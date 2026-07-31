@@ -5,6 +5,7 @@ import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import type { ObservabilitySummary } from '@/api/client'
 import { fadeRise, useMotionPreset } from '@/lib/motion'
 import { useObservabilitySummaryQuery } from '@/queries'
+import { cn } from '@/lib/utils'
 import { formatCompact, formatInt } from '@/utils/telemetryFormat'
 
 interface ChatWelcomeProps {
@@ -94,12 +95,8 @@ function heatLevel(turns: number, maxTurns: number): number {
 }
 
 export function ChatWelcome({ context }: ChatWelcomeProps) {
-  const [view, setView] = useState<UsageView>('overview')
-  const [period, setPeriod] = useState<UsagePeriod>('all')
   const preset = useMotionPreset()
   const enter = fadeRise(preset, 12)
-  const queryDays = period === 'all' ? 90 : period
-  const summary = useObservabilitySummaryQuery(queryDays)
 
   return (
     <motion.div
@@ -124,10 +121,25 @@ export function ChatWelcome({ context }: ChatWelcomeProps) {
 
       {context}
 
-      <section
-        className="w-full rounded-xl border border-(--color-border-subtle) bg-(--bg-sidebar) p-2 shadow-sm"
-        aria-label="Recent usage"
-      >
+      <RecentUsageCard />
+    </motion.div>
+  )
+}
+
+export function RecentUsageCard({ className }: { className?: string }) {
+  const [view, setView] = useState<UsageView>('overview')
+  const [period, setPeriod] = useState<UsagePeriod>('all')
+  const queryDays = period === 'all' ? 90 : period
+  const summary = useObservabilitySummaryQuery(queryDays)
+
+  return (
+    <section
+      className={cn(
+        '@container/usage w-full rounded-xl border border-(--color-border-subtle) bg-(--bg-sidebar) p-2 shadow-sm',
+        className,
+      )}
+      aria-label="Recent usage"
+    >
         <div className="mb-1.5 flex items-center justify-between">
           <div className="flex items-center gap-1" role="tablist" aria-label="Usage view">
             {(['overview', 'models'] as const).map((item) => (
@@ -172,7 +184,7 @@ export function ChatWelcome({ context }: ChatWelcomeProps) {
 
         {summary.isLoading ? (
           <div className="space-y-1.5">
-            <div className="grid grid-cols-2 gap-1 min-[460px]:grid-cols-4">
+            <div className="grid grid-cols-2 gap-1 @[28rem]/usage:grid-cols-4">
               {Array.from({ length: 8 }).map((_, index) => (
                 <div key={index} className="h-10 animate-pulse rounded-md bg-(--bg-key) p-2">
                   <div className="h-2 w-12 rounded bg-(--color-border)" />
@@ -193,8 +205,7 @@ export function ChatWelcome({ context }: ChatWelcomeProps) {
         ) : (
           <ModelUsage data={summary.data} />
         )}
-      </section>
-    </motion.div>
+    </section>
   )
 }
 
@@ -224,7 +235,7 @@ function UsageOverview({ data, queryDays }: { data: ObservabilitySummary; queryD
 
   return (
     <div>
-      <div className="grid grid-cols-2 gap-1 min-[460px]:grid-cols-4">
+      <div className="grid grid-cols-2 gap-1 @[28rem]/usage:grid-cols-4">
         {stats.map(([label, value]) => (
           <div key={label} className="min-w-0 rounded-md bg-(--bg-key) px-2 py-1">
             <p className="truncate text-[11px] leading-3.5 text-(--color-text-muted)" title={label}>

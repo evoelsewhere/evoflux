@@ -1,6 +1,5 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useMemo } from 'react'
 import { Activity, ArrowUp, ChevronDown, File, Folder, Globe, Loader2, MessageCircle, Paperclip, Quote, Square, SquareCheck, Terminal, X } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
 import { MentionOverlay } from './InputBar.overlay'
@@ -10,7 +9,6 @@ import { TodosList } from './TodosList'
 import { cn } from '@/lib/utils'
 import type { AgentCapabilities, TodoItem } from '@/api/types'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { fadeRise, panelTransition, useMotionPreset } from '@/lib/motion'
 
 // Re-export the public type so callers can import ``FileRef`` from this module
 // alongside the component. (The helper ``findActiveMention`` is imported from
@@ -242,9 +240,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragCounterRef = useRef(0)
   const isMobile = useIsMobile()
-  const preset = useMotionPreset()
-  const attachmentEnter = fadeRise(preset, 6)
-  const menuEnter = fadeRise(preset, 8)
 
   // Terminal → composer handoff: the AI Terminal's "Send to agent" dispatches
   // this event so selected output lands in the chat draft, without coupling
@@ -407,9 +402,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     const wasMinimized = prevMinimizedRef.current
     prevMinimizedRef.current = minimized
     if (!wasMinimized || minimized) return
-    // ``rAF`` lets framer's parent ``layout`` tween start before
-    // focus, so the caret doesn't appear mid-morph at the wrong
-    // position.
+    // Focus on the next frame so the expanded textarea is visible first.
     const id = requestAnimationFrame(() => {
       textareaRef.current?.focus()
     })
@@ -438,12 +431,43 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       : ''
     const message = [quotedContext, trimmed].filter(Boolean).join('\n\n')
     const submitted = shellMode ? `!${trimmed}` : message
+    const submittedFiles = files
+    const submittedShellMode = shellMode
+
+    // Clear the accepted draft immediately instead of leaving it visible
+    // while network/model checks run. If the parent rejects or throws, restore
+    // only into still-empty fields so text typed during the request is never
+    // overwritten.
+    setValue('')
+    setQuoteContext(null)
+    setShellMode(false)
+    setFiles([])
+    setMentionRange(null)
+    setSnippetRange(null)
+    setHistoryIndex(-1)
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
+
+    const restoreDraft = () => {
+      setValue((current) => current || value)
+      setQuoteContext((current) => current ?? quoteContext)
+      setShellMode((current) => current || submittedShellMode)
+      setFiles((current) => current.length > 0 ? current : submittedFiles)
+      requestAnimationFrame(resize)
+    }
+
     setSubmitting(true)
     try {
-      const accepted = await onSubmit(submitted, files.length > 0 ? files : undefined)
-      if (accepted === false) return
+      const accepted = await onSubmit(
+        submitted,
+        submittedFiles.length > 0 ? submittedFiles : undefined,
+      )
+      if (accepted === false) {
+        restoreDraft()
+        return
+      }
     } catch {
-      // The caller owns reporting; preserve the draft so it can be retried.
+      // The caller owns reporting; restore the draft so it can be retried.
+      restoreDraft()
       return
     } finally {
       setSubmitting(false)
@@ -454,19 +478,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         prev[0] === historyEntry ? prev : [historyEntry, ...prev].slice(0, 100),
       )
     }
-    setHistoryIndex(-1)
-    setValue('')
-    setQuoteContext(null)
-    setShellMode(false)
-    setFiles([])
-    // Clear the mention picker too — it tracks positions inside the value
-    // we just wiped. Without this, a picker that was open at submit time
-    // would render above the now-empty textarea on the next paint.
-    setMentionRange(null)
-    setSnippetRange(null)
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
-    }
   }, [
     value,
     quoteContext,
@@ -476,6 +487,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     shellMode,
     slashFilter,
     submitting,
+    resize,
   ])
 
   const buildAcceptString = useCallback((): string => {
@@ -1258,33 +1270,17 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   return (
     <div className={floating ? '' : 'bg-(--bg-page) px-4 pb-5 pt-3'}>
       <div className={floating ? 'relative' : 'relative mx-auto max-w-4xl'}>
-        <AnimatePresence initial={false}>
-          {!minimized && !filesBelow && files.length > 0 && (
-            <motion.div
-              key="composer-attachments-top"
-              initial={attachmentEnter.initial}
-              animate={attachmentEnter.animate}
-              exit={attachmentEnter.exit}
-              transition={attachmentEnter.transition}
-            >
-              {filePreviewStrip}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {!minimized && !filesBelow && files.length > 0 && (
+          <div>{filePreviewStrip}</div>
+        )}
 
-        <AnimatePresence initial={false}>
-          {!minimized && slashMenuOpen && (
-            <motion.div
-              key="slash-menu"
-              id={slashMenuId}
-              role="listbox"
-              aria-label="Slash commands"
-              initial={menuEnter.initial}
-              animate={menuEnter.animate}
-              exit={menuEnter.exit}
-              transition={menuEnter.transition}
-              className="absolute bottom-full left-0 right-0 z-(--z-panel) mb-1 max-h-64 overflow-y-auto rounded-lg bg-(--color-surface)"
-            >
+        {!minimized && slashMenuOpen && (
+          <div
+            id={slashMenuId}
+            role="listbox"
+            aria-label="Slash commands"
+            className="absolute bottom-full left-0 right-0 z-(--z-panel) mb-1 max-h-64 overflow-y-auto rounded-lg bg-(--color-surface)"
+          >
               {filteredSlashCommands.map((cmd) => {
                 if (cmd.isSeparator) {
                   return (
@@ -1334,9 +1330,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                   </button>
                 )
               })}
-            </motion.div>
-          )}
-        </AnimatePresence>
+          </div>
+        )}
 
         {!minimized && snippetMenuOpen && filteredSnippetCommands.length > 0 && (
           <div
@@ -1431,16 +1426,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
         {!minimized && showTodoProgress && (
           <div className="relative z-(--z-panel) mb-2 flex justify-center">
-            <AnimatePresence initial={false}>
-              {showTodosPopover && (
-                <motion.div
-                  key="composer-todos-popover"
-                  className="absolute bottom-full left-1/2 mb-2 w-[min(40rem,calc(100vw-2rem))] -translate-x-1/2"
-                  initial={{ opacity: 0, y: 6 * preset.distance, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 6 * preset.distance, scale: 0.98 }}
-                  transition={panelTransition(preset)}
-                >
+            {showTodosPopover && (
+              <div className="absolute bottom-full left-1/2 mb-2 w-[min(40rem,calc(100vw-2rem))] -translate-x-1/2">
                   <div
                     id="composer-task-list"
                     className="overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-card)/95 backdrop-blur-xl"
@@ -1451,9 +1438,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                       listClassName="max-h-[min(48vh,20rem)] py-2"
                     />
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+              </div>
+            )}
 
             <button
               type="button"
@@ -1496,11 +1482,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         {/* Input card — minimized: compact pill · expanded: Gemini-style card */}
         <div className={`relative ${minimized ? 'flex justify-center' : ''}`}>
           {renderDragHandle?.()}
-          <motion.div
-            layout
-            initial={false}
-            animate={{ padding: minimized ? 8 : 0 }}
-            transition={preset.spring}
+          <div
             onDragEnter={handleDragEnter}
             onDragLeave={handleDragLeave}
             onDragOver={handleDragOver}
@@ -1509,7 +1491,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               'relative block border bg-(--color-surface) transition-[background-color,border-color] duration-(--motion-base)',
               minimized
                 ? cn(
-                    'w-fit border-(--color-border) hover:bg-(--bg-key)',
+                    'w-fit border-(--color-border) p-2 hover:bg-(--bg-key)',
                     isMobile ? 'rounded-2xl' : 'rounded-[20px]',
                   )
                 : cn(
@@ -1650,22 +1632,12 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                 </div>
               </>
             )}
-          </motion.div>
+          </div>
         </div>
 
-        <AnimatePresence initial={false}>
-          {!minimized && filesBelow && files.length > 0 && (
-            <motion.div
-              key="composer-attachments-bottom"
-              initial={attachmentEnter.initial}
-              animate={attachmentEnter.animate}
-              exit={attachmentEnter.exit}
-              transition={attachmentEnter.transition}
-            >
-              {filePreviewStrip}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {!minimized && filesBelow && files.length > 0 && (
+          <div>{filePreviewStrip}</div>
+        )}
 
         {attachmentsEnabled && (
           <input
