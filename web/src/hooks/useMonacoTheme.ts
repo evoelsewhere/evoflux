@@ -3,58 +3,104 @@
  * the app's CSS custom properties so the editor blends with the current
  * light/dark mode without any hardcoded colours.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import type { Monaco } from '@monaco-editor/react'
+import type { editor as MonacoEditor } from 'monaco-editor'
 
 const DARK_THEME = 'evoflux-dark'
 const LIGHT_THEME = 'evoflux-light'
+type MonacoThemeData = MonacoEditor.IStandaloneThemeData
 
 /** Read a CSS custom property from :root. */
 function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
-function resolveMonacoTokenHex(value: string): string | null {
-  const color = value.trim()
-  const hex = color.replace(/^#/, '')
-  if (/^[0-9a-f]{3}$/i.test(hex)) {
+/**
+ * Monaco token rules only accept 6/8-digit hex values. CSS accepts shorter
+ * forms such as #fff, so normalize at the editor boundary instead of relying
+ * on the browser's color parser (which differs between WebKit and Chromium).
+ */
+function normalizeHex(value: string): string | null {
+  const hex = value.trim().replace(/^#/, '')
+  if (/^[0-9a-f]{3,4}$/i.test(hex)) {
     return [...hex].map((digit) => digit.repeat(2)).join('').toUpperCase()
   }
-  if (/^[0-9a-f]{6}$/i.test(hex)) return hex.toUpperCase()
-
-  if (typeof document === 'undefined') return null
-  const context = document.createElement('canvas').getContext('2d')
-  if (!context) return null
-
-  // Invalid assignments leave fillStyle unchanged. Two different sentinels
-  // distinguish that case without relying on a browser-specific color parser.
-  context.fillStyle = '#010203'
-  context.fillStyle = color
-  const first = context.fillStyle
-  context.fillStyle = '#040506'
-  context.fillStyle = color
-  if (context.fillStyle !== first) return null
-
-  context.clearRect(0, 0, 1, 1)
-  context.fillStyle = color
-  context.fillRect(0, 0, 1, 1)
-  const [red, green, blue] = context.getImageData(0, 0, 1, 1).data
-  return [red, green, blue]
-    .map((channel) => channel.toString(16).padStart(2, '0'))
-    .join('')
-    .toUpperCase()
+  if (/^[0-9a-f]{6}([0-9a-f]{2})?$/i.test(hex)) return hex.toUpperCase()
+  return null
 }
 
 export function toMonacoTokenHex(value: string, fallback: string): string {
-  return resolveMonacoTokenHex(value) ?? resolveMonacoTokenHex(fallback) ?? 'FFFFFF'
+  return (normalizeHex(value) ?? normalizeHex(fallback) ?? 'FFFFFF').slice(0, 6)
+}
+
+export function toMonacoThemeColor(
+  value: string,
+  fallback: string,
+  alpha?: string,
+): string {
+  const resolved = normalizeHex(value) ?? normalizeHex(fallback) ?? 'FFFFFF'
+  const opacity = alpha && /^[0-9a-f]{2}$/i.test(alpha)
+    ? alpha.toUpperCase()
+    : resolved.slice(6, 8)
+  return `#${resolved.slice(0, 6)}${opacity ?? ''}`
 }
 
 function tokenColor(cssVariable: string, fallback: string): string {
   return toMonacoTokenHex(cssVar(cssVariable), fallback)
 }
 
+function themeColor(cssVariable: string, fallback: string, alpha?: string): string {
+  return toMonacoThemeColor(cssVar(cssVariable), fallback, alpha)
+}
+
+/**
+ * Final defensive boundary before Monaco sees the theme. This also protects
+ * against future rules being added with CSS-valid but Monaco-invalid #rgb
+ * colors, which otherwise throw and take down the entire React surface.
+ */
+export function sanitizeMonacoTheme(theme: MonacoThemeData): MonacoThemeData {
+  const tokenFallback = theme.base === 'vs-dark' ? 'FFFFFF' : '000000'
+  const uiFallback = theme.base === 'vs-dark' ? '#1E1E1E' : '#FFFFFF'
+
+  return {
+    ...theme,
+    rules: theme.rules.map((rule) => ({
+      ...rule,
+      ...(rule.foreground
+        ? { foreground: toMonacoTokenHex(rule.foreground, tokenFallback) }
+        : {}),
+      ...(rule.background
+        ? { background: toMonacoTokenHex(rule.background, tokenFallback) }
+        : {}),
+    })),
+    colors: Object.fromEntries(
+      Object.entries(theme.colors).map(([name, color]) => [
+        name,
+        toMonacoThemeColor(color, uiFallback),
+      ]),
+    ),
+  }
+}
+
+function defineThemeSafely(monaco: Monaco, name: string, theme: MonacoThemeData) {
+  try {
+    monaco.editor.defineTheme(name, sanitizeMonacoTheme(theme))
+  } catch (error) {
+    // A malformed custom theme must never crash the desktop app. Keep the
+    // custom name defined with Monaco's built-in palette as a safe fallback.
+    console.error(`[Monaco] Failed to define ${name}; using built-in colors`, error)
+    monaco.editor.defineTheme(name, {
+      base: theme.base,
+      inherit: true,
+      rules: [],
+      colors: {},
+    })
+  }
+}
+
 function defineDarkTheme(monaco: Monaco) {
-  monaco.editor.defineTheme(DARK_THEME, {
+  defineThemeSafely(monaco, DARK_THEME, {
     base: 'vs-dark',
     inherit: true,
     rules: [
@@ -68,29 +114,29 @@ function defineDarkTheme(monaco: Monaco) {
       { token: 'operator', foreground: tokenColor('--color-syn-operator', '8B949E') },
     ],
     colors: {
-      'editor.background': cssVar('--bg-card'),
-      'editor.foreground': cssVar('--color-text-2'),
-      'editorLineNumber.foreground': cssVar('--color-text-subtle'),
-      'editorLineNumber.activeForeground': cssVar('--color-text-muted'),
-      'editor.selectionBackground': cssVar('--color-accent') + '26',
-      'editor.lineHighlightBackground': cssVar('--bg-key') + '80',
-      'editorCursor.foreground': cssVar('--color-text'),
-      'editorWidget.background': cssVar('--bg-card'),
-      'editorWidget.border': cssVar('--color-border'),
-      'input.background': cssVar('--bg-input'),
-      'input.border': cssVar('--color-border'),
-      'input.foreground': cssVar('--color-text'),
-      'scrollbarSlider.background': cssVar('--color-border') + '40',
-      'scrollbarSlider.hoverBackground': cssVar('--color-border') + '80',
-      'scrollbarSlider.activeBackground': cssVar('--color-border') + 'AA',
-      'editorGutter.background': cssVar('--bg-card'),
-      'minimap.background': cssVar('--bg-card'),
+      'editor.background': themeColor('--bg-card', '#242423'),
+      'editor.foreground': themeColor('--color-text-2', '#DDDCD8'),
+      'editorLineNumber.foreground': themeColor('--color-text-subtle', '#85827F'),
+      'editorLineNumber.activeForeground': themeColor('--color-text-muted', '#AAA8A2'),
+      'editor.selectionBackground': themeColor('--color-accent', '#9AA0BF', '26'),
+      'editor.lineHighlightBackground': themeColor('--bg-key', '#2C2C2A', '80'),
+      'editorCursor.foreground': themeColor('--color-text', '#F3F2EF'),
+      'editorWidget.background': themeColor('--bg-card', '#242423'),
+      'editorWidget.border': themeColor('--color-border', '#3C3C39'),
+      'input.background': themeColor('--bg-input', '#20201F'),
+      'input.border': themeColor('--color-border', '#3C3C39'),
+      'input.foreground': themeColor('--color-text', '#F3F2EF'),
+      'scrollbarSlider.background': themeColor('--color-border', '#3C3C39', '40'),
+      'scrollbarSlider.hoverBackground': themeColor('--color-border', '#3C3C39', '80'),
+      'scrollbarSlider.activeBackground': themeColor('--color-border', '#3C3C39', 'AA'),
+      'editorGutter.background': themeColor('--bg-card', '#242423'),
+      'minimap.background': themeColor('--bg-card', '#242423'),
     },
   })
 }
 
 function defineLightTheme(monaco: Monaco) {
-  monaco.editor.defineTheme(LIGHT_THEME, {
+  defineThemeSafely(monaco, LIGHT_THEME, {
     base: 'vs',
     inherit: true,
     rules: [
@@ -104,30 +150,28 @@ function defineLightTheme(monaco: Monaco) {
       { token: 'operator', foreground: tokenColor('--color-syn-operator', '737373') },
     ],
     colors: {
-      'editor.background': cssVar('--bg-card'),
-      'editor.foreground': cssVar('--color-text-2'),
-      'editorLineNumber.foreground': cssVar('--color-text-subtle'),
-      'editorLineNumber.activeForeground': cssVar('--color-text-muted'),
-      'editor.selectionBackground': cssVar('--color-accent') + '26',
-      'editor.lineHighlightBackground': cssVar('--bg-key') + '80',
-      'editorCursor.foreground': cssVar('--color-text'),
-      'editorWidget.background': cssVar('--bg-card'),
-      'editorWidget.border': cssVar('--color-border'),
-      'input.background': cssVar('--bg-input'),
-      'input.border': cssVar('--color-border'),
-      'input.foreground': cssVar('--color-text'),
-      'scrollbarSlider.background': cssVar('--color-border') + '40',
-      'scrollbarSlider.hoverBackground': cssVar('--color-border') + '80',
-      'scrollbarSlider.activeBackground': cssVar('--color-border') + 'AA',
-      'editorGutter.background': cssVar('--bg-card'),
-      'minimap.background': cssVar('--bg-card'),
+      'editor.background': themeColor('--bg-card', '#FFFFFF'),
+      'editor.foreground': themeColor('--color-text-2', '#343A46'),
+      'editorLineNumber.foreground': themeColor('--color-text-subtle', '#697381'),
+      'editorLineNumber.activeForeground': themeColor('--color-text-muted', '#5C6675'),
+      'editor.selectionBackground': themeColor('--color-accent', '#4C66D6', '26'),
+      'editor.lineHighlightBackground': themeColor('--bg-key', '#ECEFF5', '80'),
+      'editorCursor.foreground': themeColor('--color-text', '#171A21'),
+      'editorWidget.background': themeColor('--bg-card', '#FFFFFF'),
+      'editorWidget.border': themeColor('--color-border', '#D8DDE6'),
+      'input.background': themeColor('--bg-input', '#FFFFFF'),
+      'input.border': themeColor('--color-border', '#D8DDE6'),
+      'input.foreground': themeColor('--color-text', '#171A21'),
+      'scrollbarSlider.background': themeColor('--color-border', '#D8DDE6', '40'),
+      'scrollbarSlider.hoverBackground': themeColor('--color-border', '#D8DDE6', '80'),
+      'scrollbarSlider.activeBackground': themeColor('--color-border', '#D8DDE6', 'AA'),
+      'editorGutter.background': themeColor('--bg-card', '#FFFFFF'),
+      'minimap.background': themeColor('--bg-card', '#FFFFFF'),
     },
   })
 }
 
 export function useMonacoTheme(monaco: Monaco | null) {
-  const defined = useRef(false)
-
   useEffect(() => {
     if (!monaco) return
     const isDark = document.documentElement.classList.contains('dark')
@@ -135,7 +179,6 @@ export function useMonacoTheme(monaco: Monaco | null) {
     // (Re)define both themes whenever the resolved theme changes
     defineDarkTheme(monaco)
     defineLightTheme(monaco)
-    defined.current = true
 
     monaco.editor.setTheme(isDark ? DARK_THEME : LIGHT_THEME)
 
