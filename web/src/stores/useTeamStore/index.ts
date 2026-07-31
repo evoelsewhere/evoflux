@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
-import { cancelQueuedTeamMessage, getRegistry, listTeamAgents, postTeamChat, postTeamCommand, teamStream, teamHistory } from '@/api/client'
+import { cancelQueuedTeamMessage, getRegistry, getTeamGoal, listTeamAgents, postTeamChat, postTeamCommand, teamStream, teamHistory } from '@/api/client'
 import { queryClient } from '@/lib/query-client'
 import { queryKeys } from '@/queries/keys'
 import { parseTeamBlocks, sumUsageFromMessages } from '@/utils/messages'
@@ -106,6 +106,7 @@ function resetSessionState(
   state.isSessionLoading = false
   state.error = null
   state.activeLoop = null
+  state.activeGoal = null
   state.activeWorkflowExecution = null
   state.setupRequired = null
   state.planApproval = null
@@ -220,6 +221,7 @@ export const useTeamStore = create<TeamStore>()(
     isSessionLoading: false,
     error: null,
     activeLoop: null,
+    activeGoal: null,
     activeWorkflowExecution: null,
     setupRequired: null,
     browserSession: null,
@@ -637,6 +639,96 @@ export const useTeamStore = create<TeamStore>()(
       }
     },
 
+    sendGoalCommand: async (command, objective, options) => {
+      const sessionId = get().sessionId
+      const isStart = objective !== undefined
+      if (isStart && get().isTeamWorking) {
+        set((draft) => {
+          draft.error = 'Pause or stop the current turn before replacing its goal'
+        })
+        return
+      }
+      if (!sessionId && !isStart) {
+        set((draft) => { draft.error = 'No active session for goal command' })
+        return
+      }
+
+      const leadName = get().leadName
+      const submittedAt = Date.now()
+      const optimisticBlockId = `user-${submittedAt}`
+      if (isStart) {
+        get()._abortController?.abort()
+        set((draft) => {
+          draft.isTeamWorking = true
+          draft.isContinuing = false
+          draft.error = null
+          draft.setupRequired = null
+          draft._leadRevertTime = null
+          Object.values(draft.agentStreams).forEach((stream) => {
+            stream._revertedSuffix = []
+            stream.revertedCount = 0
+            stream.revertedMessages = []
+          })
+          if (!leadName) return
+          if (!draft.agentStreams[leadName]) {
+            draft.agentStreams[leadName] = createDefaultAgentStream()
+          }
+          const stream = draft.agentStreams[leadName]
+          stream._turnStartedAt = submittedAt
+          const effectiveModel = effectiveLeadModel(draft, leadName, options?.model)
+          const effectiveThinkingLevel = options?.thinkingLevel ?? draft.sessionThinkingLevel
+          stream.currentBlocks.push({
+            id: optimisticBlockId,
+            type: 'user',
+            content: objective,
+            timestamp: new Date(submittedAt),
+            extra: {
+              command: 'goal_start',
+              ...(effectiveModel ? { model: effectiveModel } : {}),
+              ...(effectiveThinkingLevel ? { thinking_level: effectiveThinkingLevel } : {}),
+              ...((options?.fastMode ?? draft.sessionFastMode) ? { service_tier: 'fast' } : {}),
+            },
+          })
+        })
+      }
+
+      try {
+        const result = await postTeamChat(
+          command,
+          sessionId,
+          false,
+          undefined,
+          options?.mode ?? 'work',
+          options?.workspace ?? get()._workspace,
+          options?.model ?? get().sessionModel,
+          options?.thinkingLevel ?? get().sessionThinkingLevel,
+          false,
+          options?.fastMode ?? get().sessionFastMode,
+        )
+        const goal = await getTeamGoal(result.session_id)
+        set((draft) => {
+          draft.sessionId = result.session_id
+          draft.sessionModel = options?.model ?? get().sessionModel
+          draft.sessionThinkingLevel = options?.thinkingLevel ?? get().sessionThinkingLevel
+          draft.activeGoal = goal
+          draft.error = null
+          if (options?.workspace) draft._workspace = options.workspace
+        })
+        if (isStart) get().connectStream()
+      } catch (err) {
+        set((draft) => {
+          draft.error = err instanceof Error ? err.message : 'Failed to run goal command'
+          if (isStart) {
+            draft.isTeamWorking = false
+            if (leadName && draft.agentStreams[leadName]) {
+              draft.agentStreams[leadName].currentBlocks = draft.agentStreams[leadName].currentBlocks
+                .filter((block) => block.id !== optimisticBlockId)
+            }
+          }
+        })
+      }
+    },
+
     sendLoopCommand: async (command, prompt, options) => {
       const sessionId = get().sessionId
       const isStart = prompt !== undefined
@@ -917,6 +1009,7 @@ export const useTeamStore = create<TeamStore>()(
                 }
               : null
             draft.activeLoop = history.loop_status ?? null
+            draft.activeGoal = history.goal ?? null
             draft.activeWorkflowExecution = history.workflow_execution
               ? {
                   executionId: String(history.workflow_execution.execution_id),

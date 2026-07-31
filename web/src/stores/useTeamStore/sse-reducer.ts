@@ -21,7 +21,7 @@ import {
   touchesWiki,
 } from './helpers'
 import { isBackgroundCompletion, sendDesktopNotification } from '@/lib/desktop-notifications'
-import type { TurnChangedFile } from '@/api/types'
+import type { GoalResponse, TurnChangedFile } from '@/api/types'
 import type { ActivityItem, CacheInvalidation, TeamStore } from './types'
 
 type Setter = (fn: (draft: TeamStore) => void) => void
@@ -547,6 +547,13 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
           draft.activeLoop = prompt || limit > 0
             ? { prompt, limit, remaining, used, paused }
             : null
+        })
+        break
+      }
+
+      case 'goal_status': {
+        set((draft) => {
+          draft.activeGoal = (d.goal as GoalResponse | null | undefined) ?? null
         })
         break
       }
