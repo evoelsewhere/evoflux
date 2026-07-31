@@ -223,9 +223,9 @@ async def resume_goal(
     current = _validate_now(now)
     goal = await require_goal(db, session_id)
     _check_version(goal, expected_version)
-    if goal.status == "complete":
+    if goal.status in _TERMINAL_STATUSES:
         raise GoalConflictError(
-            "A complete goal cannot be resumed; replace it instead."
+            f"A {goal.status} goal cannot be resumed; replace it instead."
         )
     if goal.status != "active":
         goal.status = "active"
@@ -352,6 +352,10 @@ async def set_token_budget(
     budget = _validate_budget(token_budget)
     goal = await require_goal(db, session_id)
     _check_version(goal, expected_version)
+    if goal.status in _TERMINAL_STATUSES:
+        raise GoalConflictError(
+            f"Cannot change the token budget of a {goal.status} goal."
+        )
     goal.token_budget = budget
     if goal.status == "active" and budget is not None and goal.tokens_used >= budget:
         _stop_clock(goal, current)

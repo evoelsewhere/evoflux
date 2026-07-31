@@ -76,6 +76,19 @@ async def test_pause_and_resume_preserve_elapsed_time(goal_db):
 
 
 @pytest.mark.asyncio
+async def test_terminal_goal_cannot_resume_or_change_budget(goal_db):
+    db, session = goal_db
+    await goal_service.replace_goal(db, session.id, "Deploy")
+    for _ in range(3):
+        await goal_service.request_blocked(db, session.id, blocker="No credentials")
+
+    with pytest.raises(goal_service.GoalConflictError):
+        await goal_service.resume_goal(db, session.id)
+    with pytest.raises(goal_service.GoalConflictError):
+        await goal_service.set_token_budget(db, session.id, 10_000)
+
+
+@pytest.mark.asyncio
 async def test_blocked_requires_three_matching_goal_turns(goal_db):
     db, session = goal_db
     await goal_service.replace_goal(db, session.id, "Deploy")

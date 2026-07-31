@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import Field
 
 from app.agent.tools.registry import InjectedArg, Tool
+from app.agent.goal_status import publish_goal_status
 from app.core.db import resolve_db_factory
 from app.services import goal_service
 
@@ -91,6 +92,8 @@ async def _update_goal(
                 _state.metadata["_goal_blocker_reported"] = True
         await db.commit()
         current = goal_service.snapshot(goal)
+
+    await publish_goal_status(str(session_id), goal, source="agent_tool")
 
     if status == "blocked" and current.status == "active":
         return (

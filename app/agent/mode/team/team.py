@@ -31,6 +31,7 @@ from sqlmodel import col, select
 
 from app.agent.hooks.continuation import CONTINUATION_DIRECTIVE
 from app.agent.hooks.goal import GOAL_CONTINUATION_DIRECTIVE
+from app.agent.goal_status import publish_goal_status
 from app.agent.mode.team.mailbox import Message, TeamMailbox
 from app.agent.mode.team.member import (
     AlreadyWorkingError,
@@ -52,6 +53,7 @@ from app.agent.tools.registry import Tool
 from app.core.db import DbFactory, resolve_db_factory
 from app.core.paths import session_workspace_dir
 from app.models.chat import ChatSession, SessionMessage
+from app.models.goal import SessionGoal
 from app.models.team import DelegationTask
 from app.services import memory_stream_store as stream_store
 from app.services import snapshot_service
@@ -87,6 +89,13 @@ class LoopCommand:
     action: Literal["start", "set", "pause", "resume", "stop"]
     prompt: str | None = None
     limit: int | None = None
+
+
+@dataclass(frozen=True)
+class GoalCommand:
+    action: Literal["start", "status", "pause", "resume", "budget", "stop"]
+    objective: str | None = None
+    token_budget: int | None = None
 
 
 def _loop_status_payload(
@@ -129,9 +138,52 @@ def parse_loop_command(content: str) -> LoopCommand | None:
     return LoopCommand(action=action)
 
 
+def parse_goal_command(content: str) -> GoalCommand | None:
+    """Parse the durable ``/goal`` command namespace.
+
+    Supported forms are ``/goal <objective>``, bare ``/goal`` for status,
+    and ``/goal:pause|resume|stop|budget`` controls. ``/goal:set`` is
+    intentionally not an alias: replacing a goal is always explicit through
+    the objective form.
+    """
+
+    invocation = parse_slash_invocation(content)
+    if invocation is None or invocation.command != "goal":
+        return None
+
+    if invocation.subcommand is None:
+        objective = invocation.arguments.strip()
+        if not objective:
+            return GoalCommand(action="status")
+        return GoalCommand(action="start", objective=objective)
+
+    if invocation.subcommand in {"status", "pause", "resume", "stop"}:
+        if invocation.argv:
+            return None
+        action = cast(
+            Literal["status", "pause", "resume", "stop"],
+            invocation.subcommand,
+        )
+        return GoalCommand(action=action)
+
+    if invocation.subcommand != "budget" or len(invocation.argv) != 1:
+        return None
+    raw_budget = invocation.argv[0].casefold()
+    if raw_budget in {"none", "unlimited"}:
+        return GoalCommand(action="budget", token_budget=None)
+    if not raw_budget.isdigit() or int(raw_budget) <= 0:
+        return None
+    return GoalCommand(action="budget", token_budget=int(raw_budget))
+
+
 def is_loop_command(content: str) -> bool:
     invocation = parse_slash_invocation(content)
     return invocation is not None and invocation.command == "loop"
+
+
+def is_goal_command(content: str) -> bool:
+    invocation = parse_slash_invocation(content)
+    return invocation is not None and invocation.command == "goal"
 
 
 # ---------------------------------------------------------------------------
@@ -1887,7 +1939,73 @@ class AgentTeam:
 
         # Persist user message and parent member sessions
         skip_delivery = False
-        loop_command = parse_loop_command(content)
+        turn_was_active = self.has_active_user_turn()
+        goal_command = parse_goal_command(content)
+        goal_status_pending = False
+        goal_status_value: SessionGoal | None = None
+        if goal_command is not None:
+            from app.services import goal_service
+
+            try:
+                goal_session_id = UUID(session_id)
+                db_factory = resolve_db_factory(self.lead.db_factory)
+                async with db_factory() as db:
+                    if goal_command.action == "start":
+                        assert goal_command.objective is not None
+                        if turn_was_active:
+                            raise goal_service.GoalConflictError(
+                                "Cannot replace a goal during an active turn. "
+                                "Pause or interrupt it, wait for the turn to stop, "
+                                "then set the new objective."
+                            )
+                        goal_status_value = await goal_service.replace_goal(
+                            db,
+                            goal_session_id,
+                            goal_command.objective,
+                        )
+                        content = goal_command.objective
+                        message_extra = {
+                            **(message_extra or {}),
+                            "command": "goal_start",
+                        }
+                    elif goal_command.action == "status":
+                        goal_status_value = await goal_service.get_goal(
+                            db, goal_session_id
+                        )
+                        skip_delivery = True
+                    elif goal_command.action == "pause":
+                        goal_status_value = await goal_service.pause_goal(
+                            db,
+                            goal_session_id,
+                        )
+                        skip_delivery = True
+                    elif goal_command.action == "resume":
+                        goal_status_value = await goal_service.resume_goal(
+                            db,
+                            goal_session_id,
+                        )
+                        skip_delivery = True
+                    elif goal_command.action == "budget":
+                        goal_status_value = await goal_service.set_token_budget(
+                            db,
+                            goal_session_id,
+                            goal_command.token_budget,
+                        )
+                        skip_delivery = True
+                    else:
+                        existing_goal = await goal_service.get_goal(db, goal_session_id)
+                        if existing_goal is not None:
+                            await goal_service.clear_goal(db, goal_session_id)
+                        goal_status_value = None
+                        skip_delivery = True
+                    await db.commit()
+                goal_status_pending = True
+            except goal_service.GoalValidationError as exc:
+                raise ContinuePreconditionError(str(exc), status=422) from exc
+            except goal_service.GoalError as exc:
+                raise ContinuePreconditionError(str(exc)) from exc
+
+        loop_command = parse_loop_command(content) if goal_command is None else None
         if loop_command is not None:
             if self.mode != "coding":
                 raise ContinuePreconditionError(
@@ -1980,6 +2098,28 @@ class AgentTeam:
                     ),
                 )
                 skip_delivery = True
+
+        if goal_command is not None and skip_delivery:
+            if not turn_was_active:
+                await stream_store.init_turn(session_id)
+            if goal_status_pending:
+                await publish_goal_status(
+                    session_id,
+                    goal_status_value,
+                    source=f"command:{goal_command.action}",
+                )
+            if (
+                goal_command.action == "resume"
+                and not turn_was_active
+                and await self._activate_goal_continuation(session_id)
+            ):
+                return session_id
+            if not turn_was_active:
+                await stream_store.push_event(
+                    session_id, StreamEnvelope.from_event(DoneEvent())
+                )
+                await stream_store.mark_done(session_id)
+            return session_id
 
         if skip_delivery:
             try:
@@ -2097,6 +2237,13 @@ class AgentTeam:
             turn_changes_svc.begin_turn(session_id)
         except Exception as exc:
             logger.warning("team_init_turn_failed error={}", exc)
+
+        if goal_status_pending:
+            await publish_goal_status(
+                session_id,
+                goal_status_value,
+                source="command:start",
+            )
 
         if content.startswith("[Scheduled Task: "):
             task_name = (

@@ -36,7 +36,7 @@ from app.api.schemas.sessions import (
     TeamWorkspaceVisibilityRequest,
 )
 from app.webbridge_tags import WEBBRIDGE_SESSION_TAG
-from app.api.schemas.team import TeamHistoryMember, TeamHistoryResponse
+from app.api.schemas.team import GoalResponse, TeamHistoryMember, TeamHistoryResponse
 from app.api.routes.team.worktrees import (
     WorktreeCreateRequest,
     create_coding_workspace_worktree,
@@ -49,6 +49,7 @@ from app.models.chat import (
 )
 from app.services import (
     agent_service,
+    goal_service,
     memory_stream_store as stream_store,
     team_manager,
 )
@@ -255,6 +256,10 @@ def _changed_paths_payload(shift: BoundaryShift) -> dict:
     }
 
 
+def _goal_response(goal) -> GoalResponse:
+    return GoalResponse.model_validate(goal_service.snapshot(goal).model_dump())
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 
@@ -279,7 +284,10 @@ async def team_chat(
     receive the SSE event stream (supports reconnect + replay).
     """
     from app.agent.mode.team.team import (
+        ContinuePreconditionError,
+        is_goal_command,
         is_loop_command,
+        parse_goal_command,
         parse_loop_command,
     )
 
@@ -425,6 +433,18 @@ async def team_chat(
                 status_code=422,
                 detail="Invalid /loop command. Use /loop <prompt>, /loop:set 5|10|20|50, /loop:pause, /loop:resume, or /loop:stop.",
             )
+    goal_command = None
+    if is_goal_command(message):
+        goal_command = parse_goal_command(message)
+        if goal_command is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Invalid /goal command. Use /goal <objective>, /goal, "
+                    "/goal:pause, /goal:resume, /goal:budget <tokens|none>, "
+                    "or /goal:stop."
+                ),
+            )
 
     if body.shell:
         if files:
@@ -488,6 +508,7 @@ async def team_chat(
             session_uuid is not None
             and team_obj.has_active_user_turn()
             and loop_command is None
+            and goal_command is None
         ):
             # Explicit uploads still 409 — they need the live capability check
             # + persistence pipeline that only runs on the dispatch path. But
@@ -576,12 +597,14 @@ async def team_chat(
                 # A normal user turn can acknowledge immediately after
                 # validation/stream initialisation. Snapshot, persistence and
                 # agent activation continue in-order in the background.
-                # Loop controls stay synchronous because they mutate a live
-                # turn rather than starting a new one.
-                defer=loop_command is None,
+                # Goal/loop controls stay synchronous because they mutate
+                # durable or live turn state rather than queueing a prompt.
+                defer=loop_command is None and goal_command is None,
             )
         except AttachmentError as exc:
             raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+        except ContinuePreconditionError as exc:
+            raise HTTPException(status_code=exc.status, detail=exc.reason) from exc
 
         logger.info(
             "team_chat_received session_id={} attachments={}",
@@ -1226,6 +1249,17 @@ async def get_team_session_detail(
     )
 
 
+@router.get("/{session_id}/goal", response_model=GoalResponse | None)
+async def get_session_goal(session_id: UUID, db: DbSession) -> GoalResponse | None:
+    """Return the durable goal attached to a session, if one exists."""
+
+    session = await db.get(ChatSession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    goal = await goal_service.get_goal(db, session_id)
+    return _goal_response(goal) if goal is not None else None
+
+
 class TurnChangedFileOut(BaseModel):
     path: str
     status: Literal["added", "modified", "removed", "changed"] = "changed"
@@ -1359,6 +1393,8 @@ async def team_history(
         ) from exc
     if history is None:
         raise HTTPException(status_code=404, detail="Lead session not found.")
+    goal_row = await goal_service.get_goal(db, history.lead_session.id)
+    goal_response = _goal_response(goal_row) if goal_row is not None else None
     # Loop status is an in-memory lookup on a live team. Only *peek* at the
     # team cache here — booting a team just to read history blocked this GET
     # (and, via the global team lock + sync file IO, every other request)
@@ -1424,6 +1460,7 @@ async def team_history(
         loop_status=loop_team.loop_status(str(history.lead_session.id))
         if loop_team
         else None,
+        goal=goal_response,
         workflow_execution=workflow_execution,
         has_more=history.has_more,
         next_cursor=next_cursor,

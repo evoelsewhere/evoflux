@@ -184,6 +184,29 @@ class TestPushEvent:
         assert data["action"]["tab"] == "providers"
 
     @pytest.mark.asyncio
+    async def test_goal_status_is_preserved_and_replayed_across_hidden_turns(self):
+        await store.init_turn("sid-1")
+        payload = {
+            "type": "goal_status",
+            "session_id": "sid-1",
+            "goal": {"status": "active", "tokens_used": 42},
+            "metadata": {"source": "usage"},
+        }
+        await store.push_event(
+            "sid-1",
+            StreamEnvelope.from_parts("goal_status", payload),
+        )
+        await store.init_turn("sid-1", keep_subscribers=True)
+
+        events = []
+        async for event in store.attach("sid-1"):
+            events.append(event)
+            break
+
+        assert events[0]["event"] == "goal_status"
+        assert json.loads(events[0]["data"]) == payload
+
+    @pytest.mark.asyncio
     async def test_push_thinking_appends_thinking(self):
         await store.init_turn("sid-1")
         await store.push_event(
