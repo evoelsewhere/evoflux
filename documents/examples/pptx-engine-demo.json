@@ -1,0 +1,221 @@
+{
+  "title": "EvoOffice PPTX Engine",
+  "theme": {
+    "title_font": "Aptos Display",
+    "body_font": "Aptos",
+    "background": "F4F1EA",
+    "ink": "17242E",
+    "muted": "65717A",
+    "accent": "116466",
+    "highlight": "D59B45",
+    "title_pt": 40,
+    "body_pt": 20,
+    "margin_inches": 0.72
+  },
+  "slides": [
+    {
+      "title": "EvoOffice PPTX Engine",
+      "layout": "cover",
+      "kicker": "EVOFLUX",
+      "slots": {
+        "primary": {
+          "type": "text",
+          "text": "Từ ý định đến slide PowerPoint native, có kiểm soát và có thể chỉnh sửa.",
+          "size": 22,
+          "color": "65717A",
+          "max_lines": 4
+        },
+        "visual": {
+          "type": "image",
+          "path": "documents/images/generated/system-architecture.jpg",
+          "alt_text": "Sơ đồ kiến trúc hệ thống EvoFlux",
+          "focal_x": 0.5,
+          "focal_y": 0.5
+        }
+      },
+      "footer": "EvoOffice engine demo"
+    },
+    {
+      "title": "Một engine, bốn lớp kiểm soát",
+      "layout": "agenda",
+      "kicker": "KIẾN TRÚC",
+      "slots": {
+        "intro": {
+          "type": "text",
+          "text": "Model quyết định nội dung và layout; engine chịu trách nhiệm hình học, object native và chất lượng đầu ra.",
+          "bold": true,
+          "max_lines": 8
+        },
+        "agenda": {
+          "type": "bullets",
+          "items": [
+            "PresentationSpec có schema và capability contract",
+            "18 layout với slot đã định nghĩa",
+            "Object PowerPoint native, không flatten",
+            "Build → render → inspect → repair"
+          ],
+          "size": 20
+        }
+      },
+      "footer": "Architecture overview"
+    },
+    {
+      "title": "Chất lượng tăng qua từng cổng kiểm tra",
+      "layout": "chart-focus",
+      "kicker": "NATIVE CHART",
+      "slots": {
+        "chart": {
+          "type": "chart",
+          "kind": "area",
+          "categories": ["Plan", "Compose", "Render", "Repair"],
+          "series": {
+            "Độ tin cậy": [0.32, 0.58, 0.82, 0.96]
+          },
+          "title": "Độ tin cậy của artifact",
+          "number_format": "0%",
+          "show_legend": false,
+          "show_data_labels": true,
+          "alt_text": "Độ tin cậy tăng từ 32 phần trăm ở bước plan lên 96 phần trăm sau repair."
+        },
+        "insight": {
+          "type": "text",
+          "text": "Chart giữ nguyên series, labels và workbook nhúng để người dùng tiếp tục chỉnh sửa trong PowerPoint.",
+          "bold": true,
+          "max_lines": 8
+        }
+      },
+      "footer": "Editable evidence"
+    },
+    {
+      "title": "Ba cam kết có thể kiểm chứng",
+      "layout": "metrics",
+      "profile": "executive-dense",
+      "kicker": "QUALITY CONTRACT",
+      "slots": {
+        "metric-1": {
+          "type": "metric",
+          "value": "18",
+          "label": "layout có slot contract",
+          "context": "Từ cover đến chart, table và process"
+        },
+        "metric-2": {
+          "type": "metric",
+          "value": "9",
+          "label": "block native",
+          "context": "Text, image, chart, table, icon và hơn nữa"
+        },
+        "metric-3": {
+          "type": "metric",
+          "value": "0",
+          "label": "lỗi được phép giao",
+          "context": "Build dừng khi preflight hoặc visual QA thất bại"
+        },
+        "detail": {
+          "type": "text",
+          "text": "Capability chưa hỗ trợ được công bố là preserve-only thay vì bị mô phỏng bằng shape cơ bản.",
+          "align": "center",
+          "bold": true,
+          "max_lines": 3
+        }
+      },
+      "footer": "Deterministic quality"
+    },
+    {
+      "title": "Visual và nội dung dùng chung một hệ",
+      "layout": "visual-left",
+      "kicker": "ASSET PIPELINE",
+      "slots": {
+        "visual": {
+          "type": "image",
+          "path": "documents/images/generated/agent-working-model.jpg",
+          "alt_text": "Minh hoạ mô hình hoạt động của agent trong EvoFlux",
+          "focal_x": 0.48,
+          "focal_y": 0.5
+        },
+        "text": {
+          "type": "bullets",
+          "items": [
+            "Ảnh được crop theo focal point",
+            "Alt text được ghi vào object native",
+            "Speaker notes giữ provenance",
+            "Không biến cả slide thành screenshot"
+          ],
+          "size": 18
+        }
+      },
+      "footer": "Native media objects"
+    },
+    {
+      "title": "Hỗ trợ rõ ràng, bảo toàn phần còn lại",
+      "layout": "table-focus",
+      "profile": "executive-dense",
+      "kicker": "CAPABILITY MATRIX",
+      "slots": {
+        "table": {
+          "type": "table",
+          "headers": ["Feature", "Create", "Edit / preserve"],
+          "rows": [
+            ["Text, image, chart", "Native", "Native"],
+            ["Table, process, notes", "Native", "Native"],
+            ["Transition / Morph", "Basic", "Preserve"],
+            ["SmartArt", "Template", "Preserve-only"],
+            ["Media, OLE, animation", "Template", "Preserve-only"]
+          ],
+          "column_weights": [1.5, 1, 1.35],
+          "alt_text": "Ma trận khả năng tạo mới và bảo toàn các tính năng PowerPoint."
+        },
+        "note": {
+          "type": "bullets",
+          "items": [
+            "Không flatten phần chưa hỗ trợ",
+            "Mutation map giới hạn phạm vi thay đổi",
+            "Package diff phát hiện regression"
+          ],
+          "size": 13
+        }
+      },
+      "footer": "Honest capability boundaries"
+    },
+    {
+      "title": "Vòng lặp kết thúc khi deck đạt chuẩn",
+      "layout": "process",
+      "kicker": "DELIVERY LOOP",
+      "slots": {
+        "process": {
+          "type": "process",
+          "steps": ["Plan", "Compose", "Render", "Inspect", "Repair"],
+          "alt_text": "Quy trình năm bước từ lập kế hoạch đến sửa lỗi."
+        },
+        "note": {
+          "type": "text",
+          "text": "Mỗi slide được render riêng; overlap, clipping và chart mismatch đều chặn delivery.",
+          "align": "center",
+          "bold": true,
+          "max_lines": 3
+        }
+      },
+      "transition": "fade",
+      "footer": "Render every slide"
+    },
+    {
+      "title": "Artifact tốt phải chỉnh sửa được",
+      "layout": "quote",
+      "kicker": "KẾT LUẬN",
+      "slots": {
+        "quote": {
+          "type": "quote",
+          "quote": "EvoOffice không vẽ một bức ảnh giống PowerPoint. Nó tạo một tài liệu PowerPoint thực sự, có cấu trúc và có thể kiểm chứng."
+        },
+        "attribution": {
+          "type": "text",
+          "text": "Nguyên tắc thiết kế của EvoOffice PPTX Engine",
+          "color": "116466",
+          "bold": true,
+          "align": "right",
+          "max_lines": 2
+        }
+      },
+      "footer": "EvoOffice PPTX Engine"
+    }
+  ]
+}

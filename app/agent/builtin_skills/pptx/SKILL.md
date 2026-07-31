@@ -5,9 +5,25 @@ description: "Create, inspect, or edit PowerPoint presentations (.pptx), includi
 
 # PPTX
 
-Create PowerPoint decks with `python-pptx`, native charts/tables/shapes, and
-targeted OOXML patches. The quality target is a designed presentation, not a
-document split across slides. Use only the bundled Python toolchain.
+Create new PowerPoint decks through the declarative `pptx_engine` tool. It
+compiles validated layout/slot specifications into native charts, tables,
+images, text, groups, notes, and transitions, then runs structural and visual
+QA. Use the package-preserving OOXML editor for supplied templates. The quality
+target is a designed presentation, not a document split across slides.
+
+## Declarative engine contract
+
+For a new deck, call `pptx_engine(action="catalog")` once to inspect the
+available layouts, slots, block types, and capability matrix. Then call
+`pptx_engine(action="compose", path="...pptx", spec={...})`. The model owns the
+narrative, content, layout selection, and asset choices; the engine owns exact
+geometry, text floors, native-object construction, rendering, and QA.
+
+Do not write a free-form `python-pptx` coordinate script for normal deck
+creation. Low-level helpers under `scripts/` are engine internals and an escape
+hatch for a structural feature that the declarative schema cannot yet express.
+SmartArt, media/OLE, and complex animation remain template-first preserve-only
+capabilities and must never be approximated with basic shapes.
 
 ## Template-first contract
 
@@ -77,17 +93,15 @@ then compare the before/after package and render every slide.
 3. If creating from scratch, plan the communication job before code:
    audience, decision/action, narrative arc, slide sequence, visual approach,
    and one-sentence takeaway per slide.
-4. Assign every slide one explicit silhouette before writing slide copy:
-   `hero`, `split`, `visual-left`, `comparison`, or `statement`. Declare which
-   content belongs in each region and a maximum line count. Do not place
-   arbitrary shapes first and try to make the content fit afterward.
+4. Assign every slide one explicit silhouette from the engine catalog before
+   writing slide copy. Declare which content belongs in each named slot and a
+   maximum line count. Do not place arbitrary shapes first and try to make the
+   content fit afterward.
 5. Define design tokens: slide ratio, margins/grid, title/body sizes, fonts,
    background, primary/accent colors, chart palette, footer, and image style.
-6. Build one reproducible Python script in a temporary directory. Use
-   `layout_plan`, `QualityLedger`, `LayoutGuard`, and strict `add_text` from
-   `scripts/stylekit.py`. Collect all preflight issues in one build and repair
-   them as a batch; collision or text-fit errors require a layout/copy change,
-   not an overlap exception.
+6. Build one declarative `PresentationSpec` and submit it to `pptx_engine`.
+   Collect all returned preflight issues and repair them as a batch; collision
+   or text-fit errors require a layout/copy change, not an overlap exception.
 7. For functional symbols, use the curated vector catalog in
   `scripts/icons.py`, not generated raster icons or mixed icon families.
   After choosing names, validate all of them in one pass with
@@ -97,45 +111,28 @@ then compare the before/after package and render every slide.
    Quantitative evidence becomes an editable chart, structured comparisons
    become a real table, photos use native crop/focal controls, and navigation
    uses native hyperlinks. Do not rebuild these as collections of rectangles.
-9. Run structural QA and render every slide. Inspect every slide individually,
-   repair issues, rerender, and deliver only the final PPTX.
+9. Keep `render=true` for the final compose/validate call. Inspect every
+   returned slide image individually, repair issues, rerender, and deliver only
+   the final PPTX.
 
-Minimal layout-first pattern:
+Minimal layout-first spec:
 
-```python
-ledger = QualityLedger()
-plan = layout_plan(prs, "split", theme=theme)
-guard = LayoutGuard(plan, ledger=ledger)
-add_title(slide, takeaway, theme=theme, guard=guard)
-
-text_region = plan.region("text")
-add_text(
-    slide,
-    body,
-    left=text_region.left,
-    top=text_region.top,
-    width=text_region.width,
-    height=text_region.height,
-    font=theme.body_font,
-    size=theme.body_pt,
-    color=theme.ink,
-    max_lines=6,
-    guard=guard,
-)
-visual_region = plan.region("visual")
-add_image_cover(
-    slide,
-    image_path,
-    left=visual_region.left,
-    top=visual_region.top,
-    width=visual_region.width,
-    height=visual_region.height,
-    guard=guard,
-)
-
-# Call once after every slide has been composed. The exception lists all
-# geometry, type-floor, and text-fit issues instead of only the first one.
-ledger.raise_if_errors()
+```json
+{
+  "title": "Decision-ready update",
+  "layout": "split",
+  "slots": {
+    "text": {
+      "type": "bullets",
+      "items": ["Evidence first", "One clear decision"]
+    },
+    "visual": {
+      "type": "image",
+      "path": "assets/decision.jpg",
+      "alt_text": "Team reviewing the decision"
+    }
+  }
+}
 ```
 
 Do not repair a generator with global regex substitutions. Helper signatures
@@ -312,11 +309,8 @@ set_accessibility(
 
 ## Required QA
 
-Run:
-
-```bash
-python "{SKILL_DIR}/scripts/qa.py" output.pptx --render-dir /tmp/pptx-render
-```
+For new decks, use `pptx_engine(action="validate", path="output.pptx",
+render=true)`. The compose action already runs the same gate when `render=true`.
 
 For a template edit, include the unmodified source:
 

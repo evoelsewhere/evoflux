@@ -131,7 +131,7 @@ def inspect_docx(source: Path) -> dict[str, Any]:
             document_xml = package.read("word/document.xml")
             comments = sum(name == "word/comments.xml" for name in names)
             tracked_change_parts = sum(
-                b"<w:ins" in package.read(name) or b"<w:del" in package.read(name)
+                bool(re.search(rb"<w:(?:ins|del)(?:\s|>)", package.read(name)))
                 for name in names
                 if name.startswith("word/") and name.endswith(".xml")
             )

@@ -28,7 +28,7 @@ from app.agent.builtin_skills.pptx.scripts.stylekit import (
     PresentationTheme,
 )
 
-ChartKind = Literal["column", "bar", "line", "doughnut"]
+ChartKind = Literal["column", "bar", "line", "area", "pie", "doughnut"]
 TransitionKind = Literal["none", "fade", "push", "wipe", "cut", "morph"]
 _MORPH_NAMESPACE = "http://schemas.microsoft.com/office/powerpoint/2015/09/main"
 
@@ -36,6 +36,8 @@ _CHART_TYPES = {
     "column": XL_CHART_TYPE.COLUMN_CLUSTERED,
     "bar": XL_CHART_TYPE.BAR_CLUSTERED,
     "line": XL_CHART_TYPE.LINE_MARKERS,
+    "area": XL_CHART_TYPE.AREA,
+    "pie": XL_CHART_TYPE.PIE,
     "doughnut": XL_CHART_TYPE.DOUGHNUT,
 }
 
@@ -235,6 +237,7 @@ def add_native_chart(
     plot.has_data_labels = show_data_labels
     if show_data_labels:
         labels = plot.data_labels
+        labels.show_value = True
         labels.number_format = number_format
         labels.font.name = theme.body_font
         labels.font.size = Pt(10)
@@ -243,7 +246,7 @@ def add_native_chart(
             labels.position = XL_LABEL_POSITION.OUTSIDE_END
     if kind == "doughnut":
         plot.hole_size = 62
-    else:
+    if kind not in {"pie", "doughnut"}:
         value_axis = chart.value_axis
         value_axis.has_major_gridlines = True
         value_axis.tick_labels.number_format = number_format

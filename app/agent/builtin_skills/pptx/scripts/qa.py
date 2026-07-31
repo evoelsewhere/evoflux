@@ -465,18 +465,20 @@ def _layout_findings(
                     )
                 )
             is_title = _is_title_shape(shape, slide)
-            if is_title and estimated_lines > 1:
+            role = _shape_role(shape)
+            maximum_title_lines = 2 if role == "deck-title" else 1
+            if is_title and estimated_lines > maximum_title_lines:
                 findings.append(
                     _finding(
                         "error",
                         f"slide:{slide_number}:title-wrap:{shape_id}",
                         estimated_lines,
                         f"Slide {slide_number}: title {shape.name!r} is likely to wrap "
-                        f"to {estimated_lines} lines; shorten it or change layout",
+                        f"to {estimated_lines} lines; the {role or 'title'} role allows "
+                        f"{maximum_title_lines}. Shorten it or change layout",
                     )
                 )
             floor = _font_floor(shape)
-            role = _shape_role(shape)
             if is_title or role == "title":
                 minimum = policy.title_min_pt
             elif role in {"subheading", "section-heading"}:

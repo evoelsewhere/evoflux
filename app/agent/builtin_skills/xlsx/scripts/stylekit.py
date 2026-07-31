@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Mapping
 
 from openpyxl import Workbook
 from openpyxl.formatting.rule import CellIsRule, FormulaRule
@@ -248,7 +248,7 @@ def style_body_range(
 
 def set_column_widths(
     sheet,
-    widths: dict[str | int, float],
+    widths: Mapping[str | int, float],
     *,
     profile: WorkbookProfileName = "data-table",
 ) -> None:

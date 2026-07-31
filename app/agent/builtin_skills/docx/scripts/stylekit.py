@@ -36,6 +36,12 @@ class DocumentProfile:
     h1_pt: float
     h2_pt: float
     h3_pt: float
+    h1_before_pt: float
+    h1_after_pt: float
+    h2_before_pt: float
+    h2_after_pt: float
+    h3_before_pt: float
+    h3_after_pt: float
     margin_inches: float
     header_footer_inches: float
     table_cell_vertical_dxa: int
@@ -52,7 +58,13 @@ DOCUMENT_PROFILES: dict[DocumentProfileName, DocumentProfile] = {
         title_pt=26,
         h1_pt=16,
         h2_pt=13,
-        h3_pt=11.5,
+        h3_pt=12,
+        h1_before_pt=16,
+        h1_after_pt=8,
+        h2_before_pt=12,
+        h2_after_pt=6,
+        h3_before_pt=8,
+        h3_after_pt=4,
         margin_inches=1.0,
         header_footer_inches=0.49,
         table_cell_vertical_dxa=80,
@@ -68,6 +80,12 @@ DOCUMENT_PROFILES: dict[DocumentProfileName, DocumentProfile] = {
         h1_pt=15,
         h2_pt=12,
         h3_pt=10.5,
+        h1_before_pt=18,
+        h1_after_pt=10,
+        h2_before_pt=14,
+        h2_after_pt=7,
+        h3_before_pt=10,
+        h3_after_pt=5,
         margin_inches=0.78,
         header_footer_inches=0.42,
         table_cell_vertical_dxa=70,
@@ -83,6 +101,12 @@ DOCUMENT_PROFILES: dict[DocumentProfileName, DocumentProfile] = {
         h1_pt=16,
         h2_pt=13,
         h3_pt=11.5,
+        h1_before_pt=18,
+        h1_after_pt=10,
+        h2_before_pt=12,
+        h2_after_pt=6,
+        h3_before_pt=8,
+        h3_after_pt=4,
         margin_inches=1.0,
         header_footer_inches=0.49,
         table_cell_vertical_dxa=90,
@@ -98,6 +122,12 @@ DOCUMENT_PROFILES: dict[DocumentProfileName, DocumentProfile] = {
         h1_pt=15,
         h2_pt=12,
         h3_pt=10.5,
+        h1_before_pt=12,
+        h1_after_pt=6,
+        h2_before_pt=10,
+        h2_after_pt=5,
+        h3_before_pt=8,
+        h3_after_pt=4,
         margin_inches=0.70,
         header_footer_inches=0.38,
         table_cell_vertical_dxa=60,
@@ -211,9 +241,33 @@ def apply_theme(
 
     roles = (
         ("Title", theme.heading_font, policy.title_pt, theme.ink, True, 0, 8),
-        ("Heading 1", theme.heading_font, policy.h1_pt, theme.accent, True, 14, 5),
-        ("Heading 2", theme.heading_font, policy.h2_pt, theme.ink, True, 10, 3),
-        ("Heading 3", theme.body_font, policy.h3_pt, theme.ink, True, 8, 2),
+        (
+            "Heading 1",
+            theme.heading_font,
+            policy.h1_pt,
+            theme.accent,
+            True,
+            policy.h1_before_pt,
+            policy.h1_after_pt,
+        ),
+        (
+            "Heading 2",
+            theme.heading_font,
+            policy.h2_pt,
+            theme.ink,
+            True,
+            policy.h2_before_pt,
+            policy.h2_after_pt,
+        ),
+        (
+            "Heading 3",
+            theme.body_font,
+            policy.h3_pt,
+            theme.ink,
+            True,
+            policy.h3_before_pt,
+            policy.h3_after_pt,
+        ),
     )
     for name, font, size, color, bold, before, after in roles:
         style = styles[name]

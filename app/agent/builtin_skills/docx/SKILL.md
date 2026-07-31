@@ -5,10 +5,12 @@ description: "Create, inspect, or edit Word documents (.docx), including reports
 
 # DOCX
 
-Build Word documents with the Python OpenXML stack bundled in EvoFlux:
-`python-docx` for safe package construction and `lxml`/OOXML patches for
-features the high-level API cannot express. Do not install another document
-CLI. Do not overwrite a source document.
+For a new Word document, call `docx_engine(action="catalog")`, then
+`docx_engine(action="compose", ...)`. The model owns the document archetype,
+content, semantic blocks, and content-completeness contract; the engine owns
+styles, native numbering, table geometry, headers/footers, render, and QA. Do
+not write a free-form `python-docx` script for routine creation. Low-level
+OpenXML remains an escape hatch for unsupported features and template edits.
 
 ## Template-first contract
 
@@ -40,21 +42,21 @@ fonts are protected.
    `word/document.xml`, styles, numbering, headers, footers, relationships, and
    comments before changing layout. A template is a contract, not inspiration.
    Prefer tagged content controls and paragraph IDs over text search.
-3. For a new DOCX, select a document profile before writing:
+3. For a new DOCX, call the engine catalog, then select a document profile:
    `standard-business`, `compact-reference`, `narrative-proposal`, or
    `operational-sop`. Resolve it into page size/margins, fonts, type scale,
    paragraph rhythm, heading colors, table geometry, header/footer, and accent
-   tokens. Use `apply_theme(..., profile=...)` from `stylekit.py`.
+   tokens. Express the document as semantic paragraphs, headings, real lists,
+   callouts, quotes, fixed-geometry tables, images, and page breaks.
 4. Build a content-completeness contract before pagination. Persist required
    sections or fields with `declare_content_contract`; QA must fail if a
    decision, requirement, owner, procedure step, acceptance check, source, or
    appendix is silently removed merely to shorten the document.
-5. Author one reproducible Python builder in a temporary working directory.
-   Use semantic Word styles, real numbering, explicit table widths, typed
-   fields, headers/footers, and meaningful image alt text.
-6. Save the output, run structural QA, render it, inspect every page, then fix
-   and repeat. Deliver only the final DOCX unless the user asks for sources or
-   previews.
+5. Compose through `docx_engine`; its schema rejects unknown blocks, malformed
+   table geometry, and unsafe asset paths before writing.
+6. Run `docx_engine(action="validate", render=true)`, inspect every page, then
+   fix and repeat. Deliver only the final DOCX unless the user asks for sources
+   or previews.
 
 ## Design rules
 

@@ -8,7 +8,7 @@ from PIL import Image
 from pptx import Presentation
 from pptx.enum.dml import MSO_THEME_COLOR
 from pptx.enum.shapes import MSO_SHAPE
-from pptx.util import Inches
+from pptx.util import Inches, Pt
 import pytest
 
 from app.agent.builtin_skills.pptx.scripts import office_features
@@ -113,6 +113,43 @@ def test_render_pptx_preview(monkeypatch, tmp_path):
     assert 'data-source-layer="slide"' in rendered
     assert "aspect-ratio:" in rendered
     assert "Arial,sans-serif" in rendered
+
+
+def test_render_pptx_preview_keeps_titles_single_line_and_renders_area_charts(
+    monkeypatch,
+    tmp_path,
+):
+    source = tmp_path / "area-chart.pptx"
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    title = slide.shapes.add_textbox(
+        Inches(0.8), Inches(0.4), Inches(11.7), Inches(0.7)
+    )
+    title.name = "[role:title] Delivery confidence"
+    title.text = "Delivery confidence"
+    title.text_frame.paragraphs[0].runs[0].font.size = Pt(18)
+    office_features.add_native_chart(
+        slide,
+        ["Plan", "Compose", "Render", "Repair"],
+        {"Confidence": [42, 61, 78, 93]},
+        left=Inches(0.8),
+        top=Inches(1.5),
+        width=Inches(11.7),
+        height=Inches(4.9),
+        kind="area",
+        title="Quality gate confidence",
+    )
+    presentation.save(source)
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
+    rendered = preview.render_office_preview(source).read_text()
+
+    assert "white-space:nowrap" in rendered
+    assert "font-size:16.20pt" in rendered
+    assert '<polygon class="chart-area"' in rendered
+    assert 'fill-opacity=".24"' in rendered
+    assert ">Plan</text>" in rendered
+    assert ">Repair</text>" in rendered
 
 
 def test_render_pptx_preview_resolves_template_theme_colors(monkeypatch, tmp_path):

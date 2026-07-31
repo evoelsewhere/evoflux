@@ -1,0 +1,163 @@
+{
+  "title": "EvoOffice XLSX Engine Demo",
+  "profile": "dashboard",
+  "theme": {
+    "font": "Aptos",
+    "ink": "17242E",
+    "muted": "65717A",
+    "accent": "116466",
+    "header_fill": "DDEAE7",
+    "section_fill": "EEF4F2",
+    "input_fill": "FFF1CF",
+    "border": "CBD5D8"
+  },
+  "required_fields": ["Gate", "Owner", "Status", "Create", "Edit / preserve"],
+  "named_ranges": [
+    {
+      "name": "DeliveryConfidence",
+      "reference": "'Delivery Data'!$B$5:$B$12"
+    }
+  ],
+  "sheets": [
+    {
+      "name": "Dashboard",
+      "role": "summary",
+      "title": "EvoOffice delivery control",
+      "title_range": "A1:N1",
+      "freeze": "A3",
+      "column_widths": {
+        "A": 4,
+        "B": 18,
+        "C": 14,
+        "D": 4,
+        "E": 18,
+        "F": 14,
+        "G": 4,
+        "H": 18,
+        "I": 14,
+        "J": 4,
+        "K": 14,
+        "L": 14,
+        "M": 14,
+        "N": 14
+      },
+      "blocks": [
+        {
+          "type": "kpi",
+          "label_cell": "B3",
+          "value_cell": "B4",
+          "label": "Quality gates",
+          "value": 8,
+          "number_format": "0"
+        },
+        {
+          "type": "kpi",
+          "label_cell": "E3",
+          "value_cell": "E4",
+          "label": "Confidence trung bình",
+          "value": 0.74,
+          "number_format": "0%"
+        },
+        {
+          "type": "kpi",
+          "label_cell": "H3",
+          "value_cell": "H4",
+          "label": "Gate bị chặn",
+          "value": 1,
+          "number_format": "0"
+        },
+        {
+          "type": "note",
+          "range": "B6:I7",
+          "text": "Workbook giữ dữ liệu, công thức, validation, conditional formatting và chart ở dạng Excel native; mọi sheet đều có vai trò và content contract rõ ràng."
+        },
+        {
+          "type": "chart",
+          "kind": "area",
+          "source_sheet": "Delivery Data",
+          "source_range": "A4:B12",
+          "position": "B9",
+          "title": "Confidence qua từng quality gate",
+          "width": 16,
+          "height": 8,
+          "y_number_format": "0%",
+          "has_legend": false
+        }
+      ]
+    },
+    {
+      "name": "Delivery Data",
+      "role": "tracker",
+      "title": "Delivery quality ledger",
+      "title_range": "A1:G1",
+      "freeze": "A5",
+      "blocks": [
+        {
+          "type": "table",
+          "anchor": "A4",
+          "name": "DeliveryLedger",
+          "columns": [
+            {"key": "gate", "label": "Gate", "width": 18},
+            {"key": "confidence", "label": "Confidence", "width": 14, "number_format": "0%"},
+            {"key": "owner", "label": "Owner", "width": 20, "editable": true},
+            {"key": "planned", "label": "Planned hours", "width": 14, "number_format": "0.0"},
+            {"key": "actual", "label": "Actual hours", "width": 14, "number_format": "0.0", "editable": true},
+            {
+              "key": "status",
+              "label": "Status",
+              "width": 14,
+              "editable": true,
+              "validation": ["On track", "At risk", "Blocked", "Done"],
+              "status_colors": {
+                "On track": "E2F0D9",
+                "At risk": "FFF2CC",
+                "Blocked": "FCE4D6",
+                "Done": "DDEBF7"
+              }
+            },
+            {"key": "variance", "label": "Variance", "width": 12, "number_format": "0.0", "variance_colors": true}
+          ],
+          "rows": [
+            {"gate": "Plan", "confidence": 0.38, "owner": "Product", "planned": 6, "actual": 5.5, "status": "Done"},
+            {"gate": "Schema", "confidence": 0.52, "owner": "Platform", "planned": 8, "actual": 8.5, "status": "Done"},
+            {"gate": "Compose", "confidence": 0.64, "owner": "Agent", "planned": 12, "actual": 11, "status": "Done"},
+            {"gate": "Formula", "confidence": 0.71, "owner": "Finance", "planned": 5, "actual": 5.5, "status": "On track"},
+            {"gate": "Render", "confidence": 0.79, "owner": "Visual QA", "planned": 8, "actual": 9, "status": "At risk"},
+            {"gate": "Inspect", "confidence": 0.84, "owner": "Reviewer", "planned": 4, "actual": 4, "status": "On track"},
+            {"gate": "Repair", "confidence": 0.91, "owner": "Agent", "planned": 6, "actual": 7, "status": "Blocked"},
+            {"gate": "Deliver", "confidence": 0.96, "owner": "EvoFlux", "planned": 2, "actual": 1.5, "status": "On track"}
+          ],
+          "formula_columns": {
+            "variance": "=E{row}-D{row}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Capability Matrix",
+      "role": "data",
+      "title": "XLSX capability contract",
+      "title_range": "A1:C1",
+      "freeze": "A5",
+      "blocks": [
+        {
+          "type": "table",
+          "anchor": "A4",
+          "name": "CapabilityMatrix",
+          "columns": [
+            {"key": "feature", "label": "Feature", "width": 34},
+            {"key": "create", "label": "Create", "width": 20},
+            {"key": "edit", "label": "Edit / preserve", "width": 24}
+          ],
+          "rows": [
+            {"feature": "Cells, formulas, tables", "create": "Native", "edit": "Native"},
+            {"feature": "Charts and conditional formatting", "create": "Native", "edit": "Native / partial"},
+            {"feature": "Validation, comments, names", "create": "Native", "edit": "Native"},
+            {"feature": "Pivot tables and slicers", "create": "Template-first", "edit": "Preserve-only"},
+            {"feature": "VBA and external queries", "create": "Unsupported", "edit": "Preserve-only"}
+          ]
+        }
+      ]
+    }
+  ]
+}
