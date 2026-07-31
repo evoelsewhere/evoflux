@@ -35,6 +35,7 @@ from app.agent.drift import detect_drift, stamp_agent_files
 from app.agent.hooks.base import BaseAgentHook
 from app.agent.hooks.code_navigation_telemetry import CodeNavigationTelemetryHook
 from app.agent.hooks.continuation import ContinuationHook
+from app.agent.hooks.goal import GoalContextHook, GoalUsageHook
 from app.agent.hooks.dynamic_prompt import inject_current_date
 from app.agent.hooks.memory_context import default_memory_context_hook
 from app.agent.hooks.memory_flush import build_memory_flush_hook
@@ -1209,6 +1210,20 @@ class TeamMemberBase(abc.ABC):
             publisher_hook,
             otel_hook,
         ]
+        if self.db_factory:
+            hooks.append(
+                GoalUsageHook(
+                    db_factory=self.db_factory,
+                    session_id=lead_session_id,
+                )
+            )
+            if self._role_label == "lead":
+                hooks.append(
+                    GoalContextHook(
+                        db_factory=self.db_factory,
+                        session_id=lead_session_id,
+                    )
+                )
         if self._team.mode == "coding":
             hooks.append(CodeNavigationTelemetryHook())
         # Splice user-queued messages into the running turn — lead only, since

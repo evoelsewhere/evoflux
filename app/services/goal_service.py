@@ -315,6 +315,31 @@ async def request_blocked(
     return goal
 
 
+async def reset_blocker_streak(
+    db: AsyncSession,
+    session_id: UUID,
+    *,
+    now: datetime | None = None,
+) -> SessionGoal | None:
+    """Reset a pending blocker after a successful lead goal turn."""
+
+    current = _validate_now(now)
+    goal = await get_goal(db, session_id)
+    if (
+        goal is None
+        or goal.status != "active"
+        or (goal.blocker_streak == 0 and goal.blocker_fingerprint is None)
+    ):
+        return goal
+    goal.blocker_streak = 0
+    goal.blocker_fingerprint = None
+    goal.status_details = None
+    _touch(goal, current)
+    db.add(goal)
+    await db.flush()
+    return goal
+
+
 async def set_token_budget(
     db: AsyncSession,
     session_id: UUID,

@@ -30,6 +30,7 @@ from loguru import logger
 from sqlmodel import col, select
 
 from app.agent.hooks.continuation import CONTINUATION_DIRECTIVE
+from app.agent.hooks.goal import GOAL_CONTINUATION_DIRECTIVE
 from app.agent.mode.team.mailbox import Message, TeamMailbox
 from app.agent.mode.team.member import (
     AlreadyWorkingError,
@@ -1394,6 +1395,9 @@ class AgentTeam:
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("workflow_advance_hook_failed error={}", exc)
 
+            if await self._activate_goal_continuation(session_id):
+                return
+
             if await self._activate_loop_message(session_id):
                 return
 
@@ -1634,6 +1638,77 @@ class AgentTeam:
             session_id,
             loop.remaining,
         )
+        return True
+
+    async def _activate_goal_continuation(self, session_id: str) -> bool:
+        """Start the next hidden lead activation for an active durable goal."""
+
+        try:
+            session_uuid = UUID(session_id)
+        except ValueError:
+            return False
+
+        db_factory = resolve_db_factory(self.lead.db_factory)
+        try:
+            async with db_factory() as db:
+                from app.services import goal_service
+
+                goal = await goal_service.get_goal(db, session_uuid)
+                if goal is None or goal.status != "active":
+                    return False
+        except Exception as exc:  # noqa: BLE001 - preserve completion barrier
+            logger.warning(
+                "team_goal_state_load_failed session_id={} error={}",
+                session_id,
+                exc,
+            )
+            return False
+
+        try:
+            await stream_store.init_turn(session_id, keep_subscribers=True)
+        except Exception as exc:
+            logger.warning("team_init_goal_turn_failed error={}", exc)
+            return False
+
+        directive_id: UUID | None = None
+        try:
+            async with db_factory() as db:
+                directive = await save_message(
+                    db,
+                    session_uuid,
+                    HumanMessage(content=GOAL_CONTINUATION_DIRECTIVE),
+                    exclude_from_context=False,
+                    extra={
+                        "command": "goal_continue",
+                        "hidden_from_user": True,
+                        "hidden_from_summary": True,
+                    },
+                )
+                directive_id = directive.id
+                await db.commit()
+        except Exception as exc:  # noqa: BLE001 - preserve completion barrier
+            logger.warning(
+                "team_save_goal_directive_failed session_id={} error={}",
+                session_id,
+                exc,
+            )
+            return False
+
+        self._has_active_turn = True
+        try:
+            self.lead.activate_for_continuation()
+        except AlreadyWorkingError:
+            # Another activation won the race. Remove the unused directive and
+            # let that activation's completion boundary reassess the goal.
+            if directive_id is not None:
+                async with db_factory() as db:
+                    directive = await db.get(SessionMessage, directive_id)
+                    if directive is not None:
+                        await db.delete(directive)
+                        await db.commit()
+            return True
+
+        logger.info("team_goal_continued session_id={}", session_id)
         return True
 
     async def inject_synthetic_turn(self, session_id: str, prompt: str) -> str | None:
