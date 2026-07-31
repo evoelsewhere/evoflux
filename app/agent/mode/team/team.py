@@ -30,6 +30,8 @@ from loguru import logger
 from sqlmodel import col, select
 
 from app.agent.hooks.continuation import CONTINUATION_DIRECTIVE
+from app.agent.hooks.goal import GOAL_CONTINUATION_DIRECTIVE
+from app.agent.goal_status import publish_goal_status
 from app.agent.mode.team.mailbox import Message, TeamMailbox
 from app.agent.mode.team.member import (
     AlreadyWorkingError,
@@ -51,6 +53,7 @@ from app.agent.tools.registry import Tool
 from app.core.db import DbFactory, resolve_db_factory
 from app.core.paths import session_workspace_dir
 from app.models.chat import ChatSession, SessionMessage
+from app.models.goal import SessionGoal
 from app.models.team import DelegationTask
 from app.services import memory_stream_store as stream_store
 from app.services import snapshot_service
@@ -71,66 +74,54 @@ if TYPE_CHECKING:
     from app.agent.providers.factory import ProviderFactory
 
 
-_LOOP_LIMITS = {5, 10, 20, 50}
-
-
-@dataclass
-class LoopState:
-    prompt: str
-    remaining: int
-    paused: bool = False
-
-
 @dataclass(frozen=True)
-class LoopCommand:
-    action: Literal["start", "set", "pause", "resume", "stop"]
-    prompt: str | None = None
-    limit: int | None = None
+class GoalCommand:
+    action: Literal["start", "status", "pause", "resume", "budget", "stop"]
+    objective: str | None = None
+    token_budget: int | None = None
 
 
-def _loop_status_payload(
-    *,
-    prompt: str | None,
-    limit: int,
-    remaining: int,
-    paused: bool = False,
-) -> dict[str, object]:
-    used = max(limit - remaining, 0)
-    return {
-        "prompt": prompt,
-        "limit": limit,
-        "remaining": remaining,
-        "used": used,
-        "paused": paused,
-    }
+def parse_goal_command(content: str) -> GoalCommand | None:
+    """Parse the durable ``/goal`` command namespace.
 
+    Supported forms are ``/goal <objective>``, bare ``/goal`` for status,
+    and ``/goal:pause|resume|stop|budget`` controls. ``/goal:set`` is
+    intentionally not an alias: replacing a goal is always explicit through
+    the objective form.
+    """
 
-def parse_loop_command(content: str) -> LoopCommand | None:
     invocation = parse_slash_invocation(content)
-    if invocation is None or invocation.command != "loop":
+    if invocation is None or invocation.command != "goal":
         return None
 
     if invocation.subcommand is None:
-        prompt = invocation.arguments.strip()
-        return LoopCommand(action="start", prompt=prompt) if prompt else None
+        objective = invocation.arguments.strip()
+        if not objective:
+            return GoalCommand(action="status")
+        return GoalCommand(action="start", objective=objective)
 
-    if invocation.subcommand == "set":
-        if len(invocation.argv) != 1 or not invocation.argv[0].isdigit():
+    if invocation.subcommand in {"status", "pause", "resume", "stop"}:
+        if invocation.argv:
             return None
-        limit = int(invocation.argv[0])
-        if limit not in _LOOP_LIMITS:
-            return None
-        return LoopCommand(action="set", limit=limit)
+        action = cast(
+            Literal["status", "pause", "resume", "stop"],
+            invocation.subcommand,
+        )
+        return GoalCommand(action=action)
 
-    if invocation.subcommand not in {"pause", "resume", "stop"} or invocation.argv:
+    if invocation.subcommand != "budget" or len(invocation.argv) != 1:
         return None
-    action = cast(Literal["pause", "resume", "stop"], invocation.subcommand)
-    return LoopCommand(action=action)
+    raw_budget = invocation.argv[0].casefold()
+    if raw_budget in {"none", "unlimited"}:
+        return GoalCommand(action="budget", token_budget=None)
+    if not raw_budget.isdigit() or int(raw_budget) <= 0:
+        return None
+    return GoalCommand(action="budget", token_budget=int(raw_budget))
 
 
-def is_loop_command(content: str) -> bool:
+def is_goal_command(content: str) -> bool:
     invocation = parse_slash_invocation(content)
-    return invocation is not None and invocation.command == "loop"
+    return invocation is not None and invocation.command == "goal"
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +246,7 @@ def _is_hidden_continuation_directive(message: object) -> bool:
 #   a queued user message can never be mis-captured as node output.
 # advance_cb(session_id) -> bool: runs after the queued-message branch
 #   declines; True = an active execution consumed this boundary (the chain
-#   stops; the runner drives on), False = fall through to /loop/DoneEvent.
+#   stops; the runner drives on), False = fall through to Goal/DoneEvent.
 _workflow_capture_cb = None
 _workflow_advance_cb = None
 
@@ -337,9 +328,6 @@ class AgentTeam:
 
         # Guard: only emit done after at least one user turn has started
         self._has_active_turn: bool = False
-        self._loop_states: dict[str, LoopState] = {}
-        self._loop_limits: dict[str, int] = {}
-
         # Workflow-node roster allowlist (plan v5 §6.4 step 2): while an
         # agent node's turn is in flight, delegation/spawn is limited to
         # that node's declared subagents. None = no restriction (normal
@@ -1267,21 +1255,6 @@ class AgentTeam:
                 await db.commit()
             self._dispatching_handoffs.discard(task_id)
 
-    def loop_status(self, session_id: str) -> dict[str, object] | None:
-        """Return the current loop status for a session, if a loop is active."""
-        loop = self._loop_states.get(session_id)
-        if loop is None:
-            limit = self._loop_limits.get(session_id)
-            if limit is None:
-                return None
-            return _loop_status_payload(prompt=None, limit=limit, remaining=limit)
-        return _loop_status_payload(
-            prompt=loop.prompt,
-            limit=self._loop_limits.get(session_id, 10),
-            remaining=loop.remaining,
-            paused=loop.paused,
-        )
-
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -1386,7 +1359,7 @@ class AgentTeam:
                 return
 
             # Workflow hook ② (advance): an active execution consumes the
-            # boundary before /loop gets a look-in.
+            # boundary before autonomous Goal continuation.
             if _workflow_advance_cb is not None:
                 try:
                     if await _workflow_advance_cb(session_id):
@@ -1394,7 +1367,7 @@ class AgentTeam:
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("workflow_advance_hook_failed error={}", exc)
 
-            if await self._activate_loop_message(session_id):
+            if await self._activate_goal_continuation(session_id):
                 return
 
             try:
@@ -1566,84 +1539,86 @@ class AgentTeam:
         )
         return True
 
-    async def _activate_loop_message(self, session_id: str) -> bool:
-        loop = self._loop_states.get(session_id)
-        if loop is None or loop.paused or loop.remaining <= 0:
-            return False
-
-        loop.remaining -= 1
-        if loop.remaining <= 0:
-            self._loop_states.pop(session_id, None)
-
-        try:
-            await stream_store.init_turn(session_id, keep_subscribers=True)
-        except Exception as exc:
-            logger.warning("team_init_loop_turn_failed error={}", exc)
-            return False
+    async def _activate_goal_continuation(self, session_id: str) -> bool:
+        """Start the next hidden lead activation for an active durable goal."""
 
         try:
             session_uuid = UUID(session_id)
         except ValueError:
             return False
+
+        db_factory = resolve_db_factory(self.lead.db_factory)
         try:
-            db_factory = resolve_db_factory(self.lead.db_factory)
             async with db_factory() as db:
-                row = await save_message(
-                    db, session_uuid, HumanMessage(content=loop.prompt)
-                )
-                await db.commit()
+                from app.services import goal_service
+
+                goal = await goal_service.get_goal(db, session_uuid)
+                if goal is None or goal.status != "active":
+                    return False
+        except Exception as exc:  # noqa: BLE001 - preserve completion barrier
+            logger.warning(
+                "team_goal_state_load_failed session_id={} error={}",
+                session_id,
+                exc,
+            )
+            return False
+
+        try:
+            await stream_store.init_turn(session_id, keep_subscribers=True)
         except Exception as exc:
-            logger.warning("team_save_loop_message_failed error={}", exc)
+            logger.warning("team_init_goal_turn_failed error={}", exc)
+            return False
+
+        directive_id: UUID | None = None
+        try:
+            async with db_factory() as db:
+                directive = await save_message(
+                    db,
+                    session_uuid,
+                    HumanMessage(content=GOAL_CONTINUATION_DIRECTIVE),
+                    exclude_from_context=False,
+                    extra={
+                        "command": "goal_continue",
+                        "hidden_from_user": True,
+                        "hidden_from_summary": True,
+                    },
+                )
+                directive_id = directive.id
+                await db.commit()
+        except Exception as exc:  # noqa: BLE001 - preserve completion barrier
+            logger.warning(
+                "team_save_goal_directive_failed session_id={} error={}",
+                session_id,
+                exc,
+            )
             return False
 
         self._has_active_turn = True
-        await stream_store.push_event(
-            session_id,
-            StreamEnvelope.from_parts(
-                "loop_status",
-                _loop_status_payload(
-                    prompt=loop.prompt,
-                    limit=self._loop_limits.get(session_id, 10),
-                    remaining=loop.remaining,
-                    paused=loop.paused,
-                ),
-            ),
-        )
-        await stream_store.push_event(
-            session_id,
-            StreamEnvelope.from_parts(
-                "queued_turn_start",
-                {
-                    "type": "queued_turn_start",
-                    "agent": self.lead.name,
-                    "message_ids": [str(row.id)],
-                    "messages": [
-                        {"id": str(row.id), "content": loop.prompt},
-                    ],
-                },
-            ),
-        )
-        msg = Message(
-            from_agent="user",
-            to_agent=self.lead.name,
-            content=f"[user]: {loop.prompt}",
-        )
-        await self.mailbox.send(to=self.lead.name, message=msg)
-        logger.info(
-            "team_loop_message_activated session_id={} remaining={}",
-            session_id,
-            loop.remaining,
-        )
+        try:
+            self.lead.activate_for_continuation()
+        except AlreadyWorkingError:
+            # Another activation won the race. Remove the unused directive and
+            # let that activation's completion boundary reassess the goal.
+            if directive_id is not None:
+                async with db_factory() as db:
+                    directive = await db.get(SessionMessage, directive_id)
+                    if directive is not None:
+                        await db.delete(directive)
+                        await db.commit()
+            return True
+
+        logger.info("team_goal_continued session_id={}", session_id)
         return True
 
     async def inject_synthetic_turn(self, session_id: str, prompt: str) -> str | None:
-        """Start a synthetic lead turn with *prompt* — the F2 recipe the
-        /loop activation uses, exposed for the workflow runner's agent
-        nodes. Returns the saved message row id (the caller's watermark
-        anchor) or None on failure."""
+        """Start a synthetic lead turn for a workflow agent node.
+
+        Returns the saved message row id (the caller's watermark anchor),
+        or ``None`` on failure.
+        """
         # Bind the lead to this session first — a freshly-booted team's lead
-        # has no session yet, and /loop's recipe assumes handle_user_message
-        # already did this binding (session pointer, DB row, member restore).
+        # has no session yet, while normal user dispatch already performs this
+        # binding (session pointer, DB row, member restore).
         if self.lead.session_id != session_id:
             self.lead.session_id = session_id
             try:
@@ -1781,6 +1756,13 @@ class AgentTeam:
         The caller should subscribe to GET /team/{session_id}/stream to
         receive the SSE event stream.
         """
+        invocation = parse_slash_invocation(content)
+        if invocation is not None and invocation.command == "loop":
+            raise ContinuePreconditionError(
+                "/loop has been removed. Use /goal <objective> instead.",
+                status=410,
+            )
+
         # Update the lead's active session
 
         await self.prepare_user_session(
@@ -1791,7 +1773,6 @@ class AgentTeam:
         )
 
         if interrupt:
-            self._loop_states.pop(session_id, None)
             cancelled = [m for m in self.all_members if m.state == "working"]
             for member in cancelled:
                 member._cancel_event.set()
@@ -1812,109 +1793,92 @@ class AgentTeam:
 
         # Persist user message and parent member sessions
         skip_delivery = False
-        loop_command = parse_loop_command(content)
-        if loop_command is not None:
-            if self.mode != "coding":
-                raise ContinuePreconditionError(
-                    "/loop commands are only available in coding mode."
-                )
-            if loop_command.action == "start":
-                assert loop_command.prompt is not None
-                content = loop_command.prompt
-                limit = self._loop_limits.get(session_id, 10)
-                remaining = max(limit - 1, 0)
-                if remaining > 0:
-                    self._loop_states[session_id] = LoopState(
-                        prompt=loop_command.prompt,
-                        remaining=remaining,
-                    )
-                else:
-                    self._loop_states.pop(session_id, None)
-                await stream_store.push_event(
-                    session_id,
-                    StreamEnvelope.from_parts(
-                        "loop_status",
-                        _loop_status_payload(
-                            prompt=loop_command.prompt,
-                            limit=limit,
-                            remaining=remaining,
-                        ),
-                    ),
-                )
-            elif loop_command.action == "set":
-                assert loop_command.limit is not None
-                self._loop_limits[session_id] = loop_command.limit
-                skip_delivery = True
-                await stream_store.push_event(
-                    session_id,
-                    StreamEnvelope.from_parts(
-                        "loop_status",
-                        _loop_status_payload(
-                            prompt=None,
-                            limit=loop_command.limit,
-                            remaining=loop_command.limit,
-                        ),
-                    ),
-                )
-            elif loop_command.action == "pause":
-                if session_id in self._loop_states:
-                    self._loop_states[session_id].paused = True
-                    state = self._loop_states[session_id]
-                    await stream_store.push_event(
-                        session_id,
-                        StreamEnvelope.from_parts(
-                            "loop_status",
-                            _loop_status_payload(
-                                prompt=state.prompt,
-                                limit=self._loop_limits.get(session_id, 10),
-                                remaining=state.remaining,
-                                paused=True,
-                            ),
-                        ),
-                    )
-                skip_delivery = True
-            elif loop_command.action == "resume":
-                if session_id in self._loop_states:
-                    self._loop_states[session_id].paused = False
-                    state = self._loop_states[session_id]
-                    await stream_store.push_event(
-                        session_id,
-                        StreamEnvelope.from_parts(
-                            "loop_status",
-                            _loop_status_payload(
-                                prompt=state.prompt,
-                                limit=self._loop_limits.get(session_id, 10),
-                                remaining=state.remaining,
-                            ),
-                        ),
-                    )
-                skip_delivery = True
-            elif loop_command.action == "stop":
-                self._loop_states.pop(session_id, None)
-                await stream_store.push_event(
-                    session_id,
-                    StreamEnvelope.from_parts(
-                        "loop_status",
-                        {
-                            "prompt": None,
-                            "limit": 0,
-                            "remaining": 0,
-                            "used": 0,
-                            "paused": False,
-                        },
-                    ),
-                )
-                skip_delivery = True
+        turn_was_active = self.has_active_user_turn()
+        goal_command = parse_goal_command(content)
+        goal_status_pending = False
+        goal_status_value: SessionGoal | None = None
+        if goal_command is not None:
+            from app.services import goal_service
 
-        if skip_delivery:
             try:
+                goal_session_id = UUID(session_id)
+                db_factory = resolve_db_factory(self.lead.db_factory)
+                async with db_factory() as db:
+                    if goal_command.action == "start":
+                        assert goal_command.objective is not None
+                        if turn_was_active:
+                            raise goal_service.GoalConflictError(
+                                "Cannot replace a goal during an active turn. "
+                                "Pause or interrupt it, wait for the turn to stop, "
+                                "then set the new objective."
+                            )
+                        goal_status_value = await goal_service.replace_goal(
+                            db,
+                            goal_session_id,
+                            goal_command.objective,
+                        )
+                        content = goal_command.objective
+                        message_extra = {
+                            **(message_extra or {}),
+                            "command": "goal_start",
+                        }
+                    elif goal_command.action == "status":
+                        goal_status_value = await goal_service.get_goal(
+                            db, goal_session_id
+                        )
+                        skip_delivery = True
+                    elif goal_command.action == "pause":
+                        goal_status_value = await goal_service.pause_goal(
+                            db,
+                            goal_session_id,
+                        )
+                        skip_delivery = True
+                    elif goal_command.action == "resume":
+                        goal_status_value = await goal_service.resume_goal(
+                            db,
+                            goal_session_id,
+                        )
+                        skip_delivery = True
+                    elif goal_command.action == "budget":
+                        goal_status_value = await goal_service.set_token_budget(
+                            db,
+                            goal_session_id,
+                            goal_command.token_budget,
+                        )
+                        skip_delivery = True
+                    else:
+                        existing_goal = await goal_service.get_goal(db, goal_session_id)
+                        if existing_goal is not None:
+                            await goal_service.clear_goal(db, goal_session_id)
+                        goal_status_value = None
+                        skip_delivery = True
+                    await db.commit()
+                goal_status_pending = True
+            except goal_service.GoalValidationError as exc:
+                raise ContinuePreconditionError(str(exc), status=422) from exc
+            except goal_service.GoalError as exc:
+                raise ContinuePreconditionError(str(exc)) from exc
+
+        if goal_command is not None and skip_delivery:
+            if not turn_was_active:
                 await stream_store.init_turn(session_id)
+            if goal_status_pending:
+                await publish_goal_status(
+                    session_id,
+                    goal_status_value,
+                    source=f"command:{goal_command.action}",
+                )
+            if (
+                goal_command.action == "resume"
+                and not turn_was_active
+                and await self._activate_goal_continuation(session_id)
+            ):
+                return session_id
+            if not turn_was_active:
                 await stream_store.push_event(
                     session_id, StreamEnvelope.from_event(DoneEvent())
                 )
                 await stream_store.mark_done(session_id)
-            except Exception as exc:
-                logger.warning("team_loop_command_done_failed error={}", exc)
             return session_id
 
         saved_user_message_id = existing_message_id
@@ -2022,6 +1986,13 @@ class AgentTeam:
             turn_changes_svc.begin_turn(session_id)
         except Exception as exc:
             logger.warning("team_init_turn_failed error={}", exc)
+
+        if goal_status_pending:
+            await publish_goal_status(
+                session_id,
+                goal_status_value,
+                source="command:start",
+            )
 
         if content.startswith("[Scheduled Task: "):
             task_name = (

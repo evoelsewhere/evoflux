@@ -2,10 +2,10 @@
  * useSlashCommandRegistry — the composer's slash-command subsystem for
  * TeamChatView (extracted unchanged).
  *
- * Owns the built-in command list (plus coding-only loop commands), the
+ * Owns the built-in command list (including durable goal controls), the
  * user-defined commands / snippets / runnable workflows queries and their
  * flattening into ``SlashCommand[]`` / ``SnippetCommand[]``, and every
- * submit-time interceptor: built-ins, ``/loop*``, ``/workflow`` (with the
+ * submit-time interceptors: built-ins, ``/goal*``, ``/workflow`` (with the
  * RunInputsDialog request state) and server-side expansion of
  * user-defined commands.
  */
@@ -17,7 +17,7 @@ import { useSnippetsQuery } from '@/queries/useSnippetsQuery'
 import { useWorkflowsQuery } from '@/queries/useWorkflowsQuery'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
-import { parseLoopCommand } from '@/lib/parseLoopCommand'
+import { parseGoalCommand } from '@/lib/parseGoalCommand'
 import { mapWorkflowArgs, parseWorkflowCommand } from '@/lib/parseWorkflowCommand'
 import type { RunInputsRequest } from '../RunInputsDialog'
 import type { InputBarHandle, SlashCommand, SnippetCommand } from '../InputBar'
@@ -101,15 +101,11 @@ export function useSlashCommandRegistry({
     { id: 'new', label: 'New Chat', description: 'Start a fresh team conversation' },
     { id: 'init', label: 'Init', description: 'Create or update AGENTS.md for this project' },
     { id: 'btw', label: 'btw', description: 'Open side chat with read-only access to this session' },
-    ...(mode === 'coding'
-      ? [
-          { id: 'loop', label: 'loop <prompt>', displayName: 'loop', insertText: 'loop', description: 'Start a coding loop', keepInputOpen: true },
-          { id: 'loop:set', label: 'loop:set <limit>', displayName: 'loop:set', insertText: 'loop:set', description: 'Set coding loop budget: 5, 10, 20, or 50', keepInputOpen: true },
-          { id: 'loop:pause', label: 'loop:pause', displayName: 'loop:pause', description: 'Pause the active coding loop' },
-          { id: 'loop:resume', label: 'loop:resume', displayName: 'loop:resume', description: 'Resume the paused coding loop' },
-          { id: 'loop:stop', label: 'loop:stop', displayName: 'loop:stop', description: 'Stop the active coding loop' },
-        ]
-      : []),
+    { id: 'goal', label: 'goal <objective>', displayName: 'goal', insertText: 'goal', description: 'Start a durable autonomous goal', keepInputOpen: true },
+    { id: 'goal:budget', label: 'goal:budget <tokens>', displayName: 'goal:budget', insertText: 'goal:budget', description: 'Set a token budget, or use none', keepInputOpen: true },
+    { id: 'goal:pause', label: 'goal:pause', displayName: 'goal:pause', description: 'Pause the active goal' },
+    { id: 'goal:resume', label: 'goal:resume', displayName: 'goal:resume', description: 'Resume the paused goal' },
+    { id: 'goal:stop', label: 'goal:stop', displayName: 'goal:stop', description: 'Remove the session goal' },
     {
       id: 'skill',
       label: 'skill:',
@@ -184,9 +180,9 @@ export function useSlashCommandRegistry({
     }
   }, [agentWorkspace, pushToast])
 
-  const runLoopCommand = useCallback(async (command: string, prompt?: string) => {
+  const runGoalCommand = useCallback(async (command: string, objective?: string) => {
     const current = useTeamStore.getState()
-    await current.sendLoopCommand(command, prompt, {
+    await current.sendGoalCommand(command, objective, {
       mode,
       workspace,
       model: current.sessionId ? selectedModel || null : null,
@@ -232,13 +228,10 @@ export function useSlashCommandRegistry({
       case 'new':
         handleNewSession()
         break
-      case 'loop:pause':
-      case 'loop:resume':
-      case 'loop:stop':
-        void runLoopCommand(`/${id}`).then(() => {
-          const verb = id.slice('loop:'.length)
-          pushToast({ tone: 'success', title: verb === 'stop' ? 'Loop stopped' : `Loop ${verb}d` })
-        })
+      case 'goal:pause':
+      case 'goal:resume':
+      case 'goal:stop':
+        void runGoalCommand(`/${id}`)
         break
       case 'init':
         // Prompt body lives on the backend so it can be tweaked without a
@@ -262,44 +255,43 @@ export function useSlashCommandRegistry({
         // Handled by the parent (TeamChatView) via onSlashCommand callback
         break
     }
-  }, [handleNewSession, runLoopCommand, mode, agentWorkspace, pushToast, inputRef])
+  }, [handleNewSession, runGoalCommand, mode, agentWorkspace, pushToast, inputRef])
 
-  const tryHandleBuiltinLoopCommand = useCallback(async (content: string): Promise<boolean> => {
-    const parsed = parseLoopCommand(content)
+  const tryHandleBuiltinGoalCommand = useCallback(async (content: string): Promise<boolean> => {
+    const parsed = parseGoalCommand(content)
     switch (parsed.kind) {
       case 'none':
         return false
-      case 'unknown_subcommand':
-        return false
-      case 'start_missing_prompt':
+      case 'invalid':
         pushToast({
           tone: 'error',
-          title: '/loop needs a prompt',
-          description: 'Type the prompt after /loop, e.g. "/loop just say hi".',
+          title: 'Invalid /goal command',
+          description: 'Use /goal <objective>, /goal, /goal:pause, /goal:resume, /goal:budget <tokens|none>, or /goal:stop.',
         })
         return true
-      case 'set_invalid_limit':
+      case 'budget_invalid':
         pushToast({
           tone: 'error',
-          title: '/loop:set needs a valid limit',
-          description: 'Use one of: 5, 10, 20, or 50.',
+          title: '/goal:budget needs a valid budget',
+          description: 'Enter a positive token count, or use none for no limit.',
         })
         return true
       case 'start':
-        await runLoopCommand(content, parsed.prompt)
+        await runGoalCommand(content, parsed.objective)
         return true
-      case 'set':
-        await runLoopCommand(`/loop:set ${parsed.limit}`)
-        pushToast({ tone: 'success', title: `Loop budget set to ${parsed.limit}` })
+      case 'status':
+        await runGoalCommand('/goal')
+        return true
+      case 'budget':
+        await runGoalCommand(content)
         return true
       case 'pause':
       case 'resume':
       case 'stop':
-        await runLoopCommand(`/loop:${parsed.kind}`)
-        pushToast({ tone: 'success', title: parsed.kind === 'stop' ? 'Loop stopped' : `Loop ${parsed.kind}d` })
+        await runGoalCommand(`/goal:${parsed.kind}`)
         return true
     }
-  }, [pushToast, runLoopCommand])
+  }, [pushToast, runGoalCommand])
 
   const startWorkflowRun = useCallback(
     async (name: string, values: Record<string, unknown>) => {
@@ -363,7 +355,7 @@ export function useSlashCommandRegistry({
   const expandUserCommand = useCallback(
     async (content: string): Promise<string> => {
       if (!content.startsWith('/')) return content
-      if (content.startsWith('/loop:') || content.startsWith('/loop ')) return content
+      if (content === '/goal' || content.startsWith('/goal:') || content.startsWith('/goal ')) return content
       // The command name may include slashes (nested folders), so we
       // greedily match the longest known prefix instead of splitting on
       // the first space. Tokens are separated by whitespace.
@@ -402,11 +394,12 @@ export function useSlashCommandRegistry({
     snippetCommands,
     handleSlashCommand,
     handleSnippetCommand,
-    tryHandleBuiltinLoopCommand,
+    tryHandleBuiltinGoalCommand,
     tryHandleWorkflowCommand,
     expandUserCommand,
     startWorkflowRun,
     runInputsRequest,
     setRunInputsRequest,
+    runGoalCommand,
   }
 }

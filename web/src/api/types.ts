@@ -804,6 +804,24 @@ export interface TeamStatusResponse {
   members: TeamStatusAgent[]
 }
 
+export type GoalStatus = 'active' | 'paused' | 'complete' | 'blocked'
+
+export interface GoalResponse {
+  session_id: string
+  objective: string
+  status: GoalStatus
+  token_budget: number | null
+  tokens_used: number
+  time_used_seconds: number
+  pause_reason: string | null
+  blocker_streak: number
+  status_details: Record<string, unknown> | null
+  version: number
+  created_at: string
+  updated_at: string
+  completed_at: string | null
+}
+
 export interface TeamHistoryResponse {
   lead: SessionDetailResponse
   members: Array<{
@@ -811,15 +829,9 @@ export interface TeamHistoryResponse {
     session_id: string
     messages: MessageResponse[]
   }>
-  loop_status?: {
-    prompt: string | null
-    limit: number
-    remaining: number
-    used: number
-    paused: boolean
-  } | null
-  // Live workflow snapshot from the runner — same live-state semantics as
-  // loop_status (gone after restart).
+  /** Durable autonomous objective attached to this session. */
+  goal?: GoalResponse | null
+  // Live workflow snapshot from the runner (gone after restart).
   workflow_execution?: {
     execution_id: string
     definition_name: string

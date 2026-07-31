@@ -292,9 +292,7 @@ async def test_gemini_document_uses_native_delivery_when_extraction_fails(tmp_pa
     att = RawAttachment(filename="doc.pdf", content_type="application/pdf", data=data)
     with (
         patch("app.services.agent_service._uploads_dir", return_value=tmp_path),
-        patch(
-            "app.services.agent_service._convert_with_markitdown", return_value=None
-        ),
+        patch("app.services.agent_service._convert_with_markitdown", return_value=None),
     ):
         _, metas = await validate_and_persist_attachments(team, [att])
 
@@ -669,6 +667,37 @@ async def test_deferred_dispatch_can_be_cancelled_before_activation():
 
 
 # ── interrupt_team ────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_interrupt_team_pauses_active_goal_before_stopping():
+    import app.core.db as db_module
+    from app.models.chat import ChatSession
+    from app.services import goal_service
+
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(agent_name="lead")
+        db.add(session)
+        await db.commit()
+        await goal_service.replace_goal(db, session.id, "Keep working")
+        await db.commit()
+
+    team = MagicMock()
+    team.members = {}
+    team.all_members = []
+    team.lead.db_factory = None
+    team.lead.session_id = str(session.id)
+
+    with (
+        patch("app.services.agent_service.stream_store.push_event", new=AsyncMock()),
+        patch("app.services.agent_service.stream_store.mark_done", new=AsyncMock()),
+    ):
+        await interrupt_team(team, session_id=str(session.id))
+
+    async with db_module.async_session_factory() as db:
+        goal = await goal_service.require_goal(db, session.id)
+        assert goal.status == "paused"
+        assert goal.pause_reason == "user_interrupt"
 
 
 @pytest.mark.asyncio

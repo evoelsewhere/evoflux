@@ -3,7 +3,8 @@ import { InputBar, type FileRef, type InputBarHandle, type SlashCommand, type Sn
 import { RevertNotice } from './RevertNotice'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useVisualKeyboardInset } from '@/hooks/use-visual-keyboard-inset'
-import type { AgentCapabilities, TodoItem } from '@/api/types'
+import { GoalProgressRow } from './GoalProgressRow'
+import type { AgentCapabilities, GoalResponse, TodoItem } from '@/api/types'
 
 interface FloatingInputBarProps {
   boundsRef: React.RefObject<HTMLElement | null>
@@ -44,6 +45,8 @@ interface FloatingInputBarProps {
   onWebBridgeEnabledChange?: (enabled: boolean) => void
   permissionMode?: import('@/api/types').PermissionMode
   onPermissionModeChange?: (mode: import('@/api/types').PermissionMode) => void
+  goal?: GoalResponse | null
+  onGoalCommand?: (command: string) => void
 }
 
 /**
@@ -55,7 +58,7 @@ interface FloatingInputBarProps {
  * soft keyboard via `visualViewport` inset.
  */
 export const FloatingInputBar = forwardRef<InputBarHandle, FloatingInputBarProps>(
-  function FloatingInputBar({ boundsRef: _, revertedCount, revertedMessages, onRedo, ...inputBarProps }, ref) {
+  function FloatingInputBar({ boundsRef: _, revertedCount, revertedMessages, onRedo, goal, onGoalCommand, ...inputBarProps }, ref) {
     const isMobile = useIsMobile()
     const keyboardInset = useVisualKeyboardInset()
     const innerRef = useRef<InputBarHandle | null>(null)
@@ -77,6 +80,7 @@ export const FloatingInputBar = forwardRef<InputBarHandle, FloatingInputBarProps
           className="pointer-events-auto shrink-0 border-t border-(--color-border) bg-(--bg-page) pb-safe transition-[padding-bottom] duration-(--motion-fast)"
           style={keyboardInset > 0 ? { paddingBottom: `calc(${keyboardInset}px + 0.5rem)` } : undefined}
         >
+          {goal && onGoalCommand && <GoalProgressRow goal={goal} onCommand={onGoalCommand} />}
           <RevertNotice count={revertedCount ?? 0} messages={revertedMessages ?? []} onRedo={onRedo} />
           <InputBar ref={innerRef} floating filesBelow={false} {...inputBarProps} />
         </div>
@@ -86,6 +90,11 @@ export const FloatingInputBar = forwardRef<InputBarHandle, FloatingInputBarProps
     // ── Desktop: InputBar owns the card — we just provide flex context ───
     return (
       <div className="pointer-events-auto shrink-0">
+        {goal && onGoalCommand && (
+          <div className="bg-(--bg-page) px-4 pt-2">
+            <GoalProgressRow goal={goal} onCommand={onGoalCommand} />
+          </div>
+        )}
         {(revertedCount ?? 0) > 0 && (
           <div className="mx-auto max-w-3xl px-4 pb-1">
             <RevertNotice count={revertedCount ?? 0} messages={revertedMessages ?? []} onRedo={onRedo} />
