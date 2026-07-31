@@ -4,10 +4,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { TeamChatView } from '@/components/TeamChatView'
 import { getTeamSession, resolveTeamSession } from '@/api/client'
 import { useTeamStore } from '@/stores/useTeamStore'
+import { useToastStore } from '@/stores/useToastStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { applyCacheInvalidations, patchSessionTitle } from '@/stores/cache-invalidation-bridge'
 import { queryKeys } from '@/queries'
-import { clearLastCodingFocus, codingFocusId, isProjectFocusId, loadLastCodingFocusId, saveLastCodingFocus, saveLastCodingWorkspace, shouldRestoreLastCodingWorkspace, workspaceFromSession } from '@/utils/workspace'
+import { clearLastCodingFocus, codingFocusId, isProjectFocusId, isWorkspaceUnavailableError, loadLastCodingFocusId, saveLastCodingFocus, saveLastCodingWorkspace, shouldRestoreLastCodingWorkspace, workspaceFromSession } from '@/utils/workspace'
 
 /**
  * Layout route for /, /coding, and their session routes.
@@ -115,6 +116,18 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'forge' | 'coding' }) {
         } catch {
           if (cancelled) return
           clearLastCodingFocus(focusId)
+          if (isWorkspaceUnavailableError(err)) {
+            useTeamStore.setState((state) => {
+              state.error = null
+            })
+            useToastStore.getState().push({
+              tone: 'info',
+              title: 'Workspace moved or unavailable',
+              description: 'The saved folder no longer exists. Open the repository from its new location to continue.',
+            }, 7000)
+            navigate({ to: '/coding', replace: true })
+            return
+          }
           useTeamStore.setState((state) => {
             state.error = err instanceof Error ? err.message : 'Failed to open workspace'
           })
