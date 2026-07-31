@@ -107,3 +107,94 @@ async def test_queued_user_messages_take_precedence_over_goal():
 
     queued.assert_awaited_once()
     goal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_goal_cannot_be_replaced_while_turn_is_active():
+    import app.core.db as db_module
+
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(agent_name="lead")
+        db.add(session)
+        await db.commit()
+
+    team = _team(str(session.id))
+    team._has_active_turn = True
+    team.lead.state = "working"
+
+    from app.agent.mode.team.team import ContinuePreconditionError
+
+    with pytest.raises(ContinuePreconditionError, match="active turn"):
+        await team.handle_user_message(
+            "/goal Ship the replacement objective",
+            str(session.id),
+        )
+
+    async with db_module.async_session_factory() as db:
+        goal = await goal_service.get_goal(db, session.id)
+    assert goal is None
+
+
+@pytest.mark.asyncio
+async def test_goal_start_persists_objective_and_starts_normal_turn(
+    mock_stream_store,
+    monkeypatch,
+):
+    import app.core.db as db_module
+
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(agent_name="lead")
+        db.add(session)
+        await db.commit()
+
+    team = _team(str(session.id))
+    team.mailbox.send = AsyncMock()
+    monkeypatch.setattr(
+        "app.agent.mode.team.team.snapshot_service.track",
+        AsyncMock(return_value=None),
+    )
+
+    await team.handle_user_message(
+        "/goal Implement and verify the feature",
+        str(session.id),
+    )
+
+    team.mailbox.send.assert_awaited_once()
+    assert team._has_active_turn is True
+    async with db_module.async_session_factory() as db:
+        goal = await goal_service.require_goal(db, session.id)
+        result = await db.exec(
+            select(SessionMessage).where(col(SessionMessage.session_id) == session.id)
+        )
+        messages = list(result.all())
+    assert goal.objective == "Implement and verify the feature"
+    assert messages[0].content == "Implement and verify the feature"
+    assert messages[0].extra["command"] == "goal_start"
+    assert any(
+        call.args[1].event == "goal_status" for call in mock_stream_store.call_args_list
+    )
+
+
+@pytest.mark.asyncio
+async def test_resume_command_restarts_hidden_goal_turn(mock_stream_store):
+    import app.core.db as db_module
+
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(agent_name="lead")
+        db.add(session)
+        await db.commit()
+        await goal_service.replace_goal(db, session.id, "Finish")
+        await goal_service.pause_goal(db, session.id)
+        await db.commit()
+
+    team = _team(str(session.id))
+    activate = MagicMock()
+    team.lead.activate_for_continuation = activate
+
+    await team.handle_user_message("/goal:resume", str(session.id))
+
+    activate.assert_called_once_with()
+    assert team._has_active_turn is True
+    async with db_module.async_session_factory() as db:
+        goal = await goal_service.require_goal(db, session.id)
+        assert goal.status == "active"

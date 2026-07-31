@@ -5,6 +5,10 @@ Covers: history, workspace files, todos, and permission requests.
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Literal
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 
 from app.api.schemas.sessions import MessageResponse, SessionDetailResponse
@@ -19,10 +23,27 @@ class TeamHistoryMember(BaseModel):
     messages: list[MessageResponse]
 
 
+class GoalResponse(BaseModel):
+    session_id: UUID
+    objective: str
+    status: Literal["active", "paused", "complete", "blocked"]
+    token_budget: int | None = None
+    tokens_used: int
+    time_used_seconds: float
+    pause_reason: str | None = None
+    blocker_streak: int
+    status_details: dict | None = None
+    version: int
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
+
+
 class TeamHistoryResponse(BaseModel):
     lead: SessionDetailResponse
     members: list[TeamHistoryMember]
     loop_status: dict[str, object] | None = None
+    goal: GoalResponse | None = None
     # Live workflow execution snapshot from the runner's in-memory state —
     # gone after restart, consistent with the no-durability posture (plan
     # v5 §6.5). Same live-state semantics as loop_status.

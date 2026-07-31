@@ -727,6 +727,37 @@ async def interrupt_team(team: "AgentTeam", session_id: str | None) -> list[str]
     effective_session_id = session_id or getattr(team.lead, "session_id", None)
     if effective_session_id:
         cancel_deferred_user_message(effective_session_id)
+        # Interrupt is a user-requested halt. Pause an active durable goal
+        # before cancelling agent tasks so their completion callbacks cannot
+        # immediately schedule another hidden goal turn.
+        try:
+            from app.agent.goal_status import publish_goal_status
+            from app.services import goal_service
+
+            db_factory = resolve_db_factory(team.lead.db_factory)
+            async with db_factory() as db:
+                goal = await goal_service.get_goal(db, uuid.UUID(effective_session_id))
+                if goal is not None and goal.status == "active":
+                    goal = await goal_service.pause_goal(
+                        db,
+                        uuid.UUID(effective_session_id),
+                        reason="user_interrupt",
+                    )
+                    await db.commit()
+                else:
+                    goal = None
+            if goal is not None:
+                await publish_goal_status(
+                    effective_session_id,
+                    goal,
+                    source="interrupt",
+                )
+        except Exception as exc:  # noqa: BLE001 - interrupt must still succeed
+            logger.warning(
+                "team_interrupt_goal_pause_failed session_id={} error={}",
+                effective_session_id,
+                exc,
+            )
 
     live_members = getattr(team, "members", {})
     if isinstance(live_members, dict):

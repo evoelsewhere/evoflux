@@ -8,6 +8,7 @@ from uuid import UUID
 from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
+from app.agent.goal_status import publish_goal_status
 from app.core.db import DbFactory, resolve_db_factory
 from app.services import goal_service
 
@@ -108,8 +109,14 @@ class GoalContextHook(BaseAgentHook):
             return
         try:
             async with self._db_factory() as db:
-                await goal_service.reset_blocker_streak(db, session_id)
+                goal = await goal_service.reset_blocker_streak(db, session_id)
                 await db.commit()
+            if goal is not None and goal.status == "active":
+                await publish_goal_status(
+                    self._session_id,
+                    goal,
+                    source="blocker_audit",
+                )
         except Exception as exc:  # noqa: BLE001 - bookkeeping is recoverable
             logger.warning(
                 "goal_blocker_reset_failed session_id={} error={}",
@@ -170,8 +177,14 @@ class GoalUsageHook(BaseAgentHook):
             return
         try:
             async with self._db_factory() as db:
-                await goal_service.add_usage(db, session_id, tokens)
+                goal = await goal_service.add_usage(db, session_id, tokens)
                 await db.commit()
+            if goal is not None:
+                await publish_goal_status(
+                    self._session_id,
+                    goal,
+                    source="usage",
+                )
         except Exception as exc:  # noqa: BLE001 - accounting must not break a turn
             logger.warning(
                 "goal_usage_write_failed session_id={} tokens={} error={}",

@@ -17,6 +17,7 @@ from app.agent.providers.base import LLMProviderBase
 from app.agent.mode.team.member import TeamLead, TeamMember
 from app.agent.mode.team.team import AgentTeam, LoopState
 from app.models.chat import ChatSession, CodingWorkspace, SessionMessage
+from app.services import goal_service
 
 
 class MockProvider(LLMProviderBase):
@@ -1106,6 +1107,55 @@ class TestTeamHistoryWithData:
             "used": 2,
             "paused": True,
         }
+
+    @pytest.mark.asyncio
+    async def test_history_includes_durable_goal(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            await _create_team_session(db, lead_id)
+            await db.commit()
+            await goal_service.replace_goal(
+                db,
+                lead_id,
+                "Implement and verify Goal mode",
+                token_budget=50_000,
+            )
+            await goal_service.add_usage(db, lead_id, 1_250)
+            await db.commit()
+
+        client = TestClient(app_with_team)
+        response = client.get(f"/api/team/{lead_id}/history")
+
+        assert response.status_code == 200
+        goal = response.json()["goal"]
+        assert goal["objective"] == "Implement and verify Goal mode"
+        assert goal["status"] == "active"
+        assert goal["token_budget"] == 50_000
+        assert goal["tokens_used"] == 1_250
+
+    @pytest.mark.asyncio
+    async def test_get_session_goal_returns_null_or_snapshot(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            await _create_team_session(db, lead_id)
+            await db.commit()
+
+        client = TestClient(app_with_team)
+        empty = client.get(f"/api/team/{lead_id}/goal")
+        assert empty.status_code == 200
+        assert empty.json() is None
+
+        async with _db.async_session_factory() as db:
+            await goal_service.replace_goal(db, lead_id, "Finish")
+            await db.commit()
+
+        populated = client.get(f"/api/team/{lead_id}/goal")
+        assert populated.status_code == 200
+        assert populated.json()["objective"] == "Finish"
 
 
 # ---------------------------------------------------------------------------

@@ -111,6 +111,15 @@ class UsageEvent(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class GoalStatusEvent(BaseModel):
+    """Latest durable goal snapshot for the session, or ``None`` when stopped."""
+
+    type: Literal["goal_status"] = "goal_status"
+    session_id: str
+    goal: dict[str, Any] | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class DoneEvent(BaseModel):
     """Stream complete."""
 
