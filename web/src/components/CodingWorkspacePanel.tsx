@@ -205,7 +205,7 @@ export function CodingWorkspacePanel({
   const project = projectQuery.data ?? null
   // Drive multi/single-repo mode off the *primed* projectId, not the async
   // project fetch — otherwise the single-workspace diff flashes while the
-  // project detail is still loading (see forge.tsx projectId priming).
+  // project detail is still loading (see work.tsx projectId priming).
   const isProjectMode = projectId != null
   // Single-workspace queries — dead in project mode (Files/Changed render
   // MultiRepoFileTree/DiffReviewPanel instead), so skip the wasted fetch.

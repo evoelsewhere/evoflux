@@ -127,7 +127,7 @@ def _ensure_aim_agents_installed(agents_dir: Path) -> None:
     """Self-heal: backfill ``agents_dir`` from ``seed/agents/aim/`` if it
     has no lead file yet.
 
-    Unlike forge/coding, AIM blueprints have no Python-templated builtin
+    Unlike work/coding, AIM blueprints have no Python-templated builtin
     counterpart (``BUILTIN_AGENT_BLUEPRINTS`` has no "aim" key) — they ship
     as complete .md files under ``seed/agents/aim/``, already covered by
     ``install_seed``'s generic ``agents/`` tree copy (app/cli/seed.py). A
@@ -331,7 +331,7 @@ def current_team_for_session(session_id: str) -> "AgentTeam | None":
 
 def find_team_for_session(session_id: str) -> "AgentTeam | None":
     """Any live team currently bound to *session_id*, regardless of mode —
-    forge teams key by session id, coding/aim teams by (workspace, session).
+    work teams key by session id, coding/aim teams by (workspace, session).
     Used by the workflow runner, which only has a session id."""
     team = _session_teams.get(session_id)
     if team is not None:

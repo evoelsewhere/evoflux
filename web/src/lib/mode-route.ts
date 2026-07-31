@@ -1,9 +1,9 @@
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 
-export type PersistedAppMode = 'forge' | 'coding' | 'aim'
+export type PersistedAppMode = 'work' | 'coding' | 'aim'
 
 const MODE_ROUTE_KEYS: Record<PersistedAppMode, string> = {
-  forge: STORAGE_KEYS.modeRoutes.forge,
+  work: STORAGE_KEYS.modeRoutes.work,
   coding: STORAGE_KEYS.modeRoutes.coding,
   aim: STORAGE_KEYS.modeRoutes.aim,
 }
@@ -23,7 +23,7 @@ export function appModeForPath(pathname: string): PersistedAppMode | null {
   if (pathname === '/coding' || pathname.startsWith('/coding/')) return 'coding'
   if (pathname === '/telemetry' || pathname.startsWith('/telemetry/')) return null
   if (pathname === '/scheduler' || pathname.startsWith('/scheduler/')) return null
-  return 'forge'
+  return 'work'
 }
 
 function isSafeLocalRoute(route: string): boolean {
@@ -43,8 +43,13 @@ export function saveModeRoute(pathname: string, fullPath: string): void {
 export function loadModeRoute(mode: PersistedAppMode): string | null {
   try {
     const route = localStorage.getItem(MODE_ROUTE_KEYS[mode])
+      ?? (mode === 'work' ? localStorage.getItem(STORAGE_KEYS.legacyModeRoutes.work) : null)
     if (!route || !isSafeLocalRoute(route)) return null
-    return appModeForPath(pathnameOf(route)) === mode ? route : null
+    if (appModeForPath(pathnameOf(route)) !== mode) return null
+    if (mode === 'work' && !localStorage.getItem(MODE_ROUTE_KEYS.work)) {
+      localStorage.setItem(MODE_ROUTE_KEYS.work, route)
+    }
+    return route
   } catch {
     return null
   }
@@ -52,7 +57,7 @@ export function loadModeRoute(mode: PersistedAppMode): string | null {
 
 /**
  * Restore the last route before TanStack Router captures its initial location.
- * This prevents the Forge layout from mounting and starting requests for one
+ * This prevents the Work layout from mounting and starting requests for one
  * frame before an effect redirects to the user's actual last mode.
  */
 export function restoreLastRouteBeforeRouterMount(): void {

@@ -227,10 +227,10 @@ async def _project_paths_for_session(
 async def _team_for_session_mode(db: DbSession, session_id: str):
     """Resolve the live team that matches *session_id*'s persisted mode.
 
-    Never binds a default-mode (forge) team to a coding/aim session id:
+    Never binds a default-mode (work) team to a coding/aim session id:
     ``_session_teams`` wins in ``find_team_for_session`` (the workflow
-    runner's lookup), so one stray forge boot would make every later
-    pipeline in that session run with the forge lead.
+    runner's lookup), so one stray work boot would make every later
+    pipeline in that session run with the work lead.
     """
     try:
         _, team_obj = await resolve_team_for_session(db, session_id)
@@ -374,7 +374,7 @@ async def team_chat(
             session_id = str(uuid7())
         team_obj = await team_manager.get_or_start_team_for_session(session_id)
         team_obj = _require_team(team_obj)
-        # The persisted session is authoritative for Forge workspaces.  A
+        # The persisted session is authoritative for Work workspaces.  A
         # reloaded/stale client may omit the field (or still carry the
         # previously selected folder), but the live team must always use the
         # folder most recently saved through PUT /{session_id}/workspace.
@@ -640,7 +640,7 @@ async def team_command(
     from app.agent.mode.team.team import ContinuePreconditionError
 
     # Resolve by the session's persisted mode — booting the default
-    # (forge) team here for a coding/aim session would poison the
+    # (work) team here for a coding/aim session would poison the
     # session→team lookup for the rest of the process (see
     # _team_for_session_mode).
     team_obj = await _team_for_session_mode(db, body.session_id)
@@ -731,7 +731,7 @@ async def list_team_agents(
     mode: str = Query(
         "coding",
         description="Which roster the workspace team uses: 'coding' or 'aim'. "
-        "Ignored without a workspace (the default forge team has one roster).",
+        "Ignored without a workspace (the default work team has one roster).",
     ),
 ) -> dict:
     """Return info on the lead, all live member instances, and spawnable blueprints.
@@ -879,7 +879,7 @@ async def list_team_sessions(
     """
     if mode is not None:
         mode = normalize_mode(mode)
-        if mode not in {"forge", "coding", "aim"}:
+        if mode not in {"work", "coding", "aim"}:
             raise HTTPException(status_code=422, detail="Invalid mode")
     if workspace is not None and mode not in ("coding", "aim"):
         raise HTTPException(
@@ -920,9 +920,9 @@ async def resolve_team_session(
 ) -> TeamSessionResolveResponse:
     """Return the newest matching top-level session, creating one if absent."""
     body.mode = normalize_mode(body.mode)
-    if body.mode not in {"forge", "coding", "aim"}:
+    if body.mode not in {"work", "coding", "aim"}:
         raise HTTPException(
-            status_code=422, detail="mode must be 'forge', 'coding', or 'aim'."
+            status_code=422, detail="mode must be 'work', 'coding', or 'aim'."
         )
     model = body.model.strip() if body.model else None
     thinking_level = body.thinking_level.strip() if body.thinking_level else None
@@ -932,7 +932,7 @@ async def resolve_team_session(
 
     workspace = body.workspace
     project_id = body.project_id
-    if body.mode == "forge":
+    if body.mode == "work":
         workspace = None
         project_id = None
         if body.worktree_from or body.worktree_name or body.worktree_branch:

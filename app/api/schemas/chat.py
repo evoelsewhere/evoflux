@@ -32,7 +32,7 @@ class ChatForm(BaseModel):
         False,
         description="Interrupt the running agent. Mutually exclusive with message.",
     )
-    mode: str = Field("forge", description="Chat mode: forge or coding.")
+    mode: str = Field("work", description="Chat mode: work or coding.")
     workspace: str | None = Field(
         None, description="Workspace directory for coding mode."
     )
@@ -59,7 +59,7 @@ class ChatForm(BaseModel):
         message: str | None = Form(None),
         session_id: str | None = Form(None),
         interrupt: bool = Form(False),
-        mode: str = Form("forge"),
+        mode: str = Form("work"),
         workspace: str | None = Form(None),
         model: str | None = Form(None),
         thinking_level: str | None = Form(None),
@@ -96,8 +96,8 @@ class ChatForm(BaseModel):
         if self.message is not None and len(self.message.strip()) == 0:
             raise ValueError("message must not be blank.")
         self.mode = normalize_mode(self.mode)
-        if self.mode not in {"forge", "coding", "aim"}:
-            raise ValueError("mode must be 'forge', 'coding', or 'aim'.")
+        if self.mode not in {"work", "coding", "aim"}:
+            raise ValueError("mode must be 'work', 'coding', or 'aim'.")
         if self.mode in ("coding", "aim") and not self.workspace:
             raise ValueError(f"workspace is required when mode='{self.mode}'.")
         if (

@@ -13,7 +13,7 @@ VALID = """
 schema_version: 1
 name: {name}
 description: test workflow
-scope: forge
+scope: work
 nodes:
   - id: only
     kind: notify
@@ -182,7 +182,7 @@ async def test_detail_exposes_manifest_and_lint(client, setup_db):
     raw = """
 schema_version: 1
 name: risky
-scope: forge
+scope: work
 nodes:
   - { id: run, kind: tool, tool: shell, args: { command: "echo hi" } }
 """

@@ -5,7 +5,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-export type AgentTeam = 'forge' | 'coding' | 'aim'
+export type AgentTeam = 'work' | 'coding' | 'aim'
 
 export interface AgentTeamVisual {
   label: string
@@ -17,8 +17,8 @@ export interface AgentTeamVisual {
 }
 
 export const AGENT_TEAM_VISUALS: Record<AgentTeam, AgentTeamVisual> = {
-  forge: {
-    label: 'Forge',
+  work: {
+    label: 'Work',
     description: 'General-purpose research and execution',
     icon: Hammer,
     accent: 'text-(--color-marker-orange)',
@@ -43,7 +43,7 @@ export const AGENT_TEAM_VISUALS: Record<AgentTeam, AgentTeamVisual> = {
   },
 }
 
-const FORGE_BUILT_INS = new Set(['executor', 'explorer', 'consultant', 'debate'])
+const WORK_BUILT_INS = new Set(['executor', 'explorer', 'consultant', 'debate'])
 const CODING_BUILT_INS = new Set(['coder', 'explorer', 'debate', 'architect'])
 const AIM_BUILT_INS = new Set([
   'aim-lead',
@@ -58,7 +58,7 @@ const AIM_BUILT_INS = new Set([
 export function agentTeamFromName(name: string): AgentTeam {
   if (name.startsWith('coding/')) return 'coding'
   if (name.startsWith('aim/')) return 'aim'
-  return 'forge'
+  return 'work'
 }
 
 export function agentDisplayName(name: string): string {
@@ -71,5 +71,5 @@ export function isBuiltInAgentName(name: string, role: string): boolean {
   if (role === 'lead') return basename === 'evoflux' || basename === 'aim-lead'
   if (team === 'coding') return CODING_BUILT_INS.has(basename)
   if (team === 'aim') return AIM_BUILT_INS.has(basename)
-  return FORGE_BUILT_INS.has(basename)
+  return WORK_BUILT_INS.has(basename)
 }

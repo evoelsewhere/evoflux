@@ -23,7 +23,7 @@
  *
  * The desktop chrome (resizable width, collapse-to-rail, search trigger,
  * footer, section headers, session rows, session action surfaces) comes
- * from the shared `@/components/shell/` primitives — same as the forge
+ * from the shared `@/components/shell/` primitives — same as the work
  * and aim sidebars. Coding keeps its stacked-cards layout (mode switch,
  * search, navigator, footer as separate floating cards) and all of its
  * workspace/worktree dialogs in-file.
@@ -198,7 +198,7 @@ interface CodingSidebarProps {
   openWorkspaceDialogKey?: number;
   /** Open the command palette (search input + footer help). */
   onCommandPalette?: () => void;
-  /** Body-row mount point so the picker occupies Forge's trailing-panel slot. */
+  /** Body-row mount point so the picker occupies Work's trailing-panel slot. */
   workspacePickerPortal?: HTMLElement | null;
   /** Mobile only: whether the overlay drawer is open. */
   mobileOpen?: boolean;
@@ -394,7 +394,7 @@ export function CodingSidebar({
   );
 
   // The store holds the authoritative project binding for the active session
-  // (primed synchronously in forge.tsx), so it survives even when the active
+  // (primed synchronously in work.tsx), so it survives even when the active
   // session lives on an unloaded page of the paginated global list. Prefer it,
   // falling back to the list lookup only before the store is primed.
   const storeProjectId = useTeamStore((s) => s.projectId);
@@ -630,7 +630,7 @@ export function CodingSidebar({
       // Only carry the current model/thinking-level over when there's an
       // existing session to carry them FROM — otherwise a stale value left
       // over from a different mode's session gets sent here and can be
-      // rejected as "Choose a model from the registry." (see forge.tsx).
+      // rejected as "Choose a model from the registry." (see work.tsx).
       const carryModel = state.sessionId ? state.sessionModel : null;
       const carryThinkingLevel = state.sessionId ? state.sessionThinkingLevel : null;
       state.beginResolvedSession(null, {

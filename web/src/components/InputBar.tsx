@@ -189,7 +189,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   attachmentsEnabled = true,
   placeholder = 'Message EvoFlux…',
   autoFocus,
-  capabilities,
   floating = false,
   filesBelow = false,
   renderDragHandle,
@@ -422,14 +421,17 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const submit = useCallback(async () => {
     const trimmed = value.trim()
     const context = quoteContext?.trim() ?? ''
-    if ((!trimmed && !context) || disabled || submitting || slashFilter !== null) return
+    if ((!trimmed && !context && files.length === 0) || disabled || submitting || slashFilter !== null) return
     const quotedContext = context
       ? context
           .split('\n')
           .map((line) => `> ${line}`)
           .join('\n')
       : ''
-    const message = [quotedContext, trimmed].filter(Boolean).join('\n\n')
+    const attachmentPrompt = files.length > 0 && !trimmed && !quotedContext
+      ? `Please inspect the attached file${files.length === 1 ? '' : 's'}.`
+      : ''
+    const message = [quotedContext, trimmed, attachmentPrompt].filter(Boolean).join('\n\n')
     const submitted = shellMode ? `!${trimmed}` : message
     const submittedFiles = files
     const submittedShellMode = shellMode
@@ -490,57 +492,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     resize,
   ])
 
-  const buildAcceptString = useCallback((): string => {
-    const parts: string[] = [
-      'text/plain', 'text/csv', 'text/tab-separated-values', 'text/markdown',
-      'application/json', '.txt', '.csv', '.tsv', '.json', '.md',
-    ]
-    if (capabilities?.input.vision) parts.push('image/*')
-    if (capabilities?.input.document_text) {
-      parts.push('application/pdf', '.pdf',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx', '.xls', '.xlsm',
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.pptx', '.ppt', '.pptm',
-        'application/msword', '.doc',
-        '.odt', '.ods', '.odp', '.rtf', '.epub')
-    }
-    if (capabilities?.input.audio) parts.push('audio/*')
-    if (capabilities?.input.video) parts.push('video/*')
-    return parts.join(',')
-  }, [capabilities])
-
-  const isFileTypeAllowed = useCallback((file: File): boolean => {
-    const mimeType = file.type
-    const name = file.name.toLowerCase()
-    if (
-      mimeType.startsWith('text/') || mimeType === 'application/json' ||
-      name.endsWith('.txt') || name.endsWith('.csv') || name.endsWith('.tsv') ||
-      name.endsWith('.json') || name.endsWith('.md')
-    ) return true
-    if (capabilities?.input.vision && mimeType.startsWith('image/')) return true
-    if (capabilities?.input.document_text && (
-      mimeType === 'application/pdf' ||
-      mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-      mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-      mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
-      mimeType === 'application/vnd.ms-excel' ||
-      mimeType === 'application/vnd.ms-powerpoint' ||
-      mimeType === 'application/msword' ||
-      name.endsWith('.pdf') || name.endsWith('.docx') || name.endsWith('.doc') ||
-      name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.xlsm') ||
-      name.endsWith('.pptx') || name.endsWith('.ppt') || name.endsWith('.pptm') ||
-      name.endsWith('.odt') || name.endsWith('.ods') || name.endsWith('.odp') ||
-      name.endsWith('.rtf') || name.endsWith('.epub')
-    )) return true
-    if (capabilities?.input.audio && mimeType.startsWith('audio/')) return true
-    if (capabilities?.input.video && mimeType.startsWith('video/')) return true
-    return false
-  }, [capabilities])
-
   const addFile = useCallback((file: File) => {
-    if (!isFileTypeAllowed(file)) return
     setFiles((prev) => [...prev, file])
-  }, [isFileTypeAllowed])
+  }, [])
 
   const removeFile = useCallback((index: number) => {
     const oldUrl = blobUrls.get(index)
@@ -556,13 +510,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       const item = items[i]
       if (item.kind === 'file') {
         const file = item.getAsFile()
-        if (file && isFileTypeAllowed(file)) {
+        if (file) {
           e.preventDefault()
           addFile(file)
         }
       }
     }
-  }, [addFile, attachmentsEnabled, isFileTypeAllowed])
+  }, [addFile, attachmentsEnabled])
 
   const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -588,23 +542,19 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     if (!droppedFiles) return
     for (let i = 0; i < droppedFiles.length; i++) {
       const file = droppedFiles[i]
-      if (isFileTypeAllowed(file)) {
-        addFile(file)
-      }
+      addFile(file)
     }
-  }, [addFile, attachmentsEnabled, isFileTypeAllowed])
+  }, [addFile, attachmentsEnabled])
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.currentTarget.files
     if (!selectedFiles) return
     for (let i = 0; i < selectedFiles.length; i++) {
       const file = selectedFiles[i]
-      if (isFileTypeAllowed(file)) {
-        addFile(file)
-      }
+      addFile(file)
     }
     e.currentTarget.value = ''
-  }, [addFile, isFileTypeAllowed])
+  }, [addFile])
 
   // ── Slash command filtering ────────────────────────────────────────────────
 
@@ -1004,7 +954,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   }
 
   const hasText = value.trim().length > 0 || Boolean(quoteContext)
-  const canSend = hasText && !disabled && !submitting
+  const hasFiles = files.length > 0
+  const canSend = (hasText || hasFiles) && !disabled && !submitting
   const canStop = isStreaming && !disabled && onStop != null
   const charCount = value.length + (quoteContext?.length ?? 0)
   const showCharCount = charCount > CHAR_WARN_THRESHOLD
@@ -1013,7 +964,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   // can re-expand when the user attaches a file via the slim strip.
   // Edge-triggered on the boolean — not on the underlying length values —
   // so we only re-render the parent when crossing 0↔1.
-  const hasContent = hasText || shellMode || files.length > 0
+  const hasContent = hasText || shellMode || hasFiles
   const lastHasContentRef = useRef(hasContent)
   useEffect(() => {
     if (lastHasContentRef.current !== hasContent) {
@@ -1645,7 +1596,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             ref={fileInputRef}
             type="file"
             multiple
-            accept={buildAcceptString()}
             onChange={handleFileSelect}
             className="hidden"
             aria-hidden="true"

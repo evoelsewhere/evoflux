@@ -175,7 +175,7 @@ class TestBuildTeamSummarizationHook:
         )
         hook_normal = build_team_summarization_hook(
             _mock_provider(),
-            mode="forge",
+            mode="work",
             agent_name="exec#1",
             role="member",
             lead_name="main",

@@ -43,7 +43,7 @@ async def dispatch_shell_command(
     *,
     command: str,
     session_id: str,
-    mode: str = "forge",
+    mode: str = "work",
     workspace: str | None = None,
     model: str | None = None,
     model_provided: bool = False,

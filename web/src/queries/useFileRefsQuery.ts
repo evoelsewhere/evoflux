@@ -25,7 +25,7 @@ import { queryKeys } from './keys'
 interface FileListing { files: WorkspaceFileInfo[] }
 
 interface UseFileRefsQueryArgs {
-  mode: 'forge' | 'coding'
+  mode: 'work' | 'coding'
   sessionId?: string | null
   workspace?: string | null
   /** Only fetch when the input bar wants the list (focus / @ keystroke). */

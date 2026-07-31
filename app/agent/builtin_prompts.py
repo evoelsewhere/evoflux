@@ -8,7 +8,7 @@ from typing import Any, Mapping, TypedDict
 DEFAULT_EMPTY_PROMPT = "You are a helpful assistant."
 _EXTRA_PROMPT_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 
-FORGE_EVOFLUX_DESCRIPTION = "Your personal on-machine AI assistant. Lives on your laptop, reads your files, runs your shell, remembers what matters."
+WORK_EVOFLUX_DESCRIPTION = "Your personal on-machine AI assistant. Lives on your laptop, reads your files, runs your shell, remembers what matters."
 CODING_EVOFLUX_DESCRIPTION = "Lead coding agent. Plans the work, coordinates the team, and delivers a verified change with a concise handoff."
 
 # ── Tool tiers ───────────────────────────────────────────────────────────────
@@ -17,7 +17,7 @@ CODING_EVOFLUX_DESCRIPTION = "Lead coding agent. Plans the work, coordinates the
 # Agents no longer enumerate tools one by one — an agent gets every tool of
 # its mode's tier, so a newly registered tool is available everywhere without
 # per-agent wiring. ``lead_only`` tools (user interaction / session structure)
-# are filtered out for members. Tier names equal team modes: "forge", "coding".
+# are filtered out for members. Tier names equal team modes: "work", "coding".
 
 # Wired explicitly by the loader / team runtime (implicit adds and per-role
 # variants) — never granted via tier membership.
@@ -61,7 +61,7 @@ class BuiltinAgentBlueprint(TypedDict):
 
 
 BUILTIN_MEMBER_PROFILES: dict[str, dict[str, BuiltinMemberProfile]] = {
-    "forge": {
+    "work": {
         "executor": {
             "description": "Makes it real. Turns plans into artifacts on disk — files, documents, builds, commands, deliverables.",
             "skills": [
@@ -447,40 +447,40 @@ Deliver a structured plan: the approach in one paragraph, the ordered steps (wit
 }
 
 BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
-    "forge": {
+    "work": {
         "executor": {
             "name": "executor",
             "role": "member",
-            "mode": "forge",
-            "description": BUILTIN_MEMBER_PROFILES["forge"]["executor"]["description"],
+            "mode": "work",
+            "description": BUILTIN_MEMBER_PROFILES["work"]["executor"]["description"],
             "thinking_level": "low",
-            "skills": BUILTIN_MEMBER_PROFILES["forge"]["executor"]["skills"],
+            "skills": BUILTIN_MEMBER_PROFILES["work"]["executor"]["skills"],
         },
         "explorer": {
             "name": "explorer",
             "role": "member",
-            "mode": "forge",
-            "description": BUILTIN_MEMBER_PROFILES["forge"]["explorer"]["description"],
+            "mode": "work",
+            "description": BUILTIN_MEMBER_PROFILES["work"]["explorer"]["description"],
             "thinking_level": "low",
-            "skills": BUILTIN_MEMBER_PROFILES["forge"]["explorer"]["skills"],
+            "skills": BUILTIN_MEMBER_PROFILES["work"]["explorer"]["skills"],
         },
         "consultant": {
             "name": "consultant",
             "role": "member",
-            "mode": "forge",
-            "description": BUILTIN_MEMBER_PROFILES["forge"]["consultant"][
+            "mode": "work",
+            "description": BUILTIN_MEMBER_PROFILES["work"]["consultant"][
                 "description"
             ],
             "thinking_level": "high",
-            "skills": BUILTIN_MEMBER_PROFILES["forge"]["consultant"]["skills"],
+            "skills": BUILTIN_MEMBER_PROFILES["work"]["consultant"]["skills"],
         },
         "debate": {
             "name": "debate",
             "role": "member",
-            "mode": "forge",
-            "description": BUILTIN_MEMBER_PROFILES["forge"]["debate"]["description"],
+            "mode": "work",
+            "description": BUILTIN_MEMBER_PROFILES["work"]["debate"]["description"],
             "thinking_level": "medium",
-            "skills": BUILTIN_MEMBER_PROFILES["forge"]["debate"]["skills"],
+            "skills": BUILTIN_MEMBER_PROFILES["work"]["debate"]["skills"],
         },
     },
     "coding": {
@@ -521,7 +521,7 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
     },
 }
 
-FORGE_EVOFLUX_PROMPT = """You are **EvoFlux** — a personal AI assistant running on the user's own machine.
+WORK_EVOFLUX_PROMPT = """You are **EvoFlux** — a personal AI assistant running on the user's own machine.
 You live here. Their files, their shell, their memory. Treat it that way.
 
 ## Who you are
@@ -559,7 +559,7 @@ You live here. Their files, their shell, their memory. Treat it that way.
 - **web_search/web_fetch** — web research and page content extraction.
 - **memory_search/wiki_search** — what past sessions already established: prior decisions, project context, consolidated wiki topics. Check before re-deriving something the user likely told you before.
 
-**Decision rule:** searching file contents → `grep`; finding files by name → `glob`; something the user may have covered in an earlier session → `memory_search` first. The code-graph tools (`code_search`, `code_graph`, …) only work against an indexed coding workspace — a forge session's scratch workspace is never indexed, so they'll just report "no code index" here; use `grep` instead.
+**Decision rule:** searching file contents → `grep`; finding files by name → `glob`; something the user may have covered in an earlier session → `memory_search` first. The code-graph tools (`code_search`, `code_graph`, …) only work against an indexed coding workspace — a work session's scratch workspace is never indexed, so they'll just report "no code index" here; use `grep` instead.
 
 ## Vibe
 
@@ -600,12 +600,12 @@ State what changed, which checks ran with which result, and what remains risky o
 
 def EVOFLUX_description_for_mode(mode: str) -> str:
     """Return the built-in lead description for a team mode."""
-    return CODING_EVOFLUX_DESCRIPTION if mode == "coding" else FORGE_EVOFLUX_DESCRIPTION
+    return CODING_EVOFLUX_DESCRIPTION if mode == "coding" else WORK_EVOFLUX_DESCRIPTION
 
 
 def EVOFLUX_prompt_for_mode(mode: str) -> str:
     """Return the built-in lead prompt for a team mode."""
-    return CODING_EVOFLUX_PROMPT if mode == "coding" else FORGE_EVOFLUX_PROMPT
+    return CODING_EVOFLUX_PROMPT if mode == "coding" else WORK_EVOFLUX_PROMPT
 
 
 def _normalise_extra_prompt(extra_prompt: str) -> str:
@@ -634,7 +634,7 @@ def _looks_like_legacy_first_party_prompt(extra_prompt: str, *, name: str) -> bo
     The checks are intentionally narrow to first-party prompt openings.
 
     Callers (``apply_member_extra_prompt``) pass only a role ``name``, not the
-    team mode — "explorer" and "debate" exist as a member in both "forge" and
+    team mode — "explorer" and "debate" exist as a member in both "work" and
     "coding" with different prompt openings, so each maps to every historical
     opening for that name rather than a single mode's. "designer"/"qa" were
     retired member roles (see ``_REMOVED_FIRST_PARTY_AGENT_FILES`` in

@@ -1843,7 +1843,7 @@ async def test_side_panel_transcript_composer_and_handoff_are_pairing_scoped(
                     session_id=session.id,
                     role="assistant",
                     content="Earlier assistant",
-                    name="forge",
+                    name="work",
                 ),
                 SessionMessage(
                     session_id=session.id, role="tool", content="Hidden tool"
@@ -2038,7 +2038,7 @@ async def test_side_panel_transcript_composer_and_handoff_are_pairing_scoped(
     assert answer.status_code == 200
     assert reply_calls == [("question-1", ["yes"])]
 
-    interrupt = AsyncMock(return_value=["forge"])
+    interrupt = AsyncMock(return_value=["work"])
     monkeypatch.setattr("app.api.routes.team.webbridge.interrupt_team", interrupt)
     stopped = client.post(
         f"{_PREFIX}/sessions/{session.id}/interrupt", headers=owner_headers
@@ -2952,7 +2952,7 @@ async def test_paired_extension_lists_and_creates_browser_sessions(
         {
             "id": str(existing.id),
             "title": "Existing WebBridge session",
-            "mode": "forge",
+            "mode": "work",
             "running": False,
             "model": None,
         }

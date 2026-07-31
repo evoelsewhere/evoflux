@@ -7,7 +7,7 @@
 
   **Lead-and-specialists. Orchestrated. Parallel. Verified.**
 
-  Forge for cowork, Coding for software engineering, and AIM for legacy modernization —
+  Work for cowork, Coding for software engineering, and AIM for legacy modernization —
   powered by one local-first agent harness and any model you choose.
 
   [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-2563EB.svg)](LICENSE)
@@ -29,7 +29,7 @@
 <br />
 
 <p align="center">
-  <img src="documents/images/generated/harness-and-modes.jpg" width="820" alt="One EvoFlux harness connects any LLM to Forge, Coding, and AIM" />
+  <img src="documents/images/generated/harness-and-modes.jpg" width="820" alt="One EvoFlux harness connects any LLM to Work, Coding, and AIM" />
 </p>
 
 > [!NOTE]
@@ -41,7 +41,7 @@
 
 One desktop app. One harness. Three different kinds of work.
 
-| | **Forge** | **Coding** | **AIM** |
+| | **Work** | **Coding** | **AIM** |
 |---|---|---|---|
 | Product role | Cowork | Software engineering workspace | AI modernization factory |
 | Workspace | Temporary sandbox | Persistent repo or multi-repo project | Legacy base + target + KB repos |
@@ -49,9 +49,9 @@ One desktop app. One harness. Three different kinds of work.
 | Default specialists | Executor, Explorer, Consultant, Debate | Coder, Explorer, Architect, Debate | Archaeology, Architecture, Conversion, Testing, Appraisal, Triage |
 | Verification | Artifact and tool-result review | Tests, diffs, code graph, git | Human gates + deterministic equivalence |
 
-### Forge · cowork without a repository
+### Work · cowork without a repository
 
-Forge is the fast execution sandbox. Start with a request instead of a project: research a topic, draft a document, build a slide deck, analyze data, work with files, automate a browser task, or prototype a script.
+Work is the fast execution sandbox. Start with a request instead of a project: research a topic, draft a document, build a slide deck, analyze data, work with files, automate a browser task, or prototype a script.
 
 ### Coding · persistent engineering
 
@@ -63,12 +63,12 @@ AIM turns legacy migration into a governed production line. A flow-first interfa
 
 <table>
   <tr>
-    <td width="33%" align="center"><strong>Forge</strong></td>
+    <td width="33%" align="center"><strong>Work</strong></td>
     <td width="33%" align="center"><strong>Coding</strong></td>
     <td width="33%" align="center"><strong>AIM</strong></td>
   </tr>
   <tr>
-    <td><a href="documents/images/showcase/forge-mode.jpg"><img src="documents/images/showcase/forge-mode.jpg" width="360" alt="Forge creating and visually QA-ing a PowerPoint" /></a></td>
+    <td><a href="documents/images/showcase/work-mode.jpg"><img src="documents/images/showcase/work-mode.jpg" width="360" alt="Work creating and visually QA-ing a PowerPoint" /></a></td>
     <td><a href="documents/images/showcase/coding-mode.jpg"><img src="documents/images/showcase/coding-mode.jpg" width="360" alt="Coding working across a multi-repository project" /></a></td>
     <td><a href="documents/images/showcase/aim-mode.jpg"><img src="documents/images/showcase/aim-mode.jpg" width="360" alt="AIM migration overview and dependency-aware work queue" /></a></td>
   </tr>
@@ -90,7 +90,7 @@ Download the [latest release](https://github.com/khuonghung/evoflux/releases/lat
 On first launch:
 
 1. Connect an LLM provider.
-2. Start a Forge session, open a repository for Coding, or configure an AIM project.
+2. Start a Work session, open a repository for Coding, or configure an AIM project.
 3. Choose the model, reasoning level, skills, tools, and permissions for each agent.
 
 ### Run the desktop app from source
@@ -297,7 +297,7 @@ EvoFlux also includes disposable headless Chromium automation, PDF/DOCX/HTML int
   | Deployment | **Local, self-hosted** | Local + optional cloud | Local IDE + cloud agents | Cloud/VPC + local desktop | Local + cloud sandbox | Self-hosted or cloud |
   | Open source | **Apache-2.0** | No | No | No | CLI only | MIT |
   | Bring your own model | **12 providers** | Partial proxy setups | Partial BYOK | Provider choice | OpenAI only | Any model |
-  | Non-project cowork | **Forge** | Ad hoc | No | Limited | No | Yes |
+  | Non-project cowork | **Work** | Ad hoc | No | Limited | No | Yes |
   | Multi-agent | Lead + on-demand specialists + mailbox | Subagents and teams | Agent fleets + worktrees | Sub-Devins | Up to six subagents | Parallel delegation |
   | Code understanding | Structural graph, 25 parsers, cross-repo | Search + optional LSP | Embedding search | Codebase Q&A | Repo-aware loop | Agent-computer interface |
   | Persistent memory | Inspectable wiki + Dream | Markdown + auto-memory | Project Memories | Org knowledge base | `AGENTS.md` + session memory | Condenser + skills |
@@ -329,7 +329,7 @@ EvoFlux also includes disposable headless Chromium automation, PDF/DOCX/HTML int
 app/        Local FastAPI sidecar — agents, code graph, memory, scheduler, MCP
 web/        React interface embedded by the Tauri desktop app
 desktop/    Tauri v2 shell and Python sidecar packaging
-seed/       Forge, Coding, and AIM blueprints, skills, rulebooks, and config
+seed/       Work, Coding, and AIM blueprints, skills, rulebooks, and config
 tests/      Backend and frontend tests
 documents/  Design notes, analyses, and README media
 ```

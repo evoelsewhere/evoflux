@@ -195,16 +195,16 @@ def test_default_tool_registry_keys():
 def test_tier_tools_cover_default_registry():
     """Every non-MCP, non-loader-managed registry tool belongs to some tier.
 
-    "aim" is included alongside forge/coding: aim_units/aim_compare are
+    "aim" is included alongside work/coding: aim_units/aim_compare are
     deliberately gated to that tier only (documents/research/aim-framework.md
-    §3.3) and aren't meant to be reachable from forge/coding sessions.
+    §3.3) and aren't meant to be reachable from work/coding sessions.
     """
     from app.agent.builtin_prompts import _LOADER_MANAGED_TOOLS, tier_tools
 
     registry = _default_tool_registry()
 
     lead_union: set[str] = set()
-    for mode in ("forge", "coding", "aim"):
+    for mode in ("work", "coding", "aim"):
         lead_union |= set(tier_tools(registry, mode=mode, role="lead"))
 
     expected = {
@@ -220,8 +220,8 @@ def test_tier_tools_lead_only_and_tier_filters():
 
     registry = _default_tool_registry()
 
-    member_normal = set(tier_tools(registry, mode="forge", role="member"))
-    lead_normal = set(tier_tools(registry, mode="forge", role="lead"))
+    member_normal = set(tier_tools(registry, mode="work", role="member"))
+    lead_normal = set(tier_tools(registry, mode="work", role="lead"))
     lead_coding = set(tier_tools(registry, mode="coding", role="lead"))
 
     # User-interaction / session-structure tools are lead-only
@@ -236,7 +236,7 @@ def test_tier_tools_lead_only_and_tier_filters():
         assert name in lead_normal
         assert name not in member_normal
 
-    # wiki_search belongs to the forge tier only
+    # wiki_search belongs to the work tier only
     assert "wiki_search" in lead_normal
     assert "wiki_search" not in lead_coding
 
@@ -263,7 +263,7 @@ def test_member_frontmatter_cannot_add_lead_only_tools(tmp_path):
         "You help.",
     )
     factory, _ = _make_provider_factory()
-    agent = rebuild_agent_from_disk(f, provider_factory=factory, mode="forge")
+    agent = rebuild_agent_from_disk(f, provider_factory=factory, mode="work")
 
     assert "ask_user" not in agent._tools
     assert "worktree_start" not in agent._tools
@@ -280,7 +280,7 @@ def test_lead_frontmatter_keeps_lead_only_tools(tmp_path):
         "You lead.",
     )
     factory, _ = _make_provider_factory()
-    agent = rebuild_agent_from_disk(f, provider_factory=factory, mode="forge")
+    agent = rebuild_agent_from_disk(f, provider_factory=factory, mode="work")
 
     assert "ask_user" in agent._tools
     assert "worktree_start" in agent._tools
@@ -576,7 +576,7 @@ def test_ensure_builtin_lead_blueprint_writes_evoflux_when_missing(tmp_path):
             {"name": "worker", "role": "member", "model": "zai:glm-5-turbo"},
         ],
     )
-    written = ensure_builtin_lead_blueprint(d, mode="forge")
+    written = ensure_builtin_lead_blueprint(d, mode="work")
     assert written == "evoflux.md"
     assert (d / "evoflux.md").exists()
 
@@ -591,7 +591,7 @@ def test_ensure_builtin_lead_blueprint_skips_existing_lead(tmp_path):
             {"name": "lead", "role": "lead", "model": "zai:glm-5-turbo"},
         ],
     )
-    written = ensure_builtin_lead_blueprint(d, mode="forge")
+    written = ensure_builtin_lead_blueprint(d, mode="work")
     assert written is None
     assert not (d / "evoflux.md").exists()
 
@@ -696,7 +696,7 @@ def test_coding_mode_hides_retired_executor_member(tmp_path):
 
 
 def test_EVOFLUX_lead_uses_builtin_prompt_with_extra(tmp_path):
-    from app.agent.builtin_prompts import FORGE_EVOFLUX_PROMPT
+    from app.agent.builtin_prompts import WORK_EVOFLUX_PROMPT
     from app.agent.loader import load_team_from_dir
 
     d = _make_agents_dir(
@@ -713,7 +713,7 @@ def test_EVOFLUX_lead_uses_builtin_prompt_with_extra(tmp_path):
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory)
     assert team is not None
-    assert team.lead.agent.system_prompt.startswith(FORGE_EVOFLUX_PROMPT)
+    assert team.lead.agent.system_prompt.startswith(WORK_EVOFLUX_PROMPT)
     assert "## User extra prompt" in team.lead.agent.system_prompt
     assert "Prefer concise answers." in team.lead.agent.system_prompt
     assert team.lead.agent.description is not None
@@ -723,7 +723,7 @@ def test_EVOFLUX_lead_uses_builtin_prompt_with_extra(tmp_path):
 
 
 def test_EVOFLUX_seed_comment_is_not_injected_as_extra_prompt(tmp_path):
-    from app.agent.builtin_prompts import FORGE_EVOFLUX_PROMPT
+    from app.agent.builtin_prompts import WORK_EVOFLUX_PROMPT
     from app.agent.loader import load_team_from_dir
 
     d = _make_agents_dir(
@@ -740,7 +740,7 @@ def test_EVOFLUX_seed_comment_is_not_injected_as_extra_prompt(tmp_path):
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory)
     assert team is not None
-    assert team.lead.agent.system_prompt.startswith(FORGE_EVOFLUX_PROMPT)
+    assert team.lead.agent.system_prompt.startswith(WORK_EVOFLUX_PROMPT)
     assert "## User extra prompt" not in team.lead.agent.system_prompt
     assert "Add extra prompt text below" not in team.lead.agent.system_prompt
 
@@ -830,7 +830,7 @@ def test_builtin_member_profile_uses_code_defaults_with_extra(tmp_path):
     )
     factory, _ = _make_provider_factory()
     agent = rebuild_agent_from_disk(f, provider_factory=factory)
-    profile = BUILTIN_MEMBER_PROFILES["forge"]["executor"]
+    profile = BUILTIN_MEMBER_PROFILES["work"]["executor"]
     assert agent.description == profile["description"]
     assert agent.system_prompt.startswith(str(profile["prompt"]))
     assert "## User extra prompt" in agent.system_prompt
@@ -842,7 +842,7 @@ def test_builtin_member_profile_uses_code_defaults_with_extra(tmp_path):
 def test_builtin_member_profiles_are_curated_to_default_agents():
     from app.agent.builtin_prompts import BUILTIN_MEMBER_PROFILES
 
-    assert set(BUILTIN_MEMBER_PROFILES["forge"]) == {
+    assert set(BUILTIN_MEMBER_PROFILES["work"]) == {
         "executor",
         "explorer",
         "consultant",
@@ -950,7 +950,7 @@ def test_EVOFLUX_coding_lead_uses_coding_builtin_prompt(tmp_path):
 
 
 def test_EVOFLUX_legacy_seed_prompt_is_not_appended(tmp_path):
-    from app.agent.builtin_prompts import FORGE_EVOFLUX_PROMPT
+    from app.agent.builtin_prompts import WORK_EVOFLUX_PROMPT
     from app.agent.loader import load_team_from_dir
 
     legacy_body = """You are **EvoFlux** — a personal AI assistant running on the user's own machine.
@@ -971,7 +971,7 @@ Old shipped prompt body that should be replaced by the code-owned base prompt.
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory)
     assert team is not None
-    assert team.lead.agent.system_prompt.startswith(FORGE_EVOFLUX_PROMPT)
+    assert team.lead.agent.system_prompt.startswith(WORK_EVOFLUX_PROMPT)
     assert "## User extra prompt" not in team.lead.agent.system_prompt
     assert "Old shipped prompt body" not in team.lead.agent.system_prompt
 
@@ -987,7 +987,7 @@ def test_builtin_member_legacy_seed_prompt_is_not_appended(tmp_path):
     )
     factory, _ = _make_provider_factory()
     agent = rebuild_agent_from_disk(f, provider_factory=factory)
-    assert agent.system_prompt == BUILTIN_MEMBER_PROFILES["forge"]["executor"]["prompt"]
+    assert agent.system_prompt == BUILTIN_MEMBER_PROFILES["work"]["executor"]["prompt"]
 
 
 def test_load_team_from_dir_degrades_when_lead_provider_missing_key(tmp_path):

@@ -56,7 +56,7 @@ def test_mode_coding_picks_coding_prompt_and_small_keep(mock_provider):
 
 def test_mode_normal_picks_chat_prompt_and_default_keep(mock_provider):
     """Any non-coding mode picks the prose chat prompt + the chat keep window."""
-    result = build_summarization_hook(mock_provider, mode="forge")
+    result = build_summarization_hook(mock_provider, mode="work")
     assert result is not None
     assert result._summary_prompt == CHAT_SUMMARY_PROMPT
     assert result._keep_last_assistants == DEFAULT_KEEP_LAST_ASSISTANTS

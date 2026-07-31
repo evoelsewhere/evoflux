@@ -10,11 +10,10 @@ Single root per session — uploads live *inside* the workspace:
 - ``uploads_dir(session_id)`` → ``{workspace_dir(session_id)}/uploads``
   User-uploaded attachment files (UUID-named, validated at upload).
   Fed to the LLM via curated multimodal rehydration
-  (``build_parts_from_metas``) and *also* reachable by the agent's
-  filesystem tools as the relative path ``uploads/<filename>``.  This
-  is intentional: it lets the agent pass user-uploaded images into
-  workspace-bound tools (image/video generation, etc.) without a
-  staging step.
+  (``build_parts_from_metas``) and mounted read-only into every session
+  sandbox. Work sessions can also address them as ``uploads/<filename>``;
+  Coding/AIM sessions use the absolute path supplied in the model-facing
+  attachment hint so repositories remain untouched.
 
   The absolute file path is persisted in the attachment meta dict
   (``att["path"]``) so rehydration is a pure path lookup — no derivation
@@ -43,8 +42,8 @@ def session_workspace_dir(session_id: str, workspace: str | None = None) -> Path
 def uploads_dir(session_id: str) -> Path:
     """Return the per-session directory for user-uploaded attachments.
 
-    Lives under the session workspace so the agent's filesystem tools
-    can reach it as ``uploads/<filename>``.
+    Lives under the app-managed Work session root. ``SandboxConfig`` mounts
+    it read-only for Coding/AIM sessions whose primary workspace is a repo.
     """
     return workspace_dir(session_id) / "uploads"
 

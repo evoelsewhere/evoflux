@@ -1,9 +1,9 @@
-# Builtin example — the smallest useful forge workflow: one agent turn
+# Builtin example — the smallest useful work workflow: one agent turn
 # framed as a structured review, then a desktop ping.
 schema_version: 1
 name: second-opinion
 description: Get a structured second opinion on any question or plan
-scope: forge
+scope: work
 
 inputs:
   - name: question

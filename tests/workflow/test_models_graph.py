@@ -19,7 +19,7 @@ from app.workflow.models import (
 MINIMAL = """
 schema_version: 1
 name: minimal
-scope: forge
+scope: work
 nodes:
   - id: only
     kind: notify
@@ -29,7 +29,7 @@ nodes:
 BRANCHED = """
 schema_version: 1
 name: branched
-scope: forge
+scope: work
 nodes:
   - { id: start, kind: transform, set: { x: "1" } }
   - { id: decide, kind: gate, title: "Go?", choices: ["yes", "no"] }
@@ -52,8 +52,13 @@ def test_minimal_parses():
 
 
 def test_scope_aim_is_valid():
-    definition = parse_definition(MINIMAL.replace("scope: forge", "scope: aim"))
+    definition = parse_definition(MINIMAL.replace("scope: work", "scope: aim"))
     assert definition.scope == "aim"
+
+
+def test_scope_normalizes_legacy_forge_to_work():
+    definition = parse_definition(MINIMAL.replace("scope: work", "scope: forge"))
+    assert definition.scope == "work"
 
 
 def test_duplicate_node_ids_rejected():

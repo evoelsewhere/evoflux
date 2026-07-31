@@ -32,6 +32,7 @@ def test_message_response_strips_internal_attachment_paths():
                     "path": "/tmp/EvoFlux/sid/uploads/abc.png",
                     "workspace_path": "/tmp/EvoFlux/sid/uploads/abc.png",
                     "converted_text": "internal",
+                    "delivery": "native",
                 }
             ]
         },
@@ -667,12 +668,19 @@ class TestTeamChatFormValidation:
         response = client.post("/api/team/chat", data={})
         assert response.status_code == 422
 
-    def test_legacy_normal_mode_coerces_to_forge(self):
-        """Older clients may still send mode=normal (renamed to forge)."""
+    def test_legacy_normal_mode_coerces_to_work(self):
+        """Older clients may still send the original mode name."""
         from app.api.schemas.chat import ChatForm
 
         form = ChatForm(message="hi", mode="normal")
-        assert form.mode == "forge"
+        assert form.mode == "work"
+
+    def test_legacy_forge_mode_coerces_to_work(self):
+        """Clients from the previous release may still send mode=forge."""
+        from app.api.schemas.chat import ChatForm
+
+        form = ChatForm(message="hi", mode="forge")
+        assert form.mode == "work"
 
     def test_unknown_mode_rejected(self):
         from pydantic import ValidationError

@@ -8,7 +8,7 @@ import {
 
 describe('agent settings visuals', () => {
   it('maps agent paths to their team and display name', () => {
-    expect(agentTeamFromName('evoflux')).toBe('forge')
+    expect(agentTeamFromName('evoflux')).toBe('work')
     expect(agentTeamFromName('coding/coder')).toBe('coding')
     expect(agentTeamFromName('aim/aim-appraiser')).toBe('aim')
     expect(agentDisplayName('coding/coder')).toBe('coder')

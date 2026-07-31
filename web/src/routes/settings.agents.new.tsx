@@ -37,7 +37,7 @@ You are "new_agent" — a helpful team member.
 export function NewAgentPage() {
   const search = useSettingsSearch()
   const initialMode: AgentMode =
-    search.mode === 'coding' ? 'coding' : search.mode === 'aim' ? 'aim' : 'forge'
+    search.mode === 'coding' ? 'coding' : search.mode === 'aim' ? 'aim' : 'work'
   const [draft, setDraft] = useState(TEMPLATE)
   const [name, setName] = useState('new_agent')
   const [agentMode, setAgentMode] = useState<AgentMode>(initialMode)
@@ -111,7 +111,7 @@ export function NewAgentPage() {
           </p>
         </header>
         <div className="grid gap-2 p-3 sm:grid-cols-3 sm:p-4">
-          {(['forge', 'coding', 'aim'] as const).map((team) => {
+          {(['work', 'coding', 'aim'] as const).map((team) => {
             const visual = AGENT_TEAM_VISUALS[team]
             const active = team === agentMode
             return (
@@ -127,7 +127,7 @@ export function NewAgentPage() {
                     : 'border-(--color-border) bg-(--bg-input) hover:border-(--color-border-strong) hover:bg-(--bg-key)/35',
                 )}
               >
-                <AgentGlyph name={team === 'forge' ? name : `${team}/${name}`} role="member" />
+                <AgentGlyph name={team === 'work' ? name : `${team}/${name}`} role="member" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-(--color-text)">{visual.label}</p>
                   <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-(--color-text-muted)">{visual.description}</p>
@@ -143,7 +143,7 @@ export function NewAgentPage() {
         </div>
         <div className="border-t border-(--color-border-subtle) px-4 py-2.5 text-[11px] text-(--color-text-muted) sm:px-5">
           File: <span className="font-mono text-(--color-text-2)">
-            {agentMode === 'forge' ? `${name}.md` : `${agentMode}/${name}.md`}
+            {agentMode === 'work' ? `${name}.md` : `${agentMode}/${name}.md`}
           </span>
         </div>
       </section>

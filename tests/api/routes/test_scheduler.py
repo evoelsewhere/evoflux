@@ -45,7 +45,7 @@ async def client(fresh_scheduler):
 def _create_payload(**overrides) -> dict:
     payload = {
         "name": "task1",
-        "mode": "forge",
+        "mode": "work",
         "schedule_type": "every",
         "every_seconds": 60,
         "prompt": "hello",
@@ -65,7 +65,7 @@ class TestCreate:
         assert resp.status_code == 201, resp.text
         body = resp.json()
         assert body["name"] == "task1"
-        assert body["mode"] == "forge"
+        assert body["mode"] == "work"
         assert body["workspace"] is None
         assert body["schedule_type"] == "every"
         assert body["every_seconds"] == 60
@@ -121,7 +121,7 @@ class TestCreate:
             "/api/scheduler/tasks",
             json={
                 "name": "bad",
-                "mode": "forge",
+                "mode": "work",
                 "schedule_type": "at",
                 "prompt": "hi",
             },
@@ -332,7 +332,7 @@ class TestAtTask:
             "/api/scheduler/tasks",
             json={
                 "name": "at_one",
-                "mode": "forge",
+                "mode": "work",
                 "schedule_type": "at",
                 "at_datetime": target,
                 "prompt": "hi",
@@ -356,7 +356,7 @@ class TestCronTask:
             "/api/scheduler/tasks",
             json={
                 "name": "cron_one",
-                "mode": "forge",
+                "mode": "work",
                 "schedule_type": "cron",
                 "cron_expression": "0 0 * * *",
                 "prompt": "hi",
@@ -372,7 +372,7 @@ class TestCronTask:
             "/api/scheduler/tasks",
             json={
                 "name": "bad_cron",
-                "mode": "forge",
+                "mode": "work",
                 "schedule_type": "cron",
                 "cron_expression": "totally bogus",
                 "prompt": "hi",
@@ -387,7 +387,7 @@ class TestCronTask:
 
 
 async def _seed_session(
-    sid: UUID, *, mode: str = "forge", workspace: str | None = None
+    sid: UUID, *, mode: str = "work", workspace: str | None = None
 ) -> None:
     async with _db_module.async_session_factory() as db:
         db.add(ChatSession(id=sid, mode=mode, workspace=workspace))
@@ -396,12 +396,12 @@ async def _seed_session(
 
 class TestSessionCompat:
     async def test_create_rejects_mismatched_session_mode(self, client, tmp_path):
-        # Session is 'forge'; task asks for 'coding' on a real workspace.
+        # Session is 'work'; task asks for 'coding' on a real workspace.
         # Target validation passes, session-compat validation must reject.
         ws = tmp_path / "ws"
         ws.mkdir()
         sid = uuid4()
-        await _seed_session(sid, mode="forge")
+        await _seed_session(sid, mode="work")
         resp = await client.post(
             "/api/scheduler/tasks",
             json=_create_payload(
@@ -475,10 +475,10 @@ class TestSessionCompat:
         assert resp.status_code == 422
 
     async def test_update_mode_conflicts_with_existing_session(self, client, tmp_path):
-        # Create a task bound to a 'forge' session; switching it to 'coding'
-        # must now fail because the session row is 'forge'.
+        # Create a task bound to a 'work' session; switching it to 'coding'
+        # must now fail because the session row is 'work'.
         sid = uuid4()
-        await _seed_session(sid, mode="forge")
+        await _seed_session(sid, mode="work")
         ws = tmp_path / "ws"
         ws.mkdir()
 

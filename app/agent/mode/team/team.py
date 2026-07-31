@@ -297,7 +297,7 @@ class AgentTeam:
         provider_factory: "ProviderFactory | None" = None,
         extra_tools: dict[str, Tool] | None = None,
         db_factory: DbFactory | None = None,
-        mode: str = "forge",
+        mode: str = "work",
         workspace: str | None = None,
         permission_mode: str = "auto",
         extra_workspace_paths: list[str] | None = None,

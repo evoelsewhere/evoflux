@@ -191,7 +191,7 @@ class TestDefaultDeferredTools:
             "todo_manage",
             "write",
         }
-        for mode in ("forge", "coding", "aim"):
+        for mode in ("work", "coding", "aim"):
             granted = set(tier_tools(registry, mode=mode, role="lead"))
             granted.update({"skill", "todo_manage", "schedule_task", "note"})
             eager = {name for name in granted if not registry[name].deferred}

@@ -272,7 +272,7 @@ async def test_registry_returns_catalog(
     by_name = {t["name"]: t for t in body["tools"]}
     assert by_name["ask_user"]["lead_only"] is True
     assert by_name["read"]["lead_only"] is False
-    assert by_name["wiki_search"]["tiers"] == ["forge"]
+    assert by_name["wiki_search"]["tiers"] == ["work"]
     assert by_name["read"]["tiers"] is None
 
 

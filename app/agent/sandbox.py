@@ -8,9 +8,10 @@ Sensitive deny patterns are applied even inside allowed roots.
 - ``EVOFLUX_STATE_DIR``   — logs, telemetry, OTEL rollups
 - ``EVOFLUX_CACHE_DIR``   — regeneratable cache including OAuth tokens
 
-User uploads live *inside* the per-session workspace
-(``{workspace}/<sid>/uploads/``) and are therefore reachable by the
-agent's fs tools as the relative path ``uploads/<filename>``.
+User uploads live in app-managed per-session storage. Every session sandbox
+automatically mounts that directory as a read-only root, so Work, Coding, and
+AIM agents can inspect arbitrary attachments without modifying the upload or
+polluting a repository.
 
 All relative paths resolve under ``workspace_root``. Absolute paths must land
 inside one of the explicit allowed roots.
@@ -96,7 +97,7 @@ class SandboxConfig:
         # see the full repo set without a model-facing "workspace_paths"
         # argument on every one of them.
         extra_workspace_paths: list[str] | None = None,
-        # AIM mode only: paths (typically base-source repos) that remain
+        # Paths (typically AIM base-source repos) that remain
         # readable — they are NOT in denied_roots, so read/search/grep tools
         # still work — but are rejected by write-path tools (write/edit/
         # patch/rm). See validate_path's is_write param.
@@ -120,9 +121,14 @@ class SandboxConfig:
             self.workspace_root,
             *(Path(p).resolve() for p in self.extra_workspace_paths),
         ]
-        self.read_only_paths: list[Path] = [
-            Path(p).resolve() for p in (read_only_paths or [])
-        ]
+        resolved_read_only = [Path(p).resolve() for p in (read_only_paths or [])]
+        if session_id:
+            from app.core.paths import session_uploads_dir
+
+            upload_root = session_uploads_dir(session_id).resolve()
+            if upload_root not in resolved_read_only:
+                resolved_read_only.append(upload_root)
+        self.read_only_paths: list[Path] = resolved_read_only
         self.write_allowed_paths: list[Path] = [
             (
                 Path(path).resolve()

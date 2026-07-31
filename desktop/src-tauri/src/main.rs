@@ -1256,7 +1256,7 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
         Some("CmdOrCtrl+N"),
     )?;
     let file_home = MenuItem::with_id(app, MENU_HOME, "Home", true, Some("CmdOrCtrl+Shift+H"))?;
-    let file_chat = MenuItem::with_id(app, MENU_CHAT, "Forge", true, Some("CmdOrCtrl+Shift+C"))?;
+    let file_chat = MenuItem::with_id(app, MENU_CHAT, "Work", true, Some("CmdOrCtrl+Shift+C"))?;
     let file_coding =
         MenuItem::with_id(app, MENU_CODING, "Coding", true, Some("CmdOrCtrl+Shift+K"))?;
     let file_quit = MenuItem::with_id(app, MENU_QUIT, "Quit EvoFlux", true, Some("CmdOrCtrl+Q"))?;
@@ -1379,7 +1379,7 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
     let tray_show = MenuItem::with_id(app, MENU_SHOW, "Show EvoFlux", true, None::<&str>)?;
     let tray_new_window =
         MenuItem::with_id(app, MENU_NEW_WINDOW, "New Window", true, None::<&str>)?;
-    let tray_chat = MenuItem::with_id(app, MENU_CHAT, "Forge", true, None::<&str>)?;
+    let tray_chat = MenuItem::with_id(app, MENU_CHAT, "Work", true, None::<&str>)?;
     let tray_coding = MenuItem::with_id(app, MENU_CODING, "Coding", true, None::<&str>)?;
     let tray_command_palette = MenuItem::with_id(
         app,

@@ -100,7 +100,7 @@ def _mode_for_agent_path(name: str) -> str:
         return "coding"
     if first == ("aim",):
         return "aim"
-    return "forge"
+    return "work"
 
 
 def _effective_config(cfg: AgentConfig, *, mode: str) -> AgentConfig:

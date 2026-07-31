@@ -1,6 +1,6 @@
 /**
  * SidebarShell — the shared desktop chrome of the three mode sidebars
- * (forge / coding / aim): a floating-card panel with resizable width,
+ * (work / coding / aim): a floating-card panel with resizable width,
  * collapse-to-icon-rail animation, and the macOS traffic-light inset.
  *
  * Shared by Sidebar.tsx / AimSidebar.tsx / CodingSidebar.tsx — all three
@@ -12,14 +12,14 @@
  *   - the collapsed rail width: 56px, or 70px on macOS overlay so the
  *     traffic lights land inside the rail
  *
- * It deliberately does NOT own the mobile drawer (forge/coding keep their
+ * It deliberately does NOT own the mobile drawer (work/coding keep their
  * own overlay markup) or the `pt-10` traffic-light content inset — that
  * padding belongs to the first section inside a card, so callers keep
  * applying the `isMacOverlay ? 'pt-10' : 'pt-2'` ternary to their own
  * top section, as before.
  *
  * Two layout styles compose from the same pieces:
- *   (a) one floating card with internal dividers (forge/aim):
+ *   (a) one floating card with internal dividers (work/aim):
  *       `<SidebarCard className="h-full">…sections + <SidebarShellDivider/>…</SidebarCard>`
  *   (b) stacked separate cards per section (coding): several `<SidebarCard>`
  *       children — the shell's `gap-1 p-1` column spaces them.
@@ -200,7 +200,7 @@ export function SidebarCard({
   )
 }
 
-/** In-card section separator (the forge pattern: a hairline inset by mx-3,
+/** In-card section separator (the work pattern: a hairline inset by mx-3,
  *  mx-2 in the icon rail) — preferred over `border-t` on the section. */
 export function SidebarShellDivider({ className }: { className?: string }) {
   return (
@@ -227,7 +227,7 @@ export function SidebarModeRailSlot({ className }: { className?: string }) {
 
 /**
  * Fake search input that opens the command palette (Ctrl+P). Canonical
- * background is `bg-(--bg-page)` (the forge/aim variant).
+ * background is `bg-(--bg-page)` (the work/aim variant).
  */
 export function SidebarSearchTrigger({
   onClick,

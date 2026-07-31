@@ -290,7 +290,7 @@ class TestWorkspaceFilesListing:
 
 
 class TestSessionWorkspaceSelection:
-    def test_update_workspace_syncs_cached_forge_team(
+    def test_update_workspace_syncs_cached_work_team(
         self, client, session_id, tmp_path, monkeypatch
     ):
         async def save_session() -> None:
@@ -301,7 +301,7 @@ class TestSessionWorkspaceSelection:
                     ChatSession(
                         id=uuid.UUID(session_id),
                         agent_name="lead",
-                        mode="forge",
+                        mode="work",
                     )
                 )
                 await db.commit()
@@ -332,7 +332,7 @@ class TestSessionWorkspaceSelection:
         assert resp.json()["workspace_root"] == expected
         assert live_team.workspace == expected
 
-    def test_reset_workspace_clears_cached_forge_team(
+    def test_reset_workspace_clears_cached_work_team(
         self, client, session_id, tmp_path, monkeypatch
     ):
         selected = tmp_path / "selected-workspace"
@@ -346,7 +346,7 @@ class TestSessionWorkspaceSelection:
                     ChatSession(
                         id=uuid.UUID(session_id),
                         agent_name="lead",
-                        mode="forge",
+                        mode="work",
                         workspace=str(selected),
                     )
                 )

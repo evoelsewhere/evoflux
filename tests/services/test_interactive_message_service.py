@@ -11,13 +11,13 @@ from app.services import interactive_message_service
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("reset_to_default", [False, True])
-async def test_forge_interactive_restore_syncs_persisted_workspace(
+async def test_work_interactive_restore_syncs_persisted_workspace(
     setup_db, monkeypatch, tmp_path, reset_to_default
 ):
     from app.core import db as db_module
 
     session_id = uuid.uuid7()
-    selected = tmp_path / "forge-interactive-workspace"
+    selected = tmp_path / "work-interactive-workspace"
     selected.mkdir()
     persisted_workspace = None if reset_to_default else str(selected)
 
@@ -26,7 +26,7 @@ async def test_forge_interactive_restore_syncs_persisted_workspace(
             ChatSession(
                 id=session_id,
                 agent_name="lead",
-                mode="forge",
+                mode="work",
                 workspace=persisted_workspace,
             )
         )

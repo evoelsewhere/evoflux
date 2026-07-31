@@ -41,7 +41,7 @@ User feedback driving round 2: (1) AIM UI chưa match 2 mode còn lại,
 - Unit cards: KB-doc icon, complexity (loc/score), deps count, assignee,
   full tooltip.
 
-### R2-P3 — Shell parity với Forge/Coding ✅
+### R2-P3 — Shell parity với Work/Coding ✅
 
 - `AimSidebar`: resizable (`useResizableWidth`, storageKey
   `oa.aimSidebar.width`), collapse-to-icon-rail (`ModeSwitchRail`, state in
@@ -206,18 +206,18 @@ live at 200px/280px + width persistence.
 **Commit:** fcac579
 
 **Problem:** `prependSession` wrote to `infinite()` (no mode). Sidebar reads
-`infinite('forge')`, CodingSidebar reads `infinite('coding')` — exact key mismatch, new
+`infinite('work')`, CodingSidebar reads `infinite('coding')` — exact key mismatch, new
 sessions silently invisible.
 
 **Fix:**
 - `cache-invalidation-bridge.ts`: `prependSession` normalises `session.mode` → writes to
-  `infinite('forge'|'coding'|'aim')`.
+  `infinite('work'|'coding'|'aim')`.
 - `queryKeys.team.sessions.infinite(mode?)` and `teamAgents(workspace, mode?)` gain mode.
 - `useTeamSessionsQuery(mode)` sends mode filter to backend.
-- All sidebars use correct mode: Sidebar→'forge', CodingSidebar→'coding'.
+- All sidebars use correct mode: Sidebar→'work', CodingSidebar→'coding'.
 - New `ModeSwitchTabs` / `ModeSwitchRail` component replaces 3 hand-rolled copies.
-- `_team_for_session_mode` in chat.py prevents forge team binding to aim sessions.
-- Regression test: `test_commands_never_bind_forge_team_to_aim_session`.
+- `_team_for_session_mode` in chat.py prevents work team binding to aim sessions.
+- Regression test: `test_commands_never_bind_work_team_to_aim_session`.
 
 **Verify:** tsc clean, 14 tests pass.
 
@@ -228,9 +228,9 @@ sessions silently invisible.
 **Commit:** 0b0957e
 
 **Problem:**
-(a) `_mode_for_agent_path` only knew `coding/` — `aim/*` agents got `forge` mode,
+(a) `_mode_for_agent_path` only knew `coding/` — `aim/*` agents got `work` mode,
     wrong tool list.
-(b) Settings agents page had no AIM tab — aim agents fell into Forge group.
+(b) Settings agents page had no AIM tab — aim agents fell into Work group.
 
 **Fix:**
 (a) `app/api/routes/agents.py`: added `aim/` case → mode='aim'.
@@ -314,10 +314,10 @@ milestone table.
 
 | Surface | Check | Status |
 |---------|-------|--------|
-| Forge Sidebar | Server-filtered `mode=forge`, no coding/aim sessions | ✅ |
+| Work Sidebar | Server-filtered `mode=work`, no coding/aim sessions | ✅ |
 | CodingSidebar | Server-filtered `mode=coding` | ✅ |
 | AimSidebar | Shows project list only, no session list | ✅ |
-| Settings/agents | All 3 mode tabs (Forge/Coding/AIM), correct filters | ✅ |
+| Settings/agents | All 3 mode tabs (Work/Coding/AIM), correct filters | ✅ |
 | AgentInfoPopover | Receives `mode` prop, shows correct roster | ✅ |
 | SessionSettingsPanel | Receives `mode` prop, shows correct agents | ✅ |
 | SessionPillsRow | Receives `mode` prop, forwards to AgentInfoPopover | ✅ |

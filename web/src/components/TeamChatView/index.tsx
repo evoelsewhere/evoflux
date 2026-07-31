@@ -191,7 +191,7 @@ function PanelLoadingFallback() {
 
 interface TeamChatViewProps {
   sessionId?: string
-  mode?: 'forge' | 'coding' | 'aim'
+  mode?: 'work' | 'coding' | 'aim'
   workspace?: string | null
   codingSessionLoading?: boolean
 }
@@ -211,13 +211,13 @@ interface PendingCodeReviewStart {
   fastMode: boolean
 }
 
-export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codingSessionLoading = false }: TeamChatViewProps) {
+export function TeamChatView({ sessionId, mode = 'work', workspace = null, codingSessionLoading = false }: TeamChatViewProps) {
   // A handful of child components/hooks (file refs, command palette,
-  // scheduler) only distinguish forge vs. coding — aim (the post-run
-  // Discussion panel) behaves like forge for them: session-keyed, no
+  // scheduler) only distinguish work vs. coding — aim (the post-run
+  // Discussion panel) behaves like work for them: session-keyed, no
   // workspace-file chrome. Everywhere else in this file aim falls through
   // the non-coding branch of each `mode === 'coding'` check.
-  const forgeOrCodingMode: 'forge' | 'coding' = mode === 'coding' ? 'coding' : 'forge'
+  const workOrCodingMode: 'work' | 'coding' = mode === 'coding' ? 'coding' : 'work'
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
@@ -518,7 +518,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const leadAgent = teamAgentsData?.agents?.find((a) => a.is_lead)
   const leadCapabilities: AgentCapabilitiesType | undefined = leadAgent?.capabilities
   const selectedModel = sessionModel ?? ''
-  const selectedThinkingLevel = sessionThinkingLevel ?? 'none'
+  const selectedThinkingLevel = sessionThinkingLevel
 
   // When the user selects a session model override, derive capabilities from
   // the model registry so file-upload affordances match the selected model.
@@ -554,7 +554,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   // lazily — the query is keyed on workspace/session so coding and normal
   // modes don't share cache entries.
   const { refs: fileRefs } = useFileRefsQuery({
-    mode: forgeOrCodingMode,
+    mode: workOrCodingMode,
     sessionId: sessionIdState,
     workspace,
     enabled: fileRefsEnabled && (mode === 'coding' ? Boolean(workspace) : Boolean(sessionIdState)),
@@ -1058,7 +1058,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     setViewMode,
     handleWorkspaceFiles,
     handleCodingSidebarToggle,
-    mode: forgeOrCodingMode,
+    mode: workOrCodingMode,
     handleNewSession,
     handleDreamRun,
     agentNames,
@@ -1354,7 +1354,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             open={workbenchTabs.some((tab) => tab.tool === 'scheduler')}
             embedded
             onClose={() => closeWorkbenchTool('scheduler')}
-            contextMode={forgeOrCodingMode}
+            contextMode={workOrCodingMode}
             contextWorkspace={mode === 'coding' ? workspace : null}
           />
         </WorkbenchSurface>
@@ -1419,7 +1419,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   )
 
   // On desktop, Coding panels sit in AppShell's outer trailing column — the
-  // same structural slot Forge uses. This constrains both the chat *and its
+  // same structural slot Work uses. This constrains both the chat *and its
   // topbar*; mobile keeps its full-screen overlay behavior.
   const fullHeightTrailing = (
     <>

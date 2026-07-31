@@ -290,7 +290,7 @@ export interface MessageAttachment {
   filename?: string
   media_type?: string
   original_name?: string
-  category?: 'text' | 'image' | 'document'
+  category?: 'text' | 'data' | 'image' | 'document' | 'audio' | 'video' | 'binary'
   url?: string        // /api/chat/files/{session_id}/{filename} or blob URL for optimistic
 }
 
@@ -846,7 +846,7 @@ export interface WorkflowInputSpec {
 export interface WorkflowListItem {
   name: string
   description: string
-  scope: 'forge' | 'coding' | 'aim'
+  scope: 'work' | 'coding' | 'aim'
   inputs: WorkflowInputSpec[]
   hash: string
   root: string
@@ -1227,7 +1227,7 @@ export interface TeamCommandResponse {
 export interface ToolCatalogEntry {
   name: string
   description: string
-  /** Tier membership: null = every tier; e.g. ['forge'] restricts to that mode. */
+  /** Tier membership: null = every tier; e.g. ['work'] restricts to that mode. */
   tiers: string[] | null
   /** Lead-only tools are never granted to members — hidden from member pickers. */
   lead_only: boolean
@@ -1296,7 +1296,7 @@ export interface WorkspaceFilesResponse {
 
 // ── Scheduler ───────────────────────────────────────────────────────────────
 
-export type ScheduledTaskMode = 'forge' | 'coding'
+export type ScheduledTaskMode = 'work' | 'coding'
 
 export interface ScheduledTaskResponse {
   id: string

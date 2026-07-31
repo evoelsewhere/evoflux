@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.api.schemas.base import _ExcludeNoneModel
 from app.api.schemas.projects import ProjectResponse
+from app.models.chat import normalize_mode
 from app.webbridge_tags import WEBBRIDGE_BROWSER_ORIGIN_TAG
 
 
@@ -19,7 +20,7 @@ class SessionCreate(BaseModel):
 
 
 class TeamSessionResolveRequest(BaseModel):
-    mode: str = "forge"
+    mode: str = "work"
     workspace: str | None = None
     project_id: UUID | None = None
     model: str | None = None
@@ -38,6 +39,11 @@ class TeamSessionResolveRequest(BaseModel):
     # Feature contexts such as a code review can request "contains" so the
     # same session is reused even after another capability tag is added.
     tag_match: Literal["exact", "contains"] = "exact"
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _normalize_mode(cls, value: object) -> object:
+        return normalize_mode(value) if isinstance(value, str) else value
 
     @field_validator("tags")
     @classmethod
@@ -92,7 +98,7 @@ class SessionResponse(_ExcludeNoneModel):
     title: str | None = None
     agent_name: str | None = None
     scheduled_task_name: str | None = None
-    mode: str = "forge"
+    mode: str = "work"
     workspace: str | None = None
     project_id: UUID | None = None
     permission_mode: str = "auto"
@@ -103,6 +109,11 @@ class SessionResponse(_ExcludeNoneModel):
     running: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _normalize_mode(cls, value: object) -> object:
+        return normalize_mode(value) if isinstance(value, str) else value
 
     @field_validator("tags", mode="before")
     @classmethod

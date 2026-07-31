@@ -169,7 +169,7 @@ class TestLoaderLeadOnly:
         assert team is not None
         assert (
             team.blueprints["executor"].description
-            == BUILTIN_MEMBER_PROFILES["forge"]["executor"]["description"]
+            == BUILTIN_MEMBER_PROFILES["work"]["executor"]["description"]
         )
 
     def test_blueprint_name_with_hash_is_rejected(self, tmp_path):

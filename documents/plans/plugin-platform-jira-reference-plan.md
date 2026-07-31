@@ -33,7 +33,7 @@ Nếu một contributor clone skeleton, thay metadata và triển khai đúng co
 
 ## 2. Product decisions
 
-1. **Plugins là global product surface.** Nút Plugins có mặt trong Forge, Coding và AIM.
+1. **Plugins là global product surface.** Nút Plugins có mặt trong Work, Coding và AIM.
 2. **Sidebar chỉ có một nút Plugins do core sở hữu.** Plugin bên thứ ba không được tự thêm row vào primary sidebar trong v1 để tránh navigation bị lộn xộn.
 3. **Plugin Center quản lý lifecycle; Workbench chạy plugin UI.** Installed plugin có thể đóng góp các tool/panel riêng vào Workbench launcher.
 4. **Không dynamic-import JavaScript bên thứ ba vào React app.** UI plugin chạy trong iframe sandbox với opaque origin.
@@ -91,8 +91,8 @@ Recent
 
 Exact behavior:
 
-- Forge and Coding expanded sidebar: Plugins sits immediately below Scheduler.
-- Forge and Coding collapsed rail: Plugins is an icon item in the same global-action group.
+- Work and Coding expanded sidebar: Plugins sits immediately below Scheduler.
+- Work and Coding collapsed rail: Plugins is an icon item in the same global-action group.
 - Mobile drawer: Plugins is present below Scheduler and closes the drawer after opening.
 - AIM: Plugins appears in the global action area below search and above project navigation, even though AIM currently does not expose Scheduler in that area.
 - No default shortcut in v1. Add one only after shortcut collision audit.
@@ -295,7 +295,7 @@ Reference Jira manifest:
         "description": "Browse and update Jira work items",
         "icon": "list-todo",
         "view": "tasks",
-        "modes": ["forge", "coding", "aim"],
+        "modes": ["work", "coding", "aim"],
         "singleInstance": true
       }
     ],
@@ -1178,7 +1178,7 @@ Maintain packages for:
 
 ### 17.3 Frontend tests
 
-- Plugins row in expanded/collapsed/mobile Forge and Coding sidebar, plus AIM global area;
+- Plugins row in expanded/collapsed/mobile Work and Coding sidebar, plus AIM global area;
 - Plugin Center works with no plugins and broken plugins;
 - local install permission review;
 - merged Workbench catalog and dynamic tab lifecycle;

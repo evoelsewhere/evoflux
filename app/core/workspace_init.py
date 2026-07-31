@@ -41,7 +41,7 @@ def ensure_workspace_initialized() -> None:
 
         from app.agent.loader import ensure_builtin_agent_blueprints
 
-        default_written = ensure_builtin_agent_blueprints(agents_dir, mode="forge")
+        default_written = ensure_builtin_agent_blueprints(agents_dir, mode="work")
         coding_written = ensure_builtin_agent_blueprints(
             agents_dir / "coding", mode="coding"
         )
@@ -70,23 +70,23 @@ def ensure_workspace_initialized() -> None:
     # an already-broken workspace recovers without manual intervention.
     from app.agent.config import agent_dir_has_lead
 
-    healed_forge = None
+    healed_work = None
     healed_coding = None
-    forge_has_lead = agent_dir_has_lead(agents_dir)
+    work_has_lead = agent_dir_has_lead(agents_dir)
     coding_has_lead = agent_dir_has_lead(agents_dir / "coding")
-    if not forge_has_lead or not coding_has_lead:
+    if not work_has_lead or not coding_has_lead:
         from app.agent.loader import ensure_builtin_lead_blueprint
 
-        if not forge_has_lead:
-            healed_forge = ensure_builtin_lead_blueprint(agents_dir, mode="forge")
+        if not work_has_lead:
+            healed_work = ensure_builtin_lead_blueprint(agents_dir, mode="work")
         if not coding_has_lead:
             healed_coding = ensure_builtin_lead_blueprint(
                 agents_dir / "coding", mode="coding"
             )
-    if healed_forge or healed_coding:
+    if healed_work or healed_coding:
         logger.warning(
-            "workspace_lead_agent_healed forge={} coding={}",
-            healed_forge,
+            "workspace_lead_agent_healed work={} coding={}",
+            healed_work,
             healed_coding,
         )
 

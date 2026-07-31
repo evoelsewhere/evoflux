@@ -28,14 +28,24 @@ from app.services.agent_service import (
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _make_team(*, vision: bool = True, document_text: bool = True) -> MagicMock:
+def _make_team(
+    *,
+    vision: bool = True,
+    document_text: bool = True,
+    audio: bool = False,
+    video: bool = False,
+    model_id: str = "mock:model",
+) -> MagicMock:
     """Build a minimal AgentTeam stub."""
     caps = MagicMock()
     caps.input.vision = vision
     caps.input.document_text = document_text
+    caps.input.audio = audio
+    caps.input.video = video
 
     agent = MagicMock()
     agent.capabilities = caps
+    agent.model_id = model_id
 
     lead = MagicMock()
     lead.agent = agent
@@ -92,9 +102,11 @@ def test_require_team_raises_when_none():
         ("pic.png", None, "image"),
         # Extension fallback when MIME is unrecognised
         ("file.md", "application/octet-stream", "text"),
-        # Unknown extension → None
-        ("binary.exe", None, None),
-        ("noext", "application/octet-stream", None),
+        ("recording.mp3", "audio/mpeg", "audio"),
+        ("demo.webm", "video/webm", "video"),
+        # Unknown formats are persisted for workspace/tool fallback.
+        ("binary.exe", None, "binary"),
+        ("noext", "application/octet-stream", "binary"),
     ],
 )
 def test_categorize(filename, content_type, expected):
@@ -170,8 +182,8 @@ def test_default_ext_known_categories():
 
 
 def test_default_ext_unknown_category_returns_bin():
-    assert _default_ext("video") == ".bin"
-    assert _default_ext("audio") == ".bin"
+    assert _default_ext("video") == ".mp4"
+    assert _default_ext("audio") == ".mp3"
     assert _default_ext("") == ".bin"
 
 
@@ -179,35 +191,130 @@ def test_default_ext_unknown_category_returns_bin():
 
 
 @pytest.mark.asyncio
-async def test_validate_unsupported_extension(tmp_path):
+async def test_validate_unknown_extension_uses_workspace_fallback(tmp_path):
     team = _make_team()
     att = RawAttachment(filename="virus.exe", content_type=None, data=b"\x4d\x5a" * 10)
-    with pytest.raises(AttachmentError) as exc_info:
-        await validate_and_persist_attachments(team, [att])
-    assert exc_info.value.status == 415
-    assert ".exe" in str(exc_info.value)
+    with patch("app.services.agent_service._uploads_dir", return_value=tmp_path):
+        _, metas = await validate_and_persist_attachments(team, [att])
+
+    assert len(metas) == 1
+    assert metas[0]["category"] == "binary"
+    assert metas[0]["delivery"] == "workspace"
+    assert Path(metas[0]["path"]).read_bytes() == att.data
 
 
 @pytest.mark.asyncio
-async def test_validate_image_rejected_when_no_vision(tmp_path):
+async def test_validate_image_without_vision_uses_workspace_fallback(tmp_path):
     team = _make_team(vision=False)
     data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 50
     att = RawAttachment(filename="img.png", content_type="image/png", data=data)
-    with pytest.raises(AttachmentError) as exc_info:
-        await validate_and_persist_attachments(team, [att])
-    assert exc_info.value.status == 422
-    assert "image" in str(exc_info.value).lower()
+    with patch("app.services.agent_service._uploads_dir", return_value=tmp_path):
+        _, metas = await validate_and_persist_attachments(team, [att])
+
+    assert metas[0]["category"] == "image"
+    assert metas[0]["delivery"] == "workspace"
 
 
 @pytest.mark.asyncio
-async def test_validate_document_rejected_when_no_document_text(tmp_path):
+async def test_validate_image_with_vision_uses_native_delivery(tmp_path):
+    team = _make_team(vision=True)
+    data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 50
+    att = RawAttachment(filename="img.png", content_type="image/png", data=data)
+    with patch("app.services.agent_service._uploads_dir", return_value=tmp_path):
+        _, metas = await validate_and_persist_attachments(team, [att])
+
+    assert metas[0]["delivery"] == "native"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("filename", "content_type", "category"),
+    [
+        ("recording.mp3", "audio/mpeg", "audio"),
+        ("clip.mp4", "video/mp4", "video"),
+    ],
+)
+async def test_gemini_native_audio_video_delivery(
+    tmp_path, filename, content_type, category
+):
+    team = _make_team(
+        audio=True,
+        video=True,
+        model_id="googlegenai:gemini-3.1-pro-preview",
+    )
+    att = RawAttachment(filename=filename, content_type=content_type, data=b"media")
+    with patch("app.services.agent_service._uploads_dir", return_value=tmp_path):
+        _, metas = await validate_and_persist_attachments(team, [att])
+
+    assert metas[0]["category"] == category
+    assert metas[0]["delivery"] == "native"
+
+
+@pytest.mark.asyncio
+async def test_non_gemini_audio_capability_still_uses_workspace_fallback(tmp_path):
+    team = _make_team(audio=True, model_id="mock:omni")
+    att = RawAttachment(
+        filename="recording.mp3", content_type="audio/mpeg", data=b"media"
+    )
+    with patch("app.services.agent_service._uploads_dir", return_value=tmp_path):
+        _, metas = await validate_and_persist_attachments(team, [att])
+
+    assert metas[0]["delivery"] == "workspace"
+
+
+@pytest.mark.asyncio
+async def test_validate_document_is_extracted_independently_of_model_capability(
+    tmp_path,
+):
     team = _make_team(document_text=False)
     data = b"%PDF-1.4" + b"\x00" * 50
     att = RawAttachment(filename="doc.pdf", content_type="application/pdf", data=data)
-    with pytest.raises(AttachmentError) as exc_info:
-        await validate_and_persist_attachments(team, [att])
-    assert exc_info.value.status == 422
-    assert "document" in str(exc_info.value).lower()
+    with (
+        patch("app.services.agent_service._uploads_dir", return_value=tmp_path),
+        patch(
+            "app.services.agent_service._convert_with_markitdown",
+            return_value="document body",
+        ),
+    ):
+        _, metas = await validate_and_persist_attachments(team, [att])
+
+    assert metas[0]["converted_text"] == "document body"
+    assert metas[0]["delivery"] == "extracted"
+
+
+@pytest.mark.asyncio
+async def test_gemini_document_uses_native_delivery_when_extraction_fails(tmp_path):
+    team = _make_team(
+        document_text=True,
+        model_id="googlegenai:gemini-3.1-pro-preview",
+    )
+    data = b"%PDF-1.4" + b"\x00" * 50
+    att = RawAttachment(filename="doc.pdf", content_type="application/pdf", data=data)
+    with (
+        patch("app.services.agent_service._uploads_dir", return_value=tmp_path),
+        patch(
+            "app.services.agent_service._convert_with_markitdown", return_value=None
+        ),
+    ):
+        _, metas = await validate_and_persist_attachments(team, [att])
+
+    assert metas[0]["delivery"] == "native"
+
+
+@pytest.mark.asyncio
+async def test_unknown_utf8_source_file_is_promoted_to_extracted_text(tmp_path):
+    team = _make_team()
+    att = RawAttachment(
+        filename="script.custom",
+        content_type="application/octet-stream",
+        data=b"print('hello')\n",
+    )
+    with patch("app.services.agent_service._uploads_dir", return_value=tmp_path):
+        _, metas = await validate_and_persist_attachments(team, [att])
+
+    assert metas[0]["category"] == "text"
+    assert metas[0]["converted_text"] == "print('hello')\n"
+    assert metas[0]["delivery"] == "extracted"
 
 
 @pytest.mark.asyncio
@@ -246,6 +353,7 @@ async def test_validate_and_persist_text_file(tmp_path):
     meta = metas[0]
     assert meta["category"] == "text"
     assert meta["converted_text"] == "hello world"
+    assert meta["delivery"] == "extracted"
     assert meta["original_name"] == "notes.txt"
     # The saved file should exist on disk
     saved = tmp_path / meta["filename"]
@@ -385,7 +493,7 @@ async def test_dispatch_passes_session_model_settings():
         interrupt=False,
         attachment_metas=None,
         message_extra=None,
-        mode="forge",
+        mode="work",
         workspace=None,
         model="openai:gpt-5.5",
         model_provided=True,
@@ -481,7 +589,7 @@ async def test_deferred_dispatch_returns_before_message_preparation_finishes():
     team.prepare_user_session.assert_awaited_once_with(
         content="hello",
         session_id="existing-123",
-        mode="forge",
+        mode="work",
         workspace=None,
     )
     team.reserve_user_turn.assert_called_once_with()

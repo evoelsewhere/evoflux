@@ -6,10 +6,10 @@ import { restoreLastRouteBeforeRouterMount } from '@/lib/mode-route'
 restoreLastRouteBeforeRouterMount()
 
 const TeamLayout = lazy(() =>
-  import('./routes/forge').then((module) => ({ default: module.TeamLayout })),
+  import('./routes/work').then((module) => ({ default: module.TeamLayout })),
 )
 const CodingLayout = lazy(() =>
-  import('./routes/forge').then((module) => ({ default: module.CodingLayout })),
+  import('./routes/work').then((module) => ({ default: module.CodingLayout })),
 )
 const AimLayout = lazy(() =>
   import('./routes/aim').then((module) => ({ default: module.AimLayout })),
@@ -26,10 +26,10 @@ const rootRoute = createRootRoute({
   notFoundComponent: NotFound,
 })
 
-// / layout — forge mode, persists across / and /$sessionId
+// / layout — work mode, persists across / and /$sessionId
 const teamLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
-  id: 'forge',
+  id: 'work',
   component: TeamLayout,
 })
 const teamIndexRoute = createRoute({

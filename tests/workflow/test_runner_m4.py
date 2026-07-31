@@ -77,7 +77,7 @@ async def test_agent_node_lifecycle_with_boundary_hooks(setup_db, fake_team):
     definition = parse_definition("""
 schema_version: 1
 name: agentic
-scope: forge
+scope: work
 nodes:
   - { id: work, kind: agent, subagents: [debate], prompt: "Analyze {{inputs.thing}}" }
   - { id: shape, kind: transform, set: { got: "{{nodes.work.output.text}}" } }
@@ -88,7 +88,7 @@ outputs:
 """)
 
     async with db_module.async_session_factory() as db:
-        session = ChatSession(mode="forge")
+        session = ChatSession(mode="work")
         db.add(session)
         await db.commit()
         await db.refresh(session)
@@ -147,7 +147,7 @@ async def test_agent_node_structured_handoff_has_text_contract(setup_db, fake_te
     definition = parse_definition("""
 schema_version: 1
 name: structured-agent-output
-scope: forge
+scope: work
 nodes:
     - { id: work, kind: agent, subagents: [researcher], prompt: "Research it" }
     - { id: shape, kind: transform, set: { got: "{{nodes.work.output.text}}" } }
@@ -158,7 +158,7 @@ outputs:
 """)
 
     async with db_module.async_session_factory() as db:
-        session = ChatSession(mode="forge")
+        session = ChatSession(mode="work")
         db.add(session)
         await db.commit()
         await db.refresh(session)
@@ -215,12 +215,12 @@ async def test_agent_node_timeout_interrupts_team(setup_db, fake_team):
     definition = parse_definition("""
 schema_version: 1
 name: sluggish
-scope: forge
+scope: work
 nodes:
   - { id: work, kind: agent, subagents: [], prompt: p, timeout_s: 1 }
 """)
     async with db_module.async_session_factory() as db:
-        session = ChatSession(mode="forge")
+        session = ChatSession(mode="work")
         db.add(session)
         await db.commit()
         await db.refresh(session)
@@ -253,7 +253,7 @@ async def test_gate_round_trip_via_ask_user_service(setup_db, fake_team):
     definition = parse_definition("""
 schema_version: 1
 name: gated-flow
-scope: forge
+scope: work
 nodes:
   - { id: ask, kind: gate, title: "Deploy?", body: "to prod", choices: [go, halt] }
   - { id: deploy, kind: transform, set: { did: "deployed" } }
@@ -261,7 +261,7 @@ edges:
   - { from: ask, to: deploy, when: go }
 """)
     async with db_module.async_session_factory() as db:
-        session = ChatSession(mode="forge")
+        session = ChatSession(mode="work")
         db.add(session)
         await db.commit()
         await db.refresh(session)
@@ -314,7 +314,7 @@ async def test_input_node_free_text_routes_through_switch(setup_db, fake_team):
     definition = parse_definition("""
 schema_version: 1
 name: enviro
-scope: forge
+scope: work
 nodes:
   - { id: ask_env, kind: input, question: "Which env?" }
   - { id: route, kind: switch, value: "{{nodes.ask_env.output.text}}" }
@@ -326,7 +326,7 @@ edges:
   - { from: route, to: other, when: "*" }
 """)
     async with db_module.async_session_factory() as db:
-        session = ChatSession(mode="forge")
+        session = ChatSession(mode="work")
         db.add(session)
         await db.commit()
         await db.refresh(session)
@@ -361,12 +361,12 @@ async def test_stop_during_gate_cancels_cleanly(setup_db, fake_team):
     definition = parse_definition("""
 schema_version: 1
 name: stuck-gate
-scope: forge
+scope: work
 nodes:
   - { id: ask, kind: gate, title: t, choices: [a] }
 """)
     async with db_module.async_session_factory() as db:
-        session = ChatSession(mode="forge")
+        session = ChatSession(mode="work")
         db.add(session)
         await db.commit()
         await db.refresh(session)
@@ -397,7 +397,7 @@ async def test_foreach_tool_body_yields_iteration_rows(setup_db, fake_team):
     definition = parse_definition("""
 schema_version: 1
 name: loopy-tools
-scope: forge
+scope: work
 nodes:
   - id: seed
     kind: transform
@@ -415,7 +415,7 @@ outputs:
   n: "{{nodes.each.output.count}}"
 """)
     async with db_module.async_session_factory() as db:
-        session = ChatSession(mode="forge")
+        session = ChatSession(mode="work")
         db.add(session)
         await db.commit()
         await db.refresh(session)
@@ -474,7 +474,7 @@ async def test_foreach_failure_persists_partial_outputs(
             """
             schema_version: 1
             name: partial-loop
-            scope: forge
+            scope: work
             nodes:
               - id: seed
                 kind: transform
@@ -493,7 +493,7 @@ async def test_foreach_failure_persists_partial_outputs(
         )
     )
     async with db_module.async_session_factory() as db:
-        session = ChatSession(mode="forge")
+        session = ChatSession(mode="work")
         db.add(session)
         await db.commit()
         await db.refresh(session)

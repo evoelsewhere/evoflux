@@ -1,5 +1,5 @@
 /**
- * AimSidebar — AIM mode's navigation: mode switch (Forge|Coding|AIM),
+ * AimSidebar — AIM mode's navigation: mode switch (Work|Coding|AIM),
  * the list of AIM projects, and each project's feature items rendered as
  * an expandable dropdown (aim-mode-shell-ux-spec.md v2.2 §3.1).
  *
@@ -72,7 +72,7 @@ interface AimSidebarProps {
   activeFeature?: AimFeature
   onNewProject: () => void
   /** Opens the command palette (search input + footer help), same as
-   * the forge/coding sidebars. */
+   * the work/coding sidebars. */
   onCommandPalette?: () => void
   mobile?: boolean
   onMobileClose?: () => void
@@ -148,7 +148,7 @@ export function AimSidebar({
 
   const content = (
     <SidebarCard className="h-full">
-        {/* Mode switch — shared tab strip, same as forge/coding sidebars */}
+        {/* Mode switch — shared tab strip, same as work/coding sidebars */}
         <div className={`shrink-0 px-1.5 ${isMacOverlay ? 'pt-10' : 'pt-1.5'}`}>
           {mobile ? (
             <ModeSwitchTabs active="aim" onNavigate={onMobileClose} />
@@ -158,7 +158,7 @@ export function AimSidebar({
         </div>
 
         {/* Search trigger — opens the command palette (Ctrl+P), same
-            placement + markup as the forge/coding sidebars. */}
+            placement + markup as the work/coding sidebars. */}
         {onCommandPalette && (
           <div
             className={cn(
@@ -362,7 +362,7 @@ export function AimSidebar({
           )}
         </nav>
 
-        {/* Footer trio — mirrors the forge/coding sidebars so all three
+        {/* Footer trio — mirrors the work/coding sidebars so all three
             modes feel like the same shell. */}
         <SidebarShellDivider />
         <SidebarFooter onCommandPalette={onCommandPalette} onAction={onMobileClose} />

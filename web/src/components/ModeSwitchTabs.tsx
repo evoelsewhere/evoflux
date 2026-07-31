@@ -1,23 +1,59 @@
 /**
- * ModeSwitchTabs — the canonical Forge | Coding | AIM control. Desktop uses
+ * ModeSwitchTabs — the canonical Work | Coding | AIM control. Desktop uses
  * one root-owned instance that survives route changes; transient mobile
  * drawers reuse the same control. ModeSwitchRail is its collapsed variant.
  */
 
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { motion } from 'framer-motion'
-import { ArrowRightLeft, Code2, Gauge } from 'lucide-react'
+import { CodeXml, createLucideIcon, Monitor, type LucideIcon } from 'lucide-react'
 import { useMotionPreset } from '@/lib/motion'
 import { loadModeRoute } from '@/lib/mode-route'
 import { cn } from '@/lib/utils'
 
-export type AppMode = 'forge' | 'coding' | 'aim'
+export type AppMode = 'work' | 'coding' | 'aim'
 
-const TABS: Array<{ mode: AppMode; label: string; Icon: typeof Gauge; to: string }> = [
-  { mode: 'forge', label: 'Forge', Icon: Gauge, to: '/' },
-  { mode: 'coding', label: 'Coding', Icon: Code2, to: '/coding' },
-  { mode: 'aim', label: 'AIM', Icon: ArrowRightLeft, to: '/aim' },
+const AimGrowth = createLucideIcon('AimGrowth', [
+  ['path', { d: 'M3 19c4.5 0 6.5-1.8 9-5l3-4', key: 'lower-rise' }],
+  ['polyline', { points: '11 10 15 10 15 14', key: 'lower-arrow' }],
+  ['path', { d: 'M4 11c4.5 0 7-2 10-5l6-4', key: 'upper-rise' }],
+  ['polyline', { points: '16 2 20 2 20 6', key: 'upper-arrow' }],
+])
+
+const TABS: Array<{ mode: AppMode; label: string; Icon: LucideIcon; to: string }> = [
+  { mode: 'work', label: 'Work', Icon: Monitor, to: '/' },
+  { mode: 'coding', label: 'Coding', Icon: CodeXml, to: '/coding' },
+  { mode: 'aim', label: 'AIM', Icon: AimGrowth, to: '/aim' },
 ]
+
+function ModeIcon({
+  Icon,
+  active,
+  compact = false,
+}: {
+  Icon: LucideIcon
+  active: boolean
+  compact?: boolean
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        'grid shrink-0 place-items-center transition-[color,filter] duration-(--motion-fast)',
+        compact ? 'size-[18px]' : 'size-5',
+        active
+          ? 'text-(--color-accent) [filter:drop-shadow(0_0_3px_color-mix(in_srgb,var(--color-accent)_58%,transparent))]'
+          : 'text-(--color-text-subtle) group-hover:text-(--color-text)',
+      )}
+    >
+      <Icon
+        size={compact ? 14 : 15}
+        strokeWidth={1.75}
+        absoluteStrokeWidth
+      />
+    </span>
+  )
+}
 
 function useAnimatedModeNavigation(onNavigate?: () => void) {
   const navigate = useNavigate()
@@ -95,20 +131,13 @@ export function ModeSwitchTabs({
             aria-selected={mode === active}
             role="tab"
             className={cn(
-              'relative z-10 flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-lg px-1 text-xs font-medium outline-none transition-[color,transform] duration-(--motion-fast) active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35 @[12.5rem]/modeswitch:px-2',
+              'group relative z-10 flex h-8 min-w-0 items-center justify-center gap-1 rounded-lg px-1 text-xs font-medium outline-none transition-[color,transform] duration-(--motion-fast) active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35 @[12.5rem]/modeswitch:gap-1.5 @[12.5rem]/modeswitch:px-2',
               mode === active
                 ? 'text-(--color-text)'
                 : 'text-(--color-text-subtle) hover:text-(--color-text)',
             )}
           >
-            <Icon
-              size={13}
-              className={cn(
-                'shrink-0 transition-colors duration-(--motion-fast)',
-                mode === active && 'text-(--color-accent)',
-              )}
-              aria-hidden="true"
-            />
+            <ModeIcon Icon={Icon} active={mode === active} />
             <span className="hidden whitespace-nowrap @[12.5rem]/modeswitch:inline">{label}</span>
           </button>
         ))}
@@ -144,7 +173,7 @@ export function ModeSwitchRail({
           title={label}
           aria-current={mode === active ? 'page' : undefined}
           className={cn(
-            'relative flex h-8 w-8 items-center justify-center rounded-lg outline-none transition-[color,transform] duration-(--motion-fast) active:translate-y-px focus-visible:ring-2 focus-visible:ring-(--color-accent)/35',
+            'group relative flex h-8 w-8 items-center justify-center rounded-lg outline-none transition-[color,transform] duration-(--motion-fast) active:translate-y-px focus-visible:ring-2 focus-visible:ring-(--color-accent)/35',
             mode === active
               ? 'text-(--color-accent)'
               : 'text-(--color-text-subtle) hover:text-(--color-text-2)',
@@ -158,7 +187,9 @@ export function ModeSwitchRail({
               aria-hidden="true"
             />
           )}
-          <Icon size={16} className="relative z-10" aria-hidden="true" />
+          <span className="relative z-10">
+            <ModeIcon Icon={Icon} active={mode === active} compact />
+          </span>
         </button>
       ))}
     </div>

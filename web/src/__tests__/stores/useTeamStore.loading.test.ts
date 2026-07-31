@@ -35,7 +35,7 @@ describe('useTeamStore request coalescing', () => {
       }),
     )
 
-    useTeamStore.getState().beginResolvedSession('session-1', { mode: 'forge' })
+    useTeamStore.getState().beginResolvedSession('session-1', { mode: 'work' })
     const first = useTeamStore.getState().loadSession('session-1', null, null)
     const second = useTeamStore.getState().loadSession('session-1', null, null)
 

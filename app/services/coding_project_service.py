@@ -76,7 +76,7 @@ async def list_visible_projects(
 ) -> list[CodingProject]:
     """List non-hidden, non-deleted projects.
 
-    ``kind`` filters to "coding" or "aim" — Forge/Coding UIs should always
+    ``kind`` filters to "coding" or "aim" — Work/Coding UIs should always
     pass ``kind="coding"`` and the AIM Board's project picker
     ``kind="aim"``, so the two modes never surface each other's projects
     (documents/research/aim-framework.md §3.3).

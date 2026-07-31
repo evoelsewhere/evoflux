@@ -1,30 +1,30 @@
-# Computer Use cho Forge mode — điều khiển máy tính tối đa
+# Computer Use cho Work mode — điều khiển máy tính tối đa
 
 | | |
 |---|---|
 | **Trạng thái** | PROPOSED (v1 — research + architecture + roadmap) |
 | **Ngày** | 2026-07-19 |
-| **Phạm vi** | Mở rộng năng lực điều khiển máy tính (computer use) cho agent ở mode Forge; macOS-first |
+| **Phạm vi** | Mở rộng năng lực điều khiển máy tính (computer use) cho agent ở mode Work; macOS-first |
 | **Tài liệu liên quan** | [`aim-framework.md`](aim-framework.md) (cùng pattern research→architecture), [`aim-mode-shell-ux-spec.md`](../plans/aim-mode-shell-ux-spec.md) |
 
 ---
 
 ## Tóm tắt điều hành
 
-**Forge đã điều khiển được ~70–80% máy tính** thông qua các kênh có sẵn: `shell`/`terminal_run` chạy lệnh tùy ý trong chính PTY của user (gồm `osascript`, `open`, `shortcuts run`, `defaults`, `pbpaste/pbcopy`, `screencapture`, `launchctl`…), `browser_use` điều khiển Chromium đầy đủ qua CDP, filesystem R/W toàn máy (trừ denylist), và MCP cắm server bằng config. **Khoảng trống thật sự chỉ có 3**: (1) agent không *nhìn* được màn hình ngoài browser, (2) agent không *click/gõ* được lên app native, (3) bản đóng gói Tauri chưa khai báo entitlement/usage-description cho Screen Recording + Accessibility.
+**Work đã điều khiển được ~70–80% máy tính** thông qua các kênh có sẵn: `shell`/`terminal_run` chạy lệnh tùy ý trong chính PTY của user (gồm `osascript`, `open`, `shortcuts run`, `defaults`, `pbpaste/pbcopy`, `screencapture`, `launchctl`…), `browser_use` điều khiển Chromium đầy đủ qua CDP, filesystem R/W toàn máy (trừ denylist), và MCP cắm server bằng config. **Khoảng trống thật sự chỉ có 3**: (1) agent không *nhìn* được màn hình ngoài browser, (2) agent không *click/gõ* được lên app native, (3) bản đóng gói Tauri chưa khai báo entitlement/usage-description cho Screen Recording + Accessibility.
 
 Nghiên cứu state-of-the-art (Anthropic Computer Use `computer_20251124`, OSWorld benchmark, hệ MCP cộng đồng, đường macOS-native AX/CGEvent) cho thấy không cần một "computer-use model" riêng: cần **một `computer` tool** theo đúng contract tool hiện có của EvoFlux (đã có sẵn permission gate, SSE streaming, multimodal `ImageDataBlock`). Đề xuất lộ trình 4 pha:
 
 - **P0 — OS automation pack** (không cần permission mới, ~1 ngày): skill + recipes cho các kênh đã có (osascript/JXA, Shortcuts, clipboard, `open`…), preset permission rules.
 - **P1 — Perception** (~1–2 ngày): `computer` tool phía đọc — `screenshot` (region, downscale), `list_windows`, `ax_tree`; cần Screen Recording TCC; gate theo vision-capability của model.
-- **P2 — Input synthesis** (~2–3 ngày): `left_click/type/key/scroll/drag` qua CGEvent; cần Accessibility TCC; UI `ComputerViewer` (tái dùng pattern `ScreencastCanvas` của BrowserViewer) + icon "Computer" ở sidebar forge.
+- **P2 — Input synthesis** (~2–3 ngày): `left_click/type/key/scroll/drag` qua CGEvent; cần Accessibility TCC; UI `ComputerViewer` (tái dùng pattern `ScreencastCanvas` của BrowserViewer) + icon "Computer" ở sidebar work.
 - **P3 — Reliability & packaging** (~2–4 ngày): AX-first targeting, verify loop, entitlements + onboarding permission wizard.
 
 Nguyên tắc xuyên suốt: **ưu tiên kênh có cấu trúc (shell, AX tree, AppleScript) trước, pixel-based chỉ là fallback**; mọi action đi qua permission gate hiện có (`ask` mặc định); nội dung màn hình là untrusted input (prompt-injection guardrails).
 
 ---
 
-## Phần 1 — Hiện trạng: Forge đã điều khiển được gì
+## Phần 1 — Hiện trạng: Work đã điều khiển được gì
 
 | Lớp năng lực | Hiện có trong EvoFlux | Mức độ |
 |---|---|---|
@@ -108,7 +108,7 @@ Attribution: backend Python chạy dạng **sidecar con của EvoFlux.app** → 
 
 - Actions (đối chiếu `computer_20251124`): `left_click/right_click/double_click`, `mouse_move`, `type`, `key`, `scroll`, `drag`, `wait` — thực thi bằng **CGEvent qua pyobjc** (Quartz wheel có sẵn cho macOS arm64; tránh dep pyautogui nếu muốn gọn) hoặc pyautogui nếu ưu tiên tốc độ dev.
 - Sau mỗi action trả kèm `screenshot` mới (verify loop bắt buộc trong tool description).
-- UI `ComputerViewer`: panel phải (tái dùng pattern `ScreencastCanvas`/BrowserViewer) stream screenshot 1–2 fps khi tool active + action log; **icon "Computer" ở nav sidebar forge** (vị trí đã chốt với user, cạnh New Chat/Scheduler) mở panel này.
+- UI `ComputerViewer`: panel phải (tái dùng pattern `ScreencastCanvas`/BrowserViewer) stream screenshot 1–2 fps khi tool active + action log; **icon "Computer" ở nav sidebar work** (vị trí đã chốt với user, cạnh New Chat/Scheduler) mở panel này.
 - Kill switch: nút Stop nổi trên panel + policy `computer` action destructive (delete/send/purchase/type password) luôn `ask` kể cả ở `auto` mode (rule riêng, không cho always-allow).
 
 ### P3 — Reliability & packaging (~2–4 ngày)
@@ -136,7 +136,7 @@ Attribution: backend Python chạy dạng **sidecar con của EvoFlux.app** → 
 
 1. **P0 ngay** (skill + permission preset): giá trị lớn, rủi ro 0, không cần quyết định kiến trúc.
 2. **P1+P2** theo thiết kế §4 với `computer` tool builtin (không qua MCP cộng đồng — kiểm soát permission + multimodal + packaging tốt hơn), demo trên claude-sonnet và mimo-v2.5.
-3. Quyết định cần user: macOS-first? chấp nhận dep pyobjc/pyautogui? duyệt icon "Computer" ở sidebar forge (vị trí cũ đã chọn) làm entry point cho ComputerViewer?
+3. Quyết định cần user: macOS-first? chấp nhận dep pyobjc/pyautogui? duyệt icon "Computer" ở sidebar work (vị trí cũ đã chọn) làm entry point cho ComputerViewer?
 
 ## Tham khảo
 

@@ -52,7 +52,7 @@ def _fmt_task(task: Any) -> str:
     run_count = getattr(task, "run_count", 0)
     next_fire = getattr(task, "next_fire_at", None)
     name = getattr(task, "name", "?")
-    mode = getattr(task, "mode", "forge")
+    mode = getattr(task, "mode", "work")
     workspace = getattr(task, "workspace", None)
     task_id = getattr(task, "id", "?")
 
@@ -202,7 +202,7 @@ async def _schedule_task(
     # context by the tool executor — never accepted from LLM-supplied args.
     # See ``app.agent.agent_loop.tool_executor.make_tool_executor``.
     _state: Annotated[Any, InjectedArg()] = None,
-    _mode: Annotated[Literal["forge", "coding"], InjectedArg()] = "forge",
+    _mode: Annotated[Literal["work", "coding"], InjectedArg()] = "work",
     _workspace: Annotated[str | None, InjectedArg()] = None,
 ) -> str:
     """Set a reminder for your future self — a prompt that will be
@@ -232,7 +232,7 @@ async def _schedule_task(
     # routing context (``_mode`` + ``_workspace``), and must only see /
     # touch tasks that belong to that same context:
     #
-    #   * Default-team lead (``_mode='forge'``)  → only ``mode='forge'``
+    #   * Default-team lead (``_mode='work'``)  → only ``mode='work'``
     #     tasks.
     #   * Coding-team lead   (``_mode='coding'``) → only ``mode='coding'``
     #     tasks with a matching ``workspace``.
@@ -241,7 +241,7 @@ async def _schedule_task(
     # so the agent has no way to enumerate or probe tasks outside its
     # scope — the surface is identical to a missing row.
     def _in_scope(task: Any) -> bool:
-        t_mode = getattr(task, "mode", "forge")
+        t_mode = getattr(task, "mode", "work")
         if t_mode != _mode:
             return False
         if _mode == "coding":
