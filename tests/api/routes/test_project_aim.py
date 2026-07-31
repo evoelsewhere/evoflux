@@ -645,15 +645,8 @@ async def test_project_health_surfaces_runner_and_target_base_blockers(
 
 @pytest.mark.asyncio
 async def test_project_approval_inbox_aggregates_live_gates(client, tmp_path):
-    from app.agent.ask_user import (
-        AskUserRequest,
-        AskUserService,
-        reset_ask_user_service,
-        set_ask_user_service,
-    )
-    from app.agent.tools.builtin.ask_user import QuestionSpec
     from app.models.chat import ChatSession
-    from app.models.workflow import WorkflowExecution
+    from app.models.workflow import WorkflowExecution, WorkflowGateRequest
 
     project, *_ = await _make_aim_project_with_units(tmp_path)
     async with db_module.async_session_factory() as db:
@@ -672,23 +665,19 @@ async def test_project_approval_inbox_aggregates_live_gates(client, tmp_path):
             status="waiting_gate",
         )
         db.add(execution)
+        await db.flush()
+        request = WorkflowGateRequest(
+            execution_id=execution.id,
+            node_id="approve",
+            kind="gate",
+            request_id=str(uuid4()),
+            question="Approve target design?",
+            options=["approve", "reject"],
+        )
+        db.add(request)
         await db.commit()
 
-    service = AskUserService(str(session.id))
-    request = AskUserRequest.create(
-        str(session.id),
-        [
-            QuestionSpec(
-                question="Approve target design?", options=["approve", "reject"]
-            )
-        ],
-    )
-    service._pending[request.id] = request
-    token = set_ask_user_service(service)
-    try:
-        response = await client.get(f"/api/team/projects/{project.id}/aim/approvals")
-    finally:
-        reset_ask_user_service(token, str(session.id))
+    response = await client.get(f"/api/team/projects/{project.id}/aim/approvals")
 
     assert response.status_code == 200
     approvals = response.json()

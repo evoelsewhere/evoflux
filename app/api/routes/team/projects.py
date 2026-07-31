@@ -1473,41 +1473,39 @@ async def get_aim_project_health(
 
 @router.get("/{project_id}/aim/approvals", response_model=list[AimApprovalOut])
 async def list_aim_approvals(project_id: UUID, db: DbSession) -> list[AimApprovalOut]:
-    from app.agent.ask_user import get_service_for_session
     from app.models.chat import ChatSession
-    from app.models.workflow import WorkflowExecution
+    from app.models.workflow import WorkflowExecution, WorkflowGateRequest
 
     await _get_aim_project_or_404(db, project_id)
     rows = (
         await db.exec(
-            select(WorkflowExecution, ChatSession)
+            select(WorkflowExecution, ChatSession, WorkflowGateRequest)
             .join(ChatSession, col(WorkflowExecution.session_id) == col(ChatSession.id))
+            .join(
+                WorkflowGateRequest,
+                col(WorkflowGateRequest.execution_id) == col(WorkflowExecution.id),
+            )
             .where(
                 ChatSession.project_id == project_id,
                 WorkflowExecution.status == "waiting_gate",
+                WorkflowGateRequest.kind == "gate",
+                WorkflowGateRequest.status == "pending",
             )
-            .order_by(col(WorkflowExecution.started_at))
+            .order_by(col(WorkflowGateRequest.created_at))
         )
     ).all()
-    approvals: list[AimApprovalOut] = []
-    for execution, session in rows:
-        service = get_service_for_session(str(session.id))
-        if service is None:
-            continue
-        for request_id, request in service._pending.items():
-            for question in request.questions:
-                approvals.append(
-                    AimApprovalOut(
-                        execution_id=execution.id,
-                        session_id=session.id,
-                        session_title=session.title,
-                        workflow=execution.definition_name,
-                        request_id=request_id,
-                        question=question.question,
-                        options=question.options,
-                    )
-                )
-    return approvals
+    return [
+        AimApprovalOut(
+            execution_id=execution.id,
+            session_id=session.id,
+            session_title=session.title,
+            workflow=execution.definition_name,
+            request_id=gate.request_id,
+            question=gate.question,
+            options=gate.options,
+        )
+        for execution, session, gate in rows
+    ]
 
 
 @router.post(

@@ -10,7 +10,12 @@ from .chat import (
 from .code_graph import CodeEdge, CodeIndexState, CodeNode
 from .goal import SessionGoal
 from .team import DelegationTask
-from .workflow import WorkflowApproval, WorkflowExecution, WorkflowNodeRun
+from .workflow import (
+    WorkflowApproval,
+    WorkflowExecution,
+    WorkflowGateRequest,
+    WorkflowNodeRun,
+)
 from .webbridge import (
     WebBridgeInteraction,
     WebBridgePairing,
@@ -37,6 +42,7 @@ __all__ = [
     "SessionGoal",
     "WorkflowApproval",
     "WorkflowExecution",
+    "WorkflowGateRequest",
     "WorkflowNodeRun",
     "WebBridgeInteraction",
     "WebBridgePairing",

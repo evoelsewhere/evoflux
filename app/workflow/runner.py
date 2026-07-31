@@ -453,6 +453,25 @@ class WorkflowRunner:
             await self._fail(state, node_id=node.id, error=str(exc))
             return
 
+        request_id = str(uuid7())
+        gate_request_id = await self._persist_gate_request(
+            state,
+            node_run_id=node_run_id,
+            node_id=node.id,
+            kind=node.kind,
+            request_id=request_id,
+            question=question,
+            options=options,
+        )
+        if gate_request_id is None:
+            error = (
+                f"{node.kind} '{node.id}' could not persist its human-control "
+                "record; refusing to continue without an audit trail."
+            )
+            await self._persist_node_end(node_run_id, status="failed", error=error)
+            await self._fail(state, node_id=node.id, error=error)
+            return
+
         state.status = "waiting_gate"
         # Mirror the pause into the DB row: REST readers (the AIM Pipelines
         # table polls GET /workflows/executions) only see the persisted
@@ -468,7 +487,8 @@ class WorkflowRunner:
         try:
             answers = await asyncio.wait_for(
                 svc.ask(
-                    [QuestionSpec(question=question, options=options, strict=strict)]
+                    [QuestionSpec(question=question, options=options, strict=strict)],
+                    request_id=request_id,
                 ),
                 timeout=_GATE_TIMEOUT_S,
             )
@@ -477,11 +497,26 @@ class WorkflowRunner:
                 f"{node.kind} '{node.id}' timed out after {_GATE_TIMEOUT_S}s "
                 f"with no reply."
             )
+            await self._persist_gate_end(gate_request_id, status="timed_out")
             await self._persist_node_end(node_run_id, status="failed", error=error)
             await self._fail(state, node_id=node.id, error=error)
             return
+        except asyncio.CancelledError:
+            await self._persist_gate_end(gate_request_id, status="cancelled")
+            raise
         finally:
             reset_ask_user_service(token, state.session_id)
+
+        if not await self._persist_gate_end(
+            gate_request_id, status="answered", answers=answers
+        ):
+            error = (
+                f"{node.kind} '{node.id}' received a reply but could not persist "
+                "the decision; refusing to continue without an audit trail."
+            )
+            await self._persist_node_end(node_run_id, status="failed", error=error)
+            await self._fail(state, node_id=node.id, error=error)
+            return
         state.status = "running"
         await self._persist_execution_status(state)
 
@@ -1120,6 +1155,63 @@ class WorkflowRunner:
         except Exception as exc:  # noqa: BLE001
             logger.warning("workflow_node_persist_failed error={}", exc)
 
+    async def _persist_gate_request(
+        self,
+        state: ExecutionState,
+        *,
+        node_run_id: UUID | None,
+        node_id: str,
+        kind: str,
+        request_id: str,
+        question: str,
+        options: list[str],
+    ) -> UUID | None:
+        from app.core import db as db_module
+        from app.models.workflow import WorkflowGateRequest
+
+        try:
+            async with db_module.async_session_factory() as db:
+                row = WorkflowGateRequest(
+                    execution_id=state.execution_id,
+                    node_run_id=node_run_id,
+                    node_id=node_id,
+                    kind=kind,
+                    request_id=request_id,
+                    question=question,
+                    options=options,
+                )
+                db.add(row)
+                await db.commit()
+                return row.id
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("workflow_gate_persist_failed error={}", exc)
+            return None
+
+    async def _persist_gate_end(
+        self,
+        gate_request_id: UUID,
+        *,
+        status: str,
+        answers: list[str] | None = None,
+    ) -> bool:
+        from app.core import db as db_module
+        from app.models.workflow import WorkflowGateRequest
+
+        try:
+            async with db_module.async_session_factory() as db:
+                row = await db.get(WorkflowGateRequest, gate_request_id)
+                if row is None:
+                    return False
+                row.status = status
+                row.answers = list(answers or [])
+                row.resolved_at = _utcnow()
+                db.add(row)
+                await db.commit()
+                return True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("workflow_gate_persist_failed error={}", exc)
+            return False
+
 
 #: Process singleton (plan §6.1).
 runner = WorkflowRunner()
@@ -1139,7 +1231,11 @@ async def reconcile_orphaned_executions() -> int:
 
     from app.core import db as db_module
     from app.models.aim import AimClaim
-    from app.models.workflow import WorkflowExecution, WorkflowNodeRun
+    from app.models.workflow import (
+        WorkflowExecution,
+        WorkflowGateRequest,
+        WorkflowNodeRun,
+    )
 
     reconciled = 0
     try:
@@ -1169,6 +1265,18 @@ async def reconcile_orphaned_executions() -> int:
                     node_row.error = "interrupted by a server restart"
                     node_row.ended_at = _utcnow()
                     db.add(node_row)
+                gate_rows = (
+                    await db.exec(
+                        select(WorkflowGateRequest).where(
+                            WorkflowGateRequest.execution_id == row.id,
+                            WorkflowGateRequest.status == "pending",
+                        )
+                    )
+                ).all()
+                for gate_row in gate_rows:
+                    gate_row.status = "interrupted"
+                    gate_row.resolved_at = _utcnow()
+                    db.add(gate_row)
                 claim_rows = (
                     await db.exec(
                         select(AimClaim).where(AimClaim.workflow_execution_id == row.id)

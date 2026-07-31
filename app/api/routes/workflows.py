@@ -21,6 +21,7 @@ from app.api.schemas.workflows import (
     WorkflowExecutionDetailResponse,
     WorkflowExecutionListResponse,
     WorkflowExecutionOut,
+    WorkflowGateRequestOut,
     WorkflowListItem,
     WorkflowListResponse,
     WorkflowNodeRunOut,
@@ -511,7 +512,11 @@ async def stop_execution_route(execution_id: UUID) -> None:
 async def get_execution_route(
     execution_id: UUID, db: DbSession
 ) -> WorkflowExecutionDetailResponse:
-    from app.models.workflow import WorkflowExecution, WorkflowNodeRun
+    from app.models.workflow import (
+        WorkflowExecution,
+        WorkflowGateRequest,
+        WorkflowNodeRun,
+    )
 
     execution = await db.get(WorkflowExecution, execution_id)
     if execution is None:
@@ -521,10 +526,19 @@ async def get_execution_route(
         .where(col(WorkflowNodeRun.execution_id) == execution_id)
         .order_by(col(WorkflowNodeRun.started_at))
     )
+    gates = await db.exec(
+        select(WorkflowGateRequest)
+        .where(col(WorkflowGateRequest.execution_id) == execution_id)
+        .order_by(col(WorkflowGateRequest.created_at))
+    )
     return WorkflowExecutionDetailResponse(
         execution=_execution_out(execution),
         node_runs=[
             WorkflowNodeRunOut.model_validate(row, from_attributes=True)
             for row in rows.all()
+        ],
+        gate_requests=[
+            WorkflowGateRequestOut.model_validate(gate, from_attributes=True)
+            for gate in gates.all()
         ],
     )
