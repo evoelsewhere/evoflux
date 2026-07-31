@@ -1070,13 +1070,15 @@ async def resolve_team_session(
         # code_overview and the first-turn overview injection are all dead
         # until an index exists, and the watcher only reacts to file
         # *changes*, never to the initial open.
-        await _kick_auto_index(db, watch_targets)
+        await _kick_auto_index(db, watch_targets, project_id=project_id)
 
     data = SessionResponse.model_validate(session).model_dump()
     return TeamSessionResolveResponse(**data, created=created)
 
 
-async def _kick_auto_index(db, paths: list[str]) -> None:
+async def _kick_auto_index(
+    db, paths: list[str], *, project_id: UUID | None = None
+) -> None:
     """Start a background code-graph build for never-indexed workspaces.
 
     Best-effort: failures are logged and never block session resolve. The
@@ -1084,26 +1086,57 @@ async def _kick_auto_index(db, paths: list[str]) -> None:
     """
     from app.core.runtime_settings import load_runtime_settings
     from app.services import code_graph_service as svc
+    from app.services.code_graph.cross_repo_jobs import cross_repo_jobs
     from app.services.code_graph.jobs import index_jobs
 
     try:
         if not load_runtime_settings().code_graph.auto_index_enabled:
             return
+        workspace_ids: list[UUID] = []
+        index_activity = False
         for path in dict.fromkeys(paths):
             workspace_id = await svc.resolve_workspace_id(db, path=path)
-            if workspace_id is None or index_jobs.is_running(workspace_id):
+            if workspace_id is None:
                 continue
+            workspace_ids.append(workspace_id)
             counts = await svc.get_index_status(db, workspace_id=workspace_id)
-            if counts["files"] > 0:
+            needs_project_bootstrap = bool(
+                project_id is not None
+                and counts["files"] > 0
+                and await svc.requires_project_graph_bootstrap(
+                    db,
+                    project_id=project_id,
+                    workspace_id=workspace_id,
+                )
+            )
+            needs_index = counts["files"] == 0 or needs_project_bootstrap
+            if index_jobs.is_running(workspace_id):
+                index_activity = True
+                continue
+            if not needs_index:
                 continue
             _, started = await index_jobs.start(
                 workspace_id=workspace_id,
                 root_path=path,
                 languages=None,
-                full=False,
+                # Existing standalone indexes need one full rebuild after the
+                # repo joins a project so unchanged files emit project-scoped
+                # cross-repo candidates. A never-indexed repo can use the
+                # normal incremental path (all files are new).
+                full=needs_project_bootstrap,
             )
             if started:
+                index_activity = True
                 logger.info("code_graph_auto_index_started workspace={}", path)
+
+        # First-open project indexing is one logical operation: resolve only
+        # after all member jobs settle so links are never matched against a
+        # half-built sibling graph.
+        if project_id is not None and len(workspace_ids) > 1 and index_activity:
+            await cross_repo_jobs.start(
+                project_id=project_id,
+                wait_for_workspaces=workspace_ids,
+            )
     except Exception as exc:  # noqa: BLE001 — best-effort, never blocks session resolve
         logger.warning("code_graph_auto_index_failed err={}", exc)
 

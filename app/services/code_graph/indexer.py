@@ -185,6 +185,7 @@ class ExistingDef:
     name: str
     kind: str
     file_path: str = ""
+    qualified_name: str | None = None
 
 
 def index_workspace(
@@ -270,6 +271,10 @@ def _build_index(
     extra_files: dict[str, str] = {}
     for definition in existing_defs:
         name_to_keys.setdefault(definition.name, []).append(definition.key)
+        if definition.qualified_name and definition.qualified_name != definition.name:
+            qname_to_keys.setdefault(definition.qualified_name, []).append(
+                definition.key
+            )
         extra_kinds[definition.key] = definition.kind
         extra_files[definition.key] = definition.file_path
 

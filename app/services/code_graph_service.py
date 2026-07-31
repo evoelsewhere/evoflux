@@ -27,7 +27,7 @@ from sqlmodel import SQLModel, col, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import current_sqlite_path, sqlite_write_guard
-from app.models.chat import CodingWorkspace, _utcnow
+from app.models.chat import CodingProjectWorkspace, CodingWorkspace, _utcnow
 from app.models.code_graph import (
     CodeAmbiguousEdge,
     CodeEdge,
@@ -506,7 +506,13 @@ async def _reindex_incremental(
     ).all()
     # Unchanged files' nodes act as resolution targets for cross-file edges.
     existing_defs = [
-        ExistingDef(key=str(n.id), name=n.name, kind=n.kind, file_path=n.file_path)
+        ExistingDef(
+            key=str(n.id),
+            name=n.name,
+            kind=n.kind,
+            file_path=n.file_path,
+            qualified_name=n.qualified_name,
+        )
         for n in existing_nodes
         if n.file_path not in affected
     ]
@@ -783,6 +789,39 @@ async def get_index_status(db: AsyncSession, *, workspace_id: UUID) -> dict[str,
         "nodes": nodes,
         "edges": edges,
     }
+
+
+async def requires_project_graph_bootstrap(
+    db: AsyncSession, *, project_id: UUID, workspace_id: UUID
+) -> bool:
+    """Whether this workspace's graph predates its project membership.
+
+    Cross-repo candidates are materialized while indexing and are scoped to
+    projects the workspace belongs to at that moment.  Reusing a graph that
+    was built before the repo joined a project therefore leaves no candidates
+    for unchanged files.  The oldest per-file timestamp is the durable marker:
+    a full project-aware build refreshes every file after the membership row
+    was created, while an unrelated incremental edit refreshes only a subset.
+    """
+    joined_at = (
+        await db.exec(
+            select(CodingProjectWorkspace.created_at).where(
+                col(CodingProjectWorkspace.project_id) == project_id,
+                col(CodingProjectWorkspace.workspace_id) == workspace_id,
+            )
+        )
+    ).first()
+    if joined_at is None:
+        return False
+
+    oldest_indexed_at = (
+        await db.exec(
+            select(sa_func.min(CodeIndexState.indexed_at)).where(
+                col(CodeIndexState.workspace_id) == workspace_id
+            )
+        )
+    ).first()
+    return oldest_indexed_at is None or oldest_indexed_at < joined_at
 
 
 # Priority order for graph visualization: structural containers first, then

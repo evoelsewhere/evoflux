@@ -179,11 +179,11 @@ Agents are Markdown files with YAML frontmatter (`name`, `role`, `model`, `think
 
 Twenty-five tree-sitter parsers cover Python, TypeScript/TSX, JavaScript, Go, Rust, Java, C#, C, C++, Swift, Kotlin, PHP, Ruby, Scala, Dart, Objective-C, Lua, Luau, R, Pascal, Svelte, Vue, Astro, and Liquid.
 
-Indexing extracts symbols and typed edges — `calls`, `inherits`, `implements`, `imports`, and `references` — and links a reference only when it resolves unambiguously. Agents query symbols instead of repeatedly loading whole files.
+Indexing extracts symbols and typed edges — including `calls`, `inherits`, `implements`, `imports`, `references`, `overrides`, `reads`, and `writes` — and links a reference only when it resolves unambiguously. Incremental indexing follows file changes automatically; every graph query also performs a synchronous incremental freshness pass, including while background indexing is paused during an agent run.
 
 #### Cross-repository resolution
 
-A `CodingProject` can contain several repositories. Every graph tool accepts `scope="project"`, while three deterministic resolver tiers reconnect cross-repo references without an LLM call:
+A `CodingProject` can contain several repositories. Graph tools automatically use the active repository and its linked project when sibling lookup is needed; there is no model-facing scope argument. Three deterministic resolver tiers reconnect cross-repo references without an LLM call:
 
 1. Reattach a previously resolved edge.
 2. Match static manifests, identities, and Java fully qualified names.
@@ -196,18 +196,19 @@ A `CodingProject` can contain several repositories. Every graph tool accepts `sc
 <details>
   <summary><strong>Token-efficient code graph investigation</strong></summary>
   <br />
-  <p align="center">
-    <img src="documents/images/generated/code-graph-call-order.jpg" width="700" alt="Cheap-first code graph investigation order" />
-  </p>
 
-  Start with `code_overview`, locate with `code_search`, and inspect with `code_symbol`. Escalate to `code_references`, `code_neighbors`, or `code_path` only when the answer is still missing.
+  Coding mode preloads the `code-graph-navigation` skill for the Lead and every specialist, including custom agents. An agent can explicitly disable that default with `skills_opt_out: [code-graph-navigation]` in its Markdown frontmatter.
 
-  | Question | Preferred call | Typical saving |
-  |---|---|---:|
-  | Does this symbol exist, and where? | `code_search` before `code_symbol` | ~16× |
-  | How many callers does X have? | Built-in count from `code_symbol` | ~7.5× |
-  | What does X call? | `code_neighbors(..., edge_kind="calls")` | ~4× |
-  | How are A and B connected? | `code_path("A", "B")` | Focused structural route |
+  | Question | Current graph tool |
+  |---|---|
+  | What is indexed and which symbols are central? | `code_overview` |
+  | Does this symbol exist, and where? | `code_search` |
+  | Who calls/references X, and what does X depend on? | `code_graph` |
+  | How are A and B connected? | `code_path` |
+
+  Use graph tools first for indexed identifiers and structural relationships, then verify material findings in live source. Use `grep` for literals, comments, configuration keys, and prose; use LSP, tests, or runtime evidence where static resolution is insufficient.
+
+  The `/metrics` endpoint exposes graph-first versus fallback-first navigation turns, per-tool query count and latency, result-token volume, and estimated file-read/token savings. Saving estimates use a transparent baseline: each unique source location returned by the graph replaces one full-file read, with UTF-8 bytes divided by four as the token estimate.
 </details>
 
 ### Memory and Dream

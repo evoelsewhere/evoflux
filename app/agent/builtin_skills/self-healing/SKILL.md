@@ -164,6 +164,7 @@ Only these keys are valid. Reject any request to invent new ones.
 | `thinking_level` | a level advertised by the selected model, such as `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or `ultra` |
 | `tools` | extra tools layered on top of any built-in first-party profile tools: `web_search`, `web_fetch`, `date`, `read`, `write`, `edit`, `ls`, `grep`, `glob`, `rm`, `shell`, `bg`, `wiki_search`, plus `mcp_<server>_<tool>` entries from configured MCP servers. Never list `skill` or `team_message` — injected automatically. Lead-only tools (`note`, `schedule_task`, `todo_manage`) are also injected automatically. |
 | `skills` | optional explicit skill metadata/drift hooks; names of discovered skill directories (project/global EvoFlux, opencode-compatible, or bundled read-only skills). Do not use this as the normal skill-install wiring step. |
+| `skills_opt_out` | explicit mode-default skill opt-outs. In Coding mode, use `[code-graph-navigation]` only when this agent must not receive the default graph-first navigation guidance. |
 | `responses_api` | `true` to force OpenAI Responses API |
 
 Validation invariants to preserve:

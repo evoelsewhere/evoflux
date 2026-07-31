@@ -66,6 +66,7 @@ def test_agent_config_defaults():
     cfg = AgentConfig(name="bot")
     assert cfg.role == "member"
     assert cfg.tools == []
+    assert cfg.skills_opt_out == []
     assert cfg.description is None
     assert cfg.model is None
     assert cfg.system_prompt == ""
@@ -190,6 +191,13 @@ def test_default_tool_registry_keys():
         "memory_search",
     }
     assert expected.issubset(registry.keys())
+    assert {
+        "code_overview",
+        "code_search",
+        "code_graph",
+        "code_path",
+    }.issubset(registry)
+    assert {"code_symbol", "code_neighbors"}.isdisjoint(registry)
 
 
 def test_tier_tools_cover_default_registry():
@@ -529,6 +537,49 @@ def test_build_agent_skills_missing_skill_not_injected(tmp_path, monkeypatch):
     agent = _build_agent(cfg, {}, factory)
     # No valid skills → no hook attached, prompt unchanged
     assert agent.system_prompt == "Base prompt"
+
+
+def test_coding_mode_preloads_graph_navigation_for_lead_and_custom_member():
+    from app.agent.hooks.skill_preload import SkillPreloadHook
+
+    factory, _ = _make_provider_factory()
+    lead = _build_agent(
+        AgentConfig(name="lead", role="lead", system_prompt="Lead."),
+        {},
+        factory,
+        mode="coding",
+    )
+    custom = _build_agent(
+        AgentConfig(name="domain-specialist", system_prompt="Inspect code."),
+        {},
+        factory,
+        mode="coding",
+    )
+
+    for agent in (lead, custom):
+        assert "code-graph-navigation" in agent.skills
+        preload_hooks = [
+            hook for hook in agent.hooks if isinstance(hook, SkillPreloadHook)
+        ]
+        assert len(preload_hooks) == 1
+        assert "code-graph-navigation" in preload_hooks[0]._skills
+
+
+def test_coding_mode_graph_navigation_supports_explicit_opt_out():
+    from app.agent.hooks.skill_preload import SkillPreloadHook
+
+    factory, _ = _make_provider_factory()
+    cfg = AgentConfig(
+        name="isolated-reviewer",
+        role="member",
+        system_prompt="Use only supplied artifacts.",
+        skills=["code-graph-navigation"],
+        skills_opt_out=["code-graph-navigation"],
+    )
+    agent = _build_agent(cfg, {}, factory, mode="coding")
+
+    assert "code-graph-navigation" not in agent.skills
+    assert not any(isinstance(hook, SkillPreloadHook) for hook in agent.hooks)
 
 
 # ---------------------------------------------------------------------------

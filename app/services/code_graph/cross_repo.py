@@ -28,6 +28,7 @@ from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import func as sa_func
+from sqlalchemy import or_
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -70,6 +71,41 @@ METHOD_EMBEDDING = "embedding"
 # CrossRepoEdge rows with this value still deserialize/display correctly.
 METHOD_LLM = "llm"
 METHOD_LEXICAL = "lexical"
+
+
+async def invalidate_workspace_resolutions(
+    db: AsyncSession, *, workspace_id: UUID
+) -> int:
+    """Invalidate resolver-produced links affected by repo metadata changes.
+
+    Package identity, local path dependencies, and layout hints participate in
+    cross-repo matching.  When one of those files changes, a previously
+    resolved edge can become wrong even though both endpoint symbols still
+    exist.  Reset only active resolved rows involving the workspace; rejected
+    rows are user decisions and must remain untouched.  The next resolver pass
+    deterministically recomputes these links from their retained raw reference.
+    """
+    rows = (
+        await db.exec(
+            select(CrossRepoEdge).where(
+                col(CrossRepoEdge.status) == "resolved",
+                or_(
+                    col(CrossRepoEdge.src_workspace_id) == workspace_id,
+                    col(CrossRepoEdge.dst_workspace_id) == workspace_id,
+                ),
+            )
+        )
+    ).all()
+    for row in rows:
+        row.status = "unresolved"
+        row.method = None
+        row.confidence = None
+        row.rationale = None
+        row.dst_workspace_id = None
+        row.dst_node_id = None
+        row.dst_qualified_name = None
+        db.add(row)
+    return len(rows)
 
 
 @dataclass(frozen=True, slots=True)

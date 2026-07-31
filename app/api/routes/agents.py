@@ -128,6 +128,10 @@ def _effective_config(cfg: AgentConfig, *, mode: str) -> AgentConfig:
             data.skills = list(dict.fromkeys([*profile["skills"], *data.skills]))
             data.mcp = list(dict.fromkeys([*profile["mcp"], *data.mcp]))
 
+    from app.agent.config import apply_mode_skill_defaults
+
+    apply_mode_skill_defaults(data, mode=mode)
+
     # Mirror the loader's tier grant so the API shows the effective toolset:
     # implicit + tier grant first, then frontmatter extras — with lead_only
     # extras dropped for members exactly like ``_build_agent`` does.

@@ -41,6 +41,13 @@ class CrossRepoResolveJob:
     stats: dict | None = None
 
 
+@dataclass(slots=True)
+class _PendingResolve:
+    wait_for_workspaces: set[UUID]
+    # None means a full-project pass; sets can be safely unioned.
+    changed_workspaces: set[UUID] | None
+
+
 class CrossRepoResolveJobRegistry:
     """Tracks at most one running resolution job per project."""
 
@@ -48,6 +55,10 @@ class CrossRepoResolveJobRegistry:
         self._jobs: dict[str, CrossRepoResolveJob] = {}
         self._tasks: set[asyncio.Task[None]] = set()
         self._lock = asyncio.Lock()
+        # A save/reindex can finish while the current resolver pass is already
+        # reading candidates. Coalesce those requests into one guaranteed
+        # follow-up pass instead of silently dropping them as duplicates.
+        self._pending: dict[str, _PendingResolve] = {}
 
     async def start(
         self,
@@ -73,12 +84,30 @@ class CrossRepoResolveJobRegistry:
         redundant work when only some repos in a project have changed.
 
         Returns ``(job, started)``; ``started`` is ``False`` when a job was
-        already running for this project (the existing job is returned).
+        already running for this project. In that case the request is merged
+        into one follow-up pass and the existing job is returned.
         """
         key = str(project_id)
         async with self._lock:
             existing = self._jobs.get(key)
             if existing is not None and existing.status == "running":
+                pending = self._pending.get(key)
+                if pending is None:
+                    self._pending[key] = _PendingResolve(
+                        wait_for_workspaces=set(wait_for_workspaces or []),
+                        changed_workspaces=(
+                            None
+                            if changed_workspaces is None
+                            else set(changed_workspaces)
+                        ),
+                    )
+                else:
+                    pending.wait_for_workspaces.update(wait_for_workspaces or [])
+                    if changed_workspaces is None:
+                        pending.changed_workspaces = None
+                    elif pending.changed_workspaces is not None:
+                        pending.changed_workspaces.update(changed_workspaces)
+                existing.message = "Additional graph changes queued…"
                 return existing, False
             job = CrossRepoResolveJob(
                 project_id=key,
@@ -108,53 +137,70 @@ class CrossRepoResolveJobRegistry:
         changed_workspaces: set[UUID] | None = None,
     ) -> None:
         factory = resolve_db_factory(db_factory)
+        current_wait = set(wait_for_workspaces or [])
+        current_changed = changed_workspaces
         try:
-            if wait_for_workspaces:
+            while True:
                 job.phase = "indexing"
-                job.message = "Waiting for repos to finish indexing…"
-                while any(index_jobs.is_running(wid) for wid in wait_for_workspaces):
+                job.progress = 0.0
+                if current_wait:
+                    job.message = "Waiting for repos to finish indexing…"
+                while any(index_jobs.is_running(wid) for wid in current_wait):
                     await asyncio.sleep(0.5)
 
-            job.phase = "reattach"
-            job.progress = 0.0
-            job.message = "Re-attaching stale links…"
-            async with factory() as db:
-                stats: CrossRepoResolveStats = await resolve_project(
-                    db, project_id=project_id, changed_workspaces=changed_workspaces
+                job.phase = "reattach"
+                job.progress = 0.0
+                job.message = "Re-attaching stale links…"
+                async with factory() as db:
+                    stats: CrossRepoResolveStats = await resolve_project(
+                        db,
+                        project_id=project_id,
+                        changed_workspaces=current_changed,
+                    )
+
+                job.phase = "static"
+                job.progress = 0.33
+                job.message = f"{stats.static_resolved} resolved statically"
+                job.stats = asdict(stats)
+
+                job.phase = "lexical"
+                job.progress = 0.5
+                job.message = "Narrowing remaining references…"
+                async with factory() as db:
+                    tier_b = await resolve_project_tier_b(db, project_id=project_id)
+                merged = CrossRepoResolveStats(
+                    reattached=stats.reattached,
+                    static_resolved=stats.static_resolved,
+                    lexical_resolved=tier_b.lexical_resolved,
+                    still_unresolved=max(
+                        0,
+                        stats.still_unresolved - tier_b.lexical_resolved,
+                    ),
+                    capped=tier_b.capped,
+                )
+                job.stats = asdict(merged)
+                job.progress = 0.9
+                job.message = f"{tier_b.lexical_resolved} resolved by lexical match" + (
+                    f" ({tier_b.capped} deferred to next run)" if tier_b.capped else ""
                 )
 
-            job.phase = "static"
-            job.progress = 0.33
-            job.message = f"{stats.static_resolved} resolved statically"
-            job.stats = asdict(stats)
-
-            job.phase = "lexical"
-            job.progress = 0.5
-            job.message = "Narrowing remaining references…"
-            async with factory() as db:
-                tier_b = await resolve_project_tier_b(db, project_id=project_id)
-            merged = CrossRepoResolveStats(
-                reattached=stats.reattached,
-                static_resolved=stats.static_resolved,
-                lexical_resolved=tier_b.lexical_resolved,
-                still_unresolved=max(
-                    0,
-                    stats.still_unresolved - tier_b.lexical_resolved,
-                ),
-                capped=tier_b.capped,
-            )
-            job.stats = asdict(merged)
-            job.progress = 0.9
-            job.message = f"{tier_b.lexical_resolved} resolved by lexical match" + (
-                f" ({tier_b.capped} deferred to next run)" if tier_b.capped else ""
-            )
-
-            job.status = "done"
-            job.phase = "done"
-            job.progress = 1.0
-            job.message = ""
-            job.error = None
+                # Coordinate with start() under the same lock: either consume
+                # every request queued during this pass, or mark done before a
+                # new caller can observe the job as still running.
+                async with self._lock:
+                    pending = self._pending.pop(str(project_id), None)
+                    if pending is None:
+                        job.status = "done"
+                        job.phase = "done"
+                        job.progress = 1.0
+                        job.message = ""
+                        job.error = None
+                        break
+                    current_wait = pending.wait_for_workspaces
+                    current_changed = pending.changed_workspaces
         except Exception as exc:  # noqa: BLE001 — surfaced to the UI via status
+            async with self._lock:
+                self._pending.pop(str(project_id), None)
             job.status = "error"
             job.error = str(exc)
             logger.exception("cross_repo resolve job failed project={}", job.project_id)

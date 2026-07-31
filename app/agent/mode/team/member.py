@@ -33,6 +33,7 @@ from app.agent.execution_policy import resolve_execution_policy
 from app.agent.checkpointer import SQLiteCheckpointer
 from app.agent.drift import detect_drift, stamp_agent_files
 from app.agent.hooks.base import BaseAgentHook
+from app.agent.hooks.code_navigation_telemetry import CodeNavigationTelemetryHook
 from app.agent.hooks.continuation import ContinuationHook
 from app.agent.hooks.dynamic_prompt import inject_current_date
 from app.agent.hooks.memory_context import default_memory_context_hook
@@ -1208,6 +1209,8 @@ class TeamMemberBase(abc.ABC):
             publisher_hook,
             otel_hook,
         ]
+        if self._team.mode == "coding":
+            hooks.append(CodeNavigationTelemetryHook())
         # Splice user-queued messages into the running turn — lead only, since
         # the user-facing queue lives on the lead's session.  Must precede
         # summarization so a freshly-injected message participates in window

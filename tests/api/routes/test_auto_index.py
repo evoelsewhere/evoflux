@@ -22,6 +22,15 @@ class _FakeJobs:
         return object(), True
 
 
+class _FakeCrossRepoJobs:
+    def __init__(self) -> None:
+        self.started: list[tuple] = []
+
+    async def start(self, *, project_id, wait_for_workspaces):
+        self.started.append((project_id, wait_for_workspaces))
+        return object(), True
+
+
 @pytest.fixture
 def fake_jobs(monkeypatch):
     from app.services.code_graph import jobs as jobs_mod
@@ -118,3 +127,58 @@ async def test_dedupes_paths_and_never_raises(monkeypatch, fake_jobs):
 
     monkeypatch.setattr(svc, "resolve_workspace_id", _boom)
     await _kick_auto_index(None, ["/repo/b"])  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_project_auto_index_chains_cross_repo_resolution(monkeypatch, fake_jobs):
+    from app.services import code_graph_service as svc
+    from app.services.code_graph import cross_repo_jobs as cross_jobs_module
+
+    project_id = uuid4()
+    workspace_ids = {"/repo/a": uuid4(), "/repo/b": uuid4()}
+    cross_jobs = _FakeCrossRepoJobs()
+
+    async def _resolve(db, *, path):
+        return workspace_ids[path]
+
+    async def _status(db, *, workspace_id):
+        return {"files": 0, "nodes": 0, "edges": 0}
+
+    monkeypatch.setattr(svc, "resolve_workspace_id", _resolve)
+    monkeypatch.setattr(svc, "get_index_status", _status)
+    monkeypatch.setattr(cross_jobs_module, "cross_repo_jobs", cross_jobs)
+
+    await _kick_auto_index(None, ["/repo/a", "/repo/b"], project_id=project_id)
+
+    assert len(fake_jobs.started) == 2
+    assert cross_jobs.started == [(project_id, list(workspace_ids.values()))]
+
+
+@pytest.mark.asyncio
+async def test_project_rebuilds_index_that_predates_membership(monkeypatch, fake_jobs):
+    from app.services import code_graph_service as svc
+    from app.services.code_graph import cross_repo_jobs as cross_jobs_module
+
+    project_id = uuid4()
+    workspace_ids = {"/repo/a": uuid4(), "/repo/b": uuid4()}
+    cross_jobs = _FakeCrossRepoJobs()
+
+    async def _resolve(db, *, path):
+        return workspace_ids[path]
+
+    async def _status(db, *, workspace_id):
+        return {"files": 4, "nodes": 10, "edges": 5}
+
+    async def _needs_bootstrap(db, *, project_id, workspace_id):
+        return True
+
+    monkeypatch.setattr(svc, "resolve_workspace_id", _resolve)
+    monkeypatch.setattr(svc, "get_index_status", _status)
+    monkeypatch.setattr(svc, "requires_project_graph_bootstrap", _needs_bootstrap)
+    monkeypatch.setattr(cross_jobs_module, "cross_repo_jobs", cross_jobs)
+
+    await _kick_auto_index(None, ["/repo/a", "/repo/b"], project_id=project_id)
+
+    assert len(fake_jobs.started) == 2
+    assert all(full is True for _, _, _, full in fake_jobs.started)
+    assert len(cross_jobs.started) == 1
