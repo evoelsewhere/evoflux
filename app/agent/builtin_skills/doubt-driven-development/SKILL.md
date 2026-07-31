@@ -158,7 +158,7 @@ Surface the failure explicitly. Offer: run it manually, try a different tool, or
 
 Acknowledge the skip in the output (*"Proceeding with single-model findings only"*) and continue to RECONCILE. Skipping is fine; silent skipping is not.
 
-**Non-interactive contexts** (CI, `/loop`, autonomous-loop, scheduled runs):
+**Non-interactive contexts** (CI, Goal mode, scheduled runs):
 
 - Cross-model is **skipped**, and the skip must be **announced** in the output: *"Cross-model skipped: non-interactive context."*
 - **Never invoke an external CLI without explicit user authorization** — this is a load-bearing safety property.

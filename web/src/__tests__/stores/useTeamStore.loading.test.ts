@@ -75,3 +75,49 @@ describe('useTeamStore request coalescing', () => {
     expect(apiMocks.listTeamAgents).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('useTeamStore goal state', () => {
+  const goal = {
+    session_id: 'session-1',
+    objective: 'Finish the migration',
+    status: 'active' as const,
+    token_budget: 20_000,
+    tokens_used: 400,
+    time_used_seconds: 12,
+    pause_reason: null,
+    blocker_streak: 0,
+    status_details: null,
+    version: 1,
+    created_at: '2026-07-31T00:00:00Z',
+    updated_at: '2026-07-31T00:00:12Z',
+    completed_at: null,
+  }
+
+  it('restores a durable goal from session history', async () => {
+    apiMocks.teamHistory.mockResolvedValue({
+      lead: {
+        id: 'session-1',
+        agent_name: 'lead',
+        messages: [],
+        running: false,
+      },
+      members: [],
+      goal,
+      has_more: false,
+      next_cursor: null,
+    })
+
+    useTeamStore.getState().beginResolvedSession('session-1', { mode: 'work' })
+    await useTeamStore.getState().loadSession('session-1', null, null)
+
+    expect(useTeamStore.getState().activeGoal).toEqual(goal)
+  })
+
+  it('applies and clears goal snapshots from SSE', () => {
+    useTeamStore.getState()._handleSSEEvent('goal_status', { goal })
+    expect(useTeamStore.getState().activeGoal).toEqual(goal)
+
+    useTeamStore.getState()._handleSSEEvent('goal_status', { goal: null })
+    expect(useTeamStore.getState().activeGoal).toBeNull()
+  })
+})

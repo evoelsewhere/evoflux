@@ -456,12 +456,12 @@ class TestTeamChatRoute:
         test_team._activate_queued_user_messages.assert_not_awaited()
 
     @pytest.mark.parametrize(
-        "command", ["/loop:set 5", "/loop:pause", "/loop:resume", "/loop:stop"]
+        "command", ["/loop old objective", "/loop:set 5", "/loop:pause"]
     )
-    def test_team_chat_loop_control_bypasses_queue_while_turn_active(
+    def test_team_chat_rejects_removed_loop_namespace(
         self, app_with_team, test_team, command
     ):
-        """Loop subcommands must take effect immediately while a turn runs."""
+        """Old commands must not leak through as ordinary user prompts."""
         session_id = str(uuid.uuid7())
         test_team.mode = "coding"
         test_team._has_active_turn = True
@@ -482,10 +482,54 @@ class TestTeamChatRoute:
         finally:
             test_team._has_active_turn = False
 
+        assert response.status_code == 410
+        assert response.json()["detail"] == (
+            "/loop has been removed. Use /goal <objective> instead."
+        )
+        test_team.handle_user_message.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "/goal",
+            "/goal:pause",
+            "/goal:resume",
+            "/goal:budget 25000",
+            "/goal:stop",
+        ],
+    )
+    def test_team_chat_goal_control_bypasses_queue_while_turn_active(
+        self,
+        app_with_team,
+        test_team,
+        command,
+    ):
+        session_id = str(uuid.uuid7())
+        test_team._has_active_turn = True
+        test_team.handle_user_message = AsyncMock(return_value=session_id)
+
+        client = TestClient(app_with_team)
+        try:
+            response = client.post(
+                "/api/team/chat",
+                data={"message": command, "session_id": session_id},
+            )
+        finally:
+            test_team._has_active_turn = False
+
         assert response.status_code == 202
-        assert response.json()["status"] == "accepted"
         test_team.handle_user_message.assert_awaited_once()
-        assert test_team.handle_user_message.call_args.kwargs["content"] == command
+
+    def test_team_chat_rejects_invalid_goal_command(self, app_with_team):
+        client = TestClient(app_with_team)
+
+        response = client.post(
+            "/api/team/chat",
+            data={"message": "/goal:set legacy alias"},
+        )
+
+        assert response.status_code == 422
+        assert "Invalid /goal command" in response.json()["detail"]
 
     def test_team_chat_queued_message_persists_mention_attachments(
         self, app_with_team, test_team

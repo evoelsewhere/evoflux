@@ -175,6 +175,18 @@ The model is replaceable. The harness — context, action, policy, verification,
 
 Agents are Markdown files with YAML frontmatter (`name`, `role`, `model`, `thinking_level`), making teams readable, diffable, and versionable. A team has one Lead and any number of on-demand members. Multiple instances of the same blueprint can work in parallel without becoming always-on background processes.
 
+### Durable Goal mode
+
+Start an autonomous objective in any mode with `/goal <objective>`. Goal state,
+elapsed time, token usage, and an optional token budget survive reconnects and
+app restarts. The team continues through hidden internal turns until the Lead
+records completion, the budget pauses execution, the user pauses it, or the
+same concrete blocker is reported three turns in a row. Goal mode never expands
+the session's permissions or sandbox scope.
+
+Use `/goal` to inspect status, `/goal:budget <tokens|none>` to change the budget,
+and `/goal:pause`, `/goal:resume`, or `/goal:stop` to control the objective.
+
 ### Structural code knowledge graph
 
 Twenty-five tree-sitter parsers cover Python, TypeScript/TSX, JavaScript, Go, Rust, Java, C#, C, C++, Swift, Kotlin, PHP, Ruby, Scala, Dart, Objective-C, Lua, Luau, R, Pascal, Svelte, Vue, Astro, and Liquid.

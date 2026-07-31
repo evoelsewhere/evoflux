@@ -49,6 +49,7 @@ class _TurnState:
         "agent_errors",
         "summarization",
         "usage",
+        "goal_status",
         "error",
         "agent_not_configured",
         "browser_session",
@@ -80,6 +81,9 @@ class _TurnState:
         # stored as DB rows and rehydrated separately on session load.
         self.summarization: dict[str, dict[str, Any]] = {}
         self.usage: dict | None = None
+        # Latest durable goal snapshot. Preserve it across hidden goal turns so
+        # an SSE reconnect between model calls can rebuild the progress row.
+        self.goal_status: dict[str, Any] | None = None
         self.error: str | None = None
         self.agent_not_configured: dict[str, Any] | None = None
         # Latest browser session state for reconnect replay.  Updated on
@@ -220,6 +224,9 @@ async def push_event(session_id: str, envelope: StreamEnvelope) -> None:
 
         elif event_type == "usage":
             state.usage = data
+
+        elif event_type == "goal_status":
+            state.goal_status = data
 
         elif event_type == "error":
             state.error = data.get("message", "error")
@@ -476,6 +483,11 @@ async def attach(session_id: str) -> AsyncGenerator[dict[str, str], None]:
             if state.agent_not_configured is not None:
                 yield StreamEnvelope.from_event(
                     AgentNotConfiguredEvent.model_validate(state.agent_not_configured)
+                ).to_wire()
+
+            if state.goal_status is not None:
+                yield StreamEnvelope.from_parts(
+                    event="goal_status", data=state.goal_status
                 ).to_wire()
 
             # Me replay summarisation state so a mid-compaction reconnect

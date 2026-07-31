@@ -1,4 +1,4 @@
-import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending, PermissionRequestPending, AskUserQuestionPending, TurnChangesPending } from '@/api/types'
+import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending, PermissionRequestPending, AskUserQuestionPending, TurnChangesPending, GoalResponse } from '@/api/types'
 
 export interface PendingMessage {
   id: string
@@ -55,14 +55,6 @@ export interface AgentStream {
   _revertedSuffix?: ContentBlock[]
 }
 
-export interface ActiveLoop {
-  prompt: string | null
-  limit: number
-  remaining: number
-  used: number
-  paused: boolean
-}
-
 export interface ActiveWorkflowExecution {
   executionId: string
   definitionName: string
@@ -109,7 +101,7 @@ export interface TeamStoreState {
   /** True while ``loadSession`` is fetching history for the current session. */
   isSessionLoading: boolean
   error: string | null
-  activeLoop: ActiveLoop | null
+  activeGoal: GoalResponse | null
   activeWorkflowExecution: ActiveWorkflowExecution | null
   setupRequired: SetupRequiredNotice | null
   browserSession: BrowserSessionInfo | null
@@ -139,7 +131,7 @@ export interface TeamStoreActions {
   compactTeam: () => Promise<void>
   undoTeam: () => Promise<TeamCommandResponse | undefined>
   redoTeam: () => Promise<void>
-  sendLoopCommand: (command: string, prompt?: string, options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean }) => Promise<void>
+  sendGoalCommand: (command: string, objective?: string, options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean }) => Promise<void>
   stopTeam: () => Promise<void>
   connectStream: () => AbortController
   loadTeamStatus: (
