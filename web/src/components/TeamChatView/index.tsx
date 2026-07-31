@@ -433,6 +433,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const activeStatus        = useTeamStore((s) => s.activeAgent ? s.agentStreams[s.activeAgent]?.status : undefined)
   const activeLastError     = useTeamStore((s) => s.activeAgent ? s.agentStreams[s.activeAgent]?.lastError : undefined)
   const hasActiveStream     = useTeamStore((s) => Boolean(s.activeAgent && s.agentStreams[s.activeAgent]))
+  const activeGoal          = useTeamStore((s) => s.activeGoal)
 
   // Per-purpose narrowed subscriptions — the full ``agentStreams`` map gets a
   // new reference on every streamed token, so subscribing to it wholesale
@@ -1022,12 +1023,14 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     snippetCommands,
     handleSlashCommand,
     handleSnippetCommand,
+    tryHandleBuiltinGoalCommand,
     tryHandleBuiltinLoopCommand,
     tryHandleWorkflowCommand,
     expandUserCommand,
     startWorkflowRun,
     runInputsRequest,
     setRunInputsRequest,
+    runGoalCommand,
   } = useSlashCommandRegistry({
     mode,
     workspace,
@@ -1473,6 +1476,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         return true
       }
     }
+    if (await tryHandleBuiltinGoalCommand(content)) return true
     if (await tryHandleWorkflowCommand(content)) return true
     if (mode === 'coding' && (await tryHandleBuiltinLoopCommand(content))) return true
     const shell = content.startsWith('!')
@@ -1496,6 +1500,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     selectedModel,
     selectedThinkingLevel,
     sendMessage,
+    tryHandleBuiltinGoalCommand,
     tryHandleBuiltinLoopCommand,
     tryHandleWorkflowCommand,
     webBridgeEnabled,
@@ -1755,6 +1760,8 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             boundsRef={mainColumnRef}
             onSubmit={handleComposerSubmit}
             onStop={() => useTeamStore.getState().stopTeam()}
+            goal={activeGoal}
+            onGoalCommand={(command) => { void runGoalCommand(command) }}
             onSlashCommand={(id) => {
               if (id === 'btw') {
                 openWorkbenchTool('side-chat')

@@ -1,4 +1,4 @@
-import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending, PermissionRequestPending, AskUserQuestionPending, TurnChangesPending } from '@/api/types'
+import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending, PermissionRequestPending, AskUserQuestionPending, TurnChangesPending, GoalResponse } from '@/api/types'
 
 export interface PendingMessage {
   id: string
@@ -110,6 +110,7 @@ export interface TeamStoreState {
   isSessionLoading: boolean
   error: string | null
   activeLoop: ActiveLoop | null
+  activeGoal: GoalResponse | null
   activeWorkflowExecution: ActiveWorkflowExecution | null
   setupRequired: SetupRequiredNotice | null
   browserSession: BrowserSessionInfo | null
@@ -140,6 +141,7 @@ export interface TeamStoreActions {
   undoTeam: () => Promise<TeamCommandResponse | undefined>
   redoTeam: () => Promise<void>
   sendLoopCommand: (command: string, prompt?: string, options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean }) => Promise<void>
+  sendGoalCommand: (command: string, objective?: string, options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean }) => Promise<void>
   stopTeam: () => Promise<void>
   connectStream: () => AbortController
   loadTeamStatus: (

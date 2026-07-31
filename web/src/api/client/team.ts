@@ -43,6 +43,7 @@ import type {
   WebBridgeAuditResponse,
   WebBridgeTeachDraft,
   WebBridgeTeachDraftReplayResponse,
+  GoalResponse,
 } from '../types'
 
 export async function postTeamChat(
@@ -107,6 +108,12 @@ export async function postTeamChat(
       : body?.detail
     throw new Error(detail || `POST /team/chat failed: ${res.status}`)
   }
+  return res.json()
+}
+
+export async function getTeamGoal(sessionId: string): Promise<GoalResponse | null> {
+  const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/goal`)
+  if (!res.ok) await parseDetailOrThrow(res, `GET /team/${sessionId}/goal`)
   return res.json()
 }
 
