@@ -30,6 +30,54 @@ class TestSkillAutoRoutingHook:
     """Tests for the SkillAutoRoutingHook class."""
 
     @pytest.mark.asyncio
+    async def test_explicit_skill_directive_loads_selected_skill(self):
+        hook = SkillAutoRoutingHook()
+        # A matching trigger for another skill must not override an explicit
+        # composer choice.
+        hook._trigger_data = {"other-skill": ["test"]}
+        state = _make_state(
+            [HumanMessage(content="/skill:pptx Test this presentation")]
+        )
+
+        await hook.before_agent(_make_ctx(), state)
+
+        assert set(state.metadata.get("loaded_skills", {})) == {"pptx"}
+        assert len(state.messages) == 3
+        assistant = state.messages[1]
+        assert isinstance(assistant, AssistantMessage)
+        assert assistant.tool_calls is not None
+        assert assistant.tool_calls[0].id.startswith("explicit_")
+        assert assistant.tool_calls[0].function.arguments == ('{"skill_name": "pptx"}')
+        assert isinstance(state.messages[2], ToolMessage)
+        assert state.messages[2].content
+
+    @pytest.mark.asyncio
+    async def test_explicit_skill_directive_after_quote_context(self):
+        hook = SkillAutoRoutingHook()
+        state = _make_state(
+            [
+                HumanMessage(content="Earlier request"),
+                AssistantMessage(content="Earlier response"),
+                HumanMessage(content="> quoted\n\n/skill:docx Draft a report"),
+            ]
+        )
+
+        await hook.before_agent(_make_ctx(), state)
+
+        assert set(state.metadata.get("loaded_skills", {})) == {"docx"}
+        assert isinstance(state.messages[2], HumanMessage)
+        assert isinstance(state.messages[3], AssistantMessage)
+        assert isinstance(state.messages[4], ToolMessage)
+
+    def test_explicit_nested_skill_selector_uses_settings_notation(self):
+        discovered = {"git/commit": {"dir": "/tmp/git/commit"}}
+
+        assert (
+            SkillAutoRoutingHook._resolve_explicit_skill_name("git:commit", discovered)
+            == "git/commit"
+        )
+
+    @pytest.mark.asyncio
     async def test_pptx_intent_outranks_generic_technical_verbs(self):
         """A slide request should not route by incidental design/test verbs."""
         hook = SkillAutoRoutingHook()

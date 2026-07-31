@@ -29,6 +29,7 @@ import { downloadWorkspaceFile } from '@/lib/workspace-download'
 import { useWorkspaceFilesQuery } from '@/queries'
 import { extractSleepPrefix, formatTime } from '@/utils/format'
 import { findCommittedMentions } from './InputBar.mentions'
+import { findSkillDirectives } from './InputBar.skills'
 import { resolveApiUrl } from '@/api/client'
 import type { ContentBlock, MessageAttachment, WorkspaceFileInfo } from '@/api/types'
 
@@ -96,7 +97,8 @@ function shortModelName(modelId: string | null | undefined): string | null {
 }
 
 /**
- * Render user prose with ``@mention`` tokens syntax-highlighted.
+ * Render user prose with ``@mention`` and ``/skill:<name>`` tokens
+ * syntax-highlighted.
  *
  * Matches the InputBar's overlay convention so a message looks the same
  * after send as it did while composing:
@@ -110,17 +112,39 @@ function shortModelName(modelId: string | null | undefined): string | null {
  * detection — same code path the overlay relies on.
  */
 function renderMentionSegments(content: string): React.ReactNode[] {
-  const ranges = findCommittedMentions(content, null)
+  const ranges = [
+    ...findCommittedMentions(content, null).map((range) => ({
+      ...range,
+      kind: 'mention' as const,
+    })),
+    ...findSkillDirectives(content).map((range) => ({
+      ...range,
+      kind: 'skill' as const,
+    })),
+  ].sort((a, b) => a.start - b.start)
   if (ranges.length === 0) return [content]
   const out: React.ReactNode[] = []
   let cursor = 0
   for (const r of ranges) {
     if (r.start > cursor) out.push(content.slice(cursor, r.start))
     const token = content.slice(r.start, r.end)
+    if (r.kind === 'skill') {
+      out.push(
+        <span
+          key={`skill-${r.start}`}
+          data-testid="skill-chip"
+          className="bg-(--color-accent)/15 font-semibold text-(--color-accent)"
+        >
+          {token}
+        </span>,
+      )
+      cursor = r.end
+      continue
+    }
     const isFolder = token.endsWith('/')
     out.push(
       <span
-        key={r.start}
+        key={`mention-${r.start}`}
         data-mention-kind={isFolder ? 'directory' : 'file'}
         className={
           isFolder ? 'text-(--accent-orange-text)' : 'text-(--accent-blue-text)'
