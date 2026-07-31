@@ -39,8 +39,8 @@ import type { Chapter, ContentBlock } from '@/api/types'
 const SCROLL_THRESHOLD = 40
 const USER_SCROLL_DETACH_DELTA = 4
 const LOAD_OLDER_THRESHOLD = 300
-const INITIAL_RENDERED_TURNS = 80
-const TURN_RENDER_STEP = 80
+const INITIAL_RENDERED_TURNS = 48
+const TURN_RENDER_STEP = 48
 
 interface AgentViewProps {
   /** Finalized blocks from previous turns. */
@@ -71,11 +71,14 @@ interface AgentViewProps {
 
 export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, chapters, onAddSelectionToChat, onRequestSelectionDetails, onSendToSideChat }: AgentViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
+  const showScrollBtnRef = useRef(false)
   const [renderedTurnCount, setRenderedTurnCount] = useState(INITIAL_RENDERED_TURNS)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
   const prevScrollHeightRef = useRef<number | null>(null)
+  const pendingRestoreRef = useRef(false)
   // Me mirror store _loadingOlder in a ref so the wheel handler can check
   // it synchronously without subscribing to store state changes.
   const loadingOlderRef = useRef(false)
@@ -194,36 +197,40 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     return el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_THRESHOLD
   }, [])
 
+  const setScrollButtonVisible = useCallback((visible: boolean) => {
+    if (showScrollBtnRef.current === visible) return
+    showScrollBtnRef.current = visible
+    setShowScrollBtn(visible)
+  }, [])
+
   const scrollToBottom = useCallback((smooth = false) => {
     const el = scrollRef.current
     if (!el) return
     pinnedRef.current = true
-    setShowScrollBtn(false)
+    setScrollButtonVisible(false)
     if (smooth) {
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
     } else {
       el.scrollTop = el.scrollHeight
     }
-  }, [])
+  }, [setScrollButtonVisible])
 
   // Me track scroll position and reveal/fetch older history near the top.
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
     let lastScrollTop = el.scrollTop
+    let scrollFrame: number | null = null
+    let topLoadArmed = true
     const updatePinnedFromPosition = () => {
+      scrollFrame = null
       const atBottom = isAtBottom()
       pinnedRef.current = atBottom
-      // Me: only flip state when the boolean actually changes. Calling
-      // setState with the current value on every scroll tick still
-      // schedules a re-render, which cascades through MarkdownBlock /
-      // ReactMarkdown and was enough to re-mount inline ``<video>``
-      // elements mid-playback (flicker).
-      setShowScrollBtn((prev) => (prev === !atBottom ? prev : !atBottom))
+      setScrollButtonVisible(!atBottom)
     }
     const detachFromBottom = () => {
       pinnedRef.current = false
-      setShowScrollBtn(true)
+      setScrollButtonVisible(true)
     }
     const onScroll = () => {
       const nextScrollTop = el.scrollTop
@@ -235,7 +242,10 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
       // rAF. Multiple scroll events can fire before a single rAF executes, so
       // if the guard lived inside rAF all queued callbacks would see the flag
       // as false and fire duplicate requests.
-      if (el.scrollTop <= LOAD_OLDER_THRESHOLD) {
+      if (el.scrollTop > LOAD_OLDER_THRESHOLD * 2) {
+        topLoadArmed = true
+      } else if (el.scrollTop <= LOAD_OLDER_THRESHOLD && topLoadArmed) {
+        topLoadArmed = false
         if (hiddenTurnCount > 0) {
           showEarlierTurns()
         } else if (useTeamStore.getState().hasMore && !loadingOlderRef.current) {
@@ -248,7 +258,9 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
         }
       }
 
-      requestAnimationFrame(updatePinnedFromPosition)
+      if (scrollFrame === null) {
+        scrollFrame = requestAnimationFrame(updatePinnedFromPosition)
+      }
     }
     const onWheel = (e: WheelEvent) => {
       if (e.deltaY < -USER_SCROLL_DETACH_DELTA) detachFromBottom()
@@ -256,16 +268,16 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     el.addEventListener('scroll', onScroll, { passive: true })
     el.addEventListener('wheel', onWheel, { passive: true })
     return () => {
+      if (scrollFrame !== null) cancelAnimationFrame(scrollFrame)
       el.removeEventListener('scroll', onScroll)
       el.removeEventListener('wheel', onWheel)
     }
-  }, [hiddenTurnCount, isAtBottom, showEarlierTurns])
+  }, [hiddenTurnCount, isAtBottom, setScrollButtonVisible, showEarlierTurns])
 
   // Me restore scroll position after older messages are prepended.
   // We track a "pending restore" flag separately from blocks.length so
   // that SSE flushes (which also grow blocks) never accidentally trigger
   // a scroll-position restore.
-  const pendingRestoreRef = useRef(false)
   useEffect(() => {
     const el = scrollRef.current
     if (!el || !pendingRestoreRef.current || prevScrollHeightRef.current === null) return
@@ -274,28 +286,40 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     prevScrollHeightRef.current = null
   }, [blocks.length, renderedTurnCount])
 
-  // Me single scroll effect — block count or last block text changed
-  const lastContent =
-    currentBlocks[currentBlocks.length - 1]?.content ??
-    blocks[blocks.length - 1]?.content ??
-    ''
+  // Follow the actual rendered transcript height instead of raw SSE chunks.
+  // ResizeObserver is paint-coalesced, so the viewport moves on the same
+  // cadence as the streaming Markdown reveal and no longer jitters ahead.
   useEffect(() => {
-    if (pinnedRef.current) scrollToBottom()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalLen, lastContent])
+    const content = contentRef.current
+    if (!content || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      const el = scrollRef.current
+      if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [])
+
+  // New blocks may mount without changing the wrapper's measured height
+  // immediately; keep a synchronous fallback for that structural update.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
+  }, [totalLen])
 
   const isEmpty = visibleCount === 0 && !isWorking
   useEffect(() => {
     if (!isEmpty) return
     pinnedRef.current = true
-    setShowScrollBtn(false)
     if (scrollRef.current) scrollRef.current.scrollTop = 0
-  }, [isEmpty])
+    const frame = requestAnimationFrame(() => setScrollButtonVisible(false))
+    return () => cancelAnimationFrame(frame)
+  }, [isEmpty, setScrollButtonVisible])
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-    <div ref={scrollRef} className="flex-1 overflow-y-auto">
-      <div className={`mx-auto max-w-4xl px-3 py-4 ${chapterByMessageId.size > 0 ? 'lg:pl-14' : ''}`}>
+    <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain">
+      <div ref={contentRef} className={`mx-auto max-w-4xl px-3 py-4 ${chapterByMessageId.size > 0 ? 'lg:pl-14' : ''}`}>
         {isEmpty && (
            emptyState ?? <ChatWelcome />
          )}
@@ -319,7 +343,11 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                  if (item.kind === 'user') {
                    const chapter = chapterByMessageId.get(item.block.id)
                    return (
-                     <div key={item.block.id} data-chapter-anchor={item.block.id}>
+                     <div
+                       key={item.block.id}
+                       className="oa-transcript-turn"
+                       data-chapter-anchor={item.block.id}
+                     >
                        {chapter && (
                          <div className="mb-3 flex items-center gap-2 text-xs text-(--color-text-muted)">
                            <div className="h-px flex-1 bg-(--color-border)" />
@@ -346,7 +374,10 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                   // Map blockId → absolute index for streaming detection inside groups
                   const blockAbsIdx = new Map(item.blocks.map((b, j) => [b.id, item.startIndex + j]))
                  return (
-                   <div key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}>
+                   <div
+                     key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}
+                     className={turnIsStreaming ? undefined : 'oa-transcript-turn'}
+                   >
                      <div className="space-y-2">
                        {groupedBlocks.map((renderItem, j) => {
                          if ('kind' in renderItem && (renderItem as ToolBlockGroup).kind === 'group') {
@@ -362,7 +393,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                          const absIdx = blockAbsIdx.get(block.id) ?? item.startIndex + j
                          const isStreaming = isWorking && absIdx >= blocks.length
                          return (
-                           <BlockEnter key={block.id}>
+                           <BlockEnter key={block.id} disabled={isStreaming && block.type === 'text'}>
                              <BlockRenderer
                                block={block}
                                isStreaming={isStreaming}

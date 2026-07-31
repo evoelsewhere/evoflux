@@ -37,6 +37,7 @@ export interface TodosListProps {
   headerClassName?: string
   listClassName?: string
   emptyClassName?: string
+  compact?: boolean
   onClose?: () => void
 }
 
@@ -46,6 +47,7 @@ export function TodosList({
   headerClassName,
   listClassName,
   emptyClassName,
+  compact = false,
   onClose,
 }: TodosListProps) {
   const preset = useMotionPreset()
@@ -117,30 +119,41 @@ export function TodosList({
                 initial={enter.initial}
                 animate={enter.animate}
                 transition={{ ...enter.transition, delay: staggerDelay(preset, index) }}
-                className="flex items-start gap-2.5 px-3 py-1.5"
+                className={cn(
+                  'flex items-start',
+                  compact ? 'gap-2 px-2.5 py-1' : 'gap-2.5 px-3 py-1.5',
+                )}
               >
                 <Icon
-                  size={14}
+                  size={compact ? 12 : 14}
                   aria-hidden="true"
-                  className={`mt-0.5 shrink-0 ${STATUS_ICON_COLOR[todo.status]} ${
+                  className={`${compact ? 'mt-px' : 'mt-0.5'} shrink-0 ${STATUS_ICON_COLOR[todo.status]} ${
                     isInProgress ? 'animate-pulse' : ''
                   }`}
                 />
                 <span
-                  className={`min-w-0 flex-1 text-xs leading-snug ${
+                  className={cn(
+                    'min-w-0 flex-1',
+                    compact ? 'text-[11px] leading-[1.3]' : 'text-xs leading-snug',
                     isStruck
                       ? 'text-(--color-text-subtle) line-through'
-                      : 'text-(--color-text)'
-                  }`}
+                      : 'text-(--color-text)',
+                  )}
                 >
                   {todo.content}
                 </span>
                 {todo.tier && !isStruck && (
-                  <TierBadge tier={todo.tier} className="mt-0.5" />
+                  <TierBadge
+                    tier={todo.tier}
+                    className={compact ? 'mt-px scale-90' : 'mt-0.5'}
+                  />
                 )}
                 {agent && (
                   <span
-                    className="mt-0.5 shrink-0 font-mono text-xs uppercase tracking-wide text-(--color-text-subtle)"
+                    className={cn(
+                      'shrink-0 font-mono uppercase tracking-wide text-(--color-text-subtle)',
+                      compact ? 'mt-px max-w-20 truncate text-[10px]' : 'mt-0.5 text-xs',
+                    )}
                     title={`Assigned to ${agent}`}
                   >
                     {agent}

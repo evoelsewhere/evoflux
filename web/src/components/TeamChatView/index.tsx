@@ -25,7 +25,16 @@
  * (one primitive per ``useTeamStore`` call) to avoid the infinite loop
  * that returning a freshly-built object on every render would trigger.
  */
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import {
+  lazy,
+  startTransition,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { AgentView } from '../AgentView'
@@ -78,6 +87,8 @@ import { useTeamSse } from './useTeamSse'
 import { useSlashCommandRegistry } from './useSlashCommandRegistry'
 import { useMobileEdgeSwipes } from './useMobileEdgeSwipes'
 import { VIEW_MODES, type ViewMode } from './types'
+import { shouldStartAutomaticSplit } from './auto-layout'
+import { AutomaticSplitTransition } from './AutomaticSplitTransition'
 import { codingFocusId, saveLastCodingWorkspace, workspaceLabel } from '@/utils/workspace'
 import { setTraySession } from '@/lib/tray'
 import { queryKeys } from '@/queries/keys'
@@ -107,9 +118,9 @@ const GitWorkspacePanel = lazy(() =>
     default: module.GitWorkspacePanel,
   })),
 )
-const MonitorView = lazy(() =>
-  import('../MonitorView').then((module) => ({ default: module.MonitorView })),
-)
+const loadMonitorView = () =>
+  import('../MonitorView').then((module) => ({ default: module.MonitorView }))
+const MonitorView = lazy(loadMonitorView)
 const SideChatPanel = lazy(() =>
   import('../SideChatPanel').then((module) => ({ default: module.SideChatPanel })),
 )
@@ -131,19 +142,44 @@ const SchedulerPanel = lazy(() =>
     default: module.SchedulerPanel,
   })),
 )
-const SplitWorkbench = lazy(() =>
+const loadSplitWorkbench = () =>
   import('./SplitWorkbench').then((module) => ({
     default: module.SplitWorkbench,
-  })),
-)
+  }))
+const SplitWorkbench = lazy(loadSplitWorkbench)
 
 function PanelLoadingFallback() {
   return (
     <div
-      className="flex h-full min-h-32 items-center justify-center text-xs text-(--color-text-muted)"
+      className="flex h-full min-h-32 items-center justify-center"
       role="status"
+      aria-label="Loading panel"
     >
-      Loading panel…
+      <div className="oa-panel-loader relative h-24 w-44 overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-card)/75 p-3 shadow-lg shadow-black/8">
+        <span className="oa-panel-loader-scan absolute inset-y-0 w-16" aria-hidden="true" />
+        <div className="relative flex h-full gap-2.5" aria-hidden="true">
+          <div className="flex w-10 shrink-0 flex-col gap-1.5 rounded-lg border border-(--color-border-subtle) bg-(--bg-page)/65 p-2">
+            <span className="oa-panel-loader-block h-2.5 w-2.5 rounded-sm bg-(--color-accent)/45" />
+            <span className="oa-panel-loader-block h-1 w-full rounded-full bg-(--bg-key)" />
+            <span className="oa-panel-loader-block h-1 w-4/5 rounded-full bg-(--bg-key)" />
+            <span className="oa-panel-loader-block mt-auto h-1 w-3/5 rounded-full bg-(--bg-key)" />
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <div className="flex items-center gap-1.5">
+              <span className="oa-panel-loader-block h-2 w-2 rounded-full bg-(--color-accent)" />
+              <span className="oa-panel-loader-block h-1.5 w-14 rounded-full bg-(--bg-key)" />
+            </div>
+            <span className="oa-panel-loader-block h-5 w-full rounded-md bg-(--bg-key)" />
+            <span className="oa-panel-loader-block h-2 w-5/6 rounded-full bg-(--bg-key)" />
+            <span className="oa-panel-loader-block h-2 w-2/3 rounded-full bg-(--bg-key)" />
+            <div className="mt-auto flex justify-end gap-1">
+              <span className="oa-panel-loader-dot h-1.5 w-1.5 rounded-full bg-(--color-accent)" />
+              <span className="oa-panel-loader-dot h-1.5 w-1.5 rounded-full bg-(--color-accent)" />
+              <span className="oa-panel-loader-dot h-1.5 w-1.5 rounded-full bg-(--color-accent)" />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -199,7 +235,11 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const [showMobileActions, setShowMobileActions] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
   const [fileRefsEnabled, setFileRefsEnabled] = useState(false)
-  const [viewMode, setViewMode] = useState<ViewMode>('agent')
+  const [viewMode, setViewModeState] = useState<ViewMode>('agent')
+  const [pendingViewMode, setPendingViewMode] = useState<ViewMode | null>(null)
+  const [automaticSplitTransition, setAutomaticSplitTransition] = useState(false)
+  const previousActiveAgentCountRef = useRef(0)
+  const layoutSwitchFrameRef = useRef<number | null>(null)
   const [sideChatQuote, setSideChatQuote] = useState<string | null>(null)
   const [webBridgeEnabled, setWebBridgeEnabled] = useState(false)
   const [webBridgeDialogOpen, setWebBridgeDialogOpen] = useState(false)
@@ -209,6 +249,54 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   // On mobile, always force agent view — split/monitor require a wide screen.
   // Also close any desktop-only panels when shrinking to mobile.
   const effectiveViewMode: ViewMode = isMobile ? 'agent' : viewMode
+  const displayedViewMode: ViewMode = isMobile
+    ? 'agent'
+    : pendingViewMode ?? viewMode
+  const setViewMode = useCallback((nextViewMode: ViewMode) => {
+    setAutomaticSplitTransition(false)
+    setPendingViewMode(nextViewMode)
+    if (layoutSwitchFrameRef.current !== null) {
+      cancelAnimationFrame(layoutSwitchFrameRef.current)
+    }
+    // Let the dropdown close and its label update before React begins the
+    // Markdown-heavy layout render. The transition remains interruptible.
+    layoutSwitchFrameRef.current = requestAnimationFrame(() => {
+      layoutSwitchFrameRef.current = null
+      startTransition(() => setViewModeState(nextViewMode))
+    })
+  }, [])
+  const completeAutomaticSplit = useCallback(() => {
+    setViewMode('split')
+  }, [setViewMode])
+
+  useEffect(() => {
+    if (pendingViewMode === null || pendingViewMode !== viewMode) return
+    const frame = requestAnimationFrame(() => setPendingViewMode(null))
+    return () => cancelAnimationFrame(frame)
+  }, [pendingViewMode, viewMode])
+
+  useEffect(() => () => {
+    if (layoutSwitchFrameRef.current !== null) {
+      cancelAnimationFrame(layoutSwitchFrameRef.current)
+    }
+  }, [])
+
+  // Remove first-click network/transform latency. Hidden layout code is
+  // downloaded while the browser is idle; transcript data is not subscribed
+  // or rendered until the layout is actually requested.
+  useEffect(() => {
+    if (isMobile) return
+    const preload = () => {
+      void loadSplitWorkbench()
+      void loadMonitorView()
+    }
+    if (typeof window.requestIdleCallback === 'function') {
+      const idleId = window.requestIdleCallback(preload, { timeout: 1_000 })
+      return () => window.cancelIdleCallback(idleId)
+    }
+    const timer = window.setTimeout(preload, 200)
+    return () => window.clearTimeout(timer)
+  }, [isMobile])
   useEffect(() => {
     setCodingFileViewer(null)
   }, [workspace])
@@ -351,6 +439,25 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const splitAgentNames = useTeamStore(useShallow(
     (s) => s.agentNames.filter((name) => s.agentStreams[name]?.status !== 'offline'),
   ))
+  const activeAgentCount = useTeamStore(
+    (s) => s.agentNames.reduce(
+      (count, name) => count + (s.agentStreams[name]?.status === 'working' ? 1 : 0),
+      0,
+    ),
+  )
+  useEffect(() => {
+    const previousActiveCount = previousActiveAgentCountRef.current
+    previousActiveAgentCountRef.current = activeAgentCount
+    if (!shouldStartAutomaticSplit({
+      previousActiveCount,
+      activeCount: activeAgentCount,
+      viewMode,
+      isMobile,
+    })) return
+
+    const frame = requestAnimationFrame(() => setAutomaticSplitTransition(true))
+    return () => cancelAnimationFrame(frame)
+  }, [activeAgentCount, isMobile, viewMode])
   // Only monitor/split views render every agent's stream — gate the
   // whole-map subscription on the view mode so the default agent view
   // stops re-rendering this shell on every token of every agent.
@@ -934,11 +1041,10 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   })
 
   const cycleViewMode = useCallback(() => {
-    setViewMode((v) => {
-      const idx = VIEW_MODES.indexOf(v)
-      return VIEW_MODES[(idx + 1) % VIEW_MODES.length]
-    })
-  }, [])
+    const currentViewMode = pendingViewMode ?? viewMode
+    const idx = VIEW_MODES.indexOf(currentViewMode)
+    setViewMode(VIEW_MODES[(idx + 1) % VIEW_MODES.length])
+  }, [pendingViewMode, setViewMode, viewMode])
 
   const commands = useTeamCommands({
     viewMode,
@@ -1435,7 +1541,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           activeAgent={activeAgent}
           agentNames={agentNames}
           onSelectAgent={setActiveAgent}
-          viewMode={effectiveViewMode}
+          viewMode={displayedViewMode}
           onViewModeChange={setViewMode}
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
           workspace={agentWorkspace}
@@ -1444,6 +1550,12 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         />
       }
     >
+        {automaticSplitTransition && (
+          <AutomaticSplitTransition
+            activeAgentCount={activeAgentCount}
+            onComplete={completeAutomaticSplit}
+          />
+        )}
         {setupRequired && (
           <div className="mx-3 mt-3 flex flex-col gap-3 rounded-xl border border-(--accent-blue)/40 bg-(--accent-blue-soft) p-3 text-sm text-(--color-text) shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 gap-3">

@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDeleteChapter } from '@/hooks/useSessionChapters'
 import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
@@ -32,6 +32,7 @@ export function SessionChapterRail({
     [chapters],
   )
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null)
+  const activeChapterIdRef = useRef<string | null>(null)
   const [previewChapterId, setPreviewChapterId] = useState<string | null>(null)
   const deleteMutation = useDeleteChapter(sessionId)
   const preset = useMotionPreset()
@@ -56,7 +57,10 @@ export function SessionChapterRail({
       }
     }
 
-    setActiveChapterId((current) => current === nextChapterId ? current : nextChapterId)
+    if (activeChapterIdRef.current !== nextChapterId) {
+      activeChapterIdRef.current = nextChapterId
+      setActiveChapterId(nextChapterId)
+    }
   }, [anchoredChapters, containerRef])
 
   useEffect(() => {
@@ -83,6 +87,7 @@ export function SessionChapterRail({
     if (!container || !chapter.message_id) return
     const anchor = findChapterAnchor(container, chapter.message_id)
     anchor?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    activeChapterIdRef.current = chapter.id
     setActiveChapterId(chapter.id)
   }, [containerRef])
 
