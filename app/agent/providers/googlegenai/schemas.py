@@ -55,6 +55,7 @@ class Content(GeminiBaseModel):
 class ThinkingConfig(GeminiBaseModel):
     include_thoughts: bool = True
     thinking_level: str | None = None
+    thinking_budget: int | None = None
 
 
 class GenerationConfig(GeminiBaseModel):

@@ -5,7 +5,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.agent.providers.model_discovery import _bedrock_models
+from app.agent.providers.model_discovery import (
+    _bedrock_models,
+    _entry_from_openai_catalog_item,
+)
 
 
 def test_model_filter_uses_capabilities_not_name_markers(
@@ -53,6 +56,36 @@ def test_model_filter_rejects_explicit_no_tool_call(
     assert model_discovery.filter_agent_model_ids(
         "custom", ["completion", "agent"]
     ) == ["agent"]
+
+
+def test_rich_openai_catalog_item_preserves_provider_contract() -> None:
+    model = _entry_from_openai_catalog_item(
+        {
+            "id": "vendor/reasoning-model",
+            "context_length": 200_000,
+            "architecture": {
+                "input_modalities": ["text", "image"],
+                "output_modalities": ["text"],
+            },
+            "supported_parameters": ["tools", "temperature", "reasoning"],
+            "top_provider": {"max_completion_tokens": 64_000},
+            "reasoning": {
+                "mandatory": False,
+                "default_enabled": True,
+                "supported_efforts": ["high", "low"],
+                "default_effort": "high",
+            },
+        }
+    )
+
+    assert model is not None
+    assert model.capabilities["input"]["vision"] is True
+    assert model.metadata["limits"] == {
+        "context_length": 200_000,
+        "max_completion_tokens": 64_000,
+    }
+    assert model.metadata["thinking"]["levels"] == ["high", "low", "none"]
+    assert model.metadata["thinking"]["source"] == "provider_live"
 
 
 class _BedrockClient:
@@ -108,7 +141,7 @@ async def test_bedrock_models_include_foundation_and_inference_profiles(
         {"AWS_BEDROCK_REGION": "us-east-1", "AWS_BEDROCK_PROFILE": ""}
     )
 
-    assert models == [
+    assert [model.id for model in models] == [
         "amazon.nova-pro-v1:0",
         "anthropic.claude-sonnet-4-6",
         "global.anthropic.claude-sonnet-4-6",
@@ -172,6 +205,102 @@ class _FakeFoundryCatalogOnlyClient(_FakeFoundryClient):
                 {"object": "list", "data": [{"id": "gpt-5.1"}, {"id": "grok-4.3"}]}
             )
         raise httpx.HTTPStatusError("404", request=None, response=None)
+
+
+class _FakeCodexModelsClient:
+    def __init__(self, *_args, **_kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def get(self, url, params=None, headers=None):
+        assert url == "https://chatgpt.com/backend-api/codex/models"
+        assert params == {"client_version": "1.0.0"}
+        assert headers["Authorization"] == "Bearer test-token"
+        return _FakeFoundryResponse(
+            {
+                "models": [
+                    {
+                        "slug": "gpt-5.6-sol",
+                        "supported_reasoning_levels": [
+                            {"effort": "low"},
+                            {"effort": "medium"},
+                            {"effort": "high"},
+                            {"effort": "xhigh"},
+                            {"effort": "max"},
+                            {"effort": "ultra"},
+                        ],
+                    },
+                    {
+                        "slug": "gpt-5.6-luna",
+                        "supported_reasoning_levels": [
+                            {"effort": "low"},
+                            {"effort": "medium"},
+                            {"effort": "high"},
+                            {"effort": "xhigh"},
+                            {"effort": "max"},
+                        ],
+                    },
+                ]
+            }
+        )
+
+
+@pytest.mark.asyncio
+async def test_codex_discovery_registers_live_reasoning_levels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agent.providers import model_discovery
+    from app.agent.providers.catalog import find
+    from app.agent.providers.codex.oauth import CodexOAuth
+    from app.agent.providers.model_metadata import (
+        clear_runtime_model_metadata,
+        get_model_thinking_levels,
+        has_runtime_model_metadata,
+        set_runtime_model_metadata,
+    )
+
+    oauth = SimpleNamespace(
+        access_token=SimpleNamespace(get_secret_value=lambda: "test-token"),
+        account_id="account-1",
+        is_expired=lambda: False,
+    )
+    monkeypatch.setattr(CodexOAuth, "load", classmethod(lambda _cls: oauth))
+    monkeypatch.setattr(model_discovery.httpx, "AsyncClient", _FakeCodexModelsClient)
+    monkeypatch.setattr(model_discovery, "is_agent_model_id", lambda *_args: True)
+    entry = find("codex")
+    assert entry is not None
+
+    clear_runtime_model_metadata()
+    try:
+        set_runtime_model_metadata(
+            "codex:removed-model", {"thinking": {"levels": ["high"]}}
+        )
+        models = await model_discovery.discover_provider_model_entries(entry)
+
+        assert [model.id for model in models] == ["gpt-5.6-luna", "gpt-5.6-sol"]
+        assert has_runtime_model_metadata("codex:removed-model") is False
+        assert get_model_thinking_levels("codex:gpt-5.6-sol") == (
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra",
+        )
+        assert get_model_thinking_levels("codex:gpt-5.6-luna") == (
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        )
+    finally:
+        clear_runtime_model_metadata()
 
 
 @pytest.mark.asyncio

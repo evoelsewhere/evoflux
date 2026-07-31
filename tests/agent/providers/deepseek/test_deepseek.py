@@ -282,12 +282,12 @@ class TestDeepSeekThinking:
 
     def test_thinking_not_sent_when_thinking_level_none(self):
         body = self._build_body("none")
-        assert "thinking" not in body
+        assert body["thinking"] == {"type": "disabled"}
         assert "reasoning_effort" not in body
 
     def test_thinking_not_sent_when_thinking_level_off(self):
         body = self._build_body("off")
-        assert "thinking" not in body
+        assert body["thinking"] == {"type": "disabled"}
         assert "reasoning_effort" not in body
 
     def test_thinking_not_sent_when_thinking_level_absent(self):

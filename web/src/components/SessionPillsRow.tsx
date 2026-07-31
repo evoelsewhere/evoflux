@@ -21,6 +21,7 @@ const THINKING_LEVEL_LABEL: Record<string, string> = {
   high: 'High',
   xhigh: 'X-High',
   max: 'Max',
+  ultra: 'Ultra',
 }
 
 /** Compact tick labels — full names live in the value readout. */
@@ -33,6 +34,7 @@ const THINKING_MARK: Record<string, string> = {
   high: 'High',
   xhigh: 'XH',
   max: 'Max',
+  ultra: 'Ult',
 }
 
 const CONTROL_CLASS =
@@ -46,10 +48,8 @@ type ThinkingOption = {
 
 function buildThinkingOptions(levels: string[]): ThinkingOption[] {
   return [
-    { value: 'none', label: 'None', mark: THINKING_MARK.none },
     { value: null, label: 'Default', mark: THINKING_MARK.default },
     ...levels
-      .filter((level) => level !== 'none')
       .map((level) => ({
         value: level,
         label: THINKING_LEVEL_LABEL[level] ?? level,
@@ -372,12 +372,19 @@ function AdvancedComposerControl({
         </div>
 
         <div className="border-t border-(--color-border-subtle) px-2.5 py-2">
-          <ThinkingEffortControl
-            options={thinkingOptions}
-            currentIndex={currentIndex}
-            fastMode={effectiveFastMode}
-            onSelectIndex={selectThinkingAt}
-          />
+          {thinkingOptions.length > 1 ? (
+            <ThinkingEffortControl
+              options={thinkingOptions}
+              currentIndex={currentIndex}
+              fastMode={effectiveFastMode}
+              onSelectIndex={selectThinkingAt}
+            />
+          ) : (
+            <div className="flex items-center justify-between gap-3 py-0.5">
+              <span className="text-[11px] font-medium text-(--color-text-2)">Thinking</span>
+              <span className="text-[10px] text-(--color-text-subtle)">Provider default</span>
+            </div>
+          )}
         </div>
 
         <div className="border-t border-(--color-border-subtle) px-2.5 py-2">

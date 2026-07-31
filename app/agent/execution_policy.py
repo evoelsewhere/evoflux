@@ -69,9 +69,11 @@ def _resolve_complexity(
 
 
 def _supported_level(desired: str, supported: tuple[str, ...]) -> str:
-    if not supported or desired in supported:
+    if not supported:
+        return ""
+    if desired in supported:
         return desired
-    order = ("none", "minimal", "low", "medium", "high", "xhigh")
+    order = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
     desired_index = order.index(desired) if desired in order else 3
     ranked = [level for level in supported if level in order]
     if not ranked:

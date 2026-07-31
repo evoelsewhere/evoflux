@@ -44,6 +44,7 @@ export function useWorkspaceFileWatcher(workspace: string | null) {
 
           // Invalidate diff for changed paths
           queryClient.invalidateQueries({ queryKey: queryKeys.coding.diff(workspace!) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.git.changes(workspace!) })
         })
       } catch (err) {
         console.error('Failed to start file watcher:', err)

@@ -10,6 +10,7 @@ from app.agent.providers.model_metadata import (
     get_model_cost,
     get_model_features,
     get_model_limits,
+    get_model_thinking_levels,
 )
 
 
@@ -17,6 +18,7 @@ def _clear_registry_caches() -> None:
     model_registry.load_model_registry.cache_clear()
     capabilities._registry.cache_clear()
     model_metadata._registry.cache_clear()
+    model_metadata.clear_runtime_model_metadata()
 
 
 @pytest.fixture(autouse=True)
@@ -175,6 +177,73 @@ def test_provider_owned_model_registry_aliases(
     assert get_model_limits("runtime:gpt-live").context_length == 222000
     assert get_capabilities("runtime:renamed-live").input.vision is True
     assert get_model_limits("runtime:renamed-live").context_length == 666000
+
+
+def test_provider_alias_can_exclude_endpoint_specific_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        model_registry.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache")
+    )
+    monkeypatch.setattr(
+        model_registry.settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config")
+    )
+    monkeypatch.setattr(model_registry.settings, "EVOFLUX_MODEL_REGISTRY_REFRESH", True)
+    monkeypatch.setattr(
+        model_registry,
+        "_provider_entries",
+        lambda include_plugins: [
+            {
+                "id": "runtime",
+                "metadata_source_provider": "openai",
+                "metadata_source_exclude": ["thinking"],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        model_registry,
+        "_fetch_models_dev",
+        lambda: {
+            "openai": {
+                "models": {
+                    "gpt-live": {
+                        "limit": {"context": 123000},
+                        "reasoning_options": [
+                            {"type": "effort", "values": ["low", "high"]}
+                        ],
+                    }
+                }
+            }
+        },
+    )
+
+    assert get_model_limits("runtime:gpt-live").context_length == 123000
+    assert get_model_thinking_levels("runtime:gpt-live") == ()
+
+
+def test_snapshot_builder_keeps_supported_providers_and_drops_stale_ones(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.update_model_registry import _build_registry
+
+    monkeypatch.setattr(
+        "scripts.update_model_registry._supported_provider_ids",
+        lambda: {"openai", "codex"},
+    )
+    registry = _build_registry(
+        {
+            "openai:gpt-live": {
+                "limits": {"context_length": 123000},
+                "thinking": {"levels": ["low", "high"]},
+            },
+            "removed-provider:stale-model": {"limits": {"context_length": 1}},
+        }
+    )
+
+    assert "removed-provider:stale-model" not in registry
+    assert registry["openai:gpt-live"]["thinking"]["levels"] == ["low", "high"]
+    assert registry["codex:gpt-live"]["limits"]["context_length"] == 123000
+    assert "thinking" not in registry["codex:gpt-live"]
 
 
 def test_provider_aliases_are_ignored_when_plugins_are_excluded(

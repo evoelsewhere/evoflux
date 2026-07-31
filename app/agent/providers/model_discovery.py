@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Any
 
 import httpx
 from loguru import logger
@@ -14,6 +16,15 @@ from app.agent.providers.openai.compatible import OPENAI_COMPATIBLE_PROVIDER_SPE
 from app.core.config import settings
 
 TIMEOUT_S = 3.0
+
+
+@dataclass(frozen=True)
+class DiscoveredModel:
+    """One live model plus fields authored by the provider catalog."""
+
+    id: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+    capabilities: dict[str, Any] = field(default_factory=dict)
 
 
 def _secret_value(value: object) -> str:
@@ -55,13 +66,160 @@ def filter_agent_model_ids(provider_id: str, model_ids: list[str]) -> list[str]:
     ]
 
 
+def _is_discovered_agent_model(
+    provider_id: str, model: DiscoveredModel
+) -> bool:
+    """Apply live authoritative negatives before registry fallback."""
+    output = model.capabilities.get("output")
+    if isinstance(output, dict) and output.get("text") is False:
+        return False
+    features = model.metadata.get("features")
+    if isinstance(features, dict) and features.get("tool_call") is False:
+        return False
+    return is_agent_model_id(provider_id, model.id)
+
+
+def _positive_catalog_int(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
+def _live_modalities(item: dict[str, Any]) -> tuple[list[str], list[str]]:
+    architecture = item.get("architecture")
+    if not isinstance(architecture, dict):
+        architecture = {}
+    input_modalities = architecture.get("input_modalities")
+    output_modalities = architecture.get("output_modalities")
+    if not isinstance(input_modalities, list):
+        input_modalities = []
+    if not isinstance(output_modalities, list):
+        output_modalities = []
+    return (
+        [str(value).lower() for value in input_modalities if isinstance(value, str)],
+        [str(value).lower() for value in output_modalities if isinstance(value, str)],
+    )
+
+
+def _metadata_from_openai_catalog_item(item: dict[str, Any]) -> dict[str, Any]:
+    """Normalize rich OpenAI-compatible catalogs without inventing fields.
+
+    OpenAI's own ``/models`` response contains only identity fields, while
+    OpenRouter, FCI and Kimi return richer provider-owned contracts. Every
+    field below is conditional so a basic catalog remains an ID list rather
+    than an accidental source of false negatives.
+    """
+    metadata: dict[str, Any] = {}
+    supported_endpoints = item.get("supported_endpoints")
+    if isinstance(supported_endpoints, list):
+        metadata["interfaces"] = [
+            value
+            for value in supported_endpoints
+            if isinstance(value, str) and value
+        ]
+    limits: dict[str, int] = {}
+    context = _positive_catalog_int(item.get("context_length"))
+    top_provider = item.get("top_provider")
+    if not isinstance(top_provider, dict):
+        top_provider = {}
+    max_completion = _positive_catalog_int(
+        top_provider.get("max_completion_tokens")
+    )
+    if context is not None:
+        limits["context_length"] = context
+    if max_completion is not None:
+        limits["max_completion_tokens"] = max_completion
+    if limits:
+        metadata["limits"] = limits
+
+    supported = item.get("supported_parameters")
+    if isinstance(supported, list):
+        parameters = {
+            value for value in supported if isinstance(value, str) and value
+        }
+        metadata["features"] = {
+            "tool_call": "tools" in parameters,
+            "temperature": "temperature" in parameters,
+            "reasoning": bool(
+                {"reasoning", "include_reasoning", "reasoning_effort"} & parameters
+            ),
+        }
+
+    reasoning = item.get("reasoning")
+    if isinstance(reasoning, dict):
+        efforts = reasoning.get("supported_efforts")
+        levels = (
+            [value for value in efforts if isinstance(value, str) and value]
+            if isinstance(efforts, list)
+            else []
+        )
+        if reasoning.get("mandatory") is False and "none" not in levels:
+            levels.append("none")
+        thinking: dict[str, Any] = {
+            "levels": levels,
+            "control": "effort",
+            "source": "provider_live",
+        }
+        default_effort = reasoning.get("default_effort")
+        if isinstance(default_effort, str) and default_effort:
+            thinking["default_level"] = default_effort
+        if isinstance(reasoning.get("default_enabled"), bool):
+            thinking["default_enabled"] = reasoning["default_enabled"]
+        metadata["thinking"] = thinking
+
+    # Kimi's catalog uses explicit booleans instead of supported_parameters.
+    if isinstance(item.get("supports_reasoning"), bool):
+        metadata.setdefault("features", {})["reasoning"] = item["supports_reasoning"]
+    return metadata
+
+
+def _capabilities_from_openai_catalog_item(
+    item: dict[str, Any],
+) -> dict[str, Any]:
+    input_modalities, output_modalities = _live_modalities(item)
+    capabilities: dict[str, Any] = {}
+    input_caps: dict[str, bool] = {}
+    output_caps: dict[str, bool] = {}
+    if input_modalities:
+        input_caps = {
+            "vision": "image" in input_modalities,
+            "audio": "audio" in input_modalities,
+            "video": "video" in input_modalities,
+        }
+    elif isinstance(item.get("supports_image_in"), bool):
+        input_caps["vision"] = item["supports_image_in"]
+        if isinstance(item.get("supports_video_in"), bool):
+            input_caps["video"] = item["supports_video_in"]
+    if output_modalities:
+        output_caps = {
+            "text": "text" in output_modalities,
+            "image": "image" in output_modalities,
+            "audio": "audio" in output_modalities,
+            "video": "video" in output_modalities,
+        }
+    if input_caps:
+        capabilities["input"] = input_caps
+    if output_caps:
+        capabilities["output"] = output_caps
+    return capabilities
+
+
+def _entry_from_openai_catalog_item(item: dict[str, Any]) -> DiscoveredModel | None:
+    model_id = item.get("id")
+    if not isinstance(model_id, str) or not model_id:
+        return None
+    return DiscoveredModel(
+        id=model_id,
+        metadata=_metadata_from_openai_catalog_item(item),
+        capabilities=_capabilities_from_openai_catalog_item(item),
+    )
+
+
 async def _openai_compatible_models(
     *,
     provider_id: str,
     base_url: str,
     api_key: str,
     extra_headers: Mapping[str, str] | None = None,
-) -> list[str]:
+) -> list[DiscoveredModel]:
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     if extra_headers:
         headers.update(extra_headers)
@@ -71,9 +229,13 @@ async def _openai_compatible_models(
     data = response.json()
     items = data.get("data", []) if isinstance(data, dict) else []
     models = sorted(
-        str(item["id"])
-        for item in items
-        if isinstance(item, dict) and isinstance(item.get("id"), str)
+        (
+            model
+            for item in items
+            if isinstance(item, dict)
+            and (model := _entry_from_openai_catalog_item(item)) is not None
+        ),
+        key=lambda model: model.id,
     )
     logger.debug(
         "provider_models_discovered provider={} count={}", provider_id, len(models)
@@ -86,7 +248,9 @@ async def _openai_compatible_models(
 FOUNDRY_DEPLOYMENTS_API_VERSION = "2023-03-15-preview"
 
 
-async def _foundry_models(overrides: Mapping[str, str] | None) -> list[str]:
+async def _foundry_models(
+    overrides: Mapping[str, str] | None,
+) -> list[DiscoveredModel]:
     """Return the deployment names on a Microsoft Foundry resource.
 
     ``GET {base}/models`` on the v1 surface lists the *region catalog*
@@ -122,11 +286,13 @@ async def _foundry_models(overrides: Mapping[str, str] | None) -> list[str]:
     data = response.json()
     items = data.get("data", []) if isinstance(data, dict) else []
     models = sorted(
-        {
-            str(item["id"])
+        (
+            model
             for item in items
-            if isinstance(item, dict) and isinstance(item.get("id"), str)
-        }
+            if isinstance(item, dict)
+            and (model := _entry_from_openai_catalog_item(item)) is not None
+        ),
+        key=lambda model: model.id,
     )
     logger.debug(
         "provider_models_discovered provider=foundry count={} source=deployments",
@@ -135,7 +301,9 @@ async def _foundry_models(overrides: Mapping[str, str] | None) -> list[str]:
     return models
 
 
-async def _google_genai_models(overrides: Mapping[str, str] | None) -> list[str]:
+async def _google_genai_models(
+    overrides: Mapping[str, str] | None,
+) -> list[DiscoveredModel]:
     api_key = _resolve(overrides, "GOOGLE_API_KEY")
     if not api_key:
         return []
@@ -147,18 +315,35 @@ async def _google_genai_models(overrides: Mapping[str, str] | None) -> list[str]
         response.raise_for_status()
     data = response.json()
     items = data.get("models", []) if isinstance(data, dict) else []
-    models: list[str] = []
+    models: list[DiscoveredModel] = []
     for item in items:
         if not isinstance(item, dict):
             continue
         name = item.get("name")
         methods = item.get("supportedGenerationMethods", [])
         if isinstance(name, str) and "generateContent" in methods:
-            models.append(name.removeprefix("models/"))
-    return sorted(models)
+            metadata: dict[str, Any] = {}
+            limits: dict[str, int] = {}
+            context = _positive_catalog_int(item.get("inputTokenLimit"))
+            output = _positive_catalog_int(item.get("outputTokenLimit"))
+            if context is not None:
+                limits["context_length"] = context
+            if output is not None:
+                limits["max_completion_tokens"] = output
+            if limits:
+                metadata["limits"] = limits
+            models.append(
+                DiscoveredModel(
+                    id=name.removeprefix("models/"),
+                    metadata=metadata,
+                )
+            )
+    return sorted(models, key=lambda model: model.id)
 
 
-async def _anthropic_models(overrides: Mapping[str, str] | None) -> list[str]:
+async def _anthropic_models(
+    overrides: Mapping[str, str] | None,
+) -> list[DiscoveredModel]:
     api_key = _resolve(overrides, "ANTHROPIC_API_KEY")
     if not api_key:
         return []
@@ -175,13 +360,16 @@ async def _anthropic_models(overrides: Mapping[str, str] | None) -> list[str]:
     data = response.json()
     items = data.get("data", []) if isinstance(data, dict) else []
     return sorted(
-        str(item["id"])
-        for item in items
-        if isinstance(item, dict) and isinstance(item.get("id"), str)
+        (
+            DiscoveredModel(id=str(item["id"]))
+            for item in items
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        ),
+        key=lambda model: model.id,
     )
 
 
-async def _copilot_models() -> list[str]:
+async def _copilot_models() -> list[DiscoveredModel]:
     from app.agent.providers.copilot.oauth import CopilotOAuth
 
     oauth = CopilotOAuth.load()
@@ -200,15 +388,88 @@ async def _copilot_models() -> list[str]:
     data = response.json()
     items = data.get("data", []) if isinstance(data, dict) else []
     return sorted(
-        str(item["id"])
-        for item in items
-        if isinstance(item, dict)
-        and isinstance(item.get("id"), str)
-        and item.get("model_picker_enabled", True)
+        (
+            DiscoveredModel(
+                id=str(item["id"]),
+                metadata=_metadata_from_openai_catalog_item(item),
+                capabilities=_capabilities_from_openai_catalog_item(item),
+            )
+            for item in items
+            if isinstance(item, dict)
+            and isinstance(item.get("id"), str)
+            and item.get("model_picker_enabled", True)
+        ),
+        key=lambda model: model.id,
     )
 
 
-async def _codex_models() -> list[str]:
+async def _ollama_models(
+    overrides: Mapping[str, str] | None,
+) -> list[DiscoveredModel]:
+    """Use Ollama's native API; its OpenAI shim omits model capabilities."""
+    configured = _resolve(
+        overrides,
+        "OLLAMA_BASE_URL",
+        OPENAI_COMPATIBLE_PROVIDER_SPECS["ollama"].base_url,
+    ).rstrip("/")
+    root = configured.removesuffix("/v1")
+    async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
+        response = await client.get(f"{root}/api/tags")
+        response.raise_for_status()
+        data = response.json()
+        items = data.get("models", []) if isinstance(data, dict) else []
+        names = [
+            str(item["name"])
+            for item in items
+            if isinstance(item, dict) and isinstance(item.get("name"), str)
+        ]
+
+        async def inspect(model_id: str) -> DiscoveredModel:
+            show = await client.post(f"{root}/api/show", json={"model": model_id})
+            show.raise_for_status()
+            details = show.json()
+            raw_capabilities = details.get("capabilities", [])
+            capabilities = {
+                value
+                for value in raw_capabilities
+                if isinstance(value, str)
+            }
+            model_info = details.get("model_info")
+            context_lengths = (
+                [
+                    value
+                    for key, value in model_info.items()
+                    if isinstance(key, str)
+                    and key.endswith(".context_length")
+                    and _positive_catalog_int(value) is not None
+                ]
+                if isinstance(model_info, dict)
+                else []
+            )
+            metadata: dict[str, Any] = {
+                "features": {
+                    "tool_call": "tools" in capabilities,
+                    "reasoning": "thinking" in capabilities,
+                }
+            }
+            if context_lengths:
+                metadata["limits"] = {"context_length": max(context_lengths)}
+            return DiscoveredModel(
+                id=model_id,
+                metadata=metadata,
+                capabilities={
+                    "input": {"vision": "vision" in capabilities},
+                    "output": {"text": "completion" in capabilities},
+                },
+            )
+
+        return sorted(
+            await asyncio.gather(*(inspect(name) for name in names)),
+            key=lambda model: model.id,
+        )
+
+
+async def _codex_models() -> list[DiscoveredModel]:
     from app.agent.providers.codex.oauth import CodexOAuth
 
     oauth = CodexOAuth.load()
@@ -233,21 +494,40 @@ async def _codex_models() -> list[str]:
         response.raise_for_status()
     data = response.json()
     items = data.get("models", []) if isinstance(data, dict) else []
-    return sorted(
-        str(item["slug"])
-        for item in items
-        if isinstance(item, dict) and isinstance(item.get("slug"), str)
-    )
+    models: list[DiscoveredModel] = []
+    for item in items:
+        if not isinstance(item, dict) or not isinstance(item.get("slug"), str):
+            continue
+        levels: list[str] = []
+        supported = item.get("supported_reasoning_levels")
+        if isinstance(supported, list):
+            for option in supported:
+                effort = option.get("effort") if isinstance(option, dict) else None
+                if isinstance(effort, str) and effort and effort not in levels:
+                    levels.append(effort)
+        metadata: dict[str, Any] = {
+            "thinking": {
+                "levels": levels,
+                "control": "effort",
+                "source": "provider_live",
+            }
+        }
+        models.append(DiscoveredModel(id=str(item["slug"]), metadata=metadata))
+    return sorted(models, key=lambda model: model.id)
 
 
-async def _bedrock_models(overrides: Mapping[str, str] | None = None) -> list[str]:
+async def _bedrock_models(
+    overrides: Mapping[str, str] | None = None,
+) -> list[DiscoveredModel]:
     # boto3 is synchronous — run the whole discovery in a worker thread so
     # its network round-trips (list_foundation_models + paginated
     # list_inference_profiles) never block the event loop.
     return await asyncio.to_thread(_bedrock_models_sync, overrides)
 
 
-def _bedrock_models_sync(overrides: Mapping[str, str] | None = None) -> list[str]:
+def _bedrock_models_sync(
+    overrides: Mapping[str, str] | None = None,
+) -> list[DiscoveredModel]:
     import boto3
     from botocore.config import Config as BotoConfig
 
@@ -286,15 +566,43 @@ def _bedrock_models_sync(overrides: Mapping[str, str] | None = None) -> list[str
         client = session.client("bedrock", **kwargs)
     else:
         client = boto3.client("bedrock", **kwargs)
-    model_ids: set[str] = set()
+    models_by_id: dict[str, DiscoveredModel] = {}
 
     response = client.list_foundation_models(byOutputModality="TEXT")
     summaries = response.get("modelSummaries", [])
-    model_ids.update(
-        str(item["modelId"])
-        for item in summaries
-        if isinstance(item, dict) and isinstance(item.get("modelId"), str)
-    )
+    for item in summaries:
+        if not isinstance(item, dict) or not isinstance(item.get("modelId"), str):
+            continue
+        input_modalities = item.get("inputModalities")
+        output_modalities = item.get("outputModalities")
+        capabilities: dict[str, Any] = {}
+        if isinstance(input_modalities, list):
+            values = {
+                str(value).upper()
+                for value in input_modalities
+                if isinstance(value, str)
+            }
+            capabilities["input"] = {
+                "vision": "IMAGE" in values,
+                "audio": "AUDIO" in values,
+                "video": "VIDEO" in values,
+            }
+        if isinstance(output_modalities, list):
+            values = {
+                str(value).upper()
+                for value in output_modalities
+                if isinstance(value, str)
+            }
+            capabilities["output"] = {
+                "text": "TEXT" in values,
+                "image": "IMAGE" in values,
+                "audio": "AUDIO" in values,
+                "video": "VIDEO" in values,
+            }
+        models_by_id[str(item["modelId"])] = DiscoveredModel(
+            id=str(item["modelId"]),
+            capabilities=capabilities,
+        )
 
     for profile_type in ("SYSTEM_DEFINED", "APPLICATION"):
         next_token: str | None = None
@@ -304,26 +612,27 @@ def _bedrock_models_sync(overrides: Mapping[str, str] | None = None) -> list[str
                 params["nextToken"] = next_token
             profiles_response = client.list_inference_profiles(**params)
             profile_summaries = profiles_response.get("inferenceProfileSummaries", [])
-            model_ids.update(
-                str(item["inferenceProfileId"])
-                for item in profile_summaries
-                if isinstance(item, dict)
-                and isinstance(item.get("inferenceProfileId"), str)
-                and item.get("status") in (None, "ACTIVE")
-            )
+            for item in profile_summaries:
+                if (
+                    isinstance(item, dict)
+                    and isinstance(item.get("inferenceProfileId"), str)
+                    and item.get("status") in (None, "ACTIVE")
+                ):
+                    profile_id = str(item["inferenceProfileId"])
+                    models_by_id.setdefault(profile_id, DiscoveredModel(id=profile_id))
             next_token = profiles_response.get("nextToken")
             if not isinstance(next_token, str) or not next_token:
                 break
 
-    return sorted(model_ids)
+    return sorted(models_by_id.values(), key=lambda model: model.id)
 
 
-async def discover_provider_models(
+async def discover_provider_model_entries(
     entry: ProviderEntry,
     *,
     overrides: Mapping[str, str] | None = None,
-) -> list[str]:
-    """Return live provider model IDs, or ``[]`` on failure / unsupported.
+) -> list[DiscoveredModel]:
+    """Return live provider models and provider-owned metadata.
 
     ``overrides`` lets callers (e.g. the settings ``/models`` route) inject
     a candidate API key + base URL for a single request without mutating
@@ -340,6 +649,8 @@ async def discover_provider_models(
                     ),
                     api_key=_resolve(overrides, "OPENAI_API_KEY"),
                 )
+            case "ollama":
+                models = await _ollama_models(overrides)
             case _ if provider_id in OPENAI_COMPATIBLE_PROVIDER_SPECS:
                 spec = OPENAI_COMPATIBLE_PROVIDER_SPECS[provider_id]
                 base_url = spec.base_url
@@ -365,7 +676,7 @@ async def discover_provider_models(
             case "copilot":
                 models = await _copilot_models()
             case "codex":
-                models = await _codex_models()
+                entries = await _codex_models()
             case "bedrock":
                 models = await _bedrock_models(overrides)
             case _:
@@ -383,9 +694,76 @@ async def discover_provider_models(
                         models = list(plugin.fallback_models)
                 else:
                     models = []
-        return filter_agent_model_ids(provider_id, models)
+        if provider_id not in {
+            "openai",
+            "zai",
+            "foundry",
+            "googlegenai",
+            "anthropic",
+            "copilot",
+            "codex",
+            "bedrock",
+            *OPENAI_COMPATIBLE_PROVIDER_SPECS,
+        }:
+            entries = [
+                model if isinstance(model, DiscoveredModel) else DiscoveredModel(id=model)
+                for model in models
+            ]
+        elif provider_id != "codex":
+            entries = models
+        filtered = [
+            model
+            for model in entries
+            if _is_discovered_agent_model(provider_id, model)
+        ]
+        from app.agent.providers.capabilities import (
+            replace_runtime_provider_capabilities,
+        )
+        from app.agent.providers.model_metadata import replace_runtime_provider_metadata
+
+        replace_runtime_provider_metadata(
+            provider_id,
+            {model.id: model.metadata for model in filtered if model.metadata},
+        )
+        replace_runtime_provider_capabilities(
+            provider_id,
+            {
+                model.id: model.capabilities
+                for model in filtered
+                if model.capabilities
+            },
+        )
+        return filtered
     except Exception as exc:
         logger.info(
             "provider_models_unavailable provider={} error={}", provider_id, exc
         )
         return []
+
+
+async def discover_provider_models(
+    entry: ProviderEntry,
+    *,
+    overrides: Mapping[str, str] | None = None,
+) -> list[str]:
+    """Compatibility API returning only live model IDs."""
+    return [
+        model.id
+        for model in await discover_provider_model_entries(entry, overrides=overrides)
+    ]
+
+
+async def ensure_runtime_model_metadata(model_id: str | None) -> None:
+    """Load live metadata once before validating a provider-owned control."""
+    if not model_id or ":" not in model_id:
+        return
+    from app.agent.providers.catalog import find
+    from app.agent.providers.model_metadata import has_runtime_model_metadata
+
+    if has_runtime_model_metadata(model_id):
+        return
+    provider_id, _ = model_id.split(":", 1)
+    entry = find(provider_id)
+    if entry is None:
+        return
+    await discover_provider_model_entries(entry)

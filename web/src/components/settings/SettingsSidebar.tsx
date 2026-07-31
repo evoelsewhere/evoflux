@@ -11,6 +11,8 @@ import {
   ArrowLeft,
   BarChart3,
   Bell,
+  Bot,
+  BrainCircuit,
   Info,
   KeyRound,
   Moon,
@@ -21,7 +23,6 @@ import {
   Shield,
   Sparkles,
   Stethoscope,
-  Wrench,
   X,
   type LucideIcon,
 } from 'lucide-react'
@@ -46,6 +47,7 @@ type SidebarPath =
   | '/settings/agents'
   | '/settings/skills'
   | '/settings/mcp'
+  | '/settings/memory'
   | '/settings/sandbox'
   | '/settings/dream'
   | '/settings/notifications'
@@ -96,8 +98,8 @@ function SidebarRow({
       onClick={go}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative mx-2 flex min-h-11 items-center gap-2.5 rounded-lg px-3 text-left text-sm transition-[background-color,color,transform] duration-(--motion-fast) active:scale-[0.985]',
-        'text-(--color-text-2) hover:bg-(--bg-key)/70 hover:text-(--color-text)',
+        'group relative mx-2 flex min-h-10 items-center gap-2.5 overflow-hidden rounded-lg px-3 text-left text-[13px] transition-[background-color,color,transform] duration-(--motion-fast) active:scale-[0.985]',
+        'text-(--color-text-muted) hover:bg-(--bg-key)/70 hover:text-(--color-text)',
         'focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40 focus-visible:outline-none',
         active && 'text-(--color-text)',
       )}
@@ -108,20 +110,25 @@ function SidebarRow({
         <motion.span
           layoutId="settings-nav-active"
           transition={preset.spring}
-          className="absolute inset-0 -z-10 rounded-md bg-(--bg-key)"
+          className="absolute inset-0 rounded-lg border border-(--color-accent)/15 bg-(--color-accent-soft)"
           aria-hidden="true"
         />
       )}
       <Icon
         size={15}
-        className={cn('shrink-0', active ? 'text-(--color-text)' : 'text-(--color-text-muted)')}
+        className={cn(
+          'relative z-10 shrink-0',
+          active ? 'text-(--color-accent)' : 'text-(--color-text-subtle) group-hover:text-(--color-text-muted)',
+        )}
         aria-hidden="true"
       />
-      <span className={cn('min-w-0 flex-1 truncate', active && 'font-semibold')}>{item.label}</span>
+      <span className={cn('relative z-10 min-w-0 flex-1 truncate', active && 'font-semibold')}>
+        {item.label}
+      </span>
       {item.count === null ? (
-        <Skeleton className="h-3 w-5 shrink-0 rounded" />
+        <Skeleton className="relative z-10 h-3 w-5 shrink-0 rounded" />
       ) : item.count !== undefined ? (
-        <span className="shrink-0 font-mono text-xs tabular-nums text-(--color-text-muted)">
+        <span className="relative z-10 min-w-5 shrink-0 rounded-full bg-(--bg-key) px-1.5 py-0.5 text-center font-mono text-[10px] tabular-nums text-(--color-text-muted)">
           {item.count}
         </span>
       ) : null}
@@ -152,7 +159,7 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
   const sections = useMemo<SidebarSection[]>(
     () => [
       {
-        label: 'Models',
+        label: 'Intelligence',
         items: [
           {
             to: '/settings/providers',
@@ -161,20 +168,9 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             matchPrefix: '/settings/providers',
           },
           {
-            to: '/settings/connection',
-            label: 'Connection',
-            icon: Server,
-            matchPrefix: '/settings/connection',
-          },
-        ],
-      },
-      {
-        label: 'Team',
-        items: [
-          {
             to: '/settings/agents',
             label: 'Agents',
-            icon: Wrench,
+            icon: Bot,
             matchPrefix: '/settings/agents',
             count: agentsQ.data?.agents.length ?? null,
           },
@@ -195,20 +191,37 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
         ],
       },
       {
-        label: 'Machine',
+        label: 'Knowledge',
         items: [
           {
-            to: '/settings/sandbox',
-            label: 'Sandbox',
-            icon: Shield,
-            matchPrefix: '/settings/sandbox',
-            count: sandboxQ.data?.denied_patterns.length ?? null,
+            to: '/settings/memory',
+            label: 'Memory',
+            icon: BrainCircuit,
+            matchPrefix: '/settings/memory',
           },
           {
             to: '/settings/dream',
             label: 'Dream',
             icon: Moon,
             matchPrefix: '/settings/dream',
+          },
+        ],
+      },
+      {
+        label: 'System',
+        items: [
+          {
+            to: '/settings/connection',
+            label: 'Connection',
+            icon: Server,
+            matchPrefix: '/settings/connection',
+          },
+          {
+            to: '/settings/sandbox',
+            label: 'Sandbox',
+            icon: Shield,
+            matchPrefix: '/settings/sandbox',
+            count: sandboxQ.data?.denied_patterns.length ?? null,
           },
           {
             to: '/settings/notifications',
@@ -283,7 +296,7 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
 
   return (
     <aside
-      className="flex h-full w-[17rem] shrink-0 flex-col border-r border-(--color-border) bg-(--bg-sidebar)"
+      className="flex h-full w-[16.5rem] shrink-0 flex-col border-r border-(--color-border-subtle) bg-(--bg-sidebar)"
     >
       <div
         {...dragHandlers}
@@ -293,7 +306,7 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
           <button
             type="button"
             onClick={onBack}
-            className="mb-3 flex h-9 items-center gap-2 rounded-md px-2 text-sm text-(--color-text-muted) transition-[background-color,color,transform] hover:bg-(--bg-key) hover:text-(--color-text) active:scale-[0.985] focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40 focus-visible:outline-none"
+            className="mb-3 flex h-9 items-center gap-2 rounded-lg px-2 text-[13px] font-medium text-(--color-text-muted) transition-[background-color,color,transform] hover:bg-(--bg-key) hover:text-(--color-text) active:scale-[0.985] focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40 focus-visible:outline-none"
           >
             <ArrowLeft size={15} aria-hidden="true" />
             <span>Back to app</span>
@@ -311,7 +324,7 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search settings..."
-            className="h-9 w-full rounded-lg border border-(--color-border) bg-(--bg-input) pl-9 pr-8 text-sm text-(--color-text) outline-none transition-[border-color,box-shadow] placeholder:text-(--color-text-subtle) focus:border-(--color-accent)/55 focus:ring-3 focus:ring-(--focus-ring)/25"
+            className="h-9 w-full rounded-lg border border-(--color-border) bg-(--bg-input) pl-9 pr-8 text-[13px] text-(--color-text) shadow-sm outline-none transition-[border-color,box-shadow] placeholder:text-(--color-text-subtle) focus:border-(--color-accent)/55 focus:ring-3 focus:ring-(--focus-ring)/20"
           />
           {query && (
             <button
@@ -328,11 +341,11 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
 
       <nav
         aria-label="Settings categories"
-        className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 pb-5 pt-1"
+        className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-1 pb-5 pt-1"
       >
         {visibleSections.map((section) => (
           <div key={section.label} className="flex flex-col">
-            <p className="px-4 pb-1.5 text-[11px] font-medium tracking-wide text-(--color-text-subtle) uppercase">
+            <p className="px-4 pb-1.5 text-[10px] font-semibold tracking-[0.09em] text-(--color-text-subtle) uppercase">
               {section.label}
             </p>
             {section.items.map((item) => (

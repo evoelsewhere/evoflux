@@ -52,7 +52,9 @@ class ProviderEntry(TypedDict, total=False):
     docs_url: str  # link to provider's API key dashboard
     models_dev_provider_id: str  # provider id used by models.dev when different
     metadata_source_provider: str  # source provider for same-model-id metadata aliases
+    metadata_source_exclude: list[str]  # fields not shared with the source provider
     model_registry_aliases: dict[str, str]  # target model -> source provider:model
+    live_model_metadata: bool  # discovery also returns per-model capabilities
     auto_connect: bool  # whether catalog/registry loads may contact the provider
 
 
@@ -294,6 +296,11 @@ _CATALOG: list[ProviderEntry] = [
         "kind": "oauth",
         "env_var": "",
         "metadata_source_provider": "openai",
+        # Codex OAuth and the public OpenAI API can expose different reasoning
+        # controls for the same slug. General metadata can be inherited, but
+        # thinking levels must come from Codex's live model catalog.
+        "metadata_source_exclude": ["thinking"],
+        "live_model_metadata": True,
         "oauth_command": "EvoFlux auth codex",
         "docs_url": "https://platform.openai.com/docs/codex",
     },
@@ -428,7 +435,10 @@ def all_providers() -> list[ProviderEntry]:
             "docs_url": plugin.docs_url,
             "models_dev_provider_id": plugin.models_dev_provider_id,
             "metadata_source_provider": plugin.metadata_source_provider,
+            "metadata_source_exclude": [],
             "model_registry_aliases": dict(plugin.model_registry_aliases),
+            "live_model_metadata": False,
+            "auto_connect": True,
         }
         entry["credentials"] = credential_map(plugin.credentials)
         entries.append(entry)

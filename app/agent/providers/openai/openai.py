@@ -145,7 +145,7 @@ class OpenAIProvider(LLMProviderBase):
 
         Default uses ``_should_use_responses`` (explicit flag, then
         thinking-level auto-detection).  Override to implement
-        per-model routing tables (e.g. Copilot's ``_MODEL_ENDPOINT_MAP``).
+        provider model metadata (for example Copilot's live endpoint list).
         """
         return _should_use_responses(model_kwargs)
 

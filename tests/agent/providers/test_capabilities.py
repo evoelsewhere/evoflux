@@ -2,12 +2,11 @@
 
 The resolver does exactly two things:
 
-1. **Exact match** in the model registry → return those
-   flags merged onto the all-false defaults.
-2. **Anything else** → return the all-false defaults.
+1. Provider-live sparse metadata when available.
+2. Exact static registry metadata for fields the provider does not report.
+3. Safe defaults for unknown fields.
 
-No prefix fallbacks, no name-substring heuristics. The YAML is the
-authoritative document; the resolver is dumb on purpose.
+There are no provider-prefix or model-name capability heuristics.
 """
 
 from __future__ import annotations
@@ -19,7 +18,9 @@ from app.agent.providers.capabilities import (
     ModelInputCapabilities,
     ModelOutputCapabilities,
     _merge_caps,
+    clear_runtime_model_capabilities,
     get_capabilities,
+    replace_runtime_provider_capabilities,
 )
 
 
@@ -116,9 +117,8 @@ class TestGetCapabilities:
         assert caps == ModelCapabilities()
 
     def test_unknown_model_returns_default(self) -> None:
-        # openai is a vision-capable provider, so unknowns get vision fallback.
         caps = get_capabilities("openai:made-up-model-zzz")
-        assert caps.input.vision is True
+        assert caps.input.vision is False
         assert caps.input.document_text is True
         assert caps.output.text is True
 
@@ -130,14 +130,10 @@ class TestGetCapabilities:
         "model_id",
         [
             "openai:gpt-5.5",
-            "codex:gpt-5.5-mini",
-            "codex:gpt-5.2-codex",
             "openai:gpt-5.4-mini",
             "googlegenai:gemini-3.1-pro-preview",
             "vertexai:gemini-2.5-pro",
             "xai:grok-4.3",
-            "copilot:claude-opus-4-7",
-            "router9:gh/gpt-5",
             "bedrock:anthropic.claude-opus-4-7",
             "bedrock:global.anthropic.claude-sonnet-4-6",
             "bedrock:amazon.nova-pro-v1:0",
@@ -168,18 +164,15 @@ class TestGetCapabilities:
         assert caps.input.document_text is True
         assert caps.output.text is True
 
-    @pytest.mark.parametrize(
-        "model_id",
-        [
-            # Vision-capable providers get vision fallback for unknown models.
-            "openrouter:anthropic/claude-sonnet-4.6",
-            "openai:text-embedding-3-small",
-            "openai:whisper-1",
-        ],
-    )
-    def test_vision_providers_get_vision_fallback(self, model_id: str) -> None:
-        caps = get_capabilities(model_id)
-        assert caps.input.vision is True, model_id
+    def test_live_provider_capabilities_overlay_static_registry(self) -> None:
+        try:
+            replace_runtime_provider_capabilities(
+                "openai",
+                {"made-up-model-zzz": {"input": {"vision": True}}},
+            )
+            assert get_capabilities("openai:made-up-model-zzz").input.vision is True
+        finally:
+            clear_runtime_model_capabilities()
 
     def test_case_insensitive_lookup(self) -> None:
         lower = get_capabilities("openai:gpt-5.5")

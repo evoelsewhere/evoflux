@@ -346,11 +346,12 @@ class TestFoundryProviderFactory:
 
 
 class TestFoundryCapabilities:
-    def test_unknown_deployment_falls_back_to_vision(self):
-        # Deployment names are user-chosen, so registry lookups will
-        # frequently miss; foundry is in _VISION_PROVIDERS.
+    def test_unknown_deployment_uses_safe_capability_defaults(self):
+        # Deployment names are user-chosen. Without deployment-to-base-model
+        # metadata, vision must stay unknown/disabled rather than inferred
+        # from the Foundry provider prefix.
         caps = get_capabilities("foundry:my-custom-deploy")
-        assert caps.input.vision is True
+        assert caps.input.vision is False
 
     def test_case_insensitive_lookup(self):
         caps_lower = get_capabilities("foundry:my-custom-deploy")

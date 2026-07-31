@@ -1375,15 +1375,15 @@ def test_make_default_provider_factory_openrouter_model(monkeypatch):
 
     mock_provider = MagicMock()
     with patch(
-        "app.agent.providers.factory.ChatCompletionsOnlyProvider",
+        "app.agent.providers.factory.OpenRouterProvider",
         return_value=mock_provider,
-    ) as MockCompatible:
+    ) as MockOpenRouter:
         with patch("app.core.config.settings") as mock_settings:
             mock_settings.OPENROUTER_API_KEY = MagicMock()
             mock_settings.OPENROUTER_API_KEY.get_secret_value.return_value = "or-key"
             build_provider("openrouter:qwen3")
-            MockCompatible.assert_called_once()
-            assert "openrouter" in MockCompatible.call_args.kwargs.get("base_url", "")
+            MockOpenRouter.assert_called_once()
+            assert "openrouter" in MockOpenRouter.call_args.kwargs.get("base_url", "")
 
 
 def test_make_default_provider_factory_nvidia_model():

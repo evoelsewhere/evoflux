@@ -60,9 +60,6 @@ from .schemas import (
 
 DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
 
-_NO_THINKING = frozenset({"none", "off", ""})
-
-
 class _DeepSeekCompletionsHandler(CompletionsHandler):
     """DeepSeek-specific completions handler.
 
@@ -223,7 +220,9 @@ class _DeepSeekCompletionsHandler(CompletionsHandler):
         insufficient.
         """
         thinking_level = merged.get("thinking_level", "")
-        if thinking_level and thinking_level not in _NO_THINKING:
+        if thinking_level in {"none", "off"}:
+            body["thinking"] = DeepSeekThinking(type="disabled").model_dump()
+        elif thinking_level:
             body["thinking"] = DeepSeekThinking(type="enabled").model_dump()
             body["reasoning_effort"] = thinking_level
 

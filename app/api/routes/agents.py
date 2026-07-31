@@ -269,7 +269,9 @@ async def get_registry() -> RegistryResponse:
     from app.agent.providers.capabilities import get_capabilities
     from app.agent.providers.catalog import all_providers
     from app.agent.providers.model_metadata import (
+        get_effective_model_thinking,
         get_model_limits,
+        get_model_metadata,
         get_model_thinking_levels,
     )
     from app.agent.tools.builtin.skill import discover_skills
@@ -313,6 +315,8 @@ async def get_registry() -> RegistryResponse:
             return
         seen.add(model_id)
         caps = get_capabilities(model_id)
+        metadata = get_model_metadata(model_id)
+        effective_thinking = get_effective_model_thinking(model_id)
         limits = get_model_limits(model_id)
         models.append(
             ModelCatalogEntry(
@@ -327,6 +331,11 @@ async def get_registry() -> RegistryResponse:
                 summary_trigger_tokens=prompt_token_threshold_for_model(model_id),
                 context_length=limits.context_length,
                 thinking_levels=list(get_model_thinking_levels(model_id)),
+                thinking_control=effective_thinking.control,
+                thinking_default_level=effective_thinking.default_level,
+                thinking_default_enabled=effective_thinking.default_enabled,
+                thinking_source=effective_thinking.source,
+                interfaces=list(metadata.interfaces),
             )
         )
 

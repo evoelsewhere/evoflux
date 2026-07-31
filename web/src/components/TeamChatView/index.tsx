@@ -118,6 +118,11 @@ const GitWorkspacePanel = lazy(() =>
     default: module.GitWorkspacePanel,
   })),
 )
+const CodingSummaryPanel = lazy(() =>
+  import('@/components/CodingSummaryPanel').then((module) => ({
+    default: module.CodingSummaryPanel,
+  })),
+)
 const loadMonitorView = () =>
   import('../MonitorView').then((module) => ({ default: module.MonitorView }))
 const MonitorView = lazy(loadMonitorView)
@@ -309,6 +314,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const setSessionModelSettings = useTeamStore((s) => s.setSessionModelSettings)
   const setupRequired = useTeamStore((s) => s.setupRequired)
   const dismissSetupRequired = useTeamStore((s) => s.dismissSetupRequired)
+  const turnChanges = useTeamStore((s) => s.turnChanges)
 
   const dreamMutation = useTriggerDreamMutation()
   const pushToast = useToastStore((s) => s.push)
@@ -1215,6 +1221,26 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       <Suspense fallback={<PanelLoadingFallback />}>
         {mode === 'coding' && workspace && (
           <>
+            <WorkbenchSurface tool="overview">
+              {(_tab, active) => (
+                <CodingSummaryPanel
+                  workspace={workspace}
+                  sessionId={sessionIdState}
+                  open={active}
+                  isWorking={isTeamWorking}
+                  onOpenFile={(path) => {
+                    setCodingFileViewer({
+                      path,
+                      name: path.split('/').pop() ?? path,
+                      size: 0,
+                      mtime: 0,
+                      mime: 'text/plain',
+                    })
+                    setCodingFileViewerMode('diff')
+                  }}
+                />
+              )}
+            </WorkbenchSurface>
             <WorkbenchSurface tool="files">
               <CodingWorkspacePanel
                 workspace={workspace}
@@ -1622,6 +1648,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
                 isContinuing={isContinuing}
                 onContinue={continueTeam}
                 onSelectAgent={setActiveAgent}
+                showTurnChanges={mode === 'coding'}
               />
             </Suspense>
           </div>
@@ -1710,6 +1737,13 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             onAddSelectionToChat={handleAddSelectionToChat}
             onRequestSelectionDetails={handleRequestSelectionDetails}
             onSendToSideChat={handleSendToSideChat}
+            turnChanges={
+              mode === 'coding'
+                && activeAgent === leadName
+                && turnChanges?.sessionId === sessionIdState
+                ? turnChanges
+                : null
+            }
             emptyState={
               mode === 'coding' && workspace ? (
                 <div className="flex flex-col items-center justify-center py-16">

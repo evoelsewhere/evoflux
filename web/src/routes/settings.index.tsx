@@ -8,6 +8,8 @@
 import {
   BarChart3,
   Bell,
+  Bot,
+  BrainCircuit,
   ChevronRight,
   Server,
   Info,
@@ -18,7 +20,6 @@ import {
   Shield,
   Sparkles,
   Stethoscope,
-  Wrench,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -55,19 +56,21 @@ function SettingsNavRow({ row }: { row: NavRow }) {
       type="button"
       onClick={() => navigate(row.to)}
       className={cn(
-        'group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors',
-        'hover:bg-(--bg-key)/60',
+        'group flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors',
+        'hover:bg-(--bg-key)/65',
         'focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-(--focus-ring)/40 focus-visible:outline-none',
       )}
     >
-      <Icon size={16} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-(--bg-key) text-(--color-text-muted) transition-colors group-hover:bg-(--color-accent-soft) group-hover:text-(--color-accent)">
+        <Icon size={16} aria-hidden="true" />
+      </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
-          <span className="truncate text-sm text-(--color-text)">{row.title}</span>
+          <span className="truncate text-sm font-medium text-(--color-text)">{row.title}</span>
           {row.count === null ? (
             <Skeleton className="h-3 w-12 rounded" />
           ) : row.count !== undefined ? (
-            <span className="font-mono text-[11px] tabular-nums text-(--color-text-subtle)">
+            <span className="rounded-full bg-(--bg-key) px-2 py-0.5 font-mono text-[10px] tabular-nums text-(--color-text-muted)">
               {row.count} {row.countLabel}
             </span>
           ) : null}
@@ -104,7 +107,7 @@ export function SettingsHubPage() {
 
   const groups: Array<{ label: string; rows: NavRow[] }> = [
     {
-      label: 'Models',
+      label: 'Intelligence',
       rows: [
         {
           to: '/settings/providers',
@@ -115,19 +118,8 @@ export function SettingsHubPage() {
           countLabel: 'connected',
         },
         {
-          to: '/settings/connection',
-          icon: Server,
-          title: 'Connection',
-          description: 'Point the app at a local or remote backend',
-        },
-      ],
-    },
-    {
-      label: 'Team',
-      rows: [
-        {
           to: '/settings/agents',
-          icon: Wrench,
+          icon: Bot,
           title: 'Agents',
           description: 'Model, tools and system prompt per team member',
           count: agentsCount,
@@ -152,8 +144,31 @@ export function SettingsHubPage() {
       ],
     },
     {
-      label: 'Machine',
+      label: 'Knowledge',
       rows: [
+        {
+          to: '/settings/memory',
+          icon: BrainCircuit,
+          title: 'Memory',
+          description: 'Long-term knowledge, sources and pending notes',
+        },
+        {
+          to: '/settings/dream',
+          icon: Moon,
+          title: 'Dream',
+          description: 'Synthesize new material into durable memory',
+        },
+      ],
+    },
+    {
+      label: 'System',
+      rows: [
+        {
+          to: '/settings/connection',
+          icon: Server,
+          title: 'Connection',
+          description: 'Point the app at a local or remote backend',
+        },
         {
           to: '/settings/sandbox',
           icon: Shield,
@@ -161,12 +176,6 @@ export function SettingsHubPage() {
           description: 'Agent filesystem, process and worktree isolation',
           count: sandboxCount,
           countLabel: sandboxCount === 1 ? 'pattern' : 'patterns',
-        },
-        {
-          to: '/settings/dream',
-          icon: Moon,
-          title: 'Dream',
-          description: 'Scheduled agent that folds sessions into the wiki',
         },
         {
           to: '/settings/notifications',

@@ -6,8 +6,10 @@ Registry precedence is:
 2. cached/refreshed ``https://models.dev/api.json`` metadata;
 3. local ``{EVOFLUX_CONFIG_DIR}/model_registry.yaml`` overrides.
 
-Public resolver APIs stay in ``capabilities.py`` and ``model_metadata.py``; this
-module owns source loading, normalization, and merge order.
+Provider-discovered runtime metadata is applied by ``model_metadata.py`` after
+these static sources. Public resolver APIs stay in ``capabilities.py`` and
+``model_metadata.py``; this module owns static source loading, normalization,
+aliases, and merge order.
 """
 
 from __future__ import annotations
@@ -62,8 +64,8 @@ def _provider_id_aliases(*, include_plugins: bool = True) -> dict[str, str]:
 
 def _model_registry_aliases(
     *, include_plugins: bool = True
-) -> tuple[dict[str, str], dict[str, str]]:
-    provider_aliases: dict[str, str] = {}
+) -> tuple[dict[str, tuple[str, frozenset[str]]], dict[str, str]]:
+    provider_aliases: dict[str, tuple[str, frozenset[str]]] = {}
     model_aliases: dict[str, str] = {}
     for entry in _provider_entries(include_plugins):
         provider_id = entry.get("id")
@@ -72,7 +74,14 @@ def _model_registry_aliases(
         target_provider = provider_id.lower()
         source_provider = entry.get("metadata_source_provider")
         if isinstance(source_provider, str) and source_provider:
-            provider_aliases[target_provider] = source_provider.lower()
+            excluded = entry.get("metadata_source_exclude", [])
+            excluded_fields = frozenset(
+                field.lower() for field in excluded if isinstance(field, str) and field
+            )
+            provider_aliases[target_provider] = (
+                source_provider.lower(),
+                excluded_fields,
+            )
 
         aliases = entry.get("model_registry_aliases")
         if not isinstance(aliases, dict):
@@ -101,14 +110,25 @@ def apply_model_registry_aliases(
         if ":" not in key:
             continue
         provider_id, model_id = key.split(":", 1)
-        for target_provider, source_provider in provider_aliases.items():
+        for target_provider, (
+            source_provider,
+            excluded_fields,
+        ) in provider_aliases.items():
             if provider_id != source_provider:
                 continue
             target_key = f"{target_provider}:{model_id}"
+            aliased_value = {
+                field: deepcopy(field_value)
+                for field, field_value in value.items()
+                if field not in excluded_fields
+            }
             if overwrite:
-                result[target_key] = _deep_merge(result.get(target_key, {}), value)
+                current = deepcopy(result.get(target_key, {}))
+                for field in excluded_fields:
+                    current.pop(field, None)
+                result[target_key] = _deep_merge(current, aliased_value)
             elif target_key not in result:
-                result[target_key] = deepcopy(value)
+                result[target_key] = aliased_value
 
     for target_key, source_key in model_aliases.items():
         source = result.get(source_key)
@@ -283,7 +303,7 @@ def _features_from_model(model: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _thinking_from_model(model: dict[str, Any]) -> dict[str, list[str]] | None:
+def _thinking_from_model(model: dict[str, Any]) -> dict[str, Any] | None:
     """Map models.dev ``reasoning_options`` to ``thinking.levels``.
 
     - ``effort`` — its ``values`` already use EvoFlux's level vocabulary
@@ -304,7 +324,7 @@ def _thinking_from_model(model: dict[str, Any]) -> dict[str, list[str]] | None:
     if options is None or not isinstance(options, list):
         return None
     if not options:
-        return {"levels": []}
+        return {"levels": [], "control": "none", "source": "models_dev"}
     for option in options:
         if not isinstance(option, dict) or option.get("type") != "effort":
             continue
@@ -314,12 +334,20 @@ def _thinking_from_model(model: dict[str, Any]) -> dict[str, list[str]] | None:
             and values
             and all(isinstance(v, str) for v in values)
         ):
-            return {"levels": list(dict.fromkeys(cast(list[str], values)))}
+            return {
+                "levels": list(dict.fromkeys(cast(list[str], values))),
+                "control": "effort",
+                "source": "models_dev",
+            }
     if any(
         isinstance(option, dict) and option.get("type") == "toggle"
         for option in options
     ):
-        return {"levels": ["none"]}
+        return {
+            "levels": ["none"],
+            "control": "toggle",
+            "source": "models_dev",
+        }
     return None
 
 
@@ -382,13 +410,19 @@ def load_model_registry() -> ModelRegistry:
     models_dev = _normalize_models_dev(_load_models_dev_data())
     overlay = _load_user_overlay()
 
-    for source in (models_dev, overlay):
-        for key, value in source.items():
-            registry[key] = _deep_merge(registry.get(key, {}), value)
-        registry = apply_model_registry_aliases(registry, overwrite=True)
-        if source is overlay:
-            for key, value in source.items():
-                registry[key] = _deep_merge(registry.get(key, {}), value)
+    for key, value in models_dev.items():
+        registry[key] = _deep_merge(registry.get(key, {}), value)
+
+    # Source-provider overrides must participate in alias generation (for
+    # example an OpenAI limit override inherited by Codex).
+    for key, value in overlay.items():
+        registry[key] = _deep_merge(registry.get(key, {}), value)
+    registry = apply_model_registry_aliases(registry, overwrite=True)
+
+    # Reapply target-provider overrides after aliases so an explicit
+    # ``codex:model`` row remains the highest-precedence static source.
+    for key, value in overlay.items():
+        registry[key] = _deep_merge(registry.get(key, {}), value)
 
     logger.debug(
         "model registry loaded bundled={} models_dev={} overlay={} final={}",

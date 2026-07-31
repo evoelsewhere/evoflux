@@ -1,7 +1,8 @@
 """Model metadata resolution.
 
 Looks up per-model limits and other metadata for a fully-qualified
-``provider:model`` string against the curated model registry.
+``provider:model`` string. Static registry metadata supplies the baseline;
+sparse metadata from a provider's live catalog takes precedence at runtime.
 
 This module intentionally stays API-compatible with the old metadata resolver,
 but its source data now lives beside modality gates in the model registry.
@@ -9,6 +10,7 @@ but its source data now lives beside modality gates in the model registry.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
@@ -37,12 +39,27 @@ class ModelLimits:
 
 @dataclass(frozen=True)
 class ModelThinking:
-    """Reasoning/thinking controls supported by one model."""
+    """Effective reasoning controls supported by the EvoFlux adapter.
+
+    ``levels`` contains exact accepted values. An empty tuple means the model
+    may reason internally, but this integration exposes no safe control.
+    ``control`` describes the provider wire contract for diagnostics/UI.
+    """
 
     levels: tuple[str, ...] = ()
+    control: str | None = None
+    default_level: str | None = None
+    default_enabled: bool | None = None
+    source: str | None = None
 
-    def to_dict(self) -> dict[str, list[str]]:
-        return {"levels": list(self.levels)}
+    def to_dict(self) -> dict[str, list[str] | str | bool | None]:
+        return {
+            "levels": list(self.levels),
+            "control": self.control,
+            "default_level": self.default_level,
+            "default_enabled": self.default_enabled,
+            "source": self.source,
+        }
 
 
 @dataclass(frozen=True)
@@ -93,25 +110,20 @@ class ModelMetadata:
     thinking: ModelThinking = ModelThinking()
     cost: ModelCost = ModelCost()
     features: ModelFeatures = ModelFeatures()
+    interfaces: tuple[str, ...] = ()
 
-    def to_dict(
-        self,
-    ) -> dict[
-        str,
-        dict[str, int | None]
-        | dict[str, list[str]]
-        | dict[str, float | None]
-        | dict[str, bool | str | None],
-    ]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "limits": self.limits.to_dict(),
             "thinking": self.thinking.to_dict(),
             "cost": self.cost.to_dict(),
             "features": self.features.to_dict(),
+            "interfaces": list(self.interfaces),
         }
 
 
 _DEFAULT = ModelMetadata()
+_runtime_metadata: dict[str, dict[str, Any]] = {}
 
 
 def _positive_int(value: Any, field: str) -> int | None:
@@ -181,7 +193,17 @@ def _merge_metadata(spec: dict[str, Any]) -> ModelMetadata:
             ),
         ),
         thinking=ModelThinking(
-            levels=_string_tuple(thinking_spec.get("levels"), "thinking.levels")
+            levels=_string_tuple(thinking_spec.get("levels"), "thinking.levels"),
+            control=_optional_string(
+                thinking_spec.get("control"), "thinking.control"
+            ),
+            default_level=_optional_string(
+                thinking_spec.get("default_level"), "thinking.default_level"
+            ),
+            default_enabled=_optional_bool(
+                thinking_spec.get("default_enabled"), "thinking.default_enabled"
+            ),
+            source=_optional_string(thinking_spec.get("source"), "thinking.source"),
         ),
         cost=ModelCost(
             input=_finite_float(cost_spec.get("input"), "cost.input"),
@@ -207,7 +229,59 @@ def _merge_metadata(spec: dict[str, Any]) -> ModelMetadata:
                 features_spec.get("release_date"), "features.release_date"
             ),
         ),
+        interfaces=_string_tuple(spec.get("interfaces"), "interfaces"),
     )
+
+
+def _deep_merge_dict(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    result = deepcopy(base)
+    for key, value in override.items():
+        current = result.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            result[key] = _deep_merge_dict(current, value)
+        else:
+            result[key] = deepcopy(value)
+    return result
+
+
+def set_runtime_model_metadata(model_id: str, metadata: dict[str, Any]) -> None:
+    """Register sparse metadata reported by a provider's live model catalog."""
+    normalized = model_id.strip().lower()
+    if ":" not in normalized:
+        raise ValueError("runtime model metadata requires a qualified model ID")
+    # Validate before publishing so a malformed provider payload cannot poison
+    # every subsequent metadata lookup.
+    _merge_metadata(_deep_merge_dict(_DEFAULT.to_dict(), metadata))
+    _runtime_metadata[normalized] = deepcopy(metadata)
+
+
+def replace_runtime_provider_metadata(
+    provider_id: str, models: dict[str, dict[str, Any]]
+) -> None:
+    """Atomically replace one provider's live metadata after a fresh discovery."""
+    provider = provider_id.strip().lower()
+    if not provider or ":" in provider:
+        raise ValueError("runtime metadata provider ID must be unqualified")
+    replacement: dict[str, dict[str, Any]] = {}
+    for model_id, metadata in models.items():
+        key = f"{provider}:{model_id.strip().lower()}"
+        _merge_metadata(_deep_merge_dict(_DEFAULT.to_dict(), metadata))
+        replacement[key] = deepcopy(metadata)
+
+    prefix = f"{provider}:"
+    stale = [key for key in _runtime_metadata if key.startswith(prefix)]
+    for key in stale:
+        _runtime_metadata.pop(key, None)
+    _runtime_metadata.update(replacement)
+
+
+def has_runtime_model_metadata(model_id: str | None) -> bool:
+    return bool(model_id and model_id.lower() in _runtime_metadata)
+
+
+def clear_runtime_model_metadata() -> None:
+    """Clear provider-discovered metadata (primarily useful for tests)."""
+    _runtime_metadata.clear()
 
 
 def _load_registry() -> dict[str, ModelMetadata]:
@@ -215,7 +289,7 @@ def _load_registry() -> dict[str, ModelMetadata]:
     for key, value in load_model_registry().items():
         metadata = {
             field: value[field]
-            for field in ("limits", "thinking", "cost", "features")
+            for field in ("limits", "thinking", "cost", "features", "interfaces")
             if field in value
         }
         if not metadata:
@@ -237,7 +311,12 @@ def get_model_metadata(model_id: str | None) -> ModelMetadata:
     """Return metadata for a fully-qualified ``provider:model`` string."""
     if not model_id:
         return _DEFAULT
-    return _registry().get(model_id.lower(), _DEFAULT)
+    normalized = model_id.lower()
+    base = _registry().get(normalized, _DEFAULT)
+    runtime = _runtime_metadata.get(normalized)
+    if runtime is None:
+        return base
+    return _merge_metadata(_deep_merge_dict(base.to_dict(), runtime))
 
 
 def get_model_limits(model_id: str | None) -> ModelLimits:
@@ -255,6 +334,69 @@ def get_model_features(model_id: str | None) -> ModelFeatures:
     return get_model_metadata(model_id).features
 
 
+def get_effective_model_thinking(model_id: str | None) -> ModelThinking:
+    """Intersect the provider model contract with the EvoFlux transport.
+
+    Provider model capability and adapter capability are separate facts. For
+    example Bedrock foundation models can reason, but the current Converse
+    adapter does not translate EvoFlux's named effort selector. Advertising
+    those levels would make the UI persist a setting that is silently ignored.
+    """
+    if not model_id or ":" not in model_id:
+        return ModelThinking()
+    provider_id, provider_model = model_id.lower().split(":", 1)
+    raw = get_model_metadata(model_id).thinking
+    levels = raw.levels
+
+    if provider_id == "bedrock":
+        return ModelThinking(
+            control="none",
+            source="adapter_constraint",
+        )
+    if provider_id in {"googlegenai", "vertexai"}:
+        if "gemma" in provider_model:
+            return ModelThinking(control="none", source="adapter_constraint")
+        if provider_model.startswith("gemini-3"):
+            return ModelThinking(
+                levels=tuple(
+                    level
+                    for level in levels
+                    if level in {"minimal", "low", "medium", "high"}
+                ),
+                control="effort",
+                default_level=raw.default_level,
+                default_enabled=raw.default_enabled,
+                source=raw.source or "provider_profile",
+            )
+        # The generateContent API uses thinkingBudget for Gemini 2.5.
+        # EvoFlux implements only the documented zero-budget off switch for
+        # Flash/Lite; sending thinkingLevel to 2.5 models is a provider error.
+        if provider_model.startswith("gemini-2.5-flash"):
+            return ModelThinking(
+                levels=("none",),
+                control="budget",
+                default_enabled=True,
+                source="provider_profile",
+            )
+        return ModelThinking(control="none", source="adapter_constraint")
+    if provider_id == "deepseek" and provider_model.startswith("deepseek-v4"):
+        # Direct API contract (July 2026): low/high/max, with xhigh accepted
+        # and mapped by the model. Thinking is on by default and can be disabled.
+        return ModelThinking(
+            levels=("none", "low", "high", "xhigh", "max"),
+            control="effort",
+            default_level="high",
+            default_enabled=True,
+            source="provider_profile",
+        )
+    return raw
+
+
 def get_model_thinking_levels(model_id: str | None) -> tuple[str, ...]:
-    """Return supported thinking levels for a fully-qualified model ID."""
-    return get_model_metadata(model_id).thinking.levels
+    """Return exact selectable reasoning controls for one model."""
+    return get_effective_model_thinking(model_id).levels
+
+
+def get_model_interfaces(model_id: str | None) -> tuple[str, ...]:
+    """Return provider-advertised invocation interfaces when available."""
+    return get_model_metadata(model_id).interfaces

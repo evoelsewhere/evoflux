@@ -13,7 +13,7 @@ export type AccentColor = 'default' | 'blue' | 'green' | 'orange' | 'pink' | 'pu
 export type FontFamily = 'inter' | 'system' | 'mono' | 'geist' | 'anthropic-sans'
 /** Legacy stored value migrated to anthropic-sans. */
 type LegacyFontFamily = 'source-sans'
-export type FontScale = 0.85 | 0.9 | 0.95 | 1 | 1.05 | 1.1 | 1.15 | 1.2 | 1.25 | 1.3
+export type FontScale = 0.9 | 0.95 | 1 | 1.05 | 1.1 | 1.15 | 1.2
 export type MotionIntensity = 'reduced' | 'subtle' | 'standard' | 'expressive' | 'cinematic'
 
 export interface AppearanceSettings {
@@ -27,7 +27,7 @@ export const APPEARANCE_STORAGE_KEY = STORAGE_KEYS.appearance
 
 export const ACCENT_COLORS: readonly AccentColor[] = ['default', 'blue', 'green', 'orange', 'pink', 'purple', 'red']
 export const FONT_FAMILIES: readonly FontFamily[] = ['inter', 'system', 'mono', 'geist', 'anthropic-sans']
-export const FONT_SCALES: readonly FontScale[] = [0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3]
+export const FONT_SCALES: readonly FontScale[] = [0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.2]
 export const MOTION_INTENSITIES: readonly MotionIntensity[] = [
   'reduced',
   'subtle',
@@ -50,7 +50,9 @@ export const MOTION_SCALES: Record<MotionIntensity, number> = {
   cinematic: 1.55,
 }
 
-const BASE_FONT_SIZE_PX = 18
+// Keep this aligned with the 16px rem baseline in index.css. The previous
+// 18px multiplier made the first step above 100% jump from 16px to 18.9px.
+const BASE_FONT_SIZE_PX = 16
 
 export const DEFAULT_APPEARANCE: AppearanceSettings = {
   accent: 'default',

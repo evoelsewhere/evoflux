@@ -22,8 +22,8 @@ import { cn } from '@/lib/utils'
 export type SettingsContentSize = 'narrow' | 'wide' | 'full'
 
 const CONTENT_WIDTHS: Record<SettingsContentSize, string> = {
-  narrow: 'max-w-none',
-  wide: 'max-w-none',
+  narrow: 'max-w-[52rem]',
+  wide: 'max-w-[68rem]',
   full: 'max-w-none',
 }
 
@@ -44,7 +44,7 @@ export function SettingsPageHeader({
   const settingsNavigate = useSettingsNavigate()
 
   return (
-    <header className="relative flex items-start gap-3 border-b border-(--color-border-subtle) pb-4 sm:gap-4 sm:pb-5">
+    <header className="relative flex items-start gap-3 border-b border-(--color-border-subtle) pb-5 sm:gap-4 sm:pb-6">
       {isMobile && (
         <button
           type="button"
@@ -55,18 +55,18 @@ export function SettingsPageHeader({
           <ArrowLeft size={18} />
         </button>
       )}
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-(--color-border) bg-(--bg-card) text-(--color-accent) shadow-[0_8px_24px_color-mix(in_srgb,var(--color-accent)_10%,transparent)] sm:size-11">
-        <Icon size={19} aria-hidden="true" />
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-(--color-accent)/20 bg-(--color-accent-soft) text-(--color-accent) sm:size-11">
+        <Icon size={18} aria-hidden="true" />
       </div>
       <div className="min-w-0 flex-1 pt-0.5">
         <h1
           id={titleId}
-          className="text-balance text-xl font-semibold tracking-[-0.02em] text-(--color-text) sm:text-2xl"
+          className="font-heading text-balance text-xl font-semibold tracking-[-0.025em] text-(--color-text) sm:text-[1.65rem]"
         >
           {title}
         </h1>
         {lede && (
-          <p className="mt-1.5 max-w-[62ch] text-sm leading-relaxed text-(--color-text-muted)">
+          <p className="mt-1.5 max-w-[66ch] text-[13px] leading-relaxed text-(--color-text-muted) sm:text-sm">
             {lede}
           </p>
         )}
@@ -112,7 +112,7 @@ export function SettingsPage({
           animate={{ opacity: 1, y: 0 }}
           transition={preset.transition}
           className={cn(
-            'w-full space-y-6 px-4 py-4 sm:px-6 sm:py-7',
+            'mx-auto w-full space-y-7 px-4 py-5 sm:px-7 sm:py-8',
             actions && 'pb-24 sm:pb-5',
             CONTENT_WIDTHS[size],
           )}
@@ -151,13 +151,17 @@ export function SettingsGroup({
   children: ReactNode
 }) {
   return (
-    <section className="space-y-2.5">
+    <section className="space-y-3">
       {(title || actions) && (
         <div className="flex items-end justify-between gap-3 px-0.5">
           <div className="min-w-0">
-            {title && <h2 className="text-[13px] font-semibold text-(--color-text)">{title}</h2>}
+            {title && (
+              <h2 className="font-heading text-sm font-semibold tracking-[-0.01em] text-(--color-text)">
+                {title}
+              </h2>
+            )}
             {description && (
-              <p className="mt-1 max-w-[58ch] text-xs leading-relaxed text-(--color-text-muted)">
+              <p className="mt-1 max-w-[62ch] text-xs leading-relaxed text-(--color-text-muted)">
                 {description}
               </p>
             )}
@@ -168,7 +172,7 @@ export function SettingsGroup({
       <div
         className={cn(
           !bare &&
-            'divide-y divide-(--color-border-subtle) overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card) shadow-[0_10px_30px_rgba(0,0,0,0.025)]',
+            'divide-y divide-(--color-border-subtle) overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card) shadow-[0_1px_2px_rgba(15,23,42,0.03),0_10px_32px_rgba(15,23,42,0.025)]',
           stagger && 'stagger-children',
           className,
         )}
@@ -208,7 +212,7 @@ export function SettingsRow({
         </label>
       )}
       {description && (
-        <p className="mt-1 max-w-[54ch] text-xs leading-relaxed text-(--color-text-muted)">
+        <p className="mt-1 max-w-[58ch] text-xs leading-[1.55] text-(--color-text-muted)">
           {description}
         </p>
       )}
@@ -217,7 +221,7 @@ export function SettingsRow({
 
   if (stacked) {
     return (
-      <div className={cn('space-y-2.5 px-4 py-4', className)}>
+      <div className={cn('space-y-3 px-4 py-4 sm:px-5', className)}>
         {text}
         {control ?? children}
       </div>
@@ -225,7 +229,7 @@ export function SettingsRow({
   }
 
   return (
-    <div className={cn('flex min-h-14 items-start gap-4 px-4 py-4', className)}>
+    <div className={cn('flex min-h-16 items-start gap-5 px-4 py-4 sm:px-5', className)}>
       {text}
       {(control || children) && (
         <div className="flex shrink-0 items-center gap-2 pt-0.5">{control ?? children}</div>

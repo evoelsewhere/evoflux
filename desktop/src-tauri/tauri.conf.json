@@ -89,6 +89,7 @@
       "timestampUrl": "http://timestamp.digicert.com",
       "wix": {
         "language": "en-US",
+        "bannerPath": "./windows/installer-banner.bmp",
         "template": "./windows/main-per-user.wxs"
       }
     },

@@ -112,7 +112,7 @@ export function DreamSettingsPage() {
     <SettingsPage
       icon={Moon}
       title="Dream"
-      lede="Dream folds unprocessed sessions and notes into the wiki on a schedule. Its prompt and tools are built in, so only timing and model are configurable."
+      lede="Dream turns unprocessed sessions and notes into curated Memory on a schedule. Its prompt and tools are built in, so only timing and model are configurable."
       actions={
         <div className="flex items-center gap-2">
           {dirty && (

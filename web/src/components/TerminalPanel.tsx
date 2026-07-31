@@ -23,7 +23,7 @@ import { apiBaseUrl } from '@/api/base-url'
 import { withTokenParam } from '@/api/auth'
 
 const DARK_ANSI_THEME: ITheme = {
-  black: '#1B1D1F',
+  black: '#191918',
   red: '#F87171',
   green: '#4ADE80',
   yellow: '#FBBF24',
@@ -69,15 +69,15 @@ function terminalTheme(): ITheme {
 
   return {
     ...(dark ? DARK_ANSI_THEME : LIGHT_ANSI_THEME),
-    background: cssColor('--terminal-bg', dark ? '#171A1F' : '#F8FAFC'),
-    foreground: dark ? '#D6DEE8' : '#334155',
-    cursor: dark ? '#60A5FA' : '#2563EB',
-    cursorAccent: cssColor('--terminal-bg', dark ? '#171A1F' : '#F8FAFC'),
-    selectionBackground: dark ? '#1E4F78' : '#BFDBFE',
-    selectionInactiveBackground: dark ? '#29394A' : '#DBEAFE',
-    scrollbarSliderBackground: dark ? '#53596066' : '#C9CDD166',
-    scrollbarSliderHoverBackground: dark ? '#6B728099' : '#9CA3AF99',
-    scrollbarSliderActiveBackground: dark ? '#8B949EB3' : '#6B7280B3',
+    background: cssColor('--terminal-bg', dark ? '#151514' : '#F8FAFC'),
+    foreground: dark ? '#DDDCD8' : '#334155',
+    cursor: dark ? '#9AA0BF' : '#2563EB',
+    cursorAccent: cssColor('--terminal-bg', dark ? '#151514' : '#F8FAFC'),
+    selectionBackground: dark ? '#3B3D48' : '#BFDBFE',
+    selectionInactiveBackground: dark ? '#313130' : '#DBEAFE',
+    scrollbarSliderBackground: dark ? '#56565066' : '#C9CDD166',
+    scrollbarSliderHoverBackground: dark ? '#73736D99' : '#9CA3AF99',
+    scrollbarSliderActiveBackground: dark ? '#92918AB3' : '#6B7280B3',
   }
 }
 

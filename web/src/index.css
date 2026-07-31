@@ -152,41 +152,42 @@
 }
 
 /* ─────────────────────────────────────────────────────────────
- * Dark mode — pure black/white/gray, single blue accent.
+ * Dark mode — neutral charcoal surfaces with a muted indigo accent.
  * ───────────────────────────────────────────────────────────── */
 :root.dark {
     color-scheme: dark;
 
-    /* Surfaces — lifted charcoal hierarchy for long sessions without
-       collapsing the page, sidebar, and widgets into near-black. */
-    --bg-page:           #1B1D1F;
-    --bg-sidebar:        #222529;
-    --bg-card:           #282B2F;
-    --bg-input:          #24272B;
-    --bg-key:            #30343A;
-    --bg-muted:          #30343A;
-    --bg-send:           #D4D6D8;
-    --terminal-bg:       #171A1F;
-    --color-surface:     #282B2F;
-    --color-surface-2:   #30343A;
-    --color-bg-elevated: #2C3035;
+    /* Surfaces — distinct enough to scan, close enough to feel like one app. */
+    --bg-page:           #191918;
+    --bg-sidebar:        #1E1E1D;
+    --bg-card:           #242423;
+    --bg-input:          #20201F;
+    --bg-key:            #2C2C2A;
+    --bg-hover:          #333331;
+    --bg-muted:          #2B2B29;
+    --bg-send:           #E8E6E1;
+    --terminal-bg:       #151514;
+    --color-surface:     #242423;
+    --color-surface-2:   #2C2C2A;
+    --color-bg-elevated: #292928;
 
-    /* Fine borders — enough separation without outlining every surface. */
-    --border-soft:         #33373C;
-    --border-card:         #3D4248;
-    --color-border-subtle: #33373C;
-    --color-border:        #3D4248;
-    --color-border-strong: #535960;
+    /* Fine borders — quiet at rest, clear on interactive surfaces. */
+    --border-soft:         #30302E;
+    --border-card:         #393936;
+    --color-border-subtle: #30302E;
+    --color-border:        #3C3C39;
+    --color-border-strong: #565650;
 
-    /* Text — softened foreground reduces glare on near-black bg */
-    --color-text:           #F7F8F9;
-    --color-text-2:         #E5E7EA;
-    --color-text-muted:     #C9CCD1;
-    --color-text-subtle:    #ADB1B7;
-    --color-text-on-accent: #494d52;
+    /* Text — four deliberate levels instead of near-white everywhere. */
+    --color-text:           #F3F2EF;
+    --color-text-2:         #DDDCD8;
+    --color-text-muted:     #AAA8A2;
+    --color-text-subtle:    #85827F;
+    --color-text-on-accent: #191918;
 
     /* Accent */
-    --color-accent:  #C8CACC;
+    --color-accent:      #9AA0BF;
+    --color-accent-soft: color-mix(in srgb, var(--color-accent) 13%, transparent);
     --color-overlay: rgba(0, 0, 0, 0.62);
 
     /* Composer effort scale */
@@ -269,8 +270,8 @@
     /* Operator: medium gray — intentionally de-emphasised */
     --color-syn-operator: #8B949E;
 
-    /* Focus + depth — VSCode 2026 Dark blue-teal accent for interactive states */
-    --focus-ring:   #3994BC;
+    /* Focus + depth */
+    --focus-ring:   #9AA0BF;
     --shadow-depth: 0 2px 4px rgba(0, 0, 0, 0.40), 0 4px 16px rgba(0, 0, 0, 0.30);
     --shadow-popover: 0 16px 48px rgba(0, 0, 0, 0.55), 0 6px 24px rgba(0, 0, 0, 0.38);
 
@@ -295,8 +296,8 @@
     --card-foreground:            var(--color-text);
     --popover:                    var(--bg-card);
     --popover-foreground:         var(--color-text);
-    --primary:                    #2871A3;
-    --primary-foreground:         #FFFFFF;
+    --primary:                    var(--color-accent);
+    --primary-foreground:         var(--color-text-on-accent);
     --secondary:                  var(--bg-key);
     --secondary-foreground:       var(--color-text);
     --muted:                      var(--bg-key);
@@ -311,7 +312,7 @@
     --sidebar:                    var(--bg-sidebar);
     --sidebar-foreground:         var(--color-text);
     --sidebar-primary:            var(--color-accent);
-    --sidebar-primary-foreground: var(--bg-page);
+    --sidebar-primary-foreground: var(--color-text-on-accent);
     --sidebar-accent:             var(--bg-key);
     --sidebar-accent-foreground:  var(--color-text);
     --sidebar-border:             var(--border-soft);
@@ -324,41 +325,43 @@
 }
 
 /* ─────────────────────────────────────────────────────────────
- * Light mode — pure white/gray, single blue accent.
+ * Light mode — soft neutral canvas with crisp white work surfaces.
  * ───────────────────────────────────────────────────────────── */
 :root,
 :root.light {
     color-scheme: light;
 
-    /* Surfaces — true white canvas with quiet neutral separation. */
-    --bg-page:           #FFFFFF;
-    --bg-sidebar:        #F7F8F8;
+    /* Surfaces */
+    --bg-page:           #F7F8FB;
+    --bg-sidebar:        #F1F3F7;
     --bg-card:           #FFFFFF;
     --bg-input:          #FFFFFF;
-    --bg-key:            #F1F2F3;
-    --bg-muted:          #F1F2F3;
-    --bg-send:           #111114;
-    --terminal-bg:       #F8FAFC;
+    --bg-key:            #ECEFF5;
+    --bg-hover:          #E5E9F1;
+    --bg-muted:          #EEF1F6;
+    --bg-send:           #1D2433;
+    --terminal-bg:       #F4F6FA;
     --color-surface:     #FFFFFF;
-    --color-surface-2:   #F1F2F3;
+    --color-surface-2:   #EEF1F6;
     --color-bg-elevated: #FFFFFF;
 
-    /* Fine borders — quiet neutral lines on the white canvas. */
-    --border-soft:         #ECEEF0;
-    --border-card:         #DEE1E4;
-    --color-border-subtle: #ECEEF0;
-    --color-border:        #DEE1E4;
-    --color-border-strong: #C9CDD1;
+    /* Borders */
+    --border-soft:         #E6E9EF;
+    --border-card:         #DCE1E9;
+    --color-border-subtle: #E6E9EF;
+    --color-border:        #D8DDE6;
+    --color-border-strong: #BCC4D0;
 
-    /* Text — ink-black primary, measured secondary scale */
-    --color-text:           #000000;
-    --color-text-2:         #1a1a1a;
-    --color-text-muted:     #3c3c3c;
-    --color-text-subtle:    #4d4d4d;
+    /* Text — neutral ink with a readable but visible hierarchy. */
+    --color-text:           #171A21;
+    --color-text-2:         #343A46;
+    --color-text-muted:     #5C6675;
+    --color-text-subtle:    #697381;
     --color-text-on-accent: #FFFFFF;
 
     /* Accent */
-    --color-accent:  #111114;
+    --color-accent:      #4C66D6;
+    --color-accent-soft: color-mix(in srgb, var(--color-accent) 10%, transparent);
     --color-overlay: rgba(0, 0, 0, 0.40);
 
     /* Composer effort scale */
@@ -442,7 +445,7 @@
     --color-syn-operator: #737373;
 
     /* Focus + depth — VSCode 2026 Light blue for interactive states */
-    --focus-ring:   #0069CC;
+    --focus-ring:   #4C66D6;
     --shadow-depth: 0 1px 3px rgba(10, 10, 30, 0.07), 0 4px 12px rgba(10, 10, 30, 0.10);
     --shadow-popover: 0 8px 32px rgba(10, 10, 30, 0.20), 0 4px 16px rgba(10, 10, 30, 0.12);
 
@@ -453,7 +456,7 @@
     --card-foreground:            var(--color-text);
     --popover:                    var(--bg-card);
     --popover-foreground:         var(--color-text);
-    --primary:                    #111114;
+    --primary:                    var(--color-accent);
     --primary-foreground:         #FFFFFF;
     --secondary:                  var(--bg-key);
     --secondary-foreground:       var(--color-text);
@@ -469,7 +472,7 @@
     --sidebar:                    var(--bg-sidebar);
     --sidebar-foreground:         var(--color-text);
     --sidebar-primary:            var(--color-accent);
-    --sidebar-primary-foreground: var(--bg-page);
+    --sidebar-primary-foreground: var(--color-text-on-accent);
     --sidebar-accent:             var(--bg-key);
     --sidebar-accent-foreground:  var(--color-text);
     --sidebar-border:             var(--border-soft);
@@ -587,6 +590,24 @@ a svg.lucide,
     color var(--motion-fast) ease,
     opacity var(--motion-fast) ease,
     transform var(--motion-fast) ease;
+}
+
+/* Desktop-only smoked glass. The sidebar follows the active page palette
+ * instead of introducing another opaque slab. Mobile drawers and the web app
+ * keep their solid surfaces for contrast and cheaper compositing. */
+[data-desktop-sidebar-glass="true"] [data-sidebar-card] {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--bg-sidebar) 64%, transparent),
+      color-mix(in srgb, var(--bg-page) 78%, transparent)
+    );
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 72%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(108%);
+  backdrop-filter: blur(22px) saturate(108%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--color-text) 3%, transparent),
+    0 10px 30px rgb(0 0 0 / 7%);
 }
 
 .mobile-safe-header {

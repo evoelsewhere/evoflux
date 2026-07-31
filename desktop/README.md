@@ -76,6 +76,11 @@ $env:EVOFLUX_WINDOWS_CERTIFICATE_THUMBPRINT = "YOUR_CERT_THUMBPRINT"
 .\scripts\build_msi.ps1
 ```
 
+WiX MSI validation requires the Windows **VBScript** optional capability. The
+build script checks both the 32-bit and 64-bit script engines before starting
+the expensive build and prints the Windows capability command if either engine
+is unavailable.
+
 For a local-only unsigned artifact, pass `-AllowUnsigned` explicitly. Release
 MSIs reject downgrades so a newer database is never opened by an older
 migration bundle. The sidecar build also validates the Alembic head marker and

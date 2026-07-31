@@ -10,12 +10,10 @@ few facets differ:
 * **Headers.** Copilot expects ``Openai-Intent``, ``x-initiator``, and a
   ``User-Agent`` alongside the OAuth bearer.
 * **Per-model endpoint routing.** Some Copilot-hosted models accept only
-  ``/chat/completions``; others accept only ``/responses``. The mapping
-  is hardcoded in :data:`_MODEL_ENDPOINT_MAP`.
-* **Reasoning gating.** ``reasoning_effort`` (Chat Completions) is
-  accepted only by a whitelisted subset of OpenAI models served via
-  Copilot; Claude / Gemini / Grok reject it. Other reasoning fields
-  flow through unchanged.
+  ``/chat/completions``; others accept only ``/responses``. The live
+  ``/models`` contract is used instead of a model-name table.
+* **Reasoning gating.** ``reasoning_effort`` is forwarded only when the
+  resolved model profile advertises the selected effort.
 * **Responses request body.** Copilot's gateway accepts ``temperature``
   and ``top_p`` on ``/responses`` (it ignores them); OpenAI's strict
   endpoint rejects them. The Copilot subclass adds them.
@@ -48,41 +46,14 @@ _DEFAULT_HEADERS: dict[str, str] = {
     "x-initiator": "user",
 }
 
-# Models that accept ``reasoning_effort`` on /chat/completions. Other
-# Copilot-hosted models reject the field outright.
-_REASONING_EFFORT_MODELS: frozenset[str] = frozenset(
-    {
-        "gpt-5-mini",
-        "gpt-5.1",
-        "gpt-5.2",
-        "gpt-5.4-mini",
-    }
-)
-
-# Per-model endpoint preference. Models not listed default to "completions".
-# "completions" → /chat/completions, "responses" → /responses.
-_MODEL_ENDPOINT_MAP: dict[str, str] = {
-    "gpt-5-mini": "completions",
-    "gpt-5.1": "completions",
-    "gpt-5.2": "completions",
-    "claude-sonnet-4": "completions",
-    "claude-sonnet-4.5": "completions",
-    "claude-opus-4.5": "completions",
-    "claude-haiku-4.5": "completions",
-    "gemini-3.1-pro-preview": "completions",
-    "gemini-3-flash-preview": "completions",
-    "gemini-2.5-pro": "completions",
-    "grok-code-fast-1": "completions",
-    "gpt-5.4-mini": "responses",
-    "gpt-5.4": "responses",
-    "gpt-5.2-codex": "responses",
-    "gpt-5.3-codex": "responses",
-}
-
-
 def _endpoint_for_model(model: str) -> str:
-    """Return ``"completions"`` or ``"responses"`` for ``model``."""
-    return _MODEL_ENDPOINT_MAP.get(model, "completions")
+    """Resolve the live Copilot model contract, defaulting conservatively."""
+    from app.agent.providers.model_metadata import get_model_interfaces
+
+    interfaces = get_model_interfaces(f"copilot:{model}")
+    if "responses" in interfaces and "chat/completions" not in interfaces:
+        return "responses"
+    return "completions"
 
 
 def _resolve_github_token(explicit: str | SecretStr | None) -> str | None:
@@ -111,11 +82,10 @@ class _CopilotCompletionsHandler(CompletionsHandler):
 
     def customize_thinking(self, merged: dict[str, Any], body: dict[str, Any]) -> None:
         thinking_level = merged.get("thinking_level")
-        if (
-            thinking_level
-            and thinking_level not in ("none", "off")
-            and self.model in _REASONING_EFFORT_MODELS
-        ):
+        from app.agent.providers.model_metadata import get_model_thinking_levels
+
+        supported = get_model_thinking_levels(f"copilot:{self.model}")
+        if thinking_level and thinking_level in supported:
             body["reasoning_effort"] = thinking_level
 
     def _usage_from_openai(self, u: Any) -> Usage:
@@ -172,8 +142,7 @@ class _CopilotResponsesHandler(ResponsesHandler):
 class CopilotProvider(OpenAIProvider):
     """GitHub Copilot provider (OpenAI-compatible).
 
-    Auto-routes to ``/chat/completions`` or ``/responses`` based on the
-    model (see :data:`_MODEL_ENDPOINT_MAP`).
+    Routes to ``/chat/completions`` or ``/responses`` from live model metadata.
 
     Args:
         model: Model name, e.g. ``"gpt-5-mini"``, ``"claude-sonnet-4"``.
@@ -185,9 +154,8 @@ class CopilotProvider(OpenAIProvider):
         top_p: Nucleus sampling cutoff (same caveats as ``temperature``).
         max_tokens: Hard cap on completion tokens.
         model_kwargs: Extra request body fields. Notable keys:
-            ``thinking_level`` (str) — only forwarded as
-            ``reasoning_effort`` for models in
-            :data:`_REASONING_EFFORT_MODELS`.
+            ``thinking_level`` (str) — forwarded only when the model profile
+            advertises that exact effort.
     """
 
     def __init__(

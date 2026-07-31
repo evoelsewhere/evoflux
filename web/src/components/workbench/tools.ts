@@ -1,10 +1,11 @@
 import {
-  BookOpen,
+  BrainCircuit,
   CalendarClock,
   Files,
   GitBranch,
   GitPullRequest,
   Globe2,
+  LayoutDashboard,
   MessageCirclePlus,
   Network,
   Terminal,
@@ -23,6 +24,11 @@ export const WORKBENCH_TOOLS: Record<
   WorkbenchTool,
   { label: string; description: string; icon: LucideIcon; shortcut?: string }
 > = {
+  overview: {
+    label: 'Overview',
+    description: 'See workspace, Git, session, and tool status at a glance',
+    icon: LayoutDashboard,
+  },
   terminal: {
     label: 'Terminal',
     description: 'Run commands in the active workspace',
@@ -57,9 +63,9 @@ export const WORKBENCH_TOOLS: Record<
     shortcut: '⌥⌘S',
   },
   wiki: {
-    label: 'Wiki',
-    description: 'Browse the shared agent knowledge base',
-    icon: BookOpen,
+    label: 'Memory',
+    description: 'Browse curated knowledge and pending notes',
+    icon: BrainCircuit,
     shortcut: '⌃M',
   },
   scheduler: {
@@ -87,6 +93,9 @@ export function isWorkbenchToolEnabled(
   tool: WorkbenchTool,
   context: WorkbenchContext,
 ): boolean {
+  if (tool === 'overview') {
+    return context.mode === 'coding' && Boolean(context.workspace)
+  }
   if (tool === 'source-control' || tool === 'pull-requests') {
     return context.mode === 'coding'
   }
