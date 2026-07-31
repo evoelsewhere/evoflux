@@ -95,7 +95,12 @@ def _css_color(value: Any, default: str = "transparent") -> str:
 
 def _css_font_family(name: Any) -> str:
     family = str(name).replace("\\", "\\\\").replace('"', '\\"')
-    return html.escape(f'"{family}",Arial,sans-serif', quote=True)
+    fallback = (
+        '"Helvetica Neue",Arial,sans-serif'
+        if family.casefold() == "aptos display"
+        else "Arial,sans-serif"
+    )
+    return html.escape(f'"{family}",{fallback}', quote=True)
 
 
 def _render_docx(source: Path) -> str:
@@ -398,6 +403,37 @@ def _xlsx_series_values(workbook: Any, series: Any) -> list[float]:
     return values
 
 
+def _xlsx_category_values(workbook: Any, series: Any) -> list[str]:
+    """Resolve chart category labels from a worksheet reference."""
+    from openpyxl.utils.cell import range_boundaries
+
+    data_source = getattr(series, "cat", None) or getattr(series, "xVal", None)
+    if data_source is None:
+        return []
+    reference = getattr(data_source, "strRef", None) or getattr(
+        data_source, "numRef", None
+    )
+    formula = str(getattr(reference, "f", "") or "")
+    if "!" not in formula:
+        return []
+    sheet_name, cell_range = formula.rsplit("!", 1)
+    sheet_name = sheet_name.strip("'").replace("''", "'")
+    if sheet_name not in workbook.sheetnames:
+        return []
+    min_column, min_row, max_column, max_row = range_boundaries(cell_range)
+    sheet = workbook[sheet_name]
+    return [
+        str(cell.value or "")
+        for row in sheet.iter_rows(
+            min_row=min_row,
+            max_row=max_row,
+            min_col=min_column,
+            max_col=max_column,
+        )
+        for cell in row
+    ]
+
+
 def _xlsx_chart_svg(workbook: Any, chart: Any) -> str:
     """Render common workbook charts as a deterministic SVG preview."""
     palette = ("#2563eb", "#0f766e", "#f59e0b", "#dc2626", "#7c3aed")
@@ -414,6 +450,86 @@ def _xlsx_chart_svg(workbook: Any, chart: Any) -> str:
     )
     maximum = maximum or 1
     count = max(len(values) for values in series_values)
+    chart_type = type(chart).__name__.upper()
+    categories = _xlsx_category_values(workbook, chart.ser[0]) if chart.ser else []
+
+    def category_labels() -> str:
+        if not categories:
+            return ""
+        return "".join(
+            f'<text x="{52 + index * 520 / max(len(categories) - 1, 1):.2f}" '
+            'y="278" text-anchor="middle" font-size="13" fill="#6b7280">'
+            f"{html.escape(label)}</text>"
+            for index, label in enumerate(categories)
+        )
+
+    if "PIE" in chart_type or "DOUGHNUT" in chart_type:
+        values = [abs(value) for value in series_values[0]]
+        total = sum(values) or 1
+        start_angle = -math.pi / 2
+        slices: list[str] = []
+        for index, value in enumerate(values):
+            end_angle = start_angle + 2 * math.pi * value / total
+            start_x = 300 + 108 * math.cos(start_angle)
+            start_y = 150 + 108 * math.sin(start_angle)
+            end_x = 300 + 108 * math.cos(end_angle)
+            end_y = 150 + 108 * math.sin(end_angle)
+            large_arc = 1 if end_angle - start_angle > math.pi else 0
+            slices.append(
+                f'<path d="M300 150 L{start_x:.2f} {start_y:.2f} '
+                f'A108 108 0 {large_arc} 1 {end_x:.2f} {end_y:.2f} Z" '
+                f'fill="{palette[index % len(palette)]}"/>'
+            )
+            start_angle = end_angle
+        hole = (
+            '<circle cx="300" cy="150" r="65" fill="white"/>'
+            if "DOUGHNUT" in chart_type
+            else ""
+        )
+        return (
+            '<svg class="workbook-chart-svg" viewBox="0 0 600 300">'
+            f"{''.join(slices)}{hole}</svg>"
+        )
+
+    if "AREA" in chart_type or "LINE" in chart_type:
+        paths: list[str] = []
+        for series_index, values in enumerate(series_values):
+            points = [
+                (
+                    52 + value_index * 520 / max(len(values) - 1, 1),
+                    252 - (value / maximum) * 205,
+                )
+                for value_index, value in enumerate(values)
+            ]
+            point_text = " ".join(f"{x:.2f},{y:.2f}" for x, y in points)
+            color = palette[series_index % len(palette)]
+            area = ""
+            if "AREA" in chart_type and points:
+                polygon = [
+                    f"{points[0][0]:.2f},252",
+                    *[f"{x:.2f},{y:.2f}" for x, y in points],
+                    f"{points[-1][0]:.2f},252",
+                ]
+                area = (
+                    f'<polygon class="workbook-chart-area" '
+                    f'points="{" ".join(polygon)}" fill="{color}" '
+                    'fill-opacity=".24"/>'
+                )
+            markers = "".join(
+                f'<circle cx="{x:.2f}" cy="{y:.2f}" r="4" fill="{color}"/>'
+                for x, y in points
+            )
+            paths.append(
+                area + f'<polyline points="{point_text}" fill="none" '
+                f'stroke="{color}" stroke-width="4"/>{markers}'
+            )
+        return (
+            '<svg class="workbook-chart-svg" viewBox="0 0 600 300" '
+            'preserveAspectRatio="none">'
+            '<line x1="45" y1="252" x2="575" y2="252" stroke="#9ca3af"/>'
+            f"{''.join(paths)}{category_labels()}</svg>"
+        )
+
     group_width = 520 / max(count, 1)
     bar_width = max(group_width / max(len(series_values), 1) * 0.72, 2)
     bars: list[str] = []
@@ -578,7 +694,7 @@ def _render_xlsx(source: Path) -> str:
         # CSS cells have a 25px minimum height.  Compact workbook profiles may
         # request slightly shorter rows, so use the rendered minimum here or
         # the final rows can extend beyond the stage and be falsely clipped.
-        stage_height = 27 + sum(max(height, 25) for height in row_heights)
+        stage_height = 32 + sum(max(height, 25) + 1 for height in row_heights)
         for chart_index, chart in enumerate(sheet._charts, start=1):
             title = f"Chart {chart_index}"
             try:
@@ -777,6 +893,8 @@ def _slide_background(slide: Any, palette: dict[str, str]) -> str:
 def _shape_text(shape: Any, palette: dict[str, str]) -> str:
     from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 
+    shape_name = str(getattr(shape, "name", "")).casefold()
+    is_slide_title = "[role:title]" in shape_name
     alignment = {
         PP_ALIGN.CENTER: "center",
         PP_ALIGN.RIGHT: "right",
@@ -796,7 +914,8 @@ def _shape_text(shape: Any, palette: dict[str, str]) -> str:
             if run.font.underline:
                 styles.append("text-decoration:underline")
             if run.font.size:
-                styles.append(f"font-size:{run.font.size.pt:.2f}pt")
+                size_pt = run.font.size.pt * (0.9 if is_slide_title else 1)
+                styles.append(f"font-size:{size_pt:.2f}pt")
             if run.font.name:
                 styles.append(f"font-family:{_css_font_family(run.font.name)}")
             if run.font.color and run.font.color.type is not None:
@@ -806,6 +925,15 @@ def _shape_text(shape: Any, palette: dict[str, str]) -> str:
             style_attr = f' style="{";".join(styles)}"' if styles else ""
             runs.append(f"<span{style_attr}>{html.escape(run.text)}</span>")
         paragraph_styles: list[str] = []
+        if is_slide_title:
+            paragraph_styles.extend(
+                (
+                    "white-space:nowrap",
+                    "overflow-wrap:normal",
+                    "line-height:1.05",
+                    "letter-spacing:-.015em",
+                )
+            )
         if paragraph.alignment in alignment:
             paragraph_styles.append(f"text-align:{alignment[paragraph.alignment]}")
         if paragraph.level:
@@ -1048,6 +1176,20 @@ def _chart_svg(chart: Any, theme_palette: dict[str, str]) -> str:
     )
     maximum = maximum or 1
     count = max(len(values) for values in series_values)
+    try:
+        categories = [str(category) for category in chart.plots[0].categories]
+    except (AttributeError, IndexError, TypeError):
+        categories = []
+
+    def category_labels() -> str:
+        if not categories:
+            return ""
+        return "".join(
+            f'<text x="{52 + index * 520 / max(len(categories) - 1, 1):.2f}" '
+            'y="278" text-anchor="middle" font-size="13" fill="#6b7280">'
+            f"{html.escape(label)}</text>"
+            for index, label in enumerate(categories)
+        )
 
     if "DOUGHNUT" in chart_type or "PIE" in chart_type:
         values = [abs(value) for value in series_values[0]]
@@ -1073,7 +1215,7 @@ def _chart_svg(chart: Any, theme_palette: dict[str, str]) -> str:
             '<circle cx="300" cy="150" r="65" fill="white"/></svg>'
         )
 
-    if "LINE" in chart_type:
+    if "AREA" in chart_type or "LINE" in chart_type:
         paths: list[str] = []
         for series_index, values in enumerate(series_values):
             points = []
@@ -1086,15 +1228,26 @@ def _chart_svg(chart: Any, theme_palette: dict[str, str]) -> str:
                 f'<circle cx="{x:.2f}" cy="{y:.2f}" r="4" fill="{colors[series_index]}"/>'
                 for x, y in points
             )
+            area = ""
+            if "AREA" in chart_type and points:
+                polygon_points = [
+                    f"{points[0][0]:.2f},252",
+                    *[f"{x:.2f},{y:.2f}" for x, y in points],
+                    f"{points[-1][0]:.2f},252",
+                ]
+                area = (
+                    f'<polygon class="chart-area" points="{" ".join(polygon_points)}" '
+                    f'fill="{colors[series_index]}" fill-opacity=".24"/>'
+                )
             paths.append(
-                f'<polyline points="{point_text}" fill="none" '
+                area + f'<polyline points="{point_text}" fill="none" '
                 f'stroke="{colors[series_index]}" stroke-width="4"/>'
                 f"{markers}"
             )
         return (
             '<svg class="chart-svg" viewBox="0 0 600 300" preserveAspectRatio="none">'
             '<line x1="45" y1="252" x2="575" y2="252" stroke="#d1d5db"/>'
-            f"{''.join(paths)}</svg>"
+            f"{''.join(paths)}{category_labels()}</svg>"
         )
 
     group_width = 520 / max(count, 1)

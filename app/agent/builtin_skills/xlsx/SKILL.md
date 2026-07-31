@@ -5,10 +5,12 @@ description: "Create, inspect, analyze, or edit spreadsheet files with formulas,
 
 # XLSX
 
-Create and edit workbooks with `openpyxl` and the Python standard library. Use
-native formulas, tables, charts, validations, named ranges, comments, and
-styles. Use only the bundled Python toolchain. The deliverable for this skill
-is a spreadsheet file.
+For a new workbook, call `xlsx_engine(action="catalog")`, then
+`xlsx_engine(action="compose", ...)`. The model owns sheet purpose, data,
+formulas, chart choice, and content completeness; the engine owns deterministic
+styles, native Excel objects, print geometry, render, and QA. Do not write a
+free-form `openpyxl` coordinate script for routine creation. Low-level helpers
+remain an escape hatch for unsupported structures and template-first edits.
 
 ## Template-first contract
 
@@ -40,22 +42,23 @@ charts, tables, pivots, and VBA are protected from unexplained changes.
    protected/hidden regions.
 3. Define a mutation map (`target -> allowed change -> dependencies -> check`).
    Preserve everything outside that map.
-4. For a new workbook, select a workbook profile before styling:
+4. For a new workbook, call the engine catalog, then select a workbook profile:
    `data-table`, `financial-model`, `dashboard`, or `operational`. Plan each
    sheet's role as inputs, data, calculation, summary, or tracker. Keep raw
    data, assumptions, calculations, and presentation outputs distinguishable.
-   Use `apply_workbook_profile` and `prepare_data_sheet` from `stylekit.py`.
+   Express sheets, cells, tables, KPIs, notes, charts, validations, and
+   conditional formatting through the declarative spec.
 5. Build a content-completeness contract before layout. For a tracker this
    normally includes fields such as action, owner, target/date, status, risk,
    and notes; for a model it includes inputs, calculation drivers, outputs,
    units, periods, and sources. Persist it with `declare_content_contract` so
    QA catches columns or fields silently dropped to make the workbook look
    simpler.
-6. Build one reproducible Python script. Use `scripts/stylekit.py` for
-   typography, widths, table styles, number formats, and calculation settings.
-7. Save and QA after each logical sheet or cross-sheet calculation block. Run
-   final structural/formula QA, render every sheet when available, inspect, and
-   deliver only the requested workbook.
+6. Compose through `xlsx_engine`; its schema rejects unknown fields and unsafe
+   formulas before writing.
+7. Run `xlsx_engine(action="validate", render=true)` for final structural,
+   formula, and visual QA. Inspect every rendered sheet and deliver only the
+   requested workbook.
 
 Use the package-preserving editor for value/formula substitutions. Use
 `openpyxl` only for requested structural changes such as adding rows, tables,

@@ -18,12 +18,24 @@ from pptx.util import Inches, Pt
 EMU_PER_INCH = 914400
 PT_PER_INCH = 72
 LayoutName = Literal[
+    "cover",
     "hero",
     "split",
     "visual-left",
     "comparison",
     "statement",
     "workstreams",
+    "section",
+    "agenda",
+    "three-column",
+    "four-quadrant",
+    "chart-focus",
+    "table-focus",
+    "timeline",
+    "metrics",
+    "quote",
+    "process",
+    "image-full",
 ]
 LayoutProfileName = Literal["editorial", "executive-dense", "operational"]
 
@@ -323,7 +335,25 @@ def layout_plan(
     content_width = slide_width - 2 * margin
     gap = 0.42
 
-    if name == "hero":
+    if name == "cover":
+        primary_width = content_width * 0.58
+        content = {
+            "primary": _region(
+                "primary",
+                margin,
+                content_top,
+                primary_width,
+                content_height,
+            ),
+            "visual": _region(
+                "visual",
+                margin + primary_width + gap,
+                content_top,
+                content_width - primary_width - gap,
+                content_height,
+            ),
+        }
+    elif name == "hero":
         content = {
             "canvas": _region(
                 "canvas",
@@ -436,6 +466,169 @@ def layout_plan(
             content_width,
             summary_height,
         )
+    elif name == "section":
+        statement_width = content_width * 0.78
+        content = {
+            "statement": _region(
+                "statement",
+                margin,
+                content_top,
+                statement_width,
+                content_height,
+            ),
+            "marker": _region(
+                "marker",
+                margin + statement_width + gap,
+                content_top,
+                content_width - statement_width - gap,
+                content_height,
+            ),
+        }
+    elif name == "agenda":
+        intro_width = content_width * 0.3
+        content = {
+            "intro": _region(
+                "intro",
+                margin,
+                content_top,
+                intro_width,
+                content_height,
+            ),
+            "agenda": _region(
+                "agenda",
+                margin + intro_width + gap,
+                content_top,
+                content_width - intro_width - gap,
+                content_height,
+            ),
+        }
+    elif name == "three-column":
+        column_gap = 0.24
+        column_width = (content_width - 2 * column_gap) / 3
+        content = {
+            f"column-{index + 1}": _region(
+                f"column-{index + 1}",
+                margin + index * (column_width + column_gap),
+                content_top,
+                column_width,
+                content_height,
+            )
+            for index in range(3)
+        }
+    elif name == "four-quadrant":
+        row_gap = 0.22
+        column_gap = 0.26
+        cell_width = (content_width - column_gap) / 2
+        cell_height = (content_height - row_gap) / 2
+        content = {
+            "top-left": _region(
+                "top-left", margin, content_top, cell_width, cell_height
+            ),
+            "top-right": _region(
+                "top-right",
+                margin + cell_width + column_gap,
+                content_top,
+                cell_width,
+                cell_height,
+            ),
+            "bottom-left": _region(
+                "bottom-left",
+                margin,
+                content_top + cell_height + row_gap,
+                cell_width,
+                cell_height,
+            ),
+            "bottom-right": _region(
+                "bottom-right",
+                margin + cell_width + column_gap,
+                content_top + cell_height + row_gap,
+                cell_width,
+                cell_height,
+            ),
+        }
+    elif name == "chart-focus":
+        chart_width = content_width * 0.7
+        content = {
+            "chart": _region("chart", margin, content_top, chart_width, content_height),
+            "insight": _region(
+                "insight",
+                margin + chart_width + gap,
+                content_top,
+                content_width - chart_width - gap,
+                content_height,
+            ),
+        }
+    elif name == "table-focus":
+        table_width = content_width * 0.76
+        content = {
+            "table": _region("table", margin, content_top, table_width, content_height),
+            "note": _region(
+                "note",
+                margin + table_width + gap,
+                content_top,
+                content_width - table_width - gap,
+                content_height,
+            ),
+        }
+    elif name == "timeline":
+        content = {
+            "timeline": _region(
+                "timeline", margin, content_top, content_width, content_height
+            )
+        }
+    elif name == "metrics":
+        metric_gap = 0.22
+        metric_height = content_height * 0.58
+        metric_width = (content_width - 2 * metric_gap) / 3
+        content = {
+            f"metric-{index + 1}": _region(
+                f"metric-{index + 1}",
+                margin + index * (metric_width + metric_gap),
+                content_top,
+                metric_width,
+                metric_height,
+            )
+            for index in range(3)
+        }
+        content["detail"] = _region(
+            "detail",
+            margin,
+            content_top + metric_height + 0.28,
+            content_width,
+            content_height - metric_height - 0.28,
+        )
+    elif name == "quote":
+        quote_height = content_height * 0.72
+        content = {
+            "quote": _region("quote", margin, content_top, content_width, quote_height),
+            "attribution": _region(
+                "attribution",
+                margin,
+                content_top + quote_height + 0.22,
+                content_width,
+                content_height - quote_height - 0.22,
+            ),
+        }
+    elif name == "process":
+        process_height = content_height * 0.7
+        content = {
+            "process": _region(
+                "process", margin, content_top, content_width, process_height
+            ),
+            "note": _region(
+                "note",
+                margin,
+                content_top + process_height + 0.24,
+                content_width,
+                content_height - process_height - 0.24,
+            ),
+        }
+    elif name == "image-full":
+        content = {
+            "canvas": _region(
+                "canvas", margin, content_top, content_width, content_height
+            )
+        }
     else:
         raise LayoutError(f"Unknown layout: {name}")
 
