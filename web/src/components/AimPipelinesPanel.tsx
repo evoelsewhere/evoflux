@@ -64,11 +64,13 @@ import {
   runWorkflow,
   stopExecution,
   teamHistory,
+  teamStream,
   updateTeamSessionTitle,
 } from '@/api/client'
 import { queryKeys } from '@/queries/keys'
 import { useWorkflowsQuery } from '@/queries/useWorkflowsQuery'
 import { resolveAimRolePath } from '@/lib/aim-kb'
+import { workflowProgressExecutionId } from '@/lib/aim-workflow-events'
 import {
   aimGateAnswersComplete,
   emptyAimGateAnswers,
@@ -2188,6 +2190,7 @@ export function RunMonitorPanel({
   onClose: () => void
   onDiscuss?: () => void
 }) {
+  const queryClient = useQueryClient()
   // The table's 5s join may not have caught a just-started run — resolve the
   // session's newest execution ourselves until one shows up. Give up after
   // ~30s: a session with no execution by then never ran a workflow (e.g. an
@@ -2223,6 +2226,7 @@ export function RunMonitorPanel({
     },
   })
   const execution = detailQ.data?.execution
+  const executionStatus = execution?.status
   const nodeRuns = detailQ.data?.node_runs ?? []
   const workflowQ = useQuery({
     queryKey: [
@@ -2244,6 +2248,37 @@ export function RunMonitorPanel({
   const executionInputs = Object.entries(execution?.inputs ?? {}).filter(
     ([, value]) => value !== null && value !== undefined && value !== '',
   )
+
+  useEffect(() => {
+    if (
+      !sessionId ||
+      (executionStatus && !['running', 'waiting_gate'].includes(executionStatus))
+    ) {
+      return
+    }
+    const controller = new AbortController()
+    teamStream(
+      sessionId,
+      {
+        onEvent: (type, data) => {
+          const eventExecutionId = workflowProgressExecutionId(type, data)
+          if (!eventExecutionId || (executionId && eventExecutionId !== executionId)) return
+          void queryClient.invalidateQueries({
+            queryKey: ['workflow-execution', eventExecutionId],
+          })
+          void queryClient.invalidateQueries({
+            queryKey: ['aim-monitor-execution', sessionId],
+          })
+          void queryClient.invalidateQueries({
+            queryKey: ['aim-pending-questions', sessionId],
+          })
+          void queryClient.invalidateQueries({ queryKey: ['aim-run-executions'] })
+        },
+      },
+      controller.signal,
+    )
+    return () => controller.abort()
+  }, [executionId, executionStatus, queryClient, sessionId])
 
   const [stopping, setStopping] = useState(false)
   const stop = async () => {
