@@ -171,7 +171,7 @@ class TestDefaultDeferredTools:
         assert not loader.deferred
         assert loader.read_only
 
-    def test_lead_registry_core_stays_between_ten_and_fifteen_tools(self):
+    def test_lead_registry_core_includes_goal_controls(self):
         from app.agent.builtin_prompts import tier_tools
         from app.agent.loader import _default_tool_registry
 
@@ -180,6 +180,7 @@ class TestDefaultDeferredTools:
             "edit",
             "glob",
             "grep",
+            "get_goal",
             "load_tool",
             "ls",
             "patch",
@@ -187,6 +188,7 @@ class TestDefaultDeferredTools:
             "shell",
             "skill",
             "todo_manage",
+            "update_goal",
             "write",
         }
         for mode in ("work", "coding", "aim"):
@@ -196,7 +198,7 @@ class TestDefaultDeferredTools:
             assert 10 <= len(eager) <= 15
             assert eager == expected_core
 
-    def test_actual_coding_lead_payload_has_fourteen_eager_tools(self):
+    def test_actual_coding_lead_payload_has_sixteen_eager_tools(self):
         from app.agent.builtin_prompts import tier_tools
         from app.agent.loader import _default_tool_registry
         from tests.agent.mode.team.conftest import MockTeamProvider
@@ -222,6 +224,7 @@ class TestDefaultDeferredTools:
             "edit",
             "glob",
             "grep",
+            "get_goal",
             "load_tool",
             "ls",
             "patch",
@@ -232,6 +235,7 @@ class TestDefaultDeferredTools:
             "team_manage",
             "team_message",
             "todo_manage",
+            "update_goal",
             "write",
         }
 
