@@ -1,5 +1,5 @@
-"""Workflow tables (plan §5): a per-hash approval ledger and a best-effort
-execution debug log.
+"""Workflow tables (plan §5): definition approvals, execution evidence, and
+durable human-gate decisions.
 
 ``workflow_executions``/``workflow_node_runs`` are **never read to resume
 anything** — all live state is the runner's in-memory ``ExecutionState``;
@@ -95,3 +95,44 @@ class WorkflowNodeRun(SQLModel, table=True):
         default_factory=_utcnow, sa_column=Column(TZDateTime(), nullable=False)
     )
     ended_at: datetime | None = Field(default=None, sa_column=Column(TZDateTime()))
+
+
+class WorkflowGateRequest(SQLModel, table=True):
+    """Durable evidence for one workflow gate or input request.
+
+    The live future that unblocks a workflow remains process-local, but the
+    question and its terminal disposition must survive long enough for AIM's
+    approval inbox and audit trail to explain what happened.
+    """
+
+    __tablename__: str = "workflow_gate_requests"  # type: ignore[reportIncompatibleVariableOverride]
+    __table_args__ = (
+        sa.UniqueConstraint("request_id", name="uq_workflow_gate_requests_request"),
+        sa.Index("ix_workflow_gate_requests_execution", "execution_id"),
+        sa.Index("ix_workflow_gate_requests_status", "status"),
+    )
+
+    id: UUID = Field(default_factory=uuid7, primary_key=True)
+    execution_id: UUID = Field(sa_column=Column(sa.Uuid(), nullable=False))
+    node_run_id: UUID | None = Field(default=None, sa_column=Column(sa.Uuid()))
+    node_id: str = Field(sa_column=Column(sa.String(120), nullable=False))
+    kind: str = Field(sa_column=Column(sa.String(20), nullable=False))
+    request_id: str = Field(sa_column=Column(sa.String(36), nullable=False))
+    question: str = Field(sa_column=Column(Text(), nullable=False))
+    options: list = Field(
+        default_factory=list,
+        sa_column=Column(JSON(), nullable=False, server_default="[]"),
+    )
+    # pending | answered | timed_out | cancelled | interrupted
+    status: str = Field(
+        default="pending",
+        sa_column=Column(sa.String(20), nullable=False, server_default="pending"),
+    )
+    answers: list = Field(
+        default_factory=list,
+        sa_column=Column(JSON(), nullable=False, server_default="[]"),
+    )
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=Column(TZDateTime(), nullable=False)
+    )
+    resolved_at: datetime | None = Field(default=None, sa_column=Column(TZDateTime()))

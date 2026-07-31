@@ -59,9 +59,7 @@ async def _wait_done(runner: WorkflowRunner, session_id: str, timeout: float = 1
 
 
 @pytest.mark.asyncio
-async def test_work_team_boot_uses_persisted_workspace(
-    setup_db, monkeypatch, tmp_path
-):
+async def test_work_team_boot_uses_persisted_workspace(setup_db, monkeypatch, tmp_path):
     from app.core import db as db_module
     from app.models.chat import ChatSession
 
@@ -641,7 +639,11 @@ async def test_reconcile_orphaned_executions_fails_live_rows(setup_db):
     from app.core import db as db_module
     from app.models.aim import AimClaim, AimUnit
     from app.models.chat import CodingProject
-    from app.models.workflow import WorkflowExecution, WorkflowNodeRun
+    from app.models.workflow import (
+        WorkflowExecution,
+        WorkflowGateRequest,
+        WorkflowNodeRun,
+    )
     from app.workflow.runner import reconcile_orphaned_executions
 
     running_id = uuid7()
@@ -689,6 +691,16 @@ async def test_reconcile_orphaned_executions_fails_live_rows(setup_db):
         db.add(
             WorkflowNodeRun(execution_id=gate_id, node_id="certify", status="running")
         )
+        db.add(
+            WorkflowGateRequest(
+                execution_id=gate_id,
+                node_id="certify",
+                kind="gate",
+                request_id=str(uuid4()),
+                question="Certify?",
+                options=["certify", "hold"],
+            )
+        )
         claim = AimClaim(
             project_id=project.id,
             unit_id=unit.id,
@@ -715,6 +727,15 @@ async def test_reconcile_orphaned_executions_fails_live_rows(setup_db):
             )
         ).one()
         assert node.status == "failed"
+        gate = (
+            await db.exec(
+                select(WorkflowGateRequest).where(
+                    WorkflowGateRequest.execution_id == gate_id
+                )
+            )
+        ).one()
+        assert gate.status == "interrupted"
+        assert gate.resolved_at is not None
         assert await db.get(AimClaim, claim_id) is None
 
 
