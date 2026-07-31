@@ -134,19 +134,6 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         break
       }
 
-      case 'chapter_created': {
-        const sessionId = d.session_id as string | undefined
-        if (sessionId) {
-          set((draft) => {
-            draft.cacheInvalidations = [
-              ...draft.cacheInvalidations,
-              { kind: 'chapters', sessionId },
-            ]
-          })
-        }
-        break
-      }
-
       case 'thinking': {
         const agent = d.agent as string
         const text = d.text as string

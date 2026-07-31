@@ -18,7 +18,6 @@ import {
 import type { LucideIcon } from 'lucide-react'
 
 import type { ChangedFile, TurnChangedFile } from '@/api/types'
-import { useSessionChapters } from '@/hooks/useSessionChapters'
 import { cn } from '@/lib/utils'
 import { useGitChangesQuery } from '@/queries/useGitQuery'
 import { useTodosQuery } from '@/queries/useTodosQuery'
@@ -131,7 +130,6 @@ export function CodingSummaryPanel({
     refetch: refetchGitChanges,
   } = gitChanges
   const todosQuery = useTodosQuery(sessionId)
-  const chaptersQuery = useSessionChapters(sessionId)
   const turnChanges = useTeamStore((state) => state.turnChanges)
   const openWorkbenchTool = useUIStore((state) => state.openWorkbenchTool)
   const currentTurnChanges =
@@ -153,9 +151,7 @@ export function CodingSummaryPanel({
     (todo) => todo.status === 'completed' || todo.status === 'cancelled',
   ).length
   const activeTodo = todos.find((todo) => todo.status === 'in_progress')
-  const currentChapter = chaptersQuery.data?.at(-1)
   const progressDetail = activeTodo?.content
-    ?? currentChapter?.title
     ?? (todos.length > 0
       ? `${completedTodos} of ${todos.length} tasks complete`
       : sessionId
@@ -190,11 +186,10 @@ export function CodingSummaryPanel({
     void Promise.all([
       refetchGitChanges(),
       todosQuery.refetch(),
-      chaptersQuery.refetch(),
     ])
   }
   const refreshing =
-    gitIsFetching || todosQuery.isFetching || chaptersQuery.isFetching
+    gitIsFetching || todosQuery.isFetching
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-(--bg-page)">
@@ -280,10 +275,8 @@ export function CodingSummaryPanel({
           <Section title="Session">
             <SummaryRow
               icon={isWorking ? Loader2 : CheckCircle2}
-              label={isWorking ? 'Agent working' : 'Progress'}
+              label={isWorking ? 'Agent working' : 'Tasks'}
               detail={progressDetail}
-              onClick={openTool('progress')}
-              disabled={!sessionId}
               trailing={
                 todos.length > 0 ? (
                   <span className="shrink-0 font-mono text-[10px] tabular-nums text-(--color-text-muted)">

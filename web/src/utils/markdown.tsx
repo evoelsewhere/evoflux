@@ -15,13 +15,11 @@ import rehypeKatex from 'rehype-katex'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize from 'rehype-sanitize'
 import 'katex/dist/katex.min.css'
-import Editor, { useMonaco } from '@monaco-editor/react'
 import { Copy, Check, ImageOff, FileVideo } from 'lucide-react'
 import { resolveApiUrl } from '@/api/client'
 import { apiUrl } from '@/api/base-url'
 import { withTokenParam } from '@/api/auth'
 import { ImageLightbox } from '@/components/ImageLightbox'
-import { useMonacoTheme } from '@/hooks/useMonacoTheme'
 import { useStreamingReveal } from '@/hooks/useStreamingReveal'
 import { cn } from '@/lib/utils'
 
@@ -137,40 +135,15 @@ export function extractText(node: unknown): string {
 // ── CodeBlock ─────────────────────────────────────────────────────────────────
 
 export function CodeBlock({
+  children,
   language,
   rawText,
 }: {
+  children: React.ReactNode
   language?: string
   rawText: string
 }) {
   const [copied, setCopied] = useState(false)
-  const monaco = useMonaco()
-  const theme = useMonacoTheme(monaco)
-  const value = rawText.endsWith('\n') ? rawText.slice(0, -1) : rawText
-  const lineCount = value.split('\n').length
-  const editorHeight = Math.min(Math.max(lineCount * 20 + 20, 60), 360)
-  const normalizedLanguage = language?.toLowerCase() ?? 'plaintext'
-  const editorLanguage = {
-    bash: 'shell',
-    csharp: 'csharp',
-    cs: 'csharp',
-    javascript: 'javascript',
-    js: 'javascript',
-    jsx: 'javascript',
-    markdown: 'markdown',
-    md: 'markdown',
-    py: 'python',
-    python: 'python',
-    sh: 'shell',
-    shell: 'shell',
-    text: 'plaintext',
-    ts: 'typescript',
-    tsx: 'typescript',
-    typescript: 'typescript',
-    yaml: 'yaml',
-    yml: 'yaml',
-    zsh: 'shell',
-  }[normalizedLanguage] ?? normalizedLanguage
 
   const handleCopy = async () => {
     try {
@@ -200,47 +173,13 @@ export function CodeBlock({
   return (
     <div className="group relative my-1.5 overflow-hidden rounded-md border border-(--color-border) bg-(--bg-card)">
       <div className="absolute top-1.5 right-1.5 z-(--z-panel)">{copyButton}</div>
-      <Editor
-        height={editorHeight}
-        theme={theme}
-        language={editorLanguage}
-        value={value}
-        loading={(
-          <pre className="h-full overflow-auto px-3 py-2.5 font-mono text-[13px] leading-5 text-(--color-text)">
-            <code>{value}</code>
-          </pre>
-        )}
-        options={{
-          readOnly: true,
-          domReadOnly: true,
-          ariaLabel: language ? `${language} code block` : 'Code block',
-          automaticLayout: true,
-          contextmenu: true,
-          folding: false,
-          fontSize: 13,
-          glyphMargin: false,
-          hideCursorInOverviewRuler: true,
-          lineDecorationsWidth: 12,
-          lineHeight: 20,
-          lineNumbers: 'off',
-          lineNumbersMinChars: 0,
-          minimap: { enabled: false },
-          overviewRulerBorder: false,
-          overviewRulerLanes: 0,
-          padding: { top: 10, bottom: 10 },
-          renderLineHighlight: 'none',
-          renderValidationDecorations: 'off',
-          scrollBeyondLastLine: false,
-          scrollBeyondLastColumn: 2,
-          scrollbar: {
-            horizontalScrollbarSize: 8,
-            useShadows: false,
-            verticalScrollbarSize: 8,
-          },
-          selectionHighlight: false,
-          wordWrap: 'off',
-        }}
-      />
+      <pre
+        className="m-0 overflow-x-auto px-3 py-2.5 pr-11 font-mono text-[13px] leading-5 text-(--color-text)"
+      >
+        <code className={cn('hljs block min-w-max bg-transparent p-0', language && `language-${language}`)}>
+          {children}
+        </code>
+      </pre>
     </div>
   )
 }
@@ -477,7 +416,9 @@ export const MarkdownBlock = memo(function MarkdownBlock({
         const codeText = extractText(codeEl?.props?.children)
         const language = codeEl?.props?.className?.match(/(?:^|\s)language-([^\s]+)/)?.[1]
         return (
-          <CodeBlock language={language} rawText={codeText} />
+          <CodeBlock language={language} rawText={codeText}>
+            {codeEl?.props?.children as React.ReactNode}
+          </CodeBlock>
         )
       },
       a: ({ onClick, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
@@ -556,15 +497,10 @@ export const MarkdownBlock = memo(function MarkdownBlock({
 // identity across every ``MarkdownBlock`` instance and every render — it
 // shallow-compares plugins to decide whether to rebuild its processor.
 const _REMARK_PLUGINS = [remarkGfm, remarkMath]
-// ``subset`` bounds highlightAuto for unlabeled code blocks — without it
-// highlight.js tries every registered grammar per block, which is very slow
-// when a long history full of code blocks mounts at once.
-const _HIGHLIGHT_SUBSET = [
-  'python', 'typescript', 'javascript', 'tsx', 'json', 'bash', 'shell',
-  'yaml', 'html', 'css', 'sql', 'diff', 'markdown', 'go', 'rust', 'java',
-]
 const _REHYPE_PLUGINS: React.ComponentProps<typeof ReactMarkdown>['rehypePlugins'] = [
-  [rehypeHighlight, { detect: true, subset: _HIGHLIGHT_SUBSET }],
+  // Highlight only explicitly-labelled fences. Auto-detection gives prose
+  // diagrams false languages (often SQL) and colors ordinary words as code.
+  rehypeHighlight,
   rehypeKatex,
 ]
 const _REHYPE_PLUGINS_WITH_HTML: React.ComponentProps<typeof ReactMarkdown>['rehypePlugins'] = [

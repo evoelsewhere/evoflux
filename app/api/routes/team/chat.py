@@ -45,7 +45,6 @@ from app.api.routes.team.worktrees import (
 from app.models.chat import (
     ChatSession,
     CodingProjectWorkspace,
-    SessionChapter,
     normalize_mode,
 )
 from app.services import (
@@ -1429,97 +1428,6 @@ async def team_history(
         has_more=history.has_more,
         next_cursor=next_cursor,
     )
-
-
-# ── Session chapters ──────────────────────────────────────────────────────────
-
-
-class ChapterCreateRequest(BaseModel):
-    title: str
-    summary: str | None = None
-    message_id: str | None = None
-
-
-class ChapterResponse(BaseModel):
-    id: str
-    session_id: str
-    title: str
-    summary: str | None
-    message_id: str | None
-    wiki_paths: list[str]
-    created_at: str
-
-
-def _chapter_response(chapter: SessionChapter) -> ChapterResponse:
-    return ChapterResponse(
-        id=str(chapter.id),
-        session_id=str(chapter.session_id),
-        title=chapter.title,
-        summary=chapter.summary,
-        message_id=str(chapter.message_id) if chapter.message_id else None,
-        wiki_paths=chapter.wiki_paths or [],
-        created_at=chapter.created_at.isoformat(),
-    )
-
-
-@router.get("/sessions/{session_id}/chapters")
-async def list_chapters(
-    db: DbSession,
-    session_id: UUID,
-) -> list[ChapterResponse]:
-    """List all chapters for a session, ordered oldest-first."""
-    import sqlalchemy as sa_
-
-    result = await db.execute(
-        sa_.select(SessionChapter)
-        .where(SessionChapter.session_id == session_id)
-        .order_by(SessionChapter.created_at)
-    )
-    chapters = result.scalars().all()
-    return [_chapter_response(c) for c in chapters]
-
-
-@router.post("/sessions/{session_id}/chapters", status_code=201)
-async def create_chapter(
-    db: DbSession,
-    session_id: UUID,
-    body: ChapterCreateRequest,
-) -> ChapterResponse:
-    """Create a new chapter bookmark for a session."""
-    from uuid import UUID as _UUID
-
-    chapter = SessionChapter(
-        session_id=session_id,
-        title=body.title[:255],
-        summary=body.summary,
-        message_id=_UUID(body.message_id) if body.message_id else None,
-    )
-    db.add(chapter)
-    await db.commit()
-    await db.refresh(chapter)
-    return _chapter_response(chapter)
-
-
-@router.delete("/sessions/{session_id}/chapters/{chapter_id}", status_code=204)
-async def delete_chapter(
-    db: DbSession,
-    session_id: UUID,
-    chapter_id: UUID,
-) -> None:
-    """Delete a single chapter."""
-    import sqlalchemy as sa_
-
-    result = await db.execute(
-        sa_.select(SessionChapter).where(
-            SessionChapter.id == chapter_id,
-            SessionChapter.session_id == session_id,
-        )
-    )
-    chapter = result.scalar_one_or_none()
-    if chapter is None:
-        raise HTTPException(status_code=404, detail="Chapter not found.")
-    await db.delete(chapter)
-    await db.commit()
 
 
 # ── Side Chat ────────────────────────────────────────────────────────────────

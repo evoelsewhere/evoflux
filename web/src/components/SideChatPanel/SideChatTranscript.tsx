@@ -5,7 +5,7 @@
  * through the exact same pipeline as the main chat's AgentView:
  * `partitionTurns` → `BlockRenderer` (+ `groupConsecutiveToolCalls` for
  * finished turns) → `AssistantTurnFooter`. Narrow-panel differences only:
- * no turn windowing, no chapters, no revert, compact footers.
+ * no turn windowing, no revert, compact footers.
  */
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { ChevronDown } from 'lucide-react'

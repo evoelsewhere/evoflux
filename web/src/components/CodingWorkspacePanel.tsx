@@ -16,7 +16,6 @@ import { FileTypeIcon, FolderTypeIcon } from './FileTypeIcon'
 import { MultiRepoFileTree } from './MultiRepoFileTree'
 import { NativeFileTree } from './NativeFileTree'
 import { ProjectCodeGraphPanel } from './ProjectCodeGraphPanel'
-import { TaskTimelinePanel } from './TaskTimelinePanel'
 import type { WorkspaceFileInfo } from '@/api/types'
 import { isTauriAvailable, tauriOpenWorkspaceFile } from '@/api/tauri-workspace'
 import { openExternalUrl } from '@/lib/open-external'
@@ -174,16 +173,14 @@ export function CodingWorkspacePanel({
   initialFileViewMode = 'file',
   onAddFileComment,
   onSendFileToChat,
-  sessionId = null,
   projectId = null,
-  isWorking = false,
   desktopOverlay = true,
   desktopOverlayInner = false,
   embedded = false,
 }: {
   workspace: string
   open: boolean
-  view?: 'files' | 'graph' | 'progress'
+  view?: 'files' | 'graph'
   onClose: () => void
   mobile?: boolean
   selectedFilePath?: string | null
@@ -192,9 +189,7 @@ export function CodingWorkspacePanel({
   initialFileViewMode?: 'file' | 'diff' | 'preview'
   onAddFileComment?: (path: string, startLine: number, endLine: number) => void
   onSendFileToChat?: (action: string, code: string, path: string, startLine: number, endLine: number) => void
-  sessionId?: string | null
   projectId?: string | null
-  isWorking?: boolean
   /** Dock into AppShell's body row instead of covering it. */
   desktopOverlay?: boolean
   desktopOverlayInner?: boolean
@@ -449,10 +444,6 @@ export function CodingWorkspacePanel({
                 <CodeGraphPanel workspace={workspace} onFileSelect={onFileSelect} />
               </div>
             )}
-          </div>
-        ) : view === 'progress' ? (
-          <div className="min-h-0 flex-1 overflow-auto py-2">
-            <TaskTimelinePanel sessionId={sessionId} isWorking={isWorking} />
           </div>
         ) : (
           <div ref={splitBodyRef} className="flex min-h-0 flex-1 overflow-hidden">

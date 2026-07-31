@@ -47,9 +47,6 @@ export function applyCacheInvalidations(
       case 'team_sessions':
         queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
         break
-      case 'chapters':
-        queryClient.invalidateQueries({ queryKey: queryKeys.chapters.list(event.sessionId) })
-        break
     }
   }
 }

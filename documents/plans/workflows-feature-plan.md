@@ -458,7 +458,7 @@ Plus the `workflow_execution` field added to the existing team-history response 
 - **Query**: `useWorkflowsQuery(workspace)` cloning `useCommandsQuery` (F16).
 - **Slash menu**: in the `slashCommands` merge (`TeamChatView/index.tsx:683-713`), append one entry **per approved workflow** matching the current scope (`mode` prop + `_workspace`, F19): `displayName: "/workflow <name>"`, `insertText: "workflow <name>"`, `category: 'workflow'`, `description`, `keepInputOpen: true` (args may follow). Work sessions list `scope: work` only; coding sessions list both. Unapproved/invalid → omitted (F16).
 - **Submit intercept**: new `tryHandleWorkflowCommand` in `onSubmit` beside the `/loop` check (`index.tsx:1424-1438`, F17), backed by `web/src/lib/parseWorkflowCommand.ts` (clone of `parseLoopCommand.ts`): parses `/workflow <name> [arg1 arg2 …]`, maps positional args onto declared inputs (coerced by type), and if required inputs are still missing opens **`RunInputsDialog`** (small form generated from `inputs[]`). Then `runWorkflow(...)` — the raw slash text is **never sent as a chat message** (unlike `/loop`; no server-side slash parse exists or is needed).
-- **Progress pill**: `WorkflowProgressPill` cloning `LoopStatusPill` exactly (F18): SSE case `'workflow_progress'` in `sse-reducer.ts` (beside `loop_status` at `:489`), store field `activeWorkflowExecution` in `useTeamStore/types.ts`, hydration line beside `index.ts:801` from the new history field, rendered beside `TaskProgressPill` (`index.tsx:1162-1174` region; mobile card beside `:1604`). Pill shows `"<name>: <node_id> (i/n)"`, a red state with the error on failure, and an ✕ → `stopExecution`.
+- **Progress pill**: `WorkflowProgressPill` cloning `LoopStatusPill` exactly (F18): SSE case `'workflow_progress'` in `sse-reducer.ts` (beside `loop_status` at `:489`), store field `activeWorkflowExecution` in `useTeamStore/types.ts`, hydration line beside `index.ts:801` from the new history field, rendered with the chat status controls. Pill shows `"<name>: <node_id> (i/n)"`, a red state with the error on failure, and an ✕ → `stopExecution`.
 - **Gate rendering**: expected to reuse the existing question UI (it's a real `QuestionAskedEvent`, F10). Verified early in M4; fallback is a `GateBanner` component fed by `workflow_progress(waiting_gate)` + `getExecution`.
 
 ### 9.2 Builder (Workflows screen)
@@ -563,7 +563,7 @@ Webhook trigger, durable runs, budgets — considered and deliberately not built
 - Dependency: `@xyflow/react` (via bun — `bun.lock` is the only lockfile).
 
 **Frontend — edits (function-level)**
-- `web/src/components/TeamChatView/index.tsx` — ① workflow entries in the `slashCommands` merge (`:683-713`); ② `tryHandleWorkflowCommand` branch in `onSubmit` (`:1424-1438`); ③ pill render beside `TaskProgressPill` (`:1162-1174`; mobile `:1604`).
+- `web/src/components/TeamChatView/index.tsx` — ① workflow entries in the `slashCommands` merge (`:683-713`); ② `tryHandleWorkflowCommand` branch in `onSubmit` (`:1424-1438`); ③ progress pill rendering in the chat status controls.
 - `web/src/stores/useTeamStore/sse-reducer.ts` — `case 'workflow_progress'` (beside `loop_status` at `:489`).
 - `web/src/stores/useTeamStore/types.ts` — `activeWorkflowExecution` field (beside `activeLoop` at `:102`).
 - `web/src/stores/useTeamStore/index.ts` — hydration from `history.workflow_execution` (beside `:801`).

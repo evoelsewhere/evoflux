@@ -28,20 +28,33 @@ import type { ToolBlockGroup } from './ToolCallGroup'
 import { PendingMessageQueue } from './PendingMessageQueue'
 import { getVisibleTurnWindow, partitionTurns, type TurnItem } from '@/utils/turns'
 import { isDirectUserBlock, latestDirectUserBlockId } from '@/utils/blocks'
+import { buildUserMessageNavigationItems } from '@/utils/user-message-navigation'
 import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { ActivityStatus } from './motion/ActivityStatus'
 import { BlockEnter } from './motion/BlockEnter'
-import { SessionChapterRail } from './SessionChapterRail'
 import { TextSelectionAction } from './TextSelectionAction'
 import { TurnChangesCard } from './TurnChangesCard'
-import type { Chapter, ContentBlock, TurnChangesPending } from '@/api/types'
+import { UserMessageNavigationRail } from './UserMessageNavigationRail'
+import type { ContentBlock, TurnChangesPending } from '@/api/types'
 
 const SCROLL_THRESHOLD = 40
 const USER_SCROLL_DETACH_DELTA = 4
 const LOAD_OLDER_THRESHOLD = 300
 const INITIAL_RENDERED_TURNS = 48
 const TURN_RENDER_STEP = 48
+
+function findUserMessageNavigationAnchor(
+  container: HTMLDivElement,
+  messageId: string,
+): HTMLElement | null {
+  for (const element of container.querySelectorAll<HTMLElement>(
+    '[data-user-message-navigation-anchor]',
+  )) {
+    if (element.dataset.userMessageNavigationAnchor === messageId) return element
+  }
+  return null
+}
 
 interface AgentViewProps {
   /** Finalized blocks from previous turns. */
@@ -60,8 +73,6 @@ interface AgentViewProps {
   onContinue?: () => void
   /** Optional slot rendered in place of the default mascot empty state. */
   emptyState?: React.ReactNode
-  /** Session chapters for anchor markers and TOC dividers. */
-  chapters?: Chapter[]
   /** Quote selected transcript text into the primary composer. */
   onAddSelectionToChat?: (selectedText: string) => void
   /** Prepare a primary-chat prompt requesting more detail about selected text. */
@@ -72,7 +83,7 @@ interface AgentViewProps {
   turnChanges?: TurnChangesPending | null
 }
 
-export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, chapters, onAddSelectionToChat, onRequestSelectionDetails, onSendToSideChat, turnChanges }: AgentViewProps) {
+export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, onAddSelectionToChat, onRequestSelectionDetails, onSendToSideChat, turnChanges }: AgentViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
@@ -82,6 +93,10 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
   const prevScrollHeightRef = useRef<number | null>(null)
   const pendingRestoreRef = useRef(false)
+  const pendingUserNavigationRef = useRef<{
+    messageId: string
+    behavior: ScrollBehavior
+  } | null>(null)
   // Me mirror store _loadingOlder in a ref so the wheel handler can check
   // it synchronously without subscribing to store state changes.
   const loadingOlderRef = useRef(false)
@@ -141,6 +156,14 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     () => getVisibleTurnWindow(turnItems, renderedTurnCount),
     [renderedTurnCount, turnItems],
   )
+  const userMessageNavigationItems = useMemo(
+    () => buildUserMessageNavigationItems(turnItems),
+    [turnItems],
+  )
+  const userMessageNavigationIds = useMemo(
+    () => new Set(userMessageNavigationItems.map((item) => item.id)),
+    [userMessageNavigationItems],
+  )
 
   const finalizedMCPAppIdsByUri = useMemo(() => {
     const byUri = new Map<string, string>()
@@ -151,8 +174,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     }
     return byUri
   }, [blocks])
-  const mcpAppIdsRef = useRef<Set<string>>(new Set())
-  const latestMCPAppBlockIds = useMemo(() => {
+  const latestMCPAppBlockIdsKey = useMemo(() => {
     let byUri = finalizedMCPAppIdsByUri
     if (currentBlocks.length > 0) {
       byUri = new Map(finalizedMCPAppIdsByUri)
@@ -162,28 +184,14 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
         if (uri) byUri.set(uri, block.id)
       }
     }
-    const next = new Set(byUri.values())
-    // Keep the previous Set identity when contents are unchanged so the
-    // memoized BlockRenderer isn't invalidated on every streamed chunk.
-    const prev = mcpAppIdsRef.current
-    if (prev.size === next.size) {
-      let same = true
-      for (const id of next) {
-        if (!prev.has(id)) { same = false; break }
-      }
-      if (same) return prev
-    }
-    mcpAppIdsRef.current = next
-    return next
+    return [...byUri.values()].join('\0')
   }, [currentBlocks, finalizedMCPAppIdsByUri])
-
-  const chapterByMessageId = useMemo(() => {
-    const map = new Map<string, Chapter>()
-    for (const ch of chapters ?? []) {
-      if (ch.message_id) map.set(ch.message_id, ch)
-    }
-    return map
-  }, [chapters])
+  // Key the Set by its primitive contents so streamed text chunks retain the
+  // same identity until an MCP app resource actually changes.
+  const latestMCPAppBlockIds = useMemo(
+    () => new Set(latestMCPAppBlockIdsKey ? latestMCPAppBlockIdsKey.split('\0') : []),
+    [latestMCPAppBlockIdsKey],
+  )
 
   const showEarlierTurns = useCallback(() => {
     const el = scrollRef.current
@@ -217,6 +225,31 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
       el.scrollTop = el.scrollHeight
     }
   }, [setScrollButtonVisible])
+
+  const scrollToUserMessage = useCallback((
+    messageId: string,
+    behavior: ScrollBehavior,
+  ) => {
+    const container = scrollRef.current
+    const item = userMessageNavigationItems.find((entry) => entry.id === messageId)
+    if (!container || !item) return
+
+    pinnedRef.current = false
+    setScrollButtonVisible(true)
+
+    const anchor = findUserMessageNavigationAnchor(container, messageId)
+    if (anchor) {
+      anchor.scrollIntoView({ behavior, block: 'start' })
+      return
+    }
+
+    // The rail indexes every loaded prompt, including turns outside the
+    // transcript's render window. Reveal just enough history to mount the
+    // target, then complete the navigation in the effect below.
+    pendingUserNavigationRef.current = { messageId, behavior }
+    const requiredTurnCount = turnItems.length - item.turnIndex
+    setRenderedTurnCount((count) => Math.max(count, requiredTurnCount))
+  }, [setScrollButtonVisible, turnItems.length, userMessageNavigationItems])
 
   // Me track scroll position and reveal/fetch older history near the top.
   useEffect(() => {
@@ -289,6 +322,16 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     prevScrollHeightRef.current = null
   }, [blocks.length, renderedTurnCount])
 
+  useEffect(() => {
+    const pending = pendingUserNavigationRef.current
+    const container = scrollRef.current
+    if (!pending || !container) return
+    const anchor = findUserMessageNavigationAnchor(container, pending.messageId)
+    if (!anchor) return
+    pendingUserNavigationRef.current = null
+    anchor.scrollIntoView({ behavior: pending.behavior, block: 'start' })
+  }, [blocks.length, renderedTurnCount, visibleTurnItems])
+
   // Follow the actual rendered transcript height instead of raw SSE chunks.
   // ResizeObserver is paint-coalesced, so the viewport moves on the same
   // cadence as the streaming Markdown reveal and no longer jitters ahead.
@@ -322,7 +365,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
     <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain">
-      <div ref={contentRef} className={`mx-auto max-w-4xl px-3 py-4 ${chapterByMessageId.size > 0 ? 'lg:pl-14' : ''}`}>
+      <div ref={contentRef} className="mx-auto max-w-4xl px-3 py-4">
         {isEmpty && (
            emptyState ?? <ChatWelcome />
          )}
@@ -344,20 +387,13 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
               {visibleTurnItems.map((item, k) => {
                  const globalTurnIndex = hiddenTurnCount + k
                  if (item.kind === 'user') {
-                   const chapter = chapterByMessageId.get(item.block.id)
+                   const navigationItem = userMessageNavigationIds.has(item.block.id)
                    return (
                      <div
                        key={item.block.id}
                        className="oa-transcript-turn"
-                       data-chapter-anchor={item.block.id}
+                       data-user-message-navigation-anchor={navigationItem ? item.block.id : undefined}
                      >
-                       {chapter && (
-                         <div className="mb-3 flex items-center gap-2 text-xs text-(--color-text-muted)">
-                           <div className="h-px flex-1 bg-(--color-border)" />
-                           <span className="font-medium">{chapter.title}</span>
-                           <div className="h-px flex-1 bg-(--color-border)" />
-                         </div>
-                       )}
                        <BlockRenderer
                          block={item.block}
                          isStreaming={false}
@@ -457,10 +493,11 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
          </div>
       </div>
     </div>
-    <SessionChapterRail
-      chapters={chapters ?? []}
+    <UserMessageNavigationRail
+      items={userMessageNavigationItems}
       containerRef={scrollRef}
-      sessionId={sessionId}
+      isWorking={isWorking}
+      onNavigate={scrollToUserMessage}
     />
     {showScrollBtn && !isEmpty && (
       <div className="pointer-events-none absolute inset-x-0 bottom-3 z-(--z-panel) mx-auto flex w-full max-w-4xl justify-end px-3">

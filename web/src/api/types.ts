@@ -914,16 +914,6 @@ export interface WorkflowExecutionListResponse {
   executions: WorkflowExecutionSummary[]
 }
 
-export interface Chapter {
-  id: string
-  session_id: string
-  title: string
-  summary: string | null
-  message_id: string | null
-  wiki_paths: string[]
-  created_at: string
-}
-
 // SSE Event Types
 export type SSEEventType =
   | 'session'
@@ -948,7 +938,6 @@ export type SSEEventType =
   | 'summarization_content'
   | 'summarization_end'
   | 'browser_session'
-  | 'chapter_created'
 
 export interface SSEEvent {
   type: SSEEventType

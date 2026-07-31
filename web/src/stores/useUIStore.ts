@@ -23,7 +23,6 @@ export type WorkbenchTool =
   | 'browser'
   | 'files'
   | 'graph'
-  | 'progress'
   | 'side-chat'
   | 'wiki'
   | 'scheduler'

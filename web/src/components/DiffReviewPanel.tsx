@@ -144,7 +144,6 @@ export function DiffReviewPanel({ project, workspacePaths, className, onOpenRepo
       repoPaths,
       '',
       `For each repo: stage everything (\`git add -A\`), commit with a descriptive message, push, and run \`create_pull_request\`.`,
-      `Use the session chapters as context for the PR title and body.`,
     ].join('\n')
     void useTeamStore.getState().sendMessage(message)
   }

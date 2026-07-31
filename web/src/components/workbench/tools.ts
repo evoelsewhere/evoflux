@@ -9,7 +9,6 @@ import {
   MessageCirclePlus,
   Network,
   Terminal,
-  Timer,
   type LucideIcon,
 } from 'lucide-react'
 import type { WorkbenchTool } from '@/stores/useUIStore'
@@ -50,11 +49,6 @@ export const WORKBENCH_TOOLS: Record<
     label: 'Graph',
     description: 'Explore code and cross-repository relationships',
     icon: Network,
-  },
-  progress: {
-    label: 'Progress',
-    description: 'Follow tasks and agent execution over time',
-    icon: Timer,
   },
   'side-chat': {
     label: 'Side chat',
@@ -100,7 +94,6 @@ export function isWorkbenchToolEnabled(
     return context.mode === 'coding'
   }
   if (tool === 'graph') return context.mode === 'coding' && Boolean(context.workspace)
-  if (tool === 'progress') return context.mode === 'coding' && Boolean(context.sessionId)
   if (tool === 'files') return Boolean(context.sessionId || context.workspace)
   if (tool === 'terminal' || tool === 'browser' || tool === 'side-chat') {
     return Boolean(context.sessionId)

@@ -161,7 +161,7 @@ A language model generates reasoning. The harness turns that reasoning into cont
 |---|---|
 | **1. Tool orchestration** | Shell, filesystem, git, browser automation, MCP, and agent-to-agent actions |
 | **2. Guardrails** | Permissions, policies, approvals, filesystem sandboxing, command checks |
-| **3. Context and memory** | Workspace state, sessions, code graph, chapters, compaction, knowledge wiki |
+| **3. Context and memory** | Workspace state, sessions, code graph, compaction, knowledge wiki |
 | **4. Verification loops** | Test, compare, review, debate, reject, rework, and evidence |
 | **5. Observability** | Streaming events, telemetry, logs, metrics, diagnostics, and audit history |
 
@@ -229,7 +229,7 @@ Wildcard `(tool, pattern) → allow | deny | ask` rules use last-match-wins eval
 
 ### Git and session UX
 
-Coding mode exposes diff review, commits, branches, merge, rebase, cherry-pick, stash, and worktrees to agents and the source-control UI. Long sessions support chapters, a live table of contents, revert/undo boundaries, context compaction, four-pane Split view, and a unified Monitor view.
+Coding mode exposes diff review, commits, branches, merge, rebase, cherry-pick, stash, and worktrees to agents and the source-control UI. Long sessions support prompt navigation, revert/undo boundaries, context compaction, four-pane Split view, and a unified Monitor view.
 
 ---
 

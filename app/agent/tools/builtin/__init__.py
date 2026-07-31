@@ -5,7 +5,6 @@ from typing import Any
 
 _EXPORT_MODULES = {
     "browser_use": "browser_use_tool",
-    "mark_chapter": "chapter",
     "webbridge": "webbridge_tool",
     "create_pull_request": "pr",
     "add_code_review_comment": "code_reviews",
@@ -90,7 +89,6 @@ __all__ = [
     "update_code_review",
     "webbridge",
     "discover_skills",
-    "mark_chapter",
     "edit_file",
     "shell_tool",
     "get_date",
