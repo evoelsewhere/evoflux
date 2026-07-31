@@ -52,6 +52,7 @@ import {
   AvatarImage,
 } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import {
   NativeSelect,
   NativeSelectOption,
@@ -68,15 +69,21 @@ import {
   useCodeReviewsQuery,
   useCodeReviewActionMutation,
   useCodeReviewQuery,
+  useCreateCodeReviewMutation,
   useDeleteGitServerConnectionMutation,
   useGitServerConnectionsQuery,
   useSaveGitServerConnectionMutation,
   useTestGitServerConnectionMutation,
 } from '@/queries'
+import {
+  useGitBranchesQuery,
+  useGitRepositoryQuery,
+} from '@/queries/useGitQuery'
 import { useTeamSessionsQuery } from '@/queries/useSessionsQuery'
 import { formatRelativeDate } from '@/utils/format'
 import { MarkdownBlock } from '@/utils/markdown'
 import { cn } from '@/lib/utils'
+import { useToastStore } from '@/stores/useToastStore'
 import { GitActionSurface, type GitAction } from '@/components/git/GitActionMenu'
 import type { PullRequestsScope } from '@/stores/useUIStore'
 
@@ -1293,6 +1300,150 @@ function ConnectionsDialog({
   )
 }
 
+function CreateReviewDialog({
+  target,
+  onClose,
+}: {
+  target: RepositoryCodeReviews | null
+  onClose: () => void
+}) {
+  const workspace = target?.workspace ?? ''
+  const repository = useGitRepositoryQuery(workspace, Boolean(target))
+  const branches = useGitBranchesQuery(workspace, Boolean(target))
+  const create = useCreateCodeReviewMutation(target?.workspace_id ?? '')
+  const push = useToastStore((state) => state.push)
+  const [form, setForm] = useState({
+    title: '',
+    body: '',
+    sourceBranch: '',
+    targetBranch: '',
+  })
+
+  const localBranches = useMemo(
+    () => (branches.data ?? []).filter((branch) => branch.remote === null),
+    [branches.data],
+  )
+
+  const detectedSource = repository.data?.branch ?? ''
+  const likelyTarget =
+    localBranches.find((branch) => branch.name === 'main')?.name
+    ?? localBranches.find((branch) => branch.name === 'master')?.name
+    ?? target?.items[0]?.target_branch
+    ?? 'main'
+  const sourceBranch = form.sourceBranch || detectedSource
+  const targetBranch = form.targetBranch || likelyTarget
+
+  const submit = async () => {
+    if (!target) return
+    try {
+      const created = await create.mutateAsync({
+        title: form.title.trim(),
+        body: form.body.trim(),
+        source_branch: sourceBranch.trim(),
+        target_branch: targetBranch.trim(),
+      })
+      push({
+        tone: 'success',
+        title: `${providerReviewName(target.provider)} created`,
+        description: created.web_url || `#${created.number} is now open.`,
+      })
+      onClose()
+    } catch (error) {
+      push({
+        tone: 'error',
+        title: `Could not create ${providerReviewName(target.provider).toLowerCase()}`,
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  return (
+    <Dialog open={Boolean(target)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Create {providerReviewName(target?.provider ?? null).toLowerCase()}</DialogTitle>
+          <DialogDescription>
+            The source branch must already be pushed. EvoFlux creates the review through the saved Git server API connection.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1.5 text-xs text-(--color-text-muted)">
+              <span>Source branch</span>
+              <Input
+                value={sourceBranch}
+                onChange={(event) => setForm((current) => ({
+                  ...current,
+                  sourceBranch: event.target.value,
+                }))}
+                list="create-review-branches"
+                placeholder="feature/my-change"
+              />
+            </label>
+            <label className="space-y-1.5 text-xs text-(--color-text-muted)">
+              <span>Target branch</span>
+              <Input
+                value={targetBranch}
+                onChange={(event) => setForm((current) => ({
+                  ...current,
+                  targetBranch: event.target.value,
+                }))}
+                list="create-review-branches"
+                placeholder="main"
+              />
+            </label>
+            <datalist id="create-review-branches">
+              {localBranches.map((branch) => (
+                <option key={branch.name} value={branch.name} />
+              ))}
+            </datalist>
+          </div>
+          <label className="block space-y-1.5 text-xs text-(--color-text-muted)">
+            <span>Title</span>
+            <Input
+              value={form.title}
+              onChange={(event) => setForm((current) => ({
+                ...current,
+                title: event.target.value,
+              }))}
+              placeholder="Describe the change"
+              autoFocus
+            />
+          </label>
+          <label className="block space-y-1.5 text-xs text-(--color-text-muted)">
+            <span>Description</span>
+            <Textarea
+              value={form.body}
+              onChange={(event) => setForm((current) => ({
+                ...current,
+                body: event.target.value,
+              }))}
+              placeholder="Summary, validation, and rollout notes…"
+              className="min-h-32"
+            />
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => void submit()}
+            disabled={
+              create.isPending
+              || !form.title.trim()
+              || !sourceBranch.trim()
+              || !targetBranch.trim()
+              || sourceBranch.trim() === targetBranch.trim()
+            }
+          >
+            <GitPullRequest size={13} aria-hidden="true" />
+            {create.isPending ? 'Creating…' : 'Create review'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 interface PullRequestsPanelProps {
   open: boolean
   scope: PullRequestsScope
@@ -1330,6 +1481,8 @@ export function PullRequestsPanel({
   const [configTarget, setConfigTarget] =
     useState<RepositoryCodeReviews | null>(null)
   const [manageOpen, setManageOpen] = useState(false)
+  const [createTarget, setCreateTarget] =
+    useState<RepositoryCodeReviews | null>(null)
   const [selectedReview, setSelectedReview] = useState<{
     repository: RepositoryCodeReviews
     item: CodeReviewItem
@@ -1579,6 +1732,17 @@ export function PullRequestsPanel({
                 )}{' '}
                 · {repository.items.length}
               </span>
+              {!repository.error && repository.connection_id && (
+                <button
+                  type="button"
+                  onClick={() => setCreateTarget(repository)}
+                  className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)"
+                  aria-label={`Create review for ${repository.name}`}
+                  title={`Create ${providerReviewName(repository.provider).toLowerCase()}`}
+                >
+                  <Plus size={12} />
+                </button>
+              )}
               {repository.remote_url && (
                 <button
                   type="button"
@@ -1662,6 +1826,11 @@ export function PullRequestsPanel({
         open={manageOpen}
         onClose={() => setManageOpen(false)}
         connections={connections.data ?? []}
+      />
+      <CreateReviewDialog
+        key={createTarget?.workspace_id ?? 'closed'}
+        target={createTarget}
+        onClose={() => setCreateTarget(null)}
       />
     </div>
   )

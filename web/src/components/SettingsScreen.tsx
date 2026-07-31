@@ -29,6 +29,7 @@ import { SkillEditorPage } from '@/routes/settings.skills.$name'
 import { NewSkillPage } from '@/routes/settings.skills.new'
 import { SkillsListPage } from '@/routes/settings.skills'
 import { TelemetrySettingsPage } from '@/routes/settings.telemetry'
+import { VersionControlSettingsPage } from '@/routes/settings.version-control'
 
 const LIST_SECTIONS: Readonly<Record<string, string>> = {
   agents: 'Agents',
@@ -39,6 +40,7 @@ const LIST_SECTIONS: Readonly<Record<string, string>> = {
 const LEAF_SECTIONS: Readonly<Record<string, string>> = {
   providers: 'Providers',
   connection: 'Connection',
+  'version-control': 'Git & reviews',
   memory: 'Memory',
   sandbox: 'Sandbox',
   notifications: 'Notifications',
@@ -92,6 +94,7 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'mcp') return <McpListPage />
   if (section === 'memory') return <MemorySettingsPage />
   if (section === 'connection') return <BackendConnectionPage />
+  if (section === 'version-control') return <VersionControlSettingsPage />
   if (section === 'providers') return <ProvidersSettingsPage />
   if (section === 'sandbox') return <SandboxSettingsPage />
   // Keep old command/deep-link targets working after Dream was folded into Memory.

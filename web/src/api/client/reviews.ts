@@ -5,6 +5,8 @@ import type {
   CodeReviewsResponse,
   CodeReviewActionInput,
   CodeReviewContext,
+  CodeReviewCreateInput,
+  CodeReviewCreateResult,
   GitServerConnection,
   GitServerConnectionInput,
 } from '../types'
@@ -56,6 +58,22 @@ export async function getCodeReview(
     `${apiBaseUrl()}/team/reviews/${encodeURIComponent(workspaceId)}/${number}`,
   )
   if (!res.ok) await parseDetailOrThrow(res, 'getCodeReview')
+  return res.json()
+}
+
+export async function createCodeReview(
+  workspaceId: string,
+  body: CodeReviewCreateInput,
+): Promise<CodeReviewCreateResult> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/reviews/${encodeURIComponent(workspaceId)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'createCodeReview')
   return res.json()
 }
 

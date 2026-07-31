@@ -15,6 +15,7 @@ import httpx
 from dotenv import dotenv_values
 
 from app.core.config import settings
+from app.core.runtime_settings import load_runtime_settings
 from app.models.chat import GitServerConnection
 from app.services.git_ops import run_git
 
@@ -166,6 +167,7 @@ class RepositoryTarget:
     repository: str | None
     detected_provider: str | None
     inspection_error: str | None = None
+    remote_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,6 +221,13 @@ def require_capability(provider: str, capability: str) -> None:
         raise GitServerApiError(
             f"{capability.replace('_', ' ').title()} is not supported by the "
             f"{provider.replace('_', ' ')} REST adapter."
+        )
+
+
+def require_review_mutations_enabled() -> None:
+    if not load_runtime_settings().code_reviews.allow_mutations:
+        raise GitServerApiError(
+            "Pull/merge request mutations are disabled in Git & reviews settings."
         )
 
 
@@ -536,7 +545,23 @@ async def inspect_repository(
             ),
         )
 
-    host, repository, remote_url = parse_remote_url(result.stdout.strip())
+    try:
+        host, repository, remote_url = parse_remote_url(result.stdout.strip())
+    except ValueError:
+        return RepositoryTarget(
+            workspace_id=workspace_id,
+            workspace=workspace,
+            name=name,
+            remote_url=None,
+            host=None,
+            repository=None,
+            detected_provider=None,
+            inspection_error=(
+                f"Git remote '{remote_name}' has an invalid URL. Update the remote, "
+                "then refresh reviews."
+            ),
+            remote_name=remote_name,
+        )
     return RepositoryTarget(
         workspace_id=workspace_id,
         workspace=workspace,
@@ -545,6 +570,7 @@ async def inspect_repository(
         host=host,
         repository=repository,
         detected_provider=infer_provider(host, repository),
+        remote_name=remote_name,
     )
 
 
@@ -605,6 +631,17 @@ def _auth_headers(connection: GitServerConnection, token: str) -> dict[str, str]
     raise ValueError(f"Unsupported Git provider: {connection.provider}")
 
 
+def _require_secure_connection(connection: GitServerConnection) -> None:
+    review_cfg = load_runtime_settings().code_reviews
+    parsed_base = urlparse(connection.base_url)
+    if not review_cfg.allow_insecure_connections and (
+        parsed_base.scheme != "https" or not connection.verify_ssl
+    ):
+        raise GitServerApiError(
+            "Insecure Git server connections are disabled in Git & reviews settings."
+        )
+
+
 async def _request_json(
     connection: GitServerConnection,
     token: str,
@@ -615,29 +652,63 @@ async def _request_json(
     json_body: dict[str, Any] | None = None,
     extra_headers: dict[str, str] | None = None,
 ) -> Any:
+    review_cfg = load_runtime_settings().code_reviews
+    _require_secure_connection(connection)
     url = f"{connection.base_url.rstrip('/')}/{path.lstrip('/')}"
     try:
         async with httpx.AsyncClient(
             verify=connection.verify_ssl,
-            timeout=httpx.Timeout(20.0),
-            follow_redirects=True,
+            timeout=httpx.Timeout(review_cfg.request_timeout_seconds),
+            follow_redirects=False,
         ) as client:
             headers = _auth_headers(connection, token)
             headers.update(extra_headers or {})
-            response = await client.request(
-                method,
-                url,
-                params=params,
-                json=json_body,
-                headers=headers,
+            response: httpx.Response | None = None
+            max_attempts = (
+                review_cfg.retry_attempts + 1
+                if method.upper() in {"GET", "HEAD"}
+                else 1
             )
+            for attempt in range(max_attempts):
+                try:
+                    response = await client.request(
+                        method,
+                        url,
+                        params=params,
+                        json=json_body,
+                        headers=headers,
+                    )
+                except (httpx.TimeoutException, httpx.TransportError):
+                    if attempt + 1 >= max_attempts:
+                        raise
+                    await asyncio.sleep(
+                        min(review_cfg.retry_backoff_seconds * (2**attempt), 30.0)
+                    )
+                    continue
+                if response.status_code not in {408, 429, 500, 502, 503, 504}:
+                    break
+                if attempt + 1 >= max_attempts:
+                    break
+                retry_after = response.headers.get("retry-after", "").strip()
+                try:
+                    delay = float(retry_after) if retry_after else 0.0
+                except ValueError:
+                    delay = 0.0
+                if delay <= 0:
+                    delay = review_cfg.retry_backoff_seconds * (2**attempt)
+                await asyncio.sleep(min(delay, 30.0))
+            assert response is not None
     except httpx.TimeoutException as exc:
         raise GitServerApiError("The Git server timed out.") from exc
     except httpx.HTTPError as exc:
         raise GitServerApiError(f"Could not reach the Git server: {exc}") from exc
-    if response.status_code >= 400:
-        if response.status_code in {401, 403}:
+    if response.status_code >= 300:
+        if 300 <= response.status_code < 400:
+            detail = "The Git server returned an unexpected redirect."
+        elif response.status_code in {401, 403}:
             detail = "The API key is invalid or lacks repository permissions."
+        elif response.status_code == 429:
+            detail = "The Git server rate limit was exceeded. Retry later."
         elif response.status_code == 404:
             detail = "Repository or code review not found through this connection."
         else:
@@ -698,6 +769,7 @@ async def fetch_code_review_image(
     url: str,
 ) -> ReviewImage | ReviewImageRedirect:
     """Fetch a private GitHub review attachment without exposing its token."""
+    _require_secure_connection(connection)
     token = connection_token(connection)
     if not token:
         raise GitServerApiError("No API key is configured for this Git server.")
@@ -711,7 +783,9 @@ async def fetch_code_review_image(
     try:
         async with httpx.AsyncClient(
             verify=connection.verify_ssl,
-            timeout=httpx.Timeout(20.0),
+            timeout=httpx.Timeout(
+                load_runtime_settings().code_reviews.request_timeout_seconds
+            ),
             follow_redirects=False,
         ) as client:
             async with client.stream("GET", image_url, headers=headers) as response:
@@ -1384,6 +1458,7 @@ async def list_repository_reviews(
     target: RepositoryTarget,
     connection: GitServerConnection,
 ) -> RepositoryReviews:
+    max_pages = load_runtime_settings().code_reviews.max_pages_per_repository
     token = connection_token(connection)
     if not token:
         return RepositoryReviews(
@@ -1403,7 +1478,7 @@ async def list_repository_reviews(
     try:
         if connection.provider == "github":
             items = []
-            for page in range(1, 6):
+            for page in range(1, max_pages + 1):
                 payload = await _request_json(
                     connection,
                     token,
@@ -1422,7 +1497,7 @@ async def list_repository_reviews(
                     break
         elif connection.provider == "gitlab":
             items = []
-            for page in range(1, 6):
+            for page in range(1, max_pages + 1):
                 payload = await _request_json(
                     connection,
                     token,
@@ -1442,7 +1517,7 @@ async def list_repository_reviews(
                     break
         elif connection.provider == "bitbucket_cloud":
             items = []
-            for page in range(1, 11):
+            for page in range(1, max_pages + 1):
                 payload = await _request_json(
                     connection,
                     token,
@@ -1457,7 +1532,7 @@ async def list_repository_reviews(
             project, repo = _bitbucket_server_coordinates(repository)
             items = []
             start = 0
-            for _page in range(5):
+            for _page in range(max_pages):
                 payload = await _request_json(
                     connection,
                     token,
@@ -1472,7 +1547,7 @@ async def list_repository_reviews(
                 start = int(page_data.get("nextPageStart") or start + 100)
         elif connection.provider == "gitea":
             items = []
-            for page in range(1, 11):
+            for page in range(1, max_pages + 1):
                 payload = await _request_json(
                     connection,
                     token,
@@ -1486,7 +1561,7 @@ async def list_repository_reviews(
         elif connection.provider == "azure_devops":
             project, repo = _azure_coordinates(repository)
             items = []
-            for page in range(5):
+            for page in range(max_pages):
                 payload = await _request_json(
                     connection,
                     token,
@@ -1906,6 +1981,7 @@ async def add_code_review_comment(
     *,
     idempotency_key: str | None = None,
 ) -> dict[str, Any]:
+    require_review_mutations_enabled()
     require_capability(connection.provider, "comment")
     token = connection_token(connection)
     repository = target.repository
@@ -1960,6 +2036,7 @@ async def add_code_review_inline_comment(
     base_commit_id: str | None = None,
     start_commit_id: str | None = None,
 ) -> dict[str, Any]:
+    require_review_mutations_enabled()
     require_capability(connection.provider, "inline_comment")
     token = connection_token(connection)
     repository = target.repository
@@ -2049,6 +2126,7 @@ async def reply_code_review_thread(
     thread_id: str,
     body: str,
 ) -> dict[str, Any]:
+    require_review_mutations_enabled()
     require_capability(connection.provider, "reply_thread")
     token = connection_token(connection)
     repository = target.repository
@@ -2087,6 +2165,7 @@ async def set_code_review_thread_resolved(
     *,
     resolved: bool,
 ) -> dict[str, Any]:
+    require_review_mutations_enabled()
     require_capability(connection.provider, "resolve_thread")
     token = connection_token(connection)
     repository = target.repository
@@ -2131,6 +2210,7 @@ async def submit_code_review(
     body: str = "",
     reviewer_id: str | None = None,
 ) -> dict[str, Any]:
+    require_review_mutations_enabled()
     event = event.lower()
     if event not in {"approve", "request_changes", "comment"}:
         raise GitServerApiError(
@@ -2190,6 +2270,7 @@ async def update_code_review(
     number: int,
     updates: dict[str, Any],
 ) -> dict[str, Any]:
+    require_review_mutations_enabled()
     require_capability(connection.provider, "update")
     token = connection_token(connection)
     repository = target.repository
@@ -2289,12 +2370,19 @@ async def merge_code_review(
     method: str | None = None,
     commit_title: str | None = None,
 ) -> dict[str, Any]:
+    require_review_mutations_enabled()
     require_capability(connection.provider, "merge")
     token = connection_token(connection)
     repository = target.repository
     if not token or not repository:
         raise GitServerApiError("The connection or repository is not configured.")
     provider = connection.provider
+    if load_runtime_settings().code_reviews.require_successful_checks_before_merge:
+        checks = await get_repository_review_checks(target, connection, number)
+        if checks.get("summary") != "success":
+            raise GitServerApiError(
+                "Merge blocked because required checks are not successful."
+            )
     root = _review_root(provider, repository, number)
     params: dict[str, str | int] | None = None
     http_method = "POST"
@@ -2351,6 +2439,7 @@ async def set_code_review_state(
     *,
     open: bool,
 ) -> dict[str, Any]:
+    require_review_mutations_enabled()
     capability = "reopen" if open else "close"
     require_capability(connection.provider, capability)
     token = connection_token(connection)
@@ -2417,6 +2506,7 @@ async def create_repository_review(
     target_branch: str,
 ) -> dict[str, Any]:
     """Create a pull/merge request through the configured provider REST API."""
+    require_review_mutations_enabled()
     token = connection_token(connection)
     if not token:
         raise GitServerApiError("The connection has no API key.")
@@ -2512,6 +2602,10 @@ async def create_repository_review(
         or row.get("pullRequestId")
         or 0
     )
+    if number <= 0:
+        raise GitServerApiError(
+            "The Git server created a review but returned no usable review number."
+        )
     return {
         "provider": provider,
         "repository": repository,
@@ -2525,6 +2619,10 @@ async def aggregate_reviews(
     targets: list[RepositoryTarget],
     connections: list[GitServerConnection],
 ) -> list[RepositoryReviews]:
+    semaphore = asyncio.Semaphore(
+        load_runtime_settings().code_reviews.max_concurrent_repositories
+    )
+
     async def load(target: RepositoryTarget) -> RepositoryReviews:
         if target.inspection_error:
             return RepositoryReviews(
@@ -2548,7 +2646,8 @@ async def aggregate_reviews(
                 provider=target.detected_provider,
                 error="Connect this repository to a Git server API.",
             )
-        return await list_repository_reviews(target, connection)
+        async with semaphore:
+            return await list_repository_reviews(target, connection)
 
     return list(await asyncio.gather(*(load(target) for target in targets)))
 

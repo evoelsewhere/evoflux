@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 from typing import Literal
 
@@ -81,6 +83,33 @@ class CrossRepoSettings(BaseModel):
     # than are sane to run through FTS5 in one pass. The remainder is simply
     # picked up on the next resolve call.
     max_rows_per_run: int = 500
+
+
+class GitSettings(BaseModel):
+    """Operational and safety defaults for local/remote Git commands."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    network_timeout_seconds: float = Field(default=120.0, ge=10.0, le=1800.0)
+    max_diff_bytes: int = Field(default=2_000_000, ge=64_000, le=50_000_000)
+    default_pull_strategy: Literal["ff_only", "merge", "rebase"] = "ff_only"
+    prune_on_fetch: bool = True
+    allow_force_push: bool = False
+
+
+class CodeReviewSettings(BaseModel):
+    """Provider-neutral PR/MR API reliability and mutation guardrails."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    request_timeout_seconds: float = Field(default=20.0, ge=2.0, le=300.0)
+    retry_attempts: int = Field(default=2, ge=0, le=5)
+    retry_backoff_seconds: float = Field(default=0.5, ge=0.0, le=10.0)
+    max_concurrent_repositories: int = Field(default=4, ge=1, le=32)
+    max_pages_per_repository: int = Field(default=5, ge=1, le=20)
+    allow_mutations: bool = True
+    allow_insecure_connections: bool = False
+    require_successful_checks_before_merge: bool = False
 
 
 class ServerSettings(BaseModel):
@@ -173,6 +202,8 @@ class RuntimeSettings(BaseModel):
     providers: dict[str, ProviderUiSettings] = Field(default_factory=dict)
     code_graph: CodeGraphSettings = Field(default_factory=CodeGraphSettings)
     cross_repo: CrossRepoSettings = Field(default_factory=CrossRepoSettings)
+    git: GitSettings = Field(default_factory=GitSettings)
+    code_reviews: CodeReviewSettings = Field(default_factory=CodeReviewSettings)
     webbridge: WebBridgeSettings = Field(default_factory=WebBridgeSettings)
 
 
@@ -215,7 +246,21 @@ def save_runtime_settings(cfg: RuntimeSettings, path: Path | None = None) -> Pat
     resolved = path or runtime_settings_path()
     resolved.parent.mkdir(parents=True, exist_ok=True)
     data = cfg.model_dump(mode="json", exclude_none=True)
-    resolved.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    serialized = yaml.safe_dump(data, sort_keys=False)
+    fd, temporary_name = tempfile.mkstemp(
+        dir=resolved.parent,
+        prefix=f".{resolved.name}.",
+        suffix=".tmp",
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(serialized)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, resolved)
+    finally:
+        temporary.unlink(missing_ok=True)
     return resolved
 
 

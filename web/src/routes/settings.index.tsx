@@ -11,6 +11,7 @@ import {
   Bot,
   BrainCircuit,
   ChevronRight,
+  GitBranch,
   Server,
   Info,
   KeyRound,
@@ -161,6 +162,12 @@ export function SettingsHubPage() {
           icon: Server,
           title: 'Connection',
           description: 'Point the app at a local or remote backend',
+        },
+        {
+          to: '/settings/version-control',
+          icon: GitBranch,
+          title: 'Git & reviews',
+          description: 'Sync, pull request reliability and safety policy',
         },
         {
           to: '/settings/sandbox',

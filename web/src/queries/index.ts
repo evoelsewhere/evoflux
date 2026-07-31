@@ -63,6 +63,10 @@ export {
   useUpdateSandboxSettingsMutation,
 } from './useSandboxSettingsQuery'
 export {
+  useVersionControlSettingsQuery,
+  useUpdateVersionControlSettingsMutation,
+} from './useVersionControlSettingsQuery'
+export {
   useProvidersQuery,
   useProviderModelsMutation,
   useProviderUsageQuery,
@@ -75,6 +79,7 @@ export {
 export { queryKeys } from './keys'
 export {
   useCodeReviewActionMutation,
+  useCreateCodeReviewMutation,
   useCodeReviewQuery,
   useCodeReviewsQuery,
   useGitServerConnectionsQuery,

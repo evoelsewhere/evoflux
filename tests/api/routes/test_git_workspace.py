@@ -215,3 +215,19 @@ def test_log_paginates_and_returns_graph_metadata(app_without_team, tmp_path: Pa
     assert {entry["sha"] for entry in first.json()["entries"]}.isdisjoint(
         {entry["sha"] for entry in second.json()["entries"]}
     )
+
+
+def test_log_files_returns_files_for_selected_commit(app_without_team, tmp_path: Path):
+    repo = _repo(tmp_path)
+    (repo / "added.txt").write_text("new\n", encoding="utf-8")
+    _git(repo, "add", "added.txt")
+    _git(repo, "commit", "-m", "add file")
+    sha = _git(repo, "rev-parse", "HEAD")
+
+    response = TestClient(app_without_team).get(
+        f"/api/team/workspace/git/log/{sha}/files",
+        params={"workspace": str(repo)},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [{"path": "added.txt", "status": "A"}]

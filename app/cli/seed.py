@@ -41,9 +41,11 @@ skills ship by users browsing the repo and copying what they want.
 from __future__ import annotations
 
 import io
+import os
 import re
 import shutil
 import tarfile
+import tempfile
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -98,6 +100,24 @@ class SeedDownloadError(RuntimeError):
 
 
 # ── .env credential writer ──────────────────────────────────────────────────
+
+
+def _write_env_file(env_file: Path, content: str) -> None:
+    """Atomically replace the credential file with owner-only permissions."""
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=env_file.parent,
+        prefix=f".{env_file.name}.",
+        suffix=".tmp",
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, env_file)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def write_env_credentials(
@@ -155,7 +175,7 @@ def write_env_credentials(
             lines.append(f"{key}={val}")
             if key in comments:
                 lines.append(comments[key])
-        env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        _write_env_file(env_file, "\n".join(lines) + "\n")
         return True
 
     existing = env_file.read_text(encoding="utf-8")
@@ -177,7 +197,7 @@ def write_env_credentials(
         out_lines.append(f"{key}={val}")
         if key in comments:
             out_lines.append(comments[key])
-    env_file.write_text("\n".join(out_lines) + "\n", encoding="utf-8")
+    _write_env_file(env_file, "\n".join(out_lines) + "\n")
     return False
 
 

@@ -13,6 +13,7 @@ import {
   Bell,
   Bot,
   BrainCircuit,
+  GitBranch,
   Info,
   KeyRound,
   Palette,
@@ -43,6 +44,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 type SidebarPath =
   | '/settings/providers'
   | '/settings/connection'
+  | '/settings/version-control'
   | '/settings/agents'
   | '/settings/skills'
   | '/settings/mcp'
@@ -207,6 +209,12 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             label: 'Connection',
             icon: Server,
             matchPrefix: '/settings/connection',
+          },
+          {
+            to: '/settings/version-control',
+            label: 'Git & reviews',
+            icon: GitBranch,
+            matchPrefix: '/settings/version-control',
           },
           {
             to: '/settings/sandbox',

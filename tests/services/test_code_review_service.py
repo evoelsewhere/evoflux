@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import subprocess
 from uuid import uuid4
 
@@ -1014,6 +1015,116 @@ async def test_github_inline_comment_maps_position_and_idempotency(
         "side": "RIGHT",
         "commit_id": "abc",
     }
+
+
+@pytest.mark.asyncio
+async def test_read_requests_retry_transient_server_failures(monkeypatch):
+    from app.core.runtime_settings import CodeReviewSettings, RuntimeSettings
+
+    attempts = 0
+    real_async_client = service.httpx.AsyncClient
+
+    def handle_request(request):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return service.httpx.Response(503, request=request)
+        return service.httpx.Response(200, request=request, json={"login": "octocat"})
+
+    transport = service.httpx.MockTransport(handle_request)
+    monkeypatch.setattr(
+        service.httpx,
+        "AsyncClient",
+        lambda **kwargs: real_async_client(transport=transport, **kwargs),
+    )
+    monkeypatch.setattr(
+        service,
+        "load_runtime_settings",
+        lambda: RuntimeSettings(
+            code_reviews=CodeReviewSettings(
+                retry_attempts=1,
+                retry_backoff_seconds=0,
+            )
+        ),
+    )
+    connection = GitServerConnection(
+        name="GitHub",
+        provider="github",
+        base_url="https://api.github.com",
+        host="github.com",
+        token_env_var="GITHUB_RETRY_TOKEN",
+    )
+
+    payload = await service._request_json(connection, "secret", "user")
+
+    assert payload == {"login": "octocat"}
+    assert attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_review_aggregation_respects_configured_concurrency(monkeypatch):
+    from app.core.runtime_settings import CodeReviewSettings, RuntimeSettings
+
+    active = 0
+    peak = 0
+
+    async def fake_list(target, connection):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return service.RepositoryReviews(
+            target=target,
+            connection_id=str(connection.id),
+            provider=connection.provider,
+        )
+
+    monkeypatch.setattr(service, "list_repository_reviews", fake_list)
+    monkeypatch.setattr(
+        service,
+        "load_runtime_settings",
+        lambda: RuntimeSettings(
+            code_reviews=CodeReviewSettings(max_concurrent_repositories=2)
+        ),
+    )
+    connection = GitServerConnection(
+        name="GitHub",
+        provider="github",
+        base_url="https://api.github.com",
+        host="github.com",
+        token_env_var="GITHUB_CONCURRENCY_TOKEN",
+    )
+    targets = [
+        service.RepositoryTarget(
+            workspace_id=str(uuid4()),
+            workspace=f"/repo-{index}",
+            name=f"repo-{index}",
+            remote_url=f"git@github.com:acme/repo-{index}.git",
+            host="github.com",
+            repository=f"acme/repo-{index}",
+            detected_provider="github",
+        )
+        for index in range(5)
+    ]
+
+    results = await service.aggregate_reviews(targets, [connection])
+
+    assert len(results) == 5
+    assert peak == 2
+
+
+def test_review_mutations_can_be_disabled_globally(monkeypatch):
+    from app.core.runtime_settings import CodeReviewSettings, RuntimeSettings
+
+    monkeypatch.setattr(
+        service,
+        "load_runtime_settings",
+        lambda: RuntimeSettings(code_reviews=CodeReviewSettings(allow_mutations=False)),
+    )
+
+    with pytest.raises(service.GitServerApiError, match="mutations are disabled"):
+        service.require_review_mutations_enabled()
 
 
 def test_provider_capability_reports_rest_only_limitations():

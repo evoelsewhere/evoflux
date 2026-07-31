@@ -1539,6 +1539,21 @@ export interface CodeReviewsResponse {
   total: number
 }
 
+export interface CodeReviewCreateInput {
+  title: string
+  body?: string
+  source_branch: string
+  target_branch: string
+}
+
+export interface CodeReviewCreateResult {
+  provider: GitServerProvider
+  repository: string
+  number: number
+  web_url: string
+  title: string
+}
+
 export interface CodeReviewComment {
   stable_id: string
   id: string
