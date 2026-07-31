@@ -147,6 +147,7 @@ export const queryKeys = {
   },
   settings: {
     sandbox: () => ['settings', 'sandbox'] as const,
+    versionControl: () => ['settings', 'version-control'] as const,
     multimodal: () => ['settings', 'multimodal'] as const,
     providers: () => ['settings', 'providers'] as const,
     providerModels: (providerId: string) => ['settings', 'providers', providerId, 'models'] as const,

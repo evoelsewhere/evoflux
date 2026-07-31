@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
   createGitServerConnection,
+  createCodeReview,
   deleteGitServerConnection,
   getCodeReview,
   getCodeReviews,
@@ -13,6 +14,7 @@ import {
 } from '@/api/client'
 import type {
   CodeReviewActionInput,
+  CodeReviewCreateInput,
   GitServerConnectionInput,
 } from '@/api/types'
 import { queryKeys } from './keys'
@@ -58,6 +60,17 @@ export function useCodeReviewActionMutation(
   return useMutation({
     mutationFn: (body: CodeReviewActionInput) =>
       mutateCodeReview(workspaceId, number, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.git.reviews() })
+    },
+  })
+}
+
+export function useCreateCodeReviewMutation(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: CodeReviewCreateInput) =>
+      createCodeReview(workspaceId, body),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.git.reviews() })
     },

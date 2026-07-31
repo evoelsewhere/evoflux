@@ -23,6 +23,22 @@ export type SandboxSettings = {
 
 export type SandboxSettingsUpdate = Omit<SandboxSettings, 'native_backend'>
 
+export type VersionControlSettings = {
+  network_timeout_seconds: number
+  max_diff_bytes: number
+  default_pull_strategy: 'ff_only' | 'merge' | 'rebase'
+  prune_on_fetch: boolean
+  allow_force_push: boolean
+  review_request_timeout_seconds: number
+  review_retry_attempts: number
+  review_retry_backoff_seconds: number
+  review_max_concurrent_repositories: number
+  review_max_pages_per_repository: number
+  allow_review_mutations: boolean
+  allow_insecure_connections: boolean
+  require_successful_checks_before_merge: boolean
+}
+
 export async function getSandboxSettings(): Promise<SandboxSettings> {
   const res = await fetch(`${apiBaseUrl()}/settings/sandbox`)
   if (!res.ok) await parseDetailOrThrow(res, 'GET /settings/sandbox')
@@ -38,6 +54,24 @@ export async function updateSandboxSettings(
     body: JSON.stringify(body),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'PUT /settings/sandbox')
+  return res.json()
+}
+
+export async function getVersionControlSettings(): Promise<VersionControlSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/version-control`)
+  if (!res.ok) await parseDetailOrThrow(res, 'GET /settings/version-control')
+  return res.json()
+}
+
+export async function updateVersionControlSettings(
+  body: VersionControlSettings,
+): Promise<VersionControlSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/version-control`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'PUT /settings/version-control')
   return res.json()
 }
 

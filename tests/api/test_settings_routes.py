@@ -1101,6 +1101,35 @@ def test_save_provider_visible_models_writes_runtime_settings(
     assert "visible_models" in (tmp_path / "settings.yaml").read_text(encoding="utf-8")
 
 
+def test_version_control_settings_round_trip(tmp_path, monkeypatch):
+    from app.api.app import create_app
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    client = TestClient(create_app())
+    defaults = client.get("/api/settings/version-control")
+
+    assert defaults.status_code == 200
+    assert defaults.json()["default_pull_strategy"] == "ff_only"
+    assert defaults.json()["allow_force_push"] is False
+
+    payload = {
+        **defaults.json(),
+        "network_timeout_seconds": 240,
+        "default_pull_strategy": "rebase",
+        "allow_force_push": True,
+        "review_retry_attempts": 3,
+        "review_max_concurrent_repositories": 6,
+    }
+    updated = client.put("/api/settings/version-control", json=payload)
+
+    assert updated.status_code == 200
+    assert updated.json() == payload
+    written = (tmp_path / "settings.yaml").read_text(encoding="utf-8")
+    assert "default_pull_strategy: rebase" in written
+    assert "max_concurrent_repositories: 6" in written
+
+
 def test_save_provider_visible_models_rejects_unknown_provider() -> None:
     app = _make_app()
     client = TestClient(app)

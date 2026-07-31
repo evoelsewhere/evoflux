@@ -22,12 +22,14 @@ from app.api.schemas.reviews import (
     GitServerConnectionTest,
     GitServerConnectionUpdate,
     RepositoryReviewsOut,
+    ReviewCreateRequest,
     ReviewActionRequest,
     ReviewItemOut,
     ReviewsOut,
 )
 from app.cli.seed import write_env_credentials
 from app.core.config import settings
+from app.core.runtime_settings import load_runtime_settings
 from app.models.chat import (
     CodingProjectWorkspace,
     CodingWorkspace,
@@ -43,6 +45,7 @@ from app.services.code_review_service import (
     api_base_from_domain,
     connection_host,
     connection_token,
+    create_repository_review,
     default_api_base,
     fetch_code_review_image,
     inspect_repository,
@@ -81,6 +84,21 @@ def _derive_connection_urls(provider: str, value: str) -> tuple[str, str]:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+def _validate_connection_security(base_url: str, verify_ssl: bool) -> None:
+    from urllib.parse import urlparse
+
+    if load_runtime_settings().code_reviews.allow_insecure_connections:
+        return
+    if urlparse(base_url).scheme != "https" or not verify_ssl:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Insecure Git server connections are disabled in Git & reviews "
+                "settings."
+            ),
+        )
+
+
 def _validate_scope(scope: str, workspace_id: UUID | None) -> None:
     if scope == "repository" and workspace_id is None:
         raise HTTPException(
@@ -117,6 +135,17 @@ def _save_token(env_name: str, token: str) -> None:
         os.environ.pop(env_name, None)
 
 
+def _stored_token(env_name: str) -> str | None:
+    value = os.environ.get(env_name)
+    if value:
+        return value
+    from dotenv import dotenv_values
+
+    env_file = Path(settings.EVOFLUX_CONFIG_DIR) / ".env"
+    saved = dotenv_values(env_file).get(env_name)
+    return str(saved) if saved else None
+
+
 def _connection_out(connection: GitServerConnection) -> GitServerConnectionOut:
     domain = server_domain(connection.provider, connection.base_url)
     return GitServerConnectionOut(
@@ -143,6 +172,56 @@ async def _require_workspace(db: DbSession, workspace_id: UUID) -> CodingWorkspa
     if workspace is None or workspace.hidden or workspace.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Coding repository not found.")
     return workspace
+
+
+async def _ensure_unique_connection_target(
+    db: DbSession,
+    *,
+    scope: str,
+    workspace_id: UUID | None,
+    host: str,
+    exclude_id: UUID | None = None,
+) -> None:
+    rows = (await db.exec(select(GitServerConnection))).all()
+    duplicate = next(
+        (
+            row
+            for row in rows
+            if row.id != exclude_id
+            and row.scope == scope
+            and (
+                (scope == "server" and row.host == host)
+                or (scope == "repository" and row.workspace_id == workspace_id)
+            )
+        ),
+        None,
+    )
+    if duplicate is not None:
+        target = host if scope == "server" else "this repository"
+        raise HTTPException(
+            status_code=409,
+            detail=f"A Git server connection already targets {target}.",
+        )
+
+
+async def _ensure_unique_token_env(
+    db: DbSession,
+    env_name: str,
+    *,
+    exclude_id: UUID | None = None,
+) -> None:
+    duplicate = (
+        await db.exec(
+            select(GitServerConnection).where(
+                GitServerConnection.token_env_var == env_name
+            )
+        )
+    ).first()
+    if duplicate is not None and duplicate.id != exclude_id:
+        raise HTTPException(
+            status_code=409,
+            detail="That token environment variable is already used by another connection.",
+        )
 
 
 @router.get("/connections", response_model=list[GitServerConnectionOut])
@@ -182,6 +261,14 @@ async def create_connection(
         body.provider,
         body.domain or body.base_url or "",
     )
+    _validate_connection_security(base_url, body.verify_ssl)
+    await _ensure_unique_connection_target(
+        db,
+        scope=body.scope,
+        workspace_id=body.workspace_id,
+        host=connection_host(domain),
+    )
+    await _ensure_unique_token_env(db, env_name)
     connection = GitServerConnection(
         id=connection_id,
         name=body.name.strip(),
@@ -194,15 +281,11 @@ async def create_connection(
         username=body.username.strip() if body.username else None,
         verify_ssl=body.verify_ssl,
     )
-    if not body.token and not os.environ.get(env_name):
-        env_file = Path(settings.EVOFLUX_CONFIG_DIR) / ".env"
-        from dotenv import dotenv_values
-
-        if not dotenv_values(env_file).get(env_name):
-            raise HTTPException(
-                status_code=422,
-                detail="Provide an API key or an environment variable containing one.",
-            )
+    if not body.token and not _stored_token(env_name):
+        raise HTTPException(
+            status_code=422,
+            detail="Provide an API key or an environment variable containing one.",
+        )
     if body.token:
         _save_token(env_name, body.token)
     db.add(connection)
@@ -223,6 +306,7 @@ async def update_connection(
     connection = await db.get(GitServerConnection, connection_id)
     if connection is None:
         raise HTTPException(status_code=404, detail="Connection not found.")
+    previous_env_name = connection.token_env_var
     scope = body.scope if body.scope is not None else connection.scope
     workspace_id = (
         body.workspace_id
@@ -265,11 +349,39 @@ async def update_connection(
         connection.username = body.username.strip() or None
     if body.verify_ssl is not None:
         connection.verify_ssl = body.verify_ssl
+    _validate_connection_security(connection.base_url, connection.verify_ssl)
+    await _ensure_unique_connection_target(
+        db,
+        scope=connection.scope,
+        workspace_id=connection.workspace_id,
+        host=connection.host,
+        exclude_id=connection.id,
+    )
+    await _ensure_unique_token_env(
+        db,
+        connection.token_env_var,
+        exclude_id=connection.id,
+    )
+    if connection.token_env_var != previous_env_name and (
+        body.token == ""
+        or (body.token is None and not _stored_token(connection.token_env_var))
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Provide a new API key or choose an environment variable "
+                "that already contains one."
+            ),
+        )
     if body.token is not None:
         _save_token(connection.token_env_var, body.token)
     db.add(connection)
     await db.commit()
     await db.refresh(connection)
+    if previous_env_name != connection.token_env_var and previous_env_name.startswith(
+        _MANAGED_ENV_PREFIX
+    ):
+        _save_token(previous_env_name, "")
     return _connection_out(connection)
 
 
@@ -309,6 +421,7 @@ async def check_connection(body: GitServerConnectionTest) -> dict[str, bool]:
             username=body.username,
             verify_ssl=body.verify_ssl,
         )
+        _validate_connection_security(base_url, body.verify_ssl)
         await test_connection(connection, body.token)
     except (GitServerApiError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -502,9 +615,31 @@ async def get_review(
     number: int,
     db: DbSession,
 ) -> dict:
+    if number <= 0:
+        raise HTTPException(status_code=422, detail="Review number must be positive.")
     target, connection = await _review_target_connection(db, workspace_id)
     try:
         return await get_repository_review_context(target, connection, number)
+    except GitServerApiError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/{workspace_id}", status_code=201)
+async def create_review(
+    workspace_id: UUID,
+    body: ReviewCreateRequest,
+    db: DbSession,
+) -> dict:
+    target, connection = await _review_target_connection(db, workspace_id)
+    try:
+        return await create_repository_review(
+            target,
+            connection,
+            title=body.title,
+            body=body.body,
+            source_branch=body.source_branch,
+            target_branch=body.target_branch,
+        )
     except GitServerApiError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -516,8 +651,17 @@ async def mutate_review(
     body: ReviewActionRequest,
     db: DbSession,
 ) -> dict:
+    if number <= 0:
+        raise HTTPException(status_code=422, detail="Review number must be positive.")
     target, connection = await _review_target_connection(db, workspace_id)
     try:
+        if (
+            body.action in {"comment", "inline_comment", "reply"}
+            and not (body.body or "").strip()
+        ):
+            raise GitServerApiError(
+                f"{body.action.replace('_', ' ').title()} requires a body."
+            )
         if body.action == "comment":
             return await add_code_review_comment(
                 target,

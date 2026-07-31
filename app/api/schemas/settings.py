@@ -26,6 +26,24 @@ class SandboxSettingsBody(BaseModel):
 # ── Providers (Settings → Providers tab) ────────────────────────────────────
 
 
+class VersionControlSettingsBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    network_timeout_seconds: float = Field(ge=10.0, le=1800.0)
+    max_diff_bytes: int = Field(ge=64_000, le=50_000_000)
+    default_pull_strategy: Literal["ff_only", "merge", "rebase"]
+    prune_on_fetch: bool
+    allow_force_push: bool
+    review_request_timeout_seconds: float = Field(ge=2.0, le=300.0)
+    review_retry_attempts: int = Field(ge=0, le=5)
+    review_retry_backoff_seconds: float = Field(ge=0.0, le=10.0)
+    review_max_concurrent_repositories: int = Field(ge=1, le=32)
+    review_max_pages_per_repository: int = Field(ge=1, le=20)
+    allow_review_mutations: bool
+    allow_insecure_connections: bool
+    require_successful_checks_before_merge: bool
+
+
 class ProviderInfo(BaseModel):
     """One catalog row enriched with the user's current configuration state."""
 

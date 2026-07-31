@@ -7,13 +7,15 @@ API credential already configured in Coding mode, so gh/glab are unnecessary.
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
+from pydantic import Field
 from sqlmodel import col, select
 
+from app.agent.state import AgentState
 from app.agent.tools.registry import InjectedArg, Tool
+from app.core.runtime_settings import load_runtime_settings
 from app.core import db as db_module
 from app.models.chat import GitServerConnection
 from app.services.code_review_service import (
@@ -24,18 +26,13 @@ from app.services.code_review_service import (
     resolve_connection,
 )
 from app.services.coding_workspace_service import list_visible_coding_workspaces
-
-
-async def _run(args: list[str], cwd: str | None) -> tuple[int, str]:
-    """Run an argv command (no shell) and return combined output."""
-    proc = await asyncio.create_subprocess_exec(
-        *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-        cwd=cwd,
-    )
-    stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
-    return proc.returncode or 0, stdout.decode(errors="replace").strip()
+from app.services.git_credentials import git_credential_from_connection
+from app.services.git_ops import (
+    git_locks,
+    run_git,
+    run_git_long,
+    validate_ref_name,
+)
 
 
 async def _api_context(workspace: Path):
@@ -80,12 +77,12 @@ async def _api_context(workspace: Path):
 
 async def _create_pull_request(
     workspace_path: str,
-    commit_message: str,
-    pr_title: str,
+    commit_message: Annotated[str, Field(min_length=1, max_length=10_000)],
+    pr_title: Annotated[str, Field(min_length=1, max_length=1_000)],
     pr_body: str = "",
     base_branch: str = "main",
     branch_name: str | None = None,
-    _state: Annotated[Any, InjectedArg()] = None,
+    _state: Annotated[AgentState | None, InjectedArg()] = None,
 ) -> str:
     """Commit all changes, push the branch, and create a PR/MR through REST.
 
@@ -97,20 +94,32 @@ async def _create_pull_request(
     if not path.is_dir():
         return f"[Error] workspace_path not found: {workspace_path}"
     cwd = str(path)
+    active_workspace = _state.metadata.get("team_workspace") if _state else None
+    if not isinstance(active_workspace, str) or not active_workspace:
+        return "[Error] create_pull_request requires an active Coding workspace."
+    if path != Path(active_workspace).expanduser().resolve():
+        return "[Error] workspace_path must match the active Coding workspace."
+    if not validate_ref_name(base_branch):
+        return f"[Error] Invalid base branch: {base_branch}"
+    if branch_name is not None and not validate_ref_name(branch_name):
+        return f"[Error] Invalid branch name: {branch_name}"
 
     try:
         target, connection = await _api_context(path)
     except GitServerApiError as exc:
         return f"[Error] {exc}"
 
-    rc, _ = await _run(["git", "rev-parse", "--is-inside-work-tree"], cwd)
-    if rc != 0:
+    repo_check = await run_git(cwd, "rev-parse", "--is-inside-work-tree")
+    if not repo_check.ok:
         return f"[Error] {workspace_path} is not a git repository."
 
-    rc, current_branch = await _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd)
-    if rc != 0:
-        return f"[Error] Could not determine current branch: {current_branch}"
+    branch_result = await run_git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
+    current_branch = branch_result.stdout.strip()
+    if not branch_result.ok and not branch_name:
+        return "[Error] HEAD is detached; provide branch_name before creating a review."
     source_branch = branch_name or current_branch
+    if source_branch == base_branch:
+        return "[Error] Source and base branches must be different."
 
     reviews = await list_repository_reviews(target, connection)
     existing = next(
@@ -122,36 +131,49 @@ async def _create_pull_request(
         None,
     )
 
-    _, status = await _run(["git", "status", "--porcelain"], cwd)
-    if not status.strip():
-        if existing:
-            return (
-                "[No changes] Working tree is clean. Existing review: "
-                f"{existing.web_url or f'#{existing.number}'}"
-            )
-        return "[No changes] Working tree is clean. Nothing to commit."
+    remote_name = target.remote_name or "origin"
+    credential = git_credential_from_connection(connection)
+    git_cfg = load_runtime_settings().git
+    async with git_locks.acquire(cwd):
+        if branch_name and branch_name != current_branch:
+            switched = await run_git(cwd, "switch", "-c", branch_name, timeout=30.0)
+            if not switched.ok:
+                detail = switched.stderr.strip() or switched.stdout.strip()
+                return f"[Error] git switch -c {branch_name} failed:\n{detail}"
 
-    if branch_name and branch_name != current_branch:
-        rc, out = await _run(["git", "checkout", "-B", branch_name], cwd)
-        if rc != 0:
-            return f"[Error] git checkout {branch_name} failed:\n{out}"
+        status_result = await run_git(cwd, "status", "--porcelain", timeout=10.0)
+        if not status_result.ok:
+            return f"[Error] git status failed:\n{status_result.stderr.strip()}"
+        committed = False
+        if status_result.stdout.strip():
+            staged = await run_git(cwd, "add", "-A", timeout=30.0)
+            if not staged.ok:
+                return f"[Error] git add failed:\n{staged.stderr.strip()}"
+            commit = await run_git(cwd, "commit", "-m", commit_message, timeout=30.0)
+            if not commit.ok:
+                detail = commit.stderr.strip() or commit.stdout.strip()
+                return f"[Error] git commit failed:\n{detail}"
+            committed = True
 
-    rc, out = await _run(["git", "add", "-A"], cwd)
-    if rc != 0:
-        return f"[Error] git add failed:\n{out}"
-    rc, out = await _run(["git", "commit", "-m", commit_message], cwd)
-    if rc != 0:
-        if "nothing to commit" in out.lower():
-            return "[No changes] Nothing new to commit."
-        return f"[Error] git commit failed:\n{out}"
-    rc, out = await _run(
-        ["git", "push", "--set-upstream", "origin", source_branch], cwd
-    )
-    if rc != 0:
-        return f"[Error] git push failed:\n{out}"
+        pushed = await run_git_long(
+            cwd,
+            "push",
+            "--set-upstream",
+            remote_name,
+            source_branch,
+            timeout=git_cfg.network_timeout_seconds,
+            credential=credential,
+        )
+        if not pushed.ok:
+            detail = pushed.stderr.strip() or pushed.stdout.strip()
+            return f"[Error] git push failed:\n{detail}"
 
     if existing:
-        return f"[Review already exists] {existing.web_url or f'#{existing.number}'}"
+        prefix = "Committed and pushed" if committed else "Pushed"
+        return (
+            f"[{prefix}; review already exists] "
+            f"{existing.web_url or f'#{existing.number}'}"
+        )
     try:
         created = await create_repository_review(
             target,

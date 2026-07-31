@@ -26,6 +26,22 @@ _PROVIDER_USERNAMES = {
 }
 
 
+def git_credential_from_connection(
+    connection: GitServerConnection,
+) -> GitCredential | None:
+    token = connection_token(connection)
+    if not token:
+        return None
+    return GitCredential(
+        host=connection.host,
+        username=(
+            connection.username or _PROVIDER_USERNAMES.get(connection.provider) or "git"
+        ),
+        token=token,
+        verify_ssl=connection.verify_ssl,
+    )
+
+
 async def resolve_workspace_git_credential(
     db: AsyncSession,
     workspace: str,
@@ -69,15 +85,4 @@ async def resolve_workspace_git_credential(
     connection = resolve_connection(target, connections)
     if connection is None:
         return None
-    token = connection_token(connection)
-    if not token:
-        return None
-    username = (
-        connection.username or _PROVIDER_USERNAMES.get(connection.provider) or "git"
-    )
-    return GitCredential(
-        host=connection.host,
-        username=username,
-        token=token,
-        verify_ssl=connection.verify_ssl,
-    )
+    return git_credential_from_connection(connection)

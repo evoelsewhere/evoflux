@@ -54,6 +54,39 @@ def test_create_connection_keeps_token_out_of_api_response(
     assert "github-secret" not in listed.text
 
 
+def test_connection_target_and_token_env_are_unambiguous(tmp_path, monkeypatch):
+    from app.api.app import create_app
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("EVOFLUX_EMPTY_REVIEW_TOKEN", raising=False)
+    client = TestClient(create_app())
+    payload = {
+        "name": "GitHub",
+        "provider": "github",
+        "domain": "github.com",
+        "scope": "server",
+        "token": "github-secret",
+        "verify_ssl": True,
+    }
+
+    created = client.post("/api/team/reviews/connections", json=payload)
+    assert created.status_code == 201
+
+    duplicate = client.post(
+        "/api/team/reviews/connections",
+        json={**payload, "name": "Second GitHub", "token": "second-secret"},
+    )
+    assert duplicate.status_code == 409
+    assert "already targets" in duplicate.json()["detail"]
+
+    missing_new_token = client.put(
+        f"/api/team/reviews/connections/{created.json()['id']}",
+        json={"token_env_var": "EVOFLUX_EMPTY_REVIEW_TOKEN"},
+    )
+    assert missing_new_token.status_code == 422
+    assert "new API key" in missing_new_token.json()["detail"]
+
+
 def test_create_connection_rejects_invalid_domain(tmp_path, monkeypatch):
     from app.api.app import create_app
 
@@ -276,6 +309,81 @@ async def test_review_action_api_uses_saved_connection(monkeypatch, tmp_path):
         "number": 12,
         "body": "Looks good",
         "idempotency_key": "call-12",
+    }
+
+
+@pytest.mark.asyncio
+async def test_create_review_api_uses_saved_connection(monkeypatch, tmp_path):
+    from app.api.app import create_app
+    from app.api.routes.team import reviews as routes
+    from app.core import db as db_module
+    from app.models.chat import CodingWorkspace, GitServerConnection
+    from app.services.code_review_service import RepositoryTarget
+
+    workspace_path = tmp_path / "repo"
+    workspace_path.mkdir()
+    workspace = CodingWorkspace(path=str(workspace_path), kind="repo", name="repo")
+    connection = GitServerConnection(
+        name="GitHub",
+        provider="github",
+        base_url="https://api.github.com",
+        host="github.com",
+        scope="server",
+        token_env_var="TEST_CREATE_REVIEW_TOKEN",
+    )
+    async with db_module.async_session_factory() as db:
+        async with db.begin():
+            db.add(workspace)
+            db.add(connection)
+
+    async def fake_inspect(workspace_id, path, name):
+        return RepositoryTarget(
+            workspace_id=workspace_id,
+            workspace=path,
+            name=name,
+            remote_url="git@github.com:acme/repo.git",
+            host="github.com",
+            repository="acme/repo",
+            detected_provider="github",
+        )
+
+    seen = {}
+
+    async def fake_create(target, selected_connection, **kwargs):
+        seen.update(
+            repository=target.repository,
+            connection=selected_connection.name,
+            **kwargs,
+        )
+        return {
+            "provider": "github",
+            "repository": "acme/repo",
+            "number": 21,
+            "web_url": "https://github.com/acme/repo/pull/21",
+            "title": kwargs["title"],
+        }
+
+    monkeypatch.setattr(routes, "inspect_repository", fake_inspect)
+    monkeypatch.setattr(routes, "create_repository_review", fake_create)
+    response = TestClient(create_app()).post(
+        f"/api/team/reviews/{workspace.id}",
+        json={
+            "title": "Ship it",
+            "body": "Production ready",
+            "source_branch": "feature",
+            "target_branch": "main",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["number"] == 21
+    assert seen == {
+        "repository": "acme/repo",
+        "connection": "GitHub",
+        "title": "Ship it",
+        "body": "Production ready",
+        "source_branch": "feature",
+        "target_branch": "main",
     }
 
 

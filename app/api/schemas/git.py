@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -69,12 +71,13 @@ class PullRequest(BaseModel):
     remote: str | None = None
     branch: str | None = None
     rebase: bool = False
+    strategy: Literal["ff_only", "merge", "rebase"] | None = None
 
 
 class FetchRequest(BaseModel):
     workspace: str
     remote: str | None = None
-    prune: bool = False
+    prune: bool | None = None
 
 
 class GitRemoteRequest(BaseModel):

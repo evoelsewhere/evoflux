@@ -45,5 +45,6 @@ async def test_run_git_long_uses_ephemeral_credential_helper(
     assert "credential.helper=" in args_line
     assert "secret-token-value" not in args_line
     assert "USER:x-access-token" in result.stdout
-    assert "TOKEN:secret-token-value" in result.stdout
+    assert "secret-token-value" not in result.stdout
+    assert "TOKEN:[REDACTED]" in result.stdout
     assert "NO_VERIFY:1" in result.stdout

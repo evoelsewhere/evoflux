@@ -58,6 +58,16 @@ class GitServerConnectionUpdate(BaseModel):
     username: str | None = Field(default=None, max_length=255)
     verify_ssl: bool | None = None
 
+    @field_validator("name")
+    @classmethod
+    def strip_optional_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("Value cannot be blank.")
+        return value
+
 
 class GitServerConnectionTest(BaseModel):
     provider: GitProvider
@@ -128,6 +138,24 @@ class RepositoryReviewsOut(BaseModel):
 class ReviewsOut(BaseModel):
     repositories: list[RepositoryReviewsOut]
     total: int
+
+
+class ReviewCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=1000)
+    body: str = Field(default="", max_length=100_000)
+    source_branch: str = Field(min_length=1, max_length=512)
+    target_branch: str = Field(min_length=1, max_length=512)
+
+    @model_validator(mode="after")
+    def validate_branches(self) -> ReviewCreateRequest:
+        self.title = self.title.strip()
+        self.source_branch = self.source_branch.strip()
+        self.target_branch = self.target_branch.strip()
+        if not self.title or not self.source_branch or not self.target_branch:
+            raise ValueError("Title and branch names cannot be blank.")
+        if self.source_branch == self.target_branch:
+            raise ValueError("Source and target branches must be different.")
+        return self
 
 
 ReviewAction = Literal[

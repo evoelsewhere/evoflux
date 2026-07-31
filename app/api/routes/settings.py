@@ -19,7 +19,11 @@ from app.agent.sandbox_config import SandboxFileConfig, load_config, save_config
 from app.agent.process_sandbox import native_process_sandbox_backend
 from app.core.config import settings
 from app.core.runtime_settings import (
+    CodeReviewSettings,
+    GitSettings,
+    load_runtime_settings,
     provider_visible_models,
+    save_runtime_settings,
     set_provider_visible_models,
 )
 
@@ -40,6 +44,7 @@ from app.api.schemas.settings import (
     SandboxSettingsBody,
     SeedInstallRequest,
     SeedInstallResponse,
+    VersionControlSettingsBody,
 )
 from app.services.provider_usage import (
     ProviderUsageCredentialsError,
@@ -159,6 +164,74 @@ async def update_sandbox_settings(body: SandboxSettingsBody) -> SandboxSettingsB
 
 
 # ── Providers (Settings → Providers tab) ────────────────────────────────────
+
+
+# Version control (Settings -> Git & reviews tab)
+
+
+def _version_control_settings_body() -> VersionControlSettingsBody:
+    cfg = load_runtime_settings()
+    return VersionControlSettingsBody(
+        network_timeout_seconds=cfg.git.network_timeout_seconds,
+        max_diff_bytes=cfg.git.max_diff_bytes,
+        default_pull_strategy=cfg.git.default_pull_strategy,
+        prune_on_fetch=cfg.git.prune_on_fetch,
+        allow_force_push=cfg.git.allow_force_push,
+        review_request_timeout_seconds=cfg.code_reviews.request_timeout_seconds,
+        review_retry_attempts=cfg.code_reviews.retry_attempts,
+        review_retry_backoff_seconds=cfg.code_reviews.retry_backoff_seconds,
+        review_max_concurrent_repositories=(
+            cfg.code_reviews.max_concurrent_repositories
+        ),
+        review_max_pages_per_repository=cfg.code_reviews.max_pages_per_repository,
+        allow_review_mutations=cfg.code_reviews.allow_mutations,
+        allow_insecure_connections=cfg.code_reviews.allow_insecure_connections,
+        require_successful_checks_before_merge=(
+            cfg.code_reviews.require_successful_checks_before_merge
+        ),
+    )
+
+
+@router.get("/version-control")
+async def get_version_control_settings() -> VersionControlSettingsBody:
+    try:
+        return _version_control_settings_body()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/version-control")
+async def update_version_control_settings(
+    body: VersionControlSettingsBody,
+) -> VersionControlSettingsBody:
+    try:
+        cfg = load_runtime_settings()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    cfg.git = GitSettings(
+        network_timeout_seconds=body.network_timeout_seconds,
+        max_diff_bytes=body.max_diff_bytes,
+        default_pull_strategy=body.default_pull_strategy,
+        prune_on_fetch=body.prune_on_fetch,
+        allow_force_push=body.allow_force_push,
+    )
+    cfg.code_reviews = CodeReviewSettings(
+        request_timeout_seconds=body.review_request_timeout_seconds,
+        retry_attempts=body.review_retry_attempts,
+        retry_backoff_seconds=body.review_retry_backoff_seconds,
+        max_concurrent_repositories=body.review_max_concurrent_repositories,
+        max_pages_per_repository=body.review_max_pages_per_repository,
+        allow_mutations=body.allow_review_mutations,
+        allow_insecure_connections=body.allow_insecure_connections,
+        require_successful_checks_before_merge=(
+            body.require_successful_checks_before_merge
+        ),
+    )
+    save_runtime_settings(cfg)
+    return _version_control_settings_body()
+
+
+# Providers (Settings -> Providers tab)
 
 
 def _env_has_provider_key(env_file: "Path") -> bool:
