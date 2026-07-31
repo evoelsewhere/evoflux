@@ -468,9 +468,7 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "name": "consultant",
             "role": "member",
             "mode": "work",
-            "description": BUILTIN_MEMBER_PROFILES["work"]["consultant"][
-                "description"
-            ],
+            "description": BUILTIN_MEMBER_PROFILES["work"]["consultant"]["description"],
             "thinking_level": "high",
             "skills": BUILTIN_MEMBER_PROFILES["work"]["consultant"]["skills"],
         },

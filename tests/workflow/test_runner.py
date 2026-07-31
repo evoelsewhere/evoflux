@@ -295,7 +295,11 @@ nodes:
 
 
 @pytest.mark.asyncio
-async def test_double_start_rejected_and_stop_works(setup_db):
+async def test_double_start_rejected_and_stop_works(setup_db, monkeypatch):
+    async def block_until_cancelled(*_args, **_kwargs):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr("app.workflow.runner.run_tool_node", block_until_cancelled)
     runner = WorkflowRunner()
     definition = parse_definition("""
 schema_version: 1

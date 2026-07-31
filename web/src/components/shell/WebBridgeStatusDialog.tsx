@@ -43,7 +43,7 @@ import type {
 function deriveRelayUrl(): string {
   let origin = apiBaseUrl().replace(/\/api$/, '')
   if (!origin || origin.startsWith('/')) {
-    origin = typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:8000'
+    origin = typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:4082'
   }
   return origin.replace(/^http/i, 'ws')
 }

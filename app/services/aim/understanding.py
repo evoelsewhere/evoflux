@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
-from uuid import UUID, uuid7
+from uuid import UUID
+
+from app.uuid7 import uuid7
 
 import yaml
 
@@ -23,7 +25,8 @@ _MIN_DOCUMENT_SECTIONS = 3
 def _split_unit(unit: str) -> tuple[str, str]:
     if "/" not in unit:
         raise UnderstandingEvidenceError(f"invalid unit key: {unit!r}")
-    return tuple(unit.split("/", 1))  # type: ignore[return-value]
+    module, name = unit.split("/", 1)
+    return module, name
 
 
 def _body_digest(kb_root: Path, unit: str) -> str:

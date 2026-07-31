@@ -229,12 +229,12 @@ def build_traceability(
             states[unit_key] = None
             state_errors[unit_key] = str(exc)
 
-    graph = {
-        unit_key: list(states[unit_key][0].depends_on)
-        if states[unit_key] is not None
-        else list(unit.depends_on)
-        for unit_key, unit in units_by_key.items()
-    }
+    graph: dict[str, list[str]] = {}
+    for unit_key, unit in units_by_key.items():
+        state = states[unit_key]
+        graph[unit_key] = (
+            list(state[0].depends_on) if state is not None else list(unit.depends_on)
+        )
     reverse_graph: dict[str, set[str]] = defaultdict(set)
     for unit_key, dependencies in graph.items():
         for dependency in dependencies:
@@ -356,7 +356,7 @@ def build_traceability(
                     path=unit.kb_doc_path,
                 )
             )
-        else:
+        elif frontmatter is not None:
             drift: list[str] = []
             if unit.phase != frontmatter.phase:
                 drift.append(f"phase {unit.phase} → {frontmatter.phase}")

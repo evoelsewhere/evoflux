@@ -141,11 +141,11 @@ async def test_get_or_start_team_evicts_after_idle(monkeypatch):
 
     teams = iter([fake_team, new_team])
     monkeypatch.setattr(team_manager, "load_team_from_dir", lambda _: next(teams))
-    # Force an aggressive eviction window so the test runs instantly.
-    monkeypatch.setattr(team_manager, "_DEFAULT_TEAM_IDLE_SECONDS", 0)
+    monkeypatch.setattr(team_manager, "_DEFAULT_TEAM_IDLE_SECONDS", 1)
 
     first = await team_manager.get_or_start_team()
     assert first is fake_team
+    team_manager._team_last_used -= 2
 
     # Idle eviction applies on the next call (opportunistic sweep).
     second = await team_manager.get_or_start_team()
@@ -160,9 +160,10 @@ async def test_get_or_start_team_skips_eviction_when_working(monkeypatch):
     fake_team.lead.state = "working"
 
     monkeypatch.setattr(team_manager, "load_team_from_dir", lambda _: fake_team)
-    monkeypatch.setattr(team_manager, "_DEFAULT_TEAM_IDLE_SECONDS", 0)
+    monkeypatch.setattr(team_manager, "_DEFAULT_TEAM_IDLE_SECONDS", 1)
 
     first = await team_manager.get_or_start_team()
+    team_manager._team_last_used -= 2
     second = await team_manager.get_or_start_team()
     assert first is second
     fake_team.stop.assert_not_called()

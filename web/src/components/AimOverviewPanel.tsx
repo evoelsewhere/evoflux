@@ -78,7 +78,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useListEnterIndex } from '@/lib/motion'
 import { formatApprovalQuestion } from '@/utils/approvalQuestion'
-import { MarkdownBlock } from '@/utils/markdown'
+import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
 import { getIntlLocale } from '@/i18n'
 import type {
   AimPhaseCounts,
@@ -1337,7 +1337,7 @@ function AttentionCenter({
                 </span>
               </div>
               <div className="mt-1.5 max-h-44 overflow-auto pr-1 text-[11px] leading-4 text-(--color-text-muted) [&_h1]:text-xs [&_h2]:text-xs [&_h3]:text-[11px] [&_li]:my-0 [&_ol]:my-1 [&_p]:my-1 [&_pre]:my-1 [&_table]:my-1 [&_table]:text-[10px] [&_ul]:my-1">
-                <MarkdownBlock
+                <LazyMarkdownBlock
                   content={formatApprovalQuestion(approval.question)}
                   sessionId={approval.session_id}
                 />

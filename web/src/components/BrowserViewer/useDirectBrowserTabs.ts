@@ -715,7 +715,7 @@ function directBrowserBridgeUrl(sessionId: string): string {
   const apiBase = apiBaseUrl()
   const wsBase = apiBase.startsWith('http')
     ? apiBase.replace(/^http/, 'ws')
-    : `ws://${window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname}:8000/api`
+    : `ws://${window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname}:4082/api`
   return withTokenParam(
     `${wsBase}/team/${encodeURIComponent(sessionId)}/browser/agent`,
   )

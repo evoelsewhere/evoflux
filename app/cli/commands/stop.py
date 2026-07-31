@@ -25,9 +25,10 @@ def cmd_stop(_args: argparse.Namespace) -> None:
     deadline = time.monotonic() + 5
     while any(_pid_alive(p) for p in alive):
         if time.monotonic() > deadline:
+            force_signal = getattr(signal, "SIGKILL", signal.SIGTERM)
             for pid in alive:
                 try:
-                    os.kill(pid, signal.SIGKILL)
+                    os.kill(pid, force_signal)
                 except OSError:
                     pass
             break

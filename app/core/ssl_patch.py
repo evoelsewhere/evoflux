@@ -27,7 +27,7 @@ def apply_ssl_patch() -> None:
             self._ssl_context.verify_mode = ssl.CERT_NONE
         return _orig(self, *args, **kwargs)
 
-    httpcore.HTTPConnection._connect = _patched_connect  # type: ignore[assignment]
+    setattr(httpcore.HTTPConnection, "_connect", _patched_connect)
 
     _orig_async = httpcore.AsyncHTTPConnection._connect
 
@@ -37,4 +37,4 @@ def apply_ssl_patch() -> None:
             self._ssl_context.verify_mode = ssl.CERT_NONE
         return await _orig_async(self, *args, **kwargs)
 
-    httpcore.AsyncHTTPConnection._connect = _patched_async_connect  # type: ignore[assignment]
+    setattr(httpcore.AsyncHTTPConnection, "_connect", _patched_async_connect)

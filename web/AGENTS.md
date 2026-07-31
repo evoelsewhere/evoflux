@@ -21,7 +21,7 @@ components.json shadcn/ui-style component config
 
 ```bash
 bun install --frozen-lockfile
-bun dev                         # Vite on :5173, proxies /api to :8000
+bun dev                         # Vite on :5173, proxies /api to :4082
 bun run lint
 bun run typecheck
 bun run build

@@ -1,6 +1,8 @@
 import uuid
 from datetime import datetime, timezone
-from uuid import UUID, uuid7
+from uuid import UUID
+
+from app.uuid7 import uuid7
 
 import sqlalchemy as sa
 from sqlalchemy import Column, DateTime, ForeignKey, JSON
@@ -336,6 +338,7 @@ class SessionMessage(SQLModel, table=True):
         default_factory=_utcnow,
         sa_column=Column(TZDateTime(), nullable=False),
     )
+
 
 class DreamLog(SQLModel, table=True):
     """Records sessions that have been processed by the dream agent."""

@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-from app.workflow.models import DESTRUCTIVE_TOOLS, Node, WorkflowDefinition
+from app.workflow.models import DESTRUCTIVE_TOOLS, ForeachBody, Node, WorkflowDefinition
 from app.workflow.template import referenced_env_names
 
 
@@ -85,9 +85,9 @@ def destructive_lint(
 
     def _effective_tools(node: Node) -> set[str]:
         effective: set[str] = set()
-        candidates = [node]
+        candidates: list[Node | ForeachBody] = [node]
         if node.kind == "foreach" and node.foreach_body is not None:
-            candidates.append(node.foreach_body)  # type: ignore[arg-type]
+            candidates.append(node.foreach_body)
         for item in candidates:
             effective |= _node_tools(item)
             if item.kind == "agent":

@@ -801,8 +801,6 @@ async def delete_provider(provider_id: str) -> dict[str, bool]:
 
     # API key and cloud credential providers: remove from .env
     env_file = Path(settings.EVOFLUX_CONFIG_DIR) / ".env"
-    if not env_file.exists():
-        return {"deleted": True}
 
     # Collect all env vars to clear
     creds_to_clear: dict[str, str] = {}
@@ -827,7 +825,8 @@ async def delete_provider(provider_id: str) -> dict[str, bool]:
             store.delete(field.name)
 
     if creds_to_clear:
-        write_env_credentials(env_file, creds_to_clear)
+        if env_file.exists():
+            write_env_credentials(env_file, creds_to_clear)
         # Remove from os.environ
         for key in creds_to_clear:
             os.environ.pop(key, None)

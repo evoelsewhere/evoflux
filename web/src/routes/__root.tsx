@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 // Temporarily disabled for clean recordings — re-enable when done.
 // import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { Link, Outlet, useLocation } from '@tanstack/react-router'
@@ -7,7 +7,6 @@ import { queryClient } from '@/lib/query-client'
 import { Home } from 'lucide-react'
 import { ToastStack } from '@/components/ToastStack'
 import { MacTitleBar } from '@/components/MacTitleBar'
-import { SettingsScreen } from '@/components/SettingsScreen'
 import { PersistentModeNavigation } from '@/components/shell/PersistentModeNavigation'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import { useHistorySwipeNavigation } from '@/hooks/use-history-swipe-navigation'
@@ -16,6 +15,12 @@ import { useDesktopCommands } from '@/lib/desktop-commands'
 import { useUIStore } from '@/stores/useUIStore'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { saveModeRoute } from '@/lib/mode-route'
+
+const SettingsScreen = lazy(() =>
+  import('@/components/SettingsScreen').then((module) => ({
+    default: module.SettingsScreen,
+  })),
+)
 
 export function Root() {
   useMobileViewportGuards()

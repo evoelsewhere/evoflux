@@ -14,7 +14,9 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 import asyncio
-from uuid import UUID, uuid7
+from uuid import UUID
+
+from app.uuid7 import uuid7
 
 from loguru import logger
 from sqlalchemy import (
@@ -82,10 +84,10 @@ async def _bulk_insert_chunked(
     """
     if not rows:
         return
-    table = model.__table__  # type: ignore[attr-defined]
+    table = getattr(model, "__table__")
     for start in range(0, len(rows), batch_size):
         chunk = rows[start : start + batch_size]
-        await db.execute(sa_insert(table), chunk)
+        await db.exec(sa_insert(table), params=chunk)
         if start + batch_size < len(rows):
             await asyncio.sleep(0)
 
@@ -203,18 +205,18 @@ async def reindex_workspace(
     node_rows: list[dict] = []
     edge_rows: list[dict] = []
     async with sqlite_write_guard():
-        await db.execute(
+        await db.exec(
             sa_delete(CodeEdge).where(col(CodeEdge.workspace_id) == workspace_id)
         )
-        await db.execute(
+        await db.exec(
             sa_delete(CodeAmbiguousEdge).where(
                 col(CodeAmbiguousEdge.workspace_id) == workspace_id
             )
         )
-        await db.execute(
+        await db.exec(
             sa_delete(CodeNode).where(col(CodeNode.workspace_id) == workspace_id)
         )
-        await db.execute(
+        await db.exec(
             sa_delete(CodeIndexState).where(
                 col(CodeIndexState.workspace_id) == workspace_id
             )
@@ -402,7 +404,7 @@ async def _persist_unresolved_references(
             delete_stmt = delete_stmt.where(
                 col(CrossRepoEdge.src_file_path).in_(list(affected_files))
             )
-        await db.execute(delete_stmt)
+        await db.exec(delete_stmt)
 
         # A resolver may have already stamped a row for one of these exact
         # call sites (method IS NOT NULL, so the delete above left it alone,
@@ -579,13 +581,13 @@ async def _reindex_incremental(
 
         # Drop outgoing edges from affected files and every edge touching a removed
         # node (covers incoming edges from unchanged files to vanished symbols).
-        await db.execute(
+        await db.exec(
             sa_delete(CodeEdge).where(
                 col(CodeEdge.workspace_id) == workspace_id,
                 col(CodeEdge.file_path).in_(list(affected)),
             )
         )
-        await db.execute(
+        await db.exec(
             sa_delete(CodeAmbiguousEdge).where(
                 col(CodeAmbiguousEdge.workspace_id) == workspace_id,
                 col(CodeAmbiguousEdge.file_path).in_(list(affected)),
@@ -593,7 +595,7 @@ async def _reindex_incremental(
         )
         if removed_ids:
             rid = list(removed_ids)
-            await db.execute(
+            await db.exec(
                 sa_delete(CodeEdge).where(
                     col(CodeEdge.workspace_id) == workspace_id,
                     or_(col(CodeEdge.src_id).in_(rid), col(CodeEdge.dst_id).in_(rid)),
@@ -629,7 +631,7 @@ async def _reindex_incremental(
         await _bulk_insert_chunked(db, CodeEdge, edge_rows)
 
         if removed_ids:
-            await db.execute(
+            await db.exec(
                 sa_delete(CodeNode).where(
                     col(CodeNode.workspace_id) == workspace_id,
                     col(CodeNode.id).in_(list(removed_ids)),
@@ -637,7 +639,7 @@ async def _reindex_incremental(
             )
 
         # Refresh per-file index state for changed files; drop it for deleted ones.
-        await db.execute(
+        await db.exec(
             sa_delete(CodeIndexState).where(
                 col(CodeIndexState.workspace_id) == workspace_id,
                 col(CodeIndexState.file_path).in_(list(affected)),
@@ -1260,7 +1262,7 @@ async def find_references(
             CodeEdge.dst_id == node_id,
             col(CodeEdge.kind).in_(_REFERENCE_EDGE_KINDS),
         )
-        .order_by(CodeNode.file_path, CodeEdge.line)
+        .order_by(col(CodeNode.file_path), col(CodeEdge.line))
         .limit(limit)
     )
     rows = (await db.exec(stmt)).all()
@@ -1285,16 +1287,16 @@ async def get_ranked_symbols(
     ``(node, reference_count)`` ordered by descending count.
     """
     stmt = (
-        select(CodeNode, sa_func.count(CodeEdge.id).label("ref_count"))
+        select(CodeNode, sa_func.count(col(CodeEdge.id)).label("ref_count"))
         .join(CodeNode, col(CodeEdge.dst_id) == col(CodeNode.id))
         .where(
-            CodeEdge.workspace_id == workspace_id,
+            col(CodeEdge.workspace_id) == workspace_id,
             col(CodeEdge.kind).in_(_REFERENCE_EDGE_KINDS),
             # Exclude file nodes — they inflate counts via "contains" edges
-            CodeNode.kind != "file",
+            col(CodeNode.kind) != "file",
         )
-        .group_by(CodeNode.id)
-        .order_by(sa_func.count(CodeEdge.id).desc())
+        .group_by(col(CodeNode.id))
+        .order_by(sa_func.count(col(CodeEdge.id)).desc())
         .limit(budget)
     )
     rows = (await db.exec(stmt)).all()
@@ -1404,13 +1406,7 @@ async def find_shortest_path(
                 )
 
         if cross_repo:
-            cross_stmt = select(
-                CrossRepoEdge.src_node_id,
-                CrossRepoEdge.src_workspace_id,
-                CrossRepoEdge.dst_node_id,
-                CrossRepoEdge.dst_workspace_id,
-                CrossRepoEdge.kind,
-            ).where(
+            cross_stmt = select(CrossRepoEdge).where(
                 col(CrossRepoEdge.project_id) == project_id,
                 col(CrossRepoEdge.status) == "resolved",
                 col(CrossRepoEdge.src_node_id).is_not(None),
@@ -1421,13 +1417,23 @@ async def find_shortest_path(
                 ),
             )
             cross_rows = (await db.exec(cross_stmt)).all()
-            for src, src_ws, dst, dst_ws, kind in cross_rows:
-                if src in frontier_set and src is not None:
+            for edge in cross_rows:
+                src = edge.src_node_id
+                src_ws = edge.src_workspace_id
+                dst = edge.dst_node_id
+                dst_ws = edge.dst_workspace_id
+                kind = edge.kind
+                if (
+                    src is not None
+                    and dst is not None
+                    and dst_ws is not None
+                    and src in frontier_set
+                ):
                     if _visit(dst, src, kind, True, dst_ws):
                         return await _reconstruct_path(
                             db, src_workspace_id, visited, dst_id, cross_repo=cross_repo
                         )
-                if dst in frontier_set and dst is not None:
+                if src is not None and dst is not None and dst in frontier_set:
                     if _visit(src, dst, kind, False, src_ws):
                         return await _reconstruct_path(
                             db, src_workspace_id, visited, dst_id, cross_repo=cross_repo

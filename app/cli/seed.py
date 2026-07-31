@@ -445,7 +445,7 @@ def _prune_removed_first_party_agents(config_dir: Path) -> list[str]:
         if not path.exists() or not _is_prunable_legacy_agent(path, expected_name):
             continue
         path.unlink()
-        removed.append(str(Path(*Path(rel).parts[1:])))
+        removed.append(Path(*Path(rel).parts[1:]).as_posix())
     return sorted(removed)
 
 
@@ -476,7 +476,7 @@ def _record(
 ) -> None:
     """Record a written path in the appropriate result list."""
     if rel.parts[0] == "agents":
-        agents.append(str(Path(*rel.parts[1:])))
+        agents.append(Path(*rel.parts[1:]).as_posix())
     elif rel.parts[0] == "skills" and len(rel.parts) >= 2:
         name = rel.parts[1]
         if name not in skills:

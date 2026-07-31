@@ -67,7 +67,9 @@ async def run_tool_node(
     if not isinstance(rendered_args, dict):  # pragma: no cover — schema enforced
         raise WorkflowNodeError("tool args must render to an object.")
 
-    tool_name: str = node_like.tool
+    tool_name = node_like.tool
+    if not isinstance(tool_name, str) or not tool_name:
+        raise WorkflowNodeError("tool node is missing a tool name.")
     # coding/aim scope pins the sandbox to the target workspace; work scope
     # leaves the contextvar untouched — the tools' own default-sandbox
     # fallback applies (F12).
@@ -121,6 +123,8 @@ async def run_tool_node(
 
 def run_switch_node(node_like: Node, scope: dict) -> tuple[dict, str]:
     """Pure function: render the value; the answer routes the edges."""
+    if node_like.value is None:
+        raise WorkflowNodeError("switch node is missing a value template.")
     value = render(node_like.value, scope)
     answer = value if isinstance(value, str) else json.dumps(value, default=str)
     return {"value": answer}, answer
@@ -144,6 +148,8 @@ async def run_notify_node(
     from app.services.stream_envelope import StreamEnvelope
 
     title = render(node_like.title, scope) if node_like.title else workflow_name
+    if node_like.message is None:
+        raise WorkflowNodeError("notify node is missing a message template.")
     message = render(node_like.message, scope)
     await stream_store.push_event(
         session_id,

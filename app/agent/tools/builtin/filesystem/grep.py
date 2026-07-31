@@ -14,6 +14,7 @@ import fnmatch
 import os
 import re
 import shutil
+import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -70,7 +71,7 @@ async def _rg_scan(
 ) -> list[str] | None:
     """Search with ripgrep. Returns None when rg errors so callers can fall back."""
     cmd = [
-        rg,
+        *([sys.executable, rg] if Path(rg).suffix.lower() == ".py" else [rg]),
         "--line-number",
         "--no-heading",
         "--color=never",

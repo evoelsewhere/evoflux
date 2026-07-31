@@ -35,16 +35,19 @@
     "security": {
       "dangerousDisableAssetCspModification": ["script-src", "style-src"],
       "csp": {
-        "default-src": "'self' http: https:",
+        "default-src": "'self'",
         "connect-src": "'self' http: https: ws: wss: ipc: https://ipc.localhost",
         "script-src": "'self' 'unsafe-inline' 'unsafe-eval' blob: data: http: https:",
         "style-src": "'self' 'unsafe-inline' blob: data: http: https:",
         "img-src": "'self' data: blob: http: https:",
         "font-src": "'self' data: blob: http: https:",
-        "media-src": "'self' blob: http: https:",
+        "media-src": "'self' data: blob: http: https:",
         "frame-src": "'self' about: data: blob: http: https:",
         "object-src": "'none'",
-        "worker-src": "'self' blob:"
+        "worker-src": "'self' blob:",
+        "base-uri": "'self'",
+        "form-action": "'self'",
+        "frame-ancestors": "'none'"
       },
       "assetProtocol": {
         "enable": true,

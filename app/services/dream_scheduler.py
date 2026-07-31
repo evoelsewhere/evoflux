@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING
 from croniter import croniter
 from loguru import logger
 
-from app.core.runtime_settings import runtime_settings_path
 
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
@@ -197,42 +196,26 @@ class DreamScheduler:
         arrives while firing, the CancelledError is re-raised after the fire
         completes.
 
-        On each iteration, the loop checks settings mtime; if it has
-        changed since startup, the schedule is re-parsed in-place.  This
-        means filesystem edits (e.g. via ``$EDITOR`` or ``manual.wiki``)
-        take effect on the next tick without requiring a server restart or
-        a ``PUT /api/dream/config`` call. If Dream is disabled, the loop exits
+        On each iteration, the loop re-reads the small runtime settings file.
+        This avoids missing atomic rewrites on filesystems whose timestamp
+        metadata did not change, while still applying filesystem edits (e.g.
+        via ``$EDITOR`` or ``manual.wiki``) without a server restart or a
+        ``PUT /api/dream/config`` call. If Dream is disabled, the loop exits
         cleanly.
         """
-        path = runtime_settings_path()
-        try:
-            current_mtime = path.stat().st_mtime_ns
-        except OSError:
-            current_mtime = 0
-
         while True:
             try:
-                # Cheap stat each iteration; reparse only on mtime change.
-                try:
-                    new_mtime = path.stat().st_mtime_ns
-                except OSError:
-                    new_mtime = 0
-
-                if new_mtime != current_mtime:
-                    current_mtime = new_mtime
-                    new_schedule, still_enabled = await self._reparse_schedule()
-                    if not still_enabled:
-                        logger.info(
-                            "dream_scheduler_disabled_via_file_edit exiting=true"
-                        )
-                        return
-                    if new_schedule is not None and new_schedule != schedule:
-                        logger.info(
-                            "dream_scheduler_schedule_changed old={} new={}",
-                            schedule,
-                            new_schedule,
-                        )
-                        schedule = new_schedule
+                new_schedule, still_enabled = await self._reparse_schedule()
+                if not still_enabled:
+                    logger.info("dream_scheduler_disabled_via_file_edit exiting=true")
+                    return
+                if new_schedule is not None and new_schedule != schedule:
+                    logger.info(
+                        "dream_scheduler_schedule_changed old={} new={}",
+                        schedule,
+                        new_schedule,
+                    )
+                    schedule = new_schedule
 
                 now = datetime.now(timezone.utc)
                 cron = croniter(schedule, now)

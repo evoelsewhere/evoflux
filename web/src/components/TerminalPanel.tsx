@@ -85,7 +85,7 @@ function wsBaseUrl(): string {
   const apiBase = apiBaseUrl()
   if (apiBase.startsWith('http')) return apiBase.replace(/^http/, 'ws')
   const host = window.location.hostname || 'localhost'
-  return `ws://${host}:8000/api`
+  return `ws://${host}:4082/api`
 }
 
 function collectText(term: Terminal): string {

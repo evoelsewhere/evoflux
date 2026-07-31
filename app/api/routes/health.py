@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import shutil
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -34,25 +35,32 @@ router = APIRouter()
 # blueprint files). Health/diagnostics endpoints are polled, so run it off
 # the loop and cache the outcome — including a ValueError — briefly.
 _VALIDATE_AGENTS_TTL_S = 30.0
-_validate_agents_cache: tuple[float, bool | ValueError] | None = None
+_validate_agents_cache: tuple[float, Callable[[], bool], bool | ValueError] | None = (
+    None
+)
 
 
 async def validate_agents_dir_cached() -> bool:
     """Off-loop, briefly-cached wrapper around ``team_manager.validate_agents_dir``."""
     global _validate_agents_cache
     now = time.monotonic()
+    validator = team_manager.validate_agents_dir
     cached = _validate_agents_cache
-    if cached is not None and now - cached[0] < _VALIDATE_AGENTS_TTL_S:
-        outcome = cached[1]
+    if (
+        cached is not None
+        and cached[1] is validator
+        and now - cached[0] < _VALIDATE_AGENTS_TTL_S
+    ):
+        outcome = cached[2]
         if isinstance(outcome, ValueError):
             raise outcome
         return outcome
     try:
-        result = await asyncio.to_thread(team_manager.validate_agents_dir)
+        result = await asyncio.to_thread(validator)
     except ValueError as exc:
-        _validate_agents_cache = (now, exc)
+        _validate_agents_cache = (now, validator, exc)
         raise
-    _validate_agents_cache = (now, result)
+    _validate_agents_cache = (now, validator, result)
     return result
 
 
@@ -333,9 +341,7 @@ async def health_diagnostics(session: AsyncSession = Depends(get_session)) -> di
 
         from app.models.code_graph import CodeIndexState
 
-        result = await session.exec(  # ty: ignore[no-matching-overload]
-            sql_select(CodeIndexState.workspace_id).limit(1)
-        )
+        result = await session.exec(sql_select(CodeIndexState.workspace_id).limit(1))
         has_index = result.first() is not None
         if has_index:
             checks.append(

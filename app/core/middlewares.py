@@ -16,9 +16,10 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.types import ASGIApp
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-# Default: 4 MB
+# Default: 100 MB. Large local artifact uploads are supported, while the
+# middleware still prevents unbounded request bodies from exhausting memory.
 _DEFAULT_MAX_BYTES = 100 * 1024 * 1024
 
 # ── Security headers ─────────────────────────────────────────────────────────
@@ -103,32 +104,108 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
-    """Reject requests whose ``Content-Length`` header exceeds ``max_bytes``.
+class RequestSizeLimitMiddleware:
+    """Reject request bodies that exceed ``max_bytes``.
 
-    Returns HTTP 413 before the body is read, guarding against DoS via large
-    payloads.  Requests without a ``Content-Length`` header are allowed through
-    (chunked / streaming uploads are not blocked here).
+    A valid ``Content-Length`` is rejected before the body is read. Chunked and
+    otherwise streamed bodies are counted as the application consumes them, so
+    omitting the header cannot bypass the limit.
 
     Args:
         app: The ASGI application to wrap.
-        max_bytes: Maximum allowed content length in bytes.  Defaults to 4 MB.
+        max_bytes: Maximum allowed content length in bytes. Defaults to 100 MB.
     """
 
     def __init__(self, app: ASGIApp, max_bytes: int = _DEFAULT_MAX_BYTES) -> None:
-        super().__init__(app)
+        self.app = app
         self._max_bytes = max_bytes
 
-    async def dispatch(self, request: Request, call_next):
-        content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > self._max_bytes:
-            logger.warning(
-                "request_too_large content_length={} limit={}",
-                content_length,
-                self._max_bytes,
-            )
-            return JSONResponse(
-                status_code=413,
-                content={"detail": "Request body too large."},
-            )
-        return await call_next(request)
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        content_lengths = [
+            value.decode("latin-1")
+            for name, value in scope.get("headers", [])
+            if name.lower() == b"content-length"
+        ]
+        if content_lengths:
+            try:
+                parsed_lengths = {int(value) for value in content_lengths}
+            except ValueError:
+                await self._send_error(
+                    scope, receive, send, 400, "Invalid Content-Length."
+                )
+                return
+
+            if len(parsed_lengths) != 1 or next(iter(parsed_lengths)) < 0:
+                await self._send_error(
+                    scope, receive, send, 400, "Invalid Content-Length."
+                )
+                return
+
+            content_length = next(iter(parsed_lengths))
+            if content_length > self._max_bytes:
+                logger.warning(
+                    "request_too_large content_length={} limit={}",
+                    content_length,
+                    self._max_bytes,
+                )
+                await self._send_error(
+                    scope,
+                    receive,
+                    send,
+                    413,
+                    "Request body too large.",
+                )
+                return
+
+        received_bytes = 0
+        buffered_messages: list[Message] = []
+        while True:
+            message = await receive()
+            buffered_messages.append(message)
+            if message["type"] == "http.request":
+                received_bytes += len(message.get("body", b""))
+                if received_bytes > self._max_bytes:
+                    logger.warning(
+                        "request_too_large streamed_bytes={} limit={}",
+                        received_bytes,
+                        self._max_bytes,
+                    )
+                    await self._send_error(
+                        scope,
+                        receive,
+                        send,
+                        413,
+                        "Request body too large.",
+                    )
+                    return
+                if not message.get("more_body", False):
+                    break
+            elif message["type"] == "http.disconnect":
+                break
+
+        async def replay_receive() -> Message:
+            if buffered_messages:
+                return buffered_messages.pop(0)
+            return {"type": "http.disconnect"}
+
+        await self.app(scope, replay_receive, send)
+
+    @staticmethod
+    async def _send_error(
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+        status_code: int,
+        detail: str,
+    ) -> None:
+        response = JSONResponse(status_code=status_code, content={"detail": detail})
+        await response(scope, receive, send)

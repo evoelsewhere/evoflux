@@ -212,8 +212,8 @@ def test_credential_store_token_path_is_provider_scoped(
     second = ProviderCredentialStore("two").token_path("token.json")
 
     assert first != second
-    assert first.endswith("provider-plugins/one/token.json")
-    assert second.endswith("provider-plugins/two/token.json")
+    assert Path(first).parts[-3:] == ("provider-plugins", "one", "token.json")
+    assert Path(second).parts[-3:] == ("provider-plugins", "two", "token.json")
 
 
 class _DummyProvider(LLMProviderBase):

@@ -61,6 +61,14 @@ class WorkspaceSetRequest(BaseModel):
 
 router = APIRouter()
 
+_MEDIA_TYPE_OVERRIDES = {
+    ".avif": "image/avif",
+    ".mjs": "text/javascript",
+    ".svg": "image/svg+xml",
+    ".wasm": "application/wasm",
+    ".webp": "image/webp",
+}
+
 
 # ── Path-safety helpers ───────────────────────────────────────────────────────
 
@@ -99,6 +107,9 @@ def _safe_resolve(root: Path, rel: str) -> Path:
 
 
 def _guess_media_type(path: Path) -> str:
+    override = _MEDIA_TYPE_OVERRIDES.get(path.suffix.lower())
+    if override is not None:
+        return override
     mime, _ = mimetypes.guess_type(str(path))
     if mime:
         return mime
@@ -500,14 +511,13 @@ def _list_workspace_files(root: Path, session_id: str) -> WorkspaceFilesResponse
                 stat = entry.stat()
             except OSError:
                 continue
-            mime, _ = mimetypes.guess_type(str(entry))
             files.append(
                 WorkspaceFileInfo(
                     path=rel,
                     name=entry.name,
                     size=stat.st_size,
                     mtime=stat.st_mtime,
-                    mime=mime or "application/octet-stream",
+                    mime=_guess_media_type(entry),
                 )
             )
         if truncated:
@@ -546,10 +556,9 @@ async def read_coding_workspace_file(
     if not target.is_file():
         raise HTTPException(status_code=404, detail="File not found.")
 
-    mime, _ = mimetypes.guess_type(str(target))
     return FileResponse(
         path=str(target),
-        media_type=mime or "application/octet-stream",
+        media_type=_guess_media_type(target),
         filename=target.name if download else None,
     )
 
@@ -824,7 +833,8 @@ async def watch_session_files(session_id: str, request: Request):
     from typing import AsyncGenerator
 
     resolved = await _session_workspace(session_id)
-    queue = await workspace_file_watcher.subscribe(resolved)
+    workspace = str(resolved)
+    queue = await workspace_file_watcher.subscribe(workspace)
 
     async def _gen() -> AsyncGenerator[dict, None]:
         try:
@@ -840,7 +850,7 @@ async def watch_session_files(session_id: str, request: Request):
                 except TimeoutError:
                     yield {"event": "keepalive", "data": "{}"}
         finally:
-            await workspace_file_watcher.unsubscribe(resolved, queue)
+            await workspace_file_watcher.unsubscribe(workspace, queue)
 
     return EventSourceResponse(_gen())
 
