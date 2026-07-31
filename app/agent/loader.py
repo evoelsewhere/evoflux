@@ -28,6 +28,7 @@ Each file::
     thinking_level: low
     tools: [date, read, ls]
     skills: [mcp-installer]
+    skills_opt_out: [code-graph-navigation]
     fallback_model: copilot:gpt-5-mini
     ---
 
@@ -62,6 +63,7 @@ from app.agent.config import (
     PROVIDER_MODEL_TOKEN,
     AgentConfig,
     _FRONTMATTER_RE,
+    apply_mode_skill_defaults,
     member_model_is_configured,
     parse_agent_md,
 )
@@ -452,15 +454,17 @@ def _build_agent(
                 cfg.name, built_in_prompt, cfg.system_prompt
             )
 
+    # Coding navigation is a mode-level capability, not a persona convention:
+    # leads and custom members need the same graph-first guidance as built-in
+    # specialists. An explicit opt-out wins over profile defaults.
+    apply_mode_skill_defaults(cfg, mode=mode)
+
     # Tier grant: every agent gets all tools of its mode's tier (filtered by
     # role for lead_only tools). Frontmatter ``tools:`` entries remain as
     # extras on top — useful for custom agents referencing MCP tools by name.
     from app.agent.builtin_prompts import tier_tools
 
     cfg.tools = [*tier_tools(tool_registry, mode=mode, role=cfg.role), *cfg.tools]
-
-    if cfg.skills:
-        cfg.skills = list(dict.fromkeys(cfg.skills))
 
     # Validate assigned skills exist and pre-load their bodies for injection
     # as synthetic tool messages (via SkillPreloadHook) rather than bloating

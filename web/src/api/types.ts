@@ -1081,6 +1081,7 @@ export interface AgentConfig {
   system_prompt?: string
   tools?: string[]
   skills?: string[]
+  skills_opt_out?: string[]
   model?: string | null
   fallback_model?: string | null
   thinking_level?: string | null

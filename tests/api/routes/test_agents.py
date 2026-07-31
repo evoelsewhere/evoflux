@@ -171,6 +171,27 @@ async def test_list_materialized_coding_explorer_uses_builtin_tools(
     assert "write" in explorer["tools"]
     assert "ask_user" not in explorer["tools"]
     assert "worktree_start" not in explorer["tools"]
+    assert "code-graph-navigation" in explorer["skills"]
+    assert "code-graph-navigation" in rows["coding/evoflux"]["skills"]
+
+
+@pytest.mark.asyncio
+async def test_list_coding_agent_respects_graph_navigation_opt_out(
+    fs_dirs, client: AsyncClient
+):
+    agents_dir, _ = fs_dirs
+    coding_dir = agents_dir / "coding"
+    coding_dir.mkdir()
+    (coding_dir / "evoflux.md").write_text(
+        "---\nname: evoflux\nrole: lead\nmodel: codex:gpt-5.4\n"
+        "skills_opt_out:\n  - code-graph-navigation\n---\n"
+    )
+
+    res = await client.get("/api/agents")
+
+    assert res.status_code == 200
+    rows = {row["name"]: row for row in res.json()["agents"]}
+    assert "code-graph-navigation" not in rows["coding/evoflux"]["skills"]
 
 
 @pytest.mark.asyncio

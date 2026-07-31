@@ -23,6 +23,7 @@ class AgentConfig(BaseModel):
     tools: list[str] = []
     mcp: list[str] = []
     skills: list[str] = []
+    skills_opt_out: list[str] = []
     model: str | None = None
     fallback_model: str | None = None
     thinking_level: str | None = None
@@ -36,6 +37,21 @@ class AgentConfig(BaseModel):
                 f"(expected 'provider:model', e.g. 'googlegenai:gemini-3.1-flash')."
             )
         return self
+
+
+def apply_mode_skill_defaults(config: AgentConfig, *, mode: str) -> AgentConfig:
+    """Apply mode-wide skill policy in place and return *config*.
+
+    Runtime loading and the agent-management API both use this helper so the
+    effective configuration shown to users matches what an agent will preload.
+    """
+    if mode == "coding" and "code-graph-navigation" not in config.skills_opt_out:
+        config.skills = ["code-graph-navigation", *config.skills]
+    if config.skills_opt_out:
+        opted_out = set(config.skills_opt_out)
+        config.skills = [skill for skill in config.skills if skill not in opted_out]
+    config.skills = list(dict.fromkeys(config.skills))
+    return config
 
 
 def member_model_is_configured(model: str | None) -> bool:

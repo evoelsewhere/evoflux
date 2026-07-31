@@ -361,6 +361,81 @@ def test_incremental_import_scope_uses_definition_file_metadata(tmp_path: Path):
     assert call_edges[0].dst_key == "lib-node-uuid"
 
 
+def test_incremental_resolution_uses_existing_qualified_names(tmp_path: Path):
+    """A changed caller can still select one of two unchanged same-name methods."""
+    from app.services.code_graph.indexer import ExistingDef, index_files
+    from app.services.code_graph.types import EDGE_CALLS, NODE_METHOD
+
+    (tmp_path / "main.py").write_text(
+        "def caller():\n    ServiceA.run()\n",
+        encoding="utf-8",
+    )
+    existing_defs = [
+        ExistingDef(
+            key="service-a-run",
+            name="run",
+            qualified_name="ServiceA.run",
+            kind=NODE_METHOD,
+            file_path="service_a.py",
+        ),
+        ExistingDef(
+            key="service-b-run",
+            name="run",
+            qualified_name="ServiceB.run",
+            kind=NODE_METHOD,
+            file_path="service_b.py",
+        ),
+    ]
+
+    result = index_files(
+        tmp_path,
+        ["main.py"],
+        existing_defs=existing_defs,
+        known_file_paths=frozenset({"main.py", "service_a.py", "service_b.py"}),
+    )
+    call_edges = [edge for edge in result.edges if edge.kind == EDGE_CALLS]
+
+    assert len(call_edges) == 1
+    assert call_edges[0].dst_key == "service-a-run"
+
+
+def test_tsconfig_path_alias_edits_apply_without_process_restart(tmp_path: Path):
+    from app.services.code_graph.indexer import index_workspace
+    from app.services.code_graph.types import EDGE_CALLS
+
+    (tmp_path / "v1").mkdir()
+    (tmp_path / "v2").mkdir()
+    (tmp_path / "v1" / "target.ts").write_text(
+        "export function target() {}\n", encoding="utf-8"
+    )
+    (tmp_path / "v2" / "target.ts").write_text(
+        "export function target() {}\n", encoding="utf-8"
+    )
+    (tmp_path / "main.ts").write_text(
+        "import { target } from '@lib/target';\ntarget();\n",
+        encoding="utf-8",
+    )
+    tsconfig = tmp_path / "tsconfig.json"
+    tsconfig.write_text(
+        '{"compilerOptions":{"paths":{"@lib/*":["v1/*"]}}}',
+        encoding="utf-8",
+    )
+
+    first = index_workspace(tmp_path)
+    first_calls = [edge for edge in first.edges if edge.kind == EDGE_CALLS]
+    assert len(first_calls) == 1
+    assert first_calls[0].dst_key.startswith("v1/target.ts::")
+
+    tsconfig.write_text(
+        '{"compilerOptions":{"paths":{"@lib/*":["v2/*"]}}}',
+        encoding="utf-8",
+    )
+    second = index_workspace(tmp_path)
+    second_calls = [edge for edge in second.edges if edge.kind == EDGE_CALLS]
+    assert len(second_calls) == 1
+    assert second_calls[0].dst_key.startswith("v2/target.ts::")
+
+
 def test_go_import_scope_resolves_across_package_directory(tmp_path: Path):
     from app.services.code_graph.indexer import index_workspace
     from app.services.code_graph.types import EDGE_CALLS

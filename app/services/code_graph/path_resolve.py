@@ -88,24 +88,23 @@ def _detect_python_top_level(root: Path) -> frozenset[str]:
     return frozenset(packages)
 
 
-_TS_CONFIG_CACHE: dict[str, dict] = {}
-
-
 def _read_tsconfig(root: Path) -> dict:
-    cache_key = str(root)
-    if cache_key in _TS_CONFIG_CACHE:
-        return _TS_CONFIG_CACHE[cache_key]
+    """Read the current TypeScript config for an index pass.
+
+    Indexing is long-lived inside the desktop backend, so a process-global
+    cache made edits to ``tsconfig.json`` invisible until restart.  The repo
+    context is already built only once per index invocation; reading this
+    small file here keeps path-alias resolution correct without meaningful
+    extra work.
+    """
     tsconfig = root / "tsconfig.json"
     if not tsconfig.is_file():
-        _TS_CONFIG_CACHE[cache_key] = {}
         return {}
     try:
         data = json.loads(tsconfig.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        _TS_CONFIG_CACHE[cache_key] = {}
         return {}
-    _TS_CONFIG_CACHE[cache_key] = data if isinstance(data, dict) else {}
-    return _TS_CONFIG_CACHE[cache_key]
+    return data if isinstance(data, dict) else {}
 
 
 def _read_ts_base_url(root: Path) -> str | None:

@@ -59,9 +59,24 @@ _RELATION_LABELS = {
 
 
 async def _resolve_workspace(db: AsyncSession):
-    """Get workspace ID for current sandbox."""
+    """Flush pending edits, then get the current sandbox's workspace ID."""
     sandbox = get_sandbox()
-    return await svc.resolve_workspace_id(db, path=str(sandbox.workspace_root))
+    workspace = str(sandbox.workspace_root)
+
+    # The agent-run watcher is normally paused to avoid reindex CPU spikes
+    # during rapid edits.  A graph query is an explicit synchronization point:
+    # flush now so the same agent can query code it wrote earlier in this run.
+    # Import lazily to keep tool discovery lightweight and avoid service cycles.
+    from app.services.code_graph.watcher import flush_code_graph_index
+
+    # Sibling repositories are part of the same query scope. Flush them too so
+    # a cross-repo search cannot read a fresh primary graph and a stale sibling.
+    graph_roots = dict.fromkeys(
+        [workspace, *getattr(sandbox, "extra_workspace_paths", [])]
+    )
+    for graph_root in graph_roots:
+        await flush_code_graph_index(str(graph_root))
+    return await svc.resolve_workspace_id(db, path=workspace)
 
 
 def _loc(node: CodeNode) -> str:

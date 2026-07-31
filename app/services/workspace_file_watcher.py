@@ -164,6 +164,11 @@ class WorkspaceFileWatcher:
         def _watch_filter(change: Any, path: str) -> bool:  # noqa: ANN401
             # Fast check: reject any path segment starting with '.'
             rel = path[prefix_len:] if len(path) > prefix_len else path
+            # Root .gitignore changes alter which files belong to the code
+            # index, so keep that single metadata event while continuing to
+            # suppress noisy hidden directories and their contents.
+            if rel.replace("\\", "/") == ".gitignore":
+                return True
             return not any(
                 seg.startswith(".") for seg in rel.replace("\\", "/").split("/") if seg
             )

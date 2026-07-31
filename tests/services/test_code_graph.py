@@ -374,6 +374,43 @@ async def test_code_tools_report_when_workspace_not_indexed(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_code_tool_workspace_resolution_flushes_index_first(
+    monkeypatch, tmp_path
+) -> None:
+    from app.agent.tools.builtin import code_graph as tool_module
+    from app.services.code_graph import watcher as watcher_module
+
+    order: list[str] = []
+    workspace_id = object()
+    sibling = tmp_path / "sibling"
+
+    class _Sandbox:
+        workspace_root = tmp_path
+        extra_workspace_paths = [str(sibling)]
+
+    async def flush(workspace: str) -> None:
+        order.append(f"flush:{workspace}")
+
+    async def resolve(_db, *, path: str):
+        order.append(f"resolve:{path}")
+        return workspace_id
+
+    monkeypatch.setattr(tool_module, "get_sandbox", lambda: _Sandbox())
+    monkeypatch.setattr(watcher_module, "flush_code_graph_index", flush)
+    monkeypatch.setattr(tool_module.svc, "resolve_workspace_id", resolve)
+
+    resolved = await tool_module._resolve_workspace(object())
+
+    workspace = str(tmp_path)
+    assert resolved is workspace_id
+    assert order == [
+        f"flush:{workspace}",
+        f"flush:{sibling}",
+        f"resolve:{workspace}",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_code_tools_against_indexed_workspace(tmp_path):
     from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
     from app.agent.tools.builtin.code_graph import (

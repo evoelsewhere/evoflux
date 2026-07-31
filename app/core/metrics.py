@@ -92,6 +92,51 @@ TURN_DURATION = Histogram(
     registry=REGISTRY,
 )
 
+# ── Coding navigation metrics ────────────────────────────────────────────────
+
+CODE_NAVIGATION_TURNS = Counter(
+    "EVOFLUX_code_navigation_turns_total",
+    "Coding turns grouped by the first symbol-navigation strategy used.",
+    labelnames=("strategy",),
+    registry=REGISTRY,
+)
+
+CODE_GRAPH_QUERIES = Counter(
+    "EVOFLUX_code_graph_queries_total",
+    "Code-graph queries grouped by tool and execution status.",
+    labelnames=("tool", "status"),
+    registry=REGISTRY,
+)
+
+CODE_GRAPH_QUERY_DURATION = Histogram(
+    "EVOFLUX_code_graph_query_duration_seconds",
+    "End-to-end code-graph tool latency, including the freshness barrier.",
+    labelnames=("tool",),
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30),
+    registry=REGISTRY,
+)
+
+CODE_GRAPH_RESULT_TOKENS = Counter(
+    "EVOFLUX_code_graph_result_tokens_total",
+    "Estimated tokens returned by code-graph tools (UTF-8 bytes divided by four).",
+    labelnames=("tool",),
+    registry=REGISTRY,
+)
+
+CODE_GRAPH_ESTIMATED_FILE_READS_SAVED = Counter(
+    "EVOFLUX_code_graph_estimated_file_reads_saved_total",
+    "Estimated full-file reads replaced by code-graph result locations.",
+    labelnames=("tool",),
+    registry=REGISTRY,
+)
+
+CODE_GRAPH_ESTIMATED_TOKENS_SAVED = Counter(
+    "EVOFLUX_code_graph_estimated_tokens_saved_total",
+    "Estimated source tokens avoided versus reading each referenced file in full.",
+    labelnames=("tool",),
+    registry=REGISTRY,
+)
+
 # ── Observability plumbing metrics ────────────────────────────────────────────
 
 SPANS_DROPPED = Counter(

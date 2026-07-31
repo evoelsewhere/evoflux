@@ -21,10 +21,12 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from loguru import logger
 
 from app.core.runtime_settings import load_runtime_settings
+from app.services.code_graph.cross_repo import invalidate_workspace_resolutions
 from app.services.code_graph.cross_repo_jobs import cross_repo_jobs
 from app.services.code_graph.parsers.registry import default_registry
 from app.services.code_graph_service import reindex_workspace, resolve_workspace_id
@@ -42,6 +44,49 @@ if TYPE_CHECKING:
     from app.core.db import DbFactory
 
 
+# Files outside the parser registry that still affect graph resolution.  These
+# are deliberately matched by basename because several ecosystems keep package
+# manifests in nested workspace/member directories.
+_GRAPH_METADATA_NAMES = frozenset(
+    {
+        ".gitignore",
+        "BUCK",
+        "Cargo.toml",
+        "Chart.yaml",
+        "Gemfile",
+        "MODULE.bazel",
+        "Package.swift",
+        "Podfile",
+        "Project.toml",
+        "WORKSPACE",
+        "WORKSPACE.bazel",
+        "build.gradle",
+        "build.gradle.kts",
+        "build.sbt",
+        "composer.json",
+        "compose.yaml",
+        "compose.yml",
+        "conanfile.py",
+        "conanfile.txt",
+        "docker-compose.yaml",
+        "docker-compose.yml",
+        "go.mod",
+        "meson.build",
+        "mix.exs",
+        "package.json",
+        "pom.xml",
+        "pubspec.yaml",
+        "pyproject.toml",
+        "settings.gradle",
+        "settings.gradle.kts",
+        "setup.py",
+        "tsconfig.json",
+    }
+)
+_GRAPH_METADATA_SUFFIXES = (".csproj", ".gemspec", ".nimble", ".podspec", ".tf")
+_INDEX_JOB_RETRY_SECONDS = 0.25
+
+
 class CodeGraphWatcher:
     """Background subscriber that incrementally reindexes workspaces on file changes."""
 
@@ -55,6 +100,9 @@ class CodeGraphWatcher:
         # Pause/resume support: when paused, events accumulate but don't trigger reindex.
         self._pause_count: int = 0
         self._dirty_workspaces: set[str] = set()
+        # Metadata changes require rebuilding edges for unchanged source files;
+        # a normal content-hash incremental pass would otherwise be a no-op.
+        self._full_reindex_pending: set[str] = set()
         # Per-workspace reindex serialization: prevents concurrent reindexes
         # from piling up CPU/RAM when many files change in quick succession.
         self._reindex_locks: dict[str, asyncio.Lock] = {}
@@ -124,6 +172,7 @@ class CodeGraphWatcher:
             # Reset pause state so a subsequent start() begins clean
             self._pause_count = 0
             self._dirty_workspaces.clear()
+            self._full_reindex_pending.clear()
 
     async def pause(self) -> None:
         """Pause reindexing. Events still accumulate; reindex deferred until resume.
@@ -173,13 +222,74 @@ class CodeGraphWatcher:
         """Whether the watcher is currently paused."""
         return self._pause_count > 0
 
+    async def flush_incremental(self, workspace: str) -> None:
+        """Synchronously bring *workspace* up to date for an imminent query.
+
+        Code tools call this as a freshness barrier before reading the graph.
+        It deliberately performs an incremental hash scan even when no watcher
+        event has arrived yet: a tool call can follow a file write closely
+        enough to beat the asynchronous filesystem notification.  Pausing only
+        suppresses background work, so this explicit flush remains active while
+        an agent run has the watcher paused.
+
+        A pending debounce is folded into this pass.  If another watcher pass
+        or an API index job is already running, wait for its queued follow-up
+        rather than returning a stale snapshot.
+        """
+        workspace = str(Path(workspace).resolve())
+        current = asyncio.current_task()
+
+        pending = self._debounce_tasks.pop(workspace, None)
+        if pending is not None and pending is not current and not pending.done():
+            pending.cancel()
+            await asyncio.gather(pending, return_exceptions=True)
+
+        # Clear before reindexing so a filesystem event that lands during the
+        # pass re-adds the workspace and is not accidentally discarded.
+        self._dirty_workspaces.discard(workspace)
+        await self._reindex(workspace)
+
+        while True:
+            # _reindex schedules this task when an API/auto-index job owns the
+            # workspace.  Await it so the code query cannot overtake the job's
+            # required incremental follow-up.
+            follow_up = self._debounce_tasks.get(workspace)
+            if (
+                follow_up is not None
+                and follow_up is not current
+                and not follow_up.done()
+            ):
+                try:
+                    await asyncio.shield(follow_up)
+                except asyncio.CancelledError:
+                    # A newer filesystem event may replace the task. Preserve
+                    # cancellation of this caller, otherwise chase the newest
+                    # follow-up in the next loop iteration.
+                    if current is not None and current.cancelling():
+                        raise
+                continue
+
+            # When _reindex found another watcher pass in flight it marked the
+            # workspace pending.  The owner consumes that marker and runs once
+            # more before releasing this lock; acquiring it is therefore the
+            # freshness barrier.
+            reindex_lock = self._reindex_locks.get(workspace)
+            if reindex_lock is not None and reindex_lock.locked():
+                async with reindex_lock:
+                    pass
+                continue
+            break
+
     async def _on_change(self, workspace: str, events: list[FsChangeEvent]) -> None:
         """Callback from WorkspaceFileWatcher — filter and debounce reindex."""
         # Fast extension check via str ops (avoid Path allocation per event)
         extensions = self._extensions
         has_source = any(_suffix(e["path"]) in extensions for e in events)
-        if not has_source:
+        has_metadata = any(_is_graph_metadata(e["path"]) for e in events)
+        if not has_source and not has_metadata:
             return
+        if has_metadata:
+            self._full_reindex_pending.add(workspace)
 
         # When paused, just mark the workspace dirty — no reindex until resume
         if self._pause_count > 0:
@@ -200,6 +310,7 @@ class CodeGraphWatcher:
             await asyncio.sleep(self._reindex_debounce_ms / 1000.0)
         except asyncio.CancelledError:
             return  # superseded by a newer event batch
+        self._release_debounce_slot(workspace)
         await self._reindex(workspace)
 
     async def _delayed_reindex(self, workspace: str, delay_s: float) -> None:
@@ -213,7 +324,29 @@ class CodeGraphWatcher:
             await asyncio.sleep(delay_s)
         except asyncio.CancelledError:
             return
+        self._release_debounce_slot(workspace)
         await self._reindex(workspace)
+
+    async def _retry_after_index_job(self, workspace: str, workspace_id: UUID) -> None:
+        """Retry a watcher pass after an API/auto-index job has settled.
+
+        Dropping the original event here can leave the graph stale when a user
+        saves while the first-open background build is still parsing.
+        """
+        from app.services.code_graph.jobs import index_jobs
+
+        try:
+            while index_jobs.is_running(workspace_id):
+                await asyncio.sleep(_INDEX_JOB_RETRY_SECONDS)
+        except asyncio.CancelledError:
+            return
+        self._release_debounce_slot(workspace)
+        await self._reindex(workspace)
+
+    def _release_debounce_slot(self, workspace: str) -> None:
+        """Stop later file events from cancelling an in-flight reindex task."""
+        if self._debounce_tasks.get(workspace) is asyncio.current_task():
+            self._debounce_tasks.pop(workspace, None)
 
     async def _reindex(self, workspace: str) -> None:
         # Skip if an API-triggered reindex job is already running for this workspace.
@@ -240,15 +373,25 @@ class CodeGraphWatcher:
                         # Skip if the API-triggered background job is running
                         if index_jobs.is_running(workspace_id):
                             logger.debug(
-                                "code_graph_watcher_skip_job_running workspace={}",
+                                "code_graph_watcher_wait_job_running workspace={}",
                                 workspace,
                             )
+                            self._debounce_tasks[workspace] = asyncio.create_task(
+                                self._retry_after_index_job(workspace, workspace_id)
+                            )
                             return
+
+                        full_reindex = workspace in self._full_reindex_pending
+                        self._full_reindex_pending.discard(workspace)
+                        if full_reindex:
+                            await invalidate_workspace_resolutions(
+                                db, workspace_id=workspace_id
+                            )
                         stats = await reindex_workspace(
                             db,
                             workspace_id=workspace_id,
                             root_path=workspace,
-                            incremental=True,
+                            incremental=not full_reindex,
                         )
 
                         # Chain into cross-repo resolve for every multi-repo
@@ -259,14 +402,13 @@ class CodeGraphWatcher:
                         # 40k-node project, was hours before the Tier
                         # A/reattach fixes) to run after every incremental
                         # reindex instead of only on an explicit click.
-                        # cross_repo_jobs.start() is idempotent per project
-                        # (a no-op if a resolve is already running for it), so
-                        # firing it here on every save is safe even when
-                        # several repos in the same project are edited in
-                        # quick succession. Skipped when nothing actually
-                        # changed — a debounced no-op reindex can't have
-                        # introduced a new unresolved reference.
-                        if stats.changed_files or stats.deleted_files:
+                        # cross_repo_jobs.start() coalesces one follow-up pass
+                        # when a resolve is already running, so firing it here
+                        # on every save is safe even when several repos in the
+                        # same project are edited in quick succession. Skipped
+                        # when nothing actually changed — a debounced no-op
+                        # reindex can't have introduced a new unresolved ref.
+                        if full_reindex or stats.changed_files or stats.deleted_files:
                             for project_id in await get_projects_for_workspace(
                                 db, workspace_id
                             ):
@@ -308,6 +450,11 @@ def _suffix(path: str) -> str:
     return path[dot:].lower()
 
 
+def _is_graph_metadata(path: str) -> bool:
+    name = path.replace("\\", "/").rsplit("/", 1)[-1]
+    return name in _GRAPH_METADATA_NAMES or name.endswith(_GRAPH_METADATA_SUFFIXES)
+
+
 # Module-level reference set by the lifespan to allow hooks (e.g. IndexPauseHook)
 # to access the watcher without importing app.state or FastAPI.
 _global_watcher: CodeGraphWatcher | None = None
@@ -317,3 +464,10 @@ def set_global_watcher(watcher: CodeGraphWatcher) -> None:
     """Register the watcher instance for module-level access."""
     global _global_watcher  # noqa: PLW0603
     _global_watcher = watcher
+
+
+async def flush_code_graph_index(workspace: str) -> None:
+    """Flush the registered watcher before a graph query, when available."""
+    watcher = _global_watcher
+    if watcher is not None:
+        await watcher.flush_incremental(workspace)
