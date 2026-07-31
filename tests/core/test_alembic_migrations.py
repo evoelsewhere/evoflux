@@ -3,8 +3,9 @@
 Runs ``alembic upgrade head`` against a temp database using the real
 ``app/alembic.ini`` and asserts the latest schema state lands (currently:
 WebBridge pairing, interaction, tab-binding, Teach Mode state, AIM unit
-recovery, delegation tasks, Git server connections, the Work mode rename, and
-retired session-section cleanup and durable goals through revision 00000040).
+recovery, delegation tasks, Git server connections, the Work mode rename,
+retired session-section cleanup, durable goals, and durable workflow gates
+through revision 00000041).
 Complements ``tests/core/test_db_extra.py``, which only covers
 ``run_migrations`` error paths with mocks.
 """
@@ -124,10 +125,27 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
         }
         assert {"revision", "last_transition_id"} <= aim_unit_columns
         assert "aim_claims" in inspector.get_table_names()
+        assert "workflow_gate_requests" in inspector.get_table_names()
         workflow_execution_columns = {
             column["name"] for column in inspector.get_columns("workflow_executions")
         }
         assert {"inputs", "retry_of_execution_id"} <= workflow_execution_columns
+        gate_request_columns = {
+            column["name"] for column in inspector.get_columns("workflow_gate_requests")
+        }
+        assert {
+            "execution_id",
+            "node_run_id",
+            "node_id",
+            "kind",
+            "request_id",
+            "question",
+            "options",
+            "status",
+            "answers",
+            "created_at",
+            "resolved_at",
+        } <= gate_request_columns
         binding_unique_indexes = {
             index["name"]
             for index in inspector.get_indexes("webbridge_tab_bindings")
