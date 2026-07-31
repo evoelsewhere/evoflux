@@ -151,6 +151,32 @@ def test_scrubbed_env_removes_python_leak_vars(monkeypatch):
     assert env["PATH"] == "/usr/local/bin:/usr/bin"
 
 
+def test_scrubbed_env_filters_host_credentials_by_default(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setenv("SSH_AUTH_SOCK", "/tmp/agent.sock")
+    monkeypatch.setenv("EVOFLUX_DESKTOP_TOKEN", "internal")
+    monkeypatch.setenv("PATH", "/usr/bin")
+
+    env = _scrubbed_env()
+
+    assert env["PATH"] == "/usr/bin"
+    assert "OPENAI_API_KEY" not in env
+    assert "AWS_SECRET_ACCESS_KEY" not in env
+    assert "SSH_AUTH_SOCK" not in env
+    assert "EVOFLUX_DESKTOP_TOKEN" not in env
+
+
+def test_scrubbed_env_can_inherit_host_values_but_never_internal_token(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "user-opted-in")
+    monkeypatch.setenv("EVOFLUX_DESKTOP_TOKEN", "internal")
+
+    env = _scrubbed_env(inherit=True)
+
+    assert env["OPENAI_API_KEY"] == "user-opted-in"
+    assert "EVOFLUX_DESKTOP_TOKEN" not in env
+
+
 def test_scrubbed_env_leak_keys_covers_known_offenders():
     """Sanity check: the leak-key set covers the vars we documented."""
     expected = {
@@ -387,6 +413,27 @@ async def test_shell_timeout(sandbox_workspace):
         or "timed out" in result.lower()
         or "[Failed" in result
     )
+
+
+@_posix_only
+@pytest.mark.asyncio
+async def test_sandbox_timeout_caps_larger_tool_request(tmp_path):
+    config = SandboxConfig(
+        workspace=str(tmp_path / "workspace"),
+        session_id="session-timeout-cap",
+        max_execution_seconds=0.1,  # type: ignore[arg-type]
+        denied_roots=[],
+        denied_patterns=[],
+    )
+    token = set_sandbox(config)
+    try:
+        result = await _shell("sleep 60", timeout_seconds=30)
+    finally:
+        from app.agent.sandbox import _sandbox_ctx
+
+        _sandbox_ctx.reset(token)
+
+    assert "[Timed out after 0.1s]" in result
 
 
 # ---------------------------------------------------------------------------

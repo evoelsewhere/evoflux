@@ -14,7 +14,6 @@ export interface AgentFrontmatter {
   description?: string | null
   model?: string | null
   fallback_model?: string | null
-  temperature?: number | null
   thinking_level?: string | null
   tools?: string[]
   skills?: string[]
@@ -87,9 +86,6 @@ export function buildFrontmatter(fm: AgentFrontmatter): string {
   if (fm.description) lines.push(`description: ${escapeScalar(fm.description)}`)
   if (fm.model) lines.push(`model: ${fm.model}`)
   if (fm.fallback_model) lines.push(`fallback_model: ${fm.fallback_model}`)
-  if (fm.temperature != null && !Number.isNaN(fm.temperature)) {
-    lines.push(`temperature: ${fm.temperature}`)
-  }
   if (fm.thinking_level) lines.push(`thinking_level: ${fm.thinking_level}`)
   // tools/skills are sets conceptually — order has no semantic meaning.
   // Emit them in sorted order so that reorders in the editor don't flip the

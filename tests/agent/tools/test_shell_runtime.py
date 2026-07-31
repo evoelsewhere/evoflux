@@ -50,6 +50,14 @@ def test_build_argv_bash_uses_login_and_sources_bashrc():
 
 
 @pytest.mark.skipif(_IS_WINDOWS, reason="POSIX-only")
+@pytest.mark.parametrize("shell", ["/bin/zsh", "/bin/bash"])
+def test_build_argv_can_disable_user_profiles(shell: str):
+    argv = shell_runtime.build_argv(shell, "echo safe", load_profile=False)
+
+    assert argv == ["-c", "echo safe"]
+
+
+@pytest.mark.skipif(_IS_WINDOWS, reason="POSIX-only")
 def test_build_argv_sh_uses_bare_c():
     """Plain POSIX sh has no rc file convention — bare -c is correct."""
     argv = shell_runtime.build_argv("/bin/sh", "echo hi")

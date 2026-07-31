@@ -3,7 +3,6 @@ name: aim-test-engineer
 role: member
 description: Builds golden-master test coverage per business function and drives functional-equivalence test runs.
 model: __PROVIDER_MODEL__
-temperature: 0.2
 thinking_level: medium
 skills:
   - test-driven-development

@@ -40,6 +40,7 @@ import os
 import shlex
 import stat as stat_module
 from pathlib import Path
+from typing import Literal
 
 from loguru import logger
 
@@ -86,6 +87,9 @@ class SandboxConfig:
         max_execution_seconds: int | None = None,
         max_output_bytes: int | None = None,
         allow_network: bool | None = None,
+        native_process_isolation: Literal["required", "best_effort"] | None = None,
+        inherit_shell_environment: bool | None = None,
+        load_shell_profile: bool | None = None,
         # Other repos in the same CodingProject, if this session is
         # project-scoped. Lets tools that call get_sandbox() (e.g.
         # code_search/code_graph, which auto-detect project scope)
@@ -137,22 +141,72 @@ class SandboxConfig:
             ]
         self.denied_roots: list[Path] = list(denied_roots)
 
+        file_config = None
+        # Passing an explicit deny-list is also the constructor's opt-out from
+        # user-level policy loading (used by tests and isolated internal jobs).
+        # Normal session sandboxes omit it and receive the complete saved policy.
         if denied_patterns is None:
             try:
                 from app.agent.sandbox_config import load_config
 
-                denied_patterns = list(load_config().denied_patterns)
+                file_config = load_config()
             except (ValueError, OSError) as exc:
-                logger.warning("sandbox_patterns_load_failed err={}", exc)
-                denied_patterns = []
+                logger.warning("sandbox_config_load_failed err={}", exc)
+        if denied_patterns is None:
+            denied_patterns = (
+                list(file_config.denied_patterns) if file_config is not None else []
+            )
         self.denied_patterns: list[str] = list(denied_patterns)
 
         self.max_execution_seconds: int = (
-            max_execution_seconds or DEFAULT_MAX_EXECUTION_SECONDS
+            max_execution_seconds
+            if max_execution_seconds is not None
+            else (
+                file_config.max_execution_seconds
+                if file_config is not None
+                else DEFAULT_MAX_EXECUTION_SECONDS
+            )
         )
-        self.max_output_bytes: int = max_output_bytes or DEFAULT_MAX_OUTPUT_BYTES
+        self.max_output_bytes: int = (
+            max_output_bytes
+            if max_output_bytes is not None
+            else (
+                file_config.max_output_bytes
+                if file_config is not None
+                else DEFAULT_MAX_OUTPUT_BYTES
+            )
+        )
         self.allow_network: bool = (
-            allow_network if allow_network is not None else DEFAULT_ALLOW_NETWORK
+            allow_network
+            if allow_network is not None
+            else (
+                file_config.allow_network
+                if file_config is not None
+                else DEFAULT_ALLOW_NETWORK
+            )
+        )
+        self.native_process_isolation: Literal["required", "best_effort"] = (
+            native_process_isolation
+            if native_process_isolation is not None
+            else (
+                file_config.native_process_isolation
+                if file_config is not None
+                else "best_effort"
+            )
+        )
+        self.inherit_shell_environment: bool = (
+            inherit_shell_environment
+            if inherit_shell_environment is not None
+            else (
+                file_config.inherit_shell_environment
+                if file_config is not None
+                else False
+            )
+        )
+        self.load_shell_profile: bool = (
+            load_shell_profile
+            if load_shell_profile is not None
+            else (file_config.load_shell_profile if file_config is not None else False)
         )
 
     def metadata_path(self, name: str) -> Path:

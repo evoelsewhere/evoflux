@@ -3,7 +3,6 @@ name: aim-appraiser
 role: member
 description: Builds the migration-unit inventory, scores complexity, and proposes the wave plan.
 model: __PROVIDER_MODEL__
-temperature: 0.2
 thinking_level: medium
 skills:
   - aim-legacy-comprehension

@@ -56,7 +56,6 @@ class BuiltinAgentBlueprint(TypedDict):
     role: str
     mode: str
     description: str
-    temperature: float
     thinking_level: str
     skills: list[str]
 
@@ -454,7 +453,6 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "role": "member",
             "mode": "forge",
             "description": BUILTIN_MEMBER_PROFILES["forge"]["executor"]["description"],
-            "temperature": 0.5,
             "thinking_level": "low",
             "skills": BUILTIN_MEMBER_PROFILES["forge"]["executor"]["skills"],
         },
@@ -463,7 +461,6 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "role": "member",
             "mode": "forge",
             "description": BUILTIN_MEMBER_PROFILES["forge"]["explorer"]["description"],
-            "temperature": 0.5,
             "thinking_level": "low",
             "skills": BUILTIN_MEMBER_PROFILES["forge"]["explorer"]["skills"],
         },
@@ -474,7 +471,6 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "description": BUILTIN_MEMBER_PROFILES["forge"]["consultant"][
                 "description"
             ],
-            "temperature": 0.2,
             "thinking_level": "high",
             "skills": BUILTIN_MEMBER_PROFILES["forge"]["consultant"]["skills"],
         },
@@ -483,7 +479,6 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "role": "member",
             "mode": "forge",
             "description": BUILTIN_MEMBER_PROFILES["forge"]["debate"]["description"],
-            "temperature": 0.6,
             "thinking_level": "medium",
             "skills": BUILTIN_MEMBER_PROFILES["forge"]["debate"]["skills"],
         },
@@ -494,7 +489,6 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "role": "member",
             "mode": "coding",
             "description": BUILTIN_MEMBER_PROFILES["coding"]["coder"]["description"],
-            "temperature": 0.2,
             "thinking_level": "low",
             "skills": BUILTIN_MEMBER_PROFILES["coding"]["coder"]["skills"],
         },
@@ -503,7 +497,6 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "role": "member",
             "mode": "coding",
             "description": BUILTIN_MEMBER_PROFILES["coding"]["explorer"]["description"],
-            "temperature": 0.2,
             "thinking_level": "low",
             "skills": BUILTIN_MEMBER_PROFILES["coding"]["explorer"]["skills"],
         },
@@ -512,7 +505,6 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "role": "member",
             "mode": "coding",
             "description": BUILTIN_MEMBER_PROFILES["coding"]["debate"]["description"],
-            "temperature": 0.3,
             "thinking_level": "medium",
             "skills": BUILTIN_MEMBER_PROFILES["coding"]["debate"]["skills"],
         },
@@ -523,7 +515,6 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "description": BUILTIN_MEMBER_PROFILES["coding"]["architect"][
                 "description"
             ],
-            "temperature": 0.2,
             "thinking_level": "high",
             "skills": BUILTIN_MEMBER_PROFILES["coding"]["architect"]["skills"],
         },

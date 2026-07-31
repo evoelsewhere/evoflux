@@ -2,7 +2,6 @@
 name: executor
 role: member
 model: __PROVIDER_MODEL__
-temperature: 0.5
 thinking_level: low
 skills:
   - writing-and-deliverables

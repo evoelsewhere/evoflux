@@ -1,28 +1,30 @@
 import { useState } from 'react'
-import { Wrench } from 'lucide-react'
+import { Check, Users } from 'lucide-react'
 
 import { useCreateAgentMutation } from '@/queries'
-import { Button } from '@/components/ui/button'
 import { useToastStore } from '@/stores/useToastStore'
 import { ApiValidationError } from '@/api/client'
 import { AgentForm } from '@/components/settings/AgentForm'
-import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
 import {
-  SettingsGroup,
-  SettingsPage,
-  SettingsRow,
-} from '@/components/settings/SettingsLayout'
+  AgentGlyph,
+} from '@/components/settings/AgentVisuals'
+import {
+  AGENT_TEAM_VISUALS,
+  type AgentTeam,
+} from '@/lib/agent-visuals'
+import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
+import { SettingsPage } from '@/components/settings/SettingsLayout'
+import { cn } from '@/lib/utils'
 import { validateAgentDraft } from '@/components/settings/schema'
 import { useSettingsSearch, useSettingsNavigate } from '@/contexts/SettingsContext'
 
-type AgentMode = 'forge' | 'coding' | 'aim'
+type AgentMode = AgentTeam
 
 const TEMPLATE = `---
 name: new_agent
 role: member
 description: A helpful team member.
 model: googlegenai:gemini-3.1-flash-lite-preview
-temperature: 0.2
 ---
 
 You are "new_agent" — a helpful team member.
@@ -83,75 +85,77 @@ export function NewAgentPage() {
 
   return (
     <SettingsPage
-      icon={Wrench}
-      title="New agent"
+      icon={Users}
+      title="Create an agent"
+      lede="Start with a focused role. You can refine its model, access, and instructions before creating the file."
+      size="wide"
       actions={
         <EditorHeaderActions
-          dirty={draft !== TEMPLATE}
+          dirty
           invalid={invalid}
           saving={createMut.isPending}
           error={saveError}
           validationHint={firstDraftError}
           mode={mode}
           onModeChange={setMode}
+          saveLabel="Create agent"
           onSave={handleCreate}
         />
       }
     >
-      <SettingsGroup title="Create in">
-        <SettingsRow
-          stacked
-          description={
-            agentMode === 'coding'
-              ? `Will create coding/${name}.md for coding sessions.`
-              : agentMode === 'aim'
-                ? `Will create aim/${name}.md for AIM sessions.`
-                : `Will create ${name}.md for forge sessions.`
-          }
-          control={
-            <div className="flex gap-2">
-              <Button
+      <section className="overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-card)">
+        <header className="border-b border-(--color-border-subtle) bg-(--bg-key)/25 px-4 py-3.5 sm:px-5">
+          <h2 className="font-heading text-sm font-semibold text-(--color-text)">Choose a team</h2>
+          <p className="mt-0.5 text-xs text-(--color-text-muted)">
+            The team controls the file location and inherited capability tier.
+          </p>
+        </header>
+        <div className="grid gap-2 p-3 sm:grid-cols-3 sm:p-4">
+          {(['forge', 'coding', 'aim'] as const).map((team) => {
+            const visual = AGENT_TEAM_VISUALS[team]
+            const active = team === agentMode
+            return (
+              <button
+                key={team}
                 type="button"
-                size="xs"
-                className="min-h-11 md:min-h-0"
-                variant={agentMode === 'forge' ? 'default' : 'outline'}
-                onClick={() => setAgentMode('forge')}
+                aria-pressed={active}
+                onClick={() => setAgentMode(team)}
+                className={cn(
+                  'relative flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left outline-none transition-[border-color,background-color,transform] active:scale-[0.99] focus-visible:ring-3 focus-visible:ring-(--focus-ring)/35 sm:flex-col sm:items-start',
+                  active
+                    ? 'border-(--color-accent)/45 bg-(--color-accent-soft)'
+                    : 'border-(--color-border) bg-(--bg-input) hover:border-(--color-border-strong) hover:bg-(--bg-key)/35',
+                )}
               >
-                Forge
-              </Button>
-              <Button
-                type="button"
-                size="xs"
-                className="min-h-11 md:min-h-0"
-                variant={agentMode === 'coding' ? 'default' : 'outline'}
-                onClick={() => setAgentMode('coding')}
-              >
-                Coding
-              </Button>
-              <Button
-                type="button"
-                size="xs"
-                className="min-h-11 md:min-h-0"
-                variant={agentMode === 'aim' ? 'default' : 'outline'}
-                onClick={() => setAgentMode('aim')}
-              >
-                AIM
-              </Button>
-            </div>
-          }
-        />
-      </SettingsGroup>
+                <AgentGlyph name={team === 'forge' ? name : `${team}/${name}`} role="member" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-(--color-text)">{visual.label}</p>
+                  <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-(--color-text-muted)">{visual.description}</p>
+                </div>
+                {active && (
+                  <span className="absolute right-2.5 top-2.5 flex size-5 items-center justify-center rounded-full bg-(--color-accent) text-(--color-text-on-accent)">
+                    <Check size={11} strokeWidth={3} aria-hidden="true" />
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+        <div className="border-t border-(--color-border-subtle) px-4 py-2.5 text-[11px] text-(--color-text-muted) sm:px-5">
+          File: <span className="font-mono text-(--color-text-2)">
+            {agentMode === 'forge' ? `${name}.md` : `${agentMode}/${name}.md`}
+          </span>
+        </div>
+      </section>
 
-      <SettingsGroup bare>
-        <AgentForm
-          initial={TEMPLATE}
-          onChange={handleDraftChange}
-          disabled={createMut.isPending}
-          isNew
-          mode={mode}
-          onModeChange={setMode}
-        />
-      </SettingsGroup>
+      <AgentForm
+        initial={TEMPLATE}
+        onChange={handleDraftChange}
+        disabled={createMut.isPending}
+        isNew
+        mode={mode}
+        onModeChange={setMode}
+      />
     </SettingsPage>
   )
 }

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getSandboxSettings,
   updateSandboxSettings,
-  type SandboxSettings,
+  type SandboxSettingsUpdate,
 } from '@/api/client'
 import { queryKeys } from './keys'
 
@@ -19,7 +19,7 @@ export function useSandboxSettingsQuery() {
 export function useUpdateSandboxSettingsMutation() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (body: SandboxSettings) => updateSandboxSettings(body),
+    mutationFn: (body: SandboxSettingsUpdate) => updateSandboxSettings(body),
     onSuccess: (data) => {
       client.setQueryData(queryKeys.settings.sandbox(), data)
     },

@@ -9,7 +9,7 @@
  * The Form/Raw toggle is optional; the skill editor (which has only a raw
  * mode) hides it by leaving ``mode`` unset.
  */
-import { AlertCircle, Code2, FormInput, Save } from 'lucide-react'
+import { AlertCircle, Code2, FormInput, Plus, Save } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -32,6 +32,8 @@ interface EditorHeaderActionsProps {
   onModeChange?: (next: 'form' | 'raw') => void
   /** Optional reason to disable saving even when the draft is dirty and valid. */
   saveDisabledReason?: string | null
+  /** Override the primary action label, e.g. "Create agent" on new-item pages. */
+  saveLabel?: string
   /** Save handler; the button manages its own disabled state. */
   onSave: () => void
 }
@@ -43,6 +45,7 @@ export function EditorHeaderActions({
   error,
   validationHint,
   saveDisabledReason,
+  saveLabel = 'Save',
   mode,
   onModeChange,
   onSave,
@@ -59,6 +62,12 @@ export function EditorHeaderActions({
       : !dirty
         ? 'No unsaved changes'
         : null
+  const actionLabel = saving
+    ? saveLabel === 'Save'
+      ? 'Saving…'
+      : 'Creating…'
+    : saveLabel
+  const ActionIcon = saveLabel === 'Save' ? Save : Plus
 
   return (
     <div className="flex items-center gap-2">
@@ -125,10 +134,10 @@ export function EditorHeaderActions({
                 className="min-h-11 md:min-h-0"
                 onClick={onSave}
                 disabled={saveDisabled}
-                aria-label={saving ? 'Saving' : 'Save'}
+                aria-label={actionLabel}
               >
-                <Save size={12} aria-hidden="true" />
-                {saving ? 'Saving…' : 'Save'}
+                <ActionIcon size={12} aria-hidden="true" />
+                {actionLabel}
               </Button>
             }
           />
@@ -136,8 +145,8 @@ export function EditorHeaderActions({
         </Tooltip>
       ) : (
         <Button size="sm" className="min-h-11 md:min-h-0" onClick={onSave} disabled={saveDisabled}>
-          <Save size={12} aria-hidden="true" />
-          {saving ? 'Saving…' : 'Save'}
+          <ActionIcon size={12} aria-hidden="true" />
+          {actionLabel}
         </Button>
       )}
     </div>

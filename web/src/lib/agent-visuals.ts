@@ -1,0 +1,75 @@
+import {
+  Braces,
+  Hammer,
+  Sparkles,
+  type LucideIcon,
+} from 'lucide-react'
+
+export type AgentTeam = 'forge' | 'coding' | 'aim'
+
+export interface AgentTeamVisual {
+  label: string
+  description: string
+  icon: LucideIcon
+  accent: string
+  soft: string
+  border: string
+}
+
+export const AGENT_TEAM_VISUALS: Record<AgentTeam, AgentTeamVisual> = {
+  forge: {
+    label: 'Forge',
+    description: 'General-purpose research and execution',
+    icon: Hammer,
+    accent: 'text-(--color-marker-orange)',
+    soft: 'bg-(--color-tint-orange)',
+    border: 'border-(--color-marker-orange)/25',
+  },
+  coding: {
+    label: 'Coding',
+    description: 'Architecture, implementation, and review',
+    icon: Braces,
+    accent: 'text-(--color-marker-blue)',
+    soft: 'bg-(--accent-blue-soft)',
+    border: 'border-(--color-marker-blue)/25',
+  },
+  aim: {
+    label: 'AIM',
+    description: 'Application intelligence and migration',
+    icon: Sparkles,
+    accent: 'text-(--color-violet)',
+    soft: 'bg-(--color-tint-violet)',
+    border: 'border-(--color-violet)/25',
+  },
+}
+
+const FORGE_BUILT_INS = new Set(['executor', 'explorer', 'consultant', 'debate'])
+const CODING_BUILT_INS = new Set(['coder', 'explorer', 'debate', 'architect'])
+const AIM_BUILT_INS = new Set([
+  'aim-lead',
+  'aim-appraiser',
+  'aim-archaeologist',
+  'aim-converter',
+  'aim-target-architect',
+  'aim-test-engineer',
+  'aim-triage-analyst',
+])
+
+export function agentTeamFromName(name: string): AgentTeam {
+  if (name.startsWith('coding/')) return 'coding'
+  if (name.startsWith('aim/')) return 'aim'
+  return 'forge'
+}
+
+export function agentDisplayName(name: string): string {
+  return name.replace(/^(?:coding|aim)\//, '')
+}
+
+export function isBuiltInAgentName(name: string, role: string): boolean {
+  const team = agentTeamFromName(name)
+  const basename = agentDisplayName(name).toLowerCase()
+  if (role === 'lead') return basename === 'evoflux' || basename === 'aim-lead'
+  if (team === 'coding') return CODING_BUILT_INS.has(basename)
+  if (team === 'aim') return AIM_BUILT_INS.has(basename)
+  return FORGE_BUILT_INS.has(basename)
+}

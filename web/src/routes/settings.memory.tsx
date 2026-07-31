@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 
 import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
+import { DreamSettingsPanel } from '@/routes/settings.dream'
 import {
   SettingsCallout,
   SettingsGroup,
@@ -18,7 +19,6 @@ import {
   SettingsRow,
 } from '@/components/settings/SettingsLayout'
 import { Button } from '@/components/ui/button'
-import { useSettingsNavigate } from '@/contexts/SettingsContext'
 import { useWikiTreeQuery } from '@/queries'
 import { useUIStore } from '@/stores/useUIStore'
 
@@ -54,7 +54,6 @@ function MemoryMetric({
 
 export function MemorySettingsPage() {
   const treeQ = useWikiTreeQuery(true)
-  const navigate = useSettingsNavigate()
   const tree = treeQ.data
 
   const curatedCount = tree
@@ -72,6 +71,12 @@ export function MemorySettingsPage() {
     ui.openWorkbenchTool('wiki')
   }
 
+  const focusDreamSettings = () => {
+    document
+      .getElementById('dream-settings')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   return (
     <SettingsPage
       icon={BrainCircuit}
@@ -85,74 +90,85 @@ export function MemorySettingsPage() {
         </Button>
       }
     >
-      <SettingsAsyncBoundary
-        loading={treeQ.isLoading}
-        hasData={Boolean(tree)}
-        error={treeQ.error}
-        variant="cards"
-        loadingLabel="Loading Memory overview"
-        errorTitle="Failed to load Memory"
-        onRetry={() => void treeQ.refetch()}
-      >
-        {tree && (
-          <>
-            <section aria-label="Memory overview" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <MemoryMetric
-                icon={Sparkles}
-                label="Curated pages"
-                value={curatedCount}
-                tone="accent"
-              />
-              <MemoryMetric
-                icon={Inbox}
-                label="Pending notes"
-                value={pendingCount}
-                tone={pendingCount > 0 ? 'warning' : 'neutral'}
-              />
-              <MemoryMetric icon={FileStack} label="Imported sources" value={tree.imports.length} />
-              <MemoryMetric icon={Database} label="System documents" value={tree.system.length} />
-            </section>
+      <div>
+        <SettingsAsyncBoundary
+          loading={treeQ.isLoading}
+          hasData={Boolean(tree)}
+          error={treeQ.error}
+          variant="cards"
+          loadingLabel="Loading Memory overview"
+          errorTitle="Failed to load Memory"
+          onRetry={() => void treeQ.refetch()}
+        >
+          {tree && (
+            <div className="space-y-7">
+              <section
+                aria-label="Memory overview"
+                className="grid grid-cols-2 gap-3 lg:grid-cols-4"
+              >
+                <MemoryMetric
+                  icon={Sparkles}
+                  label="Curated pages"
+                  value={curatedCount}
+                  tone="accent"
+                />
+                <MemoryMetric
+                  icon={Inbox}
+                  label="Pending notes"
+                  value={pendingCount}
+                  tone={pendingCount > 0 ? 'warning' : 'neutral'}
+                />
+                <MemoryMetric
+                  icon={FileStack}
+                  label="Imported sources"
+                  value={tree.imports.length}
+                />
+                <MemoryMetric
+                  icon={Database}
+                  label="System documents"
+                  value={tree.system.length}
+                />
+              </section>
 
-            <SettingsGroup
-              title="How Memory works"
-              description="A three-stage flow keeps raw evidence separate from durable knowledge."
-            >
-              <SettingsRow
-                label="1. Capture"
-                description="Conversations, agent notes and imported documents arrive in the Memory inbox without overwriting curated knowledge."
-                control={
-                  <span className="rounded-full bg-(--bg-key) px-2.5 py-1 text-[11px] font-medium text-(--color-text-muted)">
-                    {pendingCount} pending
-                  </span>
-                }
-              />
-              <SettingsRow
-                label="2. Synthesize"
-                description="Dream reviews pending material, resolves repetition and writes structured pages with source references."
-                control={
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => navigate('/settings/dream')}
-                  >
-                    Configure Dream
-                    <ArrowRight size={12} aria-hidden="true" />
-                  </Button>
-                }
-              />
-              <SettingsRow
-                label="3. Recall"
-                description="Agents search the curated knowledge base during future work, while source and confidence metadata remain available for review."
-              />
-            </SettingsGroup>
+              <SettingsGroup
+                title="How Memory works"
+                description="A three-stage flow keeps raw evidence separate from durable knowledge."
+              >
+                <SettingsRow
+                  label="1. Capture"
+                  description="Conversations, agent notes and imported documents arrive in the Memory inbox without overwriting curated knowledge."
+                  control={
+                    <span className="rounded-full bg-(--bg-key) px-2.5 py-1 text-[11px] font-medium text-(--color-text-muted)">
+                      {pendingCount} pending
+                    </span>
+                  }
+                />
+                <SettingsRow
+                  label="2. Synthesize"
+                  description="Dream reviews pending material, resolves repetition and writes structured pages with source references."
+                  control={
+                    <Button size="sm" variant="outline" onClick={focusDreamSettings}>
+                      Configure Dream
+                      <ArrowRight size={12} aria-hidden="true" />
+                    </Button>
+                  }
+                />
+                <SettingsRow
+                  label="3. Recall"
+                  description="Agents search the curated knowledge base during future work, while source and confidence metadata remain available for review."
+                />
+              </SettingsGroup>
 
-            <SettingsCallout icon={Moon}>
-              Curated pages are editable. Notes and imports remain read-only so the original
-              evidence is preserved during synthesis.
-            </SettingsCallout>
-          </>
-        )}
-      </SettingsAsyncBoundary>
+              <SettingsCallout icon={Moon}>
+                Curated pages are editable. Notes and imports remain read-only so the original
+                evidence is preserved during synthesis.
+              </SettingsCallout>
+            </div>
+          )}
+        </SettingsAsyncBoundary>
+      </div>
+
+      <DreamSettingsPanel embedded />
     </SettingsPage>
   )
 }

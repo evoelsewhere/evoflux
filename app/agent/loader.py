@@ -25,7 +25,6 @@ Each file::
     role: lead
     description: Coordinates the team.
     model: googlegenai:gemini-3.1-pro-preview
-    temperature: 0.2
     thinking_level: low
     tools: [date, read, ls]
     skills: [mcp-installer]
@@ -98,7 +97,6 @@ def _builtin_agent_md(
     role: str,
     description: str,
     model: str | None,
-    temperature: float,
     thinking_level: str,
     skills: list[str] | None = None,
 ) -> str:
@@ -107,7 +105,6 @@ def _builtin_agent_md(
         "role": role,
         "description": description,
         "model": model,
-        "temperature": temperature,
         "thinking_level": thinking_level,
     }
     if skills:
@@ -153,7 +150,6 @@ def ensure_builtin_agent_blueprints(agents_dir: Path, *, mode: str) -> list[str]
                 role=blueprint["role"],
                 description=blueprint["description"],
                 model=model,
-                temperature=blueprint["temperature"],
                 thinking_level=blueprint["thinking_level"],
                 skills=blueprint.get("skills"),
             ),
@@ -228,7 +224,6 @@ def ensure_builtin_lead_blueprint(agents_dir: Path, *, mode: str) -> str | None:
             role="lead",
             description=description,
             model=model,
-            temperature=0.2,
             thinking_level="low",
         ),
     )
@@ -569,8 +564,6 @@ def _build_agent(
                 tools.append(tool)
 
     model_kwargs: dict[str, Any] = {}
-    if cfg.temperature is not None:
-        model_kwargs["temperature"] = cfg.temperature
     if cfg.thinking_level is not None:
         model_kwargs["thinking_level"] = cfg.thinking_level
     if cfg.responses_api is not None:

@@ -13,6 +13,14 @@ File shape (YAML)::
       - "**/.env.*"
       - "**/secrets/**"
     worktree_location: repository
+    native_process_isolation: best_effort
+    allow_network: false
+    inherit_shell_environment: false
+    load_shell_profile: false
+    outbound_data_policy: redact
+    outbound_pii_policy: standard
+    max_execution_seconds: 120
+    max_output_bytes: 131072
 """
 
 from __future__ import annotations
@@ -53,6 +61,58 @@ class SandboxFileConfig(BaseModel):
             "Store managed worktrees under the repository's .evoflux directory "
             "or the per-user EvoFlux data directory."
         ),
+    )
+    native_process_isolation: Literal["required", "best_effort"] = Field(
+        default="best_effort",
+        description=(
+            "Require a native process sandbox or use it when available and fall "
+            "back to application-level controls."
+        ),
+    )
+    allow_network: bool = Field(
+        default=False,
+        description="Allow shell subprocesses to access the network.",
+    )
+    inherit_shell_environment: bool = Field(
+        default=False,
+        description=(
+            "Pass the host environment to shell subprocesses. Disabled uses a "
+            "small allowlist and keeps provider credentials out of commands."
+        ),
+    )
+    load_shell_profile: bool = Field(
+        default=False,
+        description=(
+            "Source the user's zsh/bash profile before shell commands. Profiles "
+            "may execute code or export secrets."
+        ),
+    )
+    outbound_data_policy: Literal["block", "redact", "off"] = Field(
+        default="redact",
+        description=(
+            "Block, redact, or allow detected sensitive text immediately before "
+            "a payload is sent to a model provider."
+        ),
+    )
+    outbound_pii_policy: Literal["off", "standard", "strict"] = Field(
+        default="standard",
+        description=(
+            "Mask common personal data with stable per-request placeholders. "
+            "Strict mode also protects structured names, addresses, identifiers, "
+            "and non-public IP addresses."
+        ),
+    )
+    max_execution_seconds: int = Field(
+        default=120,
+        ge=5,
+        le=3600,
+        description="Maximum foreground shell execution time in seconds.",
+    )
+    max_output_bytes: int = Field(
+        default=131072,
+        ge=4096,
+        le=1048576,
+        description="Maximum shell output bytes returned inline to the agent.",
     )
 
 
@@ -170,10 +230,21 @@ def save_config(cfg: SandboxFileConfig, path: Path | None = None) -> Path:
     _atomic_write_text(resolved, text)
 
     logger.info(
-        "sandbox_config_saved path={} patterns={} worktree_location={}",
+        "sandbox_config_saved path={} patterns={} worktree_location={} "
+        "native_isolation={} network={} inherit_env={} shell_profile={} "
+        "outbound_data_policy={} outbound_pii_policy={} "
+        "max_seconds={} max_output_bytes={}",
         resolved,
         len(cfg.denied_patterns),
         cfg.worktree_location,
+        cfg.native_process_isolation,
+        cfg.allow_network,
+        cfg.inherit_shell_environment,
+        cfg.load_shell_profile,
+        cfg.outbound_data_policy,
+        cfg.outbound_pii_policy,
+        cfg.max_execution_seconds,
+        cfg.max_output_bytes,
     )
     return resolved
 

@@ -71,7 +71,9 @@ def test_ensure_workspace_initialized_skips_seed_when_agents_exist(
     config = tmp_path / "config"
     agents = config / "agents"
     agents.mkdir(parents=True)
-    (agents / "existing.md").write_text("---\nmodel: openai:gpt-5\n---\n")
+    (agents / "existing.md").write_text(
+        "---\nname: existing\nrole: lead\nmodel: openai:gpt-5\ntemperature: 0.4\n---\n"
+    )
 
     monkeypatch.setattr(
         workspace_init.settings, "EVOFLUX_DATA_DIR", str(tmp_path / "data")
@@ -104,6 +106,7 @@ def test_ensure_workspace_initialized_skips_seed_when_agents_exist(
     ensure_workspace_initialized()
 
     assert (config / "plugins").is_dir()
+    assert "temperature:" not in (agents / "existing.md").read_text()
 
 
 def test_ensure_workspace_initialized_materializes_builtins_without_seed(

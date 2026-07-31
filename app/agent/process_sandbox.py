@@ -11,6 +11,15 @@ from loguru import logger
 from app.agent.sandbox import SandboxConfig, _allowed_internal_roots
 
 
+def native_process_sandbox_backend() -> str | None:
+    """Return the native containment backend available on this host."""
+    if sys.platform == "darwin" and shutil.which("sandbox-exec"):
+        return "seatbelt"
+    if sys.platform.startswith("linux") and shutil.which("bwrap"):
+        return "bubblewrap"
+    return None
+
+
 def sandboxed_process_argv(
     executable: str,
     args: list[str],
@@ -24,15 +33,16 @@ def sandboxed_process_argv(
     installed. Other hosts keep the application-level allowlist and emit an
     explicit warning instead of pretending OS containment exists.
     """
-    if sys.platform == "darwin":
+    backend = native_process_sandbox_backend()
+    if backend == "seatbelt":
         sandbox_exec = shutil.which("sandbox-exec")
-        if sandbox_exec:
+        if sandbox_exec is not None:
             profile = _macos_profile(sandbox)
             return sandbox_exec, ["-p", profile, executable, *args]
 
-    if sys.platform.startswith("linux"):
+    if backend == "bubblewrap":
         bwrap = shutil.which("bwrap")
-        if bwrap:
+        if bwrap is not None:
             wrapped = [
                 "--die-with-parent",
                 "--new-session",
@@ -53,6 +63,13 @@ def sandboxed_process_argv(
                     wrapped.extend(["--bind", str(root), str(root)])
             wrapped.extend(["--chdir", str(cwd), executable, *args])
             return bwrap, wrapped
+
+    if sandbox.native_process_isolation == "required":
+        raise PermissionError(
+            "Native process isolation is required by Sandbox settings, but no "
+            f"supported backend is available on {sys.platform}. Install "
+            "bubblewrap on Linux or switch isolation to Best effort."
+        )
 
     logger.warning(
         "process_sandbox_native_backend_unavailable platform={} network_allowed={}",

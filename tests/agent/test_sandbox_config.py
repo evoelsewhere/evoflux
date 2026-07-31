@@ -28,6 +28,14 @@ def test_save_then_load_roundtrip(tmp_path: Path) -> None:
         SandboxFileConfig(
             denied_patterns=["**/foo", "bar/*"],
             worktree_location="user_data",
+            native_process_isolation="required",
+            allow_network=True,
+            inherit_shell_environment=True,
+            load_shell_profile=True,
+            outbound_data_policy="block",
+            outbound_pii_policy="strict",
+            max_execution_seconds=300,
+            max_output_bytes=262144,
         ),
         target,
     )
@@ -35,10 +43,31 @@ def test_save_then_load_roundtrip(tmp_path: Path) -> None:
     cfg = load_config(target)
     assert cfg.denied_patterns == ["**/foo", "bar/*"]
     assert cfg.worktree_location == "user_data"
+    assert cfg.native_process_isolation == "required"
+    assert cfg.allow_network is True
+    assert cfg.inherit_shell_environment is True
+    assert cfg.load_shell_profile is True
+    assert cfg.outbound_data_policy == "block"
+    assert cfg.outbound_pii_policy == "strict"
+    assert cfg.max_execution_seconds == 300
+    assert cfg.max_output_bytes == 262144
 
 
 def test_worktree_location_defaults_to_repository() -> None:
     assert SandboxFileConfig().worktree_location == "repository"
+
+
+def test_security_defaults_fail_safe_for_credentials_and_network() -> None:
+    cfg = SandboxFileConfig()
+
+    assert cfg.native_process_isolation == "best_effort"
+    assert cfg.allow_network is False
+    assert cfg.inherit_shell_environment is False
+    assert cfg.load_shell_profile is False
+    assert cfg.outbound_data_policy == "redact"
+    assert cfg.outbound_pii_policy == "standard"
+    assert cfg.max_execution_seconds == 120
+    assert cfg.max_output_bytes == 131072
 
 
 def test_repository_worktree_root_is_local_and_git_ignored(

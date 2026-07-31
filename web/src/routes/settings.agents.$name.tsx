@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Trash2, Wrench } from 'lucide-react'
+import { FileCode2, ShieldCheck, Sparkles, Trash2, Users } from 'lucide-react'
 
 import {
   useAgentFileQuery,
@@ -10,11 +10,20 @@ import {
 import { useToastStore } from '@/stores/useToastStore'
 import { ApiValidationError } from '@/api/client'
 import { AgentForm } from '@/components/settings/AgentForm'
-import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
 import {
-  SettingsGroup,
-  SettingsPage,
-} from '@/components/settings/SettingsLayout'
+  AgentGlyph,
+  AgentModelBadge,
+  AgentReadyBadge,
+  AgentRoleBadge,
+  AgentTeamBadge,
+} from '@/components/settings/AgentVisuals'
+import {
+  agentDisplayName,
+  agentTeamFromName,
+  isBuiltInAgentName,
+} from '@/lib/agent-visuals'
+import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
+import { SettingsPage } from '@/components/settings/SettingsLayout'
 import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import { contentEquals } from '@/components/settings/frontmatter'
 import { validateAgentDraft } from '@/components/settings/schema'
@@ -69,7 +78,8 @@ export function AgentEditorPage() {
   const invalid = draftErrors !== null
   const firstDraftError = draftErrors ? Object.values(draftErrors)[0] : null
   const currentSummary = agentsData?.agents.find((agent) => agent.name === name)
-  const isBuiltIn = currentSummary ? isBuiltInAgent(currentSummary.name, currentSummary.role) : false
+  const currentRole = currentSummary?.role ?? data?.config?.role
+  const isBuiltIn = currentRole ? isBuiltInAgentName(name, currentRole) : false
 
   const handleSave = async () => {
     setSaveError(null)
@@ -107,9 +117,10 @@ export function AgentEditorPage() {
   return (
     <>
       <SettingsPage
-        icon={Wrench}
-        title={name}
-        lede={data?.path ? <span className="font-mono text-xs">{data.path}</span> : undefined}
+        icon={Users}
+        title={agentDisplayName(name)}
+        lede="Shape how this agent thinks, what it can access, and the role it plays on its team."
+        size="wide"
         actions={
           <EditorHeaderActions
             dirty={dirty}
@@ -133,17 +144,29 @@ export function AgentEditorPage() {
           onRetry={() => void refetch()}
         >
           {data && (
-          <SettingsGroup bare>
-            <AgentForm
-              initial={data.content}
-              agentPath={name}
-              onChange={setDraft}
-              disabled={updateMut.isPending}
-              isNew={false}
-              mode={mode}
-              onModeChange={setMode}
-            />
-          </SettingsGroup>
+            <div className="space-y-5">
+              <AgentDetailOverview
+                name={name}
+                path={data.path}
+                role={currentSummary?.role ?? data.config?.role ?? 'member'}
+                description={currentSummary?.description ?? data.config?.description}
+                model={currentSummary?.model ?? data.config?.model}
+                tools={currentSummary?.tools.length ?? data.config?.tools?.length ?? 0}
+                skills={currentSummary?.skills.length ?? data.config?.skills?.length ?? 0}
+                mcp={currentSummary?.mcp.length ?? 0}
+                valid={currentSummary?.valid ?? !data.error}
+                builtIn={isBuiltIn}
+              />
+              <AgentForm
+                initial={data.content}
+                agentPath={name}
+                onChange={setDraft}
+                disabled={updateMut.isPending}
+                isNew={false}
+                mode={mode}
+                onModeChange={setMode}
+              />
+            </div>
           )}
         </SettingsAsyncBoundary>
         <div className="flex items-center justify-between gap-2 text-xs text-(--color-text-muted)">
@@ -211,12 +234,64 @@ export function AgentEditorPage() {
   )
 }
 
-const NORMAL_BUILT_INS = new Set(['EvoFlux', 'explorer', 'executor'])
-const CODING_BUILT_INS = new Set(['EvoFlux', 'coder', 'explorer'])
-
-function isBuiltInAgent(name: string, role: string): boolean {
-  const isCoding = name.startsWith('coding/')
-  const basename = name.split('/').pop() ?? name
-  if (role === 'lead') return basename === 'EvoFlux'
-  return isCoding ? CODING_BUILT_INS.has(basename) : NORMAL_BUILT_INS.has(basename)
+function AgentDetailOverview({
+  name,
+  path,
+  role,
+  description,
+  model,
+  tools,
+  skills,
+  mcp,
+  valid,
+  builtIn,
+}: {
+  name: string
+  path: string
+  role: 'lead' | 'member'
+  description?: string | null
+  model?: string | null
+  tools: number
+  skills: number
+  mcp: number
+  valid: boolean
+  builtIn: boolean
+}) {
+  const team = agentTeamFromName(name)
+  return (
+    <section className="overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-card) shadow-[0_16px_44px_rgba(0,0,0,0.035)]">
+      <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-5">
+        <AgentGlyph name={name} role={role} size="lg" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <AgentTeamBadge team={team} />
+            <AgentRoleBadge role={role} />
+            <AgentReadyBadge valid={valid} />
+            {builtIn && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-(--color-text-muted)">
+                <ShieldCheck size={12} aria-hidden="true" /> Built-in
+              </span>
+            )}
+          </div>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-(--color-text-2)">
+            {description || 'Add a short description so the lead knows when to delegate to this agent.'}
+          </p>
+        </div>
+        <div className="shrink-0 sm:self-start">
+          <AgentModelBadge model={model} />
+        </div>
+      </div>
+      <div className="flex flex-col gap-3 border-t border-(--color-border-subtle) bg-(--bg-key)/25 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
+        <div className="flex min-w-0 flex-1 items-center gap-2 text-[11px] text-(--color-text-subtle)">
+          <FileCode2 size={12} className="shrink-0" aria-hidden="true" />
+          <span className="truncate font-mono" title={path}>{path}</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-3 text-[10px] text-(--color-text-muted)">
+          <span className="inline-flex items-center gap-1"><Sparkles size={10} aria-hidden="true" /> {skills} skills</span>
+          <span>{tools} tools</span>
+          <span>{mcp} MCP</span>
+        </div>
+      </div>
+    </section>
+  )
 }

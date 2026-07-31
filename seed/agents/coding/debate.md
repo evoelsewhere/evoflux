@@ -2,7 +2,6 @@
 name: debate
 role: member
 model: __PROVIDER_MODEL__
-temperature: 0.3
 thinking_level: medium
 skills:
   - code-graph-navigation

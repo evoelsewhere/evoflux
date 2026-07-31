@@ -2,7 +2,7 @@
 name: self-healing
 description: >-
   Update or upgrade the agent's own configuration on request — swap the model,
-  tune thinking/temperature, add tools or MCP servers, or install a new skill.
+  tune thinking depth, add tools or MCP servers, or install a new skill.
   Use when the user says things like "upgrade yourself", "switch your model to
   X", "make yourself faster/smarter".
 ---
@@ -19,7 +19,7 @@ under `{EVOFLUX_CONFIG_DIR}/`. No code changes, no restarts. Agent
 
 | Target | File | Typical request |
 |--------|------|-----------------|
-| Agent model / params | `{EVOFLUX_CONFIG_DIR}/agents/{name}.md` frontmatter | "switch to gpt-5", "use Claude", "lower temperature", "turn on high thinking", "add a fallback model" |
+| Agent model / params | `{EVOFLUX_CONFIG_DIR}/agents/{name}.md` frontmatter | "switch to gpt-5", "use Claude", "turn on high thinking", "add a fallback model" |
 | Agent tools | same file, `tools:` list | Additive local overrides on top of any built-in first-party profile tools. "give yourself shell access", "let yourself browse the web" |
 | Agent skill metadata | same file, `skills:` list | Rare additive explicit metadata/drift hooks. Installing a new skill normally does **not** require editing agent files; the `skill` tool discovers skills from project/global roots. |
 | Agent MCP tools | same file, `mcp:` list (bulk) or `tools:` list (selective) | Additive local overrides on top of any built-in first-party profile MCP servers/tools. "let yourself use the filesystem MCP", "remove the github MCP from yourself" — see "MCP tools on agents" below |
@@ -40,8 +40,8 @@ Use this self-healing workflow for root/blueprint config changes:
 - Removing user-added extras from an agent `.md` file.
 - Explaining that built-in first-party capabilities cannot be removed through `.md` overrides; `.md` files are additive only.
 - Edits to the **lead's own** `.md`.
-- Multi-field changes (e.g. model + temperature + tools in one diff).
-- Anything outside `tools` / `skills` / `mcp` — `model`, `temperature`,
+- Multi-field changes (e.g. model + thinking level + tools in one diff).
+- Anything outside `tools` / `skills` / `mcp` — `model`,
   `thinking_level`, `fallback_model`, system prompt body. (Summarisation
   tuning is not editable per-agent — it lives in code; refuse and refer
   the user to `app/agent/hooks/summarization.py`.)
@@ -119,18 +119,18 @@ for them.
 ### Relative tweaks ("a bit", "more", "less")
 
 The user says "warmer", "more focused", "more thoughtful" — **read
-the current value first**, then nudge by a small delta. Don't pick
-absolute numbers from thin air.
+the current configuration and prompt first**, then make the smallest explicit
+change that expresses the intent.
 
 | Request | Step (typical) |
 |---------|----------------|
-| "warmer" / "more creative" | `temperature += 0.2` (cap at `1.0`) |
-| "more focused" / "deterministic" | `temperature -= 0.2` (floor at `0.0`) |
+| "warmer" / "more creative" | Add a precise tone or creativity instruction to the system prompt |
+| "more focused" / "deterministic" | Add a precise focus/consistency instruction to the system prompt |
 | "think harder" | `thinking_level` one rung up: `none → low → medium → high` |
 | "respond faster" | `thinking_level` one rung down |
 
-Show the user the before/after numbers in the diff so they can
-veto if the delta feels wrong.
+Show the exact prompt or thinking-level change in the diff so the user can
+veto it if the interpretation feels wrong.
 
 ## Reload semantics — when changes take effect
 
@@ -161,8 +161,7 @@ Only these keys are valid. Reject any request to invent new ones.
 |-------|--------|
 | `model` | `provider:model` — e.g. `googlegenai:gemini-3.1-flash`, `openai:gpt-5.5`, `zai:glm-5-turbo`, `openrouter:...`, `copilot:...`, `codex:...`, `vertexai:...`, `nvidia:...`, `xai:grok-4.20`, `ollama:llama3.2`, `ollama:kimi-k2.6-cloud` |
 | `fallback_model` | same format as `model` |
-| `temperature` | float, typically `0.0`–`1.0` |
-| `thinking_level` | `none` \| `low` \| `medium` \| `high` |
+| `thinking_level` | a level advertised by the selected model, such as `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or `ultra` |
 | `tools` | extra tools layered on top of any built-in first-party profile tools: `web_search`, `web_fetch`, `date`, `read`, `write`, `edit`, `ls`, `grep`, `glob`, `rm`, `shell`, `bg`, `wiki_search`, plus `mcp_<server>_<tool>` entries from configured MCP servers. Never list `skill` or `team_message` — injected automatically. Lead-only tools (`note`, `schedule_task`, `todo_manage`) are also injected automatically. |
 | `skills` | optional explicit skill metadata/drift hooks; names of discovered skill directories (project/global EvoFlux, opencode-compatible, or bundled read-only skills). Do not use this as the normal skill-install wiring step. |
 | `responses_api` | `true` to force OpenAI Responses API |
@@ -273,17 +272,16 @@ sandbox and is gated by the permission system."
 
 Delegate: call `skill("skill-installer")` and follow that workflow.
 
-### 4. "Be a bit warmer"
+### 4. "Use a warmer tone"
 
-Read the lead's `.md` (current `temperature: 0.4`), nudge by `+0.2`:
+Read the lead's `.md` and add the smallest clear instruction to its prompt:
 
 ```diff
-- temperature: 0.4
-+ temperature: 0.6
+ You are the team orchestrator. Coordinate the work and keep updates concise.
++Use a warm, approachable tone while staying precise.
 ```
 
-Show the user the absolute numbers, not just "+0.2", so the cap (1.0)
-and floor (0.0) are obvious. Apply and confirm "Active on my next turn."
+Apply and confirm "Active on my next turn."
 
 
 

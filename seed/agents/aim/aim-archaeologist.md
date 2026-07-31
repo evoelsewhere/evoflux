@@ -3,7 +3,6 @@ name: aim-archaeologist
 role: member
 description: Reverse-engineers legacy units bottom-up into module docs and candidate business rules in the knowledge base.
 model: __PROVIDER_MODEL__
-temperature: 0.2
 thinking_level: high
 skills:
   - aim-legacy-comprehension

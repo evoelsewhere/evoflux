@@ -161,7 +161,7 @@ def test_parse_agent_md_full_frontmatter(tmp_path):
         "Custom prompt.",
     )
     cfg = parse_agent_md(f)
-    assert cfg.temperature == 0.3
+    assert "temperature" not in cfg.model_dump()
     assert cfg.thinking_level == "low"
     assert cfg.tools == ["read", "shell"]
     assert cfg.skills == ["example-skill"]
@@ -422,7 +422,7 @@ def test_build_agent_description():
     assert agent.description == "I am a bot"
 
 
-def test_build_agent_passes_temperature_and_thinking_level():
+def test_build_agent_ignores_legacy_temperature_and_passes_thinking_level():
     received: dict = {}
 
     def capturing_factory(model_str, model_kwargs=None):
@@ -433,7 +433,7 @@ def test_build_agent_passes_temperature_and_thinking_level():
         name="bot", system_prompt="hello", temperature=0.5, thinking_level="high"
     )
     _build_agent(cfg, _default_tool_registry(), capturing_factory)
-    assert received.get("temperature") == 0.5
+    assert "temperature" not in received
     assert received.get("thinking_level") == "high"
 
 

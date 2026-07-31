@@ -12,6 +12,7 @@ sandbox's responsibility.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -77,6 +78,34 @@ def test_explicit_extra_workspace_path_allowed(tmp_path):
     assert (
         sandbox.validate_path(str(extra / "file.txt")) == (extra / "file.txt").resolve()
     )
+
+
+def test_session_sandbox_loads_saved_process_security_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        "app.agent.sandbox_config.load_config",
+        lambda: SimpleNamespace(
+            denied_patterns=["**/.env"],
+            max_execution_seconds=45,
+            max_output_bytes=8192,
+            allow_network=True,
+            native_process_isolation="required",
+            inherit_shell_environment=True,
+            load_shell_profile=True,
+        ),
+    )
+
+    sandbox = SandboxConfig(workspace=str(tmp_path / "ws"), denied_roots=[])
+
+    assert sandbox.denied_patterns == ["**/.env"]
+    assert sandbox.max_execution_seconds == 45
+    assert sandbox.max_output_bytes == 8192
+    assert sandbox.allow_network is True
+    assert sandbox.native_process_isolation == "required"
+    assert sandbox.inherit_shell_environment is True
+    assert sandbox.load_shell_profile is True
 
 
 def test_metadata_path_is_session_scoped_when_session_id_present(tmp_path):

@@ -15,7 +15,6 @@ import {
   BrainCircuit,
   Info,
   KeyRound,
-  Moon,
   Palette,
   Plug,
   Search,
@@ -49,7 +48,6 @@ type SidebarPath =
   | '/settings/mcp'
   | '/settings/memory'
   | '/settings/sandbox'
-  | '/settings/dream'
   | '/settings/notifications'
   | '/settings/appearance'
   | '/settings/diagnostics'
@@ -199,12 +197,6 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             icon: BrainCircuit,
             matchPrefix: '/settings/memory',
           },
-          {
-            to: '/settings/dream',
-            label: 'Dream',
-            icon: Moon,
-            matchPrefix: '/settings/dream',
-          },
         ],
       },
       {
@@ -348,14 +340,16 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             <p className="px-4 pb-1.5 text-[10px] font-semibold tracking-[0.09em] text-(--color-text-subtle) uppercase">
               {section.label}
             </p>
-            {section.items.map((item) => (
-              <SidebarRow
-                key={item.to}
-                item={item}
-                active={isActive(item.matchPrefix)}
-                onNavigate={onNavigate ? handleNavigate : undefined}
-              />
-            ))}
+            <div className="flex flex-col gap-1">
+              {section.items.map((item) => (
+                <SidebarRow
+                  key={item.to}
+                  item={item}
+                  active={isActive(item.matchPrefix)}
+                  onNavigate={onNavigate ? handleNavigate : undefined}
+                />
+              ))}
+            </div>
           </div>
         ))}
         {visibleSections.length === 0 && (

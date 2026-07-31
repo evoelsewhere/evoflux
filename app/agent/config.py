@@ -25,7 +25,6 @@ class AgentConfig(BaseModel):
     skills: list[str] = []
     model: str | None = None
     fallback_model: str | None = None
-    temperature: float | None = None
     thinking_level: str | None = None
     responses_api: bool | None = None
 

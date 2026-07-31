@@ -173,7 +173,7 @@ The model is replaceable. The harness — context, action, policy, verification,
 
 ### Multi-agent teams
 
-Agents are Markdown files with YAML frontmatter (`name`, `role`, `model`, `temperature`, `thinking_level`), making teams readable, diffable, and versionable. A team has one Lead and any number of on-demand members. Multiple instances of the same blueprint can work in parallel without becoming always-on background processes.
+Agents are Markdown files with YAML frontmatter (`name`, `role`, `model`, `thinking_level`), making teams readable, diffable, and versionable. A team has one Lead and any number of on-demand members. Multiple instances of the same blueprint can work in parallel without becoming always-on background processes.
 
 ### Structural code knowledge graph
 

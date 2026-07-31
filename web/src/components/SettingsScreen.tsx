@@ -17,7 +17,6 @@ import { AgentsListPage } from '@/routes/settings.agents'
 import { AppearanceSettingsPage } from '@/routes/settings.appearance'
 import { BackendConnectionPage } from '@/routes/settings.connection'
 import { DiagnosticsPage } from '@/routes/settings.diagnostics'
-import { DreamSettingsPage } from '@/routes/settings.dream'
 import { SettingsHubPage } from '@/routes/settings.index'
 import { McpServerDetailPage } from '@/routes/settings.mcp.$name'
 import { NewMcpServerPage } from '@/routes/settings.mcp.new'
@@ -42,7 +41,6 @@ const LEAF_SECTIONS: Readonly<Record<string, string>> = {
   connection: 'Connection',
   memory: 'Memory',
   sandbox: 'Sandbox',
-  dream: 'Dream',
   notifications: 'Notifications',
   appearance: 'Appearance',
   telemetry: 'Telemetry',
@@ -56,7 +54,8 @@ interface Crumb {
 }
 
 function crumbsFor(path: string): Crumb[] {
-  const [section, ...rest] = path.split('/').filter(Boolean)
+  const [rawSection, ...rest] = path.split('/').filter(Boolean)
+  const section = rawSection === 'dream' ? 'memory' : rawSection
   if (!section) return [{ label: 'Settings' }]
 
   const listLabel = LIST_SECTIONS[section]
@@ -95,7 +94,8 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'connection') return <BackendConnectionPage />
   if (section === 'providers') return <ProvidersSettingsPage />
   if (section === 'sandbox') return <SandboxSettingsPage />
-  if (section === 'dream') return <DreamSettingsPage />
+  // Keep old command/deep-link targets working after Dream was folded into Memory.
+  if (section === 'dream') return <MemorySettingsPage />
   if (section === 'notifications') return <NotificationSettingsPage />
   if (section === 'appearance') return <AppearanceSettingsPage />
   if (section === 'diagnostics') return <DiagnosticsPage />
@@ -137,7 +137,11 @@ export function SettingsScreen() {
   }, [settingsPath])
 
   const crumbs = useMemo(() => crumbsFor(settingsPath), [settingsPath])
-  const fullPath = settingsPath ? `/settings/${settingsPath}` : '/settings'
+  const canonicalSettingsPath =
+    settingsPath === 'dream' || settingsPath.startsWith('dream/')
+      ? settingsPath.replace(/^dream/, 'memory')
+      : settingsPath
+  const fullPath = canonicalSettingsPath ? `/settings/${canonicalSettingsPath}` : '/settings'
 
   const handleSidebarNavigate = useCallback((path: string) => {
     navigateSettings(path.replace(/^\/settings\/?/, ''))

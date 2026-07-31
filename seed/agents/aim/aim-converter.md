@@ -3,7 +3,6 @@ name: aim-converter
 role: member
 description: Implements approved unit mappings into the target repo and drives the fix-compare repair loop until equivalence.
 model: __PROVIDER_MODEL__
-temperature: 0.2
 thinking_level: low
 skills:
   - incremental-implementation
