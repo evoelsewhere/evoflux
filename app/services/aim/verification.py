@@ -74,6 +74,35 @@ def _path_digest(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _target_git_state(target_root: Path) -> tuple[str, list[str]]:
+    """Return the committed revision and porcelain status for a target repo."""
+    try:
+        revision = subprocess.run(
+            ["git", "-C", str(target_root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        status = subprocess.run(
+            ["git", "-C", str(target_root), "status", "--porcelain=v1"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise VerificationError(f"cannot inspect target git state: {exc}") from exc
+    if revision.returncode != 0 or not revision.stdout.strip():
+        raise VerificationError(
+            "target repository must be a git worktree with a committed HEAD"
+        )
+    if status.returncode != 0:
+        detail = (status.stderr or status.stdout).strip()
+        raise VerificationError(f"cannot inspect target git status: {detail[:1000]}")
+    return revision.stdout.strip(), [
+        line for line in status.stdout.splitlines() if line.strip()
+    ]
+
+
 def has_conversion_evidence(
     kb_root: Path,
     unit: str,
@@ -100,6 +129,14 @@ def has_conversion_evidence(
     try:
         command_path = resolve_verification_command(kb_root, unit)
         if data.get("verification_command_sha256") != _file_digest(command_path):
+            return False
+        if data.get("target_dirty") is not False:
+            return False
+        target_revision = data.get("target_revision")
+        if not isinstance(target_revision, str) or not target_revision:
+            return False
+        current_revision, target_status = _target_git_state(target_root)
+        if target_status or current_revision != target_revision:
             return False
         module, name = unit.split("/", 1)
         unit_result = kb_store.read_unit(kb_root, module, name)
@@ -163,6 +200,14 @@ async def verify_target_conversion(
                 f"unit {unit} target path does not exist: {declared_path!r}"
             )
         resolved_target_paths[declared_path] = resolved
+    baseline_revision, baseline_status = await asyncio.to_thread(
+        _target_git_state, target_root
+    )
+    if baseline_status:
+        raise VerificationError(
+            "target repository must be clean before verification: "
+            + "; ".join(baseline_status[:20])
+        )
     environment = {
         "AIM_UNIT": unit,
         "AIM_KB_ROOT": str(kb_root.resolve()),
@@ -194,28 +239,17 @@ async def verify_target_conversion(
             f"target verification failed with exit code {completed.returncode}: "
             f"{detail[:4000]}"
         )
-    revision = None
-    git_result = await asyncio.to_thread(
-        subprocess.run,
-        ["git", "-C", str(target_root), "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    if git_result.returncode == 0:
-        revision = git_result.stdout.strip() or None
-    status_result = await asyncio.to_thread(
-        subprocess.run,
-        ["git", "-C", str(target_root), "status", "--porcelain=v1"],
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    target_status = (
-        [line for line in status_result.stdout.splitlines() if line.strip()]
-        if status_result.returncode == 0
-        else []
-    )
+    revision, target_status = await asyncio.to_thread(_target_git_state, target_root)
+    if revision != baseline_revision:
+        raise VerificationError(
+            "verification command changed the target revision; commit target changes "
+            "before starting verification"
+        )
+    if target_status:
+        raise VerificationError(
+            "verification command left the target repository dirty: "
+            + "; ".join(target_status[:20])
+        )
     target_path_hashes = {
         declared_path: _path_digest(path)
         for declared_path, path in resolved_target_paths.items()
@@ -235,7 +269,7 @@ async def verify_target_conversion(
                 "command": str(command_path.relative_to(kb_root)),
                 "verification_command_sha256": _file_digest(command_path),
                 "target_revision": revision,
-                "target_dirty": bool(target_status),
+                "target_dirty": False,
                 "target_status": target_status,
                 "target_path_sha256": target_path_hashes,
                 "stdout": completed.stdout[-4000:],
