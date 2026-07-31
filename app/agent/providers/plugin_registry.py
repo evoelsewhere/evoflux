@@ -36,6 +36,16 @@ class ProviderCredentialStore:
             return self.overrides[name]
         return os.getenv(name) or self._saved_env().get(name, default) or default
 
+    def delete(self, name: str) -> None:
+        """Remove a saved plugin credential from every supported source."""
+        from app.cli.seed import write_env_credentials
+
+        self.overrides.pop(name, None)
+        if self._env_file.is_file():
+            write_env_credentials(self._env_file, {name: ""})
+        os.environ.pop(name, None)
+        self._env_values = None
+
     def token_path(self, filename: str) -> str:
         safe = filename.replace("/", "_")
         root = (

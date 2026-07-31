@@ -916,6 +916,49 @@ async def test_hide_messages_before_summary(session):
 
 
 @pytest.mark.asyncio
+async def test_hide_messages_before_summary_uses_id_tiebreaker(session):
+    """A same-timestamp message after the summary remains visible."""
+    from datetime import datetime, timezone
+    from uuid import UUID
+
+    chat_session = await create_chat_session(session)
+    shared_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    before = SessionMessage(
+        id=UUID(int=1),
+        session_id=chat_session.id,
+        role="user",
+        content="before",
+        created_at=shared_time,
+    )
+    summary = SessionMessage(
+        id=UUID(int=2),
+        session_id=chat_session.id,
+        role="user",
+        content="summary",
+        created_at=shared_time,
+        is_summary=True,
+    )
+    after = SessionMessage(
+        id=UUID(int=3),
+        session_id=chat_session.id,
+        role="user",
+        content="after",
+        created_at=shared_time,
+    )
+    session.add_all([before, summary, after])
+    await session.flush()
+
+    hidden_count = await hide_messages_before_summary(
+        session, chat_session.id, summary.id
+    )
+
+    assert hidden_count == 1
+    assert before.exclude_from_context is True
+    assert summary.exclude_from_context is False
+    assert after.exclude_from_context is False
+
+
+@pytest.mark.asyncio
 async def test_hide_messages_before_summary_missing_summary(session):
     """Returns 0 when the summary message id does not exist."""
     from uuid import uuid7

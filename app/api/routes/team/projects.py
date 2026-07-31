@@ -40,6 +40,7 @@ from app.api.schemas.aim import (
     AimKbDocumentOut,
     AimKbDocumentUpdate,
     AimKbSearchResponse,
+    AimKbSearchResultOut,
     AimManifestPreviewResponse,
     AimMetaResponse,
     AimPhaseCounts,
@@ -1163,7 +1164,7 @@ async def search_aim_kb_documents(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return AimKbSearchResponse(
         query=q,
-        results=[result.to_dict() for result in results],
+        results=[AimKbSearchResultOut(**result.to_dict()) for result in results],
         truncated=len(results) == limit,
     )
 
@@ -1211,9 +1212,9 @@ async def get_aim_traceability(
     data = await asyncio.to_thread(
         build_traceability,
         kb_root,
-        units,
-        runs,
-        links,
+        list(units),
+        list(runs),
+        list(links),
         target_root=target_root,
         claimed_units=claimed_units,
     )
@@ -1276,14 +1277,16 @@ async def get_aim_readiness_options(
     claimed_ids = {claim.unit_id for claim in claims}
     claimed_rows: list[AimUnit] = []
     if claimed_ids:
-        claimed_rows = (
-            await db.exec(
-                select(AimUnit).where(
-                    AimUnit.project_id == project_id,
-                    col(AimUnit.id).in_(claimed_ids),
+        claimed_rows = list(
+            (
+                await db.exec(
+                    select(AimUnit).where(
+                        AimUnit.project_id == project_id,
+                        col(AimUnit.id).in_(claimed_ids),
+                    )
                 )
-            )
-        ).all()
+            ).all()
+        )
     claimed_units = frozenset(f"{row.module}/{row.name}" for row in claimed_rows)
     options = await asyncio.to_thread(
         evaluate_pipeline_options,

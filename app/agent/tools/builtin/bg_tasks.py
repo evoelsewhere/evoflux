@@ -130,6 +130,7 @@ async def _shell_bg_start(
         _resolve_workdir,
         _scrubbed_env,
     )
+    from app.agent.process_sandbox import sandboxed_process_argv
     from app.agent.sandbox import get_sandbox
     import subprocess
 
@@ -145,7 +146,17 @@ async def _shell_bg_start(
 
     cwd = _resolve_workdir(workdir)
     shell_bin = _shell_mod.acceptable()
-    argv = _shell_mod.build_argv(shell_bin, command)
+    argv = _shell_mod.build_argv(
+        shell_bin,
+        command,
+        load_profile=sandbox.load_shell_profile,
+    )
+    exec_bin, exec_argv = sandboxed_process_argv(
+        shell_bin,
+        argv,
+        sandbox=sandbox,
+        cwd=cwd,
+    )
 
     _extra: dict[str, Any] = {}
     if sys.platform == "win32":
@@ -157,13 +168,13 @@ async def _shell_bg_start(
 
     try:
         proc = await asyncio.create_subprocess_exec(
-            shell_bin,
-            *argv,
+            exec_bin,
+            *exec_argv,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=str(cwd),
-            env=_scrubbed_env(),
+            env=_scrubbed_env(inherit=sandbox.inherit_shell_environment),
             **_extra,
         )
     except NotImplementedError:

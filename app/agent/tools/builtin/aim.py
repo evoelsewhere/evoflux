@@ -568,7 +568,7 @@ async def _aim_units(
             if transition_id is not None:
                 kb_store.sync_project_phase_from_units(kb_root)
             if project_id is not None:
-                rel_path = str(doc_path.relative_to(kb_root))
+                rel_path = doc_path.relative_to(kb_root).as_posix()
                 await upsert_unit(db, project_id, module, name, frontmatter, rel_path)
                 await db.commit()
                 suffix = ""
@@ -869,7 +869,7 @@ async def _aim_understanding(
         {
             "status": "pass",
             "count": len(paths),
-            "evidence_paths": [str(path.relative_to(kb_root)) for path in paths],
+            "evidence_paths": [path.relative_to(kb_root).as_posix() for path in paths],
         }
     )
 
@@ -969,7 +969,7 @@ async def _aim_rules(
         {
             "status": "confirmed" if action == "confirm" else "no_rules",
             "unit": unit,
-            "review_path": str(path.relative_to(kb_root)),
+            "review_path": path.relative_to(kb_root).as_posix(),
         }
     )
 
@@ -1429,7 +1429,7 @@ async def _record_compare_error(
         f"# Compare report — verdict: error\n\n## {kind}\n\n{message}\n",
         encoding="utf-8",
     )
-    report_rel_path = str(json_path.relative_to(kb_root))
+    report_rel_path = json_path.relative_to(kb_root).as_posix()
     raw_sid = state.metadata.get("session_id") if state else None
     session_id = UUID(raw_sid) if raw_sid else None
     workflow_execution_id = _current_workflow_execution_id()
@@ -1597,7 +1597,7 @@ async def _aim_compare(
         # is a per-machine/per-session detail, but "runs/.../report.json"
         # inside it is stable — record_run readers resolve it against
         # whatever the project's KB path is *now* (see get_aim_run).
-        report_rel_path = str(json_path.relative_to(kb_root))
+        report_rel_path = json_path.relative_to(kb_root).as_posix()
 
         raw_sid = _state.metadata.get("session_id") if _state else None
         session_id = UUID(raw_sid) if raw_sid else None

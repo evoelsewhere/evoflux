@@ -226,11 +226,9 @@ async def _read_mention_as_attachment(
     filename = rel_path
     mime, _ = mimetypes.guess_type(str(abs_path))
     category = categorize(filename, mime)
-    if category is None and line_start is not None:
+    if category == "binary" and line_start is not None:
         mime = "text/plain"
         category = "text"
-    if category is None:
-        return None
     if category == "image":
         # Image mentions are reference-only. The agent uses ``Read``
         # (vision-aware) to look at them on demand.
@@ -247,6 +245,11 @@ async def _read_mention_as_attachment(
             data = _slice_lines(data, line_start, line_end)
         except UnicodeDecodeError:
             return None
+    if category == "text":
+        # Keep prompt payloads stable across platforms. Files written through
+        # text mode on Windows commonly contain CRLF, but agent context and
+        # line-range semantics use LF everywhere else.
+        data = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
     if not data:
         return None
     if len(data) > SIZE_LIMITS[category]:

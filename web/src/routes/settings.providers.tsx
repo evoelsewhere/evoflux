@@ -288,7 +288,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
   const savedBaseUrl = daemon ? provider.saved_credentials[daemon.var] ?? '' : ''
   const [expanded, setExpanded] = useState(false)
   const [apiKey, setApiKey] = useState('')
-  const [baseUrl, setBaseUrl] = useState(savedBaseUrl)
+  const [baseUrlOverride, setBaseUrlOverride] = useState<string | null>(null)
   const [cloudValues, setCloudValues] = useState<Record<string, string>>({})
   const [verifiedKey, setVerifiedKey] = useState('')
   const [verifiedCloudSignature, setVerifiedCloudSignature] = useState('')
@@ -303,6 +303,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
   const push = useToastStore((s) => s.push)
   const queryClient = useQueryClient()
 
+  const baseUrl = baseUrlOverride ?? savedBaseUrl
   const trimmedKey = apiKey.trim()
   const trimmedBaseUrl = baseUrl.trim()
   const primaryCredential = provider.credentials[0]
@@ -398,6 +399,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
         body: { api_key: provider.kind === 'cloud_creds' ? '' : trimmedKey, extra: extraForSave },
       })
       setApiKey('')
+      setBaseUrlOverride(null)
       setVerifiedKey('')
       setVerifiedCloudSignature('')
       push({
@@ -418,6 +420,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
     try {
       await deleteMutation.mutateAsync(provider.id)
       setApiKey('')
+      setBaseUrlOverride(null)
       setVerifiedKey('')
       setVerifiedCloudSignature('')
       setCloudValues({})
@@ -556,7 +559,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
                     <Input
                       type="url"
                       value={baseUrl}
-                      onChange={(e) => setBaseUrl(e.target.value)}
+                      onChange={(e) => setBaseUrlOverride(e.target.value)}
                       placeholder={daemon.placeholder}
                       autoComplete="off"
                       className="mt-1.5 h-10 font-mono text-xs"
@@ -659,7 +662,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
                   <Input
                     type="url"
                     value={baseUrl}
-                    onChange={(e) => setBaseUrl(e.target.value)}
+                    onChange={(e) => setBaseUrlOverride(e.target.value)}
                     placeholder={daemon.placeholder}
                     autoComplete="off"
                     className="mt-1.5 h-10 font-mono text-xs"

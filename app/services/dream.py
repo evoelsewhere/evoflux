@@ -825,7 +825,6 @@ def _load_dream_agent(
             role="member",
             description=cfg.description,
             model=cfg.model,
-            temperature=cfg.temperature,
             thinking_level=cfg.thinking_level,
             tools=list(cfg.tools),
             system_prompt=cfg.system_prompt,

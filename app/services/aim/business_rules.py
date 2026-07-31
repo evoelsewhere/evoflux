@@ -8,7 +8,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
-from uuid import UUID, uuid7
+from uuid import UUID
+
+from app.uuid7 import uuid7
 
 import yaml
 

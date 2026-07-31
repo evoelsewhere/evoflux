@@ -380,7 +380,11 @@ def _coalesce_objc_classes(result: ParseResult) -> None:
         rewritten = replace(
             edge,
             src_local_id=replacements.get(edge.src_local_id, edge.src_local_id),
-            dst_local_id=replacements.get(edge.dst_local_id, edge.dst_local_id),
+            dst_local_id=(
+                replacements.get(edge.dst_local_id, edge.dst_local_id)
+                if edge.dst_local_id is not None
+                else None
+            ),
         )
         if rewritten not in seen:
             edges.append(rewritten)

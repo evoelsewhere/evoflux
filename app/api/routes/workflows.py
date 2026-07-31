@@ -7,6 +7,7 @@ grows them in place so the router mount stays singular.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -46,7 +47,7 @@ from app.workflow.policy import compute_manifest, content_hash, destructive_lint
 router = APIRouter()
 
 
-async def _db() -> AsyncSession:
+async def _db() -> AsyncIterator[AsyncSession]:
     from app.core import db as db_module
 
     async with db_module.async_session_factory() as session:

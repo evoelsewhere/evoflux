@@ -385,6 +385,8 @@ class StructuralParser:
                 else:
                     src_id = owner.local_id
                 for match in pattern.finditer(line):
+                    if rule.target_group is None:  # validated in EdgeRule.__post_init__
+                        continue
                     target = match.group(rule.target_group)
                     if not target or target.upper() in self._denylist:
                         continue

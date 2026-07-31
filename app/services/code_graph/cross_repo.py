@@ -242,7 +242,8 @@ async def _reattach_stale(
 
     by_workspace: dict[UUID, list[CrossRepoEdge]] = {}
     for row in rows:
-        by_workspace.setdefault(row.dst_workspace_id, []).append(row)
+        if row.dst_workspace_id is not None:
+            by_workspace.setdefault(row.dst_workspace_id, []).append(row)
 
     count = 0
     for ws_id, ws_rows in by_workspace.items():
@@ -260,6 +261,8 @@ async def _reattach_stale(
             id_by_qualified_name.setdefault(qualified_name, node_id)
 
         for row in ws_rows:
+            if row.dst_qualified_name is None:
+                continue
             node_id = id_by_qualified_name.get(row.dst_qualified_name)
             if node_id is not None:
                 row.dst_node_id = node_id
@@ -327,6 +330,8 @@ async def _reattach_stale_src(
             )
         ).all()
         for row in file_rows:
+            if row.src_line is None:
+                continue
             candidates = [
                 n for n in file_nodes if n.line_start <= row.src_line <= n.line_end
             ]

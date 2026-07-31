@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, AsyncGenerator, Literal
+from typing import TYPE_CHECKING, AsyncGenerator, Literal, cast
 from uuid import UUID
-from uuid import uuid7
+from app.uuid7 import uuid7
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from loguru import logger
@@ -1348,7 +1348,9 @@ async def set_session_permission_mode(
 
     auto_resolved: list[str] = []
     for service in get_services_for_stream(sid):
-        auto_resolved.extend(service.set_mode(body.mode))  # type: ignore[arg-type]
+        from app.agent.permission import Mode
+
+        auto_resolved.extend(service.set_mode(cast(Mode, body.mode)))
     if auto_resolved:
         logger.info(
             "permission_mode_switch_resolved session_id={} mode={} request_ids={}",
@@ -1518,6 +1520,7 @@ async def get_side_chat_messages(
     side_chat = await db.get(ChatSession, side_chat_id)
     if not _side_chat_belongs_to_source(side_chat, session_id):
         raise HTTPException(status_code=404, detail="Side chat not found")
+    assert side_chat is not None
 
     from app.services.chat_service import get_visible_session_rows
 
@@ -1546,6 +1549,7 @@ async def send_side_chat_message(
 
     if not _side_chat_belongs_to_source(side_chat, session_id):
         raise HTTPException(status_code=404, detail="Side chat not found")
+    assert side_chat is not None
 
     # Kick off the side chat agent run in the background. The team flow
     # persists the user message itself (AgentTeam.handle_user_message), so

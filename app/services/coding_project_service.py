@@ -241,7 +241,10 @@ async def get_projects_for_workspace(
     rows = (
         await db.exec(
             select(CodingProjectWorkspace.project_id)
-            .join(CodingProject, CodingProject.id == CodingProjectWorkspace.project_id)
+            .join(
+                CodingProject,
+                col(CodingProject.id) == col(CodingProjectWorkspace.project_id),
+            )
             .where(
                 CodingProjectWorkspace.workspace_id == workspace_id,
                 col(CodingProject.deleted_at).is_(None),

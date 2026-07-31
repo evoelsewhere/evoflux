@@ -216,7 +216,10 @@ def test_symlink_to_allowed_path_is_ok(tmp_path):
     real.mkdir()
     (real / "file.txt").touch()
     link = workspace / "link"
-    link.symlink_to(real)
+    try:
+        link.symlink_to(real)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
 
     sandbox = _make_sandbox(tmp_path)
     # Should not raise
@@ -231,7 +234,10 @@ def test_symlink_to_denied_root_rejected(tmp_path):
     (denied / "secret").touch()
 
     link = tmp_path / "link_to_secret"
-    link.symlink_to(denied / "secret")
+    try:
+        link.symlink_to(denied / "secret")
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
 
     sandbox = _make_sandbox(tmp_path, denied=[denied])
     with pytest.raises(PermissionError, match="Symlink target is inside a denied root"):

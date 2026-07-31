@@ -13,7 +13,9 @@ Search over this graph is lexical + structural only — see
 from __future__ import annotations
 
 from datetime import datetime
-from uuid import UUID, uuid7
+from uuid import UUID
+
+from app.uuid7 import uuid7
 
 import sqlalchemy as sa
 from sqlalchemy import Column, ForeignKey

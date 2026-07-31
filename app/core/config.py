@@ -152,7 +152,16 @@ class Settings(BaseSettings):
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 4082
     API_RELOAD: bool = False
-    CORS_ORIGINS: list[str] = ["*"]
+    CORS_ORIGINS: list[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:4082",
+            "http://127.0.0.1:4082",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "tauri://localhost",
+            "https://tauri.localhost",
+        ]
+    )
 
     # ── XDG-aligned roots ────────────────────────────────────────────────
     # Empty string means "derive from APP_ENV" (see validator).

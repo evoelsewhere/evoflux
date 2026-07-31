@@ -60,6 +60,8 @@ import threading
 import time
 from typing import Any
 
+from app.cli.pids import _pid_alive
+
 
 def _configure_serve_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
@@ -120,24 +122,6 @@ def main(argv: list[str] | None = None) -> None:
     _configure_serve_parser(parser)
     args = parser.parse_args(argv)
     cmd_serve(args)
-
-
-def _pid_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        # PID exists but we can't signal it — still alive enough for our purposes.
-        return True
-    except OSError:
-        if sys.platform == "win32":
-            # On Windows, OpenProcess may fail with ERROR_ACCESS_DENIED (5)
-            # or other codes even when the process is alive. Be conservative:
-            # assume the parent is alive rather than killing the sidecar.
-            return True
-        return False
-    return True
 
 
 def _start_parent_watch(

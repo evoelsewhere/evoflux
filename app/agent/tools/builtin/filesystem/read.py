@@ -129,6 +129,9 @@ async def _read_file(
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
         text = raw.decode("latin-1")
+    # Match Python's universal-newline behaviour so tool output and line
+    # numbers are stable across files written on Windows, macOS, and POSIX.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
 
     # Normalize newlines so Windows CRLF files don't leak ``\r`` into the
     # numbered line payload the model sees (and edit/patch tools match).

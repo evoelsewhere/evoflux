@@ -31,6 +31,14 @@ from app.services.chat_service import save_message
 from tests.agent.mode.team.conftest import MockTeamProvider
 
 
+async def _wait_for_member_idle(member: TeamMember, timeout: float = 2.0) -> None:
+    deadline = asyncio.get_running_loop().time() + timeout
+    while member.state != "idle":
+        if asyncio.get_running_loop().time() >= deadline:
+            raise AssertionError("team member did not return to idle in time")
+        await asyncio.sleep(0.01)
+
+
 class ClaimThenStopProvider(MockTeamProvider):
     """Claim once, then stop with plain text; report only after the nudge."""
 
@@ -402,7 +410,7 @@ class TestOnDemandActivation:
 
         msg = Message(from_agent="lead", to_agent="worker", content="[lead]: do task")
         await team.mailbox.send(to="worker", message=msg)
-        await asyncio.sleep(0.1)
+        await _wait_for_member_idle(team.members["worker"])
 
         assert team.members["worker"].state == "idle"
 
@@ -564,7 +572,16 @@ class TestLeadErrorHandling:
 
         msg = Message(from_agent="user", to_agent="lead", content="[user]: hi")
         await team.mailbox.send(to="lead", message=msg)
-        await asyncio.sleep(0.1)
+
+        # Message hydration may perform real SQLite work in this integration
+        # fixture. Poll for the emitted event instead of assuming the whole
+        # activation always completes within 100 ms on a loaded Windows host.
+        async with asyncio.timeout(5):
+            while not any(
+                call.args[1].event == "error"
+                for call in mock_stream_store.call_args_list
+            ):
+                await asyncio.sleep(0.02)
 
         events = [c.args[1].event for c in mock_stream_store.call_args_list]
         assert "error" in events, (

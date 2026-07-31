@@ -81,7 +81,7 @@ import {
 } from '@/queries/useGitQuery'
 import { useTeamSessionsQuery } from '@/queries/useSessionsQuery'
 import { formatRelativeDate } from '@/utils/format'
-import { MarkdownBlock } from '@/utils/markdown'
+import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
 import { cn } from '@/lib/utils'
 import { useToastStore } from '@/stores/useToastStore'
 import { GitActionSurface, type GitAction } from '@/components/git/GitActionMenu'
@@ -581,7 +581,7 @@ function ReviewCommentCard({
         )}
       </div>
       <div className="mt-2 min-w-0 text-(--color-text-2) [&_.oa-prose]:text-xs [&_.oa-prose]:leading-5">
-        <MarkdownBlock
+        <LazyMarkdownBlock
           content={comment.body}
           allowHtml
           transformImageSrc={transformImageSrc}
@@ -795,7 +795,7 @@ function ReviewDetails({
               </div>
               {summary?.description ? (
                 <div className="min-w-0 text-(--color-text-2) [&_.oa-prose]:text-xs [&_.oa-prose]:leading-5">
-                  <MarkdownBlock
+                  <LazyMarkdownBlock
                     content={summary.description}
                     allowHtml
                     transformImageSrc={transformImageSrc}

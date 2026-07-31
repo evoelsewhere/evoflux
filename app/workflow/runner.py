@@ -15,7 +15,9 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from uuid import UUID, uuid7
+from uuid import UUID
+
+from app.uuid7 import uuid7
 
 from loguru import logger
 
@@ -471,27 +473,31 @@ class WorkflowRunner:
             await self._persist_node_end(node_run_id, status="failed", error=error)
             await self._fail(state, node_id=node.id, error=error)
             return
-
-        state.status = "waiting_gate"
-        # Mirror the pause into the DB row: REST readers (the AIM Pipelines
-        # table polls GET /workflows/executions) only see the persisted
-        # status, and a gate can stay open for hours.
-        await self._persist_execution_status(state)
-        await self._emit_progress(state, node_id=node.id)
         svc = AskUserService(state.session_id)
         token = set_ask_user_service(svc)
         # A gate's choices route edges, so its answer must be one of them —
         # enforced at the reply endpoint via ``strict`` (a free-text answer
         # would match no ``when`` edge and silently strand the run).
         strict = node.kind == "gate"
-        try:
-            answers = await asyncio.wait_for(
-                svc.ask(
-                    [QuestionSpec(question=question, options=options, strict=strict)],
-                    request_id=request_id,
-                ),
-                timeout=_GATE_TIMEOUT_S,
+        ask_task = asyncio.create_task(
+            svc.ask(
+                [QuestionSpec(question=question, options=options, strict=strict)],
+                request_id=request_id,
             )
+        )
+        try:
+            # Let ``ask`` register its pending request before publishing the
+            # waiting state. Otherwise a fast REST client can observe
+            # ``waiting_gate`` while the reply endpoint still has no service
+            # request to resolve.
+            await asyncio.sleep(0)
+            state.status = "waiting_gate"
+            # Mirror the pause into the DB row: REST readers (the AIM Pipelines
+            # table polls GET /workflows/executions) only see the persisted
+            # status, and a gate can stay open for hours.
+            await self._persist_execution_status(state)
+            await self._emit_progress(state, node_id=node.id)
+            answers = await asyncio.wait_for(ask_task, timeout=_GATE_TIMEOUT_S)
         except asyncio.TimeoutError:
             error = (
                 f"{node.kind} '{node.id}' timed out after {_GATE_TIMEOUT_S}s "
@@ -505,6 +511,9 @@ class WorkflowRunner:
             await self._persist_gate_end(gate_request_id, status="cancelled")
             raise
         finally:
+            if not ask_task.done():
+                ask_task.cancel()
+                await asyncio.gather(ask_task, return_exceptions=True)
             reset_ask_user_service(token, state.session_id)
 
         if not await self._persist_gate_end(

@@ -417,17 +417,30 @@ async def test_loop_picks_up_filesystem_edit(_dream_md: Path):
                 from app.core.runtime_settings import (
                     DreamSettings,
                     RuntimeSettings,
+                    runtime_settings_path,
                     save_runtime_settings,
                 )
 
                 # Rewrite the file with enabled: false — this is the
                 # filesystem-edit path we want the loop to honour.
+                settings_path = runtime_settings_path()
+                original_stat = settings_path.stat()
                 save_runtime_settings(
                     RuntimeSettings(dream=DreamSettings(enabled=False))
                 )
+                # Metadata-only change detection is not reliable on every
+                # filesystem. Preserve the original timestamps to model a
+                # same-metadata atomic rewrite deterministically.
+                settings_path.touch()
+                import os
 
-                # The loop should exit on its own once it sees the mtime
-                # change and re-parses enabled=false.  Wait up to 2s.
+                os.utime(
+                    settings_path,
+                    ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+                )
+
+                # The loop should exit on its own once it re-parses
+                # enabled=false. Wait up to 2s.
                 loop_task = scheduler._task
                 assert loop_task is not None
                 try:

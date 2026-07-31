@@ -135,25 +135,32 @@ async def reindex_project(
             errors.append(f"run {meta.id}: unit {module}/{name} is not indexed")
             continue
         row = await db.get(AimRun, meta.id)
-        fields = {
-            "unit_id": unit.id,
-            "kind": meta.kind,
-            "verdict": meta.verdict,
-            "case_set": meta.case_set,
-            "stats": meta.stats,
-            "report_path": meta.report_path,
-            "session_id": meta.session_id,
-            "workflow_execution_id": meta.workflow_execution_id,
-            "created_at": meta.created_at,
-        }
         if row is None:
-            db.add(AimRun(id=meta.id, **fields))
+            row = AimRun(
+                id=meta.id,
+                unit_id=unit.id,
+                kind=meta.kind,
+                verdict=meta.verdict,
+                case_set=meta.case_set,
+                stats=meta.stats,
+                report_path=meta.report_path,
+                session_id=meta.session_id,
+                workflow_execution_id=meta.workflow_execution_id,
+                created_at=meta.created_at,
+            )
             runs_created += 1
         else:
-            for key, value in fields.items():
-                setattr(row, key, value)
-            db.add(row)
+            row.unit_id = unit.id
+            row.kind = meta.kind
+            row.verdict = meta.verdict
+            row.case_set = meta.case_set
+            row.stats = meta.stats
+            row.report_path = meta.report_path
+            row.session_id = meta.session_id
+            row.workflow_execution_id = meta.workflow_execution_id
+            row.created_at = meta.created_at
             runs_updated += 1
+        db.add(row)
 
     links_created = 0
     links_updated = 0
@@ -161,22 +168,26 @@ async def reindex_project(
     errors.extend(link_errors)
     for meta in link_metas:
         row = await db.get(AimLink, meta.id)
-        fields = {
-            "project_id": project_id,
-            "from_ref": meta.from_ref,
-            "to_ref": meta.to_ref,
-            "kind": meta.kind,
-            "note": meta.note,
-            "created_at": meta.created_at,
-        }
         if row is None:
-            db.add(AimLink(id=meta.id, **fields))
+            row = AimLink(
+                id=meta.id,
+                project_id=project_id,
+                from_ref=meta.from_ref,
+                to_ref=meta.to_ref,
+                kind=meta.kind,
+                note=meta.note,
+                created_at=meta.created_at,
+            )
             links_created += 1
         else:
-            for key, value in fields.items():
-                setattr(row, key, value)
-            db.add(row)
+            row.project_id = project_id
+            row.from_ref = meta.from_ref
+            row.to_ref = meta.to_ref
+            row.kind = meta.kind
+            row.note = meta.note
+            row.created_at = meta.created_at
             links_updated += 1
+        db.add(row)
 
     return ReindexResult(
         **counts,

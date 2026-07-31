@@ -73,6 +73,8 @@ dependencies = [
     # ConPTY backend for the interactive terminal on Windows (POSIX uses the
     # stdlib pty/fcntl/termios stack). Imported lazily by terminal_service.
     "pywinpty>=2.0.14; sys_platform == 'win32'",
+    # Windows does not ship the IANA timezone database used by ZoneInfo.
+    "tzdata; sys_platform == 'win32'",
 ]
 
 [project.urls]
@@ -126,7 +128,10 @@ constraint-dependencies = ["onnxruntime<1.24"]
 
 [tool.ty.src]
 include = ["app"]
-exclude = ["tests", "**/__pycache__", ".venv"]
+exclude = ["tests", "**/__pycache__", ".venv", "app/agent/builtin_skills"]
+
+[tool.ty.environment]
+python-platform = "all"
 
 [tool.ruff]
 target-version = "py313"

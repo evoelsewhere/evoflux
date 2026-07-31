@@ -174,7 +174,8 @@ async def list_workspace_paths_with_sessions(db: AsyncSession) -> list[str]:
                     select(CodingWorkspace.path)
                     .join(
                         CodingProjectWorkspace,
-                        CodingProjectWorkspace.workspace_id == CodingWorkspace.id,
+                        col(CodingProjectWorkspace.workspace_id)
+                        == col(CodingWorkspace.id),
                     )
                     .where(col(CodingProjectWorkspace.project_id).in_(project_ids))
                     .distinct()

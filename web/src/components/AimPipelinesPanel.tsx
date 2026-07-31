@@ -84,7 +84,7 @@ import { Combobox } from '@/components/ui/combobox'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TeamChatView } from '@/components/TeamChatView'
-import { MarkdownBlock } from '@/utils/markdown'
+import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
 import { formatApprovalQuestion } from '@/utils/approvalQuestion'
 import { formatRelativeDate } from '@/utils/format'
 import { takeAimPipelinePrefill } from '@/lib/aimHandoff'
@@ -2556,7 +2556,7 @@ function LogMarkdown({
       onClick={onToggle}
     >
       <div className="prose prose-sm max-w-none overflow-x-auto text-xs leading-4 text-(--color-text-2) [&_h1]:text-xs [&_h2]:text-xs [&_h3]:text-[11px] [&_h4]:text-[11px] [&_li]:my-0 [&_ol]:my-1 [&_p]:my-1 [&_pre]:my-1 [&_table]:my-1 [&_table]:text-[10px] [&_ul]:my-1">
-        <MarkdownBlock content={text} />
+        <LazyMarkdownBlock content={text} />
       </div>
     </div>
   )
@@ -3074,7 +3074,7 @@ function GateSection({ sessionId }: { sessionId: string }) {
               </p>
             )}
             <div className="text-xs leading-5 text-(--color-text)">
-              <MarkdownBlock
+              <LazyMarkdownBlock
                 content={formatApprovalQuestion(item.question)}
                 sessionId={sessionId}
               />

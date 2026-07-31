@@ -86,7 +86,9 @@ async def resolve_project_tier_b(
         _tier_b_cursor.pop(project_id, None)
     else:
         offset = _tier_b_cursor.get(project_id, 0) % len(all_rows)
-        rows = (all_rows[offset:] + all_rows[:offset])[: cfg.max_rows_per_run]
+        rows = (list(all_rows[offset:]) + list(all_rows[:offset]))[
+            : cfg.max_rows_per_run
+        ]
         capped = len(all_rows) - len(rows)
         _tier_b_cursor[project_id] = (offset + len(rows)) % len(all_rows)
         logger.info(

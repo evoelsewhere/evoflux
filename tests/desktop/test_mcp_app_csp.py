@@ -25,8 +25,7 @@ def _exists(path: str) -> bool:
 def test_desktop_csp_allows_general_mcp_app_resources_in_production() -> None:
     csp = _csp("desktop/src-tauri/tauri.conf.json")
 
-    assert "http:" in csp["default-src"]
-    assert "https:" in csp["default-src"]
+    assert csp["default-src"] == "'self'"
     assert "http:" in csp["connect-src"]
     assert "https:" in csp["connect-src"]
     assert "wss:" in csp["connect-src"]

@@ -13,6 +13,7 @@ from sqlmodel import col, select
 from app.agent.agent_loop import Agent
 from app.agent.loader import load_team_from_dir
 from app.agent.mode.team.delegate import make_team_delegate_tool
+from app.agent.mode.team.delegation_ledger import load_open_tasks
 from app.agent.mode.team.handoff import make_team_handoff_tool
 from app.agent.mode.team.member import TeamLead, TeamMember
 from app.agent.mode.team.reject import make_team_reject_tool
@@ -86,10 +87,47 @@ async def _tasks(team: AgentTeam) -> list[DelegationTask]:
                 await db.exec(
                     select(DelegationTask)
                     .where(DelegationTask.lead_session_id == UUID(team.lead.session_id))
-                    .order_by(col(DelegationTask.created_at).asc())
+                    .order_by(
+                        col(DelegationTask.created_at).asc(),
+                        col(DelegationTask.id).asc(),
+                    )
                 )
             ).all()
         )
+
+
+@pytest.mark.asyncio
+async def test_load_open_tasks_uses_id_tiebreaker_for_equal_timestamps():
+    team = await _make_team()
+    shared_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    lower_id = UUID(int=1)
+    higher_id = UUID(int=2)
+    async with db_module.async_session_factory() as db:
+        db.add_all(
+            [
+                DelegationTask(
+                    id=higher_id,
+                    lead_session_id=UUID(team.lead.session_id),
+                    delegator="lead",
+                    recipient="second",
+                    created_at=shared_time,
+                    updated_at=shared_time,
+                ),
+                DelegationTask(
+                    id=lower_id,
+                    lead_session_id=UUID(team.lead.session_id),
+                    delegator="lead",
+                    recipient="first",
+                    created_at=shared_time,
+                    updated_at=shared_time,
+                ),
+            ]
+        )
+        await db.commit()
+
+        rows = await load_open_tasks(db, UUID(team.lead.session_id))
+
+    assert [row.id for row in rows] == [lower_id, higher_id]
 
 
 @pytest.mark.asyncio

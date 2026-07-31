@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { workspaceFileKind } from '@/lib/workspace-file-kind'
 import { formatBytes } from '@/utils/format'
-import { MarkdownBlock } from '@/utils/markdown'
+import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
 import { useMonacoTheme, languageForExt } from '@/hooks/useMonacoTheme'
 import { queryKeys } from '@/queries'
 import { SidePanel } from './shell/SidePanel'
@@ -596,7 +596,7 @@ function RichPreview({ workspace, file, isHtml }: { workspace: string; file: Wor
   return (
     <div className="h-full min-h-0 overflow-auto bg-(--bg-page)">
       <div className="p-6">
-        <MarkdownBlock content={content} transformImageSrc={transformImageSrc} />
+        <LazyMarkdownBlock content={content} transformImageSrc={transformImageSrc} />
       </div>
     </div>
   )

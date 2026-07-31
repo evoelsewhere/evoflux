@@ -39,8 +39,21 @@ from pathlib import Path
 
 import pytest
 
+from app.agent.tools.builtin import shell_runtime
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "desktop" / "scripts" / "install.sh"
+
+
+def _bash_executable() -> str:
+    candidate = (
+        shell_runtime.acceptable()
+        if platform.system() == "Windows"
+        else shutil.which("bash")
+    )
+    if not candidate or shell_runtime.name(candidate) != "bash":
+        pytest.skip("a functional Bash runtime is required")
+    return candidate
 
 
 def _run(
@@ -51,7 +64,7 @@ def _run(
     if env:
         full_env.update(env)
     return subprocess.run(
-        ["bash", str(SCRIPT), *args],
+        [_bash_executable(), str(SCRIPT), *args],
         capture_output=True,
         text=True,
         env=full_env,
@@ -67,11 +80,12 @@ class TestScriptSyntax:
         assert SCRIPT.is_file(), f"install.sh missing at {SCRIPT}"
         # Should be executable (chmod +x in CI/dev).
         st = SCRIPT.stat()
-        assert st.st_mode & stat.S_IXUSR, "install.sh must be executable"
+        if os.name != "nt":
+            assert st.st_mode & stat.S_IXUSR, "install.sh must be executable"
 
     def test_bash_syntax_check_passes(self):
         proc = subprocess.run(
-            ["bash", "-n", str(SCRIPT)],
+            [_bash_executable(), "-n", str(SCRIPT)],
             capture_output=True,
             text=True,
             timeout=10,
@@ -85,7 +99,7 @@ class TestScriptSyntax:
         would let undefined variable references slip past as empty
         strings — leading to bizarre user-facing errors.
         """
-        text = SCRIPT.read_text()
+        text = SCRIPT.read_text(encoding="utf-8")
         assert "set -euo pipefail" in text
 
 
@@ -165,7 +179,7 @@ class TestPlatformDispatch:
         # We can't actually set uname output, but we can verify the
         # script *would* reject an unknown uname by looking at the
         # case statement. This is a doc-pin test.
-        text = SCRIPT.read_text()
+        text = SCRIPT.read_text(encoding="utf-8")
         assert "Unsupported platform" in text
         assert "EvoFlux-*.msi" in text  # Windows hint
 
@@ -363,7 +377,7 @@ class TestNoSignatureClobberGuard:
         # We can't trivially fake a signed bundle (codesign verifies
         # the Mach-O signature, not just the directory layout), so
         # this is a docs-pin: verify the script knows about --force.
-        text = SCRIPT.read_text()
+        text = SCRIPT.read_text(encoding="utf-8")
         assert "FORCE_RESIGN=1" in text
         assert "--force" in text
         # And there's a guard branch that uses it.
@@ -374,7 +388,7 @@ class TestEntitlementsFallback:
     """The script should ship a fallback entitlements plist if none is found."""
 
     def test_falls_back_to_inline_plist(self):
-        text = SCRIPT.read_text()
+        text = SCRIPT.read_text(encoding="utf-8")
         # Inline plist heredoc is keyed against ``PLIST`` (terminator)
         assert "<<'PLIST'" in text
         assert "com.apple.security.cs.allow-unsigned-executable-memory" in text
@@ -386,7 +400,7 @@ class TestDocsConsistency:
     """The header help text must agree with what the parser supports."""
 
     def test_every_documented_flag_is_in_the_parser(self):
-        text = SCRIPT.read_text()
+        text = SCRIPT.read_text(encoding="utf-8")
         # The help block enumerates --install and --force.
         for flag in ("--install", "--force"):
             assert flag in text

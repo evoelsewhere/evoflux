@@ -60,6 +60,7 @@ from .schemas import (
 
 DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
 
+
 class _DeepSeekCompletionsHandler(CompletionsHandler):
     """DeepSeek-specific completions handler.
 

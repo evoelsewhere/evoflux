@@ -84,7 +84,7 @@ def test_render_xlsx_preview(monkeypatch, tmp_path):
     _xlsx(source)
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
 
-    rendered = preview.render_office_preview(source).read_text()
+    rendered = preview.render_office_preview(source).read_text(encoding="utf-8")
 
     assert "Summary" in rendered
     assert "Revenue" in rendered
@@ -113,7 +113,7 @@ def test_render_xlsx_preview_includes_charts_and_images(monkeypatch, tmp_path):
     workbook.save(source)
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
 
-    rendered = preview.render_office_preview(source).read_text()
+    rendered = preview.render_office_preview(source).read_text(encoding="utf-8")
 
     assert 'class="workbook-chart-svg"' in rendered
     assert "<rect " in rendered
@@ -126,7 +126,7 @@ def test_render_pptx_preview(monkeypatch, tmp_path):
     _pptx(source)
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
 
-    rendered = preview.render_office_preview(source).read_text()
+    rendered = preview.render_office_preview(source).read_text(encoding="utf-8")
 
     assert "Product launch" in rendered
     assert 'class="slide"' in rendered
@@ -216,7 +216,7 @@ def test_render_pptx_preview_resolves_template_theme_colors(monkeypatch, tmp_pat
     presentation.save(source)
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
 
-    rendered = preview.render_office_preview(source).read_text()
+    rendered = preview.render_office_preview(source).read_text(encoding="utf-8")
 
     assert "background:#4F81BD" in rendered
 
@@ -264,7 +264,7 @@ def test_render_pptx_preview_supports_bullets_columns_and_connectors(
     presentation.save(source)
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
 
-    rendered = preview.render_office_preview(source).read_text()
+    rendered = preview.render_office_preview(source).read_text(encoding="utf-8")
 
     assert 'class="bullet-marker">•</span>' in rendered
     assert "column-count:2" in rendered

@@ -31,7 +31,7 @@ import {
 import { takeAimKbOpenPath } from '@/lib/aimHandoff'
 import { resolveAimRolePath, splitFrontmatter } from '@/lib/aim-kb'
 import { queryKeys } from '@/queries/keys'
-import { MarkdownBlock } from '@/utils/markdown'
+import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
 import { buildTree } from '@/utils/workspaceFileTree'
 import { TreeNodeView } from '@/components/CodingWorkspacePanel'
 import { ListEnter } from '@/components/motion'
@@ -474,7 +474,7 @@ function DocumentPreview({ content, extension, path, onOpenPath }: { content: st
     return (
       <div className="mx-auto max-w-4xl">
         {meta.length > 0 && <div className="mb-4 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md border border-(--color-border) bg-(--bg-key)/55 px-3 py-2">{meta.map(([key, value]) => <div key={key} className="contents"><span className="font-mono text-[9px] uppercase text-(--color-text-subtle)">{key}</span><span className="min-w-0 break-words text-xs text-(--color-text-2)">{value || '—'}</span></div>)}</div>}
-        <div className="prose prose-sm max-w-none text-sm text-(--color-text)"><MarkdownBlock content={body} onLinkClick={(href) => { const target = resolveKbLink(path, href); if (!target) return false; onOpenPath(target); return true }} /></div>
+        <div className="prose prose-sm max-w-none text-sm text-(--color-text)"><LazyMarkdownBlock content={body} onLinkClick={(href) => { const target = resolveKbLink(path, href); if (!target) return false; onOpenPath(target); return true }} /></div>
       </div>
     )
   }

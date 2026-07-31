@@ -172,15 +172,6 @@ async def lifespan(app: FastAPI):
         workflow_runner.on_turn_boundary_advance,
     )
 
-    # Fail any execution left ``running``/``waiting_gate`` by a previous
-    # process: the in-memory runner starts empty, so a paused gate from
-    # before the restart is unanswerable and must not show as live.
-    from app.workflow.runner import reconcile_orphaned_executions
-
-    phase_started = perf_counter()
-    await reconcile_orphaned_executions()
-    _log_startup_timing("workflow_reconcile", phase_started, process_started)
-
     # ── Auto-migrate DB in production ───────────────────────────────
     if settings.APP_ENV == "production":
         # Alembic's ``env.py`` calls ``asyncio.run(run_migrations_online())``
@@ -196,6 +187,14 @@ async def lifespan(app: FastAPI):
         else:
             await asyncio.to_thread(run_migrations)
         _log_startup_timing("migrations", phase_started, process_started)
+
+    # Reconciliation queries workflow tables, so it must run only after
+    # production migrations have made the schema current.
+    from app.workflow.runner import reconcile_orphaned_executions
+
+    phase_started = perf_counter()
+    await reconcile_orphaned_executions()
+    _log_startup_timing("workflow_reconcile", phase_started, process_started)
 
     # ── Seed wiki directory on first boot ──────────────────────────────
     phase_started = perf_counter()
@@ -308,10 +307,13 @@ def create_app() -> FastAPI:
     # Security headers run *inside* CORS so CORS preflights still receive the
     # right `Access-Control-*` headers unobstructed.
     app.add_middleware(SecurityHeadersMiddleware)
+    cors_allow_credentials = "*" not in settings.CORS_ORIGINS
+    if not cors_allow_credentials:
+        logger.warning("cors_wildcard_origin credentials=false")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
-        allow_credentials=True,
+        allow_credentials=cors_allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
     )

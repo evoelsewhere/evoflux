@@ -184,12 +184,13 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
         if (uri) byUri.set(uri, block.id)
       }
     }
-    return [...byUri.values()].join('\0')
+    // Reduce the relevant state to a primitive key. Streamed chunks can replace
+    // currentBlocks without changing these IDs, so the Set below keeps its
+    // identity without reading or mutating a ref during render.
+    return [...new Set(byUri.values())].sort().join('\u0000')
   }, [currentBlocks, finalizedMCPAppIdsByUri])
-  // Key the Set by its primitive contents so streamed text chunks retain the
-  // same identity until an MCP app resource actually changes.
   const latestMCPAppBlockIds = useMemo(
-    () => new Set(latestMCPAppBlockIdsKey ? latestMCPAppBlockIdsKey.split('\0') : []),
+    () => new Set(latestMCPAppBlockIdsKey ? latestMCPAppBlockIdsKey.split('\u0000') : []),
     [latestMCPAppBlockIdsKey],
   )
 
