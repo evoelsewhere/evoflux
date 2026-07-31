@@ -145,9 +145,9 @@ function splitLeadingQuote(content: string): { quote: string; message: string } 
     index += 1
   }
 
-  if (quoteLines.length === 0 || lines[index] !== '') return null
+  if (quoteLines.length === 0) return null
+  if (index < lines.length && lines[index] !== '') return null
   const message = lines.slice(index + 1).join('\n').trimStart()
-  if (!message) return null
   return { quote: quoteLines.join('\n'), message }
 }
 

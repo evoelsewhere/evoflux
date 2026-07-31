@@ -514,6 +514,7 @@ _LEAD_REGISTRY_TOOLS = [
         "team_manage",
         "team_delegate",
         "team_reject",
+        "team_worktree",
     ]
 ]
 
@@ -568,6 +569,7 @@ class TestWebbridgeSessionExcludedTools:
             "team_manage",
             "team_delegate",
             "team_reject",
+            "team_worktree",
         }
 
         excluded = webbridge_session_excluded_tools(

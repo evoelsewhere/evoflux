@@ -43,6 +43,7 @@ from app.agent.mode.team.manage import make_team_manage_tool
 from app.agent.mode.team.reject import make_team_reject_tool
 from app.agent.mode.team.shared_state import make_team_state_tool
 from app.agent.mode.team.tools import make_team_message_tool
+from app.agent.mode.team.worktree import make_team_worktree_tool
 from app.agent.multimodal import build_parts_from_metas
 from app.agent.schemas.chat import AssistantMessage, HumanMessage, ToolMessage
 from app.agent.schemas.events import DoneEvent
@@ -513,6 +514,79 @@ class AgentTeam:
             )
         return tasks
 
+    async def _ensure_delegation_worktree(self, task: DelegationTask) -> DelegationTask:
+        """Allocate and durably bind an isolated pending task before dispatch."""
+        if task.spec.get("resolved_isolation") != "worktree":
+            return task
+        from app.agent.mode.team import delegation_ledger
+        from app.services import delegation_worktree_service
+
+        allocation = delegation_worktree_service.allocation_from_spec(task.spec)
+        if allocation is not None:
+            return task
+        allocation = await delegation_worktree_service.allocate(
+            task_id=str(task.id),
+            recipient=task.recipient,
+            session_id=self.lead.session_id,
+            primary_workspace=self.workspace or "",
+            extra_workspace_paths=self.extra_workspace_paths,
+            read_only_paths=self.read_only_paths,
+            spec=task.spec,
+        )
+        spec = dict(task.spec)
+        spec["worktree_allocation"] = allocation
+        lead_session_id = UUID(self.lead.session_id)
+        db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+        try:
+            async with self._delegation_lock:
+                async with db_factory() as db:
+                    task = await delegation_ledger.update_task_spec(
+                        db,
+                        lead_session_id=lead_session_id,
+                        task_id=str(task.id),
+                        spec=spec,
+                    )
+                    await db.commit()
+        except Exception:
+            await delegation_worktree_service.discard(allocation)
+            raise
+        return task
+
+    async def fail_delegation_task(self, task: DelegationTask, error: str) -> None:
+        from app.agent.mode.team import delegation_ledger
+
+        lead_session_id = UUID(self.lead.session_id)
+        db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+        async with self._delegation_lock:
+            async with db_factory() as db:
+                failed = await delegation_ledger.fail_task(
+                    db,
+                    lead_session_id=lead_session_id,
+                    task_id=str(task.id),
+                    error=error,
+                )
+                (
+                    ready,
+                    dependency_failures,
+                ) = await delegation_ledger.release_ready_tasks(
+                    db,
+                    lead_session_id=lead_session_id,
+                    live_recipients=set(self.mailbox.registered_agents),
+                )
+                await db.commit()
+            self.resolve_delegation(
+                failed.delegator, failed.recipient, task_id=str(failed.id)
+            )
+            for row in ready:
+                self.register_delegation(
+                    row.delegator, [row.recipient], task_ids=[str(row.id)]
+                )
+            for row in dependency_failures:
+                self.resolve_delegation(
+                    row.delegator, row.recipient, task_id=str(row.id)
+                )
+        await self.dispatch_delegation_tasks(ready)
+
     async def refresh_delegations(self, *, dispatch: bool = True) -> None:
         """Rehydrate open tasks, restore recipients, and optionally replay work."""
         try:
@@ -621,6 +695,12 @@ class AgentTeam:
             if task.recipient not in self.mailbox.registered_agents:
                 continue
             self._dispatching_delegations.add(task_id)
+            try:
+                task = await self._ensure_delegation_worktree(task)
+            except Exception as exc:
+                self._dispatching_delegations.discard(task_id)
+                await self.fail_delegation_task(task, str(exc))
+                raise
             if task.last_rejection:
                 content = format_rejection_message(
                     task.delegator,
@@ -632,6 +712,7 @@ class AgentTeam:
                     "kind": "rejection",
                     "task_id": task_id,
                     "_rejection_feedback": task.last_rejection,
+                    "_task_spec": task.spec,
                 }
             else:
                 content = format_delegation_message(
@@ -747,18 +828,61 @@ class AgentTeam:
                 expired = await delegation_ledger.expire_overdue_tasks(
                     db, lead_session_id
                 )
+                existing = await delegation_ledger.get_task(
+                    db,
+                    lead_session_id=lead_session_id,
+                    task_id=task_id,
+                )
                 if expired:
                     await db.commit()
-                    for expired_task in expired:
-                        self.resolve_delegation(
-                            expired_task.delegator,
-                            expired_task.recipient,
-                            task_id=str(expired_task.id),
-                        )
-                if any(str(row.id) == task_id for row in expired):
-                    raise ValueError(
-                        f"Delegation task '{task_id}' missed its deadline."
+            for expired_task in expired:
+                self.resolve_delegation(
+                    expired_task.delegator,
+                    expired_task.recipient,
+                    task_id=str(expired_task.id),
+                )
+        if any(str(row.id) == task_id for row in expired):
+            raise ValueError(f"Delegation task '{task_id}' missed its deadline.")
+
+        if existing.status in {"review", "completed"}:
+            stored_result = dict(existing.result or {})
+            comparable_result = dict(stored_result)
+            comparable_result.pop("workspace_result", None)
+            if comparable_result != artifact:
+                raise ValueError(
+                    f"Delegation task '{task_id}' already has a different final result."
+                )
+            artifact.clear()
+            artifact.update(stored_result)
+            return existing
+
+        allocation = existing.spec.get("worktree_allocation")
+        if isinstance(allocation, dict):
+            from app.services import delegation_worktree_service
+
+            (
+                updated_allocation,
+                workspace_result,
+            ) = await delegation_worktree_service.snapshot(allocation)
+            artifact["workspace_result"] = workspace_result
+            updated_spec = dict(existing.spec)
+            updated_spec["worktree_allocation"] = updated_allocation
+            async with self._delegation_lock:
+                async with db_factory() as db:
+                    reviewed = await delegation_ledger.submit_task_for_review(
+                        db,
+                        lead_session_id=lead_session_id,
+                        task_id=task_id,
+                        delegator=delegator,
+                        recipient=recipient,
+                        result=artifact,
+                        spec=updated_spec,
                     )
+                    await db.commit()
+            return reviewed
+
+        async with self._delegation_lock:
+            async with db_factory() as db:
                 completed = await delegation_ledger.complete_task(
                     db,
                     lead_session_id=lead_session_id,
@@ -793,6 +917,211 @@ class AgentTeam:
         await self.dispatch_delegation_tasks(ready)
         return completed
 
+    async def review_delegation_worktree(self, task_id: str) -> str:
+        from app.agent.mode.team import delegation_ledger
+        from app.services import delegation_worktree_service
+
+        lead_session_id = UUID(self.lead.session_id)
+        db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+        async with db_factory() as db:
+            task = await delegation_ledger.get_task(
+                db, lead_session_id=lead_session_id, task_id=task_id
+            )
+        allocation = task.spec.get("worktree_allocation")
+        if not isinstance(allocation, dict):
+            raise ValueError(f"Delegation task '{task_id}' has no worktree allocation.")
+        return await delegation_worktree_service.review(allocation)
+
+    async def merge_delegation_worktree(self, task_id: str) -> str:
+        """Merge one reviewed worktree set and release dependent tasks."""
+        from app.agent.mode.team import delegation_ledger
+        from app.services import delegation_worktree_service
+
+        lead_session_id = UUID(self.lead.session_id)
+        db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+        async with db_factory() as db:
+            task = await delegation_ledger.get_task(
+                db, lead_session_id=lead_session_id, task_id=task_id
+            )
+        if task.status != "review":
+            raise ValueError(
+                f"Delegation task '{task_id}' is {task.status}, not review."
+            )
+        allocation = task.spec.get("worktree_allocation")
+        if not isinstance(allocation, dict):
+            raise ValueError(f"Delegation task '{task_id}' has no worktree allocation.")
+        updated_allocation, summary = await delegation_worktree_service.merge(
+            allocation
+        )
+        updated_spec = dict(task.spec)
+        updated_spec["worktree_allocation"] = updated_allocation
+        if updated_allocation.get("state") == "conflict":
+            async with db_factory() as db:
+                await delegation_ledger.update_task_spec(
+                    db,
+                    lead_session_id=lead_session_id,
+                    task_id=task_id,
+                    spec=updated_spec,
+                )
+                await db.commit()
+            raise ValueError(summary)
+
+        async with self._delegation_lock:
+            async with db_factory() as db:
+                completed = await delegation_ledger.complete_reviewed_task(
+                    db,
+                    lead_session_id=lead_session_id,
+                    task_id=task_id,
+                    spec=updated_spec,
+                )
+                ready, failed = await delegation_ledger.release_ready_tasks(
+                    db,
+                    lead_session_id=lead_session_id,
+                    live_recipients=set(self.mailbox.registered_agents),
+                )
+                await db.commit()
+            self.resolve_delegation(
+                completed.delegator, completed.recipient, task_id=task_id
+            )
+            for row in ready:
+                self.register_delegation(
+                    row.delegator, [row.recipient], task_ids=[str(row.id)]
+                )
+            for row in failed:
+                self.resolve_delegation(
+                    row.delegator, row.recipient, task_id=str(row.id)
+                )
+        await self.dispatch_delegation_tasks(ready)
+        return summary
+
+    async def discard_delegation_worktree(self, task_id: str) -> str:
+        from app.agent.mode.team import delegation_ledger
+        from app.services import delegation_worktree_service
+
+        lead_session_id = UUID(self.lead.session_id)
+        db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+        async with db_factory() as db:
+            task = await delegation_ledger.get_task(
+                db, lead_session_id=lead_session_id, task_id=task_id
+            )
+        if task.status not in {"review", "failed"}:
+            raise ValueError(
+                f"Delegation task '{task_id}' is {task.status}, not review/failed."
+            )
+        allocation = task.spec.get("worktree_allocation")
+        if not isinstance(allocation, dict):
+            raise ValueError(f"Delegation task '{task_id}' has no worktree allocation.")
+        updated_allocation = await delegation_worktree_service.discard(allocation)
+        updated_spec = dict(task.spec)
+        updated_spec["worktree_allocation"] = updated_allocation
+        async with self._delegation_lock:
+            async with db_factory() as db:
+                if task.status == "review":
+                    terminal = await delegation_ledger.cancel_reviewed_task(
+                        db,
+                        lead_session_id=lead_session_id,
+                        task_id=task_id,
+                        spec=updated_spec,
+                    )
+                else:
+                    terminal = await delegation_ledger.update_task_spec(
+                        db,
+                        lead_session_id=lead_session_id,
+                        task_id=task_id,
+                        spec=updated_spec,
+                    )
+                ready, failed = await delegation_ledger.release_ready_tasks(
+                    db,
+                    lead_session_id=lead_session_id,
+                    live_recipients=set(self.mailbox.registered_agents),
+                )
+                await db.commit()
+            self.resolve_delegation(
+                terminal.delegator, terminal.recipient, task_id=task_id
+            )
+            for row in ready:
+                self.register_delegation(
+                    row.delegator, [row.recipient], task_ids=[str(row.id)]
+                )
+            for row in failed:
+                self.resolve_delegation(
+                    row.delegator, row.recipient, task_id=str(row.id)
+                )
+        await self.dispatch_delegation_tasks(ready)
+        return f"Discarded isolated changes for delegation {task_id}."
+
+    async def finalize_delegation_worktrees(
+        self, target_repos: list[str] | None = None
+    ) -> str:
+        """Fast-forward source repos after every isolated task is merged."""
+        from app.agent.mode.team import delegation_ledger
+        from app.services import delegation_worktree_service
+
+        lead_session_id = UUID(self.lead.session_id)
+        db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+        async with db_factory() as db:
+            tasks = await delegation_ledger.tasks_with_worktrees(
+                db, lead_session_id=lead_session_id
+            )
+        unfinished = []
+        for task in tasks:
+            allocation = task.spec.get("worktree_allocation")
+            state = allocation.get("state") if isinstance(allocation, dict) else None
+            if state not in {"merged", "finalized", "discarded"}:
+                unfinished.append(f"{task.id} ({task.status}/{state or 'unknown'})")
+        if unfinished:
+            raise ValueError(
+                "Cannot finalize while isolated worktrees remain unresolved: "
+                + ", ".join(unfinished)
+                + ". Merge or explicitly discard them first."
+            )
+        eligible = [
+            task
+            for task in tasks
+            if isinstance(task.spec.get("worktree_allocation"), dict)
+            and task.spec["worktree_allocation"].get("state") == "merged"
+        ]
+        allocations = [task.spec["worktree_allocation"] for task in eligible]
+        if not allocations:
+            finalized_allocations = [
+                task.spec["worktree_allocation"]
+                for task in tasks
+                if isinstance(task.spec.get("worktree_allocation"), dict)
+                and task.spec["worktree_allocation"].get("state") == "finalized"
+            ]
+            cleanup_warnings = await delegation_worktree_service.cleanup_finalized(
+                finalized_allocations
+            )
+            if cleanup_warnings:
+                return (
+                    "No new integrations to finalize.\nCleanup pending:\n"
+                    + "\n".join(cleanup_warnings)
+                )
+            return "No new integrations to finalize; finalized refs are clean."
+        updated, summary = await delegation_worktree_service.finalize(
+            allocations, target_repos=target_repos
+        )
+        by_task = {str(allocation.get("task_id")): allocation for allocation in updated}
+        async with self._delegation_lock:
+            async with db_factory() as db:
+                for task in eligible:
+                    allocation = by_task.get(str(task.id))
+                    if allocation is None:
+                        continue
+                    spec = dict(task.spec)
+                    spec["worktree_allocation"] = allocation
+                    await delegation_ledger.update_task_spec(
+                        db,
+                        lead_session_id=lead_session_id,
+                        task_id=str(task.id),
+                        spec=spec,
+                    )
+                await db.commit()
+        cleanup_warnings = await delegation_worktree_service.cleanup_finalized(updated)
+        if cleanup_warnings:
+            summary += "\nCleanup pending:\n" + "\n".join(cleanup_warnings)
+        return summary
+
     async def validate_delegation(
         self,
         *,
@@ -826,7 +1155,7 @@ class AgentTeam:
                 f"Delegation task '{task_id}' belongs to "
                 f"{task.delegator} -> {task.recipient}."
             )
-        allowed = {"pending", "completed"} if allow_completed else {"pending"}
+        allowed = {"pending", "review", "completed"} if allow_completed else {"pending"}
         if task.status not in allowed:
             raise ValueError(
                 f"Delegation task '{task_id}' is {task.status}, not pending."
@@ -2523,11 +2852,13 @@ class AgentTeam:
             tools.append(
                 make_team_reject_tool(self.mailbox, agent_name=agent_name, team=self)
             )
+            tools.append(make_team_worktree_tool(self))
 
             deferred_lead_tools = {
                 "team_handoff": "Deliver a structured handoff to another team member.",
                 "team_state": "Read or update persistent shared team key-value state.",
                 "team_reject": "Reject a member handoff with structured corrective feedback.",
+                "team_worktree": "Review, merge, discard, or finalize delegated worktrees.",
             }
             for team_tool in tools:
                 summary = deferred_lead_tools.get(team_tool.name)

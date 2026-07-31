@@ -151,6 +151,7 @@ SIDE_CHAT_ALWAYS_EXCLUDED_TOOLS: frozenset[str] = frozenset(
         "team_state",
         "team_delegate",
         "team_reject",
+        "team_worktree",
         "show_widget",
         "visualize_read_me",
     }

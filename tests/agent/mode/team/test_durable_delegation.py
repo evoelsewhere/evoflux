@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import subprocess
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid7
 
 import pytest
@@ -87,6 +90,309 @@ async def _tasks(team: AgentTeam) -> list[DelegationTask]:
                 )
             ).all()
         )
+
+
+@pytest.mark.asyncio
+async def test_delegate_dispatch_failure_returns_durable_task_ids():
+    team = await _make_team("coder#1", "coder#2")
+    delegate = make_team_delegate_tool(team.mailbox, "lead", team)
+    team.dispatch_delegation_tasks = AsyncMock(  # type: ignore[method-assign]
+        side_effect=RuntimeError("second allocation failed")
+    )
+
+    result = await delegate(
+        to=["coder#1", "coder#2"],
+        goal="Implement independent changes",
+        expected_output="Both changes are ready for review",
+    )
+
+    tasks = await _tasks(team)
+    assert "Durable Task IDs:" in result
+    assert "second allocation failed" in result
+    assert len(tasks) == 2
+    assert all(str(task.id) in result for task in tasks)
+
+
+def _git(repo: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def _git_repo(tmp_path: Path) -> Path:
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _git(repo, "init")
+    (repo / "feature.txt").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "feature.txt")
+    _git(
+        repo,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.invalid",
+        "commit",
+        "-m",
+        "initial",
+    )
+    return repo.resolve()
+
+
+@pytest.mark.asyncio
+async def test_isolated_handoff_waits_for_lead_merge_then_finalizes(
+    tmp_path: Path,
+):
+    repo = _git_repo(tmp_path)
+    team = await _make_team("coder#1")
+    team.mode = "coding"
+    team.workspace = str(repo)
+    delegate = make_team_delegate_tool(team.mailbox, "lead", team)
+
+    result = await delegate(
+        to=["coder#1"],
+        goal="Implement isolated feature",
+        expected_output="Code and verification",
+        target_paths=["feature.txt"],
+        isolation="worktree",
+    )
+
+    assert "Task delegated" in result
+    task = (await _tasks(team))[0]
+    allocation = task.spec["worktree_allocation"]
+    task_workspace = Path(allocation["repositories"][0]["workspace"])
+    assert task_workspace != repo
+    (task_workspace / "feature.txt").write_text("isolated\n", encoding="utf-8")
+
+    handoff = make_team_handoff_tool(
+        team.mailbox,
+        "coder#1",
+        role="member",
+        team=team,
+    )
+    delivered = await handoff(
+        to=["lead"],
+        task_id=str(task.id),
+        summary="The isolated feature implementation is ready for lead review.",
+        findings=["feature.txt updated in the assigned worktree"],
+        verified=True,
+        verification_method="read feature.txt",
+    )
+
+    assert "Handoff delivered" in delivered
+    task = (await _tasks(team))[0]
+    assert task.status == "review"
+    assert team.pending_delegation_task_ids("lead", "coder#1") == [str(task.id)]
+    assert (repo / "feature.txt").read_text(encoding="utf-8") == "base\n"
+
+    duplicate = await handoff(
+        to=["lead"],
+        task_id=str(task.id),
+        summary="The isolated feature implementation is ready for lead review.",
+        findings=["feature.txt updated in the assigned worktree"],
+        verified=True,
+        verification_method="read feature.txt",
+    )
+    assert "Handoff delivered" in duplicate
+    assert (await _tasks(team))[0].status == "review"
+
+    merged = await team.merge_delegation_worktree(str(task.id))
+
+    assert str(repo) in merged
+    task = (await _tasks(team))[0]
+    assert task.status == "completed"
+    assert team.pending_delegation_task_ids("lead", "coder#1") == []
+    assert (repo / "feature.txt").read_text(encoding="utf-8") == "base\n"
+
+    duplicate_after_merge = await handoff(
+        to=["lead"],
+        task_id=str(task.id),
+        summary="The isolated feature implementation is ready for lead review.",
+        findings=["feature.txt updated in the assigned worktree"],
+        verified=True,
+        verification_method="read feature.txt",
+    )
+    assert "Handoff delivered" in duplicate_after_merge
+
+    await team.finalize_delegation_worktrees()
+
+    assert (repo / "feature.txt").read_text(encoding="utf-8") == "isolated\n"
+    assert _git(repo, "status", "--porcelain") == ""
+    await team.stop()
+
+
+@pytest.mark.asyncio
+async def test_overdue_isolated_task_must_be_discarded_before_finalize(
+    tmp_path: Path,
+):
+    repo = _git_repo(tmp_path)
+    team = await _make_team("coder#1")
+    team.mode = "coding"
+    team.workspace = str(repo)
+    delegate = make_team_delegate_tool(team.mailbox, "lead", team)
+    handoff = make_team_handoff_tool(
+        team.mailbox,
+        "coder#1",
+        role="member",
+        team=team,
+    )
+
+    await delegate(
+        to=["coder#1"],
+        goal="Implement before the deadline",
+        expected_output="Code and verification",
+        target_paths=["feature.txt"],
+        isolation="worktree",
+        deadline_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    task = (await _tasks(team))[0]
+    allocation = task.spec["worktree_allocation"]
+    workspace = Path(allocation["repositories"][0]["workspace"])
+    (workspace / "feature.txt").write_text("late\n", encoding="utf-8")
+    async with db_module.async_session_factory() as db:
+        row = await db.get(DelegationTask, task.id)
+        assert row is not None
+        row.deadline_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        db.add(row)
+        await db.commit()
+
+    result = await handoff(
+        to=["lead"],
+        task_id=str(task.id),
+        summary="This isolated implementation arrived after its deadline.",
+        findings=["feature.txt changed too late"],
+        verified=True,
+        verification_method="read feature.txt",
+    )
+
+    assert "missed its deadline" in result
+    failed = (await _tasks(team))[0]
+    assert failed.status == "failed"
+    assert workspace.is_dir()
+    with pytest.raises(ValueError, match="remain unresolved"):
+        await team.finalize_delegation_worktrees()
+
+    await team.discard_delegation_worktree(str(task.id))
+    discarded = (await _tasks(team))[0]
+    assert discarded.status == "failed"
+    assert discarded.spec["worktree_allocation"]["state"] == "discarded"
+    assert not workspace.exists()
+    assert "No new integrations" in await team.finalize_delegation_worktrees()
+    await team.stop()
+
+
+@pytest.mark.asyncio
+async def test_isolated_dispatch_failure_preserves_allocation_for_replay(
+    tmp_path: Path,
+):
+    repo = _git_repo(tmp_path)
+    team = await _make_team("coder#1")
+    team.mode = "coding"
+    team.workspace = str(repo)
+    team.mailbox.send = AsyncMock(side_effect=RuntimeError("mailbox unavailable"))
+    delegate = make_team_delegate_tool(team.mailbox, "lead", team)
+
+    result = await delegate(
+        to=["coder#1"],
+        goal="Implement after mailbox recovery",
+        expected_output="Code and verification",
+        target_paths=["feature.txt"],
+        isolation="worktree",
+    )
+
+    assert "mailbox unavailable" in result
+    task = (await _tasks(team))[0]
+    allocation = task.spec["worktree_allocation"]
+    workspace = Path(allocation["repositories"][0]["workspace"])
+    assert task.status == "pending"
+    assert task.result is None
+    assert workspace.is_dir()
+
+    team.mailbox.send = AsyncMock()
+    await team.dispatch_undelivered_delegations()
+
+    team.mailbox.send.assert_awaited_once()
+    replay = team.mailbox.send.await_args.kwargs["message"]
+    assert replay.extra["task_id"] == str(task.id)
+    assert replay.extra["_task_spec"]["worktree_allocation"] == allocation
+    await team.stop()
+
+
+@pytest.mark.asyncio
+async def test_isolated_rejection_reuses_worktree_for_next_attempt(
+    tmp_path: Path,
+):
+    repo = _git_repo(tmp_path)
+    team = await _make_team("coder#1")
+    team.mode = "coding"
+    team.workspace = str(repo)
+    delegate = make_team_delegate_tool(team.mailbox, "lead", team)
+    handoff = make_team_handoff_tool(
+        team.mailbox,
+        "coder#1",
+        role="member",
+        team=team,
+    )
+    reject = make_team_reject_tool(team.mailbox, "lead", team)
+
+    await delegate(
+        to=["coder#1"],
+        goal="Implement and refine isolated feature",
+        expected_output="Code and verification",
+        target_paths=["feature.txt"],
+        isolation="worktree",
+    )
+    task = (await _tasks(team))[0]
+    allocation = task.spec["worktree_allocation"]
+    workspace = Path(allocation["repositories"][0]["workspace"])
+    (workspace / "feature.txt").write_text("attempt one\n", encoding="utf-8")
+    await handoff(
+        to=["lead"],
+        task_id=str(task.id),
+        summary="The first isolated implementation is ready for review.",
+        findings=["feature.txt changed"],
+        verified=True,
+        verification_method="read feature.txt",
+    )
+
+    result = await reject(
+        to=["coder#1"],
+        task_id=str(task.id),
+        reason="The implementation needs the requested refinement.",
+        issues=["Expected the final value"],
+    )
+
+    assert "Rejection sent" in result
+    reopened = (await _tasks(team))[0]
+    assert reopened.status == "pending"
+    assert reopened.attempt == 2
+    assert reopened.spec["worktree_allocation"]["state"] == "active"
+    assert (
+        Path(reopened.spec["worktree_allocation"]["repositories"][0]["workspace"])
+        == workspace
+    )
+    assert workspace.is_dir()
+
+    (workspace / "feature.txt").write_text("attempt two\n", encoding="utf-8")
+    await handoff(
+        to=["lead"],
+        task_id=str(task.id),
+        summary="The refined isolated implementation is ready for review.",
+        findings=["feature.txt refined"],
+        verified=True,
+        verification_method="read feature.txt",
+    )
+    reviewed = (await _tasks(team))[0]
+    assert reviewed.status == "review"
+    assert reviewed.attempt == 2
+
+    await team.merge_delegation_worktree(str(task.id))
+    await team.finalize_delegation_worktrees()
+    assert (repo / "feature.txt").read_text(encoding="utf-8") == "attempt two\n"
+    await team.stop()
 
 
 @pytest.mark.asyncio

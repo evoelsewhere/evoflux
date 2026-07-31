@@ -591,6 +591,7 @@ class TestAgentTeamToolInjection:
             "team_handoff",
             "team_delegate",
             "team_reject",
+            "team_worktree",
             "todo_manage",
             "team_manage",
             "team_state",

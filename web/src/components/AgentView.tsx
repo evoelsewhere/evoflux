@@ -19,10 +19,8 @@
  */
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import { ChatWelcome } from './ChatWelcome'
 import { ChevronDown, ChevronUp } from 'lucide-react'
-import { AgentChip } from './ui/agent-chip'
 import { BlockRenderer } from './BlockRenderer'
 import { AssistantTurnFooter } from './AssistantTurnFooter'
 import { groupConsecutiveToolCalls, ToolCallGroupCard } from './ToolCallGroup'
@@ -31,7 +29,6 @@ import { PendingMessageQueue } from './PendingMessageQueue'
 import { getVisibleTurnWindow, partitionTurns, type TurnItem } from '@/utils/turns'
 import { isDirectUserBlock, latestDirectUserBlockId } from '@/utils/blocks'
 import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
-import { resolveAgentRole } from '@/lib/agent-roles'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { ActivityStatus } from './motion/ActivityStatus'
 import { BlockEnter } from './motion/BlockEnter'
@@ -78,7 +75,6 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [renderedTurnCount, setRenderedTurnCount] = useState(INITIAL_RENDERED_TURNS)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
-  const activeAgent = useTeamStore((s) => s.activeAgent)
   const prevScrollHeightRef = useRef<number | null>(null)
   // Me mirror store _loadingOlder in a ref so the wheel handler can check
   // it synchronously without subscribing to store state changes.
@@ -289,8 +285,6 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   }, [totalLen, lastContent])
 
   const isEmpty = visibleCount === 0 && !isWorking
-  const agentLabel = activeAgent ?? 'evoflux'
-
   useEffect(() => {
     if (!isEmpty) return
     pinnedRef.current = true
@@ -339,6 +333,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                          sessionId={sessionId}
                          onRevert={item.block.id === latestUserBlockId ? handleRevert : undefined}
                          latestMCPAppBlockIds={latestMCPAppBlockIds}
+                         renderLeadingQuoteAsContext
                        />
                      </div>
                    )
@@ -347,26 +342,11 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                   const isTrailingTurn = globalTurnIndex === turnItems.length - 1
                   const turnIsStreaming = isWorking && isTrailingTurn
                   const canContinue = isTrailingTurn && !isWorking ? onContinue : undefined
-                  // Don't collapse the live streaming turn — keep per-tool cards
-                  // visible so long runs show real-time activity instead of a
-                  // static "Read N files" row while the agent is still working.
-                  const groupedBlocks = turnIsStreaming
-                    ? item.blocks
-                    : groupConsecutiveToolCalls(item.blocks)
+                  const groupedBlocks = groupConsecutiveToolCalls(item.blocks)
                   // Map blockId → absolute index for streaming detection inside groups
                   const blockAbsIdx = new Map(item.blocks.map((b, j) => [b.id, item.startIndex + j]))
                  return (
                    <div key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}>
-                     <div className="mb-2 flex items-center gap-1.5">
-                       <img src={EvoFluxLogo} width={12} height={12} className="shrink-0 rounded-xs opacity-70" alt="" aria-hidden="true" />
-                       <AgentChip
-                         role={resolveAgentRole(agentLabel)}
-                         label={agentLabel}
-                         active={turnIsStreaming}
-                         className="min-w-0 truncate px-2 py-0.5 text-[11px]"
-                         dotClassName={turnIsStreaming ? 'animate-pulse bg-(--color-accent)' : undefined}
-                       />
-                     </div>
                      <div className="space-y-2">
                        {groupedBlocks.map((renderItem, j) => {
                          if ('kind' in renderItem && (renderItem as ToolBlockGroup).kind === 'group') {
@@ -374,6 +354,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                              <ToolCallGroupCard
                                key={`group-${item.startIndex}-${j}`}
                                group={renderItem as ToolBlockGroup}
+                               isStreaming={turnIsStreaming}
                              />
                            )
                          }
@@ -420,16 +401,6 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                 (currentBlocks.length > 0 && currentBlocks.every((b) => b.type === 'user'))
               ))) && (
               <div>
-                <div className="mb-2 flex items-center gap-1.5">
-                  <img src={EvoFluxLogo} width={12} height={12} className="shrink-0 rounded-xs opacity-70" alt="" aria-hidden="true" />
-                  <AgentChip
-                    role={resolveAgentRole(agentLabel)}
-                    label={agentLabel}
-                    active
-                    className="min-w-0 truncate px-2 py-0.5 text-[11px]"
-                    dotClassName="animate-pulse bg-(--color-accent)"
-                  />
-                </div>
                 <ActivityStatus className="py-1 pl-0.5 text-xs" />
               </div>
             )}
@@ -451,14 +422,16 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
       sessionId={sessionId}
     />
     {showScrollBtn && !isEmpty && (
+      <div className="pointer-events-none absolute inset-x-0 bottom-3 z-(--z-panel) mx-auto flex w-full max-w-4xl justify-end px-3">
         <button
           onClick={() => scrollToBottom(true)}
-          className="absolute bottom-16 left-1/2 z-(--z-panel) -translate-x-1/2 rounded-full border border-(--color-border) bg-(--bg-card) p-1 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
-          aria-label="Scroll to bottom"
+          className="pointer-events-auto flex size-8 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-card)/95 text-(--color-text-muted) shadow-md backdrop-blur transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+          aria-label="Back to latest message"
+          title="Back to latest message"
         >
           <ChevronDown size={16} />
         </button>
-
+      </div>
     )}
 
     {onAddSelectionToChat && onRequestSelectionDetails && onSendToSideChat && (

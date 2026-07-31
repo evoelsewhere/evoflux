@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useMemo } from 'react'
-import { Activity, ArrowUp, ChevronDown, File, Folder, Globe, Loader2, MessageCircle, Paperclip, Square, SquareCheck, Terminal } from 'lucide-react'
+import { Activity, ArrowUp, ChevronDown, File, Folder, Globe, Loader2, MessageCircle, Paperclip, Quote, Square, SquareCheck, Terminal, X } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
@@ -164,6 +164,7 @@ export interface InputBarHandle {
   appendValue: (text: string) => void
   insertText: (text: string) => void
   setFiles: (files: File[]) => void
+  setQuoteContext: (text: string | null) => void
 }
 
 const CHAR_WARN_THRESHOLD = 500
@@ -219,6 +220,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   onPermissionModeChange,
 }, ref) {
   const [value, setValue] = useState('')
+  const [quoteContext, setQuoteContext] = useState<string | null>(null)
   const [files, setFiles] = useState<File[]>([])
   const [slashMenuIndex, setSlashMenuIndex] = useState(0)
   const [snippetMenuIndex, setSnippetMenuIndex] = useState(0)
@@ -342,6 +344,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     focus: () => textareaRef.current?.focus(),
     setValue: (text: string) => {
       setValue(text)
+      setQuoteContext(null)
       setShellMode(false)
       setHistoryIndex(-1)
       // Programmatic value replacement invalidates any open mention picker —
@@ -364,7 +367,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     },
     insertText: (text: string) => {
       const el = textareaRef.current
-      const shouldEnterShellMode = !shellMode && value.length === 0 && text === '!'
+      const shouldEnterShellMode =
+        !shellMode && !quoteContext && value.length === 0 && text === '!'
       setValue((prev) => {
         const start = el?.selectionStart ?? prev.length
         const end = el?.selectionEnd ?? start
@@ -386,6 +390,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     },
     setFiles: (nextFiles: File[]) => {
       setFiles(nextFiles)
+    },
+    setQuoteContext: (text: string | null) => {
+      const normalized = text?.trim() || null
+      setQuoteContext(normalized)
+      if (normalized) setShellMode(false)
     },
   }))
 
@@ -419,8 +428,16 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   const submit = useCallback(async () => {
     const trimmed = value.trim()
-    if (!trimmed || disabled || submitting || slashFilter !== null) return
-    const submitted = shellMode ? `!${trimmed}` : trimmed
+    const context = quoteContext?.trim() ?? ''
+    if ((!trimmed && !context) || disabled || submitting || slashFilter !== null) return
+    const quotedContext = context
+      ? context
+          .split('\n')
+          .map((line) => `> ${line}`)
+          .join('\n')
+      : ''
+    const message = [quotedContext, trimmed].filter(Boolean).join('\n\n')
+    const submitted = shellMode ? `!${trimmed}` : message
     setSubmitting(true)
     try {
       const accepted = await onSubmit(submitted, files.length > 0 ? files : undefined)
@@ -431,11 +448,15 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     } finally {
       setSubmitting(false)
     }
-    setLocalHistory((prev) =>
-      prev[0] === submitted ? prev : [submitted, ...prev].slice(0, 100),
-    )
+    if (trimmed) {
+      const historyEntry = shellMode ? `!${trimmed}` : trimmed
+      setLocalHistory((prev) =>
+        prev[0] === historyEntry ? prev : [historyEntry, ...prev].slice(0, 100),
+      )
+    }
     setHistoryIndex(-1)
     setValue('')
+    setQuoteContext(null)
     setShellMode(false)
     setFiles([])
     // Clear the mention picker too — it tracks positions inside the value
@@ -448,6 +469,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     }
   }, [
     value,
+    quoteContext,
     disabled,
     onSubmit,
     files,
@@ -785,7 +807,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     // React synthetic event.
     if (e.nativeEvent.isComposing || e.keyCode === 229) return
 
-    if (e.key === '!' && !shellMode && value.length === 0) {
+    if (e.key === '!' && !shellMode && !quoteContext && value.length === 0) {
       e.preventDefault()
       setShellMode(true)
       setMentionRange(null)
@@ -804,6 +826,17 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         setShellMode(false)
         return
       }
+    }
+
+    if (
+      e.key === 'Backspace'
+      && !shellMode
+      && value.length === 0
+      && quoteContext
+    ) {
+      e.preventDefault()
+      setQuoteContext(null)
+      return
     }
 
     // Mention menu navigation takes priority over slash navigation: a
@@ -958,10 +991,10 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     resize()
   }
 
-  const hasText = value.trim().length > 0
+  const hasText = value.trim().length > 0 || Boolean(quoteContext)
   const canSend = hasText && !disabled && !submitting
   const canStop = isStreaming && !disabled && onStop != null
-  const charCount = value.length
+  const charCount = value.length + (quoteContext?.length ?? 0)
   const showCharCount = charCount > CHAR_WARN_THRESHOLD
 
   // Surface "has uncommitted content" to the parent so a minimized bar
@@ -1049,13 +1082,18 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       disabled={disabled}
       aria-label={webBridgeEnabled ? 'Disable WebBridge' : 'Enable WebBridge'}
       aria-pressed={webBridgeEnabled}
-      title={webBridgeEnabled ? 'WebBridge enabled' : 'Enable WebBridge'}
+      title={webBridgeEnabled ? 'Web access enabled' : 'Allow agent to browse the web'}
       className={cn(
-        actionBtnClass,
-        webBridgeEnabled && 'bg-(--bg-key) text-(--color-text)',
+        'flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2 text-xs font-medium outline-none transition-[background-color,color,transform]',
+        'hover:bg-(--bg-key) hover:text-(--color-text) active:translate-y-px focus-visible:ring-2 focus-visible:ring-(--color-accent)/30',
+        'disabled:cursor-not-allowed disabled:opacity-50',
+        webBridgeEnabled
+          ? 'bg-(--color-accent)/10 text-(--color-accent) ring-1 ring-inset ring-(--color-accent)/20'
+          : 'text-(--color-text-muted)',
       )}
     >
       <Globe size={14} aria-hidden="true" />
+      <span className="hidden sm:inline">{webBridgeEnabled ? 'Web on' : 'Web'}</span>
     </button>
   ) : null
 
@@ -1518,6 +1556,38 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                       </button>
                     </div>
                   )}
+                  {quoteContext && (
+                    <div className="mb-2 flex min-w-0 items-start gap-2 rounded-lg border border-(--color-border-subtle) bg-(--bg-key) px-2.5 py-2">
+                      <Quote
+                        size={13}
+                        className="mt-0.5 shrink-0 text-(--color-text-muted)"
+                        aria-hidden="true"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-medium text-(--color-text-muted)">
+                          Selected from chat
+                        </p>
+                        <p
+                          className="mt-0.5 line-clamp-2 text-xs leading-relaxed break-words whitespace-pre-wrap text-(--color-text-2) [overflow-wrap:anywhere]"
+                          title={quoteContext}
+                        >
+                          {quoteContext}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuoteContext(null)
+                          textareaRef.current?.focus()
+                        }}
+                        aria-label="Remove selected chat context"
+                        title="Remove context"
+                        className="flex size-6 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) outline-none transition-colors hover:bg-(--color-surface) hover:text-(--color-text) focus-visible:ring-2 focus-visible:ring-(--color-accent)/30"
+                      >
+                        <X size={13} aria-hidden="true" />
+                      </button>
+                    </div>
+                  )}
                   {messageSlot}
                 </div>
 
@@ -1532,7 +1602,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                 >
                   {/* Left: content & navigation actions */}
                   {!shellMode && attachmentsEnabled && attachEl}
-                  {!shellMode && webBridgeEl}
                   {/* Wiki moved to topbar */}
                   {onActivity && (
                     <button
@@ -1561,6 +1630,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                       mode={agentMode}
                     />
                   )}
+                  {!shellMode && webBridgeEl}
                   {permissionMode && onPermissionModeChange && (
                     <ModeSelector
                       mode={permissionMode}

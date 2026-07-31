@@ -772,12 +772,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
 
   /** Plan panel → composer: quote the selected plan text with the user's comment. */
   const handlePlanQuoteComment = useCallback((quote: string, comment: string) => {
-    const quoted = quote
-      .trim()
-      .split('\n')
-      .map((line) => `> ${line}`)
-      .join('\n')
-    inputRef.current?.appendValue(`${quoted}\n${comment}\n`)
+    inputRef.current?.setQuoteContext(quote)
+    inputRef.current?.appendValue(comment)
     inputRef.current?.focus()
   }, [])
 
@@ -808,22 +804,13 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   }, [openWorkbenchTool])
 
   const handleAddSelectionToChat = useCallback((selectedText: string) => {
-    const quoted = selectedText
-      .trim()
-      .split('\n')
-      .map((line) => `> ${line}`)
-      .join('\n')
-    inputRef.current?.appendValue(`${quoted}\n\n`)
+    inputRef.current?.setQuoteContext(selectedText)
     inputRef.current?.focus()
   }, [])
 
   const handleRequestSelectionDetails = useCallback((selectedText: string) => {
-    const quoted = selectedText
-      .trim()
-      .split('\n')
-      .map((line) => `> ${line}`)
-      .join('\n')
-    inputRef.current?.appendValue(`Please provide more details about this:\n\n${quoted}\n`)
+    inputRef.current?.setQuoteContext(selectedText)
+    inputRef.current?.appendValue('Please provide more details about this.')
     inputRef.current?.focus()
   }, [])
 

@@ -161,7 +161,7 @@ export function AssistantTurn({
 }: AssistantTurnProps) {
   const turnIsStreaming = isWorking && isTrailingTurn
   const canContinue = isTrailingTurn && !isWorking ? onContinue : undefined
-  const renderItems = turnIsStreaming ? blocks : groupConsecutiveToolCalls(blocks)
+  const renderItems = groupConsecutiveToolCalls(blocks)
   const blockAbsIdx = useMemo(
     () => new Map(blocks.map((b, j) => [b.id, startIndex + j])),
     [blocks, startIndex],
@@ -175,6 +175,7 @@ export function AssistantTurn({
             <ToolCallGroupCard
               key={`group-${startIndex}-${j}`}
               group={renderItem as ToolBlockGroup}
+              isStreaming={turnIsStreaming}
             />
           )
         }

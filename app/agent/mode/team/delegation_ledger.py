@@ -11,7 +11,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.models.chat import _utcnow
 from app.models.team import DelegationTask
 
-OPEN_STATUSES = ("blocked", "pending")
+OPEN_STATUSES = ("blocked", "pending", "review")
 
 
 def parse_task_id(task_id: str) -> UUID:
@@ -30,7 +30,7 @@ async def expire_overdue_tasks(
         await db.exec(
             select(DelegationTask).where(
                 DelegationTask.lead_session_id == lead_session_id,
-                col(DelegationTask.status).in_(OPEN_STATUSES),
+                col(DelegationTask.status).in_(("blocked", "pending")),
                 col(DelegationTask.deadline_at).is_not(None),
                 col(DelegationTask.deadline_at) <= current,
             )
@@ -80,6 +80,13 @@ async def create_tasks(
         spec=spec,
     )
     dependency_ids = [parse_task_id(task_id) for task_id in dependencies]
+    await _validate_isolated_recipient_capacity(
+        db,
+        lead_session_id=lead_session_id,
+        recipients=recipients,
+        spec=spec,
+        dependency_ids=set(dependency_ids),
+    )
     dependency_rows: list[DelegationTask] = []
     if dependency_ids:
         dependency_rows = list(
@@ -137,6 +144,8 @@ async def _validate_path_claims(
     recipients: list[str],
     spec: dict,
 ) -> None:
+    if spec.get("resolved_isolation") == "worktree":
+        return
     new_paths = [
         str(path)
         for path in spec.get("target_paths", [])
@@ -165,6 +174,33 @@ async def _validate_path_claims(
                     )
     if conflicts:
         raise ValueError("Conflicting delegation path claims: " + "; ".join(conflicts))
+
+
+async def _validate_isolated_recipient_capacity(
+    db: AsyncSession,
+    *,
+    lead_session_id: UUID,
+    recipients: list[str],
+    spec: dict,
+    dependency_ids: set[UUID],
+) -> None:
+    """Keep one active isolated workspace per concrete member handle."""
+    if spec.get("resolved_isolation") != "worktree":
+        return
+    open_tasks = await load_open_tasks(db, lead_session_id)
+    conflicts = [
+        row
+        for row in open_tasks
+        if row.recipient in recipients
+        and row.spec.get("resolved_isolation") == "worktree"
+        and row.id not in dependency_ids
+    ]
+    if conflicts:
+        rendered = ", ".join(f"{row.recipient} (task {row.id})" for row in conflicts)
+        raise ValueError(
+            "Each member may own only one active isolated delegation. "
+            f"Already allocated: {rendered}. Spawn another member or add a dependency."
+        )
 
 
 def _paths_overlap(left: str, right: str) -> bool:
@@ -220,6 +256,134 @@ async def complete_task(
     return row
 
 
+async def submit_task_for_review(
+    db: AsyncSession,
+    *,
+    lead_session_id: UUID,
+    task_id: str,
+    delegator: str,
+    recipient: str,
+    result: dict,
+    spec: dict,
+) -> DelegationTask:
+    """Store an isolated final handoff without releasing dependencies."""
+    row = await get_task(db, lead_session_id=lead_session_id, task_id=task_id)
+    if row.delegator != delegator or row.recipient != recipient:
+        raise ValueError(
+            f"Delegation task '{task_id}' belongs to "
+            f"{row.delegator} -> {row.recipient}, not {delegator} -> {recipient}."
+        )
+    if row.status == "review":
+        if row.result != dict(result):
+            raise ValueError(
+                f"Delegation task '{task_id}' already has a different review result."
+            )
+        return row
+    if row.status != "pending":
+        raise ValueError(f"Delegation task '{task_id}' is {row.status}, not pending.")
+    now = _utcnow()
+    row.status = "review"
+    row.spec = dict(spec)
+    row.result = dict(result)
+    row.completed_at = now
+    row.updated_at = now
+    db.add(row)
+    return row
+
+
+async def complete_reviewed_task(
+    db: AsyncSession,
+    *,
+    lead_session_id: UUID,
+    task_id: str,
+    spec: dict,
+) -> DelegationTask:
+    """Mark a reviewed isolated task complete only after integration merge."""
+    row = await get_task(db, lead_session_id=lead_session_id, task_id=task_id)
+    if row.status == "completed":
+        allocation = row.spec.get("worktree_allocation")
+        if isinstance(allocation, dict) and allocation.get("state") in {
+            "merged",
+            "finalized",
+        }:
+            return row
+    if row.status != "review":
+        raise ValueError(f"Delegation task '{task_id}' is {row.status}, not in review.")
+    row.status = "completed"
+    row.spec = dict(spec)
+    row.updated_at = _utcnow()
+    db.add(row)
+    return row
+
+
+async def cancel_reviewed_task(
+    db: AsyncSession,
+    *,
+    lead_session_id: UUID,
+    task_id: str,
+    spec: dict,
+) -> DelegationTask:
+    row = await get_task(db, lead_session_id=lead_session_id, task_id=task_id)
+    if row.status != "review":
+        raise ValueError(f"Delegation task '{task_id}' is {row.status}, not in review.")
+    row.status = "cancelled"
+    row.spec = dict(spec)
+    row.completed_at = _utcnow()
+    row.updated_at = _utcnow()
+    db.add(row)
+    return row
+
+
+async def update_task_spec(
+    db: AsyncSession,
+    *,
+    lead_session_id: UUID,
+    task_id: str,
+    spec: dict,
+) -> DelegationTask:
+    row = await get_task(db, lead_session_id=lead_session_id, task_id=task_id)
+    row.spec = dict(spec)
+    row.updated_at = _utcnow()
+    db.add(row)
+    return row
+
+
+async def fail_task(
+    db: AsyncSession,
+    *,
+    lead_session_id: UUID,
+    task_id: str,
+    error: str,
+) -> DelegationTask:
+    row = await get_task(db, lead_session_id=lead_session_id, task_id=task_id)
+    if row.status in {"completed", "cancelled", "failed"}:
+        return row
+    now = _utcnow()
+    row.status = "failed"
+    row.result = {"error": error}
+    row.completed_at = now
+    row.updated_at = now
+    db.add(row)
+    return row
+
+
+async def tasks_with_worktrees(
+    db: AsyncSession,
+    *,
+    lead_session_id: UUID,
+) -> list[DelegationTask]:
+    rows = (
+        await db.exec(
+            select(DelegationTask)
+            .where(DelegationTask.lead_session_id == lead_session_id)
+            .order_by(col(DelegationTask.created_at).asc())
+        )
+    ).all()
+    return [
+        row for row in rows if isinstance(row.spec.get("worktree_allocation"), dict)
+    ]
+
+
 async def completed_tasks_for_pair(
     db: AsyncSession,
     *,
@@ -234,7 +398,7 @@ async def completed_tasks_for_pair(
                 DelegationTask.lead_session_id == lead_session_id,
                 DelegationTask.delegator == delegator,
                 DelegationTask.recipient == recipient,
-                DelegationTask.status == "completed",
+                col(DelegationTask.status).in_(("review", "completed")),
             )
             .order_by(col(DelegationTask.completed_at).desc())
         )
@@ -258,12 +422,39 @@ async def reopen_task(
             f"Delegation task '{task_id}' belongs to "
             f"{row.delegator} -> {row.recipient}, not {delegator} -> {recipient}."
         )
-    if row.status != "completed":
-        raise ValueError(f"Delegation task '{task_id}' is {row.status}, not completed.")
+    if row.status not in {"review", "completed"}:
+        raise ValueError(
+            f"Delegation task '{task_id}' is {row.status}, not review/completed."
+        )
+    allocation = row.spec.get("worktree_allocation")
+    if (
+        row.status == "completed"
+        and isinstance(allocation, dict)
+        and allocation.get("state") in {"merged", "finalized"}
+    ):
+        raise ValueError(
+            f"Delegation task '{task_id}' is already merged and cannot be reopened."
+        )
     now = _utcnow()
     row.status = "pending"
     row.attempt += 1
     row.last_rejection = dict(feedback)
+    row.result = None
+    spec = dict(row.spec)
+    allocation = spec.get("worktree_allocation")
+    if isinstance(allocation, dict):
+        allocation = {
+            **allocation,
+            "state": "active",
+            "repositories": [
+                {**item, "state": "active"}
+                for item in allocation.get("repositories", [])
+                if isinstance(item, dict)
+            ],
+        }
+        allocation.pop("last_error", None)
+        spec["worktree_allocation"] = allocation
+        row.spec = spec
     row.completed_at = None
     row.final_handoff_message_id = None
     row.dispatched_at = None
@@ -383,7 +574,7 @@ async def load_unacknowledged_handoffs(
             select(DelegationTask)
             .where(
                 DelegationTask.lead_session_id == lead_session_id,
-                DelegationTask.status == "completed",
+                col(DelegationTask.status).in_(("review", "completed")),
                 col(DelegationTask.final_handoff_message_id).is_(None),
                 col(DelegationTask.delegator).in_(live_recipients),
                 col(DelegationTask.result).is_not(None),
