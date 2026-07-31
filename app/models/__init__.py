@@ -8,6 +8,7 @@ from .chat import (
     SessionMessage,
 )
 from .code_graph import CodeEdge, CodeIndexState, CodeNode
+from .goal import SessionGoal
 from .team import DelegationTask
 from .workflow import WorkflowApproval, WorkflowExecution, WorkflowNodeRun
 from .webbridge import (
@@ -33,6 +34,7 @@ __all__ = [
     "GitServerConnection",
     "MemoryProcessedSource",
     "SessionMessage",
+    "SessionGoal",
     "WorkflowApproval",
     "WorkflowExecution",
     "WorkflowNodeRun",
