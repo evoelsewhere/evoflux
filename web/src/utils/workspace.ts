@@ -5,6 +5,19 @@ export function normalizeWorkspaceInput(value: string): string | null {
   return trimmed.length > 0 ? trimmed : null
 }
 
+const WORKSPACE_UNAVAILABLE_PREFIX = 'Workspace does not exist or is not a directory:'
+
+/**
+ * Distinguish a stale/moved local workspace from an actual backend outage.
+ * API helpers surface FastAPI's ``detail`` as an Error message, so keeping
+ * this check here lets route recovery avoid turning a filesystem problem
+ * into the global "Backend connection failed" blocker.
+ */
+export function isWorkspaceUnavailableError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.trimStart().startsWith(WORKSPACE_UNAVAILABLE_PREFIX)
+}
+
 export function workspaceLabel(workspace: string): string {
   const trimmed = workspace.replace(/[\\/]+$/, '')
   if (!trimmed) return workspace
