@@ -1,11 +1,12 @@
 """Automatic skill routing hook — matches user intent to skills and loads them.
 
-On the first human turn (or whenever new skills become relevant), this hook
-scores every *unloaded* skill against the latest user message using trigger
-keywords extracted from each skill's ``description`` field.  Skills whose
-relevance score exceeds a configurable threshold are automatically loaded as
-synthetic ``skill`` tool_call / tool_result message pairs — the same
-injection pattern used by :class:`~app.agent.hooks.skill_preload.SkillPreloadHook`.
+This hook first honors an explicit composer directive such as
+``/skill:docx``. Without one, it scores every *unloaded* skill against the
+latest user message using trigger keywords extracted from each skill's
+``description`` field. Skills whose relevance score exceeds a configurable
+threshold are automatically loaded as synthetic ``skill`` tool_call /
+tool_result message pairs — the same injection pattern used by
+:class:`~app.agent.hooks.skill_preload.SkillPreloadHook`.
 
 The hook is deliberately conservative:
 
@@ -39,6 +40,13 @@ from app.agent.schemas.chat import (
 
 if TYPE_CHECKING:
     from app.agent.state import AgentState, RunContext
+
+
+_EXPLICIT_SKILL_DIRECTIVE_RE = re.compile(
+    r"^/skill:"
+    r"([a-zA-Z0-9][a-zA-Z0-9._-]*(?::[a-zA-Z0-9][a-zA-Z0-9._-]*)?)"
+    r"(?=\s|$)"
+)
 
 
 class SkillAutoRoutingHook(BaseAgentHook):
@@ -131,22 +139,66 @@ class SkillAutoRoutingHook(BaseAgentHook):
     # ------------------------------------------------------------------
 
     async def before_agent(self, ctx: "RunContext", state: "AgentState") -> None:
-        trigger_data = self._ensure_trigger_data()
-        if not trigger_data:
-            return
-
         # Find the latest HumanMessage.
+        user_message_index: int | None = None
         user_text: str | None = None
-        for msg in reversed(state.messages):
+        for index in range(len(state.messages) - 1, -1, -1):
+            msg = state.messages[index]
             if isinstance(msg, HumanMessage):
+                user_message_index = index
                 user_text = msg.text_content()
                 break
-        if not user_text:
+        if user_message_index is None or not user_text:
             return
 
         # Skills already loaded (explicit metadata or in message history).
         loaded: set[str] = set(state.metadata.get("loaded_skills", {}).keys())
         loaded |= self._loaded_from_messages(state)
+
+        # A composer-selected ``/skill:<name>`` directive is authoritative for
+        # this turn. Load it deterministically and skip fuzzy auto-routing so a
+        # deliberate choice cannot be diluted by unrelated trigger matches.
+        explicit_selector = self._explicit_skill_selector(user_text)
+        if explicit_selector is not None:
+            from app.agent.tools.builtin.skill import discover_skills
+
+            discovered = discover_skills()
+            skill_name = self._resolve_explicit_skill_name(
+                explicit_selector, discovered
+            )
+            if skill_name is None:
+                logger.warning(
+                    "skill_explicit_not_found agent={} selector={}",
+                    ctx.agent_name,
+                    explicit_selector,
+                )
+                return
+            if skill_name in loaded:
+                logger.info(
+                    "skill_explicit_reused agent={} skill={}",
+                    ctx.agent_name,
+                    skill_name,
+                )
+                return
+
+            injected = self._inject_skills(
+                state,
+                [skill_name],
+                discovered,
+                insert_idx=user_message_index + 1,
+                call_prefix="explicit",
+            )
+            if injected:
+                logger.info(
+                    "skill_explicit_routed agent={} skill={}",
+                    ctx.agent_name,
+                    skill_name,
+                )
+            return
+
+        trigger_data = self._ensure_trigger_data()
+        if not trigger_data:
+            return
 
         # Score every unloaded skill.
         scored: list[tuple[str, float]] = []
@@ -170,17 +222,67 @@ class SkillAutoRoutingHook(BaseAgentHook):
             return
 
         # Read skill bodies and build synthetic messages.
-        from app.agent.tools.builtin.skill import (
-            _parse_frontmatter,
-            _render_tokens,
-            discover_skills,
-        )
+        from app.agent.tools.builtin.skill import discover_skills
 
         discovered = discover_skills()
+        injected = self._inject_skills(
+            state,
+            [name for name, _ in top_skills],
+            discovered,
+            insert_idx=insert_idx,
+            call_prefix="auto",
+        )
+        if not injected:
+            return
+
+        logger.info(
+            "skill_auto_routed agent={} skills={} scores={}",
+            ctx.agent_name,
+            injected,
+            {name: round(s, 3) for name, s in top_skills},
+        )
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _explicit_skill_selector(message: str) -> str | None:
+        # Quote context is prepended by the composer as ``> ...`` lines. The
+        # directive must be the first real user-content line, which avoids
+        # treating a later code/example line as an instruction to load a skill.
+        for line in message.splitlines():
+            if not line or line == ">" or line.startswith("> "):
+                continue
+            match = _EXPLICIT_SKILL_DIRECTIVE_RE.match(line)
+            return match.group(1) if match else None
+        return None
+
+    @staticmethod
+    def _resolve_explicit_skill_name(
+        selector: str, discovered: dict[str, dict]
+    ) -> str | None:
+        if selector in discovered:
+            return selector
+        nested_name = selector.replace(":", "/", 1)
+        return nested_name if nested_name in discovered else None
+
+    @staticmethod
+    def _inject_skills(
+        state: "AgentState",
+        skill_names: list[str],
+        discovered: dict[str, dict],
+        *,
+        insert_idx: int,
+        call_prefix: str,
+    ) -> list[str]:
+        from app.agent.tools.builtin.skill import _parse_frontmatter, _render_tokens
+
         tool_calls: list[ToolCall] = []
         tool_messages: list[ToolMessage] = []
+        injected: list[str] = []
 
-        for skill_name, score in top_skills:
+        for skill_name in skill_names:
             info = discovered.get(skill_name)
             if info is None:
                 continue
@@ -195,7 +297,7 @@ class SkillAutoRoutingHook(BaseAgentHook):
             _, body = _parse_frontmatter(text)
             rendered = _render_tokens(body, skill_dir=skill_dir)
 
-            call_id = f"auto_{uuid.uuid4().hex[:12]}"
+            call_id = f"{call_prefix}_{uuid.uuid4().hex[:12]}"
             tool_calls.append(
                 ToolCall(
                     id=call_id,
@@ -212,30 +314,16 @@ class SkillAutoRoutingHook(BaseAgentHook):
                     content=rendered,
                 )
             )
-
-            # Pre-seed loaded_skills metadata.
             state.metadata.setdefault("loaded_skills", {})[skill_name] = rendered
+            injected.append(skill_name)
 
-        if not tool_calls:
-            return
+        if tool_calls:
+            state.messages[insert_idx:insert_idx] = [
+                AssistantMessage(content=None, tool_calls=tool_calls),
+                *tool_messages,
+            ]
 
-        assistant_msg = AssistantMessage(
-            content=None,
-            tool_calls=tool_calls,
-        )
-        synthetic = [assistant_msg, *tool_messages]
-        state.messages[insert_idx:insert_idx] = synthetic
-
-        logger.info(
-            "skill_auto_routed agent={} skills={} scores={}",
-            ctx.agent_name,
-            [name for name, _ in top_skills],
-            {name: round(s, 3) for name, s in top_skills},
-        )
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+        return injected
 
     @staticmethod
     def _loaded_from_messages(state: "AgentState") -> set[str]:

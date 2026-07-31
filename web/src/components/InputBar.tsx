@@ -42,6 +42,12 @@ export interface SlashCommand {
   displayName?: string
   /** Text inserted after the leading slash when ``keepInputOpen`` is true. Defaults to ``id``. */
   insertText?: string
+  /** Only show this entry once the slash query starts with this prefix. */
+  filterPrefix?: string
+  /** Hide this launcher once its submenu prefix has been completed. */
+  hideAfterPrefix?: string
+  /** Whether selection appends a trailing space. Defaults to true. */
+  appendSpace?: boolean
   /**
    * When ``true`` this entry is rendered as a non-interactive section header
    * (a label row). Set ``id`` to something unique but non-actionable and
@@ -571,12 +577,18 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
    */
   const filteredSlashCommands = useMemo(() => {
     if (slashFilter === null || slashCommands.length === 0) return []
-    if (slashFilter === '') return slashCommands
+
+    const availableCommands = slashCommands.filter(
+      (cmd) =>
+        (!cmd.filterPrefix || slashFilter.startsWith(cmd.filterPrefix)) &&
+        (!cmd.hideAfterPrefix || !slashFilter.startsWith(cmd.hideAfterPrefix)),
+    )
+    if (slashFilter === '') return availableCommands
 
     // Two-pass: first collect matching actionable ids, then walk the list
     // again keeping actionable matches AND any separator that precedes them.
     const matchedIds = new Set(
-      slashCommands
+      availableCommands
         .filter(
           (cmd) =>
             !cmd.isSeparator &&
@@ -590,7 +602,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
     const result: SlashCommand[] = []
     let pendingSeparator: SlashCommand | null = null
-    for (const cmd of slashCommands) {
+    for (const cmd of availableCommands) {
       if (cmd.isSeparator) {
         pendingSeparator = cmd
         continue
@@ -664,7 +676,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       // Insert ``/<id> `` and keep the textarea focused so the user can
       // append arguments. Submission is what triggers the action — the
       // parent's onSubmit handler inspects the raw text.
-      const next = `/${cmd.insertText ?? cmd.displayName ?? cmd.id} `
+      const suffix = cmd.appendSpace === false ? '' : ' '
+      const next = `/${cmd.insertText ?? cmd.displayName ?? cmd.id}${suffix}`
       setValue(next)
       const el = textareaRef.current
       if (el) {
@@ -1124,6 +1137,15 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     </button>
   )
 
+  const composerSkillNames = useMemo(
+    () => new Set(
+      slashCommands
+        .filter((cmd) => cmd.category === 'skill')
+        .map((cmd) => (cmd.displayName ?? cmd.id).replace(/^skill:/, '')),
+    ),
+    [slashCommands],
+  )
+
   // The textarea stays mounted while minimized (opacity + pointer-events
   // toggle) so the ref stays valid and there's no remount flicker.
   const messageSlot = (
@@ -1144,6 +1166,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         activeRange={mentionRange}
         textareaRef={textareaRef}
         fileRefs={fileRefs}
+        skillNames={composerSkillNames}
       />
       <textarea
         ref={setTextareaRef}

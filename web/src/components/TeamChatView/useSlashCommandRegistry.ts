@@ -12,6 +12,7 @@
 import { useCallback, useMemo, useState, type RefObject } from 'react'
 import { renderCommand, renderSnippet, resolveApiUrl, runWorkflow } from '@/api/client'
 import { useCommandsQuery } from '@/queries/useCommandsQuery'
+import { useSkillFilesQuery } from '@/queries/useSkillFilesQuery'
 import { useSnippetsQuery } from '@/queries/useSnippetsQuery'
 import { useWorkflowsQuery } from '@/queries/useWorkflowsQuery'
 import { useTeamStore } from '@/stores/useTeamStore'
@@ -68,6 +69,7 @@ export function useSlashCommandRegistry({
   // into the textarea (``keepInputOpen``) so the user can append
   // ``$ARGUMENTS`` before submitting.
   const commandsQ = useCommandsQuery(agentWorkspace)
+  const skillsQ = useSkillFilesQuery()
   const snippetsQ = useSnippetsQuery(mode === 'coding' ? agentWorkspace : null)
   const userCommandNames = useMemo(
     () => new Set<string>((commandsQ.data?.commands ?? []).map((c) => c.name)),
@@ -108,6 +110,35 @@ export function useSlashCommandRegistry({
           { id: 'loop:stop', label: 'loop:stop', displayName: 'loop:stop', description: 'Stop the active coding loop' },
         ]
       : []),
+    {
+      id: 'skill',
+      label: 'skill:',
+      displayName: 'skill:',
+      insertText: 'skill:',
+      description: 'Choose a skill to use for this message',
+      category: 'skill',
+      keepInputOpen: true,
+      appendSpace: false,
+      hideAfterPrefix: 'skill:',
+    },
+    ...(skillsQ.data?.skills ?? [])
+      .filter((skill) => skill.valid)
+      .map((skill) => {
+        const skillName = skill.name.replace('/', ':')
+        const directive = `skill:${skillName}`
+        return {
+          id: directive,
+          label: skillName,
+          displayName: directive,
+          insertText: directive,
+          description: skill.description || `Load the ${skillName} skill`,
+          category: 'skill',
+          keepInputOpen: true,
+          // Keep the root ``/`` menu compact. Skill choices appear only once
+          // the user enters the dedicated ``/skill:`` namespace.
+          filterPrefix: 'skill:',
+        }
+      }),
     ...runnableWorkflows.map((wf) => ({
       id: `workflow-${wf.name}`,
       label: `workflow ${wf.name}`,

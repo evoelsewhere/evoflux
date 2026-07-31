@@ -19,6 +19,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 
 import { findCommittedMentions, type FileRef } from './InputBar.mentions'
+import { findSkillDirectives } from './InputBar.skills'
 
 interface MentionOverlayProps {
   /** Current textarea value. */
@@ -36,6 +37,8 @@ interface MentionOverlayProps {
    * ``@nonexistent`` and ``@@`` get no color because they don't resolve.
    */
   fileRefs: readonly FileRef[]
+  /** Valid skill names in composer notation (flat or ``parent:sub``). */
+  skillNames?: ReadonlySet<string>
 }
 
 export function MentionOverlay({
@@ -43,9 +46,18 @@ export function MentionOverlay({
   activeRange,
   textareaRef,
   fileRefs,
+  skillNames,
 }: MentionOverlayProps) {
   const mirrorRef = useRef<HTMLDivElement>(null)
-  const ranges = findCommittedMentions(value, activeRange, fileRefs)
+  const mentionRanges = findCommittedMentions(value, activeRange, fileRefs)
+  const skillRanges = findSkillDirectives(value, skillNames)
+  const ranges = useMemo(
+    () => [
+      ...mentionRanges.map((range) => ({ ...range, kind: 'mention' as const })),
+      ...skillRanges.map((range) => ({ ...range, kind: 'skill' as const })),
+    ].sort((a, b) => a.start - b.start),
+    [mentionRanges, skillRanges],
+  )
 
   // Build a token → kind lookup so each committed mention can pick its
   // color (file = blue, directory = orange). Same key shape used by
@@ -100,6 +112,19 @@ export function MentionOverlay({
   for (const r of ranges) {
     if (r.start > cursor) segments.push(value.slice(cursor, r.start))
     const token = value.slice(r.start, r.end)
+    if (r.kind === 'skill') {
+      segments.push(
+        <span
+          key={`skill-${r.start}`}
+          data-testid="skill-chip"
+          className="bg-(--color-accent)/15 text-(--color-accent)"
+        >
+          {token}
+        </span>,
+      )
+      cursor = r.end
+      continue
+    }
     const kind = kindByToken.get(token) ?? 'file'
     const colorClass =
       kind === 'directory'
@@ -107,7 +132,7 @@ export function MentionOverlay({
         : 'text-(--accent-blue-text)'
     segments.push(
       <span
-        key={r.start}
+        key={`mention-${r.start}`}
         data-testid="mention-chip"
         data-mention-kind={kind}
         className={colorClass}
