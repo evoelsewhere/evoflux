@@ -15,17 +15,17 @@ import { clearLastCodingFocus, codingFocusId, isProjectFocusId, isWorkspaceUnava
  * Stays mounted across URL changes — handles navigation when a new
  * team session_id arrives from POST /team/chat.
  */
-function TeamLayoutBase({ forcedMode }: { forcedMode?: 'forge' | 'coding' }) {
+function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
   const params = useParams({ strict: false }) as Record<string, string>
   const sessionId = params.sessionId as string | undefined
   const focusId = params.focusId as string | undefined
-  const mode = forcedMode ?? 'forge'
+  const mode = forcedMode ?? 'work'
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const workspaceRef = useRef<string | null>(null)
   const cachedSessionPages = queryClient.getQueryData<{
     pages: Array<{ data: Array<{ id: string; workspace?: string | null; project_id?: string | null }> }>
-  }>(queryKeys.team.sessions.infinite(mode === 'coding' ? 'coding' : 'forge'))
+  }>(queryKeys.team.sessions.infinite(mode === 'coding' ? 'coding' : 'work'))
   const cachedSession = sessionId
     ? cachedSessionPages?.pages
       .flatMap((page) => page.data)
@@ -283,11 +283,11 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'forge' | 'coding' }) {
           className="fixed inset-0 z-(--z-overlay) flex items-center justify-center bg-(--color-overlay) p-4"
           role="alertdialog"
           aria-modal="true"
-          aria-labelledby="forge-backend-error-title"
+          aria-labelledby="work-backend-error-title"
         >
           <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl border border-(--color-border) bg-(--bg-card) p-5 shadow-2xl">
             <div>
-              <p id="forge-backend-error-title" className="text-sm font-semibold text-(--color-text)">Backend connection failed</p>
+              <p id="work-backend-error-title" className="text-sm font-semibold text-(--color-text)">Backend connection failed</p>
               <p className="mt-1 text-xs leading-5 text-(--color-text-muted)">{storeError}</p>
             </div>
             <div className="flex gap-2">

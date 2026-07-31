@@ -9,10 +9,10 @@ const CODING_WORKSPACE_PAGE_SIZE = 5
 const CODING_WORKSPACE_SMOOTHING_MS = 5000
 
 /** Paged session list, server-filtered by mode. Pass the surface's own
- * mode ('forge' for the forge sidebar, 'coding' for the coding sidebar) —
- * without the filter, per-run aim sessions flood the forge list and
+ * mode ('work' for the work sidebar, 'coding' for the coding sidebar) —
+ * without the filter, per-run aim sessions flood the work list and
  * pagination pages fill with rows the caller immediately drops. */
-export function useTeamSessionsQuery(mode: 'forge' | 'coding' | 'aim' = 'forge') {
+export function useTeamSessionsQuery(mode: 'work' | 'coding' | 'aim' = 'work') {
   return useInfiniteQuery({
     queryKey: queryKeys.team.sessions.infinite(mode),
     queryFn: ({ pageParam }: { pageParam: string | null }) =>

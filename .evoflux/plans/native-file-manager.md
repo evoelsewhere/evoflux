@@ -4,7 +4,7 @@
 
 ### Current Architecture
 ```
-Forge mode:
+Work mode:
   Browser → HTTP → Python Backend → Filesystem
   (/api/team/{sid}/media/{path})
 

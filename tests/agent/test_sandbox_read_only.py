@@ -73,6 +73,28 @@ def test_no_read_only_paths_configured_rejects_external_writes(tmp_path):
         sandbox.validate_path(str(other / "file.txt"), is_write=True)
 
 
+def test_session_uploads_are_automatically_mounted_read_only(tmp_path, monkeypatch):
+    uploads = tmp_path / "app-storage" / "session-1" / "uploads"
+    uploads.mkdir(parents=True)
+    attachment = uploads / "stored.bin"
+    attachment.write_bytes(b"data")
+    monkeypatch.setattr(
+        "app.core.paths.session_uploads_dir",
+        lambda _session_id: uploads,
+    )
+
+    sandbox = SandboxConfig(
+        workspace=str(tmp_path / "coding-repo"),
+        session_id="session-1",
+        denied_roots=[],
+        denied_patterns=[],
+    )
+
+    assert sandbox.validate_path(str(attachment)) == attachment.resolve()
+    with pytest.raises(PermissionError, match="read-only"):
+        sandbox.validate_path(str(attachment), is_write=True)
+
+
 def test_write_claim_restricts_member_to_declared_subtree(tmp_path):
     sandbox = SandboxConfig(
         workspace=str(tmp_path / "ws"),

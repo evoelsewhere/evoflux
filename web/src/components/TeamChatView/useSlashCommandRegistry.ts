@@ -36,14 +36,14 @@ async function attachmentToFile(att: MessageAttachment): Promise<File | null> {
 }
 
 interface UseSlashCommandRegistryArgs {
-  mode: 'forge' | 'coding' | 'aim'
+  mode: 'work' | 'coding' | 'aim'
   workspace: string | null
   agentWorkspace: string | null
   /** Route prop — fallback for ``startWorkflowRun`` before the store commits. */
   sessionId: string | undefined
   sessionIdState: string | null
   selectedModel: string
-  selectedThinkingLevel: string
+  selectedThinkingLevel: string | null
   inputRef: RefObject<InputBarHandle | null>
   handleNewSession: () => void
 }
@@ -77,7 +77,7 @@ export function useSlashCommandRegistry({
     mode === 'coding' || mode === 'aim' ? workspace : null,
   )
   // Approved + valid definitions matching the session scope (plan §9.1):
-  // forge sessions list forge-scope only; coding/aim sessions additionally
+  // work sessions list work-scope only; coding/aim sessions additionally
   // list their own scope. Unapproved/invalid → omitted (gating by omission).
   const runnableWorkflows = useMemo(
     () =>
@@ -85,7 +85,7 @@ export function useSlashCommandRegistry({
         (wf) =>
           wf.approved &&
           wf.valid &&
-          (wf.scope === 'forge' || wf.scope === mode),
+          (wf.scope === 'work' || wf.scope === mode),
       ),
     [workflowsQ.data, mode],
   )

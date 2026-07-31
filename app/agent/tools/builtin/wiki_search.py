@@ -83,7 +83,7 @@ async def _wiki_search(
 wiki_search = Tool(
     _wiki_search,
     name="wiki_search",
-    tiers=("forge",),
+    tiers=("work",),
     description=(
         "Search the wiki — knowledge pages distilled from past conversations. "
         "Searches topics (concepts), entities (people/tools/orgs), sources, "

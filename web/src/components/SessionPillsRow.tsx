@@ -1,4 +1,4 @@
-/** Compact session model controls shared by the Forge, Coding, and AIM composers. */
+/** Compact session model controls shared by the Work, Coding, and AIM composers. */
 
 import { useState } from 'react'
 import { ChevronDown, Zap } from 'lucide-react'

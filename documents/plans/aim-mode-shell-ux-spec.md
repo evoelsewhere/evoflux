@@ -16,7 +16,7 @@ AIM hướng tới **vận hành một dây chuyền migration**: setup rulebook
 Hệ quả IA:
 
 ```
-Switch mode [Forge | Coding | AIM]
+Switch mode [Work | Coding | AIM]
   └─ Sidebar: danh sách AIM project (+ New/Join)
        └─ Click project → expand các tính năng con (dropdown trong sidebar)
             └─ Click tính năng → main content đổi surface, làm việc tại đó
@@ -189,7 +189,7 @@ Hệ quả UI: màn **Knowledge Base là cửa sổ ĐỌC** (tree + markdown vi
 
 | Sự kiện | Vùng cập nhật | Nguồn dữ liệu | Ghi chú |
 |---|---|---|---|
-| Switch mode AIM | Sidebar list project | `GET /team/projects?kind=aim` | Forge/Coding không thấy project aim (đã enforce backend) |
+| Switch mode AIM | Sidebar list project | `GET /team/projects?kind=aim` | Work/Coding không thấy project aim (đã enforce backend) |
 | Wizard chọn folder gốc | Bước review (create/join tự phân biệt) | `POST .../aim/detect?root_path=` | 422 hiện verbatim message thiếu gì; auto-map identity khi join (§3.4) |
 | Click project | Expand feature items + điều hướng `/aim/$id/overview` | — (client state `expandedProjects`, giống CodingSidebar) | Nhớ project mở lần cuối (localStorage, giống `oa-last-coding-focus`) |
 | Overview mount / đổi wave | Metric row + 6 cột kanban | `GET .../aim/summary`, `GET .../aim/units?wave=` | **Poll 10s** — SSE là AIM-5 |

@@ -11,7 +11,9 @@ from __future__ import annotations
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.models.chat import normalize_mode
 
 #: v1 engine kinds. Phase 2 kinds (`workflow`, `wait`) validate from v1 so
 #: files don't churn, but the runner refuses to execute them (plan §4.4).
@@ -27,7 +29,7 @@ FOREACH_BODY_KINDS = frozenset({"tool", "transform", "notify", "agent"})
 #: Tools whose presence on an ungated path triggers the advisory lint.
 DESTRUCTIVE_TOOLS = frozenset({"edit", "write", "patch", "rm", "shell", "python", "bg"})
 
-WorkflowScope = Literal["forge", "coding", "aim"]
+WorkflowScope = Literal["work", "coding", "aim"]
 
 
 class DefinitionError(ValueError):
@@ -212,13 +214,18 @@ class WorkflowDefinition(BaseModel):
     schema_version: Literal[1] = 1
     name: str = Field(min_length=1, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
     description: str = ""
-    scope: WorkflowScope = "forge"
+    scope: WorkflowScope = "work"
     inputs: list[WorkflowInput] = Field(default_factory=list)
     nodes: list[Node] = Field(min_length=1)
     edges: list[Edge] = Field(default_factory=list)
     outputs: dict[str, str] = Field(default_factory=dict)
     # Canvas layout only — engine ignores it, round-trips verbatim.
     ui: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("scope", mode="before")
+    @classmethod
+    def _normalize_scope(cls, value: object) -> object:
+        return normalize_mode(value) if isinstance(value, str) else value
 
     @model_validator(mode="after")
     def _validate(self) -> "WorkflowDefinition":

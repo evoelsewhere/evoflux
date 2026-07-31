@@ -180,7 +180,7 @@ class TestListTeamSessionsWithData:
                 await _create_team_session(
                     db, other_workspace_id, mode="coding", workspace="/repo/other"
                 )
-                await _create_team_session(db, normal_id, mode="forge")
+                await _create_team_session(db, normal_id, mode="work")
 
         client = TestClient(app_with_team)
         resp = client.get(
@@ -225,13 +225,24 @@ class TestResolveTeamSession:
     def test_resolve_creates_normal_session(self, app_with_team):
         client = TestClient(app_with_team)
 
-        resp = client.post("/api/team/sessions/resolve", json={"mode": "forge"})
+        resp = client.post("/api/team/sessions/resolve", json={"mode": "work"})
 
         assert resp.status_code == 200
         data = resp.json()
         assert data["created"] is True
-        assert data["mode"] == "forge"
+        assert data["mode"] == "work"
         assert "workspace" not in data
+
+    def test_resolve_accepts_legacy_forge_and_emits_work(self, app_with_team):
+        client = TestClient(app_with_team)
+
+        resp = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "forge", "create": True},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["mode"] == "work"
 
     @pytest.mark.asyncio
     async def test_resolve_reuses_latest_normal_session(self, app_with_team):
@@ -243,7 +254,7 @@ class TestResolveTeamSession:
                 await _create_team_session(db, lead_id)
 
         client = TestClient(app_with_team)
-        resp = client.post("/api/team/sessions/resolve", json={"mode": "forge"})
+        resp = client.post("/api/team/sessions/resolve", json={"mode": "work"})
 
         assert resp.status_code == 200
         data = resp.json()
@@ -262,7 +273,7 @@ class TestResolveTeamSession:
         client = TestClient(app_with_team)
         resp = client.post(
             "/api/team/sessions/resolve",
-            json={"mode": "forge", "create": True},
+            json={"mode": "work", "create": True},
         )
 
         assert resp.status_code == 200
@@ -300,7 +311,7 @@ class TestResolveTeamSession:
         client = TestClient(app_with_team)
         resp = client.post(
             "/api/team/sessions/resolve",
-            json={"mode": "forge", "tags": ["webbridge"], "create": True},
+            json={"mode": "work", "tags": ["webbridge"], "create": True},
         )
 
         assert resp.status_code == 200
@@ -318,11 +329,11 @@ class TestResolveTeamSession:
 
         first = client.post(
             "/api/team/sessions/resolve",
-            json={"mode": "forge", "tags": ["webbridge"]},
+            json={"mode": "work", "tags": ["webbridge"]},
         ).json()
         second = client.post(
             "/api/team/sessions/resolve",
-            json={"mode": "forge", "tags": ["webbridge"]},
+            json={"mode": "work", "tags": ["webbridge"]},
         ).json()
 
         assert first["created"] is True
@@ -338,14 +349,14 @@ class TestResolveTeamSession:
         first = client.post(
             "/api/team/sessions/resolve",
             json={
-                "mode": "forge",
+                "mode": "work",
                 "tags": ["code-review", "code-review:v1:workspace:42", "webbridge"],
             },
         ).json()
         second = client.post(
             "/api/team/sessions/resolve",
             json={
-                "mode": "forge",
+                "mode": "work",
                 "tags": ["code-review", "code-review:v1:workspace:42"],
                 "tag_match": "contains",
             },
@@ -364,10 +375,10 @@ class TestResolveTeamSession:
 
         tagged = client.post(
             "/api/team/sessions/resolve",
-            json={"mode": "forge", "tags": ["webbridge"]},
+            json={"mode": "work", "tags": ["webbridge"]},
         ).json()
         untagged = client.post(
-            "/api/team/sessions/resolve", json={"mode": "forge"}
+            "/api/team/sessions/resolve", json={"mode": "work"}
         ).json()
 
         assert untagged["created"] is True
@@ -378,11 +389,11 @@ class TestResolveTeamSession:
         client = TestClient(app_with_team)
 
         untagged = client.post(
-            "/api/team/sessions/resolve", json={"mode": "forge"}
+            "/api/team/sessions/resolve", json={"mode": "work"}
         ).json()
         tagged = client.post(
             "/api/team/sessions/resolve",
-            json={"mode": "forge", "tags": ["webbridge"]},
+            json={"mode": "work", "tags": ["webbridge"]},
         ).json()
 
         assert tagged["created"] is True

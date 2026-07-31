@@ -9,12 +9,13 @@ import {
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 
 beforeEach(() => {
+  localStorage.clear()
   window.history.replaceState(null, '', '/')
 })
 
 describe('mode route persistence', () => {
-  it('classifies the three app modes without treating standalone pages as Forge', () => {
-    expect(appModeForPath('/session-id')).toBe('forge')
+  it('classifies the three app modes without treating standalone pages as Work', () => {
+    expect(appModeForPath('/session-id')).toBe('work')
     expect(appModeForPath('/coding/project/session')).toBe('coding')
     expect(appModeForPath('/aim/project/overview')).toBe('aim')
     expect(appModeForPath('/telemetry')).toBeNull()
@@ -25,7 +26,7 @@ describe('mode route persistence', () => {
     saveModeRoute('/coding/project/session', '/coding/project/session')
     saveModeRoute('/aim/project/pipelines', '/aim/project/pipelines')
 
-    expect(loadModeRoute('forge')).toBe('/session-id')
+    expect(loadModeRoute('work')).toBe('/session-id')
     expect(loadModeRoute('coding')).toBe('/coding/project/session')
     expect(loadModeRoute('aim')).toBe('/aim/project/pipelines')
   })
@@ -34,6 +35,13 @@ describe('mode route persistence', () => {
     localStorage.setItem(STORAGE_KEYS.modeRoutes.coding, '/aim/project/overview')
 
     expect(loadModeRoute('coding')).toBeNull()
+  })
+
+  it('migrates the saved route from the legacy Forge storage key', () => {
+    localStorage.setItem(STORAGE_KEYS.legacyModeRoutes.work, '/session-id')
+
+    expect(loadModeRoute('work')).toBe('/session-id')
+    expect(localStorage.getItem(STORAGE_KEYS.modeRoutes.work)).toBe('/session-id')
   })
 
   it('restores the last route before the router mounts', () => {

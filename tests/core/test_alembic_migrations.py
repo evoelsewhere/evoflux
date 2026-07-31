@@ -3,8 +3,8 @@
 Runs ``alembic upgrade head`` against a temp database using the real
 ``app/alembic.ini`` and asserts the latest schema state lands (currently:
 WebBridge pairing, interaction, tab-binding, Teach Mode state, AIM unit
-recovery, delegation tasks, and Git server connections through revision
-00000037).
+recovery, delegation tasks, Git server connections, and the Work mode rename
+through revision 00000038).
 Complements ``tests/core/test_db_extra.py``, which only covers
 ``run_migrations`` error paths with mocks.
 """
@@ -20,6 +20,7 @@ from pydantic import SecretStr
 
 import app
 from app.core.config import settings
+from app.core.schema_version import SCHEMA_HEAD
 
 
 def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
@@ -117,7 +118,61 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             version = conn.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "00000037"
+        assert version == SCHEMA_HEAD
+    finally:
+        engine.dispose()
+
+
+def test_work_mode_migration_rewrites_forge_rows_and_defaults(tmp_path, monkeypatch):
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "work-mode-rename.sqlite"
+    monkeypatch.setattr(
+        settings, "DATABASE_URL", SecretStr(f"sqlite+aiosqlite:///{db_path}")
+    )
+    ini = Path(app.__file__).resolve().parent / "alembic.ini"
+    cfg = Config(str(ini))
+    command.upgrade(cfg, "00000037")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO chat_sessions "
+                    "(id, mode, permission_mode, session_type, created_at, updated_at) "
+                    "VALUES ('legacy-forge-session', 'forge', 'auto', 'main', "
+                    "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                )
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        inspector = sa.inspect(engine)
+        chat_mode = next(
+            column
+            for column in inspector.get_columns("chat_sessions")
+            if column["name"] == "mode"
+        )
+        task_mode = next(
+            column
+            for column in inspector.get_columns("scheduled_task")
+            if column["name"] == "mode"
+        )
+        with engine.connect() as conn:
+            mode = conn.execute(
+                sa.text(
+                    "SELECT mode FROM chat_sessions WHERE id = 'legacy-forge-session'"
+                )
+            ).scalar_one()
+        assert mode == "work"
+        assert chat_mode["default"] == "'work'"
+        assert task_mode["default"] == "'work'"
     finally:
         engine.dispose()
 
@@ -159,7 +214,7 @@ def test_webbridge_prompt_repair_migrates_drifted_revision_26_database(
             version = conn.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "00000037"
+        assert version == SCHEMA_HEAD
     finally:
         engine.dispose()
 
@@ -206,7 +261,7 @@ def test_webbridge_tab_binding_repair_migrates_drifted_revision_27_database(
             version = conn.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "00000037"
+        assert version == SCHEMA_HEAD
     finally:
         engine.dispose()
 
@@ -251,7 +306,7 @@ def test_webbridge_dispatch_lease_repair_migrates_drifted_revision_28_database(
             version = conn.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "00000037"
+        assert version == SCHEMA_HEAD
     finally:
         engine.dispose()
 

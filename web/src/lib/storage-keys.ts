@@ -17,9 +17,13 @@ export const STORAGE_KEYS = {
   lastAimProject: 'oa-last-aim-project',
   pinnedSessions: 'oa.pinnedSessions',
   modeRoutes: {
-    forge: 'oa-last-route-forge',
+    work: 'oa-last-route-work',
     coding: 'oa-last-route-coding',
     aim: 'oa-last-route-aim',
+  },
+  /** Read-only migration keys from mode names used by older releases. */
+  legacyModeRoutes: {
+    work: 'oa-last-route-forge',
   },
 
   sidebar: {

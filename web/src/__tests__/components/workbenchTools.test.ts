@@ -18,7 +18,7 @@ describe('workspace overview workbench tool', () => {
       workspace: null,
     })).toBe(false)
     expect(isWorkbenchToolEnabled('overview', {
-      mode: 'forge',
+      mode: 'work',
       sessionId: 'session-1',
       workspace: null,
     })).toBe(false)

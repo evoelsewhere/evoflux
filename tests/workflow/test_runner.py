@@ -17,7 +17,7 @@ from app.workflow.runner import WorkflowRunner
 HEADLESS = """
 schema_version: 1
 name: headless
-scope: forge
+scope: work
 inputs:
   - { name: level, type: string, required: true }
 nodes:
@@ -59,7 +59,7 @@ async def _wait_done(runner: WorkflowRunner, session_id: str, timeout: float = 1
 
 
 @pytest.mark.asyncio
-async def test_forge_team_boot_uses_persisted_workspace(
+async def test_work_team_boot_uses_persisted_workspace(
     setup_db, monkeypatch, tmp_path
 ):
     from app.core import db as db_module
@@ -67,20 +67,20 @@ async def test_forge_team_boot_uses_persisted_workspace(
 
     session_id = "06a58f00-0000-7000-8000-000000000010"
     session_uuid = UUID(session_id)
-    workspace = tmp_path / "persisted-forge-workspace"
+    workspace = tmp_path / "persisted-work-workspace"
     workspace.mkdir()
     async with db_module.async_session_factory() as db:
         db.add(
             ChatSession(
                 id=session_uuid,
                 agent_name="lead",
-                mode="forge",
+                mode="work",
                 workspace=str(workspace),
             )
         )
         await db.commit()
 
-    team = SimpleNamespace(workspace=None, mode="forge")
+    team = SimpleNamespace(workspace=None, mode="work")
     monkeypatch.setattr(
         "app.services.team_manager.find_team_for_session",
         lambda _session_id: None,
@@ -95,7 +95,7 @@ async def test_forge_team_boot_uses_persisted_workspace(
     )
     state = SimpleNamespace(
         session_id=session_id,
-        definition=SimpleNamespace(scope="forge"),
+        definition=SimpleNamespace(scope="work"),
         scope_workspace=None,
     )
 
@@ -106,7 +106,7 @@ async def test_forge_team_boot_uses_persisted_workspace(
 
 
 @pytest.mark.asyncio
-async def test_forge_workspace_reset_does_not_restore_stale_workflow_scope(setup_db):
+async def test_work_workspace_reset_does_not_restore_stale_workflow_scope(setup_db):
     from app.core import db as db_module
     from app.models.chat import ChatSession
 
@@ -117,7 +117,7 @@ async def test_forge_workspace_reset_does_not_restore_stale_workflow_scope(setup
             ChatSession(
                 id=session_uuid,
                 agent_name="lead",
-                mode="forge",
+                mode="work",
                 workspace=None,
             )
         )
@@ -125,13 +125,13 @@ async def test_forge_workspace_reset_does_not_restore_stale_workflow_scope(setup
 
     state = SimpleNamespace(
         session_id=session_id,
-        definition=SimpleNamespace(scope="forge"),
+        definition=SimpleNamespace(scope="work"),
         scope_workspace="/stale/custom/workspace",
     )
 
     mode, workspace = await WorkflowRunner()._session_mode_workspace(state)
 
-    assert mode == "forge"
+    assert mode == "work"
     assert workspace is None
 
 
@@ -213,7 +213,7 @@ async def test_outputs_omit_only_keys_from_skipped_branches(setup_db):
     definition = parse_definition("""
 schema_version: 1
 name: partial-outputs
-scope: forge
+scope: work
 nodes:
     - { id: route, kind: switch, value: selected }
     - { id: selected, kind: transform, set: { result: kept } }
@@ -350,7 +350,7 @@ async def test_run_endpoint_contract(setup_db, tmp_path, monkeypatch):
     transport = ASGITransport(app=app)
 
     async with db_module.async_session_factory() as db:
-        session = ChatSession(mode="forge")
+        session = ChatSession(mode="work")
         db.add(session)
         await db.commit()
         await db.refresh(session)
@@ -538,10 +538,10 @@ async def test_run_scope_mismatch_rejected(setup_db, tmp_path, monkeypatch):
     transport = ASGITransport(app=app)
 
     async with db_module.async_session_factory() as db:
-        forge_session = ChatSession(mode="forge")
-        db.add(forge_session)
+        work_session = ChatSession(mode="work")
+        db.add(work_session)
         await db.commit()
-        await db.refresh(forge_session)
+        await db.refresh(work_session)
 
     aim_flow = """
 schema_version: 1
@@ -557,7 +557,7 @@ nodes:
         )
         resp = await client.post(
             "/api/workflows/aim-only/run",
-            json={"session_id": str(forge_session.id), "inputs": {}},
+            json={"session_id": str(work_session.id), "inputs": {}},
         )
         assert resp.status_code == 422
         assert "aim session" in resp.json()["detail"]

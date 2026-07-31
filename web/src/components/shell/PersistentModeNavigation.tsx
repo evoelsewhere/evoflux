@@ -1,7 +1,7 @@
 /**
  * Root-owned mode navigation.
  *
- * Forge, Coding, and AIM have different route layouts and sidebar bodies,
+ * Work, Coding, and AIM have different route layouts and sidebar bodies,
  * but their primary navigation is application chrome. Keeping this component
  * above <Outlet /> means it survives cross-mode route changes, so the active
  * indicator can animate continuously instead of being recreated by every

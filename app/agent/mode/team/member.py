@@ -414,7 +414,7 @@ class TeamMemberBase(abc.ABC):
     async def _ensure_db_session(
         self,
         title: str | None = None,
-        mode: str = "forge",
+        mode: str = "work",
         workspace: str | None = None,
     ) -> None:
         """Ensure a DB chat session row exists for self.session_id."""
@@ -630,7 +630,7 @@ class TeamMemberBase(abc.ABC):
             return
 
         try:
-            mode = self._team.mode if self._team is not None else "forge"
+            mode = self._team.mode if self._team is not None else "work"
             new_agent = rebuild_agent_from_disk(source, mode=mode)
         except Exception as exc:
             logger.warning(

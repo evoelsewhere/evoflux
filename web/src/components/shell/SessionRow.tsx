@@ -2,7 +2,7 @@
  * SessionRow — the unified session list row shared by the mode sidebars.
  *
  * Two densities, both lifted verbatim from their original sidebars:
- *   - "comfortable" (forge Sidebar): two-line row — animated title +
+ *   - "comfortable" (work Sidebar): two-line row — animated title +
  *     sched badge + running spinner, relative date underneath
  *     (`px-2.5 py-2 rounded-lg`).
  *   - "compact" (CodingSidebar): single-line row — running dot + title +

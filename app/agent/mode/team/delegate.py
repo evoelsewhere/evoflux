@@ -374,7 +374,7 @@ def make_team_delegate_tool(
 
             resolved_isolation = resolve_isolation(
                 requested=isolation,
-                team_mode=team.mode if team is not None else "forge",
+                team_mode=team.mode if team is not None else "work",
                 target_paths=normalized_targets,
                 target_repos=list(target_repos),
             )

@@ -15,7 +15,7 @@ import {
 import type { WorkbenchTool } from '@/stores/useUIStore'
 
 export interface WorkbenchContext {
-  mode: 'forge' | 'coding' | 'aim'
+  mode: 'work' | 'coding' | 'aim'
   sessionId: string | null
   workspace: string | null
 }

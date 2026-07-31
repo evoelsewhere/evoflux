@@ -183,6 +183,72 @@ def test_document_with_converted_text_has_no_path_hint():
 
 
 # ---------------------------------------------------------------------------
+# workspace fallback — unsupported/native-unknown files stay tool-readable
+# ---------------------------------------------------------------------------
+
+
+def test_workspace_delivery_emits_read_only_tool_instructions(tmp_path):
+    binary = tmp_path / "archive.bin"
+    binary.write_bytes(b"\x00\x01\x02")
+    att = {
+        "path": str(binary),
+        "filename": "stored.bin",
+        "original_name": "customer-format.xyz",
+        "category": "binary",
+        "media_type": "application/octet-stream",
+        "size": 3,
+        "delivery": "workspace",
+    }
+
+    parts = build_parts_from_metas("inspect this", [att])
+
+    assert len(parts) == 2
+    assert isinstance(parts[0], TextBlock)
+    assert f"Read-only workspace path: {binary}" in parts[0].text
+    assert "write/run parsing code" in parts[0].text
+    assert "do not execute it directly" in parts[0].text
+    assert parts[-1].text == "inspect this"
+
+
+def test_nonvision_image_workspace_delivery_does_not_embed_bytes(tmp_path):
+    image = tmp_path / "photo.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\n")
+    att = {
+        "path": str(image),
+        "original_name": "photo.png",
+        "category": "image",
+        "media_type": "image/png",
+        "size": 8,
+        "delivery": "workspace",
+    }
+
+    parts = build_parts_from_metas("inspect", [att])
+
+    assert len(parts) == 2
+    assert all(not isinstance(part, ImageDataBlock) for part in parts)
+    assert f"Read-only workspace path: {image}" in parts[0].text
+
+
+def test_native_audio_uses_generic_inline_media_block(tmp_path):
+    audio = tmp_path / "recording.mp3"
+    audio.write_bytes(b"audio")
+    att = {
+        "path": str(audio),
+        "original_name": "recording.mp3",
+        "category": "audio",
+        "media_type": "audio/mpeg",
+        "size": 5,
+        "delivery": "native",
+    }
+
+    parts = build_parts_from_metas("transcribe", [att])
+
+    assert len(parts) == 2
+    assert isinstance(parts[0], ImageDataBlock)
+    assert parts[0].media_type == "audio/mpeg"
+
+
+# ---------------------------------------------------------------------------
 # slow path — missing path key — emits ``[File not found: ...]`` placeholder
 # ---------------------------------------------------------------------------
 

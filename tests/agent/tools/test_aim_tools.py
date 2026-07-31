@@ -109,24 +109,24 @@ async def _seed_indexed_unit(
 
 # ---------------------------------------------------------------------------
 # Tier gating — the most important regression: aim tools must not leak into
-# forge/coding sessions.
+# work/coding sessions.
 # ---------------------------------------------------------------------------
 
 
-def test_aim_tools_excluded_from_forge_and_coding_tiers():
+def test_aim_tools_excluded_from_work_and_coding_tiers():
     registry = _default_tool_registry()
-    forge_names = tier_tools(registry, mode="forge", role="member")
+    work_names = tier_tools(registry, mode="work", role="member")
     coding_names = tier_tools(registry, mode="coding", role="member")
-    assert "aim_units" not in forge_names
-    assert "aim_capture" not in forge_names
-    assert "aim_compare" not in forge_names
-    assert "aim_readiness" not in forge_names
-    assert "aim_rules" not in forge_names
-    assert "aim_suggestions" not in forge_names
-    assert "aim_understanding" not in forge_names
-    assert "aim_claim" not in forge_names
-    assert "aim_execute" not in forge_names
-    assert "aim_verify" not in forge_names
+    assert "aim_units" not in work_names
+    assert "aim_capture" not in work_names
+    assert "aim_compare" not in work_names
+    assert "aim_readiness" not in work_names
+    assert "aim_rules" not in work_names
+    assert "aim_suggestions" not in work_names
+    assert "aim_understanding" not in work_names
+    assert "aim_claim" not in work_names
+    assert "aim_execute" not in work_names
+    assert "aim_verify" not in work_names
     assert "aim_units" not in coding_names
     assert "aim_capture" not in coding_names
     assert "aim_compare" not in coding_names

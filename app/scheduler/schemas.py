@@ -11,12 +11,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 _NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
 
-TaskMode = Literal["forge", "coding"]
+TaskMode = Literal["work", "coding"]
 
 
 def _coerce_legacy_mode(value: object) -> object:
-    """Accept the pre-rename alias ``normal`` for ``forge`` (see migration 00000019)."""
-    return "forge" if value == "normal" else value
+    """Accept both historical default-team mode names."""
+    return "work" if isinstance(value, str) and value in {"normal", "forge"} else value
 
 
 class ScheduledTaskCreate(BaseModel):
@@ -24,8 +24,8 @@ class ScheduledTaskCreate(BaseModel):
 
     name: str = Field(description="Unique task name.")
     mode: TaskMode = Field(
-        default="forge",
-        description="'forge' delivers to the default team lead; "
+        default="work",
+        description="'work' delivers to the default team lead; "
         "'coding' delivers to the lead of the coding team for ``workspace``.",
     )
 
@@ -56,8 +56,8 @@ class ScheduledTaskCreate(BaseModel):
 
         if self.mode == "coding" and not self.workspace:
             raise ValueError("workspace is required when mode='coding'")
-        if self.mode == "forge" and self.workspace:
-            raise ValueError("workspace must be empty when mode='forge'")
+        if self.mode == "work" and self.workspace:
+            raise ValueError("workspace must be empty when mode='work'")
 
         st = self.schedule_type
         if st == "at":
@@ -114,8 +114,8 @@ class ScheduledTaskUpdate(BaseModel):
         # service layer validates against the merged row state.
         if self.mode == "coding" and self.workspace == "":
             raise ValueError("workspace is required when mode='coding'")
-        if self.mode == "forge" and self.workspace:
-            raise ValueError("workspace must be empty when mode='forge'")
+        if self.mode == "work" and self.workspace:
+            raise ValueError("workspace must be empty when mode='work'")
 
         st = self.schedule_type
         if st is None:
@@ -157,6 +157,7 @@ class ScheduledTaskResponse(BaseModel):
     id: UUID
     name: str
     mode: TaskMode
+    _mode_alias = field_validator("mode", mode="before")(_coerce_legacy_mode)
     workspace: str | None
     schedule_type: str
     at_datetime: datetime | None

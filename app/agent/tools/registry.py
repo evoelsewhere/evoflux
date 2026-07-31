@@ -166,9 +166,9 @@ class Tool:
         # ``ask`` prompt in default mode).
         self.read_only = read_only
         # Team-tier membership. ``None`` means the tool belongs to every tier
-        # ("forge", "coding", ...) — the default, so newly registered tools are
+        # ("work", "coding", ...) — the default, so newly registered tools are
         # available everywhere without extra wiring. Set an explicit tuple to
-        # restrict, e.g. ``tiers=("forge",)``.
+        # restrict, e.g. ``tiers=("work",)``.
         self.tiers = frozenset(tiers) if tiers is not None else None
         # Tools that talk to the user or restructure the session (ask_user,
         # plan mode, worktree, ...) are lead-only: team members never get them.

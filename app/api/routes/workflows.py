@@ -87,7 +87,7 @@ async def list_workflows(
             WorkflowListItem(
                 name=found.name,
                 description=definition.description if definition else "",
-                scope=definition.scope if definition else "forge",
+                scope=definition.scope if definition else "work",
                 inputs=[
                     inp.model_dump()
                     for inp in (definition.inputs if definition else [])
@@ -435,7 +435,7 @@ async def run_workflow_route(
         if stale_claims or not parent_live:
             await db.commit()
 
-    # Scope rules (§6.2 + aim extension): forge runs anywhere; coding/aim
+    # Scope rules (§6.2 + aim extension): work runs anywhere; coding/aim
     # definitions require a session of that mode, whose pinned workspace IS
     # the target.
     scope_workspace: str | None = None

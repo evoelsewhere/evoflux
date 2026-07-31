@@ -12,6 +12,10 @@ beforeEach(() => {
       removeEventListener: vi.fn(),
     }),
   })
+  vi.stubGlobal('ResizeObserver', class {
+    observe = vi.fn()
+    disconnect = vi.fn()
+  })
 })
 
 describe('InputBar submit lifecycle', () => {
@@ -46,6 +50,29 @@ describe('InputBar submit lifecycle', () => {
 
     await waitFor(() => {
       expect(input).toHaveValue('Keep this draft')
+    })
+  })
+
+  it('accepts an arbitrary file and can submit it without typed text', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    const { container } = render(<InputBar onSubmit={onSubmit} />)
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')
+    expect(fileInput).not.toBeNull()
+    expect(fileInput).not.toHaveAttribute('accept')
+
+    const file = new File([new Uint8Array([0, 1, 2])], 'archive.sqlite', {
+      type: 'application/vnd.sqlite3',
+    })
+    fireEvent.change(fileInput!, { target: { files: [file] } })
+
+    expect(screen.getByText('archive.sqlite')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        'Please inspect the attached file.',
+        [file],
+      )
     })
   })
 })

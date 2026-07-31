@@ -18,7 +18,7 @@ interface UseTeamSseArgs {
   agentWorkspace: string | null
   hasCodingWorkspace: boolean
   isCodingSessionLoading: boolean
-  mode: 'forge' | 'coding' | 'aim'
+  mode: 'work' | 'coding' | 'aim'
   inputRef: RefObject<InputBarHandle | null>
 }
 

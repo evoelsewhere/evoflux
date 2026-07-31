@@ -36,7 +36,7 @@ async def _drain_until(
 async def test_spawn_run_command_and_capture_output(tmp_path):
     tm = TerminalManager()
     sid = "s1"
-    tm.attach(sid, cwd=str(tmp_path), env={"EVOFLUX_MODE": "forge"})
+    tm.attach(sid, cwd=str(tmp_path), env={"EVOFLUX_MODE": "work"})
     queue = tm.subscribe(sid)
     await asyncio.sleep(0.2)
     tm.write(sid, b"echo TERM_OK_$((3*4))\n")
@@ -164,7 +164,7 @@ def test_terminal_run_tool_is_lead_only_all_modes():
 
     registry = _default_tool_registry()
     assert "terminal_run" in registry
-    for mode in ("forge", "coding", "aim"):
+    for mode in ("work", "coding", "aim"):
         assert "terminal_run" in tier_tools(registry, mode=mode, role="lead")
         assert "terminal_run" not in tier_tools(registry, mode=mode, role="member")
 
@@ -253,7 +253,7 @@ async def test_spawn_windows_uses_comspec_and_conpty(
 
     manager = TerminalManager()
     session = manager.attach(
-        "s1", cwd=str(tmp_path), env={"EVOFLUX_MODE": "forge"}, cols=100, rows=40
+        "s1", cwd=str(tmp_path), env={"EVOFLUX_MODE": "work"}, cols=100, rows=40
     )
 
     assert len(fake_winpty.instances) == 1
@@ -266,7 +266,7 @@ async def test_spawn_windows_uses_comspec_and_conpty(
     env_map = dict(pair.split("=", 1) for pair in env.rstrip("\0").split("\0"))
     assert env.endswith("\0")
     assert env_map["EVOFLUX_SESSION"] == "s1"
-    assert env_map["EVOFLUX_MODE"] == "forge"
+    assert env_map["EVOFLUX_MODE"] == "work"
 
     # write() encodes bytes → str for pywinpty.
     manager.write("s1", b"dir\r\n")

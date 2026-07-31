@@ -20,10 +20,10 @@ def known_tool_names() -> set[str]:
 
 
 def _agents_dirs_for_scope(scope: str) -> list[Path]:
-    """A scope's roster search dirs. Coding/aim rosters INCLUDE the forge
+    """A scope's roster search dirs. Coding/aim rosters INCLUDE the work
     root's members? No — the loaders keep them separate; a coding session
     loads only agents/coding, an aim session only agents/aim. Mirror that:
-    scope forge → agents/, coding → agents/coding, aim → agents/aim."""
+    scope work → agents/, coding → agents/coding, aim → agents/aim."""
     from app.services.team_manager import _resolve_agents_dir
 
     base = _resolve_agents_dir()

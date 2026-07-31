@@ -5,7 +5,7 @@
  * visibility from one path.
  *
  * Also owns the desktop sidebar collapse state — one field shared by all
- * three mode sidebars (forge / coding / aim) and toggled from AppShell
+ * three mode sidebars (work / coding / aim) and toggled from AppShell
  * (button + Ctrl+B). This is the store's only persisted field.
  *
  * Mirrors the size and shape of ``useToastStore`` — Zustand + immer, no

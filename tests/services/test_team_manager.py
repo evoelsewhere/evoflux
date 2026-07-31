@@ -407,7 +407,7 @@ async def test_get_or_start_coding_team_uses_agents_dir_coding_agents(
 @pytest.mark.asyncio
 async def test_get_or_start_aim_team_uses_agents_dir_aim_agents(tmp_path, monkeypatch):
     """AIM sessions load from AGENTS_DIR/aim, not AGENTS_DIR/coding — the
-    third roster directory alongside forge (root) and coding."""
+    third roster directory alongside work (root) and coding."""
     from app.core.config import settings
 
     workspace = tmp_path / "target-repo"

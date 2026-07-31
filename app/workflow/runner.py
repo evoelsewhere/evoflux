@@ -649,7 +649,7 @@ class WorkflowRunner:
     # -- team + message helpers ---------------------------------------------------
 
     async def _ensure_team(self, state: ExecutionState):
-        """Find (or boot) the live team for this session — forge sessions
+        """Find (or boot) the live team for this session — work sessions
         via the session team map, coding/aim via the workspace-keyed map
         with the same wiring the chat route uses."""
         from app.services import team_manager
@@ -660,7 +660,7 @@ class WorkflowRunner:
             # A coding/aim definition must run on a team with that roster —
             # a stray default-mode team bound to this session id (e.g. by an
             # old, pre-fix /commands call) would silently swap the lead.
-            if scope == "forge" or getattr(team, "mode", scope) == scope:
+            if scope == "work" or getattr(team, "mode", scope) == scope:
                 return team
             logger.warning(
                 "workflow_team_mode_mismatch session_id={} team_mode={} scope={}"
@@ -670,9 +670,9 @@ class WorkflowRunner:
                 scope,
                 scope,
             )
-        # Boot by the SESSION's mode, not the definition scope: a forge-scope
+        # Boot by the SESSION's mode, not the definition scope: a work-scope
         # workflow in a coding/aim session must still run on that session's
-        # own team (M3: "forge runs anywhere" means anywhere, with the
+        # own team (M3: "work runs anywhere" means anywhere, with the
         # session's lead). For coding/aim scopes the run endpoint already
         # guaranteed session.mode == scope and a bound workspace.
         session_mode, session_workspace = await self._session_mode_workspace(state)
@@ -689,7 +689,7 @@ class WorkflowRunner:
                     mode=session_mode,
                     read_only_paths=read_only or None,
                 )
-            if scope != "forge":
+            if scope != "work":
                 # coding/aim definition but the session lost its
                 # mode/workspace — refuse rather than run on the wrong team.
                 return None
@@ -718,8 +718,8 @@ class WorkflowRunner:
         if session is None:
             return state.definition.scope, state.scope_workspace
         mode = normalize_mode(session.mode)
-        if mode == "forge":
-            # A NULL Forge workspace is an explicit reset to the generated
+        if mode == "work":
+            # A NULL Work workspace is an explicit reset to the generated
             # session sandbox, not a reason to resurrect the workflow's stale
             # launch-time folder.
             return mode, session.workspace

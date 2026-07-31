@@ -89,7 +89,7 @@ workbench
   id: tasks
   dynamic tool id: plugin:com.evoflux.jira/tasks
   title: Task Management
-  modes: forge, coding, aim
+  modes: work, coding, aim
   single instance: true
 
 settings
@@ -572,7 +572,7 @@ Exit: Jira can serve as the canonical fullstack plugin example.
 
 - [ ] Jira ships as `com.evoflux.jira-<version>.evoplugin` through the generic packer.
 - [ ] Plugin Center installs and enables it without a core code branch for Jira.
-- [ ] Task Management appears as `plugin:com.evoflux.jira/tasks` in Forge, Coding and AIM Workbench launchers.
+- [ ] Task Management appears as `plugin:com.evoflux.jira/tasks` in Work, Coding and AIM Workbench launchers.
 - [ ] The panel works at 360 px, wide dock, maximized desktop and mobile sizes.
 - [ ] Multiple URL/PAT connections are isolated and secrets are write-only.
 - [ ] Test & save verifies server and user identity before persistence.

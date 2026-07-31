@@ -355,19 +355,19 @@ class TestTeamAgentsRouteExtra:
             workspace.resolve()
         )
 
-    def test_forge_chat_restores_persisted_custom_workspace(
+    def test_work_chat_restores_persisted_custom_workspace(
         self, app_without_team, test_team, monkeypatch, tmp_path
     ):
         session_id = uuid.uuid7()
-        workspace = tmp_path / "custom-forge-workspace"
+        workspace = tmp_path / "custom-work-workspace"
         workspace.mkdir()
         asyncio.run(
             _save_chat_session(
                 ChatSession(
                     id=session_id,
-                    title="Forge task",
+                    title="Work task",
                     agent_name="lead",
-                    mode="forge",
+                    mode="work",
                     workspace=str(workspace),
                 )
             )

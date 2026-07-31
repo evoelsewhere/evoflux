@@ -5,7 +5,7 @@
  *   - ``ChatTrailingPanels`` — rendered after <main> inside AppShell's body
  *     row: PlanReviewPanel, Activity, BrowserViewer, TerminalPanel.
  *     Coding workspace / file viewer live in ``fullHeightTrailing`` (same
- *     slot as Forge's WorkspaceFilesPanel) so they cover the right corner
+ *     slot as Work's WorkspaceFilesPanel) so they cover the right corner
  *     beside the main card instead of sitting under the topbar.
  *   - ``ChatOverlayPanels`` — rendered after the body row (fixed-position —
  *     DOM order only matters for z-stacking): CommandPalette,
@@ -28,7 +28,7 @@ interface ChatTrailingPanelsProps {
   showActivity: boolean
   onCloseActivity: () => void
   workspace?: string | null
-  mode?: 'forge' | 'coding' | 'aim'
+  mode?: 'work' | 'coding' | 'aim'
   onOpenChangedFile?: (path: string) => void
 }
 
@@ -38,7 +38,7 @@ export function ChatTrailingPanels({
   showActivity,
   onCloseActivity,
   workspace,
-  mode = 'forge',
+  mode = 'work',
   onOpenChangedFile,
 }: ChatTrailingPanelsProps) {
   return (

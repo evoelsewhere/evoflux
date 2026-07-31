@@ -1,9 +1,10 @@
 """Agent orchestration service — transport-neutral entry points.
 
 Routes and (future) channel adapters hand a message off here. The service
-validates attachments against the team lead's capabilities, persists file
-bytes to the session uploads directory, initialises the stream store, and
-delegates to ``team.handle_user_message``.
+validates attachment integrity and size, persists bytes to the session uploads
+directory, selects native/extracted/workspace delivery from the team lead's
+capabilities, initialises the stream store, and delegates to
+``team.handle_user_message``.
 
 This module deliberately knows nothing about HTTP, multipart/form-data, or
 FastAPI ``UploadFile`` — inputs are bytes + filename + MIME. That keeps the
@@ -58,6 +59,9 @@ SIZE_LIMITS: dict[str, int] = {
     "data": 10 * 1024 * 1024,  # 10 MB — structured data files (JSON, CSV, JSONL)
     "image": 10 * 1024 * 1024,  # 10 MB
     "document": 20 * 1024 * 1024,  # 20 MB
+    "audio": 20 * 1024 * 1024,  # persisted for tool-based inspection
+    "video": 20 * 1024 * 1024,  # persisted for tool-based inspection
+    "binary": 20 * 1024 * 1024,  # unknown/proprietary formats use workspace fallback
 }
 GLOBAL_SIZE_LIMIT = 20 * 1024 * 1024  # 20 MB total across all files per message
 
@@ -124,6 +128,19 @@ EXT_CATEGORY: dict[str, str] = {
     ".epub": "document",
     ".html": "document",
     ".htm": "document",
+    ".mp3": "audio",
+    ".wav": "audio",
+    ".m4a": "audio",
+    ".flac": "audio",
+    ".ogg": "audio",
+    ".aac": "audio",
+    ".mp4": "video",
+    ".mov": "video",
+    ".avi": "video",
+    ".mkv": "video",
+    ".webm": "video",
+    ".mpeg": "video",
+    ".mpg": "video",
 }
 # First N bytes must match at least one signature for the declared MIME.
 MAGIC_BYTES: dict[str, list[tuple[bytes, int]]] = {
@@ -149,6 +166,7 @@ MAGIC_BYTES: dict[str, list[tuple[bytes, int]]] = {
 }
 MAX_FILENAME_LEN = 200
 MARKITDOWN_TIMEOUT_SECS = 30
+GENERIC_INLINE_MEDIA_PROVIDERS = frozenset({"googlegenai", "vertexai"})
 
 
 # ── Transport-neutral attachment input ───────────────────────────────────────
@@ -193,12 +211,18 @@ class NoTeamConfigured(Exception):
 # ── Attachment categorisation + magic-byte validation ────────────────────────
 
 
-def categorize(filename: str, content_type: str | None) -> str | None:
+def categorize(filename: str, content_type: str | None) -> str:
     mime = (content_type or "").split(";")[0].strip().lower()
     if mime and mime in MIME_CATEGORY:
         return MIME_CATEGORY[mime]
+    if mime.startswith("text/"):
+        return "text"
+    if mime.startswith("audio/"):
+        return "audio"
+    if mime.startswith("video/"):
+        return "video"
     ext = Path(filename or "").suffix.lower()
-    return EXT_CATEGORY.get(ext)
+    return EXT_CATEGORY.get(ext, "binary")
 
 
 def _validate_magic_bytes(data: bytes, mime: str) -> bool:
@@ -222,9 +246,67 @@ def _validate_ext_mime_consistency(filename: str, mime: str) -> bool:
 
 
 def _default_ext(category: str) -> str:
-    return {"text": ".txt", "data": ".json", "image": ".jpg", "document": ".pdf"}.get(
-        category, ".bin"
+    return {
+        "text": ".txt",
+        "data": ".json",
+        "image": ".jpg",
+        "document": ".pdf",
+        "audio": ".mp3",
+        "video": ".mp4",
+    }.get(category, ".bin")
+
+
+def _decode_probable_text(data: bytes) -> str | None:
+    """Return UTF-8 text for an otherwise unknown file when it looks textual.
+
+    Browsers commonly upload source files with an empty MIME type.  Promote
+    those files to the normal text path without treating arbitrary binary
+    bytes as prompt text.  Large unknown files stay workspace-only even when
+    they happen to decode, keeping prompt growth bounded by the text limit.
+    """
+    binary_signatures = (
+        b"MZ",  # PE/Windows executable
+        b"\x7fELF",
+        b"PK\x03\x04",  # zip-based archive/package
+        b"\xfe\xed\xfa\xce",  # Mach-O
+        b"\xce\xfa\xed\xfe",
+        b"\xfe\xed\xfa\xcf",
+        b"\xcf\xfa\xed\xfe",
     )
+    if (
+        len(data) > SIZE_LIMITS["text"]
+        or b"\x00" in data
+        or data.startswith(binary_signatures)
+    ):
+        return None
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if not text:
+        return None
+    control_count = sum(
+        1 for char in text if ord(char) < 32 and char not in "\n\r\t\f\b"
+    )
+    if control_count / len(text) > 0.02:
+        return None
+    return text
+
+
+def _supports_native_delivery(category: str, caps, model_id: str | None) -> bool:
+    """Return whether the active adapter can safely inline this category."""
+    if category == "image":
+        return bool(caps.input.vision)
+    provider_id = model_id.partition(":")[0] if isinstance(model_id, str) else ""
+    if provider_id not in GENERIC_INLINE_MEDIA_PROVIDERS:
+        return False
+    if category == "document":
+        return bool(caps.input.document_text)
+    if category == "audio":
+        return bool(caps.input.audio)
+    if category == "video":
+        return bool(caps.input.video)
+    return False
 
 
 def _convert_with_markitdown(data: bytes, mime: str, filename: str) -> str | None:
@@ -272,6 +354,9 @@ async def _persist_attachment(
     data = att.data
     if len(data) == 0:
         raise AttachmentError(f"'{att.filename}' is empty (0 bytes).", status=422)
+    probable_text = _decode_probable_text(data) if category == "binary" else None
+    if probable_text is not None:
+        category = "text"
     limit = SIZE_LIMITS[category]
     if len(data) > limit:
         raise AttachmentError(
@@ -324,25 +409,25 @@ async def _persist_attachment(
         "url": f"/api/team/{session_id}/uploads/{filename}",
     }
     if category in ("text", "data"):
-        try:
-            text = data.decode("utf-8")
-        except UnicodeDecodeError:
+        if probable_text is not None:
+            text = probable_text
+        else:
             try:
-                text = data.decode("latin-1")
-            except Exception:
-                meta["converted_text"] = f"[Unable to read file {safe_original_name}.]"
-                return meta
+                text = data.decode("utf-8")
+            except UnicodeDecodeError:
+                try:
+                    text = data.decode("latin-1")
+                except Exception:
+                    return meta
         meta["converted_text"] = _maybe_truncate_inline(text, att.truncate_inline_to)
     elif category == "document":
         converted = await asyncio.to_thread(
             _convert_with_markitdown, data, mime, original_name
         )
-        body = (
-            converted
-            if converted is not None
-            else f"[Unable to read file {safe_original_name}.]"
-        )
-        meta["converted_text"] = _maybe_truncate_inline(body, att.truncate_inline_to)
+        if converted is not None:
+            meta["converted_text"] = _maybe_truncate_inline(
+                converted, att.truncate_inline_to
+            )
     return meta
 
 
@@ -389,16 +474,16 @@ async def validate_and_persist_attachments(
     *,
     model_override: str | None = None,
 ) -> tuple[str, list[dict]]:
-    """Validate attachments against lead capabilities and save them to disk.
+    """Validate attachment integrity and persist every supported-size file.
 
     If ``session_id`` is ``None`` a fresh UUIDv7 is minted; otherwise the
     provided id is used so uploads land under the same workspace as the
     chat session that owns them.
 
-    When ``model_override`` is provided (session model picker), capabilities
-    are resolved for that model instead of the lead's default model.  This
-    ensures image/audio/video uploads are accepted when the user selects a
-    multimodal model even if the agent's default model doesn't support them.
+    Model capabilities choose the delivery strategy; they never reject a
+    valid upload. Text and documents are extracted locally when possible,
+    vision-capable models receive images natively, and every other format is
+    exposed to the agent through a read-only workspace path.
 
     Returns ``(session_id, attachment_metas)``.
 
@@ -414,6 +499,7 @@ async def validate_and_persist_attachments(
         if model_override
         else team.lead.agent.capabilities
     )
+    effective_model_id = model_override or getattr(team.lead.agent, "model_id", None)
 
     valid: list[tuple[RawAttachment, str]] = []
     total_size = 0
@@ -421,17 +507,6 @@ async def validate_and_persist_attachments(
         if not att.filename:
             continue
         category = categorize(att.filename, att.content_type)
-        if category is None:
-            ext = Path(att.filename).suffix.lower()
-            raise AttachmentError(f"Unsupported file type '{ext}'.", status=415)
-        if category == "image" and not caps.input.vision:
-            raise AttachmentError(
-                "This model does not support image inputs.", status=422
-            )
-        if category == "document" and not caps.input.document_text:
-            raise AttachmentError(
-                "This model does not support document inputs.", status=422
-            )
         total_size += len(att.data)
         if total_size > GLOBAL_SIZE_LIMIT:
             raise AttachmentError(
@@ -445,6 +520,13 @@ async def validate_and_persist_attachments(
     metas: list[dict] = []
     for att, category in valid:
         meta = await _persist_attachment(att, category, session_uploads, sid)
+        persisted_category = meta["category"]
+        if "converted_text" in meta:
+            meta["delivery"] = "extracted"
+        elif _supports_native_delivery(persisted_category, caps, effective_model_id):
+            meta["delivery"] = "native"
+        else:
+            meta["delivery"] = "workspace"
         metas.append(meta)
 
     return sid, metas
@@ -458,7 +540,7 @@ async def dispatch_user_message(
     attachments: list[RawAttachment] | None = None,
     attachment_metas: list[dict] | None = None,
     message_extra: dict | None = None,
-    mode: str = "forge",
+    mode: str = "work",
     workspace: str | None = None,
     model: str | None = None,
     model_provided: bool = False,
@@ -591,7 +673,7 @@ async def dispatch_user_shell_command(
     *,
     command: str,
     session_id: str | None,
-    mode: str = "forge",
+    mode: str = "work",
     workspace: str | None = None,
     model: str | None = None,
     model_provided: bool = False,

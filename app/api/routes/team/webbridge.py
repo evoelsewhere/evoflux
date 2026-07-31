@@ -616,7 +616,7 @@ async def create_browser_session(
     request: Request,
     db: DbSession,
 ) -> BrowserSessionOption:
-    """Create a new Forge session dedicated to a browser-originated task."""
+    """Create a new Work session dedicated to a browser-originated task."""
     pairing = await _paired_request(request, db, required_scope="sessions:create")
     idempotency_key = request.headers.get("idempotency-key", "").strip()
     if not idempotency_key or len(idempotency_key) > 128:
@@ -2281,7 +2281,7 @@ def _teach_workflow_yaml(draft: WebBridgeTeachDraft) -> str:
         schema_version=1,
         name=f"webbridge_teach_{str(draft.id).replace('-', '_')}",
         description=f"Recorded from {draft.origin}. Review before running.",
-        scope="forge",
+        scope="work",
         inputs=[
             WorkflowInput(
                 name=name,

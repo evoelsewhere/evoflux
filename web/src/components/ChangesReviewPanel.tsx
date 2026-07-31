@@ -25,13 +25,13 @@ function StatusIcon({ status }: { status: TurnChangedFile['status'] }) {
 
 interface ChangesReviewPanelProps {
   workspace?: string | null
-  mode?: 'forge' | 'coding' | 'aim'
+  mode?: 'work' | 'coding' | 'aim'
   onOpenFile?: (path: string) => void
 }
 
 export function ChangesReviewPanel({
   workspace,
-  mode = 'forge',
+  mode = 'work',
   onOpenFile,
 }: ChangesReviewPanelProps) {
   const turnChanges = useTeamStore((s) => s.turnChanges)

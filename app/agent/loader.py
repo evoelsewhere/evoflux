@@ -205,7 +205,7 @@ def ensure_builtin_lead_blueprint(agents_dir: Path, *, mode: str) -> str | None:
     """
     from app.agent.builtin_prompts import (
         CODING_EVOFLUX_DESCRIPTION,
-        FORGE_EVOFLUX_DESCRIPTION,
+        WORK_EVOFLUX_DESCRIPTION,
     )
 
     agents_dir.mkdir(parents=True, exist_ok=True)
@@ -214,7 +214,7 @@ def ensure_builtin_lead_blueprint(agents_dir: Path, *, mode: str) -> str | None:
 
     model = PROVIDER_MODEL_TOKEN
     description = (
-        CODING_EVOFLUX_DESCRIPTION if mode == "coding" else FORGE_EVOFLUX_DESCRIPTION
+        CODING_EVOFLUX_DESCRIPTION if mode == "coding" else WORK_EVOFLUX_DESCRIPTION
     )
     target = agents_dir / "evoflux.md"
     _atomic_write_text(
@@ -418,7 +418,7 @@ def _build_agent(
     provider_factory: ProviderFactory,
     *,
     source_path: Path | None = None,
-    mode: str = "forge",
+    mode: str = "work",
 ) -> Agent:
     """Construct one Agent.  ``source_path`` enables drift detection."""
     system_prompt = cfg.system_prompt
@@ -672,7 +672,7 @@ def load_team_from_dir(
     provider_factory: ProviderFactory | None = None,
     extra_tools: dict[str, Tool] | None = None,
     db_factory: DbFactory | None = None,
-    mode: str = "forge",
+    mode: str = "work",
     workspace: str | None = None,
 ) -> "AgentTeam | None":
     """Load an AgentTeam from a directory of per-agent ``.md`` files.
@@ -696,7 +696,7 @@ def load_team_from_dir(
     if not md_files:
         return None
 
-    if mode in ("forge", "coding"):
+    if mode in ("work", "coding"):
         ensure_builtin_agent_blueprints(agents_dir, mode=mode)
         md_files = sorted(agents_dir.glob("*.md"))
 
@@ -821,7 +821,7 @@ def rebuild_agent_from_disk(
     *,
     provider_factory: ProviderFactory | None = None,
     extra_tools: dict[str, Tool] | None = None,
-    mode: str = "forge",
+    mode: str = "work",
 ) -> Agent:
     """Re-parse one agent ``.md`` and return a fresh :class:`Agent`.
 

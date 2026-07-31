@@ -50,7 +50,7 @@ import { useToastStore } from '@/stores/useToastStore'
 
 type Tab = 'all' | AgentTeam
 
-const TEAM_ORDER: AgentTeam[] = ['forge', 'coding', 'aim']
+const TEAM_ORDER: AgentTeam[] = ['work', 'coding', 'aim']
 
 export function AgentsListPage() {
   const { data, isLoading, isFetching, isError, error, refetch } = useAgentFilesQuery()
@@ -188,7 +188,7 @@ export function AgentsListPage() {
                 <SegmentedControl
                   options={[
                     { value: 'all', label: `All ${agents.length}` },
-                    { value: 'forge', label: `Forge ${teams.forge.length}` },
+                    { value: 'work', label: `Work ${teams.work.length}` },
                     { value: 'coding', label: `Coding ${teams.coding.length}` },
                     { value: 'aim', label: `AIM ${teams.aim.length}` },
                   ]}
@@ -540,7 +540,7 @@ function CreateAgentDialog({
                 onClick={() => onChoose(team)}
                 className="group flex items-center gap-3 rounded-xl border border-(--color-border) bg-(--bg-input) p-3 text-left outline-none transition-[border-color,background-color,transform] hover:border-(--color-border-strong) hover:bg-(--bg-key)/45 active:scale-[0.99] focus-visible:ring-3 focus-visible:ring-(--focus-ring)/35"
               >
-                <AgentGlyph name={team === 'forge' ? 'new' : `${team}/new`} role="member" size="lg" />
+                <AgentGlyph name={team === 'work' ? 'new' : `${team}/new`} role="member" size="lg" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-heading text-sm font-semibold text-(--color-text)">{visual.label}</span>

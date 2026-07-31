@@ -300,7 +300,7 @@ async def set_session_workspace(
         row.workspace = new_workspace
         await db.commit()
 
-    # Do not cold-boot a team just to update this setting.  If the Forge team
+    # Do not cold-boot a team just to update this setting.  If the Work team
     # is already cached, however, keep it aligned with the persisted row so
     # the very next agent/shell turn uses the newly selected folder.
     team_obj = team_manager.current_team_for_session(session_id)

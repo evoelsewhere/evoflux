@@ -93,8 +93,8 @@ interface SidebarProps {
   currentSessionId?: string;
   onCommandPalette?: () => void;
   onNewChat?: () => void;
-  /** Current mode — 'forge', 'coding', or 'aim' */
-  mode?: 'forge' | 'coding' | 'aim';
+  /** Current mode — 'work', 'coding', or 'aim' */
+  mode?: 'work' | 'coding' | 'aim';
   /** Mobile only: whether the overlay drawer is open */
   mobileOpen?: boolean;
   /** Mobile only: called when the drawer should close (backdrop tap, session select) */
@@ -105,7 +105,7 @@ export function Sidebar({
   currentSessionId,
   onCommandPalette,
   onNewChat,
-  mode = 'forge',
+  mode = 'work',
   mobileOpen = false,
   onMobileClose,
 }: SidebarProps) {
@@ -116,9 +116,9 @@ export function Sidebar({
   const preset = useMotionPreset();
   const navigate = useNavigate();
   const toggleScheduler = useUIStore((s) => s.toggleScheduler);
-  // Server-filtered to forge — coding/aim sessions live in their own
+  // Server-filtered to work — coding/aim sessions live in their own
   // sidebars (per-run aim sessions would otherwise flood this list).
-  const sessions = useTeamSessionsQuery("forge");
+  const sessions = useTeamSessionsQuery("work");
   const deleteSession = useDeleteTeamSessionMutation();
   const updateSessionTitle = useUpdateTeamSessionTitleMutation();
   const sessionListRef = useRef<HTMLDivElement>(null);
@@ -412,7 +412,7 @@ export function Sidebar({
     </SidebarCard>
   );
 
-  // Desktop: one floating card with internal dividers (forge style).
+  // Desktop: one floating card with internal dividers (work style).
   const desktopShell = (
     <SidebarShell
       collapsed={collapsed}

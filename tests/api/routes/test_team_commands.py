@@ -255,14 +255,14 @@ class TestPostTeamCommands:
         }
 
     @pytest.mark.asyncio
-    async def test_commands_never_bind_forge_team_to_aim_session(
+    async def test_commands_never_bind_work_team_to_aim_session(
         self, app_with_lead_only_team, monkeypatch, tmp_path
     ):
         """Regression: the old pre-resolve boot registered a default-mode
         team under the aim session id; ``find_team_for_session`` (the
         workflow runner's lookup) then preferred it, so aim pipelines ran
-        with the forge lead. /commands must resolve by the session's
-        persisted mode and never touch the forge session-team map."""
+        with the work lead. /commands must resolve by the session's
+        persisted mode and never touch the work session-team map."""
         sid = uuid.uuid7()
         workspace = str(tmp_path)
         async with _db.async_session_factory() as db:
@@ -298,8 +298,8 @@ class TestPostTeamCommands:
             called["mode"] = kwargs.get("mode")
             return aim_team
 
-        async def forbidden_forge_boot(session_id: str):
-            raise AssertionError("must not bind a forge team to an aim session")
+        async def forbidden_work_boot(session_id: str):
+            raise AssertionError("must not bind a work team to an aim session")
 
         async def aim_compact(session_id: str) -> str:
             return session_id
@@ -311,7 +311,7 @@ class TestPostTeamCommands:
         )
         monkeypatch.setattr(
             "app.api.routes.team.chat.team_manager.get_or_start_team_for_session",
-            forbidden_forge_boot,
+            forbidden_work_boot,
         )
         try:
             client = TestClient(app_with_lead_only_team)

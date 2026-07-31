@@ -1,7 +1,7 @@
 /**
  * usePinnedSessions — client-side set of session ids the user pinned in a
  * mode sidebar. Persisted to localStorage as a JSON array, most-recently-
- * pinned first (that order drives the forge sidebar's "Pinned" section).
+ * pinned first (that order drives the work sidebar's "Pinned" section).
  *
  * Mirrors the load/persist idiom of ``useUIStore`` (sidebarCollapsed):
  * module-level loaders, writes inside the actions, storage failures

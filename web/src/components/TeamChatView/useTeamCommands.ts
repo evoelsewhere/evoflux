@@ -44,7 +44,7 @@ interface UseTeamCommandsArgs {
   setViewMode: (m: ViewMode) => void
   handleWorkspaceFiles: () => void
   handleCodingSidebarToggle: () => void
-  mode?: 'forge' | 'coding'
+  mode?: 'work' | 'coding'
 
   // Session
   handleNewSession: () => void
@@ -68,7 +68,7 @@ export function useTeamCommands({
   setViewMode,
   handleWorkspaceFiles,
   handleCodingSidebarToggle,
-  mode = 'forge',
+  mode = 'work',
   handleNewSession,
   handleDreamRun,
   agentNames,
@@ -112,7 +112,7 @@ export function useTeamCommands({
     { id: 'next-agent', group: 'Agents', label: 'Next Agent',     description: 'Tab',       action: () => cycleActiveAgent('next') },
     { id: 'prev-agent', group: 'Agents', label: 'Previous Agent', description: 'Shift+Tab', action: () => cycleActiveAgent('prev') },
     { id: 'go-home',     group: 'Navigation', label: 'Go to Home',     description: '', action: () => navigate({ to: '/' }) },
-    ...(mode === 'forge' ? [{ id: 'go-coding', group: 'Navigation', label: 'Go to Coding Mode', description: 'Open the coding workbench', action: () => navigate({ to: '/coding' }) }] : []),
+    ...(mode === 'work' ? [{ id: 'go-coding', group: 'Navigation', label: 'Go to Coding Mode', description: 'Open the coding workbench', action: () => navigate({ to: '/coding' }) }] : []),
     { id: 'go-settings', group: 'Navigation', label: 'Open Settings',  description: 'Manage agents & skills', action: () => useUIStore.getState().openSettings('agents') },
     { id: 'settings-agents', group: 'Settings', label: 'Manage Agents', description: 'Edit agent .md files',  action: () => useUIStore.getState().openSettings('agents') },
     { id: 'settings-new-agent', group: 'Settings', label: 'New Agent',  description: 'Create a new agent',    action: () => useUIStore.getState().openSettings('agents/new') },

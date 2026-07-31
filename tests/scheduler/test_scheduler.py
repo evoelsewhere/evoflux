@@ -73,7 +73,7 @@ def _make_task(
 ) -> ScheduledTask:
     return ScheduledTask(
         name=name,
-        mode="forge",
+        mode="work",
         workspace=None,
         schedule_type=schedule_type,
         every_seconds=every_seconds,

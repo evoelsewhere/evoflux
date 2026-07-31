@@ -2,7 +2,7 @@
 
 > Status: PROPOSED (v5 — implementation audit: every mechanism the design leans on was traced to its exact function in the codebase by three parallel deep-dives; contradictions found in v4's self-audit are fixed; the doc now specifies integration points at function level, FE and BE, so it can be handed to an implementer as-is)
 > Date: 2026-07-09 (v5, v4, v3); 2026-07-08 (v2)
-> Scope: A visual node-graph builder for repeatable agent pipelines ("workflows"), scoped to `forge` (usable from any forge session) or `coding` (bound to a workspace/project), triggered by `/workflow` in chat, executed **inline in the current session**.
+> Scope: A visual node-graph builder for repeatable agent pipelines ("workflows"), scoped to `work` (usable from any work session) or `coding` (bound to a workspace/project), triggered by `/workflow` in chat, executed **inline in the current session**.
 > Companion: `documents/analysis/claude-code-vs-evoflux.md`
 
 ---
@@ -19,7 +19,7 @@ Design maxim: **the canvas configures what the lead would otherwise improvise; e
 
 - Canvas-first authoring; YAML file is the source of truth (git-trackable, agent-editable); canvas and a raw-YAML Monaco view are two editors of the same file.
 - Node kinds mirror existing capabilities only. Phase 1 engine kinds: `agent` (a team turn with a per-node subagent roster), `tool` (direct registry/MCP call, incl. the "Code" preset for `python`/`shell`), `gate` (choice pause via `ask_user`), `switch` (branch on a templated value), `input` (free-text pause via `ask_user`), `notify` (desktop notification), `transform` (pure template reshape), `foreach` (sequential iteration). Phase 2 kinds, schema pinned from v1: `workflow` (sub-workflow call), `wait` (capped delay). Assignment table in §4.5.
-- Two scopes: `forge` (no target anywhere) and `coding` (target = the triggering session's pinned workspace/project, or picked explicitly when started from the Workflows screen).
+- Two scopes: `work` (no target anywhere) and `coding` (target = the triggering session's pinned workspace/project, or picked explicitly when started from the Workflows screen).
 - `/workflow` in the composer lists approved workflows for the current scope; picking one runs it in that session immediately.
 - Light per-node execution log for debugging + approve-once-per-hash; deliberately **no** durable runs, crash recovery, webhooks, schedules, or cost subsystem (see Non-goals).
 
@@ -71,8 +71,8 @@ Every claim below was verified against the live codebase on 2026-07-09 (three pa
 | F16 | Dynamic slash commands: `GET /api/commands?workspace=` → `listCommands()` → `useCommandsQuery` → merged **client-side** into a literal `slashCommands` array in `TeamChatView` (builtins, then coding-only `/loop` entries, then user commands with `keepInputOpen: true`). The `SlashCommand` interface supports `description`/`category`/`displayName`/`insertText`/`isSeparator` — **no `disabled` field**; gating is by omission. | `app/api/routes/commands.py:37-48`; `web/src/api/client/agents.ts:107-114`; `web/src/queries/useCommandsQuery.ts:8-15`; `web/src/components/TeamChatView/index.tsx:683-713, 1442`; `web/src/components/InputBar.tsx:23-53` |
 | F17 | `/loop` path: the FE intercepts in `onSubmit` (`tryHandleBuiltinLoopCommand` → store `sendLoopCommand`, optimistic state, then POSTs the raw text); the server re-parses in `handle_user_message`. User commands are different: FE calls `POST /api/commands/{name}/render` and sends the expanded body as an ordinary message — **the chat route never sees the slash text**, so "put `/workflow` in a command body" does NOT compose for free (v4's claim; dropped). | `TeamChatView/index.tsx:1424-1438, 814-849, 853-888`; `web/src/stores/useTeamStore/index.ts:559-659`; `app/api/routes/team/chat.py:300-312`; `team.py:104-124, 769-871` |
 | F18 | `LoopStatusPill` pattern (the pill recipe to clone): SSE `loop_status` → case in `sse-reducer.ts:489-501` → `activeLoop` field (`types.ts:102`) → rendered in `TeamChatView` (desktop 1162-1168, mobile 1604); hydration on load via `GET /api/team/{sid}/history` (`loop_status` field at `chat.py:1143`) applied at `useTeamStore/index.ts:801`. Server emits with `StreamEnvelope.from_parts("loop_status", payload)` — **no typed event model needed**. | cited inline; emitter `team.py:652-663`; `StreamEnvelope.from_parts` `app/services/stream_envelope.py:109` |
-| F19 | Session scope in FE: `mode` is route-derived (`forcedMode` prop, default `'forge'`); workspace/projectId live in `useTeamStore` (`_workspace`, `projectId`), synced from URL/session (`forge.tsx:39, 149-160`; `index.ts:794`). | `web/src/routes/forge.tsx:17-21, 310-311`; `TeamChatView/index.tsx:117, 274` |
-| F20 | Cache invalidation from SSE goes through the `cacheInvalidations` queue → `applyCacheInvalidations` bridge. | `web/src/stores/cache-invalidation-bridge.ts:12`; wired `forge.tsx:242-250` |
+| F19 | Session scope in FE: `mode` is route-derived (`forcedMode` prop, default `'work'`); workspace/projectId live in `useTeamStore` (`_workspace`, `projectId`), synced from URL/session (`work.tsx:39, 149-160`; `index.ts:794`). | `web/src/routes/work.tsx:17-21, 310-311`; `TeamChatView/index.tsx:117, 274` |
+| F20 | Cache invalidation from SSE goes through the `cacheInvalidations` queue → `applyCacheInvalidations` bridge. | `web/src/stores/cache-invalidation-bridge.ts:12`; wired `work.tsx:242-250` |
 
 ---
 
@@ -84,7 +84,7 @@ Every claim below was verified against the live codebase on 2026-07-09 (three pa
 | **Node** | v1 engine kinds: `kind ∈ {agent, tool, gate, switch, input, notify, transform, foreach}`; Phase 2 adds `{workflow, wait}` (§4.5). Output referenced downstream as `{{nodes.<id>.output}}`. Only `gate`/`switch` have conditional (`when:`) outgoing edges. |
 | **Edge** | `{from, to, when?}`. Determines order and (with `when`) conditional firing. Execution is sequential-topological in Phase 1 (§6.3). |
 | **Roster** (of an `agent` node) | The subagent blueprints (`role: member`) the session lead may spawn/delegate to during that node's turn. The lead card on the canvas is the session lead, locked in Phase 1. Tool access is each blueprint's own configuration (Agents settings) — never a node-level choice; only `tool` nodes pick a tool. |
-| **Scope** | `forge` or `coding` (§6.2). |
+| **Scope** | `work` or `coding` (§6.2). |
 | **Execution** | One inline run inside a specific session. In-memory state drives it; two DB tables log it. One active execution per session, enforced with 409. |
 | **Approval** | Per-content-hash acknowledgment of the manifest (agents, tools, MCP servers, env refs) before a definition is runnable. |
 
@@ -109,7 +109,7 @@ Implementation: `app/services/workflows_fs.py` — discovery/mtime-cache cloned 
 schema_version: 1
 name: bug-triage
 description: Triage a bug and open a fix PR
-scope: coding                      # forge | coding
+scope: coding                      # work | coding
 
 inputs:
   - name: ticket_id
@@ -251,7 +251,7 @@ Pydantic models in `app/workflow/models.py` (definition) + `app/api/schemas/work
 - `notify` nodes: non-empty `message`; `title` optional (defaults to the workflow name).
 - `transform` nodes: `set` is a non-empty map of key → template string.
 - `foreach` nodes: `items` template present; `body` is exactly one inline node spec of kind `tool | transform | notify | agent` (no `gate`/`input`/`switch`/nested `foreach` in v1); `concurrency` rejected in v1 (Phase 2). The destructive lint counts the body's effective tools.
-- `workflow` nodes (Phase 2 kind, validated from v1 so files don't churn): target must exist; approval + scope checked again at run time (a `forge`-scope target is callable from any workflow; a `coding`-scope target only from a `coding` workflow); static cross-definition cycle check at save; runtime depth cap 3. Phase 1 **runs** reject definitions containing one (422 "sub-workflows arrive in Phase 2") while still validating them.
+- `workflow` nodes (Phase 2 kind, validated from v1 so files don't churn): target must exist; approval + scope checked again at run time (a `work`-scope target is callable from any workflow; a `coding`-scope target only from a `coding` workflow); static cross-definition cycle check at save; runtime depth cap 3. Phase 1 **runs** reject definitions containing one (422 "sub-workflows arrive in Phase 2") while still validating them.
 - `wait` nodes (Phase 2 kind, same treatment): integer `seconds` in 1..600.
 - Destructive-path lint (advisory): entry→node paths whose **effective tools** intersect `{edit, write, patch, rm, shell, python, bg}` (`app/agent/agent_loop/tool_executor.py:38-41`) without an intervening gate get a builder-UI warning. Effective tools: for a `tool` node, the named tool; for an `agent` node, the union of the session lead's and roster blueprints' configured tools, resolved from blueprint files at save time (agent nodes have no `tools:` field of their own — a `tools:` key on an agent node is rejected with "tools are configured on the agent blueprint, not the node"). Advisory because all triggers are human-present.
 - Inputs: names unique; `enum` requires `options`.
@@ -331,7 +331,7 @@ class ExecutionState:
     execution_id: UUID
     definition: WorkflowDefinition        # parsed snapshot
     session_id: str
-    scope_workspace: str | None           # resolved coding target (None for forge)
+    scope_workspace: str | None           # resolved coding target (None for work)
     node_outputs: dict[str, dict]         # templating source of truth (in-memory)
     node_status: dict[str, str]
     fired_edges: set[tuple[str, str]]
@@ -356,7 +356,7 @@ class ExecutionState:
 
 ### 6.2 Trigger paths and scope resolution
 
-- **`/workflow` in a session** (§9/§10 detail the FE side): FE POSTs `POST /api/workflows/{name}/run {session_id, inputs}`. Server: 403 if the definition's current hash is unapproved; 409 if the session already has an active execution; 422 on input mismatch. Scope: `forge` definitions run in any session; `coding` definitions require the session to be a coding session — its pinned workspace/project **is** the target (no picker). A `coding` definition triggered from a forge session → 422 with "open it in a coding session or run from the Workflows screen".
+- **`/workflow` in a session** (§9/§10 detail the FE side): FE POSTs `POST /api/workflows/{name}/run {session_id, inputs}`. Server: 403 if the definition's current hash is unapproved; 409 if the session already has an active execution; 422 on input mismatch. Scope: `work` definitions run in any session; `coding` definitions require the session to be a coding session — its pinned workspace/project **is** the target (no picker). A `coding` definition triggered from a work session → 422 with "open it in a coding session or run from the Workflows screen".
 - **Workflows screen, no session**: FE resolves/creates a session first using the existing session-resolve endpoint (the same one the app uses on navigation), for `coding` scope after prompting for workspace/project, then calls the same `/run` with that `session_id` and navigates to the session. The runner itself never creates sessions.
 - If the session has an active user turn at `/run` time, the runner stores the execution in `active` with nothing pending; the next `advance_cb` at the natural boundary starts node 1. (Workflow starts never enter the user-message queue — F7 caveat.)
 
@@ -456,7 +456,7 @@ Plus the `workflow_execution` field added to the existing team-history response 
 
 - **Client**: `web/src/api/client/workflows.ts` — `listWorkflows`, `getWorkflow`, `saveWorkflow`, `deleteWorkflow`, `approveWorkflow`, `runWorkflow`, `stopExecution`, `listExecutions`, `getExecution`. Types in `web/src/api/types.ts`.
 - **Query**: `useWorkflowsQuery(workspace)` cloning `useCommandsQuery` (F16).
-- **Slash menu**: in the `slashCommands` merge (`TeamChatView/index.tsx:683-713`), append one entry **per approved workflow** matching the current scope (`mode` prop + `_workspace`, F19): `displayName: "/workflow <name>"`, `insertText: "workflow <name>"`, `category: 'workflow'`, `description`, `keepInputOpen: true` (args may follow). Forge sessions list `scope: forge` only; coding sessions list both. Unapproved/invalid → omitted (F16).
+- **Slash menu**: in the `slashCommands` merge (`TeamChatView/index.tsx:683-713`), append one entry **per approved workflow** matching the current scope (`mode` prop + `_workspace`, F19): `displayName: "/workflow <name>"`, `insertText: "workflow <name>"`, `category: 'workflow'`, `description`, `keepInputOpen: true` (args may follow). Work sessions list `scope: work` only; coding sessions list both. Unapproved/invalid → omitted (F16).
 - **Submit intercept**: new `tryHandleWorkflowCommand` in `onSubmit` beside the `/loop` check (`index.tsx:1424-1438`, F17), backed by `web/src/lib/parseWorkflowCommand.ts` (clone of `parseLoopCommand.ts`): parses `/workflow <name> [arg1 arg2 …]`, maps positional args onto declared inputs (coerced by type), and if required inputs are still missing opens **`RunInputsDialog`** (small form generated from `inputs[]`). Then `runWorkflow(...)` — the raw slash text is **never sent as a chat message** (unlike `/loop`; no server-side slash parse exists or is needed).
 - **Progress pill**: `WorkflowProgressPill` cloning `LoopStatusPill` exactly (F18): SSE case `'workflow_progress'` in `sse-reducer.ts` (beside `loop_status` at `:489`), store field `activeWorkflowExecution` in `useTeamStore/types.ts`, hydration line beside `index.ts:801` from the new history field, rendered beside `TaskProgressPill` (`index.tsx:1162-1174` region; mobile card beside `:1604`). Pill shows `"<name>: <node_id> (i/n)"`, a red state with the error on failure, and an ✕ → `stopExecution`.
 - **Gate rendering**: expected to reuse the existing question UI (it's a real `QuestionAskedEvent`, F10). Verified early in M4; fallback is a `GateBanner` component fed by `workflow_progress(waiting_gate)` + `getExecution`.
@@ -487,7 +487,7 @@ Plus the `workflow_execution` field added to the existing team-history response 
 
 | Subsystem | Integration |
 |---|---|
-| Forge / Coding modes | Scope rules per §6.2; mode comes from the route (F19). |
+| Work / Coding modes | Scope rules per §6.2; mode comes from the route (F19). |
 | Projects | A coding session bound to a project already carries `extra_workspace_paths` into its turns; tool nodes get the workspace via `set_sandbox` (F12). |
 | `/loop` | Untouched; the workflow `advance_cb` sits before the loop branch in the F1 chain. Both can't drive the same boundary: an active execution consumes it first. |
 | Slash commands | One new FE-intercepted family (§9.1). No server-side slash parse. Command-body composition does **not** work (F17) — dropped from claims. |

@@ -126,7 +126,7 @@ export function loadLastCodingWorkspace(): CodingWorkspaceEntry | null {
 }
 
 export function shouldRestoreLastCodingWorkspace(
-  mode: 'forge' | 'coding',
+  mode: 'work' | 'coding',
   sessionId: string | undefined,
   pathname: string,
 ): boolean {
@@ -193,7 +193,7 @@ export function clearLastCodingFocus(focusId: string): void {
 }
 
 export function workspaceFromSession(
-  mode: 'forge' | 'coding',
+  mode: 'work' | 'coding',
   sessionId: string | undefined,
   sessionWorkspace: string | null | undefined,
 ): string | null {

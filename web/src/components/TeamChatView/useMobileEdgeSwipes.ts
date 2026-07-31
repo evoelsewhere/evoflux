@@ -13,7 +13,7 @@ import type { OS } from '@/hooks/use-platform'
 interface UseMobileEdgeSwipesArgs {
   os: OS
   isMobile: boolean
-  mode: 'forge' | 'coding' | 'aim'
+  mode: 'work' | 'coding' | 'aim'
   mobileSidebarOpen: boolean
   showMobileActions: boolean
   setMobileSidebarOpen: (open: boolean) => void

@@ -35,7 +35,9 @@ if TYPE_CHECKING:
 # - ``path`` / ``workspace_path``: absolute on-disk paths, used for rehydration;
 #   clients fetch
 #   bytes via ``GET /api/team/{sid}/uploads/{filename}`` instead.
-_INTERNAL_ATTACHMENT_FIELDS = frozenset({"converted_text", "path", "workspace_path"})
+_INTERNAL_ATTACHMENT_FIELDS = frozenset(
+    {"converted_text", "path", "workspace_path", "delivery"}
+)
 
 
 def _message_response(m) -> MessageResponse:
@@ -66,7 +68,14 @@ async def _read_upload_as_attachment(file: UploadFile) -> RawAttachment | None:
     """
     if not file.filename:
         return None
-    data = await file.read()
+    # Bound memory use before materialising multipart data into RawAttachment.
+    # The service applies the same aggregate limit across the complete batch.
+    data = await file.read(GLOBAL_SIZE_LIMIT + 1)
+    if len(data) > GLOBAL_SIZE_LIMIT:
+        raise HTTPException(
+            status_code=413,
+            detail=f"'{file.filename}' exceeds the per-message upload limit.",
+        )
     return RawAttachment(
         filename=file.filename,
         content_type=file.content_type,
