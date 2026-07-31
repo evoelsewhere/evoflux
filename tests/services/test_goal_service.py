@@ -117,6 +117,21 @@ async def test_different_blocker_resets_audit_streak(goal_db):
 
 
 @pytest.mark.asyncio
+async def test_successful_turn_resets_blocker_streak(goal_db):
+    db, session = goal_db
+    await goal_service.replace_goal(db, session.id, "Deploy")
+    await goal_service.request_blocked(db, session.id, blocker="Missing credentials")
+
+    goal = await goal_service.reset_blocker_streak(db, session.id)
+
+    assert goal is not None
+    assert goal.status == "active"
+    assert goal.blocker_streak == 0
+    assert goal.blocker_fingerprint is None
+    assert goal.status_details is None
+
+
+@pytest.mark.asyncio
 async def test_usage_is_accumulated_and_budget_exhaustion_pauses(goal_db):
     db, session = goal_db
     await goal_service.replace_goal(db, session.id, "Finish", token_budget=100)
