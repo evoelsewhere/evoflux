@@ -337,7 +337,6 @@ class SessionMessage(SQLModel, table=True):
         sa_column=Column(TZDateTime(), nullable=False),
     )
 
-
 class DreamLog(SQLModel, table=True):
     """Records sessions that have been processed by the dream agent."""
 
@@ -464,49 +463,6 @@ class CodingProjectWorkspace(SQLModel, table=True):
     sort_order: int = Field(
         default=0,
         sa_column=Column(sa.Integer, nullable=False, server_default="0"),
-    )
-    created_at: datetime = Field(
-        default_factory=_utcnow,
-        sa_column=Column(TZDateTime(), nullable=False),
-    )
-
-
-class SessionChapter(SQLModel, table=True):
-    """A named chapter/section within a chat session for the session TOC."""
-
-    __tablename__: str = "session_chapters"  # type: ignore[reportIncompatibleVariableOverride]
-    __table_args__ = (
-        sa.Index("ix_session_chapters_session_created", "session_id", "created_at"),
-    )
-
-    id: UUID = Field(default_factory=uuid7, primary_key=True)
-    session_id: UUID = Field(
-        sa_column=Column(
-            sa.Uuid(),
-            ForeignKey("chat_sessions.id", ondelete="CASCADE"),
-            index=True,
-            nullable=False,
-        ),
-    )
-    title: str = Field(max_length=255)
-    summary: str | None = Field(
-        default=None, sa_column=Column(sa.Text(), nullable=True)
-    )
-    message_id: UUID | None = Field(
-        default=None,
-        sa_column=Column(
-            sa.Uuid(),
-            ForeignKey("session_messages.id", ondelete="SET NULL"),
-            nullable=True,
-        ),
-    )
-    wiki_paths: list[str] = Field(
-        default_factory=list,
-        sa_column=Column(
-            JSON().with_variant(pg.JSONB(), "postgresql"),
-            nullable=False,
-            server_default="[]",
-        ),
     )
     created_at: datetime = Field(
         default_factory=_utcnow,

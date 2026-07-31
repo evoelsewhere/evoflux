@@ -167,7 +167,6 @@ _SAFE_TOOLS: frozenset[str] = frozenset(
         "get_code_review_checks",
         # session bookkeeping / UI-only output
         "note",
-        "mark_chapter",
         "show_widget",
         "read_me",
         "todo_manage",

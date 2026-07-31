@@ -158,7 +158,6 @@ class TestDefaultDeferredTools:
                 "edit",
                 "grep",
                 "glob",
-                "mark_chapter",
                 "shell",
                 "todo_manage",
                 "skill",
@@ -183,7 +182,6 @@ class TestDefaultDeferredTools:
             "grep",
             "load_tool",
             "ls",
-            "mark_chapter",
             "patch",
             "read",
             "shell",
@@ -198,7 +196,7 @@ class TestDefaultDeferredTools:
             assert 10 <= len(eager) <= 15
             assert eager == expected_core
 
-    def test_actual_coding_lead_payload_has_fifteen_eager_tools(self):
+    def test_actual_coding_lead_payload_has_fourteen_eager_tools(self):
         from app.agent.builtin_prompts import tier_tools
         from app.agent.loader import _default_tool_registry
         from tests.agent.mode.team.conftest import MockTeamProvider
@@ -226,7 +224,6 @@ class TestDefaultDeferredTools:
             "grep",
             "load_tool",
             "ls",
-            "mark_chapter",
             "patch",
             "read",
             "shell",

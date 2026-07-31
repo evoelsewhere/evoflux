@@ -94,9 +94,6 @@ export const queryKeys = {
     sessionList: (sessionId: string) => ['scheduler', 'list', 'session', sessionId] as const,
   },
   todos: (sessionId: string) => ['todos', sessionId] as const,
-  chapters: {
-    list: (sessionId: string) => ['chapters', sessionId] as const,
-  },
   // Merged workspace-tree + projects overview powering the coding sidebar —
   // one query, one cache entry, so "which repos are standalone vs
   // project-owned" never has to be reconciled client-side from two

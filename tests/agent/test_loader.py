@@ -232,12 +232,11 @@ def test_tier_tools_lead_only_and_tier_filters():
     lead_normal = set(tier_tools(registry, mode="work", role="lead"))
     lead_coding = set(tier_tools(registry, mode="coding", role="lead"))
 
-    # User-interaction / session-structure tools are lead-only
+    # User-interaction and worktree tools are lead-only
     for name in (
         "ask_user",
         "enter_plan_mode",
         "exit_plan_mode",
-        "mark_chapter",
         "worktree_start",
         "worktree_finish",
     ):

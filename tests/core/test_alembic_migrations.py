@@ -3,8 +3,8 @@
 Runs ``alembic upgrade head`` against a temp database using the real
 ``app/alembic.ini`` and asserts the latest schema state lands (currently:
 WebBridge pairing, interaction, tab-binding, Teach Mode state, AIM unit
-recovery, delegation tasks, Git server connections, and the Work mode rename
-through revision 00000038).
+recovery, delegation tasks, Git server connections, the Work mode rename, and
+retired session-section cleanup through revision 00000039).
 Complements ``tests/core/test_db_extra.py``, which only covers
 ``run_migrations`` error paths with mocks.
 """
@@ -60,6 +60,7 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             "webbridge_teach_replays",
             "git_server_connections",
         } <= set(inspector.get_table_names())
+        assert "session_chapters" not in inspector.get_table_names()
         interaction_columns = {
             column["name"] for column in inspector.get_columns("webbridge_interactions")
         }

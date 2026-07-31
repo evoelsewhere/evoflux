@@ -8,7 +8,6 @@ import { readSSE } from '../sse'
 import type { SSECallbacks } from '../sse'
 import { parseDetailOrThrow } from './_shared'
 import type {
-  Chapter,
   MessageResponse,
   SessionDetailResponse,
   TeamSessionResolveResponse,
@@ -697,45 +696,6 @@ export async function downloadWebBridgeExtension(): Promise<void> {
   } finally {
     URL.revokeObjectURL(url)
   }
-}
-
-// ── Session chapters ──────────────────────────────────────────────────────────
-
-export async function listSessionChapters(sessionId: string): Promise<Chapter[]> {
-  const res = await fetch(
-    `${apiBaseUrl()}/team/sessions/${encodeURIComponent(sessionId)}/chapters`,
-  )
-  if (!res.ok) await parseDetailOrThrow(res, 'listSessionChapters')
-  return res.json()
-}
-
-export async function createSessionChapter(
-  sessionId: string,
-  title: string,
-  summary?: string | null,
-  messageId?: string | null,
-): Promise<Chapter> {
-  const res = await fetch(
-    `${apiBaseUrl()}/team/sessions/${encodeURIComponent(sessionId)}/chapters`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, summary: summary ?? null, message_id: messageId ?? null }),
-    },
-  )
-  if (!res.ok) await parseDetailOrThrow(res, 'createSessionChapter')
-  return res.json()
-}
-
-export async function deleteSessionChapter(
-  sessionId: string,
-  chapterId: string,
-): Promise<void> {
-  const res = await fetch(
-    `${apiBaseUrl()}/team/sessions/${encodeURIComponent(sessionId)}/chapters/${encodeURIComponent(chapterId)}`,
-    { method: 'DELETE' },
-  )
-  if (!res.ok) await parseDetailOrThrow(res, 'deleteSessionChapter')
 }
 
 // ── Coding Projects API ───────────────────────────────────────────────────────

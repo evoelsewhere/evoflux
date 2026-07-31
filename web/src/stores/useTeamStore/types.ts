@@ -31,7 +31,6 @@ export type CacheInvalidation =
   | { kind: 'todos'; sessionId: string }
   | { kind: 'team_agents' }
   | { kind: 'team_sessions' }
-  | { kind: 'chapters'; sessionId: string }
 
 export interface SetupRequiredNotice {
   agent: string

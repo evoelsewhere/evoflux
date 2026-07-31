@@ -302,7 +302,6 @@ def _default_tool_registry() -> dict[str, Tool]:
     )
     from app.agent.tools.builtin.plan import enter_plan_mode, exit_plan_mode
     from app.agent.tools.builtin.ask_user import ask_user
-    from app.agent.tools.builtin.chapter import mark_chapter
     from app.agent.tools.builtin.bg_tasks import (
         shell_bg_start,
         shell_bg_status,
@@ -394,7 +393,6 @@ def _default_tool_registry() -> dict[str, Tool]:
         "static_diagnostics": static_diagnostics,
         "code_definition": code_definition,
         "code_references": code_references,
-        "mark_chapter": mark_chapter,
         "visualize_read_me": visualize_read_me,
         "show_widget": show_widget,
         "aim_units": aim_units,

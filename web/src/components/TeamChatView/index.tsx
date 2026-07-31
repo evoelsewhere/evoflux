@@ -50,7 +50,6 @@ import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
 import { WebBridgeStatusDialog } from '@/components/shell/WebBridgeStatusDialog'
 import { useTodosQuery } from '@/queries/useTodosQuery'
-import { useSessionChapters } from '@/hooks/useSessionChapters'
 import { useRegistryQuery, useTriggerDreamMutation } from '@/queries'
 import { getTeamSession, getWebBridgeStatus, replyPlanApproval, resolveTeamSession, setSessionPermissionMode } from '@/api/client'
 import { apiBaseUrl } from '@/api/base-url'
@@ -375,19 +374,16 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       closeWorkbenchTool('terminal')
       closeWorkbenchTool('browser')
       closeWorkbenchTool('side-chat')
-      closeWorkbenchTool('progress')
       previousWorkbenchSessionRef.current = sessionIdState
     }
     if (!sessionIdState) {
       closeWorkbenchTool('terminal')
       closeWorkbenchTool('browser')
       closeWorkbenchTool('side-chat')
-      closeWorkbenchTool('progress')
       if (mode !== 'coding') closeWorkbenchTool('files')
     }
     if (mode !== 'coding') {
       closeWorkbenchTool('graph')
-      closeWorkbenchTool('progress')
       closeWorkbenchTool('source-control')
       closeWorkbenchTool('pull-requests')
     }
@@ -486,8 +482,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
 
   const { data: todosData } = useTodosQuery(sessionIdState)
   const todos = todosData?.todos ?? []
-  const { data: chapters = [] } = useSessionChapters(sessionIdState)
-
   const activeSessionId = sessionIdState ?? sessionId ?? null
   const reviewSessionContext = useMemo(
     () => parseCodeReviewSessionTags(sessionTags),
@@ -1131,7 +1125,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const historySkeleton = (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden" aria-hidden="true">
       <div className="flex-1 overflow-hidden">
-        <div className="mx-auto max-w-3xl space-y-8 px-4 py-6">
+        <div className="mx-auto max-w-4xl space-y-8 px-3 py-4">
           <div className="flex justify-end">
             <div className="h-9 w-44 animate-pulse rounded-2xl bg-(--bg-key)" />
           </div>
@@ -1254,9 +1248,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                 onAddFileComment={handleAddFileComment}
                 onSendFileToChat={handleSendToChat}
                 onClose={() => closeWorkbenchTool('files')}
-                sessionId={sessionIdState}
                 projectId={projectIdState}
-                isWorking={isTeamWorking}
               />
             </WorkbenchSurface>
             <WorkbenchSurface tool="graph">
@@ -1268,21 +1260,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                 selectedFilePath={codingFileViewer?.path ?? null}
                 onFileSelect={handleCodingFileSelect}
                 onClose={() => closeWorkbenchTool('graph')}
-                sessionId={sessionIdState}
                 projectId={projectIdState}
-                isWorking={isTeamWorking}
-              />
-            </WorkbenchSurface>
-            <WorkbenchSurface tool="progress">
-              <CodingWorkspacePanel
-                workspace={workspace}
-                open
-                view="progress"
-                embedded
-                onClose={() => closeWorkbenchTool('progress')}
-                sessionId={sessionIdState}
-                projectId={projectIdState}
-                isWorking={isTeamWorking}
               />
             </WorkbenchSurface>
           </>
@@ -1733,7 +1711,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             lastError={activeLastError}
             isContinuing={isContinuing && activeAgent === leadName}
             onContinue={activeAgent === leadName ? continueTeam : undefined}
-            chapters={activeAgent === leadName ? chapters : undefined}
             onAddSelectionToChat={handleAddSelectionToChat}
             onRequestSelectionDetails={handleRequestSelectionDetails}
             onSendToSideChat={handleSendToSideChat}
