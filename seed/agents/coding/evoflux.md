@@ -2,7 +2,6 @@
 name: evoflux
 role: lead
 model: __PROVIDER_MODEL__
-temperature: 0.2
 thinking_level: low
 ---
 

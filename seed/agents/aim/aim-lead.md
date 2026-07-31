@@ -3,7 +3,6 @@ name: aim-lead
 role: lead
 description: Orchestrates an AIM migration project end to end — assess, understand, design, convert, test-compare, cutover.
 model: __PROVIDER_MODEL__
-temperature: 0.2
 thinking_level: medium
 skills:
   - aim-kb-conventions

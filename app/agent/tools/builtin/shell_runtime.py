@@ -182,12 +182,18 @@ def is_windows(shell_path: str | None = None) -> bool:
 # to bare ``-c`` — they have no widely-used per-user rc convention.
 
 
-def build_argv(shell_bin: str, command: str) -> list[str]:
-    """Return argv (after the shell binary) that runs *command* with full user PATH.
+def build_argv(
+    shell_bin: str,
+    command: str,
+    *,
+    load_profile: bool = True,
+) -> list[str]:
+    """Return argv (after the shell binary) that runs *command*.
 
-    For zsh/bash we wrap *command* in a small script that sources the user's
-    rc files before evaluating it.  For other POSIX shells we use a bare
-    ``-c`` since they have no portable per-user rc convention.
+    When ``load_profile`` is enabled, zsh/bash wrap *command* in a small
+    script that sources the user's rc files before evaluating it. The sandbox
+    disables this by default because profiles may execute code or export
+    credentials. Other POSIX shells use a bare ``-c``.
 
     For Windows shells we use the appropriate flag (``/c`` for cmd,
     ``-Command`` for PowerShell).
@@ -209,7 +215,7 @@ def build_argv(shell_bin: str, command: str) -> list[str]:
         return ["-NoProfile", "-NonInteractive", "-Command", command]
 
     # ── POSIX shells ───────────────────────────────────────────────────
-    if shell_name == "zsh":
+    if shell_name == "zsh" and load_profile:
         # -l loads ~/.zprofile/~/.zlogin; explicit source covers ~/.zshenv
         # and ~/.zshrc which a non-interactive login shell skips.
         # ``eval $1`` keeps quoting/$VAR semantics identical to ``zsh -c``.
@@ -221,7 +227,7 @@ def build_argv(shell_bin: str, command: str) -> list[str]:
         )
         return ["-l", "-c", wrapper, "EvoFlux", command]
 
-    if shell_name == "bash":
+    if shell_name == "bash" and load_profile:
         wrapper = (
             "shopt -s expand_aliases; "
             "[[ -f ~/.bashrc ]] && source ~/.bashrc >/dev/null 2>&1 || true; "
@@ -229,7 +235,7 @@ def build_argv(shell_bin: str, command: str) -> list[str]:
         )
         return ["-l", "-c", wrapper, "EvoFlux", command]
 
-    # sh, dash, ksh, anything else POSIX-compatible
+    # Secure default for zsh/bash, plus sh/dash/ksh and other POSIX shells.
     return ["-c", command]
 
 

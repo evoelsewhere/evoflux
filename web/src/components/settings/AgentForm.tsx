@@ -17,11 +17,21 @@
  * by the parent route) hosts the Form/Raw toggle next to Save — keeping
  * top-of-page real estate consistent across all editor pages.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { AlertCircle, ChevronDown } from 'lucide-react'
-import fuzzysort from 'fuzzysort'
+import { useMemo, useState } from 'react'
+import {
+  AlertCircle,
+  Boxes,
+  BrainCircuit,
+  Check,
+  ChevronDown,
+  FileText,
+  LockKeyhole,
+  UserRound,
+  type LucideIcon,
+} from 'lucide-react'
 
+import { ModelOptions } from '@/components/model-picker/ModelOptions'
+import { ProviderBrandIcon } from '@/components/providers/ProviderBrandIcon'
 import { SettingsGroup } from '@/components/settings/SettingsLayout'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -33,7 +43,16 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { isBuiltInAgentName } from '@/lib/agent-visuals'
+import {
+  buildThinkingOptions,
+  providerOf,
+  reconcileThinkingLevel,
+  shortModelName,
+  type ModelOption,
+} from '@/lib/model-settings'
 
 import { useAgentFilesQuery, useMcpServersQuery, useRegistryQuery } from '@/queries'
 import { MultiSelect, type MultiSelectOption } from './MultiSelect'
@@ -45,7 +64,6 @@ import {
   type AgentFrontmatter,
 } from './frontmatter'
 import {
-  parseTemperatureInput,
   validateAgentName,
   validateDescription,
   validateModel,
@@ -118,11 +136,6 @@ export function AgentForm({
   const registry = useRegistryQuery()
   const mcpServers = useMcpServersQuery()
   const agentFiles = useAgentFilesQuery()
-  const selectedModel = registry.data?.models.find((entry) => entry.id === fm.model)
-  const thinkingOptions = [
-    { value: '__none__', label: '(default)' },
-    ...(selectedModel?.thinking_levels ?? []).map((value) => ({ value, label: value })),
-  ]
 
   // Hide ``mcp_<server>_<tool>`` entries from the Tools picker — they are
   // granted en bloc via the MCP server picker below, so showing them in
@@ -207,7 +220,6 @@ export function AgentForm({
           skillOptions={skillOptions}
           mcpOptions={mcpOptions}
           modelOptions={modelOptions}
-          thinkingOptions={thinkingOptions}
           agentPath={agentPath}
           effectiveTools={agentSummary?.tools}
           effectiveSkills={agentSummary?.skills}
@@ -272,7 +284,6 @@ function FormFields({
   skillOptions,
   mcpOptions,
   modelOptions,
-  thinkingOptions,
   agentPath,
   effectiveTools,
   effectiveSkills,
@@ -286,22 +297,12 @@ function FormFields({
   leadOnlyTools: Set<string>
   skillOptions: MultiSelectOption[]
   mcpOptions: MultiSelectOption[]
-  modelOptions: { id: string; provider: string; model: string; vision: boolean }[]
-  thinkingOptions: Array<{ value: string; label: string }>
+  modelOptions: ModelOption[]
   agentPath?: string
   effectiveTools?: string[]
   effectiveSkills?: string[]
   updateFromForm: (next: AgentFrontmatter, nextBody: string) => void
 }) {
-  // Temperature has a pending state (e.g. "0." while typing) that we need
-  // to preserve as a string in local state, independent of the committed
-  // `fm.temperature` number. Same approach as React's controlled-input
-  // guidance for numeric fields.
-  const [tempRaw, setTempRaw] = useState<string>(
-    fm.temperature == null ? '' : String(fm.temperature),
-  )
-  const [tempError, setTempError] = useState<string | null>(null)
-
   // Per-field errors computed fresh from zod on render. For the scalar
   // string fields we validate whenever the value is non-empty; empty is
   // handled by the caller's full-form check before save.
@@ -309,11 +310,13 @@ function FormFields({
   const descriptionError = validateDescription(fm.description ?? '')
   const currentModelOptions = useMemo(() => {
     const byId = new Map(modelOptions.map((model) => [model.id, model]))
-    const withCurrent = [...modelOptions]
+    const withCurrent: ModelOption[] = [...modelOptions]
     for (const id of [fm.model, fm.fallback_model]) {
       if (!id || byId.has(id) || !id.includes(':')) continue
       const [provider, model] = id.split(':', 2)
-      withCurrent.push({ id, provider, model, vision: false })
+      const current = { id, provider, model, vision: false }
+      withCurrent.push(current)
+      byId.set(id, current)
     }
     return withCurrent
   }, [fm.fallback_model, fm.model, modelOptions])
@@ -328,6 +331,13 @@ function FormFields({
   const fallbackError = validateModel(fm.fallback_model ?? '', {
     validValues: validModelIds,
   })
+  const selectedModel = currentModelOptions.find((model) => model.id === fm.model)
+  const thinkingOptions = buildThinkingOptions(selectedModel?.thinking_levels ?? [])
+  const thinkingValue =
+    fm.thinking_level &&
+    thinkingOptions.some((option) => option.value === fm.thinking_level)
+      ? fm.thinking_level
+      : '__default__'
   const hasBuiltInProfile = isBuiltInProfile(fm.name, fm.role, agentPath)
   const implicitToolNames = new Set(['skill', 'todo_manage', 'schedule_task', 'note'])
   // Every agent gets its mode tier's tools — the server's effective
@@ -349,276 +359,280 @@ function FormFields({
   const extraSkillOptions = hasBuiltInProfile
     ? skillOptions.filter((option) => !builtInSkills.includes(option.value))
     : skillOptions
-
-  const onTempChange = (next: string) => {
-    setTempRaw(next)
-    const parsed = parseTemperatureInput(next)
-    if (parsed.ok === true) {
-      setTempError(null)
-      updateFromForm({ ...fm, temperature: parsed.value }, body)
-    } else if (parsed.ok === 'pending') {
-      setTempError(null)
-      // Do NOT push to fm yet — keep the last committed value so we don't
-      // flip dirty flags spuriously while the user is mid-typing.
-    } else {
-      setTempError(parsed.error)
-    }
-  }
+  const promptWordCount = body.trim() ? body.trim().split(/\s+/).length : 0
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       {hasBuiltInProfile && (
-        <div className="rounded-lg border border-(--color-border) bg-(--bg-card) px-4 py-3 text-sm text-(--color-text-muted)">
-          <p className="font-medium text-(--color-text)">Built-in EvoFlux profile</p>
-          <p className="mt-1">
-            EvoFlux provides the default description, tools, skills, and prompt in code. Values saved here are additive overrides, so versioned built-ins can improve without overwriting your file.
-          </p>
+        <div className="flex items-start gap-3 rounded-xl border border-(--color-accent)/20 bg-(--color-accent-soft) px-4 py-3.5 text-xs leading-relaxed text-(--color-text-muted)">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-(--bg-card) text-(--color-accent) ring-1 ring-(--color-accent)/20">
+            <LockKeyhole size={14} aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="font-semibold text-(--color-text)">Built-in EvoFlux profile</p>
+            <p className="mt-0.5">
+              Default tools, skills, and instructions are versioned in EvoFlux. Changes here stay as additive overrides, so upgrades never overwrite your custom setup.
+            </p>
+          </div>
         </div>
       )}
 
-      {/* Identity ─────────────────────────────────────────────── */}
-      <SettingsGroup title="Identity" description="Who is this agent and what is its role?">
-        <div className="grid gap-4 px-4 py-3.5 md:grid-cols-2">
-          <Field
-            label="Name"
-            required
-            error={nameError}
-            hint={
-              !isNew
-                ? 'Filename stem; cannot be renamed after creation.'
-                : 'Letters, digits, ., _, - only.'
-            }
-          >
-            <Input
-              type="text"
-              value={fm.name}
-              onChange={(e) => updateFromForm({ ...fm, name: e.target.value }, body)}
-              disabled={disabled || !isNew}
-              placeholder="orchestrator"
-              aria-invalid={!!nameError || undefined}
-              className="min-h-11 font-mono md:min-h-9"
-            />
-          </Field>
-
-          <Field label="Role" required hint="Exactly one agent in the team must be lead.">
-            <Select
-              value={fm.role}
-              onValueChange={(v) =>
-                v && updateFromForm({ ...fm, role: v as 'lead' | 'member' }, body)
+      <div className="grid items-start gap-5 lg:grid-cols-2">
+        <AgentSection
+          icon={UserRound}
+          title="Profile"
+          description="Name the agent and make its responsibility obvious to the team."
+        >
+          <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-2">
+            <Field
+              label="Name"
+              required
+              error={nameError}
+              hint={
+                !isNew
+                  ? 'Filename stem; locked after creation.'
+                  : 'Letters, digits, ., _, - only.'
               }
-              disabled={disabled}
             >
-              <SelectTrigger aria-label="Role" className="min-h-11 w-full md:min-h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="lead">Lead</SelectItem>
-                <SelectItem value="member">Member</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
+              <Input
+                type="text"
+                value={fm.name}
+                onChange={(e) => updateFromForm({ ...fm, name: e.target.value }, body)}
+                disabled={disabled || !isNew}
+                placeholder="orchestrator"
+                aria-invalid={!!nameError || undefined}
+                className="min-h-11 font-mono md:min-h-10"
+              />
+            </Field>
 
-          <Field
-            label="Description"
-            error={descriptionError}
-            className="md:col-span-2"
-            hint="One-line summary shown when the lead browses the team."
-          >
-            <Input
-              type="text"
-              className="min-h-11 md:min-h-9"
-              value={fm.description ?? ''}
-              onChange={(e) =>
-                updateFromForm({ ...fm, description: e.target.value || null }, body)
+            <Field label="Role" required hint="Each team must have exactly one lead.">
+              <Select
+                value={fm.role}
+                onValueChange={(value) =>
+                  value && updateFromForm({ ...fm, role: value as 'lead' | 'member' }, body)
+                }
+                disabled={disabled}
+              >
+                <SelectTrigger aria-label="Role" className="min-h-11 w-full md:min-h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="lead">Lead</SelectItem>
+                  <SelectItem value="member">Member</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field
+              label="Description"
+              error={descriptionError}
+              className="md:col-span-2"
+              hint="Shown in the roster and when the lead chooses a teammate."
+            >
+              <Input
+                type="text"
+                className="min-h-11 md:min-h-10"
+                value={fm.description ?? ''}
+                onChange={(event) =>
+                  updateFromForm({ ...fm, description: event.target.value || null }, body)
+                }
+                disabled={disabled}
+                placeholder="Coordinates the team and delegates focused work."
+                aria-invalid={!!descriptionError || undefined}
+              />
+            </Field>
+          </div>
+        </AgentSection>
+
+        <AgentSection
+          icon={BrainCircuit}
+          title="Runtime"
+          description="Use the same model and reasoning controls available in chat."
+        >
+          <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-2">
+            <Field label="Primary model" required error={modelError} className="md:col-span-2">
+              <ModelCombobox
+                value={fm.model ?? ''}
+                options={currentModelOptions}
+                onChange={(modelId) => {
+                  const nextModel = currentModelOptions.find(
+                    (model) => model.id === modelId,
+                  )
+                  updateFromForm(
+                    {
+                      ...fm,
+                      model: modelId,
+                      thinking_level: reconcileThinkingLevel(
+                        fm.thinking_level,
+                        nextModel,
+                      ),
+                    },
+                    body,
+                  )
+                }}
+                disabled={disabled}
+                invalid={!!modelError}
+              />
+            </Field>
+
+            <Field
+              label="Thinking"
+              hint={
+                thinkingOptions.length > 1
+                  ? 'Options supported by this model.'
+                  : 'No configurable reasoning control.'
               }
-              disabled={disabled}
-              placeholder="Coordinates the team. Breaks tasks, delegates to members."
-              aria-invalid={!!descriptionError || undefined}
-            />
-          </Field>
-        </div>
-      </SettingsGroup>
-
-      <SettingsGroup
-        title="Model & behaviour"
-        description="Which provider, plus sampling temperature and reasoning depth."
-      >
-        <div className="grid gap-4 px-4 py-3.5 md:grid-cols-2">
-          <Field label="Model" required error={modelError} className="md:col-span-2">
-            <ModelCombobox
-              value={fm.model ?? ''}
-              options={currentModelOptions}
-              onChange={(v) => updateFromForm({ ...fm, model: v }, body)}
-              disabled={disabled}
-              invalid={!!modelError}
-              placeholder="Type to search models…"
-            />
-          </Field>
-
-          <Field
-            label="Fallback model"
-            error={fallbackError}
-            hint="Used when the primary model errors out. Leave blank for none."
-            className="md:col-span-2"
-          >
-            <ModelCombobox
-              value={fm.fallback_model ?? ''}
-              options={currentModelOptions}
-              onChange={(v) => updateFromForm({ ...fm, fallback_model: v || null }, body)}
-              disabled={disabled}
-              invalid={!!fallbackError}
-              placeholder="Type to search models (or leave blank)…"
-            />
-          </Field>
-
-          <Field label="Temperature" error={tempError} hint="0 – 2; higher = more random.">
-            <Input
-              type="text"
-              inputMode="decimal"
-              value={tempRaw}
-              onChange={(e) => onTempChange(e.target.value)}
-              disabled={disabled}
-              placeholder="0.2"
-              aria-invalid={!!tempError || undefined}
-              className="min-h-11 font-mono md:min-h-9"
-            />
-          </Field>
-
-          <Field
-            label="Thinking level"
-            hint={
-              thinkingOptions.length > 1
-                ? 'Only controls advertised for this model and provider are shown.'
-                : 'This provider exposes no configurable reasoning control for the selected model.'
-            }
-          >
-            <Select
-              value={fm.thinking_level ? fm.thinking_level : '__none__'}
-              onValueChange={(v) => {
-                if (v == null) return
-                updateFromForm(
-                  { ...fm, thinking_level: v === '__none__' ? null : v },
-                  body,
-                )
-              }}
-              disabled={disabled || thinkingOptions.length === 1}
             >
-              <SelectTrigger aria-label="Thinking level" className="min-h-11 w-full md:min-h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {thinkingOptions.map((lvl) => (
-                  <SelectItem key={lvl.value} value={lvl.value}>
-                    {lvl.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
-      </SettingsGroup>
+              <Select
+                value={thinkingValue}
+                onValueChange={(value) => {
+                  if (value == null) return
+                  updateFromForm(
+                    { ...fm, thinking_level: value === '__default__' ? null : value },
+                    body,
+                  )
+                }}
+                disabled={disabled || thinkingOptions.length === 1}
+              >
+                <SelectTrigger aria-label="Thinking level" className="min-h-11 w-full md:min-h-10">
+                  <SelectValue>
+                    {thinkingOptions.find(
+                      (option) => (option.value ?? '__default__') === thinkingValue,
+                    )?.label ?? 'Default'}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {thinkingOptions.map((option) => (
+                    <SelectItem
+                      key={option.value ?? '__default__'}
+                      value={option.value ?? '__default__'}
+                    >
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
 
-      <SettingsGroup
+            <Field
+              label="Fallback"
+              error={fallbackError}
+              hint="Used only if the primary model fails."
+            >
+              <ModelCombobox
+                value={fm.fallback_model ?? ''}
+                options={currentModelOptions}
+                onChange={(value) =>
+                  updateFromForm({ ...fm, fallback_model: value || null }, body)
+                }
+                disabled={disabled}
+                invalid={!!fallbackError}
+                allowUnset
+                unsetLabel="No fallback"
+              />
+            </Field>
+          </div>
+        </AgentSection>
+      </div>
+
+      <AgentSection
+        icon={Boxes}
         title="Capabilities"
-        description="Tier tools are granted automatically. Add extra tools, MCP servers, and skills on top."
+        description="Built-in access stays visible but compact. Add only what this agent needs beyond its team defaults."
+        meta={`${(fm.tools ?? []).length + (fm.mcp ?? []).length + (fm.skills ?? []).length} custom`}
       >
-        <div className="flex flex-col gap-4 px-4 py-3.5">
-          <Field
-            label="Tools"
-            hint={
-              grantedTools.length > 0
-                ? `${(fm.tools ?? []).length} extra selected. Tier tools are always included.`
-                : `${(fm.tools ?? []).length} selected of ${extraToolOptions.length} available.`
-            }
-          >
-            {grantedTools.length > 0 && (
-              <CapabilityChips label="Granted by tier" values={grantedTools} />
-            )}
-            <MultiSelect
-              ariaLabel="Tools"
-              options={extraToolOptions}
-              value={fm.tools ?? []}
-              onChange={(v) => updateFromForm({ ...fm, tools: v }, body)}
-              placeholder="Pick extra tools this agent may invoke…"
-            />
-          </Field>
+        <div className="grid divide-y divide-(--color-border-subtle) lg:grid-cols-3 lg:divide-x lg:divide-y-0">
+          <div className="min-w-0 p-4 sm:p-5">
+            <Field
+              label="Tools"
+              hint={
+                grantedTools.length > 0
+                  ? `${(fm.tools ?? []).length} extra selected.`
+                  : `${(fm.tools ?? []).length} selected of ${extraToolOptions.length}.`
+              }
+            >
+              {grantedTools.length > 0 && (
+                <CapabilityChips label="Included by team" values={grantedTools} />
+              )}
+              <MultiSelect
+                ariaLabel="Tools"
+                options={extraToolOptions}
+                value={fm.tools ?? []}
+                onChange={(value) => updateFromForm({ ...fm, tools: value }, body)}
+                placeholder="Add extra tools…"
+              />
+            </Field>
+          </div>
 
-          <Field
-            label="MCP servers"
-            hint={
-              mcpOptions.length === 0
-                ? 'No MCP servers configured. Add one under Settings → MCP.'
-                : `${(fm.mcp ?? []).length} selected of ${mcpOptions.length} available. Each grants every tool the server exposes.`
-            }
-          >
-            <MultiSelect
-              ariaLabel="MCP servers"
-              options={mcpOptions}
-              value={fm.mcp ?? []}
-              onChange={(v) => updateFromForm({ ...fm, mcp: v }, body)}
-              placeholder="Pick MCP servers this agent may use…"
-              emptyLabel="No matching servers"
-            />
-          </Field>
+          <div className="min-w-0 p-4 sm:p-5">
+            <Field
+              label="MCP servers"
+              hint={
+                mcpOptions.length === 0
+                  ? 'Configure servers in Settings → MCP.'
+                  : `${(fm.mcp ?? []).length} selected of ${mcpOptions.length}.`
+              }
+            >
+              <MultiSelect
+                ariaLabel="MCP servers"
+                options={mcpOptions}
+                value={fm.mcp ?? []}
+                onChange={(value) => updateFromForm({ ...fm, mcp: value }, body)}
+                placeholder="Connect MCP servers…"
+                emptyLabel="No matching servers"
+              />
+            </Field>
+          </div>
 
-          <Field
-            label="Skills"
-            hint={
-              hasBuiltInProfile
-                ? `${(fm.skills ?? []).length} extra selected. Built-in skills are always included when this profile has them.`
-                : `${(fm.skills ?? []).length} selected of ${extraSkillOptions.length} available.`
-            }
-          >
-            {builtInSkills.length > 0 && (
-              <CapabilityChips label="Built-in skills" values={builtInSkills} />
-            )}
-            <MultiSelect
-              ariaLabel="Skills"
-              options={extraSkillOptions}
-              value={fm.skills ?? []}
-              onChange={(v) => updateFromForm({ ...fm, skills: v }, body)}
-              placeholder="Pick skills the agent can load on demand…"
-            />
-          </Field>
+          <div className="min-w-0 p-4 sm:p-5">
+            <Field
+              label="Skills"
+              hint={
+                hasBuiltInProfile
+                  ? `${(fm.skills ?? []).length} extra selected.`
+                  : `${(fm.skills ?? []).length} selected of ${extraSkillOptions.length}.`
+              }
+            >
+              {builtInSkills.length > 0 && (
+                <CapabilityChips label="Built-in skills" values={builtInSkills} />
+              )}
+              <MultiSelect
+                ariaLabel="Skills"
+                options={extraSkillOptions}
+                value={fm.skills ?? []}
+                onChange={(value) => updateFromForm({ ...fm, skills: value }, body)}
+                placeholder="Add skills…"
+              />
+            </Field>
+          </div>
         </div>
-      </SettingsGroup>
+      </AgentSection>
 
-      <SettingsGroup
-        title={hasBuiltInProfile ? 'Extra prompt' : 'System prompt'}
+      <AgentSection
+        icon={FileText}
+        title={hasBuiltInProfile ? 'Extra instructions' : 'System instructions'}
         description={
           hasBuiltInProfile
-            ? 'Additional instructions appended after the built-in prompt.'
-            : 'The instructions placed at the top of every conversation with this agent.'
+            ? 'Appended after the versioned built-in prompt.'
+            : 'Placed at the start of every conversation with this agent.'
         }
+        meta={`${promptWordCount} words · ${body.length} chars`}
       >
-        <div className="px-4 py-3.5">
+        <div className="p-3 sm:p-4">
           <Textarea
-            aria-label={hasBuiltInProfile ? 'Extra prompt' : 'System prompt'}
+            aria-label={hasBuiltInProfile ? 'Extra instructions' : 'System instructions'}
             value={body}
-            onChange={(e) => updateFromForm(fm, e.target.value)}
+            onChange={(event) => updateFromForm(fm, event.target.value)}
             disabled={disabled}
-            rows={14}
-            placeholder="You are …"
-            className="min-h-72 font-mono text-[13px] leading-relaxed"
+            rows={16}
+            placeholder="Define the agent's responsibility, constraints, workflow, and output style…"
+            className="min-h-80 resize-y border-0 bg-(--bg-input) p-4 font-mono text-[13px] leading-[1.7] shadow-inner focus-visible:ring-2"
           />
         </div>
-      </SettingsGroup>
+      </AgentSection>
     </div>
   )
 }
-
-const NORMAL_BUILT_IN_MEMBERS = new Set([
-  'executor',
-  'explorer',
-  'consultant',
-  'debate',
-])
-const CODING_BUILT_IN_MEMBERS = new Set([
-  'coder',
-  'explorer',
-  'debate',
-  'architect',
-])
 
 function isBuiltInProfile(
   name?: string,
@@ -627,278 +641,191 @@ function isBuiltInProfile(
 ): boolean {
   if (!name || !role) return false
   const path = agentPath ?? name
-  const isCoding = path.startsWith('coding/')
-  const basename = path.split('/').pop() ?? name
-  if (role === 'lead') return basename === 'EvoFlux'
-  if (role !== 'member') return false
-  return isCoding
-    ? CODING_BUILT_IN_MEMBERS.has(basename)
-    : NORMAL_BUILT_IN_MEMBERS.has(basename)
+  return isBuiltInAgentName(path, role)
 }
 
-// ── Model combobox ──────────────────────────────────────────────────────────
+// ── Model picker ────────────────────────────────────────────────────────────
 
-export interface ModelOption {
-  id: string
-  provider: string
-  model: string
-  vision: boolean
-  output_image?: boolean
-  output_video?: boolean
-}
-
-/**
- * Typeahead combobox for picking a registry model id (``provider:model``).
- *
- * The user types into a regular text input; matches from the registry are
- * ranked by ``fuzzysort`` and rendered in a floating list below. Picking
- * an entry (click, ↑/↓ + Enter) commits the value. Free-text values that
- * don't match a registry entry are flagged by ``validateModel`` upstream
- * — the input itself doesn't gate keystrokes so the user can edit freely.
- *
- * Empty input commits an empty string, which the caller may interpret as
- * "unset" (used for ``fallback_model``).
- */
 export function ModelCombobox({
   value,
   onChange,
   options,
   disabled,
   invalid,
+  allowUnset,
   placeholder,
+  unsetLabel = 'No model',
 }: {
   value: string
   onChange: (v: string) => void
   options: ModelOption[]
   disabled?: boolean
   invalid?: boolean
+  allowUnset?: boolean
   placeholder?: string
+  unsetLabel?: string
 }) {
-  const [query, setQuery] = useState(value)
   const [open, setOpen] = useState(false)
-  const [highlight, setHighlight] = useState(0)
-  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null)
-  const wrapperRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const listRef = useRef<HTMLUListElement>(null)
-
-  // Adopt external value changes (e.g. switching agents) without losing
-  // the user's in-progress query while focused.
-  const [lastValue, setLastValue] = useState(value)
-  if (value !== lastValue) {
-    setLastValue(value)
-    setQuery(value)
-  }
-
-  // Track the input's viewport rect while the dropdown is open so the
-  // portalled list stays pinned beneath it as the page scrolls or the
-  // window resizes. Measured synchronously after layout so the first
-  // frame after open is already positioned correctly.
-  useLayoutEffect(() => {
-    if (!open) return
-    const measure = () => {
-      const rect = inputRef.current?.getBoundingClientRect()
-      if (rect) setAnchorRect(rect)
-    }
-    measure()
-    window.addEventListener('scroll', measure, true)
-    window.addEventListener('resize', measure)
-    return () => {
-      window.removeEventListener('scroll', measure, true)
-      window.removeEventListener('resize', measure)
-    }
-  }, [open])
-
-  // Close when a click/focus lands outside the input *and* the dropdown.
-  // The portalled list isn't a DOM descendant of the wrapper, so we
-  // can't rely on a single onBlur handler.
-  useEffect(() => {
-    if (!open) return
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as Node | null
-      if (
-        wrapperRef.current?.contains(target) ||
-        listRef.current?.contains(target)
-      ) {
-        return
-      }
-      setOpen(false)
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    return () => document.removeEventListener('pointerdown', onPointerDown)
-  }, [open])
-
-  // Filter + rank with fuzzysort. Empty query → full list (provider order).
-  const filtered = useMemo<ModelOption[]>(() => {
-    const q = query.trim()
-    if (!q) return options
-    // Indexing into ``id`` (the qualified ``provider:model``) means
-    // searching ``gpt5`` and ``openai:gpt-5.4`` both work.
-    const results = fuzzysort.go(q, options, {
-      key: 'id',
-      threshold: 0.2,
-      limit: 50,
-    })
-    return results.map((r) => r.obj)
-  }, [options, query])
-
-  // Clamp highlight when the list shrinks. Derived-state pattern (see
-  // React docs: "You might not need an effect").
-  const [lastLen, setLastLen] = useState(filtered.length)
-  if (lastLen !== filtered.length) {
-    setLastLen(filtered.length)
-    setHighlight((h) => Math.min(h, Math.max(filtered.length - 1, 0)))
-  }
-
-  const commit = (next: string) => {
-    setQuery(next)
-    onChange(next)
-    setOpen(false)
-  }
-
-  const handleKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setOpen(true)
-      setHighlight((i) => Math.min(i + 1, filtered.length - 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setHighlight((i) => Math.max(i - 1, 0))
-    } else if (e.key === 'Enter') {
-      if (!open) return
-      e.preventDefault()
-      const row = filtered[highlight]
-      if (row) commit(row.id)
-    } else if (e.key === 'Escape') {
-      if (!open) return
-      e.preventDefault()
-      setOpen(false)
-    }
-  }
+  const selected = options.find((option) => option.id === value)
+  const provider = selected ? providerOf(selected.id) : ''
+  const emptyLabel =
+    placeholder ?? (allowUnset ? unsetLabel : 'Choose a model')
 
   return (
-    <div ref={wrapperRef} className="relative">
-      <div className="relative">
-        <Input
-          ref={inputRef}
-          type="text"
-          role="combobox"
-          aria-expanded={open}
-          aria-autocomplete="list"
-          aria-controls="model-combobox-list"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value)
-            setHighlight(0)
-            setOpen(true)
-            // Push the in-progress query upstream so validation surfaces
-            // "Not in the provider model list" as the user types past a
-            // known entry. Empty query commits an empty value.
-            onChange(e.target.value)
-          }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={handleKey}
-          disabled={disabled}
-          placeholder={placeholder ?? 'Type to search models…'}
-          aria-invalid={invalid || undefined}
-          autoComplete="off"
-          spellCheck={false}
-          className="min-h-11 pr-11 font-mono md:min-h-9 md:pr-8"
-        />
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label={open ? 'Close model list' : 'Open model list'}
-          onMouseDown={(e) => {
-            // Toggle without stealing focus from the input.
-            e.preventDefault()
-            setOpen((v) => !v)
-            inputRef.current?.focus()
-          }}
-          disabled={disabled}
-          className="absolute top-1/2 right-0 flex h-11 w-11 -translate-y-1/2 items-center justify-center text-(--color-text-muted) transition-colors hover:text-(--color-text) disabled:opacity-50 md:right-1 md:h-8 md:w-8"
-        >
-          <ChevronDown size={14} aria-hidden="true" />
-        </button>
-      </div>
-
-      {open && !disabled && anchorRect &&
-        createPortal(
-          <ul
-            ref={listRef}
-            id="model-combobox-list"
-            role="listbox"
-            // Portalled to document.body so the dropdown escapes any
-            // ancestor with ``overflow-hidden`` (e.g. the Card primitive).
-            // Positioned in viewport coords via the tracked anchor rect.
-            style={{
-              position: 'fixed',
-              top: anchorRect.bottom + 4,
-              left: anchorRect.left,
-              width: anchorRect.width,
-            }}
-            className="z-(--z-modal) max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--bg-page) p-1 shadow-(--shadow-popover)"
-          >
-            {filtered.length === 0 ? (
-              <li className="px-3 py-3 text-center text-xs text-(--color-text-muted)">
-                No matching models
-              </li>
-            ) : (
-              filtered.map((o, i) => {
-                const isHi = i === highlight
-                const isSel = o.id === value
-                return (
-                  <li key={o.id}>
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected={isSel}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => commit(o.id)}
-                      onMouseEnter={() => setHighlight(i)}
-                      className={cn(
-                        'flex min-h-11 w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left font-mono text-xs transition-colors md:min-h-0',
-                        isHi && 'bg-(--bg-key)',
-                        isSel && 'text-(--color-accent)',
-                      )}
-                    >
-                      <span className="min-w-0 truncate">{o.id}</span>
-                      {o.vision && (
-                        <span className="shrink-0 text-xs text-(--color-text-muted)">
-                          vision
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                )
-              })
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label={`${allowUnset ? 'Fallback model' : 'Model'}: ${
+              selected?.id ?? emptyLabel
+            }`}
+            aria-invalid={invalid || undefined}
+            className={cn(
+              'flex min-h-11 w-full items-center gap-2 rounded-lg border border-(--color-border) bg-(--bg-input) px-3 text-left text-sm outline-none transition-colors md:min-h-9',
+              'hover:border-(--color-border-strong) focus-visible:border-(--focus-ring) focus-visible:ring-3 focus-visible:ring-(--focus-ring)/50',
+              'aria-expanded:border-(--focus-ring) disabled:cursor-not-allowed disabled:opacity-50',
+              invalid && 'border-(--color-error)',
             )}
-          </ul>,
-          document.body,
+          />
+        }
+      >
+        {selected ? (
+          <>
+            <ProviderBrandIcon providerId={selected.id} size="xs" />
+            <span className="min-w-0 flex-1 truncate font-medium text-(--color-text)">
+              {shortModelName(selected.id)}
+            </span>
+            {provider && (
+              <span className="shrink-0 font-mono text-[10px] tracking-wide text-(--color-text-subtle) uppercase">
+                {provider}
+              </span>
+            )}
+          </>
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-(--color-text-muted)">
+            {emptyLabel}
+          </span>
         )}
-    </div>
+        <ChevronDown
+          size={14}
+          aria-hidden="true"
+          className={cn(
+            'shrink-0 text-(--color-text-muted) transition-transform',
+            open && 'rotate-180',
+          )}
+        />
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sideOffset={4}
+        className="w-[--anchor-width] min-w-72 max-w-[32rem] gap-0 p-2"
+      >
+        {allowUnset && (
+          <button
+            type="button"
+            aria-pressed={!value}
+            onClick={() => {
+              onChange('')
+              setOpen(false)
+            }}
+            className={cn(
+              'mb-1 flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] outline-none transition-colors',
+              'hover:bg-(--bg-key) focus-visible:bg-(--bg-key)',
+              !value
+                ? 'bg-(--bg-key) text-(--color-text)'
+                : 'text-(--color-text-2)',
+            )}
+          >
+            <span className="min-w-0 flex-1 font-medium">{unsetLabel}</span>
+            <Check
+              aria-hidden="true"
+              size={12}
+              className={cn(
+                'shrink-0 text-(--color-accent)',
+                !value ? 'opacity-100' : 'opacity-0',
+              )}
+            />
+          </button>
+        )}
+        <ModelOptions
+          models={options}
+          selectedModel={value}
+          listClassName="max-h-64"
+          onSelect={(modelId) => {
+            onChange(modelId)
+            setOpen(false)
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   )
 }
 
 // ── Field wrapper ───────────────────────────────────────────────────────────
 
+function AgentSection({
+  icon: Icon,
+  title,
+  description,
+  meta,
+  children,
+}: {
+  icon: LucideIcon
+  title: string
+  description: string
+  meta?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-card) shadow-[0_1px_2px_rgba(15,23,42,0.03),0_12px_34px_rgba(15,23,42,0.025)]">
+      <header className="flex items-start gap-3 border-b border-(--color-border-subtle) bg-(--bg-key)/25 px-4 py-3.5 sm:px-5">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-(--color-border) bg-(--bg-card) text-(--color-text-muted)">
+          <Icon size={14} aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="font-heading text-sm font-semibold tracking-[-0.01em] text-(--color-text)">
+            {title}
+          </h2>
+          <p className="mt-0.5 text-xs leading-relaxed text-(--color-text-muted)">
+            {description}
+          </p>
+        </div>
+        {meta && (
+          <span className="shrink-0 rounded-full border border-(--color-border) bg-(--bg-card) px-2 py-1 font-mono text-[9px] tabular-nums text-(--color-text-subtle)">
+            {meta}
+          </span>
+        )}
+      </header>
+      {children}
+    </section>
+  )
+}
+
 function CapabilityChips({ label, values }: { label: string; values: string[] }) {
   return (
-    <div className="rounded-md border border-(--color-border) bg-(--bg-surface) px-3 py-2">
-      <p className="mb-1.5 text-xs font-medium text-(--color-text-muted)">
-        {label}
-      </p>
-      <div className="flex flex-wrap gap-1.5">
-        {values.map((value) => (
-          <span
-            key={value}
-            className="rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text) ring-1 ring-(--color-border)"
-          >
-            {value}
-          </span>
-        ))}
+    <details className="group rounded-lg border border-(--color-border) bg-(--bg-key)/35">
+      <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 px-3 text-[11px] text-(--color-text-muted) outline-none transition-colors hover:text-(--color-text) focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--focus-ring)/35 [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
+        <span className="rounded-full bg-(--bg-card) px-1.5 py-0.5 font-mono text-[9px] tabular-nums text-(--color-text-subtle) ring-1 ring-(--color-border)">
+          {values.length}
+        </span>
+        <ChevronDown size={12} className="transition-transform group-open:rotate-180" aria-hidden="true" />
+      </summary>
+      <div className="max-h-40 overflow-y-auto border-t border-(--color-border-subtle) p-2.5">
+        <div className="flex flex-wrap gap-1.5">
+          {values.map((value) => (
+            <span
+              key={value}
+              className="rounded-md bg-(--bg-card) px-1.5 py-0.5 font-mono text-[10px] text-(--color-text-2) ring-1 ring-(--color-border)"
+            >
+              {value}
+            </span>
+          ))}
+        </div>
       </div>
-    </div>
+    </details>
   )
 }
 
@@ -925,16 +852,16 @@ function Field({
   // in MultiSelect that's the first chip's remove (×) button, which would
   // silently delete a chip when the user clicks empty space in the field.
   return (
-    <div className={cn('flex flex-col gap-1.5', className)}>
-      <span className="text-xs font-medium text-(--color-text)">
+    <div className={cn('flex min-w-0 flex-col gap-2', className)}>
+      <span className="text-[11px] font-semibold tracking-[0.01em] text-(--color-text-2)">
         {label}
         {required && <span className="ml-0.5 text-(--color-error)">*</span>}
       </span>
       {children}
       {error ? (
-        <p className="text-xs text-(--color-error)">{error}</p>
+        <p className="text-[11px] leading-relaxed text-(--color-error)">{error}</p>
       ) : hint ? (
-        <p className="text-xs text-(--color-text-muted)">{hint}</p>
+        <p className="text-[11px] leading-relaxed text-(--color-text-muted)">{hint}</p>
       ) : null}
     </div>
   )
@@ -961,7 +888,6 @@ function parseFormState(raw: string): {
     if (typeof parsed.description === 'string') fm.description = parsed.description
     if (typeof parsed.model === 'string') fm.model = parsed.model
     if (typeof parsed.fallback_model === 'string') fm.fallback_model = parsed.fallback_model
-    if (typeof parsed.temperature === 'number') fm.temperature = parsed.temperature
     if (typeof parsed.thinking_level === 'string') fm.thinking_level = parsed.thinking_level
     if (Array.isArray(parsed.tools)) fm.tools = parsed.tools.filter((x) => typeof x === 'string')
     if (Array.isArray(parsed.skills)) fm.skills = parsed.skills.filter((x) => typeof x === 'string')

@@ -3,18 +3,24 @@
  * cannot access (system-level files like ``.env``, ``db/``, etc).
  */
 import { useMemo, useState } from 'react'
-import { ChevronDown, Plus, Save, Shield, Trash2 } from 'lucide-react'
+import { AlertTriangle, ChevronDown, Plus, Save, Shield, Trash2 } from 'lucide-react'
 
 import {
   useSandboxSettingsQuery,
   useUpdateSandboxSettingsMutation,
 } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
-import { SettingsGroup, SettingsPage } from '@/components/settings/SettingsLayout'
+import {
+  SettingsCallout,
+  SettingsGroup,
+  SettingsPage,
+  SettingsRow,
+} from '@/components/settings/SettingsLayout'
 import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SegmentedControl } from '@/components/ui/segmented-control'
+import { Switch } from '@/components/ui/switch'
 import {
   Popover,
   PopoverContent,
@@ -35,11 +41,43 @@ export function SandboxSettingsPage() {
     patterns: string[]
     sourceWorktreeLocation: 'repository' | 'user_data'
     worktreeLocation: 'repository' | 'user_data'
+    sourceNativeIsolation: 'required' | 'best_effort'
+    nativeIsolation: 'required' | 'best_effort'
+    sourceAllowNetwork: boolean
+    allowNetwork: boolean
+    sourceInheritEnvironment: boolean
+    inheritEnvironment: boolean
+    sourceLoadShellProfile: boolean
+    loadShellProfile: boolean
+    sourceOutboundDataPolicy: 'block' | 'redact' | 'off'
+    outboundDataPolicy: 'block' | 'redact' | 'off'
+    sourceOutboundPiiPolicy: 'off' | 'standard' | 'strict'
+    outboundPiiPolicy: 'off' | 'standard' | 'strict'
+    sourceMaxExecutionSeconds: number
+    maxExecutionSeconds: number
+    sourceMaxOutputBytes: number
+    maxOutputBytes: number
   }>({
     source: [],
     patterns: [],
     sourceWorktreeLocation: 'repository',
     worktreeLocation: 'repository',
+    sourceNativeIsolation: 'best_effort',
+    nativeIsolation: 'best_effort',
+    sourceAllowNetwork: false,
+    allowNetwork: false,
+    sourceInheritEnvironment: false,
+    inheritEnvironment: false,
+    sourceLoadShellProfile: false,
+    loadShellProfile: false,
+    sourceOutboundDataPolicy: 'redact',
+    outboundDataPolicy: 'redact',
+    sourceOutboundPiiPolicy: 'standard',
+    outboundPiiPolicy: 'standard',
+    sourceMaxExecutionSeconds: 120,
+    maxExecutionSeconds: 120,
+    sourceMaxOutputBytes: 131072,
+    maxOutputBytes: 131072,
   })
 
   const serverPatterns = data?.denied_patterns
@@ -55,6 +93,22 @@ export function SandboxSettingsPage() {
       patterns: serverPatterns,
       sourceWorktreeLocation: data.worktree_location,
       worktreeLocation: data.worktree_location,
+      sourceNativeIsolation: data.native_process_isolation,
+      nativeIsolation: data.native_process_isolation,
+      sourceAllowNetwork: data.allow_network,
+      allowNetwork: data.allow_network,
+      sourceInheritEnvironment: data.inherit_shell_environment,
+      inheritEnvironment: data.inherit_shell_environment,
+      sourceLoadShellProfile: data.load_shell_profile,
+      loadShellProfile: data.load_shell_profile,
+      sourceOutboundDataPolicy: data.outbound_data_policy,
+      outboundDataPolicy: data.outbound_data_policy,
+      sourceOutboundPiiPolicy: data.outbound_pii_policy,
+      outboundPiiPolicy: data.outbound_pii_policy,
+      sourceMaxExecutionSeconds: data.max_execution_seconds,
+      maxExecutionSeconds: data.max_execution_seconds,
+      sourceMaxOutputBytes: data.max_output_bytes,
+      maxOutputBytes: data.max_output_bytes,
     })
   }
   const patterns = draft.patterns
@@ -68,9 +122,35 @@ export function SandboxSettingsPage() {
     const a = draft.source
     if (a.length !== patterns.length) return true
     if (a.some((p, i) => p !== patterns[i])) return true
-    return draft.sourceWorktreeLocation !== draft.worktreeLocation
+    return (
+      draft.sourceWorktreeLocation !== draft.worktreeLocation
+      || draft.sourceNativeIsolation !== draft.nativeIsolation
+      || draft.sourceAllowNetwork !== draft.allowNetwork
+      || draft.sourceInheritEnvironment !== draft.inheritEnvironment
+      || draft.sourceLoadShellProfile !== draft.loadShellProfile
+      || draft.sourceOutboundDataPolicy !== draft.outboundDataPolicy
+      || draft.sourceOutboundPiiPolicy !== draft.outboundPiiPolicy
+      || draft.sourceMaxExecutionSeconds !== draft.maxExecutionSeconds
+      || draft.sourceMaxOutputBytes !== draft.maxOutputBytes
+    )
   }, [
+    draft.allowNetwork,
+    draft.inheritEnvironment,
+    draft.loadShellProfile,
+    draft.maxExecutionSeconds,
+    draft.maxOutputBytes,
+    draft.nativeIsolation,
+    draft.outboundDataPolicy,
+    draft.outboundPiiPolicy,
     draft.source,
+    draft.sourceAllowNetwork,
+    draft.sourceInheritEnvironment,
+    draft.sourceLoadShellProfile,
+    draft.sourceMaxExecutionSeconds,
+    draft.sourceMaxOutputBytes,
+    draft.sourceNativeIsolation,
+    draft.sourceOutboundDataPolicy,
+    draft.sourceOutboundPiiPolicy,
     draft.sourceWorktreeLocation,
     draft.worktreeLocation,
     patterns,
@@ -86,12 +166,49 @@ export function SandboxSettingsPage() {
 
   const handleSave = async () => {
     const cleaned = patterns.map((p) => p.trim()).filter(Boolean)
+    const maxExecutionSeconds = Math.min(
+      3600,
+      Math.max(5, Math.round(draft.maxExecutionSeconds || 120)),
+    )
+    const maxOutputBytes = Math.min(
+      1048576,
+      Math.max(4096, Math.round(draft.maxOutputBytes || 131072)),
+    )
     try {
-      await updateMut.mutateAsync({
+      const saved = await updateMut.mutateAsync({
         denied_patterns: cleaned,
         worktree_location: draft.worktreeLocation,
+        native_process_isolation: draft.nativeIsolation,
+        allow_network: draft.allowNetwork,
+        inherit_shell_environment: draft.inheritEnvironment,
+        load_shell_profile: draft.loadShellProfile,
+        outbound_data_policy: draft.outboundDataPolicy,
+        outbound_pii_policy: draft.outboundPiiPolicy,
+        max_execution_seconds: maxExecutionSeconds,
+        max_output_bytes: maxOutputBytes,
       })
-      setPatterns(cleaned)
+      setDraft({
+        source: saved.denied_patterns,
+        patterns: saved.denied_patterns,
+        sourceWorktreeLocation: saved.worktree_location,
+        worktreeLocation: saved.worktree_location,
+        sourceNativeIsolation: saved.native_process_isolation,
+        nativeIsolation: saved.native_process_isolation,
+        sourceAllowNetwork: saved.allow_network,
+        allowNetwork: saved.allow_network,
+        sourceInheritEnvironment: saved.inherit_shell_environment,
+        inheritEnvironment: saved.inherit_shell_environment,
+        sourceLoadShellProfile: saved.load_shell_profile,
+        loadShellProfile: saved.load_shell_profile,
+        sourceOutboundDataPolicy: saved.outbound_data_policy,
+        outboundDataPolicy: saved.outbound_data_policy,
+        sourceOutboundPiiPolicy: saved.outbound_pii_policy,
+        outboundPiiPolicy: saved.outbound_pii_policy,
+        sourceMaxExecutionSeconds: saved.max_execution_seconds,
+        maxExecutionSeconds: saved.max_execution_seconds,
+        sourceMaxOutputBytes: saved.max_output_bytes,
+        maxOutputBytes: saved.max_output_bytes,
+      })
       push({
         tone: 'success',
         title: 'Sandbox saved',
@@ -148,6 +265,223 @@ export function SandboxSettingsPage() {
         errorTitle="Failed to load sandbox settings"
         onRetry={() => void refetch()}
       >
+      <div className="space-y-10">
+      {data && (
+        <SettingsGroup
+          title="Outbound data protection"
+          description={
+            <>
+              Applied to a provider-only copy immediately before each model request.
+              Local conversation history remains unchanged.{' '}
+              <OutboundProtectionHelpPopover />
+            </>
+          }
+        >
+          <SettingsRow
+            label="Sensitive text"
+            description="Detects configured credential values, private keys, authorization headers, credentialed URLs, provider tokens, JWTs, and secret assignments."
+            control={
+              <SegmentedControl
+                options={[
+                  { value: 'off', label: 'Off' },
+                  { value: 'redact', label: 'Mask' },
+                  { value: 'block', label: 'Block' },
+                ]}
+                value={draft.outboundDataPolicy}
+                onChange={(outboundDataPolicy) =>
+                  setDraft((current) => ({ ...current, outboundDataPolicy }))
+                }
+                layoutId="sandbox-outbound-data-policy"
+                ariaLabel="Outbound sensitive data policy"
+              />
+            }
+          />
+          <SettingsRow
+            label="Personal data"
+            description="Uses stable placeholders such as [EMAIL_1] and [PHONE_1], preserving repeated references without sending the original values."
+            control={
+              <SegmentedControl
+                options={[
+                  { value: 'off', label: 'Off' },
+                  { value: 'standard', label: 'Standard' },
+                  { value: 'strict', label: 'Strict' },
+                ]}
+                value={draft.outboundPiiPolicy}
+                onChange={(outboundPiiPolicy) =>
+                  setDraft((current) => ({ ...current, outboundPiiPolicy }))
+                }
+                layoutId="sandbox-outbound-pii-policy"
+                ariaLabel="Outbound personal data policy"
+              />
+            }
+          />
+          <div className="px-4 py-4 sm:px-5">
+            <SettingsCallout
+              tone={
+                draft.outboundDataPolicy === 'off'
+                || draft.outboundPiiPolicy === 'off'
+                  ? 'warning'
+                  : 'info'
+              }
+              icon={
+                draft.outboundDataPolicy === 'off'
+                || draft.outboundPiiPolicy === 'off'
+                  ? AlertTriangle
+                  : Shield
+              }
+            >
+              <div className="space-y-1">
+                <p>
+                  Credentials:{' '}
+                  {draft.outboundDataPolicy === 'block'
+                    ? 'requests with detected secrets are stopped before the provider call.'
+                    : draft.outboundDataPolicy === 'redact'
+                      ? 'detected values are replaced with [REDACTED:…] in the provider payload.'
+                      : 'detected secrets are sent without masking.'}
+                </p>
+                <p>
+                  Personal data:{' '}
+                  {draft.outboundPiiPolicy === 'standard'
+                    ? 'email, phone, valid payment cards, and public IP addresses are pseudonymized.'
+                    : draft.outboundPiiPolicy === 'strict'
+                      ? 'Standard coverage plus all IPs and structured names, addresses, and identifiers.'
+                      : 'email, phone, payment cards, and IP addresses are sent without masking.'}
+                </p>
+                <p>
+                  Binary image and document contents cannot be reliably masked; use
+                  denied patterns to prevent sensitive files from being read.
+                </p>
+              </div>
+            </SettingsCallout>
+          </div>
+        </SettingsGroup>
+      )}
+
+      {data && (
+        <SettingsGroup
+          title="Process security"
+          description="Controls applied to every shell command, including commands executed inside delegated worktrees."
+        >
+          <SettingsRow
+            label="Native process isolation"
+            description={
+              data.native_backend
+                ? `Detected backend: ${data.native_backend}. Required mode fails closed if it becomes unavailable.`
+                : 'No native backend detected. Required mode blocks shell execution instead of falling back.'
+            }
+            control={
+              <SegmentedControl
+                options={[
+                  { value: 'required', label: 'Required' },
+                  { value: 'best_effort', label: 'Best effort' },
+                ]}
+                value={draft.nativeIsolation}
+                onChange={(nativeIsolation) =>
+                  setDraft((current) => ({ ...current, nativeIsolation }))
+                }
+                layoutId="sandbox-native-isolation"
+                ariaLabel="Native process isolation"
+              />
+            }
+          />
+          <SettingsRow
+            label="Network access"
+            description="Allow model-controlled shell processes to open network connections. Keep disabled unless builds or package installation require it."
+            control={
+              <Switch
+                checked={draft.allowNetwork}
+                onCheckedChange={(allowNetwork) =>
+                  setDraft((current) => ({ ...current, allowNetwork }))
+                }
+                aria-label="Allow sandbox network access"
+              />
+            }
+          />
+          <SettingsRow
+            label="Inherit host environment"
+            description="Expose host environment variables to shell commands. Disabled passes only PATH, locale, terminal and temporary-directory values."
+            control={
+              <Switch
+                checked={draft.inheritEnvironment}
+                onCheckedChange={(inheritEnvironment) =>
+                  setDraft((current) => ({ ...current, inheritEnvironment }))
+                }
+                aria-label="Inherit host shell environment"
+              />
+            }
+          />
+          <SettingsRow
+            label="Load shell profile"
+            description="Source .zshrc or .bashrc before commands. Profiles can execute code and export credentials, so this is disabled by default."
+            control={
+              <Switch
+                checked={draft.loadShellProfile}
+                onCheckedChange={(loadShellProfile) =>
+                  setDraft((current) => ({ ...current, loadShellProfile }))
+                }
+                aria-label="Load shell profile"
+              />
+            }
+          />
+          <SettingsRow
+            label="Maximum execution time"
+            description="Hard cap for foreground shell commands, including a larger timeout requested by an agent."
+            htmlFor="sandbox-max-execution"
+            control={
+              <div className="flex items-center gap-2">
+                <Input
+                  id="sandbox-max-execution"
+                  type="number"
+                  min={5}
+                  max={3600}
+                  value={draft.maxExecutionSeconds}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      maxExecutionSeconds: Number(event.target.value),
+                    }))
+                  }
+                  className="h-8 w-24 text-right font-mono"
+                />
+                <span className="text-xs text-(--color-text-muted)">seconds</span>
+              </div>
+            }
+          />
+          <SettingsRow
+            label="Maximum inline output"
+            description="Output beyond this limit is moved to a session artifact instead of being returned directly to the model."
+            htmlFor="sandbox-max-output"
+            control={
+              <div className="flex items-center gap-2">
+                <Input
+                  id="sandbox-max-output"
+                  type="number"
+                  min={4}
+                  max={1024}
+                  value={Math.round(draft.maxOutputBytes / 1024)}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      maxOutputBytes: Number(event.target.value) * 1024,
+                    }))
+                  }
+                  className="h-8 w-24 text-right font-mono"
+                />
+                <span className="text-xs text-(--color-text-muted)">KiB</span>
+              </div>
+            }
+          />
+          {(draft.allowNetwork || draft.inheritEnvironment || draft.loadShellProfile) && (
+            <div className="px-4 py-4 sm:px-5">
+              <SettingsCallout tone="warning" icon={AlertTriangle}>
+                This configuration exposes additional host capabilities to agent-run
+                commands. Enable only what the active project requires.
+              </SettingsCallout>
+            </div>
+          )}
+        </SettingsGroup>
+      )}
+
       {data && (
         <SettingsGroup
           title="Managed worktrees"
@@ -248,12 +582,96 @@ export function SandboxSettingsPage() {
           </ul>
         </SettingsGroup>
       )}
+      </div>
       </SettingsAsyncBoundary>
     </SettingsPage>
   )
 }
 
 // ─── Help popover ──────────────────────────────────────────────────────────
+
+function OutboundProtectionHelpPopover() {
+  const [open, setOpen] = useState(false)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            className="inline-flex min-h-11 items-center gap-0.5 rounded text-(--color-text) underline underline-offset-2 hover:opacity-80 focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40 focus-visible:outline-none md:min-h-0"
+          >
+            Learn more
+            <ChevronDown
+              size={12}
+              aria-hidden="true"
+              className={cn('transition-transform', open && 'rotate-180')}
+            />
+          </button>
+        }
+      />
+      <PopoverContent
+        className="w-[min(27rem,calc(100vw-1rem))] gap-4 p-4"
+        align="start"
+      >
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-(--color-text)">How masking works</p>
+          <p className="text-xs leading-relaxed text-(--color-text-muted)">
+            EvoFlux scans the final text payload after tools and prompts are assembled,
+            but before the request is handed to the model provider.
+          </p>
+        </div>
+
+        <ol className="space-y-2 text-xs leading-relaxed text-(--color-text-muted)">
+          <li>
+            <span className="font-medium text-(--color-text)">1. Detect — </span>
+            matches saved credential values and recognizable private keys, authorization
+            headers, provider tokens, and personal data enabled by the selected PII
+            policy.
+          </li>
+          <li>
+            <span className="font-medium text-(--color-text)">2. Protect — </span>
+            secrets use typed redaction labels. Personal data uses stable aliases, so
+            the same email or phone remains recognizable as the same entity.
+          </li>
+          <li>
+            <span className="font-medium text-(--color-text)">3. Send a copy — </span>
+            only the protected copy goes to the provider. The original conversation
+            remains available locally.
+          </li>
+        </ol>
+
+        <div className="space-y-2 rounded-lg border border-(--color-border-subtle) bg-(--bg-key)/50 p-3">
+          <div>
+            <span className="text-[10px] font-medium tracking-wide text-(--color-text-faint) uppercase">
+              Original text
+            </span>
+            <code className="mt-1 block break-all font-mono text-xs text-(--color-text)">
+              Authorization: Bearer sk-live-example
+              <br />
+              linh@example.com · +84 912 345 678
+            </code>
+          </div>
+          <div className="border-t border-(--color-border-subtle) pt-2">
+            <span className="text-[10px] font-medium tracking-wide text-(--color-text-faint) uppercase">
+              Provider receives
+            </span>
+            <code className="mt-1 block break-all font-mono text-xs text-(--color-text)">
+              Authorization: Bearer [REDACTED:authorization]
+              <br />
+              [EMAIL_1] · [PHONE_1]
+            </code>
+          </div>
+        </div>
+
+        <SettingsCallout tone="warning" icon={AlertTriangle}>
+          Standard masks email, phone, valid payment cards, and public IPs. Strict
+          also masks private IPs and structured name, address, and ID fields. Neither
+          mode can inspect images or opaque binary files.
+        </SettingsCallout>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 interface PatternExample {
   pattern: string

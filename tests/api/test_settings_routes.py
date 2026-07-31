@@ -36,6 +36,15 @@ def isolated_config(tmp_path: Path):
 
 
 @pytest.fixture(autouse=True)
+def _stable_native_sandbox_backend(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        settings_routes,
+        "native_process_sandbox_backend",
+        lambda: "test-backend",
+    )
+
+
+@pytest.fixture(autouse=True)
 def _reset_local_reachable_cache(monkeypatch: pytest.MonkeyPatch):
     """Clear provider caches and avoid live model discovery in tests.
 
@@ -69,6 +78,15 @@ def test_get_sandbox_returns_seed_defaults_when_file_missing(
     assert response.json() == {
         "denied_patterns": list(DEFAULT_DENIED_PATTERNS),
         "worktree_location": "repository",
+        "native_process_isolation": "best_effort",
+        "allow_network": False,
+        "inherit_shell_environment": False,
+        "load_shell_profile": False,
+        "outbound_data_policy": "redact",
+        "outbound_pii_policy": "standard",
+        "max_execution_seconds": 120,
+        "max_output_bytes": 131072,
+        "native_backend": "test-backend",
     }
     # GET must not write the file.
     assert not isolated_config.exists()
@@ -79,15 +97,23 @@ def test_put_sandbox_persists_patterns(isolated_config: Path) -> None:
     body = {
         "denied_patterns": ["**/.env", "**/secrets/**"],
         "worktree_location": "user_data",
+        "native_process_isolation": "required",
+        "allow_network": True,
+        "inherit_shell_environment": True,
+        "load_shell_profile": True,
+        "outbound_data_policy": "block",
+        "outbound_pii_policy": "strict",
+        "max_execution_seconds": 300,
+        "max_output_bytes": 262144,
     }
     response = client.put("/api/settings/sandbox", json=body)
     assert response.status_code == 200
-    assert response.json() == body
+    assert response.json() == {**body, "native_backend": "test-backend"}
     assert isolated_config.exists()
 
     # Round-trip — GET reflects what was saved.
     again = client.get("/api/settings/sandbox")
-    assert again.json() == body
+    assert again.json() == {**body, "native_backend": "test-backend"}
 
 
 def test_put_sandbox_strips_blank_patterns(isolated_config: Path) -> None:
@@ -100,6 +126,15 @@ def test_put_sandbox_strips_blank_patterns(isolated_config: Path) -> None:
     assert response.json() == {
         "denied_patterns": ["**/.env", "bar/*"],
         "worktree_location": "repository",
+        "native_process_isolation": "best_effort",
+        "allow_network": False,
+        "inherit_shell_environment": False,
+        "load_shell_profile": False,
+        "outbound_data_policy": "redact",
+        "outbound_pii_policy": "standard",
+        "max_execution_seconds": 120,
+        "max_output_bytes": 131072,
+        "native_backend": "test-backend",
     }
 
 

@@ -118,7 +118,7 @@ export function useTeamCommands({
     { id: 'settings-new-agent', group: 'Settings', label: 'New Agent',  description: 'Create a new agent',    action: () => useUIStore.getState().openSettings('agents/new') },
     { id: 'settings-skills', group: 'Settings', label: 'Manage Skills', description: 'Edit skill .md files',  action: () => useUIStore.getState().openSettings('skills') },
     { id: 'settings-new-skill', group: 'Settings', label: 'New Skill',  description: 'Create a new skill',    action: () => useUIStore.getState().openSettings('skills/new') },
-    { id: 'settings-dream', group: 'Settings', label: 'Dream Settings',  description: 'Edit the dream model and schedule', action: () => useUIStore.getState().openSettings('dream') },
+    { id: 'settings-memory', group: 'Settings', label: 'Memory Settings',  description: 'Review memory and configure Dream synthesis', action: () => useUIStore.getState().openSettings('memory') },
     ...agentNames.map((name) => ({
       id: `edit-${name}`, group: 'Settings',
       label: `Edit ${name}…`,

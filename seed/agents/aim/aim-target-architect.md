@@ -3,7 +3,6 @@ name: aim-target-architect
 role: member
 description: Designs per-unit target mappings that conform to the already-scaffolded target base, and owns the project's UI/UX conventions.
 model: __PROVIDER_MODEL__
-temperature: 0.2
 thinking_level: high
 skills:
   - spec-driven-development

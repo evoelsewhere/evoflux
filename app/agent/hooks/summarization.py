@@ -42,8 +42,12 @@ from typing import TYPE_CHECKING, Awaitable, Callable
 from loguru import logger
 from opentelemetry.trace import SpanKind, StatusCode
 
-from app.agent.usage import set_usage_span_attributes, usage_to_dict
 from app.agent.hooks.base import BaseAgentHook
+from app.agent.outbound_redaction import (
+    load_outbound_data_policy,
+    load_outbound_pii_policy,
+    protect_outbound_payload,
+)
 from app.agent.providers.base import LLMProviderBase
 from app.agent.providers.model_metadata import get_model_limits
 from app.agent.schemas.chat import (
@@ -52,6 +56,7 @@ from app.agent.schemas.chat import (
     SystemMessage,
     ToolMessage,
 )
+from app.agent.usage import set_usage_span_attributes, usage_to_dict
 from app.agent.schemas.events import (
     SummarizationContentEvent,
     SummarizationEndEvent,
@@ -834,8 +839,21 @@ class SummarizationHook(BaseAgentHook):
                 # conversation prefix — a net cache *miss* on OpenAI/codex.
                 # Letting it fall back to automatic prefix caching keeps it
                 # consistent with the normal turns.
+                _, protected_messages, redaction_report = protect_outbound_payload(
+                    system_prompt="",
+                    messages=list(messages),
+                    policy=load_outbound_data_policy(),
+                    pii_policy=load_outbound_pii_policy(),
+                )
+                if redaction_report.matches:
+                    logger.warning(
+                        "summarization_sensitive_data_redacted "
+                        "matches={} categories={}",
+                        redaction_report.matches,
+                        ",".join(redaction_report.categories),
+                    )
                 stream = self._llm_provider.stream(
-                    messages=messages,
+                    messages=protected_messages,
                     tools=tools,
                     **kwargs,
                 )

@@ -43,17 +43,20 @@ export const modelSchema = z
     "Expected 'provider:model' (e.g. 'openai:gpt-5.4')"
   )
 
-/** Sampling temperature. */
-export const temperatureSchema = z
-  .number()
-  .min(0, 'Must be ≥ 0')
-  .max(2, 'Must be ≤ 2')
-
 /** Agent role — exactly one file in the team must be ``lead``. */
 export const roleSchema = z.enum(['lead', 'member'])
 
-/** Thinking level — empty string means "unset". */
-export const thinkingLevelSchema = z.enum(['', 'none', 'low', 'medium', 'high'])
+/**
+ * Thinking level — empty string means "unset".
+ *
+ * Levels are model metadata, not a closed frontend enum. Providers already
+ * advertise values such as ``minimal``, ``xhigh``, ``max`` and ``ultra``;
+ * keeping a hard-coded subset here made Agent Settings reject values that
+ * the composer and backend accept.
+ */
+export const thinkingLevelSchema = z
+  .string()
+  .max(64, 'Max 64 characters')
 
 /** Short one-line description; empty string is allowed. */
 export const descriptionSchema = z
@@ -118,7 +121,6 @@ export const agentFrontmatterSchema = z.object({
   description: descriptionSchema.nullable().optional(),
   model: modelSchema,
   fallback_model: modelSchema.nullable().optional(),
-  temperature: temperatureSchema.nullable().optional(),
   thinking_level: thinkingLevelSchema.nullable().optional(),
   tools: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
@@ -182,22 +184,6 @@ export function validateDescription(raw: string): string | null {
   if (!raw) return null // empty is fine
   return firstError(descriptionSchema, raw)
 }
-
-/**
- * Parse a user-typed temperature string into ``number | null``.
- *
- * Returns a discriminated union:
- *   - empty string → ``{ ok: true, value: null }``
- *   - valid in-range decimal → ``{ ok: true, value: <number> }``
- *   - intermediate state (``'0.'``, ``'.'``, ``'-'``) → ``{ ok: 'pending' }``
- *     so the caller keeps the raw string in state without flagging an
- *     error yet.
- *   - invalid → ``{ ok: false, error: '<msg>' }``
- */
-export type TempParse =
-  | { ok: true; value: number | null }
-  | { ok: 'pending' }
-  | { ok: false; error: string }
 
 // ── Whole-draft validators ──────────────────────────────────────────────────
 
@@ -287,29 +273,4 @@ function coerceScalar(v: string): unknown {
   const n = Number(v)
   if (!Number.isNaN(n) && v.trim() !== '') return n
   return v
-}
-
-// ── Temperature input parser ───────────────────────────────────────────────
-
-export function parseTemperatureInput(raw: string): TempParse {
-  const trimmed = raw.trim()
-  if (trimmed === '') return { ok: true, value: null }
-
-  // Intermediate typing states — not yet a number, but don't reject.
-  if (trimmed === '-' || trimmed === '.' || trimmed === '-.') {
-    return { ok: 'pending' }
-  }
-
-  if (!/^-?\d*\.?\d*$/.test(trimmed)) {
-    return { ok: false, error: 'Not a number' }
-  }
-
-  const n = Number(trimmed)
-  if (Number.isNaN(n)) return { ok: false, error: 'Not a number' }
-
-  const result = temperatureSchema.safeParse(n)
-  if (!result.success) {
-    return { ok: false, error: result.error.issues[0]?.message ?? 'Invalid' }
-  }
-  return { ok: true, value: result.data }
 }

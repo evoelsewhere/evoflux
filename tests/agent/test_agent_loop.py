@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
 
 from app.agent.agent_loop import Agent
 from app.agent.hooks.base import BaseAgentHook
@@ -780,9 +781,15 @@ def test_merge_consecutive_user_messages_preserves_multimodal_neighbours():
     assert len(out) == 2
 
 
-async def test_stream_and_assemble_merges_consecutive_user_messages():
+async def test_stream_and_assemble_merges_consecutive_user_messages(
+    monkeypatch,
+):
     """provider.stream() must receive a single merged user message."""
     captured_kwargs: dict = {}
+    monkeypatch.setattr(
+        "app.agent.agent_loop.streaming.load_outbound_data_policy",
+        lambda: "redact",
+    )
 
     async def _gen():
         yield _text_chunk("ok", finish="stop")
@@ -811,6 +818,111 @@ async def test_stream_and_assemble_merges_consecutive_user_messages():
     user_msgs = [m for m in sent if isinstance(m, HumanMessage)]
     assert len(user_msgs) == 1
     assert user_msgs[0].content == "first\n\nsecond"
+
+
+async def test_stream_and_assemble_masks_at_provider_boundary(monkeypatch):
+    """Local input stays intact while provider.stream receives the masked copy."""
+    secret = "boundary-only-secret-value"
+    original = HumanMessage(content=f"token={secret}")
+    captured_kwargs: dict = {}
+
+    async def _gen():
+        yield _text_chunk("ok", finish="stop")
+        yield _usage_chunk()
+
+    def _capture(**kwargs):
+        captured_kwargs.update(kwargs)
+        return _gen()
+
+    monkeypatch.setenv("BOUNDARY_TOKEN", secret)
+    monkeypatch.setattr(
+        "app.agent.agent_loop.streaming.load_outbound_data_policy",
+        lambda: "redact",
+    )
+    mock_provider = MagicMock()
+    mock_provider.stream.side_effect = _capture
+    agent = Agent(
+        llm_provider=mock_provider,
+        name="test-agent",
+        system_prompt=f"System also has {secret}",
+    )
+
+    await agent.run(
+        [original],
+        config=RunConfig(session_id="s_redact", run_id="r_redact"),
+    )
+
+    sent_text = "\n".join(
+        message.content or "" for message in captured_kwargs["messages"]
+    )
+    assert secret not in sent_text
+    assert "[REDACTED:configured-secret]" in sent_text
+    assert original.content == f"token={secret}"
+
+
+async def test_stream_and_assemble_block_policy_never_calls_provider(monkeypatch):
+    monkeypatch.setattr(
+        "app.agent.agent_loop.streaming.load_outbound_data_policy",
+        lambda: "block",
+    )
+    mock_provider = MagicMock()
+    agent = Agent(
+        llm_provider=mock_provider,
+        name="test-agent",
+        system_prompt="safe",
+    )
+
+    with pytest.raises(PermissionError, match="Blocked model request"):
+        await agent.run(
+            [HumanMessage(content="Authorization: Bearer blocked-token-value")],
+            config=RunConfig(session_id="s_block", run_id="r_block"),
+        )
+
+    mock_provider.stream.assert_not_called()
+
+
+async def test_stream_and_assemble_pseudonymizes_pii_at_provider_boundary(
+    monkeypatch,
+):
+    original = HumanMessage(content="Email person@example.com and call +84 912 345 678")
+    captured_kwargs: dict = {}
+
+    async def _gen():
+        yield _text_chunk("ok", finish="stop")
+        yield _usage_chunk()
+
+    def _capture(**kwargs):
+        captured_kwargs.update(kwargs)
+        return _gen()
+
+    monkeypatch.setattr(
+        "app.agent.agent_loop.streaming.load_outbound_data_policy",
+        lambda: "off",
+    )
+    monkeypatch.setattr(
+        "app.agent.agent_loop.streaming.load_outbound_pii_policy",
+        lambda: "standard",
+    )
+    mock_provider = MagicMock()
+    mock_provider.stream.side_effect = _capture
+    agent = Agent(
+        llm_provider=mock_provider,
+        name="test-agent",
+        system_prompt="safe",
+    )
+
+    await agent.run(
+        [original],
+        config=RunConfig(session_id="s_pii", run_id="r_pii"),
+    )
+
+    sent_text = "\n".join(
+        message.content or "" for message in captured_kwargs["messages"]
+    )
+    assert "[EMAIL_1]" in sent_text
+    assert "[PHONE_1]" in sent_text
+    assert "person@example.com" not in sent_text
+    assert original.content == "Email person@example.com and call +84 912 345 678"
 
 
 # ---------------------------------------------------------------------------

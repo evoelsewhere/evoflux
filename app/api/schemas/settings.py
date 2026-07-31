@@ -12,6 +12,15 @@ class SandboxSettingsBody(BaseModel):
 
     denied_patterns: list[str] = Field(default_factory=list)
     worktree_location: Literal["repository", "user_data"] = "repository"
+    native_process_isolation: Literal["required", "best_effort"] = "best_effort"
+    allow_network: bool = False
+    inherit_shell_environment: bool = False
+    load_shell_profile: bool = False
+    outbound_data_policy: Literal["block", "redact", "off"] = "redact"
+    outbound_pii_policy: Literal["off", "standard", "strict"] = "standard"
+    max_execution_seconds: int = Field(default=120, ge=5, le=3600)
+    max_output_bytes: int = Field(default=131072, ge=4096, le=1048576)
+    native_backend: str | None = None
 
 
 # ── Providers (Settings → Providers tab) ────────────────────────────────────

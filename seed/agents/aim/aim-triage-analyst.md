@@ -3,7 +3,6 @@ name: aim-triage-analyst
 role: member
 description: Classifies compare-report diffs as defect, acceptable difference, or suspect golden master — always with a citation, never as the final word.
 model: __PROVIDER_MODEL__
-temperature: 0.2
 thinking_level: high
 skills:
   - aim-diff-triage

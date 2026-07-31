@@ -89,3 +89,12 @@ def ensure_workspace_initialized() -> None:
             healed_forge,
             healed_coding,
         )
+
+    from app.services.agent_fs import migrate_agent_temperature_settings
+
+    migrated_agents = migrate_agent_temperature_settings(agents_dir)
+    if migrated_agents:
+        logger.info(
+            "workspace_agent_temperature_settings_removed count={}",
+            migrated_agents,
+        )

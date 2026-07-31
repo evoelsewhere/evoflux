@@ -23,6 +23,11 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from app.agent.agent_loop.retry import StreamRestart, stream_with_retry
+from app.agent.outbound_redaction import (
+    load_outbound_data_policy,
+    load_outbound_pii_policy,
+    protect_outbound_payload,
+)
 from app.agent.usage import usage_to_dict
 from app.agent.schemas.chat import (
     AssistantMessage,
@@ -174,8 +179,22 @@ async def stream_and_assemble(
 
     # Prepend system prompt and merge any [user, user] adjacency for the
     # wire — DB keeps adjacent user rows verbatim.
+    request_messages: list[ChatMessage] = list(req.messages)
+    protected_prompt, protected_messages, redaction_report = protect_outbound_payload(
+        system_prompt=req.system_prompt,
+        messages=request_messages,
+        policy=load_outbound_data_policy(),
+        pii_policy=load_outbound_pii_policy(),
+    )
+    if redaction_report.matches:
+        logger.warning(
+            "outbound_sensitive_data_redacted matches={} categories={}",
+            redaction_report.matches,
+            ",".join(redaction_report.categories),
+        )
+
     provider_messages: list[ChatMessage] = _merge_consecutive_user_messages(
-        [SystemMessage(content=req.system_prompt), *req.messages]
+        [SystemMessage(content=protected_prompt), *protected_messages]
     )
 
     upstream = stream_with_retry(

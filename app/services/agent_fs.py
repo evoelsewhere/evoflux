@@ -44,6 +44,11 @@ class AgentFsConflictError(ValueError):
 # ── Validation ───────────────────────────────────────────────────────────────
 
 _NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
+_AGENT_FRONTMATTER_RE = re.compile(
+    r"\A(?P<opening>\s*---\r?\n)(?P<meta>.*?)(?P<closing>\r?\n---(?:\r?\n|\Z))(?P<body>.*)\Z",
+    re.DOTALL,
+)
+_AGENT_TEMPERATURE_LINE_RE = re.compile(r"^temperature[ \t]*:")
 _MAX_SKILL_FILE_BYTES = 2 * 1024 * 1024
 _MAX_SKILL_BUNDLE_BYTES = 20 * 1024 * 1024
 _MAX_SKILL_TEXT_PREVIEW_BYTES = 512 * 1024
@@ -161,6 +166,45 @@ def _atomic_write(path: Path, content: str) -> None:
     tmp_path.replace(path)
 
 
+def strip_agent_temperature(content: str) -> str:
+    """Remove the retired top-level ``temperature`` agent setting.
+
+    Only the YAML frontmatter is inspected, so prompt text containing a
+    ``temperature:`` example remains untouched. Other frontmatter formatting
+    and comments are preserved verbatim.
+    """
+    match = _AGENT_FRONTMATTER_RE.match(content)
+    if match is None:
+        return content
+    meta_lines = match.group("meta").splitlines(keepends=True)
+    filtered = [
+        line
+        for line in meta_lines
+        if not _AGENT_TEMPERATURE_LINE_RE.match(line.rstrip("\r\n"))
+    ]
+    if len(filtered) == len(meta_lines):
+        return content
+    meta = "".join(filtered).rstrip("\r\n")
+    return (
+        f"{match.group('opening')}{meta}{match.group('closing')}{match.group('body')}"
+    )
+
+
+def migrate_agent_temperature_settings(root: Path) -> int:
+    """Strip retired temperature settings from every agent below *root*."""
+    if not root.exists():
+        return 0
+    migrated = 0
+    for path in sorted(root.rglob("*.md")):
+        content = path.read_text(encoding="utf-8")
+        normalized = strip_agent_temperature(content)
+        if normalized == content:
+            continue
+        _atomic_write(path, normalized)
+        migrated += 1
+    return migrated
+
+
 # ── Public dataclasses ───────────────────────────────────────────────────────
 
 
@@ -231,6 +275,7 @@ def write_agent(name: str, content: str, *, create: bool) -> AgentFileRecord:
     file = _agent_file(name)
     if create and file.exists():
         raise AgentFsConflictError(f"Agent '{name}' already exists.")
+    content = strip_agent_temperature(content)
     _atomic_write(file, content)
     logger.info("agent_fs_write name={} bytes={}", name, len(content))
     return AgentFileRecord(name=name, path=str(file), content=content)

@@ -1,182 +1,26 @@
 /** Compact session model controls shared by the Forge, Coding, and AIM composers. */
 
-import { useMemo, useState } from 'react'
-import fuzzysort from 'fuzzysort'
-import { motion } from 'framer-motion'
-import { Check, ChevronDown, Search, Zap } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronDown, Zap } from 'lucide-react'
 import { useRegistryQuery } from '@/queries'
 import { cn } from '@/lib/utils'
-import { fadeRise, staggerDelay, useListEnterIndex, useMotionPreset } from '@/lib/motion'
+import {
+  buildThinkingOptions,
+  reconcileThinkingLevel,
+  shortModelName,
+  supportsFastMode,
+  thinkingColor,
+  type ThinkingOption,
+} from '@/lib/model-settings'
 import { DiscreteSlider } from '@/components/ui/discrete-slider'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { AgentInfoPopover } from './AgentInfoPopover'
 import { ProviderBrandIcon } from '@/components/providers/ProviderBrandIcon'
-
-const THINKING_LEVEL_LABEL: Record<string, string> = {
-  none: 'None',
-  minimal: 'Minimal',
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  xhigh: 'X-High',
-  max: 'Max',
-  ultra: 'Ultra',
-}
-
-/** Compact tick labels — full names live in the value readout. */
-const THINKING_MARK: Record<string, string> = {
-  none: 'None',
-  default: 'Def',
-  minimal: 'Min',
-  low: 'Low',
-  medium: 'Med',
-  high: 'High',
-  xhigh: 'XH',
-  max: 'Max',
-  ultra: 'Ult',
-}
+import { ModelOptions } from '@/components/model-picker/ModelOptions'
 
 const CONTROL_CLASS =
   'flex h-7 min-w-0 items-center rounded-md px-2 text-xs text-(--color-text-muted) outline-none transition-colors duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-2 focus-visible:ring-(--color-accent)/30'
-
-type ThinkingOption = {
-  value: string | null
-  label: string
-  mark: string
-}
-
-function buildThinkingOptions(levels: string[]): ThinkingOption[] {
-  return [
-    { value: null, label: 'Default', mark: THINKING_MARK.default },
-    ...levels
-      .map((level) => ({
-        value: level,
-        label: THINKING_LEVEL_LABEL[level] ?? level,
-        mark: THINKING_MARK[level] ?? level.slice(0, 3),
-      })),
-  ]
-}
-
-function shortModelName(id: string): string {
-  const colon = id.indexOf(':')
-  return colon === -1 ? id : id.slice(colon + 1)
-}
-
-function providerOf(id: string): string {
-  const colon = id.indexOf(':')
-  return colon === -1 ? '' : id.slice(0, colon)
-}
-
-function supportsFastMode(modelId: string): boolean {
-  return modelId.startsWith('codex:')
-}
-
-function thinkingColor(level: string | null): string {
-  if (!level || level === 'none') return 'var(--thinking-neutral)'
-  if (level === 'minimal' || level === 'low') return 'var(--thinking-low)'
-  if (level === 'medium') return 'var(--thinking-medium)'
-  if (level === 'high') return 'var(--thinking-high)'
-  return 'var(--thinking-max)'
-}
-
-function ModelOptions({
-  selectedModel,
-  onSelect,
-}: {
-  selectedModel: string
-  onSelect: (modelId: string) => void
-}) {
-  const preset = useMotionPreset()
-  const registry = useRegistryQuery()
-  const [query, setQuery] = useState('')
-  const models = useMemo(() => registry.data?.models ?? [], [registry.data?.models])
-  const visibleModels = useMemo(() => {
-    const value = query.trim()
-    if (!value) return models.slice(0, 30)
-    return fuzzysort.go(value, models, { key: 'id', limit: 30 }).map((result) => result.obj)
-  }, [models, query])
-  const enterIndex = useListEnterIndex(visibleModels.map((model) => model.id))
-
-  return (
-    <div className="flex min-h-0 flex-col gap-1.5">
-      <label className="relative block">
-        <Search
-          aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-(--color-text-subtle)"
-          size={13}
-        />
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search models…"
-          className="h-7 w-full rounded-md border border-(--color-border) bg-(--bg-input) pr-2 pl-8 text-[11px] text-(--color-text) outline-none transition-colors placeholder:text-(--color-text-subtle) focus:border-(--color-border-strong) focus-visible:ring-2 focus-visible:ring-(--color-accent)/20"
-        />
-      </label>
-      <div className="max-h-36 overflow-y-auto overscroll-contain" role="listbox" aria-label="Models">
-        {visibleModels.length === 0 ? (
-          <p className="px-2 py-6 text-center text-xs text-(--color-text-muted)">No models found</p>
-        ) : (
-          <div className="flex flex-col gap-0.5">
-            {visibleModels.map((model) => {
-              const selected = model.id === selectedModel
-              const provider = providerOf(model.id)
-              const index = enterIndex(model.id)
-              const enter = index !== undefined ? fadeRise(preset, 6) : null
-              const option = (
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={selected}
-                  onClick={() => onSelect(model.id)}
-                  className={cn(
-                    'relative flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] outline-none transition-colors',
-                    'hover:bg-(--bg-key) focus-visible:bg-(--bg-key)',
-                    selected ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-2)',
-                  )}
-                >
-                  {selected && (
-                    <span
-                      aria-hidden="true"
-                      className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-(--color-accent)"
-                    />
-                  )}
-                  <ProviderBrandIcon providerId={model.id} size="xs" />
-                  <span className="min-w-0 flex-1 truncate font-medium">
-                    {shortModelName(model.id)}
-                  </span>
-                  {provider && (
-                    <span className="shrink-0 font-mono text-[10px] tracking-wide text-(--color-text-subtle) uppercase">
-                      {provider}
-                    </span>
-                  )}
-                  <Check
-                    aria-hidden="true"
-                    size={12}
-                    className={cn('shrink-0 text-(--color-accent)', selected ? 'opacity-100' : 'opacity-0')}
-                  />
-                </button>
-              )
-              if (!enter || index === undefined) {
-                return <div key={model.id}>{option}</div>
-              }
-              return (
-                <motion.div
-                  key={model.id}
-                  initial={enter.initial}
-                  animate={enter.animate}
-                  transition={{ ...enter.transition, delay: staggerDelay(preset, index) }}
-                >
-                  {option}
-                </motion.div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
 
 function ThinkingEffortButtons({
   options,
@@ -359,13 +203,14 @@ function AdvancedComposerControl({
 
         <div className="px-2.5 py-2">
           <ModelOptions
+            models={registry.data?.models ?? []}
             selectedModel={effectiveModel}
             onSelect={(modelId) => {
               const nextModel = registry.data?.models.find((entry) => entry.id === modelId)
-              const nextOptions = buildThinkingOptions(nextModel?.thinking_levels ?? [])
-              const nextThinking = nextOptions.some((option) => option.value === currentThinkingLevel)
-                ? currentThinkingLevel
-                : null
+              const nextThinking = reconcileThinkingLevel(
+                currentThinkingLevel,
+                nextModel,
+              )
               onChange?.(modelId, nextThinking, supportsFastMode(modelId) && sessionFastMode)
             }}
           />

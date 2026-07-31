@@ -46,6 +46,45 @@ def test_write_and_read_agent(fs_dirs):
     assert "hi" in read.content
 
 
+def test_write_agent_strips_temperature_from_frontmatter_only(fs_dirs):
+    agents_dir, _ = fs_dirs
+    content = (
+        "---\n"
+        "name: alpha\n"
+        "temperature: 0.4\n"
+        "thinking_level: high\n"
+        "---\n"
+        "Keep this prompt example:\n"
+        "temperature: 0.9\n"
+    )
+
+    agent_fs.write_agent("alpha", content, create=True)
+
+    saved = (agents_dir / "alpha.md").read_text(encoding="utf-8")
+    assert saved == (
+        "---\n"
+        "name: alpha\n"
+        "thinking_level: high\n"
+        "---\n"
+        "Keep this prompt example:\n"
+        "temperature: 0.9\n"
+    )
+
+
+def test_migrate_agent_temperature_settings_recursively(tmp_path):
+    agents_dir = tmp_path / "agents"
+    nested = agents_dir / "coding" / "agent.md"
+    nested.parent.mkdir(parents=True)
+    nested.write_text(
+        "---\nname: agent\ntemperature: 0.2\n---\nPrompt.\n",
+        encoding="utf-8",
+    )
+
+    assert agent_fs.migrate_agent_temperature_settings(agents_dir) == 1
+    assert nested.read_text(encoding="utf-8") == ("---\nname: agent\n---\nPrompt.\n")
+    assert agent_fs.migrate_agent_temperature_settings(agents_dir) == 0
+
+
 def test_write_and_read_nested_agent(fs_dirs):
     agents_dir, _ = fs_dirs
     record = agent_fs.write_agent(
@@ -129,6 +168,7 @@ def test_list_agents_materializes_coding_builtins_when_coding_lead_exists(fs_dir
     explorer = (agents_dir / "coding" / "explorer.md").read_text(encoding="utf-8")
     assert "description: Checks the current codebase" in explorer
     assert "model: codex:gpt-5.4" in explorer
+    assert "temperature:" not in explorer
 
 
 def test_list_agents_hides_retired_coding_executor(fs_dirs):

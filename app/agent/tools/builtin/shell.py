@@ -68,8 +68,9 @@ _BG_OUTPUT_MAX_LINES = 200  # ring-buffer per background process
 
 # Maximum lines and bytes to include inline in the result
 _OUTPUT_MAX_LINES = 300
-# Bytes kept inline; output beyond this spills to a temp file
-_OUTPUT_MAX_BYTES = 131_072  # 128 KB (matches opencode Truncate.MAX_BYTES)
+# Hard safety ceiling for bytes kept inline. The user-configurable sandbox
+# value defaults to 128 KiB and may choose any smaller value.
+_OUTPUT_MAX_BYTES = 1_048_576
 
 
 # On Windows SIGKILL doesn't exist; _kill_process_group handles this by
@@ -170,17 +171,54 @@ _PYTHON_ENV_LEAK_KEYS: frozenset[str] = frozenset(
     }
 )
 
+_SAFE_SHELL_ENV_KEYS: frozenset[str] = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "LANG",
+        "LANGUAGE",
+        "TERM",
+        "COLORTERM",
+        "TERM_PROGRAM",
+        "TERM_PROGRAM_VERSION",
+        "NO_COLOR",
+        "FORCE_COLOR",
+        "TZ",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        # Windows process discovery/runtime.
+        "SystemRoot",
+        "WINDIR",
+        "COMSPEC",
+        "PATHEXT",
+    }
+)
 
-def _scrubbed_env() -> dict[str, str]:
-    """Return ``os.environ`` minus daemon-Python leak vars.
 
-    The desktop sidecar sets ``PYTHONPATH`` so the bundled interpreter can
-    import ``app`` (see ``desktop/src-tauri/src/sidecar.rs``).  That env
-    var is inherited by every subprocess we spawn — including the shell
-    tool — and shadows other Python tools' own packages.  We strip the
-    known leak vars before spawning the user's shell command.
+def _scrubbed_env(*, inherit: bool = False) -> dict[str, str]:
+    """Return the environment exposed to an agent shell.
+
+    The secure default is an allowlist of process-discovery and locale values,
+    which keeps provider API keys, OAuth tokens, SSH agent sockets and other
+    host credentials out of model-controlled commands. Users may explicitly
+    opt into inheritance in Sandbox settings. EvoFlux internal values and
+    daemon-Python runtime pointers are never inherited.
     """
-    return {k: v for k, v in os.environ.items() if k not in _PYTHON_ENV_LEAK_KEYS}
+    blocked = {
+        *(_PYTHON_ENV_LEAK_KEYS),
+        *(key for key in os.environ if key.startswith("EVOFLUX_")),
+    }
+    if inherit:
+        return {key: value for key, value in os.environ.items() if key not in blocked}
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key not in blocked and (key in _SAFE_SHELL_ENV_KEYS or key.startswith("LC_"))
+    }
 
 
 def _kill_process_group(proc: asyncio.subprocess.Process, sig: int) -> None:
@@ -347,9 +385,11 @@ async def _shell(
         )
 
     cwd = _resolve_workdir(workdir)
-    timeout = (
+    requested_timeout = (
         timeout_seconds if timeout_seconds is not None else _DEFAULT_TIMEOUT_SECONDS
     )
+    timeout = min(requested_timeout, sandbox.max_execution_seconds)
+    output_limit = min(sandbox.max_output_bytes, _OUTPUT_MAX_BYTES)
     shell_bin = _shell_mod.acceptable()
     shell_name = _shell_mod.name(shell_bin)
 
@@ -368,13 +408,13 @@ async def _shell(
         if not command.strip():
             return "[Succeeded]\n\n"
 
-        # Build the subprocess.  For zsh/bash we use ``-l`` and explicitly
-        # source the user's rc files (~/.zshenv, ~/.zshrc, ~/.bashrc) so the
-        # agent sees the same PATH the user has in their terminal — including
-        # ``~/.local/bin``, ``~/.bun/bin``, etc.  This matters when the daemon
-        # is launched from a GUI/launchd context where PATH is minimal.
-        # See ``shell_runtime.build_argv`` for details.
-        argv = _shell_mod.build_argv(shell_bin, command)
+        # Shell profiles are opt-in because they can execute arbitrary code
+        # and re-export secrets into the child process.
+        argv = _shell_mod.build_argv(
+            shell_bin,
+            command,
+            load_profile=sandbox.load_shell_profile,
+        )
         exec_bin, exec_argv = sandboxed_process_argv(
             shell_bin,
             argv,
@@ -401,7 +441,7 @@ async def _shell(
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=str(cwd),
-                env=_scrubbed_env(),
+                env=_scrubbed_env(inherit=sandbox.inherit_shell_environment),
                 **_extra,
             )
         except NotImplementedError:
@@ -428,7 +468,7 @@ async def _shell(
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     cwd=str(cwd),
-                    env=_scrubbed_env(),
+                    env=_scrubbed_env(inherit=sandbox.inherit_shell_environment),
                     timeout=timeout,
                     creationflags=_win_cflags,
                 )
@@ -455,7 +495,11 @@ async def _shell(
             status = (
                 "[Succeeded]" if exit_code == 0 else f"[Failed — exit code {exit_code}]"
             )
-            tail, was_cut = _tail_text(text, _OUTPUT_MAX_LINES, _OUTPUT_MAX_BYTES)
+            tail, was_cut = _tail_text(
+                text,
+                _OUTPUT_MAX_LINES,
+                output_limit,
+            )
             if was_cut:
                 call_id = str(uuid.uuid4())[:8]
                 try:
@@ -592,7 +636,11 @@ async def _shell(
         )
 
         # Spill to file if output is large
-        tail, was_cut = _tail_text(text, _OUTPUT_MAX_LINES, _OUTPUT_MAX_BYTES)
+        tail, was_cut = _tail_text(
+            text,
+            _OUTPUT_MAX_LINES,
+            output_limit,
+        )
 
         if was_cut:
             call_id = str(uuid.uuid4())[:8]
