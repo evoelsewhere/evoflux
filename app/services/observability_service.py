@@ -263,10 +263,13 @@ def _create_spans_window_view(
     window_start: datetime,
     window_end: datetime,
 ) -> None:
-    """Create ``spans`` and ``spans_window`` temp views over ``files``.
+    """Create temp views over ``files`` for observability queries.
 
-    Shared by all query entry points.  ``spans_window`` is filtered to
-    ``end_time BETWEEN window_start AND window_end`` (nanosecond epoch).
+    ``spans_window`` preserves the original JSON schema (including struct
+    attributes) and is used when returning full span detail.  Aggregate
+    queries use ``spans_window_map``, where attributes are cast to a
+    string map so missing keys return ``NULL`` instead of raising a DuckDB
+    binder error.
     """
     escaped = ", ".join("'" + str(f).replace("'", "''") + "'" for f in files)
     con.execute(
@@ -281,6 +284,14 @@ def _create_spans_window_view(
         SELECT * FROM spans
         WHERE end_time IS NOT NULL
           AND end_time BETWEEN {start_ns} AND {end_ns}
+        """
+    )
+    con.execute(
+        f"""
+        CREATE TEMP VIEW spans_window_map AS
+        SELECT * EXCLUDE (attributes),
+          attributes::MAP(VARCHAR, VARCHAR) AS attributes
+        FROM spans_window
         """
     )
 
@@ -334,7 +345,7 @@ def _run_queries(
             coalesce(quantile_cont(CASE WHEN name LIKE 'agent_run%' THEN duration_ms END, 0.95), 0.0) AS turn_p95,
             coalesce(quantile_cont(CASE WHEN name LIKE 'chat%'      THEN duration_ms END, 0.5), 0.0) AS llm_p50,
             coalesce(quantile_cont(CASE WHEN name LIKE 'chat%'      THEN duration_ms END, 0.95), 0.0) AS llm_p95
-        FROM spans_window
+        FROM spans_window_map
         """
     ).fetchone()
 
@@ -363,7 +374,7 @@ def _run_queries(
             strftime(make_timestamp(end_time // 1000), '%Y-%m-%d') AS day,
             count(*) AS turns,
             count_if(status = 'ERROR') AS errors
-        FROM spans_window
+        FROM spans_window_map
         WHERE name LIKE 'agent_run%'
         GROUP BY day
         ORDER BY day
@@ -386,7 +397,7 @@ def _run_queries(
             coalesce(sum(try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT)), 0) AS cached_tokens,
             coalesce(sum(try_cast(attributes['gen_ai.usage.estimated_cost_usd'] AS DOUBLE)), 0.0) AS estimated_cost_usd,
             coalesce(quantile_cont(duration_ms, 0.95), 0.0) AS p95_ms
-        FROM spans_window
+        FROM spans_window_map
         WHERE name NOT LIKE 'agent_run%'
           AND (
             attributes['gen_ai.usage.input_tokens'] IS NOT NULL
@@ -430,7 +441,7 @@ def _run_queries(
             coalesce(sum(try_cast(attributes['gen_ai.usage.input_tokens'] AS BIGINT)), 0) AS input_tokens,
             coalesce(sum(try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT)), 0) AS cached_tokens,
             coalesce(sum(try_cast(attributes['gen_ai.usage.estimated_cost_usd'] AS DOUBLE)), 0.0) AS estimated_cost_usd
-        FROM spans_window
+        FROM spans_window_map
         WHERE name NOT LIKE 'agent_run%'
           AND (
             attributes['gen_ai.usage.input_tokens'] IS NOT NULL
@@ -464,7 +475,7 @@ def _run_queries(
             count(*) AS calls,
             count_if(status = 'ERROR') AS errors,
             coalesce(quantile_cont(duration_ms, 0.95), 0.0) AS p95_ms
-        FROM spans_window
+        FROM spans_window_map
         WHERE name LIKE 'execute_tool%'
         GROUP BY tool
         ORDER BY calls DESC
@@ -543,7 +554,7 @@ def list_traces(
             WITH
               runs AS (
                 SELECT *
-                FROM spans_window
+                FROM spans_window_map
                 WHERE name LIKE 'agent_run%'
               ),
               counts AS (
@@ -555,7 +566,7 @@ def list_traces(
                   coalesce(sum(CASE WHEN name NOT LIKE 'agent_run%' THEN try_cast(attributes['gen_ai.usage.output_tokens'] AS BIGINT) END), 0) AS output_tokens,
                   coalesce(sum(CASE WHEN name NOT LIKE 'agent_run%' THEN try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT) END), 0) AS cached_tokens,
                   coalesce(sum(CASE WHEN name NOT LIKE 'agent_run%' THEN try_cast(attributes['gen_ai.usage.estimated_cost_usd'] AS DOUBLE) END), 0.0) AS estimated_cost_usd
-                FROM spans_window
+                FROM spans_window_map
                 GROUP BY trace_id
               )
             SELECT
@@ -648,7 +659,7 @@ def count_traces(days: int = 7) -> int:
         row = con.execute(
             """
             SELECT count(*)
-            FROM spans_window
+            FROM spans_window_map
             WHERE name LIKE 'agent_run%'
             """
         ).fetchone()

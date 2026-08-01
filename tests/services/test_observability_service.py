@@ -241,6 +241,38 @@ def test_summarize_aggregates_turns_llm_tools(
     assert tools["web_fetch"]["errors"] == 1
 
 
+def test_summarize_handles_missing_cache_read_tokens(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    spans_dir = _point_EVOFLUX_at(tmp_path, monkeypatch)
+    now = datetime.now(timezone.utc)
+    key = now.strftime("%Y-%m-%d-%H")
+    ts_ns = int(now.timestamp() * 1e9)
+
+    spans = [
+        _span(name="agent_run lead", end_time_ns=ts_ns, duration_ms=1000.0),
+        _span(
+            name="chat xiaomi-mimo",
+            end_time_ns=ts_ns,
+            duration_ms=300.0,
+            attributes={
+                "gen_ai.provider.name": "xiaomi",
+                "gen_ai.request.model": "mimo-v2.5",
+                "gen_ai.usage.input_tokens": 500,
+                "gen_ai.usage.output_tokens": 100,
+                "gen_ai.usage.estimated_cost_usd": 0.001,
+            },
+        ),
+    ]
+    _write_spans(spans_dir / f"{key}.jsonl", spans)
+
+    result = summarize(days=7)
+    assert result.total_turns == 1
+    assert result.total_llm_calls == 1
+    assert result.total_cached_tokens == 0
+    assert result.total_input_tokens == 500
+
+
 def test_summarize_clamps_days(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _point_EVOFLUX_at(tmp_path, monkeypatch)
     # Should not raise even with out-of-range input.
