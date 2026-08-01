@@ -24,6 +24,14 @@ function shellDisplayContent(msg: MessageResponse): string {
   if (msg.extra?.kind === 'user_shell' && typeof command === 'string' && command.trim()) {
     return command.trim().startsWith('!') ? command.trim() : `!${command.trim()}`
   }
+  // WebBridge stores browser evidence in the canonical message body so the
+  // agent receives one fenced prompt. Both EvoFlux Chat and Side Chat should
+  // render the user's original request, not that internal transport envelope.
+  const sidePanel = msg.extra?.webbridge_side_panel
+  if (sidePanel && typeof sidePanel === 'object' && !Array.isArray(sidePanel)) {
+    const userContent = (sidePanel as Record<string, unknown>).user_content
+    if (typeof userContent === 'string' && userContent.trim()) return userContent
+  }
   return msg.content || ''
 }
 

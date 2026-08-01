@@ -24,6 +24,7 @@ const MAX_CONTEXT_CHARS = 20000;
 const PENDING_INTERACTION_TTL_MS = 5 * 60 * 1000;
 const RECONNECT_BASE_MS = 1000; // first retry delay
 const RECONNECT_MAX_MS = 30000; // cap on the exponential backoff
+const CONNECT_TIMEOUT_MS = 15000;
 const HEARTBEAT_ALARM = "webbridge-heartbeat";
 const HEARTBEAT_PERIOD_MIN = 0.5; // minimum period chrome.alarms allows
 const TEXT_WATCH_ALARM = "webbridge-text-watch";
@@ -62,6 +63,9 @@ let pairingId = "";
 let pairingRelayBase = "";
 let connectionCredentialInFlight = null;
 let connectInFlight = false;
+let connectionAttempt = 0;
+const agentControlOverlays = new Set();
+const overlayCaptureSuspensions = new Map();
 
 const COMMAND_CAPABILITIES = [
   "navigate", "click", "dblclick", "type", "key", "scroll", "screenshot",
@@ -101,8 +105,8 @@ async function loadConfig() {
   }
 }
 
-function canonicalRelayBase() {
-  return (relayBase || DEFAULT_RELAY_BASE)
+function canonicalRelayBase(value = relayBase) {
+  return (value || DEFAULT_RELAY_BASE)
     .trim()
     .replace(/\/+$/, "")
     .replace(/^http/i, "ws");
@@ -131,8 +135,8 @@ function assertRelayTransportSecure() {
   }
 }
 
-function buildHttpUrl(path) {
-  const base = (relayBase || DEFAULT_RELAY_BASE)
+function buildHttpUrl(path, value = relayBase) {
+  const base = (value || DEFAULT_RELAY_BASE)
     .replace(/^ws:/i, "http:")
     .replace(/^wss:/i, "https:");
   return base + path;
@@ -1108,13 +1112,13 @@ async function buildAuthenticatedRelayUrl() {
   return `${base}${RELAY_PATH}?_ticket=${encodeURIComponent(body.ticket)}`;
 }
 
-async function persistConnectionCredential(body) {
+async function persistConnectionCredential(body, credentialRelayBase = canonicalRelayBase()) {
   if (!body?.credential || !body?.pairing_id) {
     throw new Error("Connection response was incomplete");
   }
   pairingCredential = body.credential;
   pairingId = body.pairing_id;
-  pairingRelayBase = canonicalRelayBase();
+  pairingRelayBase = credentialRelayBase;
   await chrome.storage.local.set({
     pairingCredential,
     pairingId,
@@ -1126,11 +1130,12 @@ async function persistConnectionCredential(body) {
 async function bootstrapLocalConnection() {
   await loadConfig();
   assertRelayTransportSecure();
-  const parsed = new URL(canonicalRelayBase());
+  const bootstrapRelayBase = canonicalRelayBase();
+  const parsed = new URL(bootstrapRelayBase);
   if (!["localhost", "127.0.0.1", "::1"].includes(parsed.hostname.toLowerCase())) {
     throw new Error("The connection address must point to EvoFlux on this device.");
   }
-  const response = await fetch(buildHttpUrl(LOCAL_PAIRING_PATH), {
+  const response = await fetch(buildHttpUrl(LOCAL_PAIRING_PATH, bootstrapRelayBase), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1143,7 +1148,7 @@ async function bootstrapLocalConnection() {
     throw new Error(await responseError(response, "Connection was rejected"));
   }
   const body = await response.json();
-  await persistConnectionCredential(body);
+  await persistConnectionCredential(body, bootstrapRelayBase);
   return { pairing_id: pairingId, scopes: body.scopes || [] };
 }
 
@@ -1155,22 +1160,34 @@ async function ensureConnectionCredential() {
     });
   }
   await connectionCredentialInFlight;
+  // A settings change can race an in-flight bootstrap. Never mint a ticket
+  // for the new relay with a credential scoped to the previous relay.
+  if (!pairingCredential || pairingRelayBase !== canonicalRelayBase()) {
+    return ensureConnectionCredential();
+  }
 }
 
 // ── Connection management ────────────────────────────────────────────────────
 
 async function connect() {
-  if (connectInFlight || (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING))) return;
+  if (
+    manualDisconnect ||
+    connectInFlight ||
+    (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING))
+  ) return;
 
+  const attempt = ++connectionAttempt;
   connectInFlight = true;
-  await loadConfig();
-  manualDisconnect = false;
+  broadcastConnectionState();
 
   let sock;
   try {
-    sock = new WebSocket(await buildAuthenticatedRelayUrl());
+    await loadConfig();
+    const relayUrl = await buildAuthenticatedRelayUrl();
+    if (manualDisconnect || attempt !== connectionAttempt) return;
+    sock = new WebSocket(relayUrl);
   } catch (e) {
-    connectInFlight = false;
+    if (attempt !== connectionAttempt) return;
     if (e.code === "pairing") {
       await clearRevokedPairingState();
       manualDisconnect = true;
@@ -1183,13 +1200,32 @@ async function connect() {
         : "closed";
     console.error("[WebBridge] Connection setup failed:", e);
     if (!manualDisconnect) scheduleReconnect();
+    connectInFlight = false;
+    broadcastConnectionState();
+    return;
+  } finally {
+    if (attempt === connectionAttempt) connectInFlight = false;
+  }
+  if (manualDisconnect || attempt !== connectionAttempt) {
+    try { sock.close(); } catch { /* superseded before handlers were installed */ }
     return;
   }
   ws = sock;
-  connectInFlight = false;
+  broadcastConnectionState();
+  const openTimeout = setTimeout(() => {
+    if (ws === sock && sock.readyState === WebSocket.CONNECTING) {
+      lastCloseReason = "timeout";
+      console.warn("[WebBridge] Relay connection timed out; retrying.");
+      try { sock.close(); } catch { /* close event will schedule reconnect */ }
+    }
+  }, CONNECT_TIMEOUT_MS);
 
   sock.onopen = () => {
-    if (ws !== sock) return; // superseded by a newer socket
+    clearTimeout(openTimeout);
+    if (ws !== sock || attempt !== connectionAttempt || manualDisconnect) {
+      try { sock.close(); } catch { /* superseded socket */ }
+      return;
+    }
     console.log("[WebBridge] Connected to relay");
     connected = true;
     lastCloseReason = null;
@@ -1216,6 +1252,7 @@ async function connect() {
 
     ensureHeartbeatAlarm();
     broadcastTabInfo();
+    broadcastConnectionState();
   };
 
   sock.onmessage = (event) => {
@@ -1228,6 +1265,7 @@ async function connect() {
   };
 
   sock.onclose = (event) => {
+    clearTimeout(openTimeout);
     if (ws !== sock) return; // superseded socket — ignore its close event
     console.log("[WebBridge] Disconnected from relay (code", event.code + ")");
     connected = false;
@@ -1239,13 +1277,26 @@ async function connect() {
       });
     }
     // 4401 = the single-use relay ticket was invalid or expired.
-    lastCloseReason = event.code === 4403 ? "pairing" : event.code === 4401 ? "ticket" : "closed";
+    if (lastCloseReason !== "timeout") {
+      lastCloseReason = event.code === 4403 ? "pairing" : event.code === 4401 ? "ticket" : "closed";
+    }
+    broadcastConnectionState();
     if (!manualDisconnect) scheduleReconnect();
   };
 
   sock.onerror = (e) => {
     console.error("[WebBridge] WebSocket error:", e);
   };
+}
+
+function broadcastConnectionState() {
+  chrome.runtime.sendMessage({
+    type: "connection_state",
+    connected,
+    connecting: connectInFlight || Boolean(ws && ws.readyState === WebSocket.CONNECTING),
+    last_close_reason: lastCloseReason,
+    relay_base: relayBase,
+  }).catch(() => {});
 }
 
 async function clearRevokedPairingState() {
@@ -1280,6 +1331,8 @@ async function clearRevokedPairingState() {
 
 function disconnect() {
   manualDisconnect = true;
+  connectionAttempt++;
+  connectInFlight = false;
   clearTimeout(reconnectTimer);
   if (ws) {
     try { ws.close(); } catch { /* already closed */ }
@@ -1289,6 +1342,7 @@ function disconnect() {
   detachAllDebuggers().catch((e) => {
     console.warn("[WebBridge] Failed to release browser control:", e.message);
   });
+  broadcastConnectionState();
 }
 
 // Exponential backoff with jitter, capped — avoids hammering the relay (and
@@ -1586,6 +1640,7 @@ async function takeHumanControlLease(tab) {
   const leases = await readHumanControlLeases();
   leases[tab.id] = lease;
   await humanLeaseStorage().set({ [HUMAN_LEASE_STORAGE_KEY]: leases });
+  await setAgentControlOverlay(tab.id, false);
   return humanLeaseSummary(lease);
 }
 
@@ -1855,18 +1910,20 @@ async function captureSelectedRegion(tab, raw) {
   }
   // cssVisualViewport and pointer coordinates are already CSS page pixels.
   // Applying visual scale or DPR again moves the clip off-surface at zoom.
-  const result = await cdpSend(tab.id, "Page.captureScreenshot", {
-    format: "png",
-    clip: {
-      x: current.page_x + selected.clip.x,
-      y: current.page_y + selected.clip.y,
-      width: selected.clip.width,
-      height: selected.clip.height,
-      scale: 1,
-    },
-    captureBeyondViewport: true,
-    fromSurface: true,
-  });
+  const result = await captureWithoutAgentControlOverlay(tab.id, () => (
+    cdpSend(tab.id, "Page.captureScreenshot", {
+      format: "png",
+      clip: {
+        x: current.page_x + selected.clip.x,
+        y: current.page_y + selected.clip.y,
+        width: selected.clip.width,
+        height: selected.clip.height,
+        scale: 1,
+      },
+      captureBeyondViewport: true,
+      fromSurface: true,
+    })
+  ));
   if (!result?.data) throw new Error("Browser did not return a screenshot.");
   const capture = {
     tab_id: tab.id,
@@ -1999,10 +2056,93 @@ async function clickAt(tabId, x, y) {
   });
 }
 
-async function ensureDebuggerAttached(tabId) {
-  if (attachedTabs.has(tabId)) return;
+function pointerPhase(params) {
+  if (params.type === "mousePressed") return "press";
+  if (params.type === "mouseReleased") return "release";
+  if (params.buttons) return "drag";
+  return "move";
+}
 
-  return new Promise((resolve, reject) => {
+async function setAgentControlOverlay(tabId, enabled, pointer = null) {
+  if (tabId == null) return false;
+  if (!enabled) {
+    agentControlOverlays.delete(tabId);
+    overlayCaptureSuspensions.delete(tabId);
+    try {
+      await chrome.tabs.sendMessage(tabId, {
+        type: "webbridge_agent_control",
+        enabled: false,
+      });
+    } catch {
+      // Restricted pages and navigations may remove the content script first.
+    }
+    return false;
+  }
+
+  try {
+    if (agentControlOverlays.has(tabId) && !pointer) return true;
+    if (!agentControlOverlays.has(tabId)) {
+      await chrome.scripting.executeScript({
+        target: { tabId, frameIds: [0] },
+        files: ["agent_control_overlay.js"],
+      });
+    }
+    const response = await chrome.tabs.sendMessage(tabId, {
+      type: "webbridge_agent_control",
+      enabled: true,
+      pointer,
+    });
+    if (response?.ok === false) throw new Error("Control overlay rejected the update");
+    agentControlOverlays.add(tabId);
+    return true;
+  } catch (error) {
+    agentControlOverlays.delete(tabId);
+    console.warn("[WebBridge] Could not show the control overlay:", error.message);
+    return false;
+  }
+}
+
+async function setAgentControlOverlaySuspended(tabId, suspended) {
+  if (tabId == null || !agentControlOverlays.has(tabId)) return false;
+  const currentDepth = overlayCaptureSuspensions.get(tabId) || 0;
+  const nextDepth = suspended ? currentDepth + 1 : Math.max(0, currentDepth - 1);
+  if (nextDepth > 0) overlayCaptureSuspensions.set(tabId, nextDepth);
+  else overlayCaptureSuspensions.delete(tabId);
+  if ((suspended && currentDepth > 0) || (!suspended && nextDepth > 0)) return true;
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, {
+      type: "webbridge_agent_control",
+      suspended: nextDepth > 0,
+    });
+    if (response?.ok === false) throw new Error("Control overlay rejected capture suspension");
+    return true;
+  } catch (error) {
+    if (suspended) overlayCaptureSuspensions.delete(tabId);
+    console.warn("[WebBridge] Could not suspend the control overlay for capture:", error.message);
+    return false;
+  }
+}
+
+async function captureWithoutAgentControlOverlay(tabId, capture) {
+  const shouldSuspend = agentControlOverlays.has(tabId);
+  if (!shouldSuspend) return capture();
+  const suspended = await setAgentControlOverlaySuspended(tabId, true);
+  try {
+    return await capture();
+  } finally {
+    if (suspended && agentControlOverlays.has(tabId)) {
+      await setAgentControlOverlaySuspended(tabId, false);
+    }
+  }
+}
+
+async function ensureDebuggerAttached(tabId) {
+  if (attachedTabs.has(tabId)) {
+    await setAgentControlOverlay(tabId, true);
+    return;
+  }
+
+  await new Promise((resolve, reject) => {
     chrome.debugger.attach({ tabId }, "1.3", () => {
       if (chrome.runtime.lastError) {
         reject(new Error(
@@ -2015,17 +2155,22 @@ async function ensureDebuggerAttached(tabId) {
       }
     });
   });
+  await setAgentControlOverlay(tabId, true);
 }
 
 async function detachDebugger(tabId) {
-  if (!attachedTabs.has(tabId)) return;
+  if (!attachedTabs.has(tabId)) {
+    await setAgentControlOverlay(tabId, false);
+    return;
+  }
 
-  return new Promise((resolve) => {
+  await new Promise((resolve) => {
     chrome.debugger.detach({ tabId }, () => {
       attachedTabs.delete(tabId);
       resolve();
     });
   });
+  await setAgentControlOverlay(tabId, false);
 }
 
 async function detachAllDebuggers() {
@@ -2048,6 +2193,18 @@ function sendCommandOnce(tabId, method, params) {
 
 async function cdpSend(tabId, method, params = {}) {
   await ensureDebuggerAttached(tabId);
+
+  if (
+    method === "Input.dispatchMouseEvent" &&
+    Number.isFinite(params.x) &&
+    Number.isFinite(params.y)
+  ) {
+    await setAgentControlOverlay(tabId, true, {
+      x: params.x,
+      y: params.y,
+      phase: pointerPhase(params),
+    });
+  }
 
   try {
     return await sendCommandOnce(tabId, method, params);
@@ -2286,6 +2443,7 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 chrome.debugger.onDetach.addListener((source) => {
   networkInflight.delete(source.tabId);
   diagnosticCaptures.delete(source.tabId);
+  setAgentControlOverlay(source.tabId, false).catch(() => {});
   if (source.tabId && attachedTabs.delete(source.tabId)) {
     console.warn("[WebBridge] Debugger detached from tab", source.tabId);
     broadcastTabInfo();
@@ -2294,6 +2452,8 @@ chrome.debugger.onDetach.addListener((source) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   attachedTabs.delete(tabId);
+  agentControlOverlays.delete(tabId);
+  overlayCaptureSuspensions.delete(tabId);
   networkInflight.delete(tabId);
   diagnosticCaptures.delete(tabId);
   cancelTextWatchesForTab(tabId).catch((error) => {
@@ -2348,6 +2508,9 @@ async function cmdNavigate(params) {
   const loaded = await completed;
   await broadcastTabInfo();
   const current = await chrome.tabs.get(tab.id);
+  if (browserOrigin(current.url || current.pendingUrl || "")) {
+    await ensureDebuggerAttached(current.id);
+  }
   return {
     success: true,
     url: current.url || current.pendingUrl || params.url,
@@ -2520,13 +2683,15 @@ async function cmdScreenshot(params) {
     clip = { x: vp.scrollX, y: vp.scrollY, width: vp.width, height: vp.height, scale: 1 };
   }
 
-  const result = await cdpSend(tab.id, "Page.captureScreenshot", {
-    format: fmt,
-    quality: fmt === "jpeg" ? quality : undefined,
-    clip,
-    captureBeyondViewport: true,
-    fromSurface: true,
-  });
+  const result = await captureWithoutAgentControlOverlay(tab.id, () => (
+    cdpSend(tab.id, "Page.captureScreenshot", {
+      format: fmt,
+      quality: fmt === "jpeg" ? quality : undefined,
+      clip,
+      captureBeyondViewport: true,
+      fromSurface: true,
+    })
+  ));
 
   return {
     success: true,
@@ -2706,6 +2871,7 @@ async function cmdSwitchTab(params) {
     }
     await chrome.tabs.update(id, { active: true });
     await chrome.windows.update(tab.windowId, { focused: true });
+    if (browserOrigin(tab.url || tab.pendingUrl || "")) await ensureDebuggerAttached(tab.id);
     await broadcastTabInfo();
     return { success: true, tab_id: id };
   }
@@ -2718,6 +2884,7 @@ async function cmdSwitchTab(params) {
     }
     await chrome.tabs.update(tab.id, { active: true });
     await chrome.windows.update(tab.windowId, { focused: true });
+    if (browserOrigin(tab.url || tab.pendingUrl || "")) await ensureDebuggerAttached(tab.id);
     await broadcastTabInfo();
     return { success: true, tab_id: tab.id };
   }
@@ -2791,6 +2958,7 @@ async function cmdEvaluate(params) {
 
 async function cmdBack(params) {
   const tab = await resolveTab(params);
+  await ensureDebuggerAttached(tab.id);
   await chrome.tabs.goBack(tab.id);
   await broadcastTabInfo();
   return { success: true };
@@ -2798,6 +2966,7 @@ async function cmdBack(params) {
 
 async function cmdForward(params) {
   const tab = await resolveTab(params);
+  await ensureDebuggerAttached(tab.id);
   await chrome.tabs.goForward(tab.id);
   await broadcastTabInfo();
   return { success: true };
@@ -2805,6 +2974,7 @@ async function cmdForward(params) {
 
 async function cmdReload(params) {
   const tab = await resolveTab(params);
+  await ensureDebuggerAttached(tab.id);
   await chrome.tabs.reload(tab.id);
   await broadcastTabInfo();
   return { success: true };
@@ -3343,6 +3513,7 @@ async function cmdStatus() {
   return {
     success: true,
     connected: true,
+    agent_control_active: Boolean(tab?.id != null && agentControlOverlays.has(tab.id)),
     active_tab: tab ? {
       id: tab.id,
       url: tab.url || "",
@@ -3393,6 +3564,11 @@ async function broadcastTabInfo() {
 
 // Keep backend policy/status accurate for both active and background tabs.
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === "loading") {
+    // The old document (and its injected overlay) is being replaced.
+    agentControlOverlays.delete(tabId);
+    overlayCaptureSuspensions.delete(tabId);
+  }
   if (changeInfo.url || changeInfo.status === "loading") {
     rotateTabPageInstance(tabId).catch((error) => {
       console.warn("[WebBridge] Failed to rotate Side Chat page identity:", error.message);
@@ -3420,6 +3596,11 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   }
   if (changeInfo.url || changeInfo.title || changeInfo.status === "complete") {
     broadcastTabInfo();
+  }
+  if (changeInfo.status === "complete" && attachedTabs.has(tabId)) {
+    chrome.tabs.get(tabId).then(async (tab) => {
+      if (!await humanLeaseForTab(tab)) await setAgentControlOverlay(tabId, true);
+    }).catch(() => {});
   }
 });
 
@@ -3523,9 +3704,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const humanLease = await humanLeaseForTab(activeTab);
       sendResponse({
         connected: connected,
+        connecting: connectInFlight || Boolean(ws && ws.readyState === WebSocket.CONNECTING),
         extension_id: extensionId,
         active_tab: activeTab ? { id: activeTab.id, url: activeTab.url, title: activeTab.title } : null,
         attached_tab_ids: [...attachedTabs.keys()],
+        visual_control_tab_ids: [...agentControlOverlays],
         last_close_reason: lastCloseReason,
         relay_base: relayBase,
         paired: Boolean(pairingCredential && pairingId),
@@ -3542,7 +3725,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "toggle_connection") {
-    if (connected || (ws && ws.readyState === WebSocket.CONNECTING)) {
+    if (connected || connectInFlight || (ws && ws.readyState === WebSocket.CONNECTING)) {
       disconnect();
     } else {
       manualDisconnect = false;

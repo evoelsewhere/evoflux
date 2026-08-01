@@ -136,6 +136,7 @@ async def submit_persisted_interactive_message(
     persisted_message: SessionMessage | None = None,
     source_key: str | None = None,
     source_request_hash: str | None = None,
+    service_tier: str | None = None,
 ) -> InteractiveMessageResult:
     """Queue or dispatch one prepared interactive message."""
     session_id = str(session.id)
@@ -191,6 +192,8 @@ async def submit_persisted_interactive_message(
                 queued_extra["model"] = effective_model
             if session.thinking_level:
                 queued_extra["thinking_level"] = session.thinking_level
+            if service_tier:
+                queued_extra["service_tier"] = service_tier
             async with db.begin():
                 queued = await save_queued_user_message(
                     db,
@@ -216,6 +219,8 @@ async def submit_persisted_interactive_message(
             "thinking_level": session.thinking_level,
             "thinking_level_provided": session.thinking_level is not None,
         }
+        if service_tier:
+            dispatch_kwargs["service_tier"] = service_tier
         if attachments:
             if persisted_message is None:
                 dispatch_kwargs["attachments"] = attachments

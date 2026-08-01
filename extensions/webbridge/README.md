@@ -75,6 +75,20 @@ Side Chat settings also show browser-control state. **Release browser control**
 detaches every controlled tab without disabling the relay connection;
 disconnecting the extension releases them automatically.
 
+When an EvoFlux agent attaches to an HTTP(S) tab, WebBridge now renders a
+non-interactive virtual cursor and an animated cyan/violet glow around the page
+viewport. Native CDP mouse moves, clicks, double-clicks, hovers, and drags are
+mirrored by the cursor so the action remains visible without changing the page
+or intercepting user input. The overlay disappears when control is released,
+the user takes a human-control lease, the relay disconnects, or the debugger is
+detached; it restores after same-tab navigation while agent control remains
+active. Reduced-motion browser preferences disable non-essential animation.
+
+Connection attempts are generation-scoped, so Disconnect and connection-address
+changes supersede an in-flight ticket/bootstrap request instead of allowing a
+stale socket to win the race. Relay sockets also time out and enter the existing
+jittered exponential reconnect path if the WebSocket handshake stalls.
+
 ## Send browser context to EvoFlux
 
 After connecting, WebBridge adds three explicit, HTTP(S)-only context-menu
@@ -145,6 +159,25 @@ to the page origin. **Report issue evidence** is opt-in and collects only a
 bounded, redacted ring of console warnings/errors and failed-network metadata;
 no headers, request/response bodies, cookies, query strings, or secrets are
 stored.
+
+Side Chat and the full EvoFlux chat are two views of that same canonical
+`ChatSession`: messages, titles, model selection, attachments, AskUser handoffs,
+interrupts, and live agent activity stay synchronized. Browser evidence remains
+fenced in the persisted prompt consumed by the agent, while both chat surfaces
+render the original user-authored text. Historical tool activity exposes only
+the tool name, completion state, and duration; arguments and output remain
+private. The model control mirrors Desktop Chat with the configured model
+catalog, provider identity, thinking-effort choices, and Codex Standard/Fast
+response speed. Model and thinking settings persist on the shared session and
+are polled back into Side Chat when changed in EvoFlux; Fast remains a per-turn
+choice, matching Desktop Chat's request contract. Side Chat stream ownership is
+session-scoped, uses bounded exponential
+backoff with jitter, and rejects stale history/question responses after a tab or
+session switch. While a turn is running, Side Chat renders the same response
+shape as Desktop Chat directly in the transcript: a sanitized Thought character
+count, tool name/state/duration steps, and progressively streamed Markdown.
+Raw reasoning, tool arguments, and tool output remain excluded from the paired
+browser surface.
 
 ## P3: Teach Mode and text watches
 

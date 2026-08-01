@@ -355,6 +355,7 @@ class BrowserSessionOption(BaseModel):
     mode: str
     running: bool
     model: str | None = None
+    thinking_level: str | None = None
 
 
 class BrowserModelOption(BaseModel):
@@ -368,12 +369,26 @@ class BrowserSessionModelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model: str | None = Field(default=None, max_length=255)
+    thinking_level: str | None = Field(default=None, max_length=50)
 
     @field_validator("model")
     @classmethod
     def _normalize_model(cls, value: str | None) -> str | None:
         normalized = value.strip() if value else None
         return normalized or None
+
+    @field_validator("thinking_level")
+    @classmethod
+    def _normalize_thinking_level(cls, value: str | None) -> str | None:
+        normalized = value.strip() if value else None
+        return normalized or None
+
+
+class BrowserPanelActivity(BaseModel):
+    id: str
+    name: str
+    state: Literal["pending", "done"]
+    duration_ms: int | None = None
 
 
 class BrowserPanelMessage(BaseModel):
@@ -383,6 +398,10 @@ class BrowserPanelMessage(BaseModel):
     agent: str | None = None
     created_at: str
     attachments: list[BrowserPanelAttachment] = Field(default_factory=list)
+    activities: list[BrowserPanelActivity] = Field(default_factory=list)
+    is_summary: bool = False
+    model: str | None = None
+    response_duration_ms: int | None = None
 
 
 class BrowserPanelAttachment(BaseModel):
@@ -431,6 +450,7 @@ class BrowserPanelMessageRequest(BaseModel):
     binding_tab_id: int | None = Field(default=None, ge=0)
     origin: str = Field(max_length=2048)
     user_gesture: bool = False
+    fast_mode: bool = False
     element: BrowserPanelElement | None = None
     contexts: list[BrowserPanelContext] = Field(default_factory=list, max_length=2)
 
@@ -605,6 +625,7 @@ async def list_browser_sessions(
             mode=session.mode,
             running=str(session.id) in running,
             model=session.model,
+            thinking_level=session.thinking_level,
         )
         for session in sessions
     ]
@@ -655,6 +676,7 @@ async def create_browser_session(
         mode=session.mode,
         running=str(session.id) in stream_store.running_session_ids(),
         model=session.model,
+        thinking_level=session.thinking_level,
     )
 
 
@@ -691,13 +713,34 @@ async def update_browser_session_model(
     )
     session = await _require_pairing_webbridge_session(db, session_id, pairing.id)
     if body.model is not None:
-        from app.api.routes.agents import is_registered_model_id
+        from app.api.routes.agents import get_registry
 
-        if not await is_registered_model_id(body.model):
+        registry = await get_registry()
+        selected = next(
+            (entry for entry in registry.models if entry.id == body.model), None
+        )
+        if selected is None:
             raise HTTPException(
                 status_code=422, detail="Choose a model from the registry."
             )
+        if (
+            body.thinking_level is not None
+            and body.thinking_level not in selected.thinking_levels
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Model '{body.model}' does not support thinking level "
+                    f"'{body.thinking_level}'."
+                ),
+            )
+    elif body.thinking_level is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="Choose an explicit model before setting thinking effort.",
+        )
     session.model = body.model
+    session.thinking_level = body.thinking_level
     db.add(session)
     await db.flush()
     return BrowserSessionOption(
@@ -706,6 +749,7 @@ async def update_browser_session_model(
         mode=session.mode,
         running=str(session.id) in stream_store.running_session_ids(),
         model=session.model,
+        thinking_level=session.thinking_level,
     )
 
 
@@ -859,9 +903,48 @@ def _browser_panel_messages(
     pairing_id: uuid.UUID | None = None,
 ) -> list[BrowserPanelMessage]:
     messages: list[BrowserPanelMessage] = []
+    tool_results = {
+        row.tool_call_id: row for row in rows if row.role == "tool" and row.tool_call_id
+    }
     for row in rows:
         if row.role not in {"user", "assistant"}:
             continue
+        extra = row.extra if isinstance(row.extra, dict) else {}
+        side_panel = extra.get("webbridge_side_panel")
+        display_content = (
+            side_panel.get("user_content")
+            if isinstance(side_panel, dict)
+            and isinstance(side_panel.get("user_content"), str)
+            else row.content
+        )
+        activities: list[BrowserPanelActivity] = []
+        for tool_call in row.tool_calls or []:
+            if not isinstance(tool_call, dict):
+                continue
+            function = tool_call.get("function")
+            name = function.get("name") if isinstance(function, dict) else None
+            tool_call_id = str(tool_call.get("id") or "")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            tool_result = tool_results.get(tool_call_id)
+            result_extra = (
+                tool_result.extra
+                if tool_result is not None and isinstance(tool_result.extra, dict)
+                else {}
+            )
+            raw_duration = result_extra.get("duration_ms")
+            activities.append(
+                BrowserPanelActivity(
+                    id=tool_call_id,
+                    name=name.strip(),
+                    state="done" if tool_result is not None else "pending",
+                    duration_ms=(
+                        max(0, round(raw_duration))
+                        if isinstance(raw_duration, int | float)
+                        else None
+                    ),
+                )
+            )
         raw_attachments = (row.extra or {}).get("attachments")
         attachments = [
             projected
@@ -879,16 +962,26 @@ def _browser_panel_messages(
             )
             is not None
         ]
-        if not row.content and not attachments:
+        if not display_content and not attachments and not activities:
             continue
+        raw_duration = extra.get("duration_ms")
+        raw_model = extra.get("model")
         messages.append(
             BrowserPanelMessage(
                 id=str(row.id),
                 role=row.role,
-                content=row.content or "",
+                content=str(display_content or ""),
                 agent=(member_names or {}).get(row.session_id) or row.name,
                 created_at=row.created_at.isoformat(),
                 attachments=attachments,
+                activities=activities,
+                is_summary=bool(row.is_summary),
+                model=raw_model if isinstance(raw_model, str) else None,
+                response_duration_ms=(
+                    max(0, round(raw_duration))
+                    if isinstance(raw_duration, int | float)
+                    else None
+                ),
             )
         )
     return messages
@@ -935,6 +1028,26 @@ def _resolve_session_media(root: Path, relative_path: str) -> Path:
 def _browser_panel_stream_event(event: dict[str, Any]) -> dict[str, str] | None:
     """Keep Side Chat live while withholding raw tool arguments and output."""
     event_type = str(event.get("event") or "")
+    raw_data = event.get("data")
+    try:
+        data = json.loads(raw_data) if isinstance(raw_data, str) else raw_data
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if event_type == "thinking":
+        if not isinstance(data, dict):
+            return None
+        text = data.get("text")
+        return {
+            "event": "thinking",
+            "data": json.dumps(
+                {
+                    "type": "thinking",
+                    "agent": str(data.get("agent") or "EvoFlux"),
+                    "chars": len(text) if isinstance(text, str) else 0,
+                },
+                separators=(",", ":"),
+            ),
+        }
     if event_type in {
         "agent_status",
         "done",
@@ -954,13 +1067,12 @@ def _browser_panel_stream_event(event: dict[str, Any]) -> dict[str, str] | None:
     state = activity_states.get(event_type)
     if state is None:
         return None
-    raw_data = event.get("data")
-    try:
-        data = json.loads(raw_data) if isinstance(raw_data, str) else raw_data
-    except (TypeError, json.JSONDecodeError):
-        return None
     if not isinstance(data, dict):
         return None
+    metadata = data.get("metadata")
+    raw_duration = data.get("duration_ms")
+    if not isinstance(raw_duration, int | float) and isinstance(metadata, dict):
+        raw_duration = metadata.get("duration_ms")
     return {
         "event": "activity",
         "data": json.dumps(
@@ -970,6 +1082,11 @@ def _browser_panel_stream_event(event: dict[str, Any]) -> dict[str, str] | None:
                 "agent": str(data.get("agent") or "EvoFlux"),
                 "name": str(data.get("name") or "tool"),
                 "state": state,
+                **(
+                    {"duration_ms": max(0, round(raw_duration))}
+                    if isinstance(raw_duration, int | float)
+                    else {}
+                ),
             },
             separators=(",", ":"),
         ),
@@ -1509,6 +1626,7 @@ async def _dispatch_browser_panel_message(
                 "webbridge_side_panel": {
                     "tab_id": body.tab_id,
                     "binding_tab_id": body.binding_tab_id or body.tab_id,
+                    "user_content": body.content,
                     **({"element": element_context} if element_context else {}),
                     **({"contexts": context_metadata} if context_metadata else {}),
                     **(
@@ -1528,6 +1646,11 @@ async def _dispatch_browser_panel_message(
             attachments=attachments,
             source_key=source_key,
             source_request_hash=request_hash,
+            service_tier=(
+                "fast"
+                if body.fast_mode and (session.model or "").startswith("codex:")
+                else None
+            ),
         )
     except InteractiveMessageConflict as exc:
         raise HTTPException(
@@ -1963,6 +2086,7 @@ async def assign_session_to_pairing(
         mode=session.mode,
         running=str(session.id) in stream_store.running_session_ids(),
         model=session.model,
+        thinking_level=session.thinking_level,
     )
 
 
@@ -2630,6 +2754,7 @@ async def create_and_bind_browser_session(
             mode=session.mode,
             running=False,
             model=session.model,
+            thinking_level=session.thinking_level,
         ),
         binding=_tab_binding_response(binding),
     )

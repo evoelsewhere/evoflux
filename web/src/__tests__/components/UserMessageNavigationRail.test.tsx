@@ -54,7 +54,9 @@ describe('UserMessageNavigationRail', () => {
     const onNavigate = vi.fn()
     render(<Harness onNavigate={onNavigate} />)
 
-    expect(screen.getByRole('navigation', { name: 'User messages' })).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'User messages' })).toHaveClass(
+      '@[48rem]/agent-view:flex',
+    )
     const firstMarker = screen.getByRole('button', { name: 'Jump to user message 1' })
 
     fireEvent.mouseEnter(firstMarker)

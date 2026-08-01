@@ -40,9 +40,18 @@ const sendBtn = document.getElementById("sendBtn");
 const composerStatus = document.getElementById("composerStatus");
 const modelTrigger = document.getElementById("modelTrigger");
 const modelLabel = document.getElementById("modelLabel");
+const modelThinkingLabel = document.getElementById("modelThinkingLabel");
+const modelProviderBadge = document.getElementById("modelProviderBadge");
 const modelPopover = document.getElementById("modelPopover");
 const modelSearch = document.getElementById("modelSearch");
 const modelList = document.getElementById("modelList");
+const modelCurrentName = document.getElementById("modelCurrentName");
+const modelCurrentId = document.getElementById("modelCurrentId");
+const modelCurrentProviderBadge = document.getElementById("modelCurrentProviderBadge");
+const thinkingOptions = document.getElementById("thinkingOptions");
+const thinkingAvailability = document.getElementById("thinkingAvailability");
+const speedControl = document.getElementById("speedControl");
+const speedAvailability = document.getElementById("speedAvailability");
 const activity = document.getElementById("activity");
 const activityLabel = document.getElementById("activityLabel");
 const activityDetail = document.getElementById("activityDetail");
@@ -101,8 +110,13 @@ let primaryBinding = null;
 let activeTabIsGroupedChild = false;
 let streamController = null;
 let streamGeneration = 0;
+let streamingSessionId = null;
+let streamTask = null;
 let refreshGeneration = 0;
+let historyLoadGeneration = 0;
+let questionLoadGeneration = 0;
 let liveMessage = null;
+const liveThinkingChars = new Map();
 let pendingQuestions = new Map();
 const activeTakeoverRequests = new Set();
 let humanControlLease = null;
@@ -119,6 +133,8 @@ let activeTeachRecording = null;
 let activeIssueCapture = null;
 let browserModels = [];
 let currentSessionModel = null;
+let currentSessionThinkingLevel = null;
+let currentSessionFastMode = false;
 let modelCatalogLoaded = false;
 let modelCatalogLoading = false;
 let elementPickerActive = false;
@@ -275,7 +291,19 @@ async function panelFetch(path, options = {}) {
   } catch {
     // Keep the status fallback for non-JSON response bodies.
   }
-  throw new Error(message);
+  throw new PanelHttpError(message, response.status);
+}
+
+class PanelHttpError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.name = "PanelHttpError";
+    this.status = status;
+  }
+
+  get retryable() {
+    return this.status === 408 || this.status === 425 || this.status === 429 || this.status >= 500;
+  }
 }
 
 async function currentTab() {
@@ -479,12 +507,123 @@ function shortModelName(modelId) {
   return separator >= 0 ? value.slice(separator + 1) : value;
 }
 
+function providerOf(modelId) {
+  const value = String(modelId || "");
+  const separator = value.indexOf(":");
+  return separator >= 0 ? value.slice(0, separator) : "";
+}
+
+const PROVIDER_COLORS = {
+  anthropic: "#d99162",
+  azure: "#4da3ff",
+  codex: "#5ec79b",
+  google: "#6da1ff",
+  groq: "#f08b62",
+  ollama: "#a8b0b8",
+  openai: "#5ec79b",
+  openrouter: "#aa8dff",
+};
+
+const THINKING_LABELS = {
+  none: "None",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "X-High",
+  max: "Max",
+  ultra: "Ultra",
+};
+
+function thinkingLabel(level) {
+  return level ? THINKING_LABELS[level] || level : "Default";
+}
+
+function thinkingColor(level) {
+  if (!level || level === "none") return "var(--thinking-neutral)";
+  if (["minimal", "low"].includes(level)) return "var(--thinking-low)";
+  if (level === "medium") return "var(--thinking-medium)";
+  if (level === "high") return "var(--thinking-high)";
+  return "var(--thinking-max)";
+}
+
+function setProviderBadge(element, modelId) {
+  const provider = providerOf(modelId);
+  element.textContent = provider ? provider.slice(0, 2) : "AI";
+  element.title = provider || "Lead agent default";
+  element.style.setProperty("--provider-color", PROVIDER_COLORS[provider] || "var(--accent)");
+}
+
+function selectedModelOption() {
+  return browserModels.find((entry) => entry.id === currentSessionModel) || null;
+}
+
+function supportsFastMode(modelId) {
+  return String(modelId || "").startsWith("codex:");
+}
+
+function reconcileThinkingLevel(level, model) {
+  return level && model?.thinking_levels?.includes(level) ? level : null;
+}
+
+function renderThinkingOptions() {
+  const model = selectedModelOption();
+  const levels = model?.thinking_levels || [];
+  const options = [null, ...levels];
+  thinkingOptions.replaceChildren();
+  thinkingAvailability.textContent = levels.length ? thinkingLabel(currentSessionThinkingLevel) : "Provider default";
+  for (const level of options) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "thinking-option";
+    button.dataset.thinkingLevel = level || "";
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", String(level === currentSessionThinkingLevel));
+    button.disabled = !currentSessionModel;
+    const dot = document.createElement("span");
+    dot.className = "thinking-option-dot";
+    dot.style.setProperty("--thinking-color", thinkingColor(level));
+    const label = document.createElement("span");
+    label.textContent = thinkingLabel(level);
+    button.append(dot, label);
+    thinkingOptions.append(button);
+  }
+}
+
+function renderSpeedControl() {
+  const available = supportsFastMode(currentSessionModel);
+  if (!available) currentSessionFastMode = false;
+  speedAvailability.textContent = available ? "" : "Fast unavailable";
+  for (const button of speedControl.querySelectorAll("button[data-speed]")) {
+    const fast = button.dataset.speed === "fast";
+    button.disabled = fast ? !available : false;
+    button.setAttribute("aria-checked", String(fast === currentSessionFastMode));
+  }
+}
+
 function renderModelTrigger(session = null) {
-  if (session) currentSessionModel = session.model || null;
+  if (session) {
+    if (session.id && session.id !== modelTrigger.dataset.sessionId) {
+      currentSessionFastMode = false;
+      modelTrigger.dataset.sessionId = session.id;
+    }
+    currentSessionModel = session.model || null;
+    currentSessionThinkingLevel = session.thinking_level || null;
+  }
   const label = currentSessionModel ? shortModelName(currentSessionModel) : "Model";
   modelLabel.textContent = label;
-  modelTrigger.title = currentSessionModel || "Use the lead agent's default model";
+  modelThinkingLabel.textContent = thinkingLabel(currentSessionThinkingLevel);
+  modelThinkingLabel.style.setProperty("--thinking-color", thinkingColor(currentSessionThinkingLevel));
+  setProviderBadge(modelProviderBadge, currentSessionModel);
+  setProviderBadge(modelCurrentProviderBadge, currentSessionModel);
+  modelCurrentName.textContent = currentSessionModel ? label : "Choose a model";
+  modelCurrentId.textContent = currentSessionModel || "Lead agent default";
+  modelTrigger.title = currentSessionModel
+    ? `${currentSessionModel} · ${thinkingLabel(currentSessionThinkingLevel)} thinking`
+    : "Use the lead agent's default model";
   modelTrigger.disabled = !selectedSessionId;
+  renderThinkingOptions();
+  renderSpeedControl();
 }
 
 function closeModelPicker() {
@@ -506,6 +645,9 @@ function renderModelOptions(query = "") {
     option.dataset.modelId = model || "";
     option.setAttribute("role", "option");
     option.setAttribute("aria-selected", String((model || null) === currentSessionModel));
+    const badge = document.createElement("span");
+    badge.className = "provider-badge compact";
+    setProviderBadge(badge, model);
     const copy = document.createElement("span");
     copy.className = "model-option-copy";
     const name = document.createElement("strong");
@@ -513,12 +655,21 @@ function renderModelOptions(query = "") {
     const meta = document.createElement("span");
     meta.textContent = detail;
     copy.append(name, meta);
-    option.append(copy);
+    const provider = document.createElement("span");
+    provider.className = "model-provider-label";
+    provider.textContent = providerOf(model) || "default";
+    const check = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    check.classList.add("model-check");
+    check.setAttribute("viewBox", "0 0 24 24");
+    const checkPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    checkPath.setAttribute("d", "m5 12 4 4L19 6");
+    check.append(checkPath);
+    option.append(badge, copy, provider, check);
     modelList.append(option);
   };
 
   if (!normalized || "default lead model".includes(normalized)) {
-    appendOption(null, "Default", "Use the lead agent model");
+    appendOption(null, "Lead default", "Use the EvoFlux agent model");
   }
   for (const entry of visible) {
     appendOption(entry.id, entry.model || shortModelName(entry.id), entry.provider || "Configured model");
@@ -539,11 +690,16 @@ async function loadBrowserModels() {
     const response = await panelFetch(MODELS_PATH);
     browserModels = await response.json();
     modelCatalogLoaded = true;
+    currentSessionThinkingLevel = reconcileThinkingLevel(
+      currentSessionThinkingLevel,
+      selectedModelOption(),
+    );
   } catch (error) {
     setComposerStatus(error.message || String(error), "error");
   } finally {
     modelCatalogLoading = false;
     renderModelOptions(modelSearch.value);
+    renderModelTrigger();
   }
 }
 
@@ -561,30 +717,71 @@ async function openModelPicker() {
   modelSearch.focus();
 }
 
-async function selectSessionModel(model) {
+function setModelSettingsBusy(busy) {
+  modelPopover.toggleAttribute("data-saving", busy);
+  modelSearch.disabled = busy;
+  for (const button of modelPopover.querySelectorAll("button")) button.disabled = busy;
+  if (!busy) {
+    renderThinkingOptions();
+    renderSpeedControl();
+  }
+}
+
+async function persistSessionModelSettings(model, thinkingLevel) {
   if (!selectedSessionId) return;
-  modelTrigger.disabled = true;
+  const sessionId = selectedSessionId;
+  setModelSettingsBusy(true);
   try {
     const response = await panelFetch(
-      `${SESSIONS_PATH}/${encodeURIComponent(selectedSessionId)}/model`,
+      `${SESSIONS_PATH}/${encodeURIComponent(sessionId)}/model`,
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: model || null }),
+        body: JSON.stringify({ model: model || null, thinking_level: thinkingLevel || null }),
       }
     );
     const session = await response.json();
+    if (selectedSessionId !== sessionId) return;
     currentSessionModel = session.model || null;
-    const existing = sessions.find((item) => item.id === selectedSessionId);
-    if (existing) existing.model = currentSessionModel;
+    currentSessionThinkingLevel = session.thinking_level || null;
+    if (!supportsFastMode(currentSessionModel)) currentSessionFastMode = false;
+    const existing = sessions.find((item) => item.id === sessionId);
+    if (existing) {
+      existing.model = currentSessionModel;
+      existing.thinking_level = currentSessionThinkingLevel;
+    }
     renderModelTrigger(session);
-    setComposerStatus(currentSessionModel ? `Using ${shortModelName(currentSessionModel)}.` : "Using the lead agent's default model.");
-    closeModelPicker();
+    renderModelOptions(modelSearch.value);
+    setComposerStatus(
+      currentSessionModel
+        ? `Using ${shortModelName(currentSessionModel)} · ${thinkingLabel(currentSessionThinkingLevel)} thinking.`
+        : "Using the lead agent's default model."
+    );
   } catch (error) {
     setComposerStatus(error.message || String(error), "error");
   } finally {
-    modelTrigger.disabled = false;
+    setModelSettingsBusy(false);
+    modelTrigger.disabled = !selectedSessionId;
   }
+}
+
+async function selectSessionModel(modelId) {
+  const model = browserModels.find((entry) => entry.id === modelId) || null;
+  const nextThinking = modelId
+    ? reconcileThinkingLevel(currentSessionThinkingLevel, model)
+    : null;
+  await persistSessionModelSettings(modelId, nextThinking);
+}
+
+async function selectThinkingLevel(level) {
+  if (!currentSessionModel) return;
+  await persistSessionModelSettings(currentSessionModel, level || null);
+}
+
+function selectResponseSpeed(fast) {
+  currentSessionFastMode = Boolean(fast && supportsFastMode(currentSessionModel));
+  renderSpeedControl();
+  setComposerStatus(currentSessionFastMode ? "Fast responses enabled for the next turn." : "Standard response speed.");
 }
 
 async function refreshPickedElement() {
@@ -623,6 +820,7 @@ function renderBindingStatus() {
   sendBtn.disabled = !bound || composerSending;
   pickElementBtn.disabled = !bound || !pageTools;
   takeControlBtn.disabled = !bound || !pageTools;
+  renderComposerSubmitControl();
   if (bound) {
     bindingStatus.textContent = activeTabIsGroupedChild
       ? "Group tab"
@@ -645,6 +843,8 @@ function clearTranscript() {
   loadOlderBtn.classList.remove("visible");
   historyCursor = null;
   liveMessage = null;
+  liveThinkingChars.clear();
+  toolActivities.clear();
 }
 
 function panelMediaPath(source) {
@@ -762,29 +962,114 @@ function scrollTranscriptToEnd() {
   requestAnimationFrame(() => { transcript.scrollTop = transcript.scrollHeight; });
 }
 
+function shortDisplayModel(model) {
+  return String(model || "").split(":").at(-1)?.split("/").at(-1) || "";
+}
+
+function messageMeta(message) {
+  const parts = [message.role === "user" ? "You" : (message.agent || "EvoFlux")];
+  if (message.model) parts.push(shortDisplayModel(message.model));
+  if (message.created_at) {
+    const createdAt = new Date(message.created_at);
+    if (Number.isFinite(createdAt.getTime())) {
+      parts.push(new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(createdAt));
+    }
+  }
+  if (Number.isFinite(message.response_duration_ms)) {
+    parts.push(`${Math.max(0, message.response_duration_ms / 1000).toFixed(1)}s`);
+  }
+  return parts.join(" · ");
+}
+
+function renderMessageActivities(item, activities) {
+  if (!Array.isArray(activities) || !activities.length) return null;
+  const root = document.createElement("div");
+  root.className = "message-activities";
+  for (const activityItem of activities) {
+    const row = document.createElement("div");
+    row.className = `message-activity ${activityItem.state === "done" ? "done" : "pending"}`;
+    const state = document.createElement("span");
+    state.className = "message-activity-state";
+    state.textContent = activityItem.state === "done" ? "✓" : "…";
+    const label = document.createElement("span");
+    label.textContent = friendlyToolName(activityItem.name);
+    row.append(state, label);
+    if (Number.isFinite(activityItem.duration_ms)) {
+      const duration = document.createElement("time");
+      duration.textContent = `${Math.max(0, activityItem.duration_ms / 1000).toFixed(1)}s`;
+      row.append(duration);
+    }
+    root.append(row);
+  }
+  item.append(root);
+  return root;
+}
+
 function appendMessage(message, { live = false, prepend = false } = {}) {
   const empty = transcript.querySelector(".empty");
   if (empty) empty.remove();
   const item = document.createElement("article");
-  item.className = `message ${message.role === "user" ? "user" : "assistant"}${live ? " live" : ""}`;
+  item.className = `message ${message.is_summary ? "compaction" : message.role === "user" ? "user" : "assistant"}${live ? " live" : ""}`;
   const meta = document.createElement("span");
   meta.className = "message-meta";
-  meta.textContent = message.role === "user" ? "You" : (message.agent || "EvoFlux");
+  meta.textContent = messageMeta(message);
   const content = document.createElement("div");
   content.className = "message-body";
   const rawContent = message.content || "";
-  if (message.role === "assistant" && globalThis.WebBridgeMarkdown) {
+  if (message.is_summary) {
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "Session compacted";
+    const summaryBody = document.createElement("div");
+    summaryBody.className = "compaction-summary";
+    summaryBody.textContent = rawContent.replace(/^\[Summary of earlier conversation\]\n/, "");
+    details.append(summary, summaryBody);
+    content.append(details);
+  } else if (message.role === "assistant" && globalThis.WebBridgeMarkdown) {
     globalThis.WebBridgeMarkdown.render(content, rawContent);
     void hydrateMarkdownMedia(content);
   } else {
     content.textContent = rawContent;
   }
   item.append(meta, content);
+  renderMessageActivities(item, message.activities);
   void renderAttachments(item, message.attachments || []);
   if (prepend) transcript.insertBefore(item, loadOlderBtn.nextSibling);
   else transcript.append(item);
   if (!prepend) scrollTranscriptToEnd();
   return { item, content, rawContent };
+}
+
+function ensureLiveMessage(agent = "EvoFlux") {
+  if (liveMessage?.agent === agent) return liveMessage;
+  flushLiveMarkdownRender();
+  liveMessage = {
+    agent,
+    ...appendMessage({ role: "assistant", agent, content: "" }, { live: true }),
+  };
+  liveMessage.item.classList.add("live-turn");
+  return liveMessage;
+}
+
+function renderLiveTurnDetails(agent = liveMessage?.agent || "EvoFlux") {
+  const message = ensureLiveMessage(agent);
+  for (const existing of message.item.querySelectorAll(".live-thinking-summary, .message-activities")) {
+    existing.remove();
+  }
+  const thinkingChars = liveThinkingChars.get(agent) || 0;
+  const activities = [...toolActivities.values()].filter((entry) => (
+    !entry.agent || entry.agent === agent
+  ));
+  if (thinkingChars > 0 || (agentStates.get(agent) === "working" && !activities.length)) {
+    const thinking = document.createElement("div");
+    thinking.className = "live-thinking-summary";
+    thinking.textContent = thinkingChars > 0
+      ? `Thought · ${thinkingChars.toLocaleString()} chars`
+      : "Thinking…";
+    message.item.append(thinking);
+  }
+  renderMessageActivities(message.item, activities);
+  scrollTranscriptToEnd();
 }
 
 function showEmptyTranscript(text) {
@@ -796,7 +1081,9 @@ function showEmptyTranscript(text) {
 }
 
 async function loadHistory({ before = null, prepend = false } = {}) {
-  if (!selectedSessionId) {
+  const sessionId = selectedSessionId;
+  const loadGeneration = ++historyLoadGeneration;
+  if (!sessionId) {
     showEmptyTranscript("EvoFlux is preparing this tab session.");
     return;
   }
@@ -804,20 +1091,22 @@ async function loadHistory({ before = null, prepend = false } = {}) {
   let body = null;
   for (let page = 0; page < 20; page += 1) {
     const path = cursor
-      ? `${SESSIONS_PATH}/${encodeURIComponent(selectedSessionId)}/history?before=${encodeURIComponent(cursor)}`
-      : `${SESSIONS_PATH}/${encodeURIComponent(selectedSessionId)}/history`;
+      ? `${SESSIONS_PATH}/${encodeURIComponent(sessionId)}/history?before=${encodeURIComponent(cursor)}`
+      : `${SESSIONS_PATH}/${encodeURIComponent(sessionId)}/history`;
     const response = await panelFetch(path);
     body = await response.json();
+    if (loadGeneration !== historyLoadGeneration || sessionId !== selectedSessionId) return false;
     if (body.messages?.length || !body.has_more || !body.next_cursor) break;
     cursor = body.next_cursor;
   }
+  if (loadGeneration !== historyLoadGeneration || sessionId !== selectedSessionId) return false;
   const previousHeight = transcript.scrollHeight;
   if (!prepend) clearTranscript();
   if (!body?.messages?.length) {
     if (!prepend) showEmptyTranscript("No messages yet. Send a question from the Side Panel.");
     historyCursor = body?.next_cursor || null;
     loadOlderBtn.classList.toggle("visible", Boolean(body?.has_more && historyCursor));
-    return;
+    return true;
   }
   if (prepend) {
     for (const message of [...body.messages].reverse()) appendMessage(message, { prepend: true });
@@ -829,6 +1118,7 @@ async function loadHistory({ before = null, prepend = false } = {}) {
   }
   historyCursor = body.next_cursor || null;
   loadOlderBtn.classList.toggle("visible", Boolean(body.has_more && historyCursor));
+  return true;
 }
 
 function renderQuestions() {
@@ -913,15 +1203,19 @@ function renderQuestions() {
 }
 
 async function loadPendingQuestions() {
-  pendingQuestions.clear();
-  if (!selectedSessionId) {
+  const sessionId = selectedSessionId;
+  const loadGeneration = ++questionLoadGeneration;
+  if (!sessionId) {
+    pendingQuestions.clear();
     renderQuestions();
     return;
   }
   const response = await panelFetch(
-    `${SESSIONS_PATH}/${encodeURIComponent(selectedSessionId)}/questions/pending`
+    `${SESSIONS_PATH}/${encodeURIComponent(sessionId)}/questions/pending`
   );
   const body = await response.json();
+  if (loadGeneration !== questionLoadGeneration || sessionId !== selectedSessionId) return;
+  pendingQuestions.clear();
   for (const request of body.questions || []) pendingQuestions.set(request.request_id, request);
   renderQuestions();
 }
@@ -1144,9 +1438,17 @@ function stopStream() {
   streamGeneration += 1;
   streamController?.abort();
   streamController = null;
+  streamingSessionId = null;
+  streamTask = null;
+  historyLoadGeneration += 1;
+  questionLoadGeneration += 1;
   clearTimeout(markdownRenderTimer);
   markdownRenderTimer = null;
   liveMessage = null;
+  liveThinkingChars.clear();
+  toolActivities.clear();
+  agentStates.clear();
+  renderActivity();
 }
 
 function delay(ms) {
@@ -1189,18 +1491,42 @@ async function readSse(response, onEvent) {
 }
 
 function friendlyToolName(name) {
-  return String(name || "tool")
+  const normalized = String(name || "tool");
+  if (normalized === "webbridge") return "Browsed web";
+  if (normalized === "skill") return "Skill";
+  return normalized
     .replace(/^mcp__/, "")
     .replace(/[_-]+/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function isAgentWorking() {
+  return (
+    [...toolActivities.values()].some((entry) => entry.state !== "done")
+    || [...agentStates.values()].some((state) => state === "working")
+  );
+}
+
+function renderComposerSubmitControl() {
+  const working = isAgentWorking();
+  const stopMode = working && !composer.value.trim() && !composerSending;
+  sendBtn.classList.toggle("stop-mode", stopMode);
+  sendBtn.setAttribute("aria-label", stopMode ? "Stop generation" : "Send message");
+  sendBtn.title = stopMode
+    ? "Stop generation"
+    : "Send (Enter) · New line (Shift+Enter)";
+  composer.placeholder = working
+    ? "Queue a follow-up or stop the run…"
+    : "Message EvoFlux…";
+  stopBtn.style.display = "none";
 }
 
 function renderActivity() {
   const runningTool = [...toolActivities.values()].find((entry) => entry.state !== "done");
   const workingAgent = [...agentStates.entries()].find(([, state]) => state === "working");
   const working = Boolean(runningTool || workingAgent);
-  activity.classList.toggle("visible", working);
-  stopBtn.style.display = working ? "inline-flex" : "none";
+  activity.classList.toggle("visible", working && !liveMessage);
+  renderComposerSubmitControl();
   if (!working) return;
   if (runningTool) {
     activityLabel.textContent = friendlyToolName(runningTool.name);
@@ -1234,28 +1560,38 @@ function flushLiveMarkdownRender() {
 function handleStreamEvent(type, data) {
   if (type === "message") {
     const agent = data.agent || "EvoFlux";
-    if (!liveMessage || liveMessage.agent !== agent) {
-      flushLiveMarkdownRender();
-      liveMessage = { agent, ...appendMessage({ role: "assistant", agent, content: "" }, { live: true }) };
-    }
+    ensureLiveMessage(agent);
     liveMessage.rawContent += data.text || "";
     scheduleLiveMarkdownRender();
     return;
   }
+  if (type === "thinking") {
+    const agent = data.agent || "EvoFlux";
+    const chars = Number.isFinite(data.chars) ? Math.max(0, data.chars) : 0;
+    liveThinkingChars.set(agent, (liveThinkingChars.get(agent) || 0) + chars);
+    renderLiveTurnDetails(agent);
+    renderActivity();
+    return;
+  }
   if (type === "agent_status") {
-    agentStates.set(data.agent || "EvoFlux", data.status || "idle");
+    const agent = data.agent || "EvoFlux";
+    agentStates.set(agent, data.status || "idle");
+    if (data.status === "working") renderLiveTurnDetails(agent);
     if (data.status !== "working") {
       for (const [key, entry] of toolActivities) {
-        if (!data.agent || entry.agent === data.agent) toolActivities.delete(key);
+        if (!data.agent || entry.agent === data.agent) {
+          toolActivities.set(key, { ...entry, state: "done" });
+        }
       }
+      if (liveMessage) renderLiveTurnDetails(liveMessage.agent);
     }
     renderActivity();
     return;
   }
   if (type === "activity") {
     const key = data.id || `${data.agent || "EvoFlux"}:${data.name || "tool"}`;
-    if (data.state === "done") toolActivities.delete(key);
-    else toolActivities.set(key, data);
+    toolActivities.set(key, data);
+    renderLiveTurnDetails(data.agent || "EvoFlux");
     renderActivity();
     return;
   }
@@ -1271,6 +1607,7 @@ function handleStreamEvent(type, data) {
   if (type === "error") {
     agentStates.clear();
     toolActivities.clear();
+    if (liveMessage) renderLiveTurnDetails(liveMessage.agent);
     renderActivity();
     setNotice(data.message || "EvoFlux stream failed.", "error");
     return;
@@ -1288,19 +1625,29 @@ function handleStreamEvent(type, data) {
   }
   if (type === "done") {
     flushLiveMarkdownRender();
+    if (liveMessage) renderLiveTurnDetails(liveMessage.agent);
     agentStates.clear();
-    toolActivities.clear();
     renderActivity();
     return;
   }
   if (type === "title_update" && data.title) {
-    pageTitle.textContent = data.title;
+    sessionTitle.textContent = data.title;
+    const session = sessions.find((item) => item.id === selectedSessionId);
+    if (session) session.title = data.title;
   }
+}
+
+async function isSessionStillRunning(sessionId) {
+  const response = await panelFetch(SESSIONS_PATH);
+  const nextSessions = await response.json();
+  if (selectedSessionId !== sessionId) return false;
+  sessions = nextSessions;
+  return Boolean(sessions.find((session) => session.id === sessionId)?.running);
 }
 
 async function runStream(sessionId, generation) {
   let attempts = 0;
-  while (generation === streamGeneration && attempts < 30) {
+  while (generation === streamGeneration) {
     try {
       if (selectedSessionId !== sessionId) return;
       // The stream store replays the complete accumulated assistant text.
@@ -1316,6 +1663,7 @@ async function runStream(sessionId, generation) {
         `${SESSIONS_PATH}/${encodeURIComponent(sessionId)}/stream`,
         { signal: streamController.signal }
       );
+      if (attempts > 0) setComposerStatus("Reconnected · EvoFlux is responding.");
       let sawDone = false;
       let sawEvent = false;
       await readSse(response, (type, data) => {
@@ -1330,29 +1678,54 @@ async function runStream(sessionId, generation) {
         liveMessage = null;
         await loadHistory();
         await loadPendingQuestions();
-        return;
+        if (sawDone) return;
+        if (!sawEvent && !(await isSessionStillRunning(sessionId))) {
+          setComposerStatus("");
+          return;
+        }
       }
+      if (sawEvent) attempts = 0;
     } catch (error) {
       if (generation === streamGeneration) streamController = null;
       if (error.name === "AbortError" || generation !== streamGeneration) return;
-      if (attempts === 29) setNotice(error.message || String(error), "error");
+      if (error instanceof PanelHttpError && !error.retryable) {
+        setNotice(error.message || String(error), "error");
+        return;
+      }
     }
     attempts += 1;
-    await delay(300);
-  }
-  if (generation === streamGeneration) {
-    flushLiveMarkdownRender();
-    liveMessage = null;
-    await loadHistory();
-    await loadPendingQuestions();
+    const backoff = Math.min(5000, 250 * 2 ** Math.min(attempts - 1, 5));
+    const retryDelay = Math.round(backoff * (0.85 + Math.random() * 0.3));
+    setComposerStatus(`Connection interrupted · retrying in ${(retryDelay / 1000).toFixed(1)}s.`);
+    await delay(retryDelay);
   }
 }
 
 function startStream() {
-  if (!selectedSessionId || streamController) return;
+  if (!selectedSessionId) return;
+  if (streamTask && streamingSessionId === selectedSessionId) return;
   stopStream();
   const generation = streamGeneration;
-  void runStream(selectedSessionId, generation);
+  const sessionId = selectedSessionId;
+  streamingSessionId = sessionId;
+  const task = runStream(sessionId, generation);
+  streamTask = task;
+  void task.then(
+    () => finalizeStreamTask(task, generation),
+    (error) => {
+      finalizeStreamTask(task, generation);
+      if (generation === streamGeneration) {
+        setNotice(error?.message || String(error), "error");
+      }
+    },
+  );
+}
+
+function finalizeStreamTask(task, generation) {
+  if (streamTask !== task) return;
+  streamTask = null;
+  streamingSessionId = null;
+  if (generation === streamGeneration) streamController = null;
 }
 
 async function sendMessage() {
@@ -1383,7 +1756,7 @@ async function sendMessage() {
       .map((file) => `${file.name}:${file.size}:${file.lastModified}`)
       .join("|");
     const requestShape = await sha256(
-      `${selectedSessionId}:${activeTab.id}:${sourceScope}:${content}:${elementKey}:${JSON.stringify(contexts)}:${screenshotKey}:${filesKey}`
+      `${selectedSessionId}:${activeTab.id}:${sourceScope}:${content}:${elementKey}:${JSON.stringify(contexts)}:${screenshotKey}:${filesKey}:${currentSessionModel || "default"}:${currentSessionThinkingLevel || "default"}:${currentSessionFastMode}`
     );
     if (!pendingComposerRequest) {
       const stored = await panelSessionStorage().get([PANEL_REQUEST_STORAGE_KEY]);
@@ -1402,6 +1775,7 @@ async function sendMessage() {
       binding_tab_id: selectedBinding()?.tab_id || activeTab.id,
       origin: sourceScope,
       user_gesture: true,
+      fast_mode: currentSessionFastMode,
       element,
       contexts,
     };
@@ -1484,6 +1858,7 @@ async function sendMessage() {
   } finally {
     composerSending = false;
     sendBtn.disabled = false;
+    renderComposerSubmitControl();
   }
 }
 
@@ -1498,6 +1873,7 @@ async function submitIssueReport(report) {
     binding_tab_id: selectedBinding()?.tab_id || activeTab.id,
     origin: browserTabScope(activeTab),
     user_gesture: true,
+    fast_mode: currentSessionFastMode,
     element: browserPanelElement(pickedElement, activeTab.id),
     contexts: [],
     diagnostics: report.diagnostics || [],
@@ -1568,12 +1944,15 @@ async function refreshSettings() {
     ]);
     if (document.activeElement !== relayBaseInput) relayBaseInput.value = config.relayBase || DEFAULT_RELAY_BASE;
     const connected = Boolean(response?.connected);
-    settingsStatusDot.className = `status-dot ${connected ? "live" : "error"}`;
-    settingsStatusText.textContent = connected ? "Connected" : "Disconnected";
+    const connecting = Boolean(response?.connecting);
+    settingsStatusDot.className = `status-dot ${connected ? "live" : connecting ? "" : "error"}`.trim();
+    settingsStatusText.textContent = connected ? "Connected" : connecting ? "Connecting…" : "Disconnected";
     settingsStatusDetail.textContent = connected
       ? `Connected to ${response.relay_base || DEFAULT_RELAY_BASE}`
-      : "Save the connection address or reconnect to continue.";
-    toggleConnectionBtn.textContent = connected ? "Disconnect" : "Reconnect";
+      : connecting
+        ? `Connecting to ${response.relay_base || DEFAULT_RELAY_BASE}`
+        : "Save the connection address or reconnect to continue.";
+    toggleConnectionBtn.textContent = connected || connecting ? "Disconnect" : "Reconnect";
     textWatches = response?.text_watches || [];
     activeTextWatch = textWatches.find((item) => item.tab_id === activeTab?.id) || null;
     if (activeTextWatch?.state === "matched") {
@@ -1836,8 +2215,22 @@ modelList.addEventListener("click", (event) => {
   const option = event.target.closest("button[data-model-id]");
   if (option) void selectSessionModel(option.dataset.modelId || null);
 });
+thinkingOptions.addEventListener("click", (event) => {
+  const option = event.target.closest("button[data-thinking-level]");
+  if (option) void selectThinkingLevel(option.dataset.thinkingLevel || null);
+});
+speedControl.addEventListener("click", (event) => {
+  const option = event.target.closest("button[data-speed]");
+  if (option) selectResponseSpeed(option.dataset.speed === "fast");
+});
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".model-picker")) closeModelPicker();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && modelPopover.classList.contains("visible")) {
+    closeModelPicker();
+    modelTrigger.focus();
+  }
 });
 refreshBtn.addEventListener("click", () => void refreshPanel());
 loadOlderBtn.addEventListener("click", () => {
@@ -1856,7 +2249,10 @@ fileInput.addEventListener("change", () => selectPanelFiles(fileInput.files || [
 clearElementBtn.addEventListener("click", () => void clearElement());
 takeControlBtn.addEventListener("click", () => void takeHumanControl());
 resumeAgentBtn.addEventListener("click", () => void resumeAgent());
-sendBtn.addEventListener("click", () => void sendMessage());
+sendBtn.addEventListener("click", () => {
+  if (sendBtn.classList.contains("stop-mode")) void stopRun();
+  else void sendMessage();
+});
 stopBtn.addEventListener("click", () => void stopRun());
 composer.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
@@ -1864,7 +2260,10 @@ composer.addEventListener("keydown", (event) => {
     void sendMessage();
   }
 });
-composer.addEventListener("input", resizeComposer);
+composer.addEventListener("input", () => {
+  resizeComposer();
+  renderComposerSubmitControl();
+});
 transcript.addEventListener("scroll", () => {
   transcriptPinned = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight <= 40;
 }, { passive: true });
@@ -1880,6 +2279,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === "connection_state") {
+    const isConnected = Boolean(message.connected);
+    const isConnecting = Boolean(message.connecting);
+    statusDot.className = `status-dot ${isConnected ? "live" : isConnecting ? "" : "error"}`.trim();
+    if (settingsDrawer.classList.contains("visible")) void refreshSettings();
+    return;
+  }
   if (message?.type === "pairing_revoked") {
     stopStream();
     sessions = [];
@@ -1929,11 +2335,26 @@ chrome.runtime.onMessage.addListener((message) => {
   composer.focus();
 });
 async function refreshRunningState() {
-  if (!selectedSessionId || streamController) return;
+  if (!selectedSessionId || streamTask) return;
+  const sessionId = selectedSessionId;
   try {
     const response = await panelFetch(SESSIONS_PATH);
-    sessions = await response.json();
-    if (sessions.find((session) => session.id === selectedSessionId)?.running) {
+    const nextSessions = await response.json();
+    if (selectedSessionId !== sessionId) return;
+    sessions = nextSessions;
+    const session = sessions.find((item) => item.id === sessionId);
+    if (session) {
+      sessionTitle.textContent = session.title || "EvoFlux Side Chat";
+      if (
+        (session.model || null) !== currentSessionModel
+        || (session.thinking_level || null) !== currentSessionThinkingLevel
+      ) {
+        renderModelTrigger(session);
+        renderModelOptions(modelSearch.value);
+        setComposerStatus("Model settings synced from EvoFlux.");
+      }
+    }
+    if (session?.running) {
       startStream();
       await loadPendingQuestions();
     }
