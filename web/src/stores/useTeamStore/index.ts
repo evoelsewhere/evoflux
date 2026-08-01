@@ -112,7 +112,8 @@ function resetSessionState(
   state.turnChanges = null
   state.turnChangesOpen = false
   state.permissionRequest = null
-    state._abortController = null
+  state.askUserQuestion = null
+  state._abortController = null
   state._pendingMessages = []
   state._sessionGeneration = (state._sessionGeneration ?? 0) + 1
   state.cacheInvalidations = []
@@ -759,7 +760,16 @@ export const useTeamStore = create<TeamStore>()(
 
       get()._abortController?.abort()
       const abort = new AbortController()
-      set((draft) => { draft.isConnected = true; draft._abortController = abort })
+      // Clear gate UI before attach. Reconnect replay restores only still-
+      // pending question/permission/plan (single-slot); *_replied is not
+      // replayed, so keeping prior state would leave resolved gates stuck.
+      set((draft) => {
+        draft.isConnected = true
+        draft._abortController = abort
+        draft.permissionRequest = null
+        draft.askUserQuestion = null
+        draft.planApproval = null
+      })
 
       teamStream(
         sessionId,
@@ -787,11 +797,19 @@ export const useTeamStore = create<TeamStore>()(
             set((draft) => { draft.error = err.message; draft.isConnected = false })
           },
           onDone: () => {
+            if (abort.signal.aborted) return
             const current = get()
             if (current.sessionId !== sessionId || current._sessionGeneration !== generation) return
             set((draft) => {
               draft.isConnected = false
               draft.cacheInvalidations.push({ kind: 'team_sessions' })
+              // Empty attach (turn already finished) never replays gates —
+              // drop any leftover UI if the team is idle.
+              if (!draft.isTeamWorking) {
+                draft.permissionRequest = null
+                draft.askUserQuestion = null
+                draft.planApproval = null
+              }
             })
           },
         },

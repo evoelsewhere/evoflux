@@ -11,10 +11,12 @@ import { AimKbPanel } from '@/components/AimKbPanel'
 import { AimTraceabilityPanel } from '@/components/AimTraceabilityPanel'
 import { CommandPalette, type Command } from '@/components/CommandPalette'
 import { AppShell } from '@/components/shell/AppShell'
+import { MobileDrawerBackdrop } from '@/components/shell/MobileDrawerBackdrop'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAimProjectsQuery } from '@/queries/useAimProjectsQuery'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useModalFocus } from '@/hooks/useModalFocus'
 import { useMotionPreset } from '@/lib/motion'
 import { useUIStore } from '@/stores/useUIStore'
 import type { AimFeature } from '@/lib/aim-sidebar'
@@ -44,6 +46,7 @@ function AimLayoutBase() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const isMobile = useIsMobile()
   const preset = useMotionPreset()
+  useModalFocus(isMobile && mobileSidebarOpen, () => setMobileSidebarOpen(false))
 
   // Ctrl+P — same palette shortcut as the other two modes (shared hook).
   // Ctrl+B (sidebar collapse) is registered once by AppShell.
@@ -127,20 +130,22 @@ function AimLayoutBase() {
       ) : null}
       mobileSidebar={
         isMobile ? (
-          <AnimatePresence>
-            {mobileSidebarOpen && (
-              <>
-                <motion.button
-                  type="button"
-                  aria-label="Close AIM navigation"
-                  className="mobile-safe-top fixed inset-x-0 bottom-0 z-(--z-drawer) bg-(--color-overlay) md:hidden"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  onClick={() => setMobileSidebarOpen(false)}
+          <>
+            <AnimatePresence>
+              {mobileSidebarOpen && (
+                <MobileDrawerBackdrop
+                  onClose={() => setMobileSidebarOpen(false)}
+                  closeLabel="Close AIM navigation"
                 />
+              )}
+            </AnimatePresence>
+            <AnimatePresence>
+              {mobileSidebarOpen && (
                 <motion.aside
+                  key="aim-drawer-panel"
                   aria-label="AIM navigation"
+                  aria-modal="true"
+                  data-modal-focus="true"
                   className="mobile-safe-top fixed bottom-0 left-0 z-(--z-overlay) w-[min(288px,calc(100vw-2rem))] overflow-hidden bg-(--bg-sidebar) shadow-xl md:hidden"
                   initial={{ x: '-100%' }}
                   animate={{ x: 0 }}
@@ -156,9 +161,9 @@ function AimLayoutBase() {
                     onMobileClose={() => setMobileSidebarOpen(false)}
                   />
                 </motion.aside>
-              </>
-            )}
-          </AnimatePresence>
+              )}
+            </AnimatePresence>
+          </>
         ) : null
       }
       header={

@@ -221,6 +221,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   onWebBridgeEnabledChange,
   permissionMode,
   onPermissionModeChange,
+  sessionId = null,
 }, ref) {
   const [value, setValue] = useState('')
   const [quoteContext, setQuoteContext] = useState<string | null>(null)
@@ -245,6 +246,41 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragCounterRef = useRef(0)
   const isMobile = useIsMobile()
+
+  // Per-session composer drafts — switching sessions must not bleed text
+  // or attachments into the next chat.
+  type ComposerDraft = {
+    value: string
+    files: File[]
+    quoteContext: string | null
+    shellMode: boolean
+  }
+  const draftsRef = useRef(new Map<string, ComposerDraft>())
+  const activeSessionRef = useRef<string | null>(sessionId)
+  const draftSnapshotRef = useRef<ComposerDraft>({
+    value: '',
+    files: [],
+    quoteContext: null,
+    shellMode: false,
+  })
+  useEffect(() => {
+    draftSnapshotRef.current = { value, files, quoteContext, shellMode }
+  }, [value, files, quoteContext, shellMode])
+
+  useEffect(() => {
+    const prev = activeSessionRef.current
+    if (prev === sessionId) return
+    draftsRef.current.set(prev ?? '', draftSnapshotRef.current)
+    const next = draftsRef.current.get(sessionId ?? '')
+    setValue(next?.value ?? '')
+    setFiles(next?.files ?? [])
+    setQuoteContext(next?.quoteContext ?? null)
+    setShellMode(next?.shellMode ?? false)
+    setMentionRange(null)
+    setSnippetRange(null)
+    setHistoryIndex(-1)
+    activeSessionRef.current = sessionId
+  }, [sessionId])
 
   // Terminal → composer handoff: the AI Terminal's "Send to agent" dispatches
   // this event so selected output lands in the chat draft, without coupling
@@ -453,6 +489,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     setMentionRange(null)
     setSnippetRange(null)
     setHistoryIndex(-1)
+    draftsRef.current.delete(sessionId ?? '')
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
 
     const restoreDraft = () => {
@@ -496,6 +533,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     slashFilter,
     submitting,
     resize,
+    sessionId,
   ])
 
   const addFile = useCallback((file: File) => {

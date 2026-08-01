@@ -14,6 +14,7 @@ import {
   type McpServerDraft,
 } from '@/components/settings/McpServerDraft'
 import { useSettingsNavigate } from '@/contexts/SettingsContext'
+import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
 
 const TEMPLATE: McpServerDraft = {
   ...emptyDraft(),
@@ -50,6 +51,7 @@ export function NewMcpServerPage() {
   const invalid = fieldErrors !== null
   const firstError = fieldErrors ? Object.values(fieldErrors)[0] : null
   const dirty = !isPristine(draft)
+  useRegisterSettingsDirty(dirty)
 
   const handleCreate = async () => {
     setSaveError(null)

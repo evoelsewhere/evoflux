@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import re
 import subprocess
 from datetime import datetime, timezone
@@ -12,6 +13,7 @@ from uuid import UUID, uuid7
 
 import yaml
 
+from app.agent.tools.builtin.shell_runtime import BashNotFoundError, require_bash
 from app.services.aim import kb_store
 
 _UNIT_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
@@ -209,17 +211,17 @@ async def verify_target_conversion(
             + "; ".join(baseline_status[:20])
         )
     environment = {
+        **os.environ,
         "AIM_UNIT": unit,
         "AIM_KB_ROOT": str(kb_root.resolve()),
         "AIM_TARGET_ROOT": str(target_root.resolve()),
         "AIM_WORKFLOW_EXECUTION_ID": execution_id,
     }
-    shell_command = [
-        "env",
-        *[f"{key}={value}" for key, value in environment.items()],
-        "bash",
-        str(command_path.resolve()),
-    ]
+    try:
+        bash = require_bash()
+    except BashNotFoundError as exc:
+        raise VerificationError(str(exc)) from exc
+    shell_command = [bash, str(command_path.resolve())]
     try:
         completed = await asyncio.to_thread(
             subprocess.run,
@@ -227,6 +229,7 @@ async def verify_target_conversion(
             cwd=target_root,
             capture_output=True,
             text=True,
+            env=environment,
             timeout=max(1, min(timeout_seconds, 4 * 3600)),
         )
     except subprocess.TimeoutExpired as exc:

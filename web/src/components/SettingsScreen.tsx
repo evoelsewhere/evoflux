@@ -10,6 +10,7 @@ import { SettingsSidebar } from '@/components/settings/SettingsSidebar'
 import { SettingsProvider } from '@/contexts/SettingsContext'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
+import { confirmDiscardSettingsDraft } from '@/lib/settings-dirty'
 import { useUIStore } from '@/stores/useUIStore'
 import { AgentEditorPage } from '@/routes/settings.agents.$name'
 import { NewAgentPage } from '@/routes/settings.agents.new'
@@ -115,6 +116,16 @@ export function SettingsScreen() {
   const dragHandlers = useTauriDrag()
   const screenRef = useRef<HTMLElement>(null)
 
+  const requestClose = useCallback(() => {
+    if (!confirmDiscardSettingsDraft()) return
+    closeSettings()
+  }, [closeSettings])
+
+  const requestNavigate = useCallback((path: string) => {
+    if (!confirmDiscardSettingsDraft()) return
+    navigateSettings(path.replace(/^\/settings\/?/, ''))
+  }, [navigateSettings])
+
   useEffect(() => {
     screenRef.current?.focus()
 
@@ -122,12 +133,12 @@ export function SettingsScreen() {
       if (event.defaultPrevented || event.key !== 'Escape') return
       if (document.querySelector('[role="dialog"]')) return
       event.preventDefault()
-      closeSettings()
+      requestClose()
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [closeSettings])
+  }, [requestClose])
 
   const params = useMemo((): Record<string, string> => {
     const parts = settingsPath.split('/')
@@ -147,8 +158,8 @@ export function SettingsScreen() {
   const fullPath = canonicalSettingsPath ? `/settings/${canonicalSettingsPath}` : '/settings'
 
   const handleSidebarNavigate = useCallback((path: string) => {
-    navigateSettings(path.replace(/^\/settings\/?/, ''))
-  }, [navigateSettings])
+    requestNavigate(path)
+  }, [requestNavigate])
 
   return (
     <section
@@ -163,7 +174,7 @@ export function SettingsScreen() {
         <SettingsSidebar
           currentPath={fullPath}
           onNavigate={handleSidebarNavigate}
-          onBack={closeSettings}
+          onBack={requestClose}
         />
       )}
 
@@ -175,7 +186,7 @@ export function SettingsScreen() {
           {isMobile && (
             <button
               type="button"
-              onClick={closeSettings}
+              onClick={requestClose}
               aria-label="Back to app"
               className="flex size-10 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) transition-[background-color,color,transform] hover:bg-(--bg-key) hover:text-(--color-text) active:scale-[0.96]"
             >
@@ -200,7 +211,7 @@ export function SettingsScreen() {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => navigateSettings(crumb.to ?? '')}
+                      onClick={() => requestNavigate(crumb.to ?? '')}
                       className="shrink-0 truncate rounded px-1 py-1 transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
                     >
                       {crumb.label}
@@ -214,7 +225,7 @@ export function SettingsScreen() {
 
         <main id="main" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <SettingsProvider path={settingsPath} params={params} search={settingsSearch}>
-            <SettingsContent path={settingsPath} />
+            <SettingsContent key={canonicalSettingsPath || 'hub'} path={settingsPath} />
           </SettingsProvider>
         </main>
       </div>

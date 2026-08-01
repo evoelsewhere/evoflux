@@ -592,11 +592,20 @@ class WebBridgeManager:
         return [ext for ext in self._extensions.values() if ext.is_active(now)]
 
     def get_active_extension(self) -> ExtensionConnection | None:
-        """Return the most recently seen active extension, or None."""
+        """Return the most recently seen active extension, or None.
+
+        When several extensions share the same ``last_seen`` (common when
+        two register in the same clock tick), prefer the most recently
+        registered so sticky session routing binds to the newest one.
+        """
         active = self.active_extensions()
         if not active:
             return None
-        return max(active, key=lambda e: e.last_seen)
+        best = active[0]
+        for ext in active[1:]:
+            if ext.last_seen >= best.last_seen:
+                best = ext
+        return best
 
     def has_active_extension(self) -> bool:
         return self.get_active_extension() is not None

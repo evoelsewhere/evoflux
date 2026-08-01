@@ -1700,7 +1700,8 @@ async def get_aim_rulebook(project_id: UUID, db: DbSession) -> AimRulebookRespon
             continue
         files.append(
             AimRulebookFile(
-                path=str(path.relative_to(local_rulebook_dir)), content=content
+                path=path.relative_to(local_rulebook_dir).as_posix(),
+                content=content,
             )
         )
     return AimRulebookResponse(id=local_manifest.id, manifest=manifest, files=files)

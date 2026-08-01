@@ -17,6 +17,7 @@ import { SettingsPage } from '@/components/settings/SettingsLayout'
 import { cn } from '@/lib/utils'
 import { validateAgentDraft } from '@/components/settings/schema'
 import { useSettingsSearch, useSettingsNavigate } from '@/contexts/SettingsContext'
+import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
 
 type AgentMode = AgentTeam
 
@@ -59,6 +60,8 @@ export function NewAgentPage() {
   const draftErrors = validateAgentDraft(draft)
   const invalid = draftErrors !== null
   const firstDraftError = draftErrors ? Object.values(draftErrors)[0] : null
+  const dirty = draft !== TEMPLATE || agentMode !== initialMode
+  useRegisterSettingsDirty(dirty)
 
   const handleCreate = async () => {
     setSaveError(null)
@@ -91,7 +94,7 @@ export function NewAgentPage() {
       size="wide"
       actions={
         <EditorHeaderActions
-          dirty
+          dirty={dirty}
           invalid={invalid}
           saving={createMut.isPending}
           error={saveError}

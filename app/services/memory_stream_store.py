@@ -54,6 +54,8 @@ class _TurnState:
         "agent_not_configured",
         "browser_session",
         "plan_approval",
+        "question_asked",
+        "permission_asked",
         "subscribers",
         "_cleanup_handle",
     )
@@ -95,6 +97,12 @@ class _TurnState:
         # refresh must be able to rediscover the pending plan.  Cleared by
         # ``plan_approval_replied``.
         self.plan_approval: dict[str, Any] | None = None
+        # Pending ask-user / permission requests for reconnect replay.
+        # Forge/Coding restore these only from SSE (no REST poll on attach),
+        # so a mid-turn refresh must re-emit them like plan_approval.
+        # Cleared by ``question_replied`` / ``permission_replied``.
+        self.question_asked: dict[str, Any] | None = None
+        self.permission_asked: dict[str, Any] | None = None
         # Me keep list of queues — one per SSE client
         self.subscribers: list[asyncio.Queue] = []
         self._cleanup_handle: asyncio.TimerHandle | None = None
@@ -111,6 +119,8 @@ class _TurnState:
         self.error = None
         self.agent_not_configured = None
         self.plan_approval = None
+        self.question_asked = None
+        self.permission_asked = None
         # Preserve browser_session across turns — the browser may still be
         # active and the next turn needs to know about it.
 
@@ -300,6 +310,19 @@ async def push_event(session_id: str, envelope: StreamEnvelope) -> None:
 
         elif event_type == "plan_approval_replied":
             state.plan_approval = None
+
+        elif event_type == "question_asked":
+            # Same reconnect contract as plan_approval — agent stays blocked.
+            state.question_asked = data
+
+        elif event_type == "question_replied":
+            state.question_asked = None
+
+        elif event_type == "permission_asked":
+            state.permission_asked = data
+
+        elif event_type == "permission_replied":
+            state.permission_asked = None
 
         # Me refresh TTL on every write
         _schedule_cleanup(session_id, state)
@@ -529,6 +552,18 @@ async def attach(session_id: str) -> AsyncGenerator[dict[str, str], None]:
             if state.plan_approval is not None:
                 yield StreamEnvelope.from_parts(
                     event="plan_approval_requested", data=state.plan_approval
+                ).to_wire()
+
+            # Me replay pending ask-user / permission gates the same way —
+            # Forge/Coding do not poll REST on SSE attach.
+            if state.permission_asked is not None:
+                yield StreamEnvelope.from_parts(
+                    event="permission_asked", data=state.permission_asked
+                ).to_wire()
+
+            if state.question_asked is not None:
+                yield StreamEnvelope.from_parts(
+                    event="question_asked", data=state.question_asked
                 ).to_wire()
 
             # Me replay accumulated thinking per-agent so the frontend can

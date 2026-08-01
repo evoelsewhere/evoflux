@@ -18,6 +18,7 @@ import {
 } from '@/components/settings/skillBundle'
 import { validateSkillDraft } from '@/components/settings/schema'
 import { useSettingsNavigate } from '@/contexts/SettingsContext'
+import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
 
 const TEMPLATE = `---
 name: new-skill
@@ -48,6 +49,8 @@ export function NewSkillPage() {
   const draftErrors = validateSkillDraft(content)
   const invalid = draftErrors !== null
   const firstDraftError = draftErrors ? Object.values(draftErrors)[0] : null
+  const dirty = content !== TEMPLATE || files.length > 0
+  useRegisterSettingsDirty(dirty)
 
   const handleCreate = async () => {
     setSaveError(null)
@@ -77,7 +80,7 @@ export function NewSkillPage() {
       title="New skill"
       actions={
         <EditorHeaderActions
-          dirty={content !== TEMPLATE || files.length > 0}
+          dirty={dirty}
           invalid={invalid}
           saving={createMut.isPending}
           error={saveError}

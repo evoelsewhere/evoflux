@@ -51,6 +51,8 @@ def _make(
         "../foo",
         "secrets/key",
         "a/b/c",
+        r"C:\Users\alice\.env",
+        r"secrets\key",
     ],
 )
 def test_looks_path_like_positive(token: str) -> None:
@@ -109,7 +111,9 @@ def test_expands_tilde_against_home(
     """Tokens starting with ~ are expanded — shells expand them before exec."""
     fake_home = tmp_path / "home" / "alice"
     fake_home.mkdir(parents=True)
+    # Windows expanduser prefers USERPROFILE; POSIX uses HOME.
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     secrets = fake_home / ".aws" / "credentials"
     secrets.parent.mkdir()
     secrets.touch()

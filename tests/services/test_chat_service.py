@@ -1282,6 +1282,67 @@ async def test_get_messages_for_llm_summary_appears_exactly_once(session):
     assert "same-timestamp sibling" in contents
 
 
+@pytest.mark.asyncio
+async def test_undo_boundary_survives_identical_created_at(session):
+    """Revert boundary must use (created_at, id) — timestamp ties must not wipe context.
+
+    Fast seeds (and Windows clocks) often assign the same ``created_at`` to
+    several rows in one flush. Filtering with only ``created_at < boundary``
+    then drops every earlier turn, so /undo looks applied but the LLM window
+    goes empty and a second /undo 409s.
+    """
+    from datetime import datetime, timezone
+
+    chat_session = await create_chat_session(session)
+    shared_ts = datetime(2026, 8, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    rows: list[SessionMessage] = []
+    for role, content in (
+        ("user", "first"),
+        ("assistant", "first answer"),
+        ("user", "second"),
+        ("assistant", "second answer"),
+    ):
+        row = SessionMessage(
+            session_id=chat_session.id,
+            role=role,
+            content=content,
+        )
+        row.created_at = shared_ts
+        session.add(row)
+        rows.append(row)
+    await session.commit()
+    for row in rows:
+        await session.refresh(row)
+
+    first_user, first_assistant, second_user, _second_assistant = rows
+    # uuid7 ids still total-order even when timestamps collide
+    assert first_user.id < second_user.id
+
+    shift = await undo_session_messages(session, chat_session.id)
+    await session.commit()
+    assert shift.applied is True
+    assert shift.target is not None
+    assert shift.target.id == second_user.id
+
+    llm = await get_messages_for_llm(session, chat_session.id)
+    assert [m.content for m in llm] == ["first", "first answer"]
+
+    second_shift = await undo_session_messages(session, chat_session.id)
+    await session.commit()
+    assert second_shift.applied is True
+    assert second_shift.target is not None
+    assert second_shift.target.id == first_user.id
+
+    llm_after = await get_messages_for_llm(session, chat_session.id)
+    assert [m.content for m in llm_after] == []
+
+    # Messages at the boundary timestamp with earlier ids must stay visible
+    # until the boundary itself moves past them — first_assistant shares ts
+    # with first_user but sorts after it by id, so it is hidden with U1 undo.
+    assert first_assistant.id > first_user.id
+
+
 # ---------------------------------------------------------------------------
 # heal_orphaned_tool_calls
 # ---------------------------------------------------------------------------

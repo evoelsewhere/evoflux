@@ -103,7 +103,7 @@ function SingleFileDiff({ path, kind, moveTo, lines, oldStart = 1, newStart = 1,
               return (
                 <div key={idx} className={`flex items-stretch ${lineBg} ${lineText}`}>
                   {/* Line Numbers */}
-                  <div className="sticky left-0 z-[1] flex shrink-0 select-none border-r border-(--color-border)/50 bg-(--bg-card) text-right text-xs text-(--color-text-subtle)">
+                  <div className="sticky left-0 z-(--z-panel) flex shrink-0 select-none border-r border-(--color-border)/50 bg-(--bg-card) text-right text-xs text-(--color-text-subtle)">
                     <span className="w-9 py-0.5 pr-1.5">{line.num}</span>
                   </div>
                   {/* Code Line */}

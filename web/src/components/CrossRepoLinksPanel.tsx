@@ -169,7 +169,7 @@ function RepoGraph({
 
       {/* Subtle scrim while the LLM stage runs — recedes the graph a notch
           without hurting readability, zero layout cost. */}
-      {jobRunning && <div className="absolute inset-0 z-[5] bg-(--bg-key)/10" />}
+      {jobRunning && <div className="absolute inset-0 z-(--z-panel) bg-(--bg-key)/10" />}
 
       {nodes.map((node) => {
         const repo = repoByWorkspaceId.get(node.workspaceId)

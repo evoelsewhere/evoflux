@@ -185,7 +185,6 @@ type WebBridgeContext = {
 }
 
 function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell, renderLeadingQuoteAsContext, webbridgeContext, compact }: { content: string; timestamp?: Date; attachments?: MessageAttachment[]; onRevert?: () => void; modelId?: string | null; shell?: boolean; renderLeadingQuoteAsContext?: boolean; webbridgeContext?: WebBridgeContext; compact?: boolean }) {
-  const [showTime, setShowTime] = useState(false)
   const [copied, setCopied] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const modelName = shortModelName(modelId)
@@ -210,11 +209,11 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
       : `${messageContent.slice(0, USER_COLLAPSE_CHARS).trimEnd()}...`
     : messageContent
 
+  // Always expose copy; revert/timestamp/model appear when available.
+  // Touch: full opacity. Desktop: reveal on group hover / focus-within.
   return (
     <div
       className={compact ? 'group mb-2 flex justify-end' : 'group mb-4 flex justify-end'}
-      onMouseEnter={() => setShowTime(true)}
-      onMouseLeave={() => setShowTime(false)}
     >
       <div className={`flex max-w-full flex-col items-end gap-2 ${compact ? 'md:max-w-[90%]' : 'md:max-w-[78%]'}`}>
          {/* Attachments */}
@@ -250,12 +249,14 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
            {/* Expand / collapse button — top-right inside bubble */}
            {needsCollapse && (
              <button
+               type="button"
                onClick={() => setExpanded((v) => !v)}
                aria-expanded={expanded}
+               aria-label={expanded ? 'Collapse message' : 'Expand message'}
                title={expanded ? 'Collapse' : 'Expand'}
-               className="absolute top-1.5 right-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-(--bg-key) text-(--color-text-2) transition-[opacity,background-color,color,transform] duration-(--motion-fast) hover:text-(--color-text) active:scale-90"
+               className="absolute top-1.5 right-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-(--bg-key) text-(--color-text-2) transition-[opacity,background-color,color,transform] duration-(--motion-fast) hover:text-(--color-text) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring) active:scale-90"
              >
-               {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+               {expanded ? <ChevronUp size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}
              </button>
            )}
            {shell && (
@@ -302,9 +303,8 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
            )}
          </div>
 
-         {/* Copy button + timestamp row */}
-          {(timestamp || modelName) && (
-            <div className={`flex items-center gap-1.5 transition-opacity duration-(--motion-fast) ${showTime ? 'opacity-100' : 'opacity-0'}`}>
+         {/* Copy / revert / timestamp — always visible on touch; hover/focus on md+ */}
+          <div className="flex items-center gap-1.5 opacity-100 transition-opacity duration-(--motion-fast) md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
               {modelName && (
                 <span className="mr-1 font-mono text-xs text-(--color-text-subtle)" title={modelId ?? undefined}>
                   {modelName}
@@ -312,37 +312,37 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
               )}
                {onRevert && (
                 <button
+                  type="button"
                   onClick={onRevert}
-                  className="rounded-xs p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
+                  className="rounded-xs p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
                   aria-label="Revert latest message"
                   title="Revert latest message"
                 >
-                  <Undo2 size={11} />
+                  <Undo2 size={11} aria-hidden="true" />
                 </button>
               )}
               <button
+                type="button"
                 onClick={handleCopy}
-                className="rounded-xs p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
+                className="rounded-xs p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
                aria-label="Copy message"
                title="Copy"
              >
                {copied ? (
-                 <Check size={11} className="text-(--color-success)" />
+                 <Check size={11} className="text-(--color-success)" aria-hidden="true" />
                ) : (
-                 <Copy size={11} />
+                 <Copy size={11} aria-hidden="true" />
                )}
              </button>
               {timestamp && (
                 <span
                   className="text-xs text-(--color-text-subtle)"
-                  aria-hidden={!showTime}
                   title={formatTime(timestamp)}
                 >
                   {formatTime(timestamp)}
                 </span>
               )}
             </div>
-          )}
       </div>
     </div>
   )
@@ -368,7 +368,7 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
       if (fromAgent && fromAgent !== 'user') {
         const handoffArtifact = block.extra?._handoff_artifact as Record<string, unknown> | undefined
         if (handoffArtifact) {
-          return <HandoffCard artifact={handoffArtifact as never} fromAgent={fromAgent} />
+          return <HandoffCard artifact={handoffArtifact as never} fromAgent={fromAgent} compact={compact} />
         }
         return <InboxBubble content={block.content} fromAgent={fromAgent} compact={compact} />
       }

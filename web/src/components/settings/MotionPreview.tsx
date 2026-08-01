@@ -7,10 +7,14 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { RotateCcw } from 'lucide-react'
 
-import { useMotionPreset } from '@/lib/motion'
+import type { MotionIntensity } from '@/lib/appearance'
+import { motionPreset, panelTransition, useMotionPreset } from '@/lib/motion'
 
-export function MotionPreview() {
-  const preset = useMotionPreset()
+export function MotionPreview({ intensity }: { intensity?: MotionIntensity }) {
+  const livePreset = useMotionPreset()
+  // Prefer the Appearance selection so the preview tracks the slider even when
+  // the OS reduced-motion preference is gating live app motion.
+  const preset = intensity ? motionPreset(intensity) : livePreset
   const [replay, setReplay] = useState(0)
 
   // The intensity is part of the key, so picking a new level remounts the
@@ -24,7 +28,7 @@ export function MotionPreview() {
         <button
           type="button"
           onClick={() => setReplay((value) => value + 1)}
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
         >
           <RotateCcw size={12} aria-hidden="true" />
           Replay
@@ -37,7 +41,7 @@ export function MotionPreview() {
             key={`panel-${key}`}
             initial={{ x: '100%' }}
             animate={{ x: '35%' }}
-            transition={preset.transition}
+            transition={panelTransition(preset)}
             className="absolute inset-y-1 right-0 w-2/3 rounded-l-md bg-(--color-surface) ring-1 ring-(--color-border)"
           />
           <span className="absolute bottom-1 left-1.5 font-mono text-[9px] text-(--color-text-subtle)">panel</span>

@@ -11,7 +11,6 @@
  */
 import { useEffect, useRef, type RefObject } from 'react'
 import { useTeamStore } from '@/stores/useTeamStore'
-import type { InputBarHandle } from '../InputBar'
 
 interface UseTeamSseArgs {
   sessionId: string | undefined
@@ -19,7 +18,29 @@ interface UseTeamSseArgs {
   hasCodingWorkspace: boolean
   isCodingSessionLoading: boolean
   mode: 'work' | 'coding' | 'aim'
-  inputRef: RefObject<InputBarHandle | null>
+}
+
+function isLiveStream(
+  store: ReturnType<typeof useTeamStore.getState>,
+  sessionId: string,
+  workspace: string | null,
+): AbortController | null {
+  const controller = store._abortController
+  if (!controller || controller.signal.aborted) return null
+  if (store.sessionId !== sessionId) return null
+  if (store._workspace !== workspace) return null
+  if (!store.isConnected) return null
+  return controller
+}
+
+function markStreamStopped(controller: AbortController) {
+  const state = useTeamStore.getState()
+  if (state._abortController !== controller) return
+  controller.abort()
+  // readSSE swallows AbortError without onDone/onError, so clear the
+  // connected flag here — otherwise the next effect early-path treats a
+  // dead socket as live and never resubscribes.
+  useTeamStore.setState({ isConnected: false, _abortController: null })
 }
 
 export function useTeamSse({
@@ -28,7 +49,6 @@ export function useTeamSse({
   hasCodingWorkspace,
   isCodingSessionLoading,
   mode,
-  inputRef,
 }: UseTeamSseArgs): RefObject<AbortController | null> {
   const connectStream  = useTeamStore((s) => s.connectStream)
   const loadTeamStatus = useTeamStore((s) => s.loadTeamStatus)
@@ -44,7 +64,6 @@ export function useTeamSse({
     if (isCodingSessionLoading) return
     if (!sessionId) return
     const store = useTeamStore.getState()
-    if (store.sessionId === sessionId && store.isConnected) return
     const isSameSession =
       store.sessionId === sessionId && store._workspace === agentWorkspace
 
@@ -56,12 +75,9 @@ export function useTeamSse({
     // `loadSession` fetched the new one in the background.
     if (!isSameSession) {
       beginResolvedSession(sessionId, { mode, workspace: agentWorkspace })
-
-      // Clear the composer when switching sessions. The InputBar holds its
-      // draft text and pending files in local state, so without an explicit
-      // reset session A's typed-but-unsent message bleeds into session B.
-      inputRef.current?.setValue('')
-      inputRef.current?.setFiles([])
+      // Composer drafts are owned by InputBar (per-session Map). Do not
+      // clear here — racing setValue('') after InputBar restores would
+      // wipe the restored draft (or save '' over the previous session).
     }
 
     // Order matters: load prior-turn history FIRST, then open the SSE.
@@ -77,22 +93,47 @@ export function useTeamSse({
     // `blocks` and emptied `currentBlocks` by the time any SSE event is
     // dispatched, so replay + live events accumulate cleanly.
     let cancelled = false
-    ;(async () => {
-      if (!consumeResolvedSessionReady(sessionId, agentWorkspace)) {
-        await loadSession(
-          sessionId,
-          agentWorkspace,
-          mode === 'aim' ? 'aim' : mode === 'coding' ? 'coding' : null,
-        )
-      }
-      if (cancelled) return
-      const controller = connectStream()
-      if (controller) abortRef.current = controller
-    })()
+    const live = isSameSession ? isLiveStream(store, sessionId, agentWorkspace) : null
+
+    if (live) {
+      // Adopt the stream opened by sendMessage/continue (or a prior effect)
+      // but still register cleanup — a bare `return` left unmount with a
+      // live fetch and treated aborted sockets as connected forever.
+      abortRef.current = live
+    } else {
+      ;(async () => {
+        if (!consumeResolvedSessionReady(sessionId, agentWorkspace)) {
+          await loadSession(
+            sessionId,
+            agentWorkspace,
+            mode === 'aim' ? 'aim' : mode === 'coding' ? 'coding' : null,
+          )
+        }
+        if (cancelled) return
+        const controller = connectStream()
+        if (controller) abortRef.current = controller
+      })()
+    }
 
     return () => {
       cancelled = true
-      abortRef.current?.abort()
+      const fromRef = abortRef.current
+      abortRef.current = null
+      // sendMessage / continue replace `_abortController` without updating
+      // this ref — prefer the store's live controller for this session so
+      // unmount actually tears down the socket instead of no-op'ing on a
+      // stale aborted handle.
+      const storeNow = useTeamStore.getState()
+      const liveNow = storeNow._abortController
+      const controller =
+        liveNow &&
+        !liveNow.signal.aborted &&
+        storeNow.sessionId === sessionId &&
+        storeNow._workspace === agentWorkspace
+          ? liveNow
+          : fromRef
+      if (!controller) return
+      markStreamStopped(controller)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, agentWorkspace, hasCodingWorkspace, isCodingSessionLoading])
@@ -104,7 +145,7 @@ export function useTeamSse({
       const state = useTeamStore.getState()
       if (state.sessionId !== sessionId) return
       if (state._workspace !== agentWorkspace) return
-      if (state.isConnected && !state._unloading) return
+      if (isLiveStream(state, sessionId, agentWorkspace) && !state._unloading) return
 
       useTeamStore.setState({ _unloading: false })
       if (state.isTeamWorking) {

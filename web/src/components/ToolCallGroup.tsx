@@ -2,18 +2,24 @@
  * ToolCallGroup — collapses a consecutive agent activity run into one row.
  *
  * Thinking blocks are transparent grouping boundaries, matching Codex's
- * compact activity timeline. Expanding preserves the original ordered detail.
+ * compact activity timeline. Expanding preserves the original ordered detail
+ * through the shared `BlockRenderer` pipeline (tools, MCP apps, thinking).
+ *
+ * Latest MCP app UIs stay visible while collapsed — interactive surfaces
+ * should not require expand just to remain usable.
  */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Terminal, FileText, Search, Globe, Code2,
   FolderOpen, GitBranch, Database, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { ToolAttachments, ToolCall } from './ToolCall'
-import { Thinking } from './Thinking'
+import { ToolAttachments } from './ToolCall'
+import { BlockRenderer } from './BlockRenderer'
+import { MCPAppResult } from './MCPAppResult'
 import { ActivityStatus } from './motion/ActivityStatus'
+import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
 import type { ContentBlock, MessageAttachment } from '@/api/types'
 
 // ── Grouped block type ────────────────────────────────────────────────────────
@@ -148,12 +154,18 @@ interface ToolCallGroupProps {
   agentName?: string | null
   className?: string
   isStreaming?: boolean
+  sessionId?: string
+  latestMCPAppBlockIds?: Set<string>
+  compact?: boolean
 }
 
 export function ToolCallGroupCard({
   group,
   className,
   isStreaming = false,
+  sessionId,
+  latestMCPAppBlockIds,
+  compact = false,
 }: ToolCallGroupProps) {
   const [expanded, setExpanded] = useState(false)
   /* eslint-disable react-hooks/static-components */
@@ -178,6 +190,18 @@ export function ToolCallGroupCard({
         ?.attachments ?? [],
   )
 
+  const collapsedMcpApps = useMemo(() => {
+    if (expanded || !latestMCPAppBlockIds || latestMCPAppBlockIds.size === 0) {
+      return []
+    }
+    return toolBlocks.flatMap((block) => {
+      if (!block.toolDone || !latestMCPAppBlockIds.has(block.id)) return []
+      const mcpApp = (block.extra as { mcp_app?: unknown } | undefined)?.mcp_app
+      if (!mcpApp || !mcpAppResourceUri(block)) return []
+      return [{ blockId: block.id, toolCallId: block.toolCallId, mcpApp }]
+    })
+  }, [expanded, latestMCPAppBlockIds, toolBlocks])
+
   return (
     <div className={cn('overflow-hidden rounded-md', className)}>
       <button
@@ -186,8 +210,10 @@ export function ToolCallGroupCard({
         className={cn(
           'flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left',
           'hover:bg-(--bg-key) transition-colors',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
         )}
         aria-expanded={expanded}
+        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${label}, ${toolBlocks.length} actions`}
       >
         <Icon className="h-3.5 w-3.5 shrink-0 text-(--color-text-muted)" />
         {/* eslint-enable react-hooks/static-components */}
@@ -201,9 +227,9 @@ export function ToolCallGroupCard({
           )}
         </span>
         {expanded ? (
-          <ChevronUp className="h-3 w-3 text-(--color-text-muted)" />
+          <ChevronUp className="h-3 w-3 text-(--color-text-muted)" aria-hidden="true" />
         ) : (
-          <ChevronDown className="h-3 w-3 text-(--color-text-muted)" />
+          <ChevronDown className="h-3 w-3 text-(--color-text-muted)" aria-hidden="true" />
         )}
       </button>
 
@@ -213,33 +239,30 @@ export function ToolCallGroupCard({
         </div>
       )}
 
+      {!expanded && collapsedMcpApps.length > 0 && (
+        <div className="space-y-2 px-3 pb-2">
+          {collapsedMcpApps.map(({ blockId, toolCallId, mcpApp }) => (
+            <MCPAppResult
+              key={blockId}
+              mcpApp={mcpApp as never}
+              sessionId={sessionId}
+              toolCallId={toolCallId}
+            />
+          ))}
+        </div>
+      )}
+
       {expanded && (
         <div className="ml-2 border-l border-(--color-border) pl-2">
           {group.blocks.map((block, index) => (
             <div key={block.id} className="py-0.5">
-              {block.type === 'thinking' ? (
-                <Thinking
-                  content={block.content}
-                  isStreaming={
-                    isStreaming && index === group.blocks.length - 1
-                  }
-                />
-              ) : (
-                <ToolCall
-                  name={block.toolName || ''}
-                  args={block.toolArgs}
-                  done={block.toolDone}
-                  liveOutput={block.toolOutput}
-                  result={block.toolResult}
-                  durationMs={block.durationMs}
-                  startedAt={block.startedAt}
-                  attachments={
-                    (block.extra as
-                      | { attachments?: MessageAttachment[] }
-                      | undefined)?.attachments
-                  }
-                />
-              )}
+              <BlockRenderer
+                block={block}
+                isStreaming={isStreaming && index === group.blocks.length - 1}
+                sessionId={sessionId}
+                latestMCPAppBlockIds={latestMCPAppBlockIds}
+                compact={compact}
+              />
             </div>
           ))}
         </div>

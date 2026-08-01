@@ -130,6 +130,10 @@ async def _read_file(
     except UnicodeDecodeError:
         text = raw.decode("latin-1")
 
+    # Normalize newlines so Windows CRLF files don't leak ``\r`` into the
+    # numbered line payload the model sees (and edit/patch tools match).
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
     if offset == 1 and limit is None:
         return _cap_text_for_context(_number_lines(text), rel)
 

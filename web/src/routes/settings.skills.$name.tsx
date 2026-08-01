@@ -30,6 +30,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useSettingsParams, useSettingsNavigate } from '@/contexts/SettingsContext'
+import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
 
 /**
  * Skill editor — lighter than the agent editor because skills have an
@@ -50,19 +51,27 @@ export function SkillEditorPage() {
   const [deletedFiles, setDeletedFiles] = useState<string[]>([])
   const [saveError, setSaveError] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [seeded, setSeeded] = useState(!!data?.content)
-  if (!seeded && data?.content) {
-    setSeeded(true)
+  // Reseed per skill name — SettingsScreen keeps this page mounted across
+  // skill-to-skill navigations, so a boolean "seeded once" flag would leave
+  // the previous skill's draft in place and risk saving it over the next one.
+  const [seededFor, setSeededFor] = useState<string | null>(
+    data != null ? name : null,
+  )
+  if (data != null && seededFor !== name) {
+    setSeededFor(name)
     setDraft(data.content)
     setFiles(skillBundleFilesFromApi(data.files))
+    setDeletedFiles([])
+    setSaveError(null)
   }
 
   const readOnly = data ? !data.editable : false
   const resourcesDirty =
     !!data &&
-    JSON.stringify(files) !== JSON.stringify(skillBundleFilesFromApi(data.files)) ||
-    deletedFiles.length > 0
+    (JSON.stringify(files) !== JSON.stringify(skillBundleFilesFromApi(data.files)) ||
+      deletedFiles.length > 0)
   const dirty = !!data && (!contentEquals(draft, data.content) || resourcesDirty)
+  useRegisterSettingsDirty(dirty)
   const draftErrors = dirty ? validateSkillDraft(draft) : null
   const invalid = draftErrors !== null
   const firstDraftError = draftErrors ? Object.values(draftErrors)[0] : null
@@ -198,7 +207,7 @@ export function SkillEditorPage() {
                   variant="ghost"
                   size="xs"
                   className="min-h-11 md:min-h-0"
-                  onClick={() => navigate('/settings/skills')}
+                  onClick={() => navigate('/settings/skills', { force: true })}
                 >
                   Leave without saving
                 </Button>

@@ -30,6 +30,7 @@ import { useMemo, useState } from 'react'
 
 import { cn } from '@/lib/utils'
 import { useMotionPreset } from '@/lib/motion'
+import { confirmDiscardSettingsDraft } from '@/lib/settings-dirty'
 import { usePlatform } from '@/hooks/use-platform'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
 import {
@@ -89,6 +90,7 @@ function SidebarRow({
       onNavigate(item.to)
       return
     }
+    if (!confirmDiscardSettingsDraft()) return
     useUIStore.getState().navigateSettings(item.to.replace(/^\/settings\/?/, ''))
   }
 
@@ -117,18 +119,18 @@ function SidebarRow({
       <Icon
         size={15}
         className={cn(
-          'relative z-10 shrink-0',
+          'relative z-(--z-panel) shrink-0',
           active ? 'text-(--color-accent)' : 'text-(--color-text-subtle) group-hover:text-(--color-text-muted)',
         )}
         aria-hidden="true"
       />
-      <span className={cn('relative z-10 min-w-0 flex-1 truncate', active && 'font-semibold')}>
+      <span className={cn('relative z-(--z-panel) min-w-0 flex-1 truncate', active && 'font-semibold')}>
         {item.label}
       </span>
       {item.count === null ? (
-        <Skeleton className="relative z-10 h-3 w-5 shrink-0 rounded" />
+        <Skeleton className="relative z-(--z-panel) h-3 w-5 shrink-0 rounded" />
       ) : item.count !== undefined ? (
-        <span className="relative z-10 min-w-5 shrink-0 rounded-full bg-(--bg-key) px-1.5 py-0.5 text-center font-mono text-[10px] tabular-nums text-(--color-text-muted)">
+        <span className="relative z-(--z-panel) min-w-5 shrink-0 rounded-full bg-(--bg-key) px-1.5 py-0.5 text-center font-mono text-[10px] tabular-nums text-(--color-text-muted)">
           {item.count}
         </span>
       ) : null}

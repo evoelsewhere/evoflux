@@ -37,7 +37,6 @@ import {
   useSandboxSettingsQuery,
   useSkillFilesQuery,
 } from '@/queries'
-import { useUIStore } from '@/stores/useUIStore'
 
 interface NavRow {
   to: string
@@ -90,6 +89,7 @@ function SettingsNavRow({ row }: { row: NavRow }) {
 
 export function SettingsHubPage() {
   const isMobile = useIsMobile()
+  const navigate = useSettingsNavigate()
   const agentsQ = useAgentFilesQuery()
   const skillsQ = useSkillFilesQuery()
   const mcpQ = useMcpServersQuery()
@@ -240,7 +240,7 @@ export function SettingsHubPage() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => useUIStore.getState().navigateSettings('connection')}
+              onClick={() => navigate('connection')}
             >
               Configure
             </Button>

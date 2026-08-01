@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from app.agent.tools.builtin.shell_runtime import BashNotFoundError, require_bash
 from app.services.aim import kb_store
 from app.services.aim.golden import (
     GoldenCaseError,
@@ -138,7 +139,11 @@ async def execute_case(
             raise RunnerExecutionError("PowerShell is required by the target runner")
         command = [executable, "-File", str(runner)]
     else:
-        command = ["bash", str(runner)]
+        try:
+            bash = require_bash()
+        except BashNotFoundError as exc:
+            raise RunnerExecutionError(str(exc)) from exc
+        command = [bash, str(runner)]
     command.extend([unit, case_set, str(actual_dir.resolve())])
     case_dir = kb_root / "golden" / "units" / module / name / "cases" / case_set
     project_root = kb_root.parent

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from app.agent.tools.builtin.shell_runtime import BashNotFoundError
 from app.services.aim import kb_store
 from app.services.aim.golden import (
     GoldenCaseError,
@@ -196,3 +197,21 @@ def test_legacy_runner_resolves_inside_local_rulebook(tmp_path: Path):
     _root, kb_root = _project(tmp_path)
 
     assert resolve_legacy_runner(kb_root) == kb_root / "rulebook/runners/run_legacy.sh"
+
+
+@pytest.mark.asyncio
+async def test_execute_target_case_requires_usable_bash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _root, kb_root = _project(tmp_path)
+    case_dir = kb_root / "golden" / "units" / "core" / "Pay" / "cases" / "smoke"
+    case_dir.mkdir(parents=True)
+    (case_dir / "target.command").write_text("true\n", encoding="utf-8")
+
+    def _no_bash() -> str:
+        raise BashNotFoundError("No usable bash found for AIM runners/verification.")
+
+    monkeypatch.setattr("app.services.aim.runners.require_bash", _no_bash)
+
+    with pytest.raises(RunnerExecutionError, match="No usable bash"):
+        await execute_target_case(kb_root, "core/Pay", "smoke")

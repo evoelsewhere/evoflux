@@ -8,6 +8,7 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useModalFocus } from "@/hooks/useModalFocus";
 import { useMotionPreset, useListEnterIndex } from "@/lib/motion";
 
 import {
@@ -23,7 +24,6 @@ import {
   useDeleteTeamSessionMutation,
   useUpdateTeamSessionTitleMutation,
 } from "@/queries";
-import { ThemeToggle } from "./ThemeToggle";
 import { Skeleton } from "./ui/skeleton";
 import { SidebarItem } from "@/components/ui/sidebar-item";
 import { usePlatform } from "@/hooks/use-platform";
@@ -45,7 +45,9 @@ import {
   type SessionMenuAnchor,
 } from "@/components/shell/SessionContextMenu";
 import { EditSessionTitleDialog } from "@/components/shell/EditSessionTitleDialog";
+import { MobileDrawerBackdrop } from "@/components/shell/MobileDrawerBackdrop";
 import type { SessionResponse } from "@/api/types";
+import { cn } from "@/lib/utils";
 
 interface DateGroup {
   label: string;
@@ -114,6 +116,7 @@ export function Sidebar({
   const isTauriMobile = isTauri && (os === "ios" || os === "android");
   const mobileLongPressActions = isMobile && isTauriMobile && mobileOpen;
   const preset = useMotionPreset();
+  useModalFocus(isMobile && mobileOpen, onMobileClose);
   const navigate = useNavigate();
   const toggleScheduler = useUIStore((s) => s.toggleScheduler);
   // Server-filtered to work — coding/aim sessions live in their own
@@ -387,18 +390,22 @@ export function Sidebar({
         {sessions.isSuccess &&
           normalSessions.slice(0, 8).map((session) => {
             const isActive = session.id === currentSessionId;
+            const title = session.title || "Untitled";
             return (
               <button
                 key={session.id}
+                type="button"
                 onClick={() => handleSelect(session.id)}
-                title={session.title || 'Untitled'}
+                title={title}
+                aria-label={title}
+                aria-current={isActive ? "page" : undefined}
                 className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
                   isActive
-                    ? 'bg-(--bg-key) text-(--color-accent)'
-                    : 'text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text-2)'
+                    ? "bg-(--bg-key) text-(--color-accent)"
+                    : "text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text-2)"
                 }`}
               >
-                <div className="h-1.5 w-1.5 rounded-full bg-current" />
+                <div className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
               </button>
             );
           })}
@@ -406,9 +413,7 @@ export function Sidebar({
 
       <SidebarShellDivider className="mx-2" />
 
-      <div className="shrink-0 flex justify-center py-2 pb-safe px-1">
-        <ThemeToggle collapsed />
-      </div>
+      <SidebarFooter collapsed onCommandPalette={onCommandPalette} />
     </SidebarCard>
   );
 
@@ -491,6 +496,8 @@ export function Sidebar({
   );
 
   // Mobile: fixed overlay drawer — slides via x transform, always 272px.
+  // When closed it stays mounted for the spring close animation but is
+  // inert + hidden from AT so focus cannot land inside an off-screen drawer.
   const mobileDrawer = (
     <motion.aside
       initial={false}
@@ -499,12 +506,25 @@ export function Sidebar({
         width: "min(272px, calc(100vw - 2rem))",
       }}
       transition={preset.spring}
-      className="mobile-safe-top fixed bottom-0 left-0 z-(--z-overlay) flex w-[min(272px,calc(100vw-2rem))] shrink-0 flex-col overflow-hidden bg-(--bg-sidebar) shadow-xl"
+      aria-hidden={!mobileOpen}
+      aria-label="Session navigation"
+      aria-modal={mobileOpen ? true : undefined}
+      data-modal-focus={mobileOpen ? 'true' : undefined}
+      {...(!mobileOpen ? { inert: true } : {})}
+      className={cn(
+        "mobile-safe-top fixed bottom-0 left-0 z-(--z-overlay) flex w-[min(272px,calc(100vw-2rem))] shrink-0 flex-col overflow-hidden bg-(--bg-sidebar) shadow-xl",
+        !mobileOpen && "pointer-events-none",
+      )}
     >
       {/* Search trigger */}
       {onCommandPalette && (
         <div className="px-2.5 pt-2">
-          <SidebarSearchTrigger onClick={onCommandPalette} />
+          <SidebarSearchTrigger
+            onClick={() => {
+              onCommandPalette();
+              onMobileClose?.();
+            }}
+          />
         </div>
       )}
 
@@ -586,17 +606,11 @@ export function Sidebar({
 
   return (
     <>
-      {/* Mobile backdrop — closes the drawer on tap */}
       <AnimatePresence>
         {isMobile && mobileOpen && (
-          <motion.div
-            key="sidebar-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="mobile-safe-top fixed inset-x-0 bottom-0 z-(--z-drawer) bg-(--color-overlay) md:hidden"
-            aria-hidden="true"
-            onClick={onMobileClose}
+          <MobileDrawerBackdrop
+            onClose={() => onMobileClose?.()}
+            closeLabel="Close session navigation"
           />
         )}
       </AnimatePresence>

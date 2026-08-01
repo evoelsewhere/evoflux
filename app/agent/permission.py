@@ -333,6 +333,10 @@ class PermissionService:
         assert req._future is not None, "PermissionRequest must be created via create()"
         try:
             reply: Reply = await req._future
+        except asyncio.CancelledError:
+            # Agent interrupted while waiting — clear FE + reconnect state.
+            await self._push_replied(req.id, "reject")
+            raise
         finally:
             self.pending.pop(req.id, None)
 
@@ -429,29 +433,32 @@ class PermissionService:
         """Fire-and-forget ``permission_replied`` push (reply() is sync)."""
 
         async def _emit() -> None:
-            try:
-                from app.agent.schemas.events import PermissionRepliedEvent
-                from app.services import memory_stream_store as stream_store
-                from app.services.stream_envelope import StreamEnvelope
-
-                await stream_store.push_event(
-                    self.stream_session_id,
-                    StreamEnvelope.from_event(
-                        PermissionRepliedEvent(
-                            request_id=request_id,
-                            session_id=self.session_id,
-                            reply=reply,
-                        )
-                    ),
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("permission_replied_sse_push_failed error={}", exc)
+            await self._push_replied(request_id, reply)
 
         try:
             asyncio.get_running_loop().create_task(_emit())
         except RuntimeError:
             pass  # no running loop (sync tests) — nothing to publish to
 
+    async def _push_replied(self, request_id: str, reply: Reply) -> None:
+        """Best-effort ``permission_replied`` so every client closes."""
+        try:
+            from app.agent.schemas.events import PermissionRepliedEvent
+            from app.services import memory_stream_store as stream_store
+            from app.services.stream_envelope import StreamEnvelope
+
+            await stream_store.push_event(
+                self.stream_session_id,
+                StreamEnvelope.from_event(
+                    PermissionRepliedEvent(
+                        request_id=request_id,
+                        session_id=self.session_id,
+                        reply=reply,
+                    )
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("permission_replied_sse_push_failed error={}", exc)
 
 # ── Context-var + session-registry integration ────────────────────────────────
 

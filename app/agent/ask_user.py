@@ -118,8 +118,10 @@ class AskUserService:
         try:
             answers: list[str] = await req._future
         except asyncio.CancelledError:
-            # Agent was interrupted while waiting — clean up and re-raise.
+            # Agent was interrupted while waiting — clean up, tell the UI,
+            # and re-raise.
             self._pending.pop(req.id, None)
+            await self._push_replied(req.id, status="cancelled")
             raise
         self._pending.pop(req.id, None)
         return answers
@@ -154,14 +156,64 @@ class AskUserService:
     def reply(self, request_id: str, answers: list[str]) -> bool:
         """Resolve a pending question batch.  Called by the API reply endpoint.
 
-        Returns ``True`` if the request was found and resolved, ``False``
-        if not found or already resolved.
+        Publishes a ``question_replied`` SSE event so every connected client
+        closes its question UI.  Returns ``True`` if the request was found
+        and resolved, ``False`` if not found or already resolved.
         """
         req = self._pending.get(request_id)
         if req is None or req._future is None or req._future.done():
             return False
         req._future.set_result(answers)
+        self._publish_replied(request_id, answers=answers, status="answered")
         return True
+
+    # ── SSE publishing ────────────────────────────────────────────────────
+
+    async def _push_replied(
+        self,
+        request_id: str,
+        *,
+        status: str = "answered",
+        answers: list[str] | None = None,
+    ) -> None:
+        """Best-effort ``question_replied`` so every client closes."""
+        try:
+            from app.agent.schemas.events import QuestionRepliedEvent
+            from app.services import memory_stream_store as stream_store
+            from app.services.stream_envelope import StreamEnvelope
+
+            await stream_store.push_event(
+                self.stream_session_id,
+                StreamEnvelope.from_event(
+                    QuestionRepliedEvent(
+                        request_id=request_id,
+                        session_id=self.session_id,
+                        status=status,
+                        answers=list(answers or ()),
+                    )
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            from loguru import logger
+
+            logger.warning("question_replied_sse_push_failed error={}", exc)
+
+    def _publish_replied(
+        self,
+        request_id: str,
+        *,
+        answers: list[str],
+        status: str = "answered",
+    ) -> None:
+        """Fire-and-forget ``question_replied`` push (reply() is sync)."""
+
+        async def _emit() -> None:
+            await self._push_replied(request_id, status=status, answers=answers)
+
+        try:
+            asyncio.get_running_loop().create_task(_emit())
+        except RuntimeError:
+            pass  # no running loop (sync tests) — nothing to publish to
 
 
 # ── Context-var integration ───────────────────────────────────────────────────
@@ -207,11 +259,13 @@ def get_services_for_stream(stream_session_id: str) -> list[AskUserService]:
     """Live AskUser services publishing to one lead/session stream.
 
     A member can ask a question while publishing it on its parent lead stream.
-    Browser handoff surfaces need this reverse lookup to recover requests after
-    reconnect without exposing requests from another session.
+    Browser handoff surfaces and the REST pending/reply endpoints need this
+    reverse lookup — *stream_session_id* may be either the owning agent
+    session or the lead stream id.
     """
     return [
         service
         for service in _active_services.values()
-        if service.stream_session_id == stream_session_id
+        if service.session_id == stream_session_id
+        or service.stream_session_id == stream_session_id
     ]

@@ -121,7 +121,7 @@ async def _rg_scan(
                     break
                 if not raw:
                     break
-                text = raw.decode("utf-8", errors="replace").rstrip("\n")
+                text = raw.decode("utf-8", errors="replace").rstrip("\r\n")
                 if text == "--":
                     if hits and hits[-1] != "--":
                         hits.append("--")

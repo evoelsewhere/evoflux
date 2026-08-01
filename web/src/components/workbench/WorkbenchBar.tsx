@@ -29,6 +29,8 @@ import {
 } from '@/components/ui/layout-icons'
 import type { ViewMode } from '@/components/TeamChatView/types'
 import type { CodeReviewSessionContext } from '@/lib/code-review-session'
+import { ContextBudgetBar } from '@/components/ContextBudgetBar'
+import { useRegistryQuery } from '@/queries'
 
 interface WorkbenchBarProps {
   identity: string
@@ -57,12 +59,26 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
   const turnChanges = useTeamStore((s) => s.turnChanges)
   const showTurnChanges = useTeamStore((s) => s.showTurnChanges)
   const planApproval = useTeamStore((s) => s.planApproval)
+  const sessionModel = useTeamStore((s) => s.sessionModel)
+  const activeUsage = useTeamStore((s) =>
+    props.activeAgent ? s.agentStreams[props.activeAgent]?.usage : undefined,
+  )
+  const activeModel = useTeamStore((s) =>
+    props.activeAgent ? s.agentStreams[props.activeAgent]?.model : null,
+  )
+  const registry = useRegistryQuery()
   const motionPreset = useMotionPreset()
   const { isTauri, os } = usePlatform()
   const isDesktopShell = isTauri && os !== 'ios' && os !== 'android'
   const showOpenWith = isDesktopShell && !props.isMobile
   const changesCount = turnChanges?.files.length ?? 0
   const planPending = Boolean(planApproval)
+  const modelId = sessionModel ?? activeModel ?? null
+  const modelEntry = modelId
+    ? registry.data?.models.find((entry) => entry.id === modelId)
+    : undefined
+  const contextMax = modelEntry?.context_length ?? undefined
+  const summaryTrigger = modelEntry?.summary_trigger_tokens
   const viewModeLabel =
     props.viewMode === 'agent'
       ? 'Agent'
@@ -246,6 +262,18 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
 
         <span className="mx-0.5 h-4 w-px bg-(--color-border)" aria-hidden="true" />
 
+        {activeUsage && activeUsage.promptTokens + activeUsage.completionTokens > 0 && (
+          <ContextBudgetBar
+            compact
+            used={activeUsage.promptTokens}
+            max={contextMax}
+            input={activeUsage.promptTokens}
+            output={activeUsage.completionTokens}
+            cached={activeUsage.cachedTokens}
+            trigger={summaryTrigger}
+          />
+        )}
+
         {planPending && (
           <span
             className="flex h-7 items-center gap-1.5 rounded-lg border border-(--color-border) bg-(--bg-key) px-2 text-[11px] font-medium text-(--color-text)"
@@ -261,9 +289,10 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
           <button
             type="button"
             onClick={() => {
-              showTurnChanges()
               if (props.workspace) {
                 useUIStore.getState().openGitChanges()
+              } else {
+                showTurnChanges()
               }
             }}
             className="focus-ring-control flex h-7 items-center gap-1.5 rounded-lg border border-(--color-border) bg-(--bg-key) px-2 font-mono text-[11px] tabular-nums text-(--color-text) transition-colors hover:border-(--color-border-strong)"
