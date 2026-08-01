@@ -55,7 +55,10 @@ produces these artifacts:
 Every artifact includes a SHA-256 checksum. DMG jobs verify the Mach-O
 architecture, app signature, and disk-image checksum. Developer ID-signed
 macOS jobs additionally verify the DMG signature and stapled notarization
-ticket. Signed Windows jobs validate the MSI Authenticode signature.
+ticket. The Windows job launches the release executable with empty app-data
+directories and requires its bundled backend to become ready, covering the
+real Rust supervisor plus first database/config initialization. Signed Windows
+jobs also validate the MSI Authenticode signature.
 
 The `signing` input has three modes:
 
