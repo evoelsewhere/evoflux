@@ -36,6 +36,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useSettingsParams, useSettingsNavigate } from '@/contexts/SettingsContext'
+import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
 
 /**
  * MCP server detail / editor page.
@@ -82,6 +83,7 @@ export function McpServerDetailPage() {
   }
 
   const dirty = !!seedDraft && !!draft && !draftEquals(draft, seedDraft)
+  useRegisterSettingsDirty(dirty)
   const fieldErrors = draft ? validateDraft(draft, { isNew: false }) : null
   const invalid = fieldErrors !== null
   const firstError = fieldErrors ? Object.values(fieldErrors)[0] : null
@@ -233,7 +235,7 @@ export function McpServerDetailPage() {
                       variant="ghost"
                       size="xs"
                       className="min-h-11 md:min-h-0"
-                      onClick={() => navigate('/settings/mcp')}
+                      onClick={() => navigate('/settings/mcp', { force: true })}
                     >
                       Leave without saving
                     </Button>

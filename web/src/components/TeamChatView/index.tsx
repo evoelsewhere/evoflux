@@ -563,7 +563,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     hasCodingWorkspace,
     isCodingSessionLoading,
     mode,
-    inputRef,
   })
 
   // A newly-created review session is routed first, restored by useTeamSse,
@@ -1350,6 +1349,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                   projectId={projectIdState}
                   focus={null}
                   onOpenInChat={handleOpenCodeReviewChat}
+                  onOpenWorkspace={handleOpenWorkspaceDialog}
                 />
               )}
             </WorkbenchSurface>
@@ -1363,6 +1363,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                   projectId={projectIdState}
                   focus={reviewSessionContext}
                   onOpenInChat={handleOpenCodeReviewChat}
+                  onOpenWorkspace={handleOpenWorkspaceDialog}
                 />
               )}
             </WorkbenchSurface>

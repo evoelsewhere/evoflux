@@ -208,7 +208,9 @@ export function ContextBudgetBar({
 
       <PopoverContent
         align="end"
+        side="bottom"
         sideOffset={8}
+        collisionPadding={12}
         className="w-[min(17.5rem,calc(100vw-1.5rem))] gap-0 rounded-[10px] border-(--color-border) bg-(--bg-card) p-3.5 shadow-(--shadow-popover)"
       >
         {/* Header */}

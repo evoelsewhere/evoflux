@@ -190,12 +190,19 @@ _SAFE_SHELL_ENV_KEYS: frozenset[str] = frozenset(
         "TMPDIR",
         "TMP",
         "TEMP",
-        # Windows process discovery/runtime.
+        # Windows process discovery/runtime. Names are matched
+        # case-insensitively on win32 (hosts often expose SYSTEMROOT).
         "SystemRoot",
         "WINDIR",
         "COMSPEC",
         "PATHEXT",
     }
+)
+_SAFE_SHELL_ENV_KEYS_UPPER: frozenset[str] = frozenset(
+    key.upper() for key in _SAFE_SHELL_ENV_KEYS
+)
+_PYTHON_ENV_LEAK_KEYS_UPPER: frozenset[str] = frozenset(
+    key.upper() for key in _PYTHON_ENV_LEAK_KEYS
 )
 
 
@@ -208,6 +215,29 @@ def _scrubbed_env(*, inherit: bool = False) -> dict[str, str]:
     opt into inheritance in Sandbox settings. EvoFlux internal values and
     daemon-Python runtime pointers are never inherited.
     """
+    # Windows env names are case-insensitive; match allow/block lists that way
+    # so ``SYSTEMROOT`` (common) is not dropped while ``SystemRoot`` is listed.
+    if sys.platform == "win32":
+        blocked_upper = set(_PYTHON_ENV_LEAK_KEYS_UPPER)
+        blocked_upper.update(
+            key.upper() for key in os.environ if key.upper().startswith("EVOFLUX_")
+        )
+        if inherit:
+            return {
+                key: value
+                for key, value in os.environ.items()
+                if key.upper() not in blocked_upper
+            }
+        return {
+            key: value
+            for key, value in os.environ.items()
+            if key.upper() not in blocked_upper
+            and (
+                key.upper() in _SAFE_SHELL_ENV_KEYS_UPPER
+                or key.upper().startswith("LC_")
+            )
+        }
+
     blocked = {
         *(_PYTHON_ENV_LEAK_KEYS),
         *(key for key in os.environ if key.startswith("EVOFLUX_")),

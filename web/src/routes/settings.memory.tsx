@@ -21,6 +21,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { useWikiTreeQuery } from '@/queries'
 import { useUIStore } from '@/stores/useUIStore'
+import { confirmDiscardSettingsDraft } from '@/lib/settings-dirty'
 
 function MemoryMetric({
   icon: Icon,
@@ -66,6 +67,7 @@ export function MemorySettingsPage() {
   const pendingCount = tree?.notes.length ?? 0
 
   const openMemory = () => {
+    if (!confirmDiscardSettingsDraft()) return
     const ui = useUIStore.getState()
     ui.closeSettings()
     ui.openWorkbenchTool('wiki')

@@ -22,6 +22,7 @@ import { ModelCombobox } from '@/components/settings/AgentForm'
 import { validateModel } from '@/components/settings/schema'
 import { useRegistryQuery } from '@/queries'
 import type { DreamConfig } from '@/api/client'
+import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
 
 const DEFAULT_FORM: DreamConfig = {
   enabled: false,
@@ -74,6 +75,7 @@ export function DreamSettingsPanel({ embedded = false }: { embedded?: boolean })
       current.schedule !== source.schedule
     )
   }, [form, sourceRaw])
+  useRegisterSettingsDirty(dirty)
   const modelOptions = useMemo(() => registry.data?.models ?? [], [registry.data?.models])
   const validModelIds = useMemo(() => modelOptions.map((m) => m.id), [modelOptions])
   const modelError = validateModel(form.model, { validValues: validModelIds })

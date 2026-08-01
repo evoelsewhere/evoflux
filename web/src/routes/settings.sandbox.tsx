@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
 
 export function SandboxSettingsPage() {
   const { data, isLoading, error, refetch } = useSandboxSettingsQuery()
@@ -155,6 +156,7 @@ export function SandboxSettingsPage() {
     draft.worktreeLocation,
     patterns,
   ])
+  useRegisterSettingsDirty(dirty)
 
   const updateAt = (idx: number, value: string) =>
     setPatterns((prev) => prev.map((p, i) => (i === idx ? value : p)))

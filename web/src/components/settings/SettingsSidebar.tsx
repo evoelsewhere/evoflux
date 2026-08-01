@@ -30,6 +30,7 @@ import { useMemo, useState } from 'react'
 
 import { cn } from '@/lib/utils'
 import { useMotionPreset } from '@/lib/motion'
+import { confirmDiscardSettingsDraft } from '@/lib/settings-dirty'
 import { usePlatform } from '@/hooks/use-platform'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
 import {
@@ -89,6 +90,7 @@ function SidebarRow({
       onNavigate(item.to)
       return
     }
+    if (!confirmDiscardSettingsDraft()) return
     useUIStore.getState().navigateSettings(item.to.replace(/^\/settings\/?/, ''))
   }
 

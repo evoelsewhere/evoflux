@@ -37,6 +37,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useSettingsParams, useSettingsNavigate } from '@/contexts/SettingsContext'
+import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
 
 /**
  * Edit an existing agent. Loads the raw .md, renders the hybrid form,
@@ -80,6 +81,7 @@ export function AgentEditorPage() {
   // Compare semantically: list-fields (tools, skills) are sets, body
   // trailing whitespace doesn't count. See ``contentEquals`` for rules.
   const dirty = !!data && !contentEquals(draft, data.content)
+  useRegisterSettingsDirty(dirty)
 
   // Client-side validation via zod — first error to report. Backend still
   // revalidates on save, but blocking here avoids a round-trip.
@@ -203,7 +205,7 @@ export function AgentEditorPage() {
                   variant="ghost"
                   size="xs"
                   className="min-h-11 md:min-h-0"
-                  onClick={() => navigate('/settings/agents')}
+                  onClick={() => navigate('/settings/agents', { force: true })}
                 >
                   Leave without saving
                 </Button>

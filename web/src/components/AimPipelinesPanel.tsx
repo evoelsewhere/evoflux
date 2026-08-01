@@ -2300,7 +2300,7 @@ export function RunMonitorPanel({
         showCloseButton={false}
         className="flex h-[calc(100dvh-1rem)] min-w-0 w-[calc(100vw-1rem)] max-w-none flex-col gap-0 overflow-hidden rounded-lg bg-(--bg-page) p-0 shadow-xl sm:h-[80dvh] sm:w-[86vw] sm:max-w-none"
       >
-      <div className="sticky top-0 z-10 border-b border-(--color-border) bg-(--bg-page)/95 backdrop-blur-sm">
+      <div className="sticky top-0 z-(--z-panel) border-b border-(--color-border) bg-(--bg-page)/95 backdrop-blur-sm">
         <div className="flex h-11 items-center justify-between gap-3 px-4">
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-(--color-border) bg-(--bg-key) text-(--color-text-muted)">
@@ -2733,7 +2733,7 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
                 key={line.key}
                 className="relative flex gap-3 border-b border-(--color-border)/60 py-2.5 pl-1"
               >
-                <span className="relative z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-page) text-(--color-text-muted)">
+                <span className="relative z-(--z-panel) flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-page) text-(--color-text-muted)">
                   <Shuffle size={10} aria-hidden="true" />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -2762,7 +2762,7 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
                 key={line.key}
                 className="relative flex gap-3 border-b border-(--color-border)/60 py-2.5 pl-1"
               >
-                <span className="relative z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-(--color-accent)/50 bg-(--bg-page) text-(--color-accent)">
+                <span className="relative z-(--z-panel) flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-(--color-accent)/50 bg-(--bg-page) text-(--color-accent)">
                   <CornerDownLeft size={10} aria-hidden="true" />
                 </span>
                 <div className="min-w-0 flex-1 border-l-2 border-(--color-accent)/50 pl-2.5">
@@ -2799,7 +2799,7 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
                 key={line.key}
                 className="relative flex gap-3 border-b border-(--color-border)/60 py-2.5 pl-1"
               >
-                <span className="relative z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-page) text-(--color-text-muted)">
+                <span className="relative z-(--z-panel) flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-page) text-(--color-text-muted)">
                   <FileText size={10} aria-hidden="true" />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -2827,7 +2827,7 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
               key={line.key}
               className="relative flex gap-3 border-b border-(--color-border)/60 py-2.5 pl-1"
             >
-              <span className="relative z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-page) text-(--color-text-muted)">
+              <span className="relative z-(--z-panel) flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-page) text-(--color-text-muted)">
                 <Bot size={10} aria-hidden="true" />
               </span>
               <div className="min-w-0 flex-1">
@@ -2945,7 +2945,7 @@ function NodeRunRow({ node }: { node: WorkflowNodeRun }) {
 
   return (
     <div className="relative pl-5">
-      <span className="absolute -left-[6px] top-2.5 z-[1] flex h-3 w-3 items-center justify-center rounded-full bg-(--bg-page)">
+      <span className="absolute -left-[6px] top-2.5 z-(--z-panel) flex h-3 w-3 items-center justify-center rounded-full bg-(--bg-page)">
         <NodeStatusIcon status={node.status} />
       </span>
       <button

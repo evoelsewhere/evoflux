@@ -139,7 +139,7 @@ export function WorkbenchDock({
                 <button
                   type="button"
                   onClick={() => selectTab(tab.id)}
-                  className="relative z-10 flex h-full min-w-0 flex-1 items-center gap-1.5 pl-2 pr-1"
+                  className="relative z-(--z-panel) flex h-full min-w-0 flex-1 items-center gap-1.5 pl-2 pr-1"
                 >
                   <Icon size={14} className="shrink-0" />
                   <span className="truncate text-xs font-medium">{label}</span>
@@ -148,7 +148,7 @@ export function WorkbenchDock({
                   type="button"
                   onClick={() => closeTabAndResources(tab.id)}
                   className={cn(
-                    'relative z-10 mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-(--color-text-muted) transition-[opacity,background-color,color] hover:bg-(--bg-hover) hover:text-(--color-text) focus-visible:opacity-100 group-hover:opacity-100',
+                    'relative z-(--z-panel) mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-(--color-text-muted) transition-[opacity,background-color,color] hover:bg-(--bg-hover) hover:text-(--color-text) focus-visible:opacity-100 group-hover:opacity-100',
                     active ? 'opacity-100' : 'opacity-0',
                   )}
                   aria-label={`Close ${label}`}

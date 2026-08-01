@@ -14,6 +14,28 @@ import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { AskUserQuestionPending } from '@/api/types'
 
+/** Survives connectStream gate-clear + reconnect remount of the same request. */
+const askUserDrafts = new Map<string, { answers: string[]; step: number }>()
+
+function readDraft(requestId: string, questionCount: number) {
+  const draft = askUserDrafts.get(requestId)
+  if (!draft || draft.answers.length !== questionCount) {
+    return { answers: Array.from({ length: questionCount }, () => ''), step: 0 }
+  }
+  return {
+    answers: draft.answers,
+    step: Math.min(Math.max(draft.step, 0), Math.max(questionCount - 1, 0)),
+  }
+}
+
+function writeDraft(requestId: string, answers: string[], step: number) {
+  askUserDrafts.set(requestId, { answers, step })
+}
+
+function clearDraft(requestId: string) {
+  askUserDrafts.delete(requestId)
+}
+
 const AskUserQuestionForm = forwardRef<
   HTMLDivElement,
   {
@@ -23,8 +45,9 @@ const AskUserQuestionForm = forwardRef<
 >(function AskUserQuestionForm({ askUserQuestion, sessionId }, ref) {
   const preset = useMotionPreset()
   const { questions } = askUserQuestion
-  const [answers, setAnswers] = useState(() => questions.map(() => ''))
-  const [step, setStep] = useState(0)
+  const initial = readDraft(askUserQuestion.requestId, questions.length)
+  const [answers, setAnswers] = useState(() => initial.answers)
+  const [step, setStep] = useState(() => initial.step)
   const [replying, setReplying] = useState(false)
   const [replyError, setReplyError] = useState<string | null>(null)
 
@@ -36,7 +59,16 @@ const AskUserQuestionForm = forwardRef<
   const allAnswered = answers.length > 0 && answers.every((a) => a.trim().length > 0)
 
   const setAnswer = (value: string) => {
-    setAnswers((prev) => prev.map((a, i) => (i === step ? value : a)))
+    setAnswers((prev) => {
+      const next = prev.map((a, i) => (i === step ? value : a))
+      writeDraft(askUserQuestion.requestId, next, step)
+      return next
+    })
+  }
+
+  const goToStep = (nextStep: number) => {
+    setStep(nextStep)
+    writeDraft(askUserQuestion.requestId, answers, nextStep)
   }
 
   const handleSend = async () => {
@@ -51,11 +83,13 @@ const AskUserQuestionForm = forwardRef<
         askUserQuestion.requestId,
         answers.map((a) => a.trim()),
       )
+      clearDraft(askUserQuestion.requestId)
       useTeamStore.setState({ askUserQuestion: null })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to send reply. Please try again.'
       // Already resolved (other tab / interrupt while we were away) — dismiss.
       if (/not found|already resolved/i.test(message)) {
+        clearDraft(askUserQuestion.requestId)
         useTeamStore.setState({ askUserQuestion: null })
         return
       }
@@ -125,7 +159,7 @@ const AskUserQuestionForm = forwardRef<
               onKeyDown={(e) => {
                 if (e.key !== 'Enter' || !currentAnswered) return
                 if (isLast) void handleSend()
-                else setStep((s) => s + 1)
+                else goToStep(step + 1)
               }}
               disabled={replying}
               placeholder={q.options.length > 0 ? 'Or type your own answer…' : 'Type your answer…'}
@@ -140,7 +174,7 @@ const AskUserQuestionForm = forwardRef<
           <button
             type="button"
             disabled={replying || step === 0}
-            onClick={() => setStep((s) => s - 1)}
+            onClick={() => goToStep(step - 1)}
             className={cn(
               'flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
@@ -174,7 +208,7 @@ const AskUserQuestionForm = forwardRef<
             <button
               type="button"
               disabled={!currentAnswered}
-              onClick={() => setStep((s) => s + 1)}
+              onClick={() => goToStep(step + 1)}
               className={cn(
                 'flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
                 'bg-(--color-primary) text-white hover:opacity-90',

@@ -18,6 +18,7 @@ import {
   useVersionControlSettingsQuery,
 } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
+import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
 
 function NumericControl({
   id,
@@ -64,6 +65,7 @@ export function VersionControlSettingsPage() {
     && query.data
     && JSON.stringify(editedDraft) !== JSON.stringify(query.data),
   )
+  useRegisterSettingsDirty(dirty)
 
   const patch = <K extends keyof VersionControlSettings>(
     key: K,

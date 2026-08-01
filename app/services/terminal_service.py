@@ -170,8 +170,10 @@ class _ConPty(_PtyBackend):
             pass
 
     def write(self, data: bytes) -> None:
-        # pywinpty's write takes str, not bytes.
-        self._proc.write(data.decode("utf-8", "replace"))
+        # pywinpty's write takes str, not bytes. ConPTY / cmd.exe treat CR
+        # as Enter; a bare LF often echoes without submitting the line.
+        text = data.decode("utf-8", "replace").replace("\r\n", "\n").replace("\n", "\r")
+        self._proc.write(text)
 
     def resize(self, rows: int, cols: int) -> None:
         self._proc.set_size(cols, rows)
