@@ -289,12 +289,11 @@ def _default_tool_registry() -> dict[str, Tool]:
         image_search,
         write_file,
     )
-    from app.agent.tools.builtin.pptx_engine import pptx_engine as pptx_engine_tool
-    from app.agent.tools.builtin.xlsx_tool import xlsx_engine
-    from app.agent.tools.builtin.docx_tool import docx_engine
     from app.agent.tools.builtin.load_tool import load_tool
     from app.agent.tools.builtin.memory_search import memory_search
     from app.agent.tools.builtin.note import note_tool
+    from app.agent.tools.builtin.pptx_html import pptx_html
+    from app.agent.tools.builtin.pptx_template import pptx_template
     from app.agent.tools.builtin.wiki_search import wiki_search
     from app.agent.tools.builtin.code_graph import (
         code_search,
@@ -353,9 +352,8 @@ def _default_tool_registry() -> dict[str, Tool]:
         "patch": patch_file,
         "rm": remove_path,
         "python": python_tool,
-        "pptx_engine": pptx_engine_tool,
-        "xlsx_engine": xlsx_engine,
-        "docx_engine": docx_engine,
+        "pptx_html": pptx_html,
+        "pptx_template": pptx_template,
         "shell": shell_tool,
         "bg": background_process,
         "skill": load_skill,

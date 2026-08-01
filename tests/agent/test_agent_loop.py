@@ -428,7 +428,16 @@ async def test_tool_result_creates_tool_message_with_parts():
             parts=[
                 TextBlock(text="Image description"),
                 ImageDataBlock(data=img_data, media_type="image/png"),
-            ]
+            ],
+            attachments=[
+                {
+                    "filename": "generated.pptx",
+                    "category": "document",
+                    "url": "/api/team/s6/media/generated.pptx",
+                    "preview_url": "/api/team/s6/office-preview/generated.pptx",
+                    "download_url": "/api/team/s6/media/generated.pptx?download=1",
+                }
+            ],
         )
 
     async def _gen():
@@ -478,6 +487,11 @@ async def test_tool_result_creates_tool_message_with_parts():
     assert len(tool_msg.parts) == 2
     assert isinstance(tool_msg.parts[0], TextBlock)
     assert isinstance(tool_msg.parts[1], ImageDataBlock)
+    assert any(
+        attachment.get("filename") == "generated.pptx"
+        and attachment.get("preview_url", "").endswith("generated.pptx")
+        for attachment in (tool_msg.extra or {}).get("attachments", [])
+    )
 
 
 async def test_tool_result_content_derived_from_text_blocks():

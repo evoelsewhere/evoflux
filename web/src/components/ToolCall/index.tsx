@@ -72,8 +72,9 @@ export function ToolAttachments({
             key={`${attachment.url ?? attachment.filename ?? index}`}
             name={attachment.original_name || attachment.filename || `Tool file ${index + 1}`}
             mediaType={attachment.media_type}
-            url={resolveApiUrl(attachment.url)}
-            clickable={Boolean(attachment.url)}
+            url={resolveApiUrl(attachment.preview_url || attachment.url)}
+            clickable={Boolean(attachment.preview_url || attachment.url)}
+            downloadUrl={resolveApiUrl(attachment.download_url)}
           />
         ),
       )}

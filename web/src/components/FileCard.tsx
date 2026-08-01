@@ -12,6 +12,8 @@ interface FileCardProps {
   clickable?: boolean
   /** Show a dedicated download action for generated workspace files. */
   onDownload?: () => void
+  /** Optional direct download URL for generated workspace artifacts. */
+  downloadUrl?: string
 }
 
 function getFileIcon(mediaType?: string) {
@@ -38,6 +40,7 @@ export function FileCard({
   removable,
   clickable,
   onDownload,
+  downloadUrl,
 }: FileCardProps) {
   // Truncate long filenames to ~20 chars
   const displayName = name.length > 20 ? `${name.substring(0, 17)}…` : name
@@ -56,7 +59,7 @@ export function FileCard({
         type="button"
         onClick={handleClick}
         disabled={!clickable}
-        className={`surface-raised flex items-center gap-2 border border-(--color-border) bg-(--bg-card) px-3 py-2 text-xs text-(--color-text) transition-[background-color,border-color,box-shadow,opacity] duration-(--motion-fast) ${onDownload ? 'rounded-l-lg' : 'rounded-lg'} ${
+        className={`surface-raised flex items-center gap-2 border border-(--color-border) bg-(--bg-card) px-3 py-2 text-xs text-(--color-text) transition-[background-color,border-color,box-shadow,opacity] duration-(--motion-fast) ${onDownload || downloadUrl ? 'rounded-l-lg' : 'rounded-lg'} ${
           clickable ? 'cursor-pointer hover:border-(--color-accent) hover:bg-(--bg-key)' : ''
         }`}
         title={name}
@@ -67,10 +70,13 @@ export function FileCard({
         <span className="flex-shrink-0 font-medium">{displayName}</span>
       </button>
 
-      {onDownload && (
+      {(onDownload || downloadUrl) && (
         <button
           type="button"
-          onClick={onDownload}
+          onClick={() => {
+            if (onDownload) onDownload()
+            else if (downloadUrl) void openExternalUrl(downloadUrl)
+          }}
           className="surface-raised flex items-center justify-center rounded-r-lg border border-l-0 border-(--color-border) bg-(--bg-card) px-2 text-(--color-text-muted) transition-colors duration-(--motion-fast) hover:border-(--color-accent) hover:bg-(--bg-key) hover:text-(--color-text)"
           aria-label={`Download ${name}`}
           title="Download"

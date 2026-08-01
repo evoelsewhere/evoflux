@@ -6,12 +6,14 @@ from openpyxl.chart import BarChart, Reference
 from openpyxl.drawing.image import Image as WorkbookImage
 from PIL import Image
 from pptx import Presentation
+from pptx.chart.data import ChartData
+from pptx.enum.chart import XL_CHART_TYPE
 from pptx.enum.dml import MSO_THEME_COLOR
-from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
+from pptx.oxml.xmlchemy import OxmlElement
 from pptx.util import Inches, Pt
 import pytest
 
-from app.agent.builtin_skills.pptx.scripts import office_features
 from app.services import office_preview_service as preview
 
 
@@ -39,6 +41,24 @@ def _pptx(path):
     text_box.text = "Product launch"
     text_box.text_frame.paragraphs[0].runs[0].font.name = "Aptos Display"
     presentation.save(path)
+
+
+def _add_chart(slide, categories, series, *, kind, title):
+    data = ChartData()
+    data.categories = categories
+    for name, values in series.items():
+        data.add_series(name, values)
+    chart = slide.shapes.add_chart(
+        kind,
+        Inches(0.8),
+        Inches(0.8),
+        Inches(11.7),
+        Inches(5.8),
+        data,
+    ).chart
+    chart.has_title = True
+    chart.chart_title.text_frame.text = title
+    return chart
 
 
 def test_render_docx_preview_uses_cache(monkeypatch, tmp_path):
@@ -128,15 +148,11 @@ def test_render_pptx_preview_keeps_titles_single_line_and_renders_area_charts(
     title.name = "[role:title] Delivery confidence"
     title.text = "Delivery confidence"
     title.text_frame.paragraphs[0].runs[0].font.size = Pt(18)
-    office_features.add_native_chart(
+    _add_chart(
         slide,
         ["Plan", "Compose", "Render", "Repair"],
         {"Confidence": [42, 61, 78, 93]},
-        left=Inches(0.8),
-        top=Inches(1.5),
-        width=Inches(11.7),
-        height=Inches(4.9),
-        kind="area",
+        kind=XL_CHART_TYPE.AREA,
         title="Quality gate confidence",
     )
     presentation.save(source)
@@ -150,6 +166,38 @@ def test_render_pptx_preview_keeps_titles_single_line_and_renders_area_charts(
     assert 'fill-opacity=".24"' in rendered
     assert ">Plan</text>" in rendered
     assert ">Repair</text>" in rendered
+
+
+def test_render_pptx_preview_labels_pie_and_bar_categories(monkeypatch, tmp_path):
+    source = tmp_path / "labelled-charts.pptx"
+    presentation = Presentation()
+    pie_slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    pie = _add_chart(
+        pie_slide,
+        ["Automation", "Reuse", "Other"],
+        {"Value": [48, 34, 18]},
+        kind=XL_CHART_TYPE.DOUGHNUT,
+        title="Value mix",
+    )
+    pie.has_legend = True
+    pie.plots[0].has_data_labels = True
+    bar_slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    _add_chart(
+        bar_slide,
+        ["Discover", "Deliver", "Scale"],
+        {"Confidence": [42, 78, 93]},
+        kind=XL_CHART_TYPE.BAR_CLUSTERED,
+        title="Confidence by phase",
+    )
+    presentation.save(source)
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
+    rendered = preview.render_office_preview(source).read_text()
+
+    assert "Automation (48%)" in rendered
+    assert "Reuse (34%)" in rendered
+    assert ">Discover</text>" in rendered
+    assert ">Scale</text>" in rendered
 
 
 def test_render_pptx_preview_resolves_template_theme_colors(monkeypatch, tmp_path):
@@ -173,39 +221,46 @@ def test_render_pptx_preview_resolves_template_theme_colors(monkeypatch, tmp_pat
     assert "background:#4F81BD" in rendered
 
 
-def test_render_pptx_preview_supports_bullets_columns_groups_and_connectors(
+def test_render_pptx_preview_supports_bullets_columns_and_connectors(
     monkeypatch,
     tmp_path,
 ):
     source = tmp_path / "rich-office.pptx"
     presentation = Presentation()
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
-    office_features.add_rich_text(
-        slide,
-        [
-            office_features.RichParagraph(
-                runs=(office_features.RichTextRun("First point"),),
-                bullet=True,
-            ),
-            office_features.RichParagraph(
-                runs=(office_features.RichTextRun("Second point"),),
-                bullet=True,
-            ),
-        ],
-        left=Inches(0.8),
-        top=Inches(0.8),
-        width=Inches(5),
-        height=Inches(2),
-        columns=2,
-    )
-    office_features.add_grouped_process(
-        slide,
-        ["Discover", "Decide", "Deliver"],
-        left=Inches(1),
-        top=Inches(3.3),
-        width=Inches(10),
-        height=Inches(2.4),
-    )
+    text_box = slide.shapes.add_textbox(Inches(0.8), Inches(0.8), Inches(5), Inches(2))
+    text_box.text_frame._txBody.bodyPr.set("numCol", "2")
+    for index, value in enumerate(("First point", "Second point")):
+        paragraph = (
+            text_box.text_frame.paragraphs[0]
+            if index == 0
+            else text_box.text_frame.add_paragraph()
+        )
+        paragraph.text = value
+        properties = paragraph._p.get_or_add_pPr()
+        bullet = OxmlElement("a:buChar")
+        bullet.set("char", "•")
+        properties.append(bullet)
+
+    boxes = []
+    for index, label in enumerate(("Discover", "Decide", "Deliver")):
+        box = slide.shapes.add_shape(
+            MSO_SHAPE.ROUNDED_RECTANGLE,
+            Inches(1 + index * 3.5),
+            Inches(3.3),
+            Inches(2.5),
+            Inches(1.2),
+        )
+        box.text = label
+        boxes.append(box)
+    for left, right in zip(boxes[:-1], boxes[1:], strict=True):
+        slide.shapes.add_connector(
+            MSO_CONNECTOR.STRAIGHT,
+            left.left + left.width,
+            left.top + left.height // 2,
+            right.left,
+            right.top + right.height // 2,
+        )
     presentation.save(source)
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
 

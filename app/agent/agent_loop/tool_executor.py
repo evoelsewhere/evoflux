@@ -219,18 +219,21 @@ def make_tool_executor(
                 )
                 pending[tc.id] = result_raw.parts
 
+                explicit_attachments = list(result_raw.attachments or [])
                 session_id = str(s.metadata.get("session_id") or "")
+                attachments: list[dict[str, str]] = []
                 if session_id:
                     attachments = await materialize_tool_attachments(
                         result_raw.parts,
                         session_id=session_id,
                         tool_name=tc.function.name,
                     )
-                    if attachments:
-                        pending_attachments: dict[str, list[dict[str, str]]] = (
-                            s.metadata.setdefault("_tool_attachments", {})
-                        )
-                        pending_attachments[tc.id] = attachments
+                attachments.extend(explicit_attachments)
+                if attachments:
+                    pending_attachments: dict[str, list[dict[str, str]]] = (
+                        s.metadata.setdefault("_tool_attachments", {})
+                    )
+                    pending_attachments[tc.id] = attachments
 
                 if result_raw.mcp_app:
                     mcp_apps: dict[str, dict[str, Any]] = s.metadata.setdefault(

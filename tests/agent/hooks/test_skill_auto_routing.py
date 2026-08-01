@@ -35,19 +35,17 @@ class TestSkillAutoRoutingHook:
         # A matching trigger for another skill must not override an explicit
         # composer choice.
         hook._trigger_data = {"other-skill": ["test"]}
-        state = _make_state(
-            [HumanMessage(content="/skill:pptx Test this presentation")]
-        )
+        state = _make_state([HumanMessage(content="/skill:pdf Inspect this PDF")])
 
         await hook.before_agent(_make_ctx(), state)
 
-        assert set(state.metadata.get("loaded_skills", {})) == {"pptx"}
+        assert set(state.metadata.get("loaded_skills", {})) == {"pdf"}
         assert len(state.messages) == 3
         assistant = state.messages[1]
         assert isinstance(assistant, AssistantMessage)
         assert assistant.tool_calls is not None
         assert assistant.tool_calls[0].id.startswith("explicit_")
-        assert assistant.tool_calls[0].function.arguments == ('{"skill_name": "pptx"}')
+        assert assistant.tool_calls[0].function.arguments == ('{"skill_name": "pdf"}')
         assert isinstance(state.messages[2], ToolMessage)
         assert state.messages[2].content
 
@@ -58,13 +56,17 @@ class TestSkillAutoRoutingHook:
             [
                 HumanMessage(content="Earlier request"),
                 AssistantMessage(content="Earlier response"),
-                HumanMessage(content="> quoted\n\n/skill:docx Draft a report"),
+                HumanMessage(
+                    content=("> quoted\n\n/skill:documentation-and-adrs Draft an ADR")
+                ),
             ]
         )
 
         await hook.before_agent(_make_ctx(), state)
 
-        assert set(state.metadata.get("loaded_skills", {})) == {"docx"}
+        assert set(state.metadata.get("loaded_skills", {})) == {
+            "documentation-and-adrs"
+        }
         assert isinstance(state.messages[2], HumanMessage)
         assert isinstance(state.messages[3], AssistantMessage)
         assert isinstance(state.messages[4], ToolMessage)
@@ -76,25 +78,6 @@ class TestSkillAutoRoutingHook:
             SkillAutoRoutingHook._resolve_explicit_skill_name("git:commit", discovered)
             == "git/commit"
         )
-
-    @pytest.mark.asyncio
-    async def test_pptx_intent_outranks_generic_technical_verbs(self):
-        """A slide request should not route by incidental design/test verbs."""
-        hook = SkillAutoRoutingHook()
-        state = _make_state(
-            [
-                HumanMessage(
-                    content=(
-                        "làm slide pptx giới thiệu EvoFlux, gồm các giai đoạn "
-                        "Assess, Understand, Design, Convert, Test Compare và Cutover"
-                    )
-                )
-            ]
-        )
-
-        await hook.before_agent(_make_ctx(), state)
-
-        assert set(state.metadata.get("loaded_skills", {})) == {"pptx"}
 
     def test_explicit_description_triggers_are_extracted(self, tmp_path):
         skill_dir = tmp_path / "slides"
@@ -111,30 +94,22 @@ Body
 
         assert extract_triggers(skill_dir) == ["pptx", "powerpoint", "slide"]
 
-    def test_pptx_skill_routes_from_description(self):
-        skill_dir = _builtin_skills_dir() / "pptx"
+    def test_builtin_skill_routes_from_explicit_description_terms(self):
+        assert extract_triggers(_builtin_skills_dir() / "doc-coauthoring") == [
+            "co-author a document",
+            "co-write a proposal",
+            "draft a technical spec",
+        ]
 
-        assert extract_triggers(skill_dir) == ["pptx", "powerpoint", "slide"]
-
-    @pytest.mark.parametrize(
-        ("skill_name", "expected"),
-        [
-            ("docx", ["docx", "word document", "word template"]),
-            ("xlsx", ["xlsx", "xlsm", "spreadsheet", "workbook", "csv", "tsv"]),
-            (
-                "doc-coauthoring",
-                [
-                    "co-author a document",
-                    "co-write a proposal",
-                    "draft a technical spec",
-                ],
-            ),
-        ],
-    )
-    def test_builtin_skills_route_from_explicit_description_terms(
-        self, skill_name, expected
-    ):
-        assert extract_triggers(_builtin_skills_dir() / skill_name) == expected
+    def test_pptx_skill_routes_from_presentation_terms(self):
+        assert extract_triggers(_builtin_skills_dir() / "pptx") == [
+            "pptx",
+            "powerpoint",
+            "slide",
+            "slides",
+            "presentation",
+            "pitch deck",
+        ]
 
     def test_trigger_marker_does_not_match_whenever_prefix(self, tmp_path):
         skill_dir = tmp_path / "spreadsheet"

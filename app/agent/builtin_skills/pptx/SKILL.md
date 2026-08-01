@@ -1,397 +1,284 @@
 ---
 name: pptx
-description: "Create, inspect, or edit PowerPoint presentations (.pptx), including slide decks, templates, speaker notes, and charts, with a narrative-first, design-token, native OpenXML workflow. Triggers on PPTX, PowerPoint, or slide."
+description: Create, redesign, render, and verify presentation decks with EvoFlux's HTML-first hybrid PowerPoint pipeline. Triggers on PPTX, PowerPoint, slide, slides, presentation, or pitch deck.
 ---
 
-# PPTX
+# PowerPoint authoring
 
-Create new PowerPoint decks through the declarative `pptx_engine` tool. It
-compiles validated layout/slot specifications into native charts, tables,
-images, text, groups, notes, and transitions, then runs structural and visual
-QA. Use the package-preserving OOXML editor for supplied templates. The quality
-target is a designed presentation, not a document split across slides.
+Use this skill whenever the deliverable is a presentation. It adapts the useful
+workflow discipline from `ningzimu/codex-ppt-skill`—outline, visual direction,
+representative sample, per-slide production, assembly, and verification—but it
+does not depend on an image-generation model. The visual source of truth is
+controlled HTML/CSS rendered by Chromium.
 
-## Declarative engine contract
+For a new deck, the result is an editable-first hybrid PPTX:
 
-For a new deck, call `pptx_engine(action="catalog")` once to inspect the
-available layouts, slots, block types, and capability matrix. Then call
-`pptx_engine(action="compose", path="...pptx", spec={...})`. The model owns the
-narrative, content, layout selection, and asset choices; the engine owns exact
-geometry, text floors, native-object construction, rendering, and QA.
+- complex backgrounds, diagrams, SVG, gradients, and decoration are rendered
+  pixel-stably into each slide background;
+- semantic text, common cards, rules, and images are automatically exported as
+  individual editable PowerPoint objects in the default `max` mode;
+- explicit `data-pptx-native="text|shape|line|image"` markers cover custom
+  elements, while `data-pptx-raster` keeps complex effects pixel-stable;
+- speaker notes and source URLs stay in the PowerPoint file;
+- Chromium geometry checks must pass before the PPTX is written.
 
-Do not write a free-form `python-pptx` coordinate script for normal deck
-creation. Low-level helpers under `scripts/` are engine internals and an escape
-hatch for a structural feature that the declarative schema cannot yet express.
-SmartArt, media/OLE, and complex animation remain template-first preserve-only
-capabilities and must never be approximated with basic shapes.
+For an uploaded PPTX that the user explicitly identifies as the visual
+template, use the separate inherited-template workflow below. It edits a copy
+of that actual deck and does not route through HTML.
 
-## Template-first contract
+## Choose the authoring path first
 
-If any PPTX is supplied, editing a copied deck is the default. Do not create a
-new `Presentation()` and imitate the source. A supplied deck is an executable
-design system: its masters, layouts, theme, placeholder geometry, typography,
-brand marks, notes, and relationships are authoritative.
+- New deck or a screenshot/image reference: use `pptx_html` and the mandatory
+  style confirmation gate.
+- Uploaded PPTX explicitly requested as the visual template: use
+  `pptx_template`. The chosen PPTX itself is the style confirmation, so do not
+  ask the generic style question.
+- Uploaded PPTX with an ambiguous role: ask whether it is a visual template or
+  only a content source before authoring.
 
-Use the package-preserving editor before any high-level save:
+Never use `pptx_html`, python-pptx, or fresh blank slides as a fallback for an
+uploaded-template request. If inherited editing cannot preserve the source
+master/layout, fail clearly and ask for a different template or narrower edit.
 
-```bash
-python "{SKILL_DIR}/scripts/template.py" inspect template.pptx \
-  --out /tmp/template-manifest.json
-python "{SKILL_DIR}/scripts/template.py" apply template.pptx output.pptx \
-  --plan /tmp/template-edit-plan.json
-python "{SKILL_DIR}/scripts/template.py" verify template.pptx output.pptx \
-  --plan /tmp/template-edit-plan.json
+## Required workflow
+
+Keep this checklist in the working context:
+
+```text
+Presentation workflow
+- [ ] 1. Understand the communication job and audience
+- [ ] 2. Ask the user to choose or confirm one visual style
+- [ ] 3. Draft a slide-by-slide story outline
+- [ ] 4. Create the JSON project and validate it
+- [ ] 5. Render one representative sample slide
+- [ ] 6. Inspect the sample image and correct it
+- [ ] 7. Render all slides and resolve QA errors
+- [ ] 8. Compose the PPTX and hand off preview/download
 ```
 
-The JSON plan is a mutation map. Every edit must target an inspected stable
-`slide` + `shape_id`; everything absent from the plan is preserve-only:
+Do not jump straight from the request to a full deck unless the user explicitly
+asks to skip the sample gate. If the user supplied a reference slide, infer its
+design language but improve hierarchy and density instead of tracing every box.
+
+## Mandatory style confirmation gate for new decks
+
+Never silently choose a visual style. If the current presentation request does
+not contain an explicit style choice, ask the user which visual style they want
+and stop before writing the project, rendering HTML, or composing a PPTX. Ask in
+the user's current language; do not hard-code a locale.
+
+Offer a short, job-aware set of options. Put `scientific-defense` first as the
+recommended general default for research, technical, thesis, or evidence-heavy
+decks, but do not apply it without confirmation. For example, offer Scientific
+Defense, Clean Professional, McKinsey-style Consulting, Data Dashboard,
+Teaching Courseware, or Creative Magazine. A supplied reference may inform the
+recommendation, but the user must still confirm it.
+
+After confirmation, set both `style_preset` and `style_confirmed: true` at the
+project root. The schema intentionally has no silent style default and rejects
+projects that omit either field.
+
+## Uploaded PPTX template workflow
+
+Keep this checklist in the working context when the user says to use an
+uploaded PPTX as the template:
+
+```text
+Inherited template workflow
+- [ ] 1. Confirm the upload is the visual template (the user's request may do this)
+- [ ] 2. Inspect every source slide and object
+- [ ] 3. Review the source previews and choose source slide frames
+- [ ] 4. Write the source-slide → output-slide map with exact edit targets
+- [ ] 5. Validate source hash, omitted slides, and object types
+- [ ] 6. Render the inherited preview and inspect it visually
+- [ ] 7. Compose only after lineage and placeholder QA pass
+```
+
+First load and call the deferred `pptx_template` tool.
+
+1. `pptx_template(action="catalog")` returns the project schema and invariants.
+2. `pptx_template(action="inspect", source_pptx="<upload>.pptx")` imports the
+   actual deck, renders every source slide, and writes `template-manifest.json`
+   plus `template-inspect.ndjson`. Review all source previews. Use object IDs,
+   names, text, and slide numbers from the manifest; never invent target IDs.
+3. Write a JSON map using the manifest's `sourceSha256`. Every output slide must
+   declare `output_slide`, `source_slide`, `narrative_role`,
+   `reuse_mode: "duplicate-slide"`, and `edits`. Explicitly list every unused
+   source slide in `omitted_source_slides`. A starter is in
+   `examples/template-following.example.json`.
+4. `pptx_template(action="validate", source_pptx="...", project_path="...",
+   manifest_path="...")` checks the immutable source hash, complete mapping,
+   and type-safe targets.
+5. `pptx_template(action="render", ...)` duplicates the selected source slides,
+   applies the edits to inherited objects, and returns preview images. Inspect
+   them before publishing.
+6. `pptx_template(action="compose", ..., output="...pptx")` exports only if
+   every output slide still inherits the source master/layout and no unresolved
+   placeholder remains.
+
+Prefer `replace_text` over `set_text` when changing only part of a textbox; it
+retains surrounding rich-text runs. `replace_image` preserves the existing
+frame, crop, fit, geometry, rotation, flips, and aspect lock. Native table cells
+and chart series remain editable through their typed operations. Set
+`speaker_notes` on an output slide only when the request requires it.
+
+`edits: []` means preserve-only. Do not add text, charts, images, panels,
+overlays, or hidden replacements to that slide. Reusing one source frame
+multiple times is allowed: each duplicate receives its own edit list.
+
+## New-deck tool contract
+
+First load and call the deferred `pptx_html` tool.
+
+1. `pptx_html(action="catalog")` returns the JSON schema, built-in classes,
+   markers, 21 editable base templates, restrictions, and the 12 built-in visual
+   systems. After choosing a direction, call
+   `pptx_html(action="catalog", style_preset="...")` for its exact palette and
+   `pptx_html(action="catalog", base_template="...")` for one template's content
+   contract and editable features.
+2. Write a UTF-8 JSON project inside the workspace. A working starter lives at
+   `examples/project.example.json` in this skill.
+3. `pptx_html(action="validate", project_path="...")` validates structure and
+   security before browser work.
+4. `pptx_html(action="render", project_path="...", slide_numbers=[N])` returns
+   the sample as an image. Visually inspect it; never assume render success means
+   design success.
+5. After the sample is sound, render all slides. Fix every `error` in `qa.json`.
+   Warnings require judgment; acknowledge any warning deliberately retained.
+6. `pptx_html(action="compose", project_path="...", output="...pptx")` performs
+   full render + QA and only writes the PPTX if error-free.
+
+## Project authoring rules
+
+Each slide's `html` is the inner content of a fixed 1600×900 `.slide` element.
+Use absolute positioning when the composition needs art direction; use the
+built-in grid/flex classes for predictable editorial layouts.
+
+Set one confirmed deck-level `style_preset`; never infer it silently. Built-ins adapted from the upstream style
+library are: `clean-professional`, `creative-magazine`, `e-ink-magazine`,
+`data-dashboard`, `retro-flat-illustration`, `handdrawn-technical`,
+`handdrawn-whiteboard`, `warm-handmade`, `scientific-defense`, `mckinsey`,
+`party-government-red`, and `teaching-courseware`. Use slide-level overrides
+only for an intentional diagnostic gallery; a normal deck keeps one identity.
+
+Presets are visual systems, not fixed masters. Choose a different recommended
+archetype for each narrative role and avoid repeating one silhouette on adjacent
+slides. Reusable preset classes include `preset-tag`, `preset-display`,
+`preset-stage`, `preset-panel`, `preset-note`, `preset-number`, `preset-rule`,
+and `preset-grid`.
+
+### Base templates first
+
+Prefer `template + content` over raw `html`. The base renderer escapes text,
+validates item counts, chooses bounded geometry, and emits native-object markers
+consistently. Use raw HTML only when no base template fits the slide's narrative
+job.
+
+Built-in template IDs are: `cover-split`, `section-divider`,
+`typographic-statement`, `metric-story`, `process-flow`, `comparison`,
+`timeline`, `architecture-layers`, `decision-matrix`, `bar-chart`, `data-table`,
+`quote`, `image-story`, and `closing-actions`.
+
+For research and technical-defense decks, use the specialized editable family:
+`research-paper-overview`, `research-problem-chain`,
+`research-contribution-grid`, `research-architecture-annotated`,
+`research-mechanism`, `research-equation-explainer`, and
+`research-results-summary`. These layouts reproduce the compact navy/white
+academic grammar—numbered reasoning, technical structures, evidence columns,
+equations, tables, and restrained red conclusions—without rasterizing the
+common content objects. See
+`examples/scientific-defense-gallery.example.json` for all seven contracts.
 
 ```json
 {
-  "edits": [
-    {
-      "slide": 2,
-      "shape_id": 7,
-      "action": "replace_text",
-      "text": "Audience-ready title"
-    },
-    {
-      "slide": 3,
-      "shape_id": 12,
-      "action": "replace_table_cell",
-      "row": 1,
-      "column": 2,
-      "text": "42%"
-    }
-  ]
-}
-```
-
-The editor also supports:
-
-- `fill_placeholder` for inspected native placeholders;
-- `replace_rich_text` with paragraphs, runs, bullets, levels, alignment,
-  spacing, font, size, color, bold, italic, and underline;
-- `replace_chart_data` with `categories` and named `series`; this changes the
-  existing chart cache and embedded workbook without rebuilding the slide;
-- `replace_image` with `file`; the replacement must use the same media format.
-
-The editor patches only the selected slide, chart, workbook, or media parts
-and rejects changes to masters, layouts, and themes. Use `python-pptx` only
-when a requested structural change cannot be expressed by this editor, and
-then compare the before/after package and render every slide.
-
-## Workflow
-
-1. Classify inputs as `deck to edit`, `fillable template`, `structural base`,
-   `visual reference`, or `content source`. Never overwrite a source.
-2. If a PPTX/template exists, inspect slide size, masters, layouts,
-   placeholders, theme fonts/colors, notes, charts, and every source slide.
-   Produce a slide-frame map (`output slide -> source slide -> editTargets`).
-   Reuse its hierarchy and edit inherited elements in place. `editTargets: []`
-   means preserve the entire source slide.
-3. If creating from scratch, plan the communication job before code:
-   audience, decision/action, narrative arc, slide sequence, visual approach,
-   and one-sentence takeaway per slide.
-4. Assign every slide one explicit silhouette from the engine catalog before
-   writing slide copy. Declare which content belongs in each named slot and a
-   maximum line count. Do not place arbitrary shapes first and try to make the
-   content fit afterward.
-5. Define design tokens: slide ratio, margins/grid, title/body sizes, fonts,
-   background, primary/accent colors, chart palette, footer, and image style.
-6. Build one declarative `PresentationSpec` and submit it to `pptx_engine`.
-   Collect all returned preflight issues and repair them as a batch; collision
-   or text-fit errors require a layout/copy change, not an overlap exception.
-7. For functional symbols, use the curated vector catalog in
-  `scripts/icons.py`, not generated raster icons or mixed icon families.
-  After choosing names, validate all of them in one pass with
-  `scripts/icons.py` and its `--check <icon>...` option before running the
-  generator.
-8. Route evidence to Office-native objects with `scripts/office_features.py`.
-   Quantitative evidence becomes an editable chart, structured comparisons
-   become a real table, photos use native crop/focal controls, and navigation
-   uses native hyperlinks. Do not rebuild these as collections of rectangles.
-9. Keep `render=true` for the final compose/validate call. Inspect every
-   returned slide image individually, repair issues, rerender, and deliver only
-   the final PPTX.
-
-Minimal layout-first spec:
-
-```json
-{
-  "title": "Decision-ready update",
-  "layout": "split",
-  "slots": {
-    "text": {
-      "type": "bullets",
-      "items": ["Evidence first", "One clear decision"]
-    },
-    "visual": {
-      "type": "image",
-      "path": "assets/decision.jpg",
-      "alt_text": "Team reviewing the decision"
-    }
+  "id": "metrics",
+  "title": "Three measures explain the result",
+  "kind": "data",
+  "template": "metric-story",
+  "content": {
+    "kicker": "Performance",
+    "metrics": [
+      {"label": "Activation", "value": "68%", "detail": "+8 pts"},
+      {"label": "Time to value", "value": "2.3d", "detail": "-1.7 days"},
+      {"label": "Retention", "value": "91%", "detail": "Stable"}
+    ],
+    "insight": "The intervention improved speed without reducing retention."
   }
 }
 ```
 
-Do not repair a generator with global regex substitutions. Helper signatures
-must use their declared keyword names (`left`, `top`, `width`, `height`), and a
-signature mismatch must be fixed at the specific call site. Never mass-rewrite
-short parameter names such as `h` because they can also match inside `width`.
+Template slides must not also provide `html`. The validator rejects unknown
+fields, invalid item counts, malformed tables, negative chart values, remote
+image URLs, and content that exceeds the bounded project contract. A complete
+14-slide general example lives at `examples/template-gallery.example.json`.
 
-## Office-native feature routing
+Set `editable_mode` at the project root. Use `"max"` unless a supplied visual
+must be preserved with unusual CSS. `"balanced"` auto-promotes text and images
+but requires explicit shape markers; `"explicit"` preserves the old marker-only
+behavior.
 
-Use the richest editable PowerPoint primitive that matches the content:
+In `max` mode, semantic elements (`h1`–`h6`, `p`, `li`, `blockquote`, table
+cells), `<img>` elements, `.panel`, `.step`, `.rule`, and regions carrying
+`data-box` become native automatically. Explicit markers are still useful when
+an element has no recognized semantic class:
 
-- Trends, comparisons, distributions, and portfolio shares: `add_native_chart`.
-  The chart keeps its embedded workbook, labels, axes, legend, and theme-aware
-  series formatting. Do not draw bars or lines manually.
-- Matrices, schedules, ownership, and status registers: `add_native_table`.
-  Do not simulate a table with one rectangle and text box per cell.
-- Photography, screenshots, and diagrams: `add_image_cover` with `focal_x`,
-  `focal_y`, and `alt_text`; crop natively instead of stretching or baking the
-  image into a slide screenshot.
-- Repeated branded elements: edit the source master/layout/placeholders. Do not
-  duplicate them as slide-level shapes.
-- Rich editorial copy: `add_rich_text` for editable mixed-format runs, native
-  bullets, hierarchy, and one-to-four text columns. Do not split every emphasis
-  change into a separate text box.
-- Simple processes: `add_grouped_process` creates an editable native group
-  with connectors behind nodes. Complex topology: Graphviz or a sourced
-  visual. Do not turn every concept into a card grid.
-- Cross-slide pacing: `set_slide_transition` only when it improves continuity.
-  For intentional object continuity, assign matching `set_morph_identity`
-  values on adjacent slides and use the `morph` transition. Keep transitions
-  restrained; never use animation to hide poor hierarchy.
-- Interactive references: `set_shape_hyperlink`; accessibility:
-  `set_accessibility` on meaningful charts, tables, images, and controls.
-- Native gradients and restrained depth are available through
-  `apply_gradient_fill` and `apply_soft_shadow`. They are accents, not a reason
-  to add extra containers.
-
-SmartArt, embedded video, complex animation timelines, and existing custom
-chart features must be preserved through the template-first OOXML path. If
-they already exist in a supplied deck, edit their data/text in place or leave
-them untouched; never flatten or reconstruct them with basic shapes.
-
-## PowerPoint capability matrix
-
-Choose the route by editability and fidelity, not by whichever API is easiest:
-
-| Capability | Create new | Edit supplied template | QA/preservation |
-| --- | --- | --- | --- |
-| Theme fonts/colors | `theme_from_presentation` or design tokens | inherit theme/master | inventory themes, masters, layouts |
-| Placeholders | use source layout | `fill_placeholder` | report type/index and empty placeholders |
-| Rich text/bullets/columns | `add_rich_text` | `replace_rich_text` | text fit, wrap, density |
-| Charts + workbook | `add_native_chart` | `replace_chart_data` | chart/workbook inventory and series validation |
-| Tables | `add_native_table` | `replace_table_cell` | native-table inventory |
-| Photos/screenshots | `add_image_cover` with focal crop | `replace_image` | crop, clipping, media inventory |
-| Groups/connectors | `add_grouped_process` | preserve/edit targeted child content | group/connector inventory |
-| Hyperlinks/accessibility | native helpers | retain or patch target | hyperlink/alt-text counts |
-| Gradients/shadows | native DrawingML helpers | preserve existing effects | OOXML inventory + Chromium preview |
-| Transitions/Morph | `set_slide_transition`, `set_morph_identity` | preserve existing transition | transition/Morph inventory |
-| SmartArt | start from a suitable template | preserve package parts | SmartArt-part inventory |
-| Audio/video/OLE | insert only from a proven template workflow | preserve relationships/media | inventory; playback requires PowerPoint |
-| Complex animations | author from a suitable template | preserve `p:timing` unchanged | animation-timeline inventory |
-
-“Preserve” is a supported capability: for SmartArt, media, OLE, and complex
-animation, structural fidelity is higher when EvoFlux leaves untargeted
-package parts byte-identical than when it approximates them with shapes.
-
-Example:
-
-```python
-from app.agent.builtin_skills.pptx.scripts.office_features import (
-    add_native_chart,
-    set_accessibility,
-)
-
-chart = add_native_chart(
-    slide,
-    ["Q1", "Q2", "Q3", "Q4"],
-    {"Actual": [12, 18, 24, 31], "Plan": [14, 19, 23, 28]},
-    left=visual_region.left,
-    top=visual_region.top,
-    width=visual_region.width,
-    height=visual_region.height,
-    kind="line",
-    title="Actual growth moves ahead of plan",
-    theme=theme,
-    guard=guard,
-)
-set_accessibility(
-    chart,
-    title="Actual versus plan",
-    description="Line chart comparing quarterly actual and planned growth.",
-)
+```html
+<h1 class="title" data-pptx-role="title">
+  A clear assertion, not a topic label
+</h1>
+<div data-box data-pptx-shape="roundRect">Editable card</div>
+<div data-pptx-native="line"></div>
+<svg data-pptx-native="image" viewBox="0 0 100 100">...</svg>
 ```
 
-## Narrative and layout rules
+The exporter removes promoted objects during background capture and recreates
+them at browser-computed coordinates. Solid fills, borders, rounded rectangles,
+ellipses, rules, raster images, and captured SVG elements stay individually
+selectable. CSS gradients, clipping, filters, transformed shapes, text strokes,
+and decorative compounds should use `data-pptx-raster`; they stay in the visual
+background instead of being approximated badly.
 
-- The title slide is minimal: title, concise subtitle, and only necessary
-  metadata.
-- Each slide has one job and one clear takeaway. Write audience-facing copy;
-  never expose planning notes or generation instructions.
-- Use an assertion as the title when possible ("Renewals drive 70% of growth"),
-  not a generic label ("Revenue").
-- Select a density profile before writing or laying out the slide:
-  - `editorial`: keynote/storytelling slides with one dominant visual;
-  - `executive-dense`: decision slides with several evidence blocks;
-  - `operational`: plans, matrices, roadmaps, registers, and workstream views
-    containing many atomic actions and metadata fields.
-- Choose the profile from the content and audience, never by forcing all content
-  into the editorial default. A supplied template or reference slide is the
-  visual contract: infer its density, typography, grid, and repeated components.
-- Build a content-completeness ledger before layout. Preserve every required
-  workstream, action, KPI, owner/PIC, target, date, dependency, and status.
-  Do not delete or collapse fields merely to create more whitespace.
-- Prefer fewer, stronger elements only in the editorial profile. Dense profiles
-  should preserve useful information atoms and create hierarchy through a
-  micro-grid, repeated rows, dividers, labels, and compact semantic icons.
-- Build the spatial skeleton before adding copy: reserve the title, content,
-  visual, and footer zones; then fill only those zones.
-- Editorial slides are one composition, not a dashboard. Operational slides may
-  use structured repeated containers, but the container must encode hierarchy;
-  avoid decorative card soup and oversized corner radii.
-- Use rules, alignment, whitespace, grouping, and flat borders before adding a
-  rounded container. Profile-aware QA allows repeated operational panels but
-  still flags excessive corner treatments.
-- Titles and banner copy must remain on one line. If they wrap, shorten the
-  assertion or select another silhouette.
-- Never solve overflow by stacking text boxes, placing copy over a chart/image,
-  or shrinking below the selected profile's minimum. Use `[allow-overlap]` in a
-  shape name only for a visually inspected, intentional composition such as a
-  labeled image overlay.
-- Default 16:9 typography:
-  - `editorial`: 38–44 pt title, 22–28 pt subhead, 17–22 pt body;
-  - `executive-dense`: 28–34 pt title, 14–18 pt section, 10–14 pt body,
-    7.5–10 pt metadata;
-  - `operational`: 24–30 pt title, 12–16 pt section, 8–11.5 pt body,
-    7–9.5 pt metadata.
-  Match a supplied template when one exists.
-- Use consistent left/right margins and align shapes to a deliberate grid.
-- Operational slides should use nested grids: pillar → objective → action row →
-  metadata. Keep row heights, gutters, icon sizes, label positions, and
-  baselines consistent across repeated components.
-- Avoid ornamental pills and decorative UI styling.
-- Use icons as semantic labels, not decoration. Profile-aware QA permits more
-  icons in dense operational slides. Keep one icon family throughout the deck;
-  compact glyphs may be 0.18–0.38 inch when their strokes remain legible.
-- Use the built-in Lucide subset for UI/business symbols. It is a curated ISC
-  vector catalog, recolorable before insertion and convertible to PowerPoint
-  shapes in modern Office. Use image generation for illustrative imagery, not
-  for icons, logos, arrows, badges, or interface glyphs.
-- Use visual assets when they clarify the idea. Crop deliberately and do not
-  stretch images.
-- Use native PowerPoint charts and tables so the result stays editable. Chart
-  titles, axes, units, labels, legends, and source notes must agree with data.
-- Build connectors before nodes for diagrams so edges remain behind shapes.
-- Put source URLs for researched claims and assets in speaker notes.
+For large display titles, use explicit `<br>` elements when the line break is
+part of the art direction. Browser and PowerPoint font metrics can differ; an
+explicit break preserves the intended rhythm across both renderers.
 
-## Template and edit rules
+Add `data-box` to peer-level structural regions such as panels, columns, cards,
+and diagram nodes. In `max` mode this both enables collision QA and makes a
+supported solid region an editable PowerPoint shape. For intentional overlap,
+add `data-overlap="allow"` to one region. Use `data-qa-ignore` only for purely
+decorative objects and never to hide real text overflow.
 
-- Preserve masters, layouts, placeholders, notes, animations, theme parts, and
-  relationships unless the user explicitly asks to change them.
-- Default every inherited object to `keep`. Rewrite, replace, or delete it only
-  when the mutation map says so.
-- Reuse an existing source slide/frame when possible. Never replace a branded
-  template slide with a screenshot or a visually similar reconstruction.
-- Keep inherited font family, size, weight, color, spacing, and alignment.
-  Shorten or remap content before shrinking typography.
-- Fill or deliberately remove every inherited content placeholder. Do not
-  silently delete date, footer, or slide-number placeholders.
-- Prefer changing text, data, and local formatting in a copied deck. Do not
-  flatten the deck into screenshots.
-- Re-render representative descendants after any master/layout change.
-- For unsupported `python-pptx` features, patch only the smallest OOXML part
-  and validate the package again.
+Workspace images and SVG files must use `asset://relative/path`. Remote URLs,
+scripts, iframes, forms, imported CSS, executable attributes, and filesystem URLs
+are rejected. Prefer inline SVG and CSS geometry for diagrams; they remain sharp
+in the rendered background and need no image model.
 
-## Required QA
+## Visual quality bar
 
-For new decks, use `pptx_engine(action="validate", path="output.pptx",
-render=true)`. The compose action already runs the same gate when `render=true`.
+- One communication job per slide. Titles should state the takeaway.
+- Use composition, scale, whitespace, and contrast before adding boxes.
+- Avoid dashboard-like grids unless the content is genuinely a dashboard.
+- Use at most three major content groups on a normal slide.
+- Body copy should generally be 18–24 px or larger; titles 44–72 px.
+- Keep text concise. The configured word limit is a warning threshold, not a
+  target to fill.
+- Vary the rhythm across the deck: cover, assertion, process, evidence,
+  comparison, architecture, and closing slides should not share one repeated
+  card template.
+- Build diagrams with a clear reading order and meaningful relationships.
+- Do not use emoji as icons. Use inline SVG, CSS shapes, or workspace assets.
+- Never deliver a slide with clipped text, broken images, accidental overlaps,
+  or content outside the 1600×900 canvas.
 
-For a template edit, include the unmodified source:
+## Sources and notes
 
-```bash
-python "{SKILL_DIR}/scripts/qa.py" output.pptx \
-  --render-dir /tmp/pptx-render --compare-to template.pptx
-```
+Put presenter guidance in `speaker_notes`. Put traceable URLs or source labels in
+the slide's `sources` array. The exporter appends them to notes under `[Sources]`.
+Do not place raw citations across the visual surface unless the audience needs
+them there.
 
-The structural gate rejects missing slides, out-of-canvas objects, broken
-charts, and placeholder residue. Visual QA uses the bundled Chromium OpenXML
-renderer, not LibreOffice. It emits one PNG per slide, checks DOM clipping and
-canvas overflow, and reports `engine: chromium-openxml` with `confidence:
-medium`. Treat image diffs and overflow heuristics as prompts for full-size
-visual inspection, not proof of Microsoft PowerPoint pixel parity.
+## Final handoff
 
-The layout gate also reports:
-
-- text boxes whose estimated copy exceeds their geometry;
-- one-line titles likely to wrap;
-- text or content shapes overlapping by at least 12% of the smaller item;
-- excessive rounded-card/UI composition;
-- mixed icon families, raster icons, illegibly small icons, or icon overload;
-- slides with too many independent shapes or text blocks.
-
-Decks of five or more slides must include at least one native chart, table, or
-non-icon picture. Shape-only decks fail QA by default; use
-`--allow-shape-only` only when that treatment is an explicit design decision
-you can explain in the final response.
-
-The report includes `office_feature_summary`, per-slide editable-object counts,
-and a package-wide `powerpoint_features` inventory for masters, layouts,
-themes, charts, embedded workbooks, SmartArt parts, audio/video, notes,
-comments, OLE objects, transitions, Morph, animation timelines, placeholders,
-gradients, shadows, hyperlinks, and groups. Embedded media is structurally
-preserved; Chromium QA explicitly warns that it cannot validate playback. A
-deck of five or more slides with no chart, table, or non-icon picture receives
-a shape-only warning.
-
-Search and insert the curated icon catalog:
-
-```bash
-python "{SKILL_DIR}/scripts/icons.py" "growth analytics"
-```
-
-Validate every selected icon together before building so one run reports all
-unsupported names:
-
-```bash
-python "{SKILL_DIR}/scripts/icons.py" --check trending-up chart-line shield-check
-```
-
-```python
-from app.agent.builtin_skills.pptx.scripts.icons import add_icon
-
-add_icon(
-    slide,
-    "trending-up",
-    left=Inches(8.5),
-    top=Inches(2.1),
-    size=Inches(0.7),
-    color=theme.accent,
-    guard=guard,
-)
-```
-
-When `--compare-to` is supplied, unchanged template design debt is baselined;
-new or worsened overlap, overflow, density, and rounded-card issues still fail.
-
-For a template edit, both `template.py verify` and `qa.py` must pass. A valid
-deck with unexplained master/layout/theme or non-target slide changes is still
-a failed edit.
-
-Inspect every rendered slide at full size and confirm:
-
-- no unintended overlap, clipping, wrapping, or off-canvas content;
-- no unresolved placeholders, empty slides, duplicated accidental titles, or
-  inconsistent footers;
-- images are sharp and cropped correctly;
-- chart values, labels, colors, notes, and sources are correct;
-- the deck tells a coherent story from first slide to final action.
-
-If the bundled Chromium runtime is unavailable, the report explicitly falls
-back to `engine: structural-only`; disclose that visual QA could not be
-completed.
+Report the output path, slide count, QA status, warning count, and editable
+object counts split by text, shape, and image. State plainly which complex
+effects remain in the pixel-stable background.
