@@ -100,7 +100,17 @@ def _safe_resolve(root: Path, rel: str) -> Path:
 
 def _guess_media_type(path: Path) -> str:
     mime, _ = mimetypes.guess_type(str(path))
-    return mime or "application/octet-stream"
+    if mime:
+        return mime
+    # Windows MIME maps often omit modern types the UI still serves.
+    return _FALLBACK_MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream")
+
+
+_FALLBACK_MEDIA_TYPES = {
+    ".webp": "image/webp",
+    ".avif": "image/avif",
+    ".wasm": "application/wasm",
+}
 
 
 async def _session_workspace(session_id: str) -> Path:

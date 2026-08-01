@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import hashlib
 import io
 import json
@@ -3820,13 +3821,40 @@ def _recorder_ext(manager: WebBridgeManager, ext_id: str) -> list[str]:
 async def _run(manager: WebBridgeManager, coro_factory, sent: list[str]):
     """Drive a send_command task: start it, answer the pending request, await."""
     task = asyncio.create_task(coro_factory())
-    for _ in range(4):
-        await asyncio.sleep(0)
-        if sent:
-            break
+    # Windows SelectorEventLoop often needs more than a few bare yields
+    # before the send coroutine reaches ``fake_send``.
+    deadline = time.monotonic() + 2.0
+    while not sent and time.monotonic() < deadline:
+        await asyncio.sleep(0.01)
+    if not sent:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        raise AssertionError("send_command never enqueued a wire payload")
     request_id = json.loads(sent[-1])["request_id"]
     manager.handle_response(request_id, success=True, data={"ok": 1}, error=None)
     return await task
+
+
+async def test_active_extension_prefers_later_registration_on_last_seen_tie(
+    manager: WebBridgeManager,
+):
+    """When two extensions share last_seen, the newer registration wins.
+
+    Windows clocks often stamp both registrations with the same float, and
+    ``max(..., key=last_seen)`` then keeps the *first* — sticky session
+    routing would bind to the older extension forever.
+    """
+    shared = time.time()
+    _recorder_ext(manager, "older")
+    _recorder_ext(manager, "newer")
+    for ext_id in ("older", "newer"):
+        manager.get_extension(ext_id).last_seen = shared
+        manager.get_extension(ext_id).connected_at = shared
+
+    active = manager.get_active_extension()
+    assert active is not None
+    assert active.extension_id == "newer"
 
 
 async def test_session_sticks_to_first_extension(manager: WebBridgeManager):

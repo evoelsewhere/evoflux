@@ -30,6 +30,7 @@ interface GitWorkspacePanelProps {
     repository: RepositoryCodeReviews,
     item: CodeReviewItem,
   ) => Promise<void>
+  onOpenWorkspace?: () => void
 }
 
 /**
@@ -44,6 +45,7 @@ export function GitWorkspacePanel({
   projectId,
   focus,
   onOpenInChat,
+  onOpenWorkspace,
 }: GitWorkspacePanelProps) {
   const [selectedGitWorkspace, setSelectedGitWorkspace] = useState<string | null>(null)
   const project = useProjectQuery(projectId).data ?? null
@@ -98,14 +100,33 @@ export function GitWorkspacePanel({
       </header>
 
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        {view === 'changes' && workspace ? (
-          <SourceControlPanel
-            open={open}
-            workspace={gitWorkspace || workspace}
-            onWorkspaceChange={setSelectedGitWorkspace}
-            project={project}
-            credentialLabel={credentialLabel}
-          />
+        {view === 'changes' ? (
+          workspace ? (
+            <SourceControlPanel
+              open={open}
+              workspace={gitWorkspace || workspace}
+              onWorkspaceChange={setSelectedGitWorkspace}
+              project={project}
+              credentialLabel={credentialLabel}
+            />
+          ) : (
+            <div className="flex h-full min-h-0 flex-col items-center justify-center gap-3 px-6 text-center">
+              <GitBranch size={18} className="text-(--color-text-muted)" aria-hidden />
+              <p className="text-sm font-medium text-(--color-text)">No workspace open</p>
+              <p className="max-w-xs text-xs text-(--color-text-muted)">
+                Open a coding workspace to review and commit local changes.
+              </p>
+              {onOpenWorkspace && (
+                <button
+                  type="button"
+                  onClick={onOpenWorkspace}
+                  className="focus-ring-control mt-1 rounded-lg border border-(--color-border) bg-(--bg-key) px-3 py-1.5 text-xs font-medium text-(--color-text) transition-colors hover:border-(--color-border-strong)"
+                >
+                  Open workspace
+                </button>
+              )}
+            </div>
+          )
         ) : (
           <PullRequestsPanel
             open={open}

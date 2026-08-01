@@ -24,11 +24,12 @@
  * BrowserViewer keeps its own drag handle — only their configs are shared.
  */
 
-import { useEffect } from 'react'
+import { forwardRef, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import { X } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useModalFocus } from '@/hooks/useModalFocus'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { panelTransition, useMotionPreset } from '@/lib/motion'
@@ -96,7 +97,7 @@ interface SidePanelProps {
   children: ReactNode
 }
 
-export function SidePanel({
+export const SidePanel = forwardRef<HTMLElement, SidePanelProps>(function SidePanel({
   storageKey,
   defaultWidth,
   minWidth,
@@ -121,13 +122,15 @@ export function SidePanel({
   contentClassName,
   onWidthChange,
   children,
-}: SidePanelProps) {
+}, ref) {
   const detectedMobile = useIsMobile()
   const prefersReducedMotion = useReducedMotion()
   const motionPreset = useMotionPreset()
   const breakpointOverlay = mobileOverlay && (mobileProp ?? detectedMobile)
   const overlay = !fillParent && (forceOverlay || breakpointOverlay)
+  const overlayModal = overlay && onClose != null
   const fixedDesktopDrawer = desktopOverlay && !overlay && !desktopOverlayInner
+  useModalFocus(overlayModal, onClose)
   const resizable = useResizableWidth({
     storageKey,
     defaultWidth,
@@ -159,54 +162,35 @@ export function SidePanel({
     ? { width }
     : { width }
 
-  return (
-    <motion.aside
-      style={panelStyle}
-      initial={
-        isInner || !animated
-          ? false
-          : { opacity: 0, x: travel }
-      }
-      animate={
-        isInner
-          ? undefined
-          : { opacity: 1, x: 0 }
-      }
-      exit={
-        isInner
-          ? undefined
-          : { opacity: 0, x: travel }
-      }
-      transition={
-        isInner || !animated
-          ? { duration: 0 }
-          : fade
-          ? motionPreset.transition
-          : panelTransition(motionPreset)
-      }
-      className={cn(
-        fillParent
-          ? 'relative box-border flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden'
-          : forceOverlay
-          ? 'fixed inset-0 z-(--z-overlay) box-border min-h-0 min-w-0 w-full max-w-none overflow-hidden border-l border-(--color-border) shadow-xl'
-          : fixedDesktopDrawer
-          ? cn(
-              'fixed inset-y-0 right-0 z-(--z-overlay) box-border flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border)',
-              desktopOverlayShadow ? 'shadow-xl' : 'shadow-none',
-            )
-          : desktopOverlayInner && !overlay
-          ? 'relative box-border flex h-full min-h-0 min-w-0 shrink-0 flex-col border-l border-(--color-border)'
-          : mobileOverlay
-          ? 'fixed bottom-0 right-0 z-(--z-overlay) box-border min-h-0 min-w-0 w-full overflow-hidden border-l border-(--color-border) shadow-xl md:relative md:inset-y-auto md:right-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none'
-          : 'relative box-border flex h-full min-w-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border)',
-        breakpointOverlay && !forceOverlay && 'mobile-safe-top max-w-none',
-        forceOverlay && 'max-w-none',
-        className,
-      )}
-      aria-label={ariaLabel}
-    >
-      {/* Resize handle sits outside the overflow-hidden content wrapper so
-          it is never clipped and always receives pointer events. */}
+  const panelSurfaceClassName = cn(
+    fillParent
+      ? 'relative box-border flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden'
+      : overlay
+      ? cn(
+          'pointer-events-auto box-border flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-(--color-border) shadow-xl',
+          forceOverlay
+            ? 'h-full w-full max-w-none'
+            : 'mobile-safe-top fixed inset-x-0 bottom-0 w-full max-w-none',
+        )
+      : forceOverlay
+      ? 'fixed inset-0 z-(--z-overlay) box-border min-h-0 min-w-0 w-full max-w-none overflow-hidden border-l border-(--color-border) shadow-xl'
+      : fixedDesktopDrawer
+      ? cn(
+          'fixed inset-y-0 right-0 z-(--z-overlay) box-border flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border)',
+          desktopOverlayShadow ? 'shadow-xl' : 'shadow-none',
+        )
+      : desktopOverlayInner && !overlay
+      ? 'relative box-border flex h-full min-h-0 min-w-0 shrink-0 flex-col border-l border-(--color-border)'
+      : mobileOverlay
+      ? 'fixed bottom-0 right-0 z-(--z-overlay) box-border min-h-0 min-w-0 w-full overflow-hidden border-l border-(--color-border) shadow-xl md:relative md:inset-y-auto md:right-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none'
+      : 'relative box-border flex h-full min-w-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border)',
+    !overlay && breakpointOverlay && !forceOverlay && 'mobile-safe-top max-w-none',
+    !overlay && forceOverlay && 'max-w-none',
+    className,
+  )
+
+  const panelBody = (
+    <>
       {!fillParent && !overlay && widthOverride === undefined && (
         <div
           role="separator"
@@ -260,6 +244,67 @@ export function SidePanel({
         )}
         {children}
       </div>
+    </>
+  )
+
+  return (
+    <motion.aside
+      ref={ref}
+      style={overlay ? undefined : panelStyle}
+      initial={
+        isInner || !animated
+          ? false
+          : overlay
+          ? { opacity: 0 }
+          : { opacity: 0, x: travel }
+      }
+      animate={
+        isInner
+          ? undefined
+          : overlay
+          ? { opacity: 1 }
+          : { opacity: 1, x: 0 }
+      }
+      exit={
+        isInner
+          ? undefined
+          : overlay
+          ? { opacity: 0 }
+          : { opacity: 0, x: travel }
+      }
+      transition={
+        isInner || !animated
+          ? { duration: 0 }
+          : fade
+          ? motionPreset.transition
+          : overlay
+          ? motionPreset.transition
+          : panelTransition(motionPreset)
+      }
+      className={cn(
+        overlay
+          ? 'fixed inset-0 z-(--z-overlay) pointer-events-none mobile-safe-overlay'
+          : panelSurfaceClassName,
+      )}
+      aria-label={ariaLabel}
+      aria-modal={overlayModal ? true : undefined}
+      data-modal-focus={overlayModal ? 'true' : undefined}
+    >
+      {overlayModal && (
+        <button
+          type="button"
+          aria-label={closeLabel}
+          className="pointer-events-auto fixed inset-0 bg-(--color-overlay)"
+          onClick={onClose}
+        />
+      )}
+      {overlay ? (
+        <div className={panelSurfaceClassName} style={panelStyle}>
+          {panelBody}
+        </div>
+      ) : (
+        panelBody
+      )}
     </motion.aside>
   )
-}
+})

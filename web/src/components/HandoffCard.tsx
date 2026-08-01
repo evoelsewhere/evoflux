@@ -96,8 +96,10 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
 
           {hasDetails && (
             <button
+              type="button"
               onClick={() => setExpanded((v) => !v)}
               aria-expanded={expanded}
+              aria-label={expanded ? 'Collapse handoff details' : 'Expand handoff details'}
               title={expanded ? 'Collapse' : 'Expand'}
               className={[
                 'flex items-center justify-center shrink-0',
@@ -106,13 +108,13 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
                 compact ? 'h-4 w-4' : 'h-5 w-5',
                 'transition-[background-color,border-color,box-shadow,opacity] duration-(--motion-fast)',
                 'hover:border-(--color-accent) hover:text-(--color-accent)',
-                'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-(--color-accent)',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
                 'active:scale-90',
               ].join(' ')}
             >
               {expanded
-                ? <ChevronUp size={compact ? 10 : 12} />
-                : <ChevronDown size={compact ? 10 : 12} />}
+                ? <ChevronUp size={compact ? 10 : 12} aria-hidden="true" />
+                : <ChevronDown size={compact ? 10 : 12} aria-hidden="true" />}
             </button>
           )}
         </div>
@@ -141,9 +143,9 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
           {expanded && hasDetails && (
             <motion.div
               key="handoff-details"
-              initial={{ height: 0, opacity: 0 }}
+              initial={preset.intensity === 'reduced' ? false : { height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
+              exit={preset.intensity === 'reduced' ? undefined : { height: 0, opacity: 0 }}
               transition={panelTransition(preset)}
               className="overflow-hidden"
             >

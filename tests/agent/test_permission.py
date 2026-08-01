@@ -433,3 +433,46 @@ async def test_auto_allow_all_pending():
 
     # All tasks should complete now
     await asyncio.gather(*tasks)
+
+
+@pytest.mark.asyncio
+async def test_interrupt_cancel_publishes_permission_replied():
+    """Interrupt while blocked must dismiss the FE approval UI via SSE."""
+    from unittest.mock import AsyncMock, patch
+
+    service = PermissionService(
+        session_id="member-1", stream_session_id="lead-1", mode="ask"
+    )
+    task = asyncio.create_task(service.ask("shell", ["rm -rf /tmp/x"]))
+    for _ in range(100):
+        if service.list_pending():
+            break
+        await asyncio.sleep(0.005)
+    assert service.list_pending()
+    request_id = service.list_pending()[0].id
+
+    pushed: list = []
+
+    async def _capture(session_id: str, envelope) -> None:
+        pushed.append((session_id, envelope))
+
+    with patch(
+        "app.services.memory_stream_store.push_event",
+        new=AsyncMock(side_effect=_capture),
+    ):
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    replied = [
+        (sid, env)
+        for sid, env in pushed
+        if getattr(env, "event", None) == "permission_replied"
+    ]
+    assert len(replied) == 1
+    session_id, envelope = replied[0]
+    assert session_id == "lead-1"
+    assert envelope.data["request_id"] == request_id
+    assert envelope.data["session_id"] == "member-1"
+    assert envelope.data["reply"] == "reject"
+    assert service.list_pending() == []

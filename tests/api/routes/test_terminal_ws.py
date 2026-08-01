@@ -4,6 +4,7 @@ the ws ↔ PTY bridge (the seam a browser click would exercise)."""
 from __future__ import annotations
 
 import json
+import sys
 
 import pytest
 from fastapi import FastAPI
@@ -40,7 +41,16 @@ def test_terminal_ws_echo_roundtrip(client):
             f"/api/team/{sid}/terminal?cols=80&rows=24"
         ) as ws:
             ws.send_text(
-                json.dumps({"type": "input", "data": "echo WS_MARKER_$((2*3))\n"})
+                json.dumps(
+                    {
+                        "type": "input",
+                        "data": (
+                            "echo WS_MARKER_6\n"
+                            if sys.platform == "win32"
+                            else "echo WS_MARKER_$((2*3))\n"
+                        ),
+                    }
+                )
             )
             got = b""
             for _ in range(80):

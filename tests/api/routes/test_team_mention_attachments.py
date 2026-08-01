@@ -129,9 +129,10 @@ class TestSafeJoin:
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:
     # Populate a small workspace fixture: two text files and one PNG.
-    (tmp_path / "README.md").write_text("# project\n", encoding="utf-8")
-    (tmp_path / "notes.txt").write_text("hello", encoding="utf-8")
-    (tmp_path / "code.py").write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+    # write_bytes keeps LF newlines on Windows (write_text defaults to CRLF).
+    (tmp_path / "README.md").write_bytes(b"# project\n")
+    (tmp_path / "notes.txt").write_bytes(b"hello")
+    (tmp_path / "code.py").write_bytes(b"one\ntwo\nthree\nfour\n")
     (tmp_path / "img.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
     return tmp_path
 
@@ -289,7 +290,7 @@ async def test_line_mention_attaches_only_selected_lines(workspace):
 
 @pytest.mark.asyncio
 async def test_line_mention_supports_extensionless_source_files(tmp_path):
-    (tmp_path / "Makefile").write_text("build:\n\ttest\n", encoding="utf-8")
+    (tmp_path / "Makefile").write_bytes(b"build:\n\ttest\n")
     team = _make_team()
     out = await collect_mention_attachments(
         message="comment on @Makefile#L2",

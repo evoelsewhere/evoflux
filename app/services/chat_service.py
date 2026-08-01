@@ -104,7 +104,7 @@ async def heal_orphaned_tool_calls(db: AsyncSession, session_id: UUID) -> int:
     Returns the number of synthetic rows inserted (``0`` in the healthy
     case).  Caller is responsible for the commit.
     """
-    boundary = await _boundary_created_at(db, session_id)
+    boundary = await _revert_boundary(db, session_id)
     summary_stmt = (
         select(SessionMessage)
         .where(col(SessionMessage.session_id) == session_id)
@@ -113,7 +113,10 @@ async def heal_orphaned_tool_calls(db: AsyncSession, session_id: UUID) -> int:
     )
     summary_stmt = (
         _before_boundary(summary_stmt, boundary)
-        .order_by(col(SessionMessage.created_at).desc())
+        .order_by(
+            col(SessionMessage.created_at).desc(),
+            col(SessionMessage.id).desc(),
+        )
         .limit(1)
     )
     latest_summary = (await db.exec(summary_stmt)).first()
@@ -154,25 +157,53 @@ async def heal_orphaned_tool_calls(db: AsyncSession, session_id: UUID) -> int:
     if not missing_by_row:
         return 0
 
-    # Anchor synthetic timestamps to the orphaned assistant message so
-    # that even if the user sends the next message in the same micro-
-    # second as the heal runs, the LLM input order is unambiguous:
-    # ``assistant{tool_calls} → tool (synth) → tool (synth) → … → user``.
-    # ``+1µs * (i+1)`` keeps multiple stubs strictly monotonic relative
-    # to one another, and well before any new ``utcnow()`` write.
+    # Anchor synthetic timestamps so LLM order stays
+    # ``assistant{tool_calls} → tool (synth) → … → next message``.
+    # Prefer a slot strictly before the next chronological row — a bare
+    # ``+1µs`` is not enough when SQLite/Windows collapses sub-ms precision
+    # and ``ORDER BY (created_at, id)`` then parks a fresh UUID7 stub after
+    # later same-tick user/assistant rows.
     healed_ids: list[str] = []
     for row, missing in missing_by_row:
+        next_row = (
+            await db.exec(
+                select(SessionMessage)
+                .where(col(SessionMessage.session_id) == session_id)
+                .where(
+                    or_(
+                        col(SessionMessage.created_at) > row.created_at,
+                        and_(
+                            col(SessionMessage.created_at) == row.created_at,
+                            col(SessionMessage.id) > row.id,
+                        ),
+                    )
+                )
+                .order_by(
+                    col(SessionMessage.created_at).asc(),
+                    col(SessionMessage.id).asc(),
+                )
+                .limit(1)
+            )
+        ).first()
         for i, tc in enumerate(missing):
             stub = ToolMessage(
                 content=_INTERRUPTED_TOOL_RESULT,
                 tool_call_id=tc["id"],
                 name=tc.get("function", {}).get("name", "unknown"),
             )
+            if next_row is not None and next_row.created_at > row.created_at:
+                gap = next_row.created_at - row.created_at
+                stub_at = row.created_at + (gap * (i + 1)) / (len(missing) + 1)
+            else:
+                # Tail orphan, or same-timestamp successor: step forward in
+                # whole milliseconds so the stub stays ahead of later rows
+                # even when sub-ms timestamps are truncated.
+                stub_at = row.created_at + timedelta(milliseconds=i + 1)
             await save_message(
                 db,
                 session_id,
                 stub,
-                created_at=row.created_at + timedelta(microseconds=i + 1),
+                created_at=stub_at,
             )
             healed_ids.append(tc["id"])
 
@@ -308,18 +339,55 @@ async def _revert_boundary(db: AsyncSession, session_id: UUID) -> SessionMessage
     return row
 
 
-async def _boundary_created_at(db: AsyncSession, session_id: UUID) -> datetime | None:
-    boundary = await _revert_boundary(db, session_id)
-    return boundary.created_at if boundary else None
+def _before_boundary(stmt, boundary: SessionMessage | None):
+    """Restrict *stmt* to rows strictly before the revert boundary.
 
-
-def _before_boundary(stmt, boundary: datetime | None):
+    Order is ``(created_at, id)`` so rows that share a timestamp with the
+    boundary still total-order correctly (common when several messages are
+    flushed in the same tick).
+    """
     if boundary is None:
         return stmt
-    return stmt.where(col(SessionMessage.created_at) < boundary)
+    return stmt.where(
+        or_(
+            col(SessionMessage.created_at) < boundary.created_at,
+            and_(
+                col(SessionMessage.created_at) == boundary.created_at,
+                col(SessionMessage.id) < boundary.id,
+            ),
+        )
+    )
 
 
-def _visible_messages_stmt(session_id: UUID, boundary: datetime | None = None):
+def _after_boundary(stmt, boundary: SessionMessage):
+    """Restrict *stmt* to rows strictly after the revert boundary."""
+    return stmt.where(
+        or_(
+            col(SessionMessage.created_at) > boundary.created_at,
+            and_(
+                col(SessionMessage.created_at) == boundary.created_at,
+                col(SessionMessage.id) > boundary.id,
+            ),
+        )
+    )
+
+
+def _on_or_after_boundary(stmt, boundary: SessionMessage):
+    """Restrict *stmt* to the boundary row and everything after it."""
+    return stmt.where(
+        or_(
+            col(SessionMessage.created_at) > boundary.created_at,
+            and_(
+                col(SessionMessage.created_at) == boundary.created_at,
+                col(SessionMessage.id) >= boundary.id,
+            ),
+        )
+    )
+
+
+def _visible_messages_stmt(
+    session_id: UUID, boundary: SessionMessage | None = None
+):
     """Base query: all LLM-visible messages for a session, oldest first.
 
     ``exclude_from_context`` is the LLM-context flag. UI-only hiding uses
@@ -331,15 +399,21 @@ def _visible_messages_stmt(session_id: UUID, boundary: datetime | None = None):
         .where(~col(SessionMessage.exclude_from_context))
     )
     return _before_boundary(stmt, boundary).order_by(
-        col(SessionMessage.created_at).asc()
+        col(SessionMessage.created_at).asc(),
+        col(SessionMessage.id).asc(),
     )
 
 
-def _history_messages_stmt(session_id: UUID, boundary: datetime | None = None):
+def _history_messages_stmt(
+    session_id: UUID, boundary: SessionMessage | None = None
+):
     stmt = select(SessionMessage).where(col(SessionMessage.session_id) == session_id)
     if boundary is not None:
         stmt = _before_boundary(stmt, boundary)
-    return stmt.order_by(col(SessionMessage.created_at).asc())
+    return stmt.order_by(
+        col(SessionMessage.created_at).asc(),
+        col(SessionMessage.id).asc(),
+    )
 
 
 def _is_history_visible(row: SessionMessage) -> bool:
@@ -370,7 +444,7 @@ async def get_messages(db: AsyncSession, session_id: UUID) -> list[ChatMessage]:
     """
     logger.debug("loading_messages session_id={}", session_id)
     try:
-        boundary = await _boundary_created_at(db, session_id)
+        boundary = await _revert_boundary(db, session_id)
         rows = (await db.exec(_history_messages_stmt(session_id, boundary))).all()
         db_messages = [row for row in rows if _is_history_visible(row)]
         logger.debug(
@@ -398,7 +472,7 @@ async def get_visible_session_rows(
     need the raw row, the same as ``get_team_history`` already fetches for
     the main session's message list.
     """
-    boundary = await _boundary_created_at(db, session_id)
+    boundary = await _revert_boundary(db, session_id)
     rows = (await db.exec(_history_messages_stmt(session_id, boundary))).all()
     return [
         row
@@ -426,7 +500,7 @@ async def get_messages_for_llm(db: AsyncSession, session_id: UUID) -> list[ChatM
     """
     logger.debug("loading_llm_messages session_id={}", session_id)
     try:
-        boundary = await _boundary_created_at(db, session_id)
+        boundary = await _revert_boundary(db, session_id)
         # Find the latest summary message
         summary_stmt = (
             select(SessionMessage)
@@ -436,7 +510,10 @@ async def get_messages_for_llm(db: AsyncSession, session_id: UUID) -> list[ChatM
         )
         summary_stmt = (
             _before_boundary(summary_stmt, boundary)
-            .order_by(col(SessionMessage.created_at).desc())
+            .order_by(
+                col(SessionMessage.created_at).desc(),
+                col(SessionMessage.id).desc(),
+            )
             .limit(1)
         )
         latest_summary = (await db.exec(summary_stmt)).first()
@@ -506,10 +583,13 @@ async def undo_session_messages(db: AsyncSession, session_id: UUID) -> BoundaryS
         select(SessionMessage)
         .where(col(SessionMessage.session_id) == session_id)
         .where(col(SessionMessage.role) == "user")
-        .order_by(col(SessionMessage.created_at).desc())
+        .order_by(
+            col(SessionMessage.created_at).desc(),
+            col(SessionMessage.id).desc(),
+        )
     )
     if boundary is not None:
-        stmt = stmt.where(col(SessionMessage.created_at) < boundary.created_at)
+        stmt = _before_boundary(stmt, boundary)
     rows = (await db.exec(stmt)).all()
     target = next((row for row in rows if _is_undo_target(row)), None)
     if target is None:
@@ -559,11 +639,16 @@ async def redo_session_messages(db: AsyncSession, session_id: UUID) -> BoundaryS
     redo_anchor = _redo_anchor(session)
     next_user = (
         await db.exec(
-            select(SessionMessage)
-            .where(col(SessionMessage.session_id) == session_id)
-            .where(col(SessionMessage.role) == "user")
-            .where(col(SessionMessage.created_at) > boundary.created_at)
-            .order_by(col(SessionMessage.created_at).asc())
+            _after_boundary(
+                select(SessionMessage)
+                .where(col(SessionMessage.session_id) == session_id)
+                .where(col(SessionMessage.role) == "user"),
+                boundary,
+            )
+            .order_by(
+                col(SessionMessage.created_at).asc(),
+                col(SessionMessage.id).asc(),
+            )
             .limit(1)
         )
     ).first()
@@ -609,9 +694,12 @@ async def cleanup_reverted_tail(db: AsyncSession, session_id: UUID) -> int:
         return 0
     rows = (
         await db.exec(
-            select(SessionMessage)
-            .where(col(SessionMessage.session_id) == session_id)
-            .where(col(SessionMessage.created_at) >= boundary.created_at)
+            _on_or_after_boundary(
+                select(SessionMessage).where(
+                    col(SessionMessage.session_id) == session_id
+                ),
+                boundary,
+            )
         )
     ).all()
     cleaned = 0
@@ -627,11 +715,15 @@ async def cleanup_reverted_tail(db: AsyncSession, session_id: UUID) -> int:
     if boundary.is_summary:
         previous_summaries = (
             await db.exec(
-                select(SessionMessage)
-                .where(col(SessionMessage.session_id) == session_id)
-                .where(col(SessionMessage.is_summary))
-                .where(col(SessionMessage.created_at) < boundary.created_at)
-                .order_by(col(SessionMessage.created_at).desc())
+                _before_boundary(
+                    select(SessionMessage)
+                    .where(col(SessionMessage.session_id) == session_id)
+                    .where(col(SessionMessage.is_summary)),
+                    boundary,
+                ).order_by(
+                    col(SessionMessage.created_at).desc(),
+                    col(SessionMessage.id).desc(),
+                )
             )
         ).all()
         previous_summary = next(
@@ -642,19 +734,24 @@ async def cleanup_reverted_tail(db: AsyncSession, session_id: UUID) -> int:
             db.add(previous_summary)
         restored = (
             await db.exec(
-                select(SessionMessage)
-                .where(col(SessionMessage.session_id) == session_id)
-                .where(col(SessionMessage.created_at) < boundary.created_at)
-                .where(~col(SessionMessage.is_summary))
-                .where(col(SessionMessage.exclude_from_context))
+                _before_boundary(
+                    select(SessionMessage)
+                    .where(col(SessionMessage.session_id) == session_id)
+                    .where(~col(SessionMessage.is_summary))
+                    .where(col(SessionMessage.exclude_from_context)),
+                    boundary,
+                )
             )
         ).all()
         for row in restored:
             if _is_hidden_from_user(row):
                 continue
-            if (
-                previous_summary is not None
-                and row.created_at <= previous_summary.created_at
+            if previous_summary is not None and (
+                row.created_at < previous_summary.created_at
+                or (
+                    row.created_at == previous_summary.created_at
+                    and row.id <= previous_summary.id
+                )
             ):
                 continue
             row.exclude_from_context = False
@@ -813,22 +910,19 @@ async def exclude_messages_before_summary(
 
     # ── Exclude regular messages before the summary ──────────────────────
     # All visible non-summary messages created before the summary, oldest-first.
+    # Use (created_at, id) order so same-timestamp rows *after* the summary
+    # are not falsely excluded (common on coarse Windows clocks).
     stmt = (
-        select(SessionMessage)
-        .where(col(SessionMessage.session_id) == session_id)
-        .where(
-            or_(
-                col(SessionMessage.created_at) < summary_msg.created_at,
-                and_(
-                    col(SessionMessage.created_at) == summary_msg.created_at,
-                    col(SessionMessage.id) != summary_msg.id,
-                    ~col(SessionMessage.is_summary),
-                ),
-            )
+        _before_boundary(
+            select(SessionMessage)
+            .where(col(SessionMessage.session_id) == session_id)
+            .where(~col(SessionMessage.exclude_from_context))
+            .where(~col(SessionMessage.is_summary)),
+            summary_msg,
+        ).order_by(
+            col(SessionMessage.created_at).asc(),
+            col(SessionMessage.id).asc(),
         )
-        .where(~col(SessionMessage.exclude_from_context))
-        .where(~col(SessionMessage.is_summary))
-        .order_by(col(SessionMessage.created_at).asc())
     )
     rows = list((await db.exec(stmt)).all())
 

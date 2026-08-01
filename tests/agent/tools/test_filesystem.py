@@ -576,7 +576,13 @@ async def test_remove_path_symlink_to_workspace_target_allowed(sandbox):
     target = tmp_path / "target.txt"
     target.write_text("data")
     link = tmp_path / "link.txt"
-    link.symlink_to(target)
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        # Windows without Developer Mode / SeCreateSymbolicLinkPrivilege.
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("symlink creation requires elevated privilege on Windows")
+        raise
     result = await _remove_path("link.txt")
     assert "Removed file" in result
     # The resolved target was removed; the dangling link still exists as an
@@ -689,19 +695,34 @@ class TestGrepFlags:
 
 def _install_fake_rg(tmp_path, monkeypatch, body: str):
     import shutil as _shutil
+    import sys as _sys
 
-    script = tmp_path / "fake-rg"
-    script.write_text("#!/usr/bin/env python3\n" + body, encoding="utf-8")
-    script.chmod(0o755)
+    # On Windows a shebang script is not directly executable (WinError 193).
+    # Drop a ``.cmd`` launcher that forwards to the same Python interpreter.
+    if _sys.platform == "win32":
+        script = tmp_path / "fake_rg.py"
+        script.write_text(body, encoding="utf-8")
+        launcher = tmp_path / "fake-rg.cmd"
+        launcher.write_text(
+            f'@echo off\r\n"{_sys.executable}" "{script}" %*\r\n',
+            encoding="utf-8",
+        )
+        target = launcher
+    else:
+        script = tmp_path / "fake-rg"
+        script.write_text("#!/usr/bin/env python3\n" + body, encoding="utf-8")
+        script.chmod(0o755)
+        target = script
+
     real_which = _shutil.which
     monkeypatch.setattr(
         _shutil,
         "which",
         lambda name, *a, **kw: (
-            str(script) if name == "rg" else real_which(name, *a, **kw)
+            str(target) if name == "rg" else real_which(name, *a, **kw)
         ),
     )
-    return script
+    return target
 
 
 class TestGrepRipgrep:

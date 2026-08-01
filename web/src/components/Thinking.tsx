@@ -56,8 +56,9 @@ export function Thinking({ content, isStreaming }: ThinkingProps) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="group/my-2 flex items-center gap-1.5 py-0.5 text-[11px] leading-none text-(--color-text-subtle) opacity-75 transition-opacity hover:opacity-100"
+        className="group/my-2 flex items-center gap-1.5 py-0.5 text-[11px] leading-none text-(--color-text-subtle) opacity-75 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
         aria-expanded={open}
+        aria-label={open ? `Collapse ${label}` : `Expand ${label}`}
       >
         <ChevronRight
           size={10}
@@ -78,9 +79,9 @@ export function Thinking({ content, isStreaming }: ThinkingProps) {
         {open && (
           <motion.div
             key="thinking-body"
-            initial={{ height: 0, opacity: 0 }}
+            initial={preset.intensity === 'reduced' ? false : { height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
+            exit={preset.intensity === 'reduced' ? undefined : { height: 0, opacity: 0 }}
             transition={panelTransition(preset)}
             className="overflow-hidden"
           >

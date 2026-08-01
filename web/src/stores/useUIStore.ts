@@ -306,6 +306,8 @@ export const useUIStore = create<UIStore>()(
       if (tool === 'pull-requests') {
         state.pullRequestsScope = 'session'
         state.gitWorkspaceView = 'reviews'
+      } else if (tool === 'source-control') {
+        state.gitWorkspaceView = 'changes'
       }
       toggleTool(state, tool)
     }),

@@ -58,6 +58,7 @@ export function SidebarItem({
       type="button"
       onClick={onClick}
       title={title ?? (kbd ? `${label} (${renderKbd(kbd)})` : label)}
+      aria-label={collapsed ? label : undefined}
       aria-current={active ? 'page' : undefined}
       className={cn(
         'interactive-weight relative flex w-full items-center gap-2.5 rounded-lg text-sm transition-colors',

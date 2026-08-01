@@ -125,6 +125,7 @@ export function AimSidebar({
             type="button"
             onClick={onCommandPalette}
             title="Search (Ctrl+P)"
+            aria-label="Search"
             className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
           >
             <Search size={15} aria-hidden="true" />
@@ -134,6 +135,7 @@ export function AimSidebar({
           type="button"
           onClick={onNewProject}
           title="New / Join project"
+          aria-label="New / Join project"
           className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
         >
           <Plus size={15} aria-hidden="true" />

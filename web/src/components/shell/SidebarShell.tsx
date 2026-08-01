@@ -27,6 +27,8 @@
 
 import {
   useCallback,
+  useEffect,
+  useRef,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
@@ -61,6 +63,14 @@ export function SidebarShell({
   const setSidebarResizing = useUIStore((state) => state.setSidebarResizing)
   const setSidebarWidth = useUIStore((state) => state.setSidebarWidth)
   const resetSidebarWidth = useUIStore((state) => state.resetSidebarWidth)
+  const resizeCleanupRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    return () => {
+      resizeCleanupRef.current?.()
+      resizeCleanupRef.current = null
+    }
+  }, [])
 
   const startResize = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     if (collapsed || event.pointerType === 'touch') return
@@ -69,6 +79,9 @@ export function SidebarShell({
 
     const shell = event.currentTarget.closest<HTMLElement>('[data-sidebar-shell]')
     if (!shell) return
+
+    // Drop any prior drag (rare) before attaching a new one.
+    resizeCleanupRef.current?.()
 
     const navigation = document.querySelector<HTMLElement>(
       '[data-sidebar-width-follower]',
@@ -83,6 +96,7 @@ export function SidebarShell({
       Math.max(SIDEBAR_WIDTH.min, shell.getBoundingClientRect().width),
     )
     let liveWidth = startWidth
+    let finished = false
 
     const applyLiveWidth = (width: number) => {
       shell.style.width = `${width}px`
@@ -110,16 +124,21 @@ export function SidebarShell({
       // Direct writes keep both pieces of sidebar chrome under the cursor.
       applyLiveWidth(liveWidth)
     }
-    const handleUp = () => {
+    const finish = (commit: boolean) => {
+      if (finished) return
+      finished = true
       window.removeEventListener('pointermove', handleMove)
       window.removeEventListener('pointerup', handleUp)
       window.removeEventListener('pointercancel', handleUp)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
-      // Commit once while transitions are still disabled. The DOM is already
-      // at this exact width, so restoring transitions on the next frame does
-      // not create a second "catch-up" animation after pointerup.
-      setSidebarWidth(liveWidth)
+      resizeCleanupRef.current = null
+      if (commit) {
+        // Commit once while transitions are still disabled. The DOM is already
+        // at this exact width, so restoring transitions on the next frame does
+        // not create a second "catch-up" animation after pointerup.
+        setSidebarWidth(liveWidth)
+      }
       setSidebarResizing(false)
       if (useUIStore.getState().sidebarCollapsed) {
         applyLiveWidth(isMacOverlay ? 70 : 56)
@@ -129,12 +148,14 @@ export function SidebarShell({
         if (navigation) navigation.style.transition = navigationTransition
       })
     }
+    const handleUp = () => finish(true)
 
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
     window.addEventListener('pointermove', handleMove)
     window.addEventListener('pointerup', handleUp, { once: true })
     window.addEventListener('pointercancel', handleUp, { once: true })
+    resizeCleanupRef.current = () => finish(false)
   }, [collapsed, isMacOverlay, setSidebarResizing, setSidebarWidth])
 
   // On macOS Tauri the rail widens to 70px (matching
@@ -284,7 +305,10 @@ export function SidebarFooter({
         {onCommandPalette && (
           <button
             type="button"
-            onClick={onCommandPalette}
+            onClick={() => {
+              onCommandPalette()
+              onAction?.()
+            }}
             className="focus-ring-control press-control flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
             aria-label="Help and shortcuts"
             title="Help and shortcuts (Ctrl+P)"
@@ -313,7 +337,10 @@ export function SidebarFooter({
         {onCommandPalette && (
           <button
             type="button"
-            onClick={onCommandPalette}
+            onClick={() => {
+              onCommandPalette()
+              onAction?.()
+            }}
             className="focus-ring-control press-control flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
             aria-label="Help and shortcuts"
             title="Help and shortcuts (Ctrl+P)"

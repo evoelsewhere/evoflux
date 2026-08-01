@@ -40,6 +40,7 @@ import fnmatch
 import os
 import shlex
 import stat as stat_module
+import sys
 from pathlib import Path
 from typing import Literal
 
@@ -234,9 +235,11 @@ class SandboxConfig:
             for denied in self.denied_roots:
                 if _path_is_under(resolved, denied):
                     return denied
-        resolved_str = str(resolved)
+        # Glob patterns are authored with POSIX separators (``**/.env``).
+        # Match against ``as_posix()`` so Windows ``\`` paths still hit.
+        resolved_posix = resolved.as_posix()
         for pattern in self.denied_patterns:
-            if fnmatch.fnmatchcase(resolved_str, pattern):
+            if fnmatch.fnmatchcase(resolved_posix, pattern):
                 return pattern
         return None
 
@@ -371,7 +374,7 @@ class SandboxConfig:
         denied-root scan below already carries.
         """
         try:
-            tokens = shlex.split(command, posix=True)
+            tokens = _tokenize_command(command)
         except ValueError:
             return None
 
@@ -425,7 +428,7 @@ class SandboxConfig:
         """Return a display path for ``resolved``."""
         if _path_is_under(resolved, self.workspace_root):
             rel = resolved.relative_to(self.workspace_root)
-            return str(self.workspace_root) if str(rel) == "." else str(rel)
+            return str(self.workspace_root) if str(rel) == "." else rel.as_posix()
         return str(resolved)
 
 
@@ -448,12 +451,28 @@ def _allowed_internal_roots(session_id: str | None) -> list[Path]:
     return roots
 
 
+def _tokenize_command(command: str) -> list[str]:
+    """Split *command* into argv-like tokens for sandbox scanning.
+
+    On Windows, ``shlex`` in POSIX mode treats ``\\`` as an escape and
+    mangles drive paths (``C:\\Users\\...`` → ``C:Users...``). Normalize
+    separators to ``/`` first — pathlib accepts either form, and agent
+    commands already mix styles under PowerShell/Git Bash.
+    """
+    if sys.platform == "win32":
+        command = command.replace("\\", "/")
+    return shlex.split(command, posix=True)
+
+
 def _looks_path_like(token: str) -> bool:
     if not token:
         return False
     if token.startswith("-"):
         return False
-    if "/" in token:
+    if "/" in token or "\\" in token:
+        return True
+    # Windows drive path (``C:foo`` after separator normalization, or ``C:``).
+    if len(token) >= 2 and token[0].isalpha() and token[1] == ":":
         return True
     if token.startswith("~"):
         return True

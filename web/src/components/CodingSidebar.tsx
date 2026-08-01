@@ -34,6 +34,7 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useModalFocus } from "@/hooks/useModalFocus";
 import { usePlatform } from "@/hooks/use-platform";
 import { useMotionPreset, useListEnterIndex } from "@/lib/motion";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
@@ -44,7 +45,6 @@ import {
   Folder,
   FolderPlus,
   GitBranch,
-  GitPullRequest,
   CircleHelp,
   Loader2,
   Plus,
@@ -104,6 +104,7 @@ import {
   type SessionMenuAnchor,
 } from "@/components/shell/SessionContextMenu";
 import { EditSessionTitleDialog } from "@/components/shell/EditSessionTitleDialog";
+import { MobileDrawerBackdrop } from "@/components/shell/MobileDrawerBackdrop";
 import { CollapsibleSection } from "@/components/shell/CollapsibleSection";
 import { Button } from "@/components/ui/button";
 import {
@@ -127,6 +128,7 @@ import {
   useRemoveWorkspaceMutation,
 } from "@/queries/useProjectsQuery";
 import { ProjectSetupModal } from "@/components/ProjectSetupModal";
+import { cn } from "@/lib/utils";
 
 
 function worktreeNameSlug(value: string): string {
@@ -139,6 +141,20 @@ function worktreeNameSlug(value: string): string {
       .slice(0, 80)
       .replace(/-+$/g, "") || "session"
   );
+}
+
+/** Keep floating context menus inside the viewport. */
+function clampMenuPosition(
+  x: number,
+  y: number,
+  menuWidth = 192,
+  menuHeight = 160,
+): { x: number; y: number } {
+  const pad = 8;
+  return {
+    x: Math.min(Math.max(x, pad), window.innerWidth - menuWidth - pad),
+    y: Math.min(Math.max(y, pad), window.innerHeight - menuHeight - pad),
+  };
 }
 
 function isLocalBackendUrl(value: string): boolean {
@@ -330,11 +346,12 @@ export function CodingSidebar({
   const isTauriMobile = isTauri && (os === "ios" || os === "android");
   const mobileLongPressActions = isMobile && isTauriMobile && mobileOpen;
   const preset = useMotionPreset();
+  useModalFocus(isMobile && mobileOpen, onMobileClose);
   // Collapse state is shared by all three mode sidebars and owned by
   // useUIStore; AppShell owns the toggle button + Ctrl+B.
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   const toggleScheduler = useUIStore((s) => s.toggleScheduler);
-  const togglePullRequests = useUIStore((s) => s.togglePullRequests);
+  const toggleSourceControl = useUIStore((s) => s.toggleWorkbenchTool);
   const pinnedIds = usePinnedSessions((s) => s.pinnedIds);
   const togglePin = usePinnedSessions((s) => s.togglePin);
   const pinnedIdSet = new Set(pinnedIds);
@@ -469,7 +486,10 @@ export function CodingSidebar({
   const [trustWorkspace, setTrustWorkspace] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<SessionResponse | null>(null);
   const [editTitle, setEditTitle] = useState("");
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  // Keep the full session — project/workspace lists are separate queries and
+  // the deleted row may not be on a loaded page of the global coding list.
+  const [pendingDeleteSession, setPendingDeleteSession] =
+    useState<SessionResponse | null>(null);
   const [mobileSessionActions, setMobileSessionActions] =
     useState<SessionResponse | null>(null);
   const [desktopSessionActions, setDesktopSessionActions] =
@@ -570,7 +590,12 @@ export function CodingSidebar({
         multiple: false,
         title: "Open workspace",
       });
-      if (typeof selected !== "string") return;
+      if (typeof selected !== "string") {
+        setDialogOpen(false);
+        setTrustWorkspace(null);
+        setAddRepoDialogProjectId(null);
+        return;
+      }
       setSelectedWorkspace(selected);
       const result = await validateWorkspace(selected);
       setTrustWorkspace(result.workspace);
@@ -982,7 +1007,7 @@ export function CodingSidebar({
   };
 
   const handleSessionDelete = (session: SessionResponse) => {
-    setPendingDeleteId(session.id);
+    setPendingDeleteSession(session);
   };
 
   const handleSessionEdit = (session: SessionResponse) => {
@@ -991,9 +1016,8 @@ export function CodingSidebar({
   };
 
   const confirmSessionDelete = () => {
-    if (!pendingDeleteId) return;
-    const target = codingSessions.find((s) => s.id === pendingDeleteId);
-    if (!target) return;
+    if (!pendingDeleteSession) return;
+    const target = pendingDeleteSession;
     const fallbackSession =
       target.id === currentSessionId
         ? ((target.project_id
@@ -1029,7 +1053,7 @@ export function CodingSidebar({
         navigate({ to: "/coding", replace: true });
       }
     }
-    setPendingDeleteId(null);
+    setPendingDeleteSession(null);
   };
 
   // Collapsed icon rail — desktop only; the same two-card stack as the aim
@@ -1045,6 +1069,7 @@ export function CodingSidebar({
             type="button"
             onClick={onCommandPalette}
             title="Search (Ctrl+P)"
+            aria-label="Search"
             className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
           >
             <Search size={15} aria-hidden="true" />
@@ -1054,6 +1079,7 @@ export function CodingSidebar({
           type="button"
           onClick={() => { void openWorkspaceDialog(); }}
           title="Open folder"
+          aria-label="Open folder"
           className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
         >
           <Folder size={15} aria-hidden="true" />
@@ -1066,10 +1092,11 @@ export function CodingSidebar({
           onClick={toggleScheduler}
         />
         <SidebarItem
-          Icon={GitPullRequest}
+          Icon={GitBranch}
           label="Source Control"
+          kbd="^G"
           collapsed
-          onClick={togglePullRequests}
+          onClick={() => toggleSourceControl("source-control")}
         />
       </SidebarCard>
       <div className="flex-1" />
@@ -1213,23 +1240,25 @@ export function CodingSidebar({
                       <button
                         key={w.workspace_id}
                         type="button"
-                        onClick={(event) =>
+                        onClick={(event) => {
+                          const pos = clampMenuPosition(event.clientX, event.clientY);
                           setProjectRepoActions({
                             project,
                             workspaceId: w.workspace_id,
                             path: w.path,
-                            x: event.clientX,
-                            y: event.clientY,
-                          })
-                        }
+                            x: pos.x,
+                            y: pos.y,
+                          });
+                        }}
                         onContextMenu={(event) => {
                           event.preventDefault();
+                          const pos = clampMenuPosition(event.clientX, event.clientY);
                           setProjectRepoActions({
                             project,
                             workspaceId: w.workspace_id,
                             path: w.path,
-                            x: event.clientX,
-                            y: event.clientY,
+                            x: pos.x,
+                            y: pos.y,
                           });
                         }}
                         className="flex w-full min-w-0 items-center gap-1.5 truncate rounded-xs px-2 py-1 text-left text-xs text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
@@ -1256,8 +1285,8 @@ export function CodingSidebar({
                       handleSessionSideChat(session, session.workspace ?? "")
                     }
                     onSessionDelete={handleSessionDelete}
-                    pendingDeleteId={pendingDeleteId}
-                    onCancelDelete={() => setPendingDeleteId(null)}
+                    pendingDeleteId={pendingDeleteSession?.id ?? null}
+                    onCancelDelete={() => setPendingDeleteSession(null)}
                     onConfirmDelete={confirmSessionDelete}
                     onSessionEdit={handleSessionEdit}
                     onSessionLongPress={setMobileSessionActions}
@@ -1338,11 +1367,12 @@ export function CodingSidebar({
                 onContextMenu={(event) => {
                   if (mobileLongPressActions) return;
                   event.preventDefault();
+                  const pos = clampMenuPosition(event.clientX, event.clientY);
                   setDesktopWorkspaceActions({
                     path,
                     kind: "main",
-                    x: event.clientX,
-                    y: event.clientY,
+                    x: pos.x,
+                    y: pos.y,
                   });
                 }}
                 className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded-xs px-2 py-1 text-left text-xs transition-colors hover:bg-(--bg-key)"
@@ -1420,8 +1450,8 @@ export function CodingSidebar({
                   handleSessionSideChat(session, session.workspace ?? path)
                 }
                 onSessionDelete={handleSessionDelete}
-                pendingDeleteId={pendingDeleteId}
-                onCancelDelete={() => setPendingDeleteId(null)}
+                pendingDeleteId={pendingDeleteSession?.id ?? null}
+                onCancelDelete={() => setPendingDeleteSession(null)}
                 onConfirmDelete={confirmSessionDelete}
                 onSessionEdit={handleSessionEdit}
                 onSessionLongPress={setMobileSessionActions}
@@ -1468,9 +1498,10 @@ export function CodingSidebar({
           onClick={toggleScheduler}
         />
         <SidebarItem
-          Icon={GitPullRequest}
+          Icon={GitBranch}
           label="Source Control"
-          onClick={togglePullRequests}
+          kbd="^G"
+          onClick={() => toggleSourceControl("source-control")}
         />
       </SidebarCard>
 
@@ -1489,6 +1520,8 @@ export function CodingSidebar({
   );
 
   // Mobile: fixed overlay drawer — slides via x transform, always 272px.
+  // When closed it stays mounted for the spring close animation but is
+  // inert + hidden from AT so focus cannot land inside an off-screen drawer.
   const mobileDrawer = (
     <motion.aside
       initial={false}
@@ -1497,13 +1530,26 @@ export function CodingSidebar({
         width: "min(272px, calc(100vw - 2rem))",
       }}
       transition={preset.spring}
-      className="mobile-safe-top fixed bottom-0 left-0 z-(--z-overlay) flex w-[min(272px,calc(100vw-2rem))] shrink-0 flex-col overflow-hidden bg-(--bg-sidebar) shadow-xl"
+      aria-hidden={!mobileOpen}
+      aria-label="Coding navigation"
+      aria-modal={mobileOpen ? true : undefined}
+      data-modal-focus={mobileOpen ? 'true' : undefined}
+      {...(!mobileOpen ? { inert: true } : {})}
+      className={cn(
+        "mobile-safe-top fixed bottom-0 left-0 z-(--z-overlay) flex w-[min(272px,calc(100vw-2rem))] shrink-0 flex-col overflow-hidden bg-(--bg-sidebar) shadow-xl",
+        !mobileOpen && "pointer-events-none",
+      )}
     >
       <div className="px-3 pt-3">
         <ModeSwitchTabs active="coding" onNavigate={onMobileClose} />
         {onCommandPalette && (
           <div className="pt-1.5">
-            <SidebarSearchTrigger onClick={onCommandPalette} />
+            <SidebarSearchTrigger
+              onClick={() => {
+                onCommandPalette();
+                onMobileClose?.();
+              }}
+            />
           </div>
         )}
       </div>
@@ -1514,12 +1560,19 @@ export function CodingSidebar({
           Icon={CalendarClock}
           label="Scheduler"
           kbd="^S"
-          onClick={toggleScheduler}
+          onClick={() => {
+            toggleScheduler();
+            onMobileClose?.();
+          }}
         />
         <SidebarItem
-          Icon={GitPullRequest}
+          Icon={GitBranch}
           label="Source Control"
-          onClick={togglePullRequests}
+          kbd="^G"
+          onClick={() => {
+            toggleSourceControl("source-control");
+            onMobileClose?.();
+          }}
         />
       </div>
 
@@ -1538,17 +1591,11 @@ export function CodingSidebar({
 
   return (
     <>
-      {/* Mobile backdrop — closes the drawer on tap. */}
       <AnimatePresence>
         {isMobile && mobileOpen && (
-          <motion.div
-            key="coding-sidebar-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="mobile-safe-top fixed inset-x-0 bottom-0 z-(--z-drawer) bg-(--color-overlay) md:hidden"
-            aria-hidden="true"
-            onClick={onMobileClose}
+          <MobileDrawerBackdrop
+            onClose={() => onMobileClose?.()}
+            closeLabel="Close coding navigation"
           />
         )}
       </AnimatePresence>
@@ -1696,7 +1743,7 @@ export function CodingSidebar({
             <DialogTitle>Trust this workspace?</DialogTitle>
             <DialogDescription>
               {addRepoProject
-                ? `Coding mode grants agents filesystem and shell access. The workspace directory is the primary working area, but agents may access other paths outside it (excluding system directories). Once added to ${addRepoProject.name}.`
+                ? `Coding mode grants agents filesystem and shell access. The workspace directory is the primary working area, but agents may access other paths outside it (excluding system directories). Trusting adds this folder to ${addRepoProject.name}.`
                 : "Coding mode grants agents filesystem and shell access. The workspace directory is the primary working area, but agents may access other paths outside it (excluding system directories)."}
             </DialogDescription>
           </DialogHeader>
