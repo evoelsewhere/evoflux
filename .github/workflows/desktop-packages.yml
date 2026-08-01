@@ -1,0 +1,332 @@
+name: Build desktop packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      signing:
+        description: Sign and notarize when credentials are available
+        required: true
+        default: auto
+        type: choice
+        options:
+          - auto
+          - required
+          - off
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-packages-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+  BUN_VERSION: latest
+  SIDECAR_DIR: desktop/sidecar-bundle
+  SIGNING_MODE: ${{ inputs.signing }}
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: DMG · Intel
+            os: macos-15-intel
+            artifact: evoflux-macos-intel
+            architecture: x86_64
+          - name: DMG · Apple Silicon
+            os: macos-15
+            artifact: evoflux-macos-apple-silicon
+            architecture: arm64
+          - name: MSI · Windows x64
+            os: windows-2022
+            artifact: evoflux-windows-x64
+            architecture: x86_64
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Resolve macOS signing mode
+        if: runner.os == 'macOS'
+        id: mac_signing
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+        run: |
+          missing=()
+          for name in \
+            APPLE_CERTIFICATE \
+            APPLE_CERTIFICATE_PASSWORD \
+            APPLE_SIGNING_IDENTITY \
+            APPLE_API_ISSUER \
+            APPLE_API_KEY \
+            APPLE_API_KEY_BASE64
+          do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+
+          enabled=false
+          if [[ "$SIGNING_MODE" == "required" && ${#missing[@]} -gt 0 ]]; then
+            echo "Signing is required, but these macOS secrets are missing: ${missing[*]}" >&2
+            exit 1
+          elif [[ "$SIGNING_MODE" != "off" && ${#missing[@]} -eq 0 ]]; then
+            enabled=true
+          fi
+
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+          if [[ "$enabled" == "true" ]]; then
+            key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
+            printf '%s' "$APPLE_API_KEY_BASE64" | openssl base64 -d -A -out "$key_path"
+            chmod 600 "$key_path"
+            echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+            echo "Developer ID signing and Apple notarization are enabled."
+          else
+            echo "Building with an ad-hoc macOS signature."
+          fi
+
+      - name: Resolve Windows signing mode
+        if: runner.os == 'Windows'
+        id: windows_signing
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $missing = @()
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE)) {
+            $missing += "WINDOWS_CERTIFICATE"
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+            $missing += "WINDOWS_CERTIFICATE_PASSWORD"
+          }
+
+          $enabled = $false
+          if ($env:SIGNING_MODE -eq "required" -and $missing.Count -gt 0) {
+            throw "Signing is required, but these Windows secrets are missing: $($missing -join ', ')"
+          } elseif ($env:SIGNING_MODE -ne "off" -and $missing.Count -eq 0) {
+            $enabled = $true
+          }
+
+          "enabled=$($enabled.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          if ($enabled) {
+            Write-Host "Authenticode signing is enabled."
+          } else {
+            Write-Host "Building an unsigned MSI."
+          }
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+          key: desktop-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            desktop-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Cache Tauri CLI
+        id: cache-tauri-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-tauri*
+          key: tauri-cli-v2-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install Tauri CLI
+        if: steps.cache-tauri-cli.outputs.cache-hit != 'true'
+        shell: bash
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build native Python sidecar
+        shell: bash
+        run: |
+          python scripts/build_sidecar.py \
+            --root . \
+            --out "$SIDECAR_DIR" \
+            --python-version "$PYTHON_VERSION"
+
+      - name: Import Windows signing certificate
+        if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $pfxPath = Join-Path $env:RUNNER_TEMP "evoflux-signing.pfx"
+          try {
+            $base64 = $env:WINDOWS_CERTIFICATE -replace '\s', ''
+            [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($base64))
+            $password = ConvertTo-SecureString `
+              -String $env:WINDOWS_CERTIFICATE_PASSWORD `
+              -AsPlainText `
+              -Force
+            $imported = Import-PfxCertificate `
+              -FilePath $pfxPath `
+              -CertStoreLocation Cert:\CurrentUser\My `
+              -Password $password `
+              -Exportable
+            $certificate = $imported |
+              Where-Object HasPrivateKey |
+              Select-Object -First 1
+            if (-not $certificate) {
+              throw "The PFX did not contain a certificate with a private key."
+            }
+            "WINDOWS_CERT_THUMBPRINT=$($certificate.Thumbprint)" >> $env:GITHUB_ENV
+          } finally {
+            Remove-Item $pfxPath -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Remove stale bundle outputs
+        shell: bash
+        run: rm -rf desktop/src-tauri/target/release/bundle
+
+      - name: Build signed and notarized DMG
+        if: runner.os == 'macOS' && steps.mac_signing.outputs.enabled == 'true'
+        working-directory: desktop/src-tauri
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: cargo tauri build --bundles app,dmg --verbose
+
+      - name: Build ad-hoc signed DMG
+        if: runner.os == 'macOS' && steps.mac_signing.outputs.enabled != 'true'
+        working-directory: desktop/src-tauri
+        run: >-
+          cargo tauri build --bundles app,dmg --verbose
+          --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}'
+
+      - name: Build signed MSI
+        if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled == 'true'
+        shell: pwsh
+        working-directory: desktop/src-tauri
+        run: |
+          $config = @{
+            bundle = @{
+              windows = @{
+                certificateThumbprint = $env:WINDOWS_CERT_THUMBPRINT
+                digestAlgorithm = "sha256"
+                timestampUrl = "http://timestamp.digicert.com"
+              }
+            }
+          } | ConvertTo-Json -Depth 5 -Compress
+          cargo tauri build --bundles msi --verbose --config $config
+          if ($LASTEXITCODE -ne 0) {
+            throw "Tauri MSI build failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Build unsigned MSI
+        if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled != 'true'
+        working-directory: desktop/src-tauri
+        run: cargo tauri build --bundles msi --verbose
+
+      - name: Verify DMG architecture and signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app_path="$(find desktop/src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)"
+          dmg_path="$(find desktop/src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          if [[ -z "$app_path" || -z "$dmg_path" ]]; then
+            echo "Tauri completed without producing both an app and a DMG." >&2
+            exit 1
+          fi
+
+          binary="$app_path/Contents/MacOS/EvoFlux"
+          file "$binary" | tee "$RUNNER_TEMP/evoflux-architecture.txt"
+          grep -q "${{ matrix.architecture }}" "$RUNNER_TEMP/evoflux-architecture.txt"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          hdiutil verify "$dmg_path"
+
+          if [[ "${{ steps.mac_signing.outputs.enabled }}" == "true" ]]; then
+            codesign --verify --verbose=2 "$dmg_path"
+            xcrun stapler validate "$dmg_path"
+          fi
+
+      - name: Verify MSI signature
+        if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem desktop/src-tauri/target/release/bundle/msi/*.msi)
+          if ($files.Count -eq 0) {
+            throw "Tauri completed without producing an MSI."
+          }
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature $file.FullName
+            if ($signature.Status -ne "Valid") {
+              throw "Invalid Authenticode signature on '$($file.Name)': $($signature.Status)"
+            }
+          }
+
+      - name: Generate macOS checksums
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cd desktop/src-tauri/target/release/bundle/dmg
+          shasum -a 256 ./*.dmg > "$RUNNER_TEMP/${{ matrix.artifact }}-SHA256SUMS.txt"
+
+      - name: Generate Windows checksums
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem desktop/src-tauri/target/release/bundle/msi/*.msi)
+          if ($files.Count -eq 0) {
+            throw "Tauri completed without producing an MSI."
+          }
+          $lines = $files | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          }
+          $lines | Set-Content "$env:RUNNER_TEMP/${{ matrix.artifact }}-SHA256SUMS.txt"
+
+      - name: Upload DMG
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            ${{ runner.temp }}/${{ matrix.artifact }}-SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload MSI
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            desktop/src-tauri/target/release/bundle/msi/*.msi
+            ${{ runner.temp }}/${{ matrix.artifact }}-SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14

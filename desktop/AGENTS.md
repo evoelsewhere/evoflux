@@ -41,4 +41,4 @@ For normal desktop development, run `make dev` at the repo root first, then `mak
 ## Documentation pointers
 
 - Local architecture: `README.md`.
-- Release/signing/update pipeline: `../documents/docs/desktop.md`.
+- Release/signing/update pipeline: `../documents/research/desktop-packaging-signing.md`.
