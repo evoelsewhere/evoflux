@@ -2,7 +2,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # EvoFlux installer for macOS + Linux.
 #
-# Windows users: run the bundled ``EvoFlux-x.y.z-x64.msi`` installer
+# Windows users: run the bundled ``EvoFlux_x.y.z_x64-setup.exe`` installer
 # instead. It already handles registration, Start Menu shortcut, and
 # uninstall. (SmartScreen may warn on first launch — click "More info"
 # → "Run anyway"; the binary is unsigned but not malicious.)
@@ -126,7 +126,7 @@ case "$uname_s" in
   Linux)  PLATFORM=linux ;;
   *)
     fail "Unsupported platform: $uname_s"
-    fail "Windows users: run EvoFlux-*.msi instead."
+    fail "Windows users: run EvoFlux_*-setup.exe instead."
     exit 1
     ;;
 esac

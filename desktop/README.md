@@ -69,22 +69,17 @@ cd desktop && make dev
 
 ## Packaging
 
-Windows production builds must be Authenticode-signed:
+Build the current-user Windows NSIS installer with:
 
 ```powershell
-$env:EVOFLUX_WINDOWS_CERTIFICATE_THUMBPRINT = "YOUR_CERT_THUMBPRINT"
-.\scripts\build_msi.ps1
+cargo tauri build --bundles nsis
 ```
 
-WiX MSI validation requires the Windows **VBScript** optional capability. The
-build script checks both the 32-bit and 64-bit script engines before starting
-the expensive build and prints the Windows capability command if either engine
-is unavailable.
-
-For a local-only unsigned artifact, pass `-AllowUnsigned` explicitly. Release
-MSIs reject downgrades so a newer database is never opened by an older
-migration bundle. The sidecar build also validates the Alembic head marker and
-an upgrade from the previous revision before packaging.
+The installer defaults to `%LOCALAPPDATA%\EvoFlux` and does not require
+Administrator privileges. Public Windows builds should be Authenticode-signed;
+the GitHub packaging workflow imports the configured PFX and supplies its
+thumbprint to Tauri. The sidecar build validates the Alembic head marker and an
+upgrade from the previous revision before packaging.
 
 On Windows, safe pure-Python packages are stored in one zipimport archive to
 reduce the number of small files Defender scans during a cold start. Pass

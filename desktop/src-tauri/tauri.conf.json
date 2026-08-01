@@ -59,7 +59,7 @@
     "copyright": "Copyright (c) 2026 EvoFlux contributors",
     "shortDescription": "On-machine AI agents — streaming chat, tool use, persistent memory.",
     "longDescription": "EvoFlux is a self-hosted AI agent platform. The desktop app runs everything locally — your data, your keys, your machine.",
-    "targets": ["dmg", "app", "msi", "deb", "appimage"],
+    "targets": ["dmg", "app", "nsis", "deb", "appimage"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -86,10 +86,8 @@
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
       "timestampUrl": "http://timestamp.digicert.com",
-      "wix": {
-        "language": "en-US",
-        "bannerPath": "./windows/installer-banner.bmp",
-        "template": "./windows/main-per-user.wxs"
+      "nsis": {
+        "installMode": "currentUser"
       }
     },
     "linux": {

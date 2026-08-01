@@ -45,7 +45,7 @@ jobs:
             artifact: evoflux-macos-apple-silicon
             architecture: arm64
             dmg_architecture: aarch64
-          - name: MSI · Windows x64
+          - name: NSIS · Windows x64
             os: windows-2022
             artifact: evoflux-windows-x64
             architecture: x86_64
@@ -126,7 +126,7 @@ jobs:
           if ($enabled) {
             Write-Host "Authenticode signing is enabled."
           } else {
-            Write-Host "Building an unsigned MSI."
+            Write-Host "Building an unsigned NSIS installer."
           }
 
       - name: Set up uv
@@ -278,7 +278,7 @@ jobs:
             --wait
           xcrun stapler staple "${{ steps.create_dmg.outputs.path }}"
 
-      - name: Build signed MSI
+      - name: Build signed NSIS installer
         if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled == 'true'
         shell: pwsh
         working-directory: desktop/src-tauri
@@ -292,88 +292,13 @@ jobs:
               }
             }
           } | ConvertTo-Json -Depth 5 -Compress
-          cargo tauri build --bundles msi --verbose --config $config
-          "TAURI_MSI_BUILD_EXIT_CODE=$LASTEXITCODE" >> $env:GITHUB_ENV
-          if ($LASTEXITCODE -ne 0) {
-            Write-Warning "Tauri's WiX validation failed; the next step will finalize the per-user MSI."
-          }
-          exit 0
+          cargo tauri build --bundles nsis --verbose --config $config
 
-      - name: Build unsigned MSI
+      - name: Build unsigned NSIS installer
         if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled != 'true'
         shell: pwsh
         working-directory: desktop/src-tauri
-        run: |
-          cargo tauri build --bundles msi --verbose
-          "TAURI_MSI_BUILD_EXIT_CODE=$LASTEXITCODE" >> $env:GITHUB_ENV
-          if ($LASTEXITCODE -ne 0) {
-            Write-Warning "Tauri's WiX validation failed; the next step will finalize the per-user MSI."
-          }
-          exit 0
-
-      - name: Finalize per-user MSI
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $bundleDir = "desktop/src-tauri/target/release/bundle/msi"
-          $msiFiles = @(Get-ChildItem "$bundleDir/*.msi" -ErrorAction SilentlyContinue)
-          if ($env:TAURI_MSI_BUILD_EXIT_CODE -eq "0" -and $msiFiles.Count -gt 0) {
-            Write-Host "Tauri produced the MSI without the compatibility fallback."
-            exit 0
-          }
-
-          $wixDir = "desktop/src-tauri/target/release/wix/x64"
-          $wixObjects = @(Get-ChildItem "$wixDir/*.wixobj" -ErrorAction SilentlyContinue)
-          if ($wixObjects.Count -eq 0) {
-            throw "Tauri failed before generating WiX object files (exit $env:TAURI_MSI_BUILD_EXIT_CODE)."
-          }
-
-          $light = Join-Path $env:LOCALAPPDATA "tauri/WixTools314/light.exe"
-          if (-not (Test-Path $light)) {
-            throw "WiX linker was not found at '$light'."
-          }
-
-          $outputMsi = Join-Path $wixDir "output.msi"
-          $lightArgs = @(
-            "-ext", (Join-Path $env:LOCALAPPDATA "tauri/WixTools314/WixUIExtension.dll"),
-            "-ext", (Join-Path $env:LOCALAPPDATA "tauri/WixTools314/WixUtilExtension.dll"),
-            "-sice:ICE38",
-            "-sice:ICE91",
-            "-o", $outputMsi,
-            "-cultures:en-us",
-            "-loc", (Join-Path $wixDir "locale.wxl")
-          ) + @($wixObjects.FullName)
-
-          & $light @lightArgs
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $outputMsi)) {
-            throw "WiX linker fallback failed with exit code $LASTEXITCODE."
-          }
-
-          $tauriConfig = Get-Content desktop/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
-          $destination = Join-Path `
-            $bundleDir `
-            "$($tauriConfig.productName)_$($tauriConfig.version)_x64_en-US.msi"
-          New-Item $bundleDir -ItemType Directory -Force | Out-Null
-          Move-Item $outputMsi $destination -Force
-
-          if ("${{ steps.windows_signing.outputs.enabled }}" -eq "true") {
-            $signTool = Get-ChildItem `
-              "${env:ProgramFiles(x86)}/Windows Kits/10/bin/*/x64/signtool.exe" |
-              Sort-Object FullName -Descending |
-              Select-Object -First 1
-            if (-not $signTool) {
-              throw "Windows SignTool was not found."
-            }
-            & $signTool.FullName sign `
-              /sha1 $env:WINDOWS_CERT_THUMBPRINT `
-              /fd SHA256 `
-              /tr http://timestamp.digicert.com `
-              /td SHA256 `
-              $destination
-            if ($LASTEXITCODE -ne 0) {
-              throw "Signing the fallback MSI failed with exit code $LASTEXITCODE."
-            }
-          }
+        run: cargo tauri build --bundles nsis --verbose
 
       - name: Smoke-test first Windows app launch
         if: runner.os == 'Windows'
@@ -390,9 +315,26 @@ jobs:
           $env:EVOFLUX_WORKSPACE_DIR = Join-Path $smokeRoot "workspace"
           New-Item $localAppData -ItemType Directory -Force | Out-Null
 
-          $executable = "desktop/src-tauri/target/release/EvoFlux.exe"
+          $installers = @(
+            Get-ChildItem `
+              "desktop/src-tauri/target/release/bundle/nsis/*-setup.exe" `
+              -File
+          )
+          if ($installers.Count -ne 1) {
+            throw "Expected exactly one NSIS installer, found $($installers.Count)."
+          }
+          $installerProcess = Start-Process `
+            -FilePath $installers[0].FullName `
+            -ArgumentList "/S" `
+            -PassThru `
+            -Wait
+          if ($installerProcess.ExitCode -ne 0) {
+            throw "Silent NSIS installation failed with exit code $($installerProcess.ExitCode)."
+          }
+
+          $executable = Join-Path $localAppData "EvoFlux/EvoFlux.exe"
           if (-not (Test-Path $executable)) {
-            throw "Release executable was not found at '$executable'."
+            throw "Installed executable was not found at '$executable'."
           }
 
           $process = Start-Process -FilePath $executable -PassThru
@@ -454,13 +396,13 @@ jobs:
             xcrun stapler validate "$dmg_path"
           fi
 
-      - name: Verify MSI signature
+      - name: Verify NSIS installer signature
         if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled == 'true'
         shell: pwsh
         run: |
-          $files = @(Get-ChildItem desktop/src-tauri/target/release/bundle/msi/*.msi)
+          $files = @(Get-ChildItem desktop/src-tauri/target/release/bundle/nsis/*-setup.exe)
           if ($files.Count -eq 0) {
-            throw "Tauri completed without producing an MSI."
+            throw "Tauri completed without producing an NSIS installer."
           }
           foreach ($file in $files) {
             $signature = Get-AuthenticodeSignature $file.FullName
@@ -480,9 +422,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $files = @(Get-ChildItem desktop/src-tauri/target/release/bundle/msi/*.msi)
+          $files = @(Get-ChildItem desktop/src-tauri/target/release/bundle/nsis/*-setup.exe)
           if ($files.Count -eq 0) {
-            throw "Tauri completed without producing an MSI."
+            throw "Tauri completed without producing an NSIS installer."
           }
           $lines = $files | ForEach-Object {
             $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLowerInvariant()
@@ -501,13 +443,13 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload MSI
+      - name: Upload NSIS installer
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: |
-            desktop/src-tauri/target/release/bundle/msi/*.msi
+            desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
             ${{ runner.temp }}/${{ matrix.artifact }}-SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14

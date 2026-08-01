@@ -73,15 +73,15 @@ right package manager automatically.
 
 ## Windows (x64)
 
-Run **`EvoFlux-x.y.z-x64.msi`**.
+Run **`EvoFlux_x.y.z_x64-setup.exe`**.
 
 Windows SmartScreen will show
 *"Windows protected your PC"* on the first launch. Click
 **"More info"** → **"Run anyway"**. You only need to do this once.
 
-The MSI installer handles:
+The NSIS installer handles:
 
-- Copying files to `%LOCALAPPDATA%\Programs\EvoFlux\`.
+- Copying files to `%LOCALAPPDATA%\EvoFlux\`.
 - Creating Start Menu and Desktop shortcuts.
 - Registering the uninstaller in *Settings → Apps*.
 
@@ -96,7 +96,7 @@ Every release publishes a `SHA256SUMS` file. Verify before installing:
 shasum -a 256 -c SHA256SUMS
 
 # Windows (PowerShell)
-Get-FileHash -Algorithm SHA256 EvoFlux-*.msi
+Get-FileHash -Algorithm SHA256 EvoFlux_*-setup.exe
 ```
 
 The expected hashes are also pinned in the GitHub release notes.
@@ -150,7 +150,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 Reload your shell. Or just launch from the desktop menu.
 
-### Windows: SmartScreen blocked the MSI
+### Windows: SmartScreen blocked the installer
 
 Click **"More info"** in the dialog, then **"Run anyway"**. The
 binary is unsigned (we don't have a code-signing cert yet) but
