@@ -289,9 +289,10 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
           <button
             type="button"
             onClick={() => {
-              showTurnChanges()
               if (props.workspace) {
                 useUIStore.getState().openGitChanges()
+              } else {
+                showTurnChanges()
               }
             }}
             className="focus-ring-control flex h-7 items-center gap-1.5 rounded-lg border border-(--color-border) bg-(--bg-key) px-2 font-mono text-[11px] tabular-nums text-(--color-text) transition-colors hover:border-(--color-border-strong)"

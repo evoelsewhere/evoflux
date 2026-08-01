@@ -182,12 +182,43 @@ export function ModeSwitchRail({
   className?: string
 }) {
   const { preset, preloadMode, switchMode } = useAnimatedModeNavigation()
+  const activeIndex = TABS.findIndex((tab) => tab.mode === active)
+
+  const onRailKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const current = Math.max(0, activeIndex)
+    let next = current
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      next = (current + 1) % TABS.length
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      next = (current - 1 + TABS.length) % TABS.length
+    } else if (event.key === 'Home') {
+      next = 0
+    } else if (event.key === 'End') {
+      next = TABS.length - 1
+    } else {
+      return
+    }
+    event.preventDefault()
+    const tab = TABS[next]
+    if (!tab) return
+    if (tab.mode !== active) switchMode(tab.mode, tab.to)
+    const buttons = event.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]')
+    buttons[next]?.focus()
+  }
+
   return (
-    <div className={cn('flex flex-col items-center gap-0.5', className)}>
+    <div
+      className={cn('flex flex-col items-center gap-0.5', className)}
+      role="tablist"
+      aria-label="Application mode"
+      aria-orientation="vertical"
+      onKeyDown={onRailKeyDown}
+    >
       {TABS.map(({ mode, label, Icon, to }) => (
         <button
           key={mode}
           type="button"
+          tabIndex={mode === active ? 0 : -1}
           onPointerEnter={() => {
             if (mode !== active) preloadMode(mode, to)
           }}
@@ -199,6 +230,8 @@ export function ModeSwitchRail({
           }}
           title={label}
           aria-current={mode === active ? 'page' : undefined}
+          aria-selected={mode === active}
+          role="tab"
           className={cn(
             'group relative flex h-8 w-8 items-center justify-center rounded-lg outline-none transition-[color,transform] duration-(--motion-fast) active:translate-y-px focus-visible:ring-2 focus-visible:ring-(--color-accent)/35',
             mode === active

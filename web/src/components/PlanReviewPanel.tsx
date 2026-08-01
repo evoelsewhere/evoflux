@@ -372,7 +372,13 @@ export function PlanActionBar({ onRevise }: { onRevise: () => void }) {
         })
       }
     } catch (err) {
-      setReplyError(err instanceof Error ? err.message : 'Failed to send reply. Please try again.')
+      const message = err instanceof Error ? err.message : 'Failed to send reply. Please try again.'
+      // Already resolved (other tab / interrupt) — dismiss like permission/ask-user gates.
+      if (/not found|already resolved/i.test(message)) {
+        useTeamStore.setState({ planApproval: null })
+        return
+      }
+      setReplyError(message)
     } finally {
       setReplying(false)
     }
@@ -386,6 +392,7 @@ export function PlanActionBar({ onRevise }: { onRevise: () => void }) {
           initial={{ opacity: 0, y: 6 * preset.distance }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 6 * preset.distance }}
+          transition={preset.spring}
           className="mx-auto w-full max-w-3xl px-4 pb-2"
         >
           <div className="overflow-hidden rounded-xl border border-(--color-primary)/35 bg-(--bg-page) shadow-sm">

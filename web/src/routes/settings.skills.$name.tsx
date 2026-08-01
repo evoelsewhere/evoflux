@@ -30,6 +30,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useSettingsParams, useSettingsNavigate } from '@/contexts/SettingsContext'
+import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
 
 /**
  * Skill editor — lighter than the agent editor because skills have an
@@ -70,6 +71,7 @@ export function SkillEditorPage() {
     (JSON.stringify(files) !== JSON.stringify(skillBundleFilesFromApi(data.files)) ||
       deletedFiles.length > 0)
   const dirty = !!data && (!contentEquals(draft, data.content) || resourcesDirty)
+  useRegisterSettingsDirty(dirty)
   const draftErrors = dirty ? validateSkillDraft(draft) : null
   const invalid = draftErrors !== null
   const firstDraftError = draftErrors ? Object.values(draftErrors)[0] : null
@@ -205,7 +207,7 @@ export function SkillEditorPage() {
                   variant="ghost"
                   size="xs"
                   className="min-h-11 md:min-h-0"
-                  onClick={() => navigate('/settings/skills')}
+                  onClick={() => navigate('/settings/skills', { force: true })}
                 >
                   Leave without saving
                 </Button>

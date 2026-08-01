@@ -4,6 +4,7 @@ from uuid import uuid7
 
 import pytest
 
+from app.agent.tools.builtin.shell_runtime import BashNotFoundError
 from app.services.aim.kb_store import write_unit
 from app.services.aim.verification import (
     VerificationError,
@@ -198,6 +199,41 @@ async def test_verify_target_conversion_rejects_missing_target_path(tmp_path: Pa
     )
 
     with pytest.raises(VerificationError, match="target path does not exist"):
+        await verify_target_conversion(
+            kb_root,
+            target_root,
+            "core/Pay",
+            execution_id=str(uuid7()),
+        )
+
+
+@pytest.mark.asyncio
+async def test_verify_target_conversion_requires_usable_bash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    kb_root = tmp_path / "kb"
+    target_root = tmp_path / "target"
+    command = kb_root / "mapping/core/Pay.verify.command"
+    command.parent.mkdir(parents=True)
+    command.write_text("true\n")
+    target_root.mkdir()
+    (target_root / "build.ok").write_text("ok\n")
+    _commit_target(target_root)
+    write_unit(
+        kb_root,
+        "core",
+        "Pay",
+        kind="component",
+        phase="designed",
+        target_paths=["build.ok"],
+    )
+
+    def _no_bash() -> str:
+        raise BashNotFoundError("No usable bash found for AIM runners/verification.")
+
+    monkeypatch.setattr("app.services.aim.verification.require_bash", _no_bash)
+
+    with pytest.raises(VerificationError, match="No usable bash"):
         await verify_target_conversion(
             kb_root,
             target_root,

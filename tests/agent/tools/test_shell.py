@@ -167,6 +167,21 @@ def test_scrubbed_env_filters_host_credentials_by_default(monkeypatch):
     assert "EVOFLUX_DESKTOP_TOKEN" not in env
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows env case folding")
+def test_scrubbed_env_keeps_systemroot_case_variants(monkeypatch):
+    """PowerShell needs SYSTEMROOT; hosts often expose that casing, not SystemRoot."""
+    monkeypatch.delenv("SystemRoot", raising=False)
+    monkeypatch.delenv("SYSTEMROOT", raising=False)
+    monkeypatch.setenv("SYSTEMROOT", r"C:\Windows")
+    monkeypatch.setenv("PATH", r"C:\Windows\System32")
+    monkeypatch.setenv("EVOFLUX_DESKTOP_TOKEN", "internal")
+
+    env = _scrubbed_env()
+
+    assert env.get("SYSTEMROOT") == r"C:\Windows"
+    assert "EVOFLUX_DESKTOP_TOKEN" not in env
+
+
 def test_scrubbed_env_can_inherit_host_values_but_never_internal_token(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "user-opted-in")
     monkeypatch.setenv("EVOFLUX_DESKTOP_TOKEN", "internal")

@@ -34,6 +34,7 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useModalFocus } from "@/hooks/useModalFocus";
 import { usePlatform } from "@/hooks/use-platform";
 import { useMotionPreset, useListEnterIndex } from "@/lib/motion";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
@@ -103,6 +104,7 @@ import {
   type SessionMenuAnchor,
 } from "@/components/shell/SessionContextMenu";
 import { EditSessionTitleDialog } from "@/components/shell/EditSessionTitleDialog";
+import { MobileDrawerBackdrop } from "@/components/shell/MobileDrawerBackdrop";
 import { CollapsibleSection } from "@/components/shell/CollapsibleSection";
 import { Button } from "@/components/ui/button";
 import {
@@ -344,6 +346,7 @@ export function CodingSidebar({
   const isTauriMobile = isTauri && (os === "ios" || os === "android");
   const mobileLongPressActions = isMobile && isTauriMobile && mobileOpen;
   const preset = useMotionPreset();
+  useModalFocus(isMobile && mobileOpen, onMobileClose);
   // Collapse state is shared by all three mode sidebars and owned by
   // useUIStore; AppShell owns the toggle button + Ctrl+B.
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
@@ -1529,6 +1532,8 @@ export function CodingSidebar({
       transition={preset.spring}
       aria-hidden={!mobileOpen}
       aria-label="Coding navigation"
+      aria-modal={mobileOpen ? true : undefined}
+      data-modal-focus={mobileOpen ? 'true' : undefined}
       {...(!mobileOpen ? { inert: true } : {})}
       className={cn(
         "mobile-safe-top fixed bottom-0 left-0 z-(--z-overlay) flex w-[min(272px,calc(100vw-2rem))] shrink-0 flex-col overflow-hidden bg-(--bg-sidebar) shadow-xl",
@@ -1586,17 +1591,11 @@ export function CodingSidebar({
 
   return (
     <>
-      {/* Mobile backdrop — closes the drawer on tap. */}
       <AnimatePresence>
         {isMobile && mobileOpen && (
-          <motion.div
-            key="coding-sidebar-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="mobile-safe-top fixed inset-x-0 bottom-0 z-(--z-drawer) bg-(--color-overlay) md:hidden"
-            aria-hidden="true"
-            onClick={onMobileClose}
+          <MobileDrawerBackdrop
+            onClose={() => onMobileClose?.()}
+            closeLabel="Close coding navigation"
           />
         )}
       </AnimatePresence>

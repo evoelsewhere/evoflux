@@ -39,9 +39,14 @@ async def test_spawn_run_command_and_capture_output(tmp_path):
     tm.attach(sid, cwd=str(tmp_path), env={"EVOFLUX_MODE": "work"})
     queue = tm.subscribe(sid)
     await asyncio.sleep(0.2)
-    tm.write(sid, b"echo TERM_OK_$((3*4))\n")
-    got = await _drain_until(queue, b"TERM_OK_12")
-    assert b"TERM_OK_12" in got
+    # cmd.exe on Windows does not evaluate bash arithmetic; use a literal.
+    marker = b"TERM_OK_12"
+    tm.write(
+        sid,
+        b"echo TERM_OK_12\n" if sys.platform == "win32" else b"echo TERM_OK_$((3*4))\n",
+    )
+    got = await _drain_until(queue, marker)
+    assert marker in got
     await tm.close(sid)
     assert not tm.is_running(sid)
 
@@ -91,7 +96,13 @@ async def test_run_command_returns_output_and_is_seen_live(tmp_path):
     watcher = tm.subscribe(sid)  # stands in for the user's live terminal
     await asyncio.sleep(0.2)
 
-    output = await tm.run_command(sid, "echo AGENT_DROVE_$((7*8))", timeout_s=10)
+    output = await tm.run_command(
+        sid,
+        "echo AGENT_DROVE_56"
+        if sys.platform == "win32"
+        else "echo AGENT_DROVE_$((7*8))",
+        timeout_s=10,
+    )
     assert "AGENT_DROVE_56" in output  # returned to the agent
 
     # The same output reached the live client too (shared terminal).
@@ -124,15 +135,20 @@ async def test_exit_notifies_subscribers(tmp_path):
     await asyncio.sleep(0.2)
     tm.write(sid, b"exit\n")
     # The shell exiting should push the None sentinel to subscribers.
+    # Windows ConPTY can take several seconds after ``exit`` before EOF;
+    # keep waiting across quiet gaps instead of aborting on the first idle.
     sentinel_seen = False
-    try:
-        for _ in range(200):
-            chunk = await asyncio.wait_for(queue.get(), timeout=3.0)
-            if chunk is None:
-                sentinel_seen = True
+    deadline = asyncio.get_running_loop().time() + 20.0
+    while asyncio.get_running_loop().time() < deadline:
+        try:
+            chunk = await asyncio.wait_for(queue.get(), timeout=0.5)
+        except asyncio.TimeoutError:
+            if not tm.is_running(sid):
                 break
-    except asyncio.TimeoutError:
-        pass
+            continue
+        if chunk is None:
+            sentinel_seen = True
+            break
     assert sentinel_seen
     assert not tm.is_running(sid)
 
@@ -268,9 +284,11 @@ async def test_spawn_windows_uses_comspec_and_conpty(
     assert env_map["EVOFLUX_SESSION"] == "s1"
     assert env_map["EVOFLUX_MODE"] == "work"
 
-    # write() encodes bytes → str for pywinpty.
+    # write() encodes bytes → str and normalizes Enter to CR for ConPTY/cmd.
     manager.write("s1", b"dir\r\n")
-    assert proc.writes == ["dir\r\n"]
+    assert proc.writes == ["dir\r"]
+    manager.write("s1", b"echo hi\n")
+    assert proc.writes[-1] == "echo hi\r"
 
     # resize() maps to set_size(cols, rows).
     manager.resize("s1", 120, 50)

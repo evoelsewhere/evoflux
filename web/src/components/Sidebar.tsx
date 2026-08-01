@@ -8,6 +8,7 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useModalFocus } from "@/hooks/useModalFocus";
 import { useMotionPreset, useListEnterIndex } from "@/lib/motion";
 
 import {
@@ -44,6 +45,7 @@ import {
   type SessionMenuAnchor,
 } from "@/components/shell/SessionContextMenu";
 import { EditSessionTitleDialog } from "@/components/shell/EditSessionTitleDialog";
+import { MobileDrawerBackdrop } from "@/components/shell/MobileDrawerBackdrop";
 import type { SessionResponse } from "@/api/types";
 import { cn } from "@/lib/utils";
 
@@ -114,6 +116,7 @@ export function Sidebar({
   const isTauriMobile = isTauri && (os === "ios" || os === "android");
   const mobileLongPressActions = isMobile && isTauriMobile && mobileOpen;
   const preset = useMotionPreset();
+  useModalFocus(isMobile && mobileOpen, onMobileClose);
   const navigate = useNavigate();
   const toggleScheduler = useUIStore((s) => s.toggleScheduler);
   // Server-filtered to work — coding/aim sessions live in their own
@@ -505,6 +508,8 @@ export function Sidebar({
       transition={preset.spring}
       aria-hidden={!mobileOpen}
       aria-label="Session navigation"
+      aria-modal={mobileOpen ? true : undefined}
+      data-modal-focus={mobileOpen ? 'true' : undefined}
       {...(!mobileOpen ? { inert: true } : {})}
       className={cn(
         "mobile-safe-top fixed bottom-0 left-0 z-(--z-overlay) flex w-[min(272px,calc(100vw-2rem))] shrink-0 flex-col overflow-hidden bg-(--bg-sidebar) shadow-xl",
@@ -601,17 +606,11 @@ export function Sidebar({
 
   return (
     <>
-      {/* Mobile backdrop — closes the drawer on tap */}
       <AnimatePresence>
         {isMobile && mobileOpen && (
-          <motion.div
-            key="sidebar-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="mobile-safe-top fixed inset-x-0 bottom-0 z-(--z-drawer) bg-(--color-overlay) md:hidden"
-            aria-hidden="true"
-            onClick={onMobileClose}
+          <MobileDrawerBackdrop
+            onClose={() => onMobileClose?.()}
+            closeLabel="Close session navigation"
           />
         )}
       </AnimatePresence>

@@ -143,9 +143,9 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
           {expanded && hasDetails && (
             <motion.div
               key="handoff-details"
-              initial={{ height: 0, opacity: 0 }}
+              initial={preset.intensity === 'reduced' ? false : { height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
+              exit={preset.intensity === 'reduced' ? undefined : { height: 0, opacity: 0 }}
               transition={panelTransition(preset)}
               className="overflow-hidden"
             >
