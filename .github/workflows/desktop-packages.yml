@@ -373,6 +373,63 @@ jobs:
             }
           }
 
+      - name: Smoke-test first Windows app launch
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "evoflux-first-launch"
+          $localAppData = Join-Path $smokeRoot "local-app-data"
+          $env:LOCALAPPDATA = $localAppData
+          $env:EVOFLUX_DATA_DIR = Join-Path $smokeRoot "data"
+          $env:EVOFLUX_CONFIG_DIR = Join-Path $smokeRoot "config"
+          $env:EVOFLUX_STATE_DIR = Join-Path $smokeRoot "state"
+          $env:EVOFLUX_CACHE_DIR = Join-Path $smokeRoot "cache"
+          $env:EVOFLUX_WIKI_DIR = Join-Path $smokeRoot "wiki"
+          $env:EVOFLUX_WORKSPACE_DIR = Join-Path $smokeRoot "workspace"
+          New-Item $localAppData -ItemType Directory -Force | Out-Null
+
+          $executable = "desktop/src-tauri/target/release/EvoFlux.exe"
+          if (-not (Test-Path $executable)) {
+            throw "Release executable was not found at '$executable'."
+          }
+
+          $process = Start-Process -FilePath $executable -PassThru
+          try {
+            $deadline = (Get-Date).AddSeconds(120)
+            $ready = $false
+            $lastLog = ""
+            while ((Get-Date) -lt $deadline) {
+              $process.Refresh()
+              $logs = @(
+                Get-ChildItem $localAppData -Filter backend.log -File -Recurse `
+                  -ErrorAction SilentlyContinue
+              )
+              foreach ($log in $logs) {
+                $lastLog = Get-Content $log.FullName -Raw -ErrorAction SilentlyContinue
+                if ($lastLog -match "startup_timing phase=server_ready") {
+                  $ready = $true
+                  break
+                }
+              }
+              if ($ready) {
+                break
+              }
+              if ($process.HasExited) {
+                throw "EvoFlux exited before the bundled backend became ready.`n$lastLog"
+              }
+              Start-Sleep -Seconds 1
+            }
+            if (-not $ready) {
+              throw "First Windows launch did not become ready within 120 seconds.`n$lastLog"
+            }
+            Write-Host "First Windows launch reached backend-ready state."
+          } finally {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              $process.WaitForExit(10000) | Out-Null
+            }
+          }
+
       - name: Verify DMG architecture and signature
         if: runner.os == 'macOS'
         shell: bash
