@@ -6,12 +6,12 @@ on:
       signing:
         description: Sign and notarize when credentials are available
         required: true
-        default: auto
+        default: "auto"
         type: choice
         options:
-          - auto
-          - required
-          - off
+          - "auto"
+          - "required"
+          - "off"
 
 permissions:
   contents: read
@@ -39,10 +39,12 @@ jobs:
             os: macos-15-intel
             artifact: evoflux-macos-intel
             architecture: x86_64
+            dmg_architecture: x64
           - name: DMG · Apple Silicon
             os: macos-15
             artifact: evoflux-macos-apple-silicon
             architecture: arm64
+            dmg_architecture: aarch64
           - name: MSI · Windows x64
             os: windows-2022
             artifact: evoflux-windows-x64
@@ -209,7 +211,7 @@ jobs:
         shell: bash
         run: rm -rf desktop/src-tauri/target/release/bundle
 
-      - name: Build signed and notarized DMG
+      - name: Build signed and notarized app
         if: runner.os == 'macOS' && steps.mac_signing.outputs.enabled == 'true'
         working-directory: desktop/src-tauri
         env:
@@ -218,14 +220,63 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-        run: cargo tauri build --bundles app,dmg --verbose
+        run: cargo tauri build --bundles app --verbose
 
-      - name: Build ad-hoc signed DMG
+      - name: Build ad-hoc signed app
         if: runner.os == 'macOS' && steps.mac_signing.outputs.enabled != 'true'
         working-directory: desktop/src-tauri
         run: >-
-          cargo tauri build --bundles app,dmg --verbose
+          cargo tauri build --bundles app --verbose
           --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}'
+
+      - name: Create DMG without mounting a volume
+        if: runner.os == 'macOS'
+        id: create_dmg
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=desktop/src-tauri/tauri.conf.json
+          product_name="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["productName"])' "$config")"
+          version="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$config")"
+          source_dir=desktop/src-tauri/target/release/bundle/macos
+          dmg_dir=desktop/src-tauri/target/release/bundle/dmg
+          dmg_path="$dmg_dir/${product_name}_${version}_${{ matrix.dmg_architecture }}.dmg"
+
+          app_path="$(find "$source_dir" -maxdepth 1 -name '*.app' -print -quit)"
+          if [[ -z "$app_path" ]]; then
+            echo "Tauri completed without producing an app bundle." >&2
+            exit 1
+          fi
+
+          ln -s /Applications "$source_dir/Applications"
+          mkdir -p "$dmg_dir"
+          hdiutil create \
+            -volname "$product_name" \
+            -srcfolder "$source_dir" \
+            -ov \
+            -format UDZO \
+            "$dmg_path"
+          echo "path=$dmg_path" >> "$GITHUB_OUTPUT"
+
+      - name: Sign and notarize DMG
+        if: runner.os == 'macOS' && steps.mac_signing.outputs.enabled == 'true'
+        shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          codesign \
+            --force \
+            --sign "$APPLE_SIGNING_IDENTITY" \
+            --timestamp \
+            "${{ steps.create_dmg.outputs.path }}"
+          xcrun notarytool submit "${{ steps.create_dmg.outputs.path }}" \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER" \
+            --wait
+          xcrun stapler staple "${{ steps.create_dmg.outputs.path }}"
 
       - name: Build signed MSI
         if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled == 'true'
@@ -242,14 +293,85 @@ jobs:
             }
           } | ConvertTo-Json -Depth 5 -Compress
           cargo tauri build --bundles msi --verbose --config $config
+          "TAURI_MSI_BUILD_EXIT_CODE=$LASTEXITCODE" >> $env:GITHUB_ENV
           if ($LASTEXITCODE -ne 0) {
-            throw "Tauri MSI build failed with exit code $LASTEXITCODE."
+            Write-Warning "Tauri's WiX validation failed; the next step will finalize the per-user MSI."
           }
 
       - name: Build unsigned MSI
         if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled != 'true'
+        shell: pwsh
         working-directory: desktop/src-tauri
-        run: cargo tauri build --bundles msi --verbose
+        run: |
+          cargo tauri build --bundles msi --verbose
+          "TAURI_MSI_BUILD_EXIT_CODE=$LASTEXITCODE" >> $env:GITHUB_ENV
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Tauri's WiX validation failed; the next step will finalize the per-user MSI."
+          }
+
+      - name: Finalize per-user MSI
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bundleDir = "desktop/src-tauri/target/release/bundle/msi"
+          $msiFiles = @(Get-ChildItem "$bundleDir/*.msi" -ErrorAction SilentlyContinue)
+          if ($env:TAURI_MSI_BUILD_EXIT_CODE -eq "0" -and $msiFiles.Count -gt 0) {
+            Write-Host "Tauri produced the MSI without the compatibility fallback."
+            exit 0
+          }
+
+          $wixDir = "desktop/src-tauri/target/release/wix/x64"
+          $wixObjects = @(Get-ChildItem "$wixDir/*.wixobj" -ErrorAction SilentlyContinue)
+          if ($wixObjects.Count -eq 0) {
+            throw "Tauri failed before generating WiX object files (exit $env:TAURI_MSI_BUILD_EXIT_CODE)."
+          }
+
+          $light = Join-Path $env:LOCALAPPDATA "tauri/WixTools314/light.exe"
+          if (-not (Test-Path $light)) {
+            throw "WiX linker was not found at '$light'."
+          }
+
+          $outputMsi = Join-Path $wixDir "output.msi"
+          $lightArgs = @(
+            "-ext", (Join-Path $env:LOCALAPPDATA "tauri/WixTools314/WixUIExtension.dll"),
+            "-ext", (Join-Path $env:LOCALAPPDATA "tauri/WixTools314/WixUtilExtension.dll"),
+            "-sice:ICE38",
+            "-sice:ICE91",
+            "-o", $outputMsi,
+            "-cultures:en-us",
+            "-loc", (Join-Path $wixDir "locale.wxl")
+          ) + @($wixObjects.FullName)
+
+          & $light @lightArgs
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $outputMsi)) {
+            throw "WiX linker fallback failed with exit code $LASTEXITCODE."
+          }
+
+          $tauriConfig = Get-Content desktop/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $destination = Join-Path `
+            $bundleDir `
+            "$($tauriConfig.productName)_$($tauriConfig.version)_x64_en-US.msi"
+          New-Item $bundleDir -ItemType Directory -Force | Out-Null
+          Move-Item $outputMsi $destination -Force
+
+          if ("${{ steps.windows_signing.outputs.enabled }}" -eq "true") {
+            $signTool = Get-ChildItem `
+              "${env:ProgramFiles(x86)}/Windows Kits/10/bin/*/x64/signtool.exe" |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
+            if (-not $signTool) {
+              throw "Windows SignTool was not found."
+            }
+            & $signTool.FullName sign `
+              /sha1 $env:WINDOWS_CERT_THUMBPRINT `
+              /fd SHA256 `
+              /tr http://timestamp.digicert.com `
+              /td SHA256 `
+              $destination
+            if ($LASTEXITCODE -ne 0) {
+              throw "Signing the fallback MSI failed with exit code $LASTEXITCODE."
+            }
+          }
 
       - name: Verify DMG architecture and signature
         if: runner.os == 'macOS'
