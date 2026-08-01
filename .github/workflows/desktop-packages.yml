@@ -305,15 +305,25 @@ jobs:
         shell: pwsh
         run: |
           $smokeRoot = Join-Path $env:RUNNER_TEMP "evoflux-first-launch"
-          $localAppData = Join-Path $smokeRoot "local-app-data"
-          $env:LOCALAPPDATA = $localAppData
           $env:EVOFLUX_DATA_DIR = Join-Path $smokeRoot "data"
           $env:EVOFLUX_CONFIG_DIR = Join-Path $smokeRoot "config"
           $env:EVOFLUX_STATE_DIR = Join-Path $smokeRoot "state"
           $env:EVOFLUX_CACHE_DIR = Join-Path $smokeRoot "cache"
           $env:EVOFLUX_WIKI_DIR = Join-Path $smokeRoot "wiki"
           $env:EVOFLUX_WORKSPACE_DIR = Join-Path $smokeRoot "workspace"
-          New-Item $localAppData -ItemType Directory -Force | Out-Null
+          New-Item $smokeRoot -ItemType Directory -Force | Out-Null
+
+          $tauriConfig = Get-Content `
+            "desktop/src-tauri/tauri.conf.json" `
+            -Raw | ConvertFrom-Json
+          $windowsLocalAppData = [Environment]::GetFolderPath(
+            [Environment+SpecialFolder]::LocalApplicationData
+          )
+          $appLogDir = Join-Path `
+            $windowsLocalAppData `
+            "$($tauriConfig.identifier)/logs"
+          $backendLog = Join-Path $appLogDir "backend.log"
+          Remove-Item $appLogDir -Recurse -Force -ErrorAction SilentlyContinue
 
           $installers = @(
             Get-ChildItem `
@@ -332,7 +342,17 @@ jobs:
             throw "Silent NSIS installation failed with exit code $($installerProcess.ExitCode)."
           }
 
-          $executable = Join-Path $localAppData "EvoFlux/EvoFlux.exe"
+          $uninstallKey = `
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$($tauriConfig.productName)"
+          $installLocation = (
+            Get-ItemPropertyValue `
+              -Path $uninstallKey `
+              -Name InstallLocation `
+              -ErrorAction Stop
+          ).Trim('"')
+          $executable = Join-Path `
+            $installLocation `
+            "$($tauriConfig.mainBinaryName).exe"
           if (-not (Test-Path $executable)) {
             throw "Installed executable was not found at '$executable'."
           }
@@ -344,15 +364,10 @@ jobs:
             $lastLog = ""
             while ((Get-Date) -lt $deadline) {
               $process.Refresh()
-              $logs = @(
-                Get-ChildItem $localAppData -Filter backend.log -File -Recurse `
-                  -ErrorAction SilentlyContinue
-              )
-              foreach ($log in $logs) {
-                $lastLog = Get-Content $log.FullName -Raw -ErrorAction SilentlyContinue
+              if (Test-Path $backendLog) {
+                $lastLog = Get-Content $backendLog -Raw -ErrorAction SilentlyContinue
                 if ($lastLog -match "startup_timing phase=server_ready") {
                   $ready = $true
-                  break
                 }
               }
               if ($ready) {
