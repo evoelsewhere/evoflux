@@ -78,8 +78,10 @@ export function InboxBubble({ content, fromAgent, compact = false }: InboxBubble
 
           {needsCollapse && (
             <button
+              type="button"
               onClick={() => setExpanded((v) => !v)}
               aria-expanded={expanded}
+              aria-label={expanded ? 'Collapse message' : 'Expand message'}
               title={expanded ? 'Collapse' : 'Expand'}
               className={[
                 'flex items-center justify-center shrink-0',
@@ -88,13 +90,13 @@ export function InboxBubble({ content, fromAgent, compact = false }: InboxBubble
                 compact ? 'h-4 w-4' : 'h-5 w-5',
                 'transition-[background-color,border-color,box-shadow,opacity] duration-(--motion-fast)',
                 'hover:border-(--color-syn-operator) hover:text-(--color-syn-operator)',
-                'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-(--color-syn-operator)',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
                 'active:scale-90',
               ].join(' ')}
             >
               {expanded
-                ? <ChevronUp size={compact ? 10 : 12} />
-                : <ChevronDown size={compact ? 10 : 12} />}
+                ? <ChevronUp size={compact ? 10 : 12} aria-hidden="true" />
+                : <ChevronDown size={compact ? 10 : 12} aria-hidden="true" />}
             </button>
           )}
         </div>

@@ -472,6 +472,21 @@ async def remove(session_id: str) -> None:
     gitdir = snapshot_dir(session_id)
     try:
         if gitdir.exists():
-            await asyncio.to_thread(shutil.rmtree, gitdir, ignore_errors=True)
+            await asyncio.to_thread(_rmtree_force, gitdir)
     finally:
         _locks.pop(session_id, None)
+
+
+def _rmtree_force(path: Path) -> None:
+    """``shutil.rmtree`` that clears read-only bits (git pack files on Windows)."""
+    import stat
+
+    def _onexc(func: object, p: str, _exc: BaseException) -> None:
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            if callable(func):
+                func(p)
+        except OSError:
+            pass
+
+    shutil.rmtree(path, onexc=_onexc)

@@ -126,7 +126,8 @@ function AgentStatusCard({
           ? 'border-(--color-accent)/30 bg-(--bg-card)'
           : 'border-(--color-border) bg-(--bg-card)',
       )}
-      aria-label={`Focus agent ${name}`}
+      aria-label={interactive ? `Focus agent ${name}` : `Agent ${name}, ${stream.status}`}
+      aria-disabled={!interactive}
     >
       {/* Name + lead badge */}
       <div className="flex items-center gap-2">

@@ -432,7 +432,13 @@ class TestWorkspaceMediaEndpoint:
         target = fake_root / "real.txt"
         target.write_text("real content")
         link = fake_root / "link.txt"
-        link.symlink_to(target)
+        try:
+            link.symlink_to(target)
+        except OSError as exc:
+            # Windows without Developer Mode / SeCreateSymbolicLinkPrivilege.
+            if getattr(exc, "winerror", None) == 1314:
+                pytest.skip("symlink privilege not available")
+            raise
 
         from app.api.routes.team import files as team_routes
 
@@ -449,7 +455,12 @@ class TestWorkspaceMediaEndpoint:
         secret = tmp_path / "secret.txt"
         secret.write_text("do not leak")
         link = fake_root / "escape.txt"
-        link.symlink_to(secret)
+        try:
+            link.symlink_to(secret)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 1314:
+                pytest.skip("symlink privilege not available")
+            raise
 
         from app.api.routes.team import files as team_routes
 

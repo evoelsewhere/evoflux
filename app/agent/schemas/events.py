@@ -261,6 +261,22 @@ class QuestionAskedEvent(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class QuestionRepliedEvent(BaseModel):
+    """An ask-user question batch was resolved (or cancelled by interrupt).
+
+    Lets every connected client close its question UI (multi-tab dismiss).
+    ``answers`` carries the user reply list when ``status`` is ``answered``;
+    empty when cancelled by interrupt.
+    """
+
+    type: Literal["question_replied"] = "question_replied"
+    request_id: str
+    session_id: str
+    status: str = "answered"  # "answered" | "cancelled"
+    answers: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class SummarizationStartEvent(BaseModel):
     """Context-window compaction (summarisation) has begun.
 

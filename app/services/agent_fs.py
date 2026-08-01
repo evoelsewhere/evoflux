@@ -86,7 +86,13 @@ def _validate_skill_name(name: str) -> Path:
 
 
 def _validate_agent_name(name: str) -> Path:
-    parts = Path(name).parts
+    # Agent names are POSIX-style (``coding/lead``). Reject backslashes so
+    # Windows Path() cannot reinterpret ``a\b`` as nested ``a/b``.
+    if "\\" in name:
+        raise AgentFsPathError(
+            f"Invalid name '{name}'. Use '/' for nested agents, not '\\'."
+        )
+    parts = PurePosixPath(name).parts
     if not parts:
         raise AgentFsPathError("Agent name cannot be empty.")
     return Path(*(_validate_name(part) for part in parts))

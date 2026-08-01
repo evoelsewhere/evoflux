@@ -98,14 +98,24 @@ export function GitWorkspacePanel({
       </header>
 
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        {view === 'changes' && workspace ? (
-          <SourceControlPanel
-            open={open}
-            workspace={gitWorkspace || workspace}
-            onWorkspaceChange={setSelectedGitWorkspace}
-            project={project}
-            credentialLabel={credentialLabel}
-          />
+        {view === 'changes' ? (
+          workspace ? (
+            <SourceControlPanel
+              open={open}
+              workspace={gitWorkspace || workspace}
+              onWorkspaceChange={setSelectedGitWorkspace}
+              project={project}
+              credentialLabel={credentialLabel}
+            />
+          ) : (
+            <div className="flex h-full min-h-0 flex-col items-center justify-center gap-2 px-6 text-center">
+              <GitBranch size={18} className="text-(--color-text-muted)" aria-hidden />
+              <p className="text-sm font-medium text-(--color-text)">No workspace open</p>
+              <p className="max-w-xs text-xs text-(--color-text-muted)">
+                Open a coding workspace to review and commit local changes.
+              </p>
+            </div>
+          )
         ) : (
           <PullRequestsPanel
             open={open}

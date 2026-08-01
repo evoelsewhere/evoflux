@@ -12,24 +12,29 @@ router = APIRouter()
 
 @router.get("/{session_id}/questions/pending", status_code=200)
 async def pending_questions(session_id: str) -> dict:
-    """Pending ``ask_user`` batches for a session — lets non-chat surfaces
-    (the AIM Pipelines gate banner) render a workflow gate without being
-    attached to the SSE stream. Live-state only, like the service itself."""
-    from app.agent.ask_user import get_service_for_session
+    """Pending ``ask_user`` batches for a session.
 
-    svc = get_service_for_session(session_id)
-    if svc is None:
-        return {"questions": []}
+    *session_id* is the stream (lead) session — pending requests from every
+    team member publishing to that stream are included (parity with
+    ``GET /permissions`` and the webbridge side-panel restore path).
+
+    Live-state only, like the service itself. Forge/Coding also rediscover
+    pending questions via SSE reconnect replay of ``question_asked``.
+    """
+    from app.agent.ask_user import get_services_for_stream
+
     return {
         "questions": [
             {
                 "request_id": request_id,
+                "session_id": service.session_id,
                 "items": [
                     {"question": q.question, "options": q.options}
                     for q in request.questions
                 ],
             }
-            for request_id, request in svc._pending.items()
+            for service in get_services_for_stream(session_id)
+            for request_id, request in service._pending.items()
         ]
     }
 
@@ -40,21 +45,39 @@ async def reply_question(
     request_id: str,
     body: AskUserReplyRequest,
 ) -> dict:
-    """Reply to a pending ``ask_user`` question batch, unblocking the agent."""
-    from app.agent.ask_user import get_service_for_session
+    """Reply to a pending ``ask_user`` question batch, unblocking the agent.
 
-    svc = get_service_for_session(session_id)
-    if svc is None:
+    *session_id* may be either the owning agent session or the lead stream
+    session (AIM gate banner posts the lead id). The service publishes the
+    ``question_replied`` SSE event that closes the question UI on every
+    connected client.
+    """
+    from app.agent.ask_user import get_services_for_stream
+
+    services = get_services_for_stream(session_id)
+    if not services:
         raise HTTPException(
             status_code=404,
             detail=f"No active question for session '{session_id}'.",
         )
 
-    validation_error = svc.validate_answers(request_id, body.answers)
+    # Prefer the service that still owns this request_id so validation and
+    # reply land on the same instance (member vs lead).
+    owner = next(
+        (svc for svc in services if svc.get_pending(request_id) is not None),
+        None,
+    )
+    if owner is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Question '{request_id}' not found or already resolved.",
+        )
+
+    validation_error = owner.validate_answers(request_id, body.answers)
     if validation_error is not None:
         raise HTTPException(status_code=422, detail=validation_error)
 
-    resolved = svc.reply(request_id, body.answers)
+    resolved = owner.reply(request_id, body.answers)
     if not resolved:
         raise HTTPException(
             status_code=404,

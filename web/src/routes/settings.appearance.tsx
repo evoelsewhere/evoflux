@@ -98,6 +98,7 @@ export function AppearanceSettingsPage() {
                     onClick={() => update({ accent: opt.value })}
                     className={cn(
                       'flex size-11 items-center justify-center rounded-md border transition-colors md:size-9',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)/35',
                       active
                         ? 'border-(--color-border-strong) bg-(--bg-key)'
                         : 'border-transparent hover:bg-(--bg-key)',
@@ -208,7 +209,7 @@ export function AppearanceSettingsPage() {
                   if (next != null) update({ motionIntensity: next })
                 }}
               />
-              <MotionPreview />
+              <MotionPreview intensity={settings.motionIntensity} />
             </div>
           }
         />

@@ -594,6 +594,12 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         set((draft) => {
           draft.isTeamWorking = false
           draft.isContinuing = false
+          // Safety net: live question_replied / permission_replied /
+          // plan_approval_replied normally dismiss gates; clear any leftover
+          // if the turn ended without a matching replied event.
+          draft.askUserQuestion = null
+          draft.permissionRequest = null
+          draft.planApproval = null
           const completedAtMs = Date.now()
           const completedAt = new Date(completedAtMs)
           Object.keys(draft.agentStreams).forEach((name) => {
@@ -624,6 +630,9 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
           draft.error = d.message as string
           draft.isTeamWorking = false
           draft.isContinuing = false
+          draft.askUserQuestion = null
+          draft.permissionRequest = null
+          draft.planApproval = null
         })
         break
       }
@@ -710,9 +719,12 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         // The backend only emits this event when a tool call is actually
         // blocked awaiting a reply — mode handling lives server-side, so
         // every event received here should surface the approval UI.
+        // Idempotent on reconnect replay of the same single-slot request.
+        const requestId = d.request_id as string
         set((draft) => {
+          if (draft.permissionRequest?.requestId === requestId) return
           draft.permissionRequest = {
-            requestId: d.request_id as string,
+            requestId,
             sessionId: d.session_id as string,
             tool: d.tool as string,
             patterns: (d.patterns as string[]) ?? [],
@@ -723,6 +735,7 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
       }
 
       case 'permission_replied': {
+        // Includes interrupt cancel (reply: "reject") — dismiss, don't stick.
         set((draft) => {
           if (draft.permissionRequest?.requestId === (d.request_id as string)) {
             draft.permissionRequest = null
@@ -732,9 +745,12 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
       }
 
       case 'plan_approval_requested': {
+        const requestId = d.request_id as string
         set((draft) => {
+          // Same pending plan on reconnect replay — keep the review panel.
+          if (draft.planApproval?.requestId === requestId) return
           draft.planApproval = {
-            requestId: d.request_id as string,
+            requestId,
             sessionId: d.session_id as string,
             plan: (d.plan as string) ?? '',
             steps: (d.steps as Array<Record<string, unknown>>).map((s) => ({
@@ -806,14 +822,35 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
       }
 
       case 'question_asked': {
+        const questionsRaw = Array.isArray(d.questions) ? d.questions : []
+        const questions = questionsRaw
+          .filter((q): q is Record<string, unknown> => !!q && typeof q === 'object')
+          .map((q) => ({
+            question: typeof q.question === 'string' ? q.question : '',
+            options: Array.isArray(q.options)
+              ? q.options.filter((opt): opt is string => typeof opt === 'string')
+              : [],
+          }))
+          .filter((q) => q.question.length > 0)
+        if (questions.length === 0) break
+        const requestId = d.request_id as string
         set((draft) => {
+          // Reconnect replay of the same batch — keep in-progress answers.
+          if (draft.askUserQuestion?.requestId === requestId) return
           draft.askUserQuestion = {
-            requestId: d.request_id as string,
+            requestId,
             sessionId: d.session_id as string,
-            questions: (d.questions as Array<Record<string, unknown>>).map((q) => ({
-              question: q.question as string,
-              options: (q.options as string[]) ?? [],
-            })),
+            questions,
+          }
+        })
+        break
+      }
+
+      case 'question_replied': {
+        // Reply or interrupt cancel — close the question UI everywhere.
+        set((draft) => {
+          if (draft.askUserQuestion?.requestId === (d.request_id as string)) {
+            draft.askUserQuestion = null
           }
         })
         break

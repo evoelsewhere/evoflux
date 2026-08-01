@@ -5,7 +5,7 @@
  *
  *   - `SessionContextMenu`: desktop right-click menu — a fixed-position
  *     floating card anchored at the pointer, dismissed by clicking the
- *     backdrop or right-clicking again.
+ *     backdrop, pressing Escape, or right-clicking again.
  *   - `SessionActionsDialog`: mobile counterpart — a modal Dialog with the
  *     same actions, triggered by long-press.
  *
@@ -14,6 +14,7 @@
  * `onTogglePin` is provided).
  */
 
+import { useEffect, useMemo, useRef } from 'react'
 import { Pencil, Pin, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -47,6 +48,19 @@ interface SessionContextMenuProps extends SessionMenuActions {
   onClose: () => void
 }
 
+/** Approximate menu size for viewport clamping before first paint. */
+const MENU_WIDTH = 176
+const MENU_HEIGHT = 148
+
+function clampMenuPosition(x: number, y: number): { left: number; top: number } {
+  const maxLeft = Math.max(8, window.innerWidth - MENU_WIDTH - 8)
+  const maxTop = Math.max(8, window.innerHeight - MENU_HEIGHT - 8)
+  return {
+    left: Math.min(Math.max(8, x), maxLeft),
+    top: Math.min(Math.max(8, y), maxTop),
+  }
+}
+
 export function SessionContextMenu({
   anchor,
   onClose,
@@ -55,7 +69,31 @@ export function SessionContextMenu({
   pinned,
   onTogglePin,
 }: SessionContextMenuProps) {
-  if (!anchor) return null
+  const menuRef = useRef<HTMLDivElement>(null)
+  const position = useMemo(
+    () => (anchor ? clampMenuPosition(anchor.x, anchor.y) : null),
+    [anchor],
+  )
+
+  useEffect(() => {
+    if (!anchor) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [anchor, onClose])
+
+  useEffect(() => {
+    if (!anchor) return
+    // Prefer the first action so keyboard users land inside the menu.
+    const firstItem = menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')
+    firstItem?.focus()
+  }, [anchor])
+
+  if (!anchor || !position) return null
   const { session } = anchor
 
   return (
@@ -68,10 +106,11 @@ export function SessionContextMenu({
       }}
     >
       <div
+        ref={menuRef}
         role="menu"
         aria-label={`Actions for ${session.title || 'Untitled'}`}
         className="fixed min-w-44 rounded-lg border border-(--color-border) bg-(--bg-card) p-1 text-sm text-(--color-text) shadow-xl"
-        style={{ left: anchor.x, top: anchor.y }}
+        style={{ left: position.left, top: position.top }}
         onClick={(event) => event.stopPropagation()}
       >
         {onTogglePin && (

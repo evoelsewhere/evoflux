@@ -154,7 +154,7 @@ async def test_create_single_item(tmp_sandbox: SandboxConfig, todos_file: Path) 
 
     # Verify file was written
     assert todos_file.exists()
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     assert store["counter"] == 1
     assert len(store["items"]) == 1
     assert store["items"][0]["task_id"] == "task_1"
@@ -203,7 +203,7 @@ async def test_create_multiple_items_sequential_ids(
     assert "Task 3" in result
 
     # Verify file state
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     assert store["counter"] == 3
     assert len(store["items"]) == 3
     assert store["items"][0]["task_id"] == "task_1"
@@ -243,7 +243,7 @@ async def test_todos_are_isolated_by_sandbox_session(tmp_path: Path) -> None:
 
     assert result == "No todos."
     assert sandbox_one.metadata_path(TODOS_FILENAME).exists()
-    store_two = json.loads(sandbox_two.metadata_path(TODOS_FILENAME).read_text())
+    store_two = json.loads(sandbox_two.metadata_path(TODOS_FILENAME).read_text(encoding="utf-8"))
     assert store_two == {"counter": 0, "items": []}
 
 
@@ -286,7 +286,7 @@ async def test_update_full_item(tmp_sandbox: SandboxConfig, todos_file: Path) ->
     assert "Original content" not in result
 
     # Verify file state
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     item = store["items"][0]
     assert item["content"] == "Updated content"
     assert item["status"] == "in_progress"
@@ -325,7 +325,7 @@ async def test_update_partial_status_only(
     assert "medium" in result
 
     # Verify file state
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     item = store["items"][0]
     assert item["content"] == "Task content"  # unchanged
     assert item["status"] == "completed"  # changed
@@ -359,7 +359,7 @@ async def test_update_partial_priority_only(
     await _todo_manage(actions=update_actions, _state=None)
 
     # Verify file state
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     item = store["items"][0]
     assert item["content"] == "Task content"  # unchanged
     assert item["status"] == "pending"  # unchanged
@@ -398,7 +398,7 @@ async def test_update_unknown_task_id_returns_error(
     assert "Task 1" in result
 
     # Verify file state unchanged
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     assert len(store["items"]) == 1
     assert store["items"][0]["status"] == "pending"  # unchanged
 
@@ -429,7 +429,7 @@ async def test_create_with_dependencies_and_assignee(
         _state=None,
     )
 
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     assert store["items"][1]["dependencies"] == ["task_1"]
     assert store["items"][1]["assigned_to"] == "member#2"
 
@@ -466,7 +466,7 @@ async def test_claim_blocked_task_keeps_pending(
         _state=state,
     )
 
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     assert store["items"][1]["status"] == "pending"
     assert store["items"][1]["claimed_by"] is None
     assert "[task_2] [pending]" in result
@@ -504,7 +504,7 @@ async def test_claim_unblocked_assigned_task_marks_in_progress(
         _state=state,
     )
 
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     assert store["items"][1]["status"] == "in_progress"
     assert store["items"][1]["claimed_by"] == "member#2"
     assert "[task_2] [in_progress]" in result
@@ -534,7 +534,7 @@ async def test_claim_requires_exact_handle_assignment(
         _state=state,
     )
 
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     assert store["items"][0]["status"] == "pending"
     assert store["items"][0]["claimed_by"] is None
 
@@ -562,7 +562,7 @@ async def test_lead_cannot_claim_member_assigned_task_by_starting_it(
         _state=MockState(metadata={"agent_name": "EvoFlux"}),
     )
 
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     assert store["items"][0]["status"] == "pending"
     assert store["items"][0]["claimed_by"] is None
     assert "[task_1] [pending]" in result
@@ -641,7 +641,7 @@ async def test_member_update_requires_claim_or_assignment(
         actions=[{"action": "update", "task_id": "task_1", "status": "completed"}],
     )
 
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     assert store["items"][0]["status"] == "pending"
 
 
@@ -682,7 +682,7 @@ async def test_delete_existing_task(
     assert "Task 2" in result
 
     # Verify file state
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     assert len(store["items"]) == 1
     assert store["items"][0]["task_id"] == "task_2"
 
@@ -714,7 +714,7 @@ async def test_delete_unknown_task_id_returns_error(
     assert "Task 1" in result
 
     # Verify file state unchanged
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     assert len(store["items"]) == 1
 
 
@@ -815,7 +815,7 @@ async def test_batch_create_update_delete_in_order(
     assert "Task B" not in result
 
     # Verify file state
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     assert store["counter"] == 2
     assert len(store["items"]) == 1
     assert store["items"][0]["task_id"] == "task_1"
@@ -868,7 +868,7 @@ async def test_counter_does_not_rewind_after_delete(
     assert "task_1" not in result
 
     # Verify file state
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     assert store["counter"] == 2
     assert len(store["items"]) == 1
     assert store["items"][0]["task_id"] == "task_2"
@@ -918,7 +918,7 @@ async def test_state_metadata_cache_within_turn(
 
     # Verify file was recreated with cached data
     assert todos_file.exists()
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     assert store["counter"] == 1
     assert len(store["items"]) == 1
 
@@ -1027,7 +1027,7 @@ async def test_create_with_special_characters_in_content(
     assert "Buy 🍎 & 🍊 (fruits) — café" in result
 
     # Verify file preserves unicode
-    store = json.loads(todos_file.read_text())
+    store = json.loads(todos_file.read_text(encoding="utf-8"))
     assert store["items"][0]["content"] == "Buy 🍎 & 🍊 (fruits) — café"
 
 

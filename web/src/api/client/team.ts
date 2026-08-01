@@ -210,6 +210,8 @@ export async function replyPlanApproval(
 export async function getPendingQuestions(sessionId: string): Promise<{
   questions: Array<{
     request_id: string
+    /** Owning agent session when present — prefer for reply POSTs. */
+    session_id?: string | null
     items: Array<{ question: string; options: string[] }>
   }>
 }> {

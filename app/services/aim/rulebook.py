@@ -7,7 +7,7 @@ does not ship, select, install, or fall back to a shared rulebook catalog.
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 import yaml
@@ -48,13 +48,17 @@ class RulebookWorkspaceActivation(BaseModel):
     @field_validator("skills", "workflows", "commands")
     @classmethod
     def _validate_project_paths(cls, values: list[str], info) -> list[str]:
-        expected_root = Path(".evoflux") / info.field_name
+        # Use PurePosixPath so validation is case-sensitive on Windows too —
+        # native Path().is_relative_to() would accept ``.EvoFlux/...`` under
+        # ``.evoflux/...`` and silently bypass the workspace root contract.
+        expected_root = PurePosixPath(".evoflux") / info.field_name
         invalid = [
             value
             for value in values
-            if Path(value).is_absolute()
-            or ".." in Path(value).parts
-            or not Path(value).is_relative_to(expected_root)
+            if "\\" in value
+            or PurePosixPath(value).is_absolute()
+            or ".." in PurePosixPath(value).parts
+            or not PurePosixPath(value).is_relative_to(expected_root)
         ]
         if invalid:
             raise ValueError(

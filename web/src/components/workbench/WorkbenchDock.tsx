@@ -178,7 +178,7 @@ export function WorkbenchDock({
           </motion.button>
         </motion.div>
 
-        {activeTabId && (
+        {activeTabId && !isMobile && (
           <motion.button
             type="button"
             onClick={toggleMaximized}

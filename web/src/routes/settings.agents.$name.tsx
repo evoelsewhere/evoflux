@@ -54,18 +54,27 @@ export function AgentEditorPage() {
 
   // `draft` is the editor's working copy. Seed it once per `name` with the
   // server content; subsequent saves call `setDraft` explicitly from the
-  // mutation response.
+  // mutation response. `formEpoch` remounts AgentForm on discard/save so its
+  // internal form/raw state cannot drift from the parent draft.
   const [draft, setDraft] = useState<string>(() => data?.content ?? '')
+  const [formSeed, setFormSeed] = useState<string>(() => data?.content ?? '')
+  const [formEpoch, setFormEpoch] = useState(0)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [mode, setMode] = useState<'form' | 'raw'>('form')
   const [deleteOpen, setDeleteOpen] = useState(false)
 
-  // If the query finished *after* mount (common case), adopt its content
-  // once. We derive this from state by tracking whether we've ever seeded.
-  const [seeded, setSeeded] = useState(!!data?.content)
-  if (!seeded && data?.content) {
-    setSeeded(true)
+  // Reseed whenever the route name changes (SettingsScreen keeps this page
+  // mounted across agent-to-agent navigations).
+  const [seededFor, setSeededFor] = useState<string | null>(
+    data != null ? name : null,
+  )
+  if (data != null && seededFor !== name) {
+    setSeededFor(name)
     setDraft(data.content)
+    setFormSeed(data.content)
+    setFormEpoch(0)
+    setSaveError(null)
+    setMode('form')
   }
 
   // Compare semantically: list-fields (tools, skills) are sets, body
@@ -95,6 +104,8 @@ export function AgentEditorPage() {
         description: 'Active on next turn.',
       })
       setDraft(res.content)
+      setFormSeed(res.content)
+      setFormEpoch((epoch) => epoch + 1)
       refetch()
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
@@ -158,7 +169,8 @@ export function AgentEditorPage() {
                 builtIn={isBuiltIn}
               />
               <AgentForm
-                initial={data.content}
+                key={`${name}:${formEpoch}`}
+                initial={formSeed}
                 agentPath={name}
                 onChange={setDraft}
                 disabled={updateMut.isPending}
@@ -177,7 +189,13 @@ export function AgentEditorPage() {
                   variant="ghost"
                   size="xs"
                   className="min-h-11 md:min-h-0"
-                  onClick={() => data && setDraft(data.content)}
+                  onClick={() => {
+                    if (!data) return
+                    setDraft(data.content)
+                    setFormSeed(data.content)
+                    setFormEpoch((epoch) => epoch + 1)
+                    setSaveError(null)
+                  }}
                 >
                   Discard changes
                 </Button>

@@ -214,7 +214,7 @@ export function SettingsScreen() {
 
         <main id="main" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <SettingsProvider path={settingsPath} params={params} search={settingsSearch}>
-            <SettingsContent path={settingsPath} />
+            <SettingsContent key={canonicalSettingsPath || 'hub'} path={settingsPath} />
           </SettingsProvider>
         </main>
       </div>
