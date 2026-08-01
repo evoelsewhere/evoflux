@@ -297,6 +297,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             Write-Warning "Tauri's WiX validation failed; the next step will finalize the per-user MSI."
           }
+          exit 0
 
       - name: Build unsigned MSI
         if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled != 'true'
@@ -308,6 +309,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             Write-Warning "Tauri's WiX validation failed; the next step will finalize the per-user MSI."
           }
+          exit 0
 
       - name: Finalize per-user MSI
         if: runner.os == 'Windows'
