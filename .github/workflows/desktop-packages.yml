@@ -3,6 +3,16 @@ name: Build desktop packages
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: Desktop platform to build
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - "all"
+          - "macos-intel"
+          - "macos-apple-silicon"
+          - "windows-x64"
       signing:
         description: Sign and notarize when credentials are available
         required: true
@@ -17,7 +27,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: desktop-packages-${{ github.ref }}
+  group: desktop-packages-${{ github.ref }}-${{ inputs.platform }}
   cancel-in-progress: false
 
 env:
@@ -27,28 +37,46 @@ env:
   SIGNING_MODE: ${{ inputs.signing }}
 
 jobs:
+  prepare:
+    name: Select build platforms
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - name: Create build matrix
+        id: matrix
+        shell: bash
+        env:
+          SELECTED_PLATFORM: ${{ inputs.platform }}
+        run: |
+          case "$SELECTED_PLATFORM" in
+            all)
+              matrix='{"include":[{"name":"DMG · Intel","os":"macos-15-intel","artifact":"evoflux-macos-intel","architecture":"x86_64","dmg_architecture":"x64"},{"name":"DMG · Apple Silicon","os":"macos-15","artifact":"evoflux-macos-apple-silicon","architecture":"arm64","dmg_architecture":"aarch64"},{"name":"NSIS · Windows x64","os":"windows-2022","artifact":"evoflux-windows-x64","architecture":"x86_64"}]}'
+              ;;
+            macos-intel)
+              matrix='{"include":[{"name":"DMG · Intel","os":"macos-15-intel","artifact":"evoflux-macos-intel","architecture":"x86_64","dmg_architecture":"x64"}]}'
+              ;;
+            macos-apple-silicon)
+              matrix='{"include":[{"name":"DMG · Apple Silicon","os":"macos-15","artifact":"evoflux-macos-apple-silicon","architecture":"arm64","dmg_architecture":"aarch64"}]}'
+              ;;
+            windows-x64)
+              matrix='{"include":[{"name":"NSIS · Windows x64","os":"windows-2022","artifact":"evoflux-windows-x64","architecture":"x86_64"}]}'
+              ;;
+            *)
+              echo "Unsupported platform: $SELECTED_PLATFORM" >&2
+              exit 1
+              ;;
+          esac
+          echo "value=$matrix" >> "$GITHUB_OUTPUT"
+
   build:
     name: ${{ matrix.name }}
+    needs: prepare
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: DMG · Intel
-            os: macos-15-intel
-            artifact: evoflux-macos-intel
-            architecture: x86_64
-            dmg_architecture: x64
-          - name: DMG · Apple Silicon
-            os: macos-15
-            artifact: evoflux-macos-apple-silicon
-            architecture: arm64
-            dmg_architecture: aarch64
-          - name: NSIS · Windows x64
-            os: windows-2022
-            artifact: evoflux-windows-x64
-            architecture: x86_64
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
 
     steps:
       - name: Check out source

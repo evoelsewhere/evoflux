@@ -42,8 +42,10 @@ Last reviewed: 2026-08-02.
 ## Consolidated workflow
 
 `.github/workflows/desktop-packages.yml` is the only GitHub Actions workflow.
-Run it from **Actions > Build desktop packages > Run workflow**. One matrix run
-produces these artifacts:
+Run it from **Actions > Build desktop packages > Run workflow**. The `platform`
+input can build all three targets or only `macos-intel`,
+`macos-apple-silicon`, or `windows-x64`. The selected matrix produces these
+artifacts:
 
 | Job | Runner | Native architecture | Artifact |
 | --- | --- | --- | --- |
