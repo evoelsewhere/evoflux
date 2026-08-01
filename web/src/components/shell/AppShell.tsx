@@ -69,6 +69,7 @@ export function AppShell({
   onTouchCancel,
   children,
 }: AppShellProps) {
+  const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed)
   const toggleSidebarCollapsed = useUIStore((s) => s.toggleSidebarCollapsed)
   const hasSidebar = sidebar != null
   const motionPreset = useMotionPreset()
@@ -97,7 +98,8 @@ export function AppShell({
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.9 }}
             transition={motionPreset.spring}
-            aria-label="Toggle sidebar"
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!sidebarCollapsed}
             title="Toggle sidebar (Ctrl+B)"
             className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
           >

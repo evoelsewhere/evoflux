@@ -146,6 +146,8 @@ export interface AssistantTurnProps {
   size?: 'compact' | 'roomy'
   /** Continue from this turn when it is the trailing finalized lead turn. */
   onContinue?: () => void
+  sessionId?: string
+  latestMCPAppBlockIds?: Set<string>
 }
 
 export function AssistantTurn({
@@ -158,6 +160,8 @@ export function AssistantTurn({
   renderBlock,
   size = 'compact',
   onContinue,
+  sessionId,
+  latestMCPAppBlockIds,
 }: AssistantTurnProps) {
   const turnIsStreaming = isWorking && isTrailingTurn
   const canContinue = isTrailingTurn && !isWorking ? onContinue : undefined
@@ -176,6 +180,9 @@ export function AssistantTurn({
               key={`group-${startIndex}-${j}`}
               group={renderItem as ToolBlockGroup}
               isStreaming={turnIsStreaming}
+              sessionId={sessionId}
+              latestMCPAppBlockIds={latestMCPAppBlockIds}
+              compact={size === 'compact'}
             />
           )
         }

@@ -17,9 +17,10 @@ import { BlockRenderer } from './BlockRenderer'
 import { AgentChip } from './ui/agent-chip'
 import { getVisibleTurnWindow, partitionTurns } from '@/utils/turns'
 import { latestDirectUserBlockId, mergeBlocks } from '@/utils/blocks'
-import { formatTokens } from '@/utils/format'
 import { latestMCPAppResourceBlockIds } from '@/utils/mcp-app-artifacts'
 import { useTeamStore } from '@/stores/useTeamStore'
+import { ContextBudgetBar } from '@/components/ContextBudgetBar'
+import { useRegistryQuery } from '@/queries'
 import { TierBadge } from './TierBadge'
 import { resolveMemberTier } from '@/utils/tier'
 import type { AgentStream } from '@/stores/useTeamStore'
@@ -66,7 +67,14 @@ export function AgentPane({
   const prevScrollHeightRef = useRef<number | null>(null)
   const pendingRestoreRef = useRef(false)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
+  const sessionModel = useTeamStore((s) => s.sessionModel)
   const turnChanges = useTeamStore((s) => s.turnChanges)
+  const registry = useRegistryQuery()
+  const modelEntry = useMemo(() => {
+    const modelId = sessionModel ?? stream.model
+    if (!modelId || !registry.data) return undefined
+    return registry.data.models.find((entry) => entry.id === modelId)
+  }, [sessionModel, stream.model, registry.data])
   const handleRevert = useCallback(() => {
     void useTeamStore.getState().undoTeam()
   }, [])
@@ -260,14 +268,15 @@ export function AgentPane({
            {memberTier && <TierBadge tier={memberTier} />}
          </div>
          <div className="flex items-center gap-1 text-xs text-(--color-text-subtle)">
-           {stream.usage.totalTokens > 0 && (
-             <span
-                className="flex h-8 min-w-8 items-center justify-center rounded-full bg-(--bg-key) px-2 font-mono text-xs text-(--color-text)"
-               title={`Input: ${stream.usage.promptTokens.toLocaleString()} · Output: ${stream.usage.completionTokens.toLocaleString()} · Cache: ${stream.usage.cachedTokens.toLocaleString()}`}
-             >
-               {formatTokens(stream.usage.promptTokens)}
-             </span>
-           )}
+           <ContextBudgetBar
+             compact
+             used={stream.usage.promptTokens}
+             max={modelEntry?.context_length ?? undefined}
+             input={stream.usage.promptTokens}
+             output={stream.usage.completionTokens}
+             cached={stream.usage.cachedTokens}
+             trigger={modelEntry?.summary_trigger_tokens}
+           />
             <span aria-label={`Agent status: ${stream.status}`} className={`h-1.5 w-1.5 rounded-full ${
              isError ? 'bg-(--color-error)' : isWorking ? 'bg-(--color-accent)' : isOffline ? 'bg-(--color-text-subtle) opacity-50' : 'bg-(--color-success)'
            }`} />
@@ -276,8 +285,10 @@ export function AgentPane({
          <div className="flex shrink-0 items-center gap-0.5">
            {canMoveLeft && (
              <button
+               type="button"
                onClick={onMoveLeft}
-               className="flex h-7 w-7 items-center justify-center rounded-xs text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+               className="flex h-7 w-7 items-center justify-center rounded-xs text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
+               aria-label="Move pane left"
                title="Move left"
              >
                <ChevronLeft size={14} aria-hidden="true" />
@@ -285,8 +296,10 @@ export function AgentPane({
            )}
            {canMoveRight && (
              <button
+               type="button"
                onClick={onMoveRight}
-               className="flex h-7 w-7 items-center justify-center rounded-xs text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+               className="flex h-7 w-7 items-center justify-center rounded-xs text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
+               aria-label="Move pane right"
                title="Move right"
              >
                <ChevronRight size={14} aria-hidden="true" />
@@ -294,8 +307,11 @@ export function AgentPane({
            )}
            {collapsible && (
              <button
+               type="button"
                onClick={() => setPaneCollapsed((c) => !c)}
-               className="flex h-7 w-7 items-center justify-center rounded-xs text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+               className="flex h-7 w-7 items-center justify-center rounded-xs text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
+               aria-label={paneCollapsed ? 'Expand pane' : 'Collapse pane'}
+               aria-expanded={!paneCollapsed}
                title={paneCollapsed ? 'Expand' : 'Collapse'}
              >
                {paneCollapsed
@@ -341,6 +357,7 @@ export function AgentPane({
                            sessionId={sessionId}
                            onRevert={item.block.id === latestUserBlockId ? handleRevert : undefined}
                            latestMCPAppBlockIds={latestMCPAppBlockIds}
+                           renderLeadingQuoteAsContext
                          />
                        </div>
                      )
@@ -360,13 +377,17 @@ export function AgentPane({
                          isTrailingTurn={isTrailingTurn}
                          totalBlocks={allBlocks.length}
                          onContinue={onContinue}
+                         sessionId={sessionId}
+                         latestMCPAppBlockIds={latestMCPAppBlockIds}
                          renderBlock={({ block, isStreaming }) => (
                            <BlockRenderer
                              block={block}
                              isStreaming={isStreaming}
                              compact
                              sessionId={sessionId}
+                             onRevert={isDirectUserBlock(block) && block.id === latestUserBlockId ? handleRevert : undefined}
                              latestMCPAppBlockIds={latestMCPAppBlockIds}
+                             renderLeadingQuoteAsContext
                            />
                          )}
                        />

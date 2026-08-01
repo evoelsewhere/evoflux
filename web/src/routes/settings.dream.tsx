@@ -29,6 +29,10 @@ const DEFAULT_FORM: DreamConfig = {
   schedule: '0 2 * * *',
 }
 
+function dreamConfigEqual(a: DreamConfig, b: DreamConfig): boolean {
+  return a.enabled === b.enabled && a.model === b.model && a.schedule === b.schedule
+}
+
 function normalized(form: DreamConfig): DreamConfig {
   return {
     enabled: form.enabled,
@@ -47,9 +51,17 @@ export function DreamSettingsPanel({ embedded = false }: { embedded?: boolean })
   const [form, setForm] = useState<DreamConfig>(DEFAULT_FORM)
   const [sourceRaw, setSourceRaw] = useState<DreamConfig | null>(null)
 
-  if (data && data !== sourceRaw) {
-    setForm(data)
-    setSourceRaw(data)
+  // Adopt server config by value, not object identity — React Query refetches
+  // allocate new objects and must not wipe in-progress edits.
+  if (data) {
+    if (sourceRaw === null) {
+      setForm(data)
+      setSourceRaw(data)
+    } else if (!dreamConfigEqual(normalized(data), normalized(sourceRaw))) {
+      const formDirty = !dreamConfigEqual(normalized(form), normalized(sourceRaw))
+      setSourceRaw(data)
+      if (!formDirty) setForm(data)
+    }
   }
 
   const dirty = useMemo(() => {
@@ -72,6 +84,7 @@ export function DreamSettingsPanel({ embedded = false }: { embedded?: boolean })
   const handleSave = async () => {
     try {
       const saved = await updateMut.mutateAsync(normalized(form))
+      setForm(saved)
       setSourceRaw(saved)
       push({ tone: 'success', title: 'Dream settings saved' })
     } catch (err) {

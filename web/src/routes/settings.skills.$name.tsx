@@ -50,18 +50,25 @@ export function SkillEditorPage() {
   const [deletedFiles, setDeletedFiles] = useState<string[]>([])
   const [saveError, setSaveError] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [seeded, setSeeded] = useState(!!data?.content)
-  if (!seeded && data?.content) {
-    setSeeded(true)
+  // Reseed per skill name — SettingsScreen keeps this page mounted across
+  // skill-to-skill navigations, so a boolean "seeded once" flag would leave
+  // the previous skill's draft in place and risk saving it over the next one.
+  const [seededFor, setSeededFor] = useState<string | null>(
+    data != null ? name : null,
+  )
+  if (data != null && seededFor !== name) {
+    setSeededFor(name)
     setDraft(data.content)
     setFiles(skillBundleFilesFromApi(data.files))
+    setDeletedFiles([])
+    setSaveError(null)
   }
 
   const readOnly = data ? !data.editable : false
   const resourcesDirty =
     !!data &&
-    JSON.stringify(files) !== JSON.stringify(skillBundleFilesFromApi(data.files)) ||
-    deletedFiles.length > 0
+    (JSON.stringify(files) !== JSON.stringify(skillBundleFilesFromApi(data.files)) ||
+      deletedFiles.length > 0)
   const dirty = !!data && (!contentEquals(draft, data.content) || resourcesDirty)
   const draftErrors = dirty ? validateSkillDraft(draft) : null
   const invalid = draftErrors !== null

@@ -72,9 +72,10 @@ export function MemorySettingsPage() {
   }
 
   const focusDreamSettings = () => {
-    document
-      .getElementById('dream-settings')
-      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    const el = document.getElementById('dream-settings')
+    if (!el) return
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
   }
 
   return (

@@ -28,7 +28,8 @@ export function PermissionApprovalModal() {
     if (!permissionRequest || !sessionId) return
     setReplying(true)
     try {
-      await replyPermissionRequest(sessionId, permissionRequest.requestId, reply)
+      const replySessionId = permissionRequest.sessionId || sessionId
+      await replyPermissionRequest(replySessionId, permissionRequest.requestId, reply)
     } catch {
       // Ignore — "not found or already resolved" means the backend already
       // handled it (e.g. auto-allow mode). We still close the modal below.
@@ -49,7 +50,7 @@ export function PermissionApprovalModal() {
           transition={preset.spring}
           className="mx-auto w-full max-w-3xl px-4 pb-2"
         >
-          <div className="rounded-xl border border-(--color-warning)/35 bg-(--bg-page) shadow-sm overflow-hidden">
+          <div className="rounded-xl border border-(--color-warning)/35 bg-(--bg-page) shadow-sm overflow-hidden" role="region" aria-label="Permission required">
             {/* Top bar */}
             <div className="flex items-center gap-2 border-b border-(--color-border) bg-(--color-warning)/5 px-4 py-2.5">
               <ShieldAlert size={14} className="shrink-0 text-(--color-warning)" aria-hidden="true" />
@@ -88,11 +89,13 @@ export function PermissionApprovalModal() {
               {/* Action buttons */}
               <div className="flex shrink-0 items-center gap-1.5">
                 <button
+                  type="button"
                   disabled={replying}
                   onClick={() => handleReply('reject')}
                   className={cn(
                     'flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
                     'text-red-600 hover:bg-red-500/10 dark:text-red-400',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
                     replying && 'pointer-events-none opacity-50',
                   )}
                 >
@@ -100,22 +103,26 @@ export function PermissionApprovalModal() {
                   Reject
                 </button>
                 <button
+                  type="button"
                   disabled={replying}
                   onClick={() => handleReply('once')}
                   className={cn(
                     'flex items-center gap-1 rounded-lg border border-(--color-border) px-2.5 py-1.5 text-xs font-medium transition-colors',
                     'bg-(--bg-card) text-(--color-text) hover:bg-(--bg-key)',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
                     replying && 'pointer-events-none opacity-50',
                   )}
                 >
                   Allow once
                 </button>
                 <button
+                  type="button"
                   disabled={replying}
                   onClick={() => handleReply('always')}
                   className={cn(
                     'flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
                     'bg-(--color-primary) text-white hover:opacity-90',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
                     replying && 'pointer-events-none opacity-50',
                   )}
                 >

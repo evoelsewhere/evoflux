@@ -7,6 +7,7 @@
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { motion } from 'framer-motion'
 import { CodeXml, createLucideIcon, Monitor, type LucideIcon } from 'lucide-react'
+import type { KeyboardEvent } from 'react'
 import { useMotionPreset } from '@/lib/motion'
 import { loadModeRoute } from '@/lib/mode-route'
 import { cn } from '@/lib/utils'
@@ -94,6 +95,30 @@ export function ModeSwitchTabs({
 }) {
   const { preset, preloadMode, switchMode } = useAnimatedModeNavigation(onNavigate)
   const activeIndex = TABS.findIndex((tab) => tab.mode === active)
+
+  const onTabListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const current = Math.max(0, activeIndex)
+    let next = current
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      next = (current + 1) % TABS.length
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      next = (current - 1 + TABS.length) % TABS.length
+    } else if (event.key === 'Home') {
+      next = 0
+    } else if (event.key === 'End') {
+      next = TABS.length - 1
+    } else {
+      return
+    }
+    event.preventDefault()
+    const tab = TABS[next]
+    if (!tab) return
+    if (tab.mode !== active) switchMode(tab.mode, tab.to)
+    // Move focus to the newly selected tab after navigation kicks off.
+    const buttons = event.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]')
+    buttons[next]?.focus()
+  }
+
   return (
     // The strip is a size container: labels only render when there's room
     // for all three (below ~12.5rem the resizable sidebars would otherwise
@@ -103,6 +128,7 @@ export function ModeSwitchTabs({
         className="relative grid h-10 grid-cols-3 items-center rounded-xl bg-(--bg-key)/55 p-1 shadow-[inset_0_0_0_1px_var(--color-border)]"
         role="tablist"
         aria-label="Application mode"
+        onKeyDown={onTabListKeyDown}
       >
         <motion.div
           data-testid="mode-switch-indicator"
@@ -117,6 +143,7 @@ export function ModeSwitchTabs({
           <button
             key={mode}
             type="button"
+            tabIndex={mode === active ? 0 : -1}
             onPointerEnter={() => {
               if (mode !== active) preloadMode(mode, to)
             }}
@@ -131,7 +158,7 @@ export function ModeSwitchTabs({
             aria-selected={mode === active}
             role="tab"
             className={cn(
-              'group relative z-10 flex h-8 min-w-0 items-center justify-center gap-1 rounded-lg px-1 text-xs font-medium outline-none transition-[color,transform] duration-(--motion-fast) active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35 @[12.5rem]/modeswitch:gap-1.5 @[12.5rem]/modeswitch:px-2',
+              'group relative z-(--z-panel) flex h-8 min-w-0 items-center justify-center gap-1 rounded-lg px-1 text-xs font-medium outline-none transition-[color,transform] duration-(--motion-fast) active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35 @[12.5rem]/modeswitch:gap-1.5 @[12.5rem]/modeswitch:px-2',
               mode === active
                 ? 'text-(--color-text)'
                 : 'text-(--color-text-subtle) hover:text-(--color-text)',
@@ -187,7 +214,7 @@ export function ModeSwitchRail({
               aria-hidden="true"
             />
           )}
-          <span className="relative z-10">
+          <span className="relative z-(--z-panel)">
             <ModeIcon Icon={Icon} active={mode === active} compact />
           </span>
         </button>

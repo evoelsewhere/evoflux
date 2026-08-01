@@ -127,10 +127,11 @@ function AimLayoutBase() {
       ) : null}
       mobileSidebar={
         isMobile ? (
-          <AnimatePresence>
-            {mobileSidebarOpen && (
-              <>
+          <>
+            <AnimatePresence>
+              {mobileSidebarOpen && (
                 <motion.button
+                  key="aim-drawer-backdrop"
                   type="button"
                   aria-label="Close AIM navigation"
                   className="mobile-safe-top fixed inset-x-0 bottom-0 z-(--z-drawer) bg-(--color-overlay) md:hidden"
@@ -139,7 +140,12 @@ function AimLayoutBase() {
                   exit={{ opacity: 0 }}
                   onClick={() => setMobileSidebarOpen(false)}
                 />
+              )}
+            </AnimatePresence>
+            <AnimatePresence>
+              {mobileSidebarOpen && (
                 <motion.aside
+                  key="aim-drawer-panel"
                   aria-label="AIM navigation"
                   className="mobile-safe-top fixed bottom-0 left-0 z-(--z-overlay) w-[min(288px,calc(100vw-2rem))] overflow-hidden bg-(--bg-sidebar) shadow-xl md:hidden"
                   initial={{ x: '-100%' }}
@@ -156,9 +162,9 @@ function AimLayoutBase() {
                     onMobileClose={() => setMobileSidebarOpen(false)}
                   />
                 </motion.aside>
-              </>
-            )}
-          </AnimatePresence>
+              )}
+            </AnimatePresence>
+          </>
         ) : null
       }
       header={

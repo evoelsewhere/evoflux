@@ -3021,8 +3021,11 @@ function GateSection({ sessionId }: { sessionId: string }) {
     setReplying(true)
     setError(null)
     try {
+      // Prefer batch.session_id (owning agent) when the poll includes it so
+      // member-owned gates reply to the right service, not only the lead id.
+      const replySessionId = batch.session_id || sessionId
       await replyAskUserQuestion(
-        sessionId,
+        replySessionId,
         batch.request_id,
         normalizeAimGateAnswers(values),
       )

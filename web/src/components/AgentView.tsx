@@ -425,6 +425,8 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                                key={`group-${item.startIndex}-${j}`}
                                group={renderItem as ToolBlockGroup}
                                isStreaming={turnIsStreaming}
+                               sessionId={sessionId}
+                               latestMCPAppBlockIds={latestMCPAppBlockIds}
                              />
                            )
                          }

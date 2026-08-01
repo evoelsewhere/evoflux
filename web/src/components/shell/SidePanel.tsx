@@ -24,7 +24,7 @@
  * BrowserViewer keeps its own drag handle — only their configs are shared.
  */
 
-import { useEffect } from 'react'
+import { forwardRef, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import { X } from 'lucide-react'
@@ -96,7 +96,7 @@ interface SidePanelProps {
   children: ReactNode
 }
 
-export function SidePanel({
+export const SidePanel = forwardRef<HTMLElement, SidePanelProps>(function SidePanel({
   storageKey,
   defaultWidth,
   minWidth,
@@ -121,7 +121,7 @@ export function SidePanel({
   contentClassName,
   onWidthChange,
   children,
-}: SidePanelProps) {
+}, ref) {
   const detectedMobile = useIsMobile()
   const prefersReducedMotion = useReducedMotion()
   const motionPreset = useMotionPreset()
@@ -161,6 +161,7 @@ export function SidePanel({
 
   return (
     <motion.aside
+      ref={ref}
       style={panelStyle}
       initial={
         isInner || !animated
@@ -262,4 +263,4 @@ export function SidePanel({
       </div>
     </motion.aside>
   )
-}
+})
