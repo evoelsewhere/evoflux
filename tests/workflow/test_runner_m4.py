@@ -247,7 +247,7 @@ async def test_gate_round_trip_via_ask_user_service(setup_db, fake_team):
     from app.agent.ask_user import get_service_for_session
     from app.core import db as db_module
     from app.models.chat import ChatSession
-    from app.models.workflow import WorkflowExecution
+    from app.models.workflow import WorkflowExecution, WorkflowGateRequest
 
     runner = WorkflowRunner()
     definition = parse_definition("""
@@ -300,6 +300,25 @@ edges:
     async with db_module.async_session_factory() as db:
         execution = await db.get(WorkflowExecution, state.execution_id)
         assert execution.status == "completed"
+        gate = (
+            await db.exec(
+                select(WorkflowGateRequest).where(
+                    WorkflowGateRequest.execution_id == state.execution_id
+                )
+            )
+        ).one()
+        assert gate.node_id == "ask"
+        assert gate.kind == "gate"
+        assert gate.question.startswith("Deploy?")
+        assert gate.options == ["go", "halt"]
+        assert gate.status == "answered"
+        assert gate.answers == ["go"]
+        assert gate.resolved_at is not None
+        from app.api.routes.workflows import get_execution_route
+
+        detail = await get_execution_route(state.execution_id, db)
+        assert detail.gate_requests[0].request_id == request_id
+        assert detail.gate_requests[0].answers == ["go"]
     assert state.node_outputs["ask"] == {"choice": "go"}
     assert state.node_outputs["deploy"] == {"did": "deployed"}
 
@@ -355,7 +374,7 @@ edges:
 async def test_stop_during_gate_cancels_cleanly(setup_db, fake_team):
     from app.core import db as db_module
     from app.models.chat import ChatSession
-    from app.models.workflow import WorkflowExecution
+    from app.models.workflow import WorkflowExecution, WorkflowGateRequest
 
     runner = WorkflowRunner()
     definition = parse_definition("""
@@ -385,6 +404,15 @@ nodes:
     async with db_module.async_session_factory() as db:
         execution = await db.get(WorkflowExecution, state.execution_id)
         assert execution.status == "stopped"
+        gate = (
+            await db.exec(
+                select(WorkflowGateRequest).where(
+                    WorkflowGateRequest.execution_id == state.execution_id
+                )
+            )
+        ).one()
+        assert gate.status == "cancelled"
+        assert gate.resolved_at is not None
 
 
 @pytest.mark.asyncio

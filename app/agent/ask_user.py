@@ -31,10 +31,14 @@ class AskUserRequest:
 
     @classmethod
     def create(
-        cls, session_id: str, questions: list["QuestionSpec"]
+        cls,
+        session_id: str,
+        questions: list["QuestionSpec"],
+        *,
+        request_id: str | None = None,
     ) -> "AskUserRequest":
         req = cls(
-            id=str(uuid.uuid4()),
+            id=request_id or str(uuid.uuid4()),
             session_id=session_id,
             questions=list(questions),
         )
@@ -65,13 +69,18 @@ class AskUserService:
         self.stream_session_id = stream_session_id or session_id
         self._pending: dict[str, AskUserRequest] = {}
 
-    async def ask(self, questions: list["QuestionSpec"]) -> list[str]:
+    async def ask(
+        self,
+        questions: list["QuestionSpec"],
+        *,
+        request_id: str | None = None,
+    ) -> list[str]:
         """Push a batch of questions to the user and block until answered.
 
         Returns one answer per question, in the same order — each either
         an option the user picked or free text they typed.
         """
-        req = AskUserRequest.create(self.session_id, questions)
+        req = AskUserRequest.create(self.session_id, questions, request_id=request_id)
         self._pending[req.id] = req
 
         try:
