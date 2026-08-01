@@ -80,6 +80,20 @@ class WorkflowNodeRunOut(BaseModel):
     ended_at: datetime | None
 
 
+class WorkflowGateRequestOut(BaseModel):
+    id: UUID
+    node_run_id: UUID | None
+    node_id: str
+    kind: str
+    request_id: str
+    question: str
+    options: list[str]
+    status: str
+    answers: list[str]
+    created_at: datetime
+    resolved_at: datetime | None
+
+
 class WorkflowExecutionOut(BaseModel):
     id: UUID
     definition_name: str
@@ -101,6 +115,7 @@ class WorkflowExecutionOut(BaseModel):
 class WorkflowExecutionDetailResponse(BaseModel):
     execution: WorkflowExecutionOut
     node_runs: list[WorkflowNodeRunOut]
+    gate_requests: list[WorkflowGateRequestOut] = Field(default_factory=list)
 
 
 class WorkflowExecutionListResponse(BaseModel):

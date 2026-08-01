@@ -64,11 +64,19 @@ import {
   runWorkflow,
   stopExecution,
   teamHistory,
+  teamStream,
   updateTeamSessionTitle,
 } from '@/api/client'
 import { queryKeys } from '@/queries/keys'
 import { useWorkflowsQuery } from '@/queries/useWorkflowsQuery'
 import { resolveAimRolePath } from '@/lib/aim-kb'
+import { workflowProgressExecutionId } from '@/lib/aim-workflow-events'
+import {
+  aimGateAnswersComplete,
+  emptyAimGateAnswers,
+  normalizeAimGateAnswers,
+  withAimGateAnswer,
+} from '@/lib/aim-gates'
 import { AimSidePanel } from '@/components/AimSidePanel'
 import { ListEnter } from '@/components/motion'
 import { Button } from '@/components/ui/button'
@@ -2182,6 +2190,7 @@ export function RunMonitorPanel({
   onClose: () => void
   onDiscuss?: () => void
 }) {
+  const queryClient = useQueryClient()
   // The table's 5s join may not have caught a just-started run — resolve the
   // session's newest execution ourselves until one shows up. Give up after
   // ~30s: a session with no execution by then never ran a workflow (e.g. an
@@ -2217,6 +2226,7 @@ export function RunMonitorPanel({
     },
   })
   const execution = detailQ.data?.execution
+  const executionStatus = execution?.status
   const nodeRuns = detailQ.data?.node_runs ?? []
   const workflowQ = useQuery({
     queryKey: [
@@ -2238,6 +2248,37 @@ export function RunMonitorPanel({
   const executionInputs = Object.entries(execution?.inputs ?? {}).filter(
     ([, value]) => value !== null && value !== undefined && value !== '',
   )
+
+  useEffect(() => {
+    if (
+      !sessionId ||
+      (executionStatus && !['running', 'waiting_gate'].includes(executionStatus))
+    ) {
+      return
+    }
+    const controller = new AbortController()
+    teamStream(
+      sessionId,
+      {
+        onEvent: (type, data) => {
+          const eventExecutionId = workflowProgressExecutionId(type, data)
+          if (!eventExecutionId || (executionId && eventExecutionId !== executionId)) return
+          void queryClient.invalidateQueries({
+            queryKey: ['workflow-execution', eventExecutionId],
+          })
+          void queryClient.invalidateQueries({
+            queryKey: ['aim-monitor-execution', sessionId],
+          })
+          void queryClient.invalidateQueries({
+            queryKey: ['aim-pending-questions', sessionId],
+          })
+          void queryClient.invalidateQueries({ queryKey: ['aim-run-executions'] })
+        },
+      },
+      controller.signal,
+    )
+    return () => controller.abort()
+  }, [executionId, executionStatus, queryClient, sessionId])
 
   const [stopping, setStopping] = useState(false)
   const stop = async () => {
@@ -2956,7 +2997,7 @@ function NodeRunRow({ node }: { node: WorkflowNodeRun }) {
 function GateSection({ sessionId }: { sessionId: string }) {
   const queryClient = useQueryClient()
   const [replying, setReplying] = useState(false)
-  const [freeText, setFreeText] = useState('')
+  const [answers, setAnswers] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const pendingQ = useQuery({
     queryKey: ['aim-pending-questions', sessionId],
@@ -2964,15 +3005,27 @@ function GateSection({ sessionId }: { sessionId: string }) {
     refetchInterval: 3_000,
   })
   const batch = pendingQ.data?.questions[0]
-  const item = batch?.items[0]
-  const formattedQuestion = item ? formatApprovalQuestion(item.question) : ''
+  const items = batch?.items ?? []
+  const requestId = batch?.request_id
+  const itemCount = items.length
 
-  const answer = async (value: string) => {
-    if (!batch) return
+  useEffect(() => {
+    setAnswers(emptyAimGateAnswers(items))
+    setError(null)
+    // A request id is immutable; polling the same batch must preserve answers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestId, itemCount])
+
+  const submitAnswers = async (values: string[]) => {
+    if (!batch || !aimGateAnswersComplete(items, values)) return
     setReplying(true)
     setError(null)
     try {
-      await replyAskUserQuestion(sessionId, batch.request_id, [value])
+      await replyAskUserQuestion(
+        sessionId,
+        batch.request_id,
+        normalizeAimGateAnswers(values),
+      )
       void queryClient.invalidateQueries({ queryKey: ['aim-pending-questions', sessionId] })
     } catch (err) {
       // The backend rejects an off-menu answer to a gate (strict choices) or
@@ -2984,48 +3037,84 @@ function GateSection({ sessionId }: { sessionId: string }) {
     }
   }
 
+  const selectAnswer = (index: number, value: string) => {
+    const next = withAimGateAnswer(answers, index, value)
+    setAnswers(next)
+    // Preserve the one-click workflow-gate interaction. Batched questions
+    // wait for the explicit submit button so every answer is sent together.
+    if (items.length === 1) void submitAnswers(next)
+  }
+
   // Quiet until a question is actually pending — the section polls in the
   // background and materializes the amber box only when the run needs you.
-  if (!item) return null
+  if (items.length === 0) return null
 
   return (
     <div className="space-y-2 rounded-md border border-(--color-warning,orange)/50 bg-(--bg-key) px-3 py-2">
       <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-(--color-warning,orange)">
         <CirclePause size={11} />
-        Waiting for you
+        Waiting for you{items.length > 1 ? ` · ${items.length} questions` : ''}
       </p>
-      <div className="max-h-96 overflow-auto text-xs leading-5 text-(--color-text)">
-        <MarkdownBlock content={formattedQuestion} sessionId={sessionId} />
+      <div className="max-h-96 space-y-3 overflow-auto">
+        {items.map((item, index) => (
+          <div
+            key={`${batch?.request_id ?? 'gate'}-${index}`}
+            className={cn(
+              items.length > 1 &&
+                'border-t border-(--color-border) pt-3 first:border-t-0 first:pt-0',
+            )}
+          >
+            {items.length > 1 && (
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-(--color-text-subtle)">
+                Question {index + 1} of {items.length}
+              </p>
+            )}
+            <div className="text-xs leading-5 text-(--color-text)">
+              <MarkdownBlock
+                content={formatApprovalQuestion(item.question)}
+                sessionId={sessionId}
+              />
+            </div>
+            {item.options.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {item.options.map((option) => (
+                  <Button
+                    key={option}
+                    size="sm"
+                    variant={answers[index] === option ? 'default' : 'secondary'}
+                    disabled={replying}
+                    onClick={() => selectAnswer(index, option)}
+                  >
+                    {option}
+                  </Button>
+                ))}
+              </div>
+            ) : (
+              <input
+                type="text"
+                value={answers[index] ?? ''}
+                onChange={(event) =>
+                  setAnswers((current) =>
+                    withAimGateAnswer(current, index, event.target.value),
+                  )
+                }
+                placeholder="Your answer…"
+                aria-label={`Answer question ${index + 1}`}
+                disabled={replying}
+                className="mt-2 w-full rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
+              />
+            )}
+          </div>
+        ))}
       </div>
-      {item.options.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {item.options.map((option) => (
-            <Button
-              key={option}
-              size="sm"
-              variant="secondary"
-              disabled={replying}
-              onClick={() => void answer(option)}
-            >
-              {option}
-            </Button>
-          ))}
-        </div>
-      ) : (
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={freeText}
-            onChange={(e) => setFreeText(e.target.value)}
-            placeholder="Your answer…"
-            className="flex-1 rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
-          />
+      {(items.length > 1 || items[0]?.options.length === 0) && (
+        <div className="flex justify-end">
           <Button
             size="sm"
-            disabled={replying || !freeText.trim()}
-            onClick={() => void answer(freeText.trim())}
+            disabled={replying || !aimGateAnswersComplete(items, answers)}
+            onClick={() => void submitAnswers(answers)}
           >
-            Send
+            {items.length > 1 ? 'Submit answers' : 'Send'}
           </Button>
         </div>
       )}
