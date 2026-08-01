@@ -1,7 +1,7 @@
 """Automatic skill routing hook — matches user intent to skills and loads them.
 
 This hook first honors an explicit composer directive such as
-``/skill:docx``. Without one, it scores every *unloaded* skill against the
+``/skill:pdf``. Without one, it scores every *unloaded* skill against the
 latest user message using trigger keywords extracted from each skill's
 ``description`` field. Skills whose relevance score exceeds a configurable
 threshold are automatically loaded as synthetic ``skill`` tool_call /

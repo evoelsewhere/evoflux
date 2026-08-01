@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "title": "EvoFlux editable base-template gallery",
+  "language": "en",
+  "audience": "Presentation authors",
+  "communication_job": "Demonstrate the complete editable base-template system",
+  "visual_direction": "Clean professional, editorial spacing, native PowerPoint objects",
+  "style_preset": "clean-professional",
+  "style_confirmed": true,
+  "editable_mode": "max",
+  "width": 1600,
+  "height": 900,
+  "slides": [
+    {
+      "id": "cover",
+      "title": "A dependable starting point for every presentation",
+      "template": "cover-split",
+      "kind": "cover",
+      "content": {"kicker": "Base templates / 01", "subtitle": "Content contracts produce consistent layouts and editable PowerPoint objects.", "side_label": "Coverage", "side_value": "14", "side_note": "Narrative templates spanning opening, evidence, explanation, decision, and close."},
+      "speaker_notes": "Cover template verification.",
+      "sources": ["EvoFlux template system"]
+    },
+    {
+      "id": "section",
+      "title": "Evidence becomes useful when the story gives it a role",
+      "template": "section-divider",
+      "content": {"kicker": "Chapter transition", "subtitle": "A strong divider resets attention without adding decorative clutter.", "section": "02"},
+      "speaker_notes": "Section divider verification.",
+      "sources": ["EvoFlux template system"]
+    },
+    {
+      "id": "statement",
+      "title": "Editable structure should be the default, not a recovery task",
+      "template": "typographic-statement",
+      "content": {"kicker": "Executive takeaway", "support": "Use raster only for effects PowerPoint cannot reproduce faithfully.", "evidence": "Common text, cards, connectors, images, charts, and table cells are promoted automatically."},
+      "speaker_notes": "Statement template verification.",
+      "sources": ["EvoFlux template system"]
+    },
+    {
+      "id": "metrics",
+      "title": "Three measures explain both scale and confidence",
+      "template": "metric-story",
+      "kind": "data",
+      "content": {"kicker": "Metric story", "metrics": [{"label": "Coverage", "value": "14", "detail": "Base templates"}, {"label": "Editability", "value": "100%", "detail": "Common objects promoted"}, {"label": "QA", "value": "0", "detail": "Blocking errors"}], "insight": "The metric row is editable, but the slide still communicates one conclusion."},
+      "speaker_notes": "Metric template verification.",
+      "sources": ["EvoFlux template system"]
+    },
+    {
+      "id": "process",
+      "title": "A four-stage workflow keeps quality gates visible",
+      "template": "process-flow",
+      "kind": "process",
+      "content": {"kicker": "Process", "steps": [{"title": "Frame", "body": "Define audience and outcome."}, {"title": "Compose", "body": "Choose the content-fit template."}, {"title": "Inspect", "body": "Render and resolve geometry issues."}, {"title": "Deliver", "body": "Publish editable PowerPoint."}]},
+      "speaker_notes": "Process template verification.",
+      "sources": ["EvoFlux template system"]
+    },
+    {
+      "id": "comparison",
+      "title": "The new contract separates fidelity from editability decisions",
+      "template": "comparison",
+      "kind": "comparison",
+      "content": {"kicker": "Comparison", "left": {"label": "Before", "title": "Raster-heavy", "points": [{"text": "Only marked text was editable"}, {"text": "Cards and visuals stayed welded"}, {"text": "Authoring depended on raw HTML"}]}, "right": {"label": "Now", "title": "Editable-first", "points": [{"text": "Semantic objects promote automatically"}, {"text": "Templates validate content"}, {"text": "Raster is a deliberate fallback"}]}},
+      "speaker_notes": "Comparison template verification.",
+      "sources": ["EvoFlux template system"]
+    },
+    {
+      "id": "timeline",
+      "title": "The roadmap moves from contract to measured reuse",
+      "template": "timeline",
+      "kind": "process",
+      "content": {"kicker": "Timeline", "events": [{"when": "Now", "title": "Contract", "body": "Stable template IDs."}, {"when": "Next", "title": "Adoption", "body": "Agent routing by narrative job."}, {"when": "Then", "title": "Telemetry", "body": "Measure overrides and QA."}, {"when": "Later", "title": "Expansion", "body": "Add proven specialist layouts."}]},
+      "speaker_notes": "Timeline template verification.",
+      "sources": ["EvoFlux template system"]
+    },
+    {
+      "id": "architecture",
+      "title": "Four layers turn structured content into editable slides",
+      "template": "architecture-layers",
+      "kind": "architecture",
+      "content": {"kicker": "Architecture", "layers": [{"title": "Story", "body": "Audience-facing claim and evidence"}, {"title": "Template", "body": "Validated content contract and layout"}, {"title": "Browser", "body": "Geometry, typography, and QA"}, {"title": "PowerPoint", "body": "Native objects plus residual visual layer"}]},
+      "speaker_notes": "Architecture template verification.",
+      "sources": ["EvoFlux template system"]
+    },
+    {
+      "id": "matrix",
+      "title": "Template choice follows communication value and complexity",
+      "template": "decision-matrix",
+      "kind": "comparison",
+      "content": {"kicker": "Decision matrix", "quadrants": [{"label": "High value / low complexity", "title": "Use first", "body": "Statement, comparison, process"}, {"label": "High value / high complexity", "title": "Structure", "body": "Architecture, chart, table"}, {"label": "Low value / low complexity", "title": "Simplify", "body": "Section and closing"}, {"label": "Low value / high complexity", "title": "Avoid", "body": "Decorative diagrams without a job"}]},
+      "speaker_notes": "Matrix template verification.",
+      "sources": ["EvoFlux template system"]
+    },
+    {
+      "id": "chart",
+      "title": "Editable bars make the comparison reusable after delivery",
+      "template": "bar-chart",
+      "kind": "data",
+      "content": {"kicker": "Native chart", "subtitle": "Every bar, label, and value remains selectable.", "unit": "%", "series": [{"label": "Text", "value": 96}, {"label": "Cards", "value": 88}, {"label": "Images", "value": 82}, {"label": "Complex effects", "value": 35}]},
+      "speaker_notes": "Bar-chart template verification; sample values are illustrative.",
+      "sources": ["Illustrative verification data"]
+    },
+    {
+      "id": "table",
+      "title": "A compact table keeps owners and status easy to update",
+      "template": "data-table",
+      "kind": "data",
+      "content": {"kicker": "Native table", "headers": ["Workstream", "Owner", "Status", "Next gate"], "rows": [["Template contract", "Platform", "Ready", "Adoption"], ["Visual QA", "Design", "Ready", "Telemetry"], ["Export fidelity", "Office", "Ready", "More primitives"], ["Documentation", "Agent", "Ready", "Examples"]]},
+      "speaker_notes": "Table template verification.",
+      "sources": ["EvoFlux template system"]
+    },
+    {
+      "id": "quote",
+      "title": "Structure is useful only when authors can still change the result",
+      "template": "quote",
+      "content": {"quote": "A template should remove accidental decisions without removing the author's control.", "attribution": "EvoFlux design principle", "context": "Editable-first presentation pipeline"},
+      "speaker_notes": "Quote template verification.",
+      "sources": ["Internal design principle"]
+    },
+    {
+      "id": "image",
+      "title": "Visual evidence stays movable without an image model",
+      "template": "image-story",
+      "content": {"kicker": "Image story", "subtitle": "Workspace images and SVG assets become picture objects.", "body": "Authors can reposition, resize, replace, or crop the visual after export while the surrounding copy remains native text.", "image": "asset://assets/editable-template-visual.svg", "caption": "Deterministic SVG asset included with the template gallery."},
+      "speaker_notes": "Image template verification.",
+      "sources": ["EvoFlux deterministic SVG asset"]
+    },
+    {
+      "id": "closing",
+      "title": "Start with the closest template, then customize deliberately",
+      "template": "closing-actions",
+      "kind": "closing",
+      "content": {"kicker": "Close", "subtitle": "The base system handles repeatable structure; raw HTML remains available for exceptional slides.", "actions": [{"text": "Choose by narrative job"}, {"text": "Render a representative sample"}, {"text": "Verify editable-object counts"}]},
+      "speaker_notes": "Closing template verification.",
+      "sources": ["EvoFlux template system"]
+    }
+  ]
+}

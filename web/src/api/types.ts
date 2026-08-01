@@ -292,6 +292,9 @@ export interface MessageAttachment {
   original_name?: string
   category?: 'text' | 'data' | 'image' | 'document' | 'audio' | 'video' | 'binary'
   url?: string        // /api/chat/files/{session_id}/{filename} or blob URL for optimistic
+  preview_url?: string
+  download_url?: string
+  workspace_path?: string
 }
 
 export interface MessageResponse {

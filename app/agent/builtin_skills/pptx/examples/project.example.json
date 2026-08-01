@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "title": "HTML-first presentation example",
+  "language": "en",
+  "audience": "Decision makers",
+  "communication_job": "Explain why the proposed operating model is credible",
+  "visual_direction": "Editorial, architectural, restrained teal and orange",
+  "style_preset": "clean-professional",
+  "style_confirmed": true,
+  "editable_mode": "max",
+  "width": 1600,
+  "height": 900,
+  "theme": {
+    "background": "#f7f5f0",
+    "ink": "#17242d",
+    "muted": "#64727b",
+    "primary": "#155e63",
+    "accent": "#e97335",
+    "font_sans": "Aptos, Inter, Arial, sans-serif",
+    "font_display": "Aptos Display, Inter, Arial, sans-serif",
+    "css": ".signal { position:absolute; right:110px; top:145px; width:500px; height:500px; border-radius:50%; background:radial-gradient(circle at 38% 35%, #fff 0 8%, #9ed5cf 9% 28%, #155e63 29% 49%, #0b3437 50% 100%); box-shadow:0 34px 90px rgba(21,94,99,.25); }"
+  },
+  "min_body_px": 18,
+  "min_title_px": 44,
+  "max_words_per_slide": 120,
+  "slides": [
+    {
+      "id": "cover",
+      "title": "Modernization becomes a system, not a gamble",
+      "kind": "cover",
+      "speaker_notes": "Open with the business outcome before describing the mechanism.",
+      "sources": [],
+      "html": "<div class=\"safe\" data-box style=\"width:790px;right:auto;display:flex;flex-direction:column;justify-content:center\"><div class=\"eyebrow-rule\" data-pptx-native=\"line\"></div><p class=\"kicker\">Verified migration factory</p><h1 class=\"title\" data-pptx-role=\"title\">Modernization becomes a system, not a gamble</h1><p class=\"subtitle\">Understand the legacy estate, automate the repeatable work, and prove behavioral equivalence.</p></div><div class=\"signal\" data-box data-pptx-raster data-qa-ignore></div><div class=\"footer\" data-qa-ignore><span data-pptx-native=\"text\">EvoFlux</span><span data-pptx-native=\"text\">01</span></div>"
+    },
+    {
+      "id": "operating-model",
+      "title": "Three loops turn migration into an evidence chain",
+      "kind": "process",
+      "speaker_notes": "Walk left to right. Emphasize that verification is continuous, not a final ceremony.",
+      "sources": [
+        "Internal modernization operating model"
+      ],
+      "template": "process-flow",
+      "content": {
+        "kicker": "Operating model",
+        "steps": [
+          {"title": "Understand", "body": "Recover rules, dependencies, and constraints before touching code."},
+          {"title": "Transform", "body": "Apply deterministic conversion, then use AI where judgment adds leverage."},
+          {"title": "Verify", "body": "Compare behavior continuously and keep a traceable evidence trail."}
+        ]
+      }
+    }
+  ]
+}

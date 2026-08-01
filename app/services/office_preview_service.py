@@ -37,7 +37,7 @@ OFFICE_PREVIEW_CSP = (
     "style-src 'unsafe-inline'"
 )
 
-_CACHE_SCHEMA_VERSION = "python-openxml-html-v5"
+_CACHE_SCHEMA_VERSION = "python-openxml-html-v7"
 _render_lock = threading.Lock()
 
 
@@ -890,11 +890,18 @@ def _slide_background(slide: Any, palette: dict[str, str]) -> str:
     return "#ffffff"
 
 
-def _shape_text(shape: Any, palette: dict[str, str]) -> str:
+def _shape_text(
+    shape: Any,
+    palette: dict[str, str],
+    *,
+    slide_width: int,
+) -> str:
     from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 
     shape_name = str(getattr(shape, "name", "")).casefold()
     is_slide_title = "[role:title]" in shape_name
+    is_html_native = "[evoflux-html]" in shape_name
+    slide_width_pt = slide_width / 12700
     alignment = {
         PP_ALIGN.CENTER: "center",
         PP_ALIGN.RIGHT: "right",
@@ -914,10 +921,32 @@ def _shape_text(shape: Any, palette: dict[str, str]) -> str:
             if run.font.underline:
                 styles.append("text-decoration:underline")
             if run.font.size:
-                size_pt = run.font.size.pt * (0.9 if is_slide_title else 1)
-                styles.append(f"font-size:{size_pt:.2f}pt")
+                size_pt = run.font.size.pt
+                if is_html_native:
+                    styles.append(
+                        f"font-size:{size_pt / slide_width_pt * 100:.4f}cqw"
+                    )
+                else:
+                    size_pt *= 0.9 if is_slide_title else 1
+                    styles.append(f"font-size:{size_pt:.2f}pt")
             if run.font.name:
                 styles.append(f"font-family:{_css_font_family(run.font.name)}")
+            run_properties = run._r.rPr
+            raw_spacing = (
+                run_properties.get("spc") if run_properties is not None else None
+            )
+            if raw_spacing is not None:
+                try:
+                    spacing_pt = int(raw_spacing) / 100
+                    if is_html_native:
+                        styles.append(
+                            "letter-spacing:"
+                            f"{spacing_pt / slide_width_pt * 100:.4f}cqw"
+                        )
+                    else:
+                        styles.append(f"letter-spacing:{spacing_pt:.2f}pt")
+                except ValueError:
+                    pass
             if run.font.color and run.font.color.type is not None:
                 color = _pptx_color(run.font.color, palette)
                 if color != "transparent":
@@ -925,7 +954,7 @@ def _shape_text(shape: Any, palette: dict[str, str]) -> str:
             style_attr = f' style="{";".join(styles)}"' if styles else ""
             runs.append(f"<span{style_attr}>{html.escape(run.text)}</span>")
         paragraph_styles: list[str] = []
-        if is_slide_title:
+        if is_slide_title and not is_html_native:
             paragraph_styles.extend(
                 (
                     "white-space:nowrap",
@@ -936,6 +965,9 @@ def _shape_text(shape: Any, palette: dict[str, str]) -> str:
             )
         if paragraph.alignment in alignment:
             paragraph_styles.append(f"text-align:{alignment[paragraph.alignment]}")
+        line_spacing = paragraph.line_spacing
+        if is_html_native and isinstance(line_spacing, (int, float)):
+            paragraph_styles.append(f"line-height:{float(line_spacing):.3f}")
         if paragraph.level:
             paragraph_styles.append(f"padding-left:{paragraph.level * 1.1:.2f}em")
         properties = paragraph._p.pPr
@@ -1198,21 +1230,35 @@ def _chart_svg(chart: Any, theme_palette: dict[str, str]) -> str:
         slices: list[str] = []
         for index, value in enumerate(values):
             end_angle = start_angle + 2 * math.pi * value / total
-            start_x = 300 + 108 * math.cos(start_angle)
+            start_x = 180 + 108 * math.cos(start_angle)
             start_y = 150 + 108 * math.sin(start_angle)
-            end_x = 300 + 108 * math.cos(end_angle)
+            end_x = 180 + 108 * math.cos(end_angle)
             end_y = 150 + 108 * math.sin(end_angle)
             large_arc = 1 if end_angle - start_angle > math.pi else 0
             slices.append(
-                f'<path d="M300 150 L{start_x:.2f} {start_y:.2f} '
+                f'<path d="M180 150 L{start_x:.2f} {start_y:.2f} '
                 f'A108 108 0 {large_arc} 1 {end_x:.2f} {end_y:.2f} Z" '
                 f'fill="{fallback_palette[index % len(fallback_palette)]}"/>'
             )
             start_angle = end_angle
+        legend = "".join(
+            (
+                f'<rect x="340" y="{54 + index * 34}" width="14" height="14" '
+                f'fill="{fallback_palette[index % len(fallback_palette)]}"/>'
+                f'<text x="364" y="{66 + index * 34}" font-size="14" fill="#374151">'
+                f"{html.escape(categories[index] if index < len(categories) else f'Item {index + 1}')} "
+                f"({value / total:.0%})</text>"
+            )
+            for index, value in enumerate(values)
+        )
+        hole = (
+            '<circle cx="180" cy="150" r="65" fill="white"/>'
+            if "DOUGHNUT" in chart_type
+            else ""
+        )
         return (
             '<svg class="chart-svg" viewBox="0 0 600 300">'
-            f"{''.join(slices)}"
-            '<circle cx="300" cy="150" r="65" fill="white"/></svg>'
+            f"{''.join(slices)}{hole}{legend}</svg>"
         )
 
     if "AREA" in chart_type or "LINE" in chart_type:
@@ -1258,9 +1304,9 @@ def _chart_svg(chart: Any, theme_palette: dict[str, str]) -> str:
             if "BAR" in chart_type:
                 height = max(205 / max(count, 1) * 0.7, 4)
                 y = 34 + value_index * 205 / max(count, 1) + series_index * height
-                bar_length = abs(value) / maximum * 490
+                bar_length = abs(value) / maximum * 400
                 bars.append(
-                    f'<rect x="52" y="{y:.2f}" width="{bar_length:.2f}" '
+                    f'<rect x="150" y="{y:.2f}" width="{bar_length:.2f}" '
                     f'height="{height:.2f}" fill="{colors[series_index]}"/>'
                 )
             else:
@@ -1271,10 +1317,20 @@ def _chart_svg(chart: Any, theme_palette: dict[str, str]) -> str:
                     f'<rect x="{x:.2f}" y="{y:.2f}" width="{bar_width:.2f}" '
                     f'height="{bar_height:.2f}" fill="{colors[series_index]}"/>'
                 )
+    if "BAR" in chart_type:
+        labels = "".join(
+            f'<text x="140" y="{47 + index * 205 / max(count, 1):.2f}" '
+            'text-anchor="end" font-size="13" fill="#6b7280">'
+            f"{html.escape(label)}</text>"
+            for index, label in enumerate(categories)
+        )
+        axis = '<line x1="150" y1="25" x2="150" y2="260" stroke="#9ca3af"/>'
+    else:
+        labels = category_labels()
+        axis = '<line x1="45" y1="252" x2="575" y2="252" stroke="#9ca3af"/>'
     return (
         '<svg class="chart-svg" viewBox="0 0 600 300" preserveAspectRatio="none">'
-        '<line x1="45" y1="252" x2="575" y2="252" stroke="#9ca3af"/>'
-        f"{''.join(bars)}</svg>"
+        f"{axis}{''.join(bars)}{labels}</svg>"
     )
 
 
@@ -1405,10 +1461,11 @@ def _render_pptx(source: Path) -> str:
 
             if getattr(shape, "has_text_frame", False) and shape.text.strip():
                 styles = [box, *_shape_styles(shape, palette)]
+                native_class = " html-native" if "[evoflux-html]" in shape.name else ""
                 shapes.append(
-                    f'<div class="shape text-shape" {identity} '
+                    f'<div class="shape text-shape{native_class}" {identity} '
                     f'style="{";".join(styles)}">'
-                    f"{_shape_text(shape, palette)}</div>"
+                    f"{_shape_text(shape, palette, slide_width=slide_width)}</div>"
                 )
                 continue
 
@@ -1431,12 +1488,14 @@ def _render_pptx(source: Path) -> str:
     *{box-sizing:border-box}body{margin:0;padding:28px;background:#e8eaed;color:#202124;
     font-family:Arial,sans-serif}.slide-wrap{position:relative;width:min(1120px,94vw);
     margin:0 auto 30px}.slide{position:relative;width:100%;background:#fff;
+    container-type:inline-size;
     overflow:hidden;box-shadow:0 3px 14px #0003}.slide-number{position:absolute;right:calc(100%
     + 8px);top:0;color:#6b7280;font-size:12px}.shape{position:absolute;overflow:hidden}
     .text-shape{padding:4px}.text-frame{width:100%;height:100%;display:flex;
     flex-direction:column;overflow:hidden}
     .text-shape p{margin:0 0 .2em;line-height:1.12;white-space:pre-wrap;
-    overflow-wrap:anywhere;break-inside:avoid}.bullet-marker{text-align:center}
+    overflow-wrap:normal;word-break:normal;break-inside:avoid}.bullet-marker{text-align:center}
+    .text-shape.html-native{padding:0}.text-shape.html-native p{margin:0}
     .picture{object-fit:cover}.table-shape table{width:100%;height:100%;border-collapse:collapse;
     table-layout:fixed}.table-shape td{border:1px solid #b8bdc6;padding:4px;font-size:12px;
     overflow:hidden}.chart{display:flex;flex-direction:column;align-items:center;justify-content:

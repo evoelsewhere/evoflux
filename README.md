@@ -68,12 +68,12 @@ AIM turns legacy migration into a governed production line. A flow-first interfa
     <td width="33%" align="center"><strong>AIM</strong></td>
   </tr>
   <tr>
-    <td><a href="documents/images/showcase/work-mode.jpg"><img src="documents/images/showcase/work-mode.jpg" width="360" alt="Work creating and visually QA-ing a PowerPoint" /></a></td>
+    <td><a href="documents/images/showcase/work-mode.jpg"><img src="documents/images/showcase/work-mode.jpg" width="360" alt="Work coordinating an artifact task" /></a></td>
     <td><a href="documents/images/showcase/coding-mode.jpg"><img src="documents/images/showcase/coding-mode.jpg" width="360" alt="Coding working across a multi-repository project" /></a></td>
     <td><a href="documents/images/showcase/aim-mode.jpg"><img src="documents/images/showcase/aim-mode.jpg" width="360" alt="AIM migration overview and dependency-aware work queue" /></a></td>
   </tr>
   <tr>
-    <td><sub>PowerPoint build → render → visual QA → correction</sub></td>
+    <td><sub>Agent collaboration, files, previews, and verification</sub></td>
     <td><sub>Repository context, tool history, implementation, verification</sub></td>
     <td><sub>Migration health, gates, workflow, waves, and unit queue</sub></td>
   </tr>

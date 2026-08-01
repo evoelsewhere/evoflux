@@ -66,6 +66,10 @@ class ToolResult:
 
     parts: list[ContentBlock]
     mcp_app: dict[str, Any] | None = None
+    # UI-safe artifact metadata for generated files. Unlike multimodal parts,
+    # these entries are not sent to the provider; they are persisted in the
+    # tool message and rendered as first-class file/preview cards.
+    attachments: list[dict[str, str]] | None = None
 
 
 class Usage(BaseModel):
