@@ -85,7 +85,7 @@ AIM turns legacy migration into a governed production line. A flow-first interfa
 
 ### Install the desktop app
 
-Download the [latest release](https://github.com/khuonghung/evoflux/releases/latest) for macOS (`.dmg`), Windows (`.msi`), or Linux (`.deb` / AppImage). The packaged app includes its Python sidecar.
+Download the [latest release](https://github.com/khuonghung/evoflux/releases/latest) for macOS (`.dmg`), Windows (`-setup.exe`), or Linux (`.deb` / AppImage). The packaged app includes its Python sidecar.
 
 On first launch:
 
