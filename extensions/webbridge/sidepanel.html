@@ -31,6 +31,11 @@
       --picked-text: #c7c5ff;
       --composer-shadow: rgba(0, 0, 0, .14);
       --user-message: #45429d;
+      --thinking-neutral: #8f98a2;
+      --thinking-low: #57a5ff;
+      --thinking-medium: #a685ff;
+      --thinking-high: #db78d7;
+      --thinking-max: #ff8b70;
     }
     :root[data-theme="light"] {
       color-scheme: light;
@@ -149,8 +154,14 @@
     .message { max-width: 94%; margin: 0 0 12px; border-radius: 8px; padding: 9px 10px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
     .message.user { margin-left: auto; background: var(--user-message); color: #fafaff; }
     .message.assistant { max-width: 100%; padding: 2px 2px 10px; background: transparent; border-bottom: 1px solid var(--assistant-border); border-radius: 0; }
+    .message.compaction { max-width: 100%; margin: 4px 0 14px; border: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 0; padding: 7px 2px; background: transparent; color: var(--muted); }
+    .message.compaction .message-meta { display: none; }
+    .message.compaction summary { cursor: pointer; font-size: 10px; font-weight: 650; text-align: center; }
+    .compaction-summary { max-height: 180px; margin-top: 7px; overflow-y: auto; border-radius: 6px; background: var(--surface); padding: 8px; font-size: 10px; white-space: pre-wrap; }
     .message.live { border-color: rgba(119, 116, 255, .45); }
     .message.live .message-body { animation: reveal-content 150ms ease-out; }
+    .message.live-turn { padding-top: 4px; }
+    .message.live-turn .message-body:empty { display: none; }
     .message-meta { display: block; margin-bottom: 4px; color: var(--muted); font-size: 10px; font-weight: 600; }
     .message.user .message-meta { color: rgba(255,255,255,.72); }
     .message-body { min-width: 0; }
@@ -191,6 +202,14 @@
     .message-body table { width: 100%; border-collapse: collapse; font-size: 11px; }
     .message-body th, .message-body td { border: 1px solid var(--border); padding: 5px 6px; vertical-align: top; }
     .message-body th { background: var(--surface-raised); font-weight: 700; }
+    .message-activities { display: grid; gap: 4px; margin-top: 7px; }
+    .live-thinking-summary { display: flex; align-items: center; gap: 6px; min-height: 25px; margin-top: 6px; border-left: 1px solid var(--border-strong); padding: 3px 7px; color: var(--subtle); font-size: 9px; font-style: italic; }
+    .live-thinking-summary::before { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); opacity: .7; content: ""; }
+    .message-activity { display: grid; grid-template-columns: 15px minmax(0, 1fr) auto; align-items: center; gap: 5px; min-height: 25px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); padding: 3px 7px; color: var(--muted); font-size: 10px; }
+    .message-activity span:nth-child(2) { overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+    .message-activity-state { color: var(--success); text-align: center; }
+    .message-activity.pending .message-activity-state { color: var(--accent); }
+    .message-activity time { font-variant-numeric: tabular-nums; }
     .activity { display: none; align-items: center; gap: 8px; min-height: 34px; margin: 0 12px 8px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--muted); }
     .activity.visible { display: flex; }
     .activity-copy { min-width: 0; flex: 1; }
@@ -225,25 +244,53 @@
     .tool-icon.active { color: var(--accent); }
     .tool-icon.primary { border-color: var(--accent); background: var(--accent); color: white; }
     .tool-icon.primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .tool-icon.primary.stop-mode { border-color: var(--error); background: var(--error); }
+    .tool-icon .stop-glyph { display: none; }
+    .tool-icon.stop-mode .send-glyph { display: none; }
+    .tool-icon.stop-mode .stop-glyph { display: block; }
     .tool-icon:focus-visible, .model-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     .model-picker { position: relative; min-width: 0; }
-    .model-trigger { display: flex; min-width: 0; max-width: 148px; height: 30px; align-items: center; gap: 5px; border: 1px solid transparent; border-radius: 7px; padding: 0 7px; background: transparent; color: var(--muted); }
+    .model-trigger { display: flex; min-width: 0; max-width: 210px; height: 30px; align-items: center; gap: 5px; border: 1px solid transparent; border-radius: 7px; padding: 0 7px; background: transparent; color: var(--muted); }
     .model-trigger:hover:not(:disabled), .model-trigger[aria-expanded="true"] { border-color: var(--border); background: var(--surface-raised); color: var(--text); }
-    .model-trigger span { overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .model-trigger > #modelLabel { overflow: hidden; min-width: 0; font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .provider-badge { display: inline-grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border: 1px solid color-mix(in srgb, var(--provider-color, var(--accent)) 45%, var(--border)); border-radius: 6px; background: color-mix(in srgb, var(--provider-color, var(--accent)) 13%, var(--surface-raised)); color: var(--provider-color, var(--accent)); font-size: 8px; font-weight: 800; letter-spacing: -.02em; text-transform: uppercase; }
+    .provider-badge.compact { width: 17px; height: 17px; border-radius: 4px; font-size: 6px; }
+    .thinking-chip { flex: 0 0 auto; border-radius: 4px; padding: 2px 4px; background: color-mix(in srgb, var(--thinking-color, var(--thinking-neutral)) 16%, transparent); color: var(--thinking-color, var(--thinking-neutral)); font-size: 8px; font-weight: 700; }
     .model-trigger .chevron { width: 11px; height: 11px; }
-    .model-popover { position: absolute; z-index: 20; bottom: calc(100% + 7px); left: 0; display: none; width: min(270px, calc(100vw - 20px)); overflow: hidden; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--surface); box-shadow: 0 14px 40px rgba(0,0,0,.25); }
+    .model-popover { position: absolute; z-index: 20; bottom: calc(100% + 7px); left: 0; display: none; width: min(288px, calc(100vw - 20px)); overflow: hidden; border: 1px solid var(--border-strong); border-radius: 10px; background: color-mix(in srgb, var(--surface) 96%, transparent); box-shadow: 0 18px 48px rgba(0,0,0,.3); backdrop-filter: blur(18px); }
     .model-popover.visible { display: block; }
-    .model-search { position: relative; padding: 7px; border-bottom: 1px solid var(--border); }
-    .model-search svg { position: absolute; top: 50%; left: 16px; width: 13px; height: 13px; fill: none; stroke: var(--muted); stroke-width: 1.8; transform: translateY(-50%); }
-    .model-search input { height: 31px; padding: 0 8px 0 28px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
-    .model-list { max-height: 210px; overflow-y: auto; padding: 4px; }
-    .model-option { display: flex; width: 100%; min-width: 0; align-items: center; gap: 7px; border: 0; border-radius: 6px; padding: 7px 8px; background: transparent; color: var(--text); text-align: left; }
-    .model-option:hover, .model-option[aria-selected="true"] { background: var(--surface-raised); }
-    .model-option[aria-selected="true"] { color: var(--accent); }
+    .model-current { display: flex; min-width: 0; align-items: center; gap: 9px; padding: 9px 10px; border-bottom: 1px solid var(--border); }
+    .model-current-copy { min-width: 0; flex: 1; }
+    .model-current-copy strong, .model-current-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .model-current-copy strong { font-size: 11px; font-weight: 700; }
+    .model-current-copy span { margin-top: 2px; color: var(--subtle); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 8px; }
+    .model-catalog { padding: 7px 8px 8px; }
+    .model-search { position: relative; margin-bottom: 6px; }
+    .model-search svg { position: absolute; top: 50%; left: 9px; width: 13px; height: 13px; fill: none; stroke: var(--subtle); stroke-width: 1.8; transform: translateY(-50%); }
+    .model-search input { height: 29px; padding: 0 8px 0 28px; font-size: 10px; }
+    .model-list { max-height: 154px; overflow-y: auto; overscroll-behavior: contain; }
+    .model-option { position: relative; display: flex; width: 100%; min-width: 0; height: 33px; align-items: center; gap: 7px; border: 0; border-radius: 6px; padding: 0 7px; background: transparent; color: var(--text); text-align: left; }
+    .model-option:hover, .model-option:focus-visible, .model-option[aria-selected="true"] { background: var(--surface-raised); outline: none; }
+    .model-option[aria-selected="true"]::before { position: absolute; inset: 7px auto 7px 0; width: 2px; border-radius: 2px; background: var(--accent); content: ""; }
     .model-option-copy { min-width: 0; flex: 1; }
-    .model-option-copy strong { display: block; overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-    .model-option-copy span { display: block; overflow: hidden; margin-top: 2px; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .model-option-copy strong { display: block; overflow: hidden; font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .model-option-copy span { display: block; overflow: hidden; margin-top: 1px; color: var(--subtle); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+    .model-provider-label { flex: 0 0 auto; color: var(--subtle); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 8px; text-transform: uppercase; }
+    .model-check { width: 13px; height: 13px; flex: 0 0 auto; fill: none; stroke: var(--accent); stroke-width: 2; opacity: 0; }
+    .model-option[aria-selected="true"] .model-check { opacity: 1; }
     .model-empty { padding: 18px 10px; color: var(--muted); font-size: 10px; text-align: center; }
+    .model-setting-section { padding: 8px 10px 9px; border-top: 1px solid var(--border); }
+    .model-setting-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    .model-setting-heading strong { font-size: 10px; font-weight: 700; }
+    .model-setting-heading span { color: var(--subtle); font-size: 8px; }
+    .thinking-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+    .thinking-option { display: flex; height: 29px; min-width: 0; align-items: center; justify-content: center; gap: 5px; border: 1px solid transparent; border-radius: 6px; background: var(--surface-raised); color: var(--muted); font-size: 9px; }
+    .thinking-option:hover:not(:disabled), .thinking-option[aria-checked="true"] { border-color: var(--border-strong); color: var(--text); }
+    .thinking-option-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--thinking-color, var(--thinking-neutral)); }
+    .speed-control { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px; border-radius: 7px; background: var(--surface-raised); }
+    .speed-control button { height: 25px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 9px; }
+    .speed-control button:hover:not(:disabled) { color: var(--text); }
+    .speed-control button[aria-checked="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 4px var(--composer-shadow); }
     .composer-status { min-height: 14px; padding: 4px 2px 0; color: var(--muted); font-size: 9px; }
     .composer-status.error { color: var(--error); }
     .picked-card { align-items: center; margin-bottom: 7px; border: 1px solid var(--border); border-radius: 7px; padding: 5px 6px 5px 8px; background: var(--accent-soft); color: var(--picked-text); font-size: 11px; }
@@ -449,16 +496,43 @@
         <div class="composer-tools">
           <div class="model-picker">
             <button class="model-trigger" id="modelTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" title="Choose model">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M9 8V4h6v4M8 14h.01M16 14h.01M9 18h6"/></svg>
+              <span class="provider-badge compact" id="modelProviderBadge" aria-hidden="true">AI</span>
               <span id="modelLabel">Model</span>
+              <span class="thinking-chip" id="modelThinkingLabel">Default</span>
               <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>
             </button>
-            <div class="model-popover" id="modelPopover">
-              <div class="model-search">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                <input id="modelSearch" type="search" placeholder="Search models…" aria-label="Search models" autocomplete="off">
+            <div class="model-popover" id="modelPopover" role="dialog" aria-label="Model settings">
+              <div class="model-current">
+                <span class="provider-badge" id="modelCurrentProviderBadge" aria-hidden="true">AI</span>
+                <div class="model-current-copy">
+                  <strong id="modelCurrentName">Choose a model</strong>
+                  <span id="modelCurrentId">Lead agent default</span>
+                </div>
               </div>
-              <div class="model-list" id="modelList" role="listbox" aria-label="Models"></div>
+              <div class="model-catalog">
+                <div class="model-search">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                  <input id="modelSearch" type="search" placeholder="Search models…" aria-label="Search models" autocomplete="off">
+                </div>
+                <div class="model-list" id="modelList" role="listbox" aria-label="Models"></div>
+              </div>
+              <section class="model-setting-section" aria-labelledby="thinkingHeading">
+                <div class="model-setting-heading">
+                  <strong id="thinkingHeading">Thinking</strong>
+                  <span id="thinkingAvailability">Provider default</span>
+                </div>
+                <div class="thinking-options" id="thinkingOptions" role="radiogroup" aria-label="Thinking effort"></div>
+              </section>
+              <section class="model-setting-section" aria-labelledby="speedHeading">
+                <div class="model-setting-heading">
+                  <strong id="speedHeading">Response speed</strong>
+                  <span id="speedAvailability"></span>
+                </div>
+                <div class="speed-control" id="speedControl" role="radiogroup" aria-label="Response speed">
+                  <button type="button" data-speed="standard" role="radio">Standard</button>
+                  <button type="button" data-speed="fast" role="radio">Fast</button>
+                </div>
+              </section>
             </div>
           </div>
           <button class="tool-icon" id="attachPageBtn" title="Attach readable page" aria-label="Attach readable page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4M9 11h6M9 15h6"/></svg></button>
@@ -470,7 +544,10 @@
           <button class="tool-icon" id="takeControlBtn" title="Take control of the browser" aria-label="Take control of the browser"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 3 14 9-6 2-2 6z"/><path d="m13 14 4 4"/></svg></button>
           <button class="tool-icon active" id="resumeAgentBtn" title="Resume agent control" aria-label="Resume agent control" style="display:none"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 3 14 9-14 9z"/></svg></button>
           <span class="spacer"></span>
-          <button class="tool-icon primary" id="sendBtn" title="Send message" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7M12 19V5"/></svg></button>
+          <button class="tool-icon primary" id="sendBtn" title="Send message" aria-label="Send message">
+            <svg class="send-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7M12 19V5"/></svg>
+            <svg class="stop-glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></svg>
+          </button>
         </div>
       </div>
       <div class="composer-status" id="composerStatus"></div>

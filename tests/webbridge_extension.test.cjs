@@ -28,6 +28,10 @@ const teachRecorderSource = fs.readFileSync(
   path.join(__dirname, "..", "extensions", "webbridge", "teach_recorder.js"),
   "utf8"
 );
+const agentControlOverlaySource = fs.readFileSync(
+  path.join(__dirname, "..", "extensions", "webbridge", "agent_control_overlay.js"),
+  "utf8"
+);
 const markdownSource = fs.readFileSync(
   path.join(__dirname, "..", "extensions", "webbridge", "markdown.js"),
   "utf8"
@@ -1036,6 +1040,18 @@ test("P2 Side Chat renders progressive activity and throttles Markdown", () => {
   assert.match(sidePanelHtml, /id="loadOlderBtn"/);
   assert.match(sidePanelSource, /next_cursor/);
   assert.match(sidePanelSource, /history\?before=/);
+  assert.match(sidePanelSource, /message\.activities/);
+  assert.match(sidePanelSource, /Session compacted/);
+  assert.match(sidePanelSource, /function renderLiveTurnDetails/);
+  assert.match(sidePanelSource, /Thought · \$\{thinkingChars\.toLocaleString\(\)\} chars/);
+  assert.match(sidePanelSource, /if \(type === "thinking"\)/);
+  assert.match(sidePanelSource, /toolActivities\.set\(key, data\)/);
+  assert.match(sidePanelSource, /return "Browsed web"/);
+  assert.match(sidePanelSource, /streamTask && streamingSessionId === selectedSessionId/);
+  assert.match(sidePanelSource, /Math\.min\(5000, 250 \* 2 \*\*/);
+  assert.match(sidePanelSource, /!sawEvent && !\(await isSessionStillRunning\(sessionId\)\)/);
+  assert.match(sidePanelSource, /sessionTitle\.textContent = data\.title/);
+  assert.doesNotMatch(sidePanelSource, /pageTitle\.textContent = data\.title/);
 });
 
 test("P2 Side Chat history continues past empty projected pages", async () => {
@@ -1056,6 +1072,7 @@ test("P2 Side Chat history continues past empty projected pages", async () => {
     selectedSessionId: "session-1",
     SESSIONS_PATH: "/sessions",
     historyCursor: null,
+    historyLoadGeneration: 0,
     transcript: { scrollHeight: 100, scrollTop: 0 },
     loadOlderBtn: { classList: { toggle() {} } },
     async panelFetch(pathname) {
@@ -1085,12 +1102,79 @@ test("P2 Side Chat history continues past empty projected pages", async () => {
   assert.equal(emptyCount, 0);
 });
 
-test("P2 composer exposes model selection and icon-only browser controls", () => {
+test("P2 Side Chat ignores stale history after a tab-session switch", async () => {
+  const start = sidePanelSource.indexOf("async function loadHistory");
+  const end = sidePanelSource.indexOf("\n}\n\nfunction renderQuestions", start) + 3;
+  let resolveOld;
+  const oldResponse = new Promise((resolve) => { resolveOld = resolve; });
+  const appended = [];
+  const context = vm.createContext({
+    selectedSessionId: "session-old",
+    SESSIONS_PATH: "/sessions",
+    historyCursor: null,
+    historyLoadGeneration: 0,
+    transcript: { scrollHeight: 100, scrollTop: 0 },
+    loadOlderBtn: { classList: { toggle() {} } },
+    async panelFetch(pathname) {
+      if (pathname.includes("session-old")) return oldResponse;
+      return {
+        async json() {
+          return {
+            messages: [{ id: "fresh", role: "assistant", content: "Fresh session" }],
+            has_more: false,
+            next_cursor: null,
+          };
+        },
+      };
+    },
+    clearTranscript() {},
+    showEmptyTranscript() {},
+    appendMessage(message) { appended.push(message); },
+    requestAnimationFrame(callback) { callback(); },
+  });
+  vm.runInContext(
+    `${sidePanelSource.slice(start, end)}\nglobalThis.runLoadHistory = loadHistory;`,
+    context,
+    { filename: "sidepanel-history-race.js" }
+  );
+
+  const staleLoad = context.runLoadHistory();
+  context.selectedSessionId = "session-fresh";
+  const freshLoad = context.runLoadHistory();
+  resolveOld({
+    async json() {
+      return {
+        messages: [{ id: "stale", role: "assistant", content: "Stale session" }],
+        has_more: false,
+        next_cursor: null,
+      };
+    },
+  });
+  await Promise.all([staleLoad, freshLoad]);
+
+  assert.deepEqual(appended.map((message) => message.id), ["fresh"]);
+});
+
+test("P2 composer mirrors desktop model settings and icon-only browser controls", () => {
   assert.match(sidePanelHtml, /id="modelTrigger"/);
   assert.match(sidePanelHtml, /id="modelSearch"/);
   assert.match(sidePanelHtml, /id="modelList"/);
+  assert.match(sidePanelHtml, /id="modelCurrentName"/);
+  assert.match(sidePanelHtml, /id="modelCurrentId"/);
+  assert.match(sidePanelHtml, /id="thinkingOptions"/);
+  assert.match(sidePanelHtml, /id="speedControl"/);
+  assert.match(sidePanelHtml, /data-speed="standard"/);
+  assert.match(sidePanelHtml, /data-speed="fast"/);
   assert.match(sidePanelSource, /\/api\/team\/webbridge\/models/);
   assert.match(sidePanelSource, /\/model`/);
+  assert.match(sidePanelSource, /thinking_level: thinkingLevel \|\| null/);
+  assert.match(sidePanelSource, /fast_mode: currentSessionFastMode/);
+  assert.match(sidePanelSource, /function reconcileThinkingLevel/);
+  assert.match(sidePanelSource, /function supportsFastMode/);
+  assert.match(sidePanelSource, /Model settings synced from EvoFlux/);
+  assert.match(sidePanelSource, /function renderComposerSubmitControl/);
+  assert.match(sidePanelSource, /Queue a follow-up or stop the run/);
+  assert.match(sidePanelHtml, /class="stop-glyph"/);
   for (const id of ["attachPageBtn", "attachSelectionBtn", "captureRegionBtn", "attachFileBtn", "pickElementBtn", "takeControlBtn", "resumeAgentBtn", "sendBtn"]) {
     const start = sidePanelHtml.indexOf(`id="${id}"`);
     assert.ok(start >= 0);
@@ -1987,6 +2071,30 @@ test("paired connection exchanges credential for a single-use relay ticket", asy
   assert.ok(register.capabilities.automation.includes("teach_mode"));
 });
 
+test("disconnect supersedes an in-flight relay ticket request", async () => {
+  let resolveTicket;
+  const pendingTicket = new Promise((resolve) => { resolveTicket = resolve; });
+  const worker = loadWorker({
+    storedConfig: {
+      relayBase: "ws://127.0.0.1:8000",
+      pairingCredential: "pair-secret",
+      pairingId: "pairing-1",
+      pairingRelayBase: "ws://127.0.0.1:8000",
+    },
+    fetchResponder: async () => pendingTicket,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  worker.run("disconnect()");
+  resolveTicket({ ok: true, async json() { return { ticket: "stale-ticket" }; } });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(worker.sockets.length, 0);
+  assert.equal(worker.run("manualDisconnect"), true);
+  assert.equal(worker.run("connectInFlight"), false);
+});
+
 test("connection address automatically bootstraps a local credential and opens the relay", async () => {
   const worker = loadWorker({
     storedConfig: {
@@ -2169,6 +2277,81 @@ test("middle click is preserved in both CDP events", async () => {
   assert.equal(result.button, "middle");
   const mouseCalls = worker.cdpCalls.filter((call) => call.method === "Input.dispatchMouseEvent");
   assert.deepEqual(mouseCalls.map((call) => call.params.button), ["middle", "middle"]);
+});
+
+test("agent control mirrors CDP pointer events and releases the visual overlay", async () => {
+  const worker = loadWorker();
+
+  await worker.run('cmdClick({ x: 18, y: 27, button: "left" })');
+
+  assert.ok(worker.scriptCalls.some((call) => call.files?.includes("agent_control_overlay.js")));
+  const controlMessages = worker.tabMessages
+    .filter((call) => call.message.type === "webbridge_agent_control")
+    .map((call) => call.message);
+  assert.equal(controlMessages[0].enabled, true);
+  assert.deepEqual(
+    controlMessages.filter((message) => message.pointer).map((message) => message.pointer.phase),
+    ["press", "release"]
+  );
+  assert.deepEqual(
+    controlMessages.filter((message) => message.pointer).map((message) => [message.pointer.x, message.pointer.y]),
+    [[18, 27], [18, 27]]
+  );
+
+  await worker.run("detachAllDebuggers()");
+  assert.equal(worker.tabMessages.at(-1).message.enabled, false);
+  assert.match(agentControlOverlaySource, /pointer-events:none/);
+  assert.match(agentControlOverlaySource, /prefers-reduced-motion: reduce/);
+  assert.match(agentControlOverlaySource, /EvoFlux control/);
+  assert.match(agentControlOverlaySource, /class="cursor-aura"/);
+  assert.match(agentControlOverlaySource, /id="evoflux-cursor-fill"/);
+  assert.match(agentControlOverlaySource, /drop-shadow\(0 0 3px rgba\(72, 202, 224, \.42\)\)/);
+  assert.match(agentControlOverlaySource, /stop-color="#020405"/);
+  assert.match(agentControlOverlaySource, /stroke: rgba\(255, 255, 255, \.96\)/);
+  assert.doesNotMatch(agentControlOverlaySource, /117, 76, 255/);
+  assert.doesNotMatch(agentControlOverlaySource, /#(?:8d68ff|b65cff)|101, 86, 255|124, 88, 255/);
+  assert.match(agentControlOverlaySource, /@keyframes evoflux-frame-wave/);
+  assert.doesNotMatch(agentControlOverlaySource, /evoflux-edge-flow|class="edge /);
+  assert.doesNotMatch(agentControlOverlaySource, /class="cursor-glow"/);
+  assert.match(agentControlOverlaySource, /function setSuspended/);
+  assert.match(agentControlOverlaySource, /host\.style\.visibility = suspended \? "hidden" : "visible"/);
+});
+
+test("screenshots suspend and restore the take-control overlay", async () => {
+  const worker = loadWorker();
+  await worker.run("ensureDebuggerAttached(1)");
+  worker.tabMessages.length = 0;
+  worker.setCdpResponder((method) => {
+    if (method === "Runtime.evaluate") {
+      return {
+        result: {
+          value: {
+            width: 1280,
+            height: 720,
+            dpr: 2,
+            scrollX: 0,
+            scrollY: 0,
+            pageWidth: 1280,
+            pageHeight: 2400,
+          },
+        },
+      };
+    }
+    if (method === "Page.captureScreenshot") return { data: "clean-png" };
+    return {};
+  });
+
+  const result = await worker.run("cmdScreenshot({})");
+
+  assert.equal(result.data, "clean-png");
+  assert.deepEqual(
+    worker.tabMessages
+      .filter((call) => typeof call.message.suspended === "boolean")
+      .map((call) => call.message.suspended),
+    [true, false]
+  );
+  assert.equal(worker.run("agentControlOverlays.has(1)"), true);
+  assert.equal(worker.run("overlayCaptureSuspensions.has(1)"), false);
 });
 
 test("bound-origin guard rejects a tab that navigated before a command executes", async () => {

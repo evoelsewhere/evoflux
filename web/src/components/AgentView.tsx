@@ -363,7 +363,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   }, [isEmpty, setScrollButtonVisible])
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div className="@container/agent-view relative flex min-h-0 flex-1 flex-col">
     <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain">
       <div ref={contentRef} className="mx-auto max-w-4xl px-3 py-4">
         {isEmpty && (

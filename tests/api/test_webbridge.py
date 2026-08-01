@@ -35,6 +35,7 @@ from app.agent.schemas.chat import ImageDataBlock, TextBlock, ToolResult
 from app.agent.tools.builtin.webbridge_tool import AnyAction, _get_sid, webbridge
 from app.api.routes.team.webbridge import (
     InteractionRequest,
+    _browser_panel_messages,
     _browser_panel_stream_event,
     _require_panel_binding,
     router,
@@ -116,6 +117,7 @@ def test_side_chat_stream_sanitizes_tool_activity():
                     "name": "webbridge",
                     "arguments": '{"url":"https://secret.example"}',
                     "result": "private output",
+                    "metadata": {"duration_ms": 1250},
                 }
             ),
         }
@@ -130,6 +132,7 @@ def test_side_chat_stream_sanitizes_tool_activity():
         "agent": "lead",
         "name": "webbridge",
         "state": "running",
+        "duration_ms": 1250,
     }
     assert "secret.example" not in event["data"]
     assert "private output" not in event["data"]
@@ -148,6 +151,96 @@ def test_side_chat_stream_sanitizes_tool_activity():
     )
     assert provider is not None
     assert provider["event"] == "provider_status"
+
+    thinking = _browser_panel_stream_event(
+        {
+            "event": "thinking",
+            "data": json.dumps(
+                {
+                    "agent": "lead",
+                    "text": "private chain of thought",
+                    "metadata": {"model": "openai:gpt-test"},
+                }
+            ),
+        }
+    )
+    assert thinking is not None
+    assert thinking["event"] == "thinking"
+    assert json.loads(thinking["data"]) == {
+        "type": "thinking",
+        "agent": "lead",
+        "chars": 24,
+    }
+    assert "private chain of thought" not in thinking["data"]
+
+
+def test_side_chat_history_matches_canonical_chat_without_leaking_tool_payloads():
+    session_id = uuid4()
+    created_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    user = SimpleNamespace(
+        id=uuid4(),
+        session_id=session_id,
+        role="user",
+        content="[Untrusted browser selection]\nUser request:\nExplain this",
+        name=None,
+        created_at=created_at,
+        extra={
+            "webbridge_side_panel": {
+                "user_content": "Explain this",
+                "contexts": [{"type": "selection"}],
+            }
+        },
+        tool_calls=None,
+        tool_call_id=None,
+        is_summary=False,
+    )
+    assistant = SimpleNamespace(
+        id=uuid4(),
+        session_id=session_id,
+        role="assistant",
+        content="I checked the page.",
+        name="lead",
+        created_at=created_at,
+        extra={"model": "openai:gpt-test", "duration_ms": 1250},
+        tool_calls=[
+            {
+                "id": "call-1",
+                "function": {
+                    "name": "webbridge",
+                    "arguments": '{"token":"must-not-leak"}',
+                },
+            }
+        ],
+        tool_call_id=None,
+        is_summary=False,
+    )
+    tool_result = SimpleNamespace(
+        id=uuid4(),
+        session_id=session_id,
+        role="tool",
+        content="private tool output",
+        name="webbridge",
+        created_at=created_at,
+        extra={"duration_ms": 420},
+        tool_calls=None,
+        tool_call_id="call-1",
+        is_summary=False,
+    )
+
+    projected = _browser_panel_messages([user, assistant, tool_result])
+
+    assert projected[0].content == "Explain this"
+    assert projected[1].model == "openai:gpt-test"
+    assert projected[1].response_duration_ms == 1250
+    assert projected[1].activities[0].model_dump() == {
+        "id": "call-1",
+        "name": "webbridge",
+        "state": "done",
+        "duration_ms": 420,
+    }
+    serialized = json.dumps([message.model_dump() for message in projected])
+    assert "must-not-leak" not in serialized
+    assert "private tool output" not in serialized
 
 
 async def test_side_chat_accepts_only_verified_tabs_in_primary_group(manager):
@@ -1390,7 +1483,11 @@ async def test_prepared_interactive_message_dispatches_when_idle(
         await db.commit()
 
         result = await submit_persisted_interactive_message(
-            db, session=session, team=team, content="Browser prompt"
+            db,
+            session=session,
+            team=team,
+            content="Browser prompt",
+            service_tier="fast",
         )
 
     assert result.status == "accepted"
@@ -1404,6 +1501,7 @@ async def test_prepared_interactive_message_dispatches_when_idle(
         model_provided=True,
         thinking_level="high",
         thinking_level_provided=True,
+        service_tier="fast",
     )
 
 
@@ -1931,6 +2029,7 @@ async def test_side_panel_transcript_composer_and_handoff_are_pairing_scoped(
     assert dispatched_extra["webbridge_side_panel"] == {
         "tab_id": 42,
         "binding_tab_id": 42,
+        "user_content": "Side Panel follow-up",
         "element": {
             "page_url": "https://example.com/page",
             "selector": "button[data-testid=save]",
@@ -2955,6 +3054,7 @@ async def test_paired_extension_lists_and_creates_browser_sessions(
             "mode": "work",
             "running": False,
             "model": None,
+            "thinking_level": None,
         }
     ]
 
@@ -3047,11 +3147,6 @@ async def test_paired_side_chat_lists_and_persists_session_model(
     monkeypatch.setattr(
         "app.api.routes.agents.get_registry", AsyncMock(return_value=registry)
     )
-    monkeypatch.setattr(
-        "app.api.routes.agents.is_registered_model_id",
-        AsyncMock(return_value=True),
-    )
-
     catalog = client.get(f"{_PREFIX}/models", headers=owner_headers)
     assert catalog.status_code == 200
     assert catalog.json() == [
@@ -3066,10 +3161,18 @@ async def test_paired_side_chat_lists_and_persists_session_model(
     updated = client.patch(
         f"{_PREFIX}/sessions/{session.id}/model",
         headers=owner_headers,
-        json={"model": "openai:gpt-test"},
+        json={"model": "openai:gpt-test", "thinking_level": "high"},
     )
     assert updated.status_code == 200
     assert updated.json()["model"] == "openai:gpt-test"
+    assert updated.json()["thinking_level"] == "high"
+
+    invalid_thinking = client.patch(
+        f"{_PREFIX}/sessions/{session.id}/model",
+        headers=owner_headers,
+        json={"model": "openai:gpt-test", "thinking_level": "ultra"},
+    )
+    assert invalid_thinking.status_code == 422
 
     rejected = client.patch(
         f"{_PREFIX}/sessions/{session.id}/model",
@@ -3082,6 +3185,7 @@ async def test_paired_side_chat_lists_and_persists_session_model(
         persisted = await db.get(ChatSession, session.id)
     assert persisted is not None
     assert persisted.model == "openai:gpt-test"
+    assert persisted.thinking_level == "high"
 
 
 async def test_browser_pairings_cannot_enumerate_or_target_each_others_sessions(
