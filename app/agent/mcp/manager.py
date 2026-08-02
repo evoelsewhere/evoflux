@@ -29,6 +29,7 @@ Tool calls happen in arbitrary other tasks but only ever **read** the live
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import urllib.parse
 from contextlib import AsyncExitStack, suppress
@@ -42,7 +43,9 @@ from mcp.types import CallToolResult
 
 from app.agent.mcp.config import (
     HttpServerConfig,
+    MCPConfig,
     StdioServerConfig,
+    config_path,
     load_config,
     resolve_headers,
     resolve_secret_refs,
@@ -251,10 +254,20 @@ class MCPManager:
     Singleton: import :data:`mcp_manager` rather than instantiating directly.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        watch_config: bool = False,
+        watch_interval: float = 0.5,
+    ) -> None:
         self._runners: dict[str, _ServerRunner] = {}
+        self._server_configs: dict[str, StdioServerConfig | HttpServerConfig] = {}
         self._lock = asyncio.Lock()
         self._started = False
+        self._watch_config = watch_config
+        self._watch_interval = watch_interval
+        self._watch_task: asyncio.Task[None] | None = None
+        self._config_fingerprint: tuple[bytes | None, bytes | None] | None = None
 
     # ── Public lifecycle ──────────────────────────────────────────────────
 
@@ -272,11 +285,12 @@ class MCPManager:
     async def _start_locked(self) -> None:
         """Body of :meth:`start` — caller must already hold ``self._lock``.
 
-        Factored out so :meth:`reload_from_config` can stop-and-restart in
-        a single critical section, closing the window where another caller
-        could observe an empty ``_runners`` dict between phases.
+        Factored out so startup state and watcher creation share the same
+        lifecycle lock.
         """
         self._started = True
+        self._config_fingerprint = self._read_config_fingerprint()
+        self._ensure_config_watcher_locked()
 
         try:
             cfg = load_config()
@@ -293,6 +307,7 @@ class MCPManager:
                 self._runners[name] = self._make_disabled_runner(name, server_cfg)
                 continue
             await self._spawn_runner(name, server_cfg)
+        self._server_configs = dict(cfg.servers)
 
         logger.info(
             "mcp_manager_started servers={}",
@@ -333,9 +348,14 @@ class MCPManager:
 
     async def stop(self) -> None:
         """Signal all runners to shut down and await their exit."""
+        watch_task: asyncio.Task[None] | None = None
         async with self._lock:
-            if not self._started:
+            if not self._started and not self._runners and self._watch_task is None:
                 return
+            watch_task = self._watch_task
+            self._watch_task = None
+            if watch_task is not None and watch_task is not asyncio.current_task():
+                watch_task.cancel()
             for runner in self._runners.values():
                 runner.shutdown.set()
             tasks = [
@@ -346,8 +366,12 @@ class MCPManager:
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
             self._runners.clear()
+            self._server_configs.clear()
             self._started = False
+            self._config_fingerprint = None
             logger.info("mcp_manager_stopped")
+        if watch_task is not None and watch_task is not asyncio.current_task():
+            await asyncio.gather(watch_task, return_exceptions=True)
 
     # ── Public read API ───────────────────────────────────────────────────
 
@@ -421,16 +445,24 @@ class MCPManager:
         Raises ``KeyError`` if ``name`` is not in the current config file.
         """
         cfg = load_config()
+        fingerprint = self._read_config_fingerprint()
         if name not in cfg.servers:
             raise KeyError(name)
 
         async with self._lock:
+            self._started = True
+            self._ensure_config_watcher_locked()
             await self._stop_runner(name)
             server_cfg = cfg.servers[name]
             if not server_cfg.enabled:
                 self._runners[name] = self._make_disabled_runner(name, server_cfg)
             else:
                 await self._spawn_runner(name, server_cfg)
+            self._server_configs[name] = server_cfg
+            # CRUD routes save the file before calling this method. Mark that
+            # exact content as applied so the watcher does not immediately
+            # restart the same runner a second time.
+            self._config_fingerprint = fingerprint
 
         runner = self._runners[name]
         if runner.status.state != "stopped":
@@ -443,32 +475,135 @@ class MCPManager:
         return runner.status
 
     async def reload_from_config(self) -> None:
-        """Stop all runners and restart from the current config file.
+        """Incrementally reconcile runners with the current config file.
 
-        Done under a single lock so other callers cannot observe an empty
-        ``_runners`` dict between the teardown and the respawn.
+        Unchanged connections are preserved so adding one self-created MCP
+        cannot interrupt in-flight calls on another server.
         """
+        try:
+            cfg = load_config()
+        except ValueError as exc:
+            # Keep healthy live runners when an editor exposes a transient or
+            # malformed file. A later valid write will produce a new
+            # fingerprint and be reconciled by the watcher.
+            logger.error("mcp_config_reload_rejected err={}", exc)
+            return
+        fingerprint = self._read_config_fingerprint()
+
         async with self._lock:
-            for runner in self._runners.values():
-                runner.shutdown.set()
-            tasks = [
-                r.task
-                for r in self._runners.values()
-                if r.task is not None and not r.task.done()
-            ]
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
-            self._runners.clear()
-            self._started = False
-            await self._start_locked()
+            await self._reconcile_runners_locked(cfg)
+            self._config_fingerprint = fingerprint
 
     async def remove_runner(self, name: str) -> None:
         """Tear down ``name``'s runner if present (no-op if absent)."""
         async with self._lock:
+            self._started = True
+            self._ensure_config_watcher_locked()
             await self._stop_runner(name)
             self._runners.pop(name, None)
+            self._server_configs.pop(name, None)
+            self._config_fingerprint = self._read_config_fingerprint()
 
     # ── Internals ─────────────────────────────────────────────────────────
+
+    def _read_config_fingerprint(self) -> tuple[bytes | None, bytes | None]:
+        """Fingerprint ``mcp.json`` and its secret-ref ``.env`` source."""
+        previous = self._config_fingerprint or (None, None)
+
+        def digest(path, fallback: bytes | None) -> bytes | None:
+            try:
+                return hashlib.sha256(path.read_bytes()).digest()
+            except FileNotFoundError:
+                return None
+            except OSError as exc:
+                logger.warning(
+                    "mcp_config_fingerprint_failed path={} error={}", path, exc
+                )
+                return fallback
+
+        path = config_path()
+        return digest(path, previous[0]), digest(path.with_name(".env"), previous[1])
+
+    def _ensure_config_watcher_locked(self) -> None:
+        """Start the config watcher. Caller must hold ``self._lock``."""
+        if not self._watch_config:
+            return
+        if self._watch_task is not None and not self._watch_task.done():
+            return
+        self._watch_task = asyncio.create_task(
+            self._watch_config_loop(), name="mcp-config-watcher"
+        )
+
+    async def _watch_config_loop(self) -> None:
+        """Reconcile direct ``mcp.json`` writes without restarting EvoFlux."""
+        logger.info("mcp_config_watcher_started path={}", config_path())
+        try:
+            while True:
+                await asyncio.sleep(self._watch_interval)
+                fingerprint = self._read_config_fingerprint()
+                if fingerprint == self._config_fingerprint:
+                    continue
+                previous_fingerprint = self._config_fingerprint
+
+                try:
+                    cfg = load_config()
+                except ValueError as exc:
+                    # Remember this invalid content so we log once per write,
+                    # while preserving the last known-good live runners.
+                    async with self._lock:
+                        if self._config_fingerprint == previous_fingerprint:
+                            self._config_fingerprint = fingerprint
+                    logger.error("mcp_config_watch_rejected err={}", exc)
+                    continue
+
+                async with self._lock:
+                    # An API mutation may have applied this same file while
+                    # the watcher was waiting for the lifecycle lock.
+                    if fingerprint == self._config_fingerprint:
+                        continue
+                    if self._config_fingerprint != previous_fingerprint:
+                        # A different, newer file was applied while this
+                        # watcher iteration was loading the old one.
+                        continue
+                    env_changed = (
+                        previous_fingerprint is not None
+                        and fingerprint[1] != previous_fingerprint[1]
+                    )
+                    await self._reconcile_runners_locked(cfg, force=env_changed)
+                    self._config_fingerprint = fingerprint
+                logger.info("mcp_config_hot_reloaded servers={}", list(cfg.servers))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            # A watcher failure must not take down MCP runners or the API.
+            logger.error("mcp_config_watcher_failed error={}", exc)
+
+    async def _reconcile_runners_locked(
+        self, cfg: MCPConfig, *, force: bool = False
+    ) -> None:
+        """Incrementally reconcile runners with *cfg* while holding the lock."""
+        self._started = True
+        self._ensure_config_watcher_locked()
+
+        removed = set(self._runners) - set(cfg.servers)
+        for name in removed:
+            await self._stop_runner(name)
+            self._runners.pop(name, None)
+            self._server_configs.pop(name, None)
+
+        for name, server_cfg in cfg.servers.items():
+            if (
+                not force
+                and self._server_configs.get(name) == server_cfg
+                and name in self._runners
+            ):
+                continue
+            await self._stop_runner(name)
+            if not server_cfg.enabled:
+                self._runners[name] = self._make_disabled_runner(name, server_cfg)
+            else:
+                await self._spawn_runner(name, server_cfg)
+            self._server_configs[name] = server_cfg
 
     def _make_disabled_runner(
         self, name: str, server_cfg: StdioServerConfig | HttpServerConfig
@@ -675,4 +810,4 @@ class MCPManager:
 
 # ── Module-level singleton ─────────────────────────────────────────────────
 
-mcp_manager = MCPManager()
+mcp_manager = MCPManager(watch_config=True)

@@ -36,6 +36,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -101,7 +102,18 @@ def _load_mcp_json(path: Path) -> dict:
 
 def _save_mcp_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n")
+    payload = json.dumps(data, indent=2) + "\n"
+    fd, tmp_name = tempfile.mkstemp(prefix=".mcp.json.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(payload)
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
 
 
 def _oauth_env_key(name: str, field: str) -> str:
@@ -193,7 +205,8 @@ def _fallback_add(name: str, server_body: dict, mcp_json: Path, env_file: Path) 
     data.setdefault("servers", {})[name] = _server_body_to_config(server_body)
     _save_mcp_json(mcp_json, data)
     print(
-        f"daemon unreachable — wrote {name} to {mcp_json} (takes effect on next daemon restart)"
+        f"daemon API unreachable — wrote {name} to {mcp_json}; "
+        "the running desktop app will hot-apply the change"
     )
 
 
@@ -205,7 +218,8 @@ def _fallback_update(
     data.setdefault("servers", {})[name] = _server_body_to_config(server_body)
     _save_mcp_json(mcp_json, data)
     print(
-        f"daemon unreachable — updated {name} in {mcp_json} (takes effect on next daemon restart)"
+        f"daemon API unreachable — updated {name} in {mcp_json}; "
+        "the running desktop app will hot-apply the change"
     )
 
 
@@ -214,15 +228,14 @@ def _fallback_remove(name: str, mcp_json: Path) -> None:
     data.setdefault("servers", {}).pop(name, None)
     _save_mcp_json(mcp_json, data)
     print(
-        f"daemon unreachable — removed {name} from {mcp_json} (takes effect on next daemon restart)"
+        f"daemon API unreachable — removed {name} from {mcp_json}; "
+        "the running desktop app will hot-apply the change"
     )
 
 
 def _fallback_apply(mcp_json: Path) -> None:
     # Nothing to do — mcp.json is already the source of truth.
-    print(
-        f"daemon unreachable — {mcp_json} is already up to date (takes effect on next daemon restart)"
-    )
+    print(f"daemon API unreachable — {mcp_json} will be hot-applied by the desktop app")
 
 
 # ── Commands ─────────────────────────────────────────────────────────────────

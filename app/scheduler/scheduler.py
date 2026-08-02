@@ -12,6 +12,7 @@ from collections.abc import Coroutine
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid5, NAMESPACE_URL
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from loguru import logger
 from sqlmodel import col, select
@@ -36,6 +37,70 @@ class InvalidTaskTargetError(Exception):
     Examples: ``mode='coding'`` with a workspace path that does not exist
     or is not a directory.
     """
+
+
+class InvalidScheduleError(Exception):
+    """Raised when a merged partial update would create an invalid schedule."""
+
+
+def _validate_schedule_values(
+    *,
+    schedule_type: str,
+    at_datetime: datetime | None,
+    every_seconds: int | None,
+    cron_expression: str | None,
+    timezone_name: str,
+) -> datetime | None:
+    """Validate a complete schedule and normalize a naive ``at`` value."""
+    try:
+        tz = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        raise InvalidScheduleError(
+            f"Unknown IANA timezone: '{timezone_name}'"
+        ) from None
+
+    if schedule_type == "at":
+        if at_datetime is None:
+            raise InvalidScheduleError("at_datetime is required for schedule_type='at'")
+        if every_seconds is not None or cron_expression is not None:
+            raise InvalidScheduleError(
+                "Only at_datetime may be set for schedule_type='at'"
+            )
+        return (
+            at_datetime.replace(tzinfo=tz)
+            if at_datetime.tzinfo is None
+            else at_datetime
+        )
+
+    if schedule_type == "every":
+        if every_seconds is None or every_seconds <= 0:
+            raise InvalidScheduleError(
+                "every_seconds is required for schedule_type='every'"
+            )
+        if at_datetime is not None or cron_expression is not None:
+            raise InvalidScheduleError(
+                "Only every_seconds may be set for schedule_type='every'"
+            )
+        return None
+
+    if schedule_type == "cron":
+        if not cron_expression:
+            raise InvalidScheduleError(
+                "cron_expression is required for schedule_type='cron'"
+            )
+        if at_datetime is not None or every_seconds is not None:
+            raise InvalidScheduleError(
+                "Only cron_expression may be set for schedule_type='cron'"
+            )
+        from app.scheduler.cron import validate_cron
+
+        if not validate_cron(cron_expression):
+            raise InvalidScheduleError(f"Invalid cron expression: '{cron_expression}'")
+        return None
+
+    raise InvalidScheduleError(
+        f"schedule_type must be 'at', 'every', or 'cron'; got '{schedule_type}'"
+    )
 
 
 def _validate_target(mode: str, workspace: str | None) -> None:
@@ -119,6 +184,7 @@ class TaskScheduler:
         # task_id → running asyncio.Task
         self._tasks: dict[UUID, asyncio.Task[None]] = {}
         self._fire_tasks: set[asyncio.Task[None]] = set()
+        self._fire_locks: dict[UUID, asyncio.Lock] = {}
         self._stopping = False
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -261,25 +327,24 @@ class TaskScheduler:
         if task is None:
             raise TaskNotFoundError(str(task_id))
 
-        new_mode = body.mode if body.mode is not None else task.mode
-        new_workspace = body.workspace if body.workspace is not None else task.workspace
-        new_session_id = (
-            body.session_id if body.session_id is not None else task.session_id
-        )
-        if body.mode is not None or body.workspace is not None:
+        fields = body.model_fields_set
+        new_mode = body.mode if "mode" in fields else task.mode
+        if new_mode is None:
+            raise InvalidTaskTargetError("mode cannot be null")
+        new_workspace = body.workspace if "workspace" in fields else task.workspace
+        # Switching a coding task back to work mode should not retain a stale
+        # workspace merely because the client omitted the now-irrelevant field.
+        if body.mode == "work" and "workspace" not in fields:
+            new_workspace = None
+        new_session_id = body.session_id if "session_id" in fields else task.session_id
+        if "mode" in fields or "workspace" in fields:
             _validate_target(new_mode, new_workspace)
-            task.mode = new_mode
-            task.workspace = new_workspace
 
         # Re-validate the session pairing whenever any of (mode, workspace,
         # session_id) change.  A mode-only change can newly conflict with an
         # already-stored session_id, so we always check against the merged
         # state.
-        if (
-            body.mode is not None
-            or body.workspace is not None
-            or body.session_id is not None
-        ):
+        if "mode" in fields or "workspace" in fields or "session_id" in fields:
             await _validate_session_compat(
                 self._db,
                 session_id=new_session_id,
@@ -287,24 +352,74 @@ class TaskScheduler:
                 workspace=new_workspace,
             )
 
-        if body.schedule_type is not None:
-            task.schedule_type = body.schedule_type
-        if body.at_datetime is not None:
-            task.at_datetime = body.at_datetime
-        if body.every_seconds is not None:
-            task.every_seconds = body.every_seconds
-        if body.cron_expression is not None:
-            task.cron_expression = body.cron_expression
-        if body.timezone is not None:
-            task.timezone = body.timezone
+        schedule_type = (
+            body.schedule_type if "schedule_type" in fields else task.schedule_type
+        )
+        if schedule_type is None:
+            raise InvalidScheduleError("schedule_type cannot be null")
+        schedule_type_changed = schedule_type != task.schedule_type
+        if schedule_type_changed:
+            # A type transition starts with a clean shape; values belonging to
+            # the old type must never leak into the persisted new schedule.
+            at_datetime = body.at_datetime if "at_datetime" in fields else None
+            every_seconds = body.every_seconds if "every_seconds" in fields else None
+            cron_expression = (
+                body.cron_expression if "cron_expression" in fields else None
+            )
+        else:
+            at_datetime = (
+                body.at_datetime if "at_datetime" in fields else task.at_datetime
+            )
+            every_seconds = (
+                body.every_seconds if "every_seconds" in fields else task.every_seconds
+            )
+            cron_expression = (
+                body.cron_expression
+                if "cron_expression" in fields
+                else task.cron_expression
+            )
+        timezone_name = body.timezone if "timezone" in fields else task.timezone
+        if timezone_name is None:
+            raise InvalidScheduleError("timezone cannot be null")
+        at_datetime = _validate_schedule_values(
+            schedule_type=schedule_type,
+            at_datetime=at_datetime,
+            every_seconds=every_seconds,
+            cron_expression=cron_expression,
+            timezone_name=timezone_name,
+        )
+        schedule_definition_changed = bool(
+            fields
+            & {
+                "schedule_type",
+                "at_datetime",
+                "every_seconds",
+                "cron_expression",
+                "timezone",
+            }
+        )
+
+        task.mode = new_mode
+        task.workspace = new_workspace
+        task.schedule_type = schedule_type
+        task.at_datetime = at_datetime
+        task.every_seconds = every_seconds
+        task.cron_expression = cron_expression
+        task.timezone = timezone_name
         if body.prompt is not None:
             task.prompt = body.prompt
-        if body.session_id is not None:
+        if "session_id" in fields:
             task.session_id = body.session_id
         if body.enabled is not None:
             task.enabled = body.enabled
+            task.status = "pending" if body.enabled else "paused"
+        elif schedule_definition_changed and task.enabled:
+            task.status = "pending"
 
-        return await self.update(task)
+        return await self.update(
+            task,
+            reset_one_shot=(schedule_type == "at" and schedule_definition_changed),
+        )
 
     async def remove(self, task_id: UUID) -> None:
         """Cancel timer and delete *task_id* from DB."""
@@ -318,7 +433,9 @@ class TaskScheduler:
                 await session.delete(task)
                 await session.commit()
 
-    async def update(self, task: ScheduledTask) -> ScheduledTask:
+    async def update(
+        self, task: ScheduledTask, *, reset_one_shot: bool = False
+    ) -> ScheduledTask:
         """Persist updated *task* and restart/cancel its timer."""
         self._cancel_timer(task.id)
         task.next_fire_at = next_fire(
@@ -327,7 +444,9 @@ class TaskScheduler:
             every_seconds=task.every_seconds,
             at_datetime=task.at_datetime,
             timezone=task.timezone,
-            run_count=task.run_count,
+            # run_count is cumulative history, but a newly defined one-shot
+            # must still get one future fire even if this task ran before.
+            run_count=0 if reset_one_shot else task.run_count,
         )
         async with self._db() as session:
             session.add(task)
@@ -362,14 +481,15 @@ class TaskScheduler:
             task = result.one()
             task.enabled = True
             task.status = "pending"
-            task.next_fire_at = next_fire(
-                task.schedule_type,
-                cron_expression=task.cron_expression,
-                every_seconds=task.every_seconds,
-                at_datetime=task.at_datetime,
-                timezone=task.timezone,
-                run_count=task.run_count,
-            )
+            if task.schedule_type != "at" or task.next_fire_at is None:
+                task.next_fire_at = next_fire(
+                    task.schedule_type,
+                    cron_expression=task.cron_expression,
+                    every_seconds=task.every_seconds,
+                    at_datetime=task.at_datetime,
+                    timezone=task.timezone,
+                    run_count=task.run_count,
+                )
             session.add(task)
             await session.commit()
             await session.refresh(task)
@@ -400,10 +520,14 @@ class TaskScheduler:
                 await session.commit()
                 await session.refresh(task)
 
-        if was_disabled:
-            self._start_timer(task)
-
-        self._spawn_fire(self._fire_task(task), name=f"scheduler-trigger:{task.name}")
+        # Stop the timer before dispatching. Otherwise a one-shot whose due
+        # time arrives during a manual trigger can execute twice concurrently.
+        # Recurring timers are restored after the manual firing, preserving
+        # their previously persisted next-fire time.
+        self._cancel_timer(task.id)
+        self._spawn_fire(
+            self._trigger_and_restart(task), name=f"scheduler-trigger:{task.name}"
+        )
 
     async def list_tasks(self, session_id: str | None = None) -> list[ScheduledTask]:
         async with self._db() as session:
@@ -446,16 +570,17 @@ class TaskScheduler:
 
     async def _timer_loop(self, task: ScheduledTask) -> None:
         """Sleep until next_fire_at, fire, repeat (or exit for one-shots)."""
+        nxt = task.next_fire_at
         while True:
-            # Recompute next fire from current state
-            nxt = next_fire(
-                task.schedule_type,
-                cron_expression=task.cron_expression,
-                every_seconds=task.every_seconds,
-                at_datetime=task.at_datetime,
-                timezone=task.timezone,
-                run_count=task.run_count,
-            )
+            if nxt is None:
+                nxt = next_fire(
+                    task.schedule_type,
+                    cron_expression=task.cron_expression,
+                    every_seconds=task.every_seconds,
+                    at_datetime=task.at_datetime,
+                    timezone=task.timezone,
+                    run_count=task.run_count,
+                )
             if nxt is None:
                 # Schedule exhausted (e.g. "at" already ran)
                 break
@@ -468,7 +593,16 @@ class TaskScheduler:
                 except asyncio.CancelledError:
                     return
 
-            await self._fire_task(task)
+            # Keep dispatch alive if pause/update/delete cancels this timer
+            # after it has already fired. The independently tracked task will
+            # finish its DB bookkeeping and is awaited during shutdown.
+            fire = self._spawn_fire(
+                self._fire_task(task), name=f"scheduler-fire:{task.name}"
+            )
+            try:
+                await asyncio.shield(fire)
+            except asyncio.CancelledError:
+                return
 
             # Reload task state from DB so run_count / status are fresh
             async with self._db() as session:
@@ -479,6 +613,7 @@ class TaskScheduler:
             if fresh is None:
                 break
             task = fresh
+            nxt = task.next_fire_at
 
             # One-shot "at" tasks exit after firing
             if task.schedule_type == "at":
@@ -486,6 +621,24 @@ class TaskScheduler:
 
         # Remove ourselves from the tracking dict
         self._tasks.pop(task.id, None)
+
+    async def _trigger_and_restart(self, task: ScheduledTask) -> None:
+        """Run a manual trigger and restore recurring timer state."""
+        preserved_next = task.next_fire_at
+        await self._fire_task(
+            task,
+            manual=True,
+            preserved_next_fire_at=preserved_next,
+        )
+        async with self._db() as session:
+            fresh = await session.get(ScheduledTask, task.id)
+        if (
+            not self._stopping
+            and fresh is not None
+            and fresh.enabled
+            and fresh.schedule_type != "at"
+        ):
+            self._start_timer(fresh)
 
     async def _project_extra_paths(
         self, session_id: str | None, primary_workspace: str
@@ -515,8 +668,30 @@ class TaskScheduler:
         extras = [p for p in all_paths if p != primary_workspace]
         return extras or None
 
-    async def _fire_task(self, task: ScheduledTask) -> None:
-        """Execute one scheduled firing of *task*."""
+    async def _fire_task(
+        self,
+        task: ScheduledTask,
+        *,
+        manual: bool = False,
+        preserved_next_fire_at: datetime | None = None,
+    ) -> None:
+        """Execute one firing, serialized per scheduled task."""
+        lock = self._fire_locks.setdefault(task.id, asyncio.Lock())
+        async with lock:
+            await self._fire_task_locked(
+                task,
+                manual=manual,
+                preserved_next_fire_at=preserved_next_fire_at,
+            )
+
+    async def _fire_task_locked(
+        self,
+        task: ScheduledTask,
+        *,
+        manual: bool,
+        preserved_next_fire_at: datetime | None,
+    ) -> None:
+        """Execute one scheduled firing while holding its per-task lock."""
         from app.services import team_manager
         from app.services.agent_service import NoTeamConfigured, dispatch_user_message
 
@@ -534,6 +709,17 @@ class TaskScheduler:
             db_task.last_run_at = now
             session.add(db_task)
             await session.commit()
+            await session.refresh(db_task)
+            # Always dispatch the latest persisted prompt/target rather than
+            # a stale object captured by a timer before an API update.
+            task = db_task
+            fired_schedule = (
+                task.schedule_type,
+                task.at_datetime,
+                task.every_seconds,
+                task.cron_expression,
+                task.timezone,
+            )
 
         # 2. Resolve session_id
         # "auto" → deterministic uuid5 derived from the task name so the same
@@ -621,15 +807,6 @@ class TaskScheduler:
                 )
 
         # 4. Update stats
-        nxt = next_fire(
-            task.schedule_type,
-            cron_expression=task.cron_expression,
-            every_seconds=task.every_seconds,
-            at_datetime=task.at_datetime,
-            timezone=task.timezone,
-            after=datetime.now(_utc),
-            run_count=task.run_count + 1,
-        )
         async with self._db() as session:
             result = await session.exec(
                 select(ScheduledTask).where(ScheduledTask.id == task.id)
@@ -639,10 +816,34 @@ class TaskScheduler:
                 return
             db_task.run_count += 1
             db_task.last_error = error
-            db_task.next_fire_at = nxt
-            if error:
+            current_schedule = (
+                db_task.schedule_type,
+                db_task.at_datetime,
+                db_task.every_seconds,
+                db_task.cron_expression,
+                db_task.timezone,
+            )
+            if current_schedule == fired_schedule:
+                if manual and db_task.schedule_type != "at":
+                    db_task.next_fire_at = preserved_next_fire_at
+                else:
+                    db_task.next_fire_at = next_fire(
+                        db_task.schedule_type,
+                        cron_expression=db_task.cron_expression,
+                        every_seconds=db_task.every_seconds,
+                        at_datetime=db_task.at_datetime,
+                        timezone=db_task.timezone,
+                        after=datetime.now(_utc),
+                        run_count=db_task.run_count,
+                    )
+            # If the schedule was edited while dispatch was in flight, keep
+            # update()'s newly persisted next_fire_at instead of overwriting
+            # it with a calculation for the old firing.
+            if not db_task.enabled:
+                db_task.status = "paused"
+            elif error:
                 db_task.status = "failed"
-            elif task.schedule_type == "at":
+            elif db_task.schedule_type == "at":
                 db_task.status = "completed"
             else:
                 db_task.status = "pending"

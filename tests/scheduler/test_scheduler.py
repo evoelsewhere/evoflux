@@ -18,6 +18,7 @@ from sqlmodel import select
 import app.core.db as _db_module
 from app.scheduler.models import ScheduledTask
 from app.scheduler.scheduler import TaskScheduler
+from app.scheduler.schemas import ScheduledTaskUpdate
 
 
 _UTC = timezone.utc
@@ -401,6 +402,97 @@ class TestTrigger:
             assert db_task.enabled is True
             assert db_task.status == "pending"
             assert db_task.next_fire_at is not None
+
+    async def test_recurring_trigger_preserves_existing_next_fire(
+        self, scheduler, db_factory, mock_dispatch
+    ):
+        task = _make_task(name="preserve_cadence", every_seconds=3600)
+        saved = await scheduler.add(task)
+        original_next = saved.next_fire_at
+
+        await scheduler.trigger(task.id)
+        for _ in range(50):
+            await asyncio.sleep(0.01)
+            current = await scheduler.get_task(task.id)
+            if current is not None and current.run_count == 1:
+                break
+
+        current = await scheduler.get_task(task.id)
+        assert current is not None
+        assert current.next_fire_at == original_next
+        await scheduler.stop()
+
+    async def test_concurrent_manual_triggers_are_serialized(
+        self, scheduler, db_factory
+    ):
+        task = _make_task(name="serialized_triggers", every_seconds=3600)
+        await scheduler.add(task)
+        active = 0
+        max_active = 0
+        calls = 0
+
+        async def _get_team():
+            return MagicMock()
+
+        async def _dispatch(*_args, **_kwargs):
+            nonlocal active, max_active, calls
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.03)
+            active -= 1
+            calls += 1
+            return (str(uuid4()), 0)
+
+        with (
+            patch("app.services.team_manager.get_or_start_team", side_effect=_get_team),
+            patch(
+                "app.services.agent_service.dispatch_user_message",
+                side_effect=_dispatch,
+            ),
+        ):
+            await scheduler.trigger(task.id)
+            await scheduler.trigger(task.id)
+            await scheduler.stop()
+
+        assert calls == 2
+        assert max_active == 1
+
+    async def test_inflight_fire_does_not_overwrite_updated_schedule(
+        self, scheduler, db_factory
+    ):
+        task = _make_task(name="edit_while_running", every_seconds=3600)
+        await scheduler.add(task)
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def _get_team():
+            return MagicMock()
+
+        async def _dispatch(*_args, **_kwargs):
+            entered.set()
+            await release.wait()
+            return (str(uuid4()), 0)
+
+        with (
+            patch("app.services.team_manager.get_or_start_team", side_effect=_get_team),
+            patch(
+                "app.services.agent_service.dispatch_user_message",
+                side_effect=_dispatch,
+            ),
+        ):
+            await scheduler.trigger(task.id)
+            await asyncio.wait_for(entered.wait(), timeout=1.0)
+            updated = await scheduler.apply_update(
+                task.id, ScheduledTaskUpdate(every_seconds=7200)
+            )
+            updated_next = updated.next_fire_at
+            release.set()
+            await scheduler.stop()
+
+        current = await scheduler.get_task(task.id)
+        assert current is not None
+        assert current.every_seconds == 7200
+        assert current.next_fire_at == updated_next
 
 
 # ---------------------------------------------------------------------------

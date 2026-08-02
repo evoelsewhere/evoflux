@@ -77,8 +77,8 @@ python3 "$SCRIPT" wait <name> [--timeout 30]
 | `3` | `wait` timed out — server still `starting` |
 
 `add`, `update`, `remove`, and `apply` never exit 1 on connection refused —
-they fall back to editing `mcp.json` directly and exit 0. The agent can
-always proceed to wiring after these commands regardless of daemon state.
+they fall back to editing `mcp.json` directly and exit 0. The running desktop
+app watches that file and hot-applies the change; no app restart is required.
 
 ## When to use
 
