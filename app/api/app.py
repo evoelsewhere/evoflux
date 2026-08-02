@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from app.agent.mcp import load_config as load_mcp_config, mcp_manager
+from app.agent.mcp import mcp_manager
 from app.api.routes.agents import router as agents_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.code_graph import router as code_graph_router
@@ -79,15 +79,10 @@ async def _start_optional_services(app: FastAPI, process_started: float) -> None
 
     phase_started = perf_counter()
     try:
-        try:
-            mcp_config = load_mcp_config()
-        except ValueError as exc:
-            logger.error("mcp_config_invalid err={}", exc)
-            mcp_config = None
-        if mcp_config is not None and mcp_config.servers:
-            await mcp_manager.start()
-        elif mcp_config is not None:
-            logger.info("mcp_no_servers_configured")
+        # Start even with an absent/empty config: the manager owns the
+        # mcp.json watcher that hot-activates servers created by EvoFlux
+        # itself after startup.
+        await mcp_manager.start()
     except Exception as exc:  # noqa: BLE001
         logger.error("optional_service_start_failed service=mcp error={}", exc)
     _log_startup_timing("mcp", phase_started, process_started)

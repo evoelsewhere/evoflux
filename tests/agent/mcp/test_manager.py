@@ -15,6 +15,8 @@ from app.agent.mcp.config import (
     MCPConfig,
     OAuthConfig,
     StdioServerConfig,
+    load_config as load_mcp_config,
+    save_config,
 )
 from app.agent.mcp.manager import MCPManager, MCPServerStatus
 from app.agent.mcp.tools import MCPTool
@@ -676,7 +678,12 @@ class TestMCPManagerOAuth:
             with patch.object(manager, "_run_server", side_effect=mock_run_server):
                 await manager.restart_server("test", ready_timeout=0.01)
 
+        # restart_server is also a valid first lifecycle operation (for
+        # example a create request before optional startup finishes).
+        assert manager._started is True
+
         await manager.stop()
+        assert manager._runners == {}
 
     @pytest.mark.asyncio
     async def test_restart_server_missing_raises_keyerror(self) -> None:
@@ -802,7 +809,7 @@ class TestMCPManagerOAuth:
 
     @pytest.mark.asyncio
     async def test_reload_from_config_with_invalid_config(self) -> None:
-        """reload_from_config handles invalid config gracefully."""
+        """An invalid reload preserves last-known-good live runners."""
         manager = MCPManager()
 
         async def mock_run_server(name, server_cfg, runner):
@@ -832,9 +839,84 @@ class TestMCPManagerOAuth:
                 mock_load.side_effect = ValueError("Bad config")
                 await manager.reload_from_config()
 
-                # Runners should be cleared and _started should be True
-                assert len(manager._runners) == 0
+                # A transient editor write must not tear down healthy tools.
+                assert len(manager._runners) == 1
                 assert manager._started is True
+
+                await manager.stop()
+
+    @pytest.mark.asyncio
+    async def test_direct_config_write_hot_activates_without_restart(
+        self, tmp_path: Path
+    ) -> None:
+        """The production watcher reconciles a server written outside the API."""
+        path = tmp_path / "mcp.json"
+        save_config(
+            MCPConfig(
+                servers={"existing": StdioServerConfig(command="echo", enabled=False)}
+            ),
+            path,
+        )
+        manager = MCPManager(watch_config=True, watch_interval=0.01)
+
+        async def mock_run_server(name, server_cfg, runner):
+            runner.status = MCPServerStatus(
+                name=name,
+                transport=server_cfg.transport,
+                enabled=True,
+                state="ready",
+            )
+            runner.ready.set()
+            await runner.shutdown.wait()
+
+        with (
+            patch("app.agent.mcp.manager.config_path", return_value=path),
+            patch(
+                "app.agent.mcp.manager.load_config",
+                side_effect=lambda: load_mcp_config(path),
+            ),
+            patch.object(manager, "_run_server", side_effect=mock_run_server),
+        ):
+            await manager.start()
+            existing_runner = manager._runners["existing"]
+
+            save_config(
+                MCPConfig(
+                    servers={
+                        "existing": StdioServerConfig(command="echo", enabled=False),
+                        "self_created": StdioServerConfig(command="echo", enabled=True),
+                    }
+                ),
+                path,
+            )
+
+            for _ in range(100):
+                status = manager.get_status("self_created")
+                if status is not None and status.state == "ready":
+                    break
+                await asyncio.sleep(0.01)
+
+            assert set(manager.server_names()) == {"existing", "self_created"}
+            assert manager._runners["existing"] is existing_runner
+            status = manager.get_status("self_created")
+            assert status is not None
+            assert status.state == "ready"
+
+            # Direct secret updates are also part of MCP config lifecycle;
+            # servers must reconnect to receive the new resolved env values.
+            self_created_runner = manager._runners["self_created"]
+            path.with_name(".env").write_text("SELF_CREATED_TOKEN=changed\n")
+            for _ in range(100):
+                status = manager.get_status("self_created")
+                if (
+                    manager._runners["self_created"] is not self_created_runner
+                    and status is not None
+                    and status.state == "ready"
+                ):
+                    break
+                await asyncio.sleep(0.01)
+            assert manager._runners["self_created"] is not self_created_runner
+            await manager.stop()
 
 
 class TestWaitUntilReady:

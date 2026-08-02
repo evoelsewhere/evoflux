@@ -12,6 +12,7 @@ from httpx import ASGITransport, AsyncClient
 import app.core.db as _db_module
 from app.api.routes.scheduler import get_scheduler, router
 from app.models.chat import ChatSession
+from app.scheduler.models import ScheduledTask
 from app.scheduler.scheduler import TaskScheduler
 
 
@@ -221,6 +222,115 @@ class TestUpdate:
         assert resp.status_code == 200
         assert resp.json()["mode"] == "coding"
 
+    async def test_update_from_coding_to_work_clears_workspace(self, client, tmp_path):
+        ws = tmp_path / "ws-to-clear"
+        ws.mkdir()
+        created = await client.post(
+            "/api/scheduler/tasks",
+            json=_create_payload(name="clear-ws", mode="coding", workspace=str(ws)),
+        )
+        task_id = created.json()["id"]
+
+        resp = await client.put(
+            f"/api/scheduler/tasks/{task_id}", json={"mode": "work"}
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["mode"] == "work"
+        assert resp.json()["workspace"] is None
+
+    async def test_schedule_type_transition_requires_new_type_fields(self, client):
+        created = await client.post(
+            "/api/scheduler/tasks", json=_create_payload(name="bad-transition")
+        )
+        task_id = created.json()["id"]
+
+        resp = await client.put(
+            f"/api/scheduler/tasks/{task_id}", json={"schedule_type": "at"}
+        )
+
+        assert resp.status_code == 422
+        assert "at_datetime is required" in resp.json()["detail"]
+        current = await client.get(f"/api/scheduler/tasks/{task_id}")
+        assert current.json()["schedule_type"] == "every"
+
+    async def test_schedule_type_transition_clears_old_fields(self, client):
+        created = await client.post(
+            "/api/scheduler/tasks", json=_create_payload(name="good-transition")
+        )
+        task_id = created.json()["id"]
+        target = (datetime.now(_UTC) + timedelta(hours=1)).isoformat()
+
+        resp = await client.put(
+            f"/api/scheduler/tasks/{task_id}",
+            json={"schedule_type": "at", "at_datetime": target},
+        )
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["schedule_type"] == "at"
+        assert body["at_datetime"] is not None
+        assert body["every_seconds"] is None
+        assert body["cron_expression"] is None
+
+    async def test_rescheduled_one_shot_fires_even_with_prior_run_history(self, client):
+        created = await client.post(
+            "/api/scheduler/tasks", json=_create_payload(name="rerun-as-at")
+        )
+        task_id = UUID(created.json()["id"])
+        async with _db_module.async_session_factory() as db:
+            row = await db.get(ScheduledTask, task_id)
+            assert row is not None
+            row.run_count = 4
+            db.add(row)
+            await db.commit()
+
+        target = (datetime.now(_UTC) + timedelta(hours=1)).isoformat()
+        resp = await client.put(
+            f"/api/scheduler/tasks/{task_id}",
+            json={"schedule_type": "at", "at_datetime": target},
+        )
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["run_count"] == 4
+        assert body["status"] == "pending"
+        assert body["next_fire_at"] is not None
+
+        await client.post(f"/api/scheduler/tasks/{task_id}/pause")
+        resumed = await client.post(f"/api/scheduler/tasks/{task_id}/resume")
+        assert resumed.status_code == 200
+        assert resumed.json()["next_fire_at"] == body["next_fire_at"]
+
+    async def test_partial_update_rejects_field_for_other_schedule_type(self, client):
+        created = await client.post(
+            "/api/scheduler/tasks", json=_create_payload(name="mixed-shape")
+        )
+        task_id = created.json()["id"]
+
+        resp = await client.put(
+            f"/api/scheduler/tasks/{task_id}",
+            json={"cron_expression": "0 9 * * *"},
+        )
+
+        assert resp.status_code == 422
+        assert "Only every_seconds" in resp.json()["detail"]
+
+    async def test_explicit_null_clears_session_id(self, client):
+        sid = str(uuid4())
+        created = await client.post(
+            "/api/scheduler/tasks",
+            json=_create_payload(name="clear-session", session_id=sid),
+        )
+        task_id = created.json()["id"]
+
+        resp = await client.put(
+            f"/api/scheduler/tasks/{task_id}", json={"session_id": None}
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["session_id"] is None
+
     async def test_unknown_id_returns_404(self, client):
         resp = await client.put(
             f"/api/scheduler/tasks/{uuid4()}",
@@ -343,6 +453,39 @@ class TestAtTask:
         assert body["schedule_type"] == "at"
         assert body["at_datetime"] is not None
         assert body["next_fire_at"] is not None
+
+    async def test_naive_at_datetime_uses_declared_timezone(self, client):
+        resp = await client.post(
+            "/api/scheduler/tasks",
+            json={
+                "name": "local_at",
+                "mode": "work",
+                "schedule_type": "at",
+                "at_datetime": "2030-01-02T09:00:00",
+                "timezone": "Asia/Ho_Chi_Minh",
+                "prompt": "hi",
+            },
+        )
+
+        assert resp.status_code == 201, resp.text
+        # 09:00 in UTC+7 is persisted/returned as 02:00 UTC.
+        assert resp.json()["next_fire_at"].startswith("2030-01-02T02:00:00")
+
+    async def test_unknown_timezone_rejected(self, client):
+        resp = await client.post(
+            "/api/scheduler/tasks",
+            json={
+                "name": "bad_tz",
+                "mode": "work",
+                "schedule_type": "cron",
+                "cron_expression": "0 9 * * *",
+                "timezone": "Mars/Olympus_Mons",
+                "prompt": "hi",
+            },
+        )
+
+        assert resp.status_code == 422
+        assert "Unknown IANA timezone" in resp.text
 
 
 # ---------------------------------------------------------------------------

@@ -92,9 +92,6 @@ def slim_lifespan(monkeypatch: pytest.MonkeyPatch):
 async def test_lifespan_skips_idle_startup_services(
     monkeypatch: pytest.MonkeyPatch, slim_lifespan
 ) -> None:
-    monkeypatch.setattr(
-        app_module, "load_mcp_config", Mock(return_value=SimpleNamespace(servers={}))
-    )
     monkeypatch.setattr(app_module.mcp_manager, "start", AsyncMock())
     monkeypatch.setattr(
         app_module.task_scheduler, "has_enabled_tasks", AsyncMock(return_value=False)
@@ -103,7 +100,9 @@ async def test_lifespan_skips_idle_startup_services(
 
     app = await _run_lifespan()
 
-    app_module.mcp_manager.start.assert_not_awaited()
+    # MCP owns a lightweight config watcher and must start even when the
+    # initial file is empty so self-created servers hot-activate later.
+    app_module.mcp_manager.start.assert_awaited_once()
     app_module.task_scheduler.start.assert_not_awaited()
     slim_lifespan.start.assert_not_awaited()
     assert app.state.dream_scheduler is slim_lifespan
@@ -113,11 +112,6 @@ async def test_lifespan_skips_idle_startup_services(
 async def test_lifespan_starts_configured_services(
     monkeypatch: pytest.MonkeyPatch, slim_lifespan
 ) -> None:
-    monkeypatch.setattr(
-        app_module,
-        "load_mcp_config",
-        Mock(return_value=SimpleNamespace(servers={"fs": object()})),
-    )
     monkeypatch.setattr(app_module.mcp_manager, "start", AsyncMock())
     monkeypatch.setattr(
         app_module.task_scheduler, "has_enabled_tasks", AsyncMock(return_value=True)

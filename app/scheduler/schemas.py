@@ -6,6 +6,7 @@ import re
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -49,6 +50,15 @@ class ScheduledTaskCreate(BaseModel):
     )
     enabled: bool = Field(default=True)
 
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError:
+            raise ValueError(f"Unknown IANA timezone: '{value}'") from None
+        return value
+
     @model_validator(mode="after")
     def _validate_schedule(self) -> "ScheduledTaskCreate":
         if not _NAME_RE.match(self.name):
@@ -65,6 +75,10 @@ class ScheduledTaskCreate(BaseModel):
                 raise ValueError("at_datetime is required for schedule_type='at'")
             if self.every_seconds is not None or self.cron_expression is not None:
                 raise ValueError("Only at_datetime may be set for schedule_type='at'")
+            if self.at_datetime.tzinfo is None:
+                self.at_datetime = self.at_datetime.replace(
+                    tzinfo=ZoneInfo(self.timezone)
+                )
         elif st == "every":
             if self.every_seconds is None:
                 raise ValueError("every_seconds is required for schedule_type='every'")
@@ -106,6 +120,17 @@ class ScheduledTaskUpdate(BaseModel):
     prompt: str | None = None
     session_id: str | None = None
     enabled: bool | None = None
+
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError:
+            raise ValueError(f"Unknown IANA timezone: '{value}'") from None
+        return value
 
     @model_validator(mode="after")
     def _validate_schedule(self) -> "ScheduledTaskUpdate":

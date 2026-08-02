@@ -27,6 +27,7 @@ from app.scheduler.schemas import (
     ScheduledTaskUpdate,
 )
 from app.scheduler.scheduler import (
+    InvalidScheduleError,
     InvalidTaskTargetError,
     TaskNotFoundError,
     TaskScheduler,
@@ -67,7 +68,7 @@ async def create_task(
 ) -> ScheduledTaskResponse:
     try:
         saved = await scheduler.create(body)
-    except InvalidTaskTargetError as exc:
+    except (InvalidTaskTargetError, InvalidScheduleError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except IntegrityError as exc:
         raise HTTPException(
@@ -122,7 +123,7 @@ async def update_task(
         raise HTTPException(
             status_code=404, detail="Scheduled task not found."
         ) from exc
-    except InvalidTaskTargetError as exc:
+    except (InvalidTaskTargetError, InvalidScheduleError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return ScheduledTaskResponse.model_validate(task)
 
