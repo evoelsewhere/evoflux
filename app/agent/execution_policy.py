@@ -22,6 +22,7 @@ def resolve_execution_policy(
     priority: str | None,
     target_paths: list[str] | None = None,
     explicit_thinking_level: str | None = None,
+    provider_default_thinking_level: str | None = None,
     supported_thinking_levels: tuple[str, ...] = (),
 ) -> ExecutionPolicy:
     normalized = _resolve_complexity(complexity, priority, target_paths or [])
@@ -35,6 +36,8 @@ def resolve_execution_policy(
         desired = "high"
     elif priority == "high" and desired == "low":
         desired = "medium"
+    if provider_default_thinking_level:
+        desired = provider_default_thinking_level
     if explicit_thinking_level:
         desired = explicit_thinking_level
     thinking = _supported_level(desired, supported_thinking_levels)

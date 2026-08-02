@@ -220,15 +220,15 @@ _CATALOG: list[ProviderEntry] = [
     },
     {
         "id": "kimi",
-        "label": "Kimi (Moonshot AI)",
-        "description": "Moonshot AI's Kimi models — reasoning and coding.",
+        "label": "Kimi Code",
+        "description": "Kimi's subscription coding API — K3 and K2.7 Code with tool use and vision.",
         "kind": "api_key",
         "env_var": "MOONSHOT_API_KEY",
         "models_dev_provider_id": "kimi-for-coding",
         "credentials": [
             {
                 "name": "MOONSHOT_API_KEY",
-                "label": "Kimi API key",
+                "label": "Kimi Code API key",
                 "secret": True,
                 "required": True,
                 "placeholder": "sk-...",
@@ -238,10 +238,10 @@ _CATALOG: list[ProviderEntry] = [
                 "label": "Base URL",
                 "secret": False,
                 "required": False,
-                "placeholder": "https://api.kimi.ai/v1",
+                "placeholder": "https://api.kimi.com/coding/v1",
             },
         ],
-        "docs_url": "https://platform.moonshot.cn/console/api-keys",
+        "docs_url": "https://www.kimi.com/code/docs/en/",
     },
     {
         "id": "router9",

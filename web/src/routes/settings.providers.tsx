@@ -78,7 +78,7 @@ const DAEMON_BASE_URL: Record<string, { var: string; placeholder: string }> = {
   cliproxy: { var: 'CLIPROXY_BASE_URL', placeholder: 'http://localhost:8317/v1' },
   ollama: { var: 'OLLAMA_BASE_URL', placeholder: 'http://localhost:11434/v1' },
   xiaomi: { var: 'XIAOMI_BASE_URL', placeholder: 'https://api.xiaomi.com/v1' },
-  kimi: { var: 'MOONSHOT_BASE_URL', placeholder: 'https://api.kimi.ai/v1' },
+  kimi: { var: 'MOONSHOT_BASE_URL', placeholder: 'https://api.kimi.com/coding/v1' },
   fci: { var: 'FCI_BASE_URL', placeholder: 'https://mkp-api.fptcloud.com/v1' },
 }
 

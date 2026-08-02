@@ -52,3 +52,26 @@ def test_explicit_ultra_is_preserved_when_the_model_supports_it():
     )
 
     assert policy.thinking_level == "ultra"
+
+
+def test_provider_default_effort_wins_over_automatic_task_heuristic():
+    policy = resolve_execution_policy(
+        complexity="multi_step",
+        priority="normal",
+        provider_default_thinking_level="high",
+        supported_thinking_levels=("low", "high", "max"),
+    )
+
+    assert policy.thinking_level == "high"
+
+
+def test_explicit_effort_wins_over_provider_default():
+    policy = resolve_execution_policy(
+        complexity="complex",
+        priority="critical",
+        explicit_thinking_level="low",
+        provider_default_thinking_level="high",
+        supported_thinking_levels=("low", "high", "max"),
+    )
+
+    assert policy.thinking_level == "low"

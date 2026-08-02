@@ -665,6 +665,12 @@ async def discover_provider_model_entries(
                     from app.agent.providers.fci.fci import normalize_fci_base_url
 
                     base_url = normalize_fci_base_url(base_url)
+                elif provider_id == "kimi":
+                    from app.agent.providers.kimi.kimi import (
+                        normalize_kimi_code_base_url,
+                    )
+
+                    base_url = normalize_kimi_code_base_url(base_url)
                 models = await _openai_compatible_models(
                     provider_id=provider_id,
                     base_url=base_url,

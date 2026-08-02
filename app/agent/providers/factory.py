@@ -30,6 +30,7 @@ from app.agent.providers.deepseek import DeepSeekProvider
 from app.agent.providers.fci import FCIProvider
 from app.agent.providers.foundry import FoundryClaudeProvider, FoundryProvider
 from app.agent.providers.googlegenai import GoogleGenAIProvider
+from app.agent.providers.kimi import KimiCodeProvider
 from app.agent.providers.ollama import OllamaProvider
 from app.agent.providers.openai import ChatCompletionsOnlyProvider, OpenAIProvider
 from app.agent.providers.openai.compatible import OPENAI_COMPATIBLE_PROVIDER_SPECS
@@ -233,6 +234,16 @@ def build_provider(
             if name == "fci":
                 return _with_provider_name(
                     FCIProvider(
+                        api_key=cast(str | SecretStr, typed_api_key),
+                        model=model,
+                        base_url=base_url,
+                        model_kwargs=kwargs,
+                    ),
+                    name,
+                )
+            if name == "kimi":
+                return _with_provider_name(
+                    KimiCodeProvider(
                         api_key=cast(str | SecretStr, typed_api_key),
                         model=model,
                         base_url=base_url,

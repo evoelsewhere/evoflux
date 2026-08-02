@@ -181,9 +181,7 @@ def _merge_caps(spec: dict[str, Any]) -> ModelCapabilities:
     )
 
 
-def _deep_merge_caps(
-    base: dict[str, Any], override: dict[str, Any]
-) -> dict[str, Any]:
+def _deep_merge_caps(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     result = {
         key: dict(value) if isinstance(value, dict) else value
         for key, value in base.items()
@@ -265,6 +263,15 @@ def get_capabilities(model_id: str | None) -> ModelCapabilities:
     normalized = model_id.lower()
     base = _registry().get(normalized, _DEFAULT)
     runtime = _runtime_capabilities.get(normalized)
-    if runtime is None:
-        return base
-    return _merge_caps(_deep_merge_caps(base.to_dict(), runtime))
+    resolved = (
+        base
+        if runtime is None
+        else _merge_caps(_deep_merge_caps(base.to_dict(), runtime))
+    )
+    if normalized.startswith("kimi:") and resolved.input.video:
+        # Provider support and adapter support are separate facts: EvoFlux's
+        # canonical OpenAI-compatible path currently serializes images only.
+        spec = resolved.to_dict()
+        spec["input"]["video"] = False
+        return _merge_caps(spec)
+    return resolved
