@@ -89,7 +89,8 @@
       "nsis": {
         "installMode": "currentUser",
         "installerIcon": "./icons/icon.ico",
-        "uninstallerIcon": "./icons/icon.ico"
+        "uninstallerIcon": "./icons/icon.ico",
+        "installerHooks": "./windows/nsis-hooks.nsh"
       }
     },
     "linux": {
