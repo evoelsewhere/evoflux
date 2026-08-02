@@ -222,6 +222,8 @@ workspace/
 **/.evoflux/wiki/
 **/.evoflux/workspace/
 **/.evoflux/pptx-html/
+**/.evoflux/docx-document/
+**/.evoflux/xlsx-artifact/
 .tests/
 
 # Local presentation verification output. Recreate from skill examples/tests.

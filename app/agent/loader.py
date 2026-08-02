@@ -294,6 +294,8 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.tools.builtin.note import note_tool
     from app.agent.tools.builtin.pptx_html import pptx_html
     from app.agent.tools.builtin.pptx_template import pptx_template
+    from app.agent.tools.builtin.docx_document import docx_document
+    from app.agent.tools.builtin.xlsx_artifact import xlsx_artifact
     from app.agent.tools.builtin.wiki_search import wiki_search
     from app.agent.tools.builtin.code_graph import (
         code_search,
@@ -354,6 +356,8 @@ def _default_tool_registry() -> dict[str, Tool]:
         "python": python_tool,
         "pptx_html": pptx_html,
         "pptx_template": pptx_template,
+        "docx_document": docx_document,
+        "xlsx_artifact": xlsx_artifact,
         "shell": shell_tool,
         "bg": background_process,
         "skill": load_skill,
