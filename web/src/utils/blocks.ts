@@ -273,31 +273,11 @@ export function startCompaction(blocks: ContentBlock[]): ContentBlock[] {
   ]
 }
 
-/** summarization_content — append streaming summary text onto the most
- *  recent ``compacting`` block. If no such block exists (events out of
- *  order), drop the chunk silently. */
-export function appendCompactionContent(
-  blocks: ContentBlock[],
-  text: string,
-): ContentBlock[] {
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    const block = blocks[i]
-    if (getCompactionState(block) === 'compacting') {
-      const result = [...blocks]
-      result[i] = { ...block, content: block.content + text }
-      return result
-    }
-  }
-  return blocks
-}
-
 /** summarization_end — flip the trailing ``compacting`` block to
- *  ``compacted`` and overwrite its content with the final summary text
- *  (which supersedes any accumulated deltas). Creates a fresh block if
- *  one doesn't exist (defensive — e.g. on cold reconnect after end). */
+ *  ``compacted``. Creates a fresh block if one doesn't exist (defensive —
+ *  e.g. on cold reconnect after end). Summary text stays internal. */
 export function endCompaction(
   blocks: ContentBlock[],
-  summary: string,
   error: boolean,
 ): ContentBlock[] {
   const extra: Record<string, unknown> = { state: 'compacted' }
@@ -309,7 +289,7 @@ export function endCompaction(
       const result = [...blocks]
       result[i] = {
         ...block,
-        content: summary || block.content,
+        content: '',
         extra,
       }
       return result
@@ -321,7 +301,7 @@ export function endCompaction(
     {
       id: generateBlockId(),
       type: 'compaction',
-      content: summary,
+      content: '',
       extra,
     },
   ]

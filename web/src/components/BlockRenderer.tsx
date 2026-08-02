@@ -386,8 +386,6 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
         <CompactionDivider
           state={state}
           error={error}
-          summary={block.content}
-          sessionId={sessionId}
         />
       )
     }

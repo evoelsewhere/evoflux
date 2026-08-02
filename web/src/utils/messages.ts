@@ -3,16 +3,6 @@ import { generateBlockId } from './blocks'
 
 // Me sort messages by timestamp asc, assistant before tool on ties
 
-/** Legacy-row guard: pre-2026-05 summary rows had a hardcoded
- *  ``[Summary of earlier conversation]\n`` prefix on the body. The hook
- *  no longer emits it (see ``app/agent/hooks/summarization.py``) but
- *  old sessions still carry it — strip on read so the UI divider stays
- *  clean across legacy + new rows. */
-function stripCompactionPrefix(content: string): string {
-  const prefix = '[Summary of earlier conversation]\n'
-  return content.startsWith(prefix) ? content.slice(prefix.length) : content
-}
-
 function continuationSeparator(left: string, right: string): string {
   if (!left || !right) return ''
   if (/\s$/.test(left) || /^\s/.test(right)) return ''
@@ -143,7 +133,7 @@ export function parseApiMessages(msgs: MessageResponse[]): ChatMessage[] {
         blocks: [{
           id: generateBlockId(),
           type: 'compaction',
-          content: stripCompactionPrefix(msg.content || ''),
+          content: '',
           extra: { state: 'compacted' },
           timestamp,
         }],
@@ -247,7 +237,7 @@ export function parseTeamBlocks(msgs: MessageResponse[]): ContentBlock[] {
       result.push({
         id: msg.id,
         type: 'compaction',
-        content: stripCompactionPrefix(msg.content || ''),
+        content: '',
         extra: { state: 'compacted' },
         timestamp,
       })

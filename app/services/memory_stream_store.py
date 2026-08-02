@@ -20,7 +20,6 @@ from app.agent.schemas.events import (
     AgentNotConfiguredEvent,
     AgentStatusEvent,
     MessageEvent,
-    SummarizationContentEvent,
     SummarizationEndEvent,
     SummarizationStartEvent,
     ThinkingEvent,
@@ -75,9 +74,9 @@ class _TurnState:
         # streaming in. Overwritten per event so only the latest sticks.
         self.agent_statuses: dict[str, str] = {}
         self.agent_errors: dict[str, dict[str, Any]] = {}
-        # Me in-flight summarisation state per agent.  Carries the streaming
-        # summary text and a done flag so a mid-compaction reconnect can
-        # rebuild the "Session compacting" divider with the right state.
+        # Me in-flight summarisation state per agent. Only lifecycle state is
+        # retained: summary text is internal model context and is never
+        # replayed into the user-visible transcript.
         # Cleared on a fresh ``init_turn`` (next turn) — the assistant
         # message persistence path doesn't apply here because summaries are
         # stored as DB rows and rehydrated separately on session load.
@@ -266,32 +265,21 @@ async def push_event(session_id: str, envelope: StreamEnvelope) -> None:
             agent = envelope.agent
             if agent:
                 state.summarization[agent] = {
-                    "text": "",
                     "done": False,
                     "error": False,
                 }
 
         elif event_type == "summarization_content":
-            agent = envelope.agent
-            text = data.get("text", "")
-            if agent and text:
-                entry = state.summarization.setdefault(
-                    agent, {"text": "", "done": False, "error": False}
-                )
-                entry["text"] = entry.get("text", "") + text
+            # Backward compatibility for an old producer: accept the event,
+            # but do not retain or fan out internal summary text.
+            pass
 
         elif event_type == "summarization_end":
             agent = envelope.agent
             if agent:
                 entry = state.summarization.setdefault(
-                    agent, {"text": "", "done": False, "error": False}
+                    agent, {"done": False, "error": False}
                 )
-                # Final summary text supersedes accumulated deltas — the
-                # ``end`` payload is authoritative (it carries the trimmed
-                # full summary that was actually persisted).
-                summary = data.get("summary", "")
-                if summary:
-                    entry["text"] = summary
                 entry["done"] = True
                 meta = data.get("metadata") or {}
                 if isinstance(meta, dict) and meta.get("error"):
@@ -326,6 +314,11 @@ async def push_event(session_id: str, envelope: StreamEnvelope) -> None:
 
         # Me refresh TTL on every write
         _schedule_cleanup(session_id, state)
+
+        # Older workers may still publish summary deltas during a rolling
+        # upgrade. Suppress them at the stream boundary as well as in the UI.
+        if event_type == "summarization_content":
+            return
 
         # Me fan-out to all live SSE clients.
         #
@@ -513,28 +506,18 @@ async def attach(session_id: str) -> AsyncGenerator[dict[str, str], None]:
                     event="goal_status", data=state.goal_status
                 ).to_wire()
 
-            # Me replay summarisation state so a mid-compaction reconnect
-            # shows the divider in its current state.  We replay as a
-            # ``start`` + (optional accumulated ``content``) + (optional
-            # ``end``) sequence — the frontend reducer treats each as
-            # idempotent state transitions, so even a fully-completed
-            # compaction re-arrives cleanly.
+            # Me replay only compaction lifecycle state. Summary content is
+            # intentionally absent from both live and reconnect transcripts.
             for agent, entry in state.summarization.items():
                 if not agent:
                     continue
                 yield StreamEnvelope.from_event(
                     SummarizationStartEvent(agent=agent)
                 ).to_wire()
-                text = entry.get("text", "")
-                if text and not entry.get("done"):
-                    yield StreamEnvelope.from_event(
-                        SummarizationContentEvent(agent=agent, text=text)
-                    ).to_wire()
                 if entry.get("done"):
                     yield StreamEnvelope.from_event(
                         SummarizationEndEvent(
                             agent=agent,
-                            summary=text,
                             metadata={"error": True} if entry.get("error") else {},
                         )
                     ).to_wire()

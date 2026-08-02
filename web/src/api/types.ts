@@ -978,8 +978,9 @@ export interface ContentBlock {
   isStreaming?: boolean // whether widget is still streaming
   title?: string        // widget title
   /** Variant-specific metadata. ``user`` inbox blocks carry ``from_agent``;
-   *  ``compaction`` blocks carry ``state: 'compacting' | 'compacted'`` and
-   *  optional ``error: true``. Keeping this generic avoids one typed field
+   *  ``compaction`` blocks are content-free status markers carrying
+   *  ``state: 'compacting' | 'compacted'`` and optional ``error: true``.
+   *  Keeping this generic avoids one typed field
    *  per block variant. */
   extra?: Record<string, unknown> | null
   /** Timestamp when block was created (for team mode display) */

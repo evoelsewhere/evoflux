@@ -1,8 +1,7 @@
-"""SSE emission tests for SummarizationHook.
+"""SSE lifecycle emission tests for SummarizationHook.
 
-Verifies that summarization_start / summarization_content / summarization_end
-events flow through ``stream_store.push_event`` with the correct types and
-payloads.
+Generated summary text is internal model context. Only compaction start/end
+status events may flow through ``stream_store.push_event``.
 """
 
 from __future__ import annotations
@@ -67,8 +66,8 @@ async def _run_summarization(
 
 
 @pytest.mark.asyncio
-async def test_emits_start_content_end_on_success():
-    """Hook publishes start → N content deltas → end with the full summary."""
+async def test_emits_only_start_and_end_on_success():
+    """Hook publishes lifecycle status without exposing summary content."""
     provider = _make_provider(["Hello ", "world", "."])
     hook = SummarizationHook(
         llm_provider=provider,
@@ -84,19 +83,14 @@ async def test_emits_start_content_end_on_success():
     events = [c.args[1].event for c in fake_push.call_args_list]
     assert events[0] == "summarization_start"
     assert events[-1] == "summarization_end"
-    content_events = [
-        c.args[1]
-        for c in fake_push.call_args_list
-        if c.args[1].event == "summarization_content"
-    ]
-    assert [e.data["text"] for e in content_events] == ["Hello ", "world", "."]
+    assert events == ["summarization_start", "summarization_end"]
 
     start_env = fake_push.call_args_list[0].args[1]
     assert start_env.data["agent"] == "lead"
 
     end_env = fake_push.call_args_list[-1].args[1]
     assert end_env.data["agent"] == "lead"
-    assert end_env.data["summary"] == "Hello world."
+    assert end_env.data["summary"] == ""
     assert end_env.data.get("metadata", {}).get("error") is not True
 
 
