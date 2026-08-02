@@ -1372,6 +1372,13 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
         &[&app_menu, &file_menu, &edit_menu, &view_menu, &window_menu],
     )?;
     app.set_menu(menu)?;
+    // Windows renders the application menu as a second strip below the
+    // system title bar. EvoFlux already exposes these destinations through
+    // its application chrome, keyboard shortcuts, and tray menu, so keeping
+    // the native strip only consumes vertical workspace. Remove it before
+    // the first webview window is created; macOS keeps its global menu bar.
+    #[cfg(target_os = "windows")]
+    let _ = app.remove_menu()?;
 
     let status = MenuItem::with_id(app, MENU_STATUS, "Status: Starting", false, None::<&str>)?;
     // Informational only; updated from ``set_tray_session``.
