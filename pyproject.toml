@@ -24,6 +24,10 @@ dependencies = [
     "pydantic-settings>=2.14.2",
     "httpx>=0.28.1",
     "sqlmodel>=0.0.22",
+    # SQLAlchemy's asyncio bridge requires greenlet at runtime. Declare it
+    # directly because SQLAlchemy's platform marker misses Darwin ``arm64``,
+    # which otherwise produces a sidecar that cannot run Alembic migrations.
+    "greenlet>=3.1.1",
     "loguru>=0.7.0",
     "alembic>=1.13.1",
     "aiosqlite>=0.20.0",
