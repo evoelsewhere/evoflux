@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "mode": "template",
+  "title": "Template-preserving edit",
+  "source_sha256": "REPLACE_WITH_INSPECT_SHA256",
+  "template_confirmed": true,
+  "allow_pagination_change": false,
+  "edits": [
+    {
+      "operation": "replace_text",
+      "part": "word/document.xml",
+      "paragraph": 0,
+      "find": "Existing text",
+      "replace": "Replacement text"
+    }
+  ]
+}
