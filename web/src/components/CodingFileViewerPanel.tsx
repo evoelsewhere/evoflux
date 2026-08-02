@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Check, Copy, Download, ExternalLink, FileText, GitCompare, Loader2, PanelRightClose, PanelRightOpen, Pencil, Save, Undo2, X, Eye } from 'lucide-react'
 import Editor, { DiffEditor, useMonaco } from '@monaco-editor/react'
@@ -9,6 +9,7 @@ import { downloadCodingWorkspaceFile } from '@/lib/coding-workspace-download'
 import { openExternalUrl } from '@/lib/open-external'
 import { cn } from '@/lib/utils'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
+import { workspaceFileKind } from '@/lib/workspace-file-kind'
 import { formatBytes } from '@/utils/format'
 import { MarkdownBlock } from '@/utils/markdown'
 import { useMonacoTheme, languageForExt } from '@/hooks/useMonacoTheme'
@@ -16,17 +17,13 @@ import { queryKeys } from '@/queries'
 import { SidePanel } from './shell/SidePanel'
 import type { WorkspaceFileInfo } from '@/api/types'
 
-const TEXT_EXTENSIONS = new Set([
-  'txt', 'md', 'markdown', 'rst',
-  'json', 'jsonl', 'yaml', 'yml', 'toml', 'ini', 'env', 'gitignore',
-  'csv', 'tsv', 'log',
-  'py', 'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs',
-  'html', 'css', 'scss', 'sass',
-  'sh', 'bash', 'zsh', 'fish',
-  'rs', 'go', 'java', 'kt', 'c', 'cpp', 'h', 'hpp', 'rb', 'php', 'swift',
-  'sql', 'xml', 'svg',
-])
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'])
+const PdfPreview = lazy(() =>
+  import('./workspace-pdf-preview').then((module) => ({ default: module.PdfPreview })),
+)
+const XlsxPreview = lazy(() =>
+  import('./workspace-xlsx-preview').then((module) => ({ default: module.XlsxPreview })),
+)
+
 const DRAWIO_EXTENSIONS = new Set(['drawio', 'dio'])
 const MAX_TEXT_PREVIEW_BYTES = 512 * 1024
 // Viewer URL length limit — diagrams above ~400KB XML fall back to text
@@ -37,14 +34,25 @@ function extOf(name: string): string {
   return i >= 0 ? name.slice(i + 1).toLowerCase() : ''
 }
 
-type FileKind = 'image' | 'text' | 'drawio' | 'binary'
+type FileKind = 'image' | 'text' | 'drawio' | 'pdf' | 'xlsx' | 'binary'
 
 function kindOf(file: WorkspaceFileInfo): FileKind {
   const ext = extOf(file.name)
-  if (IMAGE_EXTENSIONS.has(ext) || file.mime.startsWith('image/')) return 'image'
   if (DRAWIO_EXTENSIONS.has(ext)) return 'drawio'
-  if (!ext || TEXT_EXTENSIONS.has(ext) || file.mime.startsWith('text/') || file.mime === 'application/json') return 'text'
+  const sharedKind = workspaceFileKind(file)
+  if (sharedKind === 'image' || sharedKind === 'text' || sharedKind === 'pdf' || sharedKind === 'xlsx') {
+    return sharedKind
+  }
   return 'binary'
+}
+
+function RichFilePreviewLoading({ label }: { label: string }) {
+  return (
+    <div className="flex h-full items-center justify-center gap-2 text-(--color-text-subtle)">
+      <Loader2 size={17} className="animate-spin" aria-hidden="true" />
+      <span className="text-xs">Loading {label} engine…</span>
+    </div>
+  )
 }
 
 function CopyButton({ workspace, file }: { workspace: string; file: WorkspaceFileInfo }) {
@@ -765,6 +773,22 @@ export function CodingFileViewerPanel({
           <ImagePreview workspace={workspace} file={file} />
         ) : kind === 'drawio' ? (
           <DrawioPreview key={file.path} workspace={workspace} file={file} />
+        ) : kind === 'pdf' ? (
+          <Suspense fallback={<RichFilePreviewLoading label="PDF" />}>
+            <PdfPreview
+              key={`${file.path}:${file.mtime}`}
+              file={file}
+              sourceUrl={codingWorkspaceFileUrl(workspace, file.path)}
+            />
+          </Suspense>
+        ) : kind === 'xlsx' ? (
+          <Suspense fallback={<RichFilePreviewLoading label="workbook" />}>
+            <XlsxPreview
+              key={`${file.path}:${file.mtime}`}
+              file={file}
+              sourceUrl={codingWorkspaceFileUrl(workspace, file.path)}
+            />
+          </Suspense>
         ) : kind === 'text' ? (
           <TextPreview
             key={file.path}

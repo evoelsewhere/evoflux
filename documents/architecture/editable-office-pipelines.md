@@ -51,10 +51,23 @@ change.
 
 ## Verification and runtime dependencies
 
-XLSX previews use artifact-tool's renderer. DOCX previews use a unique
-LibreOffice profile to produce PDF and Poppler to rasterize one PNG per page.
-Missing required runtimes are blockers; neither pipeline silently falls back to
-HTML screenshots or a lower-fidelity writer.
+XLSX authoring verification uses artifact-tool's renderer. DOCX authoring
+verification uses a unique LibreOffice profile to produce PDF and Poppler to
+rasterize one PNG per page. Missing required authoring runtimes are blockers;
+neither pipeline silently falls back to HTML screenshots or a lower-fidelity
+writer.
+
+Workspace and coding file previews are a separate desktop WebView concern:
+
+- XLSX files are imported client-side by SpreadJS in a protected, read-only
+  workbook. Set `VITE_SPREADJS_LICENSE_KEY` at web build time for licensed
+  desktop distributions. The engine and Excel I/O module are lazy-loaded only
+  after a workbook is selected.
+- PDF files are displayed by EmbedPDF/PDFium WebAssembly with virtualized
+  scrolling, search, selection, zoom, and print. The viewer disables mutation
+  tools and all remote font loading; it is also lazy-loaded.
+- Both readers fetch the original permission-scoped file URL. They do not use
+  Playwright, Chromium headless, or the Python OpenXML-to-HTML XLSX renderer.
 
 Generated previews and request manifests live under `.evoflux/` and are ignored
 by Git. Final files are published only to workspace paths and are returned as

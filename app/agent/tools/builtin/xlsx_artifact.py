@@ -99,7 +99,10 @@ def _attachments(output: Path) -> list[dict[str, str]]:
             "media_type": _XLSX_MEDIA_TYPE,
             "category": "document",
             "url": media_url,
-            "preview_url": f"/api/team/{sandbox.session_id}/office-preview/{encoded}",
+            # The in-app Work/Coding file viewers render XLSX directly from the
+            # media URL with SpreadJS. Do not route generated workbooks back
+            # through the legacy OpenXML-to-HTML preview.
+            "preview_url": media_url,
             "download_url": f"{media_url}?download=1",
             "workspace_path": relative,
         }
