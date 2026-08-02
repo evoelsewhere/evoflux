@@ -294,7 +294,7 @@ Pairings, tickets, tab bindings, and Teach drafts are persisted through Alembic 
 
 ### Beyond the real-browser bridge
 
-EvoFlux also includes disposable headless Chromium automation, PDF/DOCX/HTML intake through `markitdown`, cron-driven agent prompts, OpenTelemetry, Prometheus, and DuckDB-backed observability summaries.
+EvoFlux also includes direct control of its persistent in-app browser, PDF/DOCX/HTML intake through `markitdown`, cron-driven agent prompts, OpenTelemetry, Prometheus, and DuckDB-backed observability summaries.
 
 ---
 

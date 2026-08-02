@@ -6,6 +6,7 @@ mod sidecar;
 mod workspace;
 
 use anyhow::{anyhow, Context, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -552,40 +553,6 @@ async fn app_new_window(app: AppHandle) -> Result<(), String> {
         .map_err(|e| format!("{e:#}"))
 }
 
-#[tauri::command]
-async fn app_open_browser_devtools(app: AppHandle, cdp_url: String) -> Result<(), String> {
-    use tauri::{WebviewUrl, WebviewWindowBuilder};
-
-    // Derive the DevTools frontend URL from the CDP HTTP endpoint.
-    // Chromium serves its built-in DevTools at /devtools/inspector.html
-    // which connects back via WebSocket.
-    let ws_url = cdp_url
-        .trim_start_matches("http://")
-        .trim_start_matches("https://");
-    let devtools_url = format!(
-        "{}/devtools/inspector.html?ws={}",
-        cdp_url.trim_end_matches('/'),
-        ws_url,
-    );
-
-    let label = next_window_label(&app);
-
-    let parsed: url::Url = devtools_url
-        .parse()
-        .map_err(|e| format!("Invalid devtools URL: {e}"))?;
-
-    let win = WebviewWindowBuilder::new(&app, label, WebviewUrl::External(parsed))
-        .title("Browser DevTools")
-        .inner_size(1280.0, 820.0)
-        .min_inner_size(760.0, 560.0)
-        .build()
-        .map_err(|e| format!("Failed to open DevTools: {e}"))?;
-
-    let _ = win.show();
-    let _ = win.set_focus();
-    Ok(())
-}
-
 fn app_browser_webview(app: &AppHandle, label: &str) -> Result<tauri::Webview, String> {
     app.get_webview(label)
         .ok_or_else(|| format!("Browser webview not found: {label}"))
@@ -647,6 +614,90 @@ async fn app_browser_webview_url(app: AppHandle, label: String) -> Result<String
         .map_err(|error| format!("Could not read browser URL: {error}"))
 }
 
+fn browser_observability_init_script() -> &'static str {
+    r#"
+        (() => {
+            const label = window.__TAURI_INTERNALS__?.metadata?.currentWebview?.label;
+            if (!String(label || '').startsWith('browser-') || globalThis.__evofluxBrowserRuntime) return;
+            const runtime = { console: [], network: [], dialogs: [], dialogBehavior: { behavior: 'dismiss', promptText: null } };
+            const keep = (items, value, max) => {
+                items.push(value);
+                if (items.length > max) items.splice(0, items.length - max);
+            };
+            for (const level of ['debug', 'log', 'info', 'warn', 'error']) {
+                const original = console[level]?.bind(console);
+                if (!original) continue;
+                console[level] = (...args) => {
+                    keep(runtime.console, {
+                        ts: Date.now(),
+                        level,
+                        text: args.map((value) => {
+                            try { return typeof value === 'string' ? value : JSON.stringify(value); }
+                            catch { return String(value); }
+                        }).join(' ').slice(0, 4000),
+                    }, 400);
+                    original(...args);
+                };
+            }
+            addEventListener('error', (event) => keep(runtime.console, {
+                ts: Date.now(),
+                level: 'error',
+                source: event.filename || '',
+                line: event.lineno || 0,
+                column: event.colno || 0,
+                text: String(event.error?.stack || event.message || 'Page error').slice(0, 4000),
+            }, 400));
+            addEventListener('unhandledrejection', (event) => keep(runtime.console, {
+                ts: Date.now(),
+                level: 'error',
+                text: String(event.reason?.stack || event.reason || 'Unhandled rejection').slice(0, 4000),
+            }, 400));
+            globalThis.alert = (message) => {
+                keep(runtime.dialogs, { ts: Date.now(), type: 'alert', message: String(message) }, 100);
+            };
+            globalThis.confirm = (message) => {
+                keep(runtime.dialogs, { ts: Date.now(), type: 'confirm', message: String(message) }, 100);
+                return runtime.dialogBehavior.behavior === 'accept';
+            };
+            globalThis.prompt = (message, defaultValue = '') => {
+                keep(runtime.dialogs, { ts: Date.now(), type: 'prompt', message: String(message), default_value: String(defaultValue) }, 100);
+                return runtime.dialogBehavior.behavior === 'accept'
+                    ? String(runtime.dialogBehavior.promptText ?? defaultValue)
+                    : null;
+            };
+            const originalFetch = globalThis.fetch?.bind(globalThis);
+            if (originalFetch) globalThis.fetch = async (...args) => {
+                const request = args[0];
+                const method = String(args[1]?.method || request?.method || 'GET').toUpperCase();
+                const url = String(request?.url || request);
+                const started = performance.now();
+                try {
+                    const response = await originalFetch(...args);
+                    keep(runtime.network, { ts: Date.now(), method, url, status: response.status, duration_ms: performance.now() - started, type: 'fetch' }, 500);
+                    return response;
+                } catch (error) {
+                    keep(runtime.network, { ts: Date.now(), method, url, status: 0, duration_ms: performance.now() - started, type: 'fetch', error: String(error) }, 500);
+                    throw error;
+                }
+            };
+            const open = XMLHttpRequest.prototype.open;
+            const send = XMLHttpRequest.prototype.send;
+            XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+                this.__evofluxRequest = { method: String(method).toUpperCase(), url: String(url), started: performance.now() };
+                return open.call(this, method, url, ...rest);
+            };
+            XMLHttpRequest.prototype.send = function(...args) {
+                this.addEventListener('loadend', () => {
+                    const request = this.__evofluxRequest || { method: 'GET', url: this.responseURL, started: performance.now() };
+                    keep(runtime.network, { ts: Date.now(), method: request.method, url: request.url, status: this.status, duration_ms: performance.now() - request.started, type: 'xhr' }, 500);
+                }, { once: true });
+                return send.apply(this, args);
+            };
+            globalThis.__evofluxBrowserRuntime = runtime;
+        })();
+    "#
+}
+
 #[tauri::command]
 async fn app_browser_webview_agent_action(
     app: AppHandle,
@@ -657,7 +708,217 @@ async fn app_browser_webview_agent_action(
     if !label.starts_with("browser-") {
         return Err("Agent browser actions require a browser WebView".into());
     }
-    let script = browser_agent_action_script(&action, &params)?;
+    if action == "screenshot" {
+        return capture_browser_webview(&app, &label, &params).await;
+    }
+    if action == "cookies" {
+        return manage_browser_cookies(&app, &label, &params);
+    }
+    eval_browser_webview_action(&app, &label, &action, &params).await
+}
+
+fn manage_browser_cookies(
+    app: &AppHandle,
+    label: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let webview = app_browser_webview(app, label)?;
+    let operation = params
+        .get("operation")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("get");
+    let requested_name = params.get("name").and_then(serde_json::Value::as_str);
+    let requested_domain = params.get("domain").and_then(serde_json::Value::as_str);
+    let requested_path = params
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("/");
+
+    if operation == "set" {
+        let name = requested_name.ok_or_else(|| "cookies set requires name".to_string())?;
+        let value = params
+            .get("value")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if name
+            .chars()
+            .any(|character| matches!(character, ';' | '\r' | '\n'))
+            || value
+                .chars()
+                .any(|character| matches!(character, '\r' | '\n'))
+        {
+            return Err("Cookie name or value contains invalid header characters".into());
+        }
+        let fallback_domain = webview
+            .url()
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_string));
+        let domain = requested_domain
+            .map(str::to_string)
+            .or(fallback_domain)
+            .ok_or_else(|| "cookies set requires an HTTP(S) page or explicit domain".to_string())?;
+        let mut header = format!("{name}={value}; Path={requested_path}; Domain={domain}");
+        if let Some(max_age) = params.get("max_age").and_then(serde_json::Value::as_i64) {
+            header.push_str(&format!("; Max-Age={max_age}"));
+        }
+        if let Some(same_site) = params.get("same_site").and_then(serde_json::Value::as_str) {
+            header.push_str(&format!("; SameSite={same_site}"));
+        }
+        if params.get("secure").and_then(serde_json::Value::as_bool) == Some(true) {
+            header.push_str("; Secure");
+        }
+        if params.get("http_only").and_then(serde_json::Value::as_bool) == Some(true) {
+            header.push_str("; HttpOnly");
+        }
+        let cookie = tauri::webview::Cookie::parse(header)
+            .map_err(|error| format!("Invalid cookie: {error}"))?
+            .into_owned();
+        webview
+            .set_cookie(cookie)
+            .map_err(|error| format!("Could not set browser cookie: {error}"))?;
+        return Ok(serde_json::json!({ "set": name, "domain": domain, "path": requested_path }));
+    }
+
+    let current_host = webview
+        .url()
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string));
+    let domain_filter = requested_domain.or(current_host.as_deref());
+    let mut cookies = webview
+        .cookies()
+        .map_err(|error| format!("Could not read browser cookies: {error}"))?;
+    cookies.retain(|cookie| {
+        let name_matches = requested_name.map_or(true, |name| cookie.name() == name);
+        let domain_matches = domain_filter.map_or(true, |domain| {
+            cookie.domain().is_some_and(|cookie_domain| {
+                domain == cookie_domain.trim_start_matches('.')
+                    || domain.ends_with(&format!(".{}", cookie_domain.trim_start_matches('.')))
+            })
+        });
+        let path_matches = operation != "delete"
+            || params.get("path").is_none()
+            || cookie.path() == Some(requested_path);
+        name_matches && domain_matches && path_matches
+    });
+
+    if operation == "delete" {
+        if requested_name.is_none() {
+            return Err("cookies delete requires name".into());
+        }
+        let count = cookies.len();
+        for cookie in cookies {
+            webview
+                .delete_cookie(cookie)
+                .map_err(|error| format!("Could not delete browser cookie: {error}"))?;
+        }
+        return Ok(serde_json::json!({ "deleted": count }));
+    }
+    if operation != "get" {
+        return Err(format!("Unsupported cookies operation: {operation}"));
+    }
+
+    let include_values = params
+        .get("include_values")
+        .and_then(serde_json::Value::as_bool)
+        == Some(true);
+    Ok(serde_json::Value::Array(
+        cookies
+            .into_iter()
+            .map(|cookie| {
+                serde_json::json!({
+                    "name": cookie.name(),
+                    "value": if include_values && cookie.http_only() != Some(true) { cookie.value() } else { "[redacted]" },
+                    "domain": cookie.domain(),
+                    "path": cookie.path(),
+                    "secure": cookie.secure(),
+                    "http_only": cookie.http_only(),
+                    "same_site": cookie.same_site().map(|value| format!("{value:?}")),
+                    "expires": cookie.expires().map(|value| format!("{value:?}")),
+                })
+            })
+            .collect(),
+    ))
+}
+
+async fn eval_browser_webview_action(
+    app: &AppHandle,
+    label: &str,
+    action: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let async_start = if action == "http" {
+        Some("http_start")
+    } else if action == "evaluate"
+        && params
+            .get("await_promise")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+    {
+        Some("evaluate_start")
+    } else {
+        None
+    };
+    let Some(start_action) = async_start else {
+        return eval_browser_webview_action_once(app, label, action, params).await;
+    };
+
+    let async_id = format!(
+        "{}-{}",
+        label,
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
+    let mut start_params = params.clone();
+    start_params
+        .as_object_mut()
+        .ok_or_else(|| "Browser action parameters must be an object".to_string())?
+        .insert(
+            "async_id".to_string(),
+            serde_json::Value::String(async_id.clone()),
+        );
+    eval_browser_webview_action_once(app, label, start_action, &start_params).await?;
+
+    let timeout_ms = params
+        .get("timeout_ms")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(15_000)
+        .clamp(100, 30_000);
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout_ms);
+    let poll_params = serde_json::json!({ "async_id": async_id });
+    loop {
+        if tokio::time::Instant::now() >= deadline {
+            return Err(format!(
+                "Browser action timed out after {timeout_ms}ms: {action}"
+            ));
+        }
+        let result =
+            eval_browser_webview_action_once(app, label, "async_result", &poll_params).await?;
+        if result.get("state").and_then(serde_json::Value::as_str) == Some("done") {
+            if result.get("ok").and_then(serde_json::Value::as_bool) == Some(true) {
+                return Ok(result
+                    .get("value")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null));
+            }
+            return Err(result
+                .get("error")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("Asynchronous browser action failed")
+                .to_string());
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+async fn eval_browser_webview_action_once(
+    app: &AppHandle,
+    label: &str,
+    action: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let script = browser_agent_action_script(action, params)?;
     let wrapped = format!(
         r#"(() => {{
                     try {{
@@ -670,7 +931,7 @@ async fn app_browser_webview_agent_action(
 
     let (sender, receiver) = oneshot::channel();
     let sender = Arc::new(std::sync::Mutex::new(Some(sender)));
-    app_browser_webview(&app, &label)?
+    app_browser_webview(app, label)?
         .eval_with_callback(wrapped, move |result| {
             if let Ok(mut guard) = sender.lock() {
                 if let Some(sender) = guard.take() {
@@ -680,7 +941,7 @@ async fn app_browser_webview_agent_action(
         })
         .map_err(|error| format!("Could not run browser action: {error}"))?;
 
-    let callback_timeout = if action == "status" || action == "exists" {
+    let callback_timeout = if matches!(action, "status" | "exists" | "probe" | "async_result") {
         Duration::from_millis(750)
     } else {
         Duration::from_secs(35)
@@ -692,9 +953,141 @@ async fn app_browser_webview_agent_action(
     }
 }
 
+async fn capture_browser_webview(
+    app: &AppHandle,
+    label: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let webview = app_browser_webview(app, label)?;
+    let child_position = webview
+        .position()
+        .map_err(|error| format!("Could not read browser position: {error}"))?;
+    let child_size = webview
+        .size()
+        .map_err(|error| format!("Could not read browser size: {error}"))?;
+    let window = webview.window();
+    let window_position = window
+        .inner_position()
+        .map_err(|error| format!("Could not read browser window position: {error}"))?;
+    let tauri_monitor = window
+        .current_monitor()
+        .map_err(|error| format!("Could not read browser display: {error}"))?
+        .ok_or_else(|| "Browser is not currently on a display".to_string())?;
+
+    let mut screen_x = window_position.x + child_position.x;
+    let mut screen_y = window_position.y + child_position.y;
+    let mut width = child_size.width;
+    let mut height = child_size.height;
+
+    if params
+        .get("selector")
+        .and_then(serde_json::Value::as_str)
+        .is_some()
+        || params
+            .get("index")
+            .and_then(serde_json::Value::as_i64)
+            .is_some()
+    {
+        let rect = eval_browser_webview_action(app, label, "element_rect", params).await?;
+        let viewport_width = rect
+            .get("viewport_width")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(width as f64)
+            .max(1.0);
+        let viewport_height = rect
+            .get("viewport_height")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(height as f64)
+            .max(1.0);
+        let scale_x = width as f64 / viewport_width;
+        let scale_y = height as f64 / viewport_height;
+        screen_x += (rect
+            .get("x")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0)
+            * scale_x)
+            .round() as i32;
+        screen_y += (rect
+            .get("y")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0)
+            * scale_y)
+            .round() as i32;
+        width = (rect
+            .get("width")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(viewport_width)
+            * scale_x)
+            .round()
+            .max(1.0) as u32;
+        height = (rect
+            .get("height")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(viewport_height)
+            * scale_y)
+            .round()
+            .max(1.0) as u32;
+    }
+
+    // Tauri reports physical pixels. CoreGraphics (and therefore xcap on
+    // macOS) addresses displays in logical points, so convert relative to the
+    // current monitor. Other desktop capture backends use physical pixels.
+    let capture_scale = if cfg!(target_os = "macos") {
+        tauri_monitor.scale_factor().max(1.0)
+    } else {
+        1.0
+    };
+    let tauri_origin = tauri_monitor.position();
+    let relative_x = ((screen_x - tauri_origin.x).max(0) as f64 / capture_scale).round() as u32;
+    let relative_y = ((screen_y - tauri_origin.y).max(0) as f64 / capture_scale).round() as u32;
+    width = (width as f64 / capture_scale).round().max(1.0) as u32;
+    height = (height as f64 / capture_scale).round().max(1.0) as u32;
+
+    let target_name = tauri_monitor.name().map(String::as_str);
+    let target_width = tauri_monitor.size().width as f64 / capture_scale;
+    let target_height = tauri_monitor.size().height as f64 / capture_scale;
+    let monitor = xcap::Monitor::all()
+        .map_err(|error| format!("Could not list browser displays: {error}"))?
+        .into_iter()
+        .min_by_key(|candidate| {
+            let candidate_name = candidate.friendly_name().ok();
+            let name_penalty = match (target_name, candidate_name.as_deref()) {
+                (Some(left), Some(right)) if left == right => 0_u64,
+                _ => 1_000_000,
+            };
+            let candidate_width = candidate.width().unwrap_or_default() as f64;
+            let candidate_height = candidate.height().unwrap_or_default() as f64;
+            name_penalty
+                + (candidate_width - target_width).abs().round() as u64
+                + (candidate_height - target_height).abs().round() as u64
+        })
+        .ok_or_else(|| "Could not find the display containing the browser".to_string())?;
+    let monitor_width = monitor
+        .width()
+        .map_err(|error| format!("Could not read display bounds: {error}"))?;
+    let monitor_height = monitor
+        .height()
+        .map_err(|error| format!("Could not read display bounds: {error}"))?;
+    width = width.min(monitor_width.saturating_sub(relative_x)).max(1);
+    height = height.min(monitor_height.saturating_sub(relative_y)).max(1);
+    let image = monitor
+        .capture_region(relative_x, relative_y, width, height)
+        .map_err(|error| format!("Could not capture the in-app browser: {error}"))?;
+    let mut png = std::io::Cursor::new(Vec::new());
+    xcap::image::DynamicImage::ImageRgba8(image)
+        .write_to(&mut png, xcap::image::ImageFormat::Png)
+        .map_err(|error| format!("Could not encode browser screenshot: {error}"))?;
+    Ok(serde_json::json!({
+        "kind": "image",
+        "media_type": "image/png",
+        "data": BASE64_STANDARD.encode(png.into_inner()),
+        "text": format!("[In-app browser screenshot: {}x{}]", width, height),
+    }))
+}
+
 fn parse_browser_agent_result(raw: &str) -> Result<serde_json::Value, String> {
-    if raw.len() > 2 * 1024 * 1024 {
-        return Err("Browser action result exceeds 2 MB".into());
+    if raw.len() > 16 * 1024 * 1024 {
+        return Err("Browser action result exceeds 16 MB".into());
     }
     let mut value: serde_json::Value = serde_json::from_str(raw)
         .map_err(|error| format!("Invalid browser action result: {error}"))?;
@@ -718,7 +1111,47 @@ fn parse_browser_agent_result(raw: &str) -> Result<serde_json::Value, String> {
 
 fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Result<String, String> {
     const SUPPORTED: &[&str] = &[
-        "snapshot", "click", "fill", "select", "extract", "scroll", "exists", "status",
+        "instrument",
+        "snapshot",
+        "click",
+        "dblclick",
+        "hover",
+        "focus",
+        "fill",
+        "type",
+        "clear",
+        "submit",
+        "press",
+        "set_checked",
+        "select",
+        "drag",
+        "scroll_into_view",
+        "click_at",
+        "dispatch_event",
+        "extract",
+        "query",
+        "inspect",
+        "html",
+        "accessibility",
+        "scroll",
+        "console",
+        "network",
+        "dialogs",
+        "dialog_behavior",
+        "performance",
+        "clear_logs",
+        "storage",
+        "cookies",
+        "http",
+        "http_start",
+        "evaluate_start",
+        "async_result",
+        "debug_summary",
+        "evaluate",
+        "element_rect",
+        "exists",
+        "probe",
+        "status",
     ];
     if !SUPPORTED.contains(&action) {
         return Err(format!("Unsupported direct browser action: {action}"));
@@ -733,34 +1166,171 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                     const params = {params_json};
                     const visible = (element) => {{
                         const rect = element.getBoundingClientRect();
-                        const style = getComputedStyle(element);
+                        const style = element.ownerDocument.defaultView.getComputedStyle(element);
                         return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
                     }};
                     const resolveElement = () => {{
                         if (Number.isInteger(params.index)) {{
-                            return document.querySelector(`[data-evoflux-agent-index="${{params.index}}"]`);
+                            const indexed = globalThis.__evofluxAgentElements?.[params.index];
+                            if (indexed?.isConnected) return indexed;
+                            return deepElements().find((element) => element.getAttribute('data-evoflux-agent-index') === String(params.index)) || null;
                         }}
-                        return typeof params.selector === 'string' ? document.querySelector(params.selector) : null;
+                        if (typeof params.selector !== 'string') return null;
+                        return deepElements().find((element) => {{
+                            try {{ return element.matches(params.selector); }} catch {{ return false; }}
+                        }}) || null;
+                    }};
+                    const deepElements = (root = document) => {{
+                        const output = [];
+                        const visit = (scope) => {{
+                            const all = scope.querySelectorAll ? Array.from(scope.querySelectorAll('*')) : [];
+                            for (const element of all) {{
+                                output.push(element);
+                                if (element.shadowRoot) visit(element.shadowRoot);
+                                if (element.tagName === 'IFRAME') {{
+                                    try {{ if (element.contentDocument) visit(element.contentDocument); }} catch {{}}
+                                }}
+                            }}
+                        }};
+                        visit(root);
+                        return output;
                     }};
                     const describe = (element) => {{
                         const tag = element.tagName.toLowerCase();
-                        const label = element.getAttribute('aria-label') || element.getAttribute('placeholder') || '';
+                        const role = element.getAttribute('role') || '';
+                        const labelledBy = element.getAttribute('aria-labelledby');
+                        const labelledText = labelledBy
+                            ? labelledBy.split(/\s+/).map((id) => element.ownerDocument.getElementById(id)?.innerText || '').join(' ').trim()
+                            : '';
+                        const label = element.getAttribute('aria-label') || labelledText || element.getAttribute('placeholder') || element.getAttribute('title') || '';
                         const text = String(element.innerText || element.value || element.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 180);
-                        return `${{tag}}${{label ? ` "${{label}}"` : ''}}${{text ? `: ${{text}}` : ''}}`;
+                        const state = [
+                            element.disabled ? 'disabled' : '',
+                            'checked' in element ? `checked=${{Boolean(element.checked)}}` : '',
+                            element.getAttribute('aria-expanded') != null ? `expanded=${{element.getAttribute('aria-expanded')}}` : '',
+                        ].filter(Boolean).join(' ');
+                        const box = element.getBoundingClientRect();
+                        return `${{tag}}${{role ? `[role=${{role}}]` : ''}}${{label ? ` "${{label}}"` : ''}}${{text ? `: ${{text}}` : ''}}${{state ? ` (${{state}})` : ''}} @${{Math.round(box.x)}},${{Math.round(box.y)}} ${{Math.round(box.width)}}x${{Math.round(box.height)}}`;
                     }};
+                    const setEditableValue = (element, next, inputType = 'insertText', data = null) => {{
+                        if (element.isContentEditable) {{
+                            element.textContent = next;
+                        }} else if ('value' in element) {{
+                            const view = element.ownerDocument.defaultView;
+                            const prototype = element.tagName === 'TEXTAREA' ? view.HTMLTextAreaElement.prototype : view.HTMLInputElement.prototype;
+                            const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+                            setter ? setter.call(element, next) : (element.value = next);
+                        }} else {{
+                            throw new Error('Element is not editable');
+                        }}
+                        element.dispatchEvent(new InputEvent('input', {{ bubbles: true, inputType, data }}));
+                    }};
+                    const accessibleName = (element) => {{
+                        const labelledBy = element.getAttribute('aria-labelledby');
+                        const labelled = labelledBy
+                            ? labelledBy.split(/\s+/).map((id) => element.ownerDocument.getElementById(id)?.innerText || '').join(' ').trim()
+                            : '';
+                        const explicit = element.id ? element.ownerDocument.querySelector(`label[for="${{CSS.escape(element.id)}}"]`)?.innerText : '';
+                        return String(element.getAttribute('aria-label') || labelled || explicit || element.getAttribute('alt') || element.getAttribute('title') || element.getAttribute('placeholder') || element.innerText || element.value || '').trim().replace(/\s+/g, ' ').slice(0, 300);
+                    }};
+                    const serializable = (value) => {{
+                        if (value === undefined) return '(no return value)';
+                        try {{ return JSON.parse(JSON.stringify(value)); }} catch {{ return String(value); }}
+                    }};
+                    const beginAsync = (id, promise) => {{
+                        const jobs = globalThis.__evofluxAsyncJobs ||= {{}};
+                        jobs[id] = {{ state: 'pending' }};
+                        Promise.resolve(promise).then(
+                            (value) => {{ jobs[id] = {{ state: 'done', ok: true, value: serializable(value) }}; }},
+                            (error) => {{ jobs[id] = {{ state: 'done', ok: false, error: String(error?.stack || error?.message || error) }}; }},
+                        );
+                        return {{ state: 'started', id }};
+                    }};
+
+                    if (action === 'instrument') {{
+                        if (!globalThis.__evofluxBrowserRuntime) {{
+                            const runtime = {{ console: [], network: [], dialogs: [], dialogBehavior: {{ behavior: 'dismiss', promptText: null }} }};
+                            const keep = (items, value, max) => {{ items.push(value); if (items.length > max) items.splice(0, items.length - max); }};
+                            for (const level of ['debug', 'log', 'info', 'warn', 'error']) {{
+                                const original = console[level]?.bind(console);
+                                if (!original) continue;
+                                console[level] = (...args) => {{
+                                    keep(runtime.console, {{ ts: Date.now(), level, text: args.map((value) => {{ try {{ return typeof value === 'string' ? value : JSON.stringify(value); }} catch {{ return String(value); }} }}).join(' ').slice(0, 4000) }}, 400);
+                                    original(...args);
+                                }};
+                            }}
+                            addEventListener('error', (event) => keep(runtime.console, {{ ts: Date.now(), level: 'error', source: event.filename || '', line: event.lineno || 0, column: event.colno || 0, text: String(event.error?.stack || event.message || 'Page error').slice(0, 4000) }}, 400));
+                            addEventListener('unhandledrejection', (event) => keep(runtime.console, {{ ts: Date.now(), level: 'error', text: String(event.reason?.stack || event.reason || 'Unhandled rejection').slice(0, 4000) }}, 400));
+                            globalThis.alert = (message) => keep(runtime.dialogs, {{ ts: Date.now(), type: 'alert', message: String(message) }}, 100);
+                            globalThis.confirm = (message) => {{
+                                keep(runtime.dialogs, {{ ts: Date.now(), type: 'confirm', message: String(message) }}, 100);
+                                return runtime.dialogBehavior.behavior === 'accept';
+                            }};
+                            globalThis.prompt = (message, defaultValue = '') => {{
+                                keep(runtime.dialogs, {{ ts: Date.now(), type: 'prompt', message: String(message), default_value: String(defaultValue) }}, 100);
+                                return runtime.dialogBehavior.behavior === 'accept' ? String(runtime.dialogBehavior.promptText ?? defaultValue) : null;
+                            }};
+                            const originalFetch = globalThis.fetch?.bind(globalThis);
+                            if (originalFetch) globalThis.fetch = async (...args) => {{
+                                const request = args[0];
+                                const method = String(args[1]?.method || request?.method || 'GET').toUpperCase();
+                                const url = String(request?.url || request);
+                                const started = performance.now();
+                                try {{
+                                    const response = await originalFetch(...args);
+                                    keep(runtime.network, {{ ts: Date.now(), method, url, status: response.status, duration_ms: performance.now() - started, type: 'fetch' }}, 500);
+                                    return response;
+                                }} catch (error) {{
+                                    keep(runtime.network, {{ ts: Date.now(), method, url, status: 0, duration_ms: performance.now() - started, type: 'fetch', error: String(error) }}, 500);
+                                    throw error;
+                                }}
+                            }};
+                            const open = XMLHttpRequest.prototype.open;
+                            const send = XMLHttpRequest.prototype.send;
+                            XMLHttpRequest.prototype.open = function(method, url, ...rest) {{ this.__evofluxRequest = {{ method: String(method).toUpperCase(), url: String(url), started: performance.now() }}; return open.call(this, method, url, ...rest); }};
+                            XMLHttpRequest.prototype.send = function(...args) {{
+                                this.addEventListener('loadend', () => {{
+                                    const request = this.__evofluxRequest || {{ method: 'GET', url: this.responseURL, started: performance.now() }};
+                                    keep(runtime.network, {{ ts: Date.now(), method: request.method, url: request.url, status: this.status, duration_ms: performance.now() - request.started, type: 'xhr' }}, 500);
+                                }}, {{ once: true }});
+                                return send.apply(this, args);
+                            }};
+                            globalThis.__evofluxBrowserRuntime = runtime;
+                        }}
+                        return {{ ready: true }};
+                    }}
 
                     if (action === 'snapshot') {{
                         document.querySelectorAll('[data-evoflux-agent-index]').forEach((element) => element.removeAttribute('data-evoflux-agent-index'));
-                        const selector = 'a,button,input,textarea,select,[role="button"],[role="link"],[contenteditable="true"],summary';
-                        const elements = Array.from(document.querySelectorAll(selector)).filter(visible).slice(0, 500);
+                        const interactiveTags = new Set(['A', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY', 'DETAILS']);
+                        const interactiveRoles = new Set(['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'option', 'textbox', 'combobox', 'slider', 'spinbutton', 'treeitem', 'gridcell']);
+                        const elements = deepElements().filter((element) => visible(element) && (
+                            interactiveTags.has(element.tagName)
+                            || interactiveRoles.has(element.getAttribute('role'))
+                            || element.isContentEditable
+                            || element.tabIndex >= 0
+                            || typeof element.onclick === 'function'
+                        )).slice(0, 750);
+                        globalThis.__evofluxAgentElements = elements;
                         const lines = elements.map((element, index) => {{
-                            element.setAttribute('data-evoflux-agent-index', String(index));
+                            try {{ element.setAttribute('data-evoflux-agent-index', String(index)); }} catch {{}}
                             return `[${{index}}] ${{describe(element)}}`;
                         }});
                         const maxChars = Math.max(500, Math.min(100000, Number(params.max_chars) || 15000));
-                        const pageText = String(document.body?.innerText || '').trim().slice(0, Math.floor(maxChars * 0.45));
+                        const textParts = [String(document.body?.innerText || '').trim()];
+                        for (const frame of document.querySelectorAll('iframe')) {{
+                            try {{ if (frame.contentDocument?.body) textParts.push(String(frame.contentDocument.body.innerText || '').trim()); }} catch {{}}
+                        }}
+                        const pageText = textParts.filter(Boolean).join('\n\n[Same-origin frame]\n').slice(0, Math.floor(maxChars * 0.45));
                         const output = `URL: ${{location.href}}\nTitle: ${{document.title}}\n\nPage text:\n${{pageText}}\n\nInteractive elements (use [index] with click/fill):\n${{lines.join('\n')}}`;
                         return output.slice(0, maxChars);
+                    }}
+
+                    if (action === 'element_rect') {{
+                        const element = resolveElement();
+                        if (!element) throw new Error('Element not found; run snapshot again or provide a selector');
+                        const rect = element.getBoundingClientRect();
+                        return {{ x: Math.max(0, rect.x), y: Math.max(0, rect.y), width: rect.width, height: rect.height, viewport_width: innerWidth, viewport_height: innerHeight }};
                     }}
 
                     if (action === 'click') {{
@@ -772,39 +1342,255 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         return `Clicked ${{describe(element)}}`;
                     }}
 
+                    if (action === 'dblclick') {{
+                        const element = resolveElement();
+                        if (!element) throw new Error('Element not found; run snapshot again or provide a selector');
+                        element.scrollIntoView({{ block: 'center', inline: 'center' }});
+                        element.focus?.();
+                        element.dispatchEvent(new MouseEvent('dblclick', {{ bubbles: true, cancelable: true, view: window, detail: 2 }}));
+                        return `Double-clicked ${{describe(element)}}`;
+                    }}
+
+                    if (action === 'hover') {{
+                        const element = resolveElement();
+                        if (!element) throw new Error('Element not found; run snapshot again or provide a selector');
+                        element.scrollIntoView({{ block: 'center', inline: 'center' }});
+                        for (const type of ['pointerover', 'mouseover', 'pointerenter', 'mouseenter', 'pointermove', 'mousemove']) element.dispatchEvent(new MouseEvent(type, {{ bubbles: !type.endsWith('enter'), cancelable: true, view: window }}));
+                        return `Hovered ${{describe(element)}}`;
+                    }}
+
+                    if (action === 'focus') {{
+                        const element = resolveElement();
+                        if (!element) throw new Error('Element not found; run snapshot again or provide a selector');
+                        element.scrollIntoView({{ block: 'center', inline: 'center' }});
+                        element.focus({{ preventScroll: true }});
+                        return `Focused ${{describe(element)}}`;
+                    }}
+
                     if (action === 'fill') {{
                         const element = resolveElement();
                         if (!element) throw new Error('Input not found; run snapshot again or provide a selector');
                         const text = String(params.text ?? '');
                         element.focus?.();
-                        if (element.isContentEditable) {{
-                            element.textContent = params.clear === false ? String(element.textContent || '') + text : text;
-                        }} else if ('value' in element) {{
-                            const next = params.clear === false ? String(element.value || '') + text : text;
-                            const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-                            const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
-                            setter ? setter.call(element, next) : (element.value = next);
-                        }} else {{
-                            throw new Error('Element is not editable');
-                        }}
-                        element.dispatchEvent(new InputEvent('input', {{ bubbles: true, inputType: 'insertText', data: text }}));
+                        const current = String(element.isContentEditable ? element.textContent || '' : element.value || '');
+                        setEditableValue(element, params.clear === false ? current + text : text, 'insertText', text);
                         element.dispatchEvent(new Event('change', {{ bubbles: true }}));
                         return `Filled ${{describe(element)}} (${{text.length}} chars)`;
                     }}
 
+                    if (action === 'type') {{
+                        const element = resolveElement() || document.activeElement;
+                        if (!element) throw new Error('No editable element is focused or targeted');
+                        element.focus?.();
+                        const text = String(params.text ?? '');
+                        let current = String(element.isContentEditable ? element.textContent || '' : element.value || '');
+                        for (const character of text) {{
+                            const init = {{ key: character, code: character.length === 1 ? `Key${{character.toUpperCase()}}` : character, bubbles: true, cancelable: true }};
+                            if (element.dispatchEvent(new KeyboardEvent('keydown', init))) {{
+                                current += character;
+                                setEditableValue(element, current, 'insertText', character);
+                            }}
+                            element.dispatchEvent(new KeyboardEvent('keyup', init));
+                        }}
+                        return `Typed ${{text.length}} chars into ${{describe(element)}}`;
+                    }}
+
+                    if (action === 'clear') {{
+                        const element = resolveElement();
+                        if (!element) throw new Error('Editable element not found');
+                        element.focus?.();
+                        setEditableValue(element, '', 'deleteContentBackward', null);
+                        element.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        return `Cleared ${{describe(element)}}`;
+                    }}
+
+                    if (action === 'submit') {{
+                        const element = resolveElement() || document.activeElement;
+                        const form = element?.tagName === 'FORM' ? element : element?.form || element?.closest?.('form');
+                        if (!form) throw new Error('No form found for the target element');
+                        form.requestSubmit ? form.requestSubmit() : form.submit();
+                        return `Submitted ${{describe(form)}}`;
+                    }}
+
+                    if (action === 'press') {{
+                        const element = resolveElement() || document.activeElement;
+                        if (!element) throw new Error('No focused element and no target was provided');
+                        element.focus?.();
+                        const parts = String(params.key || '').split('+').filter(Boolean);
+                        const key = parts.pop();
+                        if (!key) throw new Error('press requires a key');
+                        const modifiers = new Set(parts.map((value) => value.toLowerCase()));
+                        const init = {{
+                            key,
+                            code: key.length === 1 ? `Key${{key.toUpperCase()}}` : key,
+                            bubbles: true,
+                            cancelable: true,
+                            ctrlKey: modifiers.has('control') || modifiers.has('ctrl'),
+                            metaKey: modifiers.has('meta') || modifiers.has('command'),
+                            altKey: modifiers.has('alt'),
+                            shiftKey: modifiers.has('shift'),
+                        }};
+                        const proceed = element.dispatchEvent(new KeyboardEvent('keydown', init));
+                        if (proceed && key === ' ' && ['BUTTON', 'SUMMARY'].includes(element.tagName)) element.click?.();
+                        if (proceed && key === 'Tab') {{
+                            const focusable = deepElements().filter((candidate) => visible(candidate) && !candidate.disabled && candidate.tabIndex >= 0);
+                            const current = focusable.indexOf(element);
+                            const offset = init.shiftKey ? -1 : 1;
+                            focusable[(current + offset + focusable.length) % focusable.length]?.focus?.();
+                        }}
+                        element.dispatchEvent(new KeyboardEvent('keyup', init));
+                        if (proceed && key === 'Enter' && element.form && !init.shiftKey) element.form.requestSubmit?.();
+                        return `Pressed ${{params.key}} on ${{describe(element)}}`;
+                    }}
+
+                    if (action === 'set_checked') {{
+                        const element = resolveElement();
+                        if (!element) throw new Error('Checkbox/radio not found; run snapshot again or provide a selector');
+                        const desired = Boolean(params.checked);
+                        if ('checked' in element) {{
+                            const prototype = element.ownerDocument.defaultView.HTMLInputElement.prototype;
+                            const setter = Object.getOwnPropertyDescriptor(prototype, 'checked')?.set;
+                            setter ? setter.call(element, desired) : (element.checked = desired);
+                        }} else {{
+                            element.setAttribute('aria-checked', String(desired));
+                        }}
+                        element.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        element.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        return `Set checked=${{desired}} on ${{describe(element)}}`;
+                    }}
+
                     if (action === 'select') {{
-                        const element = document.querySelector(String(params.selector || ''));
-                        if (!(element instanceof HTMLSelectElement)) throw new Error('Select element not found');
-                        element.value = String(params.value ?? '');
+                        const element = resolveElement();
+                        if (!element || element.tagName !== 'SELECT') throw new Error('Select element not found');
+                        const requested = String(params.value ?? '');
+                        const option = Array.from(element.options).find((candidate) => candidate.value === requested || candidate.label === requested || candidate.text === requested);
+                        if (!option) throw new Error(`Option not found: ${{requested}}`);
+                        element.value = option.value;
                         element.dispatchEvent(new Event('input', {{ bubbles: true }}));
                         element.dispatchEvent(new Event('change', {{ bubbles: true }}));
                         return `Selected "${{element.value}}"`;
                     }}
 
+                    if (action === 'drag') {{
+                        const source = resolveElement();
+                        const target = Number.isInteger(params.target_index)
+                            ? globalThis.__evofluxAgentElements?.[params.target_index]
+                            : deepElements().find((element) => {{ try {{ return element.matches(String(params.target_selector || '')); }} catch {{ return false; }} }});
+                        if (!source || !target) throw new Error('Drag source or target not found');
+                        source.scrollIntoView({{ block: 'center', inline: 'center' }});
+                        target.scrollIntoView({{ block: 'center', inline: 'center' }});
+                        const transfer = new DataTransfer();
+                        for (const type of ['dragstart', 'drag', 'dragenter', 'dragover', 'drop', 'dragend']) {{
+                            const recipient = ['dragstart', 'drag', 'dragend'].includes(type) ? source : target;
+                            recipient.dispatchEvent(new DragEvent(type, {{ bubbles: true, cancelable: true, dataTransfer: transfer }}));
+                        }}
+                        return `Dragged ${{describe(source)}} to ${{describe(target)}}`;
+                    }}
+
+                    if (action === 'scroll_into_view') {{
+                        const element = resolveElement();
+                        if (!element) throw new Error('Element not found');
+                        const block = ['start', 'center', 'end', 'nearest'].includes(params.block) ? params.block : 'center';
+                        element.scrollIntoView({{ block, inline: 'nearest', behavior: 'instant' }});
+                        return `Scrolled into view: ${{describe(element)}}`;
+                    }}
+
+                    if (action === 'click_at') {{
+                        const x = Number(params.x);
+                        const y = Number(params.y);
+                        if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('click_at requires finite x and y coordinates');
+                        const element = document.elementFromPoint(x, y);
+                        if (!element) throw new Error(`No element at viewport coordinate ${{x}},${{y}}`);
+                        const button = params.button === 'middle' ? 1 : params.button === 'right' ? 2 : 0;
+                        const buttons = button === 0 ? 1 : button === 1 ? 4 : 2;
+                        const init = {{ bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button, buttons }};
+                        element.focus?.();
+                        for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) element.dispatchEvent(new MouseEvent(type, init));
+                        return `Clicked at ${{x}},${{y}} on ${{describe(element)}}`;
+                    }}
+
+                    if (action === 'dispatch_event') {{
+                        const element = resolveElement();
+                        if (!element) throw new Error('Element not found');
+                        const eventName = String(params.event || '').trim();
+                        if (!eventName) throw new Error('dispatch_event requires an event name');
+                        const event = new CustomEvent(eventName, {{ bubbles: true, cancelable: true, detail: params.detail || {{}} }});
+                        const accepted = element.dispatchEvent(event);
+                        return {{ event: eventName, accepted, target: describe(element) }};
+                    }}
+
+                    if (action === 'query') {{
+                        const selector = String(params.selector || '');
+                        if (!selector) throw new Error('query requires a selector');
+                        const limit = Math.max(1, Math.min(500, Number(params.limit) || 50));
+                        const matches = deepElements().filter((element) => {{
+                            try {{ return element.matches(selector) && (params.include_hidden || visible(element)); }} catch {{ return false; }}
+                        }}).slice(0, limit);
+                        globalThis.__evofluxAgentElements = matches;
+                        return matches.length
+                            ? matches.map((element, index) => {{
+                                try {{ element.setAttribute('data-evoflux-agent-index', String(index)); }} catch {{}}
+                                return `[${{index}}] ${{describe(element)}}`;
+                            }}).join('\n')
+                            : '(no matching elements)';
+                    }}
+
+                    if (action === 'inspect') {{
+                        const element = resolveElement();
+                        if (!element) throw new Error('Element not found');
+                        const rect = element.getBoundingClientRect();
+                        const computed = element.ownerDocument.defaultView.getComputedStyle(element);
+                        const requestedStyles = Array.isArray(params.styles) ? params.styles.slice(0, 50) : [];
+                        const styles = Object.fromEntries(requestedStyles.map((name) => [name, computed.getPropertyValue(String(name))]));
+                        const attributes = Object.fromEntries(Array.from(element.attributes || []).map((attribute) => [attribute.name, attribute.value]));
+                        return {{
+                            tag: element.tagName.toLowerCase(),
+                            description: describe(element),
+                            role: element.getAttribute('role') || '',
+                            accessible_name: accessibleName(element),
+                            attributes,
+                            styles,
+                            rect: {{ x: rect.x, y: rect.y, width: rect.width, height: rect.height, top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left }},
+                            visible: visible(element),
+                            enabled: !element.disabled && element.getAttribute('aria-disabled') !== 'true',
+                            focused: element.ownerDocument.activeElement === element,
+                            value: 'value' in element ? String(element.value).slice(0, 10000) : null,
+                            checked: 'checked' in element ? Boolean(element.checked) : null,
+                            text: String(element.innerText || element.textContent || '').trim().slice(0, 10000),
+                        }};
+                    }}
+
+                    if (action === 'html') {{
+                        const element = resolveElement();
+                        const maxChars = Math.max(100, Math.min(200000, Number(params.max_chars) || 30000));
+                        const html = element
+                            ? (params.outer === false ? element.innerHTML : element.outerHTML)
+                            : (params.outer === false ? document.documentElement.innerHTML : document.documentElement.outerHTML);
+                        return String(html || '').slice(0, maxChars) || '(empty html)';
+                    }}
+
+                    if (action === 'accessibility') {{
+                        const maxChars = Math.max(500, Math.min(100000, Number(params.max_chars) || 20000));
+                        const implicitRoles = {{ A: 'link', BUTTON: 'button', INPUT: 'textbox', TEXTAREA: 'textbox', SELECT: 'combobox', IMG: 'img', NAV: 'navigation', MAIN: 'main', FORM: 'form', TABLE: 'table', H1: 'heading', H2: 'heading', H3: 'heading', H4: 'heading', H5: 'heading', H6: 'heading' }};
+                        const lines = deepElements().filter((element) => params.include_hidden || visible(element)).map((element) => {{
+                            const role = element.getAttribute('role') || implicitRoles[element.tagName] || '';
+                            const name = accessibleName(element);
+                            if (!role && !name) return '';
+                            const states = ['checked', 'expanded', 'selected', 'pressed', 'disabled', 'required', 'invalid']
+                                .map((state) => element.getAttribute(`aria-${{state}}`) != null ? `${{state}}=${{element.getAttribute(`aria-${{state}}`)}}` : '')
+                                .filter(Boolean).join(' ');
+                            const level = /^H[1-6]$/.test(element.tagName) ? ` level=${{element.tagName.slice(1)}}` : '';
+                            return `${{role || element.tagName.toLowerCase()}}${{level}}${{name ? ` "${{name}}"` : ''}}${{states ? ` (${{states}})` : ''}}`;
+                        }}).filter(Boolean);
+                        return lines.join('\n').slice(0, maxChars) || '(no accessibility nodes found)';
+                    }}
+
                     if (action === 'extract') {{
                         const maxChars = Math.max(100, Math.min(100000, Number(params.max_chars) || 15000));
                         if (!params.selector) return String(document.body?.innerText || '').slice(0, maxChars) || '(empty page)';
-                        const elements = Array.from(document.querySelectorAll(String(params.selector)));
+                        const elements = deepElements().filter((element) => {{
+                            try {{ return element.matches(String(params.selector)); }} catch {{ return false; }}
+                        }});
                         if (!elements.length) throw new Error(`No element found for selector: ${{params.selector}}`);
                         const values = elements.map((element) => params.attribute ? element.getAttribute(String(params.attribute)) || '' : String(element.innerText || element.textContent || '').trim());
                         return values.join('\n').slice(0, maxChars) || '(empty)';
@@ -817,12 +1603,246 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         return `Scrolled ${{params.direction || 'down'}} ${{Math.abs(pixels)}}px`;
                     }}
 
+                    if (action === 'console') {{
+                        const requested = String(params.level || 'all');
+                        const limit = Math.max(1, Math.min(200, Number(params.limit) || 50));
+                        let entries = Array.from(globalThis.__evofluxBrowserRuntime?.console || []);
+                        if (requested !== 'all') entries = entries.filter((entry) => entry.level === requested || (requested === 'warn' && entry.level === 'error'));
+                        if (params.contains) entries = entries.filter((entry) => String(entry.text || '').includes(String(params.contains)));
+                        entries = entries.slice(-limit);
+                        return entries.length ? entries.map((entry) => `[${{entry.level}}]${{entry.source ? ` ${{entry.source}}:${{entry.line}}:${{entry.column}}` : ''}} ${{entry.text}}`).join('\n') : '(no console messages captured)';
+                    }}
+
+                    if (action === 'network') {{
+                        const failedOnly = params.filter === 'failed';
+                        const limit = Math.max(1, Math.min(200, Number(params.limit) || 50));
+                        let entries = Array.from(globalThis.__evofluxBrowserRuntime?.network || []);
+                        if (failedOnly) entries = entries.filter((entry) => entry.error || Number(entry.status) >= 400 || Number(entry.status) === 0);
+                        else entries = [
+                            ...performance.getEntriesByType('resource').map((entry) => ({{ method: 'GET', url: entry.name, status: entry.responseStatus || 'loaded' }})),
+                            ...entries,
+                        ];
+                        if (params.url_contains) entries = entries.filter((entry) => String(entry.url || '').includes(String(params.url_contains)));
+                        if (params.method) entries = entries.filter((entry) => String(entry.method || '').toUpperCase() === String(params.method).toUpperCase());
+                        entries = entries.slice(-limit);
+                        return entries.length ? entries.map((entry) => `${{entry.method}} ${{entry.url}} → ${{entry.error || entry.status}}${{entry.duration_ms != null ? ` (${{Math.round(entry.duration_ms)}}ms)` : ''}}`).join('\n') : '(no network requests captured)';
+                    }}
+
+                    if (action === 'dialogs') {{
+                        const dialogs = Array.from(globalThis.__evofluxBrowserRuntime?.dialogs || []);
+                        if (params.clear && globalThis.__evofluxBrowserRuntime) globalThis.__evofluxBrowserRuntime.dialogs.length = 0;
+                        return dialogs.length ? dialogs : '(no dialogs captured)';
+                    }}
+
+                    if (action === 'dialog_behavior') {{
+                        const runtime = globalThis.__evofluxBrowserRuntime;
+                        if (!runtime) throw new Error('Browser observability is not initialized');
+                        runtime.dialogBehavior = {{
+                            behavior: params.behavior === 'accept' ? 'accept' : 'dismiss',
+                            promptText: params.prompt_text ?? null,
+                        }};
+                        return runtime.dialogBehavior;
+                    }}
+
+                    if (action === 'performance') {{
+                        const navigation = performance.getEntriesByType('navigation')[0];
+                        const memory = performance.memory ? {{
+                            used_js_heap_size: performance.memory.usedJSHeapSize,
+                            total_js_heap_size: performance.memory.totalJSHeapSize,
+                            js_heap_size_limit: performance.memory.jsHeapSizeLimit,
+                        }} : null;
+                        const result = {{
+                            url: location.href,
+                            time_origin: performance.timeOrigin,
+                            navigation: navigation ? {{
+                                type: navigation.type,
+                                dom_interactive_ms: navigation.domInteractive,
+                                dom_content_loaded_ms: navigation.domContentLoadedEventEnd,
+                                load_ms: navigation.loadEventEnd,
+                                response_ms: navigation.responseEnd,
+                                transfer_size: navigation.transferSize,
+                                decoded_body_size: navigation.decodedBodySize,
+                            }} : null,
+                            paint: Object.fromEntries(performance.getEntriesByType('paint').map((entry) => [entry.name, entry.startTime])),
+                            memory,
+                            resources: [],
+                        }};
+                        if (params.include_resources !== false) {{
+                            const limit = Math.max(1, Math.min(500, Number(params.limit) || 100));
+                            result.resources = performance.getEntriesByType('resource').slice(-limit).map((entry) => ({{
+                                name: entry.name,
+                                initiator: entry.initiatorType,
+                                duration_ms: entry.duration,
+                                transfer_size: entry.transferSize,
+                                decoded_body_size: entry.decodedBodySize,
+                                status: entry.responseStatus || null,
+                            }}));
+                        }}
+                        return result;
+                    }}
+
+                    if (action === 'clear_logs') {{
+                        const runtime = globalThis.__evofluxBrowserRuntime;
+                        if (!runtime) return {{ console: 0, network: 0, dialogs: 0 }};
+                        const target = params.target || 'all';
+                        const removed = {{ console: runtime.console.length, network: runtime.network.length, dialogs: runtime.dialogs?.length || 0 }};
+                        if (target === 'console' || target === 'all') runtime.console.length = 0;
+                        if (target === 'network' || target === 'all') runtime.network.length = 0;
+                        if ((target === 'dialogs' || target === 'all') && runtime.dialogs) runtime.dialogs.length = 0;
+                        return removed;
+                    }}
+
+                    if (action === 'storage') {{
+                        const storage = params.area === 'session' ? sessionStorage : localStorage;
+                        const operation = params.operation || 'get';
+                        if (operation === 'get') {{
+                            if (params.key != null) return {{ key: String(params.key), value: storage.getItem(String(params.key)) }};
+                            return Object.fromEntries(Array.from({{ length: storage.length }}, (_, index) => storage.key(index)).filter(Boolean).map((key) => [key, storage.getItem(key)]));
+                        }}
+                        if (operation === 'set') {{
+                            if (params.key == null || params.value == null) throw new Error('storage set requires key and value');
+                            storage.setItem(String(params.key), String(params.value));
+                            return {{ key: String(params.key), value: storage.getItem(String(params.key)) }};
+                        }}
+                        if (operation === 'remove') {{
+                            if (params.key == null) throw new Error('storage remove requires key');
+                            const key = String(params.key);
+                            const previous = storage.getItem(key);
+                            storage.removeItem(key);
+                            return {{ key, removed: previous !== null }};
+                        }}
+                        if (operation === 'clear') {{
+                            const count = storage.length;
+                            storage.clear();
+                            return {{ cleared: count }};
+                        }}
+                        throw new Error(`Unsupported storage operation: ${{operation}}`);
+                    }}
+
+                    if (action === 'cookies') {{
+                        const operation = params.operation || 'get';
+                        const parseCookies = () => Object.fromEntries(document.cookie.split(';').map((part) => part.trim()).filter(Boolean).map((part) => {{
+                            const separator = part.indexOf('=');
+                            const key = decodeURIComponent(separator < 0 ? part : part.slice(0, separator));
+                            const value = decodeURIComponent(separator < 0 ? '' : part.slice(separator + 1));
+                            return [key, value];
+                        }}));
+                        if (operation === 'get') {{
+                            const cookies = parseCookies();
+                            return params.name == null ? cookies : {{ name: String(params.name), value: cookies[String(params.name)] ?? null }};
+                        }}
+                        if (params.name == null) throw new Error(`cookies ${{operation}} requires name`);
+                        const name = encodeURIComponent(String(params.name));
+                        const value = operation === 'delete' ? '' : encodeURIComponent(String(params.value ?? ''));
+                        const parts = [`${{name}}=${{value}}`, `Path=${{params.path || '/'}}`];
+                        if (params.domain) parts.push(`Domain=${{params.domain}}`);
+                        if (operation === 'delete') parts.push('Max-Age=0');
+                        else if (params.max_age != null) parts.push(`Max-Age=${{Number(params.max_age)}}`);
+                        if (params.same_site) parts.push(`SameSite=${{params.same_site}}`);
+                        if (params.secure) parts.push('Secure');
+                        document.cookie = parts.join('; ');
+                        return {{ name: String(params.name), value: parseCookies()[String(params.name)] ?? null, note: 'HttpOnly cookies are intentionally inaccessible to page JavaScript' }};
+                    }}
+
+                    if (action === 'http_start') {{
+                        const method = String(params.method || 'GET').toUpperCase();
+                        const url = String(params.url || '');
+                        if (!url) throw new Error('http requires a URL');
+                        const asyncId = String(params.async_id || '');
+                        if (!asyncId) throw new Error('http action is missing its internal async id');
+                        const maxChars = Math.max(100, Math.min(200000, Number(params.max_chars) || 30000));
+                        const timeoutMs = Math.max(100, Math.min(30000, Number(params.timeout_ms) || 15000));
+                        const controller = new AbortController();
+                        const timer = setTimeout(() => controller.abort(`Timed out after ${{timeoutMs}}ms`), timeoutMs);
+                        const request = fetch(url, {{
+                            method,
+                            headers: params.headers || {{}},
+                            body: ['GET', 'HEAD'].includes(method) || params.body == null ? undefined : String(params.body),
+                            credentials: 'include',
+                            signal: controller.signal,
+                        }}).then(async (response) => ({{
+                            ok: response.ok,
+                            method,
+                            url: response.url || url,
+                            status: response.status,
+                            status_text: response.statusText,
+                            headers: Object.fromEntries(response.headers.entries()),
+                            body: (await response.text()).slice(0, maxChars),
+                        }})).finally(() => clearTimeout(timer));
+                        return beginAsync(asyncId, request);
+                    }}
+
+                    if (action === 'evaluate_start') {{
+                        const source = String(params.script || '');
+                        const asyncId = String(params.async_id || '');
+                        if (!source.trim()) throw new Error('evaluate requires a script');
+                        if (!asyncId) throw new Error('evaluate action is missing its internal async id');
+                        const value = (0, eval)(source);
+                        const result = typeof value === 'function' ? value() : value;
+                        return beginAsync(asyncId, result);
+                    }}
+
+                    if (action === 'async_result') {{
+                        const asyncId = String(params.async_id || '');
+                        const jobs = globalThis.__evofluxAsyncJobs || {{}};
+                        const result = jobs[asyncId] || {{ state: 'pending' }};
+                        if (result.state === 'done') delete jobs[asyncId];
+                        return result;
+                    }}
+
+                    if (action === 'debug_summary') {{
+                        const runtime = globalThis.__evofluxBrowserRuntime || {{ console: [], network: [], dialogs: [] }};
+                        const consoleLimit = Math.max(1, Math.min(200, Number(params.console_limit) || 30));
+                        const networkLimit = Math.max(1, Math.min(200, Number(params.network_limit) || 30));
+                        const consoleErrors = runtime.console.filter((entry) => entry.level === 'error' || entry.level === 'warn').slice(-consoleLimit);
+                        const failedRequests = runtime.network.filter((entry) => entry.error || Number(entry.status) >= 400 || Number(entry.status) === 0).slice(-networkLimit);
+                        const navigation = performance.getEntriesByType('navigation')[0];
+                        return {{
+                            page: {{ url: location.href, title: document.title, ready_state: document.readyState, online: navigator.onLine }},
+                            viewport: {{ width: innerWidth, height: innerHeight, device_pixel_ratio: devicePixelRatio, scroll_x: scrollX, scroll_y: scrollY }},
+                            dom: {{ elements: deepElements().length, forms: document.forms.length, links: document.links.length, images: document.images.length }},
+                            timing: navigation ? {{ dom_interactive_ms: navigation.domInteractive, load_ms: navigation.loadEventEnd, transfer_size: navigation.transferSize }} : null,
+                            console_errors: consoleErrors,
+                            failed_requests: failedRequests,
+                            dialogs: Array.from(runtime.dialogs || []).slice(-20),
+                        }};
+                    }}
+
+                    if (action === 'evaluate') {{
+                        const source = String(params.script || '');
+                        if (!source.trim()) throw new Error('evaluate requires a script');
+                        const value = (0, eval)(source);
+                        const result = typeof value === 'function' ? value() : value;
+                        if (result && typeof result.then === 'function') throw new Error('evaluate only supports synchronous scripts');
+                        return result === undefined ? '(no return value)' : result;
+                    }}
+
                     if (action === 'exists') {{
-                        return Boolean(document.querySelector(String(params.selector || '')));
+                        return Boolean(resolveElement());
+                    }}
+
+                    if (action === 'probe') {{
+                        const element = params.selector ? resolveElement() : null;
+                        return {{
+                            attached: Boolean(element),
+                            visible: Boolean(element && visible(element)),
+                            text: String(element ? element.innerText || element.textContent || '' : document.body?.innerText || '').slice(0, 100000),
+                            url: location.href,
+                            readyState: document.readyState,
+                        }};
                     }}
 
                     if (action === 'status') {{
-                        return {{ url: location.href, readyState: document.readyState }};
+                        return {{
+                            url: location.href,
+                            title: document.title,
+                            readyState: document.readyState,
+                            online: navigator.onLine,
+                            userAgent: navigator.userAgent,
+                            viewport: {{ width: innerWidth, height: innerHeight, devicePixelRatio, scrollX, scrollY }},
+                            historyLength: history.length,
+                            activeElement: document.activeElement ? describe(document.activeElement) : null,
+                        }};
                     }}
                 }}"#
     ))
@@ -2156,6 +3176,11 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(log_plugin)
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry>::new("browser-observability")
+                .js_init_script(browser_observability_init_script())
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
@@ -2179,7 +3204,6 @@ fn main() {
             app_use_external_backend,
             app_use_bundled_backend,
             app_new_window,
-            app_open_browser_devtools,
             app_browser_webview_navigate,
             app_browser_webview_command,
             app_browser_webview_url,
@@ -2278,6 +3302,111 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn browser_agent_script_includes_deep_dom_and_runtime_instrumentation() {
+        let script =
+            browser_agent_action_script("snapshot", &serde_json::json!({ "max_chars": 12_000 }))
+                .expect("snapshot action should compile");
+
+        assert!(script.contains("element.shadowRoot"));
+        assert!(script.contains("element.contentDocument"));
+        assert!(script.contains("__evofluxBrowserRuntime"));
+        assert!(script.contains("const action = \"snapshot\""));
+        assert!(script.contains("12000"));
+    }
+
+    #[test]
+    fn browser_agent_script_supports_full_direct_action_set() {
+        for action in [
+            "instrument",
+            "snapshot",
+            "click",
+            "dblclick",
+            "hover",
+            "focus",
+            "fill",
+            "type",
+            "clear",
+            "submit",
+            "press",
+            "set_checked",
+            "select",
+            "drag",
+            "scroll_into_view",
+            "click_at",
+            "dispatch_event",
+            "extract",
+            "query",
+            "inspect",
+            "html",
+            "accessibility",
+            "scroll",
+            "console",
+            "network",
+            "dialogs",
+            "dialog_behavior",
+            "performance",
+            "clear_logs",
+            "storage",
+            "cookies",
+            "http",
+            "http_start",
+            "evaluate_start",
+            "async_result",
+            "debug_summary",
+            "evaluate",
+            "element_rect",
+            "exists",
+            "probe",
+            "status",
+        ] {
+            browser_agent_action_script(action, &serde_json::json!({}))
+                .unwrap_or_else(|error| panic!("{action} should be supported: {error}"));
+        }
+    }
+
+    #[test]
+    fn browser_agent_script_rejects_unknown_actions() {
+        let error = browser_agent_action_script("launch_external", &serde_json::json!({}))
+            .expect_err("external browser actions must not be supported");
+
+        assert!(error.contains("Unsupported direct browser action"));
+    }
+
+    #[test]
+    fn browser_agent_script_contains_async_debug_transport() {
+        let http = browser_agent_action_script(
+            "http_start",
+            &serde_json::json!({
+                "async_id": "job-1",
+                "url": "/api/debug",
+                "method": "GET"
+            }),
+        )
+        .expect("http debug action should compile");
+        let evaluate = browser_agent_action_script(
+            "evaluate_start",
+            &serde_json::json!({ "async_id": "job-2", "script": "Promise.resolve(42)" }),
+        )
+        .expect("async evaluate action should compile");
+
+        assert!(http.contains("AbortController"));
+        assert!(http.contains("credentials: 'include'"));
+        assert!(evaluate.contains("beginAsync"));
+        assert!(evaluate.contains("Promise.resolve(42)"));
+    }
+
+    #[test]
+    fn browser_observability_starts_before_page_scripts_only_for_browser_webviews() {
+        let script = browser_observability_init_script();
+
+        assert!(script.contains("currentWebview?.label"));
+        assert!(script.contains("startsWith('browser-')"));
+        assert!(script.contains("unhandledrejection"));
+        assert!(script.contains("XMLHttpRequest.prototype.send"));
+        assert!(script.contains("globalThis.__evofluxBrowserRuntime = runtime"));
+    }
 
     // ── dialog_result_is_accept ──────────────────────────────────────────────
     //

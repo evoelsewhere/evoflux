@@ -9,7 +9,7 @@ Use this skill whenever the deliverable is a presentation. It adapts the useful
 workflow discipline from `ningzimu/codex-ppt-skill`—outline, visual direction,
 representative sample, per-slide production, assembly, and verification—but it
 does not depend on an image-generation model. The visual source of truth is
-controlled HTML/CSS rendered by Chromium.
+controlled HTML/CSS rendered by the EvoFlux Desktop WebView.
 
 For a new deck, the result is an editable-first hybrid PPTX:
 
@@ -20,7 +20,7 @@ For a new deck, the result is an editable-first hybrid PPTX:
 - explicit `data-pptx-native="text|shape|line|image"` markers cover custom
   elements, while `data-pptx-raster` keeps complex effects pixel-stable;
 - speaker notes and source URLs stay in the PowerPoint file;
-- Chromium geometry checks must pass before the PPTX is written.
+- Desktop WebView geometry checks must pass before the PPTX is written.
 
 For an uploaded PPTX that the user explicitly identifies as the visual
 template, use the separate inherited-template workflow below. It edits a copy

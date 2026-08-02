@@ -1,9 +1,10 @@
 """webbridge tool — control the user's real browser via the WebBridge extension.
 
-Unlike ``browser_use`` which launches a headless Chromium, ``webbridge``
-sends commands through a WebSocket relay to a Chrome/Edge extension running
-in the user's actual browser.  This gives the agent access to the user's
-real login sessions, cookies, and open tabs.
+Unlike ``browser_use`` which controls EvoFlux's visible in-app browser with no
+external-browser fallback, ``webbridge`` sends commands through a
+WebSocket relay to a Chrome/Edge extension running in the user's external
+browser. This gives the agent access to that browser's login sessions, cookies,
+and open tabs.
 
 Architecture::
 
@@ -602,9 +603,10 @@ AnyAction = Annotated[
 _DESCRIPTION = """\
 Control the user's real Chrome/Edge browser via the WebBridge extension.
 
-Unlike browser_use (which launches a headless browser), this tool connects to
-the user's actual browser through a Chrome extension. The user must install
-the EvoFlux WebBridge extension and have it connected.
+Unlike browser_use (which controls EvoFlux's visible in-app browser), this
+tool connects to an external Chrome/Edge browser through an extension. The
+user must explicitly enable WebBridge, install the EvoFlux WebBridge
+extension, and have it connected.
 
 Prefer the element-based actions (snapshot → click_selector/click_text/fill)
 over coordinate clicks: they are robust to layout and HiDPI scaling. Use
@@ -711,7 +713,9 @@ def _mark_untrusted_browser_result(result: str | ToolResult) -> str | ToolResult
 @tool(
     name="webbridge",
     deferred=True,
-    deferred_summary="Drive the user's real browser through the WebBridge extension.",
+    deferred_summary=(
+        "Drive an external Chrome/Edge browser through the opt-in WebBridge extension."
+    ),
 )
 async def webbridge(
     actions: Annotated[

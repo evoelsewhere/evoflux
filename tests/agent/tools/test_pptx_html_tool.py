@@ -133,6 +133,7 @@ async def test_render_returns_visual_preview(
     _write_project(sandbox)
 
     async def fake_render(*args, **kwargs):
+        assert kwargs["session_id"] == "00000000-0000-0000-0000-000000000001"
         return _fake_result(sandbox)
 
     monkeypatch.setattr(_pptx_html_module, "render_html_deck", fake_render)
@@ -151,6 +152,7 @@ async def test_compose_publishes_previewable_downloadable_artifact(
     _write_project(sandbox)
 
     async def fake_build(*args, **kwargs):
+        assert kwargs["session_id"] == "00000000-0000-0000-0000-000000000001"
         destination = Path(kwargs["output"])
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(b"pptx")

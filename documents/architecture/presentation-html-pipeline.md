@@ -15,7 +15,7 @@ communication job + user-confirmed visual direction
              ↓
 validated base-template renderer or bounded raw HTML
              ↓
-Chromium render + DOM geometry inspection
+EvoFlux Desktop WebView render + DOM geometry inspection
              ↓
 full preview PNG + editable-object-free background PNG
              ↓
@@ -44,14 +44,23 @@ layer.
 The project format rejects scripts, event handlers, iframes, forms, remote URLs,
 CSS imports, executable CSS, and filesystem URLs. Images must be embedded as
 `data:image` values or referenced through `asset://relative/path`; asset paths
-are resolved inside the active workspace before Chromium sees them.
+are resolved inside the active workspace before the renderer sees them. The
+sanitized document is sent only to the active task's in-app WebView over a
+session-scoped local WebSocket.
 
 ## Verification contract
 
-Chromium checks each slide for canvas overflow, text overflow, broken images,
-font floors, copy density, structural density, and accidental overlap among
-elements marked `data-box`. Any error prevents PPTX composition. Warnings remain
-visible in `.evoflux/pptx-html/<deck>/qa.json` for deliberate review.
+The desktop WebView checks each slide for canvas overflow, text overflow, broken
+images, font floors, copy density, structural density, and accidental overlap
+among elements marked `data-box`. `modern-screenshot` captures the preview,
+raster background, and editable images in an isolated frame using that frame's
+own document/window context. Any error prevents PPTX
+composition. Warnings remain visible in
+`.evoflux/pptx-html/<deck>/qa.json` for deliberate review.
+
+This renderer is intentionally desktop-only. There is no system-browser,
+headless-browser, or remote-service fallback; a render request without the
+matching EvoFlux Desktop task fails closed.
 
 The exporter writes atomically, reopens the final file with `python-pptx`, and
 checks slide count before publishing the artifact to the chat UI with preview and

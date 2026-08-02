@@ -20,6 +20,7 @@ from app.agent.agent_loop import Agent
 from app.agent.mode.team.member import TeamLead
 from app.agent.mode.team.team import AgentTeam
 from app.agent.mode.team.tier_policy import (
+    NON_WEBBRIDGE_SESSION_DENIED_TOOLS,
     SIDE_CHAT_ALWAYS_EXCLUDED_TOOLS,
     SIDE_CHAT_SESSION_TAG,
     TIER_DENIED_TOOLS,
@@ -521,6 +522,9 @@ _LEAD_REGISTRY_TOOLS = [
 
 
 class TestWebbridgeSessionExcludedTools:
+    def test_webbridge_is_opt_in_for_normal_sessions(self):
+        assert NON_WEBBRIDGE_SESSION_DENIED_TOOLS == frozenset({"webbridge"})
+
     def test_web_tools_excluded(self):
         excluded = webbridge_session_excluded_tools(_LEAD_REGISTRY_TOOLS)
         assert {"browser_use", "web_search", "web_fetch", "image_search"} <= excluded
