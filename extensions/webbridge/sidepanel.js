@@ -1017,14 +1017,7 @@ function appendMessage(message, { live = false, prepend = false } = {}) {
   content.className = "message-body";
   const rawContent = message.content || "";
   if (message.is_summary) {
-    const details = document.createElement("details");
-    const summary = document.createElement("summary");
-    summary.textContent = "Session compacted";
-    const summaryBody = document.createElement("div");
-    summaryBody.className = "compaction-summary";
-    summaryBody.textContent = rawContent.replace(/^\[Summary of earlier conversation\]\n/, "");
-    details.append(summary, summaryBody);
-    content.append(details);
+    content.textContent = "Session compacted";
   } else if (message.role === "assistant" && globalThis.WebBridgeMarkdown) {
     globalThis.WebBridgeMarkdown.render(content, rawContent);
     void hydrateMarkdownMedia(content);

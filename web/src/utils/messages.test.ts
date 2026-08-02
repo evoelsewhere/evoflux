@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseTeamBlocks } from './messages'
+import { parseApiMessages, parseTeamBlocks } from './messages'
 import type { MessageResponse } from '@/api/types'
 
 function userMessage(overrides: Partial<MessageResponse> = {}): MessageResponse {
@@ -44,5 +44,29 @@ describe('WebBridge transcript parity', () => {
   it('keeps legacy WebBridge rows readable when display metadata is absent', () => {
     const [block] = parseTeamBlocks([userMessage()])
     expect(block.content).toContain('User request:\nExplain this')
+  })
+})
+
+describe('compaction transcript privacy', () => {
+  const summary = userMessage({
+    id: 'summary-1',
+    content: 'private compacted context',
+    is_summary: true,
+  })
+
+  it('hydrates team history as a content-free status marker', () => {
+    const [block] = parseTeamBlocks([summary])
+
+    expect(block.type).toBe('compaction')
+    expect(block.content).toBe('')
+    expect(block.extra).toEqual({ state: 'compacted' })
+  })
+
+  it('hydrates single-agent history as a content-free status marker', () => {
+    const [message] = parseApiMessages([summary])
+
+    expect(message.blocks[0].type).toBe('compaction')
+    expect(message.blocks[0].content).toBe('')
+    expect(message.blocks[0].extra).toEqual({ state: 'compacted' })
   })
 })

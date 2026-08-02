@@ -1015,7 +1015,7 @@ class TestAttach:
 
 
 # ---------------------------------------------------------------------------
-# summarization (start/content/end) push + replay
+# summarization lifecycle push + replay
 # ---------------------------------------------------------------------------
 
 
@@ -1028,16 +1028,18 @@ class TestSummarizationPushAndReplay:
             StreamEnvelope.from_parts("summarization_start", {"agent": "lead"}),
         )
         assert _turns["sid-1"].summarization == {
-            "lead": {"text": "", "done": False, "error": False}
+            "lead": {"done": False, "error": False}
         }
 
     @pytest.mark.asyncio
-    async def test_content_appends_text(self):
+    async def test_legacy_content_is_not_retained_or_fanned_out(self):
         await store.init_turn("sid-1")
         await store.push_event(
             "sid-1",
             StreamEnvelope.from_parts("summarization_start", {"agent": "lead"}),
         )
+        q: asyncio.Queue = asyncio.Queue()
+        _turns["sid-1"].subscribers.append(q)
         await store.push_event(
             "sid-1",
             StreamEnvelope.from_parts(
@@ -1050,10 +1052,14 @@ class TestSummarizationPushAndReplay:
                 "summarization_content", {"agent": "lead", "text": "world."}
             ),
         )
-        assert _turns["sid-1"].summarization["lead"]["text"] == "Hello world."
+        assert _turns["sid-1"].summarization["lead"] == {
+            "done": False,
+            "error": False,
+        }
+        assert q.empty()
 
     @pytest.mark.asyncio
-    async def test_end_marks_done_and_overrides_text(self):
+    async def test_end_marks_done_without_retaining_summary(self):
         await store.init_turn("sid-1")
         await store.push_event(
             "sid-1",
@@ -1075,7 +1081,7 @@ class TestSummarizationPushAndReplay:
         entry = _turns["sid-1"].summarization["lead"]
         assert entry["done"] is True
         assert entry["error"] is False
-        assert entry["text"] == "final summary"
+        assert "text" not in entry
 
     @pytest.mark.asyncio
     async def test_end_error_flag_is_recorded(self):
@@ -1097,10 +1103,10 @@ class TestSummarizationPushAndReplay:
 
     @pytest.mark.asyncio
     async def test_attach_replays_in_flight_compaction(self):
-        """Reconnect mid-compaction: start + content (no end yet)."""
+        """Reconnect mid-compaction replays only the active status."""
         await store.init_turn("sid-1")
         _turns["sid-1"].summarization = {
-            "lead": {"text": "half summary", "done": False, "error": False}
+            "lead": {"done": False, "error": False}
         }
 
         async def _mark_done():
@@ -1113,17 +1119,15 @@ class TestSummarizationPushAndReplay:
 
         types = [e["event"] for e in events]
         assert "summarization_start" in types
-        assert "summarization_content" in types
+        assert "summarization_content" not in types
         assert "summarization_end" not in types
-        content = next(e for e in events if e["event"] == "summarization_content")
-        assert json.loads(content["data"])["text"] == "half summary"
 
     @pytest.mark.asyncio
     async def test_attach_replays_completed_compaction(self):
-        """Reconnect after compaction finished: start + end (no live content)."""
+        """Reconnect after compaction finished replays content-free status."""
         await store.init_turn("sid-1")
         _turns["sid-1"].summarization = {
-            "lead": {"text": "the final summary", "done": True, "error": False}
+            "lead": {"done": True, "error": False}
         }
 
         async def _mark_done():
@@ -1136,18 +1140,18 @@ class TestSummarizationPushAndReplay:
 
         types = [e["event"] for e in events]
         assert "summarization_start" in types
-        # No live content replay when already done — end carries the full text.
+        # Neither live deltas nor the final summary are replayed.
         assert "summarization_content" not in types
         end = next(e for e in events if e["event"] == "summarization_end")
         end_data = json.loads(end["data"])
-        assert end_data["summary"] == "the final summary"
+        assert end_data["summary"] == ""
         assert end_data.get("metadata", {}).get("error") is not True
 
     @pytest.mark.asyncio
     async def test_attach_replays_failed_compaction_with_error_flag(self):
         await store.init_turn("sid-1")
         _turns["sid-1"].summarization = {
-            "lead": {"text": "", "done": True, "error": True}
+            "lead": {"done": True, "error": True}
         }
 
         async def _mark_done():

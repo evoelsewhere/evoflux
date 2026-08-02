@@ -292,7 +292,11 @@ class SummarizationStartEvent(BaseModel):
 
 
 class SummarizationContentEvent(BaseModel):
-    """A streamed chunk of the summary text from the summariser LLM."""
+    """Legacy summary delta retained for wire compatibility.
+
+    Current producers do not emit this event because generated summaries are
+    internal model context rather than user-visible chat output.
+    """
 
     type: Literal["summarization_content"] = "summarization_content"
     agent: str
@@ -301,11 +305,12 @@ class SummarizationContentEvent(BaseModel):
 
 
 class SummarizationEndEvent(BaseModel):
-    """Compaction finished. ``summary`` carries the final summary text.
+    """Compaction finished.
 
     ``metadata.error`` is set to ``True`` when the summariser failed —
     the frontend still transitions to "compacted" so the divider can
-    clear, but may surface the error state distinctly.
+    clear, but may surface the error state distinctly. ``summary`` remains
+    only for compatibility with older producers and is empty in new events.
     """
 
     type: Literal["summarization_end"] = "summarization_end"

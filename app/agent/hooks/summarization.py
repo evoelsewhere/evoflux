@@ -37,7 +37,7 @@ Usage::
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Awaitable, Callable
+from typing import TYPE_CHECKING
 
 from loguru import logger
 from opentelemetry.trace import SpanKind, StatusCode
@@ -57,11 +57,7 @@ from app.agent.schemas.chat import (
     ToolMessage,
 )
 from app.agent.usage import set_usage_span_attributes, usage_to_dict
-from app.agent.schemas.events import (
-    SummarizationContentEvent,
-    SummarizationEndEvent,
-    SummarizationStartEvent,
-)
+from app.agent.schemas.events import SummarizationEndEvent, SummarizationStartEvent
 from app.core.otel import get_tracer
 from app.services.stream_envelope import StreamEnvelope
 
@@ -641,22 +637,21 @@ class SummarizationHook(BaseAgentHook):
         )
         span.set_attribute("summarization.has_prior_summary", has_prior_summary)
 
-        # SSE start/content/end drive the frontend "Session compacting"
-        # divider. session_id is None for headless/test runs — skip then.
+        # SSE start/end drive the frontend compaction status divider. The
+        # generated summary is internal context and must not be streamed into
+        # the user-visible transcript. session_id is None for headless/test
+        # runs — skip lifecycle emission then.
         agent_name = ctx.agent_name or ""
         emit_session_id = ctx.session_id
 
-        on_delta: Callable[[str], Awaitable[None]] | None = None
         if emit_session_id:
             await self._emit_start(emit_session_id, agent_name)
-            on_delta = self._make_delta_emitter(emit_session_id, agent_name)
 
         try:
             summary_text = await self._call_llm(
                 ctx,
                 summariser_messages,
                 tools=state.tool_defs or None,
-                on_delta=on_delta,
             )
         except Exception as exc:
             logger.error(
@@ -667,9 +662,7 @@ class SummarizationHook(BaseAgentHook):
             span.set_attribute("error.type", type(exc).__name__)
             span.set_status(StatusCode.ERROR, str(exc))
             if emit_session_id:
-                await self._emit_end(
-                    emit_session_id, agent_name, summary="", error=True
-                )
+                await self._emit_end(emit_session_id, agent_name, error=True)
             return
 
         if not summary_text:
@@ -681,9 +674,7 @@ class SummarizationHook(BaseAgentHook):
             span.set_attribute("summarization.skipped", "empty_llm_response")
             span.set_status(StatusCode.OK)
             if emit_session_id:
-                await self._emit_end(
-                    emit_session_id, agent_name, summary="", error=True
-                )
+                await self._emit_end(emit_session_id, agent_name, error=True)
             return
 
         to_summarise_set = {id(m) for m in to_summarise}
@@ -706,9 +697,8 @@ class SummarizationHook(BaseAgentHook):
         # HumanMessage as the summary anchor: ZAI and most OpenAI-compat
         # APIs require system → user → … so this shape is safe regardless
         # of what the kept window starts with. The summary text itself is
-        # stored verbatim — no prefix — so it renders cleanly in the UI
-        # divider; the ``is_summary=True`` flag is the marker the LLM and
-        # the frontend both key off of.
+        # stored verbatim for future LLM context; the UI uses only the
+        # ``is_summary=True`` flag to render a content-free status divider.
         summary_msg = HumanMessage(
             content=summary_text,
             is_summary=True,
@@ -726,7 +716,7 @@ class SummarizationHook(BaseAgentHook):
         span.set_status(StatusCode.OK)
 
         if emit_session_id:
-            await self._emit_end(emit_session_id, agent_name, summary=summary_text)
+            await self._emit_end(emit_session_id, agent_name)
 
         logger.info(
             "summarization_complete session_id={} agent={} "
@@ -756,7 +746,7 @@ class SummarizationHook(BaseAgentHook):
             logger.debug("summarization_emit_start_failed error={}", exc)
 
     async def _emit_end(
-        self, session_id: str, agent: str, *, summary: str, error: bool = False
+        self, session_id: str, agent: str, *, error: bool = False
     ) -> None:
         from app.services import memory_stream_store as stream_store
 
@@ -766,7 +756,6 @@ class SummarizationHook(BaseAgentHook):
                 StreamEnvelope.from_event(
                     SummarizationEndEvent(
                         agent=agent,
-                        summary=summary,
                         metadata={"error": True} if error else {},
                     )
                 ),
@@ -774,39 +763,14 @@ class SummarizationHook(BaseAgentHook):
         except Exception as exc:
             logger.debug("summarization_emit_end_failed error={}", exc)
 
-    def _make_delta_emitter(
-        self, session_id: str, agent: str
-    ) -> Callable[[str], Awaitable[None]]:
-        from app.services import memory_stream_store as stream_store
-
-        async def _emit(text: str) -> None:
-            try:
-                await stream_store.push_event(
-                    session_id,
-                    StreamEnvelope.from_event(
-                        SummarizationContentEvent(agent=agent, text=text)
-                    ),
-                )
-            except Exception as exc:
-                logger.debug("summarization_emit_content_failed error={}", exc)
-
-        return _emit
-
     async def _call_llm(
         self,
         ctx: "RunContext",
         messages,
         *,
         tools: list[dict] | None = None,
-        on_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> str:
-        """Stream the summariser LLM and return the full text response.
-
-        Passes max_token_length to the LLM provider if set. When ``on_delta``
-        is supplied each non-empty content chunk is forwarded to it — used
-        to publish ``summarization_content`` SSE events while the LLM is
-        still generating.
-        """
+        """Stream the summariser internally and return its full text response."""
         # Inherit the agent's ``thinking_level`` — forcing ``"none"`` here
         # breaks Codex, whose endpoint rejects requests with no ``reasoning``.
         kwargs: dict = {}
@@ -866,8 +830,6 @@ class SummarizationHook(BaseAgentHook):
                     delta = chunk.choices[0].delta
                     if delta.content:
                         full_text += delta.content
-                        if on_delta is not None:
-                            await on_delta(delta.content)
             except Exception as exc:
                 span.set_attribute("error.type", type(exc).__name__)
                 span.set_status(StatusCode.ERROR, str(exc))

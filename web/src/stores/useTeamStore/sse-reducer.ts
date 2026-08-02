@@ -7,7 +7,6 @@ import {
   completeTool,
   generateBlockId,
   startCompaction,
-  appendCompactionContent,
   endCompaction,
 } from '@/utils/blocks'
 import { createDefaultAgentStream } from './defaults'
@@ -649,27 +648,20 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
       }
 
       case 'summarization_content': {
-        const agent = d.agent as string
-        const text = d.text as string
-        if (!agent || !text) break
-        set((draft) => {
-          ensureAgent(draft, agent)
-          const stream = draft.agentStreams[agent]
-          stream.blocks = appendCompactionContent(stream.blocks, text)
-        })
+        // Compatibility with older backends that streamed summary deltas.
+        // Compaction content is internal model context, not chat output.
         break
       }
 
       case 'summarization_end': {
         const agent = d.agent as string
         if (!agent) break
-        const summary = (d.summary as string | undefined) ?? ''
         const meta = d.metadata as Record<string, unknown> | undefined
         const error = Boolean(meta?.error)
         set((draft) => {
           ensureAgent(draft, agent)
           const stream = draft.agentStreams[agent]
-          stream.blocks = endCompaction(stream.blocks, summary, error)
+          stream.blocks = endCompaction(stream.blocks, error)
         })
         break
       }
