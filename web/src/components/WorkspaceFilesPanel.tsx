@@ -8,8 +8,9 @@
  * full-screen only below the ``md`` breakpoint (mobile). Inside, preview is
  * the primary surface and the resizable file tree is a collapsible right rail.
  * Images render inline via the ``/media/`` proxy (with lightbox on click).
- * Text/code files render as-is in a plain monospace view. Office documents
- * (.docx/.xlsx/.pptx) render via docx-preview / xlsx / pptx-renderer.
+ * Text/code files render as-is in a plain monospace view. PDF and XLSX files
+ * render in lazy-loaded WebView-native engines; DOCX and PPTX use the isolated
+ * OpenXML preview endpoint.
  * Everything else can be opened in the system's default desktop app.
  *
  * Data flow:
@@ -20,7 +21,7 @@
  *                                       images use the URL directly as src)
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Editor, { useMonaco } from '@monaco-editor/react'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import {
@@ -72,7 +73,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { getWorkspacePanelLayout } from '@/lib/workspace-panel-layout'
 import { ImageLightbox } from './ImageLightbox'
 import { FileTypeIcon, FolderTypeIcon } from './FileTypeIcon'
-import { DocxPreview, XlsxPreview, PptxPreview } from './workspace-office-preview'
+import { DocxPreview, PptxPreview } from './workspace-office-preview'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -80,51 +81,25 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
 import { openExternalUrl } from '@/lib/open-external'
+import {
+  isWorkspaceCodeExtension,
+  workspaceFileExtension,
+  workspaceFileKind,
+} from '@/lib/workspace-file-kind'
 import type { WorkspaceFileInfo } from '@/api/types'
+
+const PdfPreview = lazy(() =>
+  import('./workspace-pdf-preview').then((module) => ({ default: module.PdfPreview })),
+)
+const XlsxPreview = lazy(() =>
+  import('./workspace-xlsx-preview').then((module) => ({ default: module.XlsxPreview })),
+)
 
 // ── File-type helpers ─────────────────────────────────────────────────────────
 
 // Extensions we preview as plain text. Other formats open in their desktop app.
 const FILE_LONG_PRESS_MS = 520
 const FILE_LONG_PRESS_MOVE_TOLERANCE = 10
-
-const TEXT_EXTENSIONS = new Set([
-  'txt', 'md', 'markdown', 'rst',
-  'json', 'jsonl', 'ndjson', 'yaml', 'yml', 'toml', 'ini', 'env', 'gitignore',
-  'csv', 'tsv', 'log',
-  'py', 'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs',
-  'html', 'css', 'scss', 'sass',
-  'sh', 'bash', 'zsh', 'fish',
-  'rs', 'go', 'java', 'kt', 'c', 'cpp', 'h', 'hpp', 'rb', 'php', 'swift',
-  'sql', 'xml', 'svg',
-])
-
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'])
-const DOCX_EXTENSIONS = new Set(['docx'])
-const XLSX_EXTENSIONS = new Set(['xlsx'])
-const PPTX_EXTENSIONS = new Set(['pptx'])
-
-function extOf(name: string): string {
-  const i = name.lastIndexOf('.')
-  return i >= 0 ? name.slice(i + 1).toLowerCase() : ''
-}
-
-type FileKind = 'image' | 'text' | 'docx' | 'xlsx' | 'pptx' | 'binary'
-
-function kindOf(file: WorkspaceFileInfo): FileKind {
-  const ext = extOf(file.name)
-  // SVG is both an image (for preview) and text — prefer the visual preview.
-  if (IMAGE_EXTENSIONS.has(ext)) return 'image'
-  if (file.mime.startsWith('image/')) return 'image'
-  if (DOCX_EXTENSIONS.has(ext)) return 'docx'
-  if (XLSX_EXTENSIONS.has(ext)) return 'xlsx'
-  if (PPTX_EXTENSIONS.has(ext)) return 'pptx'
-  if (!ext) return 'text'
-  if (TEXT_EXTENSIONS.has(ext)) return 'text'
-  if (file.mime.startsWith('text/')) return 'text'
-  if (file.mime === 'application/json') return 'text'
-  return 'binary'
-}
 
 // ── Resize constants ─────────────────────────────────────────────────────────
 
@@ -645,13 +620,9 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
   }
   if (content === null) return null
 
-  const ext = extOf(file.name)
+  const ext = workspaceFileExtension(file.name)
   const isMarkdown = ext === 'md' || ext === 'markdown'
-  // Code = any TEXT_EXTENSIONS entry that isn't a plain-prose or data format
-  const PLAIN_TEXT_EXTS = new Set([
-    'txt', 'log', 'csv', 'tsv', 'env', 'gitignore', 'ini', 'md', 'markdown', 'rst',
-  ])
-  const isCode = !isMarkdown && TEXT_EXTENSIONS.has(ext) && !PLAIN_TEXT_EXTS.has(ext)
+  const isCode = !isMarkdown && isWorkspaceCodeExtension(ext)
 
   if (isMarkdown) {
     return (
@@ -720,6 +691,15 @@ function BinaryPreview({ file }: { file: WorkspaceFileInfo }) {
           Use Open to view it in the default app on this computer.
         </p>
       </div>
+    </div>
+  )
+}
+
+function RichPreviewLoading({ label }: { label: string }) {
+  return (
+    <div className="flex h-full items-center justify-center gap-2 text-(--color-text-subtle)">
+      <Loader2 size={17} className="animate-spin" aria-hidden="true" />
+      <span className="text-xs">Loading {label} engine…</span>
     </div>
   )
 }
@@ -802,7 +782,7 @@ function PreviewArea({
   onReveal: (file: WorkspaceFileInfo) => void
   isDesktop: boolean
 }) {
-  const kind = kindOf(file)
+  const kind = workspaceFileKind(file)
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-2">
@@ -847,9 +827,15 @@ function PreviewArea({
         ) : kind === 'docx' ? (
           <DocxPreview sessionId={sessionId} file={file} />
         ) : kind === 'xlsx' ? (
-          <XlsxPreview sessionId={sessionId} file={file} />
+          <Suspense fallback={<RichPreviewLoading label="workbook" />}>
+            <XlsxPreview key={`${file.path}:${file.mtime}`} sessionId={sessionId} file={file} />
+          </Suspense>
         ) : kind === 'pptx' ? (
           <PptxPreview sessionId={sessionId} file={file} />
+        ) : kind === 'pdf' ? (
+          <Suspense fallback={<RichPreviewLoading label="PDF" />}>
+            <PdfPreview key={`${file.path}:${file.mtime}`} sessionId={sessionId} file={file} />
+          </Suspense>
         ) : (
           <BinaryPreview file={file} />
         )}

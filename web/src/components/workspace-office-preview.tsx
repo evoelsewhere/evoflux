@@ -2,7 +2,7 @@
  * Sandboxed OpenXML previews.
  *
  * The backend parses OpenXML with the Python libraries bundled in EvoFlux and
- * produces a self-contained HTML representation for DOCX, XLSX and PPTX. The
+ * produces a self-contained HTML representation for DOCX and PPTX. The
  * result is loaded into a script-sandboxed iframe with an in-document CSP, so
  * document content remains isolated from the application.
  */
@@ -101,10 +101,6 @@ function OfficePreview({ sessionId, file }: OfficePreviewProps) {
 }
 
 export function DocxPreview(props: OfficePreviewProps) {
-  return <OfficePreview {...props} />
-}
-
-export function XlsxPreview(props: OfficePreviewProps) {
   return <OfficePreview {...props} />
 }
 
