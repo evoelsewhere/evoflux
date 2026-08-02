@@ -19,8 +19,9 @@ import { useWorkspaceOpenersQuery } from '@/queries/useWorkspaceOpenersQuery'
 import { useToastStore } from '@/stores/useToastStore'
 
 interface OpenWithMenuProps {
-  /** Absolute workspace root to open; null disables the menu. */
+  /** Absolute workspace root to open; null shows the workspace picker action. */
   workspace: string | null
+  onChooseWorkspace?: () => void
 }
 
 function OpenerIcon({ opener }: { opener: WorkspaceOpener }) {
@@ -121,7 +122,7 @@ function openerDescription(opener: WorkspaceOpener): string {
  * workspace (detected natively by the Rust opener catalog). Desktop-only;
  * the parent decides whether to render it at all.
  */
-export function OpenWithMenu({ workspace }: OpenWithMenuProps) {
+export function OpenWithMenu({ workspace, onChooseWorkspace }: OpenWithMenuProps) {
   const pushToast = useToastStore((state) => state.push)
   const openersQuery = useWorkspaceOpenersQuery(workspace !== null)
   const openers = openersQuery.data ?? []
@@ -139,13 +140,28 @@ export function OpenWithMenu({ workspace }: OpenWithMenuProps) {
     }
   }
 
+  if (workspace === null) {
+    return (
+      <button
+        type="button"
+        onClick={onChooseWorkspace}
+        disabled={!onChooseWorkspace}
+        className="group flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-(--color-text-muted) outline-none transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:pointer-events-none disabled:opacity-50"
+        aria-label="Choose a workspace folder"
+        title="Choose a workspace folder"
+      >
+        <FolderOpen size={14} />
+        <span>Open folder</span>
+      </button>
+    )
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        disabled={workspace === null}
-        className="group flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-(--color-text-muted) outline-none transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:pointer-events-none disabled:opacity-50 data-[popup-open]:bg-(--bg-key) data-[popup-open]:text-(--color-text)"
+        className="group flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-(--color-text-muted) outline-none transition-colors hover:bg-(--bg-key) hover:text-(--color-text) data-[popup-open]:bg-(--bg-key) data-[popup-open]:text-(--color-text)"
         aria-label="Open workspace in a desktop app"
-        title={workspace === null ? 'No workspace selected' : 'Open workspace in…'}
+        title="Open workspace in…"
       >
         <AppWindow size={14} />
         <span>Open in</span>

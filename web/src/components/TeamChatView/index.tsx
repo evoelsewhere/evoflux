@@ -1560,6 +1560,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           onViewModeChange={setViewMode}
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
           workspace={agentWorkspace}
+          onChooseWorkspace={mode === 'coding' ? handleOpenWorkspaceDialog : undefined}
           reviewContext={mode === 'coding' ? reviewSessionContext : null}
           onOpenReviewContext={() => openWorkbenchTool('pull-requests')}
         />

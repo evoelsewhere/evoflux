@@ -42,8 +42,10 @@ interface WorkbenchBarProps {
   onOpenMobileSidebar: () => void
   isMobile: boolean
   isMacOverlay: boolean
-  /** Absolute workspace root for the "Open in" menu; null hides it. */
+  /** Absolute workspace root for the "Open in" menu. */
   workspace?: string | null
+  /** Opens the workspace picker when no workspace is active. */
+  onChooseWorkspace?: () => void
   reviewContext?: CodeReviewSessionContext | null
   onOpenReviewContext?: () => void
   dragHandlers?: {
@@ -70,7 +72,10 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
   const motionPreset = useMotionPreset()
   const { isTauri, os } = usePlatform()
   const isDesktopShell = isTauri && os !== 'ios' && os !== 'android'
-  const showOpenWith = isDesktopShell && !props.isMobile
+  const showOpenWith =
+    isDesktopShell &&
+    !props.isMobile &&
+    (props.workspace != null || props.onChooseWorkspace != null)
   const changesCount = turnChanges?.files.length ?? 0
   const planPending = Boolean(planApproval)
   const modelId = sessionModel ?? activeModel ?? null
@@ -203,7 +208,10 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
       >
         {showOpenWith && (
           <>
-            <OpenWithMenu workspace={props.workspace ?? null} />
+            <OpenWithMenu
+              workspace={props.workspace ?? null}
+              onChooseWorkspace={props.onChooseWorkspace}
+            />
             <span className="mx-0.5 h-4 w-px bg-(--color-border)" aria-hidden="true" />
           </>
         )}
