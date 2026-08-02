@@ -28,8 +28,8 @@ of that actual deck and does not route through HTML.
 
 ## Choose the authoring path first
 
-- New deck or a screenshot/image reference: use `pptx_html` and the mandatory
-  style confirmation gate.
+- New deck or a screenshot/image reference: use `pptx_html` and resolve the
+  visual direction using the style rule below.
 - Uploaded PPTX explicitly requested as the visual template: use
   `pptx_template`. The chosen PPTX itself is the style confirmation, so do not
   ask the generic style question.
@@ -47,7 +47,7 @@ Keep this checklist in the working context:
 ```text
 Presentation workflow
 - [ ] 1. Understand the communication job and audience
-- [ ] 2. Ask the user to choose or confirm one visual style
+- [ ] 2. Honor the supplied visual direction, or call `ask_user` once if absent
 - [ ] 3. Draft a slide-by-slide story outline
 - [ ] 4. Create the JSON project and validate it
 - [ ] 5. Render one representative sample slide
@@ -60,23 +60,37 @@ Do not jump straight from the request to a full deck unless the user explicitly
 asks to skip the sample gate. If the user supplied a reference slide, infer its
 design language but improve hierarchy and density instead of tracing every box.
 
-## Mandatory style confirmation gate for new decks
+## Visual-direction rule for new decks
 
-Never silently choose a visual style. If the current presentation request does
-not contain an explicit style choice, ask the user which visual style they want
-and stop before writing the project, rendering HTML, or composing a PPTX. Ask in
-the user's current language; do not hard-code a locale.
+Treat the user's visual direction as confirmed whenever the request describes
+a recognizable design language, even if it does not use a built-in preset ID.
+Colors, typography, tone, density, audience, layout references, brand rules, a
+reference image, or phrases such as "enterprise technology" are valid style
+direction. Map that direction to the closest `style_preset`, preserve the
+user's stated constraints, set `style_confirmed: true`, and continue without
+asking the user to approve your internal preset mapping. Never ask the user to
+repeat or reconfirm style information already present in the request.
 
-Offer a short, job-aware set of options. Put `scientific-defense` first as the
-recommended general default for research, technical, thesis, or evidence-heavy
-decks, but do not apply it without confirmation. For example, offer Scientific
-Defense, Clean Professional, McKinsey-style Consulting, Data Dashboard,
-Teaching Courseware, or Creative Magazine. A supplied reference may inform the
-recommendation, but the user must still confirm it.
+Only ask about style when the request contains no meaningful visual direction,
+or when two genuinely different interpretations would materially change the
+deck. In that case, call the deferred `ask_user` tool, offer a short,
+job-aware set of options in the user's current language, and await its result.
+Batch any other blocking presentation questions, such as missing brand assets,
+into the same `ask_user` call. After the tool returns, resume outline,
+authoring, rendering, and composition in the same run.
 
-After confirmation, set both `style_preset` and `style_confirmed: true` at the
-project root. The schema intentionally has no silent style default and rejects
-projects that omit either field.
+Never send a plain assistant message asking the user to choose a style, never
+end the run while waiting for a separate chat reply, and never replace
+`ask_user` with prose such as "please confirm". Put `scientific-defense` first
+as the recommended general option for research, technical, thesis, or
+evidence-heavy decks; other useful options include Clean Professional,
+McKinsey-style Consulting, Data Dashboard, Teaching Courseware, and Creative
+Magazine.
+
+Once the direction is supplied either in the original request or through
+`ask_user`, set both `style_preset` and `style_confirmed: true` at the project
+root. The schema intentionally has no silent style default and rejects projects
+that omit either field.
 
 ## Uploaded PPTX template workflow
 

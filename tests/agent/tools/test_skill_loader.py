@@ -648,6 +648,19 @@ class TestBuiltinSkills:
                     missing.append(f"{skill_file.parent.name}: {raw}")
         assert missing == []
 
+    def test_pptx_skill_keeps_style_questions_inside_the_same_run(self):
+        """Presentation style policy must not force avoidable chat turns."""
+        skill = (_builtin_skills_dir() / "pptx" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        normalized = " ".join(skill.split())
+
+        assert "Treat the user's visual direction as confirmed" in normalized
+        assert "continue without asking the user to approve" in normalized
+        assert "call the deferred `ask_user` tool" in normalized
+        assert "resume outline, authoring, rendering, and composition" in normalized
+        assert "Never send a plain assistant message asking" in normalized
+
     @pytest.mark.asyncio
     async def test_builtin_skill_dir_points_at_auxiliary_files(self):
         body = await load_skill("mcp-installer")
