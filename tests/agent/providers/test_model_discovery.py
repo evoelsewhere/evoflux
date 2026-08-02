@@ -226,6 +226,13 @@ class _FakeCodexModelsClient:
                 "models": [
                     {
                         "slug": "gpt-5.6-sol",
+                        "visibility": "list",
+                        "supported_in_api": True,
+                        "context_window": 272_000,
+                        "max_context_window": 272_000,
+                        "input_modalities": ["text", "image"],
+                        "default_reasoning_level": "medium",
+                        "supports_parallel_tool_calls": True,
                         "supported_reasoning_levels": [
                             {"effort": "low"},
                             {"effort": "medium"},
@@ -237,6 +244,12 @@ class _FakeCodexModelsClient:
                     },
                     {
                         "slug": "gpt-5.6-luna",
+                        "visibility": "list",
+                        "supported_in_api": True,
+                        "context_window": 272_000,
+                        "input_modalities": ["text", "image"],
+                        "default_reasoning_level": "medium",
+                        "supports_parallel_tool_calls": True,
                         "supported_reasoning_levels": [
                             {"effort": "low"},
                             {"effort": "medium"},
@@ -244,6 +257,22 @@ class _FakeCodexModelsClient:
                             {"effort": "xhigh"},
                             {"effort": "max"},
                         ],
+                    },
+                    {
+                        "slug": "codex-auto-review",
+                        "visibility": "hide",
+                        "supported_in_api": True,
+                        "context_window": 272_000,
+                        "input_modalities": ["text", "image"],
+                        "supported_reasoning_levels": [{"effort": "medium"}],
+                    },
+                    {
+                        "slug": "retired-codex-model",
+                        "visibility": "list",
+                        "supported_in_api": False,
+                        "context_window": 272_000,
+                        "input_modalities": ["text"],
+                        "supported_reasoning_levels": [{"effort": "medium"}],
                     },
                 ]
             }
@@ -259,9 +288,15 @@ async def test_codex_discovery_registers_live_reasoning_levels(
     from app.agent.providers.codex.oauth import CodexOAuth
     from app.agent.providers.model_metadata import (
         clear_runtime_model_metadata,
+        get_model_limits,
+        get_model_metadata,
         get_model_thinking_levels,
         has_runtime_model_metadata,
         set_runtime_model_metadata,
+    )
+    from app.agent.providers.capabilities import (
+        clear_runtime_model_capabilities,
+        get_capabilities,
     )
 
     oauth = SimpleNamespace(
@@ -299,8 +334,15 @@ async def test_codex_discovery_registers_live_reasoning_levels(
             "xhigh",
             "max",
         )
+        assert get_model_limits("codex:gpt-5.6-sol").context_length == 272_000
+        assert (
+            get_model_metadata("codex:gpt-5.6-sol").thinking.default_level == "medium"
+        )
+        assert get_model_metadata("codex:gpt-5.6-sol").features.tool_call is True
+        assert get_capabilities("codex:gpt-5.6-sol").input.vision is True
     finally:
         clear_runtime_model_metadata()
+        clear_runtime_model_capabilities()
 
 
 @pytest.mark.asyncio

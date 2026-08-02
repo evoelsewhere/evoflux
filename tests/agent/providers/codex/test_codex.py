@@ -39,7 +39,10 @@ from app.agent.schemas.chat import (
     ChatCompletionChunk,
     ChatCompletionChunkChoice,
     ChatCompletionDelta,
+    FunctionCallDelta,
     ToolMessage,
+    ToolCallDelta,
+    Usage,
 )
 from app.cli.commands.auth import _run_login
 
@@ -790,6 +793,58 @@ class TestCodexResponsesHandlerBuildRequest:
             "merged": {"max_tokens": 20},
         }
 
+    @pytest.mark.asyncio
+    async def test_chat_preserves_streamed_tool_calls_and_usage(self):
+        handler = _CodexResponsesHandler("gpt-5.6-sol", "https://api.example.com", {})
+
+        async def fake_stream(_messages, _tools, _merged):
+            for arguments in ('{"path":', '"README.md"}'):
+                yield ChatCompletionChunk(
+                    id="resp_1",
+                    created=1,
+                    model="gpt-5.6-sol",
+                    choices=[
+                        ChatCompletionChunkChoice(
+                            index=0,
+                            delta=ChatCompletionDelta(
+                                tool_calls=[
+                                    ToolCallDelta(
+                                        index=0,
+                                        id="call_1",
+                                        function=FunctionCallDelta(
+                                            name="read_file",
+                                            arguments=arguments,
+                                        ),
+                                    )
+                                ]
+                            ),
+                        )
+                    ],
+                )
+            yield ChatCompletionChunk(
+                id="resp_1",
+                created=1,
+                model="gpt-5.6-sol",
+                choices=[],
+                usage=Usage(
+                    prompt_tokens=10,
+                    completion_tokens=5,
+                    total_tokens=15,
+                ),
+            )
+
+        handler.stream = fake_stream  # type: ignore[method-assign]
+
+        result = await handler.chat([HumanMessage(content="Read it")], [], {})
+
+        assert result.tool_calls is not None
+        assert result.tool_calls[0].id == "call_1"
+        assert result.tool_calls[0].function.name == "read_file"
+        assert result.tool_calls[0].function.arguments == '{"path":"README.md"}'
+        assert result.extra is not None
+        assert result.extra["usage"]["input"] == 10
+        assert result.extra["usage"]["output"] == 5
+
 
 # ============================================================================
 # CodexProvider.__init__ Tests
@@ -871,6 +926,7 @@ class TestCodexProviderInit:
             assert (
                 provider._responses.request_timeout == CODEX_STREAM_IDLE_TIMEOUT_SECONDS
             )
+            assert CODEX_STREAM_IDLE_TIMEOUT_SECONDS == 300.0
 
     def test_init_accepts_temperature_parameter(self):
         """__init__() accepts temperature parameter (for API compatibility)."""

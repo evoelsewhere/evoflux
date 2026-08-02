@@ -291,7 +291,7 @@ _CATALOG: list[ProviderEntry] = [
         "metadata_source_exclude": ["thinking"],
         "live_model_metadata": True,
         "oauth_command": "EvoFlux auth codex",
-        "docs_url": "https://platform.openai.com/docs/codex",
+        "docs_url": "https://learn.chatgpt.com/docs/models",
     },
     {
         "id": "bedrock",

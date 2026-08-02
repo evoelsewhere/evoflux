@@ -18,6 +18,7 @@ Usage::
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from loguru import logger
@@ -25,10 +26,21 @@ from loguru import logger
 from app.agent.providers.base import LLMProviderBase
 from app.agent.providers.codex.oauth import CODEX_ORIGINATOR, CodexOAuth
 from app.agent.providers.openai.responses import ResponsesHandler
-from app.agent.schemas.chat import AssistantMessage, ChatMessage, SystemMessage
+from app.agent.schemas.chat import (
+    AssistantMessage,
+    ChatMessage,
+    FunctionCall,
+    SystemMessage,
+    ToolCall,
+    Usage,
+)
+from app.agent.usage import usage_to_dict
 
 CODEX_API_BASE = "https://chatgpt.com/backend-api/codex"
-CODEX_STREAM_IDLE_TIMEOUT_SECONDS = 10.0
+# Match Codex's documented default stream idle budget. Reasoning models can
+# legitimately remain silent for well over ten seconds before their first SSE
+# event, especially at high/max effort.
+CODEX_STREAM_IDLE_TIMEOUT_SECONDS = 300.0
 _NO_SERVICE_TIER = {"", "auto", "default", "none", "off", "standard"}
 
 # Identify requests honestly as EvoFlux.
@@ -91,7 +103,11 @@ class _CodexResponsesHandler(ResponsesHandler):
         """Return a final message using Codex's required streaming endpoint."""
         content = ""
         reasoning = ""
+        tool_calls: dict[int, dict[str, str]] = {}
+        usage: Usage | None = None
         async for chunk in self.stream(messages, tools, merged):
+            if chunk.usage is not None:
+                usage = chunk.usage
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta
@@ -99,9 +115,61 @@ class _CodexResponsesHandler(ResponsesHandler):
                 content += delta.content
             if delta.reasoning_content:
                 reasoning += delta.reasoning_content
+            for tool_delta in delta.tool_calls or []:
+                index = tool_delta.index if tool_delta.index is not None else 0
+                buffered = tool_calls.setdefault(
+                    index,
+                    {"id": "", "name": "", "arguments": ""},
+                )
+                if tool_delta.id and not buffered["id"]:
+                    buffered["id"] = tool_delta.id
+                function = tool_delta.function
+                if function is None:
+                    continue
+                if function.name and not buffered["name"]:
+                    buffered["name"] = function.name
+                if function.arguments:
+                    if not buffered["arguments"]:
+                        buffered["arguments"] = function.arguments
+                    else:
+                        # Responses streams finish with a full-arguments event.
+                        # Once accumulated deltas already form valid JSON, do
+                        # not append that final copy a second time.
+                        try:
+                            json.loads(buffered["arguments"])
+                        except (json.JSONDecodeError, ValueError):
+                            buffered["arguments"] += function.arguments
+
+        complete_tool_calls: list[ToolCall] = []
+        for index in sorted(tool_calls):
+            buffered = tool_calls[index]
+            if not buffered["name"]:
+                continue
+            arguments = buffered["arguments"]
+            if arguments:
+                try:
+                    json.loads(arguments)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+            complete_tool_calls.append(
+                ToolCall(
+                    id=buffered["id"],
+                    function=FunctionCall(
+                        name=buffered["name"],
+                        arguments=arguments,
+                    ),
+                )
+            )
+
         return AssistantMessage(
             content=content or None,
             reasoning_content=reasoning or None,
+            tool_calls=complete_tool_calls or None,
+            extra=(
+                {"usage": usage_to_dict(usage, f"codex:{self.model}")}
+                if usage is not None
+                else None
+            ),
         )
 
 
