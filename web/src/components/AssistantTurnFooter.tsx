@@ -177,7 +177,7 @@ export function AssistantTurn({
         if ('kind' in renderItem && (renderItem as ToolBlockGroup).kind === 'group') {
           return (
             <ToolCallGroupCard
-              key={`group-${startIndex}-${j}`}
+              key={(renderItem as ToolBlockGroup).id}
               group={renderItem as ToolBlockGroup}
               isStreaming={turnIsStreaming}
               sessionId={sessionId}
