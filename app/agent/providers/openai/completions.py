@@ -255,7 +255,21 @@ class CompletionsHandler:
     # Response parsing — non-streaming
     # ------------------------------------------------------------------
 
+    def normalize_response_payload(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Normalize a provider-specific non-streaming response envelope.
+
+        The native OpenAI wire format is already flat, so the default is an
+        identity transform. Compatible gateways can override this hook without
+        duplicating the HTTP and canonical-message conversion code.
+        """
+        return data
+
+    def normalize_stream_payload(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Normalize one provider-specific SSE JSON payload."""
+        return data
+
     def parse_response(self, data: dict) -> AssistantMessage:
+        data = self.normalize_response_payload(data)
         parsed = OpenAIChatResponse.model_validate(data)
         if not parsed.choices:
             return AssistantMessage(content=None)
@@ -334,6 +348,7 @@ class CompletionsHandler:
                     response.raise_for_status()
 
                 async for data in iter_sse_data(response, sentinel="[DONE]"):
+                    data = self.normalize_stream_payload(data)
                     chunk = OpenAIStreamChunk.model_validate(data)
 
                     if not chunk.choices:

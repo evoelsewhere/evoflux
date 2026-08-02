@@ -91,13 +91,16 @@ async def _validate_thinking_level_for_model(
     have no explicit off switch, so treating ``none`` as universally safe
     silently changes nothing or produces an invalid request.
     """
-    if not thinking_level or not model_id:
+    if not model_id:
         return
 
     from app.agent.providers.model_discovery import ensure_runtime_model_metadata
     from app.agent.providers.model_metadata import get_model_thinking_levels
 
-    await ensure_runtime_model_metadata(model_id)
+    if thinking_level or model_id.lower().startswith("fci:"):
+        await ensure_runtime_model_metadata(model_id)
+    if not thinking_level:
+        return
     supported = get_model_thinking_levels(model_id)
     if thinking_level in supported:
         return

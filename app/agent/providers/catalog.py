@@ -209,25 +209,14 @@ _CATALOG: list[ProviderEntry] = [
                 "name": "FCI_BASE_URL",
                 "label": "Base URL",
                 "secret": False,
-                "required": True,
-                "placeholder": "https://<your-fci-gateway>/v1",
+                "required": False,
+                "placeholder": "https://mkp-api.fptcloud.com/v1",
             },
         ],
-        # Safety net if the gateway doesn't implement GET /models — live
-        # discovery (via OPENAI_COMPATIBLE_PROVIDER_SPECS) is tried first.
-        "fallback_models": [
-            "Qwen3.6-27B",
-            "GLM-5.1",
-            "GLM-5.2",
-            "gemma-4-31B-it",
-            "gemma-4-26B-A4B-it",
-            "gemma-3-27b-it",
-            "gpt-oss-20b",
-            "gpt-oss-120b",
-            "DeepSeek-V4-Flash",
-            "Qwen2.5-VL-7B-Instruct",
-            "Llama-3.3-70B-Instruct",
-        ],
+        # FCI's live catalog owns tool/modality support. Do not expose stale
+        # fallback IDs as agent-capable when live discovery is unavailable.
+        "fallback_models": [],
+        "docs_url": "https://marketplace.fptcloud.com/en/my-account?tab=my-api-key",
     },
     {
         "id": "kimi",

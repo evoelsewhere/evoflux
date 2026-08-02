@@ -89,7 +89,7 @@ class Settings(BaseSettings):
 
     # FCI — FPT's OpenAI-compatible inference gateway.
     FCI_API_KEY: SecretStr | None = None
-    FCI_BASE_URL: str = ""
+    FCI_BASE_URL: str = "https://mkp-api.fptcloud.com/v1"
 
     # Microsoft Foundry (Azure AI Foundry) — resource API key plus the
     # resource name (or a full endpoint URL) the base URL is derived from.
