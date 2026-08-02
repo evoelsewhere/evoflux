@@ -22,7 +22,6 @@ import {
   ApiValidationError,
   approveWebBridgeTeachDraft,
   deleteWebBridgeTeachDraft,
-  downloadWebBridgeExtension,
   getWebBridgeAudit,
   getWebBridgeStatus,
   listWebBridgeTeachDrafts,
@@ -30,6 +29,8 @@ import {
   resolveWebBridgeTeachReplay,
 } from '@/api/client'
 import { apiBaseUrl } from '@/api/base-url'
+import { WEBBRIDGE_EXTENSION_DOWNLOAD_URL } from '@/lib/downloads'
+import { openExternalUrl } from '@/lib/open-external'
 import { useToastStore } from '@/stores/useToastStore'
 import type {
   WebBridgeAuditEntry,
@@ -154,11 +155,11 @@ export function WebBridgeStatusDialog({
   const handleDownload = useCallback(async () => {
     setDownloading(true)
     try {
-      await downloadWebBridgeExtension()
+      await openExternalUrl(WEBBRIDGE_EXTENSION_DOWNLOAD_URL)
     } catch (err) {
       pushToast({
         tone: 'error',
-        title: 'Failed to download extension',
+        title: 'Failed to open extension download',
         description: err instanceof Error ? err.message : String(err),
       })
     } finally {
