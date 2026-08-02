@@ -54,23 +54,31 @@ import sys
 import zipfile
 from pathlib import Path
 
-# Patterns to strip from site-packages to shrink the bundle. Anything
-# the runtime imports must survive — we intentionally do *not* drop
-# `.pyi` files (some packages, e.g. pydantic-core, rely on metadata)
-# or `__init__.py` files.
-STRIP_DIRS = (
+# Patterns to strip from site-packages to shrink the bundle. Runtime Python
+# modules and package metadata must survive; static typing artifacts and native
+# debug bundles are build-time inputs and are safe to remove from releases.
+STRIP_DIR_NAMES = (
     "__pycache__",
     "tests",
     "test",
-    ".dist-info/RECORD",  # pip metadata, not needed at runtime
+    "PyObjCTest",  # PyObjC's compiled self-test suite, not runtime bindings
 )
 STRIP_GLOBS = (
     "**/*.pyc",
     "**/*.pyo",
+    "**/*.pyi",
+    "**/py.typed",
     "**/*.pdb",  # MSVC debug symbols
     "**/*.dist-info/RECORD",
     # Heavy localization data we don't need:
     "**/locale/*.mo",
+)
+STRIP_DIR_SUFFIXES = (".dSYM",)  # Apple native debug-symbol bundles
+STRIP_RELATIVE_DIRS = (
+    # Keep googleapiclient.discovery_cache itself: discovery.build imports it.
+    # The bundled static API descriptions are ~100 MiB and a cache miss already
+    # falls back to Google's discovery endpoint. EvoFlux does not call this API.
+    "googleapiclient/discovery_cache/documents",
 )
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -293,15 +301,31 @@ def strip_bundle(site_packages: Path) -> int:
                     p.unlink()
             except OSError:
                 pass
-    for name in ("__pycache__", "tests", "test"):
+
+    directories: set[Path] = set()
+    for name in STRIP_DIR_NAMES:
         for p in site_packages.rglob(name):
             if p.is_dir():
-                try:
-                    size = sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
-                    shutil.rmtree(p, ignore_errors=True)
-                    removed += size
-                except OSError:
-                    pass
+                directories.add(p)
+    for suffix in STRIP_DIR_SUFFIXES:
+        directories.update(
+            p for p in site_packages.rglob(f"*{suffix}") if p.is_dir()
+        )
+    for relative in STRIP_RELATIVE_DIRS:
+        candidate = site_packages / relative
+        if candidate.is_dir():
+            directories.add(candidate)
+
+    # Deepest-first avoids traversing children after a parent has been removed.
+    for p in sorted(directories, key=lambda path: len(path.parts), reverse=True):
+        if not p.is_dir():
+            continue
+        try:
+            size = sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+            shutil.rmtree(p, ignore_errors=True)
+            removed += size
+        except OSError:
+            pass
     return removed
 
 
