@@ -89,7 +89,7 @@ from app.agent.mode.team.mailbox import Message
 from app.core.db import DbFactory, resolve_db_factory
 from app.models.chat import ChatSession, SessionMessage
 from app.models.team import DelegationTask
-from app.agent.providers.model_metadata import get_model_thinking_levels
+from app.agent.providers.model_metadata import get_effective_model_thinking
 from app.agent.providers.model_discovery import ensure_runtime_model_metadata
 from app.services.chat_service import get_messages_for_llm, save_message
 
@@ -1155,6 +1155,7 @@ class TeamMemberBase(abc.ABC):
         # Hydrate them before execution policy and summarization are built.
         if effective_model and effective_model.lower().startswith("fci:"):
             await ensure_runtime_model_metadata(effective_model)
+        thinking_profile = get_effective_model_thinking(effective_model)
         execution_policy = resolve_execution_policy(
             complexity=active_complexity,
             priority=active_priority,
@@ -1162,7 +1163,8 @@ class TeamMemberBase(abc.ABC):
             explicit_thinking_level=(
                 session_thinking_level if self._role_label == "lead" else None
             ),
-            supported_thinking_levels=get_model_thinking_levels(effective_model),
+            provider_default_thinking_level=thinking_profile.default_level,
+            supported_thinking_levels=thinking_profile.levels,
         )
         from app.services.delegation_worktree_service import sandbox_binding
 

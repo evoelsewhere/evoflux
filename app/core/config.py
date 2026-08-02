@@ -85,7 +85,10 @@ class Settings(BaseSettings):
     XIAOMI_API_KEY: SecretStr | None = None
     XIAOMI_BASE_URL: str = ""
     MOONSHOT_API_KEY: SecretStr | None = None
-    MOONSHOT_BASE_URL: str = ""
+    MOONSHOT_BASE_URL: str = "https://api.kimi.com/coding/v1"
+    # K3 is entitlement-dependent: 256K for Moderato, up to 1M for
+    # Allegretto and above. Stay conservative unless explicitly unlocked.
+    KIMI_CODE_K3_CONTEXT_WINDOW: int = 262144
 
     # FCI — FPT's OpenAI-compatible inference gateway.
     FCI_API_KEY: SecretStr | None = None

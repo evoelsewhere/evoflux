@@ -10,6 +10,7 @@ but its source data now lives beside modality gates in the model registry.
 
 from __future__ import annotations
 
+import os
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import lru_cache
@@ -194,9 +195,7 @@ def _merge_metadata(spec: dict[str, Any]) -> ModelMetadata:
         ),
         thinking=ModelThinking(
             levels=_string_tuple(thinking_spec.get("levels"), "thinking.levels"),
-            control=_optional_string(
-                thinking_spec.get("control"), "thinking.control"
-            ),
+            control=_optional_string(thinking_spec.get("control"), "thinking.control"),
             default_level=_optional_string(
                 thinking_spec.get("default_level"), "thinking.default_level"
             ),
@@ -314,9 +313,28 @@ def get_model_metadata(model_id: str | None) -> ModelMetadata:
     normalized = model_id.lower()
     base = _registry().get(normalized, _DEFAULT)
     runtime = _runtime_metadata.get(normalized)
-    if runtime is None:
-        return base
-    return _merge_metadata(_deep_merge_dict(base.to_dict(), runtime))
+    resolved = (
+        base
+        if runtime is None
+        else _merge_metadata(_deep_merge_dict(base.to_dict(), runtime))
+    )
+    if normalized == "kimi:k3":
+        # The live catalog reports K3's 1M model maximum, not the account's
+        # entitlement. Default to the Moderato-safe 256K unless 1M is explicit.
+        from app.core.config import settings
+
+        raw_context = os.getenv("KIMI_CODE_K3_CONTEXT_WINDOW") or str(
+            settings.KIMI_CODE_K3_CONTEXT_WINDOW
+        )
+        try:
+            configured_context = int(raw_context)
+        except (TypeError, ValueError):
+            configured_context = 262144
+        context_length = 1048576 if configured_context == 1048576 else 262144
+        spec = resolved.to_dict()
+        spec["limits"]["context_length"] = context_length
+        resolved = _merge_metadata(spec)
+    return resolved
 
 
 def get_model_limits(model_id: str | None) -> ModelLimits:
@@ -389,6 +407,24 @@ def get_effective_model_thinking(model_id: str | None) -> ModelThinking:
             default_enabled=True,
             source="provider_profile",
         )
+    if provider_id == "kimi":
+        if provider_model in {"k3", "k3-256k"}:
+            return ModelThinking(
+                levels=("low", "high", "max"),
+                control="effort",
+                default_level="high",
+                default_enabled=True,
+                source="provider_profile",
+            )
+        if provider_model in {
+            "kimi-for-coding",
+            "kimi-for-coding-highspeed",
+        }:
+            return ModelThinking(
+                control="none",
+                default_enabled=True,
+                source="provider_profile",
+            )
     return raw
 
 

@@ -69,9 +69,9 @@ OPENAI_COMPATIBLE_PROVIDER_SPECS: dict[str, OpenAICompatibleProviderSpec] = {
     ),
     "kimi": OpenAICompatibleProviderSpec(
         provider_id="kimi",
-        label="Kimi (Moonshot AI)",
+        label="Kimi Code",
         env_var="MOONSHOT_API_KEY",
-        base_url="https://api.kimi.ai/v1",
+        base_url="https://api.kimi.com/coding/v1",
         base_url_env_var="MOONSHOT_BASE_URL",
     ),
     "fci": OpenAICompatibleProviderSpec(
