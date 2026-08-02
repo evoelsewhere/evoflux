@@ -33,6 +33,14 @@ interface NativeBounds {
   height: number
 }
 
+export interface BrowserWaitProbe {
+  attached?: boolean
+  visible?: boolean
+  text?: string
+  url?: string
+  readyState?: string
+}
+
 const NEW_TAB_URL = '/browser-new-tab.html'
 const BROWSER_DATA_DIRECTORY = 'browser-profile'
 const BROWSER_DATA_STORE_ID = [
@@ -92,6 +100,10 @@ export function useDirectBrowserTabs({
         await invokeFor('app_browser_webview_agent_action', label, {
           action: 'exists',
           params: { selector: 'html' },
+        })
+        await invokeFor('app_browser_webview_agent_action', label, {
+          action: 'instrument',
+          params: {},
         })
         return
       } catch (error) {
@@ -379,6 +391,21 @@ export function useDirectBrowserTabs({
 
     const tab = await ensureActive()
     if (!tab) throw new Error('Desktop browser is unavailable')
+    if (action === 'status') {
+      const status = await invokeFor<{ url?: string; title?: string; readyState?: string }>(
+        'app_browser_webview_agent_action',
+        tab.label,
+        { action: 'status', params: {} },
+      )
+      return {
+        ...status,
+        tabs: tabsRef.current.map((item, index) => ({
+          index,
+          url: item.url,
+          title: item.id === tab.id ? status.title ?? '' : '',
+        })),
+      }
+    }
     if (action === 'navigate') {
       const url = typeof params.url === 'string' ? params.url : ''
       if (!url) throw new Error('navigate requires a URL')
@@ -388,31 +415,131 @@ export function useDirectBrowserTabs({
         ? { ...item, url: committedUrl }
         : item)
       setTabs(tabsRef.current)
+      await invokeFor('app_browser_webview_agent_action', tab.label, {
+        action: 'instrument',
+        params: {},
+      })
       return `Navigated to ${url}`
     }
     if (action === 'back' || action === 'forward' || action === 'reload') {
       await invokeFor('app_browser_webview_command', tab.label, { action })
+      await waitForPageReady(tab.label)
       return `${action} completed`
     }
     if (action === 'wait') {
-      const seconds = Math.max(0, Math.min(30, Number(params.seconds) || 2))
+      const rawSeconds = params.seconds == null ? 2 : Number(params.seconds)
+      const seconds = Math.max(0, Math.min(30, Number.isFinite(rawSeconds) ? rawSeconds : 2))
       const selector = typeof params.selector === 'string' ? params.selector : ''
-      if (!selector) {
+      const expectedState = typeof params.state === 'string' ? params.state : 'attached'
+      const expectedText = typeof params.text === 'string' ? params.text : ''
+      const urlContains = typeof params.url_contains === 'string' ? params.url_contains : ''
+      const loadState = typeof params.load_state === 'string' ? params.load_state : ''
+      if (!selector && !expectedText && !urlContains && !loadState) {
         await new Promise((resolve) => setTimeout(resolve, seconds * 1000))
         return `Waited ${seconds.toFixed(1)}s`
       }
       const deadline = Date.now() + seconds * 1000
-      while (Date.now() < deadline) {
-        const found = await invokeFor<boolean>('app_browser_webview_agent_action', tab.label, {
-          action: 'exists',
-          params: { selector },
+      do {
+        const probe = await invokeFor<BrowserWaitProbe>('app_browser_webview_agent_action', tab.label, {
+          action: 'probe',
+          params: { selector: selector || undefined },
         })
-        if (found) return `Selector "${selector}" found`
+        if (browserWaitConditionSatisfied(probe, {
+          selector,
+          state: expectedState,
+          text: expectedText,
+          urlContains,
+          loadState,
+        })) {
+          return `Wait condition satisfied${selector ? ` for "${selector}"` : ''}`
+        }
         await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-      throw new Error(`Timeout waiting for selector: ${selector}`)
+      } while (Date.now() < deadline)
+      throw new Error(`Timeout waiting for browser condition${selector ? `: ${selector}` : ''}`)
     }
-    if (['snapshot', 'click', 'fill', 'select', 'extract', 'scroll'].includes(action)) {
+    if (action === 'resize') {
+      const presets: Record<string, [number, number]> = {
+        mobile: [375, 812],
+        tablet: [768, 1024],
+        desktop: [1280, 800],
+      }
+      const preset = typeof params.preset === 'string' ? presets[params.preset] : undefined
+      const width = preset?.[0] ?? Number(params.width)
+      const height = preset?.[1] ?? Number(params.height)
+      if (!Number.isFinite(width) || !Number.isFinite(height)) {
+        throw new Error('resize requires a preset or width and height')
+      }
+      const webview = webviewsRef.current.get(tab.id)
+      if (!webview) throw new Error('Desktop browser is unavailable')
+      const { LogicalSize } = await import('@tauri-apps/api/dpi')
+      await webview.setSize(new LogicalSize(
+        Math.max(200, Math.min(4000, width)),
+        Math.max(200, Math.min(4000, height)),
+      ))
+      if (params.color_scheme) {
+        await invokeFor('app_browser_webview_agent_action', tab.label, {
+          action: 'evaluate',
+          params: {
+            script: `() => { document.documentElement.style.colorScheme = ${JSON.stringify(params.color_scheme)}; return 'color-scheme ${String(params.color_scheme)}'; }`,
+          },
+        })
+      }
+      return `Resized in-app browser to ${Math.round(width)}x${Math.round(height)}`
+    }
+    if (action === 'zoom') {
+      const percent = Math.max(25, Math.min(500, Number(params.percent)))
+      if (!Number.isFinite(percent)) throw new Error('zoom requires a percent')
+      const webview = webviewsRef.current.get(tab.id)
+      if (!webview) throw new Error('Desktop browser is unavailable')
+      await webview.setZoom(percent / 100)
+      return `Set in-app browser zoom to ${Math.round(percent)}%`
+    }
+    if (action === 'print') {
+      await invokeFor('app_browser_webview_command', tab.label, { action: 'print' })
+      return 'Opened the in-app browser print dialog'
+    }
+    if ([
+      'snapshot',
+      'query',
+      'inspect',
+      'html',
+      'accessibility',
+      'click',
+      'click_at',
+      'dblclick',
+      'hover',
+      'focus',
+      'fill',
+      'type',
+      'clear',
+      'submit',
+      'press',
+      'set_checked',
+      'select',
+      'drag',
+      'scroll_into_view',
+      'dispatch_event',
+      'extract',
+      'scroll',
+      'screenshot',
+      'console',
+      'network',
+      'dialogs',
+      'dialog_behavior',
+      'performance',
+      'clear_logs',
+      'storage',
+      'cookies',
+      'http',
+      'debug_summary',
+      'evaluate',
+    ].includes(action)) {
+      // A click can navigate without going through our navigate handler. Install
+      // observability idempotently in the current document before every action.
+      await invokeFor('app_browser_webview_agent_action', tab.label, {
+        action: 'instrument',
+        params: {},
+      })
       return invokeFor('app_browser_webview_agent_action', tab.label, {
         action,
         params,
@@ -421,7 +548,7 @@ export function useDirectBrowserTabs({
     throw new Error(
       `${action} is not supported by the direct desktop browser yet`,
     )
-  }, [closeAll, closeTab, createTab, invokeFor, onRequestNewTab, selectTab, singleTab, waitForNavigation])
+  }, [closeAll, closeTab, createTab, invokeFor, onRequestNewTab, selectTab, singleTab, waitForNavigation, waitForPageReady])
 
   agentHandlerRef.current = executeAgentCommand
 
@@ -612,4 +739,26 @@ export function isBrowserNewTab(url: string): boolean {
   return url === NEW_TAB_URL
     || url.endsWith('/browser-new-tab.html')
     || url === 'about:blank'
+}
+
+export function browserWaitConditionSatisfied(
+  probe: BrowserWaitProbe,
+  expected: {
+    selector: string
+    state: string
+    text: string
+    urlContains: string
+    loadState: string
+  },
+): boolean {
+  const elementReady = !expected.selector || (
+    expected.state === 'detached' ? !probe.attached
+      : expected.state === 'hidden' ? !probe.attached || !probe.visible
+        : expected.state === 'visible' ? Boolean(probe.visible)
+          : Boolean(probe.attached)
+  )
+  const textReady = !expected.text || String(probe.text ?? '').includes(expected.text)
+  const urlReady = !expected.urlContains || String(probe.url ?? '').includes(expected.urlContains)
+  const loadReady = !expected.loadState || probe.readyState === expected.loadState
+  return elementReady && textReady && urlReady && loadReady
 }

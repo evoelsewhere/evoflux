@@ -40,9 +40,6 @@ dependencies = [
     "python-docx>=1.2.0",
     "openpyxl>=3.1.5",
     "python-pptx>=1.0.2",
-    # Browser automation and browser-backed verification. The desktop sidecar
-    # build bundles its matching Chromium runtime.
-    "playwright>=1.52.0",
     "markdown-it-py>=4.0.0",
     "pyyaml>=6.0.3",
     "fastapi>=0.135.2",
@@ -57,7 +54,6 @@ dependencies = [
     "boto3>=1.35.0",
     "duckdb>=1.1.0",
     "truststore>=0.10.4",
-    "browser-use>=0.11.13",
     # Code knowledge graph: tree-sitter parsing. The language pack bundles
     # 160+ grammars behind the stable ABI, so new languages are added without
     # extra wheels.

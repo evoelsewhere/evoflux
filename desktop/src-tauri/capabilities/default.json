@@ -45,7 +45,6 @@
     "allow-app-use-external-backend",
     "allow-app-use-bundled-backend",
     "allow-app-new-window",
-    "allow-app-open-browser-devtools",
     "allow-app-browser-webview-navigate",
     "allow-app-browser-webview-command",
     "allow-app-browser-webview-url",

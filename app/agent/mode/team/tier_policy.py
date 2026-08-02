@@ -134,6 +134,12 @@ def webbridge_session_excluded_tools(tools: Iterable[Tool]) -> frozenset[str]:
     return frozenset(denied)
 
 
+# WebBridge is an explicit composer mode, not the default browser backend.
+# Keeping it out of ordinary sessions prevents ``load_tool`` from selecting
+# the extension when the user expects EvoFlux's visible in-app browser.
+NON_WEBBRIDGE_SESSION_DENIED_TOOLS: frozenset[str] = frozenset({"webbridge"})
+
+
 # ── Side Chat session scoping ─────────────────────────────────────────────
 # A side chat is tagged "side_chat" (persisted on ChatSession.tags, same
 # mechanism as WEBBRIDGE_SESSION_TAG). It has its own dedicated team instance

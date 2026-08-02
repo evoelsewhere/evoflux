@@ -55,6 +55,7 @@ from app.agent.mode.team.hooks.team_prompt import AgentTeamProtocolHook
 from app.agent.hooks.tool_result_offload import ToolResultOffloadHook
 from app.agent.mode.team.shared_state import format_state_snapshot
 from app.agent.mode.team.tier_policy import (
+    NON_WEBBRIDGE_SESSION_DENIED_TOOLS,
     SIDE_CHAT_SESSION_TAG,
     deferred_tools_for_run,
     denied_tools_for_tier,
@@ -1357,10 +1358,17 @@ class TeamMemberBase(abc.ABC):
         if is_webbridge_session:
             webbridge_excluded = webbridge_session_excluded_tools(granted_tools)
             tier_excluded = frozenset(tier_excluded or ()) | webbridge_excluded
-        elif SIDE_CHAT_SESSION_TAG in self._team.session_tags:
-            tier_excluded = side_chat_session_excluded_tools(
-                (*self.agent._tools.values(), *injected)
+        else:
+            # WebBridge is opt-in. In an ordinary session browser_use drives
+            # the user-visible EvoFlux browser and WebBridge must not be
+            # discoverable through load_tool merely because it is registered.
+            tier_excluded = (
+                frozenset(tier_excluded or ()) | NON_WEBBRIDGE_SESSION_DENIED_TOOLS
             )
+            if SIDE_CHAT_SESSION_TAG in self._team.session_tags:
+                tier_excluded |= side_chat_session_excluded_tools(
+                    (*self.agent._tools.values(), *injected)
+                )
 
         # Surface team routing context to tools via state.metadata.  The
         # schedule tool reads these as injected args so the LLM never has

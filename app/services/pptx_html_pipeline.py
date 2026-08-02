@@ -1,10 +1,10 @@
 """HTML-first presentation rendering and hybrid PowerPoint assembly.
 
 The pipeline deliberately separates creative composition from PowerPoint's
-coordinate API.  An agent authors bounded HTML/CSS on a fixed 16:9 canvas,
-Chromium renders and inspects it, and the exporter places the complex visual
-surface into PowerPoint while restoring explicitly marked text as editable
-native text boxes.
+coordinate API. An agent authors bounded HTML/CSS on a fixed 16:9 canvas, the
+EvoFlux Desktop WebView renders and inspects it, and the exporter places the
+complex visual surface into PowerPoint while restoring semantic elements as
+editable native objects.
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ import mimetypes
 import os
 from pathlib import Path
 import re
-import shutil
 import tempfile
 from typing import Any, Literal
 
@@ -733,51 +732,30 @@ _INSPECTION_SCRIPT = r"""
 """
 
 
-def _browser_candidates() -> list[Path]:
-    paths: list[Path] = []
-    for command in ("chromium", "chromium-browser", "google-chrome", "msedge"):
-        resolved = shutil.which(command)
-        if resolved:
-            paths.append(Path(resolved))
-    paths.extend(
-        Path(path)
-        for path in (
-            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-            "/Applications/Chromium.app/Contents/MacOS/Chromium",
-            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-        )
-    )
-    return [path for path in paths if path.is_file()]
-
-
-async def _launch_chromium(playwright: Any) -> Any:
-    errors: list[str] = []
+def _write_png_data_url(value: Any, path: Path) -> None:
+    if not isinstance(value, str) or not value.startswith("data:image/png;base64,"):
+        raise ValueError("Desktop presentation renderer returned invalid PNG data")
     try:
-        return await playwright.chromium.launch(headless=True)
-    except Exception as exc:
-        errors.append(f"bundled={type(exc).__name__}")
-    for candidate in _browser_candidates():
-        try:
-            return await playwright.chromium.launch(
-                headless=True,
-                executable_path=str(candidate),
-            )
-        except Exception as exc:
-            errors.append(f"{candidate.name}={type(exc).__name__}")
-    raise RuntimeError(
-        "Chromium is unavailable for HTML slide rendering: " + ", ".join(errors)
-    )
+        payload = base64.b64decode(value.partition(",")[2], validate=True)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(
+            "Desktop presentation renderer returned invalid base64"
+        ) from exc
+    if not payload.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("Desktop presentation renderer returned a non-PNG image")
+    path.write_bytes(payload)
 
 
 async def render_html_deck(
     project: HtmlDeckProject,
     *,
+    session_id: str,
     project_file: Path,
     workspace_root: Path,
     render_dir: Path,
     slide_numbers: list[int] | None = None,
 ) -> HtmlDeckBuildResult:
-    from playwright.async_api import async_playwright
+    from app.services.desktop_presentation_bridge import desktop_presentation_bridge
 
     render_dir = Path(render_dir)
     render_dir.mkdir(parents=True, exist_ok=True)
@@ -790,102 +768,75 @@ async def render_html_deck(
 
     rendered: list[SlideRender] = []
     all_issues: list[QaIssue] = []
-    async with async_playwright() as playwright:
-        browser = await _launch_chromium(playwright)
-        try:
-            context = await browser.new_context(
-                viewport={"width": CANVAS_WIDTH, "height": CANVAS_HEIGHT},
-                device_scale_factor=2,
+    for number, slide in enumerate(project.slides, start=1):
+        if number not in selected:
+            continue
+        document = _document_html(
+            project,
+            slide,
+            project_dir=Path(project_file).parent,
+            workspace_root=workspace_root,
+        )
+        response = await desktop_presentation_bridge.render(
+            session_id,
+            document=document,
+            inspection_script=_INSPECTION_SCRIPT,
+            inspection_params={
+                "minBodyPx": project.min_body_px,
+                "minTitlePx": project.min_title_px,
+                "maxWords": project.max_words_per_slide,
+                "editableMode": project.editable_mode,
+            },
+        )
+        if not isinstance(response, dict) or not isinstance(
+            response.get("inspection"), dict
+        ):
+            raise ValueError("Desktop presentation renderer returned invalid output")
+        inspection = response["inspection"]
+        issues = [
+            QaIssue(
+                severity=item["severity"],
+                code=item["code"],
+                message=item["message"],
+                slide_number=number,
+                element=str(item.get("element", "")),
             )
-            page = await context.new_page()
-            for number, slide in enumerate(project.slides, start=1):
-                if number not in selected:
-                    continue
-                document = _document_html(
-                    project,
-                    slide,
-                    project_dir=Path(project_file).parent,
-                    workspace_root=workspace_root,
-                )
-                await page.set_content(document, wait_until="load")
-                await page.evaluate("() => document.fonts.ready")
-                await page.wait_for_timeout(40)
-                inspection = await page.evaluate(
-                    _INSPECTION_SCRIPT,
-                    {
-                        "minBodyPx": project.min_body_px,
-                        "minTitlePx": project.min_title_px,
-                        "maxWords": project.max_words_per_slide,
-                        "editableMode": project.editable_mode,
-                    },
-                )
-                issues = [
-                    QaIssue(
-                        severity=item["severity"],
-                        code=item["code"],
-                        message=item["message"],
-                        slide_number=number,
-                        element=str(item.get("element", "")),
-                    )
-                    for item in inspection["issues"]
-                ]
-                preview_path = render_dir / f"slide_{number:02d}.png"
-                background_path = render_dir / f"slide_{number:02d}.background.png"
-                slide_locator = page.locator(".slide")
-                await slide_locator.screenshot(path=str(preview_path))
-                native_images: list[dict[str, Any]] = []
-                for image_index, item in enumerate(inspection["nativeImages"], start=1):
-                    image_path = render_dir / (
-                        f"slide_{number:02d}.editable_image_{image_index:02d}.png"
-                    )
-                    image_locator = page.locator(
-                        f'[data-pptx-export-image="{item["exportId"]}"]'
-                    )
-                    await image_locator.screenshot(
-                        path=str(image_path),
-                        omit_background=True,
-                    )
-                    native_images.append({**item, "path": str(image_path)})
-                has_native_objects = bool(
-                    inspection["nativeText"]
-                    or inspection["nativeShapes"]
-                    or native_images
-                )
-                if has_native_objects:
-                    await page.add_style_tag(
-                        content=(
-                            "[data-pptx-export-text],"
-                            "[data-pptx-export-text] * {"
-                            "color: transparent !important;"
-                            "text-shadow: none !important;"
-                            "-webkit-text-stroke-color: transparent !important;}"
-                            "[data-pptx-export-shape] {"
-                            "background-color: transparent !important;"
-                            "border-color: transparent !important;"
-                            "outline-color: transparent !important;}"
-                            "[data-pptx-export-image] {"
-                            "visibility: hidden !important;}"
-                        )
-                    )
-                    await slide_locator.screenshot(path=str(background_path))
-                else:
-                    shutil.copy2(preview_path, background_path)
-                rendered.append(
-                    SlideRender(
-                        number=number,
-                        slide_id=slide.id,
-                        preview_path=preview_path,
-                        background_path=background_path,
-                        native_text=list(inspection["nativeText"]),
-                        native_shapes=list(inspection["nativeShapes"]),
-                        native_images=native_images,
-                        issues=issues,
-                    )
-                )
-                all_issues.extend(issues)
-            await context.close()
-        finally:
-            await browser.close()
+            for item in inspection.get("issues", [])
+        ]
+        preview_path = render_dir / f"slide_{number:02d}.png"
+        background_path = render_dir / f"slide_{number:02d}.background.png"
+        _write_png_data_url(response.get("preview"), preview_path)
+        _write_png_data_url(response.get("background"), background_path)
+
+        image_data = response.get("nativeImages", [])
+        if not isinstance(image_data, list):
+            raise ValueError("Desktop presentation renderer returned invalid images")
+        by_export_id = {
+            item.get("exportId"): item.get("data")
+            for item in image_data
+            if isinstance(item, dict)
+        }
+        native_images: list[dict[str, Any]] = []
+        for image_index, item in enumerate(inspection.get("nativeImages", []), start=1):
+            image_path = render_dir / (
+                f"slide_{number:02d}.editable_image_{image_index:02d}.png"
+            )
+            _write_png_data_url(by_export_id.get(item["exportId"]), image_path)
+            native_images.append({**item, "path": str(image_path)})
+
+        rendered.append(
+            SlideRender(
+                number=number,
+                slide_id=slide.id,
+                preview_path=preview_path,
+                background_path=background_path,
+                native_text=list(inspection.get("nativeText", [])),
+                native_shapes=list(inspection.get("nativeShapes", [])),
+                native_images=native_images,
+                issues=issues,
+            )
+        )
+        all_issues.extend(issues)
 
     report = HtmlDeckBuildResult(
         output=None,
@@ -1185,6 +1136,7 @@ def assemble_hybrid_pptx(
 async def build_html_presentation(
     project: HtmlDeckProject,
     *,
+    session_id: str,
     project_file: Path,
     workspace_root: Path,
     render_dir: Path,
@@ -1192,6 +1144,7 @@ async def build_html_presentation(
 ) -> HtmlDeckBuildResult:
     result = await render_html_deck(
         project,
+        session_id=session_id,
         project_file=project_file,
         workspace_root=workspace_root,
         render_dir=render_dir,

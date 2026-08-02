@@ -150,7 +150,7 @@ _bg_processes: dict[int, _BgProcess] = {}
 # Environment variables that point at *our* Python runtime (the bundled
 # sidecar's site-packages, the daemon's virtualenv, etc.).  Leaking these
 # into a user-spawned subprocess is dangerous: another Python interpreter
-# the agent invokes — ``browser-use``, ``pipx`` tools, ``uv tool`` shims
+# the agent invokes — ``pipx`` tools, ``uv tool`` shims, project CLIs
 # installed under a different Python version — will find *our* pure-Python
 # packages on ``sys.path`` and then crash when it tries to load a
 # native extension built for our Python ABI (e.g. ``pydantic_core``

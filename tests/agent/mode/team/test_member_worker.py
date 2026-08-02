@@ -306,6 +306,38 @@ class TestOnDemandActivation:
         assert "webbridge" not in deferred
         assert "mcp_filesystem_read_file" in deferred
 
+    async def test_normal_session_uses_browser_use_not_webbridge(self):
+        from app.agent.tools.builtin.load_tool import load_tool
+        from app.agent.tools.registry import Tool
+
+        db_factory = _make_mock_db_factory()
+        tools = [
+            load_tool,
+            Tool(lambda: None, name="webbridge", deferred=True),
+            Tool(lambda: None, name="browser_use", deferred=True),
+        ]
+        lead = TeamLead(
+            Agent(name="lead", llm_provider=MockTeamProvider(), tools=tools),
+            db_factory=db_factory,
+        )
+        team = AgentTeam(lead=lead, db_factory=db_factory)
+        lead.register(team)
+        captured: dict[str, object] = {}
+
+        async def fake_run(*_args, **kwargs):
+            captured.update(kwargs)
+            return []
+
+        lead.agent.run = fake_run  # type: ignore[method-assign]
+
+        await lead._handle_messages(force_compaction=True)
+
+        excluded = frozenset(captured["excluded_tools"] or ())  # type: ignore[arg-type]
+        deferred = frozenset(captured["deferred_tools"] or ())  # type: ignore[arg-type]
+        assert "webbridge" in excluded
+        assert "browser_use" not in excluded
+        assert "browser_use" in deferred
+
     async def test_webbridge_member_keeps_workspace_tools_but_loses_other_browsers(
         self,
     ):

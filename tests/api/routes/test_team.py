@@ -276,6 +276,25 @@ class TestTeamChatRoute:
         assert response.status_code == 202
         assert "webbridge" in test_team.session_tags
 
+    def test_team_chat_disables_webbridge_and_uses_normal_session(
+        self, app_with_team, test_team, monkeypatch
+    ):
+        test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
+        test_team.session_tags = frozenset({"webbridge"})
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.webbridge_manager.has_active_extension",
+            lambda: False,
+        )
+
+        response = TestClient(app_with_team).post(
+            "/api/team/chat",
+            data={"message": "Read the in-app tab", "webbridge_enabled": "false"},
+        )
+
+        assert response.status_code == 202
+        assert "webbridge" not in test_team.session_tags
+        test_team.handle_user_message.assert_awaited_once()
+
     @pytest.mark.parametrize(
         "tag",
         ["webbridge_origin:browser", "webbridge_pairing:untrusted-client"],

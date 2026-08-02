@@ -26,6 +26,7 @@ from app.api.routes.team import (
     files,
     git,
     permissions,
+    presentation_renderer,
     projects,
     questions,
     reviews,
@@ -46,6 +47,7 @@ router.include_router(files.router)
 router.include_router(git.router)
 router.include_router(todos.router)
 router.include_router(permissions.router)
+router.include_router(presentation_renderer.router)
 router.include_router(questions.router)
 router.include_router(reviews.router)
 router.include_router(terminal.router)

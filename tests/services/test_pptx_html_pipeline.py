@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+from io import BytesIO
 from pathlib import Path
 
 from PIL import Image
@@ -12,6 +14,7 @@ from app.services.pptx_html_pipeline import (
     QaIssue,
     SlideRender,
     assemble_hybrid_pptx,
+    render_html_deck,
     validate_html_fragment,
 )
 from app.services.pptx_html_styles import (
@@ -117,6 +120,49 @@ def test_project_defaults_to_maximum_editability() -> None:
     project = _project("<h1>Editable without an explicit marker</h1>")
 
     assert project.editable_mode == "max"
+
+
+@pytest.mark.asyncio
+async def test_render_html_deck_uses_desktop_webview(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services.desktop_presentation_bridge import desktop_presentation_bridge
+
+    image = BytesIO()
+    Image.new("RGB", (1600, 900), "white").save(image, format="PNG")
+    png = "data:image/png;base64," + base64.b64encode(image.getvalue()).decode()
+    calls: list[dict[str, object]] = []
+
+    async def render(session_id: str, **kwargs):
+        calls.append({"session_id": session_id, **kwargs})
+        return {
+            "inspection": {
+                "issues": [],
+                "nativeText": [],
+                "nativeShapes": [],
+                "nativeImages": [],
+            },
+            "preview": png,
+            "background": png,
+            "nativeImages": [],
+        }
+
+    monkeypatch.setattr(desktop_presentation_bridge, "render", render)
+    project_file = tmp_path / "deck.json"
+    project_file.write_text("{}", encoding="utf-8")
+    result = await render_html_deck(
+        _project(),
+        session_id="desktop-session",
+        project_file=project_file,
+        workspace_root=tmp_path,
+        render_dir=tmp_path / "renders",
+    )
+
+    assert result.passed
+    assert result.slides[0].preview_path.read_bytes().startswith(b"\x89PNG")
+    assert calls[0]["session_id"] == "desktop-session"
+    assert "A clear title" in str(calls[0]["document"])
+    assert "getBoundingClientRect" in str(calls[0]["inspection_script"])
 
 
 def test_base_template_library_covers_complete_slide_families() -> None:

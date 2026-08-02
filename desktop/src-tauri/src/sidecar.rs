@@ -91,9 +91,8 @@ impl Sidecar {
         // ``PYTHONPATH`` environment variable.
         //
         // Background:  ``PYTHONPATH`` is inherited by every grandchild
-        // process the agent spawns.  Another Python interpreter the user
-        // has installed (``uv tool install browser-use``, ``pipx`` tools,
-        // Homebrew Python scripts, …) then finds *our* pure-Python
+        // process the agent spawns. Another Python interpreter from a user
+        // tool, pipx, Homebrew, etc. would then find *our* pure-Python
         // packages on ``sys.path`` before its own.  When that package
         // tries to load a native extension built for our ABI
         // (``pydantic_core`` cpython-3.12 vs. the tool's cpython-3.12),

@@ -12,7 +12,6 @@ Layout produced under ``<out>/``::
         fastapi/
         pydantic/
         …
-      browser/               ← Playwright Chromium headless shell for Office QA
 
 The Tauri shell runs a tiny bootstrap that adds
 ``sidecar-bundle/site-packages`` with ``site.addsitedir()`` so platform
@@ -27,9 +26,8 @@ copied into ``Contents/Resources/``. Instead we:
    ``uv python install --install-dir …``.
 2. ``uv pip install --target <site-packages> --python <python-bin>``
    the local project + chosen extras.
-3. Download Playwright's matching Chromium headless shell.
-4. Strip the ``site-packages/`` of caches, tests, docs.
-5. Smoke-test the bundle by invoking ``serve --port 0 --handshake``.
+3. Strip the ``site-packages/`` of caches, tests, docs.
+4. Smoke-test the bundle by invoking ``serve --port 0 --handshake``.
 
 Usage::
 
@@ -259,37 +257,6 @@ def install_packages(
     )
 
 
-def install_chromium(python_bin: Path, site_packages: Path, target: Path) -> None:
-    """Download Playwright's matching Chromium into the relocatable bundle."""
-    target.mkdir(parents=True, exist_ok=True)
-    env = {
-        **os.environ,
-        "PYTHONPATH": str(site_packages),
-        "PLAYWRIGHT_BROWSERS_PATH": str(target),
-    }
-    run(
-        [
-            str(python_bin),
-            "-m",
-            "playwright",
-            "install",
-            "--only-shell",
-            "chromium",
-        ],
-        env=env,
-    )
-    executable_names = {
-        "chrome",
-        "chrome.exe",
-        "chrome-headless-shell",
-        "chrome-headless-shell.exe",
-    }
-    if not any(
-        path.is_file() and path.name in executable_names for path in target.rglob("*")
-    ):
-        raise SystemExit(f"Chromium installation produced no executable under {target}")
-
-
 def strip_bundle(site_packages: Path) -> int:
     """Remove caches/tests/etc. from site-packages. Returns bytes saved."""
     removed = 0
@@ -308,9 +275,7 @@ def strip_bundle(site_packages: Path) -> int:
             if p.is_dir():
                 directories.add(p)
     for suffix in STRIP_DIR_SUFFIXES:
-        directories.update(
-            p for p in site_packages.rglob(f"*{suffix}") if p.is_dir()
-        )
+        directories.update(p for p in site_packages.rglob(f"*{suffix}") if p.is_dir())
     for relative in STRIP_RELATIVE_DIRS:
         candidate = site_packages / relative
         if candidate.is_dir():
@@ -704,14 +669,6 @@ def main() -> int:
         help="Skip the post-build smoke test (not recommended).",
     )
     ap.add_argument(
-        "--no-chromium",
-        action="store_true",
-        help=(
-            "Do not bundle Playwright Chromium for Office visual QA. "
-            "Runtime will search for a system Chrome/Chromium instead."
-        ),
-    )
-    ap.add_argument(
         "--no-zip-purelib",
         action="store_true",
         help=(
@@ -748,12 +705,7 @@ def main() -> int:
     site_packages = out / "site-packages"
     install_packages(python_bin, root, site_packages, extras)
 
-    # ── 3. Bundle deterministic Chromium visual-QA runtime ──────────────
-    browser_target = out / "browser"
-    if not args.no_chromium:
-        install_chromium(python_bin, site_packages, browser_target)
-
-    # ── 4. Strip caches/tests/etc. ──────────────────────────────────────
+    # ── 3. Strip caches/tests/etc. ──────────────────────────────────────
     saved = strip_bundle(site_packages)
     print(f"stripped: {human_bytes(saved)}")
     if IS_WINDOWS and not args.no_zip_purelib:
@@ -763,17 +715,15 @@ def main() -> int:
             f"packed {packages_zipped} pure-Python packages / {files_zipped} files"
         )
 
-    # ── 5. Smoke test ───────────────────────────────────────────────────
+    # ── 4. Smoke test ───────────────────────────────────────────────────
     if not args.no_smoke:
         validate_migration_bundle(python_bin, site_packages)
         smoke_test(python_bin, site_packages)
 
-    # ── 6. Report ────────────────────────────────────────────────────────
+    # ── 5. Report ────────────────────────────────────────────────────────
     print("\n=== bundle summary ===")
     report_size(python_target, "python runtime")
     report_size(site_packages, "site-packages")
-    if browser_target.is_dir():
-        report_size(browser_target, "chromium runtime")
     report_size(out, "TOTAL")
     return 0
 

@@ -11,10 +11,10 @@ Last reviewed: 2026-08-02.
 - The old build and release workflows duplicated nearly all packaging logic.
 - The old build workflow omitted the Intel target, while the old release
   workflow included it.
-- Each package contains a native CPython runtime, native Python wheels, and a
-  Playwright Chromium runtime. Consequently, each sidecar must be built on the
-  same OS and architecture as its desktop package. A sidecar is not a portable
-  artifact that can be shared across the two macOS architectures.
+- Each package contains a native CPython runtime and native Python wheels.
+  Consequently, each sidecar must be built on the same OS and architecture as
+  its desktop package. Presentation rendering reuses the app's system WebView,
+  so no browser runtime is bundled in the sidecar.
 - `bundle.macOS.signingIdentity` was fixed to `"-"`, which is only an ad-hoc
   signature. It cannot establish a verified developer identity or satisfy
   notarization requirements.

@@ -1,7 +1,7 @@
 """HTML-first editable presentation authoring tool.
 
 The tool exposes a bounded project format to the agent, delegates visual
-composition and inspection to Chromium, and produces an editable-first hybrid
+composition and inspection to the EvoFlux Desktop WebView, and produces a hybrid
 PPTX. Common text, shapes, lines, and images become native objects while only
 unsupported visual effects stay in the pixel-stable layer.
 """
@@ -106,7 +106,7 @@ async def _pptx_html(
         Field(
             description=(
                 "catalog returns the project contract; validate parses a project; "
-                "render runs Chromium visual QA and returns slide previews; compose "
+                "render runs Desktop WebView visual QA and returns slide previews; compose "
                 "runs full QA and writes the hybrid PowerPoint file."
             )
         ),
@@ -158,7 +158,7 @@ async def _pptx_html(
     """Author and verify HTML-first hybrid PowerPoint presentations.
 
     This workflow does not require an image-generation model. The source of
-    truth is a controlled 1600×900 HTML/CSS project. Chromium supplies the
+    truth is a controlled 1600×900 HTML/CSS project. The desktop WebView supplies the
     visual surface and QA geometry; the default editable_mode="max" restores
     semantic text, cards, rules, and images as editable PowerPoint objects.
     Twenty-one validated base templates cover common narrative and scientific
@@ -194,12 +194,16 @@ async def _pptx_html(
         )
 
     sandbox = get_sandbox()
+    session_id = sandbox.session_id
+    if not session_id:
+        raise RuntimeError("PPTX rendering requires an active EvoFlux Desktop task")
     if action == "render":
         render_dir = sandbox.validate_path(
             f".evoflux/pptx-html/{source.stem}", is_write=True
         )
         result = await render_html_deck(
             project,
+            session_id=session_id,
             project_file=source,
             workspace_root=sandbox.workspace_root,
             render_dir=render_dir,
@@ -217,6 +221,7 @@ async def _pptx_html(
     )
     result = await build_html_presentation(
         project,
+        session_id=session_id,
         project_file=source,
         workspace_root=sandbox.workspace_root,
         render_dir=render_dir,
@@ -234,7 +239,7 @@ pptx_html = Tool(
     deferred=True,
     deferred_summary=(
         "Create visually rich, highly editable PowerPoint decks without an "
-        "image model using controlled HTML/CSS → Chromium QA → native-object "
+        "image model using controlled HTML/CSS → Desktop WebView QA → native-object "
         "hybrid PPTX composition."
     ),
     capabilities=("presentation", "office", "filesystem-write"),
