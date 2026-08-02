@@ -422,7 +422,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                          if ('kind' in renderItem && (renderItem as ToolBlockGroup).kind === 'group') {
                            return (
                              <ToolCallGroupCard
-                               key={`group-${item.startIndex}-${j}`}
+                               key={(renderItem as ToolBlockGroup).id}
                                group={renderItem as ToolBlockGroup}
                                isStreaming={turnIsStreaming}
                                sessionId={sessionId}

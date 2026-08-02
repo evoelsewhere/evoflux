@@ -1,9 +1,10 @@
 /**
  * ToolCallGroup — collapses a consecutive agent activity run into one row.
  *
- * Thinking blocks are transparent grouping boundaries, matching Codex's
- * compact activity timeline. Expanding preserves the original ordered detail
- * through the shared `BlockRenderer` pipeline (tools, MCP apps, thinking).
+ * Only completed tools from one semantic family are grouped. Thinking and
+ * in-flight tools remain visible boundaries so live activity stays legible.
+ * Expanding preserves the original ordered detail through the shared
+ * `BlockRenderer` pipeline (tools and MCP apps).
  *
  * Latest MCP app UIs stay visible while collapsed — interactive surfaces
  * should not require expand just to remain usable.
@@ -26,6 +27,7 @@ import type { ContentBlock, MessageAttachment } from '@/api/types'
 
 export interface ToolBlockGroup {
   kind: 'group'
+  id: string
   toolName: string
   blocks: ContentBlock[]
 }
@@ -77,7 +79,7 @@ export function getToolIcon(toolName: string): React.ElementType {
 
 // ── Grouping utility ─────────────────────────────────────────────────────────
 
-const MIN_GROUP_SIZE = 2
+const MIN_GROUP_SIZE = 3
 const FILE_ACTIVITY_TOOLS = new Set([
   'read',
   'read_file',
@@ -87,22 +89,31 @@ const FILE_ACTIVITY_TOOLS = new Set([
   'code_search',
 ])
 const BROWSER_ACTIVITY_TOOLS = new Set(['browser_use', 'webbridge'])
+const SHELL_ACTIVITY_TOOLS = new Set(['bash', 'shell', 'run_command'])
+const WRITE_ACTIVITY_TOOLS = new Set([
+  'write',
+  'write_file',
+  'edit',
+  'edit_file',
+  'patch',
+])
 
-function dominantToolName(blocks: ContentBlock[]): string {
-  const counts = new Map<string, number>()
-  let dominant = 'tool'
-  let maxCount = 0
-  for (const block of blocks) {
-    if (block.type !== 'tool') continue
-    const name = block.toolName || 'tool'
-    const count = (counts.get(name) ?? 0) + 1
-    counts.set(name, count)
-    if (count > maxCount) {
-      dominant = name
-      maxCount = count
-    }
+function toolFamily(toolName: string): string {
+  if (FILE_ACTIVITY_TOOLS.has(toolName)) return 'files'
+  if (BROWSER_ACTIVITY_TOOLS.has(toolName)) return 'browser'
+  if (SHELL_ACTIVITY_TOOLS.has(toolName)) return 'shell'
+  if (WRITE_ACTIVITY_TOOLS.has(toolName)) return 'write'
+  return toolName
+}
+
+function groupLabel(toolName: string): string {
+  switch (toolFamily(toolName)) {
+    case 'files': return 'Read files'
+    case 'browser': return 'Browsed web'
+    case 'shell': return 'Ran commands'
+    case 'write': return 'Changed files'
+    default: return 'Ran tools'
   }
-  return dominant
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -112,28 +123,32 @@ export function groupConsecutiveToolCalls(blocks: ContentBlock[]): RenderBlock[]
 
   while (i < blocks.length) {
     const block = blocks[i]
-    if (block.type !== 'tool' && block.type !== 'thinking') {
+    if (block.type !== 'tool' || !block.toolName || !block.toolDone) {
       result.push(block)
       i++
       continue
     }
 
-    // A finalized thought between tool calls is part of the same activity
-    // run instead of fragmenting the transcript into one row per call.
+    // Only collapse completed tools from one semantic family. Thinking and
+    // in-flight tools remain visible boundaries while the response streams.
+    const family = toolFamily(block.toolName)
     let j = i + 1
     while (
       j < blocks.length &&
-      (blocks[j].type === 'tool' || blocks[j].type === 'thinking')
+      blocks[j].type === 'tool' &&
+      Boolean(blocks[j].toolName) &&
+      blocks[j].toolDone === true &&
+      toolFamily(blocks[j].toolName as string) === family
     ) {
       j++
     }
 
     const activityBlocks = blocks.slice(i, j)
-    const toolCount = activityBlocks.filter((item) => item.type === 'tool').length
-    if (toolCount >= MIN_GROUP_SIZE) {
+    if (activityBlocks.length >= MIN_GROUP_SIZE) {
       result.push({
         kind: 'group',
-        toolName: dominantToolName(activityBlocks),
+        id: `tool-group-${block.id}`,
+        toolName: block.toolName,
         blocks: activityBlocks,
       })
     } else {
@@ -171,19 +186,8 @@ export function ToolCallGroupCard({
   /* eslint-disable react-hooks/static-components */
   const Icon = getToolIcon(group.toolName)
   const toolBlocks = group.blocks.filter((block) => block.type === 'tool')
-  const toolNames = toolBlocks.map((block) => block.toolName || 'tool')
-  const fileActivityCount = toolNames.filter((name) =>
-    FILE_ACTIVITY_TOOLS.has(name),
-  ).length
-  const browserActivityCount = toolNames.filter((name) =>
-    BROWSER_ACTIVITY_TOOLS.has(name),
-  ).length
-  const label =
-    fileActivityCount >= Math.ceil(toolBlocks.length / 2)
-      ? 'Read files'
-      : browserActivityCount >= Math.ceil(toolBlocks.length / 2)
-        ? 'Browsed web'
-        : 'Ran tools'
+  const label = groupLabel(group.toolName)
+  const groupIsStreaming = isStreaming && toolBlocks.some((block) => !block.toolDone)
   const groupedAttachments = toolBlocks.flatMap(
     (block) =>
       (block.extra as { attachments?: MessageAttachment[] } | undefined)
@@ -222,7 +226,7 @@ export function ToolCallGroupCard({
           <span className="ml-1 text-(--color-text-subtle)">
             · {toolBlocks.length} actions
           </span>
-          {isStreaming && (
+          {groupIsStreaming && (
             <ActivityStatus label="Running" className="ml-1 text-xs" />
           )}
         </span>
@@ -258,7 +262,7 @@ export function ToolCallGroupCard({
             <div key={block.id} className="py-0.5">
               <BlockRenderer
                 block={block}
-                isStreaming={isStreaming && index === group.blocks.length - 1}
+                isStreaming={groupIsStreaming && index === group.blocks.length - 1}
                 sessionId={sessionId}
                 latestMCPAppBlockIds={latestMCPAppBlockIds}
                 compact={compact}
