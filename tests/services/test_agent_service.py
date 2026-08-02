@@ -227,6 +227,35 @@ async def test_validate_image_with_vision_uses_native_delivery(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_fci_image_uses_live_vision_capability(tmp_path):
+    from app.agent.providers.capabilities import (
+        clear_runtime_model_capabilities,
+        replace_runtime_provider_capabilities,
+    )
+
+    team = _make_team(vision=False, model_id="fci:gemma-4-31B-it")
+    data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 50
+    att = RawAttachment(filename="img.png", content_type="image/png", data=data)
+    replace_runtime_provider_capabilities(
+        "fci", {"gemma-4-31B-it": {"input": {"vision": True}}}
+    )
+    try:
+        with (
+            patch("app.services.agent_service._uploads_dir", return_value=tmp_path),
+            patch(
+                "app.agent.providers.model_discovery.ensure_runtime_model_metadata",
+                new_callable=AsyncMock,
+            ) as ensure_metadata,
+        ):
+            _, metas = await validate_and_persist_attachments(team, [att])
+    finally:
+        clear_runtime_model_capabilities()
+
+    ensure_metadata.assert_awaited_once_with("fci:gemma-4-31B-it")
+    assert metas[0]["delivery"] == "native"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("filename", "content_type", "category"),
     [

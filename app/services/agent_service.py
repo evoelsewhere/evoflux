@@ -493,13 +493,19 @@ async def validate_and_persist_attachments(
     orphaned uploads that never got referenced.
     """
     from app.agent.providers.capabilities import get_capabilities
+    from app.agent.providers.model_discovery import ensure_runtime_model_metadata
 
+    effective_model_id = model_override or getattr(team.lead.agent, "model_id", None)
+    is_fci_model = bool(
+        effective_model_id and effective_model_id.lower().startswith("fci:")
+    )
+    if is_fci_model and effective_model_id:
+        await ensure_runtime_model_metadata(effective_model_id)
     caps = (
-        get_capabilities(model_override)
-        if model_override
+        get_capabilities(effective_model_id)
+        if model_override or is_fci_model
         else team.lead.agent.capabilities
     )
-    effective_model_id = model_override or getattr(team.lead.agent, "model_id", None)
 
     valid: list[tuple[RawAttachment, str]] = []
     total_size = 0

@@ -66,9 +66,7 @@ def filter_agent_model_ids(provider_id: str, model_ids: list[str]) -> list[str]:
     ]
 
 
-def _is_discovered_agent_model(
-    provider_id: str, model: DiscoveredModel
-) -> bool:
+def _is_discovered_agent_model(provider_id: str, model: DiscoveredModel) -> bool:
     """Apply live authoritative negatives before registry fallback."""
     output = model.capabilities.get("output")
     if isinstance(output, dict) and output.get("text") is False:
@@ -76,11 +74,20 @@ def _is_discovered_agent_model(
     features = model.metadata.get("features")
     if isinstance(features, dict) and features.get("tool_call") is False:
         return False
+    if provider_id == "fci":
+        # FCI serves mixed model types and the bundled registry intentionally
+        # does not guess tool support. Only the provider's live positive signal
+        # makes a model safe for EvoFlux agent execution.
+        return isinstance(features, dict) and features.get("tool_call") is True
     return is_agent_model_id(provider_id, model.id)
 
 
 def _positive_catalog_int(value: object) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+    return (
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0
+        else None
+    )
 
 
 def _live_modalities(item: dict[str, Any]) -> tuple[list[str], list[str]]:
@@ -111,18 +118,14 @@ def _metadata_from_openai_catalog_item(item: dict[str, Any]) -> dict[str, Any]:
     supported_endpoints = item.get("supported_endpoints")
     if isinstance(supported_endpoints, list):
         metadata["interfaces"] = [
-            value
-            for value in supported_endpoints
-            if isinstance(value, str) and value
+            value for value in supported_endpoints if isinstance(value, str) and value
         ]
     limits: dict[str, int] = {}
     context = _positive_catalog_int(item.get("context_length"))
     top_provider = item.get("top_provider")
     if not isinstance(top_provider, dict):
         top_provider = {}
-    max_completion = _positive_catalog_int(
-        top_provider.get("max_completion_tokens")
-    )
+    max_completion = _positive_catalog_int(top_provider.get("max_completion_tokens"))
     if context is not None:
         limits["context_length"] = context
     if max_completion is not None:
@@ -132,9 +135,7 @@ def _metadata_from_openai_catalog_item(item: dict[str, Any]) -> dict[str, Any]:
 
     supported = item.get("supported_parameters")
     if isinstance(supported, list):
-        parameters = {
-            value for value in supported if isinstance(value, str) and value
-        }
+        parameters = {value for value in supported if isinstance(value, str) and value}
         metadata["features"] = {
             "tool_call": "tools" in parameters,
             "temperature": "temperature" in parameters,
@@ -228,6 +229,12 @@ async def _openai_compatible_models(
         response.raise_for_status()
     data = response.json()
     items = data.get("data", []) if isinstance(data, dict) else []
+    # FPT may wrap an OpenAI-compatible list in its standard
+    # ``code/message/data`` envelope.
+    if isinstance(items, dict):
+        items = items.get("data", [])
+    if not isinstance(items, list):
+        items = []
     models = sorted(
         (
             model
@@ -430,9 +437,7 @@ async def _ollama_models(
             details = show.json()
             raw_capabilities = details.get("capabilities", [])
             capabilities = {
-                value
-                for value in raw_capabilities
-                if isinstance(value, str)
+                value for value in raw_capabilities if isinstance(value, str)
             }
             model_info = details.get("model_info")
             context_lengths = (
@@ -656,6 +661,10 @@ async def discover_provider_model_entries(
                 base_url = spec.base_url
                 if spec.base_url_env_var:
                     base_url = _resolve(overrides, spec.base_url_env_var, spec.base_url)
+                if provider_id == "fci":
+                    from app.agent.providers.fci.fci import normalize_fci_base_url
+
+                    base_url = normalize_fci_base_url(base_url)
                 models = await _openai_compatible_models(
                     provider_id=provider_id,
                     base_url=base_url,
@@ -694,26 +703,16 @@ async def discover_provider_model_entries(
                         models = list(plugin.fallback_models)
                 else:
                     models = []
-        if provider_id not in {
-            "openai",
-            "zai",
-            "foundry",
-            "googlegenai",
-            "anthropic",
-            "copilot",
-            "codex",
-            "bedrock",
-            *OPENAI_COMPATIBLE_PROVIDER_SPECS,
-        }:
-            entries = [
-                model if isinstance(model, DiscoveredModel) else DiscoveredModel(id=model)
-                for model in models
-            ]
-        elif provider_id != "codex":
-            entries = models
+        raw_entries = entries if provider_id == "codex" else models
+        normalized_entries: list[DiscoveredModel] = []
+        for model in raw_entries:
+            if isinstance(model, DiscoveredModel):
+                normalized_entries.append(model)
+            elif isinstance(model, str):
+                normalized_entries.append(DiscoveredModel(id=model))
         filtered = [
             model
-            for model in entries
+            for model in normalized_entries
             if _is_discovered_agent_model(provider_id, model)
         ]
         from app.agent.providers.capabilities import (
@@ -727,11 +726,7 @@ async def discover_provider_model_entries(
         )
         replace_runtime_provider_capabilities(
             provider_id,
-            {
-                model.id: model.capabilities
-                for model in filtered
-                if model.capabilities
-            },
+            {model.id: model.capabilities for model in filtered if model.capabilities},
         )
         return filtered
     except Exception as exc:

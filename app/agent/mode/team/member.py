@@ -90,6 +90,7 @@ from app.core.db import DbFactory, resolve_db_factory
 from app.models.chat import ChatSession, SessionMessage
 from app.models.team import DelegationTask
 from app.agent.providers.model_metadata import get_model_thinking_levels
+from app.agent.providers.model_discovery import ensure_runtime_model_metadata
 from app.services.chat_service import get_messages_for_llm, save_message
 
 MAX_OPEN_TASK_NUDGES = 3
@@ -1149,6 +1150,11 @@ class TeamMemberBase(abc.ABC):
         # Prefer the per-message requested model when available; fall back to the
         # session model stored on ChatSession, then the lead agent default.
         effective_model = last_user_model or session_model or self.agent.model_id
+        # Provider-owned catalogs (notably FCI) are authoritative for context
+        # limits, modalities, tool support, and configurable thinking controls.
+        # Hydrate them before execution policy and summarization are built.
+        if effective_model and effective_model.lower().startswith("fci:"):
+            await ensure_runtime_model_metadata(effective_model)
         execution_policy = resolve_execution_policy(
             complexity=active_complexity,
             priority=active_priority,

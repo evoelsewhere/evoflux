@@ -780,3 +780,15 @@ class TestTeamChatFormValidation:
                 await _validate_thinking_level_for_model("codex:gpt-5.6-luna", "none")
         finally:
             clear_runtime_model_metadata()
+
+    @pytest.mark.asyncio
+    async def test_model_metadata_is_hydrated_without_a_thinking_override(self):
+        from app.api.routes.team.chat import _validate_thinking_level_for_model
+
+        with patch(
+            "app.agent.providers.model_discovery.ensure_runtime_model_metadata",
+            new_callable=AsyncMock,
+        ) as ensure_metadata:
+            await _validate_thinking_level_for_model("fci:gpt-oss-120b", None)
+
+        ensure_metadata.assert_awaited_once_with("fci:gpt-oss-120b")
