@@ -16,6 +16,7 @@ from app.agent.providers.openai.compatible import OPENAI_COMPATIBLE_PROVIDER_SPE
 from app.core.config import settings
 
 TIMEOUT_S = 3.0
+OAUTH_CATALOG_TIMEOUT_S = 10.0
 
 
 @dataclass(frozen=True)
@@ -376,17 +377,24 @@ async def _anthropic_models(
     )
 
 
-async def _copilot_models() -> list[DiscoveredModel]:
+async def _copilot_models(
+    overrides: Mapping[str, str] | None = None,
+) -> list[DiscoveredModel]:
     from app.agent.providers.copilot.oauth import CopilotOAuth
 
-    oauth = CopilotOAuth.load()
-    if oauth is None:
-        return []
-    async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
+    token = _resolve(overrides, "GITHUB_COPILOT_TOKEN")
+    if not token:
+        oauth = CopilotOAuth.load()
+        if oauth is None:
+            return []
+        token = oauth.github_token.get_secret_value()
+    # OAuth policy edges can take longer than ordinary model-list endpoints,
+    # and this request is on Copilot's first-task critical path.
+    async with httpx.AsyncClient(timeout=OAUTH_CATALOG_TIMEOUT_S) as client:
         response = await client.get(
             "https://api.githubcopilot.com/models",
             headers={
-                "Authorization": f"Bearer {oauth.github_token.get_secret_value()}",
+                "Authorization": f"Bearer {token}",
                 "Accept": "application/json",
                 "User-Agent": "EvoFlux/1.0.0",
             },
@@ -490,7 +498,7 @@ async def _codex_models() -> list[DiscoveredModel]:
     }
     if oauth.account_id:
         headers["ChatGPT-Account-Id"] = oauth.account_id
-    async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
+    async with httpx.AsyncClient(timeout=OAUTH_CATALOG_TIMEOUT_S) as client:
         response = await client.get(
             "https://chatgpt.com/backend-api/codex/models",
             params={"client_version": "1.0.0"},
@@ -503,6 +511,12 @@ async def _codex_models() -> list[DiscoveredModel]:
     for item in items:
         if not isinstance(item, dict) or not isinstance(item.get("slug"), str):
             continue
+        # The ChatGPT catalog contains internal models (for example
+        # ``codex-auto-review``) that are deliberately hidden from clients.
+        # It can also retain entries that the Responses endpoint no longer
+        # accepts. Neither is safe to expose in EvoFlux's agent model picker.
+        if item.get("visibility") == "hide" or item.get("supported_in_api") is False:
+            continue
         levels: list[str] = []
         supported = item.get("supported_reasoning_levels")
         if isinstance(supported, list):
@@ -510,14 +524,52 @@ async def _codex_models() -> list[DiscoveredModel]:
                 effort = option.get("effort") if isinstance(option, dict) else None
                 if isinstance(effort, str) and effort and effort not in levels:
                     levels.append(effort)
+        thinking: dict[str, Any] = {
+            "levels": levels,
+            "control": "effort",
+            "source": "provider_live",
+        }
+        default_level = item.get("default_reasoning_level")
+        if isinstance(default_level, str) and default_level:
+            thinking["default_level"] = default_level
+
         metadata: dict[str, Any] = {
             "thinking": {
-                "levels": levels,
-                "control": "effort",
-                "source": "provider_live",
+                **thinking,
             }
         }
-        models.append(DiscoveredModel(id=str(item["slug"]), metadata=metadata))
+        context_window = _positive_catalog_int(item.get("context_window"))
+        if context_window is not None:
+            # ``context_window`` is the active subscription limit. Do not use
+            # ``max_context_window``: GPT-5.4 advertises a 1M theoretical max
+            # while the current Codex subscription contract is 272K.
+            metadata["limits"] = {"context_length": context_window}
+
+        supports_tools = item.get("supports_parallel_tool_calls")
+        if supports_tools is True:
+            # Parallel support is a positive tool-call signal. A false value
+            # means serial-only, not that tools are unsupported.
+            metadata["features"] = {"tool_call": True}
+
+        input_modalities = item.get("input_modalities")
+        capabilities: dict[str, Any] = {}
+        if isinstance(input_modalities, list):
+            normalized_modalities = {
+                value.lower() for value in input_modalities if isinstance(value, str)
+            }
+            capabilities["input"] = {
+                "vision": "image" in normalized_modalities,
+                "audio": "audio" in normalized_modalities,
+                "video": "video" in normalized_modalities,
+            }
+
+        models.append(
+            DiscoveredModel(
+                id=str(item["slug"]),
+                metadata=metadata,
+                capabilities=capabilities,
+            )
+        )
     return sorted(models, key=lambda model: model.id)
 
 
@@ -689,7 +741,7 @@ async def discover_provider_model_entries(
             case "anthropic":
                 models = await _anthropic_models(overrides)
             case "copilot":
-                models = await _copilot_models()
+                models = await _copilot_models(overrides)
             case "codex":
                 entries = await _codex_models()
             case "bedrock":

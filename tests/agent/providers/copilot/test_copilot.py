@@ -171,6 +171,36 @@ class TestCopilotProviderInit:
         p = _make_provider(model="gpt-5.4")
         assert p._endpoint_type == "responses"
 
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_first_request_hydrates_live_endpoint_contract(self):
+        replace_runtime_provider_metadata("copilot", {})
+        provider = _make_provider(model="gpt-5.4")
+        assert provider._endpoint_type == "completions"
+
+        route = respx.get(f"{COPILOT_API_BASE}/models").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": "gpt-5.4",
+                            "model_picker_enabled": True,
+                            "supported_endpoints": ["responses"],
+                        }
+                    ]
+                },
+            )
+        )
+
+        await provider._ensure_model_contract()
+
+        assert route.called
+        assert route.calls[0].request.headers["Authorization"] == (
+            "Bearer gho_test_token"
+        )
+        assert provider._endpoint_type == "responses"
+
 
 # ---------------------------------------------------------------------------
 # _request_url property

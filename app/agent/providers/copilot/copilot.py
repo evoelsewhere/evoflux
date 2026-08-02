@@ -35,7 +35,7 @@ from app.agent.providers.copilot.oauth import CopilotOAuth
 from app.agent.providers.openai import OpenAIProvider
 from app.agent.providers.openai.completions import CompletionsHandler
 from app.agent.providers.openai.responses import ResponsesHandler
-from app.agent.schemas.chat import ChatMessage, Usage
+from app.agent.schemas.chat import AssistantMessage, ChatMessage, Usage
 
 COPILOT_API_BASE = "https://api.githubcopilot.com"
 
@@ -45,6 +45,7 @@ _DEFAULT_HEADERS: dict[str, str] = {
     "Openai-Intent": "conversation-edits",
     "x-initiator": "user",
 }
+
 
 def _endpoint_for_model(model: str) -> str:
     """Resolve the live Copilot model contract, defaulting conservatively."""
@@ -183,6 +184,16 @@ class CopilotProvider(OpenAIProvider):
             max_tokens=max_tokens,
             model_kwargs=model_kwargs,
         )
+        from app.agent.providers.model_metadata import has_runtime_model_metadata
+
+        # Construction is synchronous, while Copilot's per-model endpoint
+        # contract is available only from its live catalog. A provider created
+        # outside the main team runtime therefore hydrates lazily on its first
+        # request instead of permanently defaulting Responses-only models to
+        # /chat/completions.
+        self._model_contract_loaded = has_runtime_model_metadata(
+            f"copilot:{self.model}"
+        )
 
     # Convenience aliases for callers that think in Copilot-specific terms.
     @property
@@ -202,6 +213,43 @@ class CopilotProvider(OpenAIProvider):
 
     def _use_responses_for(self, model_kwargs: dict[str, Any]) -> bool:
         return _endpoint_for_model(self.model) == "responses"
+
+    async def _ensure_model_contract(self) -> None:
+        if self._model_contract_loaded:
+            return
+
+        from app.agent.providers.catalog import find
+        from app.agent.providers.model_discovery import discover_provider_model_entries
+
+        entry = find("copilot")
+        if entry is not None:
+            await discover_provider_model_entries(
+                entry,
+                overrides={"GITHUB_COPILOT_TOKEN": self.api_key},
+            )
+        self._use_responses = _endpoint_for_model(self.model) == "responses"
+        # Discovery already handles/logs transient failures. Avoid turning one
+        # outage into a catalog request before every LLM retry in this instance.
+        self._model_contract_loaded = True
+
+    async def chat(
+        self,
+        messages: list[ChatMessage],
+        tools: list[dict] | None = None,
+        **kwargs: Any,
+    ) -> AssistantMessage:
+        await self._ensure_model_contract()
+        return await super().chat(messages, tools, **kwargs)
+
+    async def stream(
+        self,
+        messages: list[ChatMessage],
+        tools: list[dict] | None = None,
+        **kwargs: Any,
+    ):
+        await self._ensure_model_contract()
+        async for chunk in super().stream(messages, tools, **kwargs):
+            yield chunk
 
     def _make_completions_handler(
         self, model: str, base_url: str, headers: dict[str, str]

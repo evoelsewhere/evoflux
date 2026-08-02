@@ -1150,10 +1150,17 @@ class TeamMemberBase(abc.ABC):
         # Prefer the per-message requested model when available; fall back to the
         # session model stored on ChatSession, then the lead agent default.
         effective_model = last_user_model or session_model or self.agent.model_id
-        # Provider-owned catalogs (notably FCI) are authoritative for context
+        # Provider-owned catalogs are authoritative for context
         # limits, modalities, tool support, and configurable thinking controls.
-        # Hydrate them before execution policy and summarization are built.
-        if effective_model and effective_model.lower().startswith("fci:"):
+        # Hydrate them before provider routing, execution policy, and
+        # summarization are built. Discovery is best-effort and falls back to
+        # the registry when a provider is temporarily unavailable.
+        provider_id = (
+            effective_model.split(":", 1)[0].lower()
+            if effective_model and ":" in effective_model
+            else ""
+        )
+        if provider_id in {"fci", "copilot", "codex"}:
             await ensure_runtime_model_metadata(effective_model)
         thinking_profile = get_effective_model_thinking(effective_model)
         execution_policy = resolve_execution_policy(
