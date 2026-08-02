@@ -685,28 +685,6 @@ export async function getWebBridgeAudit(limit?: number): Promise<WebBridgeAuditR
   return res.json()
 }
 
-/**
- * Download the WebBridge extension as a ``.zip`` and trigger a browser save.
- * Fetches through the authed ``fetch`` (so the token rides in the header, not
- * the URL) and hands the blob to a transient anchor.
- */
-export async function downloadWebBridgeExtension(): Promise<void> {
-  const res = await fetch(`${apiBaseUrl()}/team/webbridge/download`)
-  if (!res.ok) await parseDetailOrThrow(res, 'downloadWebBridgeExtension')
-  const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  try {
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'evoflux-webbridge.zip'
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-  } finally {
-    URL.revokeObjectURL(url)
-  }
-}
-
 // ── Coding Projects API ───────────────────────────────────────────────────────
 // Note: there's no listProjects() here — the coding sidebar gets the full
 // projects list bundled into getCodingWorkspaceTree()'s response instead
