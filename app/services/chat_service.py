@@ -808,7 +808,10 @@ async def release_queued_user_messages(
         .where(col(SessionMessage.role) == "user")
         .where(col(SessionMessage.exclude_from_context))
         .where(col(SessionMessage.extra)["queue_status"].as_string() == "queued")
-        .order_by(col(SessionMessage.created_at).asc())
+        .order_by(
+            col(SessionMessage.created_at).asc(),
+            col(SessionMessage.id).asc(),
+        )
     )
     queued = list(rows.all())
     released_at = datetime.now(timezone.utc)
@@ -834,7 +837,10 @@ async def pop_queued_user_messages(
         .where(col(SessionMessage.role) == "user")
         .where(col(SessionMessage.exclude_from_context))
         .where(col(SessionMessage.extra)["queue_status"].as_string() == "queued")
-        .order_by(col(SessionMessage.created_at).asc())
+        .order_by(
+            col(SessionMessage.created_at).asc(),
+            col(SessionMessage.id).asc(),
+        )
     )
     queued = list(rows.all())
     activated_at = datetime.now(timezone.utc)
@@ -1040,7 +1046,10 @@ async def list_sessions_with_tag(
             select(ChatSession)
             .where(col(ChatSession.parent_session_id).is_(None))
             .where(col(ChatSession.session_type) != "side_chat")
-            .order_by(col(ChatSession.created_at).desc())
+            .order_by(
+                col(ChatSession.created_at).desc(),
+                col(ChatSession.id).desc(),
+            )
         )
     ).all()
     return [session for session in rows if tag in (session.tags or ())][:bounded_limit]
@@ -1079,7 +1088,10 @@ async def get_latest_top_level_session(
             col(ChatSession.parent_session_id).is_(None),
             ChatSession.mode == mode,
         )
-        .order_by(col(ChatSession.created_at).desc())
+        .order_by(
+            col(ChatSession.created_at).desc(),
+            col(ChatSession.id).desc(),
+        )
     )
     if folder_id is not None:
         stmt = stmt.where(col(ChatSession.folder_id) == folder_id)
@@ -1526,7 +1538,10 @@ async def get_side_chat_context(
         select(SessionMessage)
         .where(col(SessionMessage.session_id) == source_session_id)
         .where(~col(SessionMessage.exclude_from_context))
-        .order_by(col(SessionMessage.created_at).desc())
+        .order_by(
+            col(SessionMessage.created_at).desc(),
+            col(SessionMessage.id).desc(),
+        )
         .limit(max_messages)
     )
     db_messages = list((await db.exec(stmt)).all())

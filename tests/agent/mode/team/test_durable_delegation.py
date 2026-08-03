@@ -13,6 +13,11 @@ from sqlmodel import col, select
 from app.agent.agent_loop import Agent
 from app.agent.loader import load_team_from_dir
 from app.agent.mode.team.delegate import make_team_delegate_tool
+from app.agent.mode.team.delegation_ledger import (
+    completed_tasks_for_pair,
+    load_open_tasks,
+    load_unacknowledged_handoffs,
+)
 from app.agent.mode.team.handoff import make_team_handoff_tool
 from app.agent.mode.team.member import TeamLead, TeamMember
 from app.agent.mode.team.reject import make_team_reject_tool
@@ -90,6 +95,94 @@ async def _tasks(team: AgentTeam) -> list[DelegationTask]:
                 )
             ).all()
         )
+
+
+@pytest.mark.asyncio
+async def test_load_open_tasks_uses_id_tiebreaker_for_equal_timestamps():
+    team = await _make_team()
+    shared_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    lower_id = UUID(int=1)
+    higher_id = UUID(int=2)
+    async with db_module.async_session_factory() as db:
+        db.add_all(
+            [
+                DelegationTask(
+                    id=higher_id,
+                    lead_session_id=UUID(team.lead.session_id),
+                    delegator="lead",
+                    recipient="second",
+                    created_at=shared_time,
+                    updated_at=shared_time,
+                ),
+                DelegationTask(
+                    id=lower_id,
+                    lead_session_id=UUID(team.lead.session_id),
+                    delegator="lead",
+                    recipient="first",
+                    created_at=shared_time,
+                    updated_at=shared_time,
+                ),
+            ]
+        )
+        await db.commit()
+
+        rows = await load_open_tasks(db, UUID(team.lead.session_id))
+
+    assert [row.id for row in rows] == [lower_id, higher_id]
+
+
+@pytest.mark.asyncio
+async def test_completed_at_queries_use_id_tiebreaker_for_equal_timestamps():
+    """``completed_at`` is stamped from one clock read per bulk transition, so
+    sibling rows routinely share it — ordering must still be deterministic."""
+    team = await _make_team()
+    lead_session_id = UUID(team.lead.session_id)
+    shared_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    lower_id = UUID(int=1)
+    higher_id = UUID(int=2)
+    async with db_module.async_session_factory() as db:
+        db.add_all(
+            [
+                DelegationTask(
+                    id=higher_id,
+                    lead_session_id=lead_session_id,
+                    delegator="lead",
+                    recipient="coder",
+                    status="completed",
+                    result={"summary": "second"},
+                    created_at=shared_time,
+                    updated_at=shared_time,
+                    completed_at=shared_time,
+                ),
+                DelegationTask(
+                    id=lower_id,
+                    lead_session_id=lead_session_id,
+                    delegator="lead",
+                    recipient="coder",
+                    status="completed",
+                    result={"summary": "first"},
+                    created_at=shared_time,
+                    updated_at=shared_time,
+                    completed_at=shared_time,
+                ),
+            ]
+        )
+        await db.commit()
+
+        handoffs = await load_unacknowledged_handoffs(
+            db,
+            lead_session_id=lead_session_id,
+            live_recipients={"lead"},
+        )
+        candidates = await completed_tasks_for_pair(
+            db,
+            lead_session_id=lead_session_id,
+            delegator="lead",
+            recipient="coder",
+        )
+
+    assert [row.id for row in handoffs] == [lower_id, higher_id]
+    assert [row.id for row in candidates] == [higher_id, lower_id]
 
 
 @pytest.mark.asyncio
