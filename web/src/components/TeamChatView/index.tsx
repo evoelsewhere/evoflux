@@ -1145,17 +1145,11 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     ';': () => toggleWorkbenchTool('side-chat'),
   })
 
-  // Tab / Shift+Tab — cycle the active agent in the store (agent view tabs
-  // and split-mode pane focus both follow store activeAgent).
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab' || e.ctrlKey || e.metaKey) return
-      e.preventDefault()
-      cycleActiveAgent(e.shiftKey ? 'prev' : 'next')
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [cycleActiveAgent])
+  // Agent cycling is exposed through the command palette ("Next Agent" /
+  // "Previous Agent") on purpose. Bare Tab must never be captured here: a
+  // window-level preventDefault on Tab removes sequential focus navigation from
+  // every surface this view is mounted under (sidebar, topbar, composer,
+  // settings, dialogs), which leaves the app unusable by keyboard.
 
   const closeCodingPanels = useCallback(() => {
     closeWorkbenchTool('files')
@@ -1735,7 +1729,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
               <div className="grid @[36rem]/coding-empty:grid-cols-[minmax(11.5rem,0.58fr)_minmax(24rem,1.42fr)]">
                 <section className="flex flex-col border-b border-(--color-border-subtle) p-3 @[36rem]/coding-empty:border-b-0 @[36rem]/coding-empty:border-r">
                   <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-(--color-accent)/12 text-(--color-accent) ring-1 ring-inset ring-(--color-accent)/20 shadow-sm shadow-(--color-accent)/10">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-(--color-accent)/12 text-(--color-accent) ring-1 ring-inset ring-(--color-accent)/20 shadow-sm shadow-(color:--color-accent)/10">
                       <FolderPlus size={16} strokeWidth={1.8} aria-hidden="true" />
                     </div>
                     <div className="inline-flex w-fit items-center gap-1 rounded-full border border-(--color-border-subtle) bg-(--bg-page)/70 px-2 py-0.5 text-[0.56rem] font-semibold uppercase tracking-[0.12em] text-(--color-text-muted)">
@@ -1760,7 +1754,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                   </div>
 
                   <div className="mt-auto pt-2.5">
-                    <Button type="button" size="sm" className="h-8 w-full rounded-lg px-3 text-[11px] shadow-sm shadow-(--color-accent)/15" onClick={handleOpenWorkspaceDialog}>
+                    <Button type="button" size="sm" className="h-8 w-full rounded-lg px-3 text-[11px] shadow-sm shadow-(color:--color-accent)/15" onClick={handleOpenWorkspaceDialog}>
                       <FolderPlus size={13} aria-hidden="true" />
                       Open workspace
                       <ArrowRight size={12} aria-hidden="true" />

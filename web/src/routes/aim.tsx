@@ -19,6 +19,7 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { useModalFocus } from '@/hooks/useModalFocus'
 import { useMotionPreset } from '@/lib/motion'
 import { useUIStore } from '@/stores/useUIStore'
+import { errorMessage } from '@/utils/errors'
 import type { AimFeature } from '@/lib/aim-sidebar'
 import type { CodingProject } from '@/api/types'
 
@@ -206,8 +207,10 @@ function AimLayoutBase() {
       {!projectId || !project ? (
         <EmptyState
           loading={projectsQuery.isLoading}
+          error={projectsQuery.isError ? projectsQuery.error : null}
+          onRetry={() => void projectsQuery.refetch()}
           hasProjects={(projects?.length ?? 0) > 0}
-          notFound={Boolean(projectId) && !projectsQuery.isLoading && !project}
+          notFound={Boolean(projectId) && !projectsQuery.isLoading && !projectsQuery.isError && !project}
           onNewProject={() => setWizardOpen(true)}
         />
       ) : (
@@ -230,11 +233,15 @@ function AimLayoutBase() {
 
 function EmptyState({
   loading,
+  error,
+  onRetry,
   hasProjects,
   notFound,
   onNewProject,
 }: {
   loading: boolean
+  error: unknown
+  onRetry: () => void
   hasProjects: boolean
   notFound: boolean
   onNewProject: () => void
@@ -269,6 +276,26 @@ function EmptyState({
               ))}
             </div>
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  // A failed projects request must not read as "you have no projects" — that
+  // looks like data loss and hides the retry path.
+  if (error) {
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <div className="max-w-sm text-center">
+          <p className="text-sm font-medium text-(--color-text)">Failed to load migration projects</p>
+          <p className="mt-1 text-xs leading-5 text-(--color-text-muted)">{errorMessage(error)}</p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="focus-ring-control mt-3 rounded-md border border-(--color-border) bg-(--bg-key) px-3 py-1.5 text-xs font-medium text-(--color-text) hover:bg-(--bg-page)"
+          >
+            Try again
+          </button>
         </div>
       </div>
     )
