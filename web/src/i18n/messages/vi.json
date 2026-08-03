@@ -1218,6 +1218,7 @@
   "Deleting todo {0}": "Đang xóa việc cần làm {0}",
   "Deleting...": "Đang xóa...",
   "deletions": "mục đã xóa",
+  "departed": "đã rời",
   "Delivers to the default team lead.": "Giao cho trưởng nhóm mặc định.",
   "Delivers to the lead of the coding team for the workspace below.": "Cung cấp cho trưởng nhóm lập trình không gian làm việc bên dưới.",
   "Delivery": "Bàn giao",

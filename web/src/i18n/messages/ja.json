@@ -1218,6 +1218,7 @@
   "Deleting todo {0}": "Todo {0} を削除しています",
   "Deleting...": "削除中...",
   "deletions": "削除",
+  "departed": "退出しました",
   "Delivers to the default team lead.": "デフォルトのチームリーダーに配信します。",
   "Delivers to the lead of the coding team for the workspace below.": "以下のワークスペースのコーディング チームのリーダーに提出します。",
   "Delivery": "配送",

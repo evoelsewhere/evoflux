@@ -223,7 +223,9 @@ function LifecycleRow({ item }: { item: ActivityItem }) {
       {isStatus && <AlertTriangle size={11} className="shrink-0 text-(--color-warning)" aria-hidden="true" />}
       <span data-i18n-ignore className="min-w-0 truncate font-mono text-[11px] text-(--color-text-muted)">{item.agent}</span>
       {isSpawn || item.kind === 'dismiss' || isDone ? (
-        <span>{isSpawn ? 'joined' : item.kind === 'dismiss' ? 'left' : 'turn done'}</span>
+        {/* "departed", not "left": the catalogs translate the latter as the
+            direction ("trái", "左") next to "joined" and "turn done". */}
+        <span>{isSpawn ? 'joined' : item.kind === 'dismiss' ? 'departed' : 'turn done'}</span>
       ) : (
         <span data-i18n-ignore className="min-w-0 truncate">{item.label}</span>
       )}
