@@ -10,7 +10,7 @@
 
 importScripts("semantic_runtime.js");
 
-const DEFAULT_RELAY_BASE = "ws://127.0.0.1:8000";
+const DEFAULT_RELAY_BASE = "ws://127.0.0.1:4082";
 const RELAY_PATH = "/api/team/webbridge/relay";
 const RELAY_TICKET_PATH = "/api/team/webbridge/relay-ticket";
 const NATIVE_PAIRING_PATH = "/api/team/webbridge/pairing/native";

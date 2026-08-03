@@ -159,7 +159,7 @@ def parser() -> argparse.ArgumentParser:
         "session_id", help="Existing WebBridge-enabled session bound to the editor tab"
     )
     result.add_argument(
-        "--base", default="ws://127.0.0.1:8000", help="EvoFlux WebSocket base URL"
+        "--base", default="ws://127.0.0.1:4082", help="EvoFlux WebSocket base URL"
     )
     result.add_argument(
         "--read-only",

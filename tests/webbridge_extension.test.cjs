@@ -120,7 +120,7 @@ function loadWorker(options = {}) {
           ok: true,
           protocol_version: 1,
           app_pid: 4242,
-          base_url: (storedConfig.relayBase || "ws://127.0.0.1:8000").replace(/^ws:/, "http:"),
+          base_url: (storedConfig.relayBase || "ws://127.0.0.1:4082").replace(/^ws:/, "http:"),
           discovery_token: "default-native-discovery-token-long-enough",
         });
         return;
@@ -457,10 +457,10 @@ test("P2 Side Chat auto-creates and binds one session for an unbound tab", async
   let atomicCreates = 0;
   const worker = loadWorker({
     storedConfig: {
-      relayBase: "ws://127.0.0.1:8000",
+      relayBase: "ws://127.0.0.1:4082",
       pairingCredential: "pair-secret",
       pairingId: "pairing-1",
-      pairingRelayBase: "ws://127.0.0.1:8000",
+      pairingRelayBase: "ws://127.0.0.1:4082",
     },
     fetchResponder: async (url, init) => {
       if (url.endsWith("/bindings") && !init.method) {
@@ -518,10 +518,10 @@ test("P2 internal tab keeps one session and upgrades its HTTP tool scope", async
   const bindings = [];
   const worker = loadWorker({
     storedConfig: {
-      relayBase: "ws://127.0.0.1:8000",
+      relayBase: "ws://127.0.0.1:4082",
       pairingCredential: "pair-secret",
       pairingId: "pairing-1",
-      pairingRelayBase: "ws://127.0.0.1:8000",
+      pairingRelayBase: "ws://127.0.0.1:4082",
     },
     fetchResponder: async (url, init) => {
       if (url.endsWith("/bindings") && !init.method) {
@@ -945,10 +945,10 @@ test("P2 a session opens child tabs in a named Chrome tab group", async () => {
   let sessionCreates = 0;
   const worker = loadWorker({
     storedConfig: {
-      relayBase: "ws://127.0.0.1:8000",
+      relayBase: "ws://127.0.0.1:4082",
       pairingCredential: "pair-secret",
       pairingId: "pairing-1",
-      pairingRelayBase: "ws://127.0.0.1:8000",
+      pairingRelayBase: "ws://127.0.0.1:4082",
     },
     fetchResponder: async (url, init) => {
       if (url.endsWith("/bindings")) {
@@ -1397,10 +1397,10 @@ test("explicit selection submit creates and binds a browser session with provena
   let interactionBody = null;
   const worker = loadWorker({
     storedConfig: {
-      relayBase: "ws://127.0.0.1:8000",
+      relayBase: "ws://127.0.0.1:4082",
       pairingCredential: "pair-secret",
       pairingId: "pairing-1",
-      pairingRelayBase: "ws://127.0.0.1:8000",
+      pairingRelayBase: "ws://127.0.0.1:4082",
     },
     fetchResponder: async (url, init) => {
       if (url.endsWith("/relay-ticket")) {
@@ -1530,10 +1530,10 @@ test("explicit browser context reuses its assigned session", async () => {
   let interactionBody = null;
   const worker = loadWorker({
     storedConfig: {
-      relayBase: "ws://127.0.0.1:8000",
+      relayBase: "ws://127.0.0.1:4082",
       pairingCredential: "pair-secret",
       pairingId: "pairing-1",
-      pairingRelayBase: "ws://127.0.0.1:8000",
+      pairingRelayBase: "ws://127.0.0.1:4082",
     },
     fetchResponder: async (url, init) => {
       if (url.endsWith("/relay-ticket")) {
@@ -1569,10 +1569,10 @@ test("retry reuses a pending browser action without creating another session", a
   let interactionAttempts = 0;
   const worker = loadWorker({
     storedConfig: {
-      relayBase: "ws://127.0.0.1:8000",
+      relayBase: "ws://127.0.0.1:4082",
       pairingCredential: "pair-secret",
       pairingId: "pairing-1",
-      pairingRelayBase: "ws://127.0.0.1:8000",
+      pairingRelayBase: "ws://127.0.0.1:4082",
     },
     fetchResponder: async (url, init) => {
       if (url.endsWith("/relay-ticket")) {
@@ -1692,10 +1692,10 @@ test("P3 text watch matches without sending browser context until the user confi
   let interactionBody = null;
   const worker = loadWorker({
     storedConfig: {
-      relayBase: "ws://127.0.0.1:8000",
+      relayBase: "ws://127.0.0.1:4082",
       pairingCredential: "pair-secret",
       pairingId: "pairing-1",
-      pairingRelayBase: "ws://127.0.0.1:8000",
+      pairingRelayBase: "ws://127.0.0.1:4082",
     },
     fetchResponder: async (url, init) => {
       if (url.endsWith("/relay-ticket")) {
@@ -1831,10 +1831,10 @@ test("P3 Teach Mode redacts secrets and saves a pairing-scoped semantic draft", 
   let draftBody = null;
   const worker = loadWorker({
     storedConfig: {
-      relayBase: "ws://127.0.0.1:8000",
+      relayBase: "ws://127.0.0.1:4082",
       pairingCredential: "pair-secret",
       pairingId: "pairing-1",
-      pairingRelayBase: "ws://127.0.0.1:8000",
+      pairingRelayBase: "ws://127.0.0.1:4082",
     },
     fetchResponder: async (url, init) => {
       if (url.endsWith("/relay-ticket")) {
@@ -2059,10 +2059,10 @@ test("P2 element picker retries activation and renders page guidance", async () 
 test("paired connection exchanges credential for a single-use relay ticket", async () => {
   const worker = loadWorker({
     storedConfig: {
-      relayBase: "ws://127.0.0.1:8000",
+      relayBase: "ws://127.0.0.1:4082",
       pairingCredential: "pair-secret",
       pairingId: "pairing-1",
-      pairingRelayBase: "ws://127.0.0.1:8000",
+      pairingRelayBase: "ws://127.0.0.1:4082",
     },
     fetchResponder: async () => ({
       ok: true,
@@ -2076,12 +2076,12 @@ test("paired connection exchanges credential for a single-use relay ticket", asy
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.equal(worker.fetchCalls.length, 1);
-  assert.equal(worker.fetchCalls[0].url, "http://127.0.0.1:8000/api/team/webbridge/relay-ticket");
+  assert.equal(worker.fetchCalls[0].url, "http://127.0.0.1:4082/api/team/webbridge/relay-ticket");
   assert.equal(worker.fetchCalls[0].init.headers.Authorization, "Bearer pair-secret");
   assert.equal(worker.sockets.length, 1);
   assert.equal(
     worker.sockets[0].url,
-    "ws://127.0.0.1:8000/api/team/webbridge/relay?_ticket=ticket-once"
+    "ws://127.0.0.1:4082/api/team/webbridge/relay?_ticket=ticket-once"
   );
   assert.equal(worker.sockets[0].url.includes("pair-secret"), false);
 
@@ -2101,10 +2101,10 @@ test("disconnect supersedes an in-flight relay ticket request", async () => {
   const pendingTicket = new Promise((resolve) => { resolveTicket = resolve; });
   const worker = loadWorker({
     storedConfig: {
-      relayBase: "ws://127.0.0.1:8000",
+      relayBase: "ws://127.0.0.1:4082",
       pairingCredential: "pair-secret",
       pairingId: "pairing-1",
-      pairingRelayBase: "ws://127.0.0.1:8000",
+      pairingRelayBase: "ws://127.0.0.1:4082",
     },
     fetchResponder: async () => pendingTicket,
   });
@@ -2123,7 +2123,7 @@ test("disconnect supersedes an in-flight relay ticket request", async () => {
 test("missing Native Messaging host never falls back to unauthenticated local pairing", async () => {
   const worker = loadWorker({
     storedConfig: {
-      relayBase: "ws://127.0.0.1:8000",
+      relayBase: "ws://127.0.0.1:4082",
       accessToken: "legacy-secret",
     },
     fetchResponder: async (url) => { throw new Error(`Unexpected fetch ${url}`); },
@@ -2228,10 +2228,10 @@ test("Native Messaging carries a scoped pairing across sidecar port changes", as
 test("revoked pairing credential is removed before reconnect", async () => {
   const worker = loadWorker({
     storedConfig: {
-      relayBase: "ws://127.0.0.1:8000",
+      relayBase: "ws://127.0.0.1:4082",
       pairingCredential: "revoked-secret",
       pairingId: "pairing-revoked",
-      pairingRelayBase: "ws://127.0.0.1:8000",
+      pairingRelayBase: "ws://127.0.0.1:4082",
     },
     fetchResponder: async () => ({
       ok: false,
@@ -2255,10 +2255,10 @@ test("revoked pairing credential is removed before reconnect", async () => {
 test("relay revocation close clears pairing without reconnect", async () => {
   const worker = loadWorker({
     storedConfig: {
-      relayBase: "ws://127.0.0.1:8000",
+      relayBase: "ws://127.0.0.1:4082",
       pairingCredential: "paired-secret",
       pairingId: "pairing-active",
-      pairingRelayBase: "ws://127.0.0.1:8000",
+      pairingRelayBase: "ws://127.0.0.1:4082",
       pendingInteraction: { action_id: "private-context", created_at: Date.now() },
       webbridgeTextWatches: [{
         id: "watch-1", tab_id: 1, state: "armed", expires_at: Date.now() + 60_000,
@@ -2299,7 +2299,7 @@ test("relay revocation close clears pairing without reconnect", async () => {
 test("native discovery replaces a relay-bound credential without sending the old credential", async () => {
   const worker = loadWorker({
     storedConfig: {
-      relayBase: "ws://127.0.0.1:8000",
+      relayBase: "ws://127.0.0.1:4082",
       pairingCredential: "relay-bound-secret",
       pairingId: "pairing-bound",
       pairingRelayBase: "wss://original.example",
@@ -2330,7 +2330,7 @@ test("native discovery replaces a relay-bound credential without sending the old
   assert.equal(worker.fetchCalls.length, 2);
   assert.equal(worker.sockets.length, 1);
   assert.equal(worker.storedConfig.pairingCredential, "new-secret");
-  assert.equal(worker.storedConfig.pairingRelayBase, "ws://127.0.0.1:8000");
+  assert.equal(worker.storedConfig.pairingRelayBase, "ws://127.0.0.1:4082");
 });
 
 test("manual remote relay cannot bypass required Native Messaging discovery", async () => {
