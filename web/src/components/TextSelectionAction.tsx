@@ -247,7 +247,7 @@ export function TextSelectionAction({
         left: position.left,
         transform: position.placement === 'above' ? 'translateY(-100%)' : undefined,
       }}
-      className="pointer-events-auto z-(--z-toast) flex max-w-[calc(100vw-1rem)] divide-x divide-(--color-border) overflow-x-auto rounded-lg border border-(--color-border) bg-(--bg-page)/95 shadow-xl backdrop-blur-xl animate-in fade-in-0 zoom-in-95"
+      className="pointer-events-auto z-(--z-toast) flex max-w-[calc(100vw-1rem)] divide-x divide-(--color-border) overflow-x-auto rounded-md border border-(--color-border) bg-(--bg-page)/95 shadow-lg backdrop-blur-xl animate-in fade-in-0 zoom-in-95"
     >
       {([
         ['Add to chat', onAddToChat],
@@ -263,7 +263,7 @@ export function TextSelectionAction({
           }}
           onClick={() => runAction(action)}
           className={cn(
-            'min-h-10 shrink-0 whitespace-nowrap px-3 text-sm font-medium text-(--color-text-2) outline-none transition-colors',
+            'inline-flex min-h-8 shrink-0 items-center justify-center whitespace-nowrap px-2.5 py-1 text-xs font-medium leading-4 text-(--color-text-2) outline-none transition-colors',
             'hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:bg-(--bg-key) focus-visible:text-(--color-text)',
           )}
         >
