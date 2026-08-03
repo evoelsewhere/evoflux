@@ -71,7 +71,8 @@ export function NewMcpServerPage() {
         title: `Created MCP server "${draft.name}"`,
         description: 'Available on next turn.',
       })
-      navigate('/settings/mcp/$name', { params: { name: draft.name } })
+      // The draft is persisted, so it must not trigger the discard confirm.
+      navigate('/settings/mcp/$name', { params: { name: draft.name }, force: true })
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
       setSaveError(msg)

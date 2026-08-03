@@ -57,14 +57,14 @@ export function Thinking({ content, isStreaming }: ThinkingProps) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="group/my-2 flex items-center gap-1.5 py-0.5 text-[11px] leading-none text-(--color-text-subtle) opacity-75 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
+        className="group/thinking flex items-center gap-1.5 py-0.5 text-[11px] leading-none text-(--color-text-subtle) opacity-75 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
         aria-expanded={open}
         aria-label={open ? `Collapse ${label}` : `Expand ${label}`}
       >
         <ChevronRight
           size={10}
           className={cn(
-            'shrink-0 text-(--color-text-subtle) opacity-40 transition-[opacity,transform] duration-(--motion-fast) group-hover/my-2:opacity-60',
+            'shrink-0 text-(--color-text-subtle) opacity-40 transition-[opacity,transform] duration-(--motion-fast) group-hover/thinking:opacity-60',
             open && 'rotate-90',
           )}
           aria-hidden="true"

@@ -151,9 +151,12 @@ function clampMenuPosition(
   menuHeight = 160,
 ): { x: number; y: number } {
   const pad = 8;
+  // The upper bounds go through Math.max(pad, …) as well: in a viewport
+  // narrower/shorter than the menu the raw subtraction is negative, which
+  // clamped the menu off the top-left edge instead of into view.
   return {
-    x: Math.min(Math.max(x, pad), window.innerWidth - menuWidth - pad),
-    y: Math.min(Math.max(y, pad), window.innerHeight - menuHeight - pad),
+    x: Math.min(Math.max(x, pad), Math.max(pad, window.innerWidth - menuWidth - pad)),
+    y: Math.min(Math.max(y, pad), Math.max(pad, window.innerHeight - menuHeight - pad)),
   };
 }
 
@@ -525,6 +528,21 @@ export function CodingSidebar({
   const [removedWorktreePaths, setRemovedWorktreePaths] = useState<Set<string>>(
     () => new Set(),
   );
+
+  // The two floating action menus below close on click / right-click only;
+  // Escape left them open with focus trapped behind their full-screen
+  // backdrop. (SessionContextMenu handles its own Escape.)
+  useEffect(() => {
+    if (!desktopWorkspaceActions && !projectRepoActions) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setDesktopWorkspaceActions(null);
+      setProjectRepoActions(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [desktopWorkspaceActions, projectRepoActions]);
 
   const loadBrowser = useCallback(async (path?: string | null) => {
     setLoading(true);

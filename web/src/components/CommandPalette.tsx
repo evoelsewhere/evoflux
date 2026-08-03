@@ -32,6 +32,9 @@ interface CommandPaletteProps {
   onClose: () => void
 }
 
+const LIST_ID = 'command-palette-list'
+const OPTION_ID_PREFIX = 'command-palette-option-'
+
 export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
   const { t } = useI18n()
   const [query, setQuery] = useState('')
@@ -164,6 +167,16 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
               placeholder="Search commands…"
               className="flex-1 bg-transparent text-sm text-(--color-text) placeholder-(--color-text-muted) outline-none"
               aria-label="Search commands"
+              // The arrow keys move a purely visual `activeIdx` while DOM focus
+              // stays in the input, so the combobox pairing below is the only
+              // thing that announces the highlighted row to assistive tech.
+              role="combobox"
+              aria-expanded
+              aria-controls={LIST_ID}
+              aria-autocomplete="list"
+              aria-activedescendant={
+                filtered.length > 0 ? `${OPTION_ID_PREFIX}${activeIdx}` : undefined
+              }
             />
             {query && (
               <button
@@ -179,7 +192,13 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
           </div>
 
           {/* Command list */}
-          <div ref={listRef} className="max-h-80 overflow-y-auto py-1.5">
+          <div
+            ref={listRef}
+            id={LIST_ID}
+            role="listbox"
+            aria-label="Commands"
+            className="max-h-80 overflow-y-auto py-1.5"
+          >
             {filtered.length === 0 ? (
               <p className="px-4 py-6 text-center text-sm text-(--color-text-muted)">
                 No commands match "{query}"
@@ -190,6 +209,7 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
                   return (
                     <p
                       key={`h-${i}`}
+                      role="presentation"
                       className="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-widest text-(--color-text-muted)"
                     >
                       {row.label}
@@ -252,7 +272,13 @@ function CommandRow({ cmd, idx, isActive, mouseY, onRun, onActivate }: CommandRo
   const showProximity = !isActive && intensity > 0
 
   return (
-    <div ref={ref as React.RefObject<HTMLDivElement>} className="relative isolate">
+    // Presentational so the proximity wrapper does not sit between the
+    // listbox and its options in the accessibility tree.
+    <div
+      ref={ref as React.RefObject<HTMLDivElement>}
+      role="presentation"
+      className="relative isolate"
+    >
       {showProximity && (
         <div
           aria-hidden
@@ -264,6 +290,9 @@ function CommandRow({ cmd, idx, isActive, mouseY, onRun, onActivate }: CommandRo
       )}
       <button
         data-idx={idx}
+        id={`${OPTION_ID_PREFIX}${idx}`}
+        role="option"
+        aria-selected={isActive}
         onClick={() => onRun(cmd)}
         onMouseEnter={() => onActivate(idx)}
         className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors ${

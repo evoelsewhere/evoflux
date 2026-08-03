@@ -489,7 +489,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
 
             {isError && lastError && (
              <div className="mt-3 rounded-lg border border-(--color-error) bg-(--color-error-subtle) px-3 py-2">
-               <p className="text-xs text-(--color-error)">{lastError}</p>
+               <p data-i18n-ignore className="text-xs text-(--color-error)">{lastError}</p>
              </div>
            )}
 
@@ -505,8 +505,9 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     {showScrollBtn && !isEmpty && (
       <div className="pointer-events-none absolute inset-x-0 bottom-3 z-(--z-panel) mx-auto flex w-full max-w-4xl justify-end px-3">
         <button
+          type="button"
           onClick={() => scrollToBottom(true)}
-          className="pointer-events-auto flex size-8 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-card)/95 text-(--color-text-muted) shadow-md backdrop-blur transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+          className="pointer-events-auto flex size-8 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-card)/95 text-(--color-text-muted) shadow-md backdrop-blur transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
           aria-label="Back to latest message"
           title="Back to latest message"
         >

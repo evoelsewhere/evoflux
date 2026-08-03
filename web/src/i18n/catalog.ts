@@ -45,6 +45,22 @@ export function translate(key: string, values: ReadonlyArray<string | number> = 
   return translated.replace(PLACEHOLDER, (_, index: string) => String(values[Number(index)] ?? `{${index}}`))
 }
 
+/**
+ * Pattern captures are interpolated verbatim, so a captured span that is itself
+ * UI vocabulary would survive untranslated inside a translated frame. Strings
+ * composed at runtime hit that path constantly — `"Collapse Projects section"`
+ * matches `"{0} {1} section"` and used to render as `"phần Collapse Projects"`.
+ * Give every capture an exact catalog lookup first; opaque data (ids, counts,
+ * names, paths) has no entry and passes through untouched.
+ */
+function localizeCapture(capture: string, locale: AppLocale): string {
+  const value = capture.trim()
+  if (!value) return capture
+  const translated = catalogs[locale][value]
+  if (!translated || translated === value) return capture
+  return capture.replace(value, () => translated)
+}
+
 function translateTrimmed(source: string, locale: AppLocale): string {
   const exact = catalogs[locale][source]
   if (exact) return exact
@@ -52,7 +68,8 @@ function translateTrimmed(source: string, locale: AppLocale): string {
   for (const pattern of patterns) {
     const match = pattern.regex.exec(source)
     if (!match) continue
-    return translate(pattern.key, match.slice(1), locale)
+    const values = match.slice(1).map((capture) => localizeCapture(capture, locale))
+    return translate(pattern.key, values, locale)
   }
   return source
 }

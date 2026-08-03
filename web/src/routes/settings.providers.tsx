@@ -329,6 +329,16 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
     return { [daemon.var]: trimmedBaseUrl }
   }, [daemon, trimmedBaseUrl])
 
+  const refreshProviders = () =>
+    queryClient.invalidateQueries({ queryKey: queryKeys.settings.providers() })
+
+  // A key is only verified against the base URL it was listed with, so editing
+  // the URL has to retract the verified state instead of leaving a stale tick.
+  const handleBaseUrlChange = (next: string) => {
+    setBaseUrlOverride(next)
+    setVerifiedKey('')
+  }
+
   // Auto-list models for already-connected providers (no new key typed).
   const autoFetchEnabled =
     provider.is_configured &&
@@ -398,15 +408,19 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
         providerId: provider.id,
         body: { api_key: provider.kind === 'cloud_creds' ? '' : trimmedKey, extra: extraForSave },
       })
-      setApiKey('')
-      setBaseUrlOverride(null)
-      setVerifiedKey('')
-      setVerifiedCloudSignature('')
       push({
         tone: 'success',
         title: 'Provider saved',
         description: provider.label,
       })
+      // The mutation only schedules a providers refetch, so the cached
+      // credentials are still the pre-save ones here. Releasing the local
+      // draft first would flash the previous base URL back into the field.
+      await refreshProviders()
+      setApiKey('')
+      setBaseUrlOverride(null)
+      setVerifiedKey('')
+      setVerifiedCloudSignature('')
     } catch (err) {
       push({
         tone: 'error',
@@ -419,17 +433,18 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
   const handleClear = async () => {
     try {
       await deleteMutation.mutateAsync(provider.id)
-      setApiKey('')
-      setBaseUrlOverride(null)
-      setVerifiedKey('')
-      setVerifiedCloudSignature('')
-      setCloudValues({})
       setHasReachabilityFailure(false)
       push({
         tone: 'success',
         title: 'Provider cleared',
         description: provider.label,
       })
+      await refreshProviders()
+      setApiKey('')
+      setBaseUrlOverride(null)
+      setVerifiedKey('')
+      setVerifiedCloudSignature('')
+      setCloudValues({})
     } catch (err) {
       push({
         tone: 'error',
@@ -559,7 +574,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
                     <Input
                       type="url"
                       value={baseUrl}
-                      onChange={(e) => setBaseUrlOverride(e.target.value)}
+                      onChange={(e) => handleBaseUrlChange(e.target.value)}
                       placeholder={daemon.placeholder}
                       autoComplete="off"
                       className="mt-1.5 h-10 font-mono text-xs"
@@ -662,7 +677,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
                   <Input
                     type="url"
                     value={baseUrl}
-                    onChange={(e) => setBaseUrlOverride(e.target.value)}
+                    onChange={(e) => handleBaseUrlChange(e.target.value)}
                     placeholder={daemon.placeholder}
                     autoComplete="off"
                     className="mt-1.5 h-10 font-mono text-xs"
@@ -1369,6 +1384,9 @@ export function ProvidersSettingsPage() {
         errorTitle="Failed to load providers"
         onRetry={() => void providersQ.refetch()}
       >
+      {/* The boundary renders `display: contents`, so its children never match
+          the page's `space-y-*`; own the rhythm here instead. */}
+      <div className="space-y-7">
       {providers.length > 0 && (
         <div className="flex h-10 items-center gap-2 rounded-lg border border-(--color-border) bg-(--bg-card) px-3 focus-within:border-(--focus-ring) focus-within:ring-3 focus-within:ring-(--focus-ring)/30">
           <Search size={14} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
@@ -1433,6 +1451,7 @@ export function ProvidersSettingsPage() {
           )}
         </>
       )}
+      </div>
       </SettingsAsyncBoundary>
     </SettingsPage>
   )

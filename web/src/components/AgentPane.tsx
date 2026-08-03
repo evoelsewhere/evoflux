@@ -183,7 +183,18 @@ export function AgentPane({
     () => getVisibleTurnWindow(turnItems, renderedTurnCount),
     [renderedTurnCount, turnItems],
   )
-  const latestMCPAppBlockIds = useMemo(() => latestMCPAppResourceBlockIds(allBlocks), [allBlocks])
+  // Reduce the relevant state to a primitive key first. `allBlocks` is a fresh
+  // array on every streamed chunk, so memoizing the Set on it directly would
+  // hand every `BlockRenderer` a new prop identity per token and defeat their
+  // `memo` bailout. Same technique as `AgentView`.
+  const latestMCPAppBlockIdsKey = useMemo(
+    () => [...latestMCPAppResourceBlockIds(allBlocks)].sort().join('\u0000'),
+    [allBlocks],
+  )
+  const latestMCPAppBlockIds = useMemo(
+    () => new Set(latestMCPAppBlockIdsKey ? latestMCPAppBlockIdsKey.split('\u0000') : []),
+    [latestMCPAppBlockIdsKey],
+  )
 
   const showEarlierTurns = useCallback(() => {
     const el = scrollRef.current
@@ -327,7 +338,13 @@ export function AgentPane({
       <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain" style={{ minHeight: 0 }}>
         {isEmpty && !isWorking && (isError || isOffline) && (
             <div className="flex h-full select-none flex-col items-center justify-center py-8">
-              <p className="text-xs text-(--color-text-subtle)">{isError ? stream.lastError || 'Error' : 'Offline'}</p>
+              <p className="text-xs text-(--color-text-subtle)">
+                {isError
+                  ? stream.lastError
+                    ? <span data-i18n-ignore>{stream.lastError}</span>
+                    : 'Error'
+                  : 'Offline'}
+              </p>
             </div>
           )}
 
@@ -422,14 +439,15 @@ export function AgentPane({
 
           {isError && stream.lastError && (
            <div className="mx-3 mt-3 rounded-lg border border-(--color-error) bg-(--color-error-subtle) px-3 py-2">
-             <p className="text-xs text-(--color-error)">{stream.lastError}</p>
+             <p data-i18n-ignore className="text-xs text-(--color-error)">{stream.lastError}</p>
            </div>
           )}
       </div>
       {showScrollBtn && (
         <button
+          type="button"
           onClick={() => scrollToBottom(true)}
-          className="absolute right-2 bottom-2 z-(--z-panel) flex size-8 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-card)/95 text-(--color-text-muted) shadow-md backdrop-blur transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+          className="absolute right-2 bottom-2 z-(--z-panel) flex size-8 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-card)/95 text-(--color-text-muted) shadow-md backdrop-blur transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
           aria-label="Back to latest message"
           title="Back to latest message"
         >

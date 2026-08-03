@@ -29,6 +29,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
@@ -158,6 +159,26 @@ export function SidebarShell({
     resizeCleanupRef.current = () => finish(false)
   }, [collapsed, isMacOverlay, setSidebarResizing, setSidebarWidth])
 
+  // Keyboard equivalent of the pointer drag (ARIA window-splitter keys), so
+  // the width is not mouse-only: arrows nudge, Home/End jump to the bounds,
+  // Enter restores the default — the same commit path as `finish(true)`.
+  const resizeByKeyboard = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
+    const step = event.shiftKey ? 64 : 16
+    let next: number | null = null
+    if (event.key === 'ArrowLeft') next = sidebarWidth - step
+    else if (event.key === 'ArrowRight') next = sidebarWidth + step
+    else if (event.key === 'Home') next = SIDEBAR_WIDTH.min
+    else if (event.key === 'End') next = SIDEBAR_WIDTH.max
+    else if (event.key === 'Enter') {
+      event.preventDefault()
+      resetSidebarWidth()
+      return
+    }
+    if (next === null) return
+    event.preventDefault()
+    setSidebarWidth(next)
+  }, [resetSidebarWidth, setSidebarWidth, sidebarWidth])
+
   // On macOS Tauri the rail widens to 70px (matching
   // --spacing-mac-traffic-inset) so the traffic-light buttons land fully
   // inside it instead of spilling into the main content.
@@ -181,12 +202,17 @@ export function SidebarShell({
       {!collapsed && (
         <div
           role="separator"
+          tabIndex={0}
           aria-orientation="vertical"
           aria-label={resizeLabel}
+          aria-valuenow={sidebarWidth}
+          aria-valuemin={SIDEBAR_WIDTH.min}
+          aria-valuemax={SIDEBAR_WIDTH.max}
           title="Drag to resize · double-click to reset"
-          className="absolute right-0 top-0 z-(--z-header) h-full w-1 cursor-col-resize transition-colors hover:bg-(--color-accent)/40"
+          className="absolute right-0 top-0 z-(--z-header) h-full w-1 cursor-col-resize outline-none transition-colors hover:bg-(--color-accent)/40 focus-visible:bg-(--color-accent)/60"
           onPointerDown={startResize}
           onDoubleClick={resetSidebarWidth}
+          onKeyDown={resizeByKeyboard}
         />
       )}
       <div className="flex h-full flex-col gap-0.5 overflow-hidden p-0.5">

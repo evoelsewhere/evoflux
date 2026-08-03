@@ -66,7 +66,8 @@ export function NewSkillPage() {
         title: `Created skill "${name}"`,
         description: 'Active on next turn.',
       })
-      navigate('/settings/skills/$name', { params: { name } })
+      // The draft is persisted, so it must not trigger the discard confirm.
+      navigate('/settings/skills/$name', { params: { name }, force: true })
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
       setSaveError(msg)

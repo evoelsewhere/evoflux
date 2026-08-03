@@ -23,7 +23,8 @@
  *                   for z-stacking (it is position:fixed).
  *   header        — optional strip above the body row (TeamChatView).
  *   trailing      — panels rendered after <main> inside the body row.
- *   overlay       — panels rendered after the body row (modals, palette).
+ *   overlay       — viewport-fixed modals/palette; rendered outside the
+ *                   collapsible main column so they survive `mainHidden`.
  *   children      — the main content.
  */
 
@@ -133,8 +134,11 @@ export function AppShell({
             </motion.main>
             {trailing}
           </div>
-          {overlay}
         </div>
+        {/* Overlays are viewport-fixed modals, so they take no space in this
+            row — and living OUTSIDE the mainHidden wrapper is what keeps the
+            command palette reachable while a workbench tool is maximized. */}
+        {overlay}
         {fullHeightTrailing}
       </div>
     </div>

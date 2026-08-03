@@ -78,7 +78,8 @@ export function NewAgentPage() {
         title: `Created "${agentName}"`,
         description: 'Active on next turn.',
       })
-      navigate('/settings/agents/$name', { params: { name: agentName } })
+      // The draft is persisted, so it must not trigger the discard confirm.
+      navigate('/settings/agents/$name', { params: { name: agentName }, force: true })
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
       setSaveError(msg)
