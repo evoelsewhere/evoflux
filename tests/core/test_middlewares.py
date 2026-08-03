@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+import asyncio
+from collections.abc import AsyncGenerator
+
+from fastapi import FastAPI, WebSocket
 from fastapi.testclient import TestClient
+from sse_starlette.sse import EventSourceResponse
 
 from app.core.middlewares import RequestSizeLimitMiddleware, SecurityHeadersMiddleware
 
@@ -77,6 +81,110 @@ class TestRequestSizeLimitMiddleware:
     def test_custom_max_bytes_stored(self):
         middleware = RequestSizeLimitMiddleware(app=FastAPI(), max_bytes=1024)
         assert middleware._max_bytes == 1024
+
+    def test_oversized_streamed_body_without_content_length_returns_413(self):
+        """A chunked body over the limit must not bypass the check."""
+
+        def _chunks():
+            for _ in range(4):
+                yield b"x" * 40
+
+        client = TestClient(_make_app(max_bytes=100))
+        resp = client.post("/upload", content=_chunks())
+        assert resp.status_code == 413
+        assert resp.json() == {"detail": "Request body too large."}
+
+    def test_streamed_body_within_limit_reaches_the_route(self):
+        app = FastAPI()
+        app.add_middleware(RequestSizeLimitMiddleware, max_bytes=100)
+
+        @app.post("/echo")
+        async def echo(payload: dict):
+            return {"seen": payload["value"]}
+
+        def _chunks():
+            yield b'{"value":'
+            yield b'"hello"}'
+
+        client = TestClient(app)
+        resp = client.post(
+            "/echo",
+            content=_chunks(),
+            headers={"content-type": "application/json"},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"seen": "hello"}
+
+    def test_duplicate_conflicting_content_length_is_rejected(self):
+        middleware_app = _make_app(max_bytes=100)
+        client = TestClient(middleware_app)
+        resp = client.post(
+            "/upload",
+            content=b"x" * 5,
+            headers=[("content-length", "5"), ("content-length", "6")],
+        )
+        assert resp.status_code == 400
+
+    def test_non_numeric_content_length_is_rejected(self):
+        client = TestClient(_make_app(max_bytes=100))
+        resp = client.post(
+            "/upload", content=b"x" * 5, headers={"content-length": "abc"}
+        )
+        assert resp.status_code == 400
+
+
+class TestRequestSizeLimitMiddlewareStreaming:
+    """The size limit must not truncate long-lived server-sent event streams."""
+
+    @staticmethod
+    def _sse_app() -> FastAPI:
+        app = FastAPI()
+        app.add_middleware(RequestSizeLimitMiddleware, max_bytes=100)
+
+        @app.get("/events")
+        async def events():
+            async def _gen() -> AsyncGenerator[dict, None]:
+                for index in range(3):
+                    await asyncio.sleep(0.01)
+                    yield {"event": "tick", "data": str(index)}
+
+            return EventSourceResponse(_gen())
+
+        return app
+
+    def test_sse_stream_delivers_all_events(self):
+        client = TestClient(self._sse_app())
+        with client.stream("GET", "/events") as resp:
+            assert resp.status_code == 200
+            body = "".join(resp.iter_text())
+        assert "data: 0" in body
+        assert "data: 1" in body
+        assert "data: 2" in body
+
+    def test_sse_stream_is_not_closed_before_first_event(self):
+        """Regression: a fabricated ``http.disconnect`` killed every SSE stream."""
+        client = TestClient(self._sse_app())
+        with client.stream("GET", "/events") as resp:
+            body = "".join(resp.iter_text())
+        assert body.strip() != ""
+
+    def test_websocket_passes_through_untouched(self):
+        """The limiter is pure ASGI now — non-HTTP scopes must not be inspected."""
+        app = FastAPI()
+        app.add_middleware(RequestSizeLimitMiddleware, max_bytes=10)
+
+        @app.websocket("/ws")
+        async def ws_echo(websocket: WebSocket):
+            await websocket.accept()
+            payload = await websocket.receive_text()
+            await websocket.send_text(f"echo:{payload}")
+            await websocket.close()
+
+        client = TestClient(app)
+        with client.websocket_connect("/ws") as ws:
+            # Deliberately longer than max_bytes: the limit is HTTP-only.
+            ws.send_text("x" * 64)
+            assert ws.receive_text() == "echo:" + "x" * 64
 
 
 # ── SecurityHeadersMiddleware ────────────────────────────────────────────────
