@@ -193,6 +193,17 @@ xlsx_artifact = Tool(
     name="xlsx_artifact",
     deferred=True,
     deferred_summary="Create, inspect, render, validate, and template-edit formula-driven XLSX workbooks with @oai/artifact-tool.",
+    search_aliases=(
+        "spreadsheet",
+        "excel",
+        "xls",
+        "sheet",
+        "worksheet",
+        "workbook",
+        "formula",
+        "budget",
+        "financial",
+    ),
     capabilities=("spreadsheet", "office", "filesystem-write"),
 )
 

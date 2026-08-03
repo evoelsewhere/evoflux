@@ -204,6 +204,16 @@ docx_document = Tool(
     name="docx_document",
     deferred=True,
     deferred_summary="Create, inspect, render, validate, and template-edit Word-native DOCX documents with package fidelity checks.",
+    search_aliases=(
+        "word",
+        "report",
+        "letter",
+        "contract",
+        "proposal",
+        "resume",
+        "cv",
+        "memo",
+    ),
     capabilities=("document", "office", "filesystem-write"),
 )
 

@@ -246,6 +246,15 @@ pptx_template = Tool(
         "duplicate source slides, preserve master/layout/theme, update resolved "
         "text, image, table, and chart objects, render QA, and fail closed."
     ),
+    search_aliases=(
+        "powerpoint",
+        "ppt",
+        "slide",
+        "slides",
+        "deck",
+        "presentation",
+        "branded",
+    ),
     capabilities=("presentation", "office", "filesystem-write"),
 )
 

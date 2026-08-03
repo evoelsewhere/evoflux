@@ -587,6 +587,22 @@ static_diagnostics = Tool(
     read_only=True,
     deferred=True,
     deferred_summary="Run static diagnostics for a file or directory.",
+    search_aliases=(
+        "lint",
+        "linter",
+        "lints",
+        "typecheck",
+        "types",
+        "error",
+        "errors",
+        "warning",
+        "warnings",
+        "ruff",
+        "tsc",
+        "mypy",
+        "eslint",
+        "syntax",
+    ),
 )
 
 code_definition = Tool(
@@ -601,6 +617,12 @@ code_definition = Tool(
     read_only=True,
     deferred=True,
     deferred_summary="Find the definition of a code symbol.",
+    search_aliases=(
+        "declared",
+        "declaration",
+        "defined",
+        "implementation",
+    ),
 )
 
 code_references = Tool(
@@ -614,6 +636,14 @@ code_references = Tool(
     read_only=True,
     deferred=True,
     deferred_summary="Find references to a code symbol across the workspace.",
+    search_aliases=(
+        "callers",
+        "callsites",
+        "calls",
+        "usages",
+        "importers",
+        "subclasses",
+    ),
 )
 
 lsp_diagnostics = Tool(
@@ -627,6 +657,17 @@ lsp_diagnostics = Tool(
     read_only=True,
     deferred=True,
     deferred_summary="Get live diagnostics from a language server.",
+    search_aliases=(
+        "lint",
+        "typecheck",
+        "types",
+        "error",
+        "errors",
+        "warning",
+        "warnings",
+        "syntax",
+        "lsp",
+    ),
 )
 
 lsp_definition = Tool(

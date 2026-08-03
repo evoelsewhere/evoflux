@@ -492,6 +492,12 @@ async def _ensure_browser(session_id: str) -> bool:
     description=_DESCRIPTION,
     deferred=True,
     deferred_summary="Read and control EvoFlux's visible in-app desktop browser.",
+    search_aliases=(
+        "screenshot",
+        "chrome",
+        "devtools",
+        "console",
+    ),
     capabilities=("browser",),
 )
 async def browser_use(

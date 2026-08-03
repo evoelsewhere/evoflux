@@ -9,7 +9,53 @@ from typing import Annotated, Any
 from loguru import logger
 from pydantic import BeforeValidator, Field
 
-from app.agent.tools.registry import InjectedArg, tool
+from app.agent.tools.registry import DeferredToolEntry, InjectedArg, tool
+
+
+#: Weight applied to a hit on a tool's name or aliases. Those are curated
+#: intent vocabulary, so they outrank a summary word that merely coincides:
+#: "table of data" should surface the widget renderer, not whichever summary
+#: happens to mention "data".
+_INTENT_MATCH_WEIGHT = 2
+
+#: Common English function words, dropped from a query before scoring. Matching
+#: is a plain term intersection, so otherwise "show me the diagram" scores "the"
+#: against every summary containing "the" and buries the tool that actually
+#: matched "diagram". Deliberately short: one- and two-letter filler is handled
+#: by length below, and any word the catalog itself uses is rescued by
+#: *vocabulary*, so this list never has to anticipate a tool's keywords.
+_QUERY_STOPWORDS: frozenset[str] = frozenset(
+    """
+    the and for with from into that this these those their your our
+    are was were has have had can will would should could does did not
+    any some one just use using please want need
+    """.split()
+)
+
+#: Query tokens shorter than this are filler unless the catalog uses them —
+#: which is what keeps a genuine short keyword such as "cv" searchable.
+_MIN_MEANINGFUL_TERM_LENGTH = 3
+
+
+def _tokenise(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", text.casefold()))
+
+
+def _query_terms(query: str, vocabulary: frozenset[str]) -> set[str]:
+    """Tokenise a query, dropping filler that would skew scoring.
+
+    A token the catalog itself uses is never filler, whatever the stopword list
+    says — so adding an alias can widen search without a matching edit here.
+    """
+    terms = _tokenise(query)
+    meaningful = {
+        term
+        for term in terms
+        if term in vocabulary
+        or (len(term) >= _MIN_MEANINGFUL_TERM_LENGTH and term not in _QUERY_STOPWORDS)
+    }
+    # An all-filler query still deserves a best effort over nothing.
+    return meaningful or terms
 
 
 def _coerce_tool_names(value: Any) -> Any:
@@ -62,9 +108,9 @@ async def load_tool(
 
     raw_catalog = _state.metadata.get("deferred_tool_catalog") or {}
     catalog = {
-        str(name): str(summary)
-        for name, summary in raw_catalog.items()
-        if isinstance(name, str)
+        str(name): entry
+        for name, entry in raw_catalog.items()
+        if isinstance(name, str) and isinstance(entry, DeferredToolEntry)
     }
 
     requested_names = list(
@@ -103,13 +149,23 @@ async def load_tool(
     if not query or not query.strip():
         return "Deferred tool names: " + ", ".join(sorted(catalog))
 
-    terms = set(re.findall(r"[a-z0-9]+", query.casefold()))
+    # Aliases widen what matches; the model is only ever shown the summary.
+    intent_by_name = {
+        name: _tokenise(f"{name} {' '.join(entry.aliases)}")
+        for name, entry in catalog.items()
+    }
+    vocabulary = frozenset().union(*intent_by_name.values())
+
+    terms = _query_terms(query, vocabulary)
     ranked: list[tuple[int, str, str]] = []
-    for name, summary in catalog.items():
-        haystack_terms = set(re.findall(r"[a-z0-9]+", f"{name} {summary}".casefold()))
-        score = len(terms & haystack_terms)
+    for name, entry in catalog.items():
+        intent_terms = intent_by_name[name]
+        summary_only = _tokenise(entry.summary) - intent_terms
+        score = _INTENT_MATCH_WEIGHT * len(terms & intent_terms) + len(
+            terms & summary_only
+        )
         if score:
-            ranked.append((score, name, summary))
+            ranked.append((score, name, entry.summary))
     ranked.sort(key=lambda item: (-item[0], item[1]))
 
     if not ranked:

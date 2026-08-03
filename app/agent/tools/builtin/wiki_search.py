@@ -94,4 +94,15 @@ wiki_search = Tool(
     read_only=True,
     deferred=True,
     deferred_summary="Search distilled wiki knowledge from prior conversations.",
+    search_aliases=(
+        "remember",
+        "recall",
+        "previously",
+        "earlier",
+        "past",
+        "knowledge",
+        "topic",
+        "notes",
+        "context",
+    ),
 )

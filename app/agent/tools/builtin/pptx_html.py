@@ -242,6 +242,16 @@ pptx_html = Tool(
         "image model using controlled HTML/CSS → Desktop WebView QA → native-object "
         "hybrid PPTX composition."
     ),
+    search_aliases=(
+        "powerpoint",
+        "ppt",
+        "slide",
+        "slides",
+        "deck",
+        "presentation",
+        "pitch",
+        "keynote",
+    ),
     capabilities=("presentation", "office", "filesystem-write"),
 )
 

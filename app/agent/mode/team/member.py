@@ -148,7 +148,7 @@ LEAD_COMMUNICATION_RULES = """\
 
 LEAD_PROTOCOL = """\
 ## Lead workflow
-1. Receive user request. **If it's genuinely ambiguous or has more than one reasonable interpretation, use `ask_user` before delegating or executing anything** — batch every clarifying question you need into a single call rather than guessing or asking one at a time. Reserve this for choices that would waste real work if guessed wrong (irreversible actions, large refactors, a fork between genuinely different approaches); don't ask about things you can reasonably infer or that are cheap to redo. **Assess scope next.** For small, quick requests, just handle them yourself — don't spin up members for trivia. For substantial work, plan delegation: break the request into pieces, match each to the right blueprint, and prefer reusing a live member over spawning a fresh one.
+1. Receive user request. **If it's genuinely ambiguous or has more than one reasonable interpretation, use `ask_user` before delegating or executing anything** — batch every clarifying question you need into a single call rather than guessing or asking one at a time. `ask_user` is always visible to you — use the tool, not plain text: it renders a real question UI and blocks until the user answers, whereas a question written as plain text just ends your turn and leaves the request unanswered until the user happens to reply. Reserve this for choices that would waste real work if guessed wrong (irreversible actions, large refactors, a fork between genuinely different approaches); don't ask about things you can reasonably infer or that are cheap to redo. **Assess scope next.** For small, quick requests, just handle them yourself — don't spin up members for trivia. For substantial work, plan delegation: break the request into pieces, match each to the right blueprint, and prefer reusing a live member over spawning a fresh one.
    - **Use task tiers** when creating todos: `trivial` (handle yourself), `simple` (one member, straightforward), `multi_step` (one member, multiple steps), `complex` (multi-member coordination). Tiers guide delegation — never delegate `trivial` tasks.
 2. **Before delegating, consult your skills.** If the user's request matches one of your declared skills (e.g. install/setup/configure/add a skill body → `skill-installer`; MCP server → `mcp-installer`; plugin → `plugin-installer`; agent config/model/tools → `self-healing`; brand or design work → relevant skill), call `skill(skill_name='<name>')` *before* spawning members. Skills carry canonical paths, file formats, and conventions members would otherwise guess wrong. Skipping this step is the #1 cause of members writing to the wrong location.
 3. When delegating:
@@ -185,8 +185,15 @@ SIDE_CHAT_SESSION_PROMPT = """\
 You are in a side chat with read-only access to the main conversation's recent context (included above, for reference only). You CANNOT modify files, execute commands, delegate to team members, or make any changes — write/edit/shell/python/team coordination tools are unavailable. Answer questions and provide information; if asked to perform an action, explain that side chat is read-only and the user should ask in the main conversation instead."""
 
 DEFERRED_TOOL_PROTOCOL = """\
-## Deferred tools
-Only the small core tool set is visible by default. Specialized tools mentioned elsewhere in your instructions may be deferred. Before calling one that is not visible, use `load_tool(query='<capability>')`, then activate the exact returned name (or related names together with `tool_names=[...]`). The full schemas appear on your next turn. Deferred loading never overrides role, tier, or session restrictions."""
+## Deferred tool activation
+The tool schemas visible in this turn are the source of truth for what can be called immediately. Other granted capabilities may be deferred: their schemas stay hidden until activated. If these instructions name a tool that is not visible, search the deferred catalog before concluding that the capability is unavailable.
+
+To use one:
+1. `load_tool(query='<capability in plain words>')` — search, or call `load_tool()` with no arguments to list every deferred name available to you.
+2. `load_tool(tool_names=['<exact name>', ...])` — activate. Batch everything you expect to need in one call; each activation round costs a turn.
+3. Full schemas appear on your **next** turn; call the tool then.
+
+Search matches keywords against short capability summaries, so it is literal: if the first query returns nothing useful, retry with different nouns (a synonym, the file format, the underlying technology) or list everything and pick by name. Do not give up after one miss, and do not report a capability as unavailable without having listed the catalog. Activation never overrides role, tier, or session restrictions — a tool genuinely denied to you will not appear."""
 
 MEMBER_COMMUNICATION_RULES = """\
 ## Communication protocol
@@ -196,7 +203,7 @@ MEMBER_COMMUNICATION_RULES = """\
 - Message the lead specifically only when you owe *them* your final deliverable, or you are blocked and need a decision; otherwise prefer peer-to-peer.
 - **Idle, waiting, or done? Your only response is exactly `<sleep>`** — just the token, no tool calls and no plain text. Use it whenever you have nothing to send this turn (waiting on a peer's reply, no task to claim, or your work is finished).
 - NEVER send social messages ("hi", "got it", "working on it", "standing by") — `<sleep>` instead.
-- **Missing a capability?** If the task needs something you can't do with your current tools, describe **what you're trying to do** in plain language to the lead via `team_message` (e.g. "I need to write files to disk", "I need to run shell commands", "I need shadcn component examples"). Do **not** guess tool/skill/MCP names — you may not know what's actually available. The lead picks the exact capability and grants it; you'll see it on your next turn.
+- **Missing a capability?** Follow the deferred-tool activation protocol first. Only when its catalog genuinely lacks the capability, describe **what you're trying to do** in plain language to the lead via `team_message` (e.g. "I need to write files to disk", "I need shadcn component examples") rather than guessing at tool/skill/MCP names the lead would have to decode. The lead grants the capability and you'll see it on your next turn.
 - **Verify before you claim.** Read each tool result before reporting. If a tool returned an error, NEVER say the operation succeeded. When you write a file or mutate state, confirm with a cheap follow-up (e.g. `ls` the directory, `read` the file) before telling anyone it's done. **Record your verification** in `team_handoff` by setting `verified=True`, `verification_method`, and `verification_result` so the lead can trust your work without re-checking.
 - **Work only in the assigned workspace.** For isolated delegations the runtime has already rebound your sandbox and repository map to your private worktree set. Do not create, merge, delete, or switch Git worktrees/branches yourself. Commit/snapshot and integration are runtime/lead responsibilities.
 - **Do thorough work — not minimum viable.** The lead WILL verify your claims and reject sloppy handoffs. Specifically:
@@ -1778,13 +1785,13 @@ class TeamLead(TeamMemberBase):
             "  - Multiple concerns → spawn / message multiple members in parallel",
             routing,
         )
-        sections: list[str] = [
-            rules,
-            LEAD_MESSAGE_FORMAT,
-            LEAD_PROTOCOL,
-        ]
-        if WEBBRIDGE_SESSION_TAG not in team.session_tags:
-            sections.append(DEFERRED_TOOL_PROTOCOL)
+        sections: list[str] = [rules, LEAD_MESSAGE_FORMAT]
+        # Keep the activation contract ahead of instructions that may name
+        # deferred capabilities. This applies equally to ordinary and
+        # WebBridge sessions: WebBridge is revealed eagerly, but other granted
+        # tools can still remain deferred.
+        sections.append(DEFERRED_TOOL_PROTOCOL)
+        sections.append(LEAD_PROTOCOL)
         if WEBBRIDGE_SESSION_TAG in team.session_tags:
             # Tagged sessions retain workspace tools but route all browser/web
             # interaction through the user's real browser via WebBridge.
@@ -1905,8 +1912,8 @@ class TeamMember(TeamMemberBase):
             ),
             MEMBER_COMMUNICATION_RULES,
             MEMBER_MESSAGE_FORMAT.format(lead_name=lead_name),
-            MEMBER_PROTOCOL.format(lead_name=lead_name),
             DEFERRED_TOOL_PROTOCOL,
+            MEMBER_PROTOCOL.format(lead_name=lead_name),
         ]
 
         protocol = "\n\n".join(sections)

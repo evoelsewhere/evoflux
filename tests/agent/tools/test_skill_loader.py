@@ -657,7 +657,8 @@ class TestBuiltinSkills:
 
         assert "Treat the user's visual direction as confirmed" in normalized
         assert "continue without asking the user to approve" in normalized
-        assert "call the deferred `ask_user` tool" in normalized
+        assert "call the `ask_user` tool" in normalized
+        assert "deferred `ask_user`" not in normalized
         assert "resume outline, authoring, rendering, and composition" in normalized
         assert "Never send a plain assistant message asking" in normalized
 
