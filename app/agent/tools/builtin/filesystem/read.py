@@ -48,6 +48,24 @@ def _number_lines(text: str, start: int = 1) -> str:
     return numbered + ("\n" if trailing_nl else "")
 
 
+def _split_lines_keepends(text: str) -> list[str]:
+    """Split *text* on ``\\n`` only, keeping the terminator on each line.
+
+    ``str.splitlines`` also breaks on ``\\x0b``, ``\\x0c``, ``\\x1c``-``\\x1e``,
+    ``\\x85``, ``U+2028`` and ``U+2029``. Form feeds appear in real source
+    files and ``\\x85`` shows up in any binary read through the latin-1
+    fallback, so using it here would desynchronise the offset/limit line
+    numbers from the ``\\n``-based numbering used by unpaginated reads,
+    ``_number_lines``, grep and editors.
+    """
+    parts = text.split("\n")
+    tail = parts.pop()
+    lines = [part + "\n" for part in parts]
+    if tail:
+        lines.append(tail)
+    return lines
+
+
 def _cap_text_for_context(text: str, rel: object) -> str:
     """Return a context-safe preview for unpaginated text reads."""
     if len(text) <= _MAX_CONTEXT_CHARS:
@@ -129,18 +147,16 @@ async def _read_file(
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
         text = raw.decode("latin-1")
-    # Match Python's universal-newline behaviour so tool output and line
-    # numbers are stable across files written on Windows, macOS, and POSIX.
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-
-    # Normalize newlines so Windows CRLF files don't leak ``\r`` into the
-    # numbered line payload the model sees (and edit/patch tools match).
+    # Match Python's universal-newline behaviour so Windows CRLF and classic
+    # Mac CR files don't leak ``\r`` into the numbered line payload the model
+    # sees (and edit/patch tools match), and so line numbers are stable
+    # across files written on Windows, macOS, and POSIX.
     text = text.replace("\r\n", "\n").replace("\r", "\n")
 
     if offset == 1 and limit is None:
         return _cap_text_for_context(_number_lines(text), rel)
 
-    lines = text.splitlines(keepends=True)
+    lines = _split_lines_keepends(text)
     total = len(lines)
     start = max(0, offset - 1)
     end = total if limit is None else min(total, start + limit)

@@ -7,6 +7,12 @@ import sys
 
 from app.cli.paths import _pid_file
 
+# Windows ``OpenProcess`` takes a 32-bit DWORD pid and ctypes silently
+# truncates anything wider, so ``pid + 2**32`` would probe (and later try to
+# signal) a completely unrelated live process. POSIX ``pid_t`` is narrower
+# still. Reject out-of-range values up front instead.
+_MAX_PID = 0xFFFFFFFF
+
 
 def _write_pids(pids: list[int]) -> None:
     pid_file = _pid_file()
@@ -25,7 +31,7 @@ def _read_pids() -> list[int]:
 
 
 def _pid_alive(pid: int) -> bool:
-    if pid <= 0:
+    if pid <= 0 or pid > _MAX_PID:
         return False
     if sys.platform == "win32":
         import ctypes
