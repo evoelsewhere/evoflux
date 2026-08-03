@@ -331,6 +331,8 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
             {visibleHeader && (
               <>
                 <span>: </span>
+                {/* Data inside the header is wrapped in `Arg` (display.tsx),
+                    which carries its own `data-i18n-ignore`. */}
                 <span title={headerTitle ?? undefined}>{visibleHeader}</span>
               </>
             )}
@@ -402,6 +404,7 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
                           {isShellTerminal ? 'terminal' : 'arguments'}
                         </span>
                         <button
+                          type="button"
                           onClick={handleCopyArgs}
                           className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) opacity-100 transition-[opacity,background-color,color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text-2) focus-visible:outline-2 focus-visible:outline-(--focus-ring) md:h-6 md:w-6 md:opacity-0 md:group-hover:opacity-100"
                           aria-label="Copy arguments"
@@ -426,6 +429,7 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
                           </pre>
                           {shellResult?.statusLine && (
                             <span
+                              data-i18n-ignore
                               className={`font-mono text-xs font-medium ${
                                 shellResult.statusLine.startsWith('[Succeeded')
                                   ? 'text-(--color-success)'
@@ -468,6 +472,7 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
                           result
                         </span>
                         <button
+                          type="button"
                           onClick={handleCopyResult}
                           className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) opacity-100 transition-[opacity,background-color,color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text-2) focus-visible:outline-2 focus-visible:outline-(--focus-ring) md:h-6 md:w-6 md:opacity-0 md:group-hover:opacity-100"
                           aria-label="Copy result"
@@ -480,7 +485,7 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
                           )}
                         </button>
                       </div>
-                      <div className="px-3 py-2.5 text-xs leading-relaxed text-(--color-text)">
+                      <div data-i18n-ignore className="px-3 py-2.5 text-xs leading-relaxed text-(--color-text)">
                         <ToolResult toolName={name} result={shownResult} />
                       </div>
                     </div>
@@ -504,11 +509,12 @@ function SeeBrowserButton() {
 
   return (
     <button
+      type="button"
       onClick={(e) => {
         e.stopPropagation()
         toggleBrowser()
       }}
-      className={`ml-1 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold transition-colors border ${
+      className={`ml-1 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold transition-colors border focus-visible:outline-2 focus-visible:outline-(--focus-ring) ${
         browserOpen
           ? 'border-(--accent-blue) bg-(--accent-blue) text-(--color-text-on-accent)'
           : browserActive

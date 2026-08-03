@@ -306,8 +306,8 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
 
          {/* Copy / revert / timestamp — always visible on touch; hover/focus on md+ */}
           <div className="flex items-center gap-1.5 opacity-100 transition-opacity duration-(--motion-fast) md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
-              {modelName && (
-                <span className="mr-1 font-mono text-xs text-(--color-text-subtle)" title={modelId ?? undefined}>
+               {modelName && (
+                 <span data-i18n-ignore className="mr-1 font-mono text-xs text-(--color-text-subtle)" title={modelId ?? undefined}>
                   {modelName}
                 </span>
               )}

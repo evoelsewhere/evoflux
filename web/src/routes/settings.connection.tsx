@@ -328,10 +328,7 @@ export function BackendConnectionPage() {
             <Input
               id="settings-backend-key"
               value={accessKey}
-              onChange={(event) => {
-                setAccessKeyInput(event.target.value)
-                setAccessKey(event.target.value)
-              }}
+              onChange={(event) => setAccessKeyInput(event.target.value)}
               placeholder="Paste the server access key"
               type="password"
               className="w-full text-sm"

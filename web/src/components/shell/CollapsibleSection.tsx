@@ -56,7 +56,10 @@ export function CollapsibleSection({
           onClick={onToggle}
           className="flex min-w-0 flex-1 items-center gap-1 rounded-xs py-0.5 text-left hover:bg-(--bg-key)"
           aria-expanded={!collapsed}
-          aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${label} section`}
+          // Keep the verb outside the placeholder: a whole-sentence frame lets the
+          // catalog carry a specific "Collapse {0} section" entry instead of
+          // falling back to the generic "{0} {1} section" wildcard.
+          aria-label={collapsed ? `Expand ${label} section` : `Collapse ${label} section`}
         >
           {collapsed ? (
             <ChevronRight

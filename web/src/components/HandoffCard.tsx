@@ -34,14 +34,14 @@ interface HandoffCardProps {
 }
 
 function ConfidenceMeter({ value, compact }: { value: number; compact?: boolean }) {
-  const pct = Math.round(value * 100)
+  const pct = Math.min(100, Math.max(0, Math.round(value * 100)))
   const color = value >= 0.8
     ? 'bg-(--color-success)'
     : value >= 0.5
       ? 'bg-(--color-warning)'
       : 'bg-(--color-error)'
   return (
-    <div className={`flex items-center gap-2 ${compact ? 'text-xs' : 'text-xs'}`}>
+    <div className="flex items-center gap-2 text-xs">
       <span className="text-(--color-text-muted)">Confidence</span>
       <div className={`${compact ? 'h-1 w-12' : 'h-1.5 w-16'} overflow-hidden rounded-full bg-(--color-border)`}>
         <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
@@ -65,7 +65,7 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
   const textSize  = compact ? 'text-xs'    : 'text-sm'
   const maxWidth  = compact ? 'max-w-[88%]' : 'max-w-[78%]'
   const padding   = compact ? 'px-3 py-2'  : 'px-4 py-3'
-  const labelSize = compact ? 'text-xs' : 'text-xs'
+  const labelSize = 'text-xs'
 
   const isPartial = artifact.status === 'partial'
 
@@ -87,7 +87,7 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <p className={`${labelSize} font-semibold tracking-wide text-(--color-text-2)`}>
-              Handoff from {fromAgent}
+              Handoff from <span data-i18n-ignore>{fromAgent}</span>
             </p>
             <Badge variant={isPartial ? 'outline' : 'secondary'} className={`${compact ? 'text-xs px-1 py-0' : 'text-xs px-1.5 py-0'}`}>
               {isPartial ? 'partial' : 'final'}
@@ -124,7 +124,7 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
 
         {/* Confidence + Verification — always visible */}
         {(artifact.confidence != null || artifact.verification) && (
-          <div className={`mt-2 flex flex-wrap items-center gap-3 ${compact ? 'gap-2' : 'gap-3'}`}>
+          <div className={`mt-2 flex flex-wrap items-center ${compact ? 'gap-2' : 'gap-3'}`}>
             {artifact.confidence != null && (
               <ConfidenceMeter value={artifact.confidence} compact={compact} />
             )}

@@ -86,7 +86,9 @@ export function DiagnosticsPage() {
         onRetry={() => void refetch()}
       >
       {data && summary && (
-        <>
+        // The boundary renders `display: contents`, so its children never match
+        // the page's `space-y-*`; own the rhythm here instead.
+        <div className="space-y-7">
           <SettingsCallout tone={summary.tone} icon={data.summary === 'ok' ? CheckCircle2 : AlertTriangle}>
             <span className="font-medium">{summary.label}</span>
             <span className="text-(--color-text-muted)">
@@ -101,7 +103,7 @@ export function DiagnosticsPage() {
               <CheckRow key={check.id} check={check} index={index} />
             ))}
           </SettingsGroup>
-        </>
+        </div>
       )}
       </SettingsAsyncBoundary>
     </SettingsPage>

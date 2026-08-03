@@ -119,7 +119,8 @@ export function McpServerDetailPage() {
     try {
       await deleteMut.mutateAsync(name)
       push({ tone: 'success', title: `Deleted "${name}"` })
-      navigate('/settings/mcp')
+      // The entry is gone, so the draft is not a discardable change any more.
+      navigate('/settings/mcp', { force: true })
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
       push({ tone: 'error', title: 'Delete failed', description: msg })

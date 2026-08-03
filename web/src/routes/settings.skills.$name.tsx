@@ -114,7 +114,8 @@ export function SkillEditorPage() {
     try {
       await deleteMut.mutateAsync(name)
       push({ tone: 'success', title: `Deleted "${name}"` })
-      navigate('/settings/skills')
+      // The file is gone, so the draft is not a discardable change any more.
+      navigate('/settings/skills', { force: true })
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
       push({ tone: 'error', title: 'Delete failed', description: msg })

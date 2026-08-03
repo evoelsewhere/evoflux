@@ -23,7 +23,7 @@ import {
 } from 'lucide-react'
 import { useTeamStore } from '@/stores/useTeamStore'
 import type { ActivityItem } from '@/stores/useTeamStore'
-import { isAgentRole, resolveAgentRole } from '@/lib/agent-roles'
+import { resolveAgentRole } from '@/lib/agent-roles'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { AgentChip } from '@/components/ui/agent-chip'
@@ -50,20 +50,16 @@ function relativeTime(date: Date): string {
   return date.toLocaleTimeString(getIntlLocale(), { hour: '2-digit', minute: '2-digit' })
 }
 
-function dotClass(name: string, stream: AgentStream): string {
+/**
+ * Status override for the chip dot. Returns `undefined` for idle agents so
+ * `AgentChip` keeps its own `resolveAgentRole` color — a local role→color map
+ * here used to disagree with every other surface for custom agent names.
+ */
+function dotClass(stream: AgentStream): string | undefined {
   if (stream.status === 'error') return 'bg-(--color-error)'
   if (stream.status === 'offline') return 'bg-(--color-text-subtle) opacity-40'
   if (stream.status === 'working') return 'animate-pulse bg-(--color-accent)'
-  if (isAgentRole(name)) {
-    const map: Record<string, string> = {
-      EvoFlux: 'bg-(--color-marker-mint)',
-      executor: 'bg-(--color-marker-orange)',
-      consultant: 'bg-(--color-marker-blue)',
-      explorer: 'bg-(--color-text-muted)',
-    }
-    return map[name] ?? 'bg-(--color-success)'
-  }
-  return 'bg-(--color-success)'
+  return undefined
 }
 
 function activeTool(blocks: ContentBlock[]): { name: string; args?: string } | null {
@@ -137,7 +133,7 @@ function AgentStatusCard({
           label={name}
           active={isLead || isWorking}
           className="min-w-0 flex-1 truncate px-2 py-1"
-          dotClassName={dotClass(name, stream)}
+          dotClassName={dotClass(stream)}
         />
         {isLead && (
           <span className="shrink-0 rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] text-(--color-text-muted)">
@@ -181,7 +177,9 @@ function AgentStatusCard({
         ) : (
           <span className="text-[11px] italic text-(--color-text-subtle)">
             {isError
-              ? (stream.lastError?.slice(0, 60) ?? 'error')
+              ? stream.lastError
+                ? <span data-i18n-ignore>{stream.lastError.slice(0, 60)}</span>
+                : 'error'
               : stream.status === 'offline'
               ? 'offline'
               : 'idle'}
@@ -222,11 +220,13 @@ function LifecycleRow({ item }: { item: ActivityItem }) {
       {isSpawn && <LogIn size={11} className="shrink-0 text-(--color-success)" aria-hidden="true" />}
       {item.kind === 'dismiss' && <LogOut size={11} className="shrink-0" aria-hidden="true" />}
       {isDone && <CheckCircle2 size={11} className="shrink-0 text-(--color-success)" aria-hidden="true" />}
-      {isStatus && <AlertTriangle size={11} className="shrink-0 text-amber-500" aria-hidden="true" />}
-      <span className="font-mono text-[11px] text-(--color-text-muted)">{item.agent}</span>
-      <span>
-        {isSpawn ? 'joined' : item.kind === 'dismiss' ? 'left' : isDone ? 'turn done' : item.label}
-      </span>
+      {isStatus && <AlertTriangle size={11} className="shrink-0 text-(--color-warning)" aria-hidden="true" />}
+      <span data-i18n-ignore className="min-w-0 truncate font-mono text-[11px] text-(--color-text-muted)">{item.agent}</span>
+      {isSpawn || item.kind === 'dismiss' || isDone ? (
+        <span>{isSpawn ? 'joined' : item.kind === 'dismiss' ? 'left' : 'turn done'}</span>
+      ) : (
+        <span data-i18n-ignore className="min-w-0 truncate">{item.label}</span>
+      )}
       <span
         className="ml-auto shrink-0 font-mono text-[10px]"
         title={item.timestamp.toLocaleTimeString(getIntlLocale())}
@@ -288,16 +288,17 @@ function CommsRow({ item }: { item: ActivityItem }) {
         'grid items-baseline gap-x-2 px-4 py-2.5 hover:bg-(--bg-key)',
         isHandoff && 'border-l-2 border-(--color-accent)/35',
       )}
-      style={{ gridTemplateColumns: 'auto auto auto 1fr auto' }}
+      style={{ gridTemplateColumns: 'minmax(0,auto) auto minmax(0,auto) minmax(0,1fr) auto' }}
     >
-      <span className="font-mono text-[11px] font-semibold text-(--color-text)">
+      <span data-i18n-ignore className="min-w-0 truncate font-mono text-[11px] font-semibold text-(--color-text)">
         {fromAgent}
       </span>
       <ArrowRight size={11} className="text-(--color-text-subtle)" aria-hidden="true" />
-      <span className="font-mono text-[11px] font-semibold text-(--color-accent)">
+      <span data-i18n-ignore className="min-w-0 truncate font-mono text-[11px] font-semibold text-(--color-accent)">
         {toAgents.join(', ')}
       </span>
       <span
+        data-i18n-ignore
         className="min-w-0 truncate text-xs leading-relaxed text-(--color-text-muted)"
         title={body || item.label}
       >
@@ -347,10 +348,17 @@ export function MonitorView({
 }) {
   const activityLog = useTeamStore((s) => s.activityLog)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const preset = useMotionPreset()
 
+  // `block: 'nearest'` keeps the feed pinned without yanking ancestor scroll
+  // containers, and the behavior follows the user's motion intensity.
+  const reducedMotion = preset.intensity === 'reduced'
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [activityLog.length])
+    bottomRef.current?.scrollIntoView({
+      behavior: reducedMotion ? 'auto' : 'smooth',
+      block: 'nearest',
+    })
+  }, [activityLog.length, reducedMotion])
 
   const liveAgents = useMemo(
     () => agentNames.filter((n) => agentStreams[n]?.status !== 'offline'),
@@ -382,7 +390,6 @@ export function MonitorView({
     [liveAgents, agentStreams],
   )
 
-  const preset = useMotionPreset()
   const sectionEnter = fadeRise(preset, 6)
   const agentEnterIndex = useListEnterIndex(liveAgents, 12)
   const feedIds = useMemo(() => feedItems.map((item) => item.id), [feedItems])

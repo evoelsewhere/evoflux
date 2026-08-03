@@ -185,7 +185,12 @@ export function ToolCallGroupCard({
   const [expanded, setExpanded] = useState(false)
   /* eslint-disable react-hooks/static-components */
   const Icon = getToolIcon(group.toolName)
-  const toolBlocks = group.blocks.filter((block) => block.type === 'tool')
+  // Stable identity so `collapsedMcpApps` below can actually memoize — a fresh
+  // `filter()` array per render invalidated it on every streamed chunk.
+  const toolBlocks = useMemo(
+    () => group.blocks.filter((block) => block.type === 'tool'),
+    [group.blocks],
+  )
   const label = groupLabel(group.toolName)
   const groupIsStreaming = isStreaming && toolBlocks.some((block) => !block.toolDone)
   const groupedAttachments = toolBlocks.flatMap(

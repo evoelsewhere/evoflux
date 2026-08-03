@@ -143,7 +143,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
           >
             <span className="relative flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-page) text-(--color-accent)">
               <span className="absolute inset-0 rounded-lg bg-(--color-accent)/6" aria-hidden="true" />
-              <Orbit size={14} strokeWidth={1.8} className="relative z-10" />
+              <Orbit size={14} strokeWidth={1.8} className="relative z-(--z-panel)" />
               <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-(--bg-card) bg-(--color-success)" />
             </span>
             <AnimatePresence initial={false} mode="popLayout">
@@ -338,7 +338,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             />
           )}
           <motion.span
-            className="relative z-10"
+            className="relative z-(--z-panel)"
             animate={{ scaleX: workbenchOpen ? 1 : 0.92 }}
             transition={motionPreset.spring}
           >

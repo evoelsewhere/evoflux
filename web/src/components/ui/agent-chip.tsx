@@ -87,7 +87,8 @@ export function AgentChip({
   const content = (
     <>
       <span className={dotClasses} aria-hidden="true" />
-      <span className="min-w-0 truncate">{label ?? role}</span>
+      {/* Agent names are user data — the DOM translation pass must leave them alone. */}
+      <span data-i18n-ignore className="min-w-0 truncate">{label ?? role}</span>
     </>
   )
 

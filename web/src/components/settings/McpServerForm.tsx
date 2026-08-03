@@ -96,6 +96,7 @@ export function McpServerForm({
                   : value.capabilities.filter((item) => item !== 'browser'),
               })}
               disabled={disabled}
+              ariaLabel="Browser automation"
               enabledLabel="Browser"
               disabledLabel="No"
             />
@@ -109,6 +110,7 @@ export function McpServerForm({
                   : value.capabilities.filter((item) => item !== 'webbridge-safe'),
               })}
               disabled={disabled}
+              ariaLabel="WebBridge safe"
               enabledLabel="Allowed"
               disabledLabel="Blocked"
             />
@@ -209,6 +211,7 @@ export function McpServerForm({
                 value={value.oauthEnabled}
                 onChange={(oauthEnabled) => set({ oauthEnabled })}
                 disabled={disabled}
+                ariaLabel="OAuth"
                 enabledLabel="OAuth"
                 disabledLabel="None"
               />
@@ -296,19 +299,21 @@ function EnabledToggle({
   value,
   onChange,
   disabled,
+  ariaLabel = 'Server enabled state',
   enabledLabel = 'Enabled',
   disabledLabel = 'Disabled',
 }: {
   value: boolean
   onChange: (next: boolean) => void
   disabled?: boolean
+  ariaLabel?: string
   enabledLabel?: string
   disabledLabel?: string
 }) {
   return (
     <div
       role="radiogroup"
-      aria-label="Server enabled state"
+      aria-label={ariaLabel}
       className="inline-flex min-h-11 rounded-md bg-(--bg-key) p-0.5 ring-1 ring-(--color-border) md:min-h-9"
     >
       <ToggleOption
@@ -439,51 +444,56 @@ function PairListField({
         <p className="text-xs text-(--color-text-muted)">None.</p>
       ) : (
         <div className="flex flex-col gap-1.5">
-          {pairs.map((pair, idx) => (
-            <div key={idx} className="grid gap-1.5 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
-              <Input
-                value={pair.key}
-                onChange={(e) => setAt(idx, { key: e.target.value })}
-                disabled={disabled}
-                placeholder={keyPlaceholder}
-                className="min-h-11 font-mono text-xs md:min-h-9"
-              />
-              {isEnvField && ENV_REF_RE.test(pair.value) ? (
-                <div className="relative">
-                  <Input
-                    value=""
-                    onChange={(e) => setAt(idx, { value: e.target.value })}
-                    disabled={disabled}
-                    placeholder={`Enter value for ${pair.value}`}
-                    type="password"
-                    className="min-h-11 font-mono text-xs md:min-h-9 pr-20 border-amber-500/50 bg-amber-500/5"
-                  />
-                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
-                    <KeyRound size={9} />
-                    unset
-                  </span>
-                </div>
-              ) : (
+          {pairs.map((pair, idx) => {
+            // ``${VAR}`` means the secret lives in .env and is not loaded here,
+            // so the field starts empty. Both states must render the same
+            // element, otherwise the first keystroke remounts the input and
+            // steals focus.
+            const unsetSecret = Boolean(isEnvField) && ENV_REF_RE.test(pair.value)
+            return (
+              <div key={idx} className="grid gap-1.5 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
                 <Input
-                  value={pair.value}
-                  onChange={(e) => setAt(idx, { value: e.target.value })}
+                  value={pair.key}
+                  onChange={(e) => setAt(idx, { key: e.target.value })}
                   disabled={disabled}
-                  placeholder={valuePlaceholder}
+                  placeholder={keyPlaceholder}
+                  aria-label={`${label} name ${idx + 1}`}
                   className="min-h-11 font-mono text-xs md:min-h-9"
                 />
-              )}
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                className="h-11 w-11 sm:justify-self-end md:h-6 md:w-6"
-                onClick={() => removeAt(idx)}
-                disabled={disabled}
-                aria-label={`Remove ${pair.key || 'entry'}`}
-              >
-                <Trash2 size={12} />
-              </Button>
-            </div>
-          ))}
+                <div className="relative">
+                  <Input
+                    value={unsetSecret ? '' : pair.value}
+                    onChange={(e) => setAt(idx, { value: e.target.value })}
+                    disabled={disabled}
+                    type={unsetSecret ? 'password' : undefined}
+                    placeholder={unsetSecret ? `Enter value for ${pair.value}` : valuePlaceholder}
+                    aria-label={`${label} value ${idx + 1}`}
+                    className={cn(
+                      'min-h-11 font-mono text-xs md:min-h-9',
+                      unsetSecret
+                        && 'pr-20 border-(--color-warning)/50 bg-(--color-warning)/6',
+                    )}
+                  />
+                  {unsetSecret && (
+                    <span className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded bg-(--color-warning-subtle) px-1.5 py-0.5 text-xs font-medium text-(--color-warning)">
+                      <KeyRound size={9} aria-hidden="true" />
+                      unset
+                    </span>
+                  )}
+                </div>
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  className="h-11 w-11 sm:justify-self-end md:h-6 md:w-6"
+                  onClick={() => removeAt(idx)}
+                  disabled={disabled}
+                  aria-label={`Remove ${pair.key || 'entry'}`}
+                >
+                  <Trash2 size={12} aria-hidden="true" />
+                </Button>
+              </div>
+            )
+          })}
         </div>
       )}
 

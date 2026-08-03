@@ -21,8 +21,16 @@ import { parsePatchText } from './diffUtils'
 /**
  * Keep argument values in headers easy to restyle consistently.
  */
+/**
+ * Wraps a raw tool-argument value (path, command, query, id).
+ *
+ * `data-i18n-ignore` keeps the DOM translation pass in `i18n/dom.ts` away from
+ * it — these are agent/tool data, and short values collide with catalog keys
+ * (`explorer`, `result`, `terminal`, `{0} files`, …). Surrounding chrome text
+ * stays translatable because the attribute only covers this subtree.
+ */
 function Arg({ children }: { children: ReactNode }) {
-  return <span>{children}</span>
+  return <span data-i18n-ignore>{children}</span>
 }
 
 /** Extract a non-empty string field from parsed args. */

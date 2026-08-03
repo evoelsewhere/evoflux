@@ -29,6 +29,30 @@ describe('i18n catalogs', () => {
     expect(translate('Delete task "{0}"?', ['release'], 'ja')).toBe('タスク「release」を削除しますか?')
   })
 
+  it('never leaves English UI vocabulary inside a translated frame', () => {
+    // Runtime-composed labels fall through to the pattern matcher, where captures
+    // used to be interpolated verbatim: "Collapse Projects section" matched the
+    // generic "{0} {1} section" and rendered as "phần Collapse Projects".
+    expect(translateText('Collapse Projects section', 'vi')).toBe('Thu gọn phần Dự án')
+    expect(translateText('Expand Workspaces section', 'vi')).toBe('Mở rộng phần Không gian làm việc')
+    expect(translateText('Collapse Projects section', 'ja')).toBe('プロジェクト セクションを折りたたむ')
+
+    for (const source of ['Collapse Projects section', 'Expand Workspaces section']) {
+      for (const locale of ['vi', 'ja'] as const) {
+        const translated = translateText(source, locale)
+        for (const word of source.replace(/ section$/, '').split(' ')) {
+          expect(translated).not.toContain(word)
+        }
+      }
+    }
+  })
+
+  it('translates captured UI vocabulary but passes opaque data through untouched', () => {
+    // Ids, counts, and names have no catalog entry and must survive verbatim.
+    expect(translate('Delete task "{0}"?', ['Collapse'], 'vi')).toBe('Xóa tác vụ "Collapse"?')
+    expect(translateText('Delete task "svc-42-abc"?', 'vi')).toBe('Xóa tác vụ "svc-42-abc"?')
+  })
+
   it('keeps developer vocabulary and code-like literals out of machine Vietnamese', () => {
     expect(vi.Agent).toBe('Agent')
     expect(vi.Branch).toBe('Branch')

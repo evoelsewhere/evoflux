@@ -287,6 +287,10 @@ export const SidePanel = forwardRef<HTMLElement, SidePanelProps>(function SidePa
           : panelSurfaceClassName,
       )}
       aria-label={ariaLabel}
+      // `aria-modal` is only honoured on a dialog role; on the default
+      // `complementary` role of <aside> assistive tech ignores it, so the
+      // focus trap below would have no announced counterpart.
+      role={overlayModal ? 'dialog' : undefined}
       aria-modal={overlayModal ? true : undefined}
       data-modal-focus={overlayModal ? 'true' : undefined}
     >

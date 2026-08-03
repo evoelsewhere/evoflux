@@ -50,14 +50,24 @@ interface SessionContextMenuProps extends SessionMenuActions {
 
 /** Approximate menu size for viewport clamping before first paint. */
 const MENU_WIDTH = 176
-const MENU_HEIGHT = 148
+const MENU_EDGE_PAD = 8
+/** One `py-1.5 text-sm` row plus the menu's own `p-1`. */
+const MENU_ITEM_HEIGHT = 32
+const MENU_VERTICAL_PADDING = 8
 
-function clampMenuPosition(x: number, y: number): { left: number; top: number } {
-  const maxLeft = Math.max(8, window.innerWidth - MENU_WIDTH - 8)
-  const maxTop = Math.max(8, window.innerHeight - MENU_HEIGHT - 8)
+function clampMenuPosition(
+  x: number,
+  y: number,
+  itemCount: number,
+): { left: number; top: number } {
+  // Derived from the rendered item count: a fixed over-estimate lifted menus
+  // opened near the bottom edge well above the pointer.
+  const menuHeight = itemCount * MENU_ITEM_HEIGHT + MENU_VERTICAL_PADDING
+  const maxLeft = Math.max(MENU_EDGE_PAD, window.innerWidth - MENU_WIDTH - MENU_EDGE_PAD)
+  const maxTop = Math.max(MENU_EDGE_PAD, window.innerHeight - menuHeight - MENU_EDGE_PAD)
   return {
-    left: Math.min(Math.max(8, x), maxLeft),
-    top: Math.min(Math.max(8, y), maxTop),
+    left: Math.min(Math.max(MENU_EDGE_PAD, x), maxLeft),
+    top: Math.min(Math.max(MENU_EDGE_PAD, y), maxTop),
   }
 }
 
@@ -70,27 +80,60 @@ export function SessionContextMenu({
   onTogglePin,
 }: SessionContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
+  // Set by the items themselves: an action opens its own focus target (rename
+  // dialog, delete confirmation), so restoring the trigger would steal it.
+  const actionTakenRef = useRef(false)
+  const itemCount = onTogglePin ? 3 : 2
   const position = useMemo(
-    () => (anchor ? clampMenuPosition(anchor.x, anchor.y) : null),
-    [anchor],
+    () => (anchor ? clampMenuPosition(anchor.x, anchor.y, itemCount) : null),
+    [anchor, itemCount],
   )
 
+  // Callers pass an inline `onClose`, so keeping it out of the effect's deps is
+  // what stops an unrelated parent re-render from re-running the effect below
+  // and yanking focus back to the first item mid-navigation.
+  const onCloseRef = useRef(onClose)
   useEffect(() => {
-    if (!anchor) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      onClose()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [anchor, onClose])
+    onCloseRef.current = onClose
+  })
 
   useEffect(() => {
     if (!anchor) return
+    actionTakenRef.current = false
+    const trigger = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+    const items = () =>
+      Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])
     // Prefer the first action so keyboard users land inside the menu.
-    const firstItem = menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')
-    firstItem?.focus()
+    items()[0]?.focus()
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCloseRef.current()
+        return
+      }
+      // Arrow/Home/End navigation is what `role="menu"` promises; the menu
+      // previously only responded to Escape and the pointer.
+      const focusable = items()
+      if (focusable.length === 0) return
+      const current = focusable.indexOf(document.activeElement as HTMLElement)
+      let next: number | null = null
+      if (event.key === 'ArrowDown') next = (current + 1) % focusable.length
+      else if (event.key === 'ArrowUp') next = current <= 0 ? focusable.length - 1 : current - 1
+      else if (event.key === 'Home') next = 0
+      else if (event.key === 'End') next = focusable.length - 1
+      if (next === null) return
+      event.preventDefault()
+      focusable[next]?.focus()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      if (!actionTakenRef.current && trigger?.isConnected) trigger.focus()
+    }
   }, [anchor])
 
   if (!anchor || !position) return null
@@ -132,6 +175,8 @@ export function SessionContextMenu({
           role="menuitem"
           className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
           onClick={() => {
+            // The rename dialog takes focus on open — don't restore the row.
+            actionTakenRef.current = true
             onClose()
             onEdit(session)
           }}

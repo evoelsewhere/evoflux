@@ -39,13 +39,29 @@ import type {
   WebBridgeTeachDraft,
 } from '@/api/types'
 
-/** Relay URL the extension needs, derived from the app's own connection. */
+/** Backend default from app/core/config.py (`API_PORT`). */
+const DEFAULT_BACKEND_ORIGIN = 'http://127.0.0.1:4082'
+
+/**
+ * Relay URL the extension needs, derived from the app's own connection.
+ *
+ * `apiBaseUrl()` is only an absolute origin in the packaged desktop shell (or
+ * with an explicit VITE_API_BASE_URL); the Vite dev proxy and the
+ * backend-served browser both leave it as the relative `/api`, and it becomes
+ * the `oad-backend-unavailable://api` sentinel once the desktop shell fails to
+ * start its sidecar. Only an http(s) origin can be turned into a relay URL
+ * (`https` → `wss` falls out of the `^http` replace), so anything else — the
+ * sentinel, a `tauri://` page origin, SSR — has to name the backend default.
+ */
 function deriveRelayUrl(): string {
-  let origin = apiBaseUrl().replace(/\/api$/, '')
-  if (!origin || origin.startsWith('/')) {
-    origin = typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:4082'
-  }
-  return origin.replace(/^http/i, 'ws')
+  const base = apiBaseUrl().replace(/\/api$/, '')
+  const pageOrigin = typeof window !== 'undefined' ? window.location.origin : ''
+  const httpOrigin = /^https?:\/\//i.test(base)
+    ? base
+    : /^https?:\/\//i.test(pageOrigin)
+      ? pageOrigin
+      : DEFAULT_BACKEND_ORIGIN
+  return httpOrigin.replace(/^http/i, 'ws')
 }
 
 /** A labelled, monospace, one-click-copy value row. */

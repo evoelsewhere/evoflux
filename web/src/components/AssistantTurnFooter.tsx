@@ -89,8 +89,9 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
     <div className={wrapperClass}>
       {textContent && (
         <button
+          type="button"
           onClick={handleCopy}
-          className="rounded-xs p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
+          className="rounded-xs p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
           aria-label="Copy response"
           title="Copy"
         >
@@ -101,8 +102,9 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
       )}
       {canContinue && onContinue && (
         <button
+          type="button"
           onClick={onContinue}
-          className="rounded-xs p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
+          className="rounded-xs p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
           aria-label="Continue response"
           title="Continue"
         >
@@ -110,7 +112,7 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
         </button>
       )}
       {modelName && (
-        <span className="font-mono text-(--color-text-subtle) text-xs" title={modelId ?? undefined}>
+        <span data-i18n-ignore className="font-mono text-(--color-text-subtle) text-xs" title={modelId ?? undefined}>
           {modelName}
         </span>
       )}
@@ -165,7 +167,7 @@ export function AssistantTurn({
 }: AssistantTurnProps) {
   const turnIsStreaming = isWorking && isTrailingTurn
   const canContinue = isTrailingTurn && !isWorking ? onContinue : undefined
-  const renderItems = groupConsecutiveToolCalls(blocks)
+  const renderItems = useMemo(() => groupConsecutiveToolCalls(blocks), [blocks])
   const blockAbsIdx = useMemo(
     () => new Map(blocks.map((b, j) => [b.id, startIndex + j])),
     [blocks, startIndex],
