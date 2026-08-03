@@ -305,6 +305,70 @@ async def test_line_mention_supports_extensionless_source_files(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_crlf_text_mention_is_normalised_to_lf(tmp_path):
+    """Prompt payloads must not vary by the platform that wrote the file."""
+    (tmp_path / "crlf.txt").write_bytes(b"alpha\r\nbeta\r\n")
+    team = _make_team()
+    out = await collect_mention_attachments(
+        message="see @crlf.txt",
+        team=team,
+        session_id="sid",
+        workspace=str(tmp_path),
+        existing_total_bytes=0,
+    )
+    assert len(out) == 1
+    assert out[0].data == b"alpha\nbeta\n"
+
+
+@pytest.mark.asyncio
+async def test_lone_cr_text_mention_is_normalised_to_lf(tmp_path):
+    (tmp_path / "cr.txt").write_bytes(b"alpha\rbeta\r")
+    team = _make_team()
+    out = await collect_mention_attachments(
+        message="see @cr.txt",
+        team=team,
+        session_id="sid",
+        workspace=str(tmp_path),
+        existing_total_bytes=0,
+    )
+    assert len(out) == 1
+    assert out[0].data == b"alpha\nbeta\n"
+
+
+@pytest.mark.asyncio
+async def test_crlf_line_mention_slices_before_normalising(tmp_path):
+    """``#L2-L3`` must select the same lines a CRLF-aware editor shows."""
+    (tmp_path / "crlf.py").write_bytes(b"one\r\ntwo\r\nthree\r\nfour\r\n")
+    team = _make_team()
+    out = await collect_mention_attachments(
+        message="comment on @crlf.py#L2-L3",
+        team=team,
+        session_id="sid",
+        workspace=str(tmp_path),
+        existing_total_bytes=0,
+    )
+    assert len(out) == 1
+    assert out[0].data == b"two\nthree\n"
+
+
+@pytest.mark.asyncio
+async def test_line_mention_on_unknown_extension_is_read_as_text(tmp_path):
+    """An unrecognised extension still honours an explicit line range."""
+    (tmp_path / "data.xyz").write_bytes(b"one\ntwo\nthree\n")
+    team = _make_team()
+    out = await collect_mention_attachments(
+        message="look at @data.xyz#L2",
+        team=team,
+        session_id="sid",
+        workspace=str(tmp_path),
+        existing_total_bytes=0,
+    )
+    assert len(out) == 1
+    assert out[0].data == b"two\n"
+    assert out[0].content_type == "text/plain"
+
+
+@pytest.mark.asyncio
 async def test_folder_mention_attaches_agents_md(tmp_path):
     (tmp_path / "manual").mkdir()
     (tmp_path / "manual" / "AGENTS.md").write_text("docs", encoding="utf-8")
