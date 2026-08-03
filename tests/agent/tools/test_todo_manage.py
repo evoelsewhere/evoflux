@@ -243,7 +243,9 @@ async def test_todos_are_isolated_by_sandbox_session(tmp_path: Path) -> None:
 
     assert result == "No todos."
     assert sandbox_one.metadata_path(TODOS_FILENAME).exists()
-    store_two = json.loads(sandbox_two.metadata_path(TODOS_FILENAME).read_text(encoding="utf-8"))
+    store_two = json.loads(
+        sandbox_two.metadata_path(TODOS_FILENAME).read_text(encoding="utf-8")
+    )
     assert store_two == {"counter": 0, "items": []}
 
 

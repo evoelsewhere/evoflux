@@ -148,8 +148,7 @@ class _FCIResponsesHandler(ResponsesHandler):
         source_functions = [
             tool.get("function", {})
             for tool in tools
-            if tool.get("type") == "function"
-            and isinstance(tool.get("function"), dict)
+            if tool.get("type") == "function" and isinstance(tool.get("function"), dict)
         ]
         for target, source in zip(converted, source_functions, strict=True):
             if isinstance(source.get("strict"), bool):
@@ -180,8 +179,7 @@ class _FCIResponsesHandler(ResponsesHandler):
             # selection and currently accepts only automatic tool routing.
             body["tool_choice"] = (
                 "auto"
-                if self.model.lower().startswith("gpt-oss-")
-                and tool_choice != "auto"
+                if self.model.lower().startswith("gpt-oss-") and tool_choice != "auto"
                 else tool_choice
             )
 
