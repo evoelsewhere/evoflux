@@ -9,6 +9,7 @@ from docx.oxml.ns import qn
 import pytest
 
 from app.services import docx_document_pipeline as pipeline
+from app.services.office.runtime import file_sha256
 
 
 def _new_project() -> pipeline.NewDocumentProject:
@@ -67,7 +68,7 @@ def test_template_compose_preserves_unrelated_package_parts(
                 "schema_version": 1,
                 "mode": "template",
                 "title": "Edit",
-                "source_sha256": pipeline.docx_sha256(source),
+                "source_sha256": file_sha256(source),
                 "template_confirmed": True,
                 "edits": [
                     {
@@ -119,7 +120,7 @@ def test_template_validation_detects_changed_source(tmp_path: Path) -> None:
             "schema_version": 1,
             "mode": "template",
             "title": "Edit",
-            "source_sha256": pipeline.docx_sha256(source),
+            "source_sha256": file_sha256(source),
             "template_confirmed": True,
             "edits": [
                 {

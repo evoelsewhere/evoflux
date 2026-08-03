@@ -8,16 +8,21 @@ objects, and exports the inherited master/layout structure through
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
-import hashlib
 import json
-import os
 from pathlib import Path
-import shutil
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.services.office.runtime import (
+    DEFAULT_WORKER_TIMEOUT_SECONDS,
+    NodeWorkerRuntime,
+    file_sha256,
+)
+
+# Backward-compatible public name retained for callers outside this module.
+pptx_sha256 = file_sha256
 
 
 MAX_TEMPLATE_SLIDES = 80
@@ -154,14 +159,6 @@ class TemplatePipelineResult:
         }
 
 
-def pptx_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def load_template_project(path: Path) -> TemplateDeckProject:
     return TemplateDeckProject.model_validate_json(path.read_text(encoding="utf-8"))
 
@@ -181,7 +178,7 @@ def validate_template_project(
     *,
     source_pptx: Path,
 ) -> dict[str, Any]:
-    actual_hash = pptx_sha256(source_pptx)
+    actual_hash = file_sha256(source_pptx)
     manifest_hash = str(manifest.get("sourceSha256", ""))
     if project.source_sha256 != actual_hash or manifest_hash != actual_hash:
         raise ValueError(
@@ -225,9 +222,7 @@ def validate_template_project(
             if edit.operation in {"set_text", "replace_text"} and record.get(
                 "kind"
             ) not in {"textbox", "shape"}:
-                raise ValueError(
-                    f"{edit.operation} requires a textbox or shape target"
-                )
+                raise ValueError(f"{edit.operation} requires a textbox or shape target")
 
     omitted = set(project.omitted_source_slides)
     expected_omitted = set(range(1, slide_count + 1)) - referenced
@@ -282,68 +277,12 @@ def template_catalog() -> dict[str, Any]:
     }
 
 
-def _artifact_entrypoint(workspace_root: Path) -> Path:
-    explicit = os.environ.get("EVOFLUX_ARTIFACT_TOOL_ENTRYPOINT")
-    candidates: list[Path] = []
-    if explicit:
-        candidates.append(Path(explicit).expanduser())
-
-    package_roots = [
-        workspace_root / "node_modules" / "@oai" / "artifact-tool",
-        Path(__file__).resolve().parents[2]
-        / "node_modules"
-        / "@oai"
-        / "artifact-tool",
-        Path.home()
-        / ".cache"
-        / "codex-runtimes"
-        / "codex-primary-runtime"
-        / "dependencies"
-        / "node"
-        / "node_modules"
-        / "@oai"
-        / "artifact-tool",
-    ]
-    for package_root in package_roots:
-        candidates.extend(
-            [
-                package_root / "dist" / "node" / "artifact_tool.mjs",
-                package_root / "dist" / "artifact_tool.mjs",
-            ]
-        )
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate.resolve()
-    raise RuntimeError(
-        "@oai/artifact-tool is required for uploaded PPTX templates. Set "
-        "EVOFLUX_ARTIFACT_TOOL_ENTRYPOINT to its built artifact_tool.mjs. "
-        "The template path does not fall back to HTML or python-pptx."
-    )
-
-
-def _node_binary() -> str:
-    explicit = os.environ.get("EVOFLUX_NODE_BIN")
-    if explicit and Path(explicit).is_file():
-        return str(Path(explicit).resolve())
-    found = shutil.which("node")
-    if found:
-        return found
-    bundled = (
-        Path.home()
-        / ".cache"
-        / "codex-runtimes"
-        / "codex-primary-runtime"
-        / "dependencies"
-        / "node"
-        / "bin"
-        / "node"
-    )
-    if bundled.is_file():
-        return str(bundled)
-    raise RuntimeError(
-        "Node.js is required for uploaded PPTX template editing. Set "
-        "EVOFLUX_NODE_BIN to a Node 20+ executable."
-    )
+_WORKER = NodeWorkerRuntime(
+    worker=Path(__file__).with_name("pptx_template_worker.mjs"),
+    label="PPTX template",
+    purpose="uploaded PPTX template editing",
+    requirement_hint="The template path does not fall back to HTML or python-pptx.",
+)
 
 
 async def run_template_worker(
@@ -352,56 +291,15 @@ async def run_template_worker(
     *,
     workspace_root: Path,
     work_dir: Path,
-    timeout_seconds: int = 300,
+    timeout_seconds: int = DEFAULT_WORKER_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
-    work_dir.mkdir(parents=True, exist_ok=True)
-    request_path = work_dir / f"{action}-request.json"
-    request_path.write_text(
-        json.dumps(request, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    worker = Path(__file__).with_name("pptx_template_worker.mjs")
-    env = os.environ.copy()
-    env["EVOFLUX_ARTIFACT_TOOL_ENTRYPOINT"] = str(
-        _artifact_entrypoint(workspace_root)
-    )
-    process = await asyncio.create_subprocess_exec(
-        _node_binary(),
-        str(worker),
+    return await _WORKER.run(
         action,
-        str(request_path),
-        cwd=str(workspace_root),
-        env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        request,
+        workspace_root=workspace_root,
+        work_dir=work_dir,
+        timeout_seconds=timeout_seconds,
     )
-    try:
-        stdout, stderr = await asyncio.wait_for(
-            process.communicate(), timeout=timeout_seconds
-        )
-    except TimeoutError:
-        process.kill()
-        await process.wait()
-        raise RuntimeError(
-            f"PPTX template {action} exceeded {timeout_seconds} seconds"
-        ) from None
-    if process.returncode != 0:
-        message = stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(message or f"PPTX template worker failed ({action})")
-    decoded = stdout.decode("utf-8", errors="replace")
-    value: Any = None
-    for line in reversed(decoded.splitlines()):
-        try:
-            candidate = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(candidate, dict):
-            value = candidate
-            break
-    if value is None:
-        raise RuntimeError("PPTX template worker returned invalid JSON")
-    if not isinstance(value, dict):
-        raise RuntimeError("PPTX template worker returned a non-object response")
-    return value
 
 
 def _result_from_worker(
@@ -414,7 +312,9 @@ def _result_from_worker(
         action=action,
         source_pptx=source_pptx,
         work_dir=work_dir,
-        manifest_path=(Path(value["manifestPath"]) if value.get("manifestPath") else None),
+        manifest_path=(
+            Path(value["manifestPath"]) if value.get("manifestPath") else None
+        ),
         output=Path(value["outputPath"]) if value.get("outputPath") else None,
         previews=[Path(path) for path in value.get("previewPaths", [])],
         layout_paths=[Path(path) for path in value.get("layoutPaths", [])],

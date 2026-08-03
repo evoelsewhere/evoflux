@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from app.services import xlsx_artifact_pipeline as pipeline
+from app.services.office.runtime import file_sha256
 
 
 def _new_project() -> dict[str, object]:
@@ -42,7 +44,45 @@ def test_workbook_catalog_exposes_editable_operations() -> None:
     assert catalog["workflow"] == "editable-artifact-tool-xlsx"
     assert "write_range" in catalog["operations"]
     assert "add_chart" in catalog["operations"]
+    assert "autofit_columns" in catalog["operations"]
+    assert "autofit_rows" in catalog["operations"]
     assert catalog["project_json_schema"]["properties"]["mode"]
+
+
+def _project_with_operations(operations: list[dict[str, object]]) -> dict[str, object]:
+    raw = _new_project()
+    sheets = cast(list[dict[str, object]], raw["sheets"])
+    sheets[0]["operations"] = operations
+    return raw
+
+
+def test_autofit_operations_are_accepted() -> None:
+    raw = _project_with_operations(
+        [
+            {
+                "operation": "write_range",
+                "range": "A1:B2",
+                "values": [["Label", "Value"], ["Revenue", 10]],
+            },
+            {"operation": "autofit_columns", "range": "A1:B2"},
+            {"operation": "autofit_rows", "range": "A1:B2"},
+        ]
+    )
+
+    project = pipeline.WorkbookProject.model_validate(raw)
+
+    assert [item.operation for item in project.sheets[0].operations] == [
+        "write_range",
+        "autofit_columns",
+        "autofit_rows",
+    ]
+
+
+def test_autofit_requires_a_bounded_range() -> None:
+    raw = _project_with_operations([{"operation": "autofit_columns", "range": "A:B"}])
+
+    with pytest.raises(ValueError, match="bounded A1 notation"):
+        pipeline.WorkbookProject.model_validate(raw)
 
 
 @pytest.mark.asyncio
@@ -83,7 +123,7 @@ def test_template_validation_detects_changed_source(tmp_path: Path) -> None:
             "schema_version": 1,
             "title": "Edit",
             "mode": "template",
-            "source_sha256": pipeline.xlsx_sha256(source),
+            "source_sha256": file_sha256(source),
             "template_confirmed": True,
             "sheets": [{"name": "Sheet1", "operations": []}],
         }

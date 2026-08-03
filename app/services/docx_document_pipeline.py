@@ -11,12 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
-import shutil
-import subprocess
-import tempfile
 from typing import Annotated, Any, Literal
 import zipfile
 from xml.etree import ElementTree as ET
@@ -37,6 +33,12 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+
+from app.services.office.rendering import render_pages
+from app.services.office.runtime import file_sha256
+
+# Backward-compatible public name retained for callers outside this module.
+docx_sha256 = file_sha256
 
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -351,14 +353,6 @@ class DocxPipelineResult:
         }
 
 
-def docx_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def _package_hashes(path: Path) -> dict[str, str]:
     with zipfile.ZipFile(path) as package:
         return {
@@ -395,94 +389,10 @@ def document_catalog() -> dict[str, Any]:
     }
 
 
-def _find_binary(env_name: str, names: tuple[str, ...]) -> str:
-    explicit = os.environ.get(env_name)
-    if explicit and Path(explicit).is_file():
-        return str(Path(explicit).resolve())
-    for name in names:
-        if found := shutil.which(name):
-            return found
-    override = (
-        Path.home()
-        / ".cache"
-        / "codex-runtimes"
-        / "codex-primary-runtime"
-        / "dependencies"
-        / "bin"
-        / "override"
-    )
-    for name in names:
-        candidate = override / name
-        if candidate.is_file():
-            return str(candidate)
-    raise RuntimeError(f"Required rendering binary is unavailable: {', '.join(names)}")
-
-
 def render_docx_pages(
     source: Path, render_dir: Path
 ) -> tuple[list[Path], list[dict[str, Any]]]:
-    render_dir.mkdir(parents=True, exist_ok=True)
-    soffice = _find_binary("EVOFLUX_SOFFICE_BIN", ("soffice", "libreoffice"))
-    pdftoppm = _find_binary("EVOFLUX_PDFTOPPM_BIN", ("pdftoppm",))
-    with tempfile.TemporaryDirectory(
-        prefix="evoflux-docx-render-", dir=render_dir
-    ) as temp:
-        temp_dir = Path(temp)
-        profile = temp_dir / "profile"
-        profile.mkdir()
-        env = os.environ.copy()
-        env["HOME"] = str(profile)
-        env["TMPDIR"] = str(temp_dir)
-        conversion = subprocess.run(
-            [
-                soffice,
-                "--headless",
-                f"-env:UserInstallation=file://{profile}",
-                "--convert-to",
-                "pdf",
-                "--outdir",
-                str(temp_dir),
-                str(source),
-            ],
-            capture_output=True,
-            text=True,
-            env=env,
-            timeout=180,
-            check=False,
-        )
-        pdf = temp_dir / f"{source.stem}.pdf"
-        if conversion.returncode != 0 or not pdf.is_file():
-            message = (
-                conversion.stderr.strip()
-                or conversion.stdout.strip()
-                or "LibreOffice did not produce a PDF"
-            )
-            return [], [
-                {"severity": "error", "code": "docx-render-failed", "message": message}
-            ]
-        prefix = temp_dir / "page"
-        raster = subprocess.run(
-            [pdftoppm, "-png", "-r", "144", str(pdf), str(prefix)],
-            capture_output=True,
-            text=True,
-            timeout=180,
-            check=False,
-        )
-        pages = sorted(temp_dir.glob("page-*.png"))
-        if raster.returncode != 0 or not pages:
-            return [], [
-                {
-                    "severity": "error",
-                    "code": "docx-raster-failed",
-                    "message": raster.stderr.strip() or "pdftoppm produced no pages",
-                }
-            ]
-        outputs = []
-        for index, page in enumerate(pages, start=1):
-            destination = render_dir / f"page-{index:03d}.png"
-            shutil.copy2(page, destination)
-            outputs.append(destination)
-        return outputs, []
+    return render_pages(source, render_dir, code_prefix="docx")
 
 
 def _text(node: ET.Element) -> str:
@@ -548,7 +458,7 @@ def inspect_docx(source: Path, work_dir: Path) -> DocxPipelineResult:
     manifest = {
         "schemaVersion": 1,
         "sourcePath": str(source),
-        "sourceSha256": docx_sha256(source),
+        "sourceSha256": file_sha256(source),
         "pageCount": len(previews),
         "packageParts": hashes,
         "contentParts": parts,
@@ -1121,7 +1031,7 @@ def validate_document_project(
     if isinstance(project, TemplateDocumentProject):
         if source is None:
             raise ValueError("template project requires source_docx")
-        if docx_sha256(source) != project.source_sha256:
+        if file_sha256(source) != project.source_sha256:
             raise ValueError("source DOCX changed after inspection; inspect it again")
         return {
             "valid": True,
@@ -1263,8 +1173,8 @@ __all__ = [
     "NewDocumentProject",
     "TemplateDocumentProject",
     "compose_document_project",
-    "document_catalog",
     "docx_sha256",
+    "document_catalog",
     "inspect_docx",
     "load_document_project",
     "render_document_project",

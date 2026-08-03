@@ -8,17 +8,21 @@ and every worksheet is rendered and formula-scanned before publication.
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
-import hashlib
-import json
-import os
 from pathlib import Path
 import re
-import shutil
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.services.office.runtime import (
+    DEFAULT_WORKER_TIMEOUT_SECONDS,
+    NodeWorkerRuntime,
+    file_sha256,
+)
+
+# Backward-compatible public name retained for callers outside this module.
+xlsx_sha256 = file_sha256
 
 
 _A1_RANGE = re.compile(r"^[A-Z]{1,3}[1-9][0-9]*(?::[A-Z]{1,3}[1-9][0-9]*)?$")
@@ -206,6 +210,26 @@ class DeleteDrawings(BaseModel):
     operation: Literal["delete_drawings"] = "delete_drawings"
 
 
+class AutofitRange(BaseModel):
+    """Size columns or rows from their rendered content.
+
+    Preferred over guessing ``column_width``: a numeric cell narrower than its
+    formatted text renders as ``#####`` in Excel, which the fit check reports.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    operation: Literal["autofit_columns", "autofit_rows"]
+    range: str
+
+    @field_validator("range")
+    @classmethod
+    def validate_range(cls, value: str) -> str:
+        if not _A1_RANGE.fullmatch(value.upper()):
+            raise ValueError("range must use bounded A1 notation")
+        return value.upper()
+
+
 SheetOperation = (
     WriteRange
     | StyleRange
@@ -217,6 +241,7 @@ SheetOperation = (
     | AddTable
     | AddChart
     | DeleteDrawings
+    | AutofitRange
 )
 
 
@@ -285,14 +310,6 @@ class XlsxPipelineResult:
         }
 
 
-def xlsx_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def load_workbook_project(path: Path) -> WorkbookProject:
     return WorkbookProject.model_validate_json(path.read_text(encoding="utf-8"))
 
@@ -306,6 +323,7 @@ def workbook_catalog() -> dict[str, Any]:
             "Do not overwrite cell formatting when only values or formulas change.",
             "Keep inputs typed and derived values formula-driven.",
             "Scan formula errors and render every worksheet before publishing.",
+            "Size columns with autofit_columns instead of guessing column_width.",
             "Never overwrite the uploaded source workbook.",
         ],
         "operations": [
@@ -320,60 +338,18 @@ def workbook_catalog() -> dict[str, Any]:
             "add_table",
             "add_chart",
             "delete_drawings",
+            "autofit_columns",
+            "autofit_rows",
         ],
         "project_json_schema": WorkbookProject.model_json_schema(),
     }
 
 
-def _artifact_entrypoint(workspace_root: Path) -> Path:
-    explicit = os.environ.get("EVOFLUX_ARTIFACT_TOOL_ENTRYPOINT")
-    candidates = [Path(explicit).expanduser()] if explicit else []
-    for root in (
-        workspace_root / "node_modules" / "@oai" / "artifact-tool",
-        Path.home()
-        / ".cache"
-        / "codex-runtimes"
-        / "codex-primary-runtime"
-        / "dependencies"
-        / "node"
-        / "node_modules"
-        / "@oai"
-        / "artifact-tool",
-    ):
-        candidates.extend(
-            (
-                root / "dist" / "node" / "artifact_tool.mjs",
-                root / "dist" / "artifact_tool.mjs",
-            )
-        )
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate.resolve()
-    raise RuntimeError(
-        "@oai/artifact-tool is required for XLSX authoring. Set "
-        "EVOFLUX_ARTIFACT_TOOL_ENTRYPOINT to artifact_tool.mjs."
-    )
-
-
-def _node_binary() -> str:
-    explicit = os.environ.get("EVOFLUX_NODE_BIN")
-    if explicit and Path(explicit).is_file():
-        return str(Path(explicit).resolve())
-    if found := shutil.which("node"):
-        return found
-    bundled = (
-        Path.home()
-        / ".cache"
-        / "codex-runtimes"
-        / "codex-primary-runtime"
-        / "dependencies"
-        / "node"
-        / "bin"
-        / "node"
-    )
-    if bundled.is_file():
-        return str(bundled)
-    raise RuntimeError("Node.js 20+ is required for XLSX authoring")
+_WORKER = NodeWorkerRuntime(
+    worker=Path(__file__).with_name("xlsx_artifact_worker.mjs"),
+    label="XLSX",
+    purpose="XLSX authoring",
+)
 
 
 async def run_xlsx_worker(
@@ -382,44 +358,15 @@ async def run_xlsx_worker(
     *,
     workspace_root: Path,
     work_dir: Path,
-    timeout_seconds: int = 300,
+    timeout_seconds: int = DEFAULT_WORKER_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
-    work_dir.mkdir(parents=True, exist_ok=True)
-    request_path = work_dir / f"{action}-request.json"
-    request_path.write_text(
-        json.dumps(request, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    env = os.environ.copy()
-    env["EVOFLUX_ARTIFACT_TOOL_ENTRYPOINT"] = str(_artifact_entrypoint(workspace_root))
-    process = await asyncio.create_subprocess_exec(
-        _node_binary(),
-        str(Path(__file__).with_name("xlsx_artifact_worker.mjs")),
+    return await _WORKER.run(
         action,
-        str(request_path),
-        cwd=str(workspace_root),
-        env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        request,
+        workspace_root=workspace_root,
+        work_dir=work_dir,
+        timeout_seconds=timeout_seconds,
     )
-    try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout_seconds)
-    except TimeoutError:
-        process.kill()
-        await process.wait()
-        raise RuntimeError(
-            f"XLSX {action} exceeded {timeout_seconds} seconds"
-        ) from None
-    if process.returncode != 0:
-        message = stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(message or f"XLSX worker failed ({action})")
-    for line in reversed(stdout.decode("utf-8", errors="replace").splitlines()):
-        try:
-            value = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict):
-            return value
-    raise RuntimeError("XLSX worker returned invalid JSON")
 
 
 def _result(
@@ -446,7 +393,7 @@ def validate_workbook_project(
     if project.mode == "template":
         if source is None:
             raise ValueError("template project requires source_xlsx")
-        if xlsx_sha256(source) != project.source_sha256:
+        if file_sha256(source) != project.source_sha256:
             raise ValueError("source XLSX changed after inspection; inspect it again")
     elif source is not None:
         raise ValueError("new workbook project must not declare source_xlsx")
@@ -467,7 +414,7 @@ async def inspect_xlsx(
         {
             "sourcePath": str(source),
             "workDir": str(work_dir),
-            "sourceSha256": xlsx_sha256(source),
+            "sourceSha256": file_sha256(source),
         },
         workspace_root=workspace_root,
         work_dir=work_dir,
@@ -528,6 +475,7 @@ __all__ = [
     "inspect_xlsx",
     "load_workbook_project",
     "render_xlsx_project",
+    "run_xlsx_worker",
     "validate_workbook_project",
     "workbook_catalog",
     "xlsx_sha256",
