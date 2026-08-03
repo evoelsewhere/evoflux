@@ -5,12 +5,19 @@
 # Default target
 all: test
 
-run: ## Start the API server only (no reload, no frontend; :8000)
-	uv run uvicorn app.server:app --no-access-log
+# The API port must match `API_PORT` in app/core/config.py and the `/api` proxy
+# target in web/vite.config.ts. `uvicorn` on its own defaults to 8000, so it has
+# to be passed explicitly here or `make dev` serves the API on a port the
+# frontend never talks to.
+API_PORT ?= 4082
+WEB_PORT ?= 5173
 
-kill-dev-ports: ## Stop processes listening on dev ports (:8000, :5173)
+run: ## Start the API server only (no reload, no frontend; :4082)
+	uv run uvicorn app.server:app --no-access-log --port $(API_PORT)
+
+kill-dev-ports: ## Stop processes listening on dev ports (:4082, :5173)
 	@command -v lsof >/dev/null 2>&1 || { echo "error: 'lsof' not found"; exit 1; }
-	@for port in 8000 5173; do \
+	@for port in $(API_PORT) $(WEB_PORT); do \
 		pids=$$(lsof -tiTCP:$$port -sTCP:LISTEN); \
 		if [ -n "$$pids" ]; then \
 			echo "stopping processes on port $$port: $$pids"; \
@@ -28,10 +35,10 @@ kill-dev-ports: ## Stop processes listening on dev ports (:8000, :5173)
 		fi; \
 	done
 
-dev: kill-dev-ports ## Start backend (:8000 + reload) and frontend (Vite :5173) together
+dev: kill-dev-ports ## Start backend (:4082 + reload) and frontend (Vite :5173) together
 	@command -v bun >/dev/null 2>&1 || { echo "error: 'bun' not found — install from https://bun.sh"; exit 1; }
 	@trap 'kill 0' INT TERM EXIT; \
-	(uv run uvicorn app.server:app --reload --reload-dir app --no-access-log 2>&1 | sed 's/^/[api] /') & \
+	(uv run uvicorn app.server:app --reload --reload-dir app --no-access-log --port $(API_PORT) 2>&1 | sed 's/^/[api] /') & \
 	(cd web && bun dev 2>&1 | sed 's/^/[web] /') & \
 	wait
 
