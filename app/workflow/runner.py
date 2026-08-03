@@ -40,6 +40,11 @@ _OUTPUT_CAP_BYTES = 32 * 1024
 #: abandoned gate eventually frees it. Restart recovery is handled separately
 #: (:func:`reconcile_orphaned_executions`).
 _GATE_TIMEOUT_S = 24 * 3600
+
+#: How long :meth:`WorkflowRunner.stop` waits for the cancelled walk to unwind
+#: before finalising anyway. The walk only has to persist its interrupted node
+#: and gate rows; boot-time reconciliation is the backstop if it ever overruns.
+_STOP_UNWIND_S = 5.0
 _CLAIM_HEARTBEAT_S = 60
 _CLAIM_HEARTBEAT_LEASE = timedelta(hours=4)
 
@@ -210,8 +215,23 @@ class WorkflowRunner:
         for state in list(self.active.values()):
             if state.execution_id == execution_id:
                 state.stop_requested = True
-                if state.drive_task is not None and not state.drive_task.done():
-                    state.drive_task.cancel()
+                drive_task = state.drive_task
+                if drive_task is not None and not drive_task.done():
+                    drive_task.cancel()
+                    # Let the cancelled walk unwind before finalising. A paused
+                    # gate still has to persist its ``cancelled`` audit row, and
+                    # callers (and the REST stop endpoint) treat a returned
+                    # ``stop()`` as "this execution has settled" — reading the
+                    # gate row any earlier can still see ``pending``.
+                    if asyncio.current_task() is not drive_task:
+                        _, unfinished = await asyncio.wait(
+                            {drive_task}, timeout=_STOP_UNWIND_S
+                        )
+                        if unfinished:
+                            logger.warning(
+                                "workflow_stop_unwind_timeout execution={}",
+                                execution_id,
+                            )
                 await self._finish(state, status="stopped")
                 return True
         return False
