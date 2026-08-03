@@ -28,6 +28,7 @@ import ipaddress
 import json
 import mimetypes
 import os
+import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import shutil
@@ -132,6 +133,8 @@ _BROWSER_CONTEXT_TYPES = frozenset(
 )
 _active_teach_replays: set[str] = set()
 _pairing_revocation_events: dict[str, asyncio.Event] = {}
+_NATIVE_DISCOVERY_TOKEN = secrets.token_urlsafe(32)
+_WEBBRIDGE_EXTENSION_ID = "lghglpnddenmebbhkfachafichhglafi"
 _markdown_parser = MarkdownIt("commonmark", {"html": False})
 
 
@@ -155,14 +158,22 @@ def _trusted_local_origin(value: str | None) -> bool:
         return parsed.hostname.casefold() == "localhost"
 
 
-def _extension_origin(value: str | None) -> bool:
+def _webbridge_extension_origin(value: str | None) -> bool:
+    """Accept only the stable ID baked into the bundled WebBridge extension."""
     if not value:
         return False
     try:
         parsed = urlsplit(value)
     except ValueError:
         return False
-    return parsed.scheme == "chrome-extension" and bool(parsed.netloc)
+    if parsed.scheme != "chrome-extension" or not parsed.netloc:
+        return False
+    configured = {
+        item.strip()
+        for item in os.environ.get("EVOFLUX_WEBBRIDGE_EXTENSION_IDS", "").split(",")
+        if item.strip()
+    }
+    return parsed.netloc in configured | {_WEBBRIDGE_EXTENSION_ID}
 
 
 async def _agent_ws_authorized(ws: WebSocket) -> bool:
@@ -276,12 +287,31 @@ class PairingExchangeResponse(BaseModel):
     scopes: list[str]
 
 
-class LocalPairingRequest(BaseModel):
+class NativeDiscoveryResponse(BaseModel):
+    discovery_token: str
+
+
+@router.get("/native-discovery", response_model=NativeDiscoveryResponse)
+async def get_native_discovery(request: Request) -> NativeDiscoveryResponse:
+    """Return the process-scoped token published through the native host.
+
+    Desktop bearer middleware protects this route. The token is deliberately
+    scoped to WebBridge pairing so the extension never receives the desktop
+    bearer that authorizes the rest of the API.
+    """
+    expected = expected_desktop_token()
+    if not expected or not desktop_token_matches(_bearer_token(request), expected):
+        raise HTTPException(status_code=401, detail="Desktop authentication required.")
+    return NativeDiscoveryResponse(discovery_token=_NATIVE_DISCOVERY_TOKEN)
+
+
+class NativePairingRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: str = Field(default="Local Chrome / Edge", min_length=1, max_length=120)
     browser: str = Field(default="unknown", max_length=40)
     version: str = Field(default="unknown", max_length=40)
+    discovery_token: str = Field(min_length=32, max_length=256)
 
     @field_validator("label")
     @classmethod
@@ -292,21 +322,23 @@ class LocalPairingRequest(BaseModel):
         return value
 
 
-@router.post("/pairing/local", response_model=PairingExchangeResponse, status_code=201)
-async def create_local_pairing(
-    body: LocalPairingRequest,
+@router.post("/pairing/native", response_model=PairingExchangeResponse, status_code=201)
+async def create_native_pairing(
+    body: NativePairingRequest,
     request: Request,
     db: DbSession,
 ) -> PairingExchangeResponse:
-    """Pair a browser on the same machine without a copy/paste code."""
-    if not _is_loopback_client(request) or not _extension_origin(
-        request.headers.get("origin")
+    """Pair the bundled extension using discovery from Chrome Native Messaging."""
+    if (
+        not _is_loopback_client(request)
+        or not _webbridge_extension_origin(request.headers.get("origin"))
+        or not secrets.compare_digest(body.discovery_token, _NATIVE_DISCOVERY_TOKEN)
     ):
         raise HTTPException(
             status_code=403,
             detail={
-                "code": "local_pairing_refused",
-                "message": "Code-free pairing is only available to a local browser extension.",
+                "code": "native_pairing_refused",
+                "message": "Native WebBridge discovery was not authorized.",
             },
         )
     pairing, credential = await create_pairing(
@@ -316,14 +348,13 @@ async def create_local_pairing(
         version=body.version,
     )
     logger.info(
-        "webbridge_paired_local pairing_id={} browser={}", pairing.id, pairing.browser
+        "webbridge_paired_native pairing_id={} browser={}", pairing.id, pairing.browser
     )
     return PairingExchangeResponse(
         pairing_id=str(pairing.id),
         credential=credential,
         scopes=pairing.scopes,
     )
-
 
 class PairingInfo(BaseModel):
     pairing_id: str

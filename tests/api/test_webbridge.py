@@ -34,6 +34,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.agent.schemas.chat import ImageDataBlock, TextBlock, ToolResult
 from app.agent.tools.builtin.webbridge_tool import AnyAction, _get_sid, webbridge
+from app.api.routes.team import webbridge as webbridge_routes
 from app.api.routes.team.webbridge import (
     InteractionRequest,
     _browser_panel_messages,
@@ -358,12 +359,17 @@ def _ticketed_relay_path(pairing_id: str | None = None) -> tuple[str, str]:
 def _pair_extension(client: TestClient, label: str = "Work Chrome") -> dict:
     with TestClient(client.app, client=("127.0.0.1", 5173)) as local_client:
         response = local_client.post(
-            f"{_PREFIX}/pairing/local",
-            headers={"Origin": "chrome-extension://abcdefghijklmnop"},
+            f"{_PREFIX}/pairing/native",
+            headers={
+                "Origin": (
+                    f"chrome-extension://{webbridge_routes._WEBBRIDGE_EXTENSION_ID}"
+                )
+            },
             json={
                 "label": label,
                 "browser": "chrome",
                 "version": "1.2.0",
+                "discovery_token": webbridge_routes._NATIVE_DISCOVERY_TOKEN,
             },
         )
     assert response.status_code == 201
@@ -3407,57 +3413,73 @@ async def test_browser_binding_accepts_matching_tab_scope_and_normalizes_http_or
     assert ok.json()["origin"] == "https://example.com"
 
 
-def test_local_pairing_needs_no_code_but_stays_loopback_origin_scoped(
-    client: TestClient,
-):
-    local_client = TestClient(client.app, client=("127.0.0.1", 5173))
-    paired = local_client.post(
+def test_legacy_local_pairing_endpoint_is_removed(client: TestClient):
+    response = client.post(
         f"{_PREFIX}/pairing/local",
         headers={"Origin": "chrome-extension://abcdefghijklmnop"},
         json={"label": "Local Chrome", "browser": "chrome", "version": "1.6.0"},
+    )
+    assert response.status_code == 404
+
+
+def test_native_pairing_requires_process_token_stable_extension_and_loopback(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("EVOFLUX_DESKTOP_TOKEN", "desktop-test-token")
+    assert client.get(f"{_PREFIX}/native-discovery").status_code == 401
+    discovery = client.get(
+        f"{_PREFIX}/native-discovery",
+        headers={"Authorization": "Bearer desktop-test-token"},
+    )
+    assert discovery.status_code == 200
+    token = discovery.json()["discovery_token"]
+    assert token == webbridge_routes._NATIVE_DISCOVERY_TOKEN
+
+    payload = {
+        "label": "Native Chrome",
+        "browser": "chrome",
+        "version": "2.2.0",
+        "discovery_token": token,
+    }
+    origin = f"chrome-extension://{webbridge_routes._WEBBRIDGE_EXTENSION_ID}"
+    local_client = TestClient(client.app, client=("127.0.0.1", 5173))
+    paired = local_client.post(
+        f"{_PREFIX}/pairing/native",
+        headers={"Origin": origin},
+        json=payload,
     )
     assert paired.status_code == 201
     assert paired.json()["credential"]
     assert "relay" in paired.json()["scopes"]
 
-    hostile = local_client.post(
-        f"{_PREFIX}/pairing/local",
-        headers={"Origin": "https://attacker.example"},
-        json={"label": "Hostile", "browser": "chrome", "version": "1.6.0"},
+    wrong_token = local_client.post(
+        f"{_PREFIX}/pairing/native",
+        headers={"Origin": origin},
+        json={**payload, "discovery_token": "x" * 32},
     )
-    assert hostile.status_code == 403
-    localhost_page = local_client.post(
-        f"{_PREFIX}/pairing/local",
-        headers={"Origin": "http://localhost:5173"},
-        json={"label": "Local page", "browser": "chrome", "version": "1.6.0"},
+    assert wrong_token.status_code == 403
+    wrong_extension = local_client.post(
+        f"{_PREFIX}/pairing/native",
+        headers={"Origin": "chrome-extension://abcdefghijklmnop"},
+        json=payload,
     )
-    assert localhost_page.status_code == 403
-    missing_origin = local_client.post(
-        f"{_PREFIX}/pairing/local",
-        json={"label": "No Origin", "browser": "chrome", "version": "1.6.0"},
-    )
-    assert missing_origin.status_code == 403
+    assert wrong_extension.status_code == 403
     remote_client = TestClient(client.app, client=("203.0.113.10", 5173))
     remote = remote_client.post(
-        f"{_PREFIX}/pairing/local",
-        json={"label": "Remote", "browser": "chrome", "version": "1.6.0"},
+        f"{_PREFIX}/pairing/native",
+        headers={"Origin": origin},
+        json=payload,
     )
     assert remote.status_code == 403
 
 
-async def test_local_pairing_credential_ticket_relay_and_revoke_chain(
+async def test_native_pairing_credential_ticket_relay_and_revoke_chain(
     client: TestClient,
 ):
     from app.core import db as db_module
 
-    local_client = TestClient(client.app, client=("127.0.0.1", 5173))
-    paired = local_client.post(
-        f"{_PREFIX}/pairing/local",
-        headers={"Origin": "chrome-extension://abcdefghijklmnop"},
-        json={"label": "Local Chrome", "browser": "chrome", "version": "1.9.0"},
-    )
-    assert paired.status_code == 201
-    pairing = paired.json()
+    pairing = _pair_extension(client, "Native Chrome")
     credential = pairing["credential"]
 
     async with db_module.async_session_factory() as db:

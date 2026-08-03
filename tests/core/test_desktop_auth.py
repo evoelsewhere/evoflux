@@ -28,6 +28,14 @@ def _make_app(token: str | None) -> FastAPI:
     def pairing_local() -> dict:
         return {"local": True}
 
+    @app.post("/api/team/webbridge/pairing/native")
+    def pairing_native() -> dict:
+        return {"native": True}
+
+    @app.get("/api/team/webbridge/native-discovery")
+    def native_discovery() -> dict:
+        return {"discovery": True}
+
     @app.post("/api/team/webbridge/relay-ticket")
     def relay_ticket() -> dict:
         return {"ticket": True}
@@ -161,12 +169,13 @@ class TestMiddlewareEnabled:
         client = TestClient(app)
 
         for path in (
-            "/api/team/webbridge/pairing/local",
+            "/api/team/webbridge/pairing/native",
             "/api/team/webbridge/relay-ticket",
             "/api/team/webbridge/interactions",
             "/api/team/webbridge/teach-drafts",
         ):
             assert client.post(path).status_code == 200
+        assert client.post("/api/team/webbridge/pairing/local").status_code == 401
         assert client.get("/api/team/webbridge/sessions").status_code == 200
         assert client.get("/api/team/webbridge/models").status_code == 200
         assert (
@@ -179,6 +188,14 @@ class TestMiddlewareEnabled:
         )
         assert client.put("/api/team/webbridge/bindings/42").status_code == 200
         assert client.get("/api/team/webbridge/teach-drafts/review").status_code == 401
+        assert client.get("/api/team/webbridge/native-discovery").status_code == 401
+        assert (
+            client.get(
+                "/api/team/webbridge/native-discovery",
+                headers={"Authorization": "Bearer secret"},
+            ).status_code
+            == 200
+        )
 
     def test_pairing_session_assignment_requires_desktop_auth(self):
         app = _make_app(token="secret")

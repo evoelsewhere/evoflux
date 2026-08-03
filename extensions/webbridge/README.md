@@ -45,31 +45,33 @@ enforced against the tab actually being driven.
 1. Open `chrome://extensions` (or `edge://extensions`) and enable **Developer mode**.
 2. Click **Load unpacked** and select this folder (`extensions/webbridge`) from
    the EvoFlux repository.
-3. Click the WebBridge icon in the toolbar to open Side Chat. Use its settings
-   button to configure the connection.
+3. Start EvoFlux Desktop, then click the WebBridge icon in the toolbar. The
+   extension discovers and connects to the running app automatically.
 
 ## Connection
 
-Open Side Chat settings, enter the **Connection address** shown in the EvoFlux
-WebBridge dialog, then click **Save & reconnect**. The default address is
-`ws://127.0.0.1:8000`.
+EvoFlux Desktop installs a Chrome/Edge Native Messaging host and publishes the
+current ephemeral sidecar port to it. WebBridge asks that host for the running
+app endpoint whenever it starts or reconnects, so there is no URL to copy or
+paste. The native host shares only a process-scoped WebBridge discovery token;
+it never exposes the desktop bearer token.
 
 For a local desktop connection, the extension establishes its scoped internal
 credential automatically. No pairing code or separate pairing action is
-required. The bootstrap endpoint accepts only a loopback Chrome-extension
-request.
+required. Native bootstrap requires the loopback client, the process-scoped
+token, and the exact stable extension ID.
 
 ## Side Chat settings
 
-- **Connection address** — base URL of the EvoFlux backend, default
-  `ws://127.0.0.1:8000`. `http(s)://` bases are accepted and normalized to
-  `ws(s)://`. The extension appends `/api/team/webbridge/relay` itself.
+- **Discovered desktop endpoint** — read-only status for the current bundled
+  sidecar address. WebBridge does not accept a manually pasted relay URL.
 
-The connection address is saved in `chrome.storage.local`; saving it triggers
-an immediate reconnect. The internal connection credential is stored locally
-and is only sent as an HTTP Bearer credential to mint relay tickets. The same
-settings drawer contains theme, text-watch, Teach Mode, retry, and browser
-control actions; the extension toolbar icon opens Side Chat directly.
+The discovered address is cached in `chrome.storage.local` and refreshed from
+Native Messaging before every connection. The internal connection credential
+is stored locally and is only sent as an HTTP Bearer credential to mint relay
+tickets. The same settings drawer contains theme, text-watch, Teach Mode,
+retry, and browser-control actions; the extension toolbar icon opens Side Chat
+directly.
 
 Side Chat settings also show browser-control state. **Release browser control**
 detaches every controlled tab without disabling the relay connection;

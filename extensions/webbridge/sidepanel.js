@@ -56,7 +56,6 @@ const activity = document.getElementById("activity");
 const activityLabel = document.getElementById("activityLabel");
 const activityDetail = document.getElementById("activityDetail");
 const relayBaseInput = document.getElementById("relayBaseInput");
-const saveConnectionBtn = document.getElementById("saveConnectionBtn");
 const toggleConnectionBtn = document.getElementById("toggleConnectionBtn");
 const settingsStatusDot = document.getElementById("settingsStatusDot");
 const settingsStatusText = document.getElementById("settingsStatusText");
@@ -1938,13 +1937,23 @@ async function refreshSettings() {
     if (document.activeElement !== relayBaseInput) relayBaseInput.value = config.relayBase || DEFAULT_RELAY_BASE;
     const connected = Boolean(response?.connected);
     const connecting = Boolean(response?.connecting);
+    const nativeConnection = response?.connection_mode === "native";
+    const nativeError = response?.native_error || "";
     settingsStatusDot.className = `status-dot ${connected ? "live" : connecting ? "" : "error"}`.trim();
     settingsStatusText.textContent = connected ? "Connected" : connecting ? "Connecting…" : "Disconnected";
     settingsStatusDetail.textContent = connected
-      ? `Connected to ${response.relay_base || DEFAULT_RELAY_BASE}`
+      ? nativeConnection
+        ? `Connected automatically to EvoFlux Desktop (${response.relay_base || DEFAULT_RELAY_BASE})`
+        : `Connected to ${response.relay_base || DEFAULT_RELAY_BASE}`
       : connecting
-        ? `Connecting to ${response.relay_base || DEFAULT_RELAY_BASE}`
-        : "Save the connection address or reconnect to continue.";
+        ? nativeConnection
+          ? "Discovering EvoFlux Desktop automatically…"
+          : `Connecting to ${response.relay_base || DEFAULT_RELAY_BASE}`
+        : nativeError
+          ? `Native Messaging unavailable: ${nativeError}`
+          : nativeConnection
+          ? "Waiting for EvoFlux Desktop…"
+          : "Start EvoFlux Desktop to connect WebBridge automatically.";
     toggleConnectionBtn.textContent = connected || connecting ? "Disconnect" : "Reconnect";
     textWatches = response?.text_watches || [];
     activeTextWatch = textWatches.find((item) => item.tab_id === activeTab?.id) || null;
@@ -2040,21 +2049,6 @@ async function stopAllWatches() {
     watchSettingsDetail.textContent = error.message || String(error);
   } finally {
     stopAllWatchesBtn.disabled = false;
-  }
-}
-
-async function saveConnectionSettings() {
-  saveConnectionBtn.disabled = true;
-  try {
-    await chrome.storage.local.set({
-      relayBase: relayBaseInput.value.trim() || DEFAULT_RELAY_BASE,
-    });
-    await chrome.storage.local.remove(["accessToken"]);
-    await chrome.runtime.sendMessage({ type: "config_updated" });
-    settingsStatusDetail.textContent = "Saved. Reconnecting…";
-    setTimeout(() => void refreshSettings(), 500);
-  } finally {
-    saveConnectionBtn.disabled = false;
   }
 }
 
@@ -2187,7 +2181,6 @@ settingsBtn.addEventListener("click", openSettings);
 openInEvoFluxBtn.addEventListener("click", () => void openInEvoFlux());
 closeSettingsBtn.addEventListener("click", closeSettings);
 settingsBackdrop.addEventListener("click", closeSettings);
-saveConnectionBtn.addEventListener("click", () => void saveConnectionSettings());
 toggleConnectionBtn.addEventListener("click", () => void toggleConnection());
 themeControl.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-theme-value]");
