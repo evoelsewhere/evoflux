@@ -400,7 +400,10 @@ async def completed_tasks_for_pair(
                 DelegationTask.recipient == recipient,
                 col(DelegationTask.status).in_(("review", "completed")),
             )
-            .order_by(col(DelegationTask.completed_at).desc())
+            .order_by(
+                col(DelegationTask.completed_at).desc(),
+                col(DelegationTask.id).desc(),
+            )
         )
     ).all()
     return list(rows)
@@ -579,7 +582,10 @@ async def load_unacknowledged_handoffs(
                 col(DelegationTask.delegator).in_(live_recipients),
                 col(DelegationTask.result).is_not(None),
             )
-            .order_by(col(DelegationTask.completed_at).asc())
+            .order_by(
+                col(DelegationTask.completed_at).asc(),
+                col(DelegationTask.id).asc(),
+            )
         )
     ).all()
     return list(rows)

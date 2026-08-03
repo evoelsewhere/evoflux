@@ -1,3 +1,6 @@
+from datetime import datetime, timezone
+from uuid import UUID
+
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -17,8 +20,10 @@ from app.services.chat_service import (
     cancel_queued_user_message,
     cleanup_reverted_tail,
     create_chat_session,
+    get_latest_top_level_session,
     get_messages,
     get_messages_for_llm,
+    get_side_chat_context,
     heal_orphaned_tool_calls,
     hide_messages_before_summary,
     redo_session_messages,
@@ -558,6 +563,77 @@ async def test_popped_queued_user_messages_keep_queue_order_after_response(sessi
     visible = await get_messages(session, chat_session.id)
     assert [row.id for row in popped] == [first.id, second.id]
     assert [msg.content for msg in visible] == ["response", "first", "second"]
+
+
+async def test_popped_queued_user_messages_break_created_at_ties_by_id(session):
+    """Two messages queued inside one coarse clock tick share ``created_at``.
+
+    The pop order is written back into ``created_at`` permanently, so it must
+    come from the (created_at, id) key rather than physical row order.
+    """
+    chat_session = await create_chat_session(session, "Queue")
+    shared = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    earlier_id, later_id = UUID(int=1), UUID(int=2)
+    # Inserted newest-id-first so an untie-broken query yields the wrong order.
+    for row_id, content in ((later_id, "second"), (earlier_id, "first")):
+        session.add(
+            SessionMessage(
+                id=row_id,
+                session_id=chat_session.id,
+                role="user",
+                content=content,
+                exclude_from_context=True,
+                extra={"queue_status": "queued", "queued_at": shared.isoformat()},
+                created_at=shared,
+            )
+        )
+    await session.commit()
+
+    popped = await pop_queued_user_messages(session, chat_session.id)
+    await session.commit()
+
+    assert [row.id for row in popped] == [earlier_id, later_id]
+    visible = await get_messages(session, chat_session.id)
+    assert [msg.content for msg in visible] == ["first", "second"]
+
+
+async def test_side_chat_context_breaks_created_at_ties_by_id(session):
+    """Side-chat context is fed to the LLM in order — ties must be stable."""
+    chat_session = await create_chat_session(session, "Source")
+    shared = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    earlier_id, later_id = UUID(int=1), UUID(int=2)
+    for row_id, content in ((later_id, "second"), (earlier_id, "first")):
+        session.add(
+            SessionMessage(
+                id=row_id,
+                session_id=chat_session.id,
+                role="user",
+                content=content,
+                created_at=shared,
+            )
+        )
+    await session.commit()
+
+    context = await get_side_chat_context(session, chat_session.id, max_messages=2)
+
+    assert [msg.content for msg in context] == ["first", "second"]
+
+
+async def test_latest_top_level_session_breaks_created_at_ties_by_id(session):
+    """Resolving "the newest session" must not flip between equal timestamps."""
+    shared = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    newest_id, older_id = UUID(int=2), UUID(int=1)
+    # Inserted newest-id-first so an untie-broken DESC scan prefers the older row.
+    for row_id in (newest_id, older_id):
+        session.add(
+            ChatSession(id=row_id, mode="coding", created_at=shared, updated_at=shared)
+        )
+    await session.commit()
+
+    latest = await get_latest_top_level_session(session, mode="coding", workspace=None)
+
+    assert latest is not None
+    assert latest.id == newest_id
 
 
 async def test_cancel_queued_user_message_skips_pop(session):
