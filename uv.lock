@@ -584,6 +584,7 @@ dependencies = [
     { name = "uuid7" },
     { name = "uvicorn" },
     { name = "watchfiles" },
+    { name = "websockets" },
 ]
 
 [package.optional-dependencies]
@@ -605,7 +606,6 @@ dev = [
     { name = "ruff" },
     { name = "tiktoken" },
     { name = "ty" },
-    { name = "websockets" },
 ]
 
 [package.metadata]
@@ -643,6 +643,7 @@ requires-dist = [
     { name = "uuid7", specifier = ">=0.1.0" },
     { name = "uvicorn", specifier = ">=0.42.0" },
     { name = "watchfiles", specifier = ">=0.24.0" },
+    { name = "websockets", specifier = ">=15.0.1" },
 ]
 provides-extras = ["azure-doc-intel", "full"]
 
@@ -657,7 +658,6 @@ dev = [
     { name = "ruff", specifier = ">=0.15.8" },
     { name = "tiktoken", specifier = ">=0.12.0" },
     { name = "ty", specifier = ">=0.0.33,<0.1" },
-    { name = "websockets", specifier = ">=15.0.1" },
 ]
 
 [[package]]

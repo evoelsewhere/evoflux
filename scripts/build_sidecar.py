@@ -402,10 +402,11 @@ def smoke_test(python_bin: Path, site_packages: Path) -> None:
 
     1. Spawn with the same env vars the desktop shell uses.
     2. Wait for the JSON handshake line on stdout (proves imports + bind).
-    3. Hit ``/api/health/live`` *with* the generated token (proves
-       middleware wiring + lifespan startup).
-    4. Hit it *without* the token (proves 401 enforcement).
-    5. Terminate and reap.
+    3. Hit ``/api/health/live`` (proves lifespan startup).
+    4. Verify protected HTTP endpoints reject/accept the desktop token.
+    5. Upgrade a real browser-presence WebSocket using the bundled client
+       (proves both Uvicorn's transport and the packaged dependency).
+    6. Terminate and reap.
 
     Any failure here fails the build — we never want a broken bundle to
     leave CI.
@@ -413,6 +414,7 @@ def smoke_test(python_bin: Path, site_packages: Path) -> None:
     import json
     import time
     import urllib.error
+    import urllib.parse
     import urllib.request
 
     smoke_root = site_packages.parent / "_smoke"
@@ -615,6 +617,52 @@ def smoke_test(python_bin: Path, site_packages: Path) -> None:
                     f"smoke test: protected endpoint returned {e.code}"
                 ) from e
             print(f"smoke test: protected endpoint returned {e.code} (acceptable)")
+
+        # ── Browser-presence WebSocket → must complete a real upgrade ────────
+        # Run the client with the bundled interpreter/site-packages too. This
+        # catches the exact release regression where Uvicorn could serve HTTP
+        # but the sidecar omitted every supported WebSocket transport.
+        ws_url = (
+            f"ws://127.0.0.1:{port}/api/team/sidecar-smoke/browser/presence"
+            f"?_token={urllib.parse.quote(str(token), safe='')}"
+        )
+        ws_client = """
+import asyncio, site, sys
+site.addsitedir(sys.argv[1])
+from websockets.asyncio.client import connect
+
+async def check():
+    async with connect(sys.argv[2], open_timeout=5, close_timeout=5) as websocket:
+        await websocket.send("sidecar-smoke")
+
+asyncio.run(check())
+"""
+        try:
+            completed = subprocess.run(
+                [
+                    str(python_bin),
+                    "-c",
+                    ws_client,
+                    str(site_packages),
+                    ws_url,
+                ],
+                check=True,
+                capture_output=True,
+                env=env,
+                text=True,
+                timeout=15,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            stdout = getattr(exc, "stdout", "") or "<empty>"
+            stderr = getattr(exc, "stderr", "") or "<empty>"
+            raise SystemExit(
+                "smoke test: bundled WebSocket upgrade failed\n"
+                f"client stdout:\n{stdout[-2000:]}\n"
+                f"client stderr:\n{stderr[-4000:]}"
+            ) from exc
+        if completed.stderr:
+            _append_tail(stderr_tail, completed.stderr)
+        print("smoke test: bundled browser WebSocket upgrade succeeded")
     finally:
         if proc.poll() is None:
             if IS_WINDOWS:
