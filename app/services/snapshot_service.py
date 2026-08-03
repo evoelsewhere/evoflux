@@ -6,6 +6,7 @@ import asyncio
 import os
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -481,7 +482,7 @@ def _rmtree_force(path: Path) -> None:
     """``shutil.rmtree`` that clears read-only bits (git pack files on Windows)."""
     import stat
 
-    def _onexc(func: object, p: str, _exc: BaseException) -> None:
+    def _onexc(func: Callable[..., object], p: str, _exc: BaseException) -> None:
         try:
             os.chmod(p, stat.S_IWRITE)
             if callable(func):
