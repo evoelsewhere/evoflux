@@ -107,8 +107,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 class RequestSizeLimitMiddleware:
     """Reject request bodies that exceed ``max_bytes``.
 
-    A valid ``Content-Length`` is rejected before the body is read. Chunked and
-    otherwise streamed bodies are counted as the application consumes them, so
+    A valid ``Content-Length`` is rejected before the body is read, and such a
+    request is then streamed straight through — the HTTP framing layer already
+    caps it, so buffering it here would only add memory pressure. Bodies with no
+    usable ``Content-Length`` (chunked uploads) are read up front and counted, so
     omitting the header cannot bypass the limit.
 
     Args:
@@ -130,11 +132,17 @@ class RequestSizeLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
+        headers = scope.get("headers", [])
         content_lengths = [
             value.decode("latin-1")
-            for name, value in scope.get("headers", [])
+            for name, value in headers
             if name.lower() == b"content-length"
         ]
+        # ``Transfer-Encoding`` overrides ``Content-Length``, so a request
+        # carrying both cannot be trusted to be framed by the declared length.
+        has_transfer_encoding = any(
+            name.lower() == b"transfer-encoding" for name, _ in headers
+        )
         if content_lengths:
             try:
                 parsed_lengths = {int(value) for value in content_lengths}
@@ -166,6 +174,12 @@ class RequestSizeLimitMiddleware:
                 )
                 return
 
+            if not has_transfer_encoding:
+                # Within the limit and framed by ``Content-Length``: hand the
+                # untouched receive channel to the app so bodies keep streaming.
+                await self.app(scope, receive, send)
+                return
+
         received_bytes = 0
         buffered_messages: list[Message] = []
         while True:
@@ -195,7 +209,11 @@ class RequestSizeLimitMiddleware:
         async def replay_receive() -> Message:
             if buffered_messages:
                 return buffered_messages.pop(0)
-            return {"type": "http.disconnect"}
+            # The body is exhausted, but the connection is not: long-lived
+            # responses (SSE) poll this channel to learn about client
+            # disconnects. Fabricating one here would tear the stream down
+            # immediately, so defer to the real transport.
+            return await receive()
 
         await self.app(scope, replay_receive, send)
 
