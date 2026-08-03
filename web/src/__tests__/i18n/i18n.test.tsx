@@ -47,6 +47,15 @@ describe('i18n catalogs', () => {
     }
   })
 
+  it('reads the monitor lifecycle feed as events, not directions', () => {
+    // "left" is in the catalogs as the direction ("trái", "左"), so the feed says
+    // "departed" instead — it sits next to "joined" and "turn done".
+    expect(translateText('departed', 'vi')).toBe('đã rời')
+    expect(translateText('departed', 'ja')).toBe('退出しました')
+    expect(translateText('departed', 'vi')).not.toBe(translateText('left', 'vi'))
+    expect(translateText('departed', 'ja')).not.toBe(translateText('left', 'ja'))
+  })
+
   it('translates captured UI vocabulary but passes opaque data through untouched', () => {
     // Ids, counts, and names have no catalog entry and must survive verbatim.
     expect(translate('Delete task "{0}"?', ['Collapse'], 'vi')).toBe('Xóa tác vụ "Collapse"?')

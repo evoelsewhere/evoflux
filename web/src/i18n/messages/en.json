@@ -1218,6 +1218,7 @@
   "Deleting todo {0}": "Deleting todo {0}",
   "Deleting...": "Deleting...",
   "deletions": "deletions",
+  "departed": "departed",
   "Delivers to the default team lead.": "Delivers to the default team lead.",
   "Delivers to the lead of the coding team for the workspace below.": "Delivers to the lead of the coding team for the workspace below.",
   "Delivery": "Delivery",
