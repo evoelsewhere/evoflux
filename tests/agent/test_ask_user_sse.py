@@ -33,7 +33,8 @@ async def test_reply_publishes_question_replied_sse():
         pushed.append((session_id, envelope))
 
     with patch(
-        "app.services.memory_stream_store.push_event", new=AsyncMock(side_effect=_capture)
+        "app.services.memory_stream_store.push_event",
+        new=AsyncMock(side_effect=_capture),
     ):
         assert svc.reply(request_id, ["yes"]) is True
         assert await task == ["yes"]
@@ -68,7 +69,8 @@ async def test_interrupt_cancel_publishes_question_replied_sse():
         pushed.append((session_id, envelope))
 
     with patch(
-        "app.services.memory_stream_store.push_event", new=AsyncMock(side_effect=_capture)
+        "app.services.memory_stream_store.push_event",
+        new=AsyncMock(side_effect=_capture),
     ):
         task.cancel()
         with pytest.raises(asyncio.CancelledError):

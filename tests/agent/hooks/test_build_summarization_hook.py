@@ -79,9 +79,7 @@ def test_prompt_token_threshold_for_model_caps_at_module_max():
 def test_prompt_token_threshold_for_model_uses_75_percent_context():
     assert prompt_token_threshold_for_model(
         "bedrock:mistral.voxtral-small-24b-2507"
-    ) == int(
-        32000 * PROMPT_TOKEN_THRESHOLD_CONTEXT_RATIO
-    )
+    ) == int(32000 * PROMPT_TOKEN_THRESHOLD_CONTEXT_RATIO)
 
 
 def test_prompt_token_threshold_for_model_unknown_uses_default():
