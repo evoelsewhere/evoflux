@@ -76,6 +76,7 @@ function loadWorker(options = {}) {
   const tabMessages = [];
   const sidePanelCalls = [];
   const tabGroupCalls = [];
+  const nativeMessageCalls = [];
   const storedConfig = {
     extensionId: "ext-test",
     ...(options.storedConfig || {}),
@@ -108,6 +109,26 @@ function loadWorker(options = {}) {
     onStartup: eventChannel(),
     onInstalled: eventChannel(),
     onMessage: eventChannel(),
+    sendNativeMessage(host, message, callback) {
+      nativeMessageCalls.push({ host, message });
+      if (options.nativeMessageResponder) {
+        options.nativeMessageResponder(host, message, callback, runtime);
+        return;
+      }
+      if (storedConfig.pairingCredential) {
+        callback({
+          ok: true,
+          protocol_version: 1,
+          app_pid: 4242,
+          base_url: (storedConfig.relayBase || "ws://127.0.0.1:8000").replace(/^ws:/, "http:"),
+          discovery_token: "default-native-discovery-token-long-enough",
+        });
+        return;
+      }
+      runtime.lastError = { message: "Specified native messaging host not found." };
+      callback(undefined);
+      runtime.lastError = null;
+    },
     async sendMessage(message) {
       runtime.onMessage.emit(message, null, () => {});
       return { ok: true };
@@ -336,6 +357,7 @@ function loadWorker(options = {}) {
     detachedTabs,
     fetchCalls,
     menuItems,
+    nativeMessageCalls,
     actionCalls,
     alarmCalls,
     scriptCalls,
@@ -571,10 +593,13 @@ test("P2 extension action opens Side Chat and settings live inside the panel", (
   assert.equal(extensionManifest.content_scripts, undefined);
   assert.equal(extensionManifest.web_accessible_resources, undefined);
   assert.ok(extensionManifest.permissions.includes("tabGroups"));
+  assert.ok(extensionManifest.permissions.includes("nativeMessaging"));
+  assert.ok(extensionManifest.key);
   assert.match(workerSource, /openPanelOnActionClick: true/);
   assert.match(sidePanelHtml, /id="settingsDrawer"/);
   assert.match(sidePanelHtml, /id="relayBaseInput"/);
-  assert.match(sidePanelHtml, /Connection address/);
+  assert.match(sidePanelHtml, /Discovered desktop endpoint/);
+  assert.match(sidePanelHtml, /id="relayBaseInput"[^>]+readonly/);
   assert.doesNotMatch(sidePanelHtml, /pairLocalBtn|pairingCodeInput|pairCodeBtn|Manual or remote pairing/);
   assert.doesNotMatch(workerSource, /pair_with_code|pair_locally|PAIRING_EXCHANGE_PATH/);
   assert.doesNotMatch(sidePanelHtml, /id="sessionSelect"|newConversation/);
@@ -2095,30 +2120,58 @@ test("disconnect supersedes an in-flight relay ticket request", async () => {
   assert.equal(worker.run("connectInFlight"), false);
 });
 
-test("connection address automatically bootstraps a local credential and opens the relay", async () => {
+test("missing Native Messaging host never falls back to unauthenticated local pairing", async () => {
   const worker = loadWorker({
     storedConfig: {
       relayBase: "ws://127.0.0.1:8000",
       accessToken: "legacy-secret",
     },
+    fetchResponder: async (url) => { throw new Error(`Unexpected fetch ${url}`); },
+  });
+
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(worker.fetchCalls.length, 0);
+  assert.equal(worker.sockets.length, 0);
+  assert.equal(worker.storedConfig.accessToken, undefined);
+  assert.equal(worker.run("lastCloseReason"), "native");
+  assert.match(worker.run("nativeDiscoveryError"), /host not found/i);
+});
+
+test("Native Messaging discovers the desktop sidecar and pairs without a pasted URL", async () => {
+  const discoveryToken = "native-discovery-token-that-is-long-enough";
+  const worker = loadWorker({
+    nativeMessageResponder(host, message, callback) {
+      assert.equal(host, "com.evoflux.webbridge");
+      assert.equal(message.type, "discover");
+      callback({
+        ok: true,
+        protocol_version: 1,
+        app_pid: 4242,
+        base_url: "http://127.0.0.1:43123",
+        discovery_token: discoveryToken,
+      });
+    },
     fetchResponder: async (url, init) => {
-      if (url.endsWith("/pairing/local")) {
-        assert.equal(init.method, "POST");
+      if (url.endsWith("/pairing/native")) {
+        const body = JSON.parse(init.body);
+        assert.equal(body.discovery_token, discoveryToken);
         assert.equal(init.headers.Authorization, undefined);
         return {
           ok: true,
           async json() {
             return {
-              pairing_id: "pairing-local",
-              credential: "local-scoped-secret",
-              scopes: ["relay", "interactions:write"],
+              pairing_id: "pairing-native",
+              credential: "native-scoped-secret",
+              scopes: ["relay"],
             };
           },
         };
       }
       if (url.endsWith("/relay-ticket")) {
-        assert.equal(init.headers.Authorization, "Bearer local-scoped-secret");
-        return { ok: true, async json() { return { ticket: "ticket-once" }; } };
+        assert.equal(init.headers.Authorization, "Bearer native-scoped-secret");
+        return { ok: true, async json() { return { ticket: "native-ticket" }; } };
       }
       throw new Error(`Unexpected fetch ${url}`);
     },
@@ -2130,14 +2183,46 @@ test("connection address automatically bootstraps a local credential and opens t
 
   assert.deepEqual(
     worker.fetchCalls.map((call) => new URL(call.url).pathname),
-    ["/api/team/webbridge/pairing/local", "/api/team/webbridge/relay-ticket"],
+    ["/api/team/webbridge/pairing/native", "/api/team/webbridge/relay-ticket"],
   );
-  assert.equal(worker.storedConfig.pairingCredential, "local-scoped-secret");
-  assert.equal(worker.storedConfig.pairingId, "pairing-local");
-  assert.equal(worker.storedConfig.pairingRelayBase, "ws://127.0.0.1:8000");
-  assert.equal(worker.storedConfig.accessToken, undefined);
-  assert.equal(worker.sockets.length, 1);
-  assert.equal(worker.sockets[0].url, "ws://127.0.0.1:8000/api/team/webbridge/relay?_ticket=ticket-once");
+  assert.equal(worker.storedConfig.relayBase, "ws://127.0.0.1:43123");
+  assert.equal(worker.storedConfig.pairingTransport, "native");
+  assert.equal(worker.storedConfig.discoveryToken, undefined);
+  assert.equal(worker.sockets[0].url, "ws://127.0.0.1:43123/api/team/webbridge/relay?_ticket=native-ticket");
+  assert.equal(worker.run("connectionMode"), "native");
+});
+
+test("Native Messaging carries a scoped pairing across sidecar port changes", async () => {
+  const worker = loadWorker({
+    storedConfig: {
+      relayBase: "ws://127.0.0.1:41000",
+      pairingCredential: "existing-native-secret",
+      pairingId: "pairing-native",
+      pairingRelayBase: "ws://127.0.0.1:41000",
+      pairingTransport: "native",
+    },
+    nativeMessageResponder(_host, _message, callback) {
+      callback({
+        ok: true,
+        protocol_version: 1,
+        app_pid: 4243,
+        base_url: "http://127.0.0.1:42000",
+        discovery_token: "replacement-discovery-token-long-enough",
+      });
+    },
+    fetchResponder: async (url, init) => {
+      assert.equal(url, "http://127.0.0.1:42000/api/team/webbridge/relay-ticket");
+      assert.equal(init.headers.Authorization, "Bearer existing-native-secret");
+      return { ok: true, async json() { return { ticket: "replacement-ticket" }; } };
+    },
+  });
+
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(worker.fetchCalls.length, 1);
+  assert.equal(worker.storedConfig.pairingRelayBase, "ws://127.0.0.1:42000");
+  assert.equal(worker.sockets[0].url, "ws://127.0.0.1:42000/api/team/webbridge/relay?_ticket=replacement-ticket");
 });
 
 test("revoked pairing credential is removed before reconnect", async () => {
@@ -2164,7 +2249,7 @@ test("revoked pairing credential is removed before reconnect", async () => {
   assert.equal(worker.storedConfig.pairingCredential, "");
   assert.equal(worker.storedConfig.pairingId, "");
   assert.equal(worker.run("lastCloseReason"), "pairing");
-  assert.equal(worker.run("manualDisconnect"), true);
+  assert.equal(worker.run("manualDisconnect"), false);
 });
 
 test("relay revocation close clears pairing without reconnect", async () => {
@@ -2207,11 +2292,11 @@ test("relay revocation close clears pairing without reconnect", async () => {
   assert.equal(worker.storedConfig.webbridgeTeachRecording, undefined);
   assert.equal(worker.storedSession.webbridgeHumanControlLease, undefined);
   assert.equal(worker.storedSession.webbridgePickedElements, undefined);
-  assert.equal(worker.run("manualDisconnect"), true);
+  assert.equal(worker.run("manualDisconnect"), false);
   assert.equal(worker.sockets.length, 1);
 });
 
-test("a connection address change bootstraps without sending the old credential", async () => {
+test("native discovery replaces a relay-bound credential without sending the old credential", async () => {
   const worker = loadWorker({
     storedConfig: {
       relayBase: "ws://127.0.0.1:8000",
@@ -2221,7 +2306,8 @@ test("a connection address change bootstraps without sending the old credential"
     },
     fetchResponder: async (url, init) => {
       assert.notEqual(init.headers?.Authorization, "Bearer relay-bound-secret");
-      if (url.endsWith("/pairing/local")) {
+      if (url.endsWith("/pairing/native")) {
+        assert.equal(JSON.parse(init.body).discovery_token, "default-native-discovery-token-long-enough");
         return {
           ok: true,
           async json() {
@@ -2247,7 +2333,7 @@ test("a connection address change bootstraps without sending the old credential"
   assert.equal(worker.storedConfig.pairingRelayBase, "ws://127.0.0.1:8000");
 });
 
-test("insecure remote relay is rejected before network access", async () => {
+test("manual remote relay cannot bypass required Native Messaging discovery", async () => {
   const worker = loadWorker({
     storedConfig: {
       relayBase: "ws://relay.example",
@@ -2265,8 +2351,8 @@ test("insecure remote relay is rejected before network access", async () => {
 
   assert.equal(worker.fetchCalls.length, 0);
   assert.equal(worker.sockets.length, 0);
-  assert.equal(worker.run("lastCloseReason"), "security");
-  assert.equal(worker.run("manualDisconnect"), true);
+  assert.equal(worker.run("lastCloseReason"), "native");
+  assert.equal(worker.run("manualDisconnect"), false);
 });
 
 test("middle click is preserved in both CDP events", async () => {

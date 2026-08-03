@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod native_messaging;
 mod openers;
 mod sidecar;
 mod workspace;
@@ -104,6 +105,11 @@ struct BackendStartupStatus {
     elapsed_ms: u64,
     error: Option<String>,
     fatal: bool,
+}
+
+#[derive(Deserialize)]
+struct NativeDiscoveryTokenResponse {
+    discovery_token: String,
 }
 
 impl Default for BackendStartupStatus {
@@ -2159,6 +2165,7 @@ fn apply_zoom_to_main(app: &AppHandle, factor: f64) {
 /// Idempotent: ``.take()``s the sidecar out of shared state, so repeat
 /// calls (or a race with ``ExitRequested``) are no-ops.
 async fn shutdown_sidecar_now(app: &AppHandle) {
+    native_messaging::clear_connection(app);
     let state: tauri::State<'_, AppState> = app.state();
     let sidecar = state.sidecar.clone();
     let mut guard = sidecar.lock().await;
@@ -2534,6 +2541,53 @@ async fn wait_for_health(base: &str, attempts: u32, delay: Duration) -> Result<(
     ))
 }
 
+async fn publish_webbridge_native_connection(
+    app: &AppHandle,
+    base_url: &str,
+    desktop_token: &str,
+) -> Result<()> {
+    const PUBLISH_ATTEMPTS: u32 = 5;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .context("build native discovery client")?;
+    let url = format!(
+        "{}/api/team/webbridge/native-discovery",
+        base_url.trim_end_matches('/')
+    );
+    let mut last_error = None;
+    for attempt in 1..=PUBLISH_ATTEMPTS {
+        let result: Result<()> = async {
+            let response = client
+                .get(&url)
+                .bearer_auth(desktop_token)
+                .send()
+                .await
+                .context("request WebBridge native discovery token")?
+                .error_for_status()
+                .context("WebBridge native discovery token was rejected")?
+                .json::<NativeDiscoveryTokenResponse>()
+                .await
+                .context("decode WebBridge native discovery token")?;
+            native_messaging::publish_connection(app, base_url, &response.discovery_token)
+        }
+        .await;
+        match result {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                log::warn!(
+                    "WebBridge native discovery publish attempt {attempt}/{PUBLISH_ATTEMPTS} failed: {error:#}"
+                );
+                last_error = Some(error);
+            }
+        }
+        if attempt < PUBLISH_ATTEMPTS {
+            tokio::time::sleep(Duration::from_millis(200) * attempt).await;
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow!("native discovery publication failed")))
+}
+
 struct ReadySidecar {
     sidecar: Sidecar,
     handshake: Handshake,
@@ -2615,6 +2669,7 @@ async fn start_bundled_backend_with_retry(
     app: &AppHandle,
     desktop_token: Option<&str>,
 ) -> std::result::Result<ReadySidecar, BackendStartFailure> {
+    native_messaging::clear_connection(app);
     let state: tauri::State<'_, AppState> = app.state();
     let _start_guard = state.backend_start_lock.lock().await;
     let operation_started = Instant::now();
@@ -2757,6 +2812,13 @@ async fn start_bundled_backend_with_retry(
                 tokio::time::sleep(SIDECAR_RETRY_BASE_DELAY * attempt).await;
             }
             continue;
+        }
+
+        if let Err(error) =
+            publish_webbridge_native_connection(app, &base_url, &handshake.token).await
+        {
+            native_messaging::clear_connection(app);
+            log::warn!("could not publish WebBridge native discovery: {error:#}");
         }
 
         log::info!(
@@ -3052,6 +3114,7 @@ async fn start_backend_and_window(app: AppHandle) -> Result<()> {
         match normalize_external_base_url(&active_base_url) {
             Ok(base) => match wait_for_health(&base, 8, Duration::from_millis(250)).await {
                 Ok(()) => {
+                    native_messaging::clear_connection(&app);
                     state
                         .window_backend_base_urls
                         .lock()
@@ -3153,6 +3216,14 @@ async fn start_backend_and_window(app: AppHandle) -> Result<()> {
 }
 
 fn main() {
+    if native_messaging::invoked_as_native_host() {
+        if let Err(error) = native_messaging::run_native_host() {
+            eprintln!("EvoFlux WebBridge native host failed: {error:#}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     let state = AppState {
         sidecar: Arc::new(Mutex::new(None)),
         desktop_token: Arc::new(Mutex::new(None)),
@@ -3222,6 +3293,9 @@ fn main() {
         ])
         .setup(|app| {
             install_desktop_menus(app)?;
+            if let Err(error) = native_messaging::install(app.handle()) {
+                log::warn!("could not install WebBridge native messaging host: {error:#}");
+            }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = start_backend_and_window(handle.clone()).await {
@@ -3286,6 +3360,7 @@ fn main() {
             }
             RunEvent::ExitRequested { .. } => {
                 persist_active_window_state(app);
+                native_messaging::clear_connection(app);
                 let state: tauri::State<'_, AppState> = app.state();
                 let sidecar = state.sidecar.clone();
                 // Block so the child receives SIGTERM before the parent exits.
