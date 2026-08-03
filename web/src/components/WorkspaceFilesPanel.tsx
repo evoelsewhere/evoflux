@@ -1024,6 +1024,10 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
           try {
             const result = await updateSessionWorkspace(sessionId, selected)
             queryClient.setQueryData(queryKeys.team.files(sessionId), result)
+            queryClient.setQueryData(queryKeys.team.workspaceRoot(sessionId), {
+              session_id: sessionId,
+              workspace_root: result.workspace_root,
+            })
           } catch (err) {
             setPickerError((err as Error).message ?? 'Failed to update workspace')
           } finally {
@@ -1067,6 +1071,10 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
     try {
       const result = await updateSessionWorkspace(sessionId, newPath)
       queryClient.setQueryData(queryKeys.team.files(sessionId), result)
+      queryClient.setQueryData(queryKeys.team.workspaceRoot(sessionId), {
+        session_id: sessionId,
+        workspace_root: result.workspace_root,
+      })
       setIsPickerOpen(false)
     } catch (err) {
       setPickerError((err as Error).message ?? 'Failed to update workspace')

@@ -23,6 +23,8 @@ export const queryKeys = {
     },
     // Workspace-files listing per session — powers the Artifacts panel.
     files: (sessionId: string) => ['team', 'files', sessionId] as const,
+    // Effective root only — powers desktop "Open in" without scanning files.
+    workspaceRoot: (sessionId: string) => ['team', 'workspace-root', sessionId] as const,
   },
   // Coding-mode workspace sidebar — keyed by the absolute workspace path
   // (a single project may be shared across multiple sessions/tabs, so the

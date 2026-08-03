@@ -24,6 +24,7 @@ import type {
   WorkspaceStatusResponse,
   TeamCommandResponse,
   WorkspaceFilesResponse,
+  WorkspaceRootResponse,
   CodingWorkspaceFilesResponse,
   TodosResponse,
   CodingProject,
@@ -466,6 +467,13 @@ export async function teamHistory(sessionId: string, before?: string): Promise<T
 export async function listWorkspaceFiles(sessionId: string): Promise<WorkspaceFilesResponse> {
   const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/files`)
   if (!res.ok) await parseDetailOrThrow(res, 'listWorkspaceFiles')
+  return res.json()
+}
+
+/** Resolve a session workspace root without recursively listing its files. */
+export async function getSessionWorkspaceRoot(sessionId: string): Promise<WorkspaceRootResponse> {
+  const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/workspace`)
+  if (!res.ok) await parseDetailOrThrow(res, 'getSessionWorkspaceRoot')
   return res.json()
 }
 

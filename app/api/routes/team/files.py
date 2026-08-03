@@ -41,6 +41,7 @@ from app.api.schemas.team import (
     CodingWorkspaceFilesResponse,
     WorkspaceFileInfo,
     WorkspaceFilesResponse,
+    WorkspaceRootResponse,
 )
 from app.core.db import async_session_factory
 from app.core.paths import session_workspace_dir, uploads_dir, workspace_dir
@@ -269,6 +270,21 @@ async def list_workspace_files(session_id: str) -> WorkspaceFilesResponse:
         _list_workspace_files,
         await _session_workspace(session_id),
         session_id,
+    )
+
+
+@router.get("/{session_id}/workspace", response_model=WorkspaceRootResponse)
+async def get_session_workspace(session_id: str) -> WorkspaceRootResponse:
+    """Return the effective session workspace without walking its contents."""
+    try:
+        uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session id.")
+
+    root = await _session_workspace(session_id)
+    return WorkspaceRootResponse(
+        session_id=session_id,
+        workspace_root=str(root.resolve(strict=False)),
     )
 
 
