@@ -9,7 +9,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 from app.agent.tools.builtin.shell_runtime import BashNotFoundError, require_bash
 from app.services.aim import kb_store
@@ -161,13 +161,18 @@ async def execute_case(
     }
 
     try:
-        completed = await asyncio.to_thread(
-            subprocess.run,
-            command,
-            capture_output=True,
-            text=True,
-            env=environment,
-            timeout=max(1, min(timeout_seconds, 4 * 3600)),
+        # ``text=True`` guarantees str streams, but that binding is lost across
+        # ``to_thread``'s generic signature.
+        completed = cast(
+            "subprocess.CompletedProcess[str]",
+            await asyncio.to_thread(
+                subprocess.run,
+                command,
+                capture_output=True,
+                text=True,
+                env=environment,
+                timeout=max(1, min(timeout_seconds, 4 * 3600)),
+            ),
         )
     except subprocess.TimeoutExpired as exc:
         raise RunnerExecutionError(
