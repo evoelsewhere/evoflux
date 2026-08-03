@@ -20,7 +20,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -31,6 +31,12 @@ from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.util import Inches, Pt
 
+from app.services.office.rendering import (
+    PDFTOPPM_BIN_ENV,
+    SOFFICE_BIN_ENV,
+    render_pages,
+    renderer_available,
+)
 from app.services.pptx_html_styles import (
     COMMON_PRESET_CSS,
     get_style_preset,
@@ -50,6 +56,34 @@ PPTX_WIDTH_IN = 13.333333
 PPTX_HEIGHT_IN = 7.5
 PPTX_POINTS_PER_PX = PPTX_HEIGHT_IN * 72 / CANVAS_HEIGHT
 MAX_SLIDES = 40
+# Backgrounds and editable images are embedded in the deck, so they carry the
+# detail budget. Previews are only QA thumbnails and attachment cards.
+EXPORT_PIXEL_RATIO = 2
+PREVIEW_PIXEL_RATIO = 1
+# The renderer is one WebView, so slides pipeline rather than fan out: each one
+# holds a full-canvas bitmap while it encodes.
+RENDER_CONCURRENCY = 3
+# Editable text keeps its font name rather than its rendered pixels, so a family
+# PowerPoint lacks gets substituted and reflows over the rendered background.
+# These ship with Office or the host OS and all cover Vietnamese diacritics.
+EXPORT_SAFE_FONTS = frozenset(
+    {
+        "Aptos",
+        "Aptos Display",
+        "Arial",
+        "Calibri",
+        "Calibri Light",
+        "Cambria",
+        "Consolas",
+        "Courier New",
+        "Georgia",
+        "Segoe UI",
+        "Tahoma",
+        "Times New Roman",
+        "Trebuchet MS",
+        "Verdana",
+    }
+)
 MAX_HTML_CHARS = 180_000
 MAX_CSS_CHARS = 120_000
 _ASSET_RE = re.compile(r"asset://([^\s\"'<>\)]+)")
@@ -372,6 +406,7 @@ class HtmlDeckBuildResult:
     render_dir: Path
     slides: list[SlideRender]
     issues: list[QaIssue]
+    round_trip: dict[str, Any] = field(default_factory=dict)
 
     @property
     def passed(self) -> bool:
@@ -382,6 +417,7 @@ class HtmlDeckBuildResult:
             "passed": self.passed,
             "output": str(self.output) if self.output else None,
             "render_dir": str(self.render_dir),
+            "round_trip": self.round_trip,
             "slide_count": len(self.slides),
             "renders": [str(slide.preview_path) for slide in self.slides],
             "backgrounds": [str(slide.background_path) for slide in self.slides],
@@ -578,11 +614,14 @@ def _document_html(
 
 
 _INSPECTION_SCRIPT = r"""
-({ minBodyPx, minTitlePx, maxWords, editableMode }) => {
+({ minBodyPx, minTitlePx, maxWords, editableMode, fontAllowlist }) => {
   const slide = document.querySelector('.slide');
   const slideRect = slide.getBoundingClientRect();
   const issues = [];
   const label = (el) => el.id || el.getAttribute('data-pptx-role') || el.className || el.tagName;
+  // Mirrors _font_name on the Python side: the exported run keeps only the first
+  // family of the stack, so that is the name PowerPoint has to resolve.
+  const firstFamily = (value) => String(value || '').split(',')[0].trim().replace(/^["']|["']$/g, '');
   const outside = (rect) => rect.left < slideRect.left - 1 || rect.top < slideRect.top - 1 || rect.right > slideRect.right + 1 || rect.bottom > slideRect.bottom + 1;
   const textSelector = 'h1,h2,h3,h4,h5,h6,p,li,blockquote,figcaption,th,td,[data-pptx-native="text"]';
   slide.querySelectorAll(textSelector).forEach((el) => {
@@ -657,6 +696,18 @@ _INSPECTION_SCRIPT = r"""
       order: domOrder.get(el) || 0
     };
   }).filter((item) => item.text);
+
+  const allowedFonts = new Set((fontAllowlist || []).map((name) => name.toLowerCase()));
+  if (allowedFonts.size) {
+    unique(nativeText.map((item) => firstFamily(item.fontFamily)))
+      .filter((name) => name && !allowedFonts.has(name.toLowerCase()))
+      .forEach((name) => issues.push({
+        severity: 'warning',
+        code: 'font_not_export_safe',
+        message: `Editable text uses "${name}", which PowerPoint may not have installed. It would substitute another font and reflow the text over the rendered background. Use an export-safe family or mark the element data-pptx-raster to keep the look as pixels.`,
+        element: name,
+      }));
+  }
 
   const explicitShapes = [...slide.querySelectorAll('[data-pptx-native="shape"],[data-pptx-native="line"]')];
   const automaticShapes = editableMode === 'max' ? [...slide.querySelectorAll('[data-box],.panel,.step,.rule,[data-pptx-line]')] : [];
@@ -766,28 +817,36 @@ async def render_html_deck(
     if invalid:
         raise ValueError(f"slide_numbers out of range: {invalid}")
 
-    rendered: list[SlideRender] = []
-    all_issues: list[QaIssue] = []
-    for number, slide in enumerate(project.slides, start=1):
-        if number not in selected:
-            continue
+    inspection_params = {
+        "minBodyPx": project.min_body_px,
+        "minTitlePx": project.min_title_px,
+        "maxWords": project.max_words_per_slide,
+        "editableMode": project.editable_mode,
+        "fontAllowlist": sorted(EXPORT_SAFE_FONTS),
+    }
+    canvas = {
+        "width": CANVAS_WIDTH,
+        "height": CANVAS_HEIGHT,
+        "exportPixelRatio": EXPORT_PIXEL_RATIO,
+        "previewPixelRatio": PREVIEW_PIXEL_RATIO,
+    }
+    limit = asyncio.Semaphore(RENDER_CONCURRENCY)
+
+    async def render_slide(number: int, slide: HtmlSlideSpec) -> SlideRender:
         document = _document_html(
             project,
             slide,
             project_dir=Path(project_file).parent,
             workspace_root=workspace_root,
         )
-        response = await desktop_presentation_bridge.render(
-            session_id,
-            document=document,
-            inspection_script=_INSPECTION_SCRIPT,
-            inspection_params={
-                "minBodyPx": project.min_body_px,
-                "minTitlePx": project.min_title_px,
-                "maxWords": project.max_words_per_slide,
-                "editableMode": project.editable_mode,
-            },
-        )
+        async with limit:
+            response = await desktop_presentation_bridge.render(
+                session_id,
+                document=document,
+                inspection_script=_INSPECTION_SCRIPT,
+                inspection_params=inspection_params,
+                canvas=canvas,
+            )
         if not isinstance(response, dict) or not isinstance(
             response.get("inspection"), dict
         ):
@@ -824,19 +883,27 @@ async def render_html_deck(
             _write_png_data_url(by_export_id.get(item["exportId"]), image_path)
             native_images.append({**item, "path": str(image_path)})
 
-        rendered.append(
-            SlideRender(
-                number=number,
-                slide_id=slide.id,
-                preview_path=preview_path,
-                background_path=background_path,
-                native_text=list(inspection.get("nativeText", [])),
-                native_shapes=list(inspection.get("nativeShapes", [])),
-                native_images=native_images,
-                issues=issues,
+        return SlideRender(
+            number=number,
+            slide_id=slide.id,
+            preview_path=preview_path,
+            background_path=background_path,
+            native_text=list(inspection.get("nativeText", [])),
+            native_shapes=list(inspection.get("nativeShapes", [])),
+            native_images=native_images,
+            issues=issues,
+        )
+
+    rendered = list(
+        await asyncio.gather(
+            *(
+                render_slide(number, slide)
+                for number, slide in enumerate(project.slides, start=1)
+                if number in selected
             )
         )
-        all_issues.extend(issues)
+    )
+    all_issues = [issue for slide_render in rendered for issue in slide_render.issues]
 
     report = HtmlDeckBuildResult(
         output=None,
@@ -1133,6 +1200,117 @@ def assemble_hybrid_pptx(
     return output
 
 
+# Round-trip verification compares a coarse grayscale signature rather than
+# pixels. LibreOffice and Chromium hint and antialias text differently, so only
+# low-frequency structure is comparable between them: a block of text that moved,
+# vanished, or overlapped changes the signature, while rasterisation does not.
+_SIGNATURE_SIZE: Final = (64, 36)
+# Provisional, and reported alongside every measurement so it can be retuned
+# against real decks instead of guessed at again.
+_MAX_SIGNATURE_DRIFT: Final = 0.18
+_ROUND_TRIP_DPI: Final = 96
+
+
+def _signature(path: Path) -> bytes:
+    with Image.open(path) as image:
+        coarse = image.convert("L").resize(_SIGNATURE_SIZE, Image.Resampling.BILINEAR)
+        return coarse.tobytes()
+
+
+def _signature_drift(designed: Path, exported: Path) -> float:
+    left = _signature(designed)
+    right = _signature(exported)
+    total = sum(abs(a - b) for a, b in zip(left, right, strict=True))
+    return total / (len(left) * 255)
+
+
+def verify_exported_deck(
+    output: Path,
+    slides: list[SlideRender],
+    render_dir: Path,
+) -> tuple[list[QaIssue], dict[str, Any]]:
+    """Compares the written deck against the previews the WebView produced.
+
+    Every other check runs on the HTML before export, so this is the only step
+    that sees what PowerPoint will actually open. It reports rather than blocks:
+    LibreOffice substitutes fonts of its own, so a difference is a prompt to look
+    at both images, not proof the deck is wrong.
+    """
+
+    if not renderer_available():
+        return [], {
+            "status": "skipped",
+            "reason": (
+                "LibreOffice is unavailable, so the exported deck was not "
+                f"rasterised. Set {SOFFICE_BIN_ENV} and {PDFTOPPM_BIN_ENV} to "
+                "compare the written deck against the designed previews."
+            ),
+        }
+    pages, render_issues = render_pages(
+        output,
+        render_dir,
+        code_prefix="pptx",
+        dpi=_ROUND_TRIP_DPI,
+    )
+    if render_issues:
+        reason = render_issues[0]["message"]
+        return [
+            QaIssue(
+                severity="warning",
+                code="round_trip_render_failed",
+                message=(
+                    f"The exported deck could not be rasterised for verification: {reason}"
+                ),
+                slide_number=0,
+            )
+        ], {"status": "failed", "reason": reason}
+
+    issues: list[QaIssue] = []
+    if len(pages) != len(slides):
+        issues.append(
+            QaIssue(
+                severity="warning",
+                code="round_trip_page_count",
+                message=(
+                    f"The exported deck rasterised to {len(pages)} pages but the "
+                    f"project has {len(slides)} slides."
+                ),
+                slide_number=0,
+            )
+        )
+    measurements: list[dict[str, Any]] = []
+    for slide_render, page in zip(slides, pages, strict=False):
+        drift = _signature_drift(slide_render.preview_path, page)
+        measurements.append(
+            {
+                "slide_number": slide_render.number,
+                "difference": round(drift, 4),
+                "designed": str(slide_render.preview_path),
+                "exported": str(page),
+            }
+        )
+        if drift <= _MAX_SIGNATURE_DRIFT:
+            continue
+        issues.append(
+            QaIssue(
+                severity="warning",
+                code="round_trip_drift",
+                message=(
+                    f"The exported slide differs from its designed preview "
+                    f"(difference {drift:.3f} above {_MAX_SIGNATURE_DRIFT}). Compare "
+                    f"{slide_render.preview_path.name} with {page.name}; a substituted "
+                    "font or a displaced native object is the usual cause."
+                ),
+                slide_number=slide_render.number,
+            )
+        )
+    return issues, {
+        "status": "completed",
+        "threshold": _MAX_SIGNATURE_DRIFT,
+        "slides": measurements,
+    }
+
+
 async def build_html_presentation(
     project: HtmlDeckProject,
     *,
@@ -1157,6 +1335,13 @@ async def build_html_presentation(
         result.slides,
         output,
     )
+    round_trip_issues, result.round_trip = await asyncio.to_thread(
+        verify_exported_deck,
+        result.output,
+        result.slides,
+        render_dir / "round-trip",
+    )
+    result.issues.extend(round_trip_issues)
     (render_dir / "qa.json").write_text(
         json.dumps(result.to_dict(), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -1175,4 +1360,5 @@ __all__ = [
     "load_html_deck_project",
     "render_html_deck",
     "validate_html_fragment",
+    "verify_exported_deck",
 ]

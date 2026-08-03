@@ -256,6 +256,14 @@ For large display titles, use explicit `<br>` elements when the line break is
 part of the art direction. Browser and PowerPoint font metrics can differ; an
 explicit break preserves the intended rhythm across both renderers.
 
+Editable text keeps its font *name*, not its rendered pixels, so a family the
+reader's PowerPoint lacks gets substituted and reflows over a background that was
+rendered with the original. QA warns with `font_not_export_safe` when promoted
+text uses a family outside the export-safe set (Aptos, Calibri, Cambria, Segoe
+UI, Arial, Times New Roman, Georgia, Tahoma, Trebuchet MS, Verdana, Consolas,
+Courier New). Either switch families or mark the element `data-pptx-raster` to
+keep a distinctive face as pixels.
+
 Add `data-box` to peer-level structural regions such as panels, columns, cards,
 and diagram nodes. In `max` mode this both enables collision QA and makes a
 supported solid region an editable PowerPoint shape. For intentional overlap,
@@ -291,8 +299,21 @@ the slide's `sources` array. The exporter appends them to notes under `[Sources]
 Do not place raw citations across the visual surface unless the audience needs
 them there.
 
+## Round-trip verification
+
+Every other check inspects the HTML before export. When LibreOffice is available,
+`build` additionally rasterises the written deck and compares each slide against
+the preview the WebView produced, recording the measured difference per slide in
+`qa.json` under `round_trip`. A `round_trip_drift` warning means the exported
+slide no longer matches its design: open both images named in the message and
+look before shipping. A substituted font or a displaced native object is the
+usual cause. Without LibreOffice the step reports `skipped` and the deck still
+builds, so treat the absence of drift warnings as evidence only when
+`round_trip.status` is `completed`.
+
 ## Final handoff
 
 Report the output path, slide count, QA status, warning count, and editable
 object counts split by text, shape, and image. State plainly which complex
-effects remain in the pixel-stable background.
+effects remain in the pixel-stable background, and whether round-trip
+verification ran or was skipped.

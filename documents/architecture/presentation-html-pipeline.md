@@ -58,13 +58,41 @@ own document/window context. Any error prevents PPTX
 composition. Warnings remain visible in
 `.evoflux/pptx-html/<deck>/qa.json` for deliberate review.
 
+Promoted text is also checked against `EXPORT_SAFE_FONTS`. Because a native run
+carries a font *name* rather than pixels, a family the reader's PowerPoint lacks
+is substituted and reflows over a background rendered with the original, so the
+hybrid split only holds while the two agree. The check warns rather than blocks:
+the authoring machine cannot know what the reader has installed.
+
 This renderer is intentionally desktop-only. There is no system-browser,
 headless-browser, or remote-service fallback; a render request without the
 matching EvoFlux Desktop task fails closed.
 
+Python owns the render geometry (canvas size and the export/preview pixel
+ratios) and sends it with each request. The WebView keeps no copy, because a
+geometry constant that drifts between the two languages breaks coordinates
+silently and no test would catch it. Slides render concurrently up to
+`RENDER_CONCURRENCY`; results are ordered by slide number, not by completion.
+
 The exporter writes atomically, reopens the final file with `python-pptx`, and
-checks slide count before publishing the artifact to the chat UI with preview and
-download links.
+checks slide count before publishing the artifact.
+
+### Round-trip verification
+
+Every check above runs on the HTML, so none of them sees the effect of the export
+itself — a displaced native object or a substituted font produces a clean QA pass
+and a wrong deck. When LibreOffice is available, `build_html_presentation`
+therefore rasterises the written deck through the shared
+`app/services/office/rendering.py` and compares each slide against its preview.
+
+The comparison is a coarse grayscale signature, not a pixel diff: LibreOffice and
+Chromium hint and antialias text differently, so only low-frequency structure is
+comparable between them. Text that moved, vanished, or overlapped changes the
+signature; rasterisation does not. Deviations are reported as warnings and every
+measurement lands in `qa.json` under `round_trip`, so the threshold can be
+retuned against real decks rather than trusted blindly. Without LibreOffice the
+step records `skipped` and the build proceeds, keeping a developer-machine
+dependency out of the critical path.
 
 ## Editable base templates
 
@@ -133,4 +161,6 @@ The template worker requires Node.js and a built `@oai/artifact-tool`
 entrypoint. Production environments may configure these explicitly with
 `EVOFLUX_NODE_BIN` and `EVOFLUX_ARTIFACT_TOOL_ENTRYPOINT`. When either runtime
 is unavailable, the tool reports the missing dependency and stops instead of
-silently producing a lower-fidelity deck.
+silently producing a lower-fidelity deck. Discovery and the worker subprocess
+protocol live in `app/services/office/runtime.py`, shared with the XLSX and
+DOCX pipelines; see `editable-office-pipelines.md` for the lookup order.
