@@ -1,6 +1,6 @@
 /* EvoFlux WebBridge P2 Side Panel. */
 
-const DEFAULT_RELAY_BASE = "ws://127.0.0.1:8000";
+const DEFAULT_RELAY_BASE = "ws://127.0.0.1:4082";
 const SESSIONS_PATH = "/api/team/webbridge/sessions";
 const BINDINGS_PATH = "/api/team/webbridge/bindings";
 const MODELS_PATH = "/api/team/webbridge/models";
