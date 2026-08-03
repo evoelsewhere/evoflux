@@ -1300,6 +1300,11 @@ export interface WorkspaceFilesResponse {
   workspace_root: string | null
 }
 
+export interface WorkspaceRootResponse {
+  session_id: string
+  workspace_root: string
+}
+
 // ── Scheduler ───────────────────────────────────────────────────────────────
 
 export type ScheduledTaskMode = 'work' | 'coding'

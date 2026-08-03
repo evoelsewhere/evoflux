@@ -290,6 +290,31 @@ class TestWorkspaceFilesListing:
 
 
 class TestSessionWorkspaceSelection:
+    def test_get_workspace_root_does_not_scan_files(
+        self, client, session_id, tmp_path, monkeypatch
+    ):
+        from app.api.routes.team import files as team_routes
+
+        workspace = tmp_path / "not-created-yet"
+        monkeypatch.setattr(team_routes, "workspace_dir", lambda sid: workspace)
+
+        def fail_if_scanned(*args, **kwargs):
+            raise AssertionError("workspace root lookup must not scan files")
+
+        monkeypatch.setattr(team_routes, "_list_workspace_files", fail_if_scanned)
+
+        resp = client.get(f"/api/team/{session_id}/workspace")
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "session_id": session_id,
+            "workspace_root": str(workspace.resolve()),
+        }
+
+    def test_get_workspace_root_rejects_invalid_session_id(self, client):
+        resp = client.get("/api/team/not-a-uuid/workspace")
+        assert resp.status_code == 400
+
     def test_update_workspace_syncs_cached_work_team(
         self, client, session_id, tmp_path, monkeypatch
     ):

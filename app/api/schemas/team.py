@@ -75,6 +75,13 @@ class WorkspaceFilesResponse(BaseModel):
     )
 
 
+class WorkspaceRootResponse(BaseModel):
+    """Resolved workspace root without an accompanying directory scan."""
+
+    session_id: str
+    workspace_root: str
+
+
 class CodingWorkspaceFilesResponse(BaseModel):
     """Flat recursive listing of a coding workspace."""
 
