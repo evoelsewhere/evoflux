@@ -683,7 +683,12 @@ async def save_provider(
             if name in body.extra:
                 creds[name] = body.extra[name]
     elif entry.get("kind") == "api_key" and entry.get("env_var"):
-        creds[entry["env_var"]] = body.api_key
+        # Empty api_key means "leave the existing key alone" — the UI sends
+        # blank when the user only edits optional knobs like ROUTER9_BASE_URL.
+        # Clearing a key is the DELETE endpoint's job; writing "" here would
+        # delete the .env line via write_env_credentials.
+        if body.api_key:
+            creds[entry["env_var"]] = body.api_key
     elif entry.get("kind") == "cloud_creds":
         for name in entry.get("env_vars") or []:
             if name in body.extra:

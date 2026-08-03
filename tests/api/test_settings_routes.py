@@ -400,6 +400,52 @@ def test_save_provider_persists_base_url_extra(
     assert os.environ.get("ROUTER9_BASE_URL") is None
 
 
+def test_save_provider_base_url_only_preserves_existing_api_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Editing only the daemon base URL must not wipe a stored API key.
+
+    The Settings UI keeps the key field blank after a successful save and
+    re-sends ``api_key: ""`` when the user later changes ROUTER9_BASE_URL /
+    CLIPROXY_BASE_URL. Empty used to mean "delete the key line".
+    """
+    monkeypatch.setattr(settings_routes.settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("ROUTER9_API_KEY", raising=False)
+    monkeypatch.delenv("ROUTER9_BASE_URL", raising=False)
+
+    app = _make_app()
+    client = TestClient(app)
+    assert (
+        client.put(
+            "/api/settings/providers/router9",
+            json={
+                "api_key": "rk-keep-me",
+                "extra": {"ROUTER9_BASE_URL": "http://127.0.0.1:20128/v1"},
+            },
+        ).status_code
+        == 200
+    )
+
+    response = client.put(
+        "/api/settings/providers/router9",
+        json={
+            "api_key": "",
+            "extra": {"ROUTER9_BASE_URL": "http://10.0.0.5:20128/v1"},
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["saved"] is True
+
+    env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "ROUTER9_API_KEY=rk-keep-me" in env_text
+    assert "ROUTER9_BASE_URL=http://10.0.0.5:20128/v1" in env_text
+
+    import os
+
+    assert os.environ.get("ROUTER9_API_KEY") == "rk-keep-me"
+    assert os.environ.get("ROUTER9_BASE_URL") == "http://10.0.0.5:20128/v1"
+
+
 def test_save_provider_supports_plugin_credentials(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
