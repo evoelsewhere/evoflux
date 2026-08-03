@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -81,6 +82,55 @@ class TestReady:
         # the gate.  But the per-check value must reflect the parse error.
         body = resp.json()
         assert body["checks"]["team"] == "invalid"
+
+
+class TestValidateAgentsDirCache:
+    """The 30s cache must key on the validator, not just on elapsed time.
+
+    Health endpoints are polled, so the result is cached — but a swapped
+    validator (tests, or a reloaded ``team_manager``) has to be observed
+    immediately instead of serving a stale answer for up to 30 seconds.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        import app.api.routes.health as health_mod
+
+        health_mod._validate_agents_cache = None
+        yield
+        health_mod._validate_agents_cache = None
+
+    @pytest.mark.asyncio
+    async def test_swapped_validator_is_not_served_from_cache(self):
+        import app.api.routes.health as health_mod
+
+        with patch("app.services.team_manager.validate_agents_dir", return_value=True):
+            assert await health_mod.validate_agents_dir_cached() is True
+        with patch("app.services.team_manager.validate_agents_dir", return_value=False):
+            assert await health_mod.validate_agents_dir_cached() is False
+
+    @pytest.mark.asyncio
+    async def test_cached_error_is_not_replayed_for_a_new_validator(self):
+        import app.api.routes.health as health_mod
+
+        with patch(
+            "app.services.team_manager.validate_agents_dir",
+            side_effect=ValueError("bad yaml"),
+        ):
+            with pytest.raises(ValueError):
+                await health_mod.validate_agents_dir_cached()
+        with patch("app.services.team_manager.validate_agents_dir", return_value=True):
+            assert await health_mod.validate_agents_dir_cached() is True
+
+    @pytest.mark.asyncio
+    async def test_repeat_calls_reuse_the_cache_for_the_same_validator(self):
+        import app.api.routes.health as health_mod
+
+        validator = MagicMock(return_value=True)
+        with patch("app.services.team_manager.validate_agents_dir", validator):
+            assert await health_mod.validate_agents_dir_cached() is True
+            assert await health_mod.validate_agents_dir_cached() is True
+        assert validator.call_count == 1
 
 
 class TestLegacyAliasRemoved:
