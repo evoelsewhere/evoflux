@@ -1,10 +1,10 @@
 [package]
 name = "evoflux-desktop"
-version = "0.0.4"
+version = "0.0.5"
 description = "EvoFlux — on-machine AI agents (desktop shell)"
 authors = ["EvoFlux contributors"]
 license = "Apache-2.0"
-repository = "https://github.com/khuonghung/evoflux"
+repository = "https://github.com/evoelsewhere/evoflux"
 edition = "2021"
 rust-version = "1.77"
 

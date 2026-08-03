@@ -310,7 +310,7 @@ def cmd_init(_args: argparse.Namespace) -> None:  # noqa: C901
         print(f"     {_dim('Network issue? Retry with')} {_bold('EvoFlux init')}")
         print(
             f"     {_dim('Or copy manually from')} "
-            f"https://github.com/khuonghung/evoflux/tree/main/seed"
+            f"https://github.com/evoelsewhere/evoflux/tree/main/seed"
         )
     else:
         if result.agents_written or result.skills_written or result.configs_written:
