@@ -5,6 +5,7 @@ import { useAppBackendBootstrap } from './hooks/use-app-backend-bootstrap'
 import { router } from './router'
 import { AppMotionConfig } from '@/components/motion/AppMotionConfig'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
+import { useLocale } from '@/i18n'
 
 const ANSI_SGR_PATTERN = new RegExp(
   `${String.fromCharCode(27)}\\[[0-9;]*m`,
@@ -12,6 +13,7 @@ const ANSI_SGR_PATTERN = new RegExp(
 )
 
 function App() {
+  useLocale()
   const backend = useAppBackendBootstrap()
 
   return (

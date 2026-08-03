@@ -12,7 +12,7 @@ interface LazyMarkdownBlockProps {
 
 export function LazyMarkdownBlock({ content, sessionId, isStreaming }: LazyMarkdownBlockProps) {
   return (
-    <Suspense fallback={<div className="oa-prose text-sm whitespace-pre-wrap">{content}</div>}>
+    <Suspense fallback={<div data-i18n-ignore className="oa-prose text-sm whitespace-pre-wrap">{content}</div>}>
       <MarkdownBlockImpl content={content} sessionId={sessionId} isStreaming={isStreaming} />
     </Suspense>
   )

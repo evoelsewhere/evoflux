@@ -120,7 +120,7 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
         </div>
 
         {/* Summary */}
-        <p className="text-(--color-text)">{artifact.summary}</p>
+        <p data-i18n-ignore className="text-(--color-text)">{artifact.summary}</p>
 
         {/* Confidence + Verification — always visible */}
         {(artifact.confidence != null || artifact.verification) && (
@@ -154,7 +154,7 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
                   <div>
                     <p className="mb-1 font-semibold text-(--color-text-2)">Findings</p>
                     <ul className="list-inside list-disc space-y-0.5 text-(--color-text)">
-                      {artifact.findings.map((f, i) => <li key={i}>{f}</li>)}
+                      {artifact.findings.map((f, i) => <li key={i} data-i18n-ignore>{f}</li>)}
                     </ul>
                   </div>
                 )}
@@ -162,7 +162,7 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
                   <div>
                     <p className="mb-1 font-semibold text-(--color-text-2)">Evidence</p>
                     <ul className="list-inside list-disc space-y-0.5 text-(--color-text-muted)">
-                      {artifact.evidence.map((e, i) => <li key={i}>{e}</li>)}
+                      {artifact.evidence.map((e, i) => <li key={i} data-i18n-ignore>{e}</li>)}
                     </ul>
                   </div>
                 )}
@@ -171,7 +171,7 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
                     <p className="mb-1 font-semibold text-(--color-text-2)">Next Actions</p>
                     <ul className="space-y-0.5 text-(--color-text)">
                       {artifact.next_actions.map((a, i) => (
-                        <li key={i} className="flex items-start gap-1">
+                        <li key={i} data-i18n-ignore className="flex items-start gap-1">
                           <ArrowRight size={compact ? 10 : 12} className="mt-0.5 shrink-0 text-(--color-accent)" />
                           <span>{a}</span>
                         </li>
@@ -182,7 +182,7 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
                 {artifact.verification?.result && (
                   <div>
                     <p className="mb-1 font-semibold text-(--color-text-2)">Verification Result</p>
-                    <p className="text-(--color-text-muted)">{artifact.verification.result}</p>
+                    <p data-i18n-ignore className="text-(--color-text-muted)">{artifact.verification.result}</p>
                   </div>
                 )}
               </div>

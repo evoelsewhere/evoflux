@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent }
 import { Minus, Plus, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SpatialEdge, SpatialGraphData, SpatialNode } from './repoGraphSpatialData'
+import { getIntlLocale } from '@/i18n'
 
 interface ViewState {
   scale: number
@@ -438,9 +439,9 @@ export function RepoGraphSpatial({ data, searchQuery, selectedId, onSelect, hidd
       />
       <div className="pointer-events-none absolute inset-x-0 bottom-3 left-3 z-(--z-panel) flex items-center gap-2">
         <div className="pointer-events-auto flex items-center gap-3 rounded-md border border-(--color-border) bg-(--bg-card)/90 px-3 py-1.5 text-[10px] text-(--color-text-muted) backdrop-blur-sm">
-          <span>{visibleNodes.length.toLocaleString()} visible</span>
+          <span>{visibleNodes.length.toLocaleString(getIntlLocale())} visible</span>
           <span className="text-(--color-border)">|</span>
-          <span>{visibleEdges.length.toLocaleString()} edges</span>
+          <span>{visibleEdges.length.toLocaleString(getIntlLocale())} edges</span>
           {query && matchCount > 0 && (
             <>
               <span className="text-(--color-border)">|</span>

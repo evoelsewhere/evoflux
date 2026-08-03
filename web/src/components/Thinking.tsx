@@ -19,6 +19,7 @@ import { ActivityStatus } from '@/components/motion/ActivityStatus'
 import { panelTransition, useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import { splitSections } from '@/utils/thinking'
+import { getIntlLocale } from '@/i18n'
 
 interface ThinkingProps {
   content: string
@@ -48,7 +49,7 @@ export function Thinking({ content, isStreaming }: ThinkingProps) {
   const label = isStreaming
     ? 'Thinking'
     : charCount > 0
-      ? `Thought · ${charCount.toLocaleString()} chars`
+      ? `Thought · ${charCount.toLocaleString(getIntlLocale())} chars`
       : 'Thinking'
 
   return (
@@ -92,7 +93,7 @@ export function Thinking({ content, isStreaming }: ThinkingProps) {
                 isStreaming ? 'opacity-60' : 'opacity-80',
               )}
             >
-              <div className="min-w-0 space-y-1.5 font-mono text-[11px] leading-relaxed text-(--color-text-muted) [overflow-wrap:anywhere]">
+              <div data-i18n-ignore className="min-w-0 space-y-1.5 font-mono text-[11px] leading-relaxed text-(--color-text-muted) [overflow-wrap:anywhere]">
                 {sections.map((s, i) => (
                   <div key={i} className="min-w-0">
                     {s.header && (

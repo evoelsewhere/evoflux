@@ -30,6 +30,7 @@ import { AgentChip } from '@/components/ui/agent-chip'
 import { SubagentTaskCard } from '@/components/SubagentTaskCard'
 import type { AgentStream } from '@/stores/useTeamStore'
 import type { ContentBlock } from '@/api/types'
+import { getIntlLocale } from '@/i18n'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -46,7 +47,7 @@ function relativeTime(date: Date): string {
   if (diffSec < 60) return `${diffSec}s ago`
   const diffMin = Math.floor(diffSec / 60)
   if (diffMin < 60) return `${diffMin}m ago`
-  return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  return date.toLocaleTimeString(getIntlLocale(), { hour: '2-digit', minute: '2-digit' })
 }
 
 function dotClass(name: string, stream: AgentStream): string {
@@ -228,7 +229,7 @@ function LifecycleRow({ item }: { item: ActivityItem }) {
       </span>
       <span
         className="ml-auto shrink-0 font-mono text-[10px]"
-        title={item.timestamp.toLocaleTimeString()}
+        title={item.timestamp.toLocaleTimeString(getIntlLocale())}
       >
         {relativeTime(item.timestamp)}
       </span>
@@ -304,7 +305,7 @@ function CommsRow({ item }: { item: ActivityItem }) {
       </span>
       <span
         className="font-mono text-[10px] text-(--color-text-subtle)"
-        title={item.timestamp.toLocaleTimeString()}
+        title={item.timestamp.toLocaleTimeString(getIntlLocale())}
       >
         {relativeTime(item.timestamp)}
       </span>

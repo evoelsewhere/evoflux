@@ -30,6 +30,7 @@ import { useModalFocus } from '@/hooks/useModalFocus'
 import { loadCodingWorkspaceEntries, workspaceLabel } from '@/utils/workspace'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { fadeRise, staggerDelay, useListEnterIndex, useMotionPreset } from '@/lib/motion'
+import { translate } from '@/i18n'
 
 interface SchedulerPanelProps {
   open: boolean
@@ -852,7 +853,7 @@ function TaskDetailView({
     else pauseMutation.mutate(task.id)
   }
   const deleteTask = () => {
-    if (confirm(`Delete task "${task.name}"?`)) {
+    if (confirm(translate('Delete task "{0}"?', [task.name]))) {
       deleteMutation.mutate(task.id, { onSuccess: onDeleted })
     }
   }

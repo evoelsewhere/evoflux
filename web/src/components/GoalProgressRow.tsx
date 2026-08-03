@@ -1,6 +1,7 @@
 import { Pause, Play, Target, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { GoalResponse } from '@/api/types'
+import { useI18n } from '@/i18n'
 
 interface GoalProgressRowProps {
   goal: GoalResponse
@@ -14,29 +15,30 @@ const statusLabels: Record<GoalResponse['status'], string> = {
   blocked: 'Blocked',
 }
 
-function formatTokens(value: number): string {
-  return new Intl.NumberFormat('en-US', {
+function formatTokens(value: number, locale: string): string {
+  return new Intl.NumberFormat(locale, {
     notation: value >= 10_000 ? 'compact' : 'standard',
     maximumFractionDigits: 1,
   }).format(value)
 }
 
-function formatDuration(seconds: number): string {
+function formatDuration(seconds: number, t: (key: string, values?: ReadonlyArray<string | number>) => string): string {
   const total = Math.max(0, Math.floor(seconds))
   const hours = Math.floor(total / 3600)
   const minutes = Math.floor((total % 3600) / 60)
-  if (hours > 0) return `${hours}h ${minutes}m`
-  if (minutes > 0) return `${minutes}m`
-  return `${total}s`
+  if (hours > 0) return t('{0}h {1}m', [hours, minutes])
+  if (minutes > 0) return t('{0}m', [minutes])
+  return t('{0}s', [total])
 }
 
 export function GoalProgressRow({ goal, onCommand }: GoalProgressRowProps) {
+  const { intlLocale, t } = useI18n()
   const progress = goal.token_budget
     ? Math.min((goal.tokens_used / goal.token_budget) * 100, 100)
     : null
   const usageLabel = goal.token_budget
-    ? `${formatTokens(goal.tokens_used)} / ${formatTokens(goal.token_budget)} tokens`
-    : `${formatTokens(goal.tokens_used)} tokens`
+    ? t('{0} / {1} tokens', [formatTokens(goal.tokens_used, intlLocale), formatTokens(goal.token_budget, intlLocale)])
+    : t('{0} tokens', [formatTokens(goal.tokens_used, intlLocale)])
 
   return (
     <section
@@ -57,7 +59,7 @@ export function GoalProgressRow({ goal, onCommand }: GoalProgressRowProps) {
           <div className="mt-1 flex items-center gap-2 text-[10px] text-(--color-text-subtle)">
             <span className="tabular-nums">{usageLabel}</span>
             <span aria-hidden="true">·</span>
-            <span className="tabular-nums">{formatDuration(goal.time_used_seconds)}</span>
+            <span className="tabular-nums">{formatDuration(goal.time_used_seconds, t)}</span>
             {goal.blocker_streak > 0 && (
               <>
                 <span aria-hidden="true">·</span>

@@ -1,5 +1,6 @@
 import { getPlatform } from '@/hooks/use-platform'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
+import { translateText } from '@/i18n'
 
 export type DesktopNotificationKind = 'assistant_done' | 'background_done' | 'reminder_fired'
 export type DesktopNotificationStatus = 'sent' | 'disabled' | 'unsupported' | 'permission-denied' | 'error'
@@ -120,8 +121,8 @@ export async function sendDesktopNotification(
     const { invoke } = await import('@tauri-apps/api/core')
     await invoke('plugin:notification|notify', {
       options: {
-        title: payload.title,
-        body: payload.body,
+        title: translateText(payload.title),
+        body: translateText(payload.body),
         group: `EvoFlux-${payload.kind}`,
       },
     })

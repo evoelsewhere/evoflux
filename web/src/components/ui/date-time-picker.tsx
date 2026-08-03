@@ -19,6 +19,7 @@ import { buttonVariants } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { PopoverRoot } from '@base-ui/react/popover'
+import { useI18n } from '@/i18n'
 
 interface DateTimePickerProps {
   /** ISO-8601 local string: "2026-04-23T14:30" or empty string / undefined */
@@ -84,6 +85,7 @@ export function DateTimePicker({
   disabled,
 }: DateTimePickerProps) {
   const [open, setOpen] = React.useState(false)
+  const { intlLocale } = useI18n()
 
   const handleOpenChange: PopoverRoot.Props['onOpenChange'] = (next) => setOpen(next)
 
@@ -111,7 +113,12 @@ export function DateTimePicker({
   function handleHours(h: number) { emitChange(parsed, h, minutes) }
   function handleMinutes(m: number) { emitChange(parsed, hours, m) }
 
-  const displayLabel = parsed ? format(parsed, 'dd/MM/yyyy HH:mm') : placeholder
+  const displayLabel = parsed
+    ? new Intl.DateTimeFormat(intlLocale, {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+      }).format(parsed)
+    : placeholder
 
   return (
     <div className={cn('flex items-center', className)}>

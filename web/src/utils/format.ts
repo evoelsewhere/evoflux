@@ -19,7 +19,7 @@ export function shortId(id: string): string {
 }
 
 export function formatTime(date: Date): string {
-  return date.toLocaleTimeString(undefined, {
+  return date.toLocaleTimeString(getIntlLocale(), {
     hour: 'numeric',
     minute: '2-digit',
     hour12: false,
@@ -47,15 +47,19 @@ export function formatDate(dateStr: string | null): Date {
 }
 
 import { isToday, isYesterday, format } from 'date-fns'
+import { getIntlLocale, translate } from '@/i18n'
 
 // Me format date+time: "Today 14:32", "Yesterday 09:01", or "DD/MM/YYYY 14:32"
 export function formatRelativeDate(dateStr: string | null): string {
   if (!dateStr) return ''
   const date = new Date(dateStr)
   const time = format(date, 'HH:mm')
-  if (isToday(date)) return `Today ${time}`
-  if (isYesterday(date)) return `Yesterday ${time}`
-  return `${format(date, 'dd/MM/yyyy')} ${time}`
+  if (isToday(date)) return translate('Today {0}', [time])
+  if (isYesterday(date)) return translate('Yesterday {0}', [time])
+  return new Intl.DateTimeFormat(getIntlLocale(), {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(date)
 }
 
 // ── IANA timezone helpers ────────────────────────────────────────────────────
@@ -162,16 +166,13 @@ export function formatInTimezone(iso: string | null | undefined, timeZone: strin
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return ''
   try {
-    const dtf = new Intl.DateTimeFormat('en-GB', {
+    const dtf = new Intl.DateTimeFormat(getIntlLocale(), {
       timeZone,
       hourCycle: 'h23',
       year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit',
     })
-    const parts = dtf.formatToParts(date)
-    const map: Record<string, string> = {}
-    for (const p of parts) if (p.type !== 'literal') map[p.type] = p.value
-    return `${map.day}/${map.month}/${map.year} ${map.hour}:${map.minute}`
+    return dtf.format(date)
   } catch {
     return format(date, 'dd/MM/yyyy HH:mm')
   }

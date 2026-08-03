@@ -12,6 +12,7 @@ import { X } from 'lucide-react'
 import type { SpanDetail } from '@/api/client'
 import { formatInt, formatMs, formatShortId, formatUsd } from '@/utils/telemetryFormat'
 import { Kv } from '../primitives'
+import { getIntlLocale } from '@/i18n'
 
 export function SpanDetailPanel({
   span,
@@ -61,7 +62,7 @@ export function SpanDetailPanel({
             }
           />
           <Kv label="Duration" value={formatMs(span.duration_ms)} />
-          <Kv label="Started" value={new Date(span.start_ms).toLocaleString()} />
+          <Kv label="Started" value={new Date(span.start_ms).toLocaleString(getIntlLocale())} />
           <Kv label="Span ID" value={formatShortId(span.span_id)} mono />
           <Kv
             label="Parent"

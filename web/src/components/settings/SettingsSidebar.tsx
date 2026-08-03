@@ -41,6 +41,7 @@ import {
 } from '@/queries'
 import { useUIStore } from '@/stores/useUIStore'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useI18n } from '@/i18n'
 
 type SidebarPath =
   | '/settings/providers'
@@ -148,6 +149,7 @@ interface SettingsSidebarProps {
 }
 
 export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSidebarProps = {}) {
+  const { t } = useI18n()
   const { pathname: routePathname } = useLocation()
   const pathname = currentPath ?? routePathname
   const [query, setQuery] = useState('')
@@ -161,31 +163,31 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
   const sections = useMemo<SidebarSection[]>(
     () => [
       {
-        label: 'Intelligence',
+        label: t('Intelligence'),
         items: [
           {
             to: '/settings/providers',
-            label: 'Providers',
+            label: t('Providers'),
             icon: KeyRound,
             matchPrefix: '/settings/providers',
           },
           {
             to: '/settings/agents',
-            label: 'Agents',
+            label: t('Agents'),
             icon: Bot,
             matchPrefix: '/settings/agents',
             count: agentsQ.data?.agents.length ?? null,
           },
           {
             to: '/settings/skills',
-            label: 'Skills',
+            label: t('Skills'),
             icon: Sparkles,
             matchPrefix: '/settings/skills',
             count: skillsQ.data?.skills.length ?? null,
           },
           {
             to: '/settings/mcp',
-            label: 'MCP servers',
+            label: t('MCP servers'),
             icon: Plug,
             matchPrefix: '/settings/mcp',
             count: mcpQ.data?.servers.length ?? null,
@@ -193,70 +195,70 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
         ],
       },
       {
-        label: 'Knowledge',
+        label: t('Knowledge'),
         items: [
           {
             to: '/settings/memory',
-            label: 'Memory',
+            label: t('Memory'),
             icon: BrainCircuit,
             matchPrefix: '/settings/memory',
           },
         ],
       },
       {
-        label: 'System',
+        label: t('System'),
         items: [
           {
             to: '/settings/connection',
-            label: 'Connection',
+            label: t('Connection'),
             icon: Server,
             matchPrefix: '/settings/connection',
           },
           {
             to: '/settings/version-control',
-            label: 'Git & reviews',
+            label: t('Git & reviews'),
             icon: GitBranch,
             matchPrefix: '/settings/version-control',
           },
           {
             to: '/settings/sandbox',
-            label: 'Sandbox',
+            label: t('Sandbox'),
             icon: Shield,
             matchPrefix: '/settings/sandbox',
             count: sandboxQ.data?.denied_patterns.length ?? null,
           },
           {
             to: '/settings/notifications',
-            label: 'Notifications',
+            label: t('Notifications'),
             icon: Bell,
             matchPrefix: '/settings/notifications',
           },
         ],
       },
       {
-        label: 'Application',
+        label: t('Application'),
         items: [
           {
             to: '/settings/appearance',
-            label: 'Appearance',
+            label: t('Appearance'),
             icon: Palette,
             matchPrefix: '/settings/appearance',
           },
           {
             to: '/settings/telemetry',
-            label: 'Telemetry',
+            label: t('Telemetry'),
             icon: BarChart3,
             matchPrefix: '/settings/telemetry',
           },
           {
             to: '/settings/diagnostics',
-            label: 'Diagnostics',
+            label: t('Diagnostics'),
             icon: Stethoscope,
             matchPrefix: '/settings/diagnostics',
           },
           {
             to: '/settings',
-            label: 'About EvoFlux',
+            label: t('About EvoFlux'),
             icon: Info,
             matchPrefix: '/settings',
           },
@@ -268,6 +270,7 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
       skillsQ.data?.skills.length,
       mcpQ.data?.servers.length,
       sandboxQ.data?.denied_patterns.length,
+      t,
     ],
   )
 
