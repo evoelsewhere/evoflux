@@ -9,6 +9,7 @@ import { RepoGraphSpatial } from './RepoGraphSpatial'
 import { RepoGraphMatrix } from './RepoGraphMatrix'
 import { buildSpatialData } from './repoGraphSpatialData'
 import type { CodingProject, CrossRepoResolveJob, ProjectRepoStatus, CodeGraphNode } from '@/api/types'
+import { getIntlLocale } from '@/i18n'
 
 function isRepoData(data: ProjectRepoStatus | CodeGraphNode): data is ProjectRepoStatus {
   return 'indexed' in data
@@ -253,8 +254,8 @@ export function RepoGraphModal({ open, onOpenChange, project, job }: RepoGraphMo
               })}
               {data && (
                 <div className="mt-2 border-t border-(--color-border) pt-2 text-[10px] text-(--color-text-subtle)">
-                  <p>{data.total_node_count.toLocaleString()} total nodes</p>
-                  <p>{data.total_edge_count.toLocaleString()} total edges</p>
+                  <p>{data.total_node_count.toLocaleString(getIntlLocale())} total nodes</p>
+                  <p>{data.total_edge_count.toLocaleString(getIntlLocale())} total edges</p>
                 </div>
               )}
             </div>

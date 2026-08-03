@@ -18,6 +18,7 @@ import { Folder, GitBranch } from 'lucide-react'
 import { getCodingWorkspaceStatus } from '@/api/client'
 import { fadeRise, useMotionPreset } from '@/lib/motion'
 import { queryKeys } from '@/queries'
+import { getIntlLocale } from '@/i18n'
 
 interface Props {
   workspace: string
@@ -95,7 +96,7 @@ export function WorkspaceInfoCard({ workspace }: Props) {
               </span>
               <span
                 className="shrink-0 text-(--color-text-subtle)"
-                title={new Date(data.head.timestamp * 1000).toLocaleString()}
+                title={new Date(data.head.timestamp * 1000).toLocaleString(getIntlLocale())}
               >
                 {formatDistanceToNowStrict(new Date(data.head.timestamp * 1000), { addSuffix: true })}
               </span>

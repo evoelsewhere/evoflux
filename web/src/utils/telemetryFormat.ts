@@ -5,30 +5,28 @@
  * (required for React Fast Refresh) and so the helpers are easy to unit-test.
  */
 
-const intFmt = new Intl.NumberFormat('en-US')
-const compactFmt = new Intl.NumberFormat('en-US', {
-  notation: 'compact',
-  maximumFractionDigits: 1,
-})
-const usdFmt = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 6,
-})
+import { getIntlLocale, translate } from '@/i18n'
 
 export function formatInt(n: number): string {
-  return intFmt.format(n)
+  return new Intl.NumberFormat(getIntlLocale()).format(n)
 }
 
 export function formatCompact(n: number): string {
-  if (n < 1000) return intFmt.format(n)
-  return compactFmt.format(n)
+  if (n < 1000) return formatInt(n)
+  return new Intl.NumberFormat(getIntlLocale(), {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(n)
 }
 
 export function formatUsd(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return '—'
-  return usdFmt.format(n)
+  return new Intl.NumberFormat(getIntlLocale(), {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+  }).format(n)
 }
 
 export function formatPercent(n: number): string {
@@ -54,14 +52,14 @@ export function formatMs(n: number): string {
 export function timeAgo(pastMs: number, nowMs: number): string {
   const diff = Math.max(0, nowMs - pastMs)
   const sec = Math.floor(diff / 1000)
-  if (sec < 60) return `${sec}s ago`
+  if (sec < 60) return translate('{0}s ago', [sec])
   const min = Math.floor(sec / 60)
-  if (min < 60) return `${min}m ago`
+  if (min < 60) return translate('{0}m ago', [min])
   const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr}h ago`
+  if (hr < 24) return translate('{0}h ago', [hr])
   const day = Math.floor(hr / 24)
-  if (day < 7) return `${day}d ago`
-  return new Date(pastMs).toLocaleDateString()
+  if (day < 7) return translate('{0}d ago', [day])
+  return new Date(pastMs).toLocaleDateString(getIntlLocale())
 }
 
 /**

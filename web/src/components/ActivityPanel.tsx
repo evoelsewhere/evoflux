@@ -11,6 +11,7 @@ import { ArrowRightLeft, CheckCircle2, LogIn, LogOut, Mail, AlertTriangle, Circl
 import { useTeamStore, type ActivityItem } from '@/stores/useTeamStore'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { fadeRise, staggerDelay, useMotionPreset } from '@/lib/motion'
+import { getIntlLocale } from '@/i18n'
 
 function kindIcon(kind: ActivityItem['kind']) {
   const size = 14
@@ -26,7 +27,7 @@ function kindIcon(kind: ActivityItem['kind']) {
 }
 
 function formatTime(date: Date): string {
-  return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return date.toLocaleTimeString(getIntlLocale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 function ActivityRow({ item }: { item: ActivityItem }) {

@@ -90,6 +90,7 @@ import { formatRelativeDate } from '@/utils/format'
 import { takeAimPipelinePrefill } from '@/lib/aimHandoff'
 import { useListEnterIndex } from '@/lib/motion'
 import { cn } from '@/lib/utils'
+import { getIntlLocale } from '@/i18n'
 import type {
   AimRunListItem,
   AimReadiness,
@@ -2690,7 +2691,7 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
 
   const timeOf = (at: string): string => {
     const date = new Date(at)
-    return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString()
+    return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString(getIntlLocale())
   }
 
   const toggleExpand = (key: string) =>
@@ -3360,7 +3361,7 @@ function RunRow({
       <div
         role="cell"
         className="col-span-2 flex min-w-0 items-center gap-3 text-[10px] text-(--color-text-muted) md:col-span-1 md:flex-col md:items-start md:gap-1"
-        title={startedAt ? new Date(startedAt).toLocaleString() : undefined}
+        title={startedAt ? new Date(startedAt).toLocaleString(getIntlLocale()) : undefined}
       >
         <span className="inline-flex items-center gap-1.5">
           <Clock3 size={10} className="shrink-0 text-(--color-text-subtle)" />

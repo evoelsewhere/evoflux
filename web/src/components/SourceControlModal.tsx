@@ -76,6 +76,7 @@ import {
   useGitRevertMutation,
 } from '@/queries/useGitQuery'
 import type { CodingProject, ChangedFile, GitLogEntry } from '@/api/types'
+import { getIntlLocale } from '@/i18n'
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
@@ -104,7 +105,7 @@ function formatDate(iso: string): string {
     if (diffHours < 24) return `${diffHours}h ago`
     const diffDays = Math.floor(diffHours / 24)
     if (diffDays < 7) return `${diffDays}d ago`
-    return d.toLocaleDateString()
+    return d.toLocaleDateString(getIntlLocale())
   } catch {
     return iso
   }

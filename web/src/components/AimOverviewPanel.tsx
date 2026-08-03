@@ -79,6 +79,7 @@ import { cn } from '@/lib/utils'
 import { useListEnterIndex } from '@/lib/motion'
 import { formatApprovalQuestion } from '@/utils/approvalQuestion'
 import { MarkdownBlock } from '@/utils/markdown'
+import { getIntlLocale } from '@/i18n'
 import type {
   AimPhaseCounts,
   AimApproval,
@@ -1512,7 +1513,7 @@ function RecentRunsPanel({
               type="button"
               onClick={() => onOpenRun(run.id)}
               className="group flex w-full items-center gap-2 border-t border-(--color-border) px-3 py-1.5 text-left first:border-t-0 hover:bg-(--bg-key)/70"
-              title={new Date(run.created_at).toLocaleString()}
+              title={new Date(run.created_at).toLocaleString(getIntlLocale())}
             >
               <VerdictDot verdict={run.verdict} />
               <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-(--color-text-2)">
@@ -1861,7 +1862,7 @@ function UnitDetailPanel({
           {unit.claim && (
             <DetailRow label="Active claim">
               {unit.claim.workflow_name} · until{' '}
-              {new Date(unit.claim.lease_expires_at).toLocaleTimeString()}
+              {new Date(unit.claim.lease_expires_at).toLocaleTimeString(getIntlLocale())}
             </DetailRow>
           )}
           {complexityEntries.length > 0 && (
@@ -1900,7 +1901,7 @@ function UnitDetailPanel({
                     {run.case_set ? ` · ${run.case_set}` : ''}
                   </span>
                   <span className="shrink-0 text-[10px] text-(--color-text-subtle)">
-                    {new Date(run.created_at).toLocaleTimeString()}
+                    {new Date(run.created_at).toLocaleTimeString(getIntlLocale())}
                   </span>
                 </button>
               ))}
@@ -1991,7 +1992,7 @@ function ProjectTelemetry({
             {updatedAt > 0 && (
               <span
                 className="flex items-center gap-1 text-[9px] text-(--color-text-subtle)"
-                title={`Last synchronized ${new Date(updatedAt).toLocaleString()}`}
+                title={`Last synchronized ${new Date(updatedAt).toLocaleString(getIntlLocale())}`}
               >
                 <RefreshCw size={9} />
                 {new Date(updatedAt).toLocaleTimeString([], {

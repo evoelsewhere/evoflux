@@ -23,6 +23,7 @@ import {
 } from '@/queries/useSchedulerQuery'
 import type { ScheduledTaskResponse } from '@/api/types'
 import { formatRelativeDate } from '@/utils/format'
+import { getIntlLocale, translate } from '@/i18n'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -30,7 +31,7 @@ function formatScheduleLabel(
   task: Pick<ScheduledTaskResponse, 'schedule_type' | 'at_datetime' | 'every_seconds' | 'cron_expression'>,
 ): string {
   if (task.schedule_type === 'at' && task.at_datetime) {
-    return `at ${new Date(task.at_datetime).toLocaleString()}`
+    return translate('at {0}', [new Date(task.at_datetime).toLocaleString(getIntlLocale())])
   }
   if (task.schedule_type === 'every' && task.every_seconds) {
     const mins = Math.floor(task.every_seconds / 60)

@@ -86,6 +86,7 @@ import { cn } from '@/lib/utils'
 import { useToastStore } from '@/stores/useToastStore'
 import { GitActionSurface, type GitAction } from '@/components/git/GitActionMenu'
 import type { PullRequestsScope } from '@/stores/useUIStore'
+import { getIntlLocale } from '@/i18n'
 
 type ReviewFilter = 'all' | 'ready' | 'draft'
 
@@ -258,7 +259,7 @@ function SummaryMetric({
       />
       <span className="min-w-0">
         <span className="block text-sm font-semibold tabular-nums text-(--color-text)">
-          {value.toLocaleString()}
+          {value.toLocaleString(getIntlLocale())}
         </span>
         <span className="block truncate text-[10px] text-(--color-text-muted)">
           {label}

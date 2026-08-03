@@ -7,6 +7,7 @@
  * edits. Explicit "Leave without saving" passes `force: true`.
  */
 import { useEffect, useRef } from 'react'
+import { translateText } from '@/i18n'
 
 type DirtyChecker = () => boolean
 
@@ -29,7 +30,7 @@ export function isSettingsDirty(): boolean {
 /** Returns true when navigation/close may proceed. */
 export function confirmDiscardSettingsDraft(): boolean {
   if (!isSettingsDirty()) return true
-  return window.confirm('You have unsaved settings changes. Discard them?')
+  return window.confirm(translateText('You have unsaved settings changes. Discard them?'))
 }
 
 /** Register a boolean dirty flag for the lifetime of the calling component. */

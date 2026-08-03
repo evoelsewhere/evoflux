@@ -5,6 +5,7 @@ import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import type { ObservabilitySummary } from '@/api/client'
 import { fadeRise, useMotionPreset } from '@/lib/motion'
 import { useObservabilitySummaryQuery } from '@/queries'
+import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { formatCompact, formatInt } from '@/utils/telemetryFormat'
 
@@ -210,12 +211,13 @@ export function RecentUsageCard({ className }: { className?: string }) {
 }
 
 function UsageOverview({ data, queryDays }: { data: ObservabilitySummary; queryDays: number }) {
+  const { intlLocale } = useI18n()
   const activeDayCount = activityDays(data).size
   const { current, longest } = streaks(data, queryDays)
   const favoriteModel = [...data.by_model].sort((a, b) => b.calls - a.calls)[0]?.model ?? '—'
   const peakDay = [...data.daily_turns].sort((a, b) => b.turns - a.turns)[0]
   const peakDayLabel = peakDay
-    ? new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
+    ? new Intl.DateTimeFormat(intlLocale, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
         new Date(`${peakDay.day}T00:00:00Z`),
       )
     : '—'

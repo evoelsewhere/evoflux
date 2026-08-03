@@ -271,7 +271,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
                  <Globe2 size={11} aria-hidden="true" />
                  <span>Browser context</span>
                </div>
-               <p className="truncate text-xs text-(--color-text-2)" title={webbridgeContext.page_url ?? webbridgeContext.origin}>
+               <p data-i18n-ignore className="truncate text-xs text-(--color-text-2)" title={webbridgeContext.page_url ?? webbridgeContext.origin}>
                  {webbridgeContext.page_title || webbridgeContext.page_url || webbridgeContext.origin || 'Shared from browser'}
                </p>
              </div>
@@ -283,6 +283,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
                  <span>Selected from main chat</span>
                </div>
                <p
+                 data-i18n-ignore
                  className="line-clamp-3 min-w-0 text-xs leading-relaxed break-words whitespace-pre-wrap text-(--color-text-2) [overflow-wrap:anywhere]"
                  title={quotedContext.quote}
                >
@@ -290,7 +291,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
                </p>
              </div>
            )}
-           <p className={`min-w-0 break-words whitespace-pre-wrap [overflow-wrap:anywhere] ${shell ? 'font-mono' : ''}`}>{renderMentionSegments(visibleContent)}</p>
+           <p data-i18n-ignore className={`min-w-0 break-words whitespace-pre-wrap [overflow-wrap:anywhere] ${shell ? 'font-mono' : ''}`}>{renderMentionSegments(visibleContent)}</p>
            {/* Gradient fade at bottom when collapsed */}
            {needsCollapse && !expanded && (
              <div

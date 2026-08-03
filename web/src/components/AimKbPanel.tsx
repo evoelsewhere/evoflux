@@ -47,6 +47,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { languageForExt, useMonacoTheme } from '@/hooks/useMonacoTheme'
+import { translateText } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { formatBytes } from '@/utils/format'
 import type { AimKbDocument, CodingProject, WorkspaceFileInfo } from '@/api/types'
@@ -138,7 +139,7 @@ export function AimKbPanel({ project }: { project: CodingProject }) {
   })
 
   const selectFile = useCallback((file: WorkspaceFileInfo, line = 0) => {
-    if (isDirty && selected?.path !== file.path && !window.confirm('Discard unsaved changes?')) return
+    if (isDirty && selected?.path !== file.path && !window.confirm(translateText('Discard unsaved changes?'))) return
     setSelected(file)
     setSelectedLine(line)
     setIsDirty(false)
@@ -243,7 +244,7 @@ export function AimKbPanel({ project }: { project: CodingProject }) {
           ) : (
             <>
               <div className="flex min-h-11 shrink-0 items-center gap-2 border-b border-(--color-border) px-3 py-2">
-                <button type="button" onClick={() => { if (!isDirty || window.confirm('Discard unsaved changes?')) { setSelected(null); setIsDirty(false) } }} className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) hover:bg-(--bg-key) lg:hidden" aria-label="Back to Knowledge Base explorer">
+                <button type="button" onClick={() => { if (!isDirty || window.confirm(translateText('Discard unsaved changes?'))) { setSelected(null); setIsDirty(false) } }} className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) hover:bg-(--bg-key) lg:hidden" aria-label="Back to Knowledge Base explorer">
                   <ArrowLeft size={14} />
                 </button>
                 <FileText size={13} className="shrink-0 text-(--color-text-subtle)" />

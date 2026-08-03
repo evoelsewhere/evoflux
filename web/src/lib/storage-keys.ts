@@ -12,6 +12,7 @@
 export const STORAGE_KEYS = {
   theme: 'oa-theme',
   appearance: 'oa-appearance',
+  locale: 'oa-locale',
   accessKey: 'EvoFlux.accessKey',
   lastRoute: 'oa-last-route',
   lastAimProject: 'oa-last-aim-project',

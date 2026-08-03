@@ -485,6 +485,7 @@ export const MarkdownBlock = memo(function MarkdownBlock({
 
   return (
     <div
+      data-i18n-ignore
       className={cn('oa-prose text-sm', isStreaming && 'oa-streaming-prose')}
       aria-busy={isStreaming || undefined}
     >

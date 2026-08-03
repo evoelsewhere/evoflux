@@ -15,6 +15,7 @@ import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { reducedMotionTransition, useMotionPreset } from '@/lib/motion'
 import { usePlatform } from '@/hooks/use-platform'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useI18n } from '@/i18n'
 
 export interface Command {
   id: string
@@ -32,6 +33,7 @@ interface CommandPaletteProps {
 }
 
 export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
+  const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [activeIdx, setActiveIdx] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -50,8 +52,15 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
   }, [])
 
   // Filter commands by query — memoised so the reference only changes when query changes
+  const localizedCommands = useMemo(() => commands.map((command) => ({
+    ...command,
+    label: t(command.label),
+    description: command.description ? t(command.description) : undefined,
+    group: command.group ? t(command.group) : undefined,
+  })), [commands, t])
+
   const filtered = useMemo(() => query.trim()
-    ? commands.filter((cmd) => {
+    ? localizedCommands.filter((cmd) => {
         const q = query.toLowerCase()
         return (
           cmd.label.toLowerCase().includes(q) ||
@@ -59,17 +68,8 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
           cmd.group?.toLowerCase().includes(q)
         )
       })
-    : commands,
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  [query])
-
-  // Reset active index whenever filtered list changes (query changed)
-  const prevQueryRef = useRef(query)
-  if (prevQueryRef.current !== query) {
-    prevQueryRef.current = query
-    // Reset during render — safe because it's gated on a ref change
-    if (activeIdx !== 0) setActiveIdx(0)
-  }
+    : localizedCommands,
+  [localizedCommands, query])
 
   // Scroll active item into view
   useEffect(() => {
@@ -157,14 +157,20 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
             <input
               ref={inputRef}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value)
+                setActiveIdx(0)
+              }}
               placeholder="Search commands…"
               className="flex-1 bg-transparent text-sm text-(--color-text) placeholder-(--color-text-muted) outline-none"
               aria-label="Search commands"
             />
             {query && (
               <button
-                onClick={() => setQuery('')}
+                onClick={() => {
+                  setQuery('')
+                  setActiveIdx(0)
+                }}
                 className="text-xs text-(--color-text-muted) hover:text-(--color-text-2)"
               >
                 Clear

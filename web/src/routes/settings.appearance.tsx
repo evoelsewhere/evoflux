@@ -1,10 +1,12 @@
-import { Check, Palette } from 'lucide-react'
+import { Check, Languages, Palette } from 'lucide-react'
 
 import { useAppearance } from '@/hooks/useAppearance'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { MotionPreview } from '@/components/settings/MotionPreview'
 import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/settings/SettingsLayout'
 import { DiscreteSlider } from '@/components/ui/discrete-slider'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { useI18n, type AppLocale } from '@/i18n'
 import { cn } from '@/lib/utils'
 import {
   FONT_SCALES,
@@ -63,6 +65,7 @@ const MOTION_OPTIONS: ReadonlyArray<{ value: MotionIntensity; label: string; des
 
 export function AppearanceSettingsPage() {
   const { settings, update } = useAppearance()
+  const { locale, setLocale } = useI18n()
   const scaleIndex = Math.max(0, FONT_SCALES.indexOf(settings.fontScale))
   const motionIndex = Math.max(0, MOTION_INTENSITIES.indexOf(settings.motionIntensity))
   const motionOption = MOTION_OPTIONS[motionIndex] ?? MOTION_OPTIONS[2]
@@ -73,6 +76,31 @@ export function AppearanceSettingsPage() {
         title="Appearance"
       lede="Tune contrast, typography and motion. Changes apply immediately and stay on this machine."
     >
+      <SettingsGroup title="Language & region">
+        <SettingsRow
+          label="Display language"
+          description="Choose the language used across EvoFlux. Changes apply immediately and stay on this machine."
+          control={
+            <NativeSelect
+              platformNative
+              value={locale}
+              aria-label="Display language"
+              onChange={(event) => setLocale(event.target.value as AppLocale)}
+              className="min-w-40"
+            >
+              <NativeSelectOption value="en" data-i18n-ignore>English</NativeSelectOption>
+              <NativeSelectOption value="vi" data-i18n-ignore>Tiếng Việt</NativeSelectOption>
+              <NativeSelectOption value="ja" data-i18n-ignore>日本語</NativeSelectOption>
+            </NativeSelect>
+          }
+        />
+        <SettingsRow
+          label="Regional formatting"
+          description="Dates, times and numbers follow the selected display language. Your configured time zone is unchanged."
+          control={<Languages size={17} className="text-(--color-text-muted)" aria-hidden="true" />}
+        />
+      </SettingsGroup>
+
       <SettingsGroup title="Theme">
         <SettingsRow
           label="Color scheme"

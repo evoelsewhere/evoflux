@@ -56,6 +56,7 @@ import {
 import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { WikiFileInfo } from '@/api/types'
+import { getIntlLocale, translate } from '@/i18n'
 
 interface WikiPanelProps {
   open: boolean
@@ -576,7 +577,7 @@ function WikiEditor({
   }
 
   const handleDelete = () => {
-    if (!confirm(`Delete Memory file "${path}"? This cannot be undone.`)) return
+    if (!confirm(translate('Delete Memory file "{0}"? This cannot be undone.', [path]))) return
     deleteMutation.mutate(path, { onSuccess: onDeleted })
   }
 
@@ -686,7 +687,7 @@ function WikiEditor({
       />
 
       <div className="flex items-center justify-between border-t border-(--color-border) bg-(--bg-card) px-4 py-2 font-mono text-[10px] text-(--color-text-subtle)">
-        <span className="tabular-nums">{displayChars.toLocaleString()} chars</span>
+        <span className="tabular-nums">{displayChars.toLocaleString(getIntlLocale())} chars</span>
         {isReadOnly ? (
           <span className="italic">read-only</span>
         ) : dirty ? (

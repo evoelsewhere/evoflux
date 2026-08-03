@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/dialog'
 import { useSettingsParams, useSettingsNavigate } from '@/contexts/SettingsContext'
 import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
+import { getIntlLocale } from '@/i18n'
 
 /**
  * MCP server detail / editor page.
@@ -334,7 +335,7 @@ function StatusGroup({
         label="Started"
         control={
           <span className="text-sm text-(--color-text)">
-            {server.started_at ? new Date(server.started_at).toLocaleString() : '-'}
+            {server.started_at ? new Date(server.started_at).toLocaleString(getIntlLocale()) : '-'}
           </span>
         }
       />

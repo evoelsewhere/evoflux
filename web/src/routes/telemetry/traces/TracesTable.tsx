@@ -18,6 +18,7 @@ import { Td, Th } from '../primitives'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePlatform } from '@/hooks/use-platform'
 import { mediumHapticFeedback } from '@/lib/haptics'
+import { getIntlLocale } from '@/i18n'
 
 const TRACE_LONG_PRESS_MS = 520
 const TRACE_LONG_PRESS_MOVE_TOLERANCE = 10
@@ -139,7 +140,7 @@ function TraceRow({
         className="cursor-pointer border-b border-(--color-border) transition-colors last:border-b-0 hover:bg-(--bg-key)/40 focus:bg-(--bg-key)/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--focus-ring)"
       >
         <Td>
-          <span title={new Date(trace.start_ms).toLocaleString()}>
+          <span title={new Date(trace.start_ms).toLocaleString(getIntlLocale())}>
             {timeAgo(trace.start_ms, now)}
           </span>
         </Td>
