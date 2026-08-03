@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Webview } from '@tauri-apps/api/webview'
 
-import { apiBaseUrl } from '@/api/base-url'
+import { apiWsBaseUrl } from '@/api/base-url'
 import { withTokenParam } from '@/api/auth'
 import { getPlatform } from '@/hooks/use-platform'
 
@@ -712,12 +712,8 @@ export function useDirectBrowserTabs({
 }
 
 function directBrowserBridgeUrl(sessionId: string): string {
-  const apiBase = apiBaseUrl()
-  const wsBase = apiBase.startsWith('http')
-    ? apiBase.replace(/^http/, 'ws')
-    : `ws://${window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname}:8000/api`
   return withTokenParam(
-    `${wsBase}/team/${encodeURIComponent(sessionId)}/browser/agent`,
+    `${apiWsBaseUrl()}/team/${encodeURIComponent(sessionId)}/browser/agent`,
   )
 }
 

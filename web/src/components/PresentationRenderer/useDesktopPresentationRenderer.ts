@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { domToPng } from 'modern-screenshot'
 
-import { apiBaseUrl } from '@/api/base-url'
+import { apiWsBaseUrl } from '@/api/base-url'
 import { withTokenParam } from '@/api/auth'
 import { getPlatform } from '@/hooks/use-platform'
 
@@ -336,11 +336,7 @@ function cssEscape(value: string): string {
 }
 
 function rendererUrl(sessionId: string): string {
-  const apiBase = apiBaseUrl()
-  const wsBase = apiBase.startsWith('http')
-    ? apiBase.replace(/^http/, 'ws')
-    : `ws://${window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname}:8000/api`
   return withTokenParam(
-    `${wsBase}/team/${encodeURIComponent(sessionId)}/presentation-renderer`,
+    `${apiWsBaseUrl()}/team/${encodeURIComponent(sessionId)}/presentation-renderer`,
   )
 }

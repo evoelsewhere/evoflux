@@ -19,7 +19,7 @@ import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { Send } from 'lucide-react'
-import { apiBaseUrl } from '@/api/base-url'
+import { apiBaseUrl, apiWsBaseUrl } from '@/api/base-url'
 import { withTokenParam } from '@/api/auth'
 
 const DARK_ANSI_THEME: ITheme = {
@@ -79,13 +79,6 @@ function terminalTheme(): ITheme {
     scrollbarSliderHoverBackground: dark ? '#73736D99' : '#9CA3AF99',
     scrollbarSliderActiveBackground: dark ? '#92918AB3' : '#6B7280B3',
   }
-}
-
-function wsBaseUrl(): string {
-  const apiBase = apiBaseUrl()
-  if (apiBase.startsWith('http')) return apiBase.replace(/^http/, 'ws')
-  const host = window.location.hostname || 'localhost'
-  return `ws://${host}:8000/api`
 }
 
 function collectText(term: Terminal): string {
@@ -178,7 +171,7 @@ const TerminalInstance = forwardRef<
     function connect() {
       if (!alive) return
       const url = withTokenParam(
-        `${wsBaseUrl()}/team/${sessionId}/terminal?tid=${encodeURIComponent(terminalId)}&cols=${term.cols}&rows=${term.rows}`,
+        `${apiWsBaseUrl()}/team/${sessionId}/terminal?tid=${encodeURIComponent(terminalId)}&cols=${term.cols}&rows=${term.rows}`,
       )
       const socket = new WebSocket(url)
       socket.binaryType = 'arraybuffer'
