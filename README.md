@@ -85,7 +85,7 @@ AIM turns legacy migration into a governed production line. A flow-first interfa
 
 ### Install the desktop app
 
-Download the [latest release](https://github.com/khuonghung/evoflux/releases/latest) for macOS (`.dmg`), Windows (`-setup.exe`), or Linux (`.deb` / AppImage). The packaged app includes its Python sidecar.
+Download the [latest release](https://github.com/evoelsewhere/evoflux/releases/latest) for macOS (`.dmg`), Windows (`-setup.exe`), or Linux (`.deb` / AppImage). The packaged app includes its Python sidecar.
 
 On first launch:
 
@@ -98,7 +98,7 @@ On first launch:
 Requirements: Python 3.12+, [uv](https://docs.astral.sh/uv/), [Bun](https://bun.sh/), Rust, and the Tauri prerequisites for your operating system.
 
 ```sh
-git clone https://github.com/khuonghung/evoflux.git
+git clone https://github.com/evoelsewhere/evoflux.git
 cd evoflux
 
 uv sync

@@ -240,7 +240,7 @@ Sections:
 
   If a channel has extra requirements (data move, env var rename, config migration), spell it out under the matching bullet — not in a generic preamble.
 
-- End with `**Full changelog:** https://github.com/khuonghung/evoflux/compare/<prev>...<next>`.
+- End with `**Full changelog:** https://github.com/evoelsewhere/evoflux/compare/<prev>...<next>`.
 - Avoid `## Tests` section.
 - Avoid internal file paths.
 - Avoid marketing language.

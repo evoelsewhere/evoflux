@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "evoflux"
-version = "0.0.4"  # keep in sync with app/version.txt
+version = "0.0.5"  # keep in sync with app/version.txt
 description = "Self-hosted AI agents — streaming chat, tool use, persistent memory, multi-agent teams"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -76,8 +76,8 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/khuonghung/evoflux"
-"Bug Tracker" = "https://github.com/khuonghung/evoflux/issues"
+Repository = "https://github.com/evoelsewhere/evoflux"
+"Bug Tracker" = "https://github.com/evoelsewhere/evoflux/issues"
 
 [project.scripts]
 evoflux = "app.cli:main"

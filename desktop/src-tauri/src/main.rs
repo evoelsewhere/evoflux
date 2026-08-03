@@ -2237,7 +2237,7 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
             .name(Some("EvoFlux"))
             .version(Some(env!("CARGO_PKG_VERSION")))
             .copyright(Some("Copyright (c) 2026 EvoFlux contributors"))
-            .website(Some("https://github.com/khuonghung/evoflux"))
+            .website(Some("https://github.com/evoelsewhere/evoflux"))
             .website_label(Some("EvoFlux on GitHub"));
         if let Some(icon) = app.default_window_icon() {
             builder = builder.icon(Some(icon.clone()));
