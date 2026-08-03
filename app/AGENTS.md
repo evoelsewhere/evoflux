@@ -30,7 +30,7 @@ uv run ruff check app/ tests/
 uv run ruff format --check app/ tests/
 uv run ty check app/
 uv run pytest --no-cov -q
-make run        # API only on :8000
+make run        # API only on :4082
 make dev        # API reload + Vite dev server
 ```
 
