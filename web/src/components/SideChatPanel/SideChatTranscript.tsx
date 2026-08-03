@@ -17,6 +17,7 @@ import type { ToolBlockGroup } from '../ToolCallGroup'
 import { ActivityStatus } from '../motion/ActivityStatus'
 import { BlockEnter } from '../motion/BlockEnter'
 import { partitionTurns, type TurnItem } from '@/utils/turns'
+import { latestMCPAppResourceBlockIds } from '@/utils/mcp-app-artifacts'
 import type { ContentBlock } from '@/api/types'
 
 const SCROLL_THRESHOLD = 40
@@ -77,6 +78,19 @@ export function SideChatTranscript({
     }
     return [...finalized, ...live]
   }, [blocks, currentBlocks])
+
+  // `BlockRenderer` only mounts the interactive MCP app for ids in this set, so
+  // without it Side Chat silently downgraded every app resource to a raw tool
+  // result. Reduce to a primitive key first: the concatenated blocks are a new
+  // array per streamed chunk, and a fresh Set would break the renderers' memo.
+  const latestMCPAppBlockIdsKey = useMemo(
+    () => [...latestMCPAppResourceBlockIds([...blocks, ...currentBlocks])].sort().join('\u0000'),
+    [blocks, currentBlocks],
+  )
+  const latestMCPAppBlockIds = useMemo(
+    () => new Set(latestMCPAppBlockIdsKey ? latestMCPAppBlockIdsKey.split('\u0000') : []),
+    [latestMCPAppBlockIdsKey],
+  )
 
   const isEmpty = blocks.length === 0 && currentBlocks.length === 0 && !isWorking
 
@@ -199,6 +213,7 @@ export function SideChatTranscript({
                             group={renderItem as ToolBlockGroup}
                             isStreaming={turnIsStreaming}
                             sessionId={sessionId}
+                            latestMCPAppBlockIds={latestMCPAppBlockIds}
                           />
                         )
                       }
@@ -211,6 +226,7 @@ export function SideChatTranscript({
                             block={block}
                             isStreaming={isStreaming}
                             sessionId={sessionId}
+                            latestMCPAppBlockIds={latestMCPAppBlockIds}
                           />
                         </BlockEnter>
                       )
