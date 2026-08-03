@@ -109,8 +109,8 @@ export function useTeamCommands({
         setViewMode('agent'); setActiveAgent(name)
       },
     })),
-    { id: 'next-agent', group: 'Agents', label: 'Next Agent',     description: 'Tab',       action: () => cycleActiveAgent('next') },
-    { id: 'prev-agent', group: 'Agents', label: 'Previous Agent', description: 'Shift+Tab', action: () => cycleActiveAgent('prev') },
+    { id: 'next-agent', group: 'Agents', label: 'Next Agent',     description: 'Focus the next teammate',     action: () => cycleActiveAgent('next') },
+    { id: 'prev-agent', group: 'Agents', label: 'Previous Agent', description: 'Focus the previous teammate', action: () => cycleActiveAgent('prev') },
     { id: 'go-home',     group: 'Navigation', label: 'Go to Home',     description: '', action: () => navigate({ to: '/' }) },
     ...(mode === 'work' ? [{ id: 'go-coding', group: 'Navigation', label: 'Go to Coding Mode', description: 'Open the coding workbench', action: () => navigate({ to: '/coding' }) }] : []),
     { id: 'go-settings', group: 'Navigation', label: 'Open Settings',  description: 'Manage agents & skills', action: () => useUIStore.getState().openSettings('agents') },
