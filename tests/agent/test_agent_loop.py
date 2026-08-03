@@ -8,6 +8,7 @@ Covers:
 
 from __future__ import annotations
 
+import re
 from unittest.mock import MagicMock
 
 import pytest
@@ -27,6 +28,7 @@ from app.agent.schemas.chat import (
 )
 from app.agent.schemas.agent import RunConfig
 from app.agent.state import AgentState, ModelRequest, RunContext
+from app.agent.tools.registry import DeferredToolEntry
 
 
 # ---------------------------------------------------------------------------
@@ -1050,6 +1052,13 @@ async def test_load_tool_refreshes_mcp_granted_during_same_run(tmp_path, monkeyp
         deferred_summary="Search the connected documentation server.",
     )
     mcp_search.origin = "mcp"
+    blocked_mcp = Tool(
+        lambda: "blocked result",
+        name="mcp_blocked_search",
+        deferred=True,
+        deferred_summary="Search a server excluded from this run.",
+    )
+    blocked_mcp.origin = "mcp"
 
     source = tmp_path / "lead.md"
     source.write_text(
@@ -1059,7 +1068,7 @@ async def test_load_tool_refreshes_mcp_granted_during_same_run(tmp_path, monkeyp
     monkeypatch.setattr(
         mcp_manager,
         "get_tools_for_server",
-        lambda name: [mcp_search] if name == "docs" else None,
+        lambda name: [mcp_search, blocked_mcp] if name == "docs" else None,
     )
 
     calls: list[dict] = []
@@ -1102,7 +1111,10 @@ async def test_load_tool_refreshes_mcp_granted_during_same_run(tmp_path, monkeyp
     )
     agent.source_path = source
 
-    await agent.run([HumanMessage(content="Use the docs MCP")])
+    await agent.run(
+        [HumanMessage(content="Use the docs MCP")],
+        excluded_tools=frozenset({"mcp_blocked_search"}),
+    )
 
     assert len(calls) == 3
     search_results = [
@@ -1115,6 +1127,7 @@ async def test_load_tool_refreshes_mcp_granted_during_same_run(tmp_path, monkeyp
     final_names = {tool["function"]["name"] for tool in calls[2]["tools"]}
     assert "mcp_docs_search" not in first_names
     assert "mcp_docs_search" in final_names
+    assert "mcp_blocked_search" not in final_names
 
 
 async def test_deferred_metadata_stays_visible_without_loader_tool():
@@ -1267,7 +1280,9 @@ async def test_load_tool_search_uses_only_run_local_catalog():
 
     state = AgentState(messages=[], tool_names=["load_tool", "mcp_docs_search"])
     state.metadata["deferred_tool_catalog"] = {
-        "mcp_docs_search": "Search the connected documentation server."
+        "mcp_docs_search": DeferredToolEntry(
+            summary="Search the connected documentation server."
+        )
     }
 
     result = await load_tool.arun(
@@ -1286,8 +1301,8 @@ async def test_load_tool_search_does_not_match_token_substrings():
         messages=[], tool_names=["load_tool", "run_tests", "prune_cache"]
     )
     state.metadata["deferred_tool_catalog"] = {
-        "run_tests": "Run the focused test suite.",
-        "prune_cache": "Delete stale cache entries.",
+        "run_tests": DeferredToolEntry(summary="Run the focused test suite."),
+        "prune_cache": DeferredToolEntry(summary="Delete stale cache entries."),
     }
 
     result = await load_tool.arun(query="run", _injected={"_state": state})
@@ -1302,8 +1317,8 @@ async def test_load_tool_batch_activation_is_atomic():
 
     state = AgentState(messages=[], tool_names=["load_tool", "bg_start", "bg_wait"])
     state.metadata["deferred_tool_catalog"] = {
-        "bg_start": "Start background work.",
-        "bg_wait": "Wait for background work.",
+        "bg_start": DeferredToolEntry(summary="Start background work."),
+        "bg_wait": DeferredToolEntry(summary="Wait for background work."),
     }
     state.metadata["activated_deferred_tools"] = set()
 
@@ -1328,8 +1343,8 @@ async def test_load_tool_accepts_double_encoded_json_array_from_model():
 
     state = AgentState(messages=[], tool_names=["load_tool", "bg_start", "bg_wait"])
     state.metadata["deferred_tool_catalog"] = {
-        "bg_start": "Start background work.",
-        "bg_wait": "Wait for background work.",
+        "bg_start": DeferredToolEntry(summary="Start background work."),
+        "bg_wait": DeferredToolEntry(summary="Wait for background work."),
     }
 
     result = await load_tool.arun(
@@ -1339,3 +1354,151 @@ async def test_load_tool_accepts_double_encoded_json_array_from_model():
 
     assert "bg_start, bg_wait" in result
     assert state.metadata["activated_deferred_tools"] == {"bg_start", "bg_wait"}
+
+
+# ---------------------------------------------------------------------------
+# load_tool search scoring: aliases, filler words, intent weighting
+# ---------------------------------------------------------------------------
+
+
+def _search_state(catalog: dict[str, DeferredToolEntry]) -> AgentState:
+    state = AgentState(messages=[], tool_names=["load_tool", *catalog])
+    state.metadata["deferred_tool_catalog"] = catalog
+    return state
+
+
+async def _search(state: AgentState, query: str) -> list[str]:
+    """Return the deferred tool names a query surfaces, best match first."""
+    from app.agent.tools.builtin.load_tool import load_tool
+
+    result = await load_tool.arun(query=query, _injected={"_state": state})
+    return re.findall(r"^- (\S+):", result, re.M)
+
+
+async def test_load_tool_search_matches_alias_absent_from_summary():
+    """A word the summary never uses still finds the tool via its aliases."""
+    state = _search_state(
+        {
+            "static_diagnostics": DeferredToolEntry(
+                summary="Run static diagnostics for a file or directory.",
+                aliases=("lint", "typecheck", "ruff"),
+            ),
+            "date": DeferredToolEntry(summary="Get the current local date and time."),
+        }
+    )
+
+    assert await _search(state, "lint") == ["static_diagnostics"]
+    assert await _search(state, "ruff") == ["static_diagnostics"]
+
+
+async def test_load_tool_search_never_reveals_aliases_to_the_model():
+    """Aliases widen matching only — the model is shown the summary alone."""
+    state = _search_state(
+        {
+            "show_widget": DeferredToolEntry(
+                summary="Render an interactive HTML widget inline.",
+                aliases=("chart", "dashboard", "infographic"),
+            )
+        }
+    )
+    from app.agent.tools.builtin.load_tool import load_tool
+
+    result = await load_tool.arun(query="chart", _injected={"_state": state})
+
+    assert "show_widget" in result
+    assert "Render an interactive HTML widget inline." in result
+    assert "dashboard" not in result
+    assert "infographic" not in result
+
+
+async def test_load_tool_search_ignores_filler_words():
+    """Filler must not outrank a real keyword hit."""
+    state = _search_state(
+        {
+            "show_widget": DeferredToolEntry(
+                summary="Render an interactive widget inline.",
+                aliases=("diagram",),
+            ),
+            # "a" and "the" both appear in this summary; without filtering they
+            # would score as highly as "diagram" does above.
+            "code_definition": DeferredToolEntry(
+                summary="Find the definition of a code symbol."
+            ),
+        }
+    )
+
+    assert (await _search(state, "draw a diagram"))[0] == "show_widget"
+
+
+async def test_load_tool_search_ranks_intent_above_incidental_summary_hit():
+    """An alias hit outranks a summary that merely happens to use the word."""
+    state = _search_state(
+        {
+            "show_widget": DeferredToolEntry(
+                summary="Render an interactive widget inline.",
+                aliases=("table",),
+            ),
+            "add_review_comment": DeferredToolEntry(
+                summary="Add an inline comment using normalized file position data."
+            ),
+        }
+    )
+
+    assert (await _search(state, "table of data"))[0] == "show_widget"
+
+
+async def test_load_tool_search_keeps_short_terms_the_catalog_uses():
+    """A two-letter alias like "cv" stays searchable despite the length filter."""
+    state = _search_state(
+        {
+            "docx_document": DeferredToolEntry(
+                summary="Create or edit a Word document.",
+                aliases=("cv", "resume"),
+            ),
+            "date": DeferredToolEntry(summary="Get the current local date and time."),
+        }
+    )
+
+    assert await _search(state, "cv") == ["docx_document"]
+
+
+async def test_load_tool_search_survives_an_all_filler_query():
+    """An all-filler query degrades to best effort instead of returning nothing."""
+    state = _search_state(
+        {"date": DeferredToolEntry(summary="Get the current local date and time.")}
+    )
+
+    assert await _search(state, "the") == ["date"]
+
+
+def test_deferred_catalog_entry_derives_and_truncates_missing_summary():
+    """A tool with no deferred_summary still gets a compact, bounded summary."""
+    from app.agent.tools.registry import Tool, deferred_catalog_entry
+
+    def _noop() -> str:
+        return ""
+
+    verbose = Tool(
+        _noop,
+        name="verbose",
+        description="word " * 200,
+        deferred=True,
+        search_aliases=("Alias", " ", "OTHER"),
+    )
+    entry = deferred_catalog_entry(verbose)
+
+    assert len(entry.summary) == 200
+    assert entry.summary.endswith("...")
+    assert "  " not in entry.summary
+    # Aliases are normalised on the Tool and blank entries dropped.
+    assert entry.aliases == ("alias", "other")
+
+    concise = Tool(
+        _noop,
+        name="concise",
+        description="Ignored when an explicit summary exists.",
+        deferred=True,
+        deferred_summary="Explicit summary.",
+    )
+
+    assert deferred_catalog_entry(concise).summary == "Explicit summary."

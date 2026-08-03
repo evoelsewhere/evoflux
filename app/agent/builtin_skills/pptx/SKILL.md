@@ -73,7 +73,7 @@ repeat or reconfirm style information already present in the request.
 
 Only ask about style when the request contains no meaningful visual direction,
 or when two genuinely different interpretations would materially change the
-deck. In that case, call the deferred `ask_user` tool, offer a short,
+deck. In that case, call the `ask_user` tool, offer a short,
 job-aware set of options in the user's current language, and await its result.
 Batch any other blocking presentation questions, such as missing brand assets,
 into the same `ask_user` call. After the tool returns, resume outline,

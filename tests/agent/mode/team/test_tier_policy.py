@@ -178,6 +178,7 @@ class TestDefaultDeferredTools:
 
         registry = _default_tool_registry()
         expected_core = {
+            "ask_user",
             "edit",
             "glob",
             "grep",
@@ -196,10 +197,10 @@ class TestDefaultDeferredTools:
             granted = set(tier_tools(registry, mode=mode, role="lead"))
             granted.update({"skill", "todo_manage", "schedule_task", "note"})
             eager = {name for name in granted if not registry[name].deferred}
-            assert 10 <= len(eager) <= 15
+            assert 10 <= len(eager) <= 16
             assert eager == expected_core
 
-    def test_actual_coding_lead_payload_has_sixteen_eager_tools(self):
+    def test_actual_coding_lead_payload_has_seventeen_eager_tools(self):
         from app.agent.builtin_prompts import tier_tools
         from app.agent.loader import _default_tool_registry
         from tests.agent.mode.team.conftest import MockTeamProvider
@@ -222,6 +223,7 @@ class TestDefaultDeferredTools:
         eager = {name for name, tool in merged.items() if not tool.deferred}
 
         assert eager == {
+            "ask_user",
             "edit",
             "glob",
             "grep",
@@ -606,11 +608,13 @@ class TestWebbridgeSessionTagOnTeam:
         assert "read and edit files" in prompt
         assert "delegate workspace work" in prompt
         assert "browser_use, web_search, web_fetch" in prompt
+        assert "## Deferred tool activation" in prompt
 
     def test_untagged_lead_prompt_has_no_webbridge_suffix(self):
         team = AgentTeam(lead=self._make_lead())
         prompt = team.lead.build_protocol("base", team)
         assert "WebBridge session" not in prompt
+        assert "## Deferred tool activation" in prompt
 
 
 # ── Side Chat session scoping ────────────────────────────────────────────

@@ -168,7 +168,7 @@ _SAFE_TOOLS: frozenset[str] = frozenset(
         # session bookkeeping / UI-only output
         "note",
         "show_widget",
-        "read_me",
+        "visualize_read_me",
         "todo_manage",
         # user interaction & plan flow (already block on the user)
         "ask_user",
@@ -459,6 +459,7 @@ class PermissionService:
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("permission_replied_sse_push_failed error={}", exc)
+
 
 # ── Context-var + session-registry integration ────────────────────────────────
 

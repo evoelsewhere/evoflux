@@ -1,7 +1,7 @@
 """Visualize read_me tool — load design guidelines by module.
 
 This tool loads design guidelines for creating interactive HTML widgets.
-Claude must call this tool before using show_widget to ensure consistent
+The agent must call this tool before using show_widget to ensure consistent
 design patterns.
 """
 
@@ -27,6 +27,16 @@ from app.agent.tools.builtin.visualize.guidelines import (
     read_only=True,
     deferred=True,
     deferred_summary="Load design guidelines before rendering an interactive widget.",
+    search_aliases=(
+        "chart",
+        "plot",
+        "graph",
+        "diagram",
+        "dashboard",
+        "visualise",
+        "visualization",
+        "mockup",
+    ),
 )
 async def visualize_read_me(
     modules: Annotated[

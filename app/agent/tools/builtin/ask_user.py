@@ -87,8 +87,11 @@ ask_user = Tool(
     _ask_user,
     name="ask_user",
     lead_only=True,
-    deferred=True,
-    deferred_summary="Ask the user a batch of clarifying questions and wait for answers.",
+    # Deliberately not deferred. Asking a clarifying question is a first-turn
+    # decision, and behind load_tool it cost an extra activation round before
+    # the question could even be posed — so the model reliably chose plain
+    # text instead, which ends the turn without ever prompting the user. Being
+    # lead_only, its schema is only paid for on lead calls.
     description=(
         "Ask the user one or more clarifying questions mid-task and block "
         "until they answer all of them. Batch every question you need into "

@@ -55,7 +55,7 @@ from app.agent.state import (
     build_model_chain,
     build_tool_chain,
 )
-from app.agent.tools.registry import Tool
+from app.agent.tools.registry import Tool, deferred_catalog_entry
 
 MAX_AGENT_ITERATIONS = 5000
 MAX_CONCURRENT_TOOLS = 10
@@ -352,15 +352,9 @@ class Agent(Generic[TContext]):
         )
         deferred_names = requested_deferred & run_tools.keys()
 
-        def _deferred_summary(run_tool: Tool) -> str:
-            summary = getattr(run_tool, "deferred_summary", None)
-            if summary:
-                return summary
-            compact = " ".join(run_tool.description.split())
-            return compact[:197] + "..." if len(compact) > 200 else compact
-
         deferred_catalog = {
-            name: _deferred_summary(run_tools[name]) for name in sorted(deferred_names)
+            name: deferred_catalog_entry(run_tools[name])
+            for name in sorted(deferred_names)
         }
 
         # Work on a local copy, strip any SystemMessage — system prompt lives
@@ -439,7 +433,7 @@ class Agent(Generic[TContext]):
             just before ``load_tool`` searches, while preserving per-agent MCP
             grants and all caller-provided hard exclusions.
             """
-            if role == "member" or excluded_tools:
+            if role == "member":
                 return
 
             configured_servers = list(self.mcp_servers)
@@ -478,9 +472,9 @@ class Agent(Generic[TContext]):
                     if run_tool.name not in deferred_names:
                         deferred_names.add(run_tool.name)
                         changed = True
-                    summary = _deferred_summary(run_tool)
-                    if deferred_catalog.get(run_tool.name) != summary:
-                        deferred_catalog[run_tool.name] = summary
+                    entry = deferred_catalog_entry(run_tool)
+                    if deferred_catalog.get(run_tool.name) != entry:
+                        deferred_catalog[run_tool.name] = entry
                         changed = True
 
             if changed:

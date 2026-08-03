@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid7
 
+import pytest
 import pytest_asyncio
 
 from app.agent.agent_loop import Agent
@@ -76,6 +77,55 @@ class ClaimThenStopProvider(MockTeamProvider):
                         delta=ChatCompletionDelta(
                             content="I am incorrectly stopping without team_message"
                         ),
+                        finish_reason="stop",
+                    )
+                ],
+            )
+
+        async def _gen():
+            yield chunk
+
+        return _gen()
+
+
+class DeferredMcpSequenceProvider(MockTeamProvider):
+    """Search, activate, then expose a dynamically granted MCP tool."""
+
+    def __init__(self):
+        super().__init__("done")
+        self.tool_schemas: list[frozenset[str]] = []
+
+    def stream(
+        self,
+        messages: list[ChatMessage],
+        tools: list[dict] | None = None,
+        **kwargs,
+    ):
+        self.call_count += 1
+        self.tool_schemas.append(
+            frozenset(tool["function"]["name"] for tool in (tools or []))
+        )
+        if self.call_count == 1:
+            chunk = _tool_chunk(
+                "load_tool",
+                "search_dynamic_mcp",
+                '{"query":"documentation search"}',
+            )
+        elif self.call_count == 2:
+            chunk = _tool_chunk(
+                "load_tool",
+                "activate_dynamic_mcp",
+                '{"tool_name":"mcp_docs_search"}',
+            )
+        else:
+            chunk = ChatCompletionChunk(
+                id="dynamic-mcp-done",
+                created=1,
+                model="mock-model",
+                choices=[
+                    ChatCompletionChunkChoice(
+                        index=0,
+                        delta=ChatCompletionDelta(content="done"),
                         finish_reason="stop",
                     )
                 ],
@@ -337,6 +387,72 @@ class TestOnDemandActivation:
         assert "webbridge" in excluded
         assert "browser_use" not in excluded
         assert "browser_use" in deferred
+
+    @pytest.mark.parametrize(
+        "session_tags",
+        [frozenset(), frozenset({WEBBRIDGE_SESSION_TAG})],
+        ids=["ordinary", "webbridge"],
+    )
+    async def test_team_lead_hot_refreshes_new_mcp_with_session_exclusions(
+        self, tmp_path, monkeypatch, session_tags
+    ):
+        """The real TeamLead path always passes exclusions; they must not
+        disable same-run MCP discovery in either browser session mode."""
+        from app.agent.mcp import mcp_manager
+        from app.agent.tools.builtin.load_tool import load_tool
+        from app.agent.tools.registry import Tool
+
+        mcp_search = Tool(
+            lambda: "docs result",
+            name="mcp_docs_search",
+            deferred=True,
+            deferred_summary="Search the connected documentation server.",
+            capabilities=("webbridge-safe",),
+        )
+        mcp_search.origin = "mcp"
+        monkeypatch.setattr(
+            mcp_manager,
+            "get_tools_for_server",
+            lambda name: [mcp_search] if name == "docs" else None,
+        )
+        monkeypatch.setattr(
+            "app.agent.mode.team.member.build_title_generation_hook",
+            lambda *_args, **_kwargs: None,
+        )
+        monkeypatch.setattr(
+            "app.agent.mode.team.member.build_memory_extraction_hook",
+            lambda *_args, **_kwargs: None,
+        )
+
+        source = tmp_path / "lead.md"
+        source.write_text(
+            "---\nname: lead\nrole: lead\nmcp:\n  - docs\n---\n\nUse connected tools.",
+            encoding="utf-8",
+        )
+        provider = DeferredMcpSequenceProvider()
+        webbridge = Tool(lambda: None, name="webbridge", deferred=True)
+        db_factory = _make_mock_db_factory()
+        lead = TeamLead(
+            Agent(
+                name="lead",
+                llm_provider=provider,
+                tools=[load_tool, webbridge],
+            ),
+            db_factory=db_factory,
+        )
+        lead.agent.source_path = source
+        team = AgentTeam(
+            lead=lead,
+            db_factory=db_factory,
+            session_tags=session_tags,
+        )
+        lead.register(team)
+
+        await lead._handle_messages()
+
+        assert len(provider.tool_schemas) == 3
+        assert "mcp_docs_search" not in provider.tool_schemas[0]
+        assert "mcp_docs_search" in provider.tool_schemas[2]
 
     async def test_webbridge_member_keeps_workspace_tools_but_loses_other_browsers(
         self,

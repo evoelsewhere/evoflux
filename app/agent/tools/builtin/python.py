@@ -209,6 +209,17 @@ python_tool = Tool(
     name="python",
     deferred=True,
     deferred_summary="Execute Python for data processing, parsing, calculations, or automation.",
+    search_aliases=(
+        "script",
+        "compute",
+        "calculate",
+        "math",
+        "csv",
+        "json",
+        "pandas",
+        "numpy",
+        "benchmark",
+    ),
     description=(
         "Execute Python code. Cross-platform, works on Windows/macOS/Linux. "
         "All installed packages available. "

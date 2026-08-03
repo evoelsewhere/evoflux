@@ -32,6 +32,17 @@ _USER_AGENT = (
     read_only=True,
     deferred=True,
     deferred_summary="Search the public web for current information and sources.",
+    search_aliases=(
+        "google",
+        "internet",
+        "online",
+        "news",
+        "latest",
+        "recent",
+        "research",
+        "documentation",
+        "docs",
+    ),
 )
 async def web_search(
     query: Annotated[
@@ -131,6 +142,18 @@ def _fallback_convert(content_bytes: bytes, mime: str | None) -> str:
     read_only=True,
     deferred=True,
     deferred_summary="Fetch a web URL as Markdown, HTML, or plain text.",
+    search_aliases=(
+        "url",
+        "link",
+        "website",
+        "scrape",
+        "download",
+        "http",
+        "https",
+        "article",
+        "documentation",
+        "docs",
+    ),
 )
 async def web_fetch(
     url: Annotated[
@@ -225,6 +248,18 @@ async def web_fetch(
     read_only=True,
     deferred=True,
     deferred_summary="Search the web for usable photos, illustrations, icons, or backgrounds.",
+    search_aliases=(
+        "image",
+        "images",
+        "picture",
+        "photo",
+        "stock",
+        "logo",
+        "asset",
+        "wallpaper",
+        "graphic",
+        "thumbnail",
+    ),
 )
 async def image_search(
     query: Annotated[
