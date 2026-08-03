@@ -36,6 +36,13 @@ async function saveBlob(blob, outputPath) {
     await fs.writeFile(outputPath, Buffer.from(blob));
     return;
   }
+  // artifact-tool's export result. Its own save() would also write every sidecar
+  // next to the target as "<output>.inspect.ndjson" and announce it on stdout;
+  // the exported deck must stay the only new file.
+  if (blob && (blob.data instanceof Uint8Array || Buffer.isBuffer(blob?.data))) {
+    await fs.writeFile(outputPath, Buffer.from(blob.data));
+    return;
+  }
   fail(`Expected binary artifact for ${outputPath}`);
 }
 
@@ -340,8 +347,9 @@ async function buildTemplate(request, artifactTool, action) {
     outputPath = path.join(workDir, "template-preview.pptx");
   }
   if (!issues.some((issue) => issue.severity === "error")) {
-    await fs.mkdir(path.dirname(outputPath), { recursive: true });
-    await (await PresentationFile.exportPptx(presentation)).save(outputPath);
+    // saveBlob rather than blob.save: the latter also drops a sibling
+    // "<output>.inspect.ndjson" dump into the workspace and logs to stdout.
+    await saveBlob(await PresentationFile.exportPptx(presentation), outputPath);
     const stat = await fs.stat(outputPath);
     if (!stat.isFile() || stat.size === 0) fail(`Exported PPTX is empty: ${outputPath}`);
   }

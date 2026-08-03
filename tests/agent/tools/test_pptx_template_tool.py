@@ -43,9 +43,7 @@ def _files(root: Path) -> tuple[Path, Path, Path]:
                 "schemaVersion": 1,
                 "sourceSha256": digest,
                 "slideCount": 1,
-                "records": [
-                    {"id": "sh/title", "slide": 1, "kind": "textbox"}
-                ],
+                "records": [{"id": "sh/title", "slide": 1, "kind": "textbox"}],
             }
         ),
         encoding="utf-8",
@@ -186,6 +184,6 @@ async def test_compose_publishes_inherited_pptx(
     assert isinstance(result, ToolResult)
     assert result.attachments
     assert result.attachments[0]["workspace_path"] == "deliverables/deck.pptx"
-    assert "/office-preview/deliverables/deck.pptx" in result.attachments[0][
-        "preview_url"
-    ]
+    assert (
+        "/office-preview/deliverables/deck.pptx" in result.attachments[0]["preview_url"]
+    )

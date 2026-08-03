@@ -55,8 +55,8 @@ cross-sheet formula reference, for example `='Inputs'!B4`.
 - Distinguish input cells, formulas, summaries, and notes consistently.
 - Freeze headers for long tables; use validation for editable categorical
   fields; use conditional formatting where the visual state must react to edits.
-- Apply semantic number formats and sensible fixed widths. Avoid formatting
-  unused rows or columns.
+- Apply semantic number formats, then size columns with `autofit_columns`
+  instead of guessing `column_width`. Avoid formatting unused rows or columns.
 - Use native tables and charts only when they improve analysis. Charts must be
   backed by editable worksheet cells and placed outside the data range.
 - Avoid merged cells in calculation areas.
@@ -67,3 +67,8 @@ cross-sheet formula reference, for example `='Inputs'!B4`.
 `#N/A`, `#NUM!`, and `#NULL!`, and render every worksheet. Do not compose until
 the previews are readable at normal zoom and all error-severity issues are
 resolved. A successfully written file is not sufficient verification.
+
+Both actions also measure every used column against the width its content
+needs. A column holding numbers that is too narrow is an error, because Excel
+renders `#####` there; a text-only column that is too narrow is a warning. Fix
+either by adding an `autofit_columns` operation over the affected range.

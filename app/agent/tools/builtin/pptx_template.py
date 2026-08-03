@@ -13,6 +13,7 @@ from pydantic import Field
 from app.agent.sandbox import get_sandbox
 from app.agent.schemas.chat import ImageDataBlock, TextBlock, ToolResult
 from app.agent.tools.registry import Tool
+from app.services.office.runtime import file_sha256
 from app.services.pptx_template_pipeline import (
     TemplateDeckProject,
     TemplatePipelineResult,
@@ -20,7 +21,6 @@ from app.services.pptx_template_pipeline import (
     inspect_pptx_template,
     load_template_manifest,
     load_template_project,
-    pptx_sha256,
     render_pptx_template,
     template_catalog,
     validate_template_project,
@@ -79,10 +79,9 @@ def _validate_assets(project: TemplateDeckProject, project_path: Path) -> None:
 
 def _work_dir(source: Path, purpose: str) -> Path:
     sandbox = get_sandbox()
-    fingerprint = pptx_sha256(source)[:12]
+    fingerprint = file_sha256(source)[:12]
     safe_stem = "".join(
-        char if char.isalnum() or char in {"-", "_"} else "-"
-        for char in source.stem
+        char if char.isalnum() or char in {"-", "_"} else "-" for char in source.stem
     )[:60]
     return sandbox.validate_path(
         f".evoflux/pptx-template/{safe_stem}-{fingerprint}/{purpose}",
@@ -189,9 +188,7 @@ async def _pptx_template(
         return ToolResult(parts=_result_parts(result))
 
     project_file = _read_path(project_path, suffix=".json", label="project_path")
-    manifest_file = _read_path(
-        manifest_path, suffix=".json", label="manifest_path"
-    )
+    manifest_file = _read_path(manifest_path, suffix=".json", label="manifest_path")
     project = load_template_project(project_file)
     _validate_assets(project, project_file)
 
@@ -199,9 +196,7 @@ async def _pptx_template(
         manifest = load_template_manifest(manifest_file)
         return _json(
             {
-                **validate_template_project(
-                    project, manifest, source_pptx=source
-                ),
+                **validate_template_project(project, manifest, source_pptx=source),
                 "project_path": str(project_file),
                 "manifest_path": str(manifest_file),
                 "template_confirmed": project.template_confirmed,

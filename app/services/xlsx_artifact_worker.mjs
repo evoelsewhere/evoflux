@@ -17,6 +17,14 @@ async function saveBlob(blob, outputPath) {
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.writeFile(outputPath, Buffer.from(await blob.arrayBuffer()));
 }
+// artifact-tool's export result carries sidecars that its own save() would write
+// next to the target as "<output>.inspect.ndjson" and announce on stdout. The
+// published workbook must stay the only new file, and this pipeline already
+// writes its own manifest under the work directory.
+async function saveExportedFile(file, outputPath) {
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.writeFile(outputPath, file.data);
+}
 async function artifactTool() {
   const entrypoint = process.env.EVOFLUX_ARTIFACT_TOOL_ENTRYPOINT;
   if (!entrypoint) fail("Missing EVOFLUX_ARTIFACT_TOOL_ENTRYPOINT");
@@ -108,6 +116,8 @@ async function applyOperation(sheet, op) {
     return;
   }
   if (op.operation === "delete_drawings") { sheet.deleteAllDrawings(); return; }
+  if (op.operation === "autofit_columns") { sheet.getRange(op.range).format.autofitColumns(); return; }
+  if (op.operation === "autofit_rows") { sheet.getRange(op.range).format.autofitRows(); return; }
   fail(`Unsupported workbook operation: ${op.operation}`);
 }
 async function applyProject(workbook, project) {
@@ -151,6 +161,51 @@ async function inspectWorkbook(workbook, sourcePath, workDir, sourceSha256) {
   });
   return { manifestPath, previewPaths, sheetCount: names.length, sheetNames: names, issues: [] };
 }
+// Column widths are in character units, so half a character absorbs rounding.
+const COLUMN_FIT_SLACK = 0.5;
+// Excel's own default column width. An imported workbook reports 0 for sheets
+// that never declared one, which would make every default column look clipped.
+const DEFAULT_COLUMN_WIDTH = 8.43;
+
+// Measures every used column against the width its content needs. Runs on a
+// clone imported from the export blob because autofit has to be applied to be
+// measured, and the published workbook must keep the declared widths.
+async function scanColumnFit(tool, blob) {
+  const clone = await tool.SpreadsheetFile.importXlsx(blob);
+  const sheetIndex = await clone.inspect({ kind: "sheet", include: "id,name", maxChars: 100000 });
+  const issues = [];
+  for (const name of sheetNamesFromInspect(sheetIndex)) {
+    const sheet = clone.worksheets.getItem(name);
+    const used = sheet.getUsedRange();
+    if (!used || !used.columnCount) continue;
+    const sheetDefault = sheet.defaultColWidth;
+    const defaultWidth = typeof sheetDefault === "number" && sheetDefault > 0
+      ? sheetDefault
+      : DEFAULT_COLUMN_WIDTH;
+    for (let position = 0; position < used.columnCount; position += 1) {
+      const column = used.getColumn(position);
+      const declared = column.format.columnWidth;
+      const effective = typeof declared === "number" && declared > 0 ? declared : defaultWidth;
+      column.format.autofitColumns();
+      const needed = column.format.columnWidth;
+      if (typeof effective !== "number" || typeof needed !== "number") continue;
+      if (needed <= effective + COLUMN_FIT_SLACK) continue;
+      const clipsNumbers = (column.values || []).some(
+        (row) => Array.isArray(row) && row.some((value) => typeof value === "number"),
+      );
+      const size = `${effective.toFixed(2)} wide but needs ${needed.toFixed(2)}`;
+      issues.push({
+        severity: clipsNumbers ? "error" : "warning",
+        code: clipsNumbers ? "numeric-column-clipped" : "text-column-clipped",
+        message: clipsNumbers
+          ? `${name}!${column.address} is ${size}; Excel renders ##### for numbers that do not fit. Add an autofit_columns operation or widen the column.`
+          : `${name}!${column.address} is ${size}; text is clipped or spills into the next column. Add an autofit_columns operation or widen the column.`,
+      });
+    }
+  }
+  return issues;
+}
+
 async function verifyWorkbook(workbook, workDir) {
   const errors = await workbook.inspect({
     kind: "match", searchTerm: FORMULA_ERRORS,
@@ -189,12 +244,18 @@ async function main() {
   }
   await applyProject(workbook, project);
   const qa = await verifyWorkbook(workbook, request.workDir);
+  const clean = () => qa.issues.every((issue) => issue.severity !== "error");
   let outputPath = null;
-  if (action === "compose" && qa.issues.every((issue) => issue.severity !== "error")) {
-    outputPath = path.resolve(request.outputPath);
-    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  // Only export once the workbook is otherwise sound, so a rejected project
+  // still reports its issues instead of failing inside the exporter. Both
+  // actions export, so render surfaces the fit issues that would block compose.
+  if (clean()) {
     const blob = await tool.SpreadsheetFile.exportXlsx(workbook);
-    await blob.save(outputPath);
+    qa.issues.push(...await scanColumnFit(tool, blob));
+    if (action === "compose" && clean()) {
+      outputPath = path.resolve(request.outputPath);
+      await saveExportedFile(blob, outputPath);
+    }
   }
   return { ...qa, outputPath };
 }

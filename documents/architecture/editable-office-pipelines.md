@@ -57,6 +57,38 @@ rasterize one PNG per page. Missing required authoring runtimes are blockers;
 neither pipeline silently falls back to HTML screenshots or a lower-fidelity
 writer.
 
+XLSX verification also measures every used column against the width its content
+needs, because a numeric cell narrower than its formatted text renders as `#####`
+in Excel — a broken cell that no formula scan detects. The measurement applies
+autofit on a clone imported from the export blob, so the published workbook keeps
+the widths the project declared. A narrow numeric column is an error and a narrow
+text column a warning; the fix is an `autofit_columns` operation, which is
+preferred over guessing `column_width`.
+
+Both workers write export bytes directly instead of calling artifact-tool's
+`save()`. That helper also writes every sidecar next to the target as
+`<output>.inspect.ndjson` and announces it on stdout, which would leave a stray
+dump of workbook contents beside each published file and add noise to the
+protocol's stdout channel.
+
+`app/services/office/rendering.py` owns the LibreOffice-to-PNG conversion shared
+by DOCX verification and PPTX round-trip verification. Callers pass a code prefix
+so failures stay attributable to the pipeline that asked, and `renderer_available()`
+lets a caller treat rasterisation as optional evidence rather than a hard
+dependency.
+
+`app/services/office/runtime.py` owns the plumbing every Office pipeline needs:
+source hashing, external executable discovery, and the Node worker protocol
+(`node <worker>.mjs <action> <action>-request.json`, last JSON object on stdout
+wins, non-zero exit surfaces stderr). Sharing it is deliberately limited to
+that plumbing — the pipelines still keep their own project schemas, operations,
+and verification rules, so there is no generic Office compiler. Executable
+lookup order is the environment override (`EVOFLUX_NODE_BIN`,
+`EVOFLUX_ARTIFACT_TOOL_ENTRYPOINT`, `EVOFLUX_SOFFICE_BIN`,
+`EVOFLUX_PDFTOPPM_BIN`), then `PATH` and the workspace's own `node_modules`,
+then the EvoFlux checkout, and only last the Codex primary-runtime cache, which
+is an external layout EvoFlux does not own.
+
 Workspace and coding file previews are a separate desktop WebView concern:
 
 - XLSX files are imported client-side by SpreadJS in a protected, read-only
