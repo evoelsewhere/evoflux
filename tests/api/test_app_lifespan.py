@@ -109,6 +109,47 @@ async def test_lifespan_skips_idle_startup_services(
 
 
 @pytest.mark.asyncio
+async def test_production_migrations_run_before_workflow_reconcile(
+    monkeypatch: pytest.MonkeyPatch, slim_lifespan
+) -> None:
+    """Reconciliation queries workflow tables, so the schema must be current first.
+
+    Running it before ``run_migrations`` made a fresh production database log
+    ``workflow_reconcile_failed`` and leave orphaned executions marked live.
+    """
+    import app.core.db as db_module
+    import app.workflow.runner as runner_module
+
+    calls: list[str] = []
+
+    monkeypatch.setattr(app_module.settings, "APP_ENV", "production")
+    monkeypatch.setattr(
+        app_module,
+        "inspect_database_schema",
+        Mock(return_value=SimpleNamespace(at_head=False)),
+    )
+    monkeypatch.setattr(app_module, "ensure_database_revision_is_supported", Mock())
+    monkeypatch.setattr(
+        db_module,
+        "run_migrations",
+        Mock(side_effect=lambda: calls.append("migrations")),
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "reconcile_orphaned_executions",
+        AsyncMock(side_effect=lambda: calls.append("reconcile")),
+    )
+    monkeypatch.setattr(app_module.mcp_manager, "start", AsyncMock())
+    monkeypatch.setattr(
+        app_module.task_scheduler, "has_enabled_tasks", AsyncMock(return_value=False)
+    )
+
+    await _run_lifespan()
+
+    assert calls == ["migrations", "reconcile"]
+
+
+@pytest.mark.asyncio
 async def test_lifespan_starts_configured_services(
     monkeypatch: pytest.MonkeyPatch, slim_lifespan
 ) -> None:
