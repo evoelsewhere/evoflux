@@ -46,8 +46,6 @@ class TestCorsWildcardFallback:
     def test_wildcard_mixed_with_explicit_origin_disables_credentials(
         self, monkeypatch
     ):
-        monkeypatch.setattr(
-            settings, "CORS_ORIGINS", ["http://localhost:5173", "*"]
-        )
+        monkeypatch.setattr(settings, "CORS_ORIGINS", ["http://localhost:5173", "*"])
         options = _cors_options(create_app())
         assert options["allow_credentials"] is False
