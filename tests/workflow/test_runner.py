@@ -328,6 +328,165 @@ nodes:
     assert runner.is_driving(session_id) is False
 
 
+# ── gate / input human-control round trip ─────────────────────────────────────
+
+GATE = """
+schema_version: 1
+name: gate-race
+scope: work
+nodes:
+  - id: approve
+    kind: gate
+    title: "Ship it?"
+    choices: ["approve", "reject"]
+  - { id: shipped, kind: transform, set: { result: shipped } }
+edges:
+  - { from: approve, to: shipped, when: approve }
+outputs:
+  choice: "{{nodes.approve.output.choice}}"
+"""
+
+
+def _reply_like_the_rest_endpoint(session_id: str, answers: list[str]) -> list[bool]:
+    """Resolve every pending ask for *session_id* the way the reply route does.
+
+    Mirrors ``app.api.routes.team.questions.reply_question``: an empty result
+    is exactly the 404 ("not found or already resolved") a client would get.
+    """
+    from app.agent.ask_user import get_services_for_stream
+
+    outcomes: list[bool] = []
+    for service in get_services_for_stream(session_id):
+        for request_id in list(service._pending):
+            assert service.validate_answers(request_id, answers) is None
+            outcomes.append(service.reply(request_id, answers))
+    return outcomes
+
+
+@pytest.mark.asyncio
+async def test_gate_reply_is_accepted_the_instant_waiting_gate_is_published(
+    setup_db, monkeypatch
+):
+    """A client that replies the moment it sees ``waiting_gate`` must win.
+
+    The pending ask has to be registered before the pause is published;
+    otherwise the reply endpoint has nothing to resolve and 404s.
+    """
+    from app.services import memory_stream_store
+
+    session_id = "06a58f00-0000-7000-8000-0000000000a1"
+    original = memory_stream_store.push_event
+    replies: list[list[bool]] = []
+
+    async def _reply_on_waiting_gate(sid, envelope):
+        result = await original(sid, envelope)
+        data = getattr(envelope, "data", None) or {}
+        if (
+            isinstance(data, dict)
+            and data.get("type") == "workflow_progress"
+            and data.get("status") == "waiting_gate"
+            and not replies
+        ):
+            replies.append(_reply_like_the_rest_endpoint(session_id, ["approve"]))
+            if not replies[0]:
+                # Unblock the run so the assertion below reports the race
+                # instead of hanging until the 24h gate timeout.
+                asyncio.get_running_loop().create_task(_late_reply())
+        return result
+
+    async def _late_reply() -> None:
+        for _ in range(100):
+            await asyncio.sleep(0.05)
+            if _reply_like_the_rest_endpoint(session_id, ["approve"]):
+                return
+
+    monkeypatch.setattr(memory_stream_store, "push_event", _reply_on_waiting_gate)
+
+    runner = WorkflowRunner()
+    state = await runner.start(
+        parse_definition(GATE),
+        definition_hash="0" * 64,
+        session_id=session_id,
+        inputs={},
+        scope_workspace=None,
+    )
+    await _wait_done(runner, session_id)
+
+    assert replies == [[True]], (
+        "no pending gate existed when waiting_gate was published"
+    )
+
+    from app.core import db as db_module
+    from app.models.workflow import WorkflowExecution, WorkflowGateRequest
+
+    async with db_module.async_session_factory() as db:
+        execution = await db.get(WorkflowExecution, state.execution_id)
+        assert execution.status == "completed"
+        assert execution.outputs == {"choice": "approve"}
+        gate = (
+            await db.exec(
+                select(WorkflowGateRequest).where(
+                    col(WorkflowGateRequest.execution_id) == state.execution_id
+                )
+            )
+        ).one()
+        assert gate.status == "answered"
+        assert gate.answers == ["approve"]
+
+
+@pytest.mark.asyncio
+async def test_gate_second_reply_is_rejected_without_a_duplicate_resume(
+    setup_db, monkeypatch
+):
+    """Double-reply and wrong-session replies must be clean rejections."""
+    from app.services import memory_stream_store
+
+    session_id = "06a58f00-0000-7000-8000-0000000000a2"
+    original = memory_stream_store.push_event
+    outcomes: list[list[bool]] = []
+
+    async def _reply_twice(sid, envelope):
+        result = await original(sid, envelope)
+        data = getattr(envelope, "data", None) or {}
+        if (
+            isinstance(data, dict)
+            and data.get("type") == "workflow_progress"
+            and data.get("status") == "waiting_gate"
+            and not outcomes
+        ):
+            # A reply addressed to some other session must never resolve ours.
+            wrong_session = _reply_like_the_rest_endpoint(
+                "06a58f00-0000-7000-8000-0000000000ff", ["approve"]
+            )
+            assert wrong_session == []
+            outcomes.append(_reply_like_the_rest_endpoint(session_id, ["approve"]))
+            outcomes.append(_reply_like_the_rest_endpoint(session_id, ["reject"]))
+        return result
+
+    monkeypatch.setattr(memory_stream_store, "push_event", _reply_twice)
+
+    runner = WorkflowRunner()
+    state = await runner.start(
+        parse_definition(GATE),
+        definition_hash="0" * 64,
+        session_id=session_id,
+        inputs={},
+        scope_workspace=None,
+    )
+    await _wait_done(runner, session_id)
+
+    assert outcomes == [[True], [False]]
+
+    from app.core import db as db_module
+    from app.models.workflow import WorkflowExecution
+
+    async with db_module.async_session_factory() as db:
+        execution = await db.get(WorkflowExecution, state.execution_id)
+        assert execution.status == "completed"
+        # The second (rejecting) reply must not have re-routed the run.
+        assert execution.outputs == {"choice": "approve"}
+
+
 # ── /run endpoint contract ────────────────────────────────────────────────────
 
 
@@ -737,6 +896,42 @@ async def test_reconcile_orphaned_executions_fails_live_rows(setup_db):
         assert gate.status == "interrupted"
         assert gate.resolved_at is not None
         assert await db.get(AimClaim, claim_id) is None
+
+
+@pytest.mark.asyncio
+async def test_reconcile_on_unmigrated_schema_logs_and_continues(monkeypatch):
+    """Reconciliation is deliberately non-fatal.
+
+    The lifespan runs it after production migrations, but a schema that is
+    still missing the workflow tables (fresh dev DB, failed migration) must
+    log and return 0 rather than abort startup.
+    """
+    from loguru import logger
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
+    from app.core import db as db_module
+    from app.workflow.runner import reconcile_orphaned_executions
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    monkeypatch.setattr(
+        db_module,
+        "async_session_factory",
+        async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False),
+    )
+    warnings: list[str] = []
+    sink_id = logger.add(
+        lambda message: warnings.append(message.record["message"]), level="WARNING"
+    )
+    try:
+        assert await reconcile_orphaned_executions() == 0
+    finally:
+        logger.remove(sink_id)
+        await engine.dispose()
+
+    # The swallowed failure must stay visible in the logs — it is the only
+    # signal that live-looking runs were left unreconciled.
+    assert any("workflow_reconcile_failed" in message for message in warnings)
 
 
 @pytest.mark.asyncio
