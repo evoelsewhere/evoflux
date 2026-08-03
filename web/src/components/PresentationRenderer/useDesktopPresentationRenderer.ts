@@ -5,6 +5,13 @@ import { apiBaseUrl } from '@/api/base-url'
 import { withTokenParam } from '@/api/auth'
 import { getPlatform } from '@/hooks/use-platform'
 
+interface SlideCanvas {
+  width: number
+  height: number
+  exportPixelRatio: number
+  previewPixelRatio: number
+}
+
 interface RenderRequest {
   id: string
   action: 'render_slide'
@@ -12,6 +19,7 @@ interface RenderRequest {
     document: string
     inspectionScript: string
     inspectionParams: Record<string, unknown>
+    canvas: SlideCanvas
   }
 }
 
@@ -34,9 +42,6 @@ export interface DesktopSlideRenderResult {
   nativeImages: Array<{ exportId: string; data: string }>
 }
 
-const CANVAS_WIDTH = 1600
-const CANVAS_HEIGHT = 900
-const PIXEL_RATIO = 2
 const CHUNK_CHARS = 256_000
 const HIDE_EDITABLE_CSS = `
 [data-pptx-export-text],
@@ -182,6 +187,7 @@ async function handleRequest(raw: string): Promise<{
     || request.action !== 'render_slide'
     || typeof request.params?.document !== 'string'
     || typeof request.params?.inspectionScript !== 'string'
+    || !isSlideCanvas(request.params?.canvas)
   ) {
     throw new Error('Invalid desktop presentation render request')
   }
@@ -195,6 +201,7 @@ async function handleRequest(raw: string): Promise<{
 export async function renderSlideInWebView(
   params: RenderRequest['params'],
 ): Promise<DesktopSlideRenderResult> {
+  const canvas = params.canvas
   const frame = document.createElement('iframe')
   frame.setAttribute('aria-hidden', 'true')
   frame.setAttribute('sandbox', 'allow-same-origin allow-scripts')
@@ -202,8 +209,8 @@ export async function renderSlideInWebView(
     position: 'fixed',
     left: '0',
     top: '0',
-    width: `${CANVAS_WIDTH}px`,
-    height: `${CANVAS_HEIGHT}px`,
+    width: `${canvas.width}px`,
+    height: `${canvas.height}px`,
     border: '0',
     zIndex: '-2147483647',
     pointerEvents: 'none',
@@ -236,14 +243,6 @@ export async function renderSlideInWebView(
     const slide = frameDocument.querySelector<HTMLElement>('.slide')
     if (!slide) throw new Error('Slide document has no .slide root')
 
-    const imageOptions = {
-      scale: PIXEL_RATIO,
-    }
-    const preview = await domToPng(slide, {
-      ...imageOptions,
-      width: CANVAS_WIDTH,
-      height: CANVAS_HEIGHT,
-    })
     const nativeImages = await Promise.all(
       inspection.nativeImages.map(async ({ exportId }) => {
         const element = frameDocument.querySelector<HTMLElement>(
@@ -252,7 +251,10 @@ export async function renderSlideInWebView(
         if (!element) {
           throw new Error(`Editable image ${exportId} disappeared during rendering`)
         }
-        return { exportId, data: await domToPng(element, imageOptions) }
+        return {
+          exportId,
+          data: await domToPng(element, { scale: canvas.exportPixelRatio }),
+        }
       }),
     )
 
@@ -261,18 +263,31 @@ export async function renderSlideInWebView(
       || inspection.nativeShapes.length
       || nativeImages.length,
     )
-    let background = preview
-    if (hasNativeObjects) {
-      const style = frameDocument.createElement('style')
-      style.textContent = HIDE_EDITABLE_CSS
-      frameDocument.head.append(style)
-      await nextPaint(frameWindow)
-      background = await domToPng(slide, {
-        ...imageOptions,
-        width: CANVAS_WIDTH,
-        height: CANVAS_HEIGHT,
-      })
+    const exportOptions = {
+      scale: canvas.exportPixelRatio,
+      width: canvas.width,
+      height: canvas.height,
     }
+    if (!hasNativeObjects) {
+      // Nothing is overlaid natively, so a single raster is both the background
+      // embedded in the deck and the preview.
+      const background = await domToPng(slide, exportOptions)
+      return { inspection, preview: background, background, nativeImages }
+    }
+
+    // The preview is only a QA thumbnail and an attachment card, so it renders
+    // at the cheaper ratio. It has to be captured before the editable layer is
+    // hidden, because it is the one image that shows the slide as designed.
+    const preview = await domToPng(slide, {
+      scale: canvas.previewPixelRatio,
+      width: canvas.width,
+      height: canvas.height,
+    })
+    const style = frameDocument.createElement('style')
+    style.textContent = HIDE_EDITABLE_CSS
+    frameDocument.head.append(style)
+    await nextPaint(frameWindow)
+    const background = await domToPng(slide, exportOptions)
 
     return { inspection, preview, background, nativeImages }
   } finally {
@@ -306,6 +321,14 @@ function requestIdFromMessage(raw: string): string | null {
   } catch {
     return null
   }
+}
+
+function isSlideCanvas(value: unknown): value is SlideCanvas {
+  if (typeof value !== 'object' || value === null) return false
+  const canvas = value as Record<string, unknown>
+  return (['width', 'height', 'exportPixelRatio', 'previewPixelRatio'] as const).every(
+    (key) => typeof canvas[key] === 'number' && (canvas[key] as number) > 0,
+  )
 }
 
 function cssEscape(value: string): string {

@@ -3,12 +3,14 @@ from __future__ import annotations
 import base64
 from io import BytesIO
 from pathlib import Path
+from typing import cast
 
 from PIL import Image
 import pytest
 from pptx import Presentation
 from pydantic import ValidationError
 
+from app.services import pptx_html_pipeline as pipeline
 from app.services.pptx_html_pipeline import (
     HtmlDeckProject,
     QaIssue,
@@ -163,6 +165,124 @@ async def test_render_html_deck_uses_desktop_webview(
     assert calls[0]["session_id"] == "desktop-session"
     assert "A clear title" in str(calls[0]["document"])
     assert "getBoundingClientRect" in str(calls[0]["inspection_script"])
+
+
+@pytest.mark.asyncio
+async def test_render_html_deck_owns_the_canvas_geometry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The renderer must not keep its own copy of the geometry or the allowlist."""
+
+    from app.services.desktop_presentation_bridge import desktop_presentation_bridge
+
+    image = BytesIO()
+    Image.new("RGB", (1600, 900), "white").save(image, format="PNG")
+    png = "data:image/png;base64," + base64.b64encode(image.getvalue()).decode()
+    calls: list[dict[str, object]] = []
+
+    async def render(session_id: str, **kwargs):
+        calls.append(kwargs)
+        return {
+            "inspection": {
+                "issues": [],
+                "nativeText": [],
+                "nativeShapes": [],
+                "nativeImages": [],
+            },
+            "preview": png,
+            "background": png,
+            "nativeImages": [],
+        }
+
+    monkeypatch.setattr(desktop_presentation_bridge, "render", render)
+    project_file = tmp_path / "deck.json"
+    project_file.write_text("{}", encoding="utf-8")
+    await render_html_deck(
+        _project(),
+        session_id="desktop-session",
+        project_file=project_file,
+        workspace_root=tmp_path,
+        render_dir=tmp_path / "renders",
+    )
+
+    assert calls[0]["canvas"] == {
+        "width": pipeline.CANVAS_WIDTH,
+        "height": pipeline.CANVAS_HEIGHT,
+        "exportPixelRatio": pipeline.EXPORT_PIXEL_RATIO,
+        "previewPixelRatio": pipeline.PREVIEW_PIXEL_RATIO,
+    }
+    params = cast(dict[str, object], calls[0]["inspection_params"])
+    assert params["fontAllowlist"] == sorted(pipeline.EXPORT_SAFE_FONTS)
+
+
+@pytest.mark.asyncio
+async def test_render_html_deck_keeps_slide_order_when_renders_finish_out_of_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Slides render concurrently, so completion order must not reorder them."""
+
+    import asyncio
+
+    from app.services.desktop_presentation_bridge import desktop_presentation_bridge
+
+    image = BytesIO()
+    Image.new("RGB", (1600, 900), "white").save(image, format="PNG")
+    png = "data:image/png;base64," + base64.b64encode(image.getvalue()).decode()
+
+    async def render(session_id: str, **kwargs):
+        # Later slides settle first.
+        title = str(kwargs["document"])
+        await asyncio.sleep(0.03 if "Slide one" in title else 0.0)
+        return {
+            "inspection": {
+                "issues": [],
+                "nativeText": [],
+                "nativeShapes": [],
+                "nativeImages": [],
+            },
+            "preview": png,
+            "background": png,
+            "nativeImages": [],
+        }
+
+    monkeypatch.setattr(desktop_presentation_bridge, "render", render)
+    project = HtmlDeckProject.model_validate(
+        {
+            "schema_version": 1,
+            "title": "Ordered deck",
+            "style_preset": "clean-professional",
+            "style_confirmed": True,
+            "slides": [
+                {
+                    "id": f"slide-{index}",
+                    "title": title,
+                    "html": f'<h1 data-pptx-native="text">{title}</h1>',
+                    "speaker_notes": "note",
+                    "sources": ["https://example.invalid/source"],
+                }
+                for index, title in enumerate(
+                    ("Slide one", "Slide two", "Slide three"), start=1
+                )
+            ],
+        }
+    )
+    project_file = tmp_path / "deck.json"
+    project_file.write_text("{}", encoding="utf-8")
+
+    result = await render_html_deck(
+        project,
+        session_id="desktop-session",
+        project_file=project_file,
+        workspace_root=tmp_path,
+        render_dir=tmp_path / "renders",
+    )
+
+    assert [slide.number for slide in result.slides] == [1, 2, 3]
+    assert [slide.slide_id for slide in result.slides] == [
+        "slide-1",
+        "slide-2",
+        "slide-3",
+    ]
 
 
 def test_base_template_library_covers_complete_slide_families() -> None:
@@ -401,3 +521,113 @@ def test_assemble_restores_editable_shapes_and_images(tmp_path: Path) -> None:
 def test_assemble_requires_every_slide_render(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="all slides"):
         assemble_hybrid_pptx(_project(), [], tmp_path / "deck.pptx")
+
+
+def _flat_render(tmp_path: Path, number: int, shade: str) -> SlideRender:
+    preview = tmp_path / f"slide_{number:02d}.png"
+    background = tmp_path / f"slide_{number:02d}.background.png"
+    Image.new("RGB", (1600, 900), shade).save(preview)
+    Image.new("RGB", (1600, 900), shade).save(background)
+    return SlideRender(
+        number=number,
+        slide_id=f"slide-{number}",
+        preview_path=preview,
+        background_path=background,
+        native_text=[],
+        native_shapes=[],
+        native_images=[],
+    )
+
+
+def test_verify_exported_deck_skips_when_libreoffice_is_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pipeline, "renderer_available", lambda: False)
+
+    issues, report = pipeline.verify_exported_deck(
+        tmp_path / "deck.pptx",
+        [_flat_render(tmp_path, 1, "white")],
+        tmp_path / "round-trip",
+    )
+
+    assert issues == []
+    assert report["status"] == "skipped"
+    assert "EVOFLUX_SOFFICE_BIN" in report["reason"]
+
+
+def test_verify_exported_deck_accepts_a_matching_export(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    render = _flat_render(tmp_path, 1, "#f7f5f0")
+    page = tmp_path / "page-001.png"
+    Image.new("RGB", (1280, 720), "#f7f5f0").save(page)
+    monkeypatch.setattr(pipeline, "renderer_available", lambda: True)
+    monkeypatch.setattr(pipeline, "render_pages", lambda *a, **k: ([page], []))
+
+    issues, report = pipeline.verify_exported_deck(
+        tmp_path / "deck.pptx", [render], tmp_path / "round-trip"
+    )
+
+    assert issues == []
+    assert report["status"] == "completed"
+    assert report["slides"][0]["difference"] == 0.0
+
+
+def test_verify_exported_deck_flags_an_export_that_does_not_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    render = _flat_render(tmp_path, 1, "white")
+    page = tmp_path / "page-001.png"
+    Image.new("RGB", (1280, 720), "black").save(page)
+    monkeypatch.setattr(pipeline, "renderer_available", lambda: True)
+    monkeypatch.setattr(pipeline, "render_pages", lambda *a, **k: ([page], []))
+
+    issues, report = pipeline.verify_exported_deck(
+        tmp_path / "deck.pptx", [render], tmp_path / "round-trip"
+    )
+
+    assert [issue.code for issue in issues] == ["round_trip_drift"]
+    # Reported rather than blocking: LibreOffice substitutes fonts of its own.
+    assert issues[0].severity == "warning"
+    assert issues[0].slide_number == 1
+    assert report["slides"][0]["difference"] == 1.0
+
+
+def test_verify_exported_deck_reports_a_page_count_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    page = tmp_path / "page-001.png"
+    Image.new("RGB", (1280, 720), "#f7f5f0").save(page)
+    monkeypatch.setattr(pipeline, "renderer_available", lambda: True)
+    monkeypatch.setattr(pipeline, "render_pages", lambda *a, **k: ([page], []))
+
+    issues, _ = pipeline.verify_exported_deck(
+        tmp_path / "deck.pptx",
+        [_flat_render(tmp_path, 1, "#f7f5f0"), _flat_render(tmp_path, 2, "#f7f5f0")],
+        tmp_path / "round-trip",
+    )
+
+    assert "round_trip_page_count" in {issue.code for issue in issues}
+
+
+def test_verify_exported_deck_warns_when_rasterising_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pipeline, "renderer_available", lambda: True)
+    monkeypatch.setattr(
+        pipeline,
+        "render_pages",
+        lambda *a, **k: (
+            [],
+            [{"severity": "error", "code": "pptx-render-failed", "message": "boom"}],
+        ),
+    )
+
+    issues, report = pipeline.verify_exported_deck(
+        tmp_path / "deck.pptx",
+        [_flat_render(tmp_path, 1, "white")],
+        tmp_path / "round-trip",
+    )
+
+    assert [issue.code for issue in issues] == ["round_trip_render_failed"]
+    assert report == {"status": "failed", "reason": "boom"}

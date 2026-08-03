@@ -103,6 +103,7 @@ class DesktopPresentationBridge:
         document: str,
         inspection_script: str,
         inspection_params: dict[str, Any],
+        canvas: dict[str, Any],
         timeout: float = 90.0,
     ) -> Any:
         connection = self._connections.get(session_id)
@@ -125,6 +126,7 @@ class DesktopPresentationBridge:
                             "document": document,
                             "inspectionScript": inspection_script,
                             "inspectionParams": inspection_params,
+                            "canvas": canvas,
                         },
                     },
                 )
