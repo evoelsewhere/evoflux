@@ -468,6 +468,7 @@ async fn app_use_external_backend(
         .map_err(|e| format!("{e:#}"))?;
     }
 
+    sync_webbridge_native_connection(&app, &normalized, None).await;
     let init_script = frontend_init_script(None, &normalized);
     window
         .eval(&init_script)
@@ -532,6 +533,7 @@ async fn app_use_bundled_backend(
         .remove(window.label());
     save_app_backend_config(&app, None, None, true).map_err(|e| format!("{e:#}"))?;
     let token = state.desktop_token.lock().await.clone();
+    sync_webbridge_native_connection(&app, &base, token.as_deref()).await;
     let init_script = frontend_init_script(token.as_deref(), &base);
     window
         .eval(&init_script)
@@ -2544,9 +2546,10 @@ async fn wait_for_health(base: &str, attempts: u32, delay: Duration) -> Result<(
 async fn publish_webbridge_native_connection(
     app: &AppHandle,
     base_url: &str,
-    desktop_token: &str,
+    desktop_token: Option<&str>,
 ) -> Result<()> {
     const PUBLISH_ATTEMPTS: u32 = 5;
+    native_messaging::validate_base_url(base_url)?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(3))
         .build()
@@ -2558,9 +2561,11 @@ async fn publish_webbridge_native_connection(
     let mut last_error = None;
     for attempt in 1..=PUBLISH_ATTEMPTS {
         let result: Result<()> = async {
-            let response = client
-                .get(&url)
-                .bearer_auth(desktop_token)
+            let mut request = client.get(&url);
+            if let Some(token) = desktop_token.filter(|token| !token.is_empty()) {
+                request = request.bearer_auth(token);
+            }
+            let response = request
                 .send()
                 .await
                 .context("request WebBridge native discovery token")?
@@ -2586,6 +2591,24 @@ async fn publish_webbridge_native_connection(
         }
     }
     Err(last_error.unwrap_or_else(|| anyhow!("native discovery publication failed")))
+}
+
+async fn sync_webbridge_native_connection(
+    app: &AppHandle,
+    base_url: &str,
+    desktop_token: Option<&str>,
+) -> bool {
+    match publish_webbridge_native_connection(app, base_url, desktop_token).await {
+        Ok(()) => {
+            log::info!("WebBridge native discovery ready base_url={base_url}");
+            true
+        }
+        Err(error) => {
+            native_messaging::clear_connection(app);
+            log::warn!("could not publish WebBridge native discovery: {error:#}");
+            false
+        }
+    }
 }
 
 struct ReadySidecar {
@@ -2814,12 +2837,7 @@ async fn start_bundled_backend_with_retry(
             continue;
         }
 
-        if let Err(error) =
-            publish_webbridge_native_connection(app, &base_url, &handshake.token).await
-        {
-            native_messaging::clear_connection(app);
-            log::warn!("could not publish WebBridge native discovery: {error:#}");
-        }
+        sync_webbridge_native_connection(app, &base_url, Some(&handshake.token)).await;
 
         log::info!(
             "desktop_startup_timing stage=sidecar_ready attempt={} attempt_ms={} total_ms={}",
@@ -3114,7 +3132,7 @@ async fn start_backend_and_window(app: AppHandle) -> Result<()> {
         match normalize_external_base_url(&active_base_url) {
             Ok(base) => match wait_for_health(&base, 8, Duration::from_millis(250)).await {
                 Ok(()) => {
-                    native_messaging::clear_connection(&app);
+                    sync_webbridge_native_connection(&app, &base, None).await;
                     state
                         .window_backend_base_urls
                         .lock()

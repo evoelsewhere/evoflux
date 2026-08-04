@@ -358,6 +358,14 @@ fn process_is_alive(pid: u32) -> bool {
 }
 
 fn validate_connection(base_url: &str, discovery_token: &str) -> Result<()> {
+    validate_base_url(base_url)?;
+    if discovery_token.len() < 32 || discovery_token.len() > 256 {
+        return Err(anyhow!("native discovery token is invalid"));
+    }
+    Ok(())
+}
+
+pub fn validate_base_url(base_url: &str) -> Result<()> {
     let parsed = url::Url::parse(base_url).context("parse native discovery URL")?;
     if parsed.scheme() != "http"
         || !matches!(parsed.host_str(), Some("127.0.0.1" | "localhost" | "::1"))
@@ -366,9 +374,6 @@ fn validate_connection(base_url: &str, discovery_token: &str) -> Result<()> {
         return Err(anyhow!(
             "native discovery URL must be an explicit loopback HTTP port"
         ));
-    }
-    if discovery_token.len() < 32 || discovery_token.len() > 256 {
-        return Err(anyhow!("native discovery token is invalid"));
     }
     Ok(())
 }

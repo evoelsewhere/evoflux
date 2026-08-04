@@ -295,13 +295,19 @@ class NativeDiscoveryResponse(BaseModel):
 async def get_native_discovery(request: Request) -> NativeDiscoveryResponse:
     """Return the process-scoped token published through the native host.
 
-    Desktop bearer middleware protects this route. The token is deliberately
-    scoped to WebBridge pairing so the extension never receives the desktop
-    bearer that authorizes the rest of the API.
+    Bundled desktop backends require the desktop bearer. A standalone local
+    backend has no desktop bearer by design, so allow its Tauri shell to read
+    the scoped token over loopback. Such a backend is already reachable by
+    every local process; Native Messaging still keeps the token out of web
+    pages and limits delivery to the signed extension origin.
     """
     expected = expected_desktop_token()
-    if not expected or not desktop_token_matches(_bearer_token(request), expected):
+    if expected and not desktop_token_matches(_bearer_token(request), expected):
         raise HTTPException(status_code=401, detail="Desktop authentication required.")
+    if not expected and not _is_loopback_client(request):
+        raise HTTPException(
+            status_code=403, detail="Native discovery is loopback-only."
+        )
     return NativeDiscoveryResponse(discovery_token=_NATIVE_DISCOVERY_TOKEN)
 
 
@@ -355,6 +361,7 @@ async def create_native_pairing(
         credential=credential,
         scopes=pairing.scopes,
     )
+
 
 class PairingInfo(BaseModel):
     pairing_id: str
