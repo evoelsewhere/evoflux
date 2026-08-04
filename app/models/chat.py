@@ -75,6 +75,46 @@ class TZDateTime(TypeDecorator):
         return value
 
 
+class SessionFolder(SQLModel, table=True):
+    """User-created folder grouping Work-mode chat sessions.
+
+    Folders are a pure organisation layer over ``chat_sessions``: a session
+    keeps its own history and settings, only ``folder_id`` moves. When
+    ``share_context`` is set the lead of every session in the folder receives
+    a bounded digest of its sibling sessions (see
+    ``app.services.session_folder_service.build_folder_context_block``), which
+    is what makes sessions in one folder aware of each other.
+    """
+
+    __tablename__: str = "session_folders"  # type: ignore[reportIncompatibleVariableOverride]
+    __table_args__ = (sa.Index("ix_session_folders_mode_sort", "mode", "sort_order"),)
+
+    id: UUID = Field(default_factory=uuid7, primary_key=True)
+    name: str = Field(sa_column=Column(sa.String(120), nullable=False))
+    # Folders are scoped per app mode so a Work folder never shows up in the
+    # Coding sidebar (which groups by project/workspace instead).
+    mode: str = Field(
+        default="work",
+        sa_column=Column(sa.String(20), nullable=False, server_default="work"),
+    )
+    share_context: bool = Field(
+        default=True,
+        sa_column=Column(sa.Boolean, nullable=False, server_default=sa.true()),
+    )
+    sort_order: int = Field(
+        default=0,
+        sa_column=Column(sa.Integer, nullable=False, server_default="0"),
+    )
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(TZDateTime(), nullable=False),
+    )
+    updated_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(TZDateTime(), nullable=False, onupdate=_utcnow),
+    )
+
+
 class ChatSession(SQLModel, table=True):
     __tablename__: str = "chat_sessions"  # type: ignore[reportIncompatibleVariableOverride]
     __table_args__ = (
@@ -122,6 +162,21 @@ class ChatSession(SQLModel, table=True):
                 "coding_projects.id",
                 ondelete="SET NULL",
                 name="fk_chat_sessions_project_id",
+            ),
+            nullable=True,
+            index=True,
+        ),
+    )
+    # Sidebar folder this session was filed under. ON DELETE SET NULL so
+    # deleting a folder only un-files its sessions, never removes them.
+    folder_id: UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey(
+                "session_folders.id",
+                ondelete="SET NULL",
+                name="fk_chat_sessions_folder_id",
             ),
             nullable=True,
             index=True,
@@ -336,6 +391,7 @@ class SessionMessage(SQLModel, table=True):
         default_factory=_utcnow,
         sa_column=Column(TZDateTime(), nullable=False),
     )
+
 
 class DreamLog(SQLModel, table=True):
     """Records sessions that have been processed by the dream agent."""

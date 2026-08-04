@@ -35,6 +35,7 @@ from app.agent.drift import detect_drift, stamp_agent_files
 from app.agent.hooks.base import BaseAgentHook
 from app.agent.hooks.code_navigation_telemetry import CodeNavigationTelemetryHook
 from app.agent.hooks.continuation import ContinuationHook
+from app.agent.hooks.folder_context import FolderContextHook
 from app.agent.hooks.goal import GoalContextHook, GoalUsageHook
 from app.agent.hooks.dynamic_prompt import inject_current_date
 from app.agent.hooks.memory_context import default_memory_context_hook
@@ -1243,6 +1244,16 @@ class TeamMemberBase(abc.ABC):
             if self._role_label == "lead":
                 hooks.append(
                     GoalContextHook(
+                        db_factory=self.db_factory,
+                        session_id=lead_session_id,
+                    )
+                )
+                # Sidebar-folder siblings are shared with the lead only:
+                # members work from the lead's delegation brief, so adding
+                # the digest to every member run would repeat the same
+                # tokens without adding information.
+                hooks.append(
+                    FolderContextHook(
                         db_factory=self.db_factory,
                         session_id=lead_session_id,
                     )

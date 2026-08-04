@@ -43,6 +43,10 @@ export interface SessionRowProps {
   ) => void
   /** When set, plays a fade-rise enter with stagger derived from this index. */
   enterIndex?: number
+  /** Enables HTML5 drag so the row can be dropped onto a sidebar folder. */
+  draggable?: boolean
+  onDragStart?: (session: SessionResponse, event: React.DragEvent) => void
+  onDragEnd?: () => void
 }
 
 /**
@@ -65,6 +69,9 @@ export function SessionRow({
   onLongPress,
   onContextActions,
   enterIndex,
+  draggable = false,
+  onDragStart,
+  onDragEnd,
 }: SessionRowProps) {
   const preset = useMotionPreset()
   const index = enterIndex
@@ -75,7 +82,12 @@ export function SessionRow({
   const isBrowserCreated = session.tags?.includes('webbridge_origin:browser') ?? false
 
   const row = (
-    <div className="group relative">
+    <div
+      className="group relative"
+      draggable={draggable || undefined}
+      onDragStart={draggable ? (event) => onDragStart?.(session, event) : undefined}
+      onDragEnd={draggable ? onDragEnd : undefined}
+    >
       <LongPressButton
         enabled={mobileLongPressActions}
         onLongPress={() => onLongPress?.(session)}

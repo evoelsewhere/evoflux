@@ -23,6 +23,11 @@ import {
   useTeamSessionsQuery,
   useDeleteTeamSessionMutation,
   useUpdateTeamSessionTitleMutation,
+  useSessionFoldersQuery,
+  useCreateSessionFolderMutation,
+  useLoadMoreFolderSessionsMutation,
+  useSetSessionFolderMutation,
+  queryKeys,
 } from "@/queries";
 import { Skeleton } from "./ui/skeleton";
 import { SidebarItem } from "@/components/ui/sidebar-item";
@@ -46,7 +51,18 @@ import {
 } from "@/components/shell/SessionContextMenu";
 import { EditSessionTitleDialog } from "@/components/shell/EditSessionTitleDialog";
 import { MobileDrawerBackdrop } from "@/components/shell/MobileDrawerBackdrop";
-import type { SessionResponse } from "@/api/types";
+import { SessionFolders } from "@/components/shell/SessionFolders";
+import { MoveToFolderDialog } from "@/components/shell/MoveToFolderDialog";
+import {
+  isSessionDrag,
+  readSessionDragPayload,
+  setSessionDragPayload,
+} from "@/components/shell/session-drag";
+import { resolveTeamSession } from "@/api/client";
+import { prependSession } from "@/stores/cache-invalidation-bridge";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToastStore } from "@/stores/useToastStore";
+import type { SessionFolder, SessionResponse } from "@/api/types";
 import { cn } from "@/lib/utils";
 
 interface DateGroup {
@@ -122,13 +138,34 @@ export function Sidebar({
   // Server-filtered to work — coding/aim sessions live in their own
   // sidebars (per-run aim sessions would otherwise flood this list).
   const sessions = useTeamSessionsQuery("work");
+  const folders = useSessionFoldersQuery("work");
   const deleteSession = useDeleteTeamSessionMutation();
   const updateSessionTitle = useUpdateTeamSessionTitleMutation();
+  const setSessionFolder = useSetSessionFolderMutation("work");
+  const createFolder = useCreateSessionFolderMutation("work");
+  const loadMoreFolderSessions = useLoadMoreFolderSessionsMutation("work");
+  const queryClient = useQueryClient();
+  const pushToast = useToastStore((s) => s.push);
   const sessionListRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Flatten pages into a single list of sessions
   const normalSessions = sessions.data?.pages.flatMap((p) => p.data) ?? [];
+
+  // Folders own their sessions (fetched whole, not paginated), so the date
+  // groups below show only what is still unfiled. A folder's sessions are
+  // matched by id as well as by folder_id: the folders query is the
+  // authority right after a drag, before the paged list refetches.
+  const folderList = folders.data?.folders ?? [];
+  const folderSessions = folderList.flatMap((folder) => folder.sessions);
+  const folderedIds = new Set(folderSessions.map((s) => s.id));
+  const sessionById = new Map<string, SessionResponse>();
+  for (const session of [...normalSessions, ...folderSessions]) {
+    sessionById.set(session.id, session);
+  }
+  const unfiledSessions = normalSessions.filter(
+    (s) => !s.folder_id && !folderedIds.has(s.id),
+  );
 
   // Pinned sessions (persisted in usePinnedSessions) surface in a "Pinned"
   // section above the date groups; only ids present in the already-loaded
@@ -138,10 +175,16 @@ export function Sidebar({
   const togglePin = usePinnedSessions((s) => s.togglePin);
   const pinnedIdSet = new Set(pinnedIds);
   const pinnedSessions = pinnedIds
-    .map((id) => normalSessions.find((s) => s.id === id))
-    .filter((s): s is SessionResponse => s !== undefined);
-  const unpinnedSessions = normalSessions.filter((s) => !pinnedIdSet.has(s.id));
-  const sessionEnterIndex = useListEnterIndex(normalSessions.map((s) => s.id));
+    .map((id) => sessionById.get(id))
+    .filter(
+      (session): session is SessionResponse =>
+        session !== undefined && !session.folder_id,
+    );
+  const unpinnedSessions = unfiledSessions.filter((s) => !pinnedIdSet.has(s.id));
+  const sessionEnterIndex = useListEnterIndex([
+    ...normalSessions.map((s) => s.id),
+    ...folderSessions.map((s) => s.id),
+  ]);
 
   // Collapse state is shared by all three mode sidebars and owned by
   // useUIStore (persisted); AppShell owns the toggle button + Ctrl+B.
@@ -154,10 +197,17 @@ export function Sidebar({
   const [desktopSessionActions, setDesktopSessionActions] =
     useState<SessionMenuAnchor | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  const [moveTarget, setMoveTarget] = useState<SessionResponse | null>(null);
+  const [unfileDropActive, setUnfileDropActive] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const pullStartYRef = useRef<number | null>(null);
 
   const refetchSessions = sessions.refetch;
+  const refetchFolders = folders.refetch;
+  const refreshSidebar = useCallback(
+    () => Promise.all([refetchSessions(), refetchFolders()]),
+    [refetchFolders, refetchSessions],
+  );
   const canPullRefresh = isMobile && mobileOpen;
 
   const handleSessionListTouchStart = useCallback(
@@ -183,11 +233,11 @@ export function Sidebar({
 
   const handleSessionListTouchEnd = useCallback(() => {
     if (canPullRefresh && pullDistance >= 54) {
-      void refetchSessions();
+      void refreshSidebar();
     }
     pullStartYRef.current = null;
     setPullDistance(0);
-  }, [canPullRefresh, pullDistance, refetchSessions]);
+  }, [canPullRefresh, pullDistance, refreshSidebar]);
 
   // Ctrl+R: refresh sessions (data refresh — a sidebar concern, not shell).
   // Ctrl+B (collapse) is owned once by AppShell; Ctrl+M (wiki) / Ctrl+S
@@ -198,12 +248,12 @@ export function Sidebar({
       if (!e.ctrlKey || e.metaKey) return;
       if (e.key === "r") {
         e.preventDefault();
-        refetchSessions();
+        void refreshSidebar();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [refetchSessions]);
+  }, [refreshSidebar]);
 
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = sessions;
 
@@ -214,10 +264,16 @@ export function Sidebar({
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage();
+          void fetchNextPage();
         }
       },
-      { root: sessionListRef.current, threshold: 0.1 },
+      {
+        root: sessionListRef.current,
+        // Start fetching before the user reaches the final visible rows so
+        // fast wheel/trackpad scrolling does not expose a loading gap.
+        rootMargin: "0px 0px 320px 0px",
+        threshold: 0,
+      },
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
@@ -234,7 +290,7 @@ export function Sidebar({
 
   const confirmDelete = () => {
     if (!pendingDeleteId) return;
-    const target = normalSessions.find((s) => s.id === pendingDeleteId);
+    const target = sessionById.get(pendingDeleteId);
     if (!target) return;
     const fallbackSession =
       target.id === currentSessionId
@@ -276,6 +332,55 @@ export function Sidebar({
     onMobileClose?.();
   };
 
+  // Folder "+" button: create the session already filed in the folder rather
+  // than creating it loose and moving it, so it never flashes in Recent.
+  const handleNewChatInFolder = async (folder: SessionFolder) => {
+    try {
+      const session = await resolveTeamSession({
+        mode: "work",
+        workspace: null,
+        folder_id: folder.id,
+        create: true,
+      });
+      prependSession(queryClient, session);
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.team.sessionFolders("work"),
+      });
+      navigate({ to: "/$sessionId", params: { sessionId: session.id } });
+      onMobileClose?.();
+    } catch (err) {
+      pushToast({
+        tone: "error",
+        title: "Could not start a chat in this folder",
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    }
+  };
+
+  const moveSessionToFolder = (
+    sessionId: string,
+    folderId: string | null,
+    onSuccess?: () => void,
+  ) => {
+    const session = sessionById.get(sessionId);
+    if (session && (session.folder_id ?? null) === folderId) {
+      onSuccess?.();
+      return;
+    }
+    setSessionFolder.mutate(
+      { sessionId, folderId, session },
+      {
+        onSuccess,
+        onError: (err) =>
+          pushToast({
+            tone: "error",
+            title: "Could not move the chat",
+            description: err instanceof Error ? err.message : "Please try again.",
+          }),
+      },
+    );
+  };
+
   const renderSessionRow = (session: SessionResponse) => (
     <SessionRow
       key={session.id}
@@ -291,6 +396,11 @@ export function Sidebar({
       onEdit={handleEdit}
       mobileLongPressActions={mobileLongPressActions}
       onLongPress={setMobileSessionActions}
+      // Touch drags don't emit HTML5 drag events, so mobile files sessions
+      // through the actions sheet's "Move to folder…" instead.
+      draggable={!isMobile}
+      onDragStart={(s, event) => setSessionDragPayload(event, s.id)}
+      onDragEnd={() => setUnfileDropActive(false)}
       onContextActions={(session, event) => {
         setDesktopSessionActions({
           session,
@@ -301,16 +411,20 @@ export function Sidebar({
     />
   );
 
-  const sessionList = (
+  const ungroupedList = (
     <>
       {sessions.isLoading && <SessionListSkeleton />}
       {sessions.isError && (
         <p className="px-3 py-4 text-center text-xs text-(--color-error)">Failed to load sessions</p>
       )}
-      {sessions.isSuccess && normalSessions.length === 0 && (
-        <p className="px-3 py-4 text-center text-xs text-(--color-text-subtle)">No sessions yet</p>
-      )}
-      {sessions.isSuccess && normalSessions.length > 0 && (
+      {sessions.isSuccess &&
+        pinnedSessions.length === 0 &&
+        unpinnedSessions.length === 0 && (
+          <p className="px-3 py-4 text-center text-xs text-(--color-text-subtle)">
+            No chats outside folders
+          </p>
+        )}
+      {sessions.isSuccess && (normalSessions.length > 0 || hasNextPage) && (
         <div className="space-y-0.5">
           {pinnedSessions.length > 0 && (
             <div>
@@ -344,6 +458,97 @@ export function Sidebar({
           {isFetchingNextPage && <SessionListSkeleton count={3} />}
         </div>
       )}
+    </>
+  );
+
+  const sessionList = (
+    <>
+      <div className="mx-1.5 h-px bg-(--color-border)" aria-hidden="true" />
+      <SessionFolders
+        folders={folderList}
+        isLoading={folders.isLoading}
+        isError={folders.isError}
+        isMobile={isMobile}
+        renderSession={renderSessionRow}
+        onNewChatInFolder={(folder) => void handleNewChatInFolder(folder)}
+        onDropSession={moveSessionToFolder}
+        onLoadMore={(folder) => {
+          if (!folder.next_cursor) return;
+          loadMoreFolderSessions.mutate(
+            { folderId: folder.id, before: folder.next_cursor },
+            {
+              onError: (err) =>
+                pushToast({
+                  tone: "error",
+                  title: "Could not load older chats",
+                  description:
+                    err instanceof Error ? err.message : "Please try again.",
+                }),
+            },
+          );
+        }}
+        loadingFolderId={
+          loadMoreFolderSessions.isPending
+            ? loadMoreFolderSessions.variables?.folderId
+            : null
+        }
+        onRetry={() => void folders.refetch()}
+      />
+
+      {/* Dropping a row here takes it out of its folder — the mirror of
+          dropping it on a folder header. */}
+      <div
+        className={cn(
+          "rounded-md transition-colors",
+          unfileDropActive && "bg-(--bg-key)/40 ring-1 ring-(--color-accent)",
+        )}
+        onDragEnter={(event) => {
+          if (!isSessionDrag(event)) return;
+          event.preventDefault();
+          setUnfileDropActive(true);
+        }}
+        onDragOver={(event) => {
+          if (!isSessionDrag(event)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+        }}
+        onDragLeave={(event) => {
+          if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+          setUnfileDropActive(false);
+        }}
+        onDrop={(event) => {
+          if (!isSessionDrag(event)) return;
+          event.preventDefault();
+          setUnfileDropActive(false);
+          const sessionId = readSessionDragPayload(event);
+          if (sessionId) moveSessionToFolder(sessionId, null);
+        }}
+      >
+        <div className="mx-1.5 mt-2 h-px bg-(--color-border)" aria-hidden="true" />
+        <div className="flex items-center justify-between px-2.5 pb-2 pt-2">
+          <span className="text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">
+            Recent
+          </span>
+          <button
+            type="button"
+            onClick={() => void refreshSidebar()}
+            className="rounded-md p-1.5 text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-muted)"
+            aria-label="Refresh folders and recent chats"
+            title="Refresh sidebar (Ctrl+R)"
+          >
+            <RefreshCw
+              size={15}
+              className={sessions.isFetching || folders.isFetching ? "animate-spin" : ""}
+            />
+          </button>
+        </div>
+        {unfileDropActive && (
+          <p className="px-3 py-2 text-center text-xs text-(--color-text-muted)">
+            Drop to remove from folder
+          </p>
+        )}
+        {ungroupedList}
+      </div>
     </>
   );
 
@@ -450,8 +655,6 @@ export function Sidebar({
           </nav>
         </div>
 
-        <SidebarShellDivider />
-
         {/* ─── Sessions section ─── */}
         <AnimatePresence>
           <motion.div
@@ -461,19 +664,6 @@ export function Sidebar({
             exit={{ opacity: 0 }}
             className="flex min-h-0 flex-1 flex-col overflow-hidden"
           >
-            <div className="flex items-center justify-between px-2.5 pb-1 pt-2">
-              <span className="text-xs font-medium text-(--color-text-subtle)">
-                Recent
-              </span>
-              <button
-                onClick={() => refetchSessions()}
-                className="rounded-xs p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-muted)"
-                aria-label="Refresh sessions"
-                title="Refresh sessions (Ctrl+R)"
-              >
-                <RefreshCw size={11} className={sessions.isFetching ? 'animate-spin' : ''} />
-              </button>
-            </div>
             <div
               ref={sessionListRef}
               className="relative flex-1 overflow-y-auto px-1.5 pb-1.5"
@@ -558,19 +748,6 @@ export function Sidebar({
           exit={{ opacity: 0 }}
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
-          <div className="flex items-center justify-between px-2.5 pb-1 pt-1.5">
-            <span className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-(--color-text-muted)">
-              Recent
-            </span>
-            <button
-              onClick={() => refetchSessions()}
-              className="rounded-xs p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-muted)"
-              aria-label="Refresh sessions"
-              title="Refresh sessions (Ctrl+R)"
-            >
-              <RefreshCw size={12} className={sessions.isFetching ? 'animate-spin' : ''} />
-            </button>
-          </div>
           <div
             ref={sessionListRef}
             className="relative flex-1 overflow-y-auto px-1.5 pb-1.5"
@@ -630,6 +807,7 @@ export function Sidebar({
         onTogglePin={() => {
           if (desktopSessionActions) togglePin(desktopSessionActions.session.id);
         }}
+        onMoveToFolder={setMoveTarget}
       />
 
       <SessionActionsDialog
@@ -643,6 +821,35 @@ export function Sidebar({
         onTogglePin={() => {
           if (mobileSessionActions) togglePin(mobileSessionActions.id);
         }}
+        onMoveToFolder={setMoveTarget}
+      />
+
+      <MoveToFolderDialog
+        key={moveTarget?.id ?? "closed"}
+        session={moveTarget}
+        folders={folderList}
+        onClose={() => setMoveTarget(null)}
+        onSelect={(folderId) => {
+          if (!moveTarget) return;
+          moveSessionToFolder(moveTarget.id, folderId, () => setMoveTarget(null));
+        }}
+        onCreateAndSelect={(name) => {
+          const target = moveTarget;
+          if (!target) return;
+          createFolder.mutate(name, {
+            onSuccess: (folder) => {
+              moveSessionToFolder(target.id, folder.id, () => setMoveTarget(null));
+            },
+            onError: (err) =>
+              pushToast({
+                tone: "error",
+                title: "Could not create the folder",
+                description:
+                  err instanceof Error ? err.message : "Please try again.",
+              }),
+          });
+        }}
+        isPending={setSessionFolder.isPending || createFolder.isPending}
       />
 
       <EditSessionTitleDialog

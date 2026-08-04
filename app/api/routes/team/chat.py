@@ -73,6 +73,7 @@ from app.services.chat_service import (
     update_session_title,
 )
 from app.services.commands import parse_slash_invocation
+from app.services.session_folder_service import get_folder
 
 if TYPE_CHECKING:
     from app.agent.agent_loop import Agent
@@ -948,6 +949,7 @@ async def resolve_team_session(
 
     workspace = body.workspace
     project_id = body.project_id
+    folder_id = body.folder_id
     if body.mode == "work":
         workspace = None
         project_id = None
@@ -1018,6 +1020,17 @@ async def resolve_team_session(
     # comparison (see get_latest_top_level_session); empty stays NULL on write.
     session_tags = sorted(set(body.tags))
     async with db.begin():
+        # Validated inside the transaction: any read before ``db.begin()``
+        # autobegins one and makes entering it raise.
+        if folder_id is not None:
+            folder = await get_folder(db, folder_id)
+            if folder is None:
+                raise HTTPException(status_code=404, detail="Folder not found.")
+            if normalize_mode(folder.mode) != body.mode:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Folder belongs to a different mode than the session.",
+                )
         session = None
         if not body.create:
             session = await get_latest_top_level_session(
@@ -1025,6 +1038,7 @@ async def resolve_team_session(
                 mode=body.mode,
                 workspace=workspace,
                 project_id=project_id,
+                folder_id=folder_id,
                 tags=session_tags,
                 tag_match=body.tag_match,
             )
@@ -1034,6 +1048,7 @@ async def resolve_team_session(
                 mode=body.mode,
                 workspace=workspace,
                 project_id=project_id,
+                folder_id=folder_id,
                 model=model,
                 thinking_level=thinking_level,
                 tags=session_tags or None,
