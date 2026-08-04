@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useMemo } from 'react'
-import { Activity, ArrowUp, ChevronDown, File, Folder, Globe, Loader2, MessageCircle, Paperclip, Quote, Square, SquareCheck, Terminal, X } from 'lucide-react'
+import { Activity, ArrowUp, ChevronDown, File, Folder, Loader2, MessageCircle, Paperclip, Quote, Square, SquareCheck, Terminal, X } from 'lucide-react'
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
 import { MentionOverlay } from './InputBar.overlay'
@@ -155,9 +155,6 @@ interface InputBarProps {
   wikiActive?: boolean
   onActivity?: () => void
   activityActive?: boolean
-  /** Enables the current chat's real-browser WebBridge capability. */
-  webBridgeEnabled?: boolean
-  onWebBridgeEnabledChange?: (enabled: boolean) => void
   permissionMode?: import('@/api/types').PermissionMode
   onPermissionModeChange?: (mode: import('@/api/types').PermissionMode) => void
 }
@@ -217,8 +214,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   onTodosOpenChange,
   onActivity,
   activityActive,
-  webBridgeEnabled = false,
-  onWebBridgeEnabledChange,
   permissionMode,
   onPermissionModeChange,
   sessionId = null,
@@ -1086,31 +1081,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     </button>
   )
 
-  const webBridgeEl = onWebBridgeEnabledChange ? (
-    <button
-      type="button"
-      onClick={(e) => {
-        stopClick(e)
-        onWebBridgeEnabledChange(!webBridgeEnabled)
-      }}
-      disabled={disabled}
-      aria-label={webBridgeEnabled ? 'Disable WebBridge' : 'Enable WebBridge'}
-      aria-pressed={webBridgeEnabled}
-      title={webBridgeEnabled ? 'Web access enabled' : 'Allow agent to browse the web'}
-      className={cn(
-        'flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2 text-xs font-medium outline-none transition-[background-color,color,transform]',
-        'hover:bg-(--bg-key) hover:text-(--color-text) active:translate-y-px focus-visible:ring-2 focus-visible:ring-(--color-accent)/30',
-        'disabled:cursor-not-allowed disabled:opacity-50',
-        webBridgeEnabled
-          ? 'bg-(--color-accent)/10 text-(--color-accent) ring-1 ring-inset ring-(--color-accent)/20'
-          : 'text-(--color-text-muted)',
-      )}
-    >
-      <Globe size={14} aria-hidden="true" />
-      <span className="hidden sm:inline">{webBridgeEnabled ? 'Web on' : 'Web'}</span>
-    </button>
-  ) : null
-
   const chatEl = minimized ? (
     <button
       type="button"
@@ -1625,7 +1595,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                       mode={agentMode}
                     />
                   )}
-                  {!shellMode && webBridgeEl}
                   {permissionMode && onPermissionModeChange && (
                     <ModeSelector
                       mode={permissionMode}
