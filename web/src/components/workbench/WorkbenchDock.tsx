@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Maximize2, Minimize2, Plus, X } from 'lucide-react'
 import { useResizableWidth } from '@/hooks/use-resizable-width'
@@ -6,6 +7,10 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { staggerDelay, useMotionPreset } from '@/lib/motion'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { cn } from '@/lib/utils'
+import {
+  loadBrowserPreferences,
+  subscribeBrowserPreferences,
+} from '@/components/BrowserViewer/browserPreferences'
 import {
   type WorkbenchTab,
   type WorkbenchTool,
@@ -224,9 +229,19 @@ export function WorkbenchDock({
 function WorkbenchLauncher(context: WorkbenchContext) {
   const createTab = useUIStore((state) => state.createWorkbenchTab)
   const motionPreset = useMotionPreset()
-  const availableTools = WORKBENCH_TOOL_ORDER.filter((tool) =>
-    isWorkbenchToolEnabled(tool, context),
+  // Re-render when built-in browser preference flips so the Browser tile
+  // appears/disappears without remounting the whole dock.
+  const [builtInBrowserEnabled, setBuiltInBrowserEnabled] = useState(
+    () => loadBrowserPreferences().enabled,
   )
+  useEffect(
+    () => subscribeBrowserPreferences((next) => setBuiltInBrowserEnabled(next.enabled)),
+    [],
+  )
+  const availableTools = WORKBENCH_TOOL_ORDER.filter((tool) => {
+    if (tool === 'browser' && !builtInBrowserEnabled) return false
+    return isWorkbenchToolEnabled(tool, context)
+  })
 
   return (
     <motion.div

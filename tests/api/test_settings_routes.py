@@ -1130,6 +1130,32 @@ def test_version_control_settings_round_trip(tmp_path, monkeypatch):
     assert "max_concurrent_repositories: 6" in written
 
 
+def test_webbridge_settings_round_trip(tmp_path, monkeypatch):
+    from app.api.app import create_app
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    client = TestClient(create_app())
+    defaults = client.get("/api/settings/webbridge")
+
+    assert defaults.status_code == 200
+    assert defaults.json()["enabled"] is True
+    assert defaults.json()["allow_evaluate"] is True
+
+    payload = {"enabled": False, "allow_evaluate": False}
+    updated = client.put("/api/settings/webbridge", json=payload)
+
+    assert updated.status_code == 200
+    assert updated.json() == payload
+    written = (tmp_path / "settings.yaml").read_text(encoding="utf-8")
+    assert "enabled: false" in written
+    assert "allow_evaluate: false" in written
+
+    reread = client.get("/api/settings/webbridge")
+    assert reread.status_code == 200
+    assert reread.json() == payload
+
+
 def test_save_provider_visible_models_rejects_unknown_provider() -> None:
     app = _make_app()
     client = TestClient(app)

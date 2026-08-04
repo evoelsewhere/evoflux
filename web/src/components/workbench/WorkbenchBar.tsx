@@ -29,8 +29,8 @@ import {
 } from '@/components/ui/layout-icons'
 import type { ViewMode } from '@/components/TeamChatView/types'
 import type { CodeReviewSessionContext } from '@/lib/code-review-session'
+import { useRegistryQuery, useWebBridgeSettingsQuery } from '@/queries'
 import { ContextBudgetBar } from '@/components/ContextBudgetBar'
-import { useRegistryQuery } from '@/queries'
 import { WebBridgeStatusPopover } from '@/components/shell/WebBridgeStatusDialog'
 
 interface WorkbenchBarProps {
@@ -75,6 +75,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
     props.activeAgent ? s.agentStreams[props.activeAgent]?.model : null,
   )
   const registry = useRegistryQuery()
+  const webBridgeSettings = useWebBridgeSettingsQuery()
   const motionPreset = useMotionPreset()
   const { isTauri, os } = usePlatform()
   const isDesktopShell = isTauri && os !== 'ios' && os !== 'android'
@@ -82,6 +83,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
     isDesktopShell &&
     !props.isMobile &&
     (props.workspace != null || props.onChooseWorkspace != null)
+  const webBridgePolicyEnabled = webBridgeSettings.data?.enabled !== false
   const changesCount = turnChanges?.files.length ?? 0
   const planPending = Boolean(planApproval)
   const modelId = sessionModel ?? activeModel ?? null
@@ -226,6 +228,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
           onOpenChange={props.onWebBridgePopoverOpenChange}
           enabled={props.webBridgeEnabled}
           onEnabledChange={props.onWebBridgeEnabledChange}
+          policyEnabled={webBridgePolicyEnabled}
         />
 
         <span className="mx-0.5 h-4 w-px bg-(--color-border)" aria-hidden="true" />

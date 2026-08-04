@@ -67,6 +67,10 @@ export {
   useUpdateVersionControlSettingsMutation,
 } from './useVersionControlSettingsQuery'
 export {
+  useWebBridgeSettingsQuery,
+  useUpdateWebBridgeSettingsMutation,
+} from './useWebBridgeSettingsQuery'
+export {
   useProvidersQuery,
   useProviderModelsMutation,
   useProviderUsageQuery,

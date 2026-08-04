@@ -44,6 +44,15 @@ class VersionControlSettingsBody(BaseModel):
     require_successful_checks_before_merge: bool
 
 
+class WebBridgeSettingsBody(BaseModel):
+    """User-editable WebBridge policy exposed in Settings → Browser."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    allow_evaluate: bool = True
+
+
 class ProviderInfo(BaseModel):
     """One catalog row enriched with the user's current configuration state."""
 

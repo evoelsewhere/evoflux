@@ -12,6 +12,7 @@ import {
   BrainCircuit,
   ChevronRight,
   GitBranch,
+  Globe2,
   Server,
   Info,
   KeyRound,
@@ -176,6 +177,12 @@ export function SettingsHubPage() {
           description: 'Agent filesystem, process and worktree isolation',
           count: sandboxCount,
           countLabel: sandboxCount === 1 ? 'pattern' : 'patterns',
+        },
+        {
+          to: '/settings/browser',
+          icon: Globe2,
+          title: 'Browser',
+          description: 'Built-in WebView and WebBridge for the real browser',
         },
         {
           to: '/settings/notifications',
