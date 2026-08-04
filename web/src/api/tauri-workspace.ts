@@ -130,8 +130,10 @@ export interface WorkspaceOpener {
   id: string
   /** Display name shown in the menu. */
   name: string
-  /** Category — drives icon choice and menu ordering. */
+  /** Category — drives fallback presentation and menu ordering. */
   kind: 'editor' | 'file_manager' | 'terminal'
+  /** PNG data URL extracted from the installed app by the native shell. */
+  icon_data_url: string | null
 }
 
 /**

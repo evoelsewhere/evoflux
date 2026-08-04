@@ -4,7 +4,6 @@ import {
   Code2,
   FolderOpen,
   Loader2,
-  MousePointer2,
   RefreshCw,
   SquareTerminal,
 } from 'lucide-react'
@@ -25,73 +24,17 @@ interface OpenWithMenuProps {
 }
 
 function OpenerIcon({ opener }: { opener: WorkspaceOpener }) {
-  const tile = 'flex size-5 shrink-0 items-center justify-center rounded-[5px] shadow-sm'
-
-  switch (opener.id) {
-    case 'vscode':
-      return (
-        <span className={`${tile} bg-[#1684D5] text-white`}>
-          <Code2 size={12} strokeWidth={2.4} />
-        </span>
-      )
-    case 'vscode-insiders':
-      return (
-        <span className={`${tile} bg-[#1F9E89] text-white`}>
-          <Code2 size={12} strokeWidth={2.4} />
-        </span>
-      )
-    case 'cursor':
-      return (
-        <span className={`${tile} bg-[#171717] text-white dark:bg-white dark:text-[#171717]`}>
-          <MousePointer2 size={11} fill="currentColor" />
-        </span>
-      )
-    case 'zed':
-      return (
-        <span className={`${tile} bg-[#111827] text-[10px] font-bold text-white`}>
-          Z
-        </span>
-      )
-    case 'sublime':
-      return (
-        <span className={`${tile} bg-[#FF9800] text-[10px] font-bold text-white`}>
-          S
-        </span>
-      )
-    case 'finder':
-      return (
-        <span className={`${tile} bg-[#4A9CF5] text-white`}>
-          <FolderOpen size={12} />
-        </span>
-      )
-    case 'explorer':
-    case 'file-manager':
-      return (
-        <span className={`${tile} bg-[#F7C843] text-[#2563A5]`}>
-          <FolderOpen size={12} fill="currentColor" fillOpacity={0.22} />
-        </span>
-      )
-    case 'windows-terminal':
-    case 'powershell':
-    case 'pwsh':
-      return (
-        <span className={`${tile} bg-[#2563A5] text-white`}>
-          <SquareTerminal size={12} />
-        </span>
-      )
-    case 'cmd':
-      return (
-        <span className={`${tile} bg-[#222831] text-white`}>
-          <SquareTerminal size={12} />
-        </span>
-      )
-    case 'terminal':
-    case 'iterm':
-      return (
-        <span className={`${tile} bg-[#3F444B] text-white`}>
-          <SquareTerminal size={12} />
-        </span>
-      )
+  if (opener.icon_data_url) {
+    return (
+      <span className="flex size-6 shrink-0 items-center justify-center" aria-hidden="true">
+        <img
+          src={opener.icon_data_url}
+          alt=""
+          className="size-6 object-contain"
+          draggable={false}
+        />
+      </span>
+    )
   }
 
   const Fallback = opener.kind === 'editor'
@@ -100,8 +43,11 @@ function OpenerIcon({ opener }: { opener: WorkspaceOpener }) {
       ? SquareTerminal
       : FolderOpen
   return (
-    <span className={`${tile} border border-(--color-border) bg-(--bg-key) text-(--color-text-muted)`}>
-      <Fallback size={12} />
+    <span
+      className="flex size-6 shrink-0 items-center justify-center rounded-md border border-(--color-border) bg-(--bg-key) text-(--color-text-muted)"
+      aria-hidden="true"
+    >
+      <Fallback size={13} strokeWidth={1.8} />
     </span>
   )
 }
@@ -196,7 +142,7 @@ export function OpenWithMenu({ workspace, onChooseWorkspace }: OpenWithMenuProps
             <DropdownMenuItem
               key={opener.id}
               onClick={() => void openWith(opener)}
-              className="gap-2.5 py-1.5"
+              className="gap-2.5 py-1.5 pl-1"
             >
               <OpenerIcon opener={opener} />
               <span className="min-w-0 flex-1">

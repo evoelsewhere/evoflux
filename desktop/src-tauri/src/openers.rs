@@ -9,7 +9,10 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Kind of opener — used by the frontend to pick an icon and ordering.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use base64::Engine;
+
+/// Kind of opener — used by the frontend for fallback presentation and ordering.
 #[derive(Serialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum OpenerKind {
@@ -25,8 +28,10 @@ pub struct WorkspaceOpener {
     pub id: String,
     /// Display name shown in the menu.
     pub name: String,
-    /// Category for icon/ordering.
+    /// Category for fallback presentation and ordering.
     pub kind: OpenerKind,
+    /// PNG data URL extracted from the installed application by the OS.
+    pub icon_data_url: Option<String>,
 }
 
 /// Catalog entry: how to detect and how to launch one app.
@@ -305,6 +310,70 @@ fn entry_available(entry: &CatalogEntry) -> bool {
             .any(|bin| binary_on_path(bin).is_some())
 }
 
+#[cfg(target_os = "macos")]
+fn entry_icon_path(entry: &CatalogEntry) -> Option<PathBuf> {
+    if entry.id == "finder" {
+        return Some(PathBuf::from("/System/Library/CoreServices/Finder.app"));
+    }
+
+    entry
+        .probe_paths
+        .iter()
+        .map(|path| expand_probe_path(path))
+        .find(|path| path.exists())
+        .or_else(|| entry.probe_bins.iter().find_map(|bin| binary_on_path(bin)))
+}
+
+#[cfg(target_os = "windows")]
+fn entry_icon_path(entry: &CatalogEntry) -> Option<PathBuf> {
+    let built_in = match entry.id {
+        "explorer" => Some(r"%WINDIR%\explorer.exe"),
+        "cmd" => Some(r"%WINDIR%\System32\cmd.exe"),
+        "powershell" => Some(r"%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe"),
+        _ => None,
+    }
+    .map(expand_probe_path)
+    .filter(|path| path.is_file());
+
+    built_in.or_else(|| {
+        entry
+            .probe_paths
+            .iter()
+            .map(|path| expand_probe_path(path))
+            .find(|path| path.is_file())
+            .or_else(|| entry.probe_bins.iter().find_map(|bin| binary_on_path(bin)))
+    })
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn system_icon_data_url(entry: &CatalogEntry) -> Option<String> {
+    let path = entry_icon_path(entry)?;
+    // Icon providers are OS integrations and a malformed third-party icon
+    // must not prevent the rest of the opener menu from loading.
+    let icon = std::panic::catch_unwind(|| file_icon_provider::get_file_icon(path, 64))
+        .ok()?
+        .ok()?;
+    let mut png_bytes = Vec::new();
+
+    {
+        let mut encoder = png::Encoder::new(&mut png_bytes, icon.width, icon.height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().ok()?;
+        writer.write_image_data(&icon.pixels).ok()?;
+    }
+
+    Some(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(png_bytes)
+    ))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn system_icon_data_url(_entry: &CatalogEntry) -> Option<String> {
+    None
+}
+
 /// List the desktop apps available to open the workspace root.
 #[tauri::command]
 pub async fn list_workspace_openers() -> Result<Vec<WorkspaceOpener>, String> {
@@ -319,6 +388,7 @@ pub async fn list_workspace_openers() -> Result<Vec<WorkspaceOpener>, String> {
                 id: entry.id.to_string(),
                 name: entry.name.to_string(),
                 kind: entry.kind.clone(),
+                icon_data_url: system_icon_data_url(entry),
             })
             .collect()
     })
@@ -449,4 +519,25 @@ fn launch(entry: &CatalogEntry, root: &Path, root_str: &str) -> std::io::Result<
         }
     }
     Ok(())
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_icons_for_installed_openers() {
+        let installed = CATALOG
+            .iter()
+            .filter(|entry| entry_available(entry))
+            .collect::<Vec<_>>();
+
+        assert!(!installed.is_empty());
+
+        for entry in installed {
+            let data_url =
+                system_icon_data_url(entry).unwrap_or_else(|| panic!("{} system icon", entry.name));
+            assert!(data_url.starts_with("data:image/png;base64,iVBOR"));
+        }
+    }
 }
