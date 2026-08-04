@@ -499,16 +499,33 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const webBridgeSettings = useWebBridgeSettingsQuery()
   const webBridgePolicyEnabled = webBridgeSettings.data?.enabled !== false
   useEffect(() => {
+    let cancelled = false
     if (!webBridgePolicyEnabled) {
       setWebBridgeEnabled(false)
       return
     }
-    if (!activeSessionId) {
-      setWebBridgeEnabled(areWebBridgeDefaultsEnabled())
-      return
+    const requested = activeSessionId
+      ? sessionTags === undefined
+        ? null
+        : Boolean(persistedWebBridgeEnabled)
+      : areWebBridgeDefaultsEnabled()
+    if (requested === null) return
+
+    // Fail closed while connection state is unknown. A persisted session tag
+    // or the new-chat default is only a preference; it must never make the UI
+    // appear enabled before a live extension has been verified.
+    setWebBridgeEnabled(false)
+    if (!requested) return
+    void getWebBridgeStatus()
+      .then((status) => {
+        if (!cancelled && status.connected) setWebBridgeEnabled(true)
+      })
+      .catch(() => {
+        // Backend/status failures stay disabled.
+      })
+    return () => {
+      cancelled = true
     }
-    if (sessionTags === undefined) return
-    setWebBridgeEnabled(Boolean(persistedWebBridgeEnabled))
   }, [activeSessionId, persistedWebBridgeEnabled, sessionTags, webBridgePolicyEnabled])
   // Lead capabilities — used to drive composer affordances (slash menu).
   // aim sessions are workspace-bound like coding (primary workspace = the
@@ -945,10 +962,31 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     inputRef.current?.focus()
   }, [])
 
-  const handleWebBridgeEnabledChange = useCallback((enabled: boolean) => {
-    setWebBridgeEnabled(enabled)
-    if (enabled) setWebBridgeDialogOpen(true)
-  }, [])
+  const handleWebBridgeEnabledChange = useCallback(async (enabled: boolean) => {
+    if (!enabled) {
+      setWebBridgeEnabled(false)
+      return
+    }
+
+    // The popover disables this action while disconnected, but keep the
+    // parent defensive so keyboard/race/programmatic calls cannot bypass it.
+    setWebBridgeEnabled(false)
+    try {
+      const status = await getWebBridgeStatus()
+      if (status.connected) {
+        setWebBridgeEnabled(true)
+        return
+      }
+    } catch {
+      // Use the same disconnected UX for status failures.
+    }
+    pushToast({
+      tone: 'error',
+      title: 'WebBridge is not connected',
+      description: 'Connect the browser extension before enabling WebBridge.',
+    })
+    setWebBridgeDialogOpen(true)
+  }, [pushToast])
 
   // Lifted above the panel: the side chat session (and any in-flight
   // generation + SSE stream) survives closing/reopening the panel.
@@ -1460,6 +1498,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       try {
         const status = await getWebBridgeStatus()
         if (!status.connected) {
+          setWebBridgeEnabled(false)
           pushToast({
             tone: 'error',
             title: 'WebBridge is not connected',
@@ -1469,6 +1508,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           return false
         }
       } catch {
+        setWebBridgeEnabled(false)
         pushToast({
           tone: 'error',
           title: 'Could not check WebBridge',
