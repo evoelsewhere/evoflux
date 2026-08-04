@@ -1678,54 +1678,49 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             </div>
           </div>
         ) : mode === 'coding' && !workspace ? (
-          <div className="relative flex flex-1 items-center justify-center overflow-y-auto px-5 py-5 sm:px-8">
+          <div className="relative flex flex-1 items-center justify-center overflow-y-auto px-3 py-3 sm:px-5">
             <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
               <div className="absolute left-1/2 top-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-(--color-accent)/8 blur-3xl" />
             </div>
-            <div className="@container/coding-empty relative w-full max-w-4xl overflow-hidden rounded-3xl border border-(--color-border) bg-(--bg-card)/95 shadow-xl shadow-black/10">
+            <div className="@container/coding-empty relative w-full max-w-[620px] overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card)/95 shadow-md shadow-black/8">
               <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-(--color-accent)/60 to-transparent" aria-hidden="true" />
-              <div className="grid @[48rem]/coding-empty:grid-cols-[minmax(17rem,0.78fr)_minmax(28rem,1.22fr)]">
-                <section className="flex flex-col border-b border-(--color-border-subtle) p-5 @[48rem]/coding-empty:border-b-0 @[48rem]/coding-empty:border-r @[48rem]/coding-empty:p-6">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-(--color-accent)/12 text-(--color-accent) ring-1 ring-inset ring-(--color-accent)/20 shadow-md shadow-(--color-accent)/10">
-                    <FolderPlus size={21} strokeWidth={1.8} aria-hidden="true" />
+              <div className="grid @[36rem]/coding-empty:grid-cols-[minmax(11.5rem,0.58fr)_minmax(24rem,1.42fr)]">
+                <section className="flex flex-col border-b border-(--color-border-subtle) p-3 @[36rem]/coding-empty:border-b-0 @[36rem]/coding-empty:border-r">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-(--color-accent)/12 text-(--color-accent) ring-1 ring-inset ring-(--color-accent)/20 shadow-sm shadow-(--color-accent)/10">
+                      <FolderPlus size={16} strokeWidth={1.8} aria-hidden="true" />
+                    </div>
+                    <div className="inline-flex w-fit items-center gap-1 rounded-full border border-(--color-border-subtle) bg-(--bg-page)/70 px-2 py-0.5 text-[0.56rem] font-semibold uppercase tracking-[0.12em] text-(--color-text-muted)">
+                      <GitBranch size={9} aria-hidden="true" />
+                      Coding workspace
+                    </div>
                   </div>
-                  <div className="mt-4 inline-flex w-fit items-center gap-1.5 rounded-full border border-(--color-border-subtle) bg-(--bg-page)/70 px-2.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-(--color-text-muted)">
-                    <GitBranch size={11} aria-hidden="true" />
-                    Coding workspace
-                  </div>
-                  <h2 className="mt-2 text-xl font-semibold tracking-tight text-(--color-text)">Start with a project folder</h2>
-                  <p className="mt-1.5 text-xs leading-5 text-(--color-text-muted)">
-                    Open a local repository to give your coding team files, source control, and project context.
+                  <h2 className="mt-1.5 text-sm leading-4.5 font-semibold tracking-tight text-(--color-text)">Start with a project folder</h2>
+                  <p className="mt-1 text-[10px] leading-3.5 text-(--color-text-muted)">
+                    Open a repository to give your coding team files, source control, and project context.
                   </p>
 
-                  <div className="mt-5 space-y-1.5">
-                    <div className="flex gap-2.5 rounded-xl bg-(--bg-page)/55 px-3 py-2.5">
+                  <div className="mt-2 grid gap-1 @[28rem]/coding-empty:grid-cols-2 @[36rem]/coding-empty:grid-cols-1">
+                    <div className="flex items-center gap-2 rounded-lg bg-(--bg-page)/55 px-2 py-1.5">
                       <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-(--bg-key) font-mono text-[0.6rem] font-semibold text-(--color-accent) ring-1 ring-(--color-border)">1</span>
-                      <div>
-                        <p className="text-[11px] font-semibold text-(--color-text)">Choose a folder</p>
-                        <p className="mt-0.5 text-[11px] leading-3.5 text-(--color-text-muted)">Select any local repository or project directory.</p>
-                      </div>
+                      <p className="text-[10px] font-semibold text-(--color-text)">Choose a folder</p>
                     </div>
-                    <div className="flex gap-2.5 rounded-xl bg-(--bg-page)/55 px-3 py-2.5">
+                    <div className="flex items-center gap-2 rounded-lg bg-(--bg-page)/55 px-2 py-1.5">
                       <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-(--bg-key) font-mono text-[0.6rem] font-semibold text-(--color-accent) ring-1 ring-(--color-border)">2</span>
-                      <div>
-                        <p className="text-[11px] font-semibold text-(--color-text)">Start building</p>
-                        <p className="mt-0.5 text-[11px] leading-3.5 text-(--color-text-muted)">Create a focused coding session with your team.</p>
-                      </div>
+                      <p className="text-[10px] font-semibold text-(--color-text)">Start building</p>
                     </div>
                   </div>
 
-                  <div className="mt-auto pt-5">
-                    <Button type="button" size="sm" className="h-9 w-full rounded-xl px-4 shadow-md shadow-(--color-accent)/15" onClick={handleOpenWorkspaceDialog}>
-                      <FolderPlus size={15} aria-hidden="true" />
+                  <div className="mt-auto pt-2.5">
+                    <Button type="button" size="sm" className="h-8 w-full rounded-lg px-3 text-[11px] shadow-sm shadow-(--color-accent)/15" onClick={handleOpenWorkspaceDialog}>
+                      <FolderPlus size={13} aria-hidden="true" />
                       Open workspace
-                      <ArrowRight size={14} aria-hidden="true" />
+                      <ArrowRight size={12} aria-hidden="true" />
                     </Button>
-                    <p className="mt-2 text-center text-[11px] text-(--color-text-subtle)">Recent workspaces stay available in the sidebar.</p>
                   </div>
                 </section>
 
-                <div className="flex items-center p-3 @[48rem]/coding-empty:p-4">
+                <div className="flex items-center p-1.5 @[36rem]/coding-empty:p-2">
                   <RecentUsageCard className="relative border-0 bg-transparent p-0 shadow-none" />
                 </div>
               </div>

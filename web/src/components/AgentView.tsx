@@ -30,6 +30,7 @@ import { getVisibleTurnWindow, partitionTurns, type TurnItem } from '@/utils/tur
 import { isDirectUserBlock, latestDirectUserBlockId } from '@/utils/blocks'
 import { buildUserMessageNavigationItems } from '@/utils/user-message-navigation'
 import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
+import { cn } from '@/lib/utils'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { ActivityStatus } from './motion/ActivityStatus'
 import { BlockEnter } from './motion/BlockEnter'
@@ -364,8 +365,14 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
 
   return (
     <div className="@container/agent-view relative flex min-h-0 flex-1 flex-col">
-    <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain">
-      <div ref={contentRef} className="mx-auto max-w-4xl px-3 py-4">
+    <div ref={scrollRef} className="flex flex-1 flex-col overflow-y-auto overscroll-contain">
+      <div
+        ref={contentRef}
+        className={cn(
+          'mx-auto w-full max-w-4xl px-3 py-4',
+          isEmpty && 'flex flex-1 items-center',
+        )}
+      >
         {isEmpty && (
            emptyState ?? <ChatWelcome />
          )}
