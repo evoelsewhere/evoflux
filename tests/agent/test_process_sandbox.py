@@ -8,6 +8,7 @@ from typing import Literal
 import pytest
 
 from app.agent.process_sandbox import (
+    _macos_profile,
     native_process_sandbox_backend,
     sandboxed_process_argv,
 )
@@ -70,3 +71,12 @@ def test_best_effort_keeps_application_sandbox_without_backend(
         sandbox=sandbox,
         cwd=sandbox.workspace_root,
     ) == ("cmd.exe", ["/c", "echo ok"])
+
+
+def test_macos_profile_allows_the_null_device_for_shell_and_git(
+    tmp_path: Path,
+) -> None:
+    """Commands may redirect output to /dev/null inside the Seatbelt sandbox."""
+    profile = _macos_profile(_sandbox(tmp_path, isolation="best_effort"))
+
+    assert '(allow file-write* (literal "/dev/null"))' in profile

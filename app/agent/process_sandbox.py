@@ -104,6 +104,10 @@ def _macos_profile(sandbox: SandboxConfig) -> str:
             "(allow process*)",
             "(allow file-read*)",
             f"(allow file-write* {writable})",
+            # Shell redirections and Git open this character device even for
+            # otherwise read-only commands.  Keep the exception narrowly
+            # scoped rather than allowing writes to all of /dev.
+            '(allow file-write* (literal "/dev/null"))',
             "(allow sysctl-read)",
             "(allow mach-lookup)",
             "(allow ipc-posix-shm)",
