@@ -1672,6 +1672,46 @@ export interface WebBridgeExtensionInfo {
   connected_at: number
   current_url: string
   current_title: string
+  automation?: WebBridgeAutomationState
+}
+
+export interface WebBridgeTextWatchState {
+  id: string
+  tab_id: number
+  page_url: string
+  needle: string
+  state: 'armed' | 'matched'
+  expires_at: number
+}
+
+export interface WebBridgeTeachRecordingState {
+  tab_id: number
+  title: string
+  state: string
+  action_count: number
+}
+
+export interface WebBridgeIssueCaptureState {
+  tab_id: number
+  page_url: string
+  expires_at: number
+  entry_count: number
+}
+
+export interface WebBridgeHumanControlState {
+  tab_id: number
+  acquired_at: number
+  expires_at: number
+}
+
+export interface WebBridgeAutomationState {
+  updated_at?: number
+  active_tab_id?: number | null
+  text_watches?: WebBridgeTextWatchState[]
+  teach_recording?: WebBridgeTeachRecordingState | null
+  issue_capture?: WebBridgeIssueCaptureState | null
+  human_control_lease?: WebBridgeHumanControlState | null
+  agent_control_tab_ids?: number[]
 }
 
 export interface WebBridgeStatusResponse {

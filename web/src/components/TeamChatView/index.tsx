@@ -48,7 +48,6 @@ import { Sidebar } from '../Sidebar'
 import { ChatOverlayPanels, ChatTrailingPanels } from '@/components/chat/ChatPanels'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
-import { WebBridgeStatusDialog } from '@/components/shell/WebBridgeStatusDialog'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useRegistryQuery, useTriggerDreamMutation } from '@/queries'
 import { getSessionWorkspaceRoot, getTeamSession, getWebBridgeStatus, replyPlanApproval, resolveTeamSession, setSessionPermissionMode } from '@/api/client'
@@ -1575,6 +1574,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           onChooseWorkspace={mode === 'coding' ? handleOpenWorkspaceDialog : undefined}
           reviewContext={mode === 'coding' ? reviewSessionContext : null}
           onOpenReviewContext={() => openWorkbenchTool('pull-requests')}
+          webBridgeEnabled={webBridgeEnabled}
+          onWebBridgeEnabledChange={handleWebBridgeEnabledChange}
+          webBridgePopoverOpen={webBridgeDialogOpen}
+          onWebBridgePopoverOpenChange={setWebBridgeDialogOpen}
         />
       }
     >
@@ -1771,7 +1774,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
 
         <PermissionApprovalModal />
         <AskUserQuestionModal />
-        <WebBridgeStatusDialog open={webBridgeDialogOpen} onOpenChange={setWebBridgeDialogOpen} />
         <PlanActionBar onRevise={() => inputRef.current?.focus()} />
         {(mode !== 'coding' || workspace) && (
           <FloatingInputBar
@@ -1825,8 +1827,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             wikiActive={workbenchOpen && wikiOpen && activeWorkbenchTool === 'wiki'}
             onActivity={handleActivityToggle}
             activityActive={showActivity}
-            webBridgeEnabled={webBridgeEnabled}
-            onWebBridgeEnabledChange={handleWebBridgeEnabledChange}
             permissionMode={permissionMode}
             onPermissionModeChange={handlePermissionModeChange}
           />

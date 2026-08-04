@@ -31,6 +31,7 @@ import type { ViewMode } from '@/components/TeamChatView/types'
 import type { CodeReviewSessionContext } from '@/lib/code-review-session'
 import { ContextBudgetBar } from '@/components/ContextBudgetBar'
 import { useRegistryQuery } from '@/queries'
+import { WebBridgeStatusPopover } from '@/components/shell/WebBridgeStatusDialog'
 
 interface WorkbenchBarProps {
   identity: string
@@ -48,6 +49,11 @@ interface WorkbenchBarProps {
   onChooseWorkspace?: () => void
   reviewContext?: CodeReviewSessionContext | null
   onOpenReviewContext?: () => void
+  /** Controls whether the active session can use the connected browser. */
+  webBridgeEnabled: boolean
+  onWebBridgeEnabledChange: (enabled: boolean) => void
+  webBridgePopoverOpen: boolean
+  onWebBridgePopoverOpenChange: (open: boolean) => void
   dragHandlers?: {
     onMouseDown?: (event: ReactMouseEvent<HTMLElement>) => void
   }
@@ -215,6 +221,15 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             <span className="mx-0.5 h-4 w-px bg-(--color-border)" aria-hidden="true" />
           </>
         )}
+        <WebBridgeStatusPopover
+          open={props.webBridgePopoverOpen}
+          onOpenChange={props.onWebBridgePopoverOpenChange}
+          enabled={props.webBridgeEnabled}
+          onEnabledChange={props.onWebBridgeEnabledChange}
+        />
+
+        <span className="mx-0.5 h-4 w-px bg-(--color-border)" aria-hidden="true" />
+
         <DropdownMenu>
           <DropdownMenuTrigger
             className="group flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-(--color-text-muted) outline-none transition-colors hover:bg-(--bg-key) hover:text-(--color-text) data-[popup-open]:bg-(--bg-key) data-[popup-open]:text-(--color-text)"

@@ -41,8 +41,6 @@ interface FloatingInputBarProps {
   wikiActive?: boolean
   onActivity?: () => void
   activityActive?: boolean
-  webBridgeEnabled?: boolean
-  onWebBridgeEnabledChange?: (enabled: boolean) => void
   permissionMode?: import('@/api/types').PermissionMode
   onPermissionModeChange?: (mode: import('@/api/types').PermissionMode) => void
   goal?: GoalResponse | null
