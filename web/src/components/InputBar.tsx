@@ -155,6 +155,8 @@ interface InputBarProps {
   wikiActive?: boolean
   onActivity?: () => void
   activityActive?: boolean
+  /** Optional mode-specific control rendered with the composer's left actions. */
+  workspaceSelector?: React.ReactNode
   permissionMode?: import('@/api/types').PermissionMode
   onPermissionModeChange?: (mode: import('@/api/types').PermissionMode) => void
 }
@@ -214,6 +216,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   onTodosOpenChange,
   onActivity,
   activityActive,
+  workspaceSelector,
   permissionMode,
   onPermissionModeChange,
   sessionId = null,
@@ -1579,6 +1582,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                       <Activity size={14} aria-hidden="true" />
                     </button>
                   )}
+                  {workspaceSelector}
 
                   <div className="flex-1" />
 

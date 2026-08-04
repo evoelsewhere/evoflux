@@ -41,6 +41,7 @@ interface FloatingInputBarProps {
   wikiActive?: boolean
   onActivity?: () => void
   activityActive?: boolean
+  workspaceSelector?: React.ReactNode
   permissionMode?: import('@/api/types').PermissionMode
   onPermissionModeChange?: (mode: import('@/api/types').PermissionMode) => void
   goal?: GoalResponse | null
