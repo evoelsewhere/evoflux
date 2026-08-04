@@ -198,6 +198,12 @@ export function WebBridgeStatusPopover({
   )
   const automationIsIdle = !textWatches.length && !teachRecording && !issueCapture
 
+  // A live disconnection invalidates the per-chat capability immediately.
+  // Do not leave a green "enabled" state around until the next message send.
+  useEffect(() => {
+    if (status !== null && !connected && enabled) onEnabledChange(false)
+  }, [connected, enabled, onEnabledChange, status])
+
   const handleApproveDraft = useCallback(async (draftId: string) => {
     setApprovingDraftId(draftId)
     try {
@@ -374,6 +380,8 @@ export function WebBridgeStatusPopover({
             <p className="mt-0.5 text-xs text-(--color-text-subtle)">
               {!policyEnabled
                 ? 'WebBridge is disabled in Settings.'
+                : !connected
+                  ? 'Connect the browser extension to enable WebBridge.'
                 : enabled
                   ? 'The agent can use WebBridge.'
                   : 'WebBridge is currently disabled.'}
@@ -384,7 +392,7 @@ export function WebBridgeStatusPopover({
             size="sm"
             variant={enabled ? 'outline' : 'default'}
             onClick={() => onEnabledChange(!enabled)}
-            disabled={!policyEnabled}
+            disabled={!policyEnabled || !connected}
             aria-label={enabled ? 'Disable WebBridge for this chat' : 'Enable WebBridge for this chat'}
             className="shrink-0"
           >
