@@ -11,6 +11,8 @@ import type {
   MessageResponse,
   SessionDetailResponse,
   TeamSessionResolveResponse,
+  SessionFolder,
+  SessionFolderListResponse,
   SessionPageResponse,
   SessionResponse,
   TeamHistoryResponse,
@@ -382,6 +384,84 @@ export async function listTeamSessions(
   return res.json()
 }
 
+// ── Session folders ───────────────────────────────────────────────────────────
+// The list endpoint bundles each folder's newest sessions, so the sidebar's
+// Folders tree comes from one request instead of a query per folder.
+
+export async function listSessionFolders(
+  mode: 'work' | 'coding' | 'aim' = 'work',
+): Promise<SessionFolderListResponse> {
+  const params = new URLSearchParams({ mode })
+  const res = await fetch(`${apiBaseUrl()}/team/session-folders?${params}`)
+  if (!res.ok) await parseDetailOrThrow(res, 'listSessionFolders')
+  return res.json()
+}
+
+export async function listSessionFolderSessions(
+  folderId: string,
+  before?: string | null,
+  limit = 40,
+): Promise<SessionPageResponse> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (before) params.set('before', before)
+  const res = await fetch(
+    `${apiBaseUrl()}/team/session-folders/${encodeURIComponent(folderId)}/sessions?${params}`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'listSessionFolderSessions')
+  return res.json()
+}
+
+export async function createSessionFolder(body: {
+  name: string
+  mode?: 'work' | 'coding' | 'aim'
+  share_context?: boolean
+}): Promise<SessionFolder> {
+  const res = await fetch(`${apiBaseUrl()}/team/session-folders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'work', ...body }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'createSessionFolder')
+  return res.json()
+}
+
+export async function updateSessionFolder(
+  id: string,
+  body: Partial<{ name: string; share_context: boolean; sort_order: number }>,
+): Promise<SessionFolder> {
+  const res = await fetch(`${apiBaseUrl()}/team/session-folders/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'updateSessionFolder')
+  return res.json()
+}
+
+export async function deleteSessionFolder(id: string): Promise<void> {
+  const res = await fetch(`${apiBaseUrl()}/team/session-folders/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'deleteSessionFolder')
+}
+
+/** File a session under a folder; pass `null` to move it back out. */
+export async function setSessionFolder(
+  sessionId: string,
+  folderId: string | null,
+): Promise<SessionResponse> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/sessions/${encodeURIComponent(sessionId)}/folder`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder_id: folderId }),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'setSessionFolder')
+  return res.json()
+}
+
 export async function setCodingWorkspaceVisibility(workspace: string, hidden: boolean): Promise<{ workspace: string; hidden: boolean; updated: number }> {
   const res = await fetch(`${apiBaseUrl()}/team/workspace/visibility`, {
     method: 'PATCH',
@@ -402,6 +482,7 @@ export async function resolveTeamSession(options: {
   mode?: string
   workspace?: string | null
   project_id?: string | null
+  folder_id?: string | null
   model?: string | null
   thinkingLevel?: string | null
   create?: boolean
@@ -416,6 +497,7 @@ export async function resolveTeamSession(options: {
   }
   if (options.workspace !== undefined) body.workspace = options.workspace
   if (options.project_id !== undefined) body.project_id = options.project_id
+  if (options.folder_id !== undefined) body.folder_id = options.folder_id
   if (options.model !== undefined) body.model = options.model
   if (options.thinkingLevel !== undefined) body.thinking_level = options.thinkingLevel
   if (options.create !== undefined) body.create = options.create

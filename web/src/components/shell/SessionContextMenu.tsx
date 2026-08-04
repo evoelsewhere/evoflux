@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useMemo, useRef } from 'react'
-import { Pencil, Pin, Trash2 } from 'lucide-react'
+import { FolderInput, Pencil, Pin, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -40,6 +40,8 @@ interface SessionMenuActions {
   pinned?: boolean
   /** The Pin/Unpin item renders only when this is provided. */
   onTogglePin?: () => void
+  /** The "Move to folder…" item renders only when this is provided. */
+  onMoveToFolder?: (session: SessionResponse) => void
 }
 
 interface SessionContextMenuProps extends SessionMenuActions {
@@ -51,10 +53,15 @@ interface SessionContextMenuProps extends SessionMenuActions {
 /** Approximate menu size for viewport clamping before first paint. */
 const MENU_WIDTH = 176
 const MENU_HEIGHT = 148
+const MENU_ITEM_HEIGHT = 34
 
-function clampMenuPosition(x: number, y: number): { left: number; top: number } {
+function clampMenuPosition(
+  x: number,
+  y: number,
+  menuHeight: number,
+): { left: number; top: number } {
   const maxLeft = Math.max(8, window.innerWidth - MENU_WIDTH - 8)
-  const maxTop = Math.max(8, window.innerHeight - MENU_HEIGHT - 8)
+  const maxTop = Math.max(8, window.innerHeight - menuHeight - 8)
   return {
     left: Math.min(Math.max(8, x), maxLeft),
     top: Math.min(Math.max(8, y), maxTop),
@@ -68,12 +75,14 @@ export function SessionContextMenu({
   onDelete,
   pinned,
   onTogglePin,
+  onMoveToFolder,
 }: SessionContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
-  const position = useMemo(
-    () => (anchor ? clampMenuPosition(anchor.x, anchor.y) : null),
-    [anchor],
-  )
+  const position = useMemo(() => {
+    if (!anchor) return null
+    const height = MENU_HEIGHT + (onMoveToFolder ? MENU_ITEM_HEIGHT : 0)
+    return clampMenuPosition(anchor.x, anchor.y, height)
+  }, [anchor, onMoveToFolder])
 
   useEffect(() => {
     if (!anchor) return
@@ -139,6 +148,20 @@ export function SessionContextMenu({
           <Pencil size={14} aria-hidden="true" />
           Edit title
         </button>
+        {onMoveToFolder && (
+          <button
+            type="button"
+            role="menuitem"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
+            onClick={() => {
+              onClose()
+              onMoveToFolder(session)
+            }}
+          >
+            <FolderInput size={14} aria-hidden="true" />
+            Move to folder…
+          </button>
+        )}
         <button
           type="button"
           role="menuitem"
@@ -169,6 +192,7 @@ export function SessionActionsDialog({
   onDelete,
   pinned,
   onTogglePin,
+  onMoveToFolder,
 }: SessionActionsDialogProps) {
   return (
     <Dialog
@@ -209,6 +233,20 @@ export function SessionActionsDialog({
             <Pencil size={14} aria-hidden="true" />
             Edit title
           </Button>
+          {onMoveToFolder && (
+            <Button
+              type="button"
+              variant="outline"
+              className="justify-start"
+              onClick={() => {
+                onClose()
+                if (session) onMoveToFolder(session)
+              }}
+            >
+              <FolderInput size={14} aria-hidden="true" />
+              Move to folder…
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"

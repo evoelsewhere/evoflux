@@ -21,6 +21,11 @@ export const queryKeys = {
         ['team', 'sessions', 'list', offset, limit] as const,
       detail: (id: string) => ['team', 'sessions', id] as const,
     },
+    // Sidebar folders — one entry per mode, holding the folders *and* their
+    // sessions (see GET /team/session-folders), so filing a session
+    // invalidates a single key. The no-arg form is the every-mode prefix.
+    sessionFolders: (mode: string) => ['team', 'session-folders', mode] as const,
+    sessionFoldersAll: () => ['team', 'session-folders'] as const,
     // Workspace-files listing per session — powers the Artifacts panel.
     files: (sessionId: string) => ['team', 'files', sessionId] as const,
     // Effective root only — powers desktop "Open in" without scanning files.

@@ -8,6 +8,14 @@ export {
   useUpdateTeamSessionTitleMutation,
 } from './useSessionsQuery'
 export {
+  useSessionFoldersQuery,
+  useCreateSessionFolderMutation,
+  useUpdateSessionFolderMutation,
+  useDeleteSessionFolderMutation,
+  useLoadMoreFolderSessionsMutation,
+  useSetSessionFolderMutation,
+} from './useSessionFoldersQuery'
+export {
   useWikiTreeQuery,
   useWikiFileQuery,
   useWriteWikiFileMutation,

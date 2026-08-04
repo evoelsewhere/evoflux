@@ -67,6 +67,11 @@ export const STORAGE_KEYS = {
     expanded: 'oa.codingSidebar.expanded',
   },
 
+  /** Work sidebar UI state. */
+  work: {
+    foldersExpanded: 'oa.workSidebar.foldersExpanded',
+  },
+
   /** AIM sidebar UI state. */
   aim: {
     expanded: 'oa.aimSidebar.expanded',

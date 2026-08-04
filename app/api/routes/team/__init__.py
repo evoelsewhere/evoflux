@@ -7,6 +7,8 @@ resource):
   GET /agents, GET /sessions, DELETE /sessions/{sid}, GET /{sid}/history
 - :mod:`app.api.routes.team.files` — GET /{sid}/uploads/{filename},
   GET /{sid}/media/{path}, GET /{sid}/files
+- :mod:`app.api.routes.team.folders` — CRUD /session-folders,
+  PATCH /sessions/{sid}/folder
 - :mod:`app.api.routes.team.todos` — GET /sessions/{sid}/todos
 - :mod:`app.api.routes.team.permissions` — GET /{sid}/permissions,
   POST /{sid}/permissions/{request_id}/reply
@@ -24,6 +26,7 @@ from app.api.routes.team import (
     browser,
     chat,
     files,
+    folders,
     git,
     permissions,
     presentation_renderer,
@@ -42,6 +45,9 @@ from app.api.routes.team.chat import _serialize_agent
 
 router = APIRouter()
 router.include_router(browser.router)
+# Before chat so the literal /session-folders paths are matched ahead of
+# chat.py's parameterised /sessions/{session_id} routes.
+router.include_router(folders.router)
 router.include_router(chat.router)
 router.include_router(files.router)
 router.include_router(git.router)

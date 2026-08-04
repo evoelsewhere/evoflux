@@ -1052,6 +1052,7 @@ async def get_latest_top_level_session(
     mode: str,
     workspace: str | None,
     project_id: UUID | None = None,
+    folder_id: UUID | None = None,
     tags: list[str] | None = None,
     tag_match: Literal["exact", "contains"] = "exact",
 ) -> ChatSession | None:
@@ -1062,6 +1063,10 @@ async def get_latest_top_level_session(
     all of the project's repos, so it must never be matched/reused by the first
     repo's path alone (which could collide with an unrelated single-repo session
     or a different project sharing that path).
+
+    ``folder_id`` scopes the lookup to one sidebar folder, so opening a
+    folder never hands back a session filed elsewhere. Leaving it ``None``
+    keeps the historical behaviour of matching regardless of folder.
 
     ``tags=None`` (the default) keeps the historical behaviour — no tag
     filtering at all. Any other value uses exact tag-SET equality unless
@@ -1076,6 +1081,8 @@ async def get_latest_top_level_session(
         )
         .order_by(col(ChatSession.created_at).desc())
     )
+    if folder_id is not None:
+        stmt = stmt.where(col(ChatSession.folder_id) == folder_id)
     if project_id is not None:
         stmt = stmt.where(col(ChatSession.project_id) == project_id)
     else:

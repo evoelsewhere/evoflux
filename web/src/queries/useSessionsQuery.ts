@@ -4,7 +4,8 @@ import type { SessionPageResponse, SessionResponse } from '@/api/types'
 import { queryKeys } from './keys'
 import { patchSessionInPageData } from './session-cache'
 
-const PAGE_SIZE = 20
+const WORK_PAGE_SIZE = 40
+const DEFAULT_PAGE_SIZE = 20
 const CODING_WORKSPACE_PAGE_SIZE = 5
 const CODING_WORKSPACE_SMOOTHING_MS = 5000
 
@@ -16,7 +17,7 @@ export function useTeamSessionsQuery(mode: 'work' | 'coding' | 'aim' = 'work') {
   return useInfiniteQuery({
     queryKey: queryKeys.team.sessions.infinite(mode),
     queryFn: ({ pageParam }: { pageParam: string | null }) =>
-      listTeamSessions(pageParam, PAGE_SIZE, { mode }),
+      listTeamSessions(pageParam, mode === 'work' ? WORK_PAGE_SIZE : DEFAULT_PAGE_SIZE, { mode }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage: SessionPageResponse) =>
       lastPage.has_more ? lastPage.next_cursor : undefined,
@@ -66,6 +67,9 @@ export function useDeleteTeamSessionMutation() {
     mutationFn: deleteTeamSession,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
+      // A deleted session may have been filed in a sidebar folder, whose
+      // sessions live in their own cache entry.
+      queryClient.invalidateQueries({ queryKey: queryKeys.team.sessionFoldersAll() })
     },
   })
 }

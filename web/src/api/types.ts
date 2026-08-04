@@ -344,6 +344,31 @@ export interface SessionResponse {
   running?: boolean
   /** Feature tags attached at resolve time (e.g. "webbridge"); absent/[] when none. */
   tags?: string[]
+  /** Sidebar folder the session is filed under; absent when unfiled. */
+  folder_id?: string | null
+}
+
+// ── Session folders (sidebar grouping) ───────────────────────────────────────
+
+export interface SessionFolder {
+  id: string
+  name: string
+  mode: string
+  /** When true, each session in the folder sees a digest of its siblings. */
+  share_context: boolean
+  sort_order: number
+  /** Total sessions filed here — can exceed the first inline page. */
+  session_count: number
+  sessions: SessionResponse[]
+  /** Cursor for the next page of older chats, when one exists. */
+  next_cursor: string | null
+  has_more: boolean
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface SessionFolderListResponse {
+  folders: SessionFolder[]
 }
 
 // ── Coding Projects (multi-repo) ─────────────────────────────────────────────

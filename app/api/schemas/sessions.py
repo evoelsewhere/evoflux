@@ -23,6 +23,10 @@ class TeamSessionResolveRequest(BaseModel):
     mode: str = "work"
     workspace: str | None = None
     project_id: UUID | None = None
+    # Sidebar folder the resolved/created session is filed under. Also scopes
+    # the reuse lookup, so "new chat in this folder" cannot hand back a
+    # session that lives outside it.
+    folder_id: UUID | None = None
     model: str | None = None
     thinking_level: str | None = None
     create: bool = False
@@ -59,6 +63,29 @@ class TeamSessionResolveRequest(BaseModel):
 
 class TeamSessionUpdateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=255)
+
+
+class SessionFolderCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    mode: str = "work"
+    share_context: bool = True
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _normalize_mode(cls, value: object) -> object:
+        return normalize_mode(value) if isinstance(value, str) else value
+
+
+class SessionFolderUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    share_context: bool | None = None
+    sort_order: int | None = None
+
+
+class SessionFolderAssignRequest(BaseModel):
+    """Body of ``PATCH /team/sessions/{id}/folder``; ``None`` un-files."""
+
+    folder_id: UUID | None = None
 
 
 class TeamWorkspaceVisibilityRequest(BaseModel):
@@ -101,6 +128,7 @@ class SessionResponse(_ExcludeNoneModel):
     mode: str = "work"
     workspace: str | None = None
     project_id: UUID | None = None
+    folder_id: UUID | None = None
     permission_mode: str = "auto"
     model: str | None = None
     thinking_level: str | None = None
@@ -144,6 +172,30 @@ class SessionPageResponse(BaseModel):
     data: list[SessionResponse]
     next_cursor: str | None = None
     has_more: bool
+
+
+class SessionFolderResponse(BaseModel):
+    """One sidebar folder with the sessions it holds.
+
+    The first page rides along inline so the sidebar renders immediately.
+    Larger folders expose a cursor for incrementally loading older chats.
+    """
+
+    id: UUID
+    name: str
+    mode: str = "work"
+    share_context: bool = True
+    sort_order: int = 0
+    session_count: int = 0
+    sessions: list[SessionResponse] = Field(default_factory=list)
+    next_cursor: str | None = None
+    has_more: bool = False
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class SessionFolderListResponse(BaseModel):
+    folders: list[SessionFolderResponse] = Field(default_factory=list)
 
 
 class MessageResponse(_ExcludeNoneModel):
