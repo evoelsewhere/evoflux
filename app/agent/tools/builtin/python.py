@@ -32,6 +32,7 @@ from loguru import logger
 from pydantic import Field
 
 from app.agent.artifacts import shell_output_dir
+from app.agent.process_sandbox import sandboxed_process_argv
 from app.agent.sandbox import get_sandbox
 from app.agent.tools.registry import InjectedArg, Tool
 
@@ -99,7 +100,8 @@ async def _python(
     timeout = (
         timeout_seconds if timeout_seconds is not None else _DEFAULT_TIMEOUT_SECONDS
     )
-    cwd = get_sandbox().workspace_root
+    sandbox = get_sandbox()
+    cwd = sandbox.workspace_root
 
     desc_tag = f" ({description})" if description else ""
     logger.info(
@@ -127,15 +129,27 @@ async def _python(
         tmp.close()
 
     try:
+        # Keep arbitrary Python execution under the same native containment
+        # policy as shell commands.  In Required mode this also fails closed
+        # on platforms without a supported backend.
+        exec_bin, exec_argv = sandboxed_process_argv(
+            sys.executable,
+            ["-u", tmp_path],
+            sandbox=sandbox,
+            cwd=cwd,
+        )
+        from app.agent.tools.builtin.shell import _scrubbed_env
+
+        env = _scrubbed_env(inherit=sandbox.inherit_shell_environment)
         try:
             proc = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-u",  # unbuffered stdout for streaming
-                tmp_path,
+                exec_bin,
+                *exec_argv,
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=str(cwd),
+                env=env,
             )
 
             try:
@@ -156,11 +170,12 @@ async def _python(
 
             def _run_sync() -> subprocess.CompletedProcess[bytes]:
                 return subprocess.run(  # noqa: S603
-                    [sys.executable, "-u", tmp_path],
+                    [exec_bin, *exec_argv],
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     cwd=str(cwd),
+                    env=env,
                     timeout=timeout,
                 )
 

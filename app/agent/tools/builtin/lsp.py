@@ -23,7 +23,9 @@ from urllib.parse import unquote, urlparse
 
 from pydantic import Field
 
+from app.agent.process_sandbox import sandboxed_process_argv
 from app.agent.sandbox import get_sandbox
+from app.agent.tools.builtin.shell import _scrubbed_env
 from app.agent.lsp_manager import LanguageServerUnavailable, get_language_server
 from app.agent.tools.registry import InjectedArg, Tool
 
@@ -62,11 +64,20 @@ async def _run(
 
     def _sync() -> tuple[int, str, str]:
         try:
+            sandbox = get_sandbox()
+            process_cwd = cwd or sandbox.workspace_root
+            exec_bin, exec_argv = sandboxed_process_argv(
+                cmd[0],
+                list(cmd[1:]),
+                sandbox=sandbox,
+                cwd=process_cwd,
+            )
             r = subprocess.run(
-                list(cmd),
+                [exec_bin, *exec_argv],
                 capture_output=True,
                 text=True,
-                cwd=str(cwd) if cwd else None,
+                cwd=str(process_cwd),
+                env=_scrubbed_env(inherit=sandbox.inherit_shell_environment),
                 timeout=timeout,
                 check=False,
             )

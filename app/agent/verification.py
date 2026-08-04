@@ -14,7 +14,9 @@ from typing import Any
 from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
+from app.agent.process_sandbox import sandboxed_process_argv
 from app.agent.sandbox import get_sandbox
+from app.agent.tools.builtin.shell import _scrubbed_env
 from app.services.turn_changes import _parse_patch_ops
 
 
@@ -246,12 +248,21 @@ async def _run_command(
 ) -> VerificationEvidence:
     command_id = str(uuid.uuid4())
     try:
+        sandbox = get_sandbox()
+        exec_bin, exec_argv = sandboxed_process_argv(
+            command[0],
+            command[1:],
+            sandbox=sandbox,
+            cwd=cwd,
+        )
         proc = await asyncio.create_subprocess_exec(
-            *command,
+            exec_bin,
+            *exec_argv,
             cwd=str(cwd),
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
+            env=_scrubbed_env(inherit=sandbox.inherit_shell_environment),
         )
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=180)
         output = stdout.decode("utf-8", errors="replace")[-8000:]
@@ -278,14 +289,19 @@ async def _git_revision(workspace: Path) -> str | None:
     if not git:
         return None
     try:
-        proc = await asyncio.create_subprocess_exec(
+        sandbox = get_sandbox()
+        exec_bin, exec_argv = sandboxed_process_argv(
             git,
-            "-C",
-            str(workspace),
-            "rev-parse",
-            "HEAD",
+            ["-C", str(workspace), "rev-parse", "HEAD"],
+            sandbox=sandbox,
+            cwd=workspace,
+        )
+        proc = await asyncio.create_subprocess_exec(
+            exec_bin,
+            *exec_argv,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
+            env=_scrubbed_env(inherit=sandbox.inherit_shell_environment),
         )
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
         return stdout.decode().strip() if proc.returncode == 0 else None

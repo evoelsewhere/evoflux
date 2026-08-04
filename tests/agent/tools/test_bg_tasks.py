@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 
@@ -24,7 +26,7 @@ async def test_shell_bg_start_and_status():
 
     # Start a long-running background command
     result = await shell_bg_start.arun(
-        command='python -c "import time; time.sleep(30)"'
+        command=f'{sys.executable} -c "import time; time.sleep(30)"'
     )
     assert "task_id" in result
     assert "bg_" in result
@@ -85,7 +87,7 @@ async def test_shell_bg_wait_timeout():
     )
 
     result = await shell_bg_start.arun(
-        command='python -c "import time; time.sleep(30)"'
+        command=f'{sys.executable} -c "import time; time.sleep(30)"'
     )
     task_id = _extract_task_id(result)
     assert task_id is not None
