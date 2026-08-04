@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { WorkbenchTool } from '@/stores/useUIStore'
+import { isBuiltInBrowserEnabled } from '@/components/BrowserViewer/browserPreferences'
 
 export interface WorkbenchContext {
   mode: 'work' | 'coding' | 'aim'
@@ -95,7 +96,10 @@ export function isWorkbenchToolEnabled(
   }
   if (tool === 'graph') return context.mode === 'coding' && Boolean(context.workspace)
   if (tool === 'files') return Boolean(context.sessionId || context.workspace)
-  if (tool === 'terminal' || tool === 'browser' || tool === 'side-chat') {
+  if (tool === 'browser') {
+    return Boolean(context.sessionId) && isBuiltInBrowserEnabled()
+  }
+  if (tool === 'terminal' || tool === 'side-chat') {
     return Boolean(context.sessionId)
   }
   return true

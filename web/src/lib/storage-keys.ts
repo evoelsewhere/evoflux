@@ -79,6 +79,7 @@ export const STORAGE_KEYS = {
 
   browser: {
     preferences: 'oa.browser.preferences',
+    webBridgeDefaultEnabled: 'oa.browser.webbridge-default-enabled',
   },
 
   /** sessionStorage, not localStorage — ephemeral one-shot handoffs. */

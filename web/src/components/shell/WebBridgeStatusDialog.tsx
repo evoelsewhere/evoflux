@@ -98,6 +98,8 @@ interface WebBridgeStatusPopoverProps {
   enabled: boolean
   onEnabledChange: (enabled: boolean) => void
   onStatusChange?: (status: WebBridgeStatusResponse) => void
+  /** When false, the master policy switch is off and per-chat enable is blocked. */
+  policyEnabled?: boolean
 }
 
 export function WebBridgeStatusPopover({
@@ -106,6 +108,7 @@ export function WebBridgeStatusPopover({
   enabled,
   onEnabledChange,
   onStatusChange,
+  policyEnabled = true,
 }: WebBridgeStatusPopoverProps) {
   const [status, setStatus] = useState<WebBridgeStatusResponse | null>(null)
   const [audit, setAudit] = useState<WebBridgeAuditEntry[]>([])
@@ -369,7 +372,11 @@ export function WebBridgeStatusPopover({
           <div className="min-w-0">
             <p className="text-xs font-medium text-(--color-text)">Use in this chat</p>
             <p className="mt-0.5 text-xs text-(--color-text-subtle)">
-              {enabled ? 'The agent can use WebBridge.' : 'WebBridge is currently disabled.'}
+              {!policyEnabled
+                ? 'WebBridge is disabled in Settings.'
+                : enabled
+                  ? 'The agent can use WebBridge.'
+                  : 'WebBridge is currently disabled.'}
             </p>
           </div>
           <Button
@@ -377,6 +384,7 @@ export function WebBridgeStatusPopover({
             size="sm"
             variant={enabled ? 'outline' : 'default'}
             onClick={() => onEnabledChange(!enabled)}
+            disabled={!policyEnabled}
             aria-label={enabled ? 'Disable WebBridge for this chat' : 'Enable WebBridge for this chat'}
             className="shrink-0"
           >

@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.core.runtime_settings import (
     CodeReviewSettings,
     GitSettings,
+    WebBridgeSettings,
     load_runtime_settings,
     provider_visible_models,
     save_runtime_settings,
@@ -45,6 +46,7 @@ from app.api.schemas.settings import (
     SeedInstallRequest,
     SeedInstallResponse,
     VersionControlSettingsBody,
+    WebBridgeSettingsBody,
 )
 from app.services.provider_usage import (
     ProviderUsageCredentialsError,
@@ -229,6 +231,47 @@ async def update_version_control_settings(
     )
     save_runtime_settings(cfg)
     return _version_control_settings_body()
+
+
+def _webbridge_settings_body() -> WebBridgeSettingsBody:
+    cfg = load_runtime_settings()
+    return WebBridgeSettingsBody(
+        enabled=cfg.webbridge.enabled,
+        allow_evaluate=cfg.webbridge.allow_evaluate,
+    )
+
+
+@router.get("/webbridge")
+async def get_webbridge_settings() -> WebBridgeSettingsBody:
+    try:
+        return _webbridge_settings_body()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/webbridge")
+async def update_webbridge_settings(
+    body: WebBridgeSettingsBody,
+) -> WebBridgeSettingsBody:
+    try:
+        cfg = load_runtime_settings()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    cfg.webbridge = WebBridgeSettings(
+        enabled=body.enabled,
+        allow_evaluate=body.allow_evaluate,
+        allowed_domains=cfg.webbridge.allowed_domains,
+        blocked_domains=cfg.webbridge.blocked_domains,
+        audit_log_size=cfg.webbridge.audit_log_size,
+        sharing=cfg.webbridge.sharing,
+        interactions=cfg.webbridge.interactions,
+    )
+    save_runtime_settings(cfg)
+    # Keep the live policy cache in sync without waiting for the cleanup loop.
+    from app.services.webbridge_service import webbridge_manager
+
+    webbridge_manager.reload_policy()
+    return _webbridge_settings_body()
 
 
 # Providers (Settings -> Providers tab)

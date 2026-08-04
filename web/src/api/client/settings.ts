@@ -75,6 +75,29 @@ export async function updateVersionControlSettings(
   return res.json()
 }
 
+export type WebBridgeSettings = {
+  enabled: boolean
+  allow_evaluate: boolean
+}
+
+export async function getWebBridgeSettings(): Promise<WebBridgeSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/webbridge`)
+  if (!res.ok) await parseDetailOrThrow(res, 'GET /settings/webbridge')
+  return res.json()
+}
+
+export async function updateWebBridgeSettings(
+  body: WebBridgeSettings,
+): Promise<WebBridgeSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/webbridge`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'PUT /settings/webbridge')
+  return res.json()
+}
+
 export type MultimodalSectionSettings = {
   model: string
   [key: string]: string | number | boolean | null

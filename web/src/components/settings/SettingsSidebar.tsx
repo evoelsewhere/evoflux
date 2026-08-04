@@ -14,6 +14,7 @@ import {
   Bot,
   BrainCircuit,
   GitBranch,
+  Globe2,
   Info,
   KeyRound,
   Palette,
@@ -52,6 +53,7 @@ type SidebarPath =
   | '/settings/mcp'
   | '/settings/memory'
   | '/settings/sandbox'
+  | '/settings/browser'
   | '/settings/notifications'
   | '/settings/appearance'
   | '/settings/diagnostics'
@@ -226,6 +228,12 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             icon: Shield,
             matchPrefix: '/settings/sandbox',
             count: sandboxQ.data?.denied_patterns.length ?? null,
+          },
+          {
+            to: '/settings/browser',
+            label: t('Browser'),
+            icon: Globe2,
+            matchPrefix: '/settings/browser',
           },
           {
             to: '/settings/notifications',

@@ -50,7 +50,7 @@ import { ChatOverlayPanels, ChatTrailingPanels } from '@/components/chat/ChatPan
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
 import { useTodosQuery } from '@/queries/useTodosQuery'
-import { useRegistryQuery, useTriggerDreamMutation } from '@/queries'
+import { useRegistryQuery, useTriggerDreamMutation, useWebBridgeSettingsQuery } from '@/queries'
 import { getSessionWorkspaceRoot, getTeamSession, getWebBridgeStatus, replyPlanApproval, resolveTeamSession, setSessionPermissionMode } from '@/api/client'
 import { apiBaseUrl } from '@/api/base-url'
 import { useShallow } from 'zustand/react/shallow'
@@ -72,6 +72,7 @@ import { PlanActionBar } from '../PlanReviewPanel'
 import { type InputBarHandle } from '../InputBar'
 import { FloatingInputBar } from '../FloatingInputBar'
 import { useDirectBrowserPresence } from '@/components/BrowserViewer/useDirectBrowserPresence'
+import { areWebBridgeDefaultsEnabled } from '@/components/BrowserViewer/browserPreferences'
 import { useDesktopPresentationRenderer } from '@/components/PresentationRenderer/useDesktopPresentationRenderer'
 import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
 import { WorkbenchDock, WorkbenchSurface } from '@/components/workbench/WorkbenchDock'
@@ -495,13 +496,20 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     [sessionTags],
   )
   const persistedWebBridgeEnabled = sessionTags?.includes('webbridge')
+  const webBridgeSettings = useWebBridgeSettingsQuery()
+  const webBridgePolicyEnabled = webBridgeSettings.data?.enabled !== false
   useEffect(() => {
-    if (!activeSessionId) {
+    if (!webBridgePolicyEnabled) {
       setWebBridgeEnabled(false)
-    } else if (persistedWebBridgeEnabled !== undefined) {
-      setWebBridgeEnabled(persistedWebBridgeEnabled)
+      return
     }
-  }, [activeSessionId, persistedWebBridgeEnabled])
+    if (!activeSessionId) {
+      setWebBridgeEnabled(areWebBridgeDefaultsEnabled())
+      return
+    }
+    if (sessionTags === undefined) return
+    setWebBridgeEnabled(Boolean(persistedWebBridgeEnabled))
+  }, [activeSessionId, persistedWebBridgeEnabled, sessionTags, webBridgePolicyEnabled])
   // Lead capabilities — used to drive composer affordances (slash menu).
   // aim sessions are workspace-bound like coding (primary workspace = the
   // target repo) — the backend requires a workspace on every aim message.

@@ -29,6 +29,7 @@ import { useToastStore } from '@/stores/useToastStore'
 import {
   loadBrowserPreferences,
   saveBrowserPreferences,
+  subscribeBrowserPreferences,
   type BrowserPreferences,
 } from './browserPreferences'
 import { DirectBrowserSettingsView } from './DirectBrowserSettingsView'
@@ -72,7 +73,7 @@ export function DirectBrowserShell({
   const onTitleChangeRef = useRef(onTitleChange)
   const urlFocusedRef = useRef(false)
   const resizingRef = useRef(false)
-  const [enabled, setEnabled] = useState(true)
+  const [enabled, setEnabled] = useState(() => loadBrowserPreferences().enabled)
   const [findOpen, setFindOpen] = useState(false)
   const [findQuery, setFindQuery] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
@@ -81,6 +82,11 @@ export function DirectBrowserShell({
   const [width, setWidth] = useState(DEFAULT_WIDTH)
   const preset = useMotionPreset()
   const pushToast = useToastStore((state) => state.push)
+
+  useEffect(() => subscribeBrowserPreferences((next) => {
+    setPreferences(next)
+    setEnabled(next.enabled)
+  }), [])
 
   const reportError = useCallback((message: string) => {
     pushToast({
@@ -337,12 +343,13 @@ export function DirectBrowserShell({
             <div ref={viewportRef} className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-white">
               {settingsOpen ? (
                 <DirectBrowserSettingsView
-                  active={hasPage}
+                  active={enabled}
                   supported={browser.supported}
                   preferences={preferences}
                   onBack={() => setSettingsOpen(false)}
                   onToggleBrowser={(next) => {
                     setEnabled(next)
+                    updatePreferences({ ...preferences, enabled: next })
                     if (!next) void browser.closeAll()
                   }}
                   onPreferencesChange={updatePreferences}

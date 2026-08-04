@@ -5,6 +5,7 @@ import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
 
 vi.mock('@/queries', () => ({
   useRegistryQuery: () => ({ data: undefined }),
+  useWebBridgeSettingsQuery: () => ({ data: { enabled: true, allow_evaluate: true } }),
 }))
 
 describe('WorkbenchBar browser access control', () => {
