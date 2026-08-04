@@ -41,6 +41,7 @@ import { AgentView } from '../AgentView'
 import { RecentUsageCard } from '../ChatWelcome'
 import { AppShell } from '@/components/shell/AppShell'
 import { WorkspaceInfoCard } from '../WorkspaceInfoCard'
+import { WorkFolderSelector } from '../WorkFolderSelector'
 import { ProjectInfoCard } from '../ProjectInfoCard'
 import { useProjectQuery } from '@/queries/useProjectsQuery'
 import { CodingSidebar } from '../CodingSidebar'
@@ -200,6 +201,7 @@ interface TeamChatViewProps {
 const EMPTY_AGENT_STREAMS: Record<string, AgentStream> = {}
 const EMPTY_BLOCKS: AgentStream['blocks'] = []
 const EMPTY_REVERTED_MESSAGES: Array<{ role: string; content: string }> = []
+const TEAM_SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 interface PendingCodeReviewStart {
   sessionId: string
@@ -220,7 +222,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
-  const { isMacOverlay, isTauri, os } = usePlatform()
+  const { isMacOverlay, os } = usePlatform()
   // Manual drag pattern: a mousedown handler that only starts a drag
   // when the user pressed on the bare header, not on a child button.
   // The hook returns `{}` outside Tauri so the spread is a no-op in
@@ -485,6 +487,9 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const { data: todosData } = useTodosQuery(sessionIdState)
   const todos = todosData?.todos ?? []
   const activeSessionId = sessionIdState ?? sessionId ?? null
+  const validWorkSessionId = activeSessionId && TEAM_SESSION_ID_RE.test(activeSessionId)
+    ? activeSessionId
+    : null
   const reviewSessionContext = useMemo(
     () => parseCodeReviewSessionTags(sessionTags),
     [sessionTags],
@@ -501,11 +506,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   // aim sessions are workspace-bound like coding (primary workspace = the
   // target repo) — the backend requires a workspace on every aim message.
   const agentWorkspace = mode === 'coding' || mode === 'aim' ? workspace : null
-  const isDesktopShell = isTauri && os !== 'ios' && os !== 'android'
   const workWorkspaceQuery = useQuery({
-    queryKey: queryKeys.team.workspaceRoot(activeSessionId ?? ''),
-    queryFn: () => getSessionWorkspaceRoot(activeSessionId as string),
-    enabled: isDesktopShell && mode === 'work' && Boolean(activeSessionId),
+    queryKey: queryKeys.team.workspaceRoot(validWorkSessionId ?? ''),
+    queryFn: () => getSessionWorkspaceRoot(validWorkSessionId as string),
+    enabled: mode === 'work' && Boolean(validWorkSessionId),
     staleTime: 30_000,
   })
   const workbenchWorkspace = mode === 'work'
@@ -1827,6 +1831,13 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             wikiActive={workbenchOpen && wikiOpen && activeWorkbenchTool === 'wiki'}
             onActivity={handleActivityToggle}
             activityActive={showActivity}
+            workspaceSelector={mode === 'work' ? (
+              <WorkFolderSelector
+                sessionId={validWorkSessionId}
+                workspaceRoot={workWorkspaceQuery.data?.workspace_root ?? null}
+                loading={workWorkspaceQuery.isLoading}
+              />
+            ) : undefined}
             permissionMode={permissionMode}
             onPermissionModeChange={handlePermissionModeChange}
           />
