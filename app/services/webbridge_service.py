@@ -211,6 +211,7 @@ class ExtensionConnection:
         self.tabs: list[dict[str, Any]] = []
         self.current_url: str = ""
         self.current_title: str = ""
+        self.automation: dict[str, Any] = {}
 
     def is_active(self, now: float) -> bool:
         return now - self.last_seen < _IDLE_TIMEOUT
@@ -227,6 +228,7 @@ class ExtensionConnection:
             "current_url": self.current_url,
             "current_title": self.current_title,
             "tabs": self.tabs,
+            "automation": self.automation,
         }
 
 
@@ -862,6 +864,8 @@ class WebBridgeManager:
                 conn.tabs = data.get("tabs", [])
                 conn.current_url = data.get("url", "")
                 conn.current_title = data.get("title", "")
+            elif event == "automation_state":
+                conn.automation = data if isinstance(data, dict) else {}
 
         envelope = {
             "type": "event",

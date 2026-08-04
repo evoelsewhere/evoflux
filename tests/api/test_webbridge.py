@@ -500,6 +500,45 @@ def test_event_updates_extension_state(client: TestClient):
         assert ext["tabs"] == [{"index": 0, "title": "Example", "active": True}]
 
 
+def test_automation_event_is_exposed_in_desktop_status(client: TestClient):
+    relay_path, _ = _ticketed_relay_path()
+    with client.websocket_connect(relay_path) as ws:
+        _register(ws)
+        automation = {
+            "updated_at": 1_700_000_000_000,
+            "active_tab_id": 42,
+            "text_watches": [
+                {
+                    "id": "watch-1",
+                    "tab_id": 42,
+                    "page_url": "https://example.com/build",
+                    "needle": "Build complete",
+                    "state": "armed",
+                    "expires_at": 1_700_000_900_000,
+                }
+            ],
+            "teach_recording": None,
+            "issue_capture": None,
+            "human_control_lease": None,
+            "agent_control_tab_ids": [42],
+        }
+        ws.send_text(
+            json.dumps(
+                {
+                    "type": "event",
+                    "event": "automation_state",
+                    "data": automation,
+                }
+            )
+        )
+        for _ in range(50):
+            extension = client.get(f"{_PREFIX}/status").json()["extensions"][0]
+            if extension["automation"]:
+                break
+            time.sleep(0.01)
+        assert extension["automation"] == automation
+
+
 def test_relay_rejects_oversized_frames(client: TestClient):
     relay_path, _ = _ticketed_relay_path()
     with client.websocket_connect(relay_path) as ws:
