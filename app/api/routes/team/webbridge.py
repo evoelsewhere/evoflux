@@ -3561,6 +3561,7 @@ class ExtensionInfo(BaseModel):
     current_url: str = ""
     current_title: str = ""
     tabs: list[dict[str, Any]] = Field(default_factory=list)
+    automation: dict[str, Any] = Field(default_factory=dict)
 
 
 class WebBridgeStatusResponse(BaseModel):
