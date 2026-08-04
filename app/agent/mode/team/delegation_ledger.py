@@ -56,7 +56,10 @@ async def load_open_tasks(
                 DelegationTask.lead_session_id == lead_session_id,
                 col(DelegationTask.status).in_(OPEN_STATUSES),
             )
-            .order_by(col(DelegationTask.created_at).asc())
+            .order_by(
+                col(DelegationTask.created_at).asc(),
+                col(DelegationTask.id).asc(),
+            )
         )
     ).all()
     return list(rows)
@@ -376,7 +379,10 @@ async def tasks_with_worktrees(
         await db.exec(
             select(DelegationTask)
             .where(DelegationTask.lead_session_id == lead_session_id)
-            .order_by(col(DelegationTask.created_at).asc())
+            .order_by(
+                col(DelegationTask.created_at).asc(),
+                col(DelegationTask.id).asc(),
+            )
         )
     ).all()
     return [
@@ -557,7 +563,10 @@ async def load_undelivered_tasks(
                 col(DelegationTask.dispatched_at).is_(None),
                 col(DelegationTask.recipient).in_(live_recipients),
             )
-            .order_by(col(DelegationTask.created_at).asc())
+            .order_by(
+                col(DelegationTask.created_at).asc(),
+                col(DelegationTask.id).asc(),
+            )
         )
     ).all()
     return list(rows)
