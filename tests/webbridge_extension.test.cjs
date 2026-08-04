@@ -2225,6 +2225,47 @@ test("Native Messaging carries a scoped pairing across sidecar port changes", as
   assert.equal(worker.sockets[0].url, "ws://127.0.0.1:42000/api/team/webbridge/relay?_ticket=replacement-ticket");
 });
 
+test("Native Messaging heartbeat reconnects when desktop changes endpoint", async () => {
+  let nativePort = 41000;
+  const worker = loadWorker({
+    storedConfig: {
+      relayBase: "ws://127.0.0.1:41000",
+      pairingCredential: "existing-native-secret",
+      pairingId: "pairing-native",
+      pairingRelayBase: "ws://127.0.0.1:41000",
+      pairingTransport: "native",
+    },
+    nativeMessageResponder(_host, _message, callback) {
+      callback({
+        ok: true,
+        protocol_version: 1,
+        app_pid: 4244,
+        base_url: `http://127.0.0.1:${nativePort}`,
+        discovery_token: "heartbeat-discovery-token-long-enough",
+      });
+    },
+    fetchResponder: async (url) => {
+      assert.equal(url, "http://127.0.0.1:41000/api/team/webbridge/relay-ticket");
+      return { ok: true, async json() { return { ticket: "initial-ticket" }; } };
+    },
+  });
+
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  const firstSocket = worker.sockets[0];
+  firstSocket.readyState = worker.context.WebSocket.OPEN;
+  firstSocket.onopen();
+
+  nativePort = 42000;
+  assert.equal(await worker.run("refreshNativeConnectionIfChanged()"), true);
+
+  assert.equal(firstSocket.readyState, worker.context.WebSocket.CLOSED);
+  assert.equal(worker.storedConfig.relayBase, "ws://127.0.0.1:42000");
+  assert.equal(worker.storedConfig.pairingRelayBase, "ws://127.0.0.1:42000");
+  assert.equal(worker.run("lastCloseReason"), "endpoint_changed");
+  assert.equal(worker.nativeMessageCalls.length, 2);
+});
+
 test("revoked pairing credential is removed before reconnect", async () => {
   const worker = loadWorker({
     storedConfig: {

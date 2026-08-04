@@ -69,6 +69,7 @@ let nativeDiscoveryError = "";
 let connectionCredentialInFlight = null;
 let connectInFlight = false;
 let connectionAttempt = 0;
+let nativeRefreshInFlight = null;
 const agentControlOverlays = new Set();
 const overlayCaptureSuspensions = new Map();
 
@@ -178,7 +179,7 @@ async function discoverNativeConnection() {
     updates.pairingRelayBase = pairingRelayBase;
   }
   await chrome.storage.local.set(updates);
-  return true;
+  return canonicalRelayBase();
 }
 
 function canonicalRelayBase(value = relayBase) {
@@ -186,6 +187,43 @@ function canonicalRelayBase(value = relayBase) {
     .trim()
     .replace(/\/+$/, "")
     .replace(/^http/i, "ws");
+}
+
+async function refreshNativeConnectionIfChanged() {
+  if (manualDisconnect || connectionMode !== "native") return false;
+  if (nativeRefreshInFlight) return nativeRefreshInFlight;
+
+  const previousRelayBase = canonicalRelayBase();
+  nativeRefreshInFlight = (async () => {
+    try {
+      const discoveredRelayBase = await discoverNativeConnection();
+      if (discoveredRelayBase === previousRelayBase) return false;
+      console.log(
+        "[WebBridge] Desktop endpoint changed; reconnecting",
+        previousRelayBase,
+        "→",
+        discoveredRelayBase,
+      );
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        lastCloseReason = "endpoint_changed";
+        ws.close(1000, "Desktop endpoint changed");
+      } else {
+        clearTimeout(reconnectTimer);
+        reconnectAttempts = 0;
+        connect();
+      }
+      return true;
+    } catch (error) {
+      // A transient desktop restart must not tear down a relay that is still
+      // alive. Surface the discovery error and retry on the next heartbeat.
+      console.warn("[WebBridge] Native endpoint refresh failed:", error.message);
+      broadcastConnectionState();
+      return false;
+    } finally {
+      nativeRefreshInFlight = null;
+    }
+  })();
+  return nativeRefreshInFlight;
 }
 
 function assertRelayTransportSecure() {
@@ -1368,7 +1406,7 @@ async function connect() {
       });
     }
     // 4401 = the single-use relay ticket was invalid or expired.
-    if (lastCloseReason !== "timeout") {
+    if (lastCloseReason !== "timeout" && lastCloseReason !== "endpoint_changed") {
       lastCloseReason = event.code === 4403 ? "pairing" : event.code === 4401 ? "ticket" : "closed";
     }
     broadcastConnectionState();
@@ -1462,6 +1500,9 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === HEARTBEAT_ALARM) {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "ping" }));
+      refreshNativeConnectionIfChanged().catch((error) => {
+        console.warn("[WebBridge] Native endpoint heartbeat failed:", error.message);
+      });
     } else if (!manualDisconnect) {
       connect();
     }

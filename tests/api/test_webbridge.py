@@ -3474,6 +3474,23 @@ def test_native_pairing_requires_process_token_stable_extension_and_loopback(
     assert remote.status_code == 403
 
 
+def test_native_discovery_supports_unauthenticated_loopback_desktop_backend(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(webbridge_routes, "expected_desktop_token", lambda: "")
+
+    local_client = TestClient(client.app, client=("127.0.0.1", 5173))
+    discovery = local_client.get(f"{_PREFIX}/native-discovery")
+    assert discovery.status_code == 200
+    assert (
+        discovery.json()["discovery_token"] == webbridge_routes._NATIVE_DISCOVERY_TOKEN
+    )
+
+    remote_client = TestClient(client.app, client=("203.0.113.10", 5173))
+    assert remote_client.get(f"{_PREFIX}/native-discovery").status_code == 403
+
+
 async def test_native_pairing_credential_ticket_relay_and_revoke_chain(
     client: TestClient,
 ):
