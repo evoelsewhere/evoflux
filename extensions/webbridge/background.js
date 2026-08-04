@@ -70,8 +70,10 @@ let connectionCredentialInFlight = null;
 let connectInFlight = false;
 let connectionAttempt = 0;
 let nativeRefreshInFlight = null;
+let automationStateBroadcastTimer = null;
 const agentControlOverlays = new Set();
 const overlayCaptureSuspensions = new Map();
+const agentPointerPositions = new Map();
 
 const COMMAND_CAPABILITIES = [
   "navigate", "click", "dblclick", "type", "key", "scroll", "screenshot",
@@ -341,6 +343,7 @@ async function readTextWatchesLocked() {
 
 async function writeTextWatches(watches) {
   await chrome.storage.local.set({ [TEXT_WATCH_STORAGE_KEY]: watches });
+  notifyAutomationState("text_watch");
 }
 
 async function withTextWatchMutation(operation) {
@@ -395,19 +398,22 @@ function ensureTextWatchAlarm() {
 }
 
 async function cancelTextWatchesForTab(tabId, currentUrl = null) {
-  return withTextWatchMutation(async () => {
+  const removed = await withTextWatchMutation(async () => {
     const watches = await readTextWatchesLocked();
     const currentPageUrl = currentUrl == null ? null : safePageUrl(currentUrl);
     const retained = watches.filter((watch) => {
       if (watch.tab_id !== tabId) return true;
       return currentPageUrl !== null && watch.page_url === currentPageUrl;
     });
+    const removedWatches = watches.filter((watch) => !retained.includes(watch));
     if (retained.length !== watches.length) {
       await writeTextWatches(retained);
       clearWatchMatch(tabId);
     }
-    return retained.length !== watches.length;
+    return removedWatches;
   });
+  if (removed.length) await setTextWatchObserver(tabId, null).catch(() => {});
+  return Boolean(removed.length);
 }
 
 async function watchTextPresent(tabId, needle) {
@@ -415,12 +421,61 @@ async function watchTextPresent(tabId, needle) {
     target: { tabId },
     args: [needle],
     func: (expected) => {
-      const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim();
+      const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim().toLocaleLowerCase();
       const root = document.body || document.documentElement;
       return normalize(root?.innerText || root?.textContent || "").includes(normalize(expected));
     },
   });
   return results.some((result) => result?.result === true);
+}
+
+async function setTextWatchObserver(tabId, watch) {
+  if (watch) {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["text_watch.js"],
+    });
+  }
+  return chrome.tabs.sendMessage(tabId, {
+    type: "webbridge_text_watch",
+    enabled: Boolean(watch),
+    watch: watch ? { id: watch.id, needle: watch.needle } : null,
+  });
+}
+
+async function markTextWatchMatched(watchId, tab, sourceUrl) {
+  if (!tab || tab.id == null) throw new Error("Text watch match did not come from a tab.");
+  return withTextWatchMutation(async () => {
+    const watches = await readTextWatchesLocked();
+    const index = watches.findIndex((watch) => watch.id === watchId);
+    if (index < 0 || watches[index].state !== "armed") return null;
+    const watch = watches[index];
+    const currentPageUrl = safePageUrl(tab.url || tab.pendingUrl || "");
+    if (
+      watch.tab_id !== tab.id ||
+      currentPageUrl !== watch.page_url ||
+      safePageUrl(sourceUrl) !== watch.page_url
+    ) {
+      return null;
+    }
+    const updated = { ...watch, state: "matched", matched_at: Date.now() };
+    watches[index] = updated;
+    await writeTextWatches(watches);
+    showWatchMatch(tab.id);
+    return textWatchSummary(updated);
+  });
+}
+
+async function restoreTextWatchObservers(tabId = null) {
+  const watches = await readTextWatches();
+  const armed = watches.filter((watch) => (
+    watch.state === "armed" && (tabId == null || watch.tab_id === tabId)
+  ));
+  await Promise.allSettled(armed.map(async (watch) => {
+    const tab = await chrome.tabs.get(watch.tab_id);
+    if (safePageUrl(tab.url || tab.pendingUrl || "") !== watch.page_url) return;
+    await setTextWatchObserver(watch.tab_id, watch);
+  }));
 }
 
 async function armTextWatch(tab, sessionId, needleValue, ttlValue) {
@@ -458,27 +513,36 @@ async function armTextWatch(tab, sessionId, needleValue, ttlValue) {
   });
   clearWatchMatch(tab.id);
   ensureTextWatchAlarm();
-  return textWatchSummary(watch);
+  await setTextWatchObserver(tab.id, watch).catch((error) => {
+    console.warn("[WebBridge] Real-time text watch unavailable; using polling:", error.message);
+  });
+  await pollTextWatches();
+  const current = (await readTextWatches()).find((entry) => entry.id === watch.id) || watch;
+  return textWatchSummary(current);
 }
 
 async function cancelTextWatch(watchId) {
-  return withTextWatchMutation(async () => {
+  const watch = await withTextWatchMutation(async () => {
     const watches = await readTextWatchesLocked();
     const watch = watches.find((entry) => entry.id === watchId);
-    if (!watch) return false;
+    if (!watch) return null;
     await writeTextWatches(watches.filter((entry) => entry.id !== watchId));
     clearWatchMatch(watch.tab_id);
-    return true;
+    return watch;
   });
+  if (watch) await setTextWatchObserver(watch.tab_id, null).catch(() => {});
+  return Boolean(watch);
 }
 
 async function cancelAllTextWatches() {
-  return withTextWatchMutation(async () => {
+  const watches = await withTextWatchMutation(async () => {
     const watches = await readTextWatchesLocked();
     await writeTextWatches([]);
     for (const watch of watches) clearWatchMatch(watch.tab_id);
-    return watches.length;
+    return watches;
   });
+  await Promise.allSettled(watches.map((watch) => setTextWatchObserver(watch.tab_id, null)));
+  return watches.length;
 }
 
 async function pollTextWatches() {
@@ -596,6 +660,7 @@ async function readTeachRecording() {
 
 async function writeTeachRecording(recording) {
   await chrome.storage.local.set({ [TEACH_RECORDING_STORAGE_KEY]: recording });
+  notifyAutomationState("teach_recording", recording?.tab_id ?? null);
 }
 
 function teachSelector(value) {
@@ -774,6 +839,7 @@ async function cancelTeachRecording(tabId = null) {
     // The tab can close before the recorder is disabled.
   }
   await chrome.storage.local.remove([TEACH_RECORDING_STORAGE_KEY]);
+  notifyAutomationState("teach_recording", recording.tab_id);
   return true;
 }
 
@@ -819,6 +885,7 @@ async function finishTeachRecording() {
   const draft = await createTeachDraft(recording);
   await chrome.storage.local.remove([TEACH_RECORDING_STORAGE_KEY]);
   await chrome.storage.local.set({ lastTeachDraft: draft });
+  notifyAutomationState("teach_recording", recording.tab_id);
   return draft;
 }
 
@@ -1381,6 +1448,9 @@ async function connect() {
 
     ensureHeartbeatAlarm();
     broadcastTabInfo();
+    broadcastAutomationState().catch((error) => {
+      console.warn("[WebBridge] Failed to publish initial automation state:", error.message);
+    });
     broadcastConnectionState();
   };
 
@@ -1428,6 +1498,54 @@ function broadcastConnectionState() {
     connection_mode: connectionMode,
     native_error: nativeDiscoveryError || null,
   }).catch(() => {});
+}
+
+function notifyAutomationState(feature, tabId = null) {
+  chrome.runtime.sendMessage({
+    type: "automation_state_changed",
+    feature,
+    tab_id: tabId,
+  }).catch(() => {});
+  clearTimeout(automationStateBroadcastTimer);
+  automationStateBroadcastTimer = setTimeout(() => {
+    automationStateBroadcastTimer = null;
+    broadcastAutomationState().catch((error) => {
+      console.warn("[WebBridge] Failed to sync automation state:", error.message);
+    });
+  }, 120);
+}
+
+async function automationStateSnapshot() {
+  const [activeTabs, watches, recording, leases] = await Promise.all([
+    chrome.tabs.query({ active: true, currentWindow: true }),
+    readTextWatches(),
+    readTeachRecording(),
+    readHumanControlLeases(),
+  ]);
+  const activeTab = activeTabs[0] || null;
+  const capture = activeTab?.id == null ? null : activeDiagnosticCapture(activeTab.id);
+  const lease = activeTab?.id == null ? null : leases[activeTab.id] || null;
+  return {
+    updated_at: Date.now(),
+    active_tab_id: activeTab?.id ?? null,
+    text_watches: watches.map(textWatchSummary),
+    teach_recording: teachRecordingSummary(recording),
+    issue_capture: diagnosticSummary(capture),
+    human_control_lease: humanLeaseSummary(lease),
+    agent_control_tab_ids: [...agentControlOverlays],
+  };
+}
+
+async function broadcastAutomationState() {
+  const sock = ws;
+  if (!sock || sock.readyState !== WebSocket.OPEN) return;
+  const data = await automationStateSnapshot();
+  if (ws !== sock || sock.readyState !== WebSocket.OPEN) return;
+  sock.send(JSON.stringify({
+    type: "event",
+    event: "automation_state",
+    data,
+  }));
 }
 
 async function clearRevokedPairingState() {
@@ -1500,6 +1618,9 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === HEARTBEAT_ALARM) {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "ping" }));
+      broadcastAutomationState().catch((error) => {
+        console.warn("[WebBridge] Automation heartbeat sync failed:", error.message);
+      });
       refreshNativeConnectionIfChanged().catch((error) => {
         console.warn("[WebBridge] Native endpoint heartbeat failed:", error.message);
       });
@@ -1777,6 +1898,7 @@ async function takeHumanControlLease(tab) {
   leases[tab.id] = lease;
   await humanLeaseStorage().set({ [HUMAN_LEASE_STORAGE_KEY]: leases });
   await setAgentControlOverlay(tab.id, false);
+  notifyAutomationState("browser_control", tab.id);
   return humanLeaseSummary(lease);
 }
 
@@ -1785,6 +1907,7 @@ async function releaseHumanControlLease(tabId = null) {
   if (tabId == null) {
     if (!Object.keys(leases).length) return false;
     await humanLeaseStorage().remove([HUMAN_LEASE_STORAGE_KEY]);
+    notifyAutomationState("browser_control");
     return true;
   }
   if (!leases[tabId]) return false;
@@ -1794,7 +1917,16 @@ async function releaseHumanControlLease(tabId = null) {
   } else {
     await humanLeaseStorage().remove([HUMAN_LEASE_STORAGE_KEY]);
   }
+  notifyAutomationState("browser_control", tabId);
   return true;
+}
+
+async function releaseBrowserControlToHuman(tabId = null) {
+  const tab = tabId == null ? await getActiveTab() : await chrome.tabs.get(tabId);
+  if (!tab || tab.id == null) throw new Error("No active browser tab");
+  const lease = await takeHumanControlLease(tab);
+  await detachDebugger(tab.id);
+  return { released: true, lease };
 }
 
 async function configureSidePanel() {
@@ -2020,10 +2152,10 @@ function closeRegionMetric(left, right, tolerance = 1) {
   return Math.abs(Number(left) - Number(right)) <= tolerance;
 }
 
-async function captureSelectedRegion(tab, raw) {
+async function captureSelectedRegion(tab, raw, cdpOptions = {}) {
   if (!tab || tab.id == null) throw new Error("No active browser tab");
   const selected = sanitizeRegionSelection(tab, raw);
-  const metrics = await cdpSend(tab.id, "Page.getLayoutMetrics");
+  const metrics = await cdpSend(tab.id, "Page.getLayoutMetrics", {}, cdpOptions);
   const visual = metrics.cssVisualViewport || metrics.visualViewport;
   if (!visual) throw new Error("Browser viewport metrics are unavailable.");
   const current = {
@@ -2058,7 +2190,7 @@ async function captureSelectedRegion(tab, raw) {
       },
       captureBeyondViewport: true,
       fromSurface: true,
-    })
+    }, cdpOptions)
   ));
   if (!result?.data) throw new Error("Browser did not return a screenshot.");
   const capture = {
@@ -2168,12 +2300,12 @@ async function resolveTab(params) {
 
 // Run an expression in the page and return its (JSON) value, raising on a
 // thrown JS exception instead of silently returning undefined.
-async function evalInPage(tabId, expression, awaitPromise = false) {
+async function evalInPage(tabId, expression, awaitPromise = false, cdpOptions = {}) {
   const result = await cdpSend(tabId, "Runtime.evaluate", {
     expression,
     returnByValue: true,
     awaitPromise,
-  });
+  }, cdpOptions);
   if (result.exceptionDetails) {
     const ex = result.exceptionDetails;
     throw new Error(ex.exception?.description || ex.text || "Script error");
@@ -2183,12 +2315,13 @@ async function evalInPage(tabId, expression, awaitPromise = false) {
 
 // Dispatch a real press/release mouse click at viewport CSS coords (x,y),
 // which triggers the full native event sequence element.click() skips.
-async function clickAt(tabId, x, y) {
+async function clickAt(tabId, x, y, button = "left", clickCount = 1) {
   await cdpSend(tabId, "Input.dispatchMouseEvent", {
-    type: "mousePressed", x, y, button: "left", clickCount: 1,
+    type: "mousePressed", x, y, button, clickCount,
   });
+  await new Promise((resolve) => setTimeout(resolve, 48));
   await cdpSend(tabId, "Input.dispatchMouseEvent", {
-    type: "mouseReleased", x, y, button: "left", clickCount: 1,
+    type: "mouseReleased", x, y, button, clickCount,
   });
 }
 
@@ -2199,11 +2332,51 @@ function pointerPhase(params) {
   return "move";
 }
 
+function minimumJerk(progress) {
+  const t = Math.max(0, Math.min(1, progress));
+  return t * t * t * (10 + t * (-15 + 6 * t));
+}
+
+function humanPointerPath(from, to, preferredSteps = null) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance < 1) return [{ x: to.x, y: to.y }];
+
+  const durationMs = Math.max(72, Math.min(360, 68 + distance * 0.34));
+  const steps = Math.max(3, Math.min(24, preferredSteps || Math.round(durationMs / 16)));
+  const perpendicularX = -dy / distance;
+  const perpendicularY = dx / distance;
+  const direction = Math.round(from.x + from.y + to.x + to.y) % 2 === 0 ? 1 : -1;
+  const bend = Math.min(38, distance * 0.075) * direction;
+  const control1 = {
+    x: from.x + dx * 0.32 + perpendicularX * bend,
+    y: from.y + dy * 0.32 + perpendicularY * bend,
+  };
+  const control2 = {
+    x: from.x + dx * 0.72 + perpendicularX * bend * 0.38,
+    y: from.y + dy * 0.72 + perpendicularY * bend * 0.38,
+  };
+  const points = [];
+  for (let step = 1; step <= steps; step++) {
+    const t = minimumJerk(step / steps);
+    const inverse = 1 - t;
+    points.push({
+      x: inverse ** 3 * from.x + 3 * inverse ** 2 * t * control1.x + 3 * inverse * t ** 2 * control2.x + t ** 3 * to.x,
+      y: inverse ** 3 * from.y + 3 * inverse ** 2 * t * control1.y + 3 * inverse * t ** 2 * control2.y + t ** 3 * to.y,
+      delayMs: durationMs / steps,
+    });
+  }
+  points[points.length - 1] = { x: to.x, y: to.y, delayMs: durationMs / steps };
+  return points;
+}
+
 async function setAgentControlOverlay(tabId, enabled, pointer = null) {
   if (tabId == null) return false;
   if (!enabled) {
     agentControlOverlays.delete(tabId);
     overlayCaptureSuspensions.delete(tabId);
+    agentPointerPositions.delete(tabId);
     try {
       await chrome.tabs.sendMessage(tabId, {
         type: "webbridge_agent_control",
@@ -2229,10 +2402,21 @@ async function setAgentControlOverlay(tabId, enabled, pointer = null) {
       pointer,
     });
     if (response?.ok === false) throw new Error("Control overlay rejected the update");
+    if (
+      !agentPointerPositions.has(tabId) &&
+      Number.isFinite(response?.pointer?.x) &&
+      Number.isFinite(response?.pointer?.y)
+    ) {
+      agentPointerPositions.set(tabId, {
+        x: response.pointer.x,
+        y: response.pointer.y,
+      });
+    }
     agentControlOverlays.add(tabId);
     return true;
   } catch (error) {
     agentControlOverlays.delete(tabId);
+    agentPointerPositions.delete(tabId);
     console.warn("[WebBridge] Could not show the control overlay:", error.message);
     return false;
   }
@@ -2272,9 +2456,9 @@ async function captureWithoutAgentControlOverlay(tabId, capture) {
   }
 }
 
-async function ensureDebuggerAttached(tabId) {
+async function ensureDebuggerAttached(tabId, { showControl = true } = {}) {
   if (attachedTabs.has(tabId)) {
-    await setAgentControlOverlay(tabId, true);
+    if (showControl) await setAgentControlOverlay(tabId, true);
     return;
   }
 
@@ -2291,7 +2475,10 @@ async function ensureDebuggerAttached(tabId) {
       }
     });
   });
-  await setAgentControlOverlay(tabId, true);
+  if (showControl) {
+    await setAgentControlOverlay(tabId, true);
+    notifyAutomationState("browser_control", tabId);
+  }
 }
 
 async function detachDebugger(tabId) {
@@ -2307,6 +2494,7 @@ async function detachDebugger(tabId) {
     });
   });
   await setAgentControlOverlay(tabId, false);
+  notifyAutomationState("browser_control", tabId);
 }
 
 async function detachAllDebuggers() {
@@ -2327,14 +2515,68 @@ function sendCommandOnce(tabId, method, params) {
   });
 }
 
-async function cdpSend(tabId, method, params = {}) {
-  await ensureDebuggerAttached(tabId);
+async function sendCommandResilient(tabId, method, params, attachOptions = {}) {
+  try {
+    return await sendCommandOnce(tabId, method, params);
+  } catch (error) {
+    if (!/not attached/i.test(error.message)) throw error;
+    attachedTabs.delete(tabId);
+    await ensureDebuggerAttached(tabId, attachOptions);
+    return sendCommandOnce(tabId, method, params);
+  }
+}
 
-  if (
+async function dispatchHumanPointerMove(tabId, target, eventParams = {}) {
+  const from = agentPointerPositions.get(tabId);
+  const points = from
+    ? humanPointerPath(from, target)
+    : [{ x: target.x, y: target.y, delayMs: 0 }];
+  let result;
+  for (let index = 0; index < points.length; index++) {
+    const point = points[index];
+    await setAgentControlOverlay(tabId, true, {
+      x: point.x,
+      y: point.y,
+      phase: eventParams.buttons ? "drag" : "move",
+    });
+    result = await sendCommandResilient(tabId, "Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: point.x,
+      y: point.y,
+      ...(eventParams.button ? { button: eventParams.button } : {}),
+      ...(eventParams.buttons ? { buttons: eventParams.buttons } : {}),
+      ...(eventParams.modifiers ? { modifiers: eventParams.modifiers } : {}),
+    });
+    agentPointerPositions.set(tabId, { x: point.x, y: point.y });
+    if (index < points.length - 1 && point.delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, Math.max(8, point.delayMs)));
+    }
+  }
+  if (points.length > 1) {
+    // Let the overlay's short interpolation settle on the same coordinate
+    // before a following press, matching the page's final mouseMoved event.
+    await new Promise((resolve) => setTimeout(resolve, 28));
+  }
+  return result;
+}
+
+async function cdpSend(tabId, method, params = {}, attachOptions = {}) {
+  await ensureDebuggerAttached(tabId, attachOptions);
+
+  const pointerEvent =
     method === "Input.dispatchMouseEvent" &&
     Number.isFinite(params.x) &&
-    Number.isFinite(params.y)
-  ) {
+    Number.isFinite(params.y);
+  if (pointerEvent && params.type === "mouseMoved" && !params.buttons) {
+    return dispatchHumanPointerMove(tabId, { x: params.x, y: params.y }, params);
+  }
+  if (pointerEvent && params.type !== "mouseMoved" && params.type !== "mouseReleased") {
+    const current = agentPointerPositions.get(tabId);
+    if (!current || Math.hypot(params.x - current.x, params.y - current.y) >= 1) {
+      await dispatchHumanPointerMove(tabId, { x: params.x, y: params.y });
+    }
+  }
+  if (pointerEvent) {
     await setAgentControlOverlay(tabId, true, {
       x: params.x,
       y: params.y,
@@ -2342,18 +2584,9 @@ async function cdpSend(tabId, method, params = {}) {
     });
   }
 
-  try {
-    return await sendCommandOnce(tabId, method, params);
-  } catch (e) {
-    if (!/not attached/i.test(e.message)) throw e;
-    // attachedTabs lied: Chrome auto-detaches on navigation to restricted
-    // pages (chrome://, web store), the user can cancel the debugging
-    // infobar, and an MV3 worker restart loses in-memory state. Drop the
-    // stale entry, re-attach once, and retry the command.
-    attachedTabs.delete(tabId);
-    await ensureDebuggerAttached(tabId);
-    return sendCommandOnce(tabId, method, params);
-  }
+  const result = await sendCommandResilient(tabId, method, params, attachOptions);
+  if (pointerEvent) agentPointerPositions.set(tabId, { x: params.x, y: params.y });
+  return result;
 }
 
 // ── Network in-flight tracking (for wait_for_network_idle) ────────────────────
@@ -2407,6 +2640,9 @@ function activeDiagnosticCapture(tabId) {
   if (!capture) return null;
   if (capture.expires_at <= Date.now()) {
     diagnosticCaptures.delete(tabId);
+    if (capture.detach_on_stop && !agentControlOverlays.has(tabId)) {
+      detachDebugger(tabId).catch(() => {});
+    }
     return null;
   }
   return capture;
@@ -2433,16 +2669,18 @@ function appendDiagnostic(tabId, entry) {
   if (capture.entries.length > MAX_DIAGNOSTIC_ENTRIES) {
     capture.entries.splice(0, capture.entries.length - MAX_DIAGNOSTIC_ENTRIES);
   }
+  notifyAutomationState("issue_capture", tabId);
 }
 
 async function startDiagnosticCapture(tab) {
   if (!tab || tab.id == null) throw new Error("No active browser tab");
   const pageUrl = requireBrowserPageUrl(tab.url || tab.pendingUrl || "");
-  await ensureDebuggerAttached(tab.id);
+  const detachOnStop = !attachedTabs.has(tab.id);
+  await ensureDebuggerAttached(tab.id, { showControl: false });
   await Promise.all([
-    cdpSend(tab.id, "Runtime.enable"),
-    cdpSend(tab.id, "Network.enable"),
-    cdpSend(tab.id, "Log.enable").catch(() => ({})),
+    cdpSend(tab.id, "Runtime.enable", {}, { showControl: false }),
+    cdpSend(tab.id, "Network.enable", {}, { showControl: false }),
+    cdpSend(tab.id, "Log.enable", {}, { showControl: false }).catch(() => ({})),
   ]);
   const capture = {
     tab_id: tab.id,
@@ -2450,13 +2688,21 @@ async function startDiagnosticCapture(tab) {
     expires_at: Date.now() + DIAGNOSTIC_CAPTURE_TTL_MS,
     entries: [],
     requests: new Map(),
+    detach_on_stop: detachOnStop,
   };
   diagnosticCaptures.set(tab.id, capture);
+  notifyAutomationState("issue_capture", tab.id);
   return diagnosticSummary(capture);
 }
 
 async function stopDiagnosticCapture(tabId) {
-  return diagnosticCaptures.delete(tabId);
+  const capture = diagnosticCaptures.get(tabId);
+  const stopped = diagnosticCaptures.delete(tabId);
+  if (capture?.detach_on_stop && !agentControlOverlays.has(tabId)) {
+    await detachDebugger(tabId);
+  }
+  notifyAutomationState("issue_capture", tabId);
+  return stopped;
 }
 
 function consoleDiagnostic(params) {
@@ -2471,10 +2717,10 @@ function consoleDiagnostic(params) {
 }
 
 async function captureIssueViewport(tab) {
-  const metrics = await cdpSend(tab.id, "Page.getLayoutMetrics");
+  const metrics = await cdpSend(tab.id, "Page.getLayoutMetrics", {}, { showControl: false });
   const visual = metrics.cssVisualViewport || metrics.visualViewport;
   if (!visual) throw new Error("Browser viewport metrics are unavailable.");
-  const dpr = await evalInPage(tab.id, "window.devicePixelRatio || 1");
+  const dpr = await evalInPage(tab.id, "window.devicePixelRatio || 1", false, { showControl: false });
   return captureSelectedRegion(tab, {
     page_url: safePageUrl(tab.url || tab.pendingUrl || ""),
     clip: {
@@ -2491,20 +2737,20 @@ async function captureIssueViewport(tab) {
       scale: Number(visual.scale || 1),
       dpr: Number(dpr || 1),
     },
-  });
+  }, { showControl: false });
 }
 
 async function collectIssueReport(tab) {
   const diagnostic = activeDiagnosticCapture(tab?.id);
   if (!diagnostic) throw new Error("Start issue capture before reporting an issue.");
   if (safePageUrl(tab.url || tab.pendingUrl || "") !== diagnostic.page_url) {
-    diagnosticCaptures.delete(tab.id);
+    await stopDiagnosticCapture(tab.id);
     throw new Error("The page changed. Start issue capture again.");
   }
   const existingRegion = await regionCaptureForTab(tab.id);
   const capture = existingRegion || await captureIssueViewport(tab);
   const entries = diagnostic.entries.map((entry) => ({ ...entry }));
-  diagnosticCaptures.delete(tab.id);
+  await stopDiagnosticCapture(tab.id);
   return { capture, diagnostics: entries };
 }
 
@@ -2583,6 +2829,7 @@ chrome.debugger.onDetach.addListener((source) => {
   if (source.tabId && attachedTabs.delete(source.tabId)) {
     console.warn("[WebBridge] Debugger detached from tab", source.tabId);
     broadcastTabInfo();
+    notifyAutomationState("browser_control", source.tabId);
   }
 });
 
@@ -2590,8 +2837,10 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   attachedTabs.delete(tabId);
   agentControlOverlays.delete(tabId);
   overlayCaptureSuspensions.delete(tabId);
+  agentPointerPositions.delete(tabId);
   networkInflight.delete(tabId);
   diagnosticCaptures.delete(tabId);
+  notifyAutomationState("tab_closed", tabId);
   cancelTextWatchesForTab(tabId).catch((error) => {
     console.warn("[WebBridge] Failed to cancel tab text watches:", error.message);
   });
@@ -2660,21 +2909,7 @@ async function cmdClick(params) {
   const { x, y, button = "left" } = params;
   const resolvedButton = ["left", "middle", "right"].includes(button) ? button : "left";
 
-  // Use CDP Input.dispatchMouseEvent
-  await cdpSend(tab.id, "Input.dispatchMouseEvent", {
-    type: "mousePressed",
-    x,
-    y,
-    button: resolvedButton,
-    clickCount: 1,
-  });
-  await cdpSend(tab.id, "Input.dispatchMouseEvent", {
-    type: "mouseReleased",
-    x,
-    y,
-    button: resolvedButton,
-    clickCount: 1,
-  });
+  await clickAt(tab.id, x, y, resolvedButton);
 
   return { success: true, x, y, button: resolvedButton };
 }
@@ -2685,20 +2920,8 @@ async function cmdDblClick(params) {
   const { x, y } = params;
 
   for (let i = 0; i < 2; i++) {
-    await cdpSend(tab.id, "Input.dispatchMouseEvent", {
-      type: "mousePressed",
-      x,
-      y,
-      button: "left",
-      clickCount: i + 1,
-    });
-    await cdpSend(tab.id, "Input.dispatchMouseEvent", {
-      type: "mouseReleased",
-      x,
-      y,
-      button: "left",
-      clickCount: i + 1,
-    });
+    await clickAt(tab.id, x, y, "left", i + 1);
+    if (i === 0) await new Promise((resolve) => setTimeout(resolve, 72));
   }
 
   return { success: true, x, y };
@@ -3469,15 +3692,15 @@ async function cmdDrag(params) {
     type: "mousePressed", x: current.x, y: current.y, button: "left", buttons: 1, clickCount: 1,
   });
   try {
-    for (let step = 1; step <= moveSteps; step++) {
-      current = {
-        x: points.from.x + (points.to.x - points.from.x) * step / moveSteps,
-        y: points.from.y + (points.to.y - points.from.y) * step / moveSteps,
-      };
+    const dragPath = humanPointerPath(points.from, points.to, moveSteps);
+    for (let step = 0; step < dragPath.length; step++) {
+      current = dragPath[step];
       await cdpSend(tab.id, "Input.dispatchMouseEvent", {
         type: "mouseMoved", x: current.x, y: current.y, button: "left", buttons: 1,
       });
-      await new Promise((resolve) => setTimeout(resolve, 16));
+      if (step < dragPath.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, Math.max(8, current.delayMs || 16)));
+      }
     }
   } finally {
     await cdpSend(tab.id, "Input.dispatchMouseEvent", {
@@ -3704,6 +3927,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     // The old document (and its injected overlay) is being replaced.
     agentControlOverlays.delete(tabId);
     overlayCaptureSuspensions.delete(tabId);
+    agentPointerPositions.delete(tabId);
   }
   if (changeInfo.url || changeInfo.status === "loading") {
     rotateTabPageInstance(tabId).catch((error) => {
@@ -3711,7 +3935,9 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     });
   }
   if (changeInfo.url) {
-    diagnosticCaptures.delete(tabId);
+    stopDiagnosticCapture(tabId).catch((error) => {
+      console.warn("[WebBridge] Failed to stop issue collection after navigation:", error.message);
+    });
     cancelTextWatchesForTab(tabId, changeInfo.url).catch((error) => {
       console.warn("[WebBridge] Failed to update text watch scope:", error.message);
     });
@@ -3732,16 +3958,23 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   }
   if (changeInfo.url || changeInfo.title || changeInfo.status === "complete") {
     broadcastTabInfo();
+    notifyAutomationState("tab_updated", tabId);
   }
   if (changeInfo.status === "complete" && attachedTabs.has(tabId)) {
     chrome.tabs.get(tabId).then(async (tab) => {
       if (!await humanLeaseForTab(tab)) await setAgentControlOverlay(tabId, true);
     }).catch(() => {});
   }
+  if (changeInfo.status === "complete") {
+    restoreTextWatchObservers(tabId).catch((error) => {
+      console.warn("[WebBridge] Failed to restore real-time text watch:", error.message);
+    });
+  }
 });
 
-chrome.tabs.onActivated.addListener(() => {
+chrome.tabs.onActivated.addListener(({ tabId }) => {
   broadcastTabInfo();
+  notifyAutomationState("active_tab", tabId);
 });
 
 chrome.tabs.onCreated.addListener(() => {
@@ -3887,11 +4120,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "webbridge_text_watch_matched") {
+    (async () => {
+      try {
+        const matched = await markTextWatchMatched(msg.watch_id, sender.tab, msg.page_url);
+        sendResponse({ ok: true, matched });
+        if (matched) {
+          notifyAutomationState("text_watch", matched.tab_id);
+        }
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
   if (msg.type === "release_debuggers") {
     (async () => {
       try {
         const released = await detachAllDebuggers();
         sendResponse({ ok: true, released });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "release_browser_control") {
+    (async () => {
+      try {
+        sendResponse({ ok: true, ...(await releaseBrowserControlToHuman(msg.tab_id)) });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }
@@ -4254,6 +4513,9 @@ ensureHeartbeatAlarm();
 ensureTextWatchAlarm();
 readPendingInteraction().catch((e) => {
   console.warn("[WebBridge] Failed to purge pending browser context:", e.message);
+});
+restoreTextWatchObservers().catch((e) => {
+  console.warn("[WebBridge] Failed to restore real-time text watches:", e.message);
 });
 configureSidePanel().catch((e) => {
   console.warn("[WebBridge] Side Panel setup failed:", e.message);

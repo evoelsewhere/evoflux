@@ -65,7 +65,7 @@
           position: absolute; left: 0; top: 0; width: 25px; height: 29px;
           transform: translate3d(var(--cursor-x, 72vw), var(--cursor-y, 34vh), 0);
           transform-origin: 4px 3px;
-          transition: transform 150ms cubic-bezier(.2,.8,.2,1);
+          transition: transform 28ms linear;
           will-change: transform;
         }
         .cursor-aura {
@@ -125,6 +125,12 @@
       </div>`;
     cursor = root.querySelector(".cursor");
     cursorPulse = root.querySelector(".cursor-pulse");
+    if (lastX == null || lastY == null) {
+      lastX = Math.max(0, Math.min(innerWidth - 1, innerWidth * 0.72));
+      lastY = Math.max(0, Math.min(innerHeight - 1, innerHeight * 0.34));
+    }
+    cursor.style.setProperty("--cursor-x", `${lastX - 4}px`);
+    cursor.style.setProperty("--cursor-y", `${lastY - 3}px`);
     (document.documentElement || document).appendChild(host);
     host.style.visibility = suspended ? "hidden" : "visible";
   }
@@ -182,7 +188,12 @@
     if (enabled && message.pointer) {
       movePointer(Number(message.pointer.x), Number(message.pointer.y), message.pointer.phase);
     }
-    sendResponse({ ok: true, enabled, suspended });
+    sendResponse({
+      ok: true,
+      enabled,
+      suspended,
+      pointer: lastX == null || lastY == null ? null : { x: lastX, y: lastY },
+    });
   });
 
   globalThis.__evofluxAgentControlOverlay = { setEnabled, setSuspended, movePointer };

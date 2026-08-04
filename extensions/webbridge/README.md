@@ -69,16 +69,17 @@ token, and the exact stable extension ID.
 The discovered address is cached in `chrome.storage.local` and refreshed from
 Native Messaging before every connection. The internal connection credential
 is stored locally and is only sent as an HTTP Bearer credential to mint relay
-tickets. The same settings drawer contains theme, text-watch, Teach Mode,
-retry, and browser-control actions; the extension toolbar icon opens Side Chat
-directly.
+tickets. The settings drawer groups automation by user goal: wait for something
+on a page, teach a repeatable task, or diagnose a page. Its live state is
+published through the paired relay and shown with the same wording in EvoFlux
+Desktop.
 
-Side Chat settings also show browser-control state. **Release browser control**
-detaches every controlled tab without disabling the relay connection;
-disconnecting the extension releases them automatically.
+Side Chat settings also show who controls the active tab. **Release browser
+control** gives that tab to the user and keeps agent commands paused until the
+user explicitly resumes them; disconnecting the extension releases all tabs.
 
 When an EvoFlux agent attaches to an HTTP(S) tab, WebBridge now renders a
-non-interactive virtual cursor and an animated cyan/violet glow around the page
+non-interactive virtual cursor and a restrained cyan glow around the page
 viewport. Native CDP mouse moves, clicks, double-clicks, hovers, and drags are
 mirrored by the cursor so the action remains visible without changing the page
 or intercepting user input. The overlay disappears when control is released,
@@ -181,19 +182,21 @@ count, tool name/state/duration steps, and progressively streamed Markdown.
 Raw reasoning, tool arguments, and tool output remain excluded from the paired
 browser surface.
 
-## P3: Teach Mode and text watches
+## P3: Recorded tasks and page watches
 
 Side Chat settings provide two opt-in P3 controls after explicit session
 binding:
 
-- **Watch for page text** polls the current HTTP(S) page every 30 seconds for a
-  literal phrase. A watch is scoped to that tab's exact origin and path, expires
+- **Wait for something on this page** uses a page-local `MutationObserver` for
+  near-real-time, case-insensitive matching, with a 30-second polling fallback.
+  Page text never crosses into the extension worker. A watch is scoped to that
+  tab's exact origin and path, expires
   after the chosen TTL, and is cancelled when the page changes or tab closes.
   A match only shows a `W` badge and waits; the multi-watch list exposes Send or
   Cancel per watch plus a profile-wide Stop all kill switch. Sending remains a
   separate user gesture. Watch arm/poll/send/cancel mutations are serialized to
   prevent a cancelled watch from being restored or sent concurrently.
-- **Teach Mode** records semantic click, fill, select, checkbox/radio, and
+- **Teach EvoFlux a repeatable task** records semantic click, fill, select, checkbox/radio, and
   same-origin navigation actions. It does not record raw keystrokes. Passwords
   and fields whose metadata looks secret are represented as parameter names;
   their values are never sent to EvoFlux or written to extension storage.
@@ -320,5 +323,6 @@ on the extension card in `chrome://extensions`. A quick syntax check is:
 node --check extensions/webbridge/background.js
 node --check extensions/webbridge/sidepanel.js
 node --check extensions/webbridge/teach_recorder.js
+node --check extensions/webbridge/text_watch.js
 node --test tests/webbridge_extension.test.cjs
 ```

@@ -32,6 +32,10 @@ const agentControlOverlaySource = fs.readFileSync(
   path.join(__dirname, "..", "extensions", "webbridge", "agent_control_overlay.js"),
   "utf8"
 );
+const textWatchSource = fs.readFileSync(
+  path.join(__dirname, "..", "extensions", "webbridge", "text_watch.js"),
+  "utf8"
+);
 const markdownSource = fs.readFileSync(
   path.join(__dirname, "..", "extensions", "webbridge", "markdown.js"),
   "utf8"
@@ -451,6 +455,31 @@ function loadTeachRecorder() {
   vm.runInContext(teachRecorderSource, context, { filename: "teach_recorder.js" });
   runtimeMessages.emit({ type: "webbridge_teach_recording", enabled: true }, null, () => {});
   return { context, listeners, sent, FakeInput, FakeTextArea };
+}
+
+function loadTextWatchRuntime() {
+  const sent = [];
+  const body = { innerText: "Waiting for build", textContent: "Waiting for build" };
+  class FakeMutationObserver {
+    constructor(callback) { this.callback = callback; }
+    observe() {}
+    disconnect() {}
+  }
+  const context = vm.createContext({
+    chrome: {
+      runtime: {
+        onMessage: eventChannel(),
+        async sendMessage(message) { sent.push(message); return { ok: true }; },
+      },
+    },
+    document: { body, documentElement: {} },
+    location: { href: "https://example.com/builds" },
+    MutationObserver: FakeMutationObserver,
+    setTimeout,
+    clearTimeout,
+  });
+  vm.runInContext(textWatchSource, context, { filename: "text_watch.js" });
+  return { body, context, sent };
 }
 
 test("P2 Side Chat auto-creates and binds one session for an unbound tab", async () => {
@@ -1215,6 +1244,15 @@ test("P2 composer mirrors desktop model settings and icon-only browser controls"
   assert.match(sidePanelSource, /function openInEvoFlux/);
 });
 
+test("P2 AskUser view replaces the composer until the pending question is answered", () => {
+  assert.match(sidePanelHtml, /\.panel\.asking \.activity, \.panel\.asking \.composer \{ display: none; \}/);
+  assert.match(sidePanelHtml, /\.panel\.asking \.questions \{ max-height: 65%;/);
+  assert.match(sidePanelSource, /panelRoot\.classList\.toggle\("asking", asking\)/);
+  assert.match(sidePanelSource, /composerRoot\.toggleAttribute\("inert", asking\)/);
+  assert.match(sidePanelSource, /questionsRoot\.querySelector\("textarea\.answer:not\(\[hidden\]\)"\)\?\.focus\(\)/);
+  assert.match(sidePanelSource, /requestAnimationFrame\(\(\) => composer\.focus\(\)\)/);
+});
+
 test("P2 typed browser handoffs reuse AskUser without reading secret values", () => {
   assert.match(sidePanelSource, /browser_handoff/);
   assert.match(sidePanelSource, /provide_secret/);
@@ -1248,6 +1286,7 @@ test("P2 issue collector is opt in and redacts sensitive diagnostics", async () 
   assert.equal(await worker.run("diagnosticCaptures.size"), 0);
 
   await worker.run("startDiagnosticCapture({ id: 1, url: 'https://example.com/active' })");
+  assert.equal(await worker.run("agentControlOverlays.has(1)"), false);
   await worker.run(`chrome.debugger.onEvent.emit(
     { tabId: 1 },
     "Runtime.consoleAPICalled",
@@ -1270,6 +1309,8 @@ test("P2 issue collector is opt in and redacts sensitive diagnostics", async () 
   assert.match(serialized, /https:\/\/example\.com\/api/);
   assert.doesNotMatch(serialized, /secret=1|token=private|must-not-store|abcdefghijklmnopqrstuvwxyz1234567890/);
   assert.equal(entries.length, 2);
+  await worker.run("stopDiagnosticCapture(1)");
+  assert.deepEqual(worker.detachedTabs, [1]);
 });
 
 test("P2 diagnostic redaction covers structured short credentials and cookies", async () => {
@@ -1721,6 +1762,8 @@ test("P3 text watch matches without sending browser context until the user confi
     "Build complete",
     15
   )`);
+  assert.ok(worker.scriptCalls.some((call) => call.files?.includes("text_watch.js")));
+  assert.ok(worker.tabMessages.some((call) => call.message.type === "webbridge_text_watch" && call.message.enabled));
   const fetchCountBeforePoll = worker.fetchCalls.length;
   worker.setScriptResponder(async () => [{ result: true }]);
 
@@ -1825,6 +1868,105 @@ test("P3 multi-watch triage exposes matched send cancel and stop-all controls", 
   assert.match(sidePanelSource, /send_matched_text_watch/);
   assert.match(sidePanelSource, /cancel_all_text_watches/);
   assert.match(workerSource, /async function cancelAllTextWatches/);
+  assert.match(workerSource, /webbridge_text_watch_matched/);
+  assert.match(sidePanelSource, /automation_state_changed/);
+  assert.ok(fs.existsSync(path.join(__dirname, "..", "extensions", "webbridge", "text_watch.js")));
+});
+
+test("P2 automation UI explains user goals and syncs live state to Desktop", () => {
+  assert.match(sidePanelHtml, /What should EvoFlux help with\?/);
+  assert.match(sidePanelHtml, /Wait for something on this page/);
+  assert.match(sidePanelHtml, /Teach EvoFlux a repeatable task/);
+  assert.match(sidePanelHtml, /Help diagnose this page/);
+  assert.match(sidePanelHtml, /Browser control/);
+  assert.doesNotMatch(sidePanelHtml, /<h2>Page automation<\/h2>/i);
+  assert.match(workerSource, /event: "automation_state"/);
+  assert.match(workerSource, /async function automationStateSnapshot/);
+  assert.match(workerSource, /notifyAutomationState\("browser_control"/);
+});
+
+test("P2 automation state frame contains summaries but no captured diagnostics", async () => {
+  const worker = loadWorker({
+    storedConfig: {
+      webbridgeTextWatches: [{
+        id: "watch-sync",
+        tab_id: 1,
+        origin: "https://example.com",
+        page_url: "https://example.com/active",
+        session_id: "session-1",
+        needle: "Build complete",
+        state: "armed",
+        created_at: Date.now(),
+        expires_at: Date.now() + 60_000,
+        matched_at: null,
+      }],
+    },
+  });
+  const frameJson = await worker.run(`(async () => {
+    const frames = [];
+    ws = { readyState: WebSocket.OPEN, send: (value) => frames.push(value) };
+    await broadcastAutomationState();
+    return frames[0];
+  })()`);
+  const frame = JSON.parse(frameJson);
+  assert.equal(frame.type, "event");
+  assert.equal(frame.event, "automation_state");
+  assert.equal(frame.data.text_watches[0].needle, "Build complete");
+  assert.deepEqual(frame.data.agent_control_tab_ids, []);
+  assert.equal(Object.hasOwn(frame.data, "diagnostic_entries"), false);
+});
+
+test("P3 real-time text watch accepts only the armed tab and page", async () => {
+  const worker = loadWorker({
+    storedConfig: {
+      webbridgeTextWatches: [{
+        id: "watch-live",
+        tab_id: 1,
+        origin: "https://example.com",
+        page_url: "https://example.com/active",
+        session_id: "session-1",
+        needle: "Build complete",
+        state: "armed",
+        created_at: Date.now(),
+        expires_at: Date.now() + 60_000,
+        matched_at: null,
+      }],
+    },
+  });
+
+  const stale = await worker.run(`markTextWatchMatched(
+    "watch-live",
+    { id: 1, url: "https://example.com/other" },
+    "https://example.com/other"
+  )`);
+  assert.equal(stale, null);
+  assert.equal(worker.storedConfig.webbridgeTextWatches[0].state, "armed");
+
+  const matched = await worker.run(`markTextWatchMatched(
+    "watch-live",
+    { id: 1, url: "https://example.com/active" },
+    "https://example.com/active"
+  )`);
+  assert.equal(matched.state, "matched");
+  assert.equal(worker.storedConfig.webbridgeTextWatches[0].state, "matched");
+  assert.ok(worker.actionCalls.some((call) => call.kind === "badge" && call.options.text === "W"));
+});
+
+test("P3 page-local text observer reports a case-insensitive match without page content", async () => {
+  const runtime = loadTextWatchRuntime();
+  runtime.context.__evofluxTextWatchRuntime.start({
+    id: "watch-runtime",
+    needle: "Build Complete",
+  });
+  assert.equal(runtime.sent.length, 0);
+
+  runtime.body.innerText = "Deployment status: BUILD COMPLETE for private customer alpha";
+  runtime.context.__evofluxTextWatchRuntime.check();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(Object.keys(runtime.sent[0]).sort(), ["page_url", "type", "watch_id"]);
+  assert.equal(runtime.sent[0].watch_id, "watch-runtime");
+  assert.equal(JSON.stringify(runtime.sent).includes("private customer alpha"), false);
 });
 
 test("P3 Teach Mode redacts secrets and saves a pairing-scoped semantic draft", async () => {
@@ -2009,6 +2151,22 @@ test("P2 human control lease blocks agent commands until the user resumes", asyn
   assert.equal(tab.id, 1);
   await assert.rejects(worker.run("cmdCloseTab({ id: 1 })"), /Human control is active/);
   assert.equal(await worker.run("releaseHumanControlLease(2)"), true);
+});
+
+test("P2 release browser control persists until the user resumes the agent", async () => {
+  const worker = loadWorker();
+  await worker.run("ensureDebuggerAttached(1)");
+
+  const result = await worker.run("releaseBrowserControlToHuman(1)");
+
+  assert.equal(result.released, true);
+  assert.equal(result.lease.tab_id, 1);
+  assert.deepEqual(worker.detachedTabs, [1]);
+  assert.equal(worker.run("attachedTabs.has(1)"), false);
+  assert.equal(worker.storedSession.webbridgeHumanControlLease[1].tab_id, 1);
+  await assert.rejects(worker.run("resolveTab({ tab_id: 1 })"), /Human control is active/);
+  assert.match(sidePanelSource, /release_browser_control/);
+  assert.match(sidePanelSource, /Resume agent control/);
 });
 
 test("P2 element picker stores only a sanitized semantic anchor", async () => {
@@ -2403,11 +2561,19 @@ test("middle click is preserved in both CDP events", async () => {
 
   assert.equal(result.button, "middle");
   const mouseCalls = worker.cdpCalls.filter((call) => call.method === "Input.dispatchMouseEvent");
-  assert.deepEqual(mouseCalls.map((call) => call.params.button), ["middle", "middle"]);
+  const clickCalls = mouseCalls.filter((call) => ["mousePressed", "mouseReleased"].includes(call.params.type));
+  assert.deepEqual(clickCalls.map((call) => call.params.button), ["middle", "middle"]);
 });
 
 test("agent control mirrors CDP pointer events and releases the visual overlay", async () => {
-  const worker = loadWorker();
+  const worker = loadWorker({
+    tabMessageResponder(_tabId, message) {
+      return {
+        ok: true,
+        pointer: message.enabled && !message.pointer ? { x: 80, y: 90 } : undefined,
+      };
+    },
+  });
 
   await worker.run('cmdClick({ x: 18, y: 27, button: "left" })');
 
@@ -2416,14 +2582,23 @@ test("agent control mirrors CDP pointer events and releases the visual overlay",
     .filter((call) => call.message.type === "webbridge_agent_control")
     .map((call) => call.message);
   assert.equal(controlMessages[0].enabled, true);
+  const pointerMessages = controlMessages.filter((message) => message.pointer);
+  const pointerPhases = pointerMessages.map((message) => message.pointer.phase);
+  assert.ok(pointerPhases.filter((phase) => phase === "move").length >= 3);
+  assert.deepEqual(pointerPhases.slice(-2), ["press", "release"]);
   assert.deepEqual(
-    controlMessages.filter((message) => message.pointer).map((message) => message.pointer.phase),
-    ["press", "release"]
-  );
-  assert.deepEqual(
-    controlMessages.filter((message) => message.pointer).map((message) => [message.pointer.x, message.pointer.y]),
+    pointerMessages.slice(-2).map((message) => [message.pointer.x, message.pointer.y]),
     [[18, 27], [18, 27]]
   );
+  const mouseMoves = worker.cdpCalls
+    .filter((call) => call.method === "Input.dispatchMouseEvent" && call.params.type === "mouseMoved")
+    .map((call) => call.params);
+  assert.ok(mouseMoves.length >= 3);
+  assert.deepEqual([mouseMoves.at(-1).x, mouseMoves.at(-1).y], [18, 27]);
+  assert.ok(mouseMoves.some((point) => {
+    const lineCrossProduct = (point.x - 80) * (27 - 90) - (point.y - 90) * (18 - 80);
+    return Math.abs(lineCrossProduct) > 1;
+  }));
 
   await worker.run("detachAllDebuggers()");
   assert.equal(worker.tabMessages.at(-1).message.enabled, false);
@@ -2442,6 +2617,8 @@ test("agent control mirrors CDP pointer events and releases the visual overlay",
   assert.doesNotMatch(agentControlOverlaySource, /class="cursor-glow"/);
   assert.match(agentControlOverlaySource, /function setSuspended/);
   assert.match(agentControlOverlaySource, /host\.style\.visibility = suspended \? "hidden" : "visible"/);
+  assert.match(agentControlOverlaySource, /transition: transform 28ms linear/);
+  assert.match(agentControlOverlaySource, /pointer: lastX == null/);
 });
 
 test("screenshots suspend and restore the take-control overlay", async () => {

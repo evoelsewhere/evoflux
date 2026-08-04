@@ -218,8 +218,11 @@
     .thinking-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); animation: thinking-dot 1.2s ease-in-out infinite; }
     .thinking-dots i:nth-child(2) { animation-delay: 150ms; }
     .thinking-dots i:nth-child(3) { animation-delay: 300ms; }
-    .questions { display: none; max-height: 42%; overflow-y: auto; border-top: 1px solid var(--border); padding: 10px 12px; background: var(--surface); }
+    .questions { display: none; flex: 0 1 auto; max-height: 42%; overflow-y: auto; border-top: 1px solid var(--border); padding: 10px 12px; background: var(--surface); }
     .questions.visible { display: block; }
+    .panel.asking .questions { max-height: 65%; border-bottom: 1px solid var(--border); }
+    .panel.asking .activity, .panel.asking .composer { display: none; }
+    .panel.asking .transcript { padding-bottom: 12px; }
     .question-card { margin-bottom: 9px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-raised); }
     .question-card:last-child { margin-bottom: 0; }
     .question-card p { margin: 0 0 7px; font-size: 12px; line-height: 1.4; }
@@ -315,6 +318,26 @@
     .setting-row input, .setting-row select { height: 34px; padding: 0 9px; }
     .setting-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .setting-hint { margin-top: 6px; overflow-wrap: anywhere; color: var(--muted); font-size: 9px; line-height: 1.45; }
+    .automation-intro { margin-bottom: 8px; border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: var(--surface); }
+    .automation-intro strong { display: block; font-size: 11px; }
+    .automation-intro span { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; line-height: 1.45; }
+    .automation-tool { transition: background 140ms ease, box-shadow 140ms ease; }
+    .automation-tool.active { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+    .automation-tool-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+    .automation-tool-icon { display: grid; width: 26px; height: 26px; flex: 0 0 auto; place-items: center; border-radius: 7px; background: var(--surface-raised); color: var(--muted); }
+    .automation-tool.active .automation-tool-icon { background: var(--accent); color: white; }
+    .automation-tool-icon svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .automation-tool-copy { min-width: 0; flex: 1; }
+    .automation-tool-copy h3 { margin: 0; color: var(--text); font-size: 11px; font-weight: 700; }
+    .automation-tool-copy p { margin: 2px 0 0; color: var(--muted); font-size: 9px; line-height: 1.4; }
+    .automation-state { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; border-radius: 999px; padding: 3px 7px; background: var(--surface-raised); color: var(--muted); font-size: 9px; font-weight: 650; }
+    .automation-state::before { width: 6px; height: 6px; border-radius: 50%; background: var(--subtle); content: ""; }
+    .automation-state.active { background: var(--success-soft); color: var(--success); }
+    .automation-state.active::before { background: var(--success); }
+    .control-summary { display: flex; align-items: flex-start; gap: 8px; }
+    .control-summary .status-dot { margin-top: 3px; }
+    .control-summary-copy strong { display: block; font-size: 11px; }
+    .control-summary-copy span { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; line-height: 1.4; }
     .watch-list { display: grid; gap: 5px; margin-top: 8px; }
     .watch-item { display: flex; min-width: 0; align-items: center; gap: 6px; border-top: 1px solid var(--border); padding-top: 6px; }
     .watch-item-copy { min-width: 0; flex: 1; }
@@ -583,28 +606,51 @@
       </section>
 
       <section class="settings-section">
-        <h2>Page automation</h2>
+        <h2>Automation</h2>
+        <div class="automation-intro">
+          <strong>What should EvoFlux help with?</strong>
+          <span>Start one task below. Its live status will also appear in EvoFlux Desktop.</span>
+        </div>
+        <div class="settings-card">
+          <div class="setting-row automation-tool" id="watchAutomationCard">
+            <div class="automation-tool-head">
+              <span class="automation-tool-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3a7 7 0 0 0-7 7c0 6-3 6-3 8h20c0-2-3-2-3-8a7 7 0 0 0-7-7Z"/><path d="M10 21h4"/></svg></span>
+              <div class="automation-tool-copy"><h3>Wait for something on this page</h3><p>EvoFlux notifies you when specific text appears. Nothing is shared until you confirm.</p></div>
+            </div>
+            <input id="watchNeedleInput" aria-label="Text to wait for" type="text" maxlength="160" placeholder="For example: Build complete" autocomplete="off">
+            <div class="row" style="margin-top:6px"><select id="watchTtlSelect" aria-label="How long to wait"><option value="5">Wait 5 minutes</option><option value="15" selected>Wait 15 minutes</option><option value="60">Wait 1 hour</option></select><button class="btn" id="watchActionBtn">Notify me</button></div>
+            <div class="setting-hint" id="watchSettingsDetail">Enter the exact words you expect to appear.</div>
+            <div class="watch-list" id="watchList"></div>
+            <button class="btn" id="stopAllWatchesBtn" style="display:none;margin-top:7px">Stop all waiting</button>
+          </div>
+          <div class="setting-row automation-tool" id="teachAutomationCard">
+            <div class="automation-tool-head">
+              <span class="automation-tool-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 3 14 9-6 2-2 6Z"/><path d="m13 14 4 4"/></svg></span>
+              <div class="automation-tool-copy"><h3>Teach EvoFlux a repeatable task</h3><p>Record your clicks and form actions, then review the draft safely in Desktop.</p></div>
+            </div>
+            <div class="setting-actions"><button class="btn" id="teachActionBtn">Record my actions</button><button class="btn" id="discardTeachBtn" style="display:none">Discard recording</button></div>
+            <div class="setting-hint" id="teachSettingsDetail">Start recording, perform the task once, then finish and save.</div>
+          </div>
+          <div class="setting-row automation-tool" id="issueAutomationCard">
+            <div class="automation-tool-head">
+              <span class="automation-tool-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 2h8M9 2v3m6-3v3M7 8h10v9a5 5 0 0 1-10 0Z"/><path d="M3 13h4m10 0h4M5 7l3 3m11-3-3 3M5 20l3-3m11 3-3-3"/></svg></span>
+              <div class="automation-tool-copy"><h3>Help diagnose this page</h3><p>Collect a small redacted error log, then send it directly to this chat.</p></div>
+            </div>
+            <div class="setting-actions"><button class="btn" id="issueCaptureBtn">Collect errors</button><button class="btn primary" id="reportIssueBtn" disabled>Send report to chat</button></div>
+            <div class="setting-hint" id="issueSettingsDetail">Collection starts only after you choose it and never includes passwords.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h2>Browser control</h2>
         <div class="settings-card">
           <div class="setting-row">
-            <label for="watchNeedleInput">Watch for page text</label>
-            <input id="watchNeedleInput" type="text" maxlength="160" placeholder="Build complete" autocomplete="off">
-            <div class="row" style="margin-top:6px"><select id="watchTtlSelect"><option value="5">5 minutes</option><option value="15" selected>15 minutes</option><option value="60">1 hour</option></select><button class="btn" id="watchActionBtn">Start watch</button></div>
-            <div class="setting-hint" id="watchSettingsDetail">A match stays private until you send it.</div>
-            <div class="watch-list" id="watchList"></div>
-            <button class="btn" id="stopAllWatchesBtn" style="display:none;margin-top:7px">Stop all watches</button>
-          </div>
-          <div class="setting-row">
-            <label>Teach Mode</label>
-            <div class="setting-actions"><button class="btn" id="teachActionBtn">Start recording</button><button class="btn" id="discardTeachBtn" style="display:none">Discard</button></div>
-            <div class="setting-hint" id="teachSettingsDetail">Record semantic actions into a reviewable draft.</div>
-          </div>
-          <div class="setting-row">
-            <label>Report issue evidence</label>
-            <div class="setting-actions"><button class="btn" id="issueCaptureBtn">Start capture</button><button class="btn primary" id="reportIssueBtn" disabled>Report issue</button></div>
-            <div class="setting-hint" id="issueSettingsDetail">Opt in to collect a small redacted console/network error ring for this page.</div>
-          </div>
-          <div class="setting-row">
-            <div class="setting-actions"><button class="btn" id="retryContextBtn" style="display:none">Retry browser context</button><button class="btn" id="releaseControlBtn">Release browser control</button></div>
+            <div class="control-summary">
+              <span class="status-dot" id="controlOwnerDot"></span>
+              <div class="control-summary-copy"><strong id="controlOwnerLabel">You are in control</strong><span id="controlOwnerDetail">EvoFlux is not controlling this tab.</span></div>
+            </div>
+            <div class="setting-actions"><button class="btn" id="retryContextBtn" style="display:none">Retry browser context</button><button class="btn" id="releaseControlBtn">Browser control released</button></div>
           </div>
         </div>
       </section>
