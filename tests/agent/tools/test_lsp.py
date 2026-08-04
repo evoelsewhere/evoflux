@@ -22,7 +22,7 @@ def _make_state(workspace: Path) -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_lsp_diagnostics_no_issues(tmp_path: Path):
+async def test_lsp_diagnostics_no_issues(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """lsp_diagnostics returns OK when ruff finds no issues."""
     from app.agent.tools.builtin.lsp import static_diagnostics
 
@@ -30,6 +30,7 @@ async def test_lsp_diagnostics_no_issues(tmp_path: Path):
     clean_file.write_text("x = 1\n")
 
     state = _make_state(tmp_path)
+    monkeypatch.setattr("app.agent.tools.builtin.lsp.shutil.which", lambda _name: "ruff")
 
     # Patch _run to simulate ruff returning empty JSON array
     with patch(
@@ -42,7 +43,9 @@ async def test_lsp_diagnostics_no_issues(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_lsp_diagnostics_with_issues(tmp_path: Path):
+async def test_lsp_diagnostics_with_issues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """lsp_diagnostics parses ruff JSON output and returns formatted issues."""
     from app.agent.tools.builtin.lsp import static_diagnostics
 
@@ -50,6 +53,7 @@ async def test_lsp_diagnostics_with_issues(tmp_path: Path):
     py_file.write_text("import os\n")
 
     state = _make_state(tmp_path)
+    monkeypatch.setattr("app.agent.tools.builtin.lsp.shutil.which", lambda _name: "ruff")
 
     ruff_output = json.dumps(
         [

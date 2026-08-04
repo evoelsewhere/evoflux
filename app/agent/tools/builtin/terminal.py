@@ -48,6 +48,12 @@ async def _terminal_run(
     the user doesn't need to watch, prefer ``shell``.
     """
     sandbox = get_sandbox()
+    if sandbox.native_process_isolation == "required":
+        return (
+            "Cannot use the shared terminal while Native process isolation is "
+            "Required. The terminal is an existing interactive host process and "
+            "cannot be contained by the per-command sandbox."
+        )
     session_id = sandbox.session_id or (
         _state.metadata.get("session_id") if _state else None
     )

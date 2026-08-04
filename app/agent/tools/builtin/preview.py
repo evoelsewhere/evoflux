@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,6 +40,7 @@ from typing import Annotated, Any, Literal
 from loguru import logger
 from pydantic import Field
 
+from app.agent.process_sandbox import sandboxed_process_argv
 from app.agent.tools.registry import InjectedArg, Tool
 
 _PORT_WAIT_SECONDS = 60.0
@@ -208,6 +210,16 @@ async def _start(name: str | None, workspace: Path) -> str:
             f"Note: logs are unavailable for reused servers."
         )
 
+    from app.agent.sandbox import get_sandbox
+    from app.agent.tools.builtin.shell import _BgProcess, _scrubbed_env
+
+    sandbox = get_sandbox()
+    if not sandbox.allow_network:
+        return (
+            "Preview requires Network access because the development server must "
+            "bind a local port. Enable it in Settings → Sandbox, then retry."
+        )
+
     argv = [
         str(cfg["runtimeExecutable"]),
         *[str(a) for a in cfg.get("runtimeArgs", [])],
@@ -216,11 +228,21 @@ async def _start(name: str | None, workspace: Path) -> str:
     cwd = workspace / str(cfg["cwd"]) if cfg.get("cwd") else workspace
     if not cwd.is_dir():
         return f"Configured cwd does not exist: {cwd}"
+    executable = Path(argv[0])
+    executable_exists = (
+        executable.is_file()
+        if executable.is_absolute()
+        else (
+            (cwd / executable).is_file()
+            if executable.parent != Path(".")
+            else shutil.which(argv[0]) is not None
+        )
+    )
+    if not executable_exists:
+        return f"Executable not found: {argv[0]!r} (command: {command})"
 
-    from app.agent.sandbox import get_sandbox
-    from app.agent.tools.builtin.shell import _BgProcess, _scrubbed_env
-
-    hit = get_sandbox().check_command(command)
+    cwd = sandbox.validate_path(str(cwd))
+    hit = sandbox.check_command(command)
     if hit is not None:
         resolved, denied = hit
         raise PermissionError(
@@ -228,7 +250,7 @@ async def _start(name: str | None, workspace: Path) -> str:
             f"'{resolved}' (denied by '{denied}')."
         )
 
-    env = _scrubbed_env()
+    env = _scrubbed_env(inherit=sandbox.inherit_shell_environment)
     extra_env = cfg.get("env")
     if isinstance(extra_env, dict):
         env.update({str(k): str(v) for k, v in extra_env.items()})
@@ -245,8 +267,15 @@ async def _start(name: str | None, workspace: Path) -> str:
         _extra["start_new_session"] = True
 
     try:
+        exec_bin, exec_argv = sandboxed_process_argv(
+            argv[0],
+            argv[1:],
+            sandbox=sandbox,
+            cwd=cwd,
+        )
         proc = await asyncio.create_subprocess_exec(
-            *argv,
+            exec_bin,
+            *exec_argv,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
