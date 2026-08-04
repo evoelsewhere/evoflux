@@ -35,6 +35,8 @@ const notice = document.getElementById("notice");
 const transcript = document.getElementById("transcript");
 const loadOlderBtn = document.getElementById("loadOlderBtn");
 const questionsRoot = document.getElementById("questions");
+const panelRoot = document.querySelector(".panel");
+const composerRoot = document.querySelector(".composer");
 const composer = document.getElementById("composer");
 const sendBtn = document.getElementById("sendBtn");
 const composerStatus = document.getElementById("composerStatus");
@@ -67,14 +69,20 @@ const watchActionBtn = document.getElementById("watchActionBtn");
 const watchSettingsDetail = document.getElementById("watchSettingsDetail");
 const watchList = document.getElementById("watchList");
 const stopAllWatchesBtn = document.getElementById("stopAllWatchesBtn");
+const watchAutomationCard = document.getElementById("watchAutomationCard");
 const teachActionBtn = document.getElementById("teachActionBtn");
 const discardTeachBtn = document.getElementById("discardTeachBtn");
 const teachSettingsDetail = document.getElementById("teachSettingsDetail");
+const teachAutomationCard = document.getElementById("teachAutomationCard");
 const issueCaptureBtn = document.getElementById("issueCaptureBtn");
 const reportIssueBtn = document.getElementById("reportIssueBtn");
 const issueSettingsDetail = document.getElementById("issueSettingsDetail");
+const issueAutomationCard = document.getElementById("issueAutomationCard");
 const retryContextBtn = document.getElementById("retryContextBtn");
 const releaseControlBtn = document.getElementById("releaseControlBtn");
+const controlOwnerDot = document.getElementById("controlOwnerDot");
+const controlOwnerLabel = document.getElementById("controlOwnerLabel");
+const controlOwnerDetail = document.getElementById("controlOwnerDetail");
 
 const annotationOverlay = document.getElementById("annotationOverlay");
 const annotationCanvasWrapper = document.getElementById("annotationCanvasWrapper");
@@ -130,6 +138,7 @@ let activeTextWatch = null;
 let textWatches = [];
 let activeTeachRecording = null;
 let activeIssueCapture = null;
+let settingsRefreshTimer = null;
 let browserModels = [];
 let currentSessionModel = null;
 let currentSessionThinkingLevel = null;
@@ -1114,13 +1123,20 @@ async function loadHistory({ before = null, prepend = false } = {}) {
 }
 
 function renderQuestions() {
+  const wasAsking = panelRoot.classList.contains("asking");
+  const focusWasInComposer = composerRoot.contains(document.activeElement);
+  const focusWasInQuestions = questionsRoot.contains(document.activeElement);
   questionsRoot.replaceChildren();
   const questions = [...pendingQuestions.values()];
+  const asking = questions.length > 0;
   const liveRequestIds = new Set(questions.map((request) => request.request_id));
   for (const requestId of activeTakeoverRequests) {
     if (!liveRequestIds.has(requestId)) activeTakeoverRequests.delete(requestId);
   }
-  questionsRoot.classList.toggle("visible", questions.length > 0);
+  panelRoot.classList.toggle("asking", asking);
+  composerRoot.toggleAttribute("inert", asking);
+  composerRoot.setAttribute("aria-hidden", String(asking));
+  questionsRoot.classList.toggle("visible", asking);
   for (const request of questions) {
     const card = document.createElement("article");
     card.className = "question-card";
@@ -1191,6 +1207,13 @@ function renderQuestions() {
     }
     card.append(reply);
     questionsRoot.append(card);
+  }
+  if (asking && focusWasInComposer) {
+    requestAnimationFrame(() => {
+      questionsRoot.querySelector("textarea.answer:not([hidden])")?.focus();
+    });
+  } else if (!asking && wasAsking && focusWasInQuestions) {
+    requestAnimationFrame(() => composer.focus());
   }
 }
 
@@ -1939,6 +1962,8 @@ async function refreshSettings() {
     const connecting = Boolean(response?.connecting);
     const nativeConnection = response?.connection_mode === "native";
     const nativeError = response?.native_error || "";
+    humanControlLease = response?.human_control_lease || null;
+    renderHumanControl();
     settingsStatusDot.className = `status-dot ${connected ? "live" : connecting ? "" : "error"}`.trim();
     settingsStatusText.textContent = connected ? "Connected" : connecting ? "Connecting…" : "Disconnected";
     settingsStatusDetail.textContent = connected
@@ -1957,15 +1982,16 @@ async function refreshSettings() {
     toggleConnectionBtn.textContent = connected || connecting ? "Disconnect" : "Reconnect";
     textWatches = response?.text_watches || [];
     activeTextWatch = textWatches.find((item) => item.tab_id === activeTab?.id) || null;
+    watchAutomationCard.classList.toggle("active", Boolean(activeTextWatch));
     if (activeTextWatch?.state === "matched") {
-      watchActionBtn.textContent = "Send match";
-      watchSettingsDetail.textContent = `Matched “${activeTextWatch.needle}”. Nothing is sent until you confirm.`;
+      watchActionBtn.textContent = "Tell EvoFlux";
+      watchSettingsDetail.textContent = `Found “${activeTextWatch.needle}”. Confirm to send only the match and page address.`;
     } else if (activeTextWatch) {
-      watchActionBtn.textContent = "Cancel watch";
-      watchSettingsDetail.textContent = `Watching for “${activeTextWatch.needle}”.`;
+      watchActionBtn.textContent = "Stop waiting";
+      watchSettingsDetail.textContent = `Waiting for “${activeTextWatch.needle}”… You can close this panel.`;
     } else {
-      watchActionBtn.textContent = "Start watch";
-      watchSettingsDetail.textContent = "A match stays private until you send it.";
+      watchActionBtn.textContent = "Notify me";
+      watchSettingsDetail.textContent = "Enter the exact words you expect to appear.";
     }
     const pageTools = hasPageTools();
     watchNeedleInput.disabled = Boolean(activeTextWatch) || !pageTools;
@@ -1977,30 +2003,48 @@ async function refreshSettings() {
     renderWatchList();
     activeTeachRecording = response?.teach_recording || null;
     const teachingThisTab = activeTeachRecording?.tab_id === activeTab?.id;
-    teachActionBtn.textContent = teachingThisTab ? "Stop & save draft" : "Start recording";
+    teachAutomationCard.classList.toggle("active", teachingThisTab);
+    teachActionBtn.textContent = teachingThisTab ? "Finish and save" : "Record my actions";
     teachActionBtn.disabled = !selectedSessionId || !pageTools || Boolean(activeTeachRecording && !teachingThisTab);
     discardTeachBtn.style.display = teachingThisTab ? "inline-flex" : "none";
     teachSettingsDetail.textContent = !pageTools
       ? "Available after this tab opens an HTTP(S) page."
       : teachingThisTab
-      ? `Recording ${activeTeachRecording.action_count || 0} semantic actions on this tab.`
+      ? `Recording now · ${activeTeachRecording.action_count || 0} action${activeTeachRecording.action_count === 1 ? "" : "s"} captured.`
       : activeTeachRecording
-        ? "Teach Mode is recording in another tab."
+        ? "A recording is already running in another tab."
         : response?.last_teach_draft
-          ? "Draft saved. Review and approve it in EvoFlux before replay."
-          : "Record semantic actions into a reviewable draft.";
+          ? "Draft saved. Open WebBridge in EvoFlux Desktop to review it."
+          : "Start recording, perform the task once, then finish and save.";
     const issueResponse = await chrome.runtime.sendMessage({ type: "get_issue_capture" });
     activeIssueCapture = issueResponse?.ok ? issueResponse.capture : null;
-    issueCaptureBtn.textContent = activeIssueCapture ? "Stop capture" : "Start capture";
+    issueAutomationCard.classList.toggle("active", Boolean(activeIssueCapture));
+    issueCaptureBtn.textContent = activeIssueCapture ? "Stop collecting" : "Collect errors";
     reportIssueBtn.disabled = !activeIssueCapture || !selectedSessionId || !pageTools;
     issueCaptureBtn.disabled = !selectedSessionId || !pageTools;
     issueSettingsDetail.textContent = !pageTools
       ? "Available after this tab opens an HTTP(S) page."
       : activeIssueCapture
-        ? `Collecting redacted errors on this page · ${activeIssueCapture.entry_count || 0} captured.`
-        : "Opt in to collect a small redacted console/network error ring for this page.";
+        ? `Collecting now · ${activeIssueCapture.entry_count || 0} redacted error${activeIssueCapture.entry_count === 1 ? "" : "s"} found.`
+        : "Collection starts only after you choose it and never includes passwords.";
     retryContextBtn.style.display = response?.pending_interaction ? "inline-flex" : "none";
-    releaseControlBtn.disabled = !(response?.attached_tab_ids?.length);
+    const humanOwnsActiveTab = humanControlLease?.tab_id === activeTab?.id;
+    const agentOwnsActiveTab = response?.visual_control_tab_ids?.includes(activeTab?.id);
+    controlOwnerDot.className = `status-dot ${agentOwnsActiveTab && !humanOwnsActiveTab ? "live" : ""}`.trim();
+    controlOwnerLabel.textContent = humanOwnsActiveTab || !agentOwnsActiveTab
+      ? "You are in control"
+      : "EvoFlux is controlling this tab";
+    controlOwnerDetail.textContent = humanOwnsActiveTab
+      ? "Agent commands are paused until you resume them."
+      : agentOwnsActiveTab
+        ? "You can take control back at any time."
+        : "EvoFlux is not controlling this tab.";
+    releaseControlBtn.textContent = humanOwnsActiveTab
+      ? "Resume agent control"
+      : agentOwnsActiveTab
+        ? "Release browser control"
+        : "Browser control released";
+    releaseControlBtn.disabled = !humanOwnsActiveTab && !agentOwnsActiveTab;
   } catch (error) {
     settingsStatusDot.className = "status-dot error";
     settingsStatusText.textContent = "Extension unavailable";
@@ -2017,14 +2061,14 @@ function renderWatchList() {
     const copy = document.createElement("div");
     copy.className = "watch-item-copy";
     const label = document.createElement("strong");
-    label.textContent = `${watch.state === "matched" ? "Matched" : "Watching"}: ${watch.needle}`;
+    label.textContent = `${watch.state === "matched" ? "Found" : "Waiting for"}: ${watch.needle}`;
     const page = document.createElement("span");
     page.textContent = watch.page_url;
     copy.append(label, page);
     const action = document.createElement("button");
     action.type = "button";
     action.className = `btn${watch.state === "matched" ? " primary" : ""}`;
-    action.textContent = watch.state === "matched" ? "Send" : "Cancel";
+    action.textContent = watch.state === "matched" ? "Tell EvoFlux" : "Stop";
     action.addEventListener("click", async () => {
       action.disabled = true;
       const response = await chrome.runtime.sendMessage({
@@ -2152,8 +2196,30 @@ async function retryBrowserContext() {
 
 async function releaseBrowserControl() {
   releaseControlBtn.disabled = true;
-  await chrome.runtime.sendMessage({ type: "release_debuggers" });
-  await refreshSettings();
+  try {
+    const humanOwnsActiveTab = humanControlLease?.tab_id === activeTab?.id;
+    const response = await chrome.runtime.sendMessage({
+      type: humanOwnsActiveTab ? "release_human_control" : "release_browser_control",
+      tab_id: activeTab?.id,
+    });
+    if (!response?.ok) throw new Error(response?.error || "Could not update browser control");
+    humanControlLease = humanOwnsActiveTab ? null : response.lease || null;
+    renderHumanControl();
+    clearNotice();
+  } catch (error) {
+    setNotice(error.message || String(error), "error");
+  } finally {
+    await refreshSettings();
+  }
+}
+
+function scheduleSettingsRefresh() {
+  if (!settingsDrawer.classList.contains("visible")) return;
+  clearTimeout(settingsRefreshTimer);
+  settingsRefreshTimer = setTimeout(() => {
+    settingsRefreshTimer = null;
+    void refreshSettings();
+  }, 80);
 }
 
 async function openGroupedTab() {
@@ -2263,6 +2329,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && (changes.relayBase || changes.pairingCredential || changes.pairingRelayBase)) {
     void refreshPanel();
   }
+  if (
+    area === "local" &&
+    (changes.webbridgeTextWatches || changes.webbridgeTeachRecording || changes.lastTeachDraft)
+  ) {
+    scheduleSettingsRefresh();
+  }
 });
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === "connection_state") {
@@ -2270,6 +2342,10 @@ chrome.runtime.onMessage.addListener((message) => {
     const isConnecting = Boolean(message.connecting);
     statusDot.className = `status-dot ${isConnected ? "live" : isConnecting ? "" : "error"}`.trim();
     if (settingsDrawer.classList.contains("visible")) void refreshSettings();
+    return;
+  }
+  if (message?.type === "automation_state_changed") {
+    scheduleSettingsRefresh();
     return;
   }
   if (message?.type === "pairing_revoked") {
