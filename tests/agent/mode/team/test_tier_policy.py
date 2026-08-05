@@ -125,6 +125,16 @@ class TestDefaultDeferredTools:
         assert registry["browser_use"].deferred
         assert registry["webbridge"].deferred
 
+    def test_preview_is_available_in_every_first_party_mode(self):
+        from app.agent.builtin_prompts import EVOFLUX_prompt_for_mode, tier_tools
+        from app.agent.loader import _default_tool_registry
+
+        registry = _default_tool_registry()
+        assert registry["preview"].tiers == frozenset({"work", "coding", "aim"})
+        for mode in ("work", "coding", "aim"):
+            assert "preview" in tier_tools(registry, mode=mode, role="lead")
+            assert "preview" in EVOFLUX_prompt_for_mode(mode)
+
     def test_includes_long_tail_tools(self):
         from app.agent.loader import _default_tool_registry
 
