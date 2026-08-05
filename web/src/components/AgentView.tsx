@@ -30,6 +30,7 @@ import { getVisibleTurnWindow, partitionTurns, type TurnItem } from '@/utils/tur
 import { isDirectUserBlock, latestDirectUserBlockId } from '@/utils/blocks'
 import { buildUserMessageNavigationItems } from '@/utils/user-message-navigation'
 import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
+import { usePinnedTranscript } from '@/hooks/usePinnedTranscript'
 import { cn } from '@/lib/utils'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { ActivityStatus } from './motion/ActivityStatus'
@@ -37,10 +38,9 @@ import { BlockEnter } from './motion/BlockEnter'
 import { TextSelectionAction } from './TextSelectionAction'
 import { TurnChangesCard } from './TurnChangesCard'
 import { UserMessageNavigationRail } from './UserMessageNavigationRail'
+import { StreamingTurnHeader } from './StreamingTurnHeader'
 import type { ContentBlock, TurnChangesPending } from '@/api/types'
 
-const SCROLL_THRESHOLD = 40
-const USER_SCROLL_DETACH_DELTA = 4
 const LOAD_OLDER_THRESHOLD = 300
 const INITIAL_RENDERED_TURNS = 48
 const TURN_RENDER_STEP = 48
@@ -85,11 +85,6 @@ interface AgentViewProps {
 }
 
 export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, onAddSelectionToChat, onRequestSelectionDetails, onSendToSideChat, turnChanges }: AgentViewProps) {
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const contentRef = useRef<HTMLDivElement>(null)
-  const pinnedRef = useRef(true)
-  const [showScrollBtn, setShowScrollBtn] = useState(false)
-  const showScrollBtnRef = useRef(false)
   const [renderedTurnCount, setRenderedTurnCount] = useState(INITIAL_RENDERED_TURNS)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
   const prevScrollHeightRef = useRef<number | null>(null)
@@ -101,6 +96,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   // Me mirror store _loadingOlder in a ref so the wheel handler can check
   // it synchronously without subscribing to store state changes.
   const loadingOlderRef = useRef(false)
+  const topLoadArmedRef = useRef(true)
 
   const handleRevert = useCallback(() => {
     void useTeamStore.getState().undoTeam()
@@ -193,39 +189,59 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     () => new Set(latestMCPAppBlockIdsKey ? latestMCPAppBlockIdsKey.split('\0') : []),
     [latestMCPAppBlockIdsKey],
   )
+  const latestLiveUserBlockId = useMemo(
+    () => latestDirectUserBlockId(currentBlocks),
+    [currentBlocks],
+  )
+
+  const handleViewportScroll = useCallback((element: HTMLDivElement) => {
+    if (element.scrollTop > LOAD_OLDER_THRESHOLD * 2) {
+      topLoadArmedRef.current = true
+      return
+    }
+    if (element.scrollTop > LOAD_OLDER_THRESHOLD || !topLoadArmedRef.current) return
+
+    topLoadArmedRef.current = false
+    if (hiddenTurnCount > 0) {
+      prevScrollHeightRef.current = element.scrollHeight
+      pendingRestoreRef.current = true
+      setRenderedTurnCount((count) => Math.min(turnItems.length, count + TURN_RENDER_STEP))
+      return
+    }
+    if (!useTeamStore.getState().hasMore || loadingOlderRef.current) return
+
+    loadingOlderRef.current = true
+    prevScrollHeightRef.current = element.scrollHeight
+    pendingRestoreRef.current = true
+    void useTeamStore.getState().loadOlderMessages().finally(() => {
+      loadingOlderRef.current = false
+    })
+  }, [hiddenTurnCount, turnItems.length])
+
+  const isEmpty = visibleCount === 0 && !isWorking
+  const {
+    contentRef,
+    detach: detachFromBottom,
+    restorePrependOffset,
+    scrollRef,
+    scrollToBottom,
+    showScrollButton: showScrollBtn,
+  } = usePinnedTranscript({
+    isEmpty,
+    contentKey: totalLen,
+    resetKey: sessionId,
+    followKey: latestLiveUserBlockId ?? (isWorking && isContinuing ? `continue:${sessionId ?? ''}` : null),
+    onScrollFrame: handleViewportScroll,
+  })
 
   const showEarlierTurns = useCallback(() => {
-    const el = scrollRef.current
-    if (el) {
-      prevScrollHeightRef.current = el.scrollHeight
+    const element = scrollRef.current
+    if (element) {
+      prevScrollHeightRef.current = element.scrollHeight
       pendingRestoreRef.current = true
     }
     setRenderedTurnCount((count) => Math.min(turnItems.length, count + TURN_RENDER_STEP))
-  }, [turnItems.length])
-
-  const isAtBottom = useCallback(() => {
-    const el = scrollRef.current
-    if (!el) return true
-    return el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_THRESHOLD
-  }, [])
-
-  const setScrollButtonVisible = useCallback((visible: boolean) => {
-    if (showScrollBtnRef.current === visible) return
-    showScrollBtnRef.current = visible
-    setShowScrollBtn(visible)
-  }, [])
-
-  const scrollToBottom = useCallback((smooth = false) => {
-    const el = scrollRef.current
-    if (!el) return
-    pinnedRef.current = true
-    setScrollButtonVisible(false)
-    if (smooth) {
-      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-    } else {
-      el.scrollTop = el.scrollHeight
-    }
-  }, [setScrollButtonVisible])
+  }, [scrollRef, turnItems.length])
 
   const scrollToUserMessage = useCallback((
     messageId: string,
@@ -235,8 +251,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     const item = userMessageNavigationItems.find((entry) => entry.id === messageId)
     if (!container || !item) return
 
-    pinnedRef.current = false
-    setScrollButtonVisible(true)
+    detachFromBottom()
 
     const anchor = findUserMessageNavigationAnchor(container, messageId)
     if (anchor) {
@@ -250,78 +265,18 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     pendingUserNavigationRef.current = { messageId, behavior }
     const requiredTurnCount = turnItems.length - item.turnIndex
     setRenderedTurnCount((count) => Math.max(count, requiredTurnCount))
-  }, [setScrollButtonVisible, turnItems.length, userMessageNavigationItems])
-
-  // Me track scroll position and reveal/fetch older history near the top.
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    let lastScrollTop = el.scrollTop
-    let scrollFrame: number | null = null
-    let topLoadArmed = true
-    const updatePinnedFromPosition = () => {
-      scrollFrame = null
-      const atBottom = isAtBottom()
-      pinnedRef.current = atBottom
-      setScrollButtonVisible(!atBottom)
-    }
-    const detachFromBottom = () => {
-      pinnedRef.current = false
-      setScrollButtonVisible(true)
-    }
-    const onScroll = () => {
-      const nextScrollTop = el.scrollTop
-      if (nextScrollTop < lastScrollTop - USER_SCROLL_DETACH_DELTA) {
-        detachFromBottom()
-      }
-      lastScrollTop = nextScrollTop
-      // Me: check + arm the load flag synchronously on the event, before any
-      // rAF. Multiple scroll events can fire before a single rAF executes, so
-      // if the guard lived inside rAF all queued callbacks would see the flag
-      // as false and fire duplicate requests.
-      if (el.scrollTop > LOAD_OLDER_THRESHOLD * 2) {
-        topLoadArmed = true
-      } else if (el.scrollTop <= LOAD_OLDER_THRESHOLD && topLoadArmed) {
-        topLoadArmed = false
-        if (hiddenTurnCount > 0) {
-          showEarlierTurns()
-        } else if (useTeamStore.getState().hasMore && !loadingOlderRef.current) {
-          loadingOlderRef.current = true
-          prevScrollHeightRef.current = el.scrollHeight
-          pendingRestoreRef.current = true
-          void useTeamStore.getState().loadOlderMessages().finally(() => {
-            loadingOlderRef.current = false
-          })
-        }
-      }
-
-      if (scrollFrame === null) {
-        scrollFrame = requestAnimationFrame(updatePinnedFromPosition)
-      }
-    }
-    const onWheel = (e: WheelEvent) => {
-      if (e.deltaY < -USER_SCROLL_DETACH_DELTA) detachFromBottom()
-    }
-    el.addEventListener('scroll', onScroll, { passive: true })
-    el.addEventListener('wheel', onWheel, { passive: true })
-    return () => {
-      if (scrollFrame !== null) cancelAnimationFrame(scrollFrame)
-      el.removeEventListener('scroll', onScroll)
-      el.removeEventListener('wheel', onWheel)
-    }
-  }, [hiddenTurnCount, isAtBottom, setScrollButtonVisible, showEarlierTurns])
+  }, [detachFromBottom, scrollRef, turnItems.length, userMessageNavigationItems])
 
   // Me restore scroll position after older messages are prepended.
   // We track a "pending restore" flag separately from blocks.length so
   // that SSE flushes (which also grow blocks) never accidentally trigger
   // a scroll-position restore.
   useEffect(() => {
-    const el = scrollRef.current
-    if (!el || !pendingRestoreRef.current || prevScrollHeightRef.current === null) return
+    if (!pendingRestoreRef.current || prevScrollHeightRef.current === null) return
     pendingRestoreRef.current = false
-    el.scrollTop = el.scrollHeight - prevScrollHeightRef.current
+    restorePrependOffset(prevScrollHeightRef.current)
     prevScrollHeightRef.current = null
-  }, [blocks.length, renderedTurnCount])
+  }, [blocks.length, renderedTurnCount, restorePrependOffset])
 
   useEffect(() => {
     const pending = pendingUserNavigationRef.current
@@ -331,37 +286,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     if (!anchor) return
     pendingUserNavigationRef.current = null
     anchor.scrollIntoView({ behavior: pending.behavior, block: 'start' })
-  }, [blocks.length, renderedTurnCount, visibleTurnItems])
-
-  // Follow the actual rendered transcript height instead of raw SSE chunks.
-  // ResizeObserver is paint-coalesced, so the viewport moves on the same
-  // cadence as the streaming Markdown reveal and no longer jitters ahead.
-  useEffect(() => {
-    const content = contentRef.current
-    if (!content || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => {
-      const el = scrollRef.current
-      if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
-    })
-    observer.observe(content)
-    return () => observer.disconnect()
-  }, [])
-
-  // New blocks may mount without changing the wrapper's measured height
-  // immediately; keep a synchronous fallback for that structural update.
-  useEffect(() => {
-    const el = scrollRef.current
-    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
-  }, [totalLen])
-
-  const isEmpty = visibleCount === 0 && !isWorking
-  useEffect(() => {
-    if (!isEmpty) return
-    pinnedRef.current = true
-    if (scrollRef.current) scrollRef.current.scrollTop = 0
-    const frame = requestAnimationFrame(() => setScrollButtonVisible(false))
-    return () => cancelAnimationFrame(frame)
-  }, [isEmpty, setScrollButtonVisible])
+  }, [blocks.length, renderedTurnCount, scrollRef, visibleTurnItems])
 
   return (
     <div className="@container/agent-view relative flex min-h-0 flex-1 flex-col">
@@ -417,13 +342,15 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                   const turnIsStreaming = isWorking && isTrailingTurn
                   const canContinue = isTrailingTurn && !isWorking ? onContinue : undefined
                   const groupedBlocks = groupConsecutiveToolCalls(item.blocks)
+                  const turnStartedAt = item.blocks.find((block) => block.startedAt)?.startedAt
                   // Map blockId → absolute index for streaming detection inside groups
                   const blockAbsIdx = new Map(item.blocks.map((b, j) => [b.id, item.startIndex + j]))
                  return (
                    <div
                      key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}
-                     className={turnIsStreaming ? undefined : 'oa-transcript-turn'}
+                     className={turnIsStreaming ? 'oa-active-turn-runway' : 'oa-transcript-turn'}
                    >
+                     {turnIsStreaming && <StreamingTurnHeader startedAt={turnStartedAt} />}
                      <div className="space-y-2">
                        {groupedBlocks.map((renderItem, j) => {
                          if ('kind' in renderItem && (renderItem as ToolBlockGroup).kind === 'group') {
@@ -431,7 +358,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                              <ToolCallGroupCard
                                key={(renderItem as ToolBlockGroup).id}
                                group={renderItem as ToolBlockGroup}
-                               isStreaming={turnIsStreaming}
+                               isStreaming={turnIsStreaming && j === groupedBlocks.length - 1}
                                sessionId={sessionId}
                                latestMCPAppBlockIds={latestMCPAppBlockIds}
                              />
@@ -486,7 +413,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                 (isContinuing && currentBlocks.length === 0) ||
                 (currentBlocks.length > 0 && currentBlocks.every((b) => b.type === 'user'))
               ))) && (
-              <div>
+              <div className="oa-active-turn-runway">
                 <ActivityStatus className="py-1 pl-0.5 text-xs" />
               </div>
             )}

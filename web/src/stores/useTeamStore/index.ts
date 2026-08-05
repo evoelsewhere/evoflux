@@ -9,6 +9,7 @@ import { applyRevertBoundary, revokeBlobUrlsFromBlocks } from './helpers'
 import { createSSEHandler } from './sse-reducer'
 import { useToastStore } from '@/stores/useToastStore'
 import { isTransientNetworkError } from '@/utils/errors'
+import { createStreamScheduler } from '@/api/stream-scheduler'
 import type { AgentStream, TeamStore } from './types'
 import type { MessageResponse } from '@/api/types'
 
@@ -771,6 +772,13 @@ export const useTeamStore = create<TeamStore>()(
         draft.planApproval = null
       })
 
+      const streamScheduler = createStreamScheduler((type, data) => {
+        const current = get()
+        if (current.sessionId !== sessionId || current._sessionGeneration !== generation) return
+        current._handleSSEEvent(type, data)
+      })
+      abort.signal.addEventListener('abort', streamScheduler.cancel, { once: true })
+
       teamStream(
         sessionId,
         {
@@ -781,7 +789,7 @@ export const useTeamStore = create<TeamStore>()(
               if (type === 'desktop_notification') current._handleSSEEvent(type, data)
               return
             }
-            current._handleSSEEvent(type, data)
+            streamScheduler.push(type, data)
           },
           onParseError: (err) => {
             console.warn(err.message)
@@ -790,6 +798,7 @@ export const useTeamStore = create<TeamStore>()(
             const current = get()
             if (current.sessionId !== sessionId || current._sessionGeneration !== generation) return
             if (current._unloading || abort.signal.aborted) return
+            streamScheduler.flush()
             if (isTransientNetworkError(err) || !current.isTeamWorking) {
               set((draft) => { draft.isConnected = false })
               return
@@ -798,6 +807,7 @@ export const useTeamStore = create<TeamStore>()(
           },
           onDone: () => {
             if (abort.signal.aborted) return
+            streamScheduler.flush()
             const current = get()
             if (current.sessionId !== sessionId || current._sessionGeneration !== generation) return
             set((draft) => {

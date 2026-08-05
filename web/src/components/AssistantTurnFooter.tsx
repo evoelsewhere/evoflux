@@ -179,7 +179,7 @@ export function AssistantTurn({
             <ToolCallGroupCard
               key={(renderItem as ToolBlockGroup).id}
               group={renderItem as ToolBlockGroup}
-              isStreaming={turnIsStreaming}
+              isStreaming={turnIsStreaming && j === renderItems.length - 1}
               sessionId={sessionId}
               latestMCPAppBlockIds={latestMCPAppBlockIds}
               compact={size === 'compact'}

@@ -1,8 +1,8 @@
 /**
  * ToolCallGroup — collapses a consecutive agent activity run into one row.
  *
- * Only completed tools from one semantic family are grouped. Thinking and
- * in-flight tools remain visible boundaries so live activity stays legible.
+ * Completed tools from one uninterrupted activity phase are grouped. Thinking
+ * and in-flight tools remain visible boundaries so live activity stays legible.
  * Expanding preserves the original ordered detail through the shared
  * `BlockRenderer` pipeline (tools and MCP apps).
  *
@@ -10,7 +10,8 @@
  * should not require expand just to remain usable.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import {
   Terminal, FileText, Search, Globe, Code2,
   FolderOpen, GitBranch, Database, ChevronDown, ChevronUp,
@@ -21,6 +22,7 @@ import { BlockRenderer } from './BlockRenderer'
 import { MCPAppResult } from './MCPAppResult'
 import { ActivityStatus } from './motion/ActivityStatus'
 import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
+import { panelTransition, useMotionPreset } from '@/lib/motion'
 import type { ContentBlock, MessageAttachment } from '@/api/types'
 
 // ── Grouped block type ────────────────────────────────────────────────────────
@@ -79,7 +81,7 @@ export function getToolIcon(toolName: string): React.ElementType {
 
 // ── Grouping utility ─────────────────────────────────────────────────────────
 
-const MIN_GROUP_SIZE = 3
+const MIN_GROUP_SIZE = 2
 const FILE_ACTIVITY_TOOLS = new Set([
   'read',
   'read_file',
@@ -106,14 +108,27 @@ function toolFamily(toolName: string): string {
   return toolName
 }
 
-function groupLabel(toolName: string): string {
-  switch (toolFamily(toolName)) {
+function familyLabel(family: string): string {
+  switch (family) {
     case 'files': return 'Read files'
     case 'browser': return 'Browsed web'
     case 'shell': return 'Ran commands'
     case 'write': return 'Changed files'
-    default: return 'Ran tools'
+    case 'python': return 'Ran Python'
+    case 'git': return 'Ran Git'
+    case 'skill': return 'Loaded a skill'
+    default: return 'Used tools'
   }
+}
+
+function groupLabel(blocks: ContentBlock[]): string {
+  const families = [...new Set(blocks.flatMap((block) => (
+    block.toolName ? [toolFamily(block.toolName)] : []
+  )))]
+  const labels = families.map(familyLabel)
+  return labels
+    .map((label, index) => index === 0 ? label : label.charAt(0).toLowerCase() + label.slice(1))
+    .join(', ')
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -129,16 +144,14 @@ export function groupConsecutiveToolCalls(blocks: ContentBlock[]): RenderBlock[]
       continue
     }
 
-    // Only collapse completed tools from one semantic family. Thinking and
-    // in-flight tools remain visible boundaries while the response streams.
-    const family = toolFamily(block.toolName)
+    // Collapse one uninterrupted completed activity phase. A reasoning/text
+    // update or an in-flight call remains a strong visual boundary.
     let j = i + 1
     while (
       j < blocks.length &&
       blocks[j].type === 'tool' &&
       Boolean(blocks[j].toolName) &&
-      blocks[j].toolDone === true &&
-      toolFamily(blocks[j].toolName as string) === family
+      blocks[j].toolDone === true
     ) {
       j++
     }
@@ -182,17 +195,25 @@ export function ToolCallGroupCard({
   latestMCPAppBlockIds,
   compact = false,
 }: ToolCallGroupProps) {
+  const preset = useMotionPreset()
   const [expanded, setExpanded] = useState(false)
+  const activityScrollRef = useRef<HTMLDivElement>(null)
   /* eslint-disable react-hooks/static-components */
   const Icon = getToolIcon(group.toolName)
   const toolBlocks = group.blocks.filter((block) => block.type === 'tool')
-  const label = groupLabel(group.toolName)
+  const label = groupLabel(toolBlocks)
   const groupIsStreaming = isStreaming && toolBlocks.some((block) => !block.toolDone)
   const groupedAttachments = toolBlocks.flatMap(
     (block) =>
       (block.extra as { attachments?: MessageAttachment[] } | undefined)
         ?.attachments ?? [],
   )
+
+  useEffect(() => {
+    if (!expanded || !isStreaming) return
+    const element = activityScrollRef.current
+    if (element) element.scrollTop = element.scrollHeight
+  }, [expanded, group.blocks.length, isStreaming])
 
   const collapsedMcpApps = useMemo(() => {
     if (expanded || !latestMCPAppBlockIds || latestMCPAppBlockIds.size === 0) {
@@ -207,7 +228,7 @@ export function ToolCallGroupCard({
   }, [expanded, latestMCPAppBlockIds, toolBlocks])
 
   return (
-    <div className={cn('overflow-hidden rounded-md', className)}>
+    <div className={cn('relative overflow-hidden rounded-md', className)}>
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -256,21 +277,45 @@ export function ToolCallGroupCard({
         </div>
       )}
 
-      {expanded && (
-        <div className="ml-2 border-l border-(--color-border) pl-2">
-          {group.blocks.map((block, index) => (
-            <div key={block.id} className="py-0.5">
-              <BlockRenderer
-                block={block}
-                isStreaming={groupIsStreaming && index === group.blocks.length - 1}
-                sessionId={sessionId}
-                latestMCPAppBlockIds={latestMCPAppBlockIds}
-                compact={compact}
-              />
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            key="activity-details"
+            initial={preset.intensity === 'reduced' ? false : { height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={preset.intensity === 'reduced' ? undefined : { height: 0, opacity: 0 }}
+            transition={panelTransition(preset)}
+            className="overflow-hidden"
+          >
+            <div ref={activityScrollRef} className="activity-group-scroll px-1">
+              {group.blocks.map((block, index) => (
+                <motion.div
+                  key={block.id}
+                  initial={preset.intensity === 'reduced'
+                    ? false
+                    : { opacity: 0, x: -4, y: 7, filter: 'blur(2px)' }}
+                  animate={{ opacity: 1, x: 0, y: 0, filter: 'blur(0px)' }}
+                  transition={preset.intensity === 'reduced'
+                    ? { duration: 0 }
+                    : {
+                        ...preset.spring,
+                        delay: Math.min(index, 8) * Math.max(preset.stagger * 1.5, 0.035),
+                      }}
+                  className="activity-group-row"
+                >
+                  <BlockRenderer
+                    block={block}
+                    isStreaming={groupIsStreaming && index === group.blocks.length - 1}
+                    sessionId={sessionId}
+                    latestMCPAppBlockIds={latestMCPAppBlockIds}
+                    compact={compact}
+                  />
+                </motion.div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

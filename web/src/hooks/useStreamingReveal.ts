@@ -1,6 +1,6 @@
 import { startTransition, useEffect, useRef, useState } from 'react'
 
-const STREAM_FRAME_MS = 32
+const STREAM_FRAME_MS = 24
 
 /**
  * Advance quickly enough to stay close to the network stream while smoothing
@@ -27,6 +27,24 @@ function preserveUnicodeBoundary(content: string, length: number): number {
     next >= 0xdc00 &&
     next <= 0xdfff
   return splitSurrogatePair ? length + 1 : length
+}
+
+/** Avoid exposing half a combining sequence while a token is being painted. */
+export function streamingRevealBoundary(content: string, length: number): number {
+  const safeLength = preserveUnicodeBoundary(content, length)
+  if (safeLength <= 0 || safeLength >= content.length) return safeLength
+
+  // Combining marks and variation selectors belong to the preceding glyph.
+  // Include them in the same frame so accents/emoji never visibly mutate.
+  let boundary = safeLength
+  while (boundary < content.length) {
+    const codePoint = content.codePointAt(boundary)
+    if (codePoint === undefined) break
+    const character = String.fromCodePoint(codePoint)
+    if (!/[\p{Mark}\uFE0E\uFE0F]/u.test(character)) break
+    boundary += character.length
+  }
+  return boundary
 }
 
 function prefersReducedMotion(): boolean {
@@ -79,7 +97,7 @@ export function useStreamingReveal(content: string, isStreaming: boolean): strin
       }
 
       const rawLength = nextStreamingRevealLength(current.length, target.length)
-      const nextLength = preserveUnicodeBoundary(target, rawLength)
+      const nextLength = streamingRevealBoundary(target, rawLength)
       const next = target.slice(0, nextLength)
       displayedRef.current = next
       lastPaintRef.current = timestamp

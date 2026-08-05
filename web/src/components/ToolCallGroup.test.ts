@@ -21,7 +21,7 @@ function block(
 }
 
 describe('groupConsecutiveToolCalls', () => {
-  it('groups at least three completed tools from the same semantic family', () => {
+  it('groups a completed activity phase', () => {
     const blocks = [
       block('read-1', 'tool', 'read'),
       block('search-1', 'tool', 'grep'),
@@ -57,25 +57,25 @@ describe('groupConsecutiveToolCalls', () => {
     expect((result[2] as ToolBlockGroup).kind).toBe('group')
   })
 
-  it('does not collapse only two completed tools', () => {
+  it('collapses two completed tools to keep the transcript quiet', () => {
     const result = groupConsecutiveToolCalls([
       block('read-1', 'tool', 'read'),
       block('search-1', 'tool', 'grep'),
     ])
 
-    expect(result).toHaveLength(2)
-    expect(result.every((item) => !('kind' in item))).toBe(true)
+    expect(result).toHaveLength(1)
+    expect((result[0] as ToolBlockGroup).kind).toBe('group')
   })
 
-  it('does not merge tools from different semantic families', () => {
+  it('summarizes mixed tool families from the same activity phase', () => {
     const result = groupConsecutiveToolCalls([
       block('read-1', 'tool', 'read'),
       block('browser-1', 'tool', 'webbridge'),
       block('edit-1', 'tool', 'edit'),
     ])
 
-    expect(result).toHaveLength(3)
-    expect(result.every((item) => !('kind' in item))).toBe(true)
+    expect(result).toHaveLength(1)
+    expect((result[0] as ToolBlockGroup).blocks).toHaveLength(3)
   })
 
   it('keeps unfinished tools visible while streaming', () => {

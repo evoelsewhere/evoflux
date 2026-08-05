@@ -758,6 +758,15 @@ a svg.lucide,
   animation: activity-text-sweep 2.2s linear infinite;
 }
 
+@keyframes activity-live-pulse {
+  0%, 100% { opacity: 0.38; transform: scale(0.72); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.activity-live-dot {
+  animation: activity-live-pulse 1.15s var(--ease-in-out) infinite;
+}
+
 /* ─────────────────────────────────────────────────────────────
  * Progressive block reveal — fade-in + slight slide-up
  * ───────────────────────────────────────────────────────────── */
@@ -907,6 +916,12 @@ a svg.lucide,
     animation: none;
     background: none;
     -webkit-text-fill-color: currentColor;
+  }
+
+  .activity-live-dot {
+    animation: none;
+    opacity: 0.72;
+    transform: none;
   }
 
   .skeleton-shimmer {
@@ -1383,6 +1398,52 @@ a svg.lucide,
   contain: layout style;
 }
 
+/* Codex-style conversation runway. While a turn is live, its minimum height
+ * keeps the latest prompt in the upper quarter of the viewport and reserves
+ * the remaining space for the response to grow before bottom-follow begins. */
+.oa-active-turn-runway {
+  min-height: clamp(18rem, 70svh, 44rem);
+}
+
+@media (max-width: 767px) {
+  .oa-active-turn-runway {
+    min-height: clamp(14rem, 62svh, 32rem);
+  }
+}
+
+/* Expanded activity groups stay compact like Codex's work log. The mask keeps
+ * the first/last row quiet and makes the internal scroll boundary legible
+ * without adding another card or hard divider. */
+.activity-group-scroll {
+  max-height: min(18rem, 45vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-block: 1.25rem;
+  scrollbar-color: color-mix(in srgb, var(--color-text-subtle) 42%, transparent) transparent;
+  scrollbar-width: thin;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black 1.25rem,
+    black calc(100% - 1.25rem),
+    transparent 100%
+  );
+}
+
+.activity-group-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.activity-group-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text-subtle) 42%, transparent);
+}
+
+.activity-group-row > div > div {
+  margin-block: 0;
+}
+
 /* A quiet caret gives the live response a clear edge without moving the text.
  * It disappears with the streaming class, so completed Markdown is unchanged. */
 @keyframes oa-streaming-caret-breathe {
@@ -1396,7 +1457,9 @@ a svg.lucide,
 .oa-streaming-prose > h3:last-child::after,
 .oa-streaming-prose > ul:last-child > li:last-child::after,
 .oa-streaming-prose > ol:last-child > li:last-child::after,
-.oa-streaming-prose > blockquote:last-child > p:last-child::after {
+.oa-streaming-prose > blockquote:last-child > p:last-child::after,
+.oa-streaming-prose > div:last-child pre code::after,
+.oa-streaming-prose > table:last-child tr:last-child td:last-child::after {
   content: '';
   display: inline-block;
   width: 0.38em;
@@ -1417,7 +1480,9 @@ a svg.lucide,
   .oa-streaming-prose > h3:last-child::after,
   .oa-streaming-prose > ul:last-child > li:last-child::after,
   .oa-streaming-prose > ol:last-child > li:last-child::after,
-  .oa-streaming-prose > blockquote:last-child > p:last-child::after {
+  .oa-streaming-prose > blockquote:last-child > p:last-child::after,
+  .oa-streaming-prose > div:last-child pre code::after,
+  .oa-streaming-prose > table:last-child tr:last-child td:last-child::after {
     animation: none;
     opacity: 0.45;
     transform: none;

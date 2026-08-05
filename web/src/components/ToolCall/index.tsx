@@ -18,7 +18,18 @@
 
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronRight, Copy, Check, MonitorPlayIcon } from 'lucide-react'
+import {
+  ChevronRight,
+  Copy,
+  Check,
+  MonitorPlayIcon,
+  FileText,
+  Search,
+  Pencil,
+  SquareTerminal,
+  Globe2,
+  FolderOpen,
+} from 'lucide-react'
 import { ToolResult } from '../ToolResult'
 import { getToolDisplay } from './display'
 import { DiffView } from './DiffView'
@@ -118,6 +129,38 @@ function formatToolLabel(name: string): string {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
+}
+
+function completedToolLabel(name: string): string {
+  switch (name) {
+    case 'read':
+    case 'read_file': return 'Read'
+    case 'write':
+    case 'write_file': return 'Wrote'
+    case 'edit':
+    case 'edit_file':
+    case 'patch': return 'Edited'
+    case 'grep':
+    case 'code_search': return 'Searched'
+    case 'glob':
+    case 'ls': return 'Listed'
+    case 'shell':
+    case 'bash':
+    case 'run_command': return 'Ran'
+    case 'browser_use':
+    case 'webbridge': return 'Browsed'
+    default: return formatToolLabel(name)
+  }
+}
+
+function ToolActivityIcon({ name }: { name: string }) {
+  const props = { size: 13, strokeWidth: 1.7, 'aria-hidden': true as const }
+  if (name === 'read' || name === 'read_file') return <FileText {...props} />
+  if (name === 'write' || name === 'write_file' || name === 'edit' || name === 'edit_file' || name === 'patch') return <Pencil {...props} />
+  if (name === 'grep' || name === 'code_search') return <Search {...props} />
+  if (name === 'glob' || name === 'ls') return <FolderOpen {...props} />
+  if (name === 'browser_use' || name === 'webbridge' || name === 'web_search' || name === 'web_fetch') return <Globe2 {...props} />
+  return <SquareTerminal {...props} />
 }
 
 function formatDuration(ms: number): string {
@@ -246,9 +289,14 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
   }
 
   const hasDetails = Boolean(formattedArgs || shownLiveOutput || shownResult || hasReadResult)
-  const expanded = manualExpanded ?? false
+  // Match Codex's live activity treatment: once a running command starts
+  // producing output, reveal the inspector without requiring a click. A user
+  // collapse remains authoritative for the rest of that invocation.
+  const expanded = manualExpanded ?? Boolean(isRunning && shownLiveOutput)
   const displayName = name || 'tool'
-  const toolLabel = formatToolLabel(displayName)
+  const toolLabel = state === 'success' || state === 'failed'
+    ? completedToolLabel(displayName)
+    : formatToolLabel(displayName)
   const title = headerTitle ? `${toolLabel}: ${headerTitle}` : toolLabel
   const elapsedMs = durationMs ?? (!done && startedAt ? now - startedAt : undefined)
   const activityLabel = state === 'start' || state === 'running'
@@ -318,19 +366,25 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
             : `${displayName} (no details)`
         }
       >
+        <span className={state === 'failed' ? 'shrink-0 text-(--color-error)' : 'shrink-0 text-(--color-text-subtle)'}>
+          <ToolActivityIcon name={displayName} />
+        </span>
         {/* Header content: tool-specific summary or fallback to tool name.
             Mono+600 per pencil dqwZw. */}
         {activityLabel ? (
-          <ActivityStatus
-            label={activityLabel}
-            className="min-w-0 truncate font-mono text-xs"
-          />
+          <span className="flex min-w-0 items-center gap-1.5">
+            <ActivityStatus
+              label={activityLabel}
+              className="min-w-0 truncate font-mono text-xs"
+            />
+            <span className="activity-live-dot size-1.5 shrink-0 rounded-full bg-(--accent-blue)" aria-hidden="true" />
+          </span>
         ) : (
           <span className="min-w-0 truncate font-mono text-(--color-text)" title={title}>
             <span className="font-semibold">{toolLabel}</span>
             {visibleHeader && (
               <>
-                <span>: </span>
+                <span> </span>
                 <span title={headerTitle ?? undefined}>{visibleHeader}</span>
               </>
             )}
