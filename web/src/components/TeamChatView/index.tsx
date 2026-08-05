@@ -1795,7 +1795,13 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                   {projectIdState ? (
                     activeProject && <ProjectInfoCard project={activeProject} />
                   ) : (
-                    <WorkspaceInfoCard workspace={workspace} />
+                    <WorkspaceInfoCard
+                      workspace={workspace}
+                      onSuggestion={(suggestion) => {
+                        inputRef.current?.setValue(suggestion)
+                        inputRef.current?.focus()
+                      }}
+                    />
                   )}
                 </div>
               ) : undefined
@@ -1806,7 +1812,13 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             {projectIdState ? (
               activeProject && <ProjectInfoCard project={activeProject} />
             ) : (
-              <WorkspaceInfoCard workspace={workspace} />
+              <WorkspaceInfoCard
+                       workspace={workspace}
+                       onSuggestion={(suggestion) => {
+                         inputRef.current?.setValue(suggestion)
+                         inputRef.current?.focus()
+                       }}
+                     />
             )}
           </div>
         ) : sessionId && !isConnected ? (
