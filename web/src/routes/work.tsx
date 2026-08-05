@@ -134,12 +134,16 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
   const navigateRef = useRef(navigate)
   const sessionIdRef = useRef(sessionId)
   const modeRef = useRef(mode)
-  useEffect(() => {
+  // Route-driven child effects may attach the selected session immediately
+  // after navigation. Sync these refs during the layout phase so the store
+  // subscriber below sees the new URL and does not redirect that session
+  // back to the bare /coding route.
+  useLayoutEffect(() => {
     navigateRef.current = navigate
     sessionIdRef.current = sessionId
     modeRef.current = mode
     workspaceRef.current = workspace
-  })
+  }, [navigate, sessionId, mode, workspace])
 
   // Keep ``useTeamStore._workspace`` and ``projectId`` in sync with the
   // URL-derived session the moment we render the layout — before the async
