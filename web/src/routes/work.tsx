@@ -8,7 +8,7 @@ import { useToastStore } from '@/stores/useToastStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { applyCacheInvalidations, patchSessionTitle } from '@/stores/cache-invalidation-bridge'
 import { queryKeys } from '@/queries'
-import { clearLastCodingFocus, codingFocusId, isProjectFocusId, isWorkspaceUnavailableError, loadLastCodingFocusId, saveLastCodingFocus, saveLastCodingWorkspace, shouldRestoreLastCodingWorkspace, workspaceFromSession } from '@/utils/workspace'
+import { clearLastCodingFocus, codingFocusId, isProjectFocusId, isWorkspaceUnavailableError, saveLastCodingFocus, saveLastCodingWorkspace, workspaceFromSession } from '@/utils/workspace'
 
 /**
  * Layout route for /, /coding, and their session routes.
@@ -51,17 +51,6 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
     // that alone would silently drop the project context on restore.
     if (mode === 'coding' && workspace) saveLastCodingFocus({ project_id: projectId, workspace })
   }, [mode, workspace, projectId])
-
-  // Bare /coding (no focusId, no sessionId) — redirect to whatever focus
-  // (workspace or project) was last active; the /coding/$focusId effect
-  // below does the actual resolving, so this is just a pointer lookup.
-  useEffect(() => {
-    if (mode !== 'coding' || sessionId || focusId) return
-    if (!shouldRestoreLastCodingWorkspace(mode, sessionId, window.location.pathname)) return
-    const lastFocusId = loadLastCodingFocusId()
-    if (!lastFocusId) return
-    navigate({ to: '/coding/$focusId', params: { focusId: lastFocusId }, replace: true })
-  }, [mode, navigate, sessionId, focusId])
 
   // /coding/$focusId (no sessionId yet) — the URL already names a workspace
   // or project directly; resolve/create its session and append it to the URL.
@@ -160,6 +149,13 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
   // flash on initial load / navigation.
   const cachedProjectId = cachedSession?.project_id ?? sessionQuery.data?.project_id ?? null
   useLayoutEffect(() => {
+    if (mode === 'coding' && !sessionId && !focusId) {
+      const state = useTeamStore.getState()
+      if (state.sessionId || state._workspace || state.projectId) {
+        state.newSession()
+      }
+      return
+    }
     useTeamStore.setState((state) => {
       if (mode === 'coding') {
         state._workspace = workspace ?? null
@@ -170,7 +166,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
         state.projectId = null
       }
     })
-  }, [mode, workspace, cachedProjectId])
+  }, [mode, workspace, cachedProjectId, sessionId, focusId])
 
   useEffect(() => {
     if (sessionId) return

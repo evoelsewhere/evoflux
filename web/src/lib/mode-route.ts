@@ -34,7 +34,10 @@ export function saveModeRoute(pathname: string, fullPath: string): void {
   const mode = appModeForPath(pathname)
   if (!mode || !isSafeLocalRoute(fullPath)) return
   try {
-    localStorage.setItem(MODE_ROUTE_KEYS[mode], fullPath)
+    // Entering Coding mode is intentionally session-neutral. Keep Work/AIM
+    // route restoration, but persist only the Coding landing page so mode
+    // switches never reopen a previous workspace/project session.
+    localStorage.setItem(MODE_ROUTE_KEYS[mode], mode === 'coding' ? '/coding' : fullPath)
   } catch {
     // Ignore unavailable/full storage.
   }
@@ -46,6 +49,9 @@ export function loadModeRoute(mode: PersistedAppMode): string | null {
       ?? (mode === 'work' ? localStorage.getItem(STORAGE_KEYS.legacyModeRoutes.work) : null)
     if (!route || !isSafeLocalRoute(route)) return null
     if (appModeForPath(pathnameOf(route)) !== mode) return null
+    // Normalize dynamic routes saved by older releases to the session-neutral
+    // Coding landing page.
+    if (mode === 'coding') return '/coding'
     if (mode === 'work' && !localStorage.getItem(MODE_ROUTE_KEYS.work)) {
       localStorage.setItem(MODE_ROUTE_KEYS.work, route)
     }
@@ -66,7 +72,10 @@ export function restoreLastRouteBeforeRouterMount(): void {
   try {
     const savedRoute = localStorage.getItem(STORAGE_KEYS.lastRoute)
     if (!savedRoute || savedRoute === '/' || !isSafeLocalRoute(savedRoute)) return
-    window.history.replaceState(window.history.state, '', savedRoute)
+    const restoredRoute = appModeForPath(pathnameOf(savedRoute)) === 'coding'
+      ? '/coding'
+      : savedRoute
+    window.history.replaceState(window.history.state, '', restoredRoute)
   } catch {
     // Keep the current route when storage/history is unavailable.
   }

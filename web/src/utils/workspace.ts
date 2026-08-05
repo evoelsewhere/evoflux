@@ -125,14 +125,6 @@ export function loadLastCodingWorkspace(): CodingWorkspaceEntry | null {
   }
 }
 
-export function shouldRestoreLastCodingWorkspace(
-  mode: 'work' | 'coding',
-  sessionId: string | undefined,
-  pathname: string,
-): boolean {
-  return mode === 'coding' && !sessionId && pathname === '/coding'
-}
-
 const LAST_CODING_FOCUS_KEY = STORAGE_KEYS.coding.lastFocus
 
 /**
@@ -186,6 +178,13 @@ export function clearLastCodingFocus(focusId: string): void {
   try {
     if (localStorage.getItem(LAST_CODING_FOCUS_KEY) === focusId) {
       localStorage.removeItem(LAST_CODING_FOCUS_KEY)
+      // Once an explicit focus has been saved, the legacy workspace pointer
+      // is only a compatibility fallback. Clear it as well when removing the
+      // active project; otherwise bare /coding would immediately restore an
+      // older workspace instead of showing the default page.
+      if (isProjectFocusId(focusId)) {
+        localStorage.removeItem(LAST_CODING_WORKSPACE_KEY)
+      }
     }
   } catch {
     // ignore storage failures
