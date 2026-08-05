@@ -295,7 +295,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
         ref={contentRef}
         className={cn(
           'mx-auto w-full max-w-4xl px-3 py-4',
-          isEmpty && 'flex flex-1 items-center',
+          isEmpty && 'flex flex-1 flex-col items-center justify-center',
         )}
       >
         {isEmpty && (
