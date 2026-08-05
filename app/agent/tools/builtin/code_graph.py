@@ -1,11 +1,14 @@
-"""Consolidated code graph tools — 4 tools instead of 7.
+"""Task-oriented code retrieval and compatibility graph tools.
 
-This module provides 4 simple, effective tools for code graph navigation:
+``code_query`` is the always-visible entry point.  It routes one request
+through graph, dirty-file overlay, LSP, and lexical fallback, then returns a
+bounded source context pack.  The four older graph tools remain available for
+backward compatibility and specialized exploration:
 
-1. code_search  — Unified search + symbol lookup
-2. code_graph   — Unified relationship view (callers, callees, cross-repo)
+1. code_search   — Unified search + symbol lookup
+2. code_graph    — Unified relationship view (callers, callees, cross-repo)
 3. code_overview — Statistics, languages, and most-referenced symbols
-4. code_path    — Shortest dependency path between two symbols
+4. code_path     — Shortest dependency path between two symbols
 
 Design principles:
 - Auto-detect scope (workspace vs project)
@@ -69,14 +72,161 @@ async def _resolve_workspace(db: AsyncSession):
     # Import lazily to keep tool discovery lightweight and avoid service cycles.
     from app.services.code_graph.watcher import flush_code_graph_index
 
-    # Sibling repositories are part of the same query scope. Flush them too so
-    # a cross-repo search cannot read a fresh primary graph and a stale sibling.
-    graph_roots = dict.fromkeys(
-        [workspace, *getattr(sandbox, "extra_workspace_paths", [])]
-    )
-    for graph_root in graph_roots:
-        await flush_code_graph_index(str(graph_root))
+    # Compatibility tools retain a strict freshness point for the active repo,
+    # but no longer serialize a flush of every sibling. Cross-repo results may
+    # use their last ready snapshots; ``code_query`` reports that provenance
+    # explicitly and overlays dirty source without blocking on full reindex.
+    await flush_code_graph_index(workspace)
     return await svc.resolve_workspace_id(db, path=workspace)
+
+
+def _render_code_query(result) -> str:  # noqa: ANN001
+    """Render a structured context pack without leaking Python repr noise."""
+    header = (
+        f"Code query: strategy={result.strategy}; freshness={result.freshness}; "
+        f"confidence={result.confidence:.2f}; coverage={result.coverage:.0%}; "
+        f"dirty_files={result.dirty_files}; pending_edges={result.pending_edges}; "
+        f"graph_version={result.graph_version or 'none'}"
+    )
+    sections = [header]
+    if result.cache_hit:
+        sections.append("Cache: hit")
+    for index, candidate in enumerate(result.results, start=1):
+        label = candidate.symbol or "source match"
+        repo_prefix = f"{candidate.repository}/" if candidate.repository else ""
+        location = (
+            f"{repo_prefix}{candidate.file_path}:"
+            f"{candidate.line_start}-{candidate.line_end}"
+        )
+        lines = [
+            f"{index}. [{candidate.provenance}] {label} — {location}",
+            f"   handle: {candidate.handle}; confidence={candidate.confidence:.2f}",
+            f"   matched: {', '.join(candidate.match_reasons)}",
+        ]
+        if candidate.kind or candidate.language:
+            lines.append(
+                f"   type: {candidate.kind or 'unknown'} / "
+                f"{candidate.language or 'unknown'}"
+            )
+        if candidate.signature:
+            lines.append(f"   signature: {candidate.signature}")
+        if candidate.callers:
+            lines.append("   inbound:\n     " + "\n     ".join(candidate.callers[:8]))
+        if candidate.callees:
+            lines.append("   outbound:\n     " + "\n     ".join(candidate.callees[:8]))
+        if candidate.tests:
+            lines.append("   tests: " + ", ".join(candidate.tests[:8]))
+        if candidate.snippet:
+            lines.append(f"```text\n{candidate.snippet}\n```")
+        sections.append("\n".join(lines))
+    if not result.results:
+        sections.append("No source candidates matched this query.")
+    if result.limitations:
+        sections.append(
+            "Limitations:\n" + "\n".join(f"- {item}" for item in result.limitations)
+        )
+    if result.next_read_ranges:
+        sections.append(
+            "Read next only if needed: " + ", ".join(result.next_read_ranges)
+        )
+    if result.truncated:
+        sections.append("Context was truncated to the requested token budget.")
+    return "\n\n".join(sections)
+
+
+async def _code_query(
+    query: Annotated[
+        str,
+        Field(
+            description=(
+                "Code question, symbol, behavior, or data-flow fragment to find."
+            )
+        ),
+    ],
+    intent: Annotated[
+        Literal["locate", "explain", "impact", "trace", "change"],
+        Field(description="Retrieval goal; impact/change enforce stricter freshness."),
+    ] = "locate",
+    paths: Annotated[
+        list[str] | None,
+        Field(description="Optional workspace-relative files/directories to search."),
+    ] = None,
+    languages: Annotated[
+        list[str] | None,
+        Field(description="Optional language filters, such as python or typescript."),
+    ] = None,
+    kinds: Annotated[
+        list[str] | None,
+        Field(description="Optional symbol-kind filters, such as class or function."),
+    ] = None,
+    budget_tokens: Annotated[
+        int,
+        Field(description="Maximum approximate result budget (500-12000 tokens)."),
+    ] = 2500,
+    freshness: Annotated[
+        Literal["fast", "balanced", "strict"],
+        Field(description="Freshness policy; strict verifies dirty source paths."),
+    ] = "balanced",
+    limit: Annotated[
+        int, Field(description="Maximum ranked context entries (1-30).")
+    ] = 10,
+) -> str:
+    """Find code and return an actionable, freshness-aware context pack.
+
+    Use this first for code navigation.  It automatically combines indexed
+    graph relationships, live dirty-file parsing, language-server locations,
+    and bounded text fallback for unsupported languages.  Source snippets and
+    stable handles are included so separate search/graph/read calls are usually
+    unnecessary.
+    """
+    from app.services.code_query_service import query_code_across_workspaces
+
+    sandbox = get_sandbox()
+    workspace = str(sandbox.workspace_root)
+    async with async_session_factory() as db:
+        roots = [workspace, *getattr(sandbox, "extra_workspace_paths", [])]
+        workspaces = []
+        for root in dict.fromkeys(str(Path(value).resolve()) for value in roots):
+            if not Path(root).is_dir():
+                continue
+            workspaces.append(
+                (
+                    root,
+                    await svc.resolve_workspace_id(db, path=root),
+                    Path(root).name or root,
+                )
+            )
+        result = await query_code_across_workspaces(
+            db,
+            workspaces=workspaces,
+            query=query,
+            intent=intent,
+            paths=paths or (),
+            languages=languages or (),
+            kinds=kinds or (),
+            budget_tokens=budget_tokens,
+            freshness_policy=freshness,
+            limit=limit,
+        )
+    return _render_code_query(result)
+
+
+code_query = Tool(
+    _code_query,
+    name="code_query",
+    description=(
+        "Primary code-navigation tool. In one call, find symbols or behavior, "
+        "verify dirty source, expand relevant relationships, include bounded "
+        "snippets, and fall back for languages without graph support."
+    ),
+    concurrency_safe=True,
+    read_only=True,
+    tiers=("coding", "aim"),
+    deferred=False,
+    capabilities=("code_navigation",),
+    max_calls_per_batch=2,
+    deduplicate_in_batch=True,
+)
 
 
 def _loc(node: CodeNode) -> str:
@@ -100,6 +250,49 @@ async def _resolve_name_anywhere(
     sibling_limit: int = 5,
 ):
     """Resolve name in active workspace, fall back to siblings if not found."""
+    if name.startswith("cg:"):
+        try:
+            import base64
+            from uuid import UUID
+
+            parts = name.split(":", 3)
+            _prefix, raw_workspace_id, raw_node_id = parts[:3]
+            handle_workspace_id = UUID(raw_workspace_id)
+            handle_node_id = UUID(raw_node_id)
+        except (TypeError, ValueError):
+            return []
+        allowed_workspace_ids = {workspace_id}
+        if project_id is not None:
+            allowed_workspace_ids.update(
+                ws.id
+                for _link, ws in await proj_svc.get_project_workspaces(db, project_id)
+            )
+        if handle_workspace_id not in allowed_workspace_ids:
+            return []
+        node = await svc.get_node(
+            db,
+            workspace_id=handle_workspace_id,
+            node_id=handle_node_id,
+        )
+        if node is not None:
+            return [(handle_workspace_id, node)]
+        if len(parts) == 4:
+            try:
+                encoded = parts[3]
+                padding = "=" * (-len(encoded) % 4)
+                qualified_name = base64.urlsafe_b64decode(encoded + padding).decode()
+            except (ValueError, UnicodeDecodeError):
+                return []
+            replacements = await svc.find_nodes_by_name(
+                db,
+                workspace_id=handle_workspace_id,
+                name=qualified_name,
+                limit=2,
+            )
+            if len(replacements) == 1:
+                return [(handle_workspace_id, replacements[0])]
+        return []
+
     matches = [
         (workspace_id, n)
         for n in await svc.find_nodes_by_name(
@@ -270,6 +463,7 @@ code_search = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
+    tiers=("coding", "aim"),
     deferred=True,
     deferred_summary="Search the indexed code graph for symbols by name or fragment.",
 )
@@ -282,7 +476,12 @@ code_search = Tool(
 
 async def _code_graph(
     name: Annotated[
-        str, Field(description="Symbol name or qualified name to explore.")
+        str,
+        Field(
+            description=(
+                "Symbol name, qualified name, or stable cg:... handle to explore."
+            )
+        ),
     ],
     direction: Annotated[
         Literal["in", "out", "both"],
@@ -522,6 +721,7 @@ code_graph = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
+    tiers=("coding", "aim"),
     deferred=True,
     deferred_summary="Explore structural relationships, ambiguity, and cross-repo links.",
 )
@@ -617,6 +817,7 @@ code_overview = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
+    tiers=("coding", "aim"),
     deferred=True,
     deferred_summary="Show indexed codebase statistics, languages, and important symbols.",
 )
@@ -628,8 +829,12 @@ code_overview = Tool(
 
 
 async def _code_path(
-    source: Annotated[str, Field(description="Source symbol name or qualified name.")],
-    target: Annotated[str, Field(description="Target symbol name or qualified name.")],
+    source: Annotated[
+        str, Field(description="Source symbol name, qualified name, or cg:... handle.")
+    ],
+    target: Annotated[
+        str, Field(description="Target symbol name, qualified name, or cg:... handle.")
+    ],
     max_hops: Annotated[
         int, Field(description="Maximum hops to search (max 8, default 6).")
     ] = 6,
@@ -723,6 +928,7 @@ code_path = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
+    tiers=("coding", "aim"),
     deferred=True,
     deferred_summary="Find a dependency path between two indexed code symbols.",
 )

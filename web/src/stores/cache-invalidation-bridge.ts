@@ -25,6 +25,7 @@ export function applyCacheInvalidations(
         queryClient.invalidateQueries({ queryKey: queryKeys.coding.files(event.workspace) })
         queryClient.invalidateQueries({ queryKey: queryKeys.coding.diff(event.workspace) })
         queryClient.invalidateQueries({ queryKey: queryKeys.coding.status(event.workspace) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.codeGraph.all(event.workspace) })
         break
       case 'coding_workspace_paths':
         queryClient.invalidateQueries({
@@ -32,6 +33,9 @@ export function applyCacheInvalidations(
         })
         queryClient.invalidateQueries({
           queryKey: queryKeys.coding.status(event.workspace),
+        })
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.codeGraph.all(event.workspace),
         })
         void patchCodingDiffForPaths(queryClient, event.workspace, event.paths)
         break

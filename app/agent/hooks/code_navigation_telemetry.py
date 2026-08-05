@@ -23,7 +23,11 @@ from app.core.metrics import (
     CODE_GRAPH_QUERIES,
     CODE_GRAPH_QUERY_DURATION,
     CODE_GRAPH_RESULT_TOKENS,
+    CODE_NAVIGATION_DUPLICATE_CALLS,
+    CODE_NAVIGATION_TOOL_CALLS,
     CODE_NAVIGATION_TURNS,
+    CODE_QUERY_CACHE,
+    CODE_QUERY_ROUTING,
 )
 
 if TYPE_CHECKING:
@@ -32,7 +36,7 @@ if TYPE_CHECKING:
 
 
 CODE_GRAPH_TOOLS = frozenset(
-    {"code_search", "code_graph", "code_overview", "code_path"}
+    {"code_query", "code_search", "code_graph", "code_overview", "code_path"}
 )
 _FALLBACK_NAVIGATION_TOOLS = frozenset(
     {
@@ -45,6 +49,9 @@ _FALLBACK_NAVIGATION_TOOLS = frozenset(
     }
 )
 _LOCATION_RE = re.compile(r"(?P<path>[^\n`():]+?\.[A-Za-z][A-Za-z0-9]*):\d+(?:-\d+)?")
+_QUERY_HEADER_RE = re.compile(
+    r"strategy=(?P<strategy>[^;]+); freshness=(?P<freshness>[^;]+);"
+)
 
 
 @lru_cache(maxsize=1)
@@ -147,9 +154,11 @@ class CodeNavigationTelemetryHook(BaseAgentHook):
 
     def __init__(self) -> None:
         self._first_strategy: str | None = None
+        self._seen_calls: set[tuple[str, str]] = set()
 
     async def before_agent(self, ctx: "RunContext", state: "AgentState") -> None:
         self._first_strategy = None
+        self._seen_calls.clear()
 
     async def wrap_tool_call(
         self,
@@ -164,6 +173,13 @@ class CodeNavigationTelemetryHook(BaseAgentHook):
             CODE_NAVIGATION_TURNS.labels(strategy=strategy).inc()
 
         tool_name = tool_call.function.name
+        if strategy is not None:
+            CODE_NAVIGATION_TOOL_CALLS.labels(tool=tool_name).inc()
+            fingerprint = (tool_name, tool_call.function.arguments or "{}")
+            if fingerprint in self._seen_calls:
+                CODE_NAVIGATION_DUPLICATE_CALLS.labels(tool=tool_name).inc()
+            self._seen_calls.add(fingerprint)
+
         if tool_name not in CODE_GRAPH_TOOLS:
             return await handler(ctx, state, tool_call)
 
@@ -183,4 +199,14 @@ class CodeNavigationTelemetryHook(BaseAgentHook):
         CODE_GRAPH_RESULT_TOKENS.labels(tool=tool_name).inc(result_tokens)
         CODE_GRAPH_ESTIMATED_FILE_READS_SAVED.labels(tool=tool_name).inc(file_reads)
         CODE_GRAPH_ESTIMATED_TOKENS_SAVED.labels(tool=tool_name).inc(saved_tokens)
+        if tool_name == "code_query":
+            match = _QUERY_HEADER_RE.search(result)
+            if match:
+                CODE_QUERY_ROUTING.labels(
+                    strategy=match.group("strategy"),
+                    freshness=match.group("freshness"),
+                ).inc()
+            CODE_QUERY_CACHE.labels(
+                outcome="hit" if "\n\nCache: hit" in result else "miss"
+            ).inc()
         return result

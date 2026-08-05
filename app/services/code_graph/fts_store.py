@@ -1,8 +1,9 @@
-"""SQLite FTS5 full-text search for code symbol names.
+"""SQLite FTS5 full-text search for code symbols.
 
-Maintains a ``code_node_fts`` virtual table that enables fast prefix/substring
-token matching on ``name``, ``qualified_name``, and ``docstring``.  The table
-is auto-created on first use and rebuilt during reindex.
+Maintains the canonical ``code_node_fts`` virtual table for fast prefix
+matching across symbol names, paths, signatures, and documentation.  FTS is a
+derived index: when its schema no longer matches the current definition it is
+recreated in place and lazily populated from ``code_nodes``.
 
 All operations are synchronous and run in a worker thread via the query
 executor.  The FTS table targets the same SQLite file as the ORM engine.
@@ -18,6 +19,19 @@ from typing import Iterator
 from loguru import logger
 
 _FTS_TABLE = "code_node_fts"
+_FTS_COLUMNS = (
+    "node_id",
+    "workspace_id",
+    "name",
+    "qualified_name",
+    "file_path",
+    "signature",
+    "docstring",
+    "kind",
+    "language",
+)
+
+FtsRow = tuple[str, str, str, str, str, str, str, str]
 
 
 @contextmanager
@@ -31,8 +45,28 @@ def _open(db_path: str) -> Iterator[sqlite3.Connection]:
 
 
 def ensure_fts_table(db_path: str) -> None:
-    """Create the FTS5 virtual table if it doesn't exist."""
+    """Ensure the one canonical FTS table has the current derived schema."""
     with _open(db_path) as conn:
+        current_columns = tuple(
+            row[1]
+            for row in conn.execute(f"PRAGMA table_info({_FTS_TABLE})").fetchall()
+        )
+        if current_columns == _FTS_COLUMNS:
+            return
+
+        # Schema replacement is rare, but two first-use queries can race. Take
+        # the write lock only on the slow path and re-check after acquiring it.
+        conn.execute("BEGIN IMMEDIATE")
+        current_columns = tuple(
+            row[1]
+            for row in conn.execute(f"PRAGMA table_info({_FTS_TABLE})").fetchall()
+        )
+        if current_columns and current_columns != _FTS_COLUMNS:
+            logger.info(
+                "code_graph rebuilding outdated FTS schema columns={}",
+                current_columns,
+            )
+            conn.execute(f"DROP TABLE {_FTS_TABLE}")
         conn.execute(f"""
             CREATE VIRTUAL TABLE IF NOT EXISTS {_FTS_TABLE}
             USING fts5(
@@ -40,31 +74,67 @@ def ensure_fts_table(db_path: str) -> None:
                 workspace_id UNINDEXED,
                 name,
                 qualified_name,
+                file_path,
+                signature,
+                docstring,
+                kind UNINDEXED,
+                language UNINDEXED,
                 tokenize='unicode61 remove_diacritics 2 tokenchars _'
             )
         """)
         conn.commit()
 
 
+def _bootstrap_workspace(conn: sqlite3.Connection, workspace_id: str) -> None:
+    """Populate a newly-created FTS workspace from the authoritative table."""
+    present = conn.execute(
+        f"SELECT 1 FROM {_FTS_TABLE} WHERE workspace_id = ? LIMIT 1",
+        (workspace_id,),
+    ).fetchone()
+    if present is not None:
+        return
+    try:
+        conn.execute(
+            f"""
+            INSERT INTO {_FTS_TABLE}(
+                node_id, workspace_id, name, qualified_name, file_path,
+                signature, docstring, kind, language
+            )
+            SELECT CAST(id AS TEXT), ?, name,
+                   qualified_name, file_path, COALESCE(signature, ''),
+                   COALESCE(docstring, ''), kind, language
+            FROM code_nodes
+            WHERE REPLACE(CAST(workspace_id AS TEXT), '-', '') = ?
+            """,
+            (workspace_id, workspace_id.replace("-", "")),
+        )
+        conn.commit()
+    except sqlite3.OperationalError as exc:
+        logger.debug("fts_bootstrap_error workspace={} err={}", workspace_id, exc)
+
+
 def rebuild_workspace_fts(
     db_path: str,
     workspace_id: str,
-    rows: Sequence[tuple[str, str, str]],
+    rows: Sequence[FtsRow],
 ) -> int:
     """Replace all FTS entries for a workspace.
 
-    Each row is ``(node_id, name, qualified_name)``.
+    Each row is ``(node_id, name, qualified_name, file_path, signature,
+    docstring, kind, language)``.
     Returns the number of rows written.
     """
+    ensure_fts_table(db_path)
     with _open(db_path) as conn:
-        ensure_fts_table(db_path)
         conn.execute(
             f"DELETE FROM {_FTS_TABLE} WHERE workspace_id = ?", (workspace_id,)
         )
         conn.executemany(
-            f"INSERT INTO {_FTS_TABLE}(node_id, workspace_id, name, qualified_name) "
-            "VALUES (?, ?, ?, ?)",
-            [(node_id, workspace_id, name, qn) for node_id, name, qn in rows],
+            f"""INSERT INTO {_FTS_TABLE}(
+                node_id, workspace_id, name, qualified_name, file_path,
+                signature, docstring, kind, language
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [(node_id, workspace_id, *values) for node_id, *values in rows],
         )
         conn.commit()
         return len(rows)
@@ -73,12 +143,12 @@ def rebuild_workspace_fts(
 def update_workspace_fts(
     db_path: str,
     workspace_id: str,
-    upserts: Sequence[tuple[str, str, str]],
+    upserts: Sequence[FtsRow],
     removed_ids: Sequence[str],
 ) -> None:
     """Incrementally update FTS entries for changed/removed nodes."""
+    ensure_fts_table(db_path)
     with _open(db_path) as conn:
-        ensure_fts_table(db_path)
         if removed_ids:
             placeholders = ",".join("?" for _ in removed_ids)
             conn.execute(
@@ -87,36 +157,53 @@ def update_workspace_fts(
             )
         # Upsert: delete then reinsert (FTS5 has no UPDATE for content)
         if upserts:
-            for node_id, name, qn in upserts:
+            for node_id, *_values in upserts:
                 conn.execute(f"DELETE FROM {_FTS_TABLE} WHERE node_id = ?", (node_id,))
             conn.executemany(
-                f"INSERT INTO {_FTS_TABLE}(node_id, workspace_id, name, qualified_name) "
-                "VALUES (?, ?, ?, ?)",
-                [(node_id, workspace_id, name, qn) for node_id, name, qn in upserts],
+                f"""INSERT INTO {_FTS_TABLE}(
+                    node_id, workspace_id, name, qualified_name, file_path,
+                    signature, docstring, kind, language
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [(node_id, workspace_id, *values) for node_id, *values in upserts],
             )
         conn.commit()
 
 
 def _search_fts_conn(
-    conn: sqlite3.Connection, workspace_id: str, query: str, limit: int
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    query: str,
+    limit: int,
+    kind: str | None = None,
+    language: str | None = None,
 ) -> list[str]:
     try:
         conn.execute(f"SELECT 1 FROM {_FTS_TABLE} LIMIT 0")
     except sqlite3.OperationalError:
         return []  # table doesn't exist yet
 
-    # Sanitize: strip FTS5 special chars, split into tokens, add prefix *
+    _bootstrap_workspace(conn, workspace_id)
+
+    # Sanitize: strip FTS5 special chars, split into tokens, add prefix *.
     tokens = _tokenize_query(query)
     if not tokens:
         return []
 
     fts_expr = " AND ".join(f'"{t}"*' for t in tokens)
     try:
+        clauses = ["workspace_id = ?", f"{_FTS_TABLE} MATCH ?"]
+        params: list[str | int] = [workspace_id, fts_expr]
+        if kind:
+            clauses.append("kind = ?")
+            params.append(kind)
+        if language:
+            clauses.append("language = ?")
+            params.append(language)
+        params.append(limit)
         cursor = conn.execute(
             f"SELECT node_id FROM {_FTS_TABLE} "
-            f"WHERE workspace_id = ? AND {_FTS_TABLE} MATCH ? "
-            f"ORDER BY rank LIMIT ?",
-            (workspace_id, fts_expr, limit),
+            f"WHERE {' AND '.join(clauses)} ORDER BY rank LIMIT ?",
+            params,
         )
         return [row[0] for row in cursor.fetchall()]
     except sqlite3.OperationalError as exc:
@@ -129,14 +216,19 @@ def search_fts(
     workspace_id: str,
     query: str,
     limit: int = 50,
+    kind: str | None = None,
+    language: str | None = None,
 ) -> list[str]:
     """Search FTS5 and return matching ``node_id`` strings, ranked by relevance.
 
     The query is tokenized and matched with implicit prefix: ``hello`` matches
     ``hello_world``. Multi-word queries use AND logic.
     """
+    ensure_fts_table(db_path)
     with _open(db_path) as conn:
-        return _search_fts_conn(conn, workspace_id, query, limit)
+        return _search_fts_conn(
+            conn, workspace_id, query, limit, kind=kind, language=language
+        )
 
 
 def search_fts_many(
@@ -154,6 +246,7 @@ def search_fts_many(
     """
     if not lookups:
         return []
+    ensure_fts_table(db_path)
     with _open(db_path) as conn:
         return [
             _search_fts_conn(conn, workspace_id, query, limit)

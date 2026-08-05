@@ -137,6 +137,34 @@ CODE_GRAPH_ESTIMATED_TOKENS_SAVED = Counter(
     registry=REGISTRY,
 )
 
+CODE_NAVIGATION_TOOL_CALLS = Counter(
+    "EVOFLUX_code_navigation_tool_calls_total",
+    "Navigation calls grouped by tool, including graph and source fallbacks.",
+    labelnames=("tool",),
+    registry=REGISTRY,
+)
+
+CODE_NAVIGATION_DUPLICATE_CALLS = Counter(
+    "EVOFLUX_code_navigation_duplicate_calls_total",
+    "Repeated navigation calls with identical arguments inside one agent turn.",
+    labelnames=("tool",),
+    registry=REGISTRY,
+)
+
+CODE_QUERY_ROUTING = Counter(
+    "EVOFLUX_code_query_routing_total",
+    "Task-oriented code queries grouped by retrieval strategy and freshness.",
+    labelnames=("strategy", "freshness"),
+    registry=REGISTRY,
+)
+
+CODE_QUERY_CACHE = Counter(
+    "EVOFLUX_code_query_cache_total",
+    "Task-oriented code-query cache outcomes.",
+    labelnames=("outcome",),
+    registry=REGISTRY,
+)
+
 # ── Observability plumbing metrics ────────────────────────────────────────────
 
 SPANS_DROPPED = Counter(

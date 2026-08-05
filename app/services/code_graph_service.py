@@ -8,7 +8,7 @@ worker thread (CPU-bound) while all database work stays async.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
@@ -146,6 +146,15 @@ class WorkspaceOverview:
     languages: list[str]
     kind_counts: dict[str, int]
     top_files: list[tuple[str, int]]
+
+
+@dataclass(frozen=True, slots=True)
+class RankedCodeNode:
+    """A code-node candidate with an explainable deterministic rank."""
+
+    node: CodeNode
+    score: float
+    match_reasons: tuple[str, ...]
 
 
 async def reindex_workspace(
@@ -729,8 +738,17 @@ async def _rebuild_fts(
     db_path = current_sqlite_path()
     if db_path is None:
         return
-    rows: list[tuple[str, str, str]] = [
-        (str(key_to_id[node.key]), node.name, node.qualified_name)
+    rows: list[fts.FtsRow] = [
+        (
+            str(key_to_id[node.key]),
+            node.name,
+            node.qualified_name,
+            node.file_path,
+            node.signature or "",
+            node.docstring or "",
+            node.kind,
+            node.language,
+        )
         for node in index.nodes
         if node.key in key_to_id
     ]
@@ -753,8 +771,17 @@ async def _update_fts(
     db_path = current_sqlite_path()
     if db_path is None:
         return
-    upserts: list[tuple[str, str, str]] = [
-        (str(key_to_id[node.key]), node.name, node.qualified_name)
+    upserts: list[fts.FtsRow] = [
+        (
+            str(key_to_id[node.key]),
+            node.name,
+            node.qualified_name,
+            node.file_path,
+            node.signature or "",
+            node.docstring or "",
+            node.kind,
+            node.language,
+        )
         for node in index.nodes
         if node.key in key_to_id
     ]
@@ -935,10 +962,187 @@ async def search_nodes(
     kind: str | None = None,
     limit: int = 20,
 ) -> list[CodeNode]:
-    """Search the graph for symbols matching ``query`` (lexical, FTS5-backed)."""
-    return await _lexical_search(
+    """Search the graph using hybrid lexical fields and deterministic ranking."""
+    ranked = await search_nodes_ranked(
         db, workspace_id=workspace_id, query=query, kind=kind, limit=limit
     )
+    return [item.node for item in ranked]
+
+
+async def search_nodes_ranked(
+    db: AsyncSession,
+    *,
+    workspace_id: UUID,
+    query: str,
+    kind: str | None = None,
+    language: str | None = None,
+    paths: Sequence[str] = (),
+    limit: int = 20,
+) -> list[RankedCodeNode]:
+    """Return explainable hybrid candidates for task-oriented retrieval.
+
+    FTS produces a broad candidate set across name/path/signature/docstring;
+    exact identifiers and requested filters are then reranked in Python.  The
+    filter is applied before the SQL limit so a noisy symbol kind cannot hide
+    relevant matches below the FTS cutoff.
+    """
+    capped = max(1, min(limit, 100))
+    paths = tuple(
+        dict.fromkeys(
+            normalized
+            for value in paths
+            if (normalized := value.replace("\\", "/").strip("/")) and normalized != "."
+        )
+    )
+    overfetch = min(500, max(capped * 5, 50))
+    nodes = await _lexical_search(
+        db,
+        workspace_id=workspace_id,
+        query=query,
+        kind=kind,
+        language=language,
+        paths=paths,
+        limit=overfetch,
+    )
+    query_folded = query.strip().casefold()
+    query_tokens = _search_tokens(query)
+    # Natural-language questions rarely have every token in one symbol row.
+    # Use the longest informative tokens as an OR-style candidate expansion;
+    # reranking below still rewards candidates that match several signals.
+    if len(nodes) < capped and len(query_tokens) > 1:
+        by_id = {node.id: node for node in nodes}
+        for token in sorted(query_tokens, key=lambda value: len(value), reverse=True)[
+            :5
+        ]:
+            for node in await _lexical_search(
+                db,
+                workspace_id=workspace_id,
+                query=token,
+                kind=kind,
+                language=language,
+                paths=paths,
+                limit=overfetch,
+            ):
+                by_id.setdefault(node.id, node)
+            if len(by_id) >= overfetch:
+                break
+        nodes = list(by_id.values())
+    ranked: list[RankedCodeNode] = []
+    for node in nodes:
+        score, reasons = _rank_node(
+            node,
+            query=query_folded,
+            query_tokens=query_tokens,
+            requested_kind=kind,
+            requested_language=language,
+            requested_paths=paths,
+        )
+        ranked.append(
+            RankedCodeNode(node=node, score=score, match_reasons=tuple(reasons))
+        )
+    ranked.sort(
+        key=lambda item: (
+            -item.score,
+            item.node.file_path,
+            item.node.line_start,
+            item.node.qualified_name,
+        )
+    )
+    return ranked[:capped]
+
+
+def _search_tokens(query: str) -> tuple[str, ...]:
+    """Normalize natural-language and identifier fragments for ranking."""
+    import re
+
+    expanded = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", query)
+    stopwords = {
+        "and",
+        "the",
+        "for",
+        "from",
+        "where",
+        "what",
+        "which",
+        "with",
+        "find",
+        "code",
+        "trace",
+        "impact",
+        "change",
+    }
+    return tuple(
+        token
+        for token in re.split(r"[^A-Za-z0-9]+", expanded.casefold())
+        if len(token) >= 2 and token not in stopwords
+    )
+
+
+def _rank_node(
+    node: CodeNode,
+    *,
+    query: str,
+    query_tokens: Sequence[str],
+    requested_kind: str | None,
+    requested_language: str | None,
+    requested_paths: Sequence[str],
+) -> tuple[float, list[str]]:
+    name = node.name.casefold()
+    qualified = node.qualified_name.casefold()
+    path = node.file_path.casefold()
+    signature = (node.signature or "").casefold()
+    docstring = (node.docstring or "").casefold()
+    reasons: list[str] = []
+    score = 0.0
+
+    if query and name == query:
+        score += 120.0
+        reasons.append("exact name")
+    elif query and qualified == query:
+        score += 115.0
+        reasons.append("exact qualified name")
+    elif query and qualified.endswith(f".{query}"):
+        score += 100.0
+        reasons.append("qualified-name suffix")
+    elif query and name.startswith(query):
+        score += 80.0
+        reasons.append("name prefix")
+    elif query and query in name:
+        score += 65.0
+        reasons.append("name fragment")
+
+    token_hits = sum(1 for token in query_tokens if token in name or token in qualified)
+    if token_hits:
+        score += min(35.0, token_hits * 8.0)
+        reasons.append(f"{token_hits} identifier token(s)")
+    path_hits = sum(1 for token in query_tokens if token in path)
+    if path_hits:
+        score += min(18.0, path_hits * 4.0)
+        reasons.append("path match")
+    signature_hits = sum(1 for token in query_tokens if token in signature)
+    if signature_hits:
+        score += min(12.0, signature_hits * 3.0)
+        reasons.append("signature match")
+    doc_hits = sum(1 for token in query_tokens if token in docstring)
+    if doc_hits:
+        score += min(8.0, doc_hits * 2.0)
+        reasons.append("documentation match")
+    if requested_kind and node.kind == requested_kind:
+        score += 12.0
+        reasons.append("requested kind")
+    if requested_language and node.language == requested_language:
+        score += 8.0
+        reasons.append("requested language")
+    if requested_paths and any(
+        path == prefix.casefold().rstrip("/")
+        or path.startswith(prefix.casefold().rstrip("/") + "/")
+        for prefix in requested_paths
+    ):
+        score += 15.0
+        reasons.append("requested path")
+    if node.kind == "file":
+        score -= 5.0
+    return score, reasons or ["full-text match"]
 
 
 async def _lexical_search(
@@ -948,13 +1152,21 @@ async def _lexical_search(
     query: str,
     kind: str | None,
     limit: int,
+    language: str | None = None,
+    paths: Sequence[str] = (),
 ) -> list[CodeNode]:
     # Try FTS5 first — O(log N) token lookup instead of LIKE '%q%' full scan.
     db_path = current_sqlite_path()
     if db_path is not None:
         try:
             fts_ids = await _run_in_query(
-                fts.search_fts, db_path, str(workspace_id), query, limit
+                fts.search_fts,
+                db_path,
+                str(workspace_id),
+                query,
+                limit,
+                kind,
+                language,
             )
         except Exception:  # noqa: BLE001
             fts_ids = []
@@ -965,6 +1177,20 @@ async def _lexical_search(
             )
             if kind:
                 stmt = stmt.where(CodeNode.kind == kind)
+            if language:
+                stmt = stmt.where(CodeNode.language == language)
+            if paths:
+                stmt = stmt.where(
+                    or_(
+                        *[
+                            or_(
+                                CodeNode.file_path == path.rstrip("/"),
+                                col(CodeNode.file_path).ilike(path.rstrip("/") + "/%"),
+                            )
+                            for path in paths
+                        ]
+                    )
+                )
             nodes = list((await db.exec(stmt)).all())
             if nodes:
                 # Preserve FTS rank order
@@ -981,11 +1207,28 @@ async def _lexical_search(
         or_(
             col(CodeNode.name).ilike(pattern),
             col(CodeNode.qualified_name).ilike(pattern),
+            col(CodeNode.file_path).ilike(pattern),
+            col(CodeNode.signature).ilike(pattern),
+            col(CodeNode.docstring).ilike(pattern),
         ),
     )
     if kind:
         stmt = stmt.where(CodeNode.kind == kind)
-    stmt = stmt.limit(limit)
+    if language:
+        stmt = stmt.where(CodeNode.language == language)
+    if paths:
+        stmt = stmt.where(
+            or_(
+                *[
+                    or_(
+                        CodeNode.file_path == path.rstrip("/"),
+                        col(CodeNode.file_path).ilike(path.rstrip("/") + "/%"),
+                    )
+                    for path in paths
+                ]
+            )
+        )
+    stmt = stmt.order_by(col(CodeNode.name), col(CodeNode.file_path)).limit(limit)
     return list((await db.exec(stmt)).all())
 
 

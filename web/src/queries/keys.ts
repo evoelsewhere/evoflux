@@ -51,8 +51,12 @@ export const queryKeys = {
   codeGraph: {
     all: (workspace: string) => ['code-graph', workspace] as const,
     status: (workspace: string) => ['code-graph', workspace, 'status'] as const,
+    freshness: (workspace: string) => ['code-graph', workspace, 'freshness'] as const,
+    capabilities: (workspace: string) => ['code-graph', workspace, 'capabilities'] as const,
     search: (workspace: string, query: string) =>
       ['code-graph', workspace, 'search', query] as const,
+    query: (workspace: string, query: string) =>
+      ['code-graph', workspace, 'query', query] as const,
   },
   // File references for the input bar's @-mention picker. Keyed by the
   // workspace path (coding mode) or session id (normal mode) so the two

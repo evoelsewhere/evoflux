@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileCode, Loader2, Network, RefreshCw, Search } from 'lucide-react'
-import { getCodeGraphStatus, reindexCodeGraph, searchCodeGraph } from '@/api/client'
+import { Activity, FileCode, Loader2, Network, RefreshCw, Search } from 'lucide-react'
+import {
+  getCodeGraphCapabilities,
+  getCodeGraphFreshness,
+  getCodeGraphStatus,
+  queryCodeGraph,
+  reindexCodeGraph,
+} from '@/api/client'
 import { queryKeys } from '@/queries'
-import type { CodeGraphNode, WorkspaceFileInfo } from '@/api/types'
+import type { CodeQueryCandidate, WorkspaceFileInfo } from '@/api/types'
 
-function nodeToFile(node: CodeGraphNode): WorkspaceFileInfo {
+function candidateToFile(candidate: CodeQueryCandidate): WorkspaceFileInfo {
   return {
-    path: node.file_path,
-    name: node.file_path.split('/').pop() ?? node.file_path,
+    path: candidate.file_path,
+    name: candidate.file_path.split('/').pop() ?? candidate.file_path,
     size: 0,
     mtime: 0,
     mime: 'text/plain',
@@ -56,10 +62,27 @@ export function CodeGraphPanel({
   const indexProgress = status.data?.index_progress ?? null
   const indexMessage = status.data?.index_message ?? null
 
+  const freshness = useQuery({
+    queryKey: queryKeys.codeGraph.freshness(workspace),
+    queryFn: () => getCodeGraphFreshness(workspace),
+    staleTime: 3_000,
+    refetchInterval: serverIndexing ? 1_000 : false,
+  })
+
+  const capabilities = useQuery({
+    queryKey: queryKeys.codeGraph.capabilities(workspace),
+    queryFn: () => getCodeGraphCapabilities(workspace),
+    staleTime: 30_000,
+  })
+
   const results = useQuery({
-    queryKey: queryKeys.codeGraph.search(workspace, debounced),
-    queryFn: () => searchCodeGraph(workspace, debounced, { limit: 30 }),
-    enabled: indexed && debounced.length > 0,
+    queryKey: queryKeys.codeGraph.query(workspace, debounced),
+    queryFn: ({ signal }) => queryCodeGraph(workspace, debounced, {
+      limit: 20,
+      budgetTokens: 1800,
+      signal,
+    }),
+    enabled: debounced.length > 0,
     staleTime: 5_000,
   })
 
@@ -70,8 +93,15 @@ export function CodeGraphPanel({
     },
   })
 
-  const nodes = results.data?.nodes ?? []
+  const candidates = results.data?.results ?? []
   const reindexing = reindex.isPending || serverIndexing
+  const unsupportedLanguages = capabilities.data?.filter((item) => !item.graph).length ?? 0
+  const freshnessLabel =
+    freshness.data?.freshness === 'fresh'
+      ? 'Fresh'
+      : freshness.data?.freshness === 'partial'
+        ? 'Overlay active'
+        : 'Source fallback'
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -146,51 +176,70 @@ export function CodeGraphPanel({
         )}
       </div>
 
+      {/* Retrieval diagnostics */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-(--color-border) px-3 py-2 text-xs text-(--color-text-subtle)">
+        <span className="inline-flex items-center gap-1.5">
+          <Activity size={12} className="text-(--color-accent)" />
+          {freshness.isLoading ? 'Checking freshness…' : freshnessLabel}
+        </span>
+        {(freshness.data?.dirty_files ?? 0) > 0 && (
+          <span>{freshness.data?.dirty_files} dirty file(s)</span>
+        )}
+        {unsupportedLanguages > 0 && <span>{unsupportedLanguages} lexical fallback(s)</span>}
+        {results.data && (
+          <span title={results.data.limitations.join('\n')}>
+            {results.data.strategy} · {Math.round(results.data.coverage * 100)}% graph coverage
+          </span>
+        )}
+      </div>
+
       {/* Search */}
-      {indexed && (
-        <div className="border-b border-(--color-border) p-2">
-          <div className="flex items-center gap-1.5 rounded-md bg-(--bg-key) px-2 py-1.5">
-            <Search size={13} className="shrink-0 text-(--color-text-subtle)" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search symbols (functions, classes…)"
-              className="min-w-0 flex-1 bg-transparent text-xs text-(--color-text) outline-none placeholder:text-(--color-text-subtle)"
-            />
-            {results.isFetching && <Loader2 size={12} className="shrink-0 animate-spin text-(--color-text-subtle)" />}
-          </div>
+      <div className="border-b border-(--color-border) p-2">
+        <div className="flex items-center gap-1.5 rounded-md bg-(--bg-key) px-2 py-1.5">
+          <Search size={13} className="shrink-0 text-(--color-text-subtle)" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search symbols or describe behavior…"
+            className="min-w-0 flex-1 bg-transparent text-xs text-(--color-text) outline-none placeholder:text-(--color-text-subtle)"
+          />
+          {results.isFetching && <Loader2 size={12} className="shrink-0 animate-spin text-(--color-text-subtle)" />}
         </div>
-      )}
+      </div>
 
       {/* Results */}
       <div className="min-h-0 flex-1 overflow-auto p-2">
-        {!indexed ? null : debounced.length === 0 ? (
-          <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Type to search the code graph.</p>
+        {debounced.length === 0 ? (
+          <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Search uses the graph when fresh and source fallback otherwise.</p>
         ) : results.isLoading ? (
           <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Searching…</p>
         ) : results.isError ? (
           <p className="px-2 py-4 text-xs text-(--color-error)">Search failed</p>
-        ) : nodes.length === 0 ? (
-          <p className="px-2 py-4 text-xs text-(--color-text-subtle)">No symbols match “{debounced}”.</p>
+        ) : candidates.length === 0 ? (
+          <p className="px-2 py-4 text-xs text-(--color-text-subtle)">No source matches “{debounced}”.</p>
         ) : (
           <div className="space-y-0.5">
-            {nodes.map((node) => (
+            {candidates.map((candidate) => (
               <button
-                key={node.id}
+                key={candidate.handle}
                 type="button"
-                onClick={() => onFileSelect?.(nodeToFile(node))}
+                onClick={() => onFileSelect?.(candidateToFile(candidate))}
                 className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-left text-xs text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-                title={`${node.qualified_name} — ${node.file_path}:${node.line_start}`}
+                title={`${candidate.match_reasons.join(', ')} — confidence ${Math.round(candidate.confidence * 100)}%`}
               >
                 <FileCode size={13} className="mt-0.5 shrink-0 text-(--color-accent)" />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
-                    <span className="truncate font-mono font-medium text-(--color-text)">{node.name}</span>
-                    <span className="shrink-0 rounded bg-(--bg-key) px-1 py-0.5 font-mono text-xs uppercase tracking-wide text-(--color-text-subtle)">{node.kind}</span>
+                    <span className="truncate font-mono font-medium text-(--color-text)">
+                      {candidate.symbol ?? candidate.file_path.split('/').pop()}
+                    </span>
+                    <span className="shrink-0 rounded bg-(--bg-key) px-1 py-0.5 font-mono text-xs uppercase tracking-wide text-(--color-text-subtle)">
+                      {candidate.kind ?? candidate.provenance}
+                    </span>
                   </span>
                   <span className="mt-0.5 flex items-center gap-1 truncate font-mono text-xs text-(--color-text-subtle)">
-                    {node.file_path}:{node.line_start}
+                    {candidate.file_path}:{candidate.line_start} · {candidate.provenance}
                   </span>
                 </span>
               </button>
