@@ -114,7 +114,7 @@ export function ChatWelcome({ context }: ChatWelcomeProps) {
       <div className="@container/work-empty relative overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card)/95 shadow-md shadow-black/8">
         <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-(--color-accent)/60 to-transparent" aria-hidden="true" />
 
-        <div className="grid @[36rem]/work-empty:grid-cols-[minmax(11.5rem,0.58fr)_minmax(24rem,1.42fr)]">
+        <div className="grid @[36rem]/work-empty:grid-cols-[minmax(13rem,0.68fr)_minmax(22.5rem,1.32fr)]">
           <section className="flex flex-col border-b border-(--color-border-subtle) p-3 @[36rem]/work-empty:border-r @[36rem]/work-empty:border-b-0">
             <div className="flex items-start gap-2">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-(--color-accent)/12 text-(--color-accent) shadow-sm shadow-(--color-accent)/10 ring-1 ring-(--color-accent)/20 ring-inset">

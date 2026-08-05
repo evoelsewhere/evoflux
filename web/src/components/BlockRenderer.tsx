@@ -12,7 +12,7 @@
  * identically to the main chat instead of re-implementing a subset.
  */
 
-import { memo, useMemo, useState } from 'react'
+import { memo, useState } from 'react'
 import { ChevronDown, ChevronUp, Copy, Check, Undo2, Terminal, Quote, Globe2 } from 'lucide-react'
 import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
 import { Thinking } from './Thinking'
@@ -24,72 +24,14 @@ import { HandoffCard } from './HandoffCard'
 import { CompactionDivider } from './CompactionDivider'
 import { ImageAttachment } from './ImageAttachment'
 import { FileCard } from './FileCard'
-import { workspaceMediaUrl } from '@/api/client'
-import { downloadWorkspaceFile } from '@/lib/workspace-download'
-import { useWorkspaceFilesQuery } from '@/queries'
 import { extractSleepPrefix, formatTime } from '@/utils/format'
 import { findCommittedMentions } from './InputBar.mentions'
 import { findSkillDirectives } from './InputBar.skills'
 import { resolveApiUrl } from '@/api/client'
-import type { ContentBlock, MessageAttachment, WorkspaceFileInfo } from '@/api/types'
+import type { ContentBlock, MessageAttachment } from '@/api/types'
 
 const USER_COLLAPSE_LINES = 10
 const USER_COLLAPSE_CHARS = 700
-
-function inlineCodeReferences(content: string): string[] {
-  const withoutFencedCode = content.replace(/(?:```|~~~)[\s\S]*?(?:```|~~~)/g, '')
-  const references = new Set<string>()
-  for (const match of withoutFencedCode.matchAll(/`([^`\n]+)`/g)) {
-    const value = match[1].trim().replace(/^\.\//, '')
-    if (value) references.add(value)
-  }
-  return [...references]
-}
-
-function resolveWorkspaceReferences(
-  references: string[],
-  files: WorkspaceFileInfo[],
-): WorkspaceFileInfo[] {
-  const resolved = new Map<string, WorkspaceFileInfo>()
-  for (const reference of references) {
-    const exact = files.find((file) => file.path === reference)
-    if (exact) {
-      resolved.set(exact.path, exact)
-      continue
-    }
-    const basenameMatches = files.filter((file) => file.name === reference)
-    if (basenameMatches.length === 1) {
-      resolved.set(basenameMatches[0].path, basenameMatches[0])
-    }
-  }
-  return [...resolved.values()]
-}
-
-function WorkspaceArtifactReferences({ content, sessionId }: { content: string; sessionId: string }) {
-  const references = useMemo(() => inlineCodeReferences(content), [content])
-  const { data } = useWorkspaceFilesQuery(sessionId)
-  const files = useMemo(
-    () => resolveWorkspaceReferences(references, data?.files ?? []),
-    [data?.files, references],
-  )
-
-  if (files.length === 0) return null
-
-  return (
-    <div className="mt-2 flex flex-wrap gap-2" aria-label="Generated files">
-      {files.map((file) => (
-        <FileCard
-          key={file.path}
-          name={file.name}
-          mediaType={file.mime}
-          url={workspaceMediaUrl(sessionId, file.path)}
-          clickable
-          onDownload={() => void downloadWorkspaceFile(sessionId, file)}
-        />
-      ))}
-    </div>
-  )
-}
 
 function shortModelName(modelId: string | null | undefined): string | null {
   if (!modelId) return null
@@ -467,12 +409,7 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
 }
 
       return (
-        <div>
-          <LazyMarkdownBlock content={block.content} sessionId={sessionId} isStreaming={isStreaming} />
-          {!isStreaming && sessionId && inlineCodeReferences(block.content).length > 0 && (
-            <WorkspaceArtifactReferences content={block.content} sessionId={sessionId} />
-          )}
-        </div>
+        <LazyMarkdownBlock content={block.content} sessionId={sessionId} isStreaming={isStreaming} />
       )
     }
     default:
