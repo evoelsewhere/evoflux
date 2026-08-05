@@ -100,6 +100,11 @@ class CodeGraphWatcher:
         # Pause/resume support: when paused, events accumulate but don't trigger reindex.
         self._pause_count: int = 0
         self._dirty_workspaces: set[str] = set()
+        # In-memory change journal used by freshness-aware queries. Unlike the
+        # workspace-level pause flag, this preserves exact paths so the query
+        # router can parse only relevant dirty files while a larger reindex is
+        # still pending.
+        self._dirty_files: dict[str, set[str]] = {}
         # Metadata changes require rebuilding edges for unchanged source files;
         # a normal content-hash incremental pass would otherwise be a no-op.
         self._full_reindex_pending: set[str] = set()
@@ -139,9 +144,10 @@ class CodeGraphWatcher:
                 # Use code_graph debounce for reindex batching
                 self._reindex_debounce_ms = settings.code_graph.watch_debounce_ms
 
+            resolved_paths = [str(Path(p).resolve()) for p in paths]
             new_paths = [
                 p
-                for p in paths
+                for p in resolved_paths
                 if p not in self._watched_workspaces and Path(p).is_dir()
             ]
             if not new_paths:
@@ -172,6 +178,7 @@ class CodeGraphWatcher:
             # Reset pause state so a subsequent start() begins clean
             self._pause_count = 0
             self._dirty_workspaces.clear()
+            self._dirty_files.clear()
             self._full_reindex_pending.clear()
 
     async def pause(self) -> None:
@@ -282,12 +289,30 @@ class CodeGraphWatcher:
 
     async def _on_change(self, workspace: str, events: list[FsChangeEvent]) -> None:
         """Callback from WorkspaceFileWatcher — filter and debounce reindex."""
+        workspace = str(Path(workspace).resolve())
         # Fast extension check via str ops (avoid Path allocation per event)
         extensions = self._extensions
         has_source = any(_suffix(e["path"]) in extensions for e in events)
-        has_metadata = any(_is_graph_metadata(e["path"]) for e in events)
+        has_metadata = any(is_graph_metadata_path(e["path"]) for e in events)
         if not has_source and not has_metadata:
             return
+        workspace_root = Path(workspace).resolve()
+        journal = self._dirty_files.setdefault(workspace, set())
+        for event in events:
+            raw_path = Path(event["path"])
+            try:
+                resolved = (
+                    raw_path.resolve()
+                    if raw_path.is_absolute()
+                    else (workspace_root / raw_path).resolve()
+                )
+                rel_path = resolved.relative_to(workspace_root).as_posix()
+            except (OSError, ValueError):
+                continue
+            if _suffix(rel_path) in self._extensions or is_graph_metadata_path(
+                rel_path
+            ):
+                journal.add(rel_path)
         if has_metadata:
             self._full_reindex_pending.add(workspace)
 
@@ -365,6 +390,7 @@ class CodeGraphWatcher:
             # more if new events arrived while the first pass was running).
             while True:
                 self._reindex_pending.discard(workspace)
+                journal_batch = self._dirty_files.pop(workspace, set())
                 try:
                     async with self._db_factory() as db:
                         workspace_id = await resolve_workspace_id(db, path=workspace)
@@ -422,6 +448,7 @@ class CodeGraphWatcher:
                         stats.deleted_files,
                     )
                 except Exception as exc:  # noqa: BLE001 — one bad reindex shouldn't stop watching
+                    self._dirty_files.setdefault(workspace, set()).update(journal_batch)
                     logger.error(
                         "code_graph_watcher_reindex_failed workspace={} err={}",
                         workspace,
@@ -435,6 +462,11 @@ class CodeGraphWatcher:
                 # If no new events arrived during this pass, we're done.
                 if workspace not in self._reindex_pending:
                     break
+
+    def dirty_paths(self, workspace: str) -> frozenset[str]:
+        """Return the current path-level change journal without consuming it."""
+        resolved = str(Path(workspace).resolve())
+        return frozenset(self._dirty_files.get(resolved, set()))
 
     async def _workspace_paths(self) -> list[Path]:
         async with self._db_factory() as db:
@@ -450,7 +482,7 @@ def _suffix(path: str) -> str:
     return path[dot:].lower()
 
 
-def _is_graph_metadata(path: str) -> bool:
+def is_graph_metadata_path(path: str) -> bool:
     name = path.replace("\\", "/").rsplit("/", 1)[-1]
     return name in _GRAPH_METADATA_NAMES or name.endswith(_GRAPH_METADATA_SUFFIXES)
 
@@ -471,3 +503,11 @@ async def flush_code_graph_index(workspace: str) -> None:
     watcher = _global_watcher
     if watcher is not None:
         await watcher.flush_incremental(workspace)
+
+
+def get_dirty_code_paths(workspace: str) -> frozenset[str]:
+    """Return watcher-observed dirty paths for retrieval overlay queries."""
+    watcher = _global_watcher
+    if watcher is None:
+        return frozenset()
+    return watcher.dirty_paths(workspace)

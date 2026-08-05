@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
@@ -72,6 +72,75 @@ class CodeGraphStatusResponse(BaseModel):
 
 class CodeSearchResponse(BaseModel):
     nodes: list[CodeNodeOut]
+
+
+class CodeQueryRequest(BaseModel):
+    query: str = Field(min_length=1)
+    intent: Literal["locate", "explain", "impact", "trace", "change"] = "locate"
+    paths: list[str] = Field(default_factory=list)
+    languages: list[str] = Field(default_factory=list)
+    kinds: list[str] = Field(default_factory=list)
+    budget_tokens: int = Field(default=2500, ge=500, le=12000)
+    freshness: Literal["fast", "balanced", "strict"] = "balanced"
+    limit: int = Field(default=10, ge=1, le=30)
+
+
+class CodeQueryCandidateOut(BaseModel):
+    handle: str
+    file_path: str
+    line_start: int
+    line_end: int
+    symbol: str | None = None
+    kind: str | None = None
+    language: str | None = None
+    signature: str | None = None
+    snippet: str | None = None
+    score: float
+    confidence: float
+    provenance: str
+    match_reasons: list[str]
+    callers: list[str]
+    callees: list[str]
+    tests: list[str]
+    repository: str | None = None
+
+
+class LanguageCapabilityOut(BaseModel):
+    language: str
+    extensions: list[str]
+    graph: bool
+    lsp: bool
+    indexed_files: int
+    workspace_files: int
+    coverage: float
+
+
+class CodeQueryResponse(BaseModel):
+    query: str
+    intent: str
+    strategy: str
+    graph_version: str | None
+    working_tree_revision: str
+    freshness: str
+    coverage: float
+    confidence: float
+    dirty_files: int
+    pending_edges: int
+    results: list[CodeQueryCandidateOut]
+    capabilities: list[LanguageCapabilityOut]
+    limitations: list[str]
+    next_read_ranges: list[str]
+    truncated: bool
+    cache_hit: bool
+
+
+class CodeGraphFreshnessResponse(BaseModel):
+    graph_version: str | None
+    working_tree_revision: str
+    freshness: str
+    indexed_files: int
+    dirty_files: int
+    change_source: str
 
 
 class CodeEdgeOut(BaseModel):

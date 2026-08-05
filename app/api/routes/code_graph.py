@@ -12,19 +12,26 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
+from sqlmodel import col, select
 
 from app.api.deps import DbSession
 from app.api.schemas.code_graph import (
     CodeGraphStatusResponse,
+    CodeGraphFreshnessResponse,
     CodeNodeOut,
     CodeOverviewResponse,
     CodeSearchResponse,
+    CodeQueryCandidateOut,
+    CodeQueryRequest,
+    CodeQueryResponse,
+    LanguageCapabilityOut,
     NeighborOut,
     NeighborsResponse,
     ReindexRequest,
     ReindexStartedResponse,
 )
 from app.services.code_graph.jobs import index_jobs
+from app.models.chat import CodingWorkspace
 from app.services.coding_workspace_service import upsert_coding_workspace
 
 router = APIRouter()
@@ -58,6 +65,28 @@ async def _require_workspace_id(db: DbSession, workspace: str | None) -> UUID:
             detail="Workspace has no code index yet. Reindex it first.",
         )
     return workspace_id
+
+
+async def _require_registered_workspace(
+    db: DbSession, workspace: str | None
+) -> tuple[Path, UUID]:
+    """Authorize endpoints that read live source, even without an index."""
+    path = _workspace_path(workspace)
+    row = (
+        await db.exec(
+            select(CodingWorkspace).where(
+                CodingWorkspace.path == str(path),
+                ~col(CodingWorkspace.hidden),
+                col(CodingWorkspace.deleted_at).is_(None),
+            )
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Workspace is not registered or is no longer active.",
+        )
+    return path, row.id
 
 
 @router.get("/status")
@@ -122,6 +151,124 @@ async def search(
         db, workspace_id=workspace_id, query=query, kind=kind, limit=limit
     )
     return CodeSearchResponse(nodes=[CodeNodeOut.from_model(n) for n in nodes])
+
+
+@router.post("/query")
+async def code_query(
+    db: DbSession,
+    body: CodeQueryRequest,
+    workspace: str | None = Query(None, description="Coding workspace directory."),
+) -> CodeQueryResponse:
+    """Return one freshness-aware code context pack with automatic fallback."""
+    from app.services.code_query_service import query_code
+
+    path, workspace_id = await _require_registered_workspace(db, workspace)
+    result = await query_code(
+        db,
+        root_path=str(path),
+        workspace_id=workspace_id,
+        query=body.query,
+        intent=body.intent,
+        paths=body.paths,
+        languages=body.languages,
+        kinds=body.kinds,
+        budget_tokens=body.budget_tokens,
+        freshness_policy=body.freshness,
+        limit=body.limit,
+        enable_lsp=False,
+    )
+    return CodeQueryResponse(
+        query=result.query,
+        intent=result.intent,
+        strategy=result.strategy,
+        graph_version=result.graph_version,
+        working_tree_revision=result.working_tree_revision,
+        freshness=result.freshness,
+        coverage=result.coverage,
+        confidence=result.confidence,
+        dirty_files=result.dirty_files,
+        pending_edges=result.pending_edges,
+        results=[
+            CodeQueryCandidateOut(
+                handle=item.handle,
+                file_path=item.file_path,
+                line_start=item.line_start,
+                line_end=item.line_end,
+                symbol=item.symbol,
+                kind=item.kind,
+                language=item.language,
+                signature=item.signature,
+                snippet=item.snippet,
+                score=item.score,
+                confidence=item.confidence,
+                provenance=item.provenance,
+                match_reasons=item.match_reasons,
+                callers=item.callers,
+                callees=item.callees,
+                tests=item.tests,
+                repository=item.repository,
+            )
+            for item in result.results
+        ],
+        capabilities=[
+            LanguageCapabilityOut(
+                language=item.language,
+                extensions=list(item.extensions),
+                graph=item.graph,
+                lsp=item.lsp,
+                indexed_files=item.indexed_files,
+                workspace_files=item.workspace_files,
+                coverage=item.coverage,
+            )
+            for item in result.capabilities
+        ],
+        limitations=result.limitations,
+        next_read_ranges=result.next_read_ranges,
+        truncated=result.truncated,
+        cache_hit=result.cache_hit,
+    )
+
+
+@router.get("/capabilities")
+async def capabilities(
+    db: DbSession,
+    workspace: str | None = Query(None, description="Coding workspace directory."),
+) -> list[LanguageCapabilityOut]:
+    from app.services.code_query_service import get_capabilities
+
+    path, workspace_id = await _require_registered_workspace(db, workspace)
+    values = await get_capabilities(db, root_path=str(path), workspace_id=workspace_id)
+    return [
+        LanguageCapabilityOut(
+            language=item.language,
+            extensions=list(item.extensions),
+            graph=item.graph,
+            lsp=item.lsp,
+            indexed_files=item.indexed_files,
+            workspace_files=item.workspace_files,
+            coverage=item.coverage,
+        )
+        for item in values
+    ]
+
+
+@router.get("/freshness")
+async def freshness(
+    db: DbSession,
+    workspace: str | None = Query(None, description="Coding workspace directory."),
+) -> CodeGraphFreshnessResponse:
+    from app.services.code_query_service import get_freshness
+
+    path, workspace_id = await _require_registered_workspace(db, workspace)
+    value = await get_freshness(db, root_path=str(path), workspace_id=workspace_id)
+    return CodeGraphFreshnessResponse(
+        graph_version=value.graph_version,
+        working_tree_revision=value.working_tree_revision,
+        freshness=value.freshness,
+        indexed_files=value.indexed_files,
+        dirty_files=value.dirty_files,
+        change_source=value.change_source,
+    )
 
 
 @router.get("/neighbors")

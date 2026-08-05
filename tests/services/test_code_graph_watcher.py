@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.services.code_graph.watcher import CodeGraphWatcher, _is_graph_metadata
+from app.services.code_graph.watcher import CodeGraphWatcher, is_graph_metadata_path
 from app.services.code_graph_service import ReindexStats
 
 
@@ -22,11 +22,11 @@ def _fake_factory():
 
 
 def test_graph_metadata_detection_covers_resolution_inputs() -> None:
-    assert _is_graph_metadata("tsconfig.json")
-    assert _is_graph_metadata("packages/shared/package.json")
-    assert _is_graph_metadata("src/App.csproj")
-    assert _is_graph_metadata(".gitignore")
-    assert not _is_graph_metadata("README.md")
+    assert is_graph_metadata_path("tsconfig.json")
+    assert is_graph_metadata_path("packages/shared/package.json")
+    assert is_graph_metadata_path("src/App.csproj")
+    assert is_graph_metadata_path(".gitignore")
+    assert not is_graph_metadata_path("README.md")
 
 
 @pytest.mark.asyncio

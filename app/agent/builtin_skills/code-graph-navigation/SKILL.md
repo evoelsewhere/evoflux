@@ -5,8 +5,9 @@ description: "Triggers include: code graph, caller, impact analysis. Navigate in
 
 # Code Graph Navigation
 
-Use the graph to narrow the search space, then confirm material claims in live
-source. Treat it as a static index of resolved structure, not proof of runtime
+Use `code_query` first. It treats the graph as an accelerator, overlays dirty
+source, and falls back to LSP/text search when coverage is missing. Source is
+authoritative; graph relationships are static evidence, not proof of runtime
 behavior.
 
 ## When to Use
@@ -28,7 +29,18 @@ behavior.
 
 ## Query Strategy
 
-### 1. Establish scope only when needed
+### 1. Retrieve a task-specific context pack
+
+Call `code_query` with the user's goal and the matching intent: `locate`,
+`explain`, `impact`, `trace`, or `change`. For impact-sensitive work, inspect
+its `freshness`, `confidence`, `pending_edges`, and limitations before relying
+on relationship absence. Prefer the included snippets and read only its
+suggested ranges when more source is necessary.
+
+Stable `cg:...` handles can be passed to `code_graph` and `code_path` without
+resolving an ambiguous symbol name again.
+
+### 2. Establish broad scope only when needed
 
 Call `code_overview` for broad exploration or an unfamiliar project. Check that
 the expected languages and a plausible number of files are indexed. In a linked
@@ -36,16 +48,17 @@ project, note every repository label and flag repositories with zero files.
 
 Skip the overview when the target symbol and repository are already known.
 
-### 2. Resolve the symbol
+### 3. Resolve remaining ambiguity
 
-Call `code_search` with the most specific identifier available. Prefer a
-qualified name and add `kind` when names collide. Keep each candidate's
-repository, qualified name, kind, signature, and `file:line` together.
+Use `code_search` only when `code_query` reports low confidence or when a broad
+symbol-only result set is specifically useful. Prefer a qualified name and add
+`kind` when names collide. Keep each candidate's repository, qualified name,
+kind, signature, and `file:line` together.
 
 Use text search for non-identifiers. Never select a candidate by name similarity
 alone; read the smallest relevant source range when multiple candidates remain.
 
-### 3. Ask only for the relationships required
+### 4. Ask only for additional relationships required
 
 Call `code_graph` with:
 
@@ -73,7 +86,7 @@ a target. Resolve it from imports, receiver types, namespaces, and the call site
 When graph output says imports are file-level, do not attribute those imports to
 the selected class or function; they belong to its containing file.
 
-### 4. Trace paths only for reachability questions
+### 5. Trace paths only for reachability questions
 
 Call `code_path` when the question is how one symbol can reach another. Use
 qualified endpoints when possible. Treat the result as a shortest indexed
@@ -86,7 +99,7 @@ labels and inspect the sibling source directly when same-name collisions matter.
 If no path is found, inspect unresolved imports and manifest/package boundaries
 before concluding the components are independent.
 
-### 5. Verify before editing or concluding
+### 6. Verify before editing or concluding
 
 Read the exact definitions and call sites identified by the graph. Use LSP for
 aliases, receiver types, overrides, and live diagnostics when available. Before

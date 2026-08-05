@@ -1097,10 +1097,10 @@ async def resolve_team_session(
                 logger.warning("code_graph_watch_paths_failed err={}", exc)
 
         # Build the code index in the background the first time a
-        # never-indexed workspace is opened — code_search/code_graph/
-        # code_overview and the first-turn overview injection are all dead
-        # until an index exists, and the watcher only reacts to file
-        # *changes*, never to the initial open.
+        # never-indexed workspace is opened. ``code_query`` can fall back to
+        # source immediately, but topology tools and cross-repo impact remain
+        # unavailable until the first graph snapshot exists. The watcher only
+        # reacts to file *changes*, never to the initial open.
         await _kick_auto_index(db, watch_targets, project_id=project_id)
 
     data = SessionResponse.model_validate(session).model_dump()

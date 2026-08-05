@@ -64,6 +64,13 @@ class CodeGraphSettings(BaseModel):
     # Build the index automatically the first time a never-indexed workspace
     # is opened in a coding/aim session (background job; UI shows progress).
     auto_index_enabled: bool = True
+    # Task-oriented retrieval remains bounded even for very large monorepos.
+    query_max_scan_files: int = Field(default=20_000, ge=100, le=200_000)
+    # Above this dirty-file count, parse only files proven relevant by lexical
+    # retrieval and leave the rest to background indexing.
+    query_large_change_files: int = Field(default=200, ge=10, le=10_000)
+    query_cache_ttl_seconds: float = Field(default=30.0, ge=0.0, le=600.0)
+    task_prefetch_enabled: bool = True
 
 
 class CrossRepoSettings(BaseModel):

@@ -76,7 +76,20 @@ async def _seed_unresolved_edge(
     return edge
 
 
-def _index_fts(workspace_id, rows: list[tuple[str, str, str]]) -> None:
+def _fts_row(node_id: str, name: str, qualified_name: str) -> fts_store.FtsRow:
+    return (
+        node_id,
+        name,
+        qualified_name,
+        f"{name}.java",
+        "",
+        "",
+        "class",
+        "java",
+    )
+
+
+def _index_fts(workspace_id, rows: list[fts_store.FtsRow]) -> None:
     db_path = db_module.current_sqlite_path()
     assert db_path is not None
     fts_store.rebuild_workspace_fts(db_path, str(workspace_id), rows)
@@ -105,7 +118,8 @@ async def test_tier_b_auto_resolves_single_exact_match(setup_db, tmp_path: Path)
         edge_id = edge.id
 
     _index_fts(
-        repo_b_id, [(str(target_id), "AuthClient", "com.example.auth.AuthClient")]
+        repo_b_id,
+        [_fts_row(str(target_id), "AuthClient", "com.example.auth.AuthClient")],
     )
 
     async with db_module.async_session_factory() as db:
@@ -186,8 +200,8 @@ async def test_tier_b_does_not_guess_when_ambiguous(setup_db, tmp_path: Path):
     _index_fts(
         repo_b_id,
         [
-            (str(n1_id), "Logger", "com.example.a.Logger"),
-            (str(n2_id), "Logger", "com.example.b.Logger"),
+            _fts_row(str(n1_id), "Logger", "com.example.a.Logger"),
+            _fts_row(str(n2_id), "Logger", "com.example.b.Logger"),
         ],
     )
 
@@ -268,7 +282,7 @@ async def test_tier_b_rotates_through_capped_rows_across_runs(
             )
             edge_ids.append(edge.id)
             fts_rows.append(
-                (str(target.id), f"Target{i}", f"com.example.gen.Target{i}")
+                _fts_row(str(target.id), f"Target{i}", f"com.example.gen.Target{i}")
             )
         await db.commit()
     _index_fts(repo_b_id, fts_rows)

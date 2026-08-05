@@ -403,11 +403,9 @@ async def test_code_tool_workspace_resolution_flushes_index_first(
 
     workspace = str(tmp_path)
     assert resolved is workspace_id
-    assert order == [
-        f"flush:{workspace}",
-        f"flush:{sibling}",
-        f"resolve:{workspace}",
-    ]
+    # Compatibility tools keep a strict active-repo barrier, but sibling
+    # snapshots no longer serialize every query behind project-wide flushes.
+    assert order == [f"flush:{workspace}", f"resolve:{workspace}"]
 
 
 @pytest.mark.asyncio

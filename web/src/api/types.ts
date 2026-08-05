@@ -224,6 +224,67 @@ export interface CodeGraphSearchResponse {
   nodes: CodeGraphNode[]
 }
 
+export type CodeQueryIntent = 'locate' | 'explain' | 'impact' | 'trace' | 'change'
+export type CodeQueryFreshnessPolicy = 'fast' | 'balanced' | 'strict'
+
+export interface CodeQueryCandidate {
+  handle: string
+  file_path: string
+  line_start: number
+  line_end: number
+  symbol: string | null
+  kind: string | null
+  language: string | null
+  signature: string | null
+  snippet: string | null
+  score: number
+  confidence: number
+  provenance: string
+  match_reasons: string[]
+  callers: string[]
+  callees: string[]
+  tests: string[]
+  repository: string | null
+}
+
+export interface CodeGraphLanguageCapability {
+  language: string
+  extensions: string[]
+  graph: boolean
+  lsp: boolean
+  indexed_files: number
+  workspace_files: number
+  coverage: number
+}
+
+export interface CodeQueryResponse {
+  query: string
+  intent: CodeQueryIntent
+  strategy: string
+  graph_version: string | null
+  working_tree_revision: string
+  freshness: 'fresh' | 'partial' | 'stale' | 'unavailable'
+  coverage: number
+  confidence: number
+  dirty_files: number
+  pending_edges: number
+  results: CodeQueryCandidate[]
+  capabilities: CodeGraphLanguageCapability[]
+  limitations: string[]
+  next_read_ranges: string[]
+  truncated: boolean
+  cache_hit: boolean
+}
+
+export interface CodeGraphFreshnessResponse {
+  graph_version: string | null
+  working_tree_revision: string
+  freshness: 'fresh' | 'partial' | 'unavailable'
+  indexed_files: number
+  dirty_files: number
+  change_source: string
+}
+
 export interface CodeGraphEdge {
   id: string
   src_id: string
