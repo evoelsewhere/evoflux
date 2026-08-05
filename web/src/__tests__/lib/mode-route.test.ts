@@ -21,13 +21,14 @@ describe('mode route persistence', () => {
     expect(appModeForPath('/telemetry')).toBeNull()
   })
 
-  it('keeps and restores a direct route for each mode', () => {
+  it('keeps direct routes for Work/AIM but opens Coding without a session', () => {
     saveModeRoute('/session-id', '/session-id')
     saveModeRoute('/coding/project/session', '/coding/project/session')
     saveModeRoute('/aim/project/pipelines', '/aim/project/pipelines')
 
     expect(loadModeRoute('work')).toBe('/session-id')
-    expect(loadModeRoute('coding')).toBe('/coding/project/session')
+    expect(localStorage.getItem(STORAGE_KEYS.modeRoutes.coding)).toBe('/coding')
+    expect(loadModeRoute('coding')).toBe('/coding')
     expect(loadModeRoute('aim')).toBe('/aim/project/pipelines')
   })
 
@@ -44,11 +45,20 @@ describe('mode route persistence', () => {
     expect(localStorage.getItem(STORAGE_KEYS.modeRoutes.work)).toBe('/session-id')
   })
 
-  it('restores the last route before the router mounts', () => {
+  it('restores Coding at its session-neutral landing page before router mount', () => {
     localStorage.setItem(STORAGE_KEYS.lastRoute, '/coding/project/session')
 
     restoreLastRouteBeforeRouterMount()
 
-    expect(window.location.pathname).toBe('/coding/project/session')
+    expect(window.location.pathname).toBe('/coding')
+  })
+
+  it('normalizes a Coding session route saved by an older release', () => {
+    localStorage.setItem(
+      STORAGE_KEYS.modeRoutes.coding,
+      '/coding/project/session',
+    )
+
+    expect(loadModeRoute('coding')).toBe('/coding')
   })
 })

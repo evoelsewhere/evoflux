@@ -766,6 +766,9 @@ export function CodingSidebar({
     const path = removeWorkspaceTarget;
     if (!path) return;
 
+    const isRemovingActiveWorkspace =
+      path === activeWorkspace || params.focusId === path;
+
     // Do this before navigating: otherwise bare /coding immediately restores
     // the old local "last workspace" pointer and retries the missing folder.
     clearLastCodingFocus(path);
@@ -789,7 +792,11 @@ export function CodingSidebar({
           description: err instanceof Error ? err.message : String(err),
         });
       });
-    if (path === activeWorkspace) {
+    if (isRemovingActiveWorkspace) {
+      // /coding is an empty/default view, but this layout stays mounted while
+      // navigating between coding routes. Reset the store explicitly so the
+      // deleted workspace's chat cannot remain visible under the empty URL.
+      useTeamStore.getState().newSession();
       navigate({ to: "/coding", replace: true });
     }
     setRemoveWorkspaceTarget(null);
@@ -2344,10 +2351,22 @@ export function CodingSidebar({
               onClick={() => {
                 const target = deleteProjectTarget;
                 if (!target) return;
+                const isDeletingActiveProject =
+                  currentProjectId === target.id || params.focusId === target.id;
                 deleteProjectMutation.mutate(target.id, {
                   onSuccess: () => {
-                    if (currentProjectId === target.id) {
-                      useTeamStore.setState({ projectId: null });
+                    clearLastCodingFocus(target.id);
+                    setExpandedProjects((current) => {
+                      if (!current.has(target.id)) return current;
+                      const next = new Set(current);
+                      next.delete(target.id);
+                      return next;
+                    });
+                    if (isDeletingActiveProject) {
+                      // Route params are the reliable fallback when the
+                      // active session is absent from paginated query data or
+                      // its project binding has already been cleared.
+                      useTeamStore.getState().newSession();
                       navigate({ to: "/coding", replace: true });
                     }
                     setDeleteProjectTarget(null);
