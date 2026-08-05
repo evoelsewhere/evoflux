@@ -1,0 +1,49 @@
+import type { WorkbenchTool } from '@/stores/useUIStore'
+
+export type HelpCategoryId =
+  | 'getting-started'
+  | 'modes'
+  | 'chat'
+  | 'composer'
+  | 'slash'
+  | 'sessions'
+  | 'workbench'
+  | 'coding'
+  | 'aim'
+  | 'memory'
+  | 'scheduler'
+  | 'browser'
+  | 'settings'
+  | 'shortcuts'
+  | 'troubleshooting'
+
+export type HelpBlock =
+  | { type: 'p'; text: string }
+  | { type: 'tips'; items: string[] }
+  | { type: 'shortcuts'; rows: { keys: string; action: string }[] }
+  | { type: 'slash'; commands: { cmd: string; desc: string }[] }
+
+export type HelpOpenAction =
+  | { type: 'settings'; path: string }
+  | { type: 'workbench'; tool: WorkbenchTool }
+  | { type: 'palette' }
+  | { type: 'route'; to: string }
+
+export interface HelpCategory {
+  id: HelpCategoryId
+  label: string
+  description: string
+}
+
+export interface HelpArticle {
+  id: string
+  category: HelpCategoryId
+  title: string
+  summary: string
+  keywords: string[]
+  setup?: string
+  tricks?: string[]
+  blocks: HelpBlock[]
+  related?: string[]
+  openAction?: HelpOpenAction
+}

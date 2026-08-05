@@ -8,6 +8,7 @@
 import {
   BarChart3,
   Bell,
+  BookOpen,
   Bot,
   BrainCircuit,
   ChevronRight,
@@ -29,6 +30,7 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { useSettingsNavigate } from '@/contexts/SettingsContext'
 import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/settings/SettingsLayout'
 import { Button } from '@/components/ui/button'
+import { useUIStore } from '@/stores/useUIStore'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   useAgentFilesQuery,
@@ -250,6 +252,26 @@ export function SettingsHubPage() {
               onClick={() => navigate('connection')}
             >
               Configure
+            </Button>
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup title="Help">
+        <SettingsRow
+          label="Guidelines"
+          description="Searchable setup tips and tricks for every EvoFlux surface."
+          control={
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                useUIStore.getState().closeSettings()
+                useUIStore.getState().openGuidelines('getting-started')
+              }}
+            >
+              <BookOpen size={13} aria-hidden="true" />
+              Open
             </Button>
           }
         />

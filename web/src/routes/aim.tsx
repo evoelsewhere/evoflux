@@ -77,6 +77,13 @@ function AimLayoutBase() {
     return [
       ...projectCommands,
       { id: 'new-project', group: 'AIM', label: 'New / Join Project', description: 'Set up a migration project', action: () => setWizardOpen(true) },
+      {
+        id: 'open-guidelines',
+        group: 'Navigation',
+        label: 'Open Guidelines…',
+        description: 'Search setup tips and feature tricks',
+        action: () => useUIStore.getState().openGuidelines(),
+      },
       { id: 'toggle-sidebar', group: 'View', label: 'Toggle Sidebar', description: '', shortcut: 'Ctrl+B', action: () => useUIStore.getState().toggleSidebarCollapsed() },
       { id: 'go-settings', group: 'Settings', label: 'Open Settings', description: 'Manage agents & skills', action: () => useUIStore.getState().openSettings('agents') },
     ]

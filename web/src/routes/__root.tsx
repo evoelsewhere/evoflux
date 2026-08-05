@@ -8,6 +8,7 @@ import { Home } from 'lucide-react'
 import { ToastStack } from '@/components/ToastStack'
 import { MacTitleBar } from '@/components/MacTitleBar'
 import { SettingsScreen } from '@/components/SettingsScreen'
+import { GuidelinesModal } from '@/components/help/GuidelinesModal'
 import { PersistentModeNavigation } from '@/components/shell/PersistentModeNavigation'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import { useHistorySwipeNavigation } from '@/hooks/use-history-swipe-navigation'
@@ -26,6 +27,7 @@ export function Root() {
   // it would override the user's preference.
   const location = useLocation()
   const settingsOpen = useUIStore((state) => state.settingsOpen)
+  const guidelinesOpen = useUIStore((state) => state.guidelinesOpen)
 
   useEffect(() => {
     const fullPath = window.location.pathname + window.location.search + window.location.hash
@@ -49,6 +51,8 @@ export function Root() {
         </>
       )}
       <ToastStack />
+      {/* Remount on each open so local search/selection state resets cleanly. */}
+      {guidelinesOpen ? <GuidelinesModal /> : null}
       {/* <ReactQueryDevtools initialIsOpen={false} /> */}
     </QueryClientProvider>
   )
