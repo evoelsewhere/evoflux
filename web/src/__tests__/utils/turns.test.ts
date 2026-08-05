@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ContentBlock } from '@/api/types'
-import { getVisibleTurnWindow, partitionTurns } from '@/utils/turns'
+import { getVisibleTurnWindow, isLatestStreamingItem, partitionTurns } from '@/utils/turns'
 
 const block = (type: ContentBlock['type'], content: string): ContentBlock =>
   ({ type, content, id: `${type}-${content}` }) as ContentBlock
@@ -41,5 +41,12 @@ describe('turn partitioning', () => {
     const window = getVisibleTurnWindow(turns, 2)
     expect(window.hiddenTurnCount).toBe(1)
     expect(window.visibleTurnItems).toEqual(turns.slice(1))
+  })
+
+  it('marks only the newest item in a live turn as streaming', () => {
+    expect(isLatestStreamingItem(true, 0, 3)).toBe(false)
+    expect(isLatestStreamingItem(true, 1, 3)).toBe(false)
+    expect(isLatestStreamingItem(true, 2, 3)).toBe(true)
+    expect(isLatestStreamingItem(false, 2, 3)).toBe(false)
   })
 })

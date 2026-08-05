@@ -16,6 +16,7 @@ import {
   type ToolBlockGroup,
 } from './ToolCallGroup'
 import type { ContentBlock } from '@/api/types'
+import { isLatestStreamingItem } from '@/utils/turns'
 import { BlockEnter } from './motion/BlockEnter'
 
 export interface AssistantTurnFooterProps {
@@ -129,9 +130,6 @@ export interface AssistantTurnProps {
   blocks: ContentBlock[]
   /** Absolute index of `blocks[0]` in the parent's full block list. */
   startIndex: number
-  /** Number of finalized blocks (i.e. `stream.blocks.length`); blocks at or
-   *  past this index are still in-flight when `isWorking` is true. */
-  finalizedCount: number
   /** True while the agent is actively streaming. */
   isWorking: boolean
   /** True when this turn has no user block after it (i.e. trailing). Only
@@ -153,7 +151,6 @@ export interface AssistantTurnProps {
 export function AssistantTurn({
   blocks,
   startIndex,
-  finalizedCount,
   isWorking,
   isTrailingTurn,
   totalBlocks,
@@ -179,7 +176,7 @@ export function AssistantTurn({
             <ToolCallGroupCard
               key={(renderItem as ToolBlockGroup).id}
               group={renderItem as ToolBlockGroup}
-              isStreaming={turnIsStreaming && j === renderItems.length - 1}
+              isStreaming={isLatestStreamingItem(turnIsStreaming, j, renderItems.length)}
               sessionId={sessionId}
               latestMCPAppBlockIds={latestMCPAppBlockIds}
               compact={size === 'compact'}
@@ -188,7 +185,9 @@ export function AssistantTurn({
         }
         const block = renderItem as ContentBlock
         const absoluteIdx = blockAbsIdx.get(block.id) ?? startIndex + j
-        const isStreaming = isWorking && absoluteIdx >= finalizedCount
+        // Earlier blocks in the live buffer are completed phases. Animate
+        // only the newest visible item in the trailing active turn.
+        const isStreaming = isLatestStreamingItem(turnIsStreaming, j, renderItems.length)
         return (
           <BlockEnter key={block.id} disabled={isStreaming && block.type === 'text'}>
             {renderBlock({

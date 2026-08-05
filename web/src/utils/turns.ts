@@ -16,6 +16,15 @@ export interface VisibleTurnWindow {
   visibleTurnItems: TurnItem[]
 }
 
+/** Only the newest rendered item in the trailing live turn may animate. */
+export function isLatestStreamingItem(
+  turnIsStreaming: boolean,
+  itemIndex: number,
+  itemCount: number,
+): boolean {
+  return turnIsStreaming && itemCount > 0 && itemIndex === itemCount - 1
+}
+
 export function getVisibleTurnWindow(
   turnItems: TurnItem[],
   renderedTurnCount: number,

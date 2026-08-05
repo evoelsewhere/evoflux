@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react'
 
-import { ActivityStatus } from '@/components/motion/ActivityStatus'
-
 function formatElapsed(milliseconds: number): string {
   const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000))
   if (totalSeconds < 1) return 'Working'
@@ -24,10 +22,9 @@ export function StreamingTurnHeader({ startedAt }: { startedAt?: number }) {
 
   return (
     <div className="mb-3 flex items-center gap-3" aria-label={formatElapsed(now - start)}>
-      <ActivityStatus
-        label={formatElapsed(now - start)}
-        className="shrink-0 text-xs font-normal"
-      />
+      <span className="shrink-0 text-xs font-normal text-(--color-text-muted)">
+        {formatElapsed(now - start)}
+      </span>
       <span className="h-px min-w-8 flex-1 bg-(--color-border-subtle)" aria-hidden="true" />
     </div>
   )

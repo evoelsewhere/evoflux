@@ -273,7 +273,6 @@ export function AgentPane({
                        <AssistantTurn
                          blocks={item.blocks}
                          startIndex={item.startIndex}
-                         finalizedCount={stream.blocks.length}
                          isWorking={isWorking}
                          isTrailingTurn={isTrailingTurn}
                          totalBlocks={allBlocks.length}
