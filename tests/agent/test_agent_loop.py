@@ -1421,8 +1421,8 @@ async def test_load_tool_search_ignores_filler_words():
             ),
             # "a" and "the" both appear in this summary; without filtering they
             # would score as highly as "diagram" does above.
-            "code_definition": DeferredToolEntry(
-                summary="Find the definition of a code symbol."
+            "static_diagnostics": DeferredToolEntry(
+                summary="Run static diagnostics for a code file."
             ),
         }
     )

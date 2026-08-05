@@ -83,53 +83,6 @@ async def test_lsp_diagnostics_missing_path(tmp_path: Path):
     assert "Error" in result or "does not exist" in result.lower()
 
 
-# ── lsp_definition ────────────────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_lsp_definition_no_workspace(tmp_path: Path):
-    """lsp_definition returns helpful message when workspace is not indexed."""
-    from app.agent.tools.builtin.lsp import code_definition
-
-    state = _make_state(tmp_path)
-
-    # Patch resolve_workspace_id to return None (not indexed)
-    with patch(
-        "app.services.code_graph_service.resolve_workspace_id",
-        new_callable=AsyncMock,
-        return_value=None,
-    ):
-        with patch("app.core.db.async_session_factory") as mock_factory:
-            mock_db = AsyncMock()
-            mock_factory.return_value = mock_db
-            result = await code_definition.arun(name="MyClass", _state=state)
-
-    assert "not indexed" in result.lower() or "Info" in result
-
-
-# ── lsp_references ────────────────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_lsp_references_no_workspace(tmp_path: Path):
-    """lsp_references returns helpful message when workspace is not indexed."""
-    from app.agent.tools.builtin.lsp import code_references
-
-    state = _make_state(tmp_path)
-
-    with patch(
-        "app.services.code_graph_service.resolve_workspace_id",
-        new_callable=AsyncMock,
-        return_value=None,
-    ):
-        with patch("app.core.db.async_session_factory") as mock_factory:
-            mock_db = AsyncMock()
-            mock_factory.return_value = mock_db
-            result = await code_references.arun(name="my_func", _state=state)
-
-    assert "not indexed" in result.lower() or "Info" in result
-
-
 @pytest.mark.asyncio
 async def test_real_lsp_diagnostics_uses_persistent_client(tmp_path: Path):
     from app.agent.tools.builtin.lsp import lsp_diagnostics

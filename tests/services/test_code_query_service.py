@@ -11,6 +11,38 @@ import app.models.chat  # noqa: F401 -- register SQLModel tables for isolated ru
 import app.models.code_graph  # noqa: F401 -- register SQLModel tables for isolated run
 
 
+def test_query_terms_preserve_symbol_and_path_structure_without_stopword_cases() -> None:
+    from app.services.code_graph.query import query_terms
+
+    terms = query_terms("explain CodeContextHook in app/agent/loader.py:640")
+
+    assert "codecontexthook" in terms
+    assert "context" in terms
+    assert "app/agent/loader.py" in terms
+
+
+def test_source_scan_respects_gitignored_vendor_tree(tmp_path: Path) -> None:
+    from app.services.code_query_service import _iter_sourceish_files
+
+    (tmp_path / ".gitignore").write_text("desktop/sidecar-bundle/\n", encoding="utf-8")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "service.py").write_text(
+        "def reconnect_session():\n    return True\n", encoding="utf-8"
+    )
+    vendor = tmp_path / "desktop" / "sidecar-bundle" / "stdlib"
+    vendor.mkdir(parents=True)
+    (vendor / "inspect.py").write_text(
+        "def reconnect_session():\n    return False\n", encoding="utf-8"
+    )
+
+    scanned = {
+        path.relative_to(tmp_path).as_posix()
+        for path in _iter_sourceish_files(tmp_path, ())
+    }
+
+    assert scanned == {"src/service.py"}
+
+
 async def _index(root: Path):  # noqa: ANN202
     from app.core.db import async_session_factory
     from app.services.code_graph_service import reindex_workspace
@@ -234,6 +266,116 @@ async def test_query_returns_graph_handle_snippet_and_relationships(
     assert "def helper" in (candidate.snippet or "")
     assert any("caller" in relationship for relationship in candidate.callers)
     assert result.strategy.endswith("graph+lexical")
+
+
+@pytest.mark.asyncio
+async def test_locate_query_does_not_expand_relationship_lists(
+    setup_db, tmp_path: Path
+):
+    from app.core.db import async_session_factory
+    from app.services.code_query_service import query_code
+
+    (tmp_path / "service.py").write_text(
+        "def helper():\n    return 1\n\ndef caller():\n    return helper()\n",
+        encoding="utf-8",
+    )
+    workspace_id = await _index(tmp_path)
+    async with async_session_factory() as db:
+        result = await query_code(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            query="helper",
+            intent="locate",
+            enable_lsp=False,
+        )
+
+    candidate = next(item for item in result.results if item.symbol == "helper")
+    assert candidate.callers == []
+    assert candidate.callees == []
+    assert candidate.tests == []
+
+
+@pytest.mark.asyncio
+async def test_natural_query_rejects_single_generic_token_match(
+    setup_db, tmp_path: Path
+):
+    from app.core.db import async_session_factory
+    from app.services.code_query_service import query_code
+
+    (tmp_path / "card.py").write_text(
+        "def summary_behavior():\n    return 'text'\n", encoding="utf-8"
+    )
+    workspace_id = await _index(tmp_path)
+    query_parts = [
+        "check " + "summary",
+        "suggestion " + "rendering",
+        "behavior",
+    ]
+    async with async_session_factory() as db:
+        result = await query_code(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            query=" ".join(query_parts),
+            enable_lsp=False,
+        )
+
+    assert result.results == []
+
+
+@pytest.mark.asyncio
+async def test_natural_query_matches_identifier_without_message_routing(
+    setup_db, tmp_path: Path
+):
+    from app.core.db import async_session_factory
+    from app.services.code_query_service import query_code
+
+    (tmp_path / "session.py").write_text(
+        "def reconnect_session():\n    return True\n", encoding="utf-8"
+    )
+    workspace_id = await _index(tmp_path)
+    async with async_session_factory() as db:
+        result = await query_code(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            query="please explain how reconnect_session handles recovery",
+            enable_lsp=False,
+        )
+
+    assert any(item.symbol == "reconnect_session" for item in result.results)
+
+
+@pytest.mark.asyncio
+async def test_coverage_uses_only_requested_path_scope(setup_db, tmp_path: Path):
+    from app.core.db import async_session_factory
+    from app.services.code_query_service import query_code
+
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "service.py").write_text(
+        "def scoped_target():\n    return True\n", encoding="utf-8"
+    )
+    (tmp_path / "elsewhere").mkdir()
+    for index in range(4):
+        (tmp_path / "elsewhere" / f"other_{index}.py").write_text(
+            f"def other_{index}():\n    return {index}\n", encoding="utf-8"
+        )
+    workspace_id = await _index(tmp_path)
+    async with async_session_factory() as db:
+        result = await query_code(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            query="scoped_target",
+            paths=("src",),
+            enable_lsp=False,
+        )
+
+    python = next(item for item in result.capabilities if item.language == "python")
+    assert python.indexed_files == 1
+    assert python.workspace_files == 1
+    assert result.coverage == 1.0
 
 
 @pytest.mark.asyncio
@@ -488,44 +630,9 @@ async def test_code_query_tool_is_always_visible():
     assert code_query.deferred is False
     assert code_query.read_only is True
     assert code_query.definition["function"]["name"] == "code_query"
-
-
-@pytest.mark.asyncio
-async def test_graph_tool_accepts_stable_query_handle(setup_db, tmp_path: Path):
-    from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
-    from app.agent.tools.builtin.code_graph import code_graph
-    from app.core.db import async_session_factory
-    from app.services.code_query_service import query_code
-    from app.services.code_graph_service import reindex_workspace
-
-    (tmp_path / "service.py").write_text(
-        "def helper():\n    return 1\n\ndef caller():\n    return helper()\n",
-        encoding="utf-8",
-    )
-    workspace_id = await _index(tmp_path)
-    async with async_session_factory() as db:
-        result = await query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="helper",
-            enable_lsp=False,
-        )
-    handle = next(item.handle for item in result.results if item.symbol == "helper")
-    # A full rebuild replaces node UUIDs. The handle retains an encoded
-    # qualified-name fallback and must still resolve after that generation.
-    async with async_session_factory() as db:
-        await reindex_workspace(db, workspace_id=workspace_id, root_path=str(tmp_path))
-        await db.commit()
-
-    token = set_sandbox(SandboxConfig(workspace=str(tmp_path)))
-    try:
-        rendered = await code_graph(name=handle, direction="both")
-    finally:
-        _sandbox_ctx.reset(token)
-
-    assert "helper" in rendered
-    assert "caller" in rendered
+    schema = code_query.definition["function"]["parameters"]
+    assert set(schema["properties"]) == {"query", "max_files"}
+    assert schema["required"] == ["query"]
 
 
 @pytest.mark.asyncio
@@ -604,7 +711,7 @@ async def test_code_query_searches_authorized_sibling_repositories(
     finally:
         _sandbox_ctx.reset(token)
 
-    assert "strategy=project:" in rendered
+    assert "strategy: project:" in rendered
     assert "backend/session.py" in rendered
     assert "restore_remote_session" in rendered
 

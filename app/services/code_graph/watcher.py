@@ -25,6 +25,10 @@ from uuid import UUID
 
 from loguru import logger
 
+from app.agent.tools.builtin.filesystem._ignore import (
+    is_ignored_workspace_path,
+    load_gitignore_rules,
+)
 from app.core.runtime_settings import load_runtime_settings
 from app.services.code_graph.cross_repo import invalidate_workspace_resolutions
 from app.services.code_graph.cross_repo_jobs import cross_repo_jobs
@@ -297,7 +301,9 @@ class CodeGraphWatcher:
         if not has_source and not has_metadata:
             return
         workspace_root = Path(workspace).resolve()
+        gitignore_rules = load_gitignore_rules(workspace_root)
         journal = self._dirty_files.setdefault(workspace, set())
+        accepted_metadata = False
         for event in events:
             raw_path = Path(event["path"])
             try:
@@ -309,12 +315,26 @@ class CodeGraphWatcher:
                 rel_path = resolved.relative_to(workspace_root).as_posix()
             except (OSError, ValueError):
                 continue
+            metadata_path = is_graph_metadata_path(rel_path)
+            if is_ignored_workspace_path(
+                rel_path,
+                is_dir=event["type"] == "directory",
+                rules=gitignore_rules,
+            ):
+                journal.discard(rel_path)
+                continue
             if _suffix(rel_path) in self._extensions or is_graph_metadata_path(
                 rel_path
             ):
                 journal.add(rel_path)
-        if has_metadata:
+                accepted_metadata = accepted_metadata or metadata_path
+        if not journal:
+            self._dirty_files.pop(workspace, None)
+        if accepted_metadata:
             self._full_reindex_pending.add(workspace)
+
+        if workspace not in self._dirty_files and not accepted_metadata:
+            return
 
         # When paused, just mark the workspace dirty — no reindex until resume
         if self._pause_count > 0:

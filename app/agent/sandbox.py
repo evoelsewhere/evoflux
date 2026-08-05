@@ -93,8 +93,8 @@ class SandboxConfig:
         inherit_shell_environment: bool | None = None,
         load_shell_profile: bool | None = None,
         # Other repos in the same CodingProject, if this session is
-        # project-scoped. Lets tools that call get_sandbox() (e.g.
-        # code_search/code_graph, which auto-detect project scope)
+        # project-scoped. Lets tools that call get_sandbox() (for example,
+        # code_query, which searches every authorized repository)
         # see the full repo set without a model-facing "workspace_paths"
         # argument on every one of them.
         extra_workspace_paths: list[str] | None = None,

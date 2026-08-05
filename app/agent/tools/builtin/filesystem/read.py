@@ -35,7 +35,7 @@ def _number_lines(text: str, start: int = 1) -> str:
     """Prefix each line with an 'NNNNN| ' line number (display-only metadata).
 
     Line numbers let the model cite file:line and correlate reads with
-    grep/lsp_diagnostics/code_graph output. The prefix must never be echoed
+    grep/lsp_diagnostics/code_query output. The prefix must never be echoed
     back into edit old_string or write content — tool descriptions say so.
     """
     if not text:

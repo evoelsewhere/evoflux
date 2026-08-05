@@ -297,13 +297,7 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.tools.builtin.docx_document import docx_document
     from app.agent.tools.builtin.xlsx_artifact import xlsx_artifact
     from app.agent.tools.builtin.wiki_search import wiki_search
-    from app.agent.tools.builtin.code_graph import (
-        code_query,
-        code_search,
-        code_graph,
-        code_overview,
-        code_path,
-    )
+    from app.agent.tools.builtin.code_graph import code_query
     from app.agent.tools.builtin.plan import enter_plan_mode, exit_plan_mode
     from app.agent.tools.builtin.ask_user import ask_user
     from app.agent.tools.builtin.bg_tasks import (
@@ -313,8 +307,6 @@ def _default_tool_registry() -> dict[str, Tool]:
     )
     from app.agent.tools.builtin.worktree import worktree_start, worktree_finish
     from app.agent.tools.builtin.lsp import (
-        code_definition,
-        code_references,
         lsp_diagnostics,
         lsp_definition,
         lsp_references,
@@ -369,10 +361,6 @@ def _default_tool_registry() -> dict[str, Tool]:
         "memory_search": memory_search,
         "note": note_tool,
         "code_query": code_query,
-        "code_search": code_search,
-        "code_graph": code_graph,
-        "code_overview": code_overview,
-        "code_path": code_path,
         "enter_plan_mode": enter_plan_mode,
         "exit_plan_mode": exit_plan_mode,
         "ask_user": ask_user,
@@ -399,8 +387,6 @@ def _default_tool_registry() -> dict[str, Tool]:
         "lsp_definition": lsp_definition,
         "lsp_references": lsp_references,
         "static_diagnostics": static_diagnostics,
-        "code_definition": code_definition,
-        "code_references": code_references,
         "visualize_read_me": visualize_read_me,
         "show_widget": show_widget,
         "aim_units": aim_units,
@@ -652,14 +638,6 @@ def _build_agent(
     from app.agent.hooks.skill_auto_routing import SkillAutoRoutingHook
 
     agent.hooks.append(SkillAutoRoutingHook())
-
-    # Prefetch a small context pack related to the actual coding request. This
-    # replaces the generic workspace overview, which consumed prompt tokens
-    # even when its densest-file statistics were unrelated to the task.
-    if "code_query" in {t.name for t in tools}:
-        from app.agent.hooks.code_context_injection import CodeContextHook
-
-        agent.hooks.append(CodeContextHook())
 
     # Stamp config dependencies for end-of-turn drift detection.
     if source_path is not None:

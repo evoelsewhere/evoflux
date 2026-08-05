@@ -284,7 +284,7 @@ async def _reattach_stale_src(
     containing ``src_line``, i.e. the most specific enclosing symbol (a
     method inside a class inside a file — narrowest span wins over the class
     or file). Rows without a usable ``src_line``, or with no candidate at
-    all, are left as-is; this only matters for ``code_path`` finding this row
+    all, are left as-is; this only matters for shortest-path traversal finding this row
     as a cross-repo hop, not for any already-shipped read path.
 
     Groups rows by ``(workspace_id, file_path)`` and fetches each file's

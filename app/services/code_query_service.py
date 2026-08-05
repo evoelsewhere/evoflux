@@ -14,12 +14,11 @@ import base64
 import copy
 import hashlib
 import os
-import re
 import shutil
 import subprocess
 import time
 from collections import OrderedDict, Counter
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Literal
@@ -30,9 +29,13 @@ from loguru import logger
 from sqlmodel import col, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.agent.tools.builtin.filesystem._ignore import _SKIPPED_DIR_NAMES
+from app.agent.tools.builtin.filesystem._ignore import (
+    is_ignored_workspace_path,
+    load_gitignore_rules,
+)
 from app.models.code_graph import CodeIndexState, CodeNode, CrossRepoEdge
 from app.services import code_graph_service as graph_svc
+from app.services.code_graph.query import QueryMatch, match_query, query_terms
 from app.services.code_graph.parsers.registry import ParserRegistry, default_registry
 from app.services.code_graph.watcher import get_dirty_code_paths, is_graph_metadata_path
 
@@ -41,23 +44,6 @@ FreshnessPolicy = Literal["fast", "balanced", "strict"]
 
 _MAX_SCAN_BYTES = 1_500_000
 _MAX_LINE_CHARS = 500
-_DEFAULT_DIR_SKIP = frozenset(
-    {
-        *_SKIPPED_DIR_NAMES,
-        ".git",
-        ".hg",
-        ".svn",
-        ".idea",
-        ".vscode",
-        "coverage",
-        "dist",
-        "build",
-        "target",
-        "vendor",
-        "node_modules",
-        "__pycache__",
-    }
-)
 _SOURCEISH_EXTENSIONS = frozenset(
     {
         ".asm",
@@ -93,31 +79,7 @@ _SOURCEISH_EXTENSIONS = frozenset(
         ".zig",
     }
 )
-_QUERY_STOPWORDS = frozenset(
-    {
-        "and",
-        "the",
-        "for",
-        "from",
-        "into",
-        "where",
-        "what",
-        "which",
-        "with",
-        "this",
-        "that",
-        "find",
-        "code",
-        "trace",
-        "explain",
-        "impact",
-        "change",
-        "locate",
-        "function",
-        "class",
-        "method",
-    }
-)
+_MIN_WEIGHTED_QUERY_COVERAGE = 0.5
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,14 +179,8 @@ _freshness_cache: OrderedDict[
 ] = OrderedDict()
 
 
-def _query_terms(query: str) -> tuple[str, ...]:
-    expanded = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", query)
-    tokens = [
-        token
-        for token in re.split(r"[^\w.$:/-]+", expanded.casefold(), flags=re.UNICODE)
-        if len(token) >= 2 and token not in _QUERY_STOPWORDS
-    ]
-    return tuple(dict.fromkeys(sorted(tokens, key=len, reverse=True)))[:8]
+def _relevant_match(match: QueryMatch) -> bool:
+    return match.exact or match.weighted_coverage >= _MIN_WEIGHTED_QUERY_COVERAGE
 
 
 def _hash_bytes(content: bytes) -> str:
@@ -252,7 +208,7 @@ def _path_in_scope(path: str, prefixes: Sequence[str]) -> bool:
     )
 
 
-def _content_fingerprint(root: Path, paths: Sequence[str]) -> str:
+def _content_fingerprint(root: Path, paths: Iterable[str]) -> str:
     digest = hashlib.sha256()
     for rel_path in sorted(set(paths)):
         digest.update(rel_path.encode("utf-8", "replace"))
@@ -361,8 +317,25 @@ def _git_working_tree(root: Path) -> _WorkingTreeState:
 
 async def _working_tree(root: Path) -> _WorkingTreeState:
     state = await asyncio.to_thread(_git_working_tree, root)
+    gitignore_rules = await asyncio.to_thread(load_gitignore_rules, root)
+    state = replace(
+        state,
+        changed=frozenset(
+            path
+            for path in state.changed
+            if not is_ignored_workspace_path(path, is_dir=False, rules=gitignore_rules)
+        ),
+        deleted=frozenset(
+            path
+            for path in state.deleted
+            if not is_ignored_workspace_path(path, is_dir=False, rules=gitignore_rules)
+        ),
+    )
     watched = frozenset(
-        path for path in get_dirty_code_paths(str(root)) if _is_retrieval_path(path)
+        path
+        for path in get_dirty_code_paths(str(root))
+        if _is_retrieval_path(path)
+        and not is_ignored_workspace_path(path, is_dir=False, rules=gitignore_rules)
     )
     if not watched:
         return state
@@ -418,17 +391,40 @@ def _iter_sourceish_files(root: Path, paths: Sequence[str]) -> list[Path]:
             roots.append(candidate)
     registry_extensions = default_registry().supported_extensions()
     allowed = registry_extensions | _SOURCEISH_EXTENSIONS
+    gitignore_rules = load_gitignore_rules(root)
     files: list[Path] = []
     for scan_root in roots:
+        scan_rel = scan_root.relative_to(root).as_posix()
+        if scan_rel != "." and is_ignored_workspace_path(
+            scan_rel,
+            is_dir=scan_root.is_dir(),
+            rules=gitignore_rules,
+        ):
+            continue
         if scan_root.is_file():
             if scan_root.suffix.casefold() in allowed:
                 files.append(scan_root)
             continue
         for current, dirnames, filenames in os.walk(scan_root):
-            dirnames[:] = [name for name in dirnames if name not in _DEFAULT_DIR_SKIP]
+            current_path = Path(current)
+            dirnames[:] = [
+                name
+                for name in dirnames
+                if not is_ignored_workspace_path(
+                    (current_path / name).relative_to(root).as_posix(),
+                    is_dir=True,
+                    rules=gitignore_rules,
+                )
+            ]
             for filename in filenames:
-                path = Path(current) / filename
+                path = current_path / filename
                 if path.suffix.casefold() not in allowed:
+                    continue
+                if is_ignored_workspace_path(
+                    path.relative_to(root).as_posix(),
+                    is_dir=False,
+                    rules=gitignore_rules,
+                ):
                     continue
                 try:
                     if path.stat().st_size > _MAX_SCAN_BYTES:
@@ -447,7 +443,7 @@ def _scan_lexical(
     paths: Sequence[str],
     limit: int,
 ) -> tuple[list[_LexicalHit], Counter[str]]:
-    terms = _query_terms(query)
+    terms = query_terms(query)
     if not terms:
         return [], Counter()
     query_folded = query.casefold().strip()
@@ -462,29 +458,30 @@ def _scan_lexical(
         if b"\0" in raw[:4096]:
             continue
         rel = file_path.relative_to(root).as_posix()
+        path_match = match_query(query, terms, (rel,))
+        if _relevant_match(path_match):
+            hits.append(
+                _LexicalHit(
+                    file_path=rel,
+                    line=1,
+                    column=1,
+                    text=f"source path: {rel}",
+                    score=10.0 + path_match.score * 0.3,
+                    reasons=("query overlap in source path",),
+                )
+            )
         for line_number, text in enumerate(
             raw.decode("utf-8", "replace").splitlines(), start=1
         ):
             folded = text.casefold()
-            matched = [term for term in terms if term in folded]
-            if not matched:
+            line_match = match_query(query, terms, (text,))
+            if not _relevant_match(line_match):
                 continue
-            score = len(matched) * 12.0
-            reasons = [f"{len(matched)} query token(s)"]
+            matched = [term for term in terms if term in folded]
+            score = 20.0 + line_match.score * 0.4
+            reasons = [f"{line_match.hits} query term(s) in current source"]
             if query_folded and query_folded in folded:
-                score += 35.0
-                reasons.append("exact text fragment")
-            if any(
-                re.search(
-                    rf"\b(?:class|def|fn|func|function|interface)\s+{re.escape(term)}\b",
-                    folded,
-                )
-                for term in terms
-            ):
-                score += 45.0
-                reasons.append("definition-like line")
-            if "test" in rel.casefold():
-                score -= 3.0
+                reasons.append("exact query text")
             column = min(
                 (folded.find(term) for term in matched if term in folded), default=0
             )
@@ -516,9 +513,11 @@ def _scan_lexical(
     return diverse, extension_counts
 
 
-def _count_workspace_extensions(root: Path) -> Counter[str]:
+def _count_workspace_extensions(root: Path, paths: Sequence[str] = ()) -> Counter[str]:
     """Count source-like files without opening their contents."""
-    return Counter(path.suffix.casefold() for path in _iter_sourceish_files(root, ()))
+    return Counter(
+        path.suffix.casefold() for path in _iter_sourceish_files(root, paths)
+    )
 
 
 async def _lexical_search(
@@ -561,7 +560,7 @@ def _parse_overlay(
     languages: Sequence[str] = (),
     kinds: Sequence[str] = (),
 ) -> list[CodeQueryCandidate]:
-    terms = _query_terms(query)
+    terms = query_terms(query)
     candidates: list[CodeQueryCandidate] = []
     for rel_path in dirty_paths:
         parser = registry.for_path(rel_path)
@@ -580,16 +579,18 @@ def _parse_overlay(
         nodes_by_id = {node.local_id: node for node in result.nodes}
         candidates_by_id: dict[str, CodeQueryCandidate] = {}
         for node in result.nodes:
-            haystack = " ".join(
-                [
+            node_match = match_query(
+                query,
+                terms,
+                (
                     node.name,
                     node.qualified_name,
-                    node.signature or "",
-                    node.docstring or "",
-                ]
-            ).casefold()
-            matched = sum(1 for term in terms if term in haystack)
-            if not matched:
+                    node.signature,
+                    node.docstring,
+                    rel_path,
+                ),
+            )
+            if not _relevant_match(node_match):
                 continue
             if kinds and node.kind not in kinds:
                 continue
@@ -602,10 +603,13 @@ def _parse_overlay(
                 kind=node.kind,
                 language=result.language,
                 signature=node.signature,
-                score=95.0 + matched * 10.0,
-                confidence=0.9,
+                score=70.0 + node_match.score,
+                confidence=min(0.95, 0.5 + node_match.weighted_coverage * 0.45),
                 provenance="overlay",
-                match_reasons=["fresh dirty-file parse"],
+                match_reasons=[
+                    f"{node_match.hits} query term(s) in parsed source",
+                    "fresh dirty-file parse",
+                ],
             )
             candidates.append(candidate)
             candidates_by_id[node.local_id] = candidate
@@ -629,14 +633,14 @@ def _parse_overlay(
                 target_candidate.callers.append(
                     f"{edge.kind} {source.qualified_name} — {rel_path}:{relation_line} [live]"
                 )
-            target_haystack = " ".join(
-                value
-                for value in (target_name, edge.module_path, edge.local_name)
-                if value
-            ).casefold()
+            target_match = match_query(
+                query,
+                terms,
+                (target_name, edge.module_path, edge.local_name),
+            )
             if (
                 source is not None
-                and any(term in target_haystack for term in terms)
+                and _relevant_match(target_match)
                 and edge.src_local_id not in candidates_by_id
                 and (not kinds or source.kind in kinds)
             ):
@@ -726,6 +730,29 @@ def _language_capabilities(
     return capabilities
 
 
+def _scoped_capability_inputs(
+    extension_counts: Counter[str],
+    states: Sequence[CodeIndexState],
+    paths: Sequence[str],
+    languages: Sequence[str],
+) -> tuple[Counter[str], list[CodeIndexState]]:
+    """Align capability coverage numerator and denominator to query scope."""
+    scoped_extensions = Counter(
+        {
+            extension: count
+            for extension, count in extension_counts.items()
+            if not languages or _language_for_path(f"source{extension}") in languages
+        }
+    )
+    scoped_states = [
+        state
+        for state in states
+        if _path_in_scope(state.file_path, paths)
+        and (not languages or state.language in languages)
+    ]
+    return scoped_extensions, scoped_states
+
+
 async def _try_lsp(
     root: Path,
     query: str,
@@ -739,7 +766,7 @@ async def _try_lsp(
     path = _safe_file(root, seed.file_path)
     if path is None:
         return []
-    terms = _query_terms(query)
+    terms = query_terms(query)
     if not terms:
         return []
     term = terms[0]
@@ -1009,7 +1036,7 @@ async def query_code(
     root_path: str,
     workspace_id: UUID | None,
     query: str,
-    intent: CodeQueryIntent = "locate",
+    intent: CodeQueryIntent = "explain",
     paths: Sequence[str] = (),
     languages: Sequence[str] = (),
     kinds: Sequence[str] = (),
@@ -1024,8 +1051,17 @@ async def query_code(
     capped_budget = max(500, min(budget_tokens, 12_000))
     states_task = asyncio.create_task(_states(db, workspace_id))
     working_task = asyncio.create_task(_working_tree(root))
+    ignore_task = asyncio.create_task(asyncio.to_thread(load_gitignore_rules, root))
     states = await states_task
     working = await working_task
+    gitignore_rules = await ignore_task
+    states = [
+        state
+        for state in states
+        if not is_ignored_workspace_path(
+            state.file_path, is_dir=False, rules=gitignore_rules
+        )
+    ]
     working = await asyncio.to_thread(_reconcile_working_tree, root, working, states)
     graph_version = _graph_version(states)
     from app.core.runtime_settings import load_runtime_settings
@@ -1056,6 +1092,7 @@ async def query_code(
         return result
 
     graph_candidates: list[CodeQueryCandidate] = []
+    graph_query_terms = query_terms(query)
     best_graph_score = 0.0
     graph_kind = kinds[0] if len(kinds) == 1 else None
     graph_language = languages[0] if len(languages) == 1 else None
@@ -1070,6 +1107,7 @@ async def query_code(
             limit=max(capped_limit * 3, 20),
         )
         best_graph_score = max((item.score for item in ranked), default=0.0)
+        relevance_floor = max(1.0, best_graph_score * 0.3)
         hash_stale = await asyncio.to_thread(
             _stale_paths,
             root,
@@ -1084,12 +1122,32 @@ async def query_code(
             )
         for item in ranked:
             node = item.node
+            if is_ignored_workspace_path(
+                node.file_path, is_dir=False, rules=gitignore_rules
+            ):
+                continue
             if node.file_path in working.changed or node.file_path in working.deleted:
                 continue
             if kinds and node.kind not in kinds:
                 continue
             if languages and node.language not in languages:
                 continue
+            graph_match = match_query(
+                query,
+                graph_query_terms,
+                (
+                    node.name,
+                    node.qualified_name,
+                    node.file_path,
+                    node.signature,
+                    node.docstring,
+                ),
+            )
+            if not _relevant_match(graph_match):
+                continue
+            if item.score < relevance_floor:
+                continue
+            relative_score = item.score / best_graph_score if best_graph_score else 0.0
             graph_candidates.append(
                 CodeQueryCandidate(
                     handle=_node_handle(workspace_id, node.id, node.qualified_name),
@@ -1101,7 +1159,12 @@ async def query_code(
                     language=node.language,
                     signature=node.signature,
                     score=item.score,
-                    confidence=min(0.98, 0.68 + item.score / 400),
+                    confidence=min(
+                        0.96,
+                        0.5
+                        + relative_score * 0.25
+                        + graph_match.weighted_coverage * 0.2,
+                    ),
                     provenance="graph",
                     match_reasons=list(item.match_reasons),
                     node_id=node.id,
@@ -1129,7 +1192,9 @@ async def query_code(
         )
     else:
         lexical_hits = []
-        extension_counts = await asyncio.to_thread(_count_workspace_extensions, root)
+        extension_counts = await asyncio.to_thread(
+            _count_workspace_extensions, root, paths
+        )
     lexical_stale = await asyncio.to_thread(
         _stale_paths,
         root,
@@ -1146,7 +1211,10 @@ async def query_code(
             changed=working.changed | newly_detected_stale,
             source=f"{working.source}+scan",
         )
-    capabilities = _language_capabilities(extension_counts, states)
+    extension_counts, capability_states = _scoped_capability_inputs(
+        extension_counts, states, paths, languages
+    )
+    capabilities = _language_capabilities(extension_counts, capability_states)
     relevant_dirty = sorted(
         path for path in working.changed if _path_in_scope(path, paths)
     )
@@ -1189,7 +1257,7 @@ async def query_code(
             line_start=max(1, hit.line - 2),
             line_end=hit.line + 3,
             score=hit.score,
-            confidence=0.62,
+            confidence=min(0.85, 0.5 + hit.score / 400.0),
             provenance="lexical",
             match_reasons=list(hit.reasons),
             language=_language_for_path(hit.file_path),
@@ -1220,6 +1288,12 @@ async def query_code(
     )
     primary = combined[: max(capped_limit * 2, 20)]
 
+    for candidate in primary:
+        if intent == "locate":
+            candidate.callers.clear()
+            candidate.callees.clear()
+            candidate.tests.clear()
+
     if workspace_id is not None and intent != "locate":
         for candidate in primary[: min(5, capped_limit)]:
             if candidate.node_id is None or candidate.workspace_id is None:
@@ -1243,10 +1317,11 @@ async def query_code(
                     candidate.callers.append(location)
                 else:
                     candidate.callees.append(location)
-                if "test" in neighbor.file_path.casefold():
-                    candidate.tests.append(
-                        f"{neighbor.file_path}:{neighbor.line_start}"
-                    )
+    if intent != "locate":
+        for candidate in primary:
+            candidate.callers[:] = candidate.callers[:12]
+            candidate.callees[:] = candidate.callees[:12]
+            candidate.tests[:] = candidate.tests[:12]
 
     if relevant_dirty and intent in {"impact", "trace", "change"}:
         pending_edges = max(pending_edges, len(relevant_dirty))
@@ -1255,8 +1330,8 @@ async def query_code(
         )
 
     selected, truncated = _apply_budget(root, primary, capped_budget, capped_limit)
-    indexed_files = len(states)
-    workspace_files = sum(cap.workspace_files for cap in capabilities)
+    indexed_files = sum(cap.indexed_files for cap in capabilities if cap.graph)
+    workspace_files = sum(cap.workspace_files for cap in capabilities if cap.graph)
     coverage = min(1.0, indexed_files / workspace_files) if workspace_files else 0.0
     has_graph = bool(graph_candidates)
     has_overlay = bool(overlay)
@@ -1352,7 +1427,7 @@ async def query_code_across_workspaces(
     *,
     workspaces: Sequence[tuple[str, UUID | None, str]],
     query: str,
-    intent: CodeQueryIntent = "locate",
+    intent: CodeQueryIntent = "explain",
     paths: Sequence[str] = (),
     languages: Sequence[str] = (),
     kinds: Sequence[str] = (),
