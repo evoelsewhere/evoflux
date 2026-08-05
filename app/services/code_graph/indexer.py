@@ -17,8 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.agent.tools.builtin.filesystem._ignore import (
-    _SKIPPED_DIR_NAMES,
-    is_gitignored,
+    is_ignored_workspace_path,
     load_gitignore_rules,
 )
 from app.services.code_graph.parsers.registry import ParserRegistry, default_registry
@@ -721,7 +720,11 @@ def _iter_named_files(
 ) -> Iterator[tuple[str, bytes]]:
     """Yield ``(rel_path, bytes)`` for the given paths that are still readable."""
     extensions = registry.supported_extensions()
+    gitignore_rules = load_gitignore_rules(root)
     for rel in rel_paths:
+        rel = rel.replace("\\", "/").strip("/")
+        if is_ignored_workspace_path(rel, is_dir=False, rules=gitignore_rules):
+            continue
         if Path(rel).suffix.lower() not in extensions:
             continue
         fpath = root / rel
@@ -745,9 +748,7 @@ def _iter_source_files(
         dirs[:] = [
             d
             for d in dirs
-            if not d.startswith(".")
-            and d not in _SKIPPED_DIR_NAMES
-            and not is_gitignored(
+            if not is_ignored_workspace_path(
                 (current / d).relative_to(root).as_posix(),
                 is_dir=True,
                 rules=gitignore_rules,
@@ -760,7 +761,7 @@ def _iter_source_files(
                 continue
             fpath = current / fname
             rel = fpath.relative_to(root).as_posix()
-            if is_gitignored(rel, is_dir=False, rules=gitignore_rules):
+            if is_ignored_workspace_path(rel, is_dir=False, rules=gitignore_rules):
                 continue
             try:
                 if fpath.stat().st_size > _MAX_FILE_BYTES:

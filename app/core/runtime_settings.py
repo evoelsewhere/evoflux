@@ -70,9 +70,6 @@ class CodeGraphSettings(BaseModel):
     # retrieval and leave the rest to background indexing.
     query_large_change_files: int = Field(default=200, ge=10, le=10_000)
     query_cache_ttl_seconds: float = Field(default=30.0, ge=0.0, le=600.0)
-    task_prefetch_enabled: bool = True
-
-
 class CrossRepoSettings(BaseModel):
     """Cross-repo reference resolution for multi-repo CodingProjects.
 

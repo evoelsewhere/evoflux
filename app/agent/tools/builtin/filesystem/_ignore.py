@@ -63,3 +63,22 @@ def is_gitignored(rel: str, *, is_dir: bool, rules: list[tuple[str, bool]]) -> b
         if matches_gitignore_pattern(pattern, rel, is_dir=is_dir):
             ignored = not include
     return ignored
+
+
+def is_ignored_workspace_path(
+    rel: str,
+    *,
+    is_dir: bool,
+    rules: list[tuple[str, bool]],
+) -> bool:
+    """Apply the shared generated/hidden/gitignore policy to a workspace path."""
+    normalized = rel.replace("\\", "/").strip("/")
+    if not normalized:
+        return False
+    parts = tuple(part for part in normalized.split("/") if part)
+    directory_parts = parts if is_dir else parts[:-1]
+    if any(
+        part.startswith(".") or part in _SKIPPED_DIR_NAMES for part in directory_parts
+    ):
+        return True
+    return is_gitignored(normalized, is_dir=is_dir, rules=rules)

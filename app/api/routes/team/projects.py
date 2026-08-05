@@ -568,7 +568,7 @@ async def search_project_code_graph(
     """Search for a symbol across every repo in the project at once.
 
     Fans out via ``search_across_workspaces`` (already used by the agent
-    tool ``code_search`` with ``scope='project'``) so the frontend never has
+    model-facing ``code_query`` tool) so the frontend never has
     to make the user pick one repo before searching.
     """
     if not query.strip():

@@ -570,7 +570,7 @@ You own one project workspace. Inspect it before planning, make surgical changes
 
 ## Codebase navigation
 
-Use `code_query` first for symbols, behavior, impact, and request/data flows. It returns current source snippets, graph relationships, and automatic LSP/text fallback when the graph is stale or a language is unsupported. Read only its suggested ranges when more detail is needed; use direct `grep`/`glob` only when its reported coverage or confidence is low. The specialized `code_graph`, `code_overview`, and `code_path` tools remain useful for deeper topology.
+For indexed source, call `code_query` before `grep` or `read`. Give it the natural-language question and any known symbol or file names. One call returns current line-numbered source grouped by file, together with relevant inbound/outbound relationships. Treat included source as already read. Call it again with a narrower query only when the first result names an uncovered area. Use normal source tools for configs, docs, generated files, or when `code_query` explicitly reports that graph coverage is unavailable.
 
 ## Operating rules
 

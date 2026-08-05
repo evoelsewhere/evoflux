@@ -1,14 +1,12 @@
-"""Static analysis, code-graph lookup, and real LSP code intelligence tools.
+"""Static analysis and real LSP code intelligence tools.
 
 The contracts are deliberately distinct:
 
 - ``static_diagnostics`` — one-shot Ruff/tsc checks.
-- ``code_definition`` / ``code_references`` — persisted code graph.
 - ``lsp_*`` — a persistent JSON-RPC language server using didOpen/didChange.
 
-These sit alongside the code-graph tools: use code-graph for topology
-(call chains, class hierarchies) and lsp_* for live correctness checks
-and precise location queries.
+These sit alongside ``code_query``: use it for indexed source and topology,
+and lsp_* for live correctness checks and precise location queries.
 """
 
 from __future__ import annotations
@@ -258,217 +256,6 @@ async def _tsc_diagnostics(target: Path, *, include_warnings: bool) -> str:
     return "\n".join(result)
 
 
-# ── lsp_definition ────────────────────────────────────────────────────────────
-
-
-async def _lsp_definition(
-    name: Annotated[
-        str,
-        Field(description="Symbol name to resolve (function, class, variable, type)."),
-    ],
-    file: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Optional: the file where you encountered the symbol "
-                "(workspace-relative). Used to disambiguate when multiple "
-                "modules define a symbol with the same name."
-            )
-        ),
-    ] = None,
-    line: Annotated[
-        int | None,
-        Field(
-            description=(
-                "Optional: the line number in *file* where the symbol appears. "
-                "Enables import-aware disambiguation."
-            )
-        ),
-    ] = None,
-    _state: Annotated[Any, InjectedArg()] = None,
-) -> str:
-    """Find the definition of a symbol using the code knowledge graph.
-
-    Accepts an optional file and line to disambiguate when multiple modules
-    define a symbol with the same name.  Returns the file path, line number,
-    signature, and docstring (if available).
-
-    Use this when you see a symbol in the code and want to jump to where it
-    is defined — equivalent to "Go to Definition" in an IDE.
-    """
-    try:
-        from app.core.db import async_session_factory
-        import app.services.code_graph_service as svc
-    except ImportError as exc:
-        return f"[Error] Code graph not available: {exc}"
-
-    sandbox = get_sandbox()
-    workspace_path = str(sandbox.workspace_root)
-
-    async with async_session_factory() as db:
-        workspace_id = await svc.resolve_workspace_id(db, path=workspace_path)
-        if workspace_id is None:
-            return (
-                "[Info] Workspace not indexed. Run 'Build index' in the Graph tab "
-                "or call code_overview to index the workspace."
-            )
-
-        matches = await svc.find_nodes_by_name(
-            db, workspace_id=workspace_id, name=name, limit=10
-        )
-
-    if not matches:
-        return f"No definition found for '{name}' in the code index."
-
-    # Disambiguate: prefer nodes in same file, then fall back to first match
-    if file and len(matches) > 1:
-        file_path = str(_resolve_path(file))
-        # Normalize to workspace-relative comparison
-        workspace = sandbox.workspace_root
-        try:
-            rel_file = str(Path(file_path).relative_to(workspace))
-        except ValueError:
-            rel_file = file_path
-
-        same_file = [
-            n
-            for n in matches
-            if n.file_path
-            and (
-                n.file_path == rel_file
-                or n.file_path.endswith(rel_file)
-                or rel_file.endswith(n.file_path)
-            )
-        ]
-        if same_file:
-            matches = same_file
-
-    node = matches[0]
-    lines = [f"[{node.kind}] {node.qualified_name}"]
-    if node.file_path:
-        loc = f"{node.file_path}"
-        if node.line_start:
-            loc += f":{node.line_start}"
-        lines.append(f"  location : {loc}")
-    if node.signature:
-        lines.append(f"  signature: {node.signature}")
-    if node.docstring:
-        first_doc_line = node.docstring.split("\n")[0].strip()
-        if first_doc_line:
-            lines.append(f"  docstring: {first_doc_line}")
-    if len(matches) > 1:
-        lines.append(
-            f"\n  ({len(matches) - 1} other definition(s) named '{name}' — "
-            f"use code_search('{name}') to see all)"
-        )
-
-    return "\n".join(lines)
-
-
-# ── lsp_references ────────────────────────────────────────────────────────────
-
-
-async def _lsp_references(
-    name: Annotated[
-        str,
-        Field(description="Symbol name whose usages to find."),
-    ],
-    file: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Optional: restrict to the definition found in this file "
-                "(helps when multiple modules export the same name)."
-            )
-        ),
-    ] = None,
-    limit: Annotated[
-        int,
-        Field(description="Maximum references to return (default 30, max 60)."),
-    ] = 30,
-    _state: Annotated[Any, InjectedArg()] = None,
-) -> str:
-    """Find all places in the codebase that reference a symbol.
-
-    Answers "where is X used?" — callers of a function, importers of a
-    class, subclasses of a base, etc.  Backed by the code knowledge graph.
-
-    The optional *file* parameter narrows the definition lookup when the
-    same name appears in multiple modules.
-    """
-    try:
-        from app.core.db import async_session_factory
-        import app.services.code_graph_service as svc
-    except ImportError as exc:
-        return f"[Error] Code graph not available: {exc}"
-
-    capped = max(1, min(limit, 60))
-    sandbox = get_sandbox()
-    workspace_path = str(sandbox.workspace_root)
-
-    async with async_session_factory() as db:
-        workspace_id = await svc.resolve_workspace_id(db, path=workspace_path)
-        if workspace_id is None:
-            return (
-                "[Info] Workspace not indexed. Run 'Build index' in the Graph tab "
-                "or call code_overview to index the workspace."
-            )
-
-        matches = await svc.find_nodes_by_name(
-            db, workspace_id=workspace_id, name=name, limit=10
-        )
-
-        if not matches:
-            return f"No symbol named '{name}' found in the code index."
-
-        # File-based disambiguation (same as lsp_definition)
-        if file and len(matches) > 1:
-            file_path = str(_resolve_path(file))
-            workspace = sandbox.workspace_root
-            try:
-                rel_file = str(Path(file_path).relative_to(workspace))
-            except ValueError:
-                rel_file = file_path
-            same_file = [
-                n
-                for n in matches
-                if n.file_path
-                and (
-                    n.file_path == rel_file
-                    or n.file_path.endswith(rel_file)
-                    or rel_file.endswith(n.file_path)
-                )
-            ]
-            if same_file:
-                matches = same_file
-
-        node = matches[0]
-        refs = await svc.find_references(
-            db, workspace_id=workspace_id, node_id=node.id, limit=capped
-        )
-
-    if not refs:
-        return (
-            f"[{node.kind}] {node.qualified_name}  ({node.file_path})\n"
-            f"  No references found."
-        )
-
-    head = (
-        f"[{node.kind}] {node.qualified_name}  "
-        f"({node.file_path}:{node.line_start})\n"
-        f"{len(refs)} reference(s):"
-    )
-    rows: list[str] = []
-    for edge_kind, src_node, line_no in refs:
-        loc = (
-            f"{src_node.file_path}:{line_no}" if line_no else src_node.file_path or "?"
-        )
-        rows.append(
-            f"  {edge_kind:<12} [{src_node.kind}] {src_node.qualified_name}  — {loc}"
-        )
-    return head + "\n" + "\n".join(rows)
-
-
 # ── Real language-server tools ───────────────────────────────────────────────
 
 
@@ -528,7 +315,7 @@ async def _real_lsp_definition(
         client = await get_language_server(get_sandbox().workspace_root, target)
         locations = await client.definition(target, line, column)
     except LanguageServerUnavailable as exc:
-        return f"[Unavailable] {exc} Use code_definition as a fallback."
+        return f"[Unavailable] {exc} Use code_query as a fallback."
     return _format_lsp_locations(locations, "definition")
 
 
@@ -558,7 +345,7 @@ async def _real_lsp_references(
             include_declaration=include_declaration,
         )
     except LanguageServerUnavailable as exc:
-        return f"[Unavailable] {exc} Use code_references as a fallback."
+        return f"[Unavailable] {exc} Use code_query as a fallback."
     return _format_lsp_locations(locations[:limit], "reference")
 
 
@@ -613,47 +400,6 @@ static_diagnostics = Tool(
         "mypy",
         "eslint",
         "syntax",
-    ),
-)
-
-code_definition = Tool(
-    _lsp_definition,
-    name="code_definition",
-    description=(
-        "Find the definition of a symbol (function, class, variable) in the "
-        "code graph. Accepts an optional file+line to disambiguate when the "
-        "same name exists in multiple modules."
-    ),
-    concurrency_safe=True,
-    read_only=True,
-    deferred=True,
-    deferred_summary="Find the definition of a code symbol.",
-    search_aliases=(
-        "declared",
-        "declaration",
-        "defined",
-        "implementation",
-    ),
-)
-
-code_references = Tool(
-    _lsp_references,
-    name="code_references",
-    description=(
-        "Find every location in the codebase that references a symbol — callers, "
-        "importers, subclasses, decorators. Backed by the code knowledge graph."
-    ),
-    concurrency_safe=True,
-    read_only=True,
-    deferred=True,
-    deferred_summary="Find references to a code symbol across the workspace.",
-    search_aliases=(
-        "callers",
-        "callsites",
-        "calls",
-        "usages",
-        "importers",
-        "subclasses",
     ),
 )
 

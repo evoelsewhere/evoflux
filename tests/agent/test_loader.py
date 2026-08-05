@@ -191,12 +191,13 @@ def test_default_tool_registry_keys():
         "memory_search",
     }
     assert expected.issubset(registry.keys())
+    assert "code_query" in registry
     assert {
         "code_overview",
         "code_search",
         "code_graph",
         "code_path",
-    }.issubset(registry)
+    }.isdisjoint(registry)
     assert {"code_symbol", "code_neighbors"}.isdisjoint(registry)
 
 

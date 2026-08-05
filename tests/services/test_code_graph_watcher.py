@@ -44,6 +44,33 @@ async def test_metadata_event_requests_full_reindex() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ignored_vendor_events_do_not_dirty_or_reindex(tmp_path) -> None:
+    (tmp_path / ".gitignore").write_text("desktop/sidecar-bundle/\n", encoding="utf-8")
+    watcher = CodeGraphWatcher(db_factory=_fake_factory)
+    watcher._extensions = {".py"}
+    watcher._reindex_debounce_ms = 60_000
+    workspace = str(tmp_path.resolve())
+
+    await watcher._on_change(
+        workspace,
+        [
+            {
+                "type": "modified",
+                "path": "desktop/sidecar-bundle/stdlib/inspect.py",
+            },
+            {
+                "type": "modified",
+                "path": "desktop/sidecar-bundle/package.json",
+            },
+        ],
+    )
+
+    assert watcher.dirty_paths(workspace) == frozenset()
+    assert workspace not in watcher._full_reindex_pending
+    assert workspace not in watcher._debounce_tasks
+
+
+@pytest.mark.asyncio
 async def test_explicit_flush_runs_while_watcher_is_paused(
     monkeypatch, tmp_path
 ) -> None:

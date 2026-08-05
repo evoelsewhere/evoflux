@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from app.agent.code_query_observation import (
+    CodeQueryObservation,
+    publish_code_query_observation,
+)
 from app.agent.hooks.code_navigation_telemetry import (
     CodeNavigationTelemetryHook,
-    estimate_graph_savings,
 )
-from app.agent.sandbox import SandboxConfig, set_sandbox
 from app.agent.schemas.chat import FunctionCall, ToolCall
 from app.agent.state import AgentState, RunContext
 from app.core.metrics import REGISTRY
@@ -41,7 +43,7 @@ async def test_graph_first_strategy_is_counted_once_per_run() -> None:
     before = _counter("EVOFLUX_code_navigation_turns_total", strategy="graph_first")
 
     await hook.before_agent(ctx, state)
-    await hook.wrap_tool_call(ctx, state, _call("code_search"), _ok_handler)
+    await hook.wrap_tool_call(ctx, state, _call("code_query"), _ok_handler)
     await hook.wrap_tool_call(ctx, state, _call("grep"), _ok_handler)
 
     after = _counter("EVOFLUX_code_navigation_turns_total", strategy="graph_first")
@@ -61,73 +63,53 @@ async def test_source_read_before_graph_is_counted_as_fallback_first() -> None:
         _call("read", '{"path":"app/service.py"}'),
         _ok_handler,
     )
-    await hook.wrap_tool_call(ctx, state, _call("code_graph"), _ok_handler)
+    await hook.wrap_tool_call(ctx, state, _call("code_query"), _ok_handler)
 
     after = _counter("EVOFLUX_code_navigation_turns_total", strategy="fallback_first")
     assert after - before == 1
 
 
-def test_saving_estimate_uses_unique_graph_result_locations(tmp_path) -> None:
-    source = tmp_path / "src" / "service.py"
-    source.parent.mkdir()
-    source.write_text("x" * 4_000, encoding="utf-8")
-    sandbox = SandboxConfig(workspace=str(tmp_path), denied_roots=[])
-    token = set_sandbox(sandbox)
-    try:
-        reads, saved_tokens, result_tokens = estimate_graph_savings(
-            "[function] service — src/service.py:1-20\n"
-            "[method] run — src/service.py:25-40"
-        )
-    finally:
-        from app.agent.sandbox import _sandbox_ctx
-
-        _sandbox_ctx.reset(token)
-
-    assert reads == 1
-    assert saved_tokens > 900
-    assert result_tokens > 0
-
-
-async def test_graph_query_records_latency_and_saving_counters(tmp_path) -> None:
-    source = tmp_path / "service.py"
-    source.write_text("x" * 2_000, encoding="utf-8")
-    sandbox = SandboxConfig(workspace=str(tmp_path), denied_roots=[])
-    token = set_sandbox(sandbox)
+async def test_graph_query_records_structured_observation() -> None:
     hook = CodeNavigationTelemetryHook()
     ctx = _ctx()
     state = AgentState(messages=[])
     query_before = _counter(
-        "EVOFLUX_code_graph_queries_total", tool="code_search", status="ok"
+        "EVOFLUX_code_graph_queries_total", tool="code_query", status="ok"
     )
     reads_before = _counter(
-        "EVOFLUX_code_graph_estimated_file_reads_saved_total", tool="code_search"
+        "EVOFLUX_code_graph_estimated_file_reads_saved_total", tool="code_query"
     )
 
     async def handler(_ctx, _state, _tool_call) -> str:
-        return "[function] service — service.py:1-20"
+        publish_code_query_observation(
+            CodeQueryObservation(
+                strategy="graph+overlay",
+                freshness="fresh",
+                cache_hit=False,
+                file_reads=2,
+                source_tokens=1000,
+                result_tokens=200,
+            )
+        )
+        return "rendered output whose wording is irrelevant to metrics"
 
-    try:
-        await hook.before_agent(ctx, state)
-        await hook.wrap_tool_call(ctx, state, _call("code_search"), handler)
-    finally:
-        from app.agent.sandbox import _sandbox_ctx
-
-        _sandbox_ctx.reset(token)
+    await hook.before_agent(ctx, state)
+    await hook.wrap_tool_call(ctx, state, _call("code_query"), handler)
 
     assert (
-        _counter("EVOFLUX_code_graph_queries_total", tool="code_search", status="ok")
+        _counter("EVOFLUX_code_graph_queries_total", tool="code_query", status="ok")
         - query_before
         == 1
     )
     assert (
         _counter(
             "EVOFLUX_code_graph_estimated_file_reads_saved_total",
-            tool="code_search",
+            tool="code_query",
         )
         - reads_before
-        == 1
+        == 2
     )
     duration_count = _counter(
-        "EVOFLUX_code_graph_query_duration_seconds_count", tool="code_search"
+        "EVOFLUX_code_graph_query_duration_seconds_count", tool="code_query"
     )
     assert duration_count >= 1

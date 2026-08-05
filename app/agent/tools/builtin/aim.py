@@ -1,7 +1,7 @@
 """``aim_units`` / ``aim_compare`` — the state tool and compare engine for
 AIM migration projects (``documents/research/aim-framework.md`` §3.5/§3.8).
 
-Both resolve the current AIM project the same way ``code_graph`` tools
+Both resolve the current AIM project through the same code-graph services
 resolve a workspace's project (``CodingWorkspace`` -> ``CodingProject``),
 then find the KB repo's path via
 ``CodingProject.settings["aim"]["roles"]["kb"]`` — a local workspace_id ->

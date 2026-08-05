@@ -35,6 +35,7 @@ from app.models.code_graph import (
     CodeNode,
     CrossRepoEdge,
 )
+from app.services.code_graph.query import query_terms
 from app.services.code_graph import fts_store as fts
 from app.services.code_graph.indexer import (
     ExistingDef,
@@ -1005,7 +1006,7 @@ async def search_nodes_ranked(
         limit=overfetch,
     )
     query_folded = query.strip().casefold()
-    query_tokens = _search_tokens(query)
+    query_tokens = query_terms(query)
     # Natural-language questions rarely have every token in one symbol row.
     # Use the longest informative tokens as an OR-style candidate expansion;
     # reranking below still rewards candidates that match several signals.
@@ -1049,33 +1050,6 @@ async def search_nodes_ranked(
         )
     )
     return ranked[:capped]
-
-
-def _search_tokens(query: str) -> tuple[str, ...]:
-    """Normalize natural-language and identifier fragments for ranking."""
-    import re
-
-    expanded = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", query)
-    stopwords = {
-        "and",
-        "the",
-        "for",
-        "from",
-        "where",
-        "what",
-        "which",
-        "with",
-        "find",
-        "code",
-        "trace",
-        "impact",
-        "change",
-    }
-    return tuple(
-        token
-        for token in re.split(r"[^A-Za-z0-9]+", expanded.casefold())
-        if len(token) >= 2 and token not in stopwords
-    )
 
 
 def _rank_node(
