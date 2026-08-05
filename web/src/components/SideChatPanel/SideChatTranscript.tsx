@@ -7,7 +7,7 @@
  * finished turns) → `AssistantTurnFooter`. Narrow-panel differences only:
  * no turn windowing, no revert, compact footers.
  */
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useMemo } from 'react'
 import { ChevronDown } from 'lucide-react'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import { BlockRenderer } from '../BlockRenderer'
@@ -18,10 +18,9 @@ import { ActivityStatus } from '../motion/ActivityStatus'
 import { BlockEnter } from '../motion/BlockEnter'
 import { partitionTurns, type TurnItem } from '@/utils/turns'
 import { latestMCPAppResourceBlockIds } from '@/utils/mcp-app-artifacts'
+import { latestDirectUserBlockId } from '@/utils/blocks'
+import { usePinnedTranscript } from '@/hooks/usePinnedTranscript'
 import type { ContentBlock } from '@/api/types'
-
-const SCROLL_THRESHOLD = 40
-const USER_SCROLL_DETACH_DELTA = 4
 
 interface SideChatTranscriptProps {
   /** Finalized blocks from the persisted history. */
@@ -45,12 +44,6 @@ export function SideChatTranscript({
   agentLabel = 'evoflux',
   emptyState,
 }: SideChatTranscriptProps) {
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const contentRef = useRef<HTMLDivElement>(null)
-  const pinnedRef = useRef(true)
-  const [showScrollBtn, setShowScrollBtn] = useState(false)
-  const showScrollBtnRef = useRef(false)
-
   // Merge finalized turns with the live tail — a trailing finalized assistant
   // turn and a leading live assistant run are one contiguous turn (same rule
   // as AgentView).
@@ -93,79 +86,22 @@ export function SideChatTranscript({
   )
 
   const isEmpty = blocks.length === 0 && currentBlocks.length === 0 && !isWorking
-
-  const isAtBottom = useCallback(() => {
-    const el = scrollRef.current
-    if (!el) return true
-    return el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_THRESHOLD
-  }, [])
-
-  const setScrollButtonVisible = useCallback((visible: boolean) => {
-    if (showScrollBtnRef.current === visible) return
-    showScrollBtnRef.current = visible
-    setShowScrollBtn(visible)
-  }, [])
-
-  const scrollToBottom = useCallback((smooth = false) => {
-    const el = scrollRef.current
-    if (!el) return
-    pinnedRef.current = true
-    setScrollButtonVisible(false)
-    if (smooth) {
-      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-    } else {
-      el.scrollTop = el.scrollHeight
-    }
-  }, [setScrollButtonVisible])
-
-  // Track the pinned state from user scrolls.
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    let scrollFrame: number | null = null
-    const onScroll = () => {
-      if (scrollFrame !== null) return
-      scrollFrame = requestAnimationFrame(() => {
-        scrollFrame = null
-        const atBottom = isAtBottom()
-        pinnedRef.current = atBottom
-        setScrollButtonVisible(!atBottom)
-      })
-    }
-    const onWheel = (event: WheelEvent) => {
-      if (event.deltaY < -USER_SCROLL_DETACH_DELTA) {
-        pinnedRef.current = false
-        setScrollButtonVisible(true)
-      }
-    }
-    el.addEventListener('scroll', onScroll, { passive: true })
-    el.addEventListener('wheel', onWheel, { passive: true })
-    return () => {
-      if (scrollFrame !== null) cancelAnimationFrame(scrollFrame)
-      el.removeEventListener('scroll', onScroll)
-      el.removeEventListener('wheel', onWheel)
-    }
-  }, [isAtBottom, setScrollButtonVisible])
-
   const totalLen = blocks.length + currentBlocks.length
-
-  // Track the visible transcript rather than the raw stream. This keeps the
-  // narrow panel pinned at exactly the same cadence as Markdown is revealed.
-  useEffect(() => {
-    const content = contentRef.current
-    if (!content || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => {
-      const el = scrollRef.current
-      if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
-    })
-    observer.observe(content)
-    return () => observer.disconnect()
-  }, [isEmpty])
-
-  useEffect(() => {
-    const el = scrollRef.current
-    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
-  }, [totalLen])
+  const latestLiveUserBlockId = useMemo(
+    () => latestDirectUserBlockId(currentBlocks),
+    [currentBlocks],
+  )
+  const {
+    contentRef,
+    scrollRef,
+    scrollToBottom,
+    showScrollButton: showScrollBtn,
+  } = usePinnedTranscript({
+    isEmpty,
+    contentKey: totalLen,
+    resetKey: sessionId,
+    followKey: latestLiveUserBlockId,
+  })
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -211,7 +147,7 @@ export function SideChatTranscript({
                           <ToolCallGroupCard
                             key={(renderItem as ToolBlockGroup).id}
                             group={renderItem as ToolBlockGroup}
-                            isStreaming={turnIsStreaming}
+                            isStreaming={turnIsStreaming && j === groupedBlocks.length - 1}
                             sessionId={sessionId}
                             latestMCPAppBlockIds={latestMCPAppBlockIds}
                           />

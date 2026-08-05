@@ -23,14 +23,13 @@ import { ContextBudgetBar } from '@/components/ContextBudgetBar'
 import { useRegistryQuery } from '@/queries'
 import { TierBadge } from './TierBadge'
 import { resolveMemberTier } from '@/utils/tier'
+import { usePinnedTranscript } from '@/hooks/usePinnedTranscript'
 import type { AgentStream } from '@/stores/useTeamStore'
 import { ActivityStatus } from './motion/ActivityStatus'
 import { resolveAgentRole } from '@/lib/agent-roles'
 import { TurnChangesCard } from './TurnChangesCard'
 import type { ContentBlock, TodoItem } from '@/api/types'
 
-const SCROLL_THRESHOLD = 40
-const USER_SCROLL_DETACH_DELTA = 4
 // Split focuses on the current work. Mount a smaller initial history window
 // so entering the layout does not parse dozens of old Markdown turns at once.
 const INITIAL_RENDERED_TURNS = 32
@@ -61,8 +60,6 @@ export function AgentPane({
   collapsible = true, showTurnChanges = false,
 }: AgentPaneProps) {
   const [paneCollapsed, setPaneCollapsed] = useState(false)
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const contentRef = useRef<HTMLDivElement>(null)
   const [renderedTurnCount, setRenderedTurnCount] = useState(INITIAL_RENDERED_TURNS)
   const prevScrollHeightRef = useRef<number | null>(null)
   const pendingRestoreRef = useRef(false)
@@ -89,90 +86,6 @@ export function AgentPane({
     [isLead, todos, name],
   )
 
-  const pinnedRef = useRef(true)
-  const [showScrollBtn, setShowScrollBtn] = useState(false)
-  const showScrollBtnRef = useRef(false)
-
-  const isAtBottom = useCallback(() => {
-    const el = scrollRef.current
-    if (!el) return true
-    return el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_THRESHOLD
-  }, [])
-
-  const setScrollButtonVisible = useCallback((visible: boolean) => {
-    if (showScrollBtnRef.current === visible) return
-    showScrollBtnRef.current = visible
-    setShowScrollBtn(visible)
-  }, [])
-
-  const scrollToBottom = useCallback((smooth = false) => {
-    const el = scrollRef.current
-    if (!el) return
-    pinnedRef.current = true
-    setScrollButtonVisible(false)
-    if (smooth) {
-      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-    } else {
-      el.scrollTop = el.scrollHeight
-    }
-  }, [setScrollButtonVisible])
-
-  // Me detect user scroll intent before stream updates can snap the pane back
-  // to the bottom. Scroll catches scrollbar/keyboard movement; wheel/touchmove
-  // detach immediately when the user starts moving upward.
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    let lastScrollTop = el.scrollTop
-    let lastTouchY: number | null = null
-    let scrollFrame: number | null = null
-    const updatePinnedFromPosition = () => {
-      scrollFrame = null
-      const atBottom = isAtBottom()
-      pinnedRef.current = atBottom
-      setScrollButtonVisible(!atBottom)
-    }
-    const detachFromBottom = () => {
-      pinnedRef.current = false
-      setScrollButtonVisible(true)
-    }
-    const onScroll = () => {
-      const nextScrollTop = el.scrollTop
-      if (nextScrollTop < lastScrollTop - USER_SCROLL_DETACH_DELTA) {
-        detachFromBottom()
-      }
-      lastScrollTop = nextScrollTop
-      if (scrollFrame === null) {
-        scrollFrame = requestAnimationFrame(updatePinnedFromPosition)
-      }
-    }
-    const onWheel = (e: WheelEvent) => {
-      if (e.deltaY < -USER_SCROLL_DETACH_DELTA) detachFromBottom()
-    }
-    const onTouchMove = (e: TouchEvent) => {
-      const y = e.touches[0]?.clientY
-      if (y == null) return
-      if (lastTouchY !== null && y > lastTouchY + USER_SCROLL_DETACH_DELTA) detachFromBottom()
-      lastTouchY = y
-    }
-    const onTouchEnd = () => {
-      lastTouchY = null
-    }
-    el.addEventListener('scroll', onScroll, { passive: true })
-    el.addEventListener('wheel', onWheel, { passive: true })
-    el.addEventListener('touchmove', onTouchMove, { passive: true })
-    el.addEventListener('touchend', onTouchEnd, { passive: true })
-    el.addEventListener('touchcancel', onTouchEnd, { passive: true })
-    return () => {
-      if (scrollFrame !== null) cancelAnimationFrame(scrollFrame)
-      el.removeEventListener('scroll', onScroll)
-      el.removeEventListener('wheel', onWheel)
-      el.removeEventListener('touchmove', onTouchMove)
-      el.removeEventListener('touchend', onTouchEnd)
-      el.removeEventListener('touchcancel', onTouchEnd)
-    }
-  }, [isAtBottom, setScrollButtonVisible])
-
   const allBlocks = useMemo(
     () => mergeBlocks(stream.blocks, stream.currentBlocks),
     [stream.blocks, stream.currentBlocks],
@@ -184,6 +97,23 @@ export function AgentPane({
     [renderedTurnCount, turnItems],
   )
   const latestMCPAppBlockIds = useMemo(() => latestMCPAppResourceBlockIds(allBlocks), [allBlocks])
+  const latestLiveUserBlockId = useMemo(
+    () => latestDirectUserBlockId(stream.currentBlocks),
+    [stream.currentBlocks],
+  )
+  const isEmpty = allBlocks.length === 0
+  const {
+    contentRef,
+    restorePrependOffset,
+    scrollRef,
+    scrollToBottom,
+    showScrollButton: showScrollBtn,
+  } = usePinnedTranscript({
+    isEmpty,
+    contentKey: allBlocks.length,
+    resetKey: sessionId,
+    followKey: latestLiveUserBlockId ?? (isWorking && isContinuing ? `continue:${sessionId ?? ''}:${name}` : null),
+  })
 
   const showEarlierTurns = useCallback(() => {
     const el = scrollRef.current
@@ -192,43 +122,14 @@ export function AgentPane({
       pendingRestoreRef.current = true
     }
     setRenderedTurnCount((count) => Math.min(turnItems.length, count + TURN_RENDER_STEP))
-  }, [turnItems.length])
+  }, [scrollRef, turnItems.length])
 
   useEffect(() => {
-    const el = scrollRef.current
-    if (!el || !pendingRestoreRef.current || prevScrollHeightRef.current === null) return
+    if (!pendingRestoreRef.current || prevScrollHeightRef.current === null) return
     pendingRestoreRef.current = false
-    el.scrollTop = el.scrollHeight - prevScrollHeightRef.current
+    restorePrependOffset(prevScrollHeightRef.current)
     prevScrollHeightRef.current = null
-  }, [renderedTurnCount])
-
-  const isEmpty = allBlocks.length === 0
-
-  // Follow rendered height so streamed Markdown and the viewport advance in
-  // one visual frame instead of scroll jumping for every raw provider chunk.
-  useEffect(() => {
-    const content = contentRef.current
-    if (!content || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => {
-      const el = scrollRef.current
-      if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
-    })
-    observer.observe(content)
-    return () => observer.disconnect()
-  }, [isEmpty])
-
-  useEffect(() => {
-    const el = scrollRef.current
-    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
-  }, [allBlocks.length])
-
-  useEffect(() => {
-    if (!isEmpty) return
-    pinnedRef.current = true
-    if (scrollRef.current) scrollRef.current.scrollTop = 0
-    const frame = requestAnimationFrame(() => setScrollButtonVisible(false))
-    return () => cancelAnimationFrame(frame)
-  }, [isEmpty, setScrollButtonVisible])
+  }, [renderedTurnCount, restorePrependOffset])
 
   const paneClass = isError
     ? 'ring-1 ring-inset ring-(--color-error)/40 shadow-sm'

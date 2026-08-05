@@ -101,6 +101,8 @@ function appendStreamingText(
   if (stream._turnStartedAt === undefined || stream._turnStartedAt === null) stream._turnStartedAt = Date.now()
   if (kind === 'thinking') {
     stream.currentBlocks = appendThinking(stream.currentBlocks, text)
+    const last = stream.currentBlocks[stream.currentBlocks.length - 1]
+    if (last?.type === 'thinking' && !last.startedAt) last.startedAt = Date.now()
   } else {
     stream.currentBlocks = appendText(stream.currentBlocks, text)
     const last = stream.currentBlocks[stream.currentBlocks.length - 1]

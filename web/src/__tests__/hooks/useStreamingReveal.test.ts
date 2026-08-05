@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   nextStreamingRevealLength,
+  streamingRevealBoundary,
   useStreamingReveal,
 } from '@/hooks/useStreamingReveal'
 
@@ -31,6 +32,16 @@ describe('nextStreamingRevealLength', () => {
     expect(nextStreamingRevealLength(0, 1_000)).toBe(96)
     expect(nextStreamingRevealLength(995, 1_000)).toBe(1_000)
     expect(nextStreamingRevealLength(20, 10)).toBe(10)
+  })
+})
+
+describe('streamingRevealBoundary', () => {
+  it('keeps combining marks with their base glyph', () => {
+    expect(streamingRevealBoundary('a\u0301b', 1)).toBe(2)
+  })
+
+  it('does not split surrogate pairs', () => {
+    expect(streamingRevealBoundary('a😀b', 2)).toBe(3)
   })
 })
 
