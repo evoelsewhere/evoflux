@@ -271,22 +271,25 @@ export function SidebarSearchTrigger({
 }
 
 interface SidebarFooterProps {
-  /** Opens the command palette; also gates the Help button's visibility. */
+  /** Opens the command palette (Search). Help always opens Guidelines. */
   onCommandPalette?: () => void
   /** Icon-rail variant: vertical stack (Settings · Help · theme · health). */
   collapsed?: boolean
-  /** Runs after the Settings action (e.g. close the mobile drawer). */
+  /** Runs after the Settings / Help action (e.g. close the mobile drawer). */
   onAction?: () => void
 }
 
 /** Footer trio — Settings + Help | HealthDot + ThemeToggle. */
 export function SidebarFooter({
-  onCommandPalette,
   collapsed = false,
   onAction,
 }: SidebarFooterProps) {
   const openSettings = () => {
     useUIStore.getState().openSettings()
+    onAction?.()
+  }
+  const openHelp = () => {
+    useUIStore.getState().openGuidelines()
     onAction?.()
   }
 
@@ -302,20 +305,16 @@ export function SidebarFooter({
         >
           <Settings size={14} aria-hidden="true" />
         </button>
-        {onCommandPalette && (
-          <button
-            type="button"
-            onClick={() => {
-              onCommandPalette()
-              onAction?.()
-            }}
-            className="focus-ring-control press-control flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-            aria-label="Help and shortcuts"
-            title="Help and shortcuts (Ctrl+P)"
-          >
-            <HelpCircle size={14} aria-hidden="true" />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={openHelp}
+          className="focus-ring-control press-control flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+          aria-label="Guidelines"
+          title="Guidelines"
+          data-testid="sidebar-guidelines-button"
+        >
+          <HelpCircle size={14} aria-hidden="true" />
+        </button>
         <ThemeToggle collapsed />
         <HealthDot />
       </div>
@@ -334,20 +333,16 @@ export function SidebarFooter({
         >
           <Settings size={14} aria-hidden="true" />
         </button>
-        {onCommandPalette && (
-          <button
-            type="button"
-            onClick={() => {
-              onCommandPalette()
-              onAction?.()
-            }}
-            className="focus-ring-control press-control flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-            aria-label="Help and shortcuts"
-            title="Help and shortcuts (Ctrl+P)"
-          >
-            <HelpCircle size={14} aria-hidden="true" />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={openHelp}
+          className="focus-ring-control press-control flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+          aria-label="Guidelines"
+          title="Guidelines"
+          data-testid="sidebar-guidelines-button"
+        >
+          <HelpCircle size={14} aria-hidden="true" />
+        </button>
       </div>
       <div className="flex items-center gap-2">
         <HealthDot />

@@ -82,6 +82,13 @@ export function useTeamCommands({
     { id: 'new-chat', group: 'Team', label: 'New Team Chat', description: 'Start a fresh team conversation', shortcut: 'Ctrl+N', action: handleNewSession },
     { id: 'dream-run', group: 'Team', label: 'Run Dream', description: 'Synthesise unprocessed sessions into Memory', action: handleDreamRun },
     {
+      id: 'open-guidelines',
+      group: 'Navigation',
+      label: 'Open Guidelines…',
+      description: 'Search setup tips and feature tricks',
+      action: () => useUIStore.getState().openGuidelines(),
+    },
+    {
       id: 'toggle-view', group: 'View',
       label: viewMode === 'agent' ? 'Switch to Split View' : 'Switch to Agent View',
       description: 'Cycle: Agent → Split', shortcut: 'Ctrl+V', action: cycleViewMode,

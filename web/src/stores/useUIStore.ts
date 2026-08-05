@@ -222,6 +222,9 @@ interface UIStore {
   settingsOpen: boolean
   settingsPath: string
   settingsSearch: Record<string, string>
+  /** Searchable in-app Guidelines modal (sidebar Help). */
+  guidelinesOpen: boolean
+  guidelinesTopicId: string | null
   /**
    * One-shot request to open the side chat panel for a specific session —
    * set by the sidebar session-row icon; consumed and cleared by
@@ -264,6 +267,8 @@ interface UIStore {
   openSettings: (path?: string, search?: Record<string, string>) => void
   closeSettings: () => void
   navigateSettings: (path: string, search?: Record<string, string>) => void
+  openGuidelines: (topicId?: string | null) => void
+  closeGuidelines: () => void
   requestSideChat: (sessionId: string) => void
   clearSideChatRequest: () => void
 }
@@ -419,6 +424,16 @@ export const useUIStore = create<UIStore>()(
     openSettings: (path = '', search = {}) => set((state) => { state.settingsOpen = true; state.settingsPath = path; state.settingsSearch = search }),
     closeSettings: () => set((state) => { state.settingsOpen = false }),
     navigateSettings: (path: string, search = {}) => set((state) => { state.settingsPath = path; state.settingsSearch = search }),
+    guidelinesOpen: false,
+    guidelinesTopicId: null,
+    openGuidelines: (topicId = null) => set((state) => {
+      state.guidelinesOpen = true
+      state.guidelinesTopicId = topicId ?? null
+    }),
+    closeGuidelines: () => set((state) => {
+      state.guidelinesOpen = false
+      state.guidelinesTopicId = null
+    }),
     sideChatRequest: null,
     requestSideChat: (sessionId) => set((state) => { state.sideChatRequest = sessionId }),
     clearSideChatRequest: () => set((state) => { state.sideChatRequest = null }),
