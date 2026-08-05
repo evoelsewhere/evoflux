@@ -26,7 +26,7 @@ import { AssistantTurnFooter } from './AssistantTurnFooter'
 import { groupConsecutiveToolCalls, ToolCallGroupCard } from './ToolCallGroup'
 import type { ToolBlockGroup } from './ToolCallGroup'
 import { PendingMessageQueue } from './PendingMessageQueue'
-import { getVisibleTurnWindow, partitionTurns, type TurnItem } from '@/utils/turns'
+import { getVisibleTurnWindow, isLatestStreamingItem, partitionTurns, type TurnItem } from '@/utils/turns'
 import { isDirectUserBlock, latestDirectUserBlockId } from '@/utils/blocks'
 import { buildUserMessageNavigationItems } from '@/utils/user-message-navigation'
 import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
@@ -343,8 +343,6 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                   const canContinue = isTrailingTurn && !isWorking ? onContinue : undefined
                   const groupedBlocks = groupConsecutiveToolCalls(item.blocks)
                   const turnStartedAt = item.blocks.find((block) => block.startedAt)?.startedAt
-                  // Map blockId → absolute index for streaming detection inside groups
-                  const blockAbsIdx = new Map(item.blocks.map((b, j) => [b.id, item.startIndex + j]))
                  return (
                    <div
                      key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}
@@ -358,15 +356,17 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                              <ToolCallGroupCard
                                key={(renderItem as ToolBlockGroup).id}
                                group={renderItem as ToolBlockGroup}
-                               isStreaming={turnIsStreaming && j === groupedBlocks.length - 1}
+                               isStreaming={isLatestStreamingItem(turnIsStreaming, j, groupedBlocks.length)}
                                sessionId={sessionId}
                                latestMCPAppBlockIds={latestMCPAppBlockIds}
                              />
                            )
                          }
                          const block = renderItem as ContentBlock
-                         const absIdx = blockAbsIdx.get(block.id) ?? item.startIndex + j
-                         const isStreaming = isWorking && absIdx >= blocks.length
+                         // A live turn can already contain several completed
+                         // thinking/tool phases. Only its newest visible item
+                         // should retain the streaming animation.
+                         const isStreaming = isLatestStreamingItem(turnIsStreaming, j, groupedBlocks.length)
                          return (
                            <BlockEnter key={block.id} disabled={isStreaming && block.type === 'text'}>
                              <BlockRenderer

@@ -16,7 +16,7 @@ import { groupConsecutiveToolCalls, ToolCallGroupCard } from '../ToolCallGroup'
 import type { ToolBlockGroup } from '../ToolCallGroup'
 import { ActivityStatus } from '../motion/ActivityStatus'
 import { BlockEnter } from '../motion/BlockEnter'
-import { partitionTurns, type TurnItem } from '@/utils/turns'
+import { isLatestStreamingItem, partitionTurns, type TurnItem } from '@/utils/turns'
 import { latestMCPAppResourceBlockIds } from '@/utils/mcp-app-artifacts'
 import { latestDirectUserBlockId } from '@/utils/blocks'
 import { usePinnedTranscript } from '@/hooks/usePinnedTranscript'
@@ -130,7 +130,6 @@ export function SideChatTranscript({
               const isTrailingTurn = k === turnItems.length - 1
               const turnIsStreaming = isWorking && isTrailingTurn
               const groupedBlocks = groupConsecutiveToolCalls(item.blocks)
-              const blockAbsIdx = new Map(item.blocks.map((b, j) => [b.id, item.startIndex + j]))
               return (
                 <div
                   key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}
@@ -147,15 +146,16 @@ export function SideChatTranscript({
                           <ToolCallGroupCard
                             key={(renderItem as ToolBlockGroup).id}
                             group={renderItem as ToolBlockGroup}
-                            isStreaming={turnIsStreaming && j === groupedBlocks.length - 1}
+                            isStreaming={isLatestStreamingItem(turnIsStreaming, j, groupedBlocks.length)}
                             sessionId={sessionId}
                             latestMCPAppBlockIds={latestMCPAppBlockIds}
                           />
                         )
                       }
                       const block = renderItem as ContentBlock
-                      const absIdx = blockAbsIdx.get(block.id) ?? item.startIndex + j
-                      const isStreaming = isWorking && absIdx >= blocks.length
+                      // Keep completed phases still; only the latest visible
+                      // item in the active turn is actually streaming.
+                      const isStreaming = isLatestStreamingItem(turnIsStreaming, j, groupedBlocks.length)
                       return (
                         <BlockEnter key={block.id} disabled={isStreaming && block.type === 'text'}>
                           <BlockRenderer
