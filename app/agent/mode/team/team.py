@@ -1694,6 +1694,7 @@ class AgentTeam:
         session_id: str,
         mode: str | None = None,
         workspace: str | None = None,
+        project_id: UUID | None = None,
     ) -> None:
         """Ensure a user session exists before deferred ingress is acknowledged.
 
@@ -1717,6 +1718,7 @@ class AgentTeam:
             title=content[:100] if content else None,
             mode=self.mode,
             workspace=self.workspace,
+            project_id=project_id,
         )
 
         # Reset blueprint counters so a fresh chat starts at #1 for each
@@ -1736,6 +1738,7 @@ class AgentTeam:
         message_extra: dict | None = None,
         mode: str | None = None,
         workspace: str | None = None,
+        project_id: UUID | None = None,
         model: str | None = None,
         model_provided: bool = False,
         thinking_level: str | None = None,
@@ -1769,6 +1772,7 @@ class AgentTeam:
             session_id=session_id,
             mode=mode,
             workspace=workspace,
+            project_id=project_id,
         )
 
         if interrupt:
