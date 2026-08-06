@@ -49,7 +49,13 @@ def _server_config(name: str, port: int) -> dict:
 def workspace(tmp_path, monkeypatch):
     monkeypatch.setattr(pv, "_workspace_root", lambda: tmp_path)
     token = set_sandbox(
-        SandboxConfig(workspace=str(tmp_path), allow_network=True, denied_roots=[])
+        SandboxConfig(
+            workspace=str(tmp_path),
+            allow_network=True,
+            denied_roots=[],
+            denied_patterns=[],
+            native_process_isolation="required",
+        )
     )
     try:
         yield tmp_path

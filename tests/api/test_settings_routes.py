@@ -84,7 +84,7 @@ def test_get_sandbox_returns_seed_defaults_when_file_missing(
         "load_shell_profile": False,
         "outbound_data_policy": "redact",
         "outbound_pii_policy": "standard",
-        "max_execution_seconds": 120,
+        "max_execution_seconds": 600,
         "max_output_bytes": 131072,
         "native_backend": "test-backend",
     }
@@ -132,7 +132,7 @@ def test_put_sandbox_strips_blank_patterns(isolated_config: Path) -> None:
         "load_shell_profile": False,
         "outbound_data_policy": "redact",
         "outbound_pii_policy": "standard",
-        "max_execution_seconds": 120,
+        "max_execution_seconds": 600,
         "max_output_bytes": 131072,
         "native_backend": "test-backend",
     }

@@ -146,7 +146,11 @@ async def _shell_bg_start(
 
     cwd = _resolve_workdir(workdir)
     shell_bin = _shell_mod.acceptable()
-    argv = _shell_mod.build_argv(shell_bin, command)
+    argv = _shell_mod.build_argv(
+        shell_bin,
+        command,
+        load_profile=sandbox.load_shell_profile,
+    )
     exec_bin, exec_argv = sandboxed_process_argv(
         shell_bin,
         argv,

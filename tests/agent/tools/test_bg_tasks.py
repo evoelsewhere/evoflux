@@ -6,6 +6,8 @@ import sys
 
 import pytest
 
+from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
+
 
 def _extract_task_id(text: str) -> str | None:
     """Extract the first bg_XXXXXXXX task id from a tool result string."""
@@ -13,6 +15,43 @@ def _extract_task_id(text: str) -> str | None:
 
     m = re.search(r"\bbg_[0-9a-f]{8}\b", text)
     return m.group(0) if m else None
+
+
+@pytest.mark.asyncio
+async def test_shell_bg_respects_disabled_profile(tmp_path, monkeypatch):
+    from app.agent.tools.builtin import shell_runtime
+    from app.agent.tools.builtin.bg_tasks import _registry, shell_bg_start
+
+    seen: list[bool] = []
+    original = shell_runtime.build_argv
+
+    def _capture(shell_bin: str, command: str, *, load_profile: bool = True):
+        seen.append(load_profile)
+        return original(shell_bin, command, load_profile=load_profile)
+
+    monkeypatch.setattr(shell_runtime, "build_argv", _capture)
+    token = set_sandbox(
+        SandboxConfig(
+            workspace=str(tmp_path),
+            native_process_isolation="best_effort",
+            load_shell_profile=False,
+            denied_roots=[],
+            denied_patterns=[],
+        )
+    )
+    try:
+        result = await shell_bg_start.arun(command="echo profile_policy")
+        task_id = _extract_task_id(result)
+        assert task_id is not None
+        task = _registry[task_id]
+        if task._bg is not None:
+            await task._bg.wait()
+    finally:
+        if "task_id" in locals() and task_id is not None:
+            _registry.pop(task_id, None)
+        _sandbox_ctx.reset(token)
+
+    assert seen == [False]
 
 
 @pytest.mark.asyncio

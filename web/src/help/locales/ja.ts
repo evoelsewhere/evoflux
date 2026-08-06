@@ -375,7 +375,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'きめ細かい制御により、リスクの高い作業は手元に（ask）、編集は速く（accept-edits）、明示的なプランゲート（plan）、信頼ツリーでの無人実行（auto）、プロンプト全スキップ（bypass）が可能です。Sandbox の deny glob は下層でなお適用 — 権限は「いつ聞くか」、sandbox は「絶対に許さないもの」を決めます。',
+        text: 'きめ細かい制御により、ask、accept-edits、plan、auto、bypass を選べます。権限は「いつ聞くか」を決め、Required は deny glob を強制します。Best effort は Coding 互換性のため sandbox 強制を明示的に無効化します。',
       },
       {
         type: 'p',
@@ -1884,7 +1884,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'settings',
     title: 'Sandbox とアウトバウンド保護',
     summary:
-      'deny glob、隔離、worktree 配置、ネットワークポリシー、PII リダクションを設定し、エージェントを安全なファイルシステムとアウトバウンド境界内に留めます。権限はいつ聞くかを決め; sandbox は絶対に許さないものを決めます。',
+      'deny glob、隔離、worktree 配置、ネットワークポリシー、PII リダクションを設定します。Required はファイル境界を強制し、Best effort は信頼済み Coding workspace 向けに強制を無効化します。',
     keywords: [
       'sandbox',
       'deny',
@@ -1920,7 +1920,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '権限モードはいつ聞くかを決め; sandbox は絶対に許さないものを決めます。この分割により、資格情報キャッシュや無関係ディスクを晒さず、信頼ツリーで bypass が使えます。Goal モードも同じフロアを継承します。',
+        text: '権限モードはいつ聞くかを決めます。Required は禁止境界を強制し、Best effort にはその sandbox 下限がありません。Goal は選択中の隔離ポリシーを維持します。',
       },
       {
         type: 'p',

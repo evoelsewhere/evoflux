@@ -231,7 +231,11 @@ async def test_read_allows_active_session_artifact_path_only(sandbox_workspace):
 
     session_id = "session-read-artifact"
     token = set_sandbox(
-        SandboxConfig(workspace=str(sandbox_workspace), session_id=session_id)
+        SandboxConfig(
+            workspace=str(sandbox_workspace),
+            session_id=session_id,
+            native_process_isolation="required",
+        )
     )
     try:
         artifact = (
@@ -266,7 +270,13 @@ async def test_read_allows_active_session_artifact_path_only(sandbox_workspace):
 async def test_read_rejects_data_dir_outside_active_session(sandbox_workspace):
     from app.agent.sandbox import _sandbox_ctx
 
-    token = set_sandbox(SandboxConfig(workspace=str(sandbox_workspace), session_id="s"))
+    token = set_sandbox(
+        SandboxConfig(
+            workspace=str(sandbox_workspace),
+            session_id="s",
+            native_process_isolation="required",
+        )
+    )
     try:
         data_file = session_artifact_dir("s").parent.parent / "evoflux.db"
         data_file.parent.mkdir(parents=True, exist_ok=True)
@@ -282,7 +292,13 @@ async def test_read_rejects_data_dir_outside_active_session(sandbox_workspace):
 async def test_read_allows_log_paths(sandbox_workspace):
     from app.agent.sandbox import _sandbox_ctx
 
-    token = set_sandbox(SandboxConfig(workspace=str(sandbox_workspace), session_id="s"))
+    token = set_sandbox(
+        SandboxConfig(
+            workspace=str(sandbox_workspace),
+            session_id="s",
+            native_process_isolation="required",
+        )
+    )
     try:
         # Test-owned filename under the logs allowlist — avoids the live
         # ``app.log`` sink the running logger appends to.
@@ -314,6 +330,7 @@ async def test_sandbox_validation(sandbox_workspace, tmp_path):
             workspace=str(sandbox_workspace),
             denied_roots=[denied],
             denied_patterns=[],
+            native_process_isolation="required",
         )
     )
 

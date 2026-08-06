@@ -19,7 +19,7 @@ File shape (YAML)::
     load_shell_profile: false
     outbound_data_policy: redact
     outbound_pii_policy: standard
-    max_execution_seconds: 120
+    max_execution_seconds: 600
     max_output_bytes: 131072
 """
 
@@ -103,7 +103,7 @@ class SandboxFileConfig(BaseModel):
         ),
     )
     max_execution_seconds: int = Field(
-        default=120,
+        default=600,
         ge=5,
         le=3600,
         description="Maximum foreground shell execution time in seconds.",
