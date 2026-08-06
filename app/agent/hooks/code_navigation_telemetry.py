@@ -11,16 +11,16 @@ from typing import TYPE_CHECKING
 from app.agent.code_query_observation import consume_code_query_observation
 from app.agent.hooks.base import BaseAgentHook
 from app.core.metrics import (
-    CODE_GRAPH_ESTIMATED_FILE_READS_SAVED,
-    CODE_GRAPH_ESTIMATED_TOKENS_SAVED,
     CODE_GRAPH_QUERIES,
     CODE_GRAPH_QUERY_DURATION,
     CODE_GRAPH_RESULT_TOKENS,
     CODE_NAVIGATION_DUPLICATE_CALLS,
+    CODE_NAVIGATION_CALLS_PER_TURN,
     CODE_NAVIGATION_TOOL_CALLS,
     CODE_NAVIGATION_TURNS,
     CODE_QUERY_CACHE,
     CODE_QUERY_ROUTING,
+    CODE_GRAPH_RESULT_TOKENS_PER_TURN,
 )
 
 if TYPE_CHECKING:
@@ -28,15 +28,11 @@ if TYPE_CHECKING:
     from app.agent.state import AgentState, RunContext, ToolCallHandler
 
 
-CODE_GRAPH_TOOLS = frozenset({"code_query"})
-_FALLBACK_NAVIGATION_TOOLS = frozenset(
-    {
-        "grep",
-        "glob",
-        "lsp_definition",
-        "lsp_references",
-    }
-)
+_GRAPH_CAPABILITY = "code_graph_navigation"
+_SOURCE_NAVIGATION_CAPABILITY = "source_navigation"
+_WORKSPACE_READ_CAPABILITY = "workspace_read"
+
+
 @lru_cache(maxsize=1)
 def _source_extensions() -> frozenset[str]:
     from app.services.code_graph.parsers.registry import default_registry
@@ -44,8 +40,16 @@ def _source_extensions() -> frozenset[str]:
     return default_registry().supported_extensions()
 
 
-def _read_is_source_navigation(tool_call: "ToolCall") -> bool:
-    if tool_call.function.name != "read":
+def _capabilities_for(state: "AgentState", tool_name: str) -> frozenset[str]:
+    by_tool = state.metadata.get("_tool_capabilities") or {}
+    values = by_tool.get(tool_name) or ()
+    return frozenset(str(value).casefold() for value in values)
+
+
+def _read_is_source_navigation(
+    tool_call: "ToolCall", capabilities: frozenset[str]
+) -> bool:
+    if _WORKSPACE_READ_CAPABILITY not in capabilities:
         return False
     try:
         arguments = json.loads(tool_call.function.arguments or "{}")
@@ -55,13 +59,28 @@ def _read_is_source_navigation(tool_call: "ToolCall") -> bool:
     return isinstance(path, str) and Path(path).suffix.lower() in _source_extensions()
 
 
-def _strategy_for(tool_call: "ToolCall") -> str | None:
-    name = tool_call.function.name
-    if name in CODE_GRAPH_TOOLS:
+def _strategy_for(tool_call: "ToolCall", state: "AgentState") -> str | None:
+    capabilities = _capabilities_for(state, tool_call.function.name)
+    if _GRAPH_CAPABILITY in capabilities:
         return "graph_first"
-    if name in _FALLBACK_NAVIGATION_TOOLS or _read_is_source_navigation(tool_call):
+    if _SOURCE_NAVIGATION_CAPABILITY in capabilities or _read_is_source_navigation(
+        tool_call, capabilities
+    ):
         return "fallback_first"
     return None
+
+
+def _call_fingerprint(tool_call: "ToolCall") -> tuple[str, str]:
+    """Return a stable identity for semantically identical tool arguments."""
+    arguments = tool_call.function.arguments or "{}"
+    try:
+        parsed_arguments = json.loads(arguments)
+        canonical_arguments = json.dumps(
+            parsed_arguments, sort_keys=True, separators=(",", ":")
+        )
+    except (TypeError, ValueError, json.JSONDecodeError):
+        canonical_arguments = arguments
+    return tool_call.function.name, canonical_arguments
 
 
 class CodeNavigationTelemetryHook(BaseAgentHook):
@@ -70,10 +89,23 @@ class CodeNavigationTelemetryHook(BaseAgentHook):
     def __init__(self) -> None:
         self._first_strategy: str | None = None
         self._seen_calls: set[tuple[str, str]] = set()
+        self._graph_calls = 0
+        self._fallback_calls = 0
+        self._graph_result_tokens = 0
 
     async def before_agent(self, ctx: "RunContext", state: "AgentState") -> None:
         self._first_strategy = None
         self._seen_calls.clear()
+        self._graph_calls = 0
+        self._fallback_calls = 0
+        self._graph_result_tokens = 0
+
+    async def after_agent(self, ctx, state, response) -> None:  # noqa: ANN001
+        CODE_NAVIGATION_CALLS_PER_TURN.labels(kind="graph").observe(self._graph_calls)
+        CODE_NAVIGATION_CALLS_PER_TURN.labels(kind="fallback").observe(
+            self._fallback_calls
+        )
+        CODE_GRAPH_RESULT_TOKENS_PER_TURN.observe(self._graph_result_tokens)
 
     async def wrap_tool_call(
         self,
@@ -82,24 +114,29 @@ class CodeNavigationTelemetryHook(BaseAgentHook):
         tool_call: "ToolCall",
         handler: "ToolCallHandler",
     ) -> str:
-        strategy = _strategy_for(tool_call)
-        if strategy is not None and self._first_strategy is None:
-            self._first_strategy = strategy
-            CODE_NAVIGATION_TURNS.labels(strategy=strategy).inc()
-
+        strategy = _strategy_for(tool_call, state)
         tool_name = tool_call.function.name
+        fingerprint = _call_fingerprint(tool_call)
         if strategy is not None:
-            CODE_NAVIGATION_TOOL_CALLS.labels(tool=tool_name).inc()
-            fingerprint = (tool_name, tool_call.function.arguments or "{}")
             if fingerprint in self._seen_calls:
                 CODE_NAVIGATION_DUPLICATE_CALLS.labels(tool=tool_name).inc()
-            self._seen_calls.add(fingerprint)
 
-        if tool_name not in CODE_GRAPH_TOOLS:
+        if strategy is not None:
+            if self._first_strategy is None:
+                self._first_strategy = strategy
+                CODE_NAVIGATION_TURNS.labels(strategy=strategy).inc()
+            CODE_NAVIGATION_TOOL_CALLS.labels(tool=tool_name).inc()
+            if strategy == "graph_first":
+                self._graph_calls += 1
+            else:
+                self._fallback_calls += 1
+
+        if strategy != "graph_first":
+            if strategy is not None:
+                self._seen_calls.add(fingerprint)
             return await handler(ctx, state, tool_call)
 
-        if tool_name == "code_query":
-            consume_code_query_observation()
+        consume_code_query_observation()
         started = time.perf_counter()
         try:
             result = await handler(ctx, state, tool_call)
@@ -112,22 +149,16 @@ class CodeNavigationTelemetryHook(BaseAgentHook):
             )
 
         CODE_GRAPH_QUERIES.labels(tool=tool_name, status="ok").inc()
-        observation = (
-            consume_code_query_observation() if tool_name == "code_query" else None
-        )
+        self._seen_calls.add(fingerprint)
+        observation = consume_code_query_observation()
         result_tokens = (
             observation.result_tokens
             if observation is not None
             else (len(result.encode("utf-8")) + 3) // 4
         )
         CODE_GRAPH_RESULT_TOKENS.labels(tool=tool_name).inc(result_tokens)
+        self._graph_result_tokens += result_tokens
         if observation is not None:
-            CODE_GRAPH_ESTIMATED_FILE_READS_SAVED.labels(tool=tool_name).inc(
-                observation.file_reads
-            )
-            CODE_GRAPH_ESTIMATED_TOKENS_SAVED.labels(tool=tool_name).inc(
-                max(0, observation.source_tokens - observation.result_tokens)
-            )
             CODE_QUERY_ROUTING.labels(
                 strategy=observation.strategy,
                 freshness=observation.freshness,

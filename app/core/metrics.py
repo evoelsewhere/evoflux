@@ -123,20 +123,6 @@ CODE_GRAPH_RESULT_TOKENS = Counter(
     registry=REGISTRY,
 )
 
-CODE_GRAPH_ESTIMATED_FILE_READS_SAVED = Counter(
-    "EVOFLUX_code_graph_estimated_file_reads_saved_total",
-    "Estimated full-file reads replaced by code-graph result locations.",
-    labelnames=("tool",),
-    registry=REGISTRY,
-)
-
-CODE_GRAPH_ESTIMATED_TOKENS_SAVED = Counter(
-    "EVOFLUX_code_graph_estimated_tokens_saved_total",
-    "Estimated source tokens avoided versus reading each referenced file in full.",
-    labelnames=("tool",),
-    registry=REGISTRY,
-)
-
 CODE_NAVIGATION_TOOL_CALLS = Counter(
     "EVOFLUX_code_navigation_tool_calls_total",
     "Navigation calls grouped by tool, including graph and source fallbacks.",
@@ -148,6 +134,21 @@ CODE_NAVIGATION_DUPLICATE_CALLS = Counter(
     "EVOFLUX_code_navigation_duplicate_calls_total",
     "Repeated navigation calls with identical arguments inside one agent turn.",
     labelnames=("tool",),
+    registry=REGISTRY,
+)
+
+CODE_NAVIGATION_CALLS_PER_TURN = Histogram(
+    "EVOFLUX_code_navigation_calls_per_turn",
+    "Actual graph and fallback navigation calls completed in one agent turn.",
+    labelnames=("kind",),
+    buckets=(0, 1, 2, 3, 5, 8, 13, 21, 34),
+    registry=REGISTRY,
+)
+
+CODE_GRAPH_RESULT_TOKENS_PER_TURN = Histogram(
+    "EVOFLUX_code_graph_result_tokens_per_turn",
+    "Actual code-query result tokens returned in one agent turn.",
+    buckets=(0, 256, 512, 1_024, 2_048, 4_096, 8_192, 12_288),
     registry=REGISTRY,
 )
 

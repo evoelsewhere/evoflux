@@ -11,13 +11,14 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 
 
+CODE_QUERY_DEFAULT_MAX_FILES = 6
+
+
 @dataclass(frozen=True, slots=True)
 class CodeQueryObservation:
     strategy: str
     freshness: str
     cache_hit: bool
-    file_reads: int
-    source_tokens: int
     result_tokens: int
 
 

@@ -161,4 +161,5 @@ read_file = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
+    capabilities=("workspace_read",),
 )

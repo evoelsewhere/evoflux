@@ -175,7 +175,7 @@ async def code_query(
         budget_tokens=body.budget_tokens,
         freshness_policy=body.freshness,
         limit=body.limit,
-        enable_lsp=False,
+        enable_lsp=body.enable_lsp,
     )
     return CodeQueryResponse(
         query=result.query,

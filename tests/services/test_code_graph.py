@@ -8,7 +8,7 @@ import pytest
 
 from app.services.code_graph.indexer import index_workspace
 from app.services.code_graph.parsers.python import PythonParser
-from app.services.code_graph.parsers.ecmascript import TypeScriptParser
+from app.services.code_graph.parsers.ecmascript import TsxParser, TypeScriptParser
 from app.services.code_graph.parsers.registry import build_registry, default_registry
 from app.services.code_graph.types import (
     EDGE_CALLS,
@@ -18,6 +18,15 @@ from app.services.code_graph.types import (
     NODE_FUNCTION,
     NODE_METHOD,
 )
+
+
+def test_content_hash_changes_when_index_format_changes(monkeypatch):
+    from app.services.code_graph import indexer
+
+    current = indexer.content_hash(b"unchanged source")
+    monkeypatch.setattr(indexer, "INDEX_FORMAT_VERSION", "next")
+
+    assert indexer.content_hash(b"unchanged source") != current
 
 
 # ── Python parser ─────────────────────────────────────────────────────────────
@@ -103,6 +112,73 @@ def test_typescript_arrow_function_variable_is_function():
     result = TypeScriptParser().parse(file_path="a.ts", source=source)
     functions = _by_kind(result.nodes, NODE_FUNCTION)
     assert [f.name for f in functions] == ["arrowFn"]
+
+
+def test_typescript_higher_order_callback_variable_is_function():
+    source = b"const handleSubmit = useCallback(async () => { sendMessage() }, [])\n"
+
+    result = TypeScriptParser().parse(file_path="view.ts", source=source)
+
+    functions = _by_kind(result.nodes, NODE_FUNCTION)
+    assert [function.name for function in functions] == ["handleSubmit"]
+    assert any(
+        edge.kind == "calls"
+        and edge.src_local_id.startswith("handleSubmit#")
+        and edge.dst_name == "sendMessage"
+        for edge in result.edges
+    )
+
+
+def test_typescript_selector_result_is_not_misclassified_as_function():
+    source = b"const sendMessage = useStore((state) => state.sendMessage)\n"
+
+    result = TypeScriptParser().parse(file_path="view.ts", source=source)
+
+    send_message = next(node for node in result.nodes if node.name == "sendMessage")
+    assert send_message.kind != NODE_FUNCTION
+
+
+def test_typescript_parser_extracts_framework_agnostic_callback_references():
+    source = b"""
+function onMessage() {}
+function register(source: EventSource) {
+  source.addEventListener('message', onMessage)
+  return <InputBar onSubmit={onMessage} />
+}
+"""
+    result = TsxParser().parse(file_path="stream.tsx", source=source)
+
+    callback_edges = [
+        edge
+        for edge in result.edges
+        if edge.kind == "references" and edge.dst_name == "onMessage"
+    ]
+    assert len(callback_edges) == 2
+    assert all(edge.src_local_id.startswith("register#") for edge in callback_edges)
+    assert any(
+        edge.kind == "references"
+        and edge.dst_name == "InputBar"
+        and edge.src_local_id.startswith("register#")
+        for edge in result.edges
+    )
+
+
+def test_callback_reference_resolves_to_function_valued_symbol(tmp_path: Path):
+    (tmp_path / "view.tsx").write_text(
+        "export const InputBar = () => null\n"
+        "export function View() { return <InputBar /> }\n",
+        encoding="utf-8",
+    )
+
+    index = index_workspace(tmp_path)
+
+    nodes = {node.qualified_name: node.key for node in index.nodes}
+    assert any(
+        edge.kind == "references"
+        and edge.src_key == nodes["View"]
+        and edge.dst_key == nodes["InputBar"]
+        for edge in index.edges
+    )
 
 
 def test_javascript_object_literal_methods_are_methods():
@@ -236,6 +312,34 @@ def test_index_workspace_drops_ambiguous_names(tmp_path: Path):
     index = index_workspace(tmp_path)
     calls = [e for e in index.edges if e.kind == EDGE_CALLS]
     assert calls == []
+
+
+def test_index_workspace_prefers_same_file_call_when_name_exists_elsewhere(
+    tmp_path: Path,
+):
+    (tmp_path / "a.py").write_text(
+        "def helper():\n    pass\n\ndef caller():\n    return helper()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "b.py").write_text(
+        "def helper():\n    pass\n",
+        encoding="utf-8",
+    )
+
+    index = index_workspace(tmp_path)
+    caller = next(node for node in index.nodes if node.name == "caller")
+    local_helper = next(
+        node
+        for node in index.nodes
+        if node.name == "helper" and node.file_path == "a.py"
+    )
+
+    assert any(
+        edge.kind == EDGE_CALLS
+        and edge.src_key == caller.key
+        and edge.dst_key == local_helper.key
+        for edge in index.edges
+    )
 
 
 def test_index_workspace_respects_gitignore(tmp_path: Path):

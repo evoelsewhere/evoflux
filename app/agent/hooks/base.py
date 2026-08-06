@@ -28,8 +28,9 @@ class BaseAgentHook(ABC):
     Lifecycle events (observe)
     --------------------------
     ``on_start``, ``on_end``, ``before_agent``, ``after_agent``,
-    ``before_model``, ``on_model_delta``, ``after_model``, ``on_rate_limit``
-    — called by the agent loop at each phase.  May read or mutate state.
+    ``before_model``, ``on_model_delta``, ``after_model``, ``on_tool_blocked``,
+    ``on_rate_limit`` — called by the agent loop at each phase. May read or
+    mutate state.
 
     ``before_model`` receives the current :class:`~app.agent.state.ModelRequest`
     and may return a modified one via ``request.override(...)``::
@@ -91,6 +92,15 @@ class BaseAgentHook(ABC):
         self, ctx: "RunContext", state: "AgentState", response: AssistantMessage
     ) -> None:
         """Called after each full LLM response is assembled."""
+
+    async def on_tool_blocked(
+        self,
+        ctx: "RunContext",
+        state: "AgentState",
+        tool_call: "ToolCall",
+        reason: str,
+    ) -> None:
+        """Called when a tool contract rejects a call before execution."""
 
     async def before_completion(
         self, ctx: "RunContext", state: "AgentState", response: AssistantMessage

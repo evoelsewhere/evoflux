@@ -190,25 +190,12 @@ Body
         score = SkillAutoRoutingHook._score_message("suffix of the string", triggers)
         assert score == 0.0
 
-    @pytest.mark.parametrize(
-        "message",
-        [
-            "show the code graph",
-            "find callers of process_event",
-            "run change impact analysis",
-            "trace a dependency path through the code graph",
-        ],
-    )
-    def test_code_graph_navigation_common_intents_clear_default_threshold(
-        self, message
-    ):
-        """Keep the bundled skill's trigger list focused enough to auto-route."""
+    def test_code_graph_navigation_has_no_message_routing_triggers(self):
+        """Coding preloads graph guidance; user wording must not route it."""
         skill_dir = _builtin_skills_dir() / "code-graph-navigation"
         triggers = extract_triggers(skill_dir)
 
-        score = SkillAutoRoutingHook._score_message(message, triggers)
-
-        assert score > 0.3
+        assert triggers == []
 
     @pytest.mark.asyncio
     async def test_no_injection_when_no_human_message(self):

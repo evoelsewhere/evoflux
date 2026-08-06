@@ -8,12 +8,13 @@ function contract.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import Field
 
 from app.agent.code_query_observation import (
+    CODE_QUERY_DEFAULT_MAX_FILES,
     CodeQueryObservation,
     publish_code_query_observation,
 )
@@ -33,7 +34,9 @@ def _selected_files(result, max_files: int):  # noqa: ANN001
     return list(grouped.items())
 
 
-def _render_code_query(result, *, max_files: int = 6) -> str:  # noqa: ANN001
+def _render_code_query(
+    result, *, max_files: int = CODE_QUERY_DEFAULT_MAX_FILES
+) -> str:  # noqa: ANN001
     """Render current source grouped by file with structural evidence attached."""
     sections = [
         "Code exploration\n"
@@ -44,6 +47,26 @@ def _render_code_query(result, *, max_files: int = 6) -> str:  # noqa: ANN001
         f"dirty files: {result.dirty_files}\n"
         f"pending edges: {result.pending_edges}"
     ]
+    if result.flow:
+        sections.append(
+            "Flow\n"
+            + "\n".join(
+                f"- {hop.source} [{hop.source_location}] --{hop.relation}--> "
+                f"{hop.target} [{hop.target_location}]"
+                for hop in result.flow
+            )
+        )
+    if result.blast_radius:
+        lines = ["Blast radius"]
+        for impact in result.blast_radius:
+            lines.append(f"- {impact.root}")
+            if impact.references:
+                lines.extend(f"  - {reference}" for reference in impact.references)
+            else:
+                lines.append("  - no indexed inbound references")
+            if impact.truncated:
+                lines.append("  - additional references omitted")
+        sections.append("\n".join(lines))
     for (repository, file_path), candidates in _selected_files(result, max_files):
         display_path = f"{repository}/{file_path}" if repository else file_path
         lines = [f"## {display_path}"]
@@ -76,35 +99,12 @@ def _render_code_query(result, *, max_files: int = 6) -> str:  # noqa: ANN001
             "Limitations:\n" + "\n".join(f"- {item}" for item in result.limitations)
         )
     if result.next_read_ranges:
-        sections.append(
-            "Source not included: " + ", ".join(result.next_read_ranges)
-        )
+        sections.append("Source not included: " + ", ".join(result.next_read_ranges))
     if result.truncated:
         sections.append(
             "Output reached its budget. Query a named symbol or file for more source."
         )
     return "\n\n".join(sections)
-
-
-def _source_token_count(
-    selected_files: list[tuple[tuple[str | None, str], list[object]]],
-    workspaces: list[tuple[str, UUID | None, str]],
-) -> int:
-    roots_by_repository = {
-        label: Path(root) for root, _workspace_id, label in workspaces
-    }
-    total = 0
-    for (repository, file_path), _candidates in selected_files:
-        root = roots_by_repository.get(repository)
-        if root is None and len(workspaces) == 1:
-            root = Path(workspaces[0][0])
-        if root is None:
-            continue
-        try:
-            total += ((root / file_path).stat().st_size + 3) // 4
-        except OSError:
-            continue
-    return total
 
 
 async def _code_query(
@@ -117,14 +117,26 @@ async def _code_query(
             ),
         ),
     ],
+    operation: Annotated[
+        Literal["locate", "explain", "impact", "trace", "change"],
+        Field(
+            description=(
+                "Structural operation to perform: locate definitions, explain "
+                "implementation, inspect inbound impact, trace a flow, or analyze "
+                "working-tree changes."
+            )
+        ),
+    ] = "explain",
     max_files: Annotated[
         int,
         Field(
             ge=1,
-            le=12,
-            description="Maximum source files to include. Usually leave at 6.",
+            le=CODE_QUERY_DEFAULT_MAX_FILES,
+            description=(
+                "Maximum source files to include. Usually leave at the default."
+            ),
         ),
-    ] = 6,
+    ] = CODE_QUERY_DEFAULT_MAX_FILES,
 ) -> str:
     """Explore code and return current source plus structural relationships.
 
@@ -133,8 +145,11 @@ async def _code_query(
     a language or recent change is not represented by the graph.
     """
     from app.services.code_query_service import query_code_across_workspaces
+    from app.core.runtime_settings import load_runtime_settings
 
     sandbox = get_sandbox()
+    query_settings = load_runtime_settings().code_graph
+    policy = query_settings.query_policy
     roots = [
         str(sandbox.workspace_root),
         *getattr(sandbox, "extra_workspace_paths", []),
@@ -155,19 +170,28 @@ async def _code_query(
             db,
             workspaces=workspaces,
             query=query,
-            budget_tokens=min(12_000, max(2_500, max_files * 900)),
-            limit=min(30, max_files * 3),
+            intent=operation,
+            budget_tokens=min(
+                policy.max_budget_tokens,
+                max(
+                    policy.tool_min_budget_tokens,
+                    max_files * policy.tokens_per_file,
+                ),
+            ),
+            limit=min(
+                policy.max_candidates,
+                max_files * policy.candidates_per_file,
+            ),
+            enable_lsp=True,
+            settings=query_settings,
         )
 
-    selected = _selected_files(result, max_files)
     rendered = _render_code_query(result, max_files=max_files)
     publish_code_query_observation(
         CodeQueryObservation(
             strategy=result.strategy,
             freshness=result.freshness,
             cache_hit=result.cache_hit,
-            file_reads=len(selected),
-            source_tokens=_source_token_count(selected, workspaces),
             result_tokens=(len(rendered.encode("utf-8")) + 3) // 4,
         )
     )
@@ -179,15 +203,15 @@ code_query = Tool(
     name="code_query",
     description=(
         "Primary code explorer. Pass a natural-language question or symbol/file "
-        "names. One call returns current line-numbered source grouped by file, "
-        "relevant relationships and change impact, with explicit fallback when "
-        "the graph cannot cover a language or recent edits."
+        "names and select the structural operation. Each call returns current "
+        "line-numbered source grouped by file, relevant relationships and change "
+        "impact, with explicit fallback when the graph cannot cover a language "
+        "or recent edits."
     ),
     concurrency_safe=True,
     read_only=True,
     tiers=("coding", "aim"),
     deferred=False,
-    capabilities=("code_navigation",),
-    max_calls_per_batch=2,
+    capabilities=("code_navigation", "code_graph_navigation"),
     deduplicate_in_batch=True,
 )

@@ -83,6 +83,7 @@ class CodeQueryRequest(BaseModel):
     budget_tokens: int = Field(default=2500, ge=500, le=12000)
     freshness: Literal["fast", "balanced", "strict"] = "balanced"
     limit: int = Field(default=10, ge=1, le=30)
+    enable_lsp: bool = True
 
 
 class CodeQueryCandidateOut(BaseModel):

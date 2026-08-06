@@ -102,7 +102,13 @@ class EcmaScriptParser(TreeSitterParser):
                     )
         elif ntype == "variable_declarator":
             value = node.child_by_field_name("value")
-            if value is not None and value.type in _FUNCTION_VALUE_TYPES:
+            if value is not None and (
+                value.type in _FUNCTION_VALUE_TYPES
+                or (
+                    value.type == "call_expression"
+                    and self._call_has_function_argument(value)
+                )
+            ):
                 name_node = node.child_by_field_name("name")
                 if name_node is not None and name_node.type == "identifier":
                     return Definition(
@@ -120,6 +126,23 @@ class EcmaScriptParser(TreeSitterParser):
                     )
         return None
 
+    def _call_has_function_argument(self, call: Node) -> bool:
+        """Recognize functions wrapped by any higher-order call.
+
+        This covers memoized callbacks, decorators, and factory wrappers
+        structurally, without a framework-specific hook-name list.
+        """
+        arguments = call.child_by_field_name("arguments")
+        return bool(
+            arguments
+            and any(
+                child.type in _FUNCTION_VALUE_TYPES
+                and (body := child.child_by_field_name("body")) is not None
+                and body.type == "statement_block"
+                for child in arguments.named_children
+            )
+        )
+
     def call_target(self, node: Node, source: bytes) -> str | None:
         if node.type == "call_expression":
             func = node.child_by_field_name("function")
@@ -128,6 +151,46 @@ class EcmaScriptParser(TreeSitterParser):
             cons = node.child_by_field_name("constructor")
             return self._callee_name(cons, source) if cons is not None else None
         return None
+
+    def reference_targets(self, node: Node, source: bytes) -> list[str]:
+        """Capture named callbacks passed to APIs and JSX event properties.
+
+        These are references rather than direct calls: a callee or framework
+        controls when they run. This connects event, promise, subscription,
+        timer, and React flows without any framework-specific name list.
+        """
+        if node.type == "call_expression":
+            arguments = node.child_by_field_name("arguments")
+            if arguments is None:
+                return []
+            return [
+                node_text(child, source)
+                for child in arguments.named_children
+                if child.type == "identifier"
+            ]
+        if node.type == "jsx_attribute":
+            value = node.child_by_field_name("value") or next(
+                (
+                    child
+                    for child in node.named_children
+                    if child.type == "jsx_expression"
+                ),
+                None,
+            )
+            if value is None:
+                return []
+            return [
+                node_text(child, source)
+                for child in value.named_children
+                if child.type == "identifier"
+            ]
+        if node.type in {"jsx_opening_element", "jsx_self_closing_element"}:
+            component = next(
+                (child for child in node.named_children if child.type == "identifier"),
+                None,
+            )
+            return [node_text(component, source)] if component is not None else []
+        return []
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
         out: list[SuperType] = []

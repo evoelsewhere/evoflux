@@ -75,7 +75,7 @@ def _partition_tool_call_batch(
     tool_calls: list[ToolCall],
     run_tools: dict[str, Tool],
 ) -> tuple[list[ToolCall], list[tuple[ToolCall, str]]]:
-    """Apply explicit per-tool batch contracts without inferring tool purpose."""
+    """Apply explicit per-tool model-turn batch contracts."""
     allowed: list[ToolCall] = []
     blocked: list[tuple[ToolCall, str]] = []
     counts: dict[str, int] = {}
@@ -493,6 +493,9 @@ class Agent(Generic[TContext]):
         state.metadata["_refresh_deferred_tool_catalog"] = (
             _refresh_deferred_tool_catalog
         )
+        state.metadata["_tool_capabilities"] = {
+            name: tuple(sorted(tool.capabilities)) for name, tool in run_tools.items()
+        }
 
         # Me seed last_prompt_tokens from checkpointer so SummarizationHook
         # fires on session resume without call-site workaround
@@ -854,6 +857,9 @@ class Agent(Generic[TContext]):
             dispatch_calls, blocked_results = _partition_tool_call_batch(
                 tc_list, run_tools
             )
+            for tool_call, reason in blocked_results:
+                for hook in combined_hooks:
+                    await hook.on_tool_blocked(ctx, state, tool_call, reason)
             dispatch_waves = _build_tool_call_waves(dispatch_calls, run_tools)
 
             logger.debug(

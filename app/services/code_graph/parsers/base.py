@@ -152,6 +152,10 @@ class TreeSitterParser:
         (e.g. a DI-injected field), else ``None``."""
         return None
 
+    def reference_targets(self, node: Node, source: bytes) -> list[str]:
+        """Return statically named values passed across a dispatch boundary."""
+        return []
+
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
         """Return base classes/interfaces for a class definition node."""
         return []
@@ -304,6 +308,15 @@ class TreeSitterParser:
                         src_local_id=parent_local_id,
                         kind=EDGE_USES,
                         dst_name=used,
+                        line=node.start_point[0] + 1,
+                    )
+                )
+            for target in self.reference_targets(node, source):
+                result.edges.append(
+                    ExtractedEdge(
+                        src_local_id=parent_local_id,
+                        kind=EDGE_REFERENCES,
+                        dst_name=target,
                         line=node.start_point[0] + 1,
                     )
                 )
