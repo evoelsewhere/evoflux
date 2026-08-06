@@ -210,7 +210,7 @@ code_query = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
-    tiers=("coding", "aim"),
+    tiers=("coding",),
     deferred=False,
     capabilities=("code_navigation", "code_graph_navigation"),
     deduplicate_in_batch=True,

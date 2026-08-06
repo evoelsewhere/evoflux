@@ -126,8 +126,7 @@ export async function getExecution(
   return res.json()
 }
 
-/** Newest-first executions for a set of sessions — the AIM Pipelines run
- * table joins its per-run sessions with real workflow status in one call. */
+/** Newest-first executions for a set of sessions. */
 export async function listWorkflowExecutions(
   sessionIds: string[],
 ): Promise<WorkflowExecutionListResponse> {

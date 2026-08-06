@@ -304,7 +304,7 @@ class Agent(Generic[TContext]):
         its name to ``state.metadata["activated_deferred_tools"]``; the loop
         recomputes ``tool_defs`` each iteration so an activation takes effect
         starting the very next model call. Cuts baseline per-call token cost
-        for heavy/narrow tools (browser automation, AIM, LSP, ...) that most
+        for heavy/narrow tools (browser automation, LSP, ...) that most
         turns never touch.
 
         ``checkpointer`` is an optional :class:`~app.agent.checkpointer.Checkpointer`

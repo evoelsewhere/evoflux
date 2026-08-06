@@ -180,7 +180,7 @@ def test_terminal_run_tool_is_lead_only_all_modes():
 
     registry = _default_tool_registry()
     assert "terminal_run" in registry
-    for mode in ("work", "coding", "aim"):
+    for mode in ("work", "coding"):
         assert "terminal_run" in tier_tools(registry, mode=mode, role="lead")
         assert "terminal_run" not in tier_tools(registry, mode=mode, role="member")
 

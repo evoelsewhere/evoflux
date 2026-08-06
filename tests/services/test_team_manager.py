@@ -99,23 +99,6 @@ async def test_get_or_start_team_for_session_is_idempotent(monkeypatch):
     fake_team.start.assert_awaited_once()
 
 
-def test_existing_aim_blueprint_gets_managed_runtime_contract(tmp_path):
-    agents_dir = tmp_path / "aim"
-    agents_dir.mkdir()
-    converter = agents_dir / "aim-converter.md"
-    converter.write_text(
-        "---\nname: aim-converter\nrole: member\nmodel: custom:model\n---\nold body\n",
-        encoding="utf-8",
-    )
-
-    team_manager._ensure_aim_agents_installed(agents_dir)
-
-    content = converter.read_text(encoding="utf-8")
-    assert "model: custom:model" in content
-    assert "<!-- aim-runtime-contract:v2 -->" in content
-    assert "Phase transitions are workflow-owned" in content
-
-
 @pytest.mark.asyncio
 async def test_get_or_start_team_for_session_isolated_by_session(monkeypatch):
     first_team = _make_team("lead-a")
@@ -402,91 +385,6 @@ async def test_get_or_start_coding_team_uses_agents_dir_coding_agents(
     assert seen["path"] == agents_dir / "coding"
     assert seen["mode"] == "coding"
     assert seen["workspace"] == str(workspace.resolve())
-
-
-@pytest.mark.asyncio
-async def test_get_or_start_aim_team_uses_agents_dir_aim_agents(tmp_path, monkeypatch):
-    """AIM sessions load from AGENTS_DIR/aim, not AGENTS_DIR/coding — the
-    third roster directory alongside work (root) and coding."""
-    from app.core.config import settings
-
-    workspace = tmp_path / "target-repo"
-    workspace.mkdir()
-    agents_dir = tmp_path / "custom-agents"
-    (agents_dir / "aim").mkdir(parents=True)
-    # A lead file already present — the self-heal backfill (install_seed)
-    # must not fire; this test is about dispatch, not the backfill itself.
-    (agents_dir / "aim" / "aim-lead.md").write_text(
-        "---\nname: aim-lead\nrole: lead\nmodel: mock:model\n---\nbody\n"
-    )
-    monkeypatch.setattr(settings, "AGENTS_DIR", str(agents_dir))
-    fake_team = _make_team("aim-lead")
-
-    seen: dict[str, object] = {}
-
-    def fake_load(path, **kwargs):
-        seen["path"] = path
-        seen.update(kwargs)
-        return fake_team
-
-    monkeypatch.setattr(team_manager, "load_team_from_dir", fake_load)
-
-    result = await team_manager.get_or_start_coding_team(
-        str(workspace),
-        "session-a",
-        mode="aim",
-        read_only_paths=["/some/source/repo"],
-    )
-
-    assert result is fake_team
-    assert seen["path"] == agents_dir / "aim"
-    assert seen["mode"] == "aim"
-    assert fake_team.read_only_paths == ["/some/source/repo"]
-
-
-@pytest.mark.asyncio
-async def test_get_or_start_aim_team_and_coding_team_share_cache_by_key(
-    tmp_path, monkeypatch
-):
-    """AIM and coding teams share the same cache/eviction machinery (keyed
-    by workspace+session_id) rather than a duplicated parallel subsystem —
-    a distinct workspace path for each mode means no real collision risk."""
-    from app.core.config import settings
-
-    coding_workspace = tmp_path / "coding-project"
-    aim_workspace = tmp_path / "aim-target"
-    coding_workspace.mkdir()
-    aim_workspace.mkdir()
-    agents_dir = tmp_path / "custom-agents"
-    (agents_dir / "aim").mkdir(parents=True)
-    (agents_dir / "aim" / "aim-lead.md").write_text(
-        "---\nname: aim-lead\nrole: lead\nmodel: mock:model\n---\nbody\n"
-    )
-    monkeypatch.setattr(settings, "AGENTS_DIR", str(agents_dir))
-    coding_team = _make_team("coding-lead")
-    aim_team = _make_team("aim-lead")
-    teams = iter([coding_team, aim_team])
-    monkeypatch.setattr(
-        team_manager, "load_team_from_dir", lambda *args, **kwargs: next(teams)
-    )
-
-    got_coding = await team_manager.get_or_start_coding_team(
-        str(coding_workspace), "session-a", mode="coding"
-    )
-    got_aim = await team_manager.get_or_start_coding_team(
-        str(aim_workspace), "session-b", mode="aim"
-    )
-
-    assert got_coding is coding_team
-    assert got_aim is aim_team
-    assert (
-        team_manager.current_coding_team_for_session(str(coding_workspace), "session-a")
-        is coding_team
-    )
-    assert (
-        team_manager.current_coding_team_for_session(str(aim_workspace), "session-b")
-        is aim_team
-    )
 
 
 @pytest.mark.asyncio

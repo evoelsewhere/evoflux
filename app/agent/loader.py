@@ -314,18 +314,6 @@ def _default_tool_registry() -> dict[str, Tool]:
     )
     from app.agent.tools.builtin.visualize import visualize_read_me, show_widget
     from app.agent.tools.builtin.preview import preview_tool
-    from app.agent.tools.builtin.aim import (
-        aim_capture,
-        aim_claim,
-        aim_compare,
-        aim_execute,
-        aim_readiness,
-        aim_rules,
-        aim_suggestions,
-        aim_understanding,
-        aim_units,
-        aim_verify,
-    )
     from app.agent.tools.builtin.terminal import terminal_run
 
     registry: dict[str, Tool] = {
@@ -389,16 +377,6 @@ def _default_tool_registry() -> dict[str, Tool]:
         "static_diagnostics": static_diagnostics,
         "visualize_read_me": visualize_read_me,
         "show_widget": show_widget,
-        "aim_units": aim_units,
-        "aim_capture": aim_capture,
-        "aim_compare": aim_compare,
-        "aim_readiness": aim_readiness,
-        "aim_rules": aim_rules,
-        "aim_suggestions": aim_suggestions,
-        "aim_understanding": aim_understanding,
-        "aim_claim": aim_claim,
-        "aim_execute": aim_execute,
-        "aim_verify": aim_verify,
         "terminal_run": terminal_run,
     }
     # Merge MCP tools from healthy servers. Names follow ``mcp_<server>_<tool>``

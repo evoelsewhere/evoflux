@@ -141,22 +141,16 @@ class CodeQueryPolicySettings(BaseModel):
     graph_confidence_coverage_weight: float = Field(default=0.2, ge=0.0, le=1.0)
     graph_confidence_cap: float = Field(default=0.96, ge=0.0, le=1.0)
     overlay_confidence_base: float = Field(default=0.5, ge=0.0, le=1.0)
-    overlay_confidence_coverage_weight: float = Field(
-        default=0.45, ge=0.0, le=1.0
-    )
+    overlay_confidence_coverage_weight: float = Field(default=0.45, ge=0.0, le=1.0)
     overlay_confidence_cap: float = Field(default=0.95, ge=0.0, le=1.0)
-    overlay_relationship_confidence: float = Field(
-        default=0.86, ge=0.0, le=1.0
-    )
+    overlay_relationship_confidence: float = Field(default=0.86, ge=0.0, le=1.0)
     lsp_confidence: float = Field(default=0.92, ge=0.0, le=1.0)
     lexical_confidence_base: float = Field(default=0.5, ge=0.0, le=1.0)
     lexical_confidence_divisor: float = Field(default=400.0, gt=0.0)
     lexical_confidence_cap: float = Field(default=0.85, ge=0.0, le=1.0)
     anchor_score_base: float = Field(default=68.0, ge=0.0)
     anchor_confidence_base: float = Field(default=0.68, ge=0.0, le=1.0)
-    anchor_confidence_coverage_weight: float = Field(
-        default=0.3, ge=0.0, le=1.0
-    )
+    anchor_confidence_coverage_weight: float = Field(default=0.3, ge=0.0, le=1.0)
     anchor_confidence_cap: float = Field(default=0.9, ge=0.0, le=1.0)
     graph_neighbor_confidence: float = Field(default=0.9, ge=0.0, le=1.0)
     partial_confidence_cap: float = Field(default=0.78, ge=0.0, le=1.0)
@@ -215,7 +209,7 @@ class CodeGraphSettings(BaseModel):
     # changes. Allows final writes to settle so only one reindex fires.
     watch_resume_delay_ms: int = 5000
     # Build the index automatically the first time a never-indexed workspace
-    # is opened in a coding/aim session (background job; UI shows progress).
+    # is opened in a coding session (background job; UI shows progress).
     auto_index_enabled: bool = True
     # Above this dirty-file count, parse only files proven relevant by lexical
     # retrieval and leave the rest to background indexing.

@@ -136,14 +136,6 @@ async def _start_optional_services(app: FastAPI, process_started: float) -> None
         )
     _log_startup_timing("code_graph_watcher", phase_started, process_started)
 
-    phase_started = perf_counter()
-    try:
-        await app.state.aim_index_watcher.start()
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "optional_service_start_failed service=aim_index_watcher error={}", exc
-        )
-    _log_startup_timing("aim_index_watcher", phase_started, process_started)
     app.state.optional_services_ready = True
     logger.info(
         "optional_services_ready total_ms={}",
@@ -221,11 +213,6 @@ async def lifespan(app: FastAPI):
     set_global_watcher(code_graph_watcher)
     app.state.code_graph_watcher = code_graph_watcher
 
-    from app.services.aim.watcher import AimIndexWatcher, set_global_aim_watcher
-
-    aim_index_watcher = AimIndexWatcher(db_factory=async_session_factory)
-    set_global_aim_watcher(aim_index_watcher)
-    app.state.aim_index_watcher = aim_index_watcher
     app.state.optional_services_ready = False
 
     # Start WebBridge extension cleanup task
@@ -257,7 +244,6 @@ async def lifespan(app: FastAPI):
     if not optional_startup_task.done():
         optional_startup_task.cancel()
     await asyncio.gather(optional_startup_task, return_exceptions=True)
-    await aim_index_watcher.stop()
     await code_graph_watcher.stop()
     webbridge_cleanup_task = getattr(app.state, "webbridge_cleanup_task", None)
     if webbridge_cleanup_task:

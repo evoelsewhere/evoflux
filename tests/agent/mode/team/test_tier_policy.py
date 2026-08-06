@@ -130,8 +130,8 @@ class TestDefaultDeferredTools:
         from app.agent.loader import _default_tool_registry
 
         registry = _default_tool_registry()
-        assert registry["preview"].tiers == frozenset({"work", "coding", "aim"})
-        for mode in ("work", "coding", "aim"):
+        assert registry["preview"].tiers == frozenset({"work", "coding"})
+        for mode in ("work", "coding"):
             assert "preview" in tier_tools(registry, mode=mode, role="lead")
             assert "preview" in EVOFLUX_prompt_for_mode(mode)
 
@@ -140,8 +140,6 @@ class TestDefaultDeferredTools:
 
         registry = _default_tool_registry()
         expected = {
-            "aim_units",
-            "aim_compare",
             "terminal_run",
             "worktree_start",
             "worktree_finish",
@@ -203,13 +201,13 @@ class TestDefaultDeferredTools:
             "update_goal",
             "write",
         }
-        for mode in ("work", "coding", "aim"):
+        for mode in ("work", "coding"):
             granted = set(tier_tools(registry, mode=mode, role="lead"))
             granted.update({"skill", "todo_manage", "schedule_task", "note"})
             eager = {name for name in granted if not registry[name].deferred}
             assert 10 <= len(eager) <= 16
             expected = set(expected_core)
-            if mode in {"coding", "aim"}:
+            if mode == "coding":
                 expected.add("code_query")
             assert eager == expected
 
@@ -224,8 +222,7 @@ class TestDefaultDeferredTools:
 
         work_tools = set(tier_tools(registry, mode="work", role="lead"))
         assert work_tools.isdisjoint(graph_tools)
-        for mode in ("coding", "aim"):
-            assert graph_tools <= set(tier_tools(registry, mode=mode, role="lead"))
+        assert graph_tools <= set(tier_tools(registry, mode="coding", role="lead"))
 
     def test_actual_coding_lead_payload_has_seventeen_eager_tools(self):
         from app.agent.builtin_prompts import tier_tools

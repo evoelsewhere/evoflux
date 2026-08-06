@@ -112,8 +112,8 @@ interface SidebarProps {
   currentSessionId?: string;
   onCommandPalette?: () => void;
   onNewChat?: () => void;
-  /** Current mode — 'work', 'coding', or 'aim' */
-  mode?: 'work' | 'coding' | 'aim';
+  /** Current mode — 'work' or 'coding' */
+  mode?: 'work' | 'coding';
   /** Mobile only: whether the overlay drawer is open */
   mobileOpen?: boolean;
   /** Mobile only: called when the drawer should close (backdrop tap, session select) */
@@ -136,8 +136,7 @@ export function Sidebar({
   useModalFocus(isMobile && mobileOpen, onMobileClose);
   const navigate = useNavigate();
   const toggleScheduler = useUIStore((s) => s.toggleScheduler);
-  // Server-filtered to work — coding/aim sessions live in their own
-  // sidebars (per-run aim sessions would otherwise flood this list).
+  // Server-filtered to work — coding sessions live in their own sidebar.
   const sessions = useTeamSessionsQuery("work");
   const folders = useSessionFoldersQuery("work");
   const deleteSession = useDeleteTeamSessionMutation();

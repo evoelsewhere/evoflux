@@ -179,20 +179,9 @@ async def reindex_workspace(
     :func:`_reindex_incremental`.
     """
     report = progress_cb or _noop_progress
-    # AIM source workspaces (legacy estates) carry rulebook-defined
-    # structural extractors — regex parsers for languages tree-sitter
-    # doesn't cover (aim-framework.md §3.9). Everyone else gets [] and the
-    # registry is exactly the builtin set. Imported lazily: the aim domain
-    # depends on code_graph, not the other way around.
-    from app.services.aim.extractors import (
-        parser_strategy_for_workspace,
-        structural_parsers_for_workspace,
-    )
-
-    parser_strategy = await parser_strategy_for_workspace(db, workspace_id)
-    extra_parsers = await structural_parsers_for_workspace(db, workspace_id)
-    builtin_languages = [] if parser_strategy in {"structural", "none"} else languages
-    registry = build_registry(builtin_languages, extra_parsers=extra_parsers)
+    # Extra structural parsers are reserved for future project rulebooks;
+    # the registry is exactly the builtin language set.
+    registry = build_registry(languages, extra_parsers=[])
     if incremental:
         return await _reindex_incremental(
             db,

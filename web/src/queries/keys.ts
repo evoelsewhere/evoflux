@@ -119,13 +119,6 @@ export const queryKeys = {
     codeGraphSearch: (id: string, query: string) =>
       ['projects', 'detail', id, 'code-graph-search', query] as const,
     codeGraphData: (id: string) => ['projects', 'detail', id, 'code-graph-data'] as const,
-    aimAll: () => ['projects', 'aim'] as const,
-    aimMeta: () => ['projects', 'aim', 'meta'] as const,
-    aimSummary: (id: string) => ['projects', 'detail', id, 'aim-summary'] as const,
-    aimUnits: (id: string, wave?: number) =>
-      ['projects', 'detail', id, 'aim-units', wave ?? null] as const,
-    aimRun: (id: string, runId: string) =>
-      ['projects', 'detail', id, 'aim-run', runId] as const,
   },
   git: {
     reviews: (scope?: string) =>

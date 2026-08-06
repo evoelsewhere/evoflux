@@ -298,9 +298,8 @@ class AgentTeam:
         # a server restart still enforces tag-based tool scoping — see
         # member.py's excluded_tools computation for the "webbridge" tag.
         session_tags: frozenset[str] | None = None,
-        # AIM mode only: paths (base-source repos) the team's filesystem
-        # tools must never write to, even though they sit alongside the
-        # writable target/KB repos in extra_workspace_paths. Threaded into
+        # Paths the team's filesystem tools must never write to, even
+        # though they may sit in extra_workspace_paths. Threaded into
         # SandboxConfig.read_only_paths (app/agent/sandbox.py) the same way
         # extra_workspace_paths already is.
         read_only_paths: list[str] | None = None,
@@ -1428,7 +1427,7 @@ class AgentTeam:
             )
 
         workspace_name = (
-            Path(workspace).name if mode in ("coding", "aim") and workspace else None
+            Path(workspace).name if mode == "coding" and workspace else None
         )
         notification_title = (
             f"Session completed - {workspace_name}"

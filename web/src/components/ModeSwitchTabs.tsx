@@ -1,30 +1,22 @@
 /**
- * ModeSwitchTabs — the canonical Work | Coding | AIM control. Desktop uses
+ * ModeSwitchTabs — the canonical Work | Coding control. Desktop uses
  * one root-owned instance that survives route changes; transient mobile
  * drawers reuse the same control. ModeSwitchRail is its collapsed variant.
  */
 
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { motion } from 'framer-motion'
-import { CodeXml, createLucideIcon, Monitor, type LucideIcon } from 'lucide-react'
+import { CodeXml, Monitor, type LucideIcon } from 'lucide-react'
 import type { KeyboardEvent } from 'react'
 import { useMotionPreset } from '@/lib/motion'
 import { loadModeRoute } from '@/lib/mode-route'
 import { cn } from '@/lib/utils'
 
-export type AppMode = 'work' | 'coding' | 'aim'
-
-const AimGrowth = createLucideIcon('AimGrowth', [
-  ['path', { d: 'M3 19c4.5 0 6.5-1.8 9-5l3-4', key: 'lower-rise' }],
-  ['polyline', { points: '11 10 15 10 15 14', key: 'lower-arrow' }],
-  ['path', { d: 'M4 11c4.5 0 7-2 10-5l6-4', key: 'upper-rise' }],
-  ['polyline', { points: '16 2 20 2 20 6', key: 'upper-arrow' }],
-])
+export type AppMode = 'work' | 'coding'
 
 const TABS: Array<{ mode: AppMode; label: string; Icon: LucideIcon; to: string }> = [
   { mode: 'work', label: 'Work', Icon: Monitor, to: '/' },
   { mode: 'coding', label: 'Coding', Icon: CodeXml, to: '/coding' },
-  { mode: 'aim', label: 'AIM', Icon: AimGrowth, to: '/aim' },
 ]
 
 function ModeIcon({
@@ -121,11 +113,11 @@ export function ModeSwitchTabs({
 
   return (
     // The strip is a size container: labels only render when there's room
-    // for all three (below ~12.5rem the resizable sidebars would otherwise
+    // for both modes (below ~12.5rem the resizable sidebars would otherwise
     // clip the text), collapsing gracefully to icons + tooltips.
     <div className={cn('@container/modeswitch', className)}>
       <div
-        className="relative grid h-10 grid-cols-3 items-center rounded-xl bg-(--bg-key)/55 p-1 shadow-[inset_0_0_0_1px_var(--color-border)]"
+        className="relative grid h-10 grid-cols-2 items-center rounded-xl bg-(--bg-key)/55 p-1 shadow-[inset_0_0_0_1px_var(--color-border)]"
         role="tablist"
         aria-label="Application mode"
         onKeyDown={onTabListKeyDown}
@@ -134,7 +126,7 @@ export function ModeSwitchTabs({
           data-testid="mode-switch-indicator"
           data-active-mode={active}
           aria-hidden="true"
-          className="pointer-events-none absolute bottom-1 left-1 top-1 w-[calc((100%-0.5rem)/3)] rounded-lg bg-(--bg-card) shadow-[0_1px_4px_rgba(0,0,0,0.08),0_0_0_1px_var(--color-border)]"
+          className="pointer-events-none absolute bottom-1 left-1 top-1 w-[calc((100%-0.5rem)/2)] rounded-lg bg-(--bg-card) shadow-[0_1px_4px_rgba(0,0,0,0.08),0_0_0_1px_var(--color-border)]"
           initial={false}
           animate={{ x: `${Math.max(0, activeIndex) * 100}%` }}
           transition={preset.spring}

@@ -75,7 +75,7 @@ const AskUserQuestionForm = forwardRef<
     setReplying(true)
     setReplyError(null)
     try {
-      // Prefer the event session_id (matches AimOverviewPanel) so replies
+      // Prefer the event session_id so replies
       // hit the service that owns the pending batch, not a switched lead id.
       const replySessionId = askUserQuestion.sessionId || sessionId
       await replyAskUserQuestion(
