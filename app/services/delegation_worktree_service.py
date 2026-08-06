@@ -45,14 +45,12 @@ def resolve_isolation(
     if requested == "shared":
         return "shared"
     if requested == "worktree":
-        if team_mode not in {"coding", "aim"}:
-            raise ValueError(
-                "Worktree isolation is only available in coding/AIM teams."
-            )
+        if team_mode != "coding":
+            raise ValueError("Worktree isolation is only available in coding teams.")
         return "worktree"
     if requested != "auto":
         raise ValueError(f"Unknown delegation isolation policy: {requested!r}.")
-    if team_mode in {"coding", "aim"} and (target_paths or target_repos):
+    if team_mode == "coding" and (target_paths or target_repos):
         return "worktree"
     return "shared"
 

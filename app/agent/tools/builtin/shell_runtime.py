@@ -12,8 +12,8 @@ Mirrors the design of opencode's ``shell.ts``:
 - Exposes ``preferred()`` (exact user preference, may be None) and
   ``acceptable()`` (always non-None, safe to pass to subprocess).
 - Exposes ``require_bash()`` for callers that must run POSIX ``.sh``
-  scripts (AIM runners/verification). That path rejects the Windows WSL
-  ``bash.exe`` stub and prefers Git Bash.
+  scripts. That path rejects the Windows WSL ``bash.exe`` stub and prefers
+  Git Bash.
 
 Both are lazy ``functools.cached_property``-style singletons — detected once
 per process, cached forever.  Tests can override by patching
@@ -289,7 +289,7 @@ def require_bash() -> str:
         return _CACHED_BASH
 
     raise BashNotFoundError(
-        "No usable bash found for AIM runners/verification. "
+        "No usable bash found for POSIX .sh scripts. "
         "Install Git for Windows (Git Bash) or add a real bash to PATH "
         "(the Windows System32 WSL bash stub is not accepted). "
         "Optionally set EVOFLUX_BASH to the bash.exe path."

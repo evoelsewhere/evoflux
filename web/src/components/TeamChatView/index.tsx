@@ -192,7 +192,7 @@ function PanelLoadingFallback() {
 
 interface TeamChatViewProps {
   sessionId?: string
-  mode?: 'work' | 'coding' | 'aim'
+  mode?: 'work' | 'coding'
   workspace?: string | null
   codingSessionLoading?: boolean
 }
@@ -214,11 +214,6 @@ interface PendingCodeReviewStart {
 }
 
 export function TeamChatView({ sessionId, mode = 'work', workspace = null, codingSessionLoading = false }: TeamChatViewProps) {
-  // A handful of child components/hooks (file refs, command palette,
-  // scheduler) only distinguish work vs. coding — aim (the post-run
-  // Discussion panel) behaves like work for them: session-keyed, no
-  // workspace-file chrome. Everywhere else in this file aim falls through
-  // the non-coding branch of each `mode === 'coding'` check.
   const workOrCodingMode: 'work' | 'coding' = mode === 'coding' ? 'coding' : 'work'
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -528,9 +523,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     }
   }, [activeSessionId, persistedWebBridgeEnabled, sessionTags, webBridgePolicyEnabled])
   // Lead capabilities — used to drive composer affordances (slash menu).
-  // aim sessions are workspace-bound like coding (primary workspace = the
-  // target repo) — the backend requires a workspace on every aim message.
-  const agentWorkspace = mode === 'coding' || mode === 'aim' ? workspace : null
+  const agentWorkspace = mode === 'coding' ? workspace : null
   const workWorkspaceQuery = useQuery({
     queryKey: queryKeys.team.workspaceRoot(validWorkSessionId ?? ''),
     queryFn: () => getSessionWorkspaceRoot(validWorkSessionId as string),
@@ -548,7 +541,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const { data: teamAgentsData, isLoading: teamAgentsLoading } = useTeamAgentsQuery(
     agentWorkspace,
     hasCodingWorkspace,
-    mode === 'aim' ? 'aim' : 'coding',
+    'coding',
   )
   const leadAgent = teamAgentsData?.agents?.find((a) => a.is_lead)
   const leadCapabilities: AgentCapabilitiesType | undefined = leadAgent?.capabilities
@@ -643,10 +636,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const isEmptyIdleSession = useCallback(() => useTeamStore.getState().isEmptyIdleSession(), [])
 
   const handleNewSession = useCallback(() => {
-    // aim sessions are per-run, created by the Pipelines Run button —
-    // there is no "new chat" concept in the Discussion panel, and this
-    // flow doesn't thread project_id through resolveTeamSession.
-    if (mode === 'aim') return
     if (isEmptyIdleSession()) return
     abortRef.current?.abort()
     abortRef.current = null
@@ -1207,9 +1196,8 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   // ── Render ─────────────────────────────────────────────────────────────────
 
   // One sidebar instance per mode — the inactive mode's sidebar (and its
-  // queries) stays unmounted instead of being CSS-hidden. aim-chat has no
-  // in-chat sidebar at all (AimSidebar lives in the AIM layout).
-  const desktopSidebar = !isMobile && mode !== 'aim'
+  // queries) stays unmounted instead of being CSS-hidden.
+  const desktopSidebar = !isMobile
     ? mode === 'coding'
       ? (
         <CodingSidebar
@@ -1235,7 +1223,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     : null
   // On mobile the sidebar is a position:fixed overlay drawer; AppShell
   // renders it inside the body row for z-stacking, as before.
-  const mobileSidebar = isMobile && mode !== 'aim'
+  const mobileSidebar = isMobile
     ? mode === 'coding'
       ? (
         <CodingSidebar
@@ -1871,7 +1859,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             onSessionModelSettingsChange={setSessionModelSettings}
             agentNames={agentNames}
             agentWorkspace={agentWorkspace}
-            agentMode={mode === 'aim' ? 'aim' : 'coding'}
+            agentMode="coding"
             todos={todos}
             todosOpen={todosOpen}
             onTodosOpenChange={setTodosOpen}

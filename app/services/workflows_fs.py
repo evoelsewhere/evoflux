@@ -1,10 +1,8 @@
 """Workflow file discovery + CRUD (plan §4.1, F15).
 
 Same roots/precedence as skills/commands: workspace → global → builtin,
-first source wins per name. The builtin tier has two directories —
-generic examples and the AIM pipeline library — searched in that order.
-Discovery is mtime-cached per directory like ``commands.py``; writes are
-atomic like the skills routes.
+first source wins per name. Discovery is mtime-cached per directory like
+``commands.py``; writes are atomic like the skills routes.
 """
 
 from __future__ import annotations
@@ -33,7 +31,6 @@ def _builtin_dirs() -> list[Path]:
     app_dir = Path(__file__).resolve().parents[1]
     return [
         app_dir / "agent" / "builtin_workflows",
-        app_dir / "agent" / "builtin_aim" / "workflows",
     ]
 
 

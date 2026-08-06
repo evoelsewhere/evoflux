@@ -1,7 +1,7 @@
 """The currently-driving workflow execution id, as a context variable.
 
 Set by :class:`~app.workflow.runner.WorkflowRunner` around an execution's
-drive loop so inline tool nodes (e.g. ``aim_compare``/``aim_units``) can stamp
+drive loop so inline tool nodes can stamp
 the execution onto the rows they write, without threading the id through every
 tool signature. ``None`` outside a workflow run — a plain slash-command call
 records no execution id, which is correct.

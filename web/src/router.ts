@@ -11,9 +11,6 @@ const TeamLayout = lazy(() =>
 const CodingLayout = lazy(() =>
   import('./routes/work').then((module) => ({ default: module.CodingLayout })),
 )
-const AimLayout = lazy(() =>
-  import('./routes/aim').then((module) => ({ default: module.AimLayout })),
-)
 const TelemetryPage = lazy(() =>
   import('./routes/telemetry').then((module) => ({ default: module.TelemetryPage })),
 )
@@ -78,42 +75,6 @@ const codingFocusSessionRoute = createRoute({
   component: () => null,
 })
 
-// /aim layout — AIM mode: sidebar → project → feature → main content
-// (documents/plans/aim-mode-shell-ux-spec.md v2.2). The layout component
-// reads $projectId/$feature itself via useParams(strict: false); the child
-// routes exist to shape the URL space.
-const aimLayoutRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/aim',
-  component: AimLayout,
-})
-const aimIndexRoute = createRoute({
-  getParentRoute: () => aimLayoutRoute,
-  path: '/',
-  component: () => null,
-})
-const aimProjectRoute = createRoute({
-  getParentRoute: () => aimLayoutRoute,
-  path: '$projectId',
-  component: Outlet,
-})
-const aimProjectIndexRoute = createRoute({
-  getParentRoute: () => aimProjectRoute,
-  path: '/',
-  component: () => null,
-})
-const aimFeatureRoute = createRoute({
-  getParentRoute: () => aimProjectRoute,
-  path: '$feature',
-  component: () => null,
-})
-// §3.2 — deep-link to a specific run (report + Discussion)
-const aimRunRoute = createRoute({
-  getParentRoute: () => aimProjectRoute,
-  path: 'runs/$runId',
-  component: () => null,
-})
-
 // /telemetry — standalone observability page (span aggregates & latency)
 const telemetryRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -133,10 +94,6 @@ const routeTree = rootRoute.addChildren([
   codingLayoutRoute.addChildren([
     codingIndexRoute,
     codingFocusRoute.addChildren([codingFocusIndexRoute, codingFocusSessionRoute]),
-  ]),
-  aimLayoutRoute.addChildren([
-    aimIndexRoute,
-    aimProjectRoute.addChildren([aimProjectIndexRoute, aimFeatureRoute, aimRunRoute]),
   ]),
   telemetryRoute,
   schedulerRoute,

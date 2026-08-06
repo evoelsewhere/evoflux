@@ -97,7 +97,7 @@ class TaskSpec(BaseModel):
         default="auto",
         description=(
             "Lead-selected workspace isolation. Auto uses a worktree for mutable "
-            "coding/AIM tasks and shared workspace for read-only coordination."
+            "coding tasks and shared workspace for read-only coordination."
         ),
     )
     resolved_isolation: Literal["shared", "worktree"] = Field(

@@ -44,9 +44,7 @@ async def _pending_id(svc: AskUserService) -> str:
 
 
 @pytest.mark.asyncio
-async def test_reply_unblocks_and_emits_question_replied(
-    client, registered_service
-):
+async def test_reply_unblocks_and_emits_question_replied(client, registered_service):
     task = asyncio.create_task(
         registered_service.ask(
             [QuestionSpec(question="Ship it?", options=["yes", "no"])]
@@ -100,7 +98,7 @@ async def test_reply_unknown_session_404(client):
 
 @pytest.mark.asyncio
 async def test_pending_and_reply_via_lead_stream_for_member(client):
-    """AIM / lead-session clients must see member-owned ask_user batches."""
+    """Lead-session clients must see member-owned ask_user batches."""
     member = AskUserService(session_id="member-sess", stream_session_id="lead-sess")
     token = set_ask_user_service(member)
     try:
@@ -117,9 +115,7 @@ async def test_pending_and_reply_via_lead_stream_for_member(client):
         assert body["questions"][0]["session_id"] == "member-sess"
         assert body["questions"][0]["items"][0]["question"] == "Gate?"
 
-        with patch(
-            "app.services.memory_stream_store.push_event", new=AsyncMock()
-        ):
+        with patch("app.services.memory_stream_store.push_event", new=AsyncMock()):
             res = await client.post(
                 f"/api/team/lead-sess/questions/{req_id}/reply",
                 json={"answers": ["a"]},

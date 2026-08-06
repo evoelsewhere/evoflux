@@ -1,5 +1,5 @@
 """Policy (hash/manifest/lint) + filesystem discovery, incl. the builtin
-corpus: every shipped YAML (generic + AIM library) must parse clean."""
+corpus: every shipped YAML must parse clean."""
 
 from __future__ import annotations
 
@@ -68,113 +68,14 @@ edges:
 
 
 def test_builtin_corpus_parses_clean():
-    """Every shipped builtin workflow (generic + the AIM library) must be a
-    valid v1 definition whose name matches its file stem."""
+    """Every shipped builtin workflow must be a valid v1 definition whose
+    name matches its file stem."""
     app_dir = Path(__file__).resolve().parents[2] / "app"
     corpus = list((app_dir / "agent" / "builtin_workflows").glob("*.yaml"))
-    corpus += list((app_dir / "agent" / "builtin_aim" / "workflows").glob("*.yaml"))
-    assert len(corpus) >= 8  # 2 generic + 6 aim
+    assert len(corpus) >= 1
     for path in corpus:
         definition = parse_definition(path.read_text(encoding="utf-8"))
         assert definition.name == path.stem, path
-
-
-def test_aim_action_workflows_have_readiness_preflight():
-    app_dir = Path(__file__).resolve().parents[2] / "app"
-    workflow_dir = app_dir / "agent" / "builtin_aim" / "workflows"
-    for path in sorted(workflow_dir.glob("*.yaml")):
-        if path.stem == "aim-assess":
-            continue
-        definition = parse_definition(path.read_text(encoding="utf-8"))
-        assert any(
-            node.kind == "tool" and node.tool == "aim_readiness"
-            for node in definition.nodes
-        ), path
-        if path.stem != "aim-suggest-workflow":
-            claim_actions = {
-                node.args.get("action")
-                for node in definition.nodes
-                if node.kind == "tool" and node.tool == "aim_claim"
-            }
-            assert {"acquire", "release"} <= claim_actions, path
-
-
-def test_aim_workflows_have_single_entry_node():
-    app_dir = Path(__file__).resolve().parents[2] / "app"
-    workflow_dir = app_dir / "agent" / "builtin_aim" / "workflows"
-    for path in sorted(workflow_dir.glob("*.yaml")):
-        definition = parse_definition(path.read_text(encoding="utf-8"))
-        assert definition.entry_nodes() == [definition.nodes[0].id], path
-
-
-def test_aim_conversion_workflows_commit_target_changes():
-    app_dir = Path(__file__).resolve().parents[2] / "app"
-    workflow_dir = app_dir / "agent" / "builtin_aim" / "workflows"
-    for name in ("aim-convert-unit", "aim-convert-wave"):
-        raw = (workflow_dir / f"{name}.yaml").read_text(encoding="utf-8")
-        normalized = " ".join(raw.split())
-        assert "target-repo changes before returning" in normalized, name
-
-
-def test_aim_test_compare_executes_actuals_deterministically():
-    app_dir = Path(__file__).resolve().parents[2] / "app"
-    path = app_dir / "agent" / "builtin_aim" / "workflows" / "aim-test-compare.yaml"
-    definition = parse_definition(path.read_text(encoding="utf-8"))
-    run_node = next(node for node in definition.nodes if node.id == "run")
-    assert run_node.kind == "tool"
-    assert run_node.tool == "aim_execute"
-
-
-def test_aim_assess_rework_requires_second_approval():
-    app_dir = Path(__file__).resolve().parents[2] / "app"
-    path = app_dir / "agent" / "builtin_aim" / "workflows" / "aim-assess.yaml"
-    definition = parse_definition(path.read_text(encoding="utf-8"))
-
-    approve_rework = next(
-        node for node in definition.nodes if node.id == "approve_rework"
-    )
-    assert approve_rework.kind == "gate"
-    assert approve_rework.choices == ["approve", "stop"]
-    edges = {(edge.from_, edge.to, edge.when) for edge in definition.edges}
-    assert ("rework", "approve_rework", None) in edges
-    assert ("approve_rework", "advance_phase", "approve") in edges
-    assert ("approve_rework", "rework_stopped", "stop") in edges
-
-
-def test_aim_assess_offers_suggestion_generation_after_approval():
-    app_dir = Path(__file__).resolve().parents[2] / "app"
-    path = app_dir / "agent" / "builtin_aim" / "workflows" / "aim-assess.yaml"
-    definition = parse_definition(path.read_text(encoding="utf-8"))
-
-    suggest = next(node for node in definition.nodes if node.id == "suggest_next")
-    generate = next(
-        node for node in definition.nodes if node.id == "generate_suggestions"
-    )
-    edges = {(edge.from_, edge.to, edge.when) for edge in definition.edges}
-
-    assert suggest.kind == "gate"
-    assert suggest.choices == ["generate", "skip"]
-    assert generate.kind == "tool" and generate.tool == "aim_suggestions"
-    assert ("advance_phase", "suggest_next", None) in edges
-    assert ("suggest_next", "generate_suggestions", "generate") in edges
-    assert ("suggest_next", "done", "skip") in edges
-
-
-def test_aim_action_workflow_outputs_distinguish_readiness_from_outcome():
-    app_dir = Path(__file__).resolve().parents[2] / "app"
-    workflow_dir = app_dir / "agent" / "builtin_aim" / "workflows"
-    for path in sorted(workflow_dir.glob("*.yaml")):
-        if path.stem == "aim-assess":
-            continue
-        definition = parse_definition(path.read_text(encoding="utf-8"))
-        assert "readiness_status" in definition.outputs, path
-        assert "blockers" in definition.outputs, path
-        assert "status" not in definition.outputs, path
-
-    compare = parse_definition(
-        (workflow_dir / "aim-test-compare.yaml").read_text(encoding="utf-8")
-    )
-    assert {"verdict", "report_path", "decision"} <= compare.outputs.keys()
 
 
 def test_discovery_precedence_and_crud(tmp_path, monkeypatch):
@@ -198,7 +99,7 @@ def test_discovery_precedence_and_crud(tmp_path, monkeypatch):
     names = {wf.name: wf.root for wf in discover_workflows(str(workspace))}
     assert names["dupe"] == "workspace"
     assert names["second-opinion"] == "builtin"
-    assert names["aim-test-compare"] == "builtin"
+    assert "aim-test-compare" not in names
 
     # Invalid file still listed, with errors.
     (workspace / ".evoflux" / "workflows" / "broken.yaml").write_text(

@@ -22,7 +22,7 @@ class ProjectResponse(BaseModel):
     name: str
     description: str | None = None
     settings: dict
-    # "coding" (default) | "aim" — see documents/research/aim-framework.md §3.3.
+    # Coding-only project kind (schema compatibility column).
     kind: str = "coding"
     workspaces: list[ProjectWorkspaceItem]
     created_at: str

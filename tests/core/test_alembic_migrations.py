@@ -2,10 +2,10 @@
 
 Runs ``alembic upgrade head`` against a temp database using the real
 ``app/alembic.ini`` and asserts the latest schema state lands (currently:
-WebBridge pairing, interaction, tab-binding, Teach Mode state, AIM unit
-recovery, delegation tasks, Git server connections, the Work mode rename,
-retired session-section cleanup, durable goals, and durable workflow gates
-through revision 00000041).
+WebBridge pairing, interaction, tab-binding, Teach Mode state, delegation
+tasks, Git server connections, the Work mode rename, retired session-section
+cleanup, durable goals, durable workflow gates, and the AIM table drop
+through revision 00000043).
 Complements ``tests/core/test_db_extra.py``, which only covers
 ``run_migrations`` error paths with mocks.
 """
@@ -120,11 +120,10 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             "steps",
             "response_draft",
         } <= teach_replay_columns
-        aim_unit_columns = {
-            column["name"] for column in inspector.get_columns("aim_units")
-        }
-        assert {"revision", "last_transition_id"} <= aim_unit_columns
-        assert "aim_claims" in inspector.get_table_names()
+        assert "aim_units" not in inspector.get_table_names()
+        assert "aim_runs" not in inspector.get_table_names()
+        assert "aim_links" not in inspector.get_table_names()
+        assert "aim_claims" not in inspector.get_table_names()
         assert "workflow_gate_requests" in inspector.get_table_names()
         workflow_execution_columns = {
             column["name"] for column in inspector.get_columns("workflow_executions")

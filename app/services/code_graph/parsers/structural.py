@@ -1,13 +1,13 @@
 """Config-driven structural parser — legacy languages without tree-sitter.
 
 Implements the :class:`~app.services.code_graph.parsers.base.LanguageParser`
-protocol from a YAML config (an AIM rulebook's ``extractors/*.yaml``) instead
-of a grammar: node rules turn matched lines into graph nodes, edge rules turn
-matched lines inside those nodes into ``calls``/``imports``/``references``
-edges. That is deliberately the Azure-Samples approach — regex extraction is
+protocol from a YAML config (``extractors/*.yaml``) instead of a grammar:
+node rules turn matched lines into graph nodes, edge rules turn matched
+lines inside those nodes into ``calls``/``imports``/``references`` edges.
+That is deliberately the Azure-Samples approach — regex extraction is
 demonstrably good enough to *seed* a code graph for COBOL/JCL/VB6-class
 languages where tree-sitter grammars are weak or absent; LLM enrichment
-covers the rest (aim-framework.md §3.9, risk #1).
+covers the rest.
 
 The model is line-based and flat:
 
@@ -26,7 +26,7 @@ The model is line-based and flat:
 There is no syntax awareness beyond the configured regexes: a "call" match
 inside a comment or string literal is emitted anyway. Configs mitigate with
 anchors and the keyword denylist; measure extraction recall on a real estate
-before trusting coverage (aim-framework.md risk #1).
+before trusting coverage.
 """
 
 from __future__ import annotations

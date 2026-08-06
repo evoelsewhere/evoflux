@@ -98,8 +98,6 @@ def _mode_for_agent_path(name: str) -> str:
     first = Path(name).parts[:1]
     if first == ("coding",):
         return "coding"
-    if first == ("aim",):
-        return "aim"
     return "work"
 
 

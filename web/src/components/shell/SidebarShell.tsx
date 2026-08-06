@@ -1,10 +1,10 @@
 /**
- * SidebarShell — the shared desktop chrome of the three mode sidebars
- * (work / coding / aim): a floating-card panel with resizable width,
+ * SidebarShell — the shared desktop chrome of the mode sidebars
+ * (work / coding): a floating-card panel with resizable width,
  * collapse-to-icon-rail animation, and the macOS traffic-light inset.
  *
- * Shared by Sidebar.tsx / AimSidebar.tsx / CodingSidebar.tsx — all three
- * mode sidebars compose this shell instead of duplicating the mechanics.
+ * Shared by Sidebar.tsx / CodingSidebar.tsx — both mode sidebars compose
+ * this shell instead of duplicating the mechanics.
  * The shell owns:
  *   - one canonical width in `useUIStore` (persisted drag + dbl-click reset)
  *   - the resize-handle separator and direct, non-tweened pointer updates
@@ -19,7 +19,7 @@
  * top section, as before.
  *
  * Two layout styles compose from the same pieces:
- *   (a) one floating card with internal dividers (work/aim):
+ *   (a) one floating card with internal dividers (work):
  *       `<SidebarCard className="h-full">…sections + <SidebarShellDivider/>…</SidebarCard>`
  *   (b) stacked separate cards per section (coding): several `<SidebarCard>`
  *       children — the shell's `gap-1 p-1` column spaces them.
@@ -248,7 +248,7 @@ export function SidebarModeRailSlot({ className }: { className?: string }) {
 
 /**
  * Fake search input that opens the command palette (Ctrl+P). Canonical
- * background is `bg-(--bg-page)` (the work/aim variant).
+ * background is `bg-(--bg-page)` (the work variant).
  */
 export function SidebarSearchTrigger({
   onClick,

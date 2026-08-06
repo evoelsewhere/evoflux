@@ -9,7 +9,7 @@ export const HELP_CATEGORIES_VI: HelpCategory[] = [
   {
     id: 'modes',
     label: 'Modes',
-    description: 'Work, Coding, và AIM',
+    description: 'Work và Coding',
   },
   {
     id: 'chat',
@@ -42,11 +42,6 @@ export const HELP_CATEGORIES_VI: HelpCategory[] = [
     description: 'Repo, project, git, Graph và PR',
   },
   {
-    id: 'aim',
-    label: 'AIM',
-    description: 'Modernization factory',
-  },
-  {
     id: 'memory',
     label: 'Memory & Dream',
     description: 'Wiki kiến thức và tổng hợp',
@@ -75,7 +70,7 @@ export const HELP_CATEGORIES_VI: HelpCategory[] = [
     id: 'troubleshooting',
     label: 'Xử lý sự cố',
     description: 'Connection, health và Diagnostics',
-  },
+  }
 ]
 
 export const HELP_ARTICLES_VI: HelpArticle[] = [
@@ -84,7 +79,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'getting-started',
     title: 'Bắt đầu với EvoFlux',
     summary:
-      'Cài app desktop hoặc chạy từ source, kết nối BYOM provider, xác nhận sidecar khỏe, rồi gửi chat Work đầu tiên, mở repo Coding, hoặc tạo project AIM. Đây là lộ trình từ lần mở app lạnh đến session streaming ổn định.',
+      'Cài app desktop hoặc chạy từ source, kết nối BYOM provider, xác nhận sidecar khỏe, rồi gửi chat Work đầu tiên, mở repo Coding, hoặc mở workspace Coding. Đây là lộ trình từ lần mở app lạnh đến session streaming ổn định.',
     keywords: [
       'start',
       'install',
@@ -102,8 +97,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'bắt đầu',
       'cài đặt',
       'kết nối',
-      'Providers',
-    ],
+      'Providers'
+],
     setup:
       'App desktop đóng gói tự khởi động FastAPI sidecar. Chạy từ source: Terminal 1 `make dev` (API + Vite), Terminal 2 `make -C desktop dev` (Tauri shell). Frontend: `cd web && bun install`. Chuẩn bị sẵn ít nhất một API key / OAuth / daemon local (Ollama…) trước khi chat lần đầu.',
     tricks: [
@@ -113,11 +108,11 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Lần mở app lạnh vẫn hiện Welcome đến khi sidecar và team registry sẵn sàng — đợi xong mới chat, tránh soi nhầm “team trống”.',
       'Sau khi có provider, gửi một tin Work ngắn (“ping — reply with ok”) để verify streaming end-to-end trước khi mở repo lớn.',
       'Trong Coding, click repo chỉ focus workspace; dùng + / New chat để tạo session. Focus một mình không bao giờ mở transcript.',
-      'Trong AIM, dùng New hoặc Join project khi layout Source / Document / Target đã sẵn; Discussion chat là phụ so với Overview và Pipelines.',
+      'Trong Coding, mở repo hoặc project từ sidebar rồi bắt đầu session trên workspace đó.',
       'Mở Guidelines bất cứ lúc nào từ nút Help trên sidebar (modal này); Ctrl+P vẫn là command palette — dành cho action nhanh, không phải docs.',
       'HealthDot xanh mà chat vẫn fail → mở Settings → Diagnostics trước khi reinstall; check subsystem thường đủ, không cần wipe sạch.',
-      'Đừng dán credential BYOM vào transcript; chỉ cấu hình trong Settings → Providers.',
-    ],
+      'Đừng dán credential BYOM vào transcript; chỉ cấu hình trong Settings → Providers.'
+],
     blocks: [
       {
         type: 'p',
@@ -125,7 +120,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Dữ liệu local là hướng đi của sản phẩm. Ba mode (Work, Coding, AIM) dùng chung một team UI — Lead/specialist, composer, permissions và workbench — học một lần, đổi surface theo việc. Work cho research và folder tạm; Coding cho repo bền; AIM khi migration cần pipeline và approval.',
+        text: 'Dữ liệu local là hướng đi của sản phẩm. Hai mode (Work và Coding) dùng chung một team UI — Lead/specialist, composer, permissions và workbench — học một lần, đổi surface theo việc. Work cho research và folder tạm; Coding cho repo bền.',
       },
       {
         type: 'p',
@@ -137,10 +132,9 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           '1) HealthDot xanh (hoặc mở Connection nếu không) và đợi Welcome tắt.',
           '2) Settings → Providers → kết nối ít nhất một model; xác nhận đã configured.',
           '3) Ở Work gửi chat ngắn đầu tiên, hoặc sang Coding mở git repository.',
-          '4) Tùy chọn: sang AIM → New / Join project và chạy wizard Source / Document / Target.',
           '5) Khi đã có session, thử workbench (Terminal, Files, Memory, Browser).',
-          '6) Trước khi bật auto hoặc bypass: xem lại Settings → Sandbox deny globs.',
-        ],
+          '6) Trước khi bật auto hoặc bypass: xem lại Settings → Sandbox deny globs.'
+],
       },
       {
         type: 'p',
@@ -152,7 +146,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Khi nào ở Work, khi nào nhảy mode: Work cho browser task, docs, research theo folder, không cần vòng đời git. Sang Coding ngay khi cần Changes, Graph, Review, worktree hoặc AGENTS.md. Sang AIM chỉ khi đã có (hoặc sẽ tạo) layout Source / Target / KB có governance — không phải cho coding hàng ngày.',
+        text: 'Khi nào ở Work, khi nào nhảy mode: Work cho browser task, docs, research theo folder, không cần vòng đời git. Sang Coding ngay khi cần Changes, Graph, Review, worktree hoặc AGENTS.md.',
       },
       {
         type: 'tips',
@@ -160,58 +154,55 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Sau chat đầu thành công, mở Memory (Ctrl+M) để biết note bền sẽ nằm đâu.',
           'Lướt permission shield (phím 1–5) trước khi cho agent sửa repo thật.',
           'Ctrl+P → Search “Diagnostics” nếu health xanh mà panel tool vẫn trống.',
-          'Chỉ khi chạy từ source: đừng mở Tauri khi `make dev` chưa phục vụ API.',
-        ],
+          'Chỉ khi chạy từ source: đừng mở Tauri khi `make dev` chưa phục vụ API.'
+],
       },
       {
         type: 'p',
-        text: 'Đọc tiếp: modes overview để chọn Work / Coding / AIM; Providers cho BYOM; Connection nếu HealthDot đỏ dai; Troubleshooting cho checklist sửa theo thứ tự.',
-      },
-    ],
+        text: 'Đọc tiếp: modes overview để chọn Work / Coding; Providers cho BYOM; Connection nếu HealthDot đỏ dai; Troubleshooting cho checklist sửa theo thứ tự.',
+      }
+],
     related: [
       'modes-overview',
       'providers-settings',
       'connection-settings',
       'troubleshooting-connection',
-      'keyboard-shortcuts',
-    ],
+      'keyboard-shortcuts'
+],
     openAction: { type: 'settings', path: 'providers' },
   },
   {
     id: 'modes-overview',
     category: 'modes',
-    title: 'Work, Coding và AIM',
+    title: 'Work và Coding',
     summary:
-      'Ba product mode dùng chung team UI nhưng khác workspace, specialist và tool mặc định. Mode switcher nhớ route cuối của từng mode — quay lại Coding hay AIM là về đúng chỗ bạn rời.',
+      'Hai product mode dùng chung team UI nhưng khác workspace, specialist và tool mặc định. Mode switcher nhớ route cuối của từng mode — quay lại Coding là về đúng chỗ bạn rời.',
     keywords: [
       'mode',
       'work',
       'coding',
-      'aim',
       'switch',
       'cowork',
       'route',
       'mode switcher',
       'chế độ',
       'Work',
-      'Coding',
-      'AIM',
-    ],
+      'Coding'
+],
     tricks: [
       'Mode switcher nhớ last route theo mode — quay Coding là về đúng workspace path trước đó.',
       'Sidebar thu gọn vẫn hiện mode rail; đổi mode không cần bung cả cây.',
       'Khi đang ở Settings, mode switcher bị ẩn; thoát Settings rồi mới đổi mode lại.',
-      'Work hợp research, docs, browser task, script tạm; Coding cho repo bền; AIM cho migration có governance.',
+      'Work hợp research, docs, browser task, script tạm; Coding cho repo bền.',
       'Permission mode, slash và hầu hết workbench tool chạy xuyên mode; Overview / Graph / Changes / Review chỉ trong Coding.',
-      'AIM Discussion là phụ — Overview, KB, Traceability và Pipelines mới là surface chính.',
       'Đừng mở git monorepo trong Work rồi chờ Changes/Review — sang Coding để tool source-control gắn vào.',
       'Work: folder + share_context cho research song song; Coding: project khi các repo phải gắn với nhau.',
-      'Mode memory theo mode, không theo window — nếu tưởng về Coding home trống, kiểm tra xem route workspace cũ có bị restore không.',
-    ],
+      'Mode memory theo mode, không theo window — nếu tưởng về Coding home trống, kiểm tra xem route workspace cũ có bị restore không.'
+],
     blocks: [
       {
         type: 'p',
-        text: 'Sidebar có ba mode cấp cao: Work (cowork sandbox), Coding (repository và project), AIM (modernization factory). Mỗi mode có cây sidebar và danh sách session riêng, nhưng đội Lead/specialist, composer và model permissions vẫn quen — shortcut và Guidelines áp dụng mọi nơi.',
+        text: 'Sidebar có hai mode cấp cao: Work (cowork sandbox) và Coding (repository và project). Mỗi mode có cây sidebar và danh sách session riêng, nhưng đội Lead/specialist, composer và model permissions vẫn quen — shortcut và Guidelines áp dụng mọi nơi.',
       },
       {
         type: 'p',
@@ -219,46 +210,40 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Work dùng private session folder hoặc folder local bạn chọn; không bắt buộc multi-repo project. Coding mở git repo hoặc multi-repo project; agent sửa cây thật với Graph, git, worktree và PR review. AIM dùng New hoặc Join project với layout Source / Document / Target / KB; pipeline và cutover readiness dẫn workflow.',
+        text: 'Work dùng private session folder hoặc folder local bạn chọn; không bắt buộc multi-repo project. Coding mở git repo hoặc multi-repo project; agent sửa cây thật với Graph, git, worktree và PR review. ',
       },
       {
         type: 'tips',
         items: [
           'Work — research, document, browser task, script nhanh, chat theo folder.',
           'Coding — single repo, multi-repo project, worktree, Graph, Changes, Review.',
-          'AIM — assess → understand → convert → test-compare → cutover-check.',
           'Mode memory — last route mỗi mode được restore khi quay lại.',
-          'Settings — mode switcher ẩn cho đến khi bạn rời settings route.',
-        ],
+          'Settings — mode switcher ẩn cho đến khi bạn rời settings route.'
+],
       },
       {
         type: 'p',
-        text: 'Khi nào dùng gì: Work khi output là note, bằng chứng browser, hoặc folder dùng rồi bỏ. Coding khi cần commit, PR, worktree hoặc AGENTS.md. AIM khi nhiều repo phải giữ governance với rulebook và verdict so sánh được — không phải cho một feature branch single-repo.',
-      },
-      {
-        type: 'p',
-        text: 'Sai thường gặp: coi AIM Discussion như IDE chính; chờ Coding Overview khi chưa focus workspace; nhét session Coding vào Work folder (folder filing là tính năng tổ chức của Work); tưởng bypass permission ở Work mang sang mode khác mà không kiểm tra shield của session mới.',
+        text: 'Khi nào dùng gì: Work khi output là note, bằng chứng browser, hoặc folder dùng rồi bỏ. Coding khi cần commit, PR, worktree hoặc AGENTS.md.',
       },
       {
         type: 'tips',
         items: [
           'Ctrl+B toggle sidebar giống nhau ở mọi mode.',
           'Scheduler task nhắm work hoặc coding mode tường minh — chọn đúng mode trên task.',
-          'Skill và workflow có thể scope theo mode trong Settings; workflow chỉ Coding sẽ ẩn ở Work.',
-        ],
+          'Skill và workflow có thể scope theo mode trong Settings; workflow chỉ Coding sẽ ẩn ở Work.'
+],
       },
       {
         type: 'p',
-        text: 'Đổi mode từng bước: (1) bấm Work, Coding hoặc AIM trên mode rail, (2) đợi cây sidebar ổn, (3) chọn hoặc tạo session, (4) xác nhận workbench tool bạn cần có sẵn cho mode đó trước khi prompt agent.',
-      },
-    ],
+        text: 'Đổi mode từng bước: (1) bấm Work hoặc Coding trên mode rail, (2) đợi cây sidebar ổn, (3) chọn hoặc tạo session, (4) xác nhận workbench tool bạn cần có sẵn cho mode đó trước khi prompt agent.',
+      }
+],
     related: [
       'coding-workspaces',
-      'aim-overview',
       'getting-started',
       'sessions-folders',
-      'workbench-tools',
-    ],
+      'workbench-tools'
+],
   },
   {
     id: 'chat-team',
@@ -279,10 +264,10 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'auto-split',
       'đội',
       'Lead',
-      'specialist',
-    ],
+      'specialist'
+],
     setup:
-      'Mở bất kỳ session nào. Cấu hình team, model và tool trong Settings → Agents (scope work / coding / aim). Session pills trên composer override model, thinking level và fast mode chỉ cho chat hiện tại.',
+      'Mở bất kỳ session nào. Cấu hình team, model và tool trong Settings → Agents (scope work / coding). Session pills trên composer override model, thinking level và fast mode chỉ cho chat hiện tại.',
     tricks: [
       'Ctrl+V xoay Agent ↔ Split trên desktop (tắt khi field đang focus dùng paste).',
       'Command palette có Next / Previous Agent khi worker đang chạy — nhanh hơn lục identity dropdown.',
@@ -292,8 +277,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Cấu hình model, skill, tool, permission từng agent trong Settings → Agents.',
       'Session pills trên composer set model, thinking level, fast mode chỉ cho chat hiện tại.',
       'Việc đơn giản để Lead làm; chỉ fan-out khi parallelism rõ ràng rút wall time.',
-      'Tool chỉ Lead (ask_user, plan mode helper, một số worktree helper) không bao giờ cấp cho specialist — đừng chờ worker approve plan.',
-    ],
+      'Tool chỉ Lead (ask_user, plan mode helper, một số worktree helper) không bao giờ cấp cho specialist — đừng chờ worker approve plan.'
+],
     blocks: [
       {
         type: 'p',
@@ -317,9 +302,9 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Agent — focus sâu một transcript (Lead hoặc specialist đã chọn).',
           'Split — xem Lead và worker song song.',
           'Monitor — overview khi nhiều agent đang chạy.',
-          'Team scope theo work / coding / aim trong Settings → Agents.',
-          'Mailbox — kết quả specialist có cấu trúc; Lead tổng hợp cho bạn.',
-        ],
+          'Team scope theo work / coding trong Settings → Agents.',
+          'Mailbox — kết quả specialist có cấu trúc; Lead tổng hợp cho bạn.'
+],
       },
       {
         type: 'p',
@@ -332,20 +317,20 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Nên fan-out — điều tra nhiều file, test/fix song song, lane specialist AIM.',
+          'Nên fan-out — điều tra nhiều file, test/fix song song, lane specialist.',
           'Nên Lead-only — Q&A ngắn, sửa một file, lượt đầu nhạy permission.',
           'Ghép Split với Plan review để đọc plan khi worker chờ.',
-          '/btw side chat cho câu meta mà không dừng team run.',
-        ],
-      },
-    ],
+          '/btw side chat cho câu meta mà không dừng team run.'
+],
+      }
+],
     related: [
       'permissions-modes',
       'composer-power',
       'agents-settings',
       'keyboard-shortcuts',
-      'side-chat',
-    ],
+      'side-chat'
+],
   },
   {
     id: 'permissions-modes',
@@ -369,8 +354,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'plan review',
       'quyền',
       'phê duyệt',
-      'sandbox',
-    ],
+      'sandbox'
+],
     setup:
       'Mở shield / permission control trên composer. Phím 1–5 hoạt động khi menu đó mở. Xem Settings → Sandbox trước khi bật auto hoặc bypass trên máy có quyền filesystem rộng.',
     tricks: [
@@ -382,8 +367,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Ask-user modal hiện khi agent cần câu trả lời có cấu trúc trước khi tiếp tục — trả lời để mở khóa run.',
       'Goal không bao giờ nới permission hay sandbox scope của session — set shield chủ đích trước `/goal`.',
       'Bypass bỏ mọi permission check — nhanh nhất, chỉ dùng trong sandbox local tin cậy với denylist chặt.',
-      'Always dính theo rule khớp — ưu tiên Once khi còn đang học agent muốn chạy gì.',
-    ],
+      'Always dính theo rule khớp — ưu tiên Once khi còn đang học agent muốn chạy gì.'
+],
     blocks: [
       {
         type: 'p',
@@ -405,12 +390,12 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           '3 Plan — lập plan rồi duyệt trước khi chạy.',
           '4 Auto — tự approve thao tác.',
           '5 Bypass — bỏ permission check hoàn toàn.',
-          'Sandbox — vẫn chặn deny globs kể cả dưới bypass.',
-        ],
+          'Sandbox — vẫn chặn deny globs kể cả dưới bypass.'
+],
       },
       {
         type: 'p',
-        text: 'Chọn mode nào: ask cho repo lạ và cây sát production; accept-edits cho Coding ngày thường khi đã tin cây; plan cho refactor nhiều bước và thay đổi kiểu AIM bạn muốn đọc trước; auto cho sandbox tin cậy và bảo trì theo lịch; bypass chỉ burst ngắn, chủ đích trên môi trường disposable hoặc denylist chặt.',
+        text: 'Chọn mode nào: ask cho repo lạ và cây sát production; accept-edits cho Coding ngày thường khi đã tin cây; plan cho refactor nhiều bước và thay đổi lớn bạn muốn đọc trước; auto cho sandbox tin cậy và bảo trì theo lịch; bypass chỉ burst ngắn, chủ đích trên môi trường disposable hoặc denylist chặt.',
       },
       {
         type: 'p',
@@ -422,14 +407,14 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Bước — shield → Plan (3) → gửi task → Plan review → Accept / Revise / Reject.',
           'Bước — trên tool prompt, ưu tiên Once đến khi pattern rõ ràng an toàn.',
           'Ghép plan với quote-into-composer để revise đúng chỗ.',
-          'Siết Sandbox trước khi auto trên multi-repo project.',
-        ],
+          'Siết Sandbox trước khi auto trên multi-repo project.'
+],
       },
       {
         type: 'p',
         text: 'MCP tool chịu cùng rule permission như tool native. Duyệt MCP call Once/Always theo cùng bar; sandbox và outbound policy vẫn áp. Tool “bị deny bất ngờ” → kiểm shield và Settings → Sandbox trước khi cấu hình lại MCP.',
-      },
-    ],
+      }
+],
     related: ['slash-goal', 'sandbox-settings', 'plan-review', 'chat-team', 'agents-settings'],
   },
   {
@@ -449,8 +434,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Accept & execute',
       'xem kế hoạch',
       'chấp nhận',
-      'plan',
-    ],
+      'plan'
+],
     setup:
       'Set permission mode sang Plan (phím 3 trong shield menu), rồi gửi task cần nhiều bước. Giữ Plan review panel hiện — đừng đổi permission mode đến khi Accept, Revise hoặc Reject plan đang pending.',
     tricks: [
@@ -462,8 +447,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Dùng plan mode trước Goal cho objective lớn để đoạn tự hành đầu bắt đầu từ outline đã duyệt.',
       'Plan mơ hồ thì Revise với Definition of Done cụ thể, đừng Accept rồi cầu may.',
       'Split hữu ích: giữ Plan review mở trong khi liếc trạng thái specialist.',
-      'Chip quote revise xóa được trước khi send nếu đổi ý — cùng pipeline quote như selection trên transcript.',
-    ],
+      'Chip quote revise xóa được trước khi send nếu đổi ý — cùng pipeline quote như selection trên transcript.'
+],
     blocks: [
       {
         type: 'p',
@@ -484,8 +469,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Revise — focus composer; optional selection đã quote.',
           'Reject — hủy lượt plan này; gửi instruction mới.',
           'Quote — chọn text plan → chip revise phía trên draft.',
-          'Shield 3 — vào plan mode trước task, không phải sau khi tool đã chạy.',
-        ],
+          'Shield 3 — vào plan mode trước task, không phải sau khi tool đã chạy.'
+],
       },
       {
         type: 'p',
@@ -501,14 +486,14 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Revise tốt nêu rõ file, test và out-of-scope.',
           'Revise xấu mơ hồ (“làm tốt hơn”) — quote bullet yếu trước.',
           'Câu meta không liên quan đẩy sang side chat để thread plan sạch.',
-          'Sau Accept việc Coding, mở Changes (Ctrl+G) xem diff có khớp plan không.',
-        ],
+          'Sau Accept việc Coding, mở Changes (Ctrl+G) xem diff có khớp plan không.'
+],
       },
       {
         type: 'p',
         text: 'Đừng dùng plan review thay sandbox policy. Plan đẹp vẫn có thể đề xuất path bạn không bao giờ muốn chạm — giữ deny globs trong Settings → Sandbox, và Reject plan nới scope vào secret, vendor dir hoặc repo không liên quan.',
-      },
-    ],
+      }
+],
     related: ['permissions-modes', 'composer-power', 'attachments', 'slash-goal', 'coding-git'],
   },
   {
@@ -535,8 +520,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'shell',
       'soạn thảo',
       'đính kèm',
-      'đề cập',
-    ],
+      'đề cập'
+],
     setup:
       'Focus composer (Ctrl+I). Attachment phải được bật cho session. Ở Work, WorkFolderSelector nằm gần composer để đổi session folder. Ở Coding, # snippet cần định nghĩa workspace hoặc global.',
     tricks: [
@@ -549,8 +534,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Paste ảnh/file hoặc kéo-thả lên composer khi attachment được bật.',
       'Bôi transcript để Add to chat, more details, hoặc Send to side chat.',
       'Ưu tiên @ mention hơn paste cả file — path xếp hạng giữ context gọn và rẻ hơn.',
-      'Custom command dưới .evoflux/commands/ thường insert vào textarea để bạn nối $ARGUMENTS.',
-    ],
+      'Custom command dưới .evoflux/commands/ thường insert vào textarea để bạn nối $ARGUMENTS.'
+],
     blocks: [
       {
         type: 'p',
@@ -574,8 +559,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'DnD / paste — attachment khi được bật',
           'Quote selection — Add to chat hoặc Send to side chat',
           'WorkFolderSelector — đổi Work session folder',
-          'RunInputsDialog — tham số workflow trước khi launch',
-        ],
+          'RunInputsDialog — tham số workflow trước khi launch'
+],
       },
       {
         type: 'p',
@@ -591,21 +576,21 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Khi dùng ! — one-liner ngắn gắn với lượt chat.',
           'Khi dùng Terminal (Ctrl+`) — process tương tác hoặc chạy lâu.',
           'Khi dùng @ — path đã biết; Files browse khi còn đang khám.',
-          'Quote → Send to side chat cho /btw mà không dừng Goal.',
-        ],
+          'Quote → Send to side chat cho /btw mà không dừng Goal.'
+],
       },
       {
         type: 'p',
-        text: 'Workflow phải được approve và hợp scope session (work / coding / aim) nếu không sẽ ẩn. Skill hiện dưới /skill: chỉ sau khi validate trong Settings → Skills. Command thiếu → kiểm scope và validation trước khi đổ lỗi slash.',
-      },
-    ],
+        text: 'Workflow phải được approve và hợp scope session (work / coding) nếu không sẽ ẩn. Skill hiện dưới /skill: chỉ sau khi validate trong Settings → Skills. Command thiếu → kiểm scope và validation trước khi đổ lỗi slash.',
+      }
+],
     related: [
       'slash-commands',
       'attachments',
       'side-chat',
       'coding-workspaces',
-      'agents-settings',
-    ],
+      'agents-settings'
+],
   },
   {
     id: 'attachments',
@@ -625,8 +610,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'clipboard',
       'đính kèm',
       'dán',
-      'trích dẫn',
-    ],
+      'trích dẫn'
+],
     setup:
       'Attachment phải được bật cho session/composer; một số môi trường tắt upload vì policy. Xác nhận drop target của composer highlight trước khi tin kéo-thả. Quote hoạt động từ selection trên transcript, Plan review và Send to side chat.',
     tricks: [
@@ -638,8 +623,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Ưu tiên quote gọn + ask ngắn hơn paste lại cả bài assistant trước.',
       'Ảnh giúp bug UI và error dialog; stack trace thì paste text hoặc attach .log để model copy token đúng.',
       'Xóa chip quote cũ trước khi đổi chủ đề — quote sót âm thầm bias lượt sau.',
-      'Paste “không làm gì” → kiểm focus đang trên composer và attachment đã bật cho session.',
-    ],
+      'Paste “không làm gì” → kiểm focus đang trên composer và attachment đã bật cho session.'
+],
     blocks: [
       {
         type: 'p',
@@ -662,8 +647,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Send to side chat — quote vào /btw song song',
           'Plan quote — chọn markdown plan → chip revise',
           '/undo — khôi phục text user trước + attachment',
-          'Clear chip — bỏ quote trước send nếu đã đổi chủ đề',
-        ],
+          'Clear chip — bỏ quote trước send nếu đã đổi chủ đề'
+],
       },
       {
         type: 'p',
@@ -679,21 +664,21 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Không nên attach — artifact build khổng lồ, zip node_modules, dump DB đầy.',
           'Nên quote — bất đồng một đoạn, revise một bullet plan, hỏi “explain this”.',
           'Sau /undo, xem lại attachment đã restore trước khi gửi lại.',
-          'WorkFolderSelector không attach folder; nó đổi session root trên đĩa.',
-        ],
+          'WorkFolderSelector không attach folder; nó đổi session root trên đĩa.'
+],
       },
       {
         type: 'p',
         text: 'Policy: org tắt upload thì bạn vẫn còn quote và @ mention — ưu tiên các đường đó thay vì vật lộn với cổng attachment. Outbound PII redaction trong Settings → Sandbox vẫn có thể áp khi nội dung đi ra provider.',
-      },
-    ],
+      }
+],
     related: [
       'composer-power',
       'plan-review',
       'side-chat',
       'slash-commands',
-      'sandbox-settings',
-    ],
+      'sandbox-settings'
+],
   },
   {
     id: 'slash-commands',
@@ -714,22 +699,19 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'command',
       '.evoflux/commands',
       'lệnh',
-      'lệnh tùy chỉnh',
-    ],
-    setup:
-      'Focus composer và gõ /. Đặt custom command project hoặc global dưới `.evoflux/commands/` (path OpenCode tương thích cũng được). Seed prompt AIM dưới seed/commands/ nằm im đến khi copy vào `.evoflux/commands/`.',
+      'lệnh tùy chỉnh'
+],
     tricks: [
       'Built-in chạy ngay khi chọn; custom thường insert vào textarea để bạn nối $ARGUMENTS.',
       'Khớp longest-prefix; `:` và `/` đổi cho nhau với tên command/skill nested.',
       'Custom command nằm dưới project hoặc global .evoflux/commands/ (và path OpenCode tương thích).',
-      'Seed AIM dưới seed/commands/ inert đến khi copy vào .evoflux/commands/.',
       'Skill hiện dưới /skill: chỉ sau khi validate trong Settings → Skills.',
-      'Workflow phải approve và hợp scope session (work / coding / aim) nếu không sẽ ẩn.',
+      'Workflow phải approve và hợp scope session (work / coding) nếu không sẽ ẩn.',
       '/compact sớm khi context budget bar leo — chờ failure phí một lượt.',
-      '/init hướng Coding cho AGENTS.md; đừng chờ nó scaffold AIM rulebook.',
+      '/init hướng Coding cho AGENTS.md; nó hướng tới AGENTS.md.',
       '/stop là nút panic khi specialist fan-out loạn; kèm instruction rõ hơn sau đó.',
-      'Ưu tiên /btw hơn làm bẩn transcript chính bằng câu meta trong run dài.',
-    ],
+      'Ưu tiên /btw hơn làm bẩn transcript chính bằng câu meta trong run dài.'
+],
     blocks: [
       {
         type: 'p',
@@ -758,8 +740,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           { cmd: '/goal:resume', desc: 'Tiếp tục Goal đã pause' },
           { cmd: '/goal:stop', desc: 'Gỡ Goal khỏi session' },
           { cmd: '/skill:…', desc: 'Gắn skill cho tin tiếp (nested: /skill:parent:child)' },
-          { cmd: '/workflow <name>', desc: 'Chạy workflow đã duyệt (có thể mở RunInputsDialog)' },
-        ],
+          { cmd: '/workflow <name>', desc: 'Chạy workflow đã duyệt (có thể mở RunInputsDialog)' }
+],
       },
       {
         type: 'p',
@@ -772,13 +754,12 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Custom — thường insert; nối $ARGUMENTS',
           'Skill — /skill: sau Settings → Skills validation',
           'Workflow — cần scope + approval nếu không sẽ ẩn',
-          'AIM seeds — copy seed/commands/ → .evoflux/commands/',
-          'Longest prefix — nest parent:child với : hoặc /',
-        ],
+          'Longest prefix — nest parent:child với : hoặc /'
+],
       },
       {
         type: 'p',
-        text: 'Custom command từng bước: (1) thêm Markdown/YAML dưới `.evoflux/commands/`, (2) reload hoặc mở lại slash menu, (3) chọn command để insert, (4) điền argument, (5) send. Seed AIM: chỉ copy prompt bạn cần — seed không dùng cố tình không vào menu.',
+        text: 'Custom command từng bước: (1) thêm Markdown/YAML dưới `.evoflux/commands/`, (2) reload hoặc mở lại slash menu, (3) chọn command để insert, (4) điền argument, (5) send. Chỉ thêm custom command bạn cần — prompt không dùng cố tình không vào menu.',
       },
       {
         type: 'p',
@@ -790,17 +771,16 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Khi /new — đổi chủ đề mà context bar đã bẩn.',
           'Khi /compact — cùng chủ đề, budget leo, cần giữ continuity.',
           'Khi /stop — tool chạy loạn hoặc fan-out sai; rồi nêu lại ask.',
-          '/init + Coding Overview sau khi mở repo mới.',
-        ],
-      },
-    ],
+          '/init + Coding Overview sau khi mở repo mới.'
+],
+      }
+],
     related: [
       'slash-goal',
       'side-chat',
       'composer-power',
-      'aim-overview',
-      'coding-workspaces',
-    ],
+      'coding-workspaces'
+],
   },
   {
     id: 'slash-goal',
@@ -823,8 +803,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       '/goal:budget',
       'mục tiêu',
       'ngân sách',
-      'tạm dừng',
-    ],
+      'tạm dừng'
+],
     setup:
       'Bắt đầu bằng `/goal <objective>` ở bất kỳ mode nào. Tùy chọn: `/goal:budget <tokens>` trước hoặc trong lúc chạy. Set permission mode và Settings → Sandbox chủ đích trước — Goal không bao giờ nới chúng.',
     tricks: [
@@ -836,8 +816,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Goal không nới permission mode hay sandbox — set chúng chủ đích trước khi start.',
       'Objective rõ + token budget cho run overnight không người canh.',
       'Objective lớn: draft bằng plan mode trước, Accept, rồi `/goal` để autonomy bắt đầu từ outline đã duyệt.',
-      'Dùng /btw cho câu meta khi Goal đang chạy để không lệch transcript objective.',
-    ],
+      'Dùng /btw cho câu meta khi Goal đang chạy để không lệch transcript objective.'
+],
     blocks: [
       {
         type: 'p',
@@ -859,8 +839,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           { cmd: '/goal:budget <tokens|none>', desc: 'Đặt hoặc xóa token budget' },
           { cmd: '/goal:pause', desc: 'Tạm dừng thực thi' },
           { cmd: '/goal:resume', desc: 'Tiếp sau pause hoặc budget hold' },
-          { cmd: '/goal:stop', desc: 'Xóa Goal khỏi session' },
-        ],
+          { cmd: '/goal:stop', desc: 'Xóa Goal khỏi session' }
+],
       },
       {
         type: 'tips',
@@ -869,8 +849,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Đặt token budget trước run overnight.',
           'Theo dõi blocker streak — cùng blocker ×3 thì dừng tiến độ.',
           'Đừng chờ Goal tự flip ask → bypass giúp bạn.',
-          'Dùng /goal:pause trước khi sửa tay lớn trên cùng cây.',
-        ],
+          'Dùng /goal:pause trước khi sửa tay lớn trên cùng cây.'
+],
       },
       {
         type: 'p',
@@ -886,17 +866,17 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Bước — shield + sandbox → optional plan Accept → /goal:budget → /goal <objective>.',
           'Bước — kẹt → đọc blocker → /goal:pause → sửa môi trường → /goal:resume.',
           'Scheduler cho cron prompt; Goal là autonomy trong session.',
-          'Dream cron riêng dưới Settings → Memory.',
-        ],
-      },
-    ],
+          'Dream cron riêng dưới Settings → Memory.'
+],
+      }
+],
     related: [
       'permissions-modes',
       'slash-commands',
       'chat-team',
       'plan-review',
-      'scheduler-tasks',
-    ],
+      'scheduler-tasks'
+],
   },
   {
     id: 'sessions-folders',
@@ -919,10 +899,10 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'thư mục',
       'ghim',
       'phiên',
-      'chia sẻ ngữ cảnh',
-    ],
+      'chia sẻ ngữ cảnh'
+],
     setup:
-      'Sidebar Work → section Folders. Coding/AIM dùng cây session riêng; folder filing là tính năng tổ chức của Work. Ctrl+R refresh danh sách session Work sau thay đổi bên ngoài.',
+      'Sidebar Work → section Folders. Coding dùng cây session riêng; folder filing là tính năng tổ chức của Work. Ctrl+R refresh danh sách session Work sau thay đổi bên ngoài.',
     tricks: [
       'Kéo hàng session lên header folder (desktop), hoặc dùng Move to folder… trên touch.',
       'Icon link trên folder bật/tắt share_context — các session cùng folder nhận bản tóm tắt ngắn (bounded) của nhau.',
@@ -933,12 +913,12 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Filing chỉ set folder_id — history, model và workspace settings vẫn theo session.',
       'Tắt share_context với folder client nhạy cảm — không để tóm tắt lọt sang session khác.',
       'Đặt tên folder theo outcome (“RFP research”, “incident 4821”), không theo ngày — ngày đã nhóm chat chưa file.',
-      'Unfile qua Move to folder… → none khi thread không còn thuộc sibling.',
-    ],
+      'Unfile qua Move to folder… → none khi thread không còn thuộc sibling.'
+],
     blocks: [
       {
         type: 'p',
-        text: 'Session Work có thể pin và xếp vào folder có tên. Folder tùy chọn bật share_context để chat sibling trao đổi bản tóm tắt ngắn có giới hạn. Session chưa file vẫn nhóm theo Pinned / Today / Yesterday / Older. Coding và AIM giữ cây riêng — đừng tìm Work folder ở đó.',
+        text: 'Session Work có thể pin và xếp vào folder có tên. Folder tùy chọn bật share_context để chat sibling trao đổi bản tóm tắt ngắn có giới hạn. Session chưa file vẫn nhóm theo Pinned / Today / Yesterday / Older. và Coding giữ cây riêng — đừng tìm Work folder ở đó.',
       },
       {
         type: 'p',
@@ -957,8 +937,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Xóa folder — chỉ unfile; chat vẫn còn.',
           'Ctrl+R — refresh danh sách session Work.',
           'Move to folder… — file / unfile thân thiện touch.',
-          'Today / Yesterday / Older — nhóm tự động cho chat chưa file.',
-        ],
+          'Today / Yesterday / Older — nhóm tự động cho chat chưa file.'
+],
       },
       {
         type: 'p',
@@ -978,17 +958,17 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'WorkFolderSelector set folder trên đĩa cho tool; sidebar folder tổ chức chat.',
           'Pin + Goal trên chat quyết định cho engagement dài.',
           '/new trong folder giữ filing nếu bạn bắt đầu từ Folder +.',
-          'Ctrl+R nếu session vừa chuyển không hiện đúng chỗ.',
-        ],
-      },
-    ],
+          'Ctrl+R nếu session vừa chuyển không hiện đúng chỗ.'
+],
+      }
+],
     related: [
       'composer-power',
       'modes-overview',
       'getting-started',
       'slash-goal',
-      'side-chat',
-    ],
+      'side-chat'
+],
   },
   {
     id: 'workbench-tools',
@@ -1011,8 +991,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       '⌘P',
       '⌥⌘S',
       'bảng',
-      'bảng công cụ',
-    ],
+      'bảng công cụ'
+],
     setup:
       'Mở session trước. Coding Overview, Graph, Changes và Review cần Coding workspace. Built-in Browser phải bật trong Settings → Browser trước khi Ctrl+T hữu ích.',
     tricks: [
@@ -1024,8 +1004,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Terminal và Browser hỗ trợ nhiều tab; tool khác là toggle single-instance.',
       'Changes (Ctrl+G) và Review chỉ Coding; Graph cần Coding workspace.',
       'Toggle cùng tool lần nữa để đóng — workbench không phải đống card vĩnh viễn.',
-      'Mở workbench với Coding workspace mà chưa chọn tool thì Overview mở mặc định.',
-    ],
+      'Mở workbench với Coding workspace mà chưa chọn tool thì Overview mở mặc định.'
+],
     blocks: [
       {
         type: 'p',
@@ -1044,8 +1024,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           { keys: 'Ctrl+;', action: 'Side chat (label có thể hiện ⌥⌘S)' },
           { keys: 'Ctrl+M', action: 'Memory (wiki)' },
           { keys: 'Ctrl+S', action: 'Scheduler' },
-          { keys: 'Ctrl+G', action: 'Git Changes (Coding)' },
-        ],
+          { keys: 'Ctrl+G', action: 'Git Changes (Coding)' }
+],
       },
       {
         type: 'tips',
@@ -1059,8 +1039,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Memory — wiki + note pending.',
           'Scheduler — cron / one-shot (chỉ panel; /scheduler redirect home).',
           'Changes — stage, commit, branch (Coding).',
-          'Review — danh sách PR/MR host đã kết nối (Coding).',
-        ],
+          'Review — danh sách PR/MR host đã kết nối (Coding).'
+],
       },
       {
         type: 'p',
@@ -1076,18 +1056,18 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Terminal vs ! — tương tác/dài vs lệnh ngắn gắn chat.',
           'Files vs @ — browse/khám vs ghim path đã biết vào ask.',
           'Changes sau Accept plan mode để verify diff.',
-          'Memory sau session research để Dream có nguyên liệu.',
-        ],
-      },
-    ],
+          'Memory sau session research để Dream có nguyên liệu.'
+],
+      }
+],
     related: [
       'side-chat',
       'memory-dream',
       'scheduler-tasks',
       'coding-git',
       'keyboard-shortcuts',
-      'browser-webbridge',
-    ],
+      'browser-webbridge'
+],
   },
   {
     id: 'side-chat',
@@ -1104,8 +1084,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Send to side chat',
       'read-only',
       'chat phụ',
-      'hỏi thêm',
-    ],
+      'hỏi thêm'
+],
     setup:
       'Mở bằng /btw, Ctrl+;, tool Side chat trên workbench, hoặc icon hàng session. Tùy chọn: chọn text transcript → Send to side chat để mang quote. Shortcut sống là Ctrl+; kể cả khi label còn hiện ⌥⌘S.',
     tricks: [
@@ -1117,8 +1097,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Giữ side chat ngắn và thực tế; việc implement dài đẩy về thread Lead.',
       'Đóng panel khi xong để khỏi gõ instruction chính vào /btw.',
       'Side chat thấy parent context read-only — không phải editor chính cho refactor cả repo.',
-      'Cần thread song song bền với tool riêng thì ưu tiên sibling Work session (có thể share_context) thay vì nhồi /btw.',
-    ],
+      'Cần thread song song bền với tool riêng thì ưu tiên sibling Work session (có thể share_context) thay vì nhồi /btw.'
+],
     blocks: [
       {
         type: 'p',
@@ -1140,8 +1120,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Send to side chat — quote selection vào /btw',
           'Parent context read-only — không merge history ngược',
           'Icon hàng session — mở không cần slash menu',
-          'Nhãn ⌥⌘S — bỏ qua; binding sống là Ctrl+;',
-        ],
+          'Nhãn ⌥⌘S — bỏ qua; binding sống là Ctrl+;'
+],
       },
       {
         type: 'p',
@@ -1161,17 +1141,17 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Ghép quote Plan review để “explain bullet này” mà không Reject.',
           'Sibling Work chat + share_context cho research song song nặng hơn.',
           '/stop vẫn nhắm team chính — side chat không phải Lead thứ hai.',
-          'Side chat thiếu tool bạn cần thường nghĩa bạn đã vượt use case /btw.',
-        ],
-      },
-    ],
+          'Side chat thiếu tool bạn cần thường nghĩa bạn đã vượt use case /btw.'
+],
+      }
+],
     related: [
       'composer-power',
       'workbench-tools',
       'slash-commands',
       'slash-goal',
-      'plan-review',
-    ],
+      'plan-review'
+],
     openAction: { type: 'workbench', tool: 'side-chat' },
   },
   {
@@ -1192,8 +1172,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'user_data',
       'dự án',
       'kho mã',
-      'cây làm việc',
-    ],
+      'cây làm việc'
+],
     setup:
       'Sang Coding (`/coding`) và thêm repository hoặc tạo project. Cấu hình vị trí worktree trong Settings → Sandbox (repository vs user_data). Chạy /init trong session khi convention nên sống trong AGENTS.md.',
     tricks: [
@@ -1206,8 +1186,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Chạy /init trong Coding session để tạo hoặc cập nhật AGENTS.md cho convention agent.',
       'Mở Coding Overview từ workbench khi workspace đã chọn để xem status một nhìn.',
       'Commit hoặc stash trước khi spawn worktree nếu cần dirty change ở chỗ khác — chúng không xuất hiện trên cây mới.',
-      'Ưu tiên project khi service chia sẻ API giữa repo; ưu tiên single repo khi changeset local.',
-    ],
+      'Ưu tiên project khi service chia sẻ API giữa repo; ưu tiên single repo khi changeset local.'
+],
     blocks: [
       {
         type: 'p',
@@ -1229,8 +1209,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Worktrees — cây sạch; source chưa commit không copy.',
           '/init — AGENTS.md cho convention Coding.',
           'Sandbox — policy vị trí worktree.',
-          'Overview — status khi workspace đã focus.',
-        ],
+          'Overview — status khi workspace đã focus.'
+],
       },
       {
         type: 'p',
@@ -1250,17 +1230,17 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Nên project — type cross-repo, contract dùng chung, đổi multi-service.',
           'Không nên project — một app repo với vendored code ít đụng.',
           'Graph cross-repo cần project_id.',
-          'Review/Changes gắn workspace đang focus.',
-        ],
-      },
-    ],
+          'Review/Changes gắn workspace đang focus.'
+],
+      }
+],
     related: [
       'coding-git',
       'coding-graph',
       'slash-commands',
       'sandbox-settings',
-      'modes-overview',
-    ],
+      'modes-overview'
+],
     openAction: { type: 'route', to: '/coding' },
   },
   {
@@ -1288,8 +1268,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Gitea',
       'Azure DevOps',
       'kéo yêu cầu',
-      'cam kết',
-    ],
+      'cam kết'
+],
     setup:
       'Coding mode với git workspace. Kết nối host trong Settings → Git & reviews cho action PR/MR remote. Xem lại timeout, max diff size và force-with-lease trước thao tác mạnh.',
     tricks: [
@@ -1301,8 +1281,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Stash / branch / rebase từ Changes hoặc agent tool tùy mức thoải mái.',
       'Ưu tiên commit nhỏ, message rõ — agent follow-up tốt hơn trên history sạch.',
       'Kết nối host trước khi hỏi Create PR; không thì commit local thành công rồi bước remote fail muộn.',
-      'Diff khổng lồ thì nâng max diff size tạm — review quá lớn che rủi ro.',
-    ],
+      'Diff khổng lồ thì nâng max diff size tạm — review quá lớn che rủi ro.'
+],
     blocks: [
       {
         type: 'p',
@@ -1324,8 +1304,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'GitHub / GitLab / Bitbucket / Gitea / Azure DevOps — tích hợp host',
           'force-with-lease — bị gate; không phải mặc định tùy tiện',
           'max diff size — chỉ nâng khi thật sự cần',
-          'stash / branch / rebase — UI hoặc agent tool',
-        ],
+          'stash / branch / rebase — UI hoặc agent tool'
+],
       },
       {
         type: 'p',
@@ -1344,17 +1324,17 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Plan Accept → Changes để verify plan thành diff bạn kỳ vọng.',
           'Worktree giữ commit thí nghiệm khỏi checkout chính.',
-          'Permission ask trước lần push đầu lên remote production.',
-        ],
-      },
-    ],
+          'Permission ask trước lần push đầu lên remote production.'
+],
+      }
+],
     related: [
       'coding-workspaces',
       'workbench-tools',
       'settings-safety',
       'permissions-modes',
-      'plan-review',
-    ],
+      'plan-review'
+],
     openAction: { type: 'workbench', tool: 'source-control' },
   },
   {
@@ -1376,8 +1356,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'code-graph-navigation',
       'skills_opt_out',
       'đồ thị mã',
-      'biểu tượng',
-    ],
+      'biểu tượng'
+],
     setup:
       'Coding workspace hoặc project — indexing chạy incremental khi file đổi. Mở Graph workbench để khám trực quan và reindex khi cây trông cũ sau edit ngoài lớn.',
     tricks: [
@@ -1389,8 +1369,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Verify phát hiện quan trọng trên source live sau khi đi graph — index có thể trễ edit ngoài.',
       'Hỏi câu cấu trúc (“ai gọi X?”) thay vì “đọc cả package”.',
       'Multi-repo project có edge cross-repo; repo standalone vẫn lợi trong một cây.',
-      'Câu trả lời bỏ qua graph → kiểm code-graph-navigation có nằm trong skills_opt_out không.',
-    ],
+      'Câu trả lời bỏ qua graph → kiểm code-graph-navigation có nằm trong skills_opt_out không.'
+],
     blocks: [
       {
         type: 'p',
@@ -1408,8 +1388,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'code_graph — caller/reference và dependency',
           'code_path — A và B nối thế nào?',
           'grep — literal, comment, prose, config key',
-          'skills_opt_out: [code-graph-navigation] — tắt preload mặc định',
-        ],
+          'skills_opt_out: [code-graph-navigation] — tắt preload mặc định'
+],
       },
       {
         type: 'p',
@@ -1432,110 +1412,12 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Ghép hit graph với Changes xem edit set có khớp call neighborhood không.',
           'AGENTS.md có thể bảo agent ưu tiên graph-first.',
-          'Specialist kế thừa tool theo Settings → Agents — đảm bảo worker search được code.',
-        ],
-      },
-    ],
+          'Specialist kế thừa tool theo Settings → Agents — đảm bảo worker search được code.'
+],
+      }
+],
     related: ['coding-workspaces', 'agents-settings', 'composer-power', 'coding-git'],
     openAction: { type: 'workbench', tool: 'graph' },
-  },
-  {
-    id: 'aim-overview',
-    category: 'aim',
-    title: 'AIM modernization factory',
-    summary:
-      'Pipeline có governance trên repo Source, Target và Knowledge Base với Overview, KB, Traceability, Pipelines, rulebook pack và seed command bạn phải copy mới kích hoạt. Discussion chat là phụ so với surface mission-control.',
-    keywords: [
-      'aim',
-      'migration',
-      'modernization',
-      'pipeline',
-      'kb',
-      'cutover',
-      'rulebook',
-      'aim-assess',
-      'aim-understand',
-      'aim-convert-unit',
-      'aim-convert-wave',
-      'aim-test-compare',
-      'aim-cutover-check',
-      'cobol-java21',
-      'vb6-dotnet',
-      'java8-java21',
-      'seed/commands',
-      'hiện đại hóa',
-      'di cư',
-      'sổ quy tắc',
-    ],
-    setup:
-      'AIM mode → New hoặc Join project; detect layout Source / Document / Target và chọn rulebook pack. Copy seed slash prompt cần dùng vào `.evoflux/commands/` trước — bản trong seed/commands/ inert đến khi kích hoạt.',
-    tricks: [
-      'Overview là mission control: unit, health, approval, trường cutover.',
-      'Pipelines: aim-assess, aim-understand, aim-convert-unit/wave, aim-test-compare, aim-cutover-check.',
-      'Rulebook pack sẵn gồm cobol-java21, vb6-dotnet và java8-java21; KB có thể override.',
-      'Seed slash AIM dưới seed/commands/ inert đến khi copy vào .evoflux/commands/.',
-      'Panel: Overview, Knowledge Base, Traceability, Pipelines — Discussion chat là phụ.',
-      'Verdict so sánh xác định: pass / fail / acceptable-diff sau canonicalization theo rulebook.',
-      'Specialist gồm Archaeologist, Architect, Converter, Appraiser, Test và Triage dưới Lead.',
-      'Chạy assess → understand trước convert wave; bỏ inventory tạo unit không truy vết được.',
-      'Coi acceptable-diff là ngoại lệ có rule, không phải soft pass bỏ qua ở cutover-check.',
-      'Mở Discussion từ kết quả pipeline khi cần follow-up tự do — đừng sống trong Discussion mặc định.',
-    ],
-    blocks: [
-      {
-        type: 'p',
-        text: 'AIM là modernization factory có governance trải ba repository: Base source (legacy, thường read-only), Target source (đích scaffold), và Knowledge Base (inventory, understanding, rule, mapping, evidence). Discussion chat tồn tại, nhưng Overview, KB, Traceability và Pipelines là surface chính.',
-      },
-      {
-        type: 'p',
-        text: 'Chat migration ad-hoc mất approval, traceability và verdict test so sánh được. Pipeline AIM đẩy unit qua assess → understand → convert → test-compare → cutover-check với so sánh hiểu rulebook — quyết định cutover dựa evidence, không phải cảm tính.',
-      },
-      {
-        type: 'p',
-        text: 'Sang AIM (`/aim`). New hoặc Join project; xác nhận detect Source / Document / Target và chọn rulebook pack. Overview cho mission control, KB cho artifact kiến thức, Traceability cho lineage unit, Pipelines để launch workflow có tên. Copy seed từ seed/commands/ vào `.evoflux/commands/` khi muốn slash đó trên composer. Mở Discussion từ kết quả pipeline khi cần follow-up tự do.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'aim-assess — inventory estate và lập wave',
-          'aim-understand — doc KB và ứng viên business rule',
-          'aim-convert-unit / aim-convert-wave — implement vào target',
-          'aim-test-compare — golden-master vs hành vi target',
-          'aim-cutover-check — readiness và tiến phase',
-          'Rulebooks — cobol-java21, vb6-dotnet, java8-java21 (+ KB override)',
-          'Verdicts — pass / fail / acceptable-diff sau canonicalization',
-        ],
-      },
-      {
-        type: 'p',
-        text: 'Project AIM đầu: (1) New hoặc Join, (2) xác nhận path Source / Document / Target, (3) chọn rulebook pack, (4) chạy aim-assess, (5) aim-understand cho unit ưu tiên, (6) convert một lát cắt dọc mỏng, (7) aim-test-compare, (8) rồi mới lập wave và cutover-check. Copy seed slash trước khi dựa vào chúng trên composer.',
-      },
-      {
-        type: 'p',
-        text: 'AIM vs Coding: AIM khi modernization cần evidence multi-repo có governance, rulebook và verdict so sánh được. Coding cho feature work thường trong repo hiện đại. Đừng ép bug fix một service qua pipeline AIM.',
-      },
-      {
-        type: 'p',
-        text: 'Sai thường gặp: sống trong Discussion thay Overview; convert trước assess/understand; coi seed/commands/ là slash live; bỏ Traceability đến tuần cutover; nhận acceptable-diff mà không ghi vì sao rulebook cho phép; chờ Work-style folder tổ chức AIM unit.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'Specialists — Archaeologist, Architect, Converter, Appraiser, Test, Triage dưới Lead.',
-          'KB override — kiến thức project tinh chỉnh rulebook pack sẵn.',
-          'Kích hoạt seed qua `.evoflux/commands/` như custom slash khác.',
-          'Permission plan mode trước convert wave chạm module target dùng chung.',
-        ],
-      },
-    ],
-    related: [
-      'modes-overview',
-      'getting-started',
-      'slash-commands',
-      'permissions-modes',
-      'coding-workspaces',
-    ],
-    openAction: { type: 'route', to: '/aim' },
   },
   {
     id: 'memory-dream',
@@ -1558,8 +1440,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Run Dream',
       'trí nhớ',
       'wiki',
-      'ghi chú',
-    ],
+      'ghi chú'
+],
     setup:
       'Mở Memory bằng Ctrl+M hoặc workbench tool. Cấu hình Dream trong Settings → Memory (cron và tùy chọn liên quan). Cron Dream mặc định `0 2 * * *` nếu bạn không đụng lịch.',
     tricks: [
@@ -1571,8 +1453,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Ghép Dream với Scheduler chỉ khi cần agent prompt tùy ý; Dream có lịch riêng.',
       'Lướt LOG.md sau Dream overnight để biết đổi gì trước khi cite trang trong chat.',
       'Viết note pending ngắn trong ngày hơn là hy vọng model nhớ tuần sau.',
-      'Dream confidence thấp thì coi trang là giả thuyết nháp và verify trên hệ nguồn.',
-    ],
+      'Dream confidence thấp thì coi trang là giả thuyết nháp và verify trên hệ nguồn.'
+],
     blocks: [
       {
         type: 'p',
@@ -1596,8 +1478,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'INDEX.md — bản đồ vào',
           'LOG.md — log synthesis append-only',
           'Ctrl+M — mở Memory workbench',
-          'Run Dream — trigger synthesis tay',
-        ],
+          'Run Dream — trigger synthesis tay'
+],
       },
       {
         type: 'p',
@@ -1615,17 +1497,17 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         type: 'tips',
         items: [
           'Scheduler cho prompt tùy ý; Dream chỉ tổng hợp wiki.',
-          'Sau wave AIM understand lớn, Run Dream để fact gần KB vào dạng wiki nếu bạn dùng cả hai.',
-          'Sandbox/outbound policy vẫn quan trọng khi nội dung Dream sau này chảy ra provider qua chat.',
-        ],
-      },
-    ],
+          'Sau đợt research hoặc coding lớn, Run Dream để fact mới vào dạng wiki.',
+          'Sandbox/outbound policy vẫn quan trọng khi nội dung Dream sau này chảy ra provider qua chat.'
+],
+      }
+],
     related: [
       'scheduler-tasks',
       'workbench-tools',
       'settings-safety',
-      'sessions-folders',
-    ],
+      'sessions-folders'
+],
     openAction: { type: 'workbench', tool: 'wiki' },
   },
   {
@@ -1647,8 +1529,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'trigger',
       'lịch',
       'đặt lịch',
-      'nhắc nhở',
-    ],
+      'nhắc nhở'
+],
     setup:
       'Mở Scheduler bằng Ctrl+S (workbench tool). Route `/scheduler` redirect home — luôn dùng panel. Chọn work hoặc coding mode trên task để prompt xuống đúng Lead.',
     tricks: [
@@ -1660,8 +1542,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Trigger tay sau khi sửa prompt để verify trước khi tin cron overnight.',
       'Giữ prompt lịch idempotent — chạy lại không tạo side effect rối trùng.',
       'Pause task trước khi laptop ngủ dài nếu backend chỉ local và sẽ miss window.',
-      'Đặt tên task theo outcome (“weekday repo chore”) để panel dễ quét.',
-    ],
+      'Đặt tên task theo outcome (“weekday repo chore”) để panel dễ quét.'
+],
     blocks: [
       {
         type: 'p',
@@ -1684,8 +1566,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Pause / resume / trigger — điều khiển vòng đời trong panel',
           'Mode — nhắm Lead work hoặc coding',
           '/scheduler — redirect home; đừng bookmark',
-          'Dream cron — riêng dưới Settings → Memory',
-        ],
+          'Dream cron — riêng dưới Settings → Memory'
+],
       },
       {
         type: 'p',
@@ -1705,16 +1587,16 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Set permission mode cẩn trên session mà scheduled prompt sẽ đụng.',
           'HealthDot phải xanh khi cron bắn trên sidecar local.',
           'Tổng hợp wiki dùng Dream; “hỏi Lead mỗi thứ Hai” dùng Scheduler.',
-          'Prompt idempotent — an toàn nếu trigger chạy hai lần.',
-        ],
-      },
-    ],
+          'Prompt idempotent — an toàn nếu trigger chạy hai lần.'
+],
+      }
+],
     related: [
       'memory-dream',
       'workbench-tools',
       'slash-goal',
-      'troubleshooting-connection',
-    ],
+      'troubleshooting-connection'
+],
     openAction: { type: 'workbench', tool: 'scheduler' },
   },
   {
@@ -1736,8 +1618,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'per-chat',
       'trình duyệt',
       'tiện ích',
-      'dạy',
-    ],
+      'dạy'
+],
     setup:
       'Built-in: bật trong Settings → Browser, rồi Ctrl+T. WebBridge: cài extension Chrome/Edge, bật master policy trong Settings → Browser, pair từ desktop status control, rồi bật WebBridge theo từng chat cần dùng.',
     tricks: [
@@ -1749,8 +1631,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'WebBridge không phải bản web EvoFlux — là companion CDP của app desktop.',
       'Built-in Browser cho browse agent trong sandbox; WebBridge khi cần cookie SSO thật hoặc extension doanh nghiệp.',
       'Revoke pairing khi cho mượn máy hoặc rotate access — ticket còn lại chết cùng revoke.',
-      'Xác nhận teach replay trước khi chia sẻ kết quả monitored vào vòng agent.',
-    ],
+      'Xác nhận teach replay trước khi chia sẻ kết quả monitored vào vòng agent.'
+],
     blocks: [
       {
         type: 'p',
@@ -1773,8 +1655,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Teach — action có nghĩa, không raw keystroke',
           'Revoke pairing — giết relay + ticket còn lại',
           'Settings → Browser — master policy cho cả hai đường',
-          'Untrusted input — selection/page context từ browser thật',
-        ],
+          'Untrusted input — selection/page context từ browser thật'
+],
       },
       {
         type: 'p',
@@ -1793,16 +1675,16 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Sandbox/outbound policy vẫn áp với thứ đi ra provider.',
           'WebBridge offline → xem Troubleshooting trước khi reinstall app.',
-          'Side chat làm rõ quote trang mà không dừng browser run chính.',
-        ],
-      },
-    ],
+          'Side chat làm rõ quote trang mà không dừng browser run chính.'
+],
+      }
+],
     related: [
       'workbench-tools',
       'settings-safety',
       'troubleshooting-connection',
-      'sandbox-settings',
-    ],
+      'sandbox-settings'
+],
     openAction: { type: 'settings', path: 'browser' },
   },
   {
@@ -1828,8 +1710,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Copilot',
       'Providers',
       'API key',
-      'Ollama',
-    ],
+      'Ollama'
+],
     openAction: { type: 'settings', path: 'providers' },
     setup:
       'Settings → Providers. Chuẩn bị API key, OAuth, hoặc URL daemon local đang chạy. Xác nhận HealthDot xanh trước khi coi danh sách model trống là outage mạng.',
@@ -1842,8 +1724,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Context budget bar dùng context_length của model đã chọn từ registry.',
       'Model nhanh cho Lead triage và model mạnh hơn cho Coding specialist khi quan tâm chi phí.',
       'Sau khi rotate key, test lại bằng Work ping nhỏ trước khi start Goal.',
-      'OAuth vẫn cần trạng thái connect thành công — OAuth dở dang để bạn không có model.',
-    ],
+      'OAuth vẫn cần trạng thái connect thành công — OAuth dở dang để bạn không có model.'
+],
     blocks: [
       {
         type: 'p',
@@ -1865,8 +1747,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Composer pills — model / thinking / fast mode theo session',
           'context_length — dẫn context budget bar',
           'Ollama — set base URL khi không dùng port mặc định',
-          'Danh sách model trống — cấu hình Providers trước',
-        ],
+          'Danh sách model trống — cấu hình Providers trước'
+],
       },
       {
         type: 'p',
@@ -1881,23 +1763,23 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Diagnostics sau khi credential trông đúng mà stream fail.',
           'Model mạnh hơn nâng context_length — để ý thói quen /compact.',
-          'MCP và tool vẫn cần permission mode dù model hoàn hảo.',
-        ],
-      },
-    ],
+          'MCP và tool vẫn cần permission mode dù model hoàn hảo.'
+],
+      }
+],
     related: [
       'agents-settings',
       'getting-started',
       'connection-settings',
-      'troubleshooting-connection',
-    ],
+      'troubleshooting-connection'
+],
   },
   {
     id: 'agents-settings',
     category: 'settings',
     title: 'Agents, Skills và MCP',
     summary:
-      'Cấu hình Markdown agent, skill pack và MCP server trong Settings — tool kế thừa cùng rule permission như tool native. Team scope theo work / coding / aim để specialist đúng mode hiện đúng chỗ.',
+      'Cấu hình Markdown agent, skill pack và MCP server trong Settings — tool kế thừa cùng rule permission như tool native. Team scope theo work / coding để specialist đúng mode hiện đúng chỗ.',
     keywords: [
       'agents',
       'skills',
@@ -1912,8 +1794,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'tác nhân',
       'máy chủ mcp',
       'MCP',
-      'Skills',
-    ],
+      'Skills'
+],
     setup:
       'Settings → Agents cho thành viên team; Settings → Skills để validate pack; Settings → MCP để thêm server. Từ chat, dùng /skill: hoặc command palette cho shortcut New Agent / New Skill.',
     tricks: [
@@ -1921,12 +1803,12 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Skill hiện dưới /skill: sau khi hợp lệ trong Settings → Skills.',
       'Chấm trạng thái MCP: ready / starting / auth / error / stopped.',
       'MCP tool chịu cùng rule permission như tool native.',
-      'Team scope theo work / coding / aim.',
+      'Team scope theo work / coding.',
       'Command palette nhảy tới Edit <agent>… hoặc tạo agent và skill mới.',
       'Dùng skills_opt_out trong frontmatter để tắt mặc định như code-graph-navigation.',
       'Tool chỉ Lead (ask_user, plan mode helper, một số worktree helper) không bao giờ cấp cho specialist.',
-      'MCP server kẹt auth thì hoàn tất auth flow trước khi đổ lỗi slash menu composer.',
-    ],
+      'MCP server kẹt auth thì hoàn tất auth flow trước khi đổ lỗi slash menu composer.'
+],
     blocks: [
       {
         type: 'p',
@@ -1948,9 +1830,9 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'MCP — stdio / HTTP / SSE',
           'Status dots — ready / starting / auth / error / stopped',
           'skills_opt_out — tắt skill preload mặc định',
-          'Mode scope — team work / coding / aim',
-          'Lead-only tools — không bao giờ trên specialist',
-        ],
+          'Mode scope — team work / coding',
+          'Lead-only tools — không bao giờ trên specialist'
+],
       },
       {
         type: 'p',
@@ -1965,16 +1847,16 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Preload code-graph-navigation ghép với Coding graph tool.',
           'Workflow và skill đều cần scope hợp lệ mới hiện trong /.',
-          'Rule Always của permission áp cả MCP tool — ưu tiên Once trước.',
-        ],
-      },
-    ],
+          'Rule Always của permission áp cả MCP tool — ưu tiên Once trước.'
+],
+      }
+],
     related: [
       'composer-power',
       'permissions-modes',
       'coding-graph',
-      'slash-commands',
-    ],
+      'slash-commands'
+],
     openAction: { type: 'settings', path: 'agents' },
   },
   {
@@ -1994,8 +1876,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'glob',
       'hộp cát',
       'chặn',
-      'bảo vệ',
-    ],
+      'bảo vệ'
+],
     openAction: { type: 'settings', path: 'sandbox' },
     setup:
       'Settings → Sandbox. Xem lại deny pattern trước khi bật permission auto/bypass mạnh. Help popover trên trang giải thích cú pháp glob ** và *.',
@@ -2008,8 +1890,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Ghép accept-edits hoặc auto với denylist chặt cho tốc độ coding ngày thường.',
       'Deny credential cache và đĩa không liên quan dù bạn tin model.',
       'Test lại một tool call mẫu sau khi sửa globs — glob sai im lặng giống “tool hỏng”.',
-      'Ghép filesystem denylist với domain policy Settings → Browser cho WebBridge.',
-    ],
+      'Ghép filesystem denylist với domain policy Settings → Browser cho WebBridge.'
+],
     blocks: [
       {
         type: 'p',
@@ -2031,8 +1913,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Outbound PII — redact/block trước provider',
           'Symlinks — reject vào root bị chặn',
           'Shell tokenization — check path bị deny trên lệnh',
-          'Goal — không bao giờ nới sandbox scope',
-        ],
+          'Goal — không bao giờ nới sandbox scope'
+],
       },
       {
         type: 'p',
@@ -2047,16 +1929,16 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Plan Reject khi plan nhắm path bị deny thay vì vật lộn với sandbox.',
           'Checklist Troubleshooting “tools denied” gồm shield + denylist.',
-          'Coding worktree theo policy vị trí Sandbox.',
-        ],
-      },
-    ],
+          'Coding worktree theo policy vị trí Sandbox.'
+],
+      }
+],
     related: [
       'permissions-modes',
       'settings-safety',
       'coding-workspaces',
-      'slash-goal',
-    ],
+      'slash-goal'
+],
   },
   {
     id: 'connection-settings',
@@ -2075,8 +1957,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'token handshake',
       'ephemeral port',
       'kết nối',
-      'máy chủ',
-    ],
+      'máy chủ'
+],
     openAction: { type: 'settings', path: 'connection' },
     setup:
       'Settings → Connection (hoặc bấm HealthDot). App đóng gói mặc định sidecar đóng gói. Từ source, đảm bảo `make dev` lên trước `make -C desktop dev`.',
@@ -2089,8 +1971,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Bấm HealthDot bất cứ lúc nào để shortcut vào Connection.',
       'Relaunch app đóng gói để restart sidecar kẹt trước khi sửa settings không liên quan.',
       'Đừng paste access key vào transcript khi cấu hình external mode.',
-      'Toggle external → bundled thì xác nhận HealthDot xanh lại trước khi tưởng Providers hỏng.',
-    ],
+      'Toggle external → bundled thì xác nhận HealthDot xanh lại trước khi tưởng Providers hỏng.'
+],
     blocks: [
       {
         type: 'p',
@@ -2112,8 +1994,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'HealthDot — shortcut vào Connection',
           'Welcome — đợi sidecar/team ready',
           'Từ source — `make dev` rồi `make -C desktop dev`',
-          'Diagnostics — khi URL ổn nhưng subsystem fail',
-        ],
+          'Diagnostics — khi URL ổn nhưng subsystem fail'
+],
       },
       {
         type: 'p',
@@ -2132,16 +2014,16 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Thứ tự cold-start Getting started khớp recovery Connection.',
           'Cron Scheduler trên sidecar local vẫn cần máy thức và khỏe.',
-          'Checklist Troubleshooting bắt đầu ở HealthDot → Connection.',
-        ],
-      },
-    ],
+          'Checklist Troubleshooting bắt đầu ở HealthDot → Connection.'
+],
+      }
+],
     related: [
       'troubleshooting-connection',
       'getting-started',
       'settings-safety',
-      'providers-settings',
-    ],
+      'providers-settings'
+],
   },
   {
     id: 'settings-safety',
@@ -2162,8 +2044,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'mcp',
       'cài đặt',
       'bản đồ',
-      'Settings',
-    ],
+      'Settings'
+],
     openAction: { type: 'settings', path: '' },
     tricks: [
       'Desktop hiện category settings trên sidebar rail; mobile dùng hub About làm nav list.',
@@ -2174,8 +2056,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Diagnostics cho check subsystem live — bổ sung tín hiệu nhị phân của HealthDot.',
       'Nhóm Intelligence vs System vs Application giữ toggle rủi ro khỏi lẫn với chọn theme.',
       'Notifications có test ping — dùng trước khi tin alert khi không focus.',
-      'Mở command palette nếu quên trang settings nào sở hữu toggle.',
-    ],
+      'Mở command palette nếu quên trang settings nào sở hữu toggle.'
+],
     blocks: [
       {
         type: 'p',
@@ -2201,8 +2083,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Appearance — theme, accent, fonts, motion, locale (en / vi / ja)',
           'Telemetry — trace và summary (cũng /telemetry)',
           'Diagnostics — check health subsystem live',
-          'About — thông tin app + link Guidelines',
-        ],
+          'About — thông tin app + link Guidelines'
+],
       },
       {
         type: 'p',
@@ -2217,17 +2099,17 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Mỗi bài Guidelines lớn deep-link qua openAction tới đúng trang khi có.',
           'Locale chỉ đổi phần giao diện dùng chung — nội dung chat giữ như bạn viết.',
-          'Telemetry trống thường nghĩa extras tắt, không phải chat outage.',
-        ],
-      },
-    ],
+          'Telemetry trống thường nghĩa extras tắt, không phải chat outage.'
+],
+      }
+],
     related: [
       'providers-settings',
       'agents-settings',
       'sandbox-settings',
       'connection-settings',
-      'troubleshooting-connection',
-    ],
+      'troubleshooting-connection'
+],
   },
   {
     id: 'keyboard-shortcuts',
@@ -2247,8 +2129,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Ctrl+V',
       'macOS',
       'phím tắt',
-      'bàn phím',
-    ],
+      'bàn phím'
+],
     tricks: [
       'Ctrl+P mở command palette (Search trên sidebar). Help mở modal Guidelines này — không phải palette.',
       'Một số nhãn workbench vẫn hiện ⌘P / ⌥⌘S — shortcut sống là Ctrl+F và Ctrl+;.',
@@ -2258,8 +2140,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Ctrl+R chỉ refresh session Work (không reload cả app).',
       'Quên binding thì Ctrl+P search theo tên action.',
       'Phím 1–5 chỉ đổi permission mode khi shield menu đang mở.',
-      'Ctrl+I focus chat input — hữu ích sau khi click qua panel workbench.',
-    ],
+      'Ctrl+I focus chat input — hữu ích sau khi click qua panel workbench.'
+],
     blocks: [
       {
         type: 'p',
@@ -2285,8 +2167,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           { keys: 'Ctrl+I', action: 'Focus chat input' },
           { keys: 'Ctrl+;', action: 'Side chat (label có thể hiện ⌥⌘S)' },
           { keys: 'Ctrl+R', action: 'Refresh Work sessions' },
-          { keys: '1–5', action: 'Permission modes khi shield menu đang mở' },
-        ],
+          { keys: '1–5', action: 'Permission modes khi shield menu đang mở' }
+],
       },
       {
         type: 'p',
@@ -2300,8 +2182,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Nhãn ⌘P / ⌥⌘S — cũ; dùng Ctrl+F / Ctrl+;',
           'Ctrl+V — xoay view bị suppress lúc paste',
           'Ctrl+R — chỉ refresh session Work',
-          '1–5 — chỉ khi shield menu mở',
-        ],
+          '1–5 — chỉ khi shield menu mở'
+],
       },
       {
         type: 'p',
@@ -2312,16 +2194,16 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Permission shield + 1–5 nhanh hơn click mode.',
           'Ctrl+; side chat trong Goal mà không /stop.',
-          'Ctrl+G sau plan Accept để verify diff.',
-        ],
-      },
-    ],
+          'Ctrl+G sau plan Accept để verify diff.'
+],
+      }
+],
     related: [
       'workbench-tools',
       'getting-started',
       'permissions-modes',
-      'side-chat',
-    ],
+      'side-chat'
+],
     openAction: { type: 'palette' },
   },
   {
@@ -2341,8 +2223,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'error',
       'lỗi',
       'sự cố',
-      'chẩn đoán',
-    ],
+      'chẩn đoán'
+],
     setup:
       'Bắt đầu ở HealthDot footer sidebar. Giữ Settings → Connection và Settings → Diagnostics gần tay. Từ source, chuẩn bị hai terminal: `make dev` và `make -C desktop dev`.',
     tricks: [
@@ -2355,8 +2237,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'WebBridge offline → extension đã cài, pairing còn, Browser settings bật, per-chat toggle on.',
       'Telemetry trống → extras observability/DuckDB có thể tắt — không nhất thiết chat outage.',
       'Goal kẹt → xem blocker streak, budget pause, hoặc /goal:stop.',
-      '/scheduler cảm giác 404 → dùng panel Ctrl+S; route redirect home.',
-    ],
+      '/scheduler cảm giác 404 → dùng panel Ctrl+S; route redirect home.'
+],
     blocks: [
       {
         type: 'p',
@@ -2382,8 +2264,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Telemetry trống → extras observability tắt (thường không chặn)',
           'Goal kẹt → xem blocker streak, budget pause, hoặc /goal:stop',
           '/scheduler cảm giác 404 → panel Ctrl+S; route redirect home',
-          'Graph cũ → reindex từ Graph tool sau edit ngoài lớn',
-        ],
+          'Graph cũ → reindex từ Graph tool sau edit ngoài lớn'
+],
       },
       {
         type: 'p',
@@ -2391,7 +2273,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: reinstall vì thiếu provider key; debug MCP khi HealthDot đỏ; tưởng health xanh nghĩa là Ollama lên; coi AIM acceptable-diff là lỗi app; force-refresh bằng Ctrl+R chờ reload đầy đủ (nó chỉ refresh session Work).',
+        text: 'Sai thường gặp: reinstall vì thiếu provider key; debug MCP khi HealthDot đỏ; tưởng health xanh nghĩa là Ollama lên; force-refresh bằng Ctrl+R chờ reload đầy đủ (nó chỉ refresh session Work).',
       },
       {
         type: 'tips',
@@ -2399,17 +2281,17 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Thứ tự cold-start Getting started khớp checklist này.',
           'Plan review đang chờ Accept không phải hang — giải panel.',
           'Nhầm focus side chat trông như “Lead bỏ qua tôi.”',
-          'Khi nghi — Diagnostics + Work ping nhỏ thắng speculative reset.',
-        ],
-      },
-    ],
+          'Khi nghi — Diagnostics + Work ping nhỏ thắng speculative reset.'
+],
+      }
+],
     related: [
       'getting-started',
       'connection-settings',
       'settings-safety',
       'providers-settings',
-      'browser-webbridge',
-    ],
+      'browser-webbridge'
+],
     openAction: { type: 'settings', path: 'diagnostics' },
-  },
+  }
 ]

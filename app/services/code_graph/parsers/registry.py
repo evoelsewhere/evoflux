@@ -97,9 +97,9 @@ def build_registry(
 
     ``extra_parsers`` are appended after the builtins, so on an extension
     collision the extra parser wins — a workspace-scoped structural parser
-    (an AIM rulebook's ``extractors/*.yaml``, see parsers/structural.py) can
-    take over an extension a builtin would otherwise claim. They are never
-    filtered by ``languages``: the caller opted in explicitly.
+    (``extractors/*.yaml``, see parsers/structural.py) can take over an
+    extension a builtin would otherwise claim. They are never filtered by
+    ``languages``: the caller opted in explicitly.
     """
     parsers: list[LanguageParser] = []
     for parser_type in _BUILTIN_PARSER_TYPES:

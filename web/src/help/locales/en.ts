@@ -9,7 +9,7 @@ export const HELP_CATEGORIES_EN: HelpCategory[] = [
   {
     id: 'modes',
     label: 'Modes',
-    description: 'Work, Coding, and AIM',
+    description: 'Work and Coding',
   },
   {
     id: 'chat',
@@ -42,11 +42,6 @@ export const HELP_CATEGORIES_EN: HelpCategory[] = [
     description: 'Repos, projects, git, graph, and PRs',
   },
   {
-    id: 'aim',
-    label: 'AIM',
-    description: 'Modernization factory',
-  },
-  {
     id: 'memory',
     label: 'Memory & Dream',
     description: 'Wiki knowledge and synthesis',
@@ -75,7 +70,7 @@ export const HELP_CATEGORIES_EN: HelpCategory[] = [
     id: 'troubleshooting',
     label: 'Troubleshooting',
     description: 'Connection, health, and diagnostics',
-  },
+  }
 ]
 
 export const HELP_ARTICLES_EN: HelpArticle[] = [
@@ -84,7 +79,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'getting-started',
     title: 'Getting started with EvoFlux',
     summary:
-      'Install the desktop app or run from source, connect a bring-your-own model provider, confirm the sidecar is healthy, then run a first Work chat, open a Coding repo, or create an AIM project. This guide is the onboarding path from cold launch to a verified streaming session.',
+      'Install the desktop app or run from source, connect a bring-your-own model provider, confirm the sidecar is healthy, then run a first Work chat or open a Coding repo. This guide is the onboarding path from cold launch to a verified streaming session.',
     keywords: [
       'start',
       'install',
@@ -106,8 +101,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'はじめ',
       'セットアップ',
       'インストール',
-      'プロバイダ',
-    ],
+      'プロバイダ'
+],
     setup:
       'Packaged desktop app launches the FastAPI sidecar automatically. From source: Terminal 1 `make dev` (API + Vite), Terminal 2 `make -C desktop dev` (Tauri shell). Frontend deps: `cd web && bun install`. Have at least one provider credential or local daemon (Ollama, etc.) ready before the first chat.',
     tricks: [
@@ -117,11 +112,10 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Cold start shows Welcome until the sidecar and team registry are ready — wait before retrying chat or hunting “empty team” bugs.',
       'After a provider is connected, send a short Work message (“ping — reply with ok”) to verify streaming end-to-end before opening a large repo.',
       'In Coding, clicking a repo focuses the workspace; use + / New chat to create a session. Focus alone never starts a transcript.',
-      'In AIM, use New or Join project once Source / Document / Target layout is available; discussion chat is secondary to Overview and Pipelines.',
       'Open Guidelines anytime from the sidebar Help button (this modal); the command palette stays on Ctrl+P and is for actions, not docs.',
       'If HealthDot is green but chat fails, open Settings → Diagnostics before reinstalling — subsystem checks often beat a full wipe.',
-      'Keep BYOM credentials out of chat transcripts; configure them only under Settings → Providers.',
-    ],
+      'Keep BYOM credentials out of chat transcripts; configure them only under Settings → Providers.'
+],
     blocks: [
       {
         type: 'p',
@@ -129,7 +123,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Local ownership is the product bet. The three modes (Work, Coding, AIM) share one team harness — Lead/specialists, composer, permissions, and workbench — so you learn the chrome once and switch surfaces for the job. Use Work for research and throwaway folders, Coding for persistent repos, and AIM when migration needs pipelines and approvals.',
+        text: 'Local ownership is the product bet. The two modes (Work and Coding) share one team harness — Lead/specialists, composer, permissions, and workbench — so you learn the chrome once and switch surfaces for the job. Use Work for research and throwaway folders; use Coding for persistent repos.',
       },
       {
         type: 'p',
@@ -141,10 +135,10 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           '1) Confirm HealthDot is green (or open Connection if not) and wait until Welcome clears.',
           '2) Settings → Providers → connect at least one model; confirm it appears as configured.',
           '3) Stay in Work and send a short first chat, or switch to Coding and open a git repository.',
-          '4) Optional: switch to AIM → New / Join project and run the setup wizard for Source / Document / Target.',
+          '4) Optional: switch to Coding → open a repo or project and start a session.',
           '5) Explore workbench tools (Terminal, Files, Memory, Browser) once a session exists.',
-          '6) Optional hardening: review Settings → Sandbox deny globs before enabling auto or bypass.',
-        ],
+          '6) Optional hardening: review Settings → Sandbox deny globs before enabling auto or bypass.'
+],
       },
       {
         type: 'p',
@@ -156,7 +150,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'When to stay in Work vs jump modes: use Work for browser tasks, docs, and folder-organized research with no git lifecycle. Switch to Coding as soon as you need Changes, Graph, Review, worktrees, or AGENTS.md. Switch to AIM only when you have (or will create) governed Source / Target / KB layout — not for everyday coding.',
+        text: 'When to stay in Work vs jump modes: use Work for browser tasks, docs, and folder-organized research with no git lifecycle. Switch to Coding as soon as you need Changes, Graph, Review, worktrees, or AGENTS.md.',
       },
       {
         type: 'tips',
@@ -164,34 +158,33 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Cross-feature: after first chat works, open Memory (Ctrl+M) so you know where durable notes will land.',
           'Cross-feature: skim permission shield modes (keys 1–5) before letting agents edit a real repo.',
           'Cross-feature: Ctrl+P → Search “Diagnostics” if health is green but a tool panel stays empty.',
-          'From source only: never start the Tauri shell without `make dev` already serving the API.',
-        ],
+          'From source only: never start the Tauri shell without `make dev` already serving the API.'
+],
       },
       {
         type: 'p',
-        text: 'Next reads: modes overview for when to use Work / Coding / AIM; Providers for BYOM setup; Connection if HealthDot stays red; Troubleshooting for the ordered fix checklist.',
-      },
-    ],
+        text: 'Next reads: modes overview for when to use Work / Coding; Providers for BYOM setup; Connection if HealthDot stays red; Troubleshooting for the ordered fix checklist.',
+      }
+],
     related: [
       'modes-overview',
       'providers-settings',
       'connection-settings',
       'troubleshooting-connection',
-      'keyboard-shortcuts',
-    ],
+      'keyboard-shortcuts'
+],
     openAction: { type: 'settings', path: 'providers' },
   },
   {
     id: 'modes-overview',
     category: 'modes',
-    title: 'Work, Coding, and AIM modes',
+    title: 'Work and Coding modes',
     summary:
-      'Three product modes share one harness but different workspaces, specialists, and default tools. The mode switcher remembers the last route per mode so returning to Coding or AIM lands where you left off.',
+      'Two product modes share one harness but different workspaces, specialists, and default tools. The mode switcher remembers the last route per mode so returning to Coding lands where you left off.',
     keywords: [
       'mode',
       'work',
       'coding',
-      'aim',
       'switch',
       'cowork',
       'route',
@@ -201,70 +194,63 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'mã hóa',
       'モード',
       'ワーク',
-      'コーディング',
-    ],
+      'コーディング'
+],
     tricks: [
       'The mode switcher remembers the last route per mode — return to Coding and you land on the same workspace path you left.',
       'Collapsed sidebar still exposes the mode rail so you can switch without expanding the full tree.',
       'Settings hides the mode switcher while you configure the app; leave Settings to switch modes again.',
-      'Work is best for research, docs, browser tasks, and throwaway scripts; Coding for persistent repos; AIM for governed migration.',
+      'Work is best for research, docs, browser tasks, and throwaway scripts; Coding for persistent repos.',
       'Permission modes, slash commands, and most workbench tools work across modes; Overview / Graph / Changes / Review are Coding-scoped.',
-      'AIM discussion chat is secondary — Overview, KB, Traceability, and Pipelines are the primary surfaces.',
       'Do not open a git monorepo in Work expecting Changes/Review — switch to Coding so source-control tools attach.',
       'Use Work folders + share_context for parallel research threads; use Coding projects when repos must stay linked.',
-      'Mode memory is per mode, not per window — if you expected a blank Coding home, check whether an old workspace route was restored.',
-    ],
+      'Mode memory is per mode, not per window — if you expected a blank Coding home, check whether an old workspace route was restored.'
+],
     blocks: [
       {
         type: 'p',
-        text: 'EvoFlux exposes three top-level modes in the sidebar: Work (cowork sandbox), Coding (repositories and projects), and AIM (modernization factory). Each mode has its own sidebar tree and session list, but the Lead/specialist team, composer, and permissions model stay familiar so shortcuts and Guidelines apply everywhere.',
+        text: 'EvoFlux exposes two top-level modes in the sidebar: Work (cowork sandbox) and Coding (repositories and projects). Each mode has its own sidebar tree and session list, but the Lead/specialist team, composer, and permissions model stay familiar so shortcuts and Guidelines apply everywhere.',
       },
       {
         type: 'p',
-        text: 'Separating modes keeps general cowork from polluting git workspaces, and keeps migration governance (approvals, KB, pipelines) out of everyday coding chats. Shared chrome means you are not relearning permissions, slash, or workbench when you switch.',
+        text: 'Separating modes keeps general cowork from polluting git workspaces. Shared chrome means you are not relearning permissions, slash, or workbench when you switch.',
       },
       {
         type: 'p',
-        text: 'Work sessions use a private session folder or another local folder you select; no persistent multi-repo project is required. Coding opens a git repo or multi-repo project; agents edit real trees with graph, git, worktrees, and PR review. AIM uses New or Join a project with Source / Document / Target / KB layout; pipelines and cutover readiness drive the workflow.',
+        text: 'Work sessions use a private session folder or another local folder you select; no persistent multi-repo project is required. Coding opens a git repo or multi-repo project; agents edit real trees with graph, git, worktrees, and PR review.',
       },
       {
         type: 'tips',
         items: [
           'Work — research, documents, browser tasks, quick scripts, folder-organized chats.',
           'Coding — single repos, multi-repo projects, worktrees, graph, Changes, Review.',
-          'AIM — assess → understand → convert → test-compare → cutover-check pipelines.',
           'Mode memory — last route per mode is restored when you switch back.',
-          'Settings — mode switcher hidden until you leave the settings routes.',
-        ],
+          'Settings — mode switcher hidden until you leave the settings routes.'
+],
       },
       {
         type: 'p',
-        text: 'When to use vs not: prefer Work when the output is notes, browser evidence, or a disposable folder. Prefer Coding when you need commits, PRs, worktrees, or AGENTS.md. Prefer AIM when multiple repositories must stay governed with rulebooks and comparable verdicts — not for a single-repo feature branch.',
-      },
-      {
-        type: 'p',
-        text: 'Common mistakes: treating AIM Discussion as the main IDE; expecting Coding Overview without a focused workspace; filing Coding sessions into Work folders (folder filing is a Work organization feature); assuming permission bypass in Work carries over after a mode switch without checking the new session’s shield.',
+        text: 'When to use vs not: prefer Work when the output is notes, browser evidence, or a disposable folder. Prefer Coding when you need commits, PRs, worktrees, or AGENTS.md.',
       },
       {
         type: 'tips',
         items: [
           'Cross-feature: Ctrl+B toggles the mode sidebar the same way in every mode.',
           'Cross-feature: Scheduler tasks target work or coding mode explicitly — set the right mode on the task.',
-          'Cross-feature: Skills and workflows can be scoped per mode in Settings; a Coding-only workflow stays hidden in Work.',
-        ],
+          'Cross-feature: Skills and workflows can be scoped per mode in Settings; a Coding-only workflow stays hidden in Work.'
+],
       },
       {
         type: 'p',
-        text: 'Step-by-step mode switch: (1) click Work, Coding, or AIM on the mode rail, (2) wait for the sidebar tree to settle, (3) pick or create a session, (4) confirm the workbench tools you need are available for that mode before prompting the agent.',
-      },
-    ],
+        text: 'Step-by-step mode switch: (1) click Work or Coding on the mode rail, (2) wait for the sidebar tree to settle, (3) pick or create a session, (4) confirm the workbench tools you need are available for that mode before prompting the agent.',
+      }
+],
     related: [
       'coding-workspaces',
-      'aim-overview',
       'getting-started',
       'sessions-folders',
-      'workbench-tools',
-    ],
+      'workbench-tools'
+],
   },
   {
     id: 'chat-team',
@@ -288,10 +274,10 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'chuyên gia',
       'エージェント',
       'リード',
-      'スプリット',
-    ],
+      'スプリット'
+],
     setup:
-      'Open any session. Configure team membership, models, and tools under Settings → Agents (scoped to work / coding / aim). Session pills on the composer override model, thinking level, and fast mode for the current chat only.',
+      'Open any session. Configure team membership, models, and tools under Settings → Agents (scoped to work / coding). Session pills on the composer override model, thinking level, and fast mode for the current chat only.',
     tricks: [
       'Ctrl+V cycles Agent ↔ Split on desktop (disabled while the focused field uses paste).',
       'Command palette has Next / Previous Agent when workers are active — faster than hunting the identity dropdown.',
@@ -301,8 +287,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Configure models, skills, tools, and permissions per agent in Settings → Agents.',
       'Session pills on the composer set model, thinking level, and fast mode for the current chat only.',
       'Keep simple tasks on the Lead; fan-out only when parallelism clearly shortens wall time.',
-      'Lead-only tools (ask_user, plan mode helpers, some worktree helpers) are never granted to specialists — do not expect workers to approve plans.',
-    ],
+      'Lead-only tools (ask_user, plan mode helpers, some worktree helpers) are never granted to specialists — do not expect workers to approve plans.'
+],
     blocks: [
       {
         type: 'p',
@@ -326,9 +312,9 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Agent — deep focus on one transcript (Lead or a selected specialist).',
           'Split — watch Lead and workers in parallel panes.',
           'Monitor — overview when many agents are active.',
-          'Teams are scoped to work / coding / aim in Settings → Agents.',
-          'Mailbox — structured specialist results; Lead synthesizes for you.',
-        ],
+          'Teams are scoped to work / coding in Settings → Agents.',
+          'Mailbox — structured specialist results; Lead synthesizes for you.'
+],
       },
       {
         type: 'p',
@@ -341,20 +327,20 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'When to fan out — multi-file investigation, parallel test/fix, AIM specialist lanes.',
+          'When to fan out — multi-file investigation, parallel test/fix, specialist lanes.',
           'When to stay Lead-only — short Q&A, single-file edits, permission-sensitive first passes.',
           'Cross-feature: pair Split with Plan review so you can read the plan while workers idle.',
-          'Cross-feature: /btw side chat for meta questions without stopping the team run.',
-        ],
-      },
-    ],
+          'Cross-feature: /btw side chat for meta questions without stopping the team run.'
+],
+      }
+],
     related: [
       'permissions-modes',
       'composer-power',
       'agents-settings',
       'keyboard-shortcuts',
-      'side-chat',
-    ],
+      'side-chat'
+],
   },
   {
     id: 'permissions-modes',
@@ -381,8 +367,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'phê duyệt',
       '権限',
       'プラン',
-      '承認',
-    ],
+      '承認'
+],
     setup:
       'Open the shield / permission control on the composer. Keys 1–5 work while that menu is open. Review Settings → Sandbox before enabling auto or bypass on a machine with broad filesystem access.',
     tricks: [
@@ -394,8 +380,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Ask-user question modals appear when the agent needs structured answers before continuing — answer to unblock the run.',
       'Goal mode never expands the session’s permissions or sandbox scope — set the shield deliberately before `/goal`.',
       'Bypass skips all permission checks — fastest, but use only in trusted local sandboxes with a tight denylist.',
-      'Always is sticky for matching rules — Prefer Once when you are still learning what the agent wants to run.',
-    ],
+      'Always is sticky for matching rules — Prefer Once when you are still learning what the agent wants to run.'
+],
     blocks: [
       {
         type: 'p',
@@ -417,12 +403,12 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           '3 Plan — plan then approve before execution.',
           '4 Auto — automatically approve operations.',
           '5 Bypass — skip permission checks entirely.',
-          'Sandbox — still blocks deny globs even under bypass.',
-        ],
+          'Sandbox — still blocks deny globs even under bypass.'
+],
       },
       {
         type: 'p',
-        text: 'When to use which mode: ask for unfamiliar repos and production-adjacent trees; accept-edits for day-to-day Coding once you trust the tree; plan for multi-step refactors and AIM-adjacent changes you want to read first; auto for trusted sandboxes and scheduled maintenance; bypass only for short, deliberate bursts on disposable or tightly denylisted environments.',
+        text: 'When to use which mode: ask for unfamiliar repos and production-adjacent trees; accept-edits for day-to-day Coding once you trust the tree; plan for multi-step refactors and large changes you want to read first; auto for trusted sandboxes and scheduled maintenance; bypass only for short, deliberate bursts on disposable or tightly denylisted environments.',
       },
       {
         type: 'p',
@@ -434,14 +420,14 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Step — shield → Plan (3) → send task → Plan review → Accept / Revise / Reject.',
           'Step — on a tool prompt, prefer Once until the pattern is clearly safe.',
           'Cross-feature: pair plan with quote-into-composer for surgical revises.',
-          'Cross-feature: tighten Sandbox before auto on multi-repo projects.',
-        ],
+          'Cross-feature: tighten Sandbox before auto on multi-repo projects.'
+],
       },
       {
         type: 'p',
         text: 'MCP tools inherit the same permission rules as native tools. Approving an MCP call Once/Always follows the same bar; sandbox and outbound policy still apply. If tools are “denied unexpectedly,” check the shield and Settings → Sandbox before reconfiguring MCP.',
-      },
-    ],
+      }
+],
     related: ['slash-goal', 'sandbox-settings', 'plan-review', 'chat-team', 'agents-settings'],
   },
   {
@@ -461,8 +447,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Accept & execute',
       'xem kế hoạch',
       'chấp nhận',
-      'プランレビュー',
-    ],
+      'プランレビュー'
+],
     setup:
       'Set permission mode to Plan (key 3 in the shield menu), then send a task that needs multi-step work. Keep the Plan review panel visible — do not switch permission mode until you Accept, Revise, or Reject a pending plan.',
     tricks: [
@@ -474,8 +460,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Use plan mode before Goal for large objectives so the first autonomous stretch starts from an approved outline.',
       'If the plan is vague, Revise with a concrete Definition of Done rather than Accepting and hoping.',
       'Split view helps: keep Plan review open while you glance at specialist status.',
-      'Quoted revise chips clear before send if you change your mind — same quote pipeline as transcript selections.',
-    ],
+      'Quoted revise chips clear before send if you change your mind — same quote pipeline as transcript selections.'
+],
     blocks: [
       {
         type: 'p',
@@ -496,8 +482,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Revise — focus composer; optional quoted selection.',
           'Reject — abort this plan turn; send a new instruction.',
           'Quote — select plan text → revise chip above draft.',
-          'Shield 3 — enter plan mode before the task, not after tools started.',
-        ],
+          'Shield 3 — enter plan mode before the task, not after tools started.'
+],
       },
       {
         type: 'p',
@@ -513,14 +499,14 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Good revise prompts name files, tests, and out-of-scope items explicitly.',
           'Bad revise prompts are vague (“make it better”) — quote the weak bullet first.',
           'Cross-feature: Send unrelated meta questions to side chat so the plan thread stays clean.',
-          'Cross-feature: after Accept on Coding work, open Changes (Ctrl+G) to verify the diff matches the plan.',
-        ],
+          'Cross-feature: after Accept on Coding work, open Changes (Ctrl+G) to verify the diff matches the plan.'
+],
       },
       {
         type: 'p',
         text: 'Do not use plan review as a substitute for sandbox policy. A beautiful plan can still propose paths you never want touched — keep deny globs in Settings → Sandbox, and Reject plans that expand scope into secrets, vendor dirs, or unrelated repos.',
-      },
-    ],
+      }
+],
     related: ['permissions-modes', 'composer-power', 'attachments', 'slash-goal', 'coding-git'],
   },
   {
@@ -550,8 +536,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'đề cập',
       '入力',
       '添付',
-      'スニペット',
-    ],
+      'スニペット'
+],
     setup:
       'Focus the composer (Ctrl+I). Attachments must be enabled for the session. In Work, WorkFolderSelector sits near the composer to retarget the session folder. In Coding, # snippets require workspace or global snippet definitions.',
     tricks: [
@@ -564,8 +550,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Paste images/files or drag-drop onto the composer when attachments are enabled.',
       'Select transcript text for Add to chat, more details, or Send to side chat.',
       'Prefer @ mentions over pasting whole files — ranked paths keep context precise and cheaper.',
-      'Custom commands under .evoflux/commands/ usually insert into the textarea so you can append $ARGUMENTS.',
-    ],
+      'Custom commands under .evoflux/commands/ usually insert into the textarea so you can append $ARGUMENTS.'
+],
     blocks: [
       {
         type: 'p',
@@ -589,8 +575,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'DnD / paste — attachments when enabled',
           'Quote selection — Add to chat or Send to side chat',
           'WorkFolderSelector — retarget Work session folder',
-          'RunInputsDialog — workflow parameters before launch',
-        ],
+          'RunInputsDialog — workflow parameters before launch'
+],
       },
       {
         type: 'p',
@@ -606,21 +592,21 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'When to use ! — short one-liners tied to the chat turn.',
           'When to use Terminal (Ctrl+`) — interactive or long-running processes.',
           'When to use @ — known paths; use Files tool browse when you are still exploring.',
-          'Cross-feature: quote → Send to side chat for /btw without stopping Goal.',
-        ],
+          'Cross-feature: quote → Send to side chat for /btw without stopping Goal.'
+],
       },
       {
         type: 'p',
-        text: 'Workflows must be approved and valid for the session scope (work / coding / aim) or they stay hidden. Skills appear under /skill: only after they validate in Settings → Skills. If a command is missing, check scope and validation before assuming a slash bug.',
-      },
-    ],
+        text: 'Workflows must be approved and valid for the session scope (work / coding) or they stay hidden. Skills appear under /skill: only after they validate in Settings → Skills. If a command is missing, check scope and validation before assuming a slash bug.',
+      }
+],
     related: [
       'slash-commands',
       'attachments',
       'side-chat',
       'coding-workspaces',
-      'agents-settings',
-    ],
+      'agents-settings'
+],
   },
   {
     id: 'attachments',
@@ -643,8 +629,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'trích dẫn',
       '添付',
       'ペースト',
-      '引用',
-    ],
+      '引用'
+],
     setup:
       'Attachments must be enabled for the session/composer; some environments disable uploads for policy reasons. Confirm the composer drop target highlights before relying on drag-and-drop. Quotes work from transcript selections, Plan review, and Send to side chat.',
     tricks: [
@@ -656,8 +642,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Prefer a tight quote plus a short ask over re-pasting an entire prior assistant essay.',
       'Images help UI and error-dialog bugs; for stack traces, paste text or attach a .log so the model can copy tokens exactly.',
       'Clear stale quote chips before switching topics — leftover quotes silently bias the next turn.',
-      'If paste seems to “do nothing,” check focus is on the composer and attachments are enabled for the session.',
-    ],
+      'If paste seems to “do nothing,” check focus is on the composer and attachments are enabled for the session.'
+],
     blocks: [
       {
         type: 'p',
@@ -680,8 +666,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Send to side chat — quote into /btw parallel ask',
           'Plan quote — select plan markdown → revise chip',
           '/undo — restore previous user text + attachments',
-          'Clear chip — remove quote before send if topic changed',
-        ],
+          'Clear chip — remove quote before send if topic changed'
+],
       },
       {
         type: 'p',
@@ -697,21 +683,21 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'When not to attach — huge build artifacts, node_modules zips, full database dumps.',
           'When to quote — disagreeing with one paragraph, revising one plan bullet, asking “explain this”.',
           'Cross-feature: after /undo, review restored attachments before re-send.',
-          'Cross-feature: WorkFolderSelector does not attach a folder; it retargets the session root.',
-        ],
+          'Cross-feature: WorkFolderSelector does not attach a folder; it retargets the session root.'
+],
       },
       {
         type: 'p',
         text: 'Policy note: if your org disables uploads, you will still have quotes and @ mentions. Prefer those paths over fighting the attachment gate. Outbound PII redaction in Settings → Sandbox can still apply when content leaves toward a provider.',
-      },
-    ],
+      }
+],
     related: [
       'composer-power',
       'plan-review',
       'side-chat',
       'slash-commands',
-      'sandbox-settings',
-    ],
+      'sandbox-settings'
+],
   },
   {
     id: 'slash-commands',
@@ -719,6 +705,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     title: 'Built-in slash commands',
     summary:
       'Type / in the composer for stop, compact, undo, init, btw, goal, skills, workflows, and custom commands from .evoflux/commands/. Built-ins run immediately; custom entries usually insert so you can finish arguments.',
+    setup:
+      'Focus the composer and type /. Place project or global custom commands under `.evoflux/commands/` (compatible OpenCode paths also work).',
     keywords: [
       'slash',
       '/stop',
@@ -734,22 +722,19 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'lệnh',
       'lệnh tùy chỉnh',
       'スラッシュ',
-      'コマンド',
-    ],
-    setup:
-      'Focus the composer and type /. Place project or global custom commands under `.evoflux/commands/` (compatible OpenCode paths also work). AIM seed prompts under seed/commands/ stay inert until copied into `.evoflux/commands/`.',
+      'コマンド'
+],
     tricks: [
       'Built-ins execute immediately on pick; custom commands usually insert into the textarea so you can append $ARGUMENTS.',
       'Longest-prefix match; : and / are interchangeable for nested command and skill names.',
       'Custom commands live under project or global .evoflux/commands/ (and compatible OpenCode paths).',
-      'AIM seed prompts under seed/commands/ are inert until copied into .evoflux/commands/.',
       'Skills appear under /skill: only after they validate in Settings → Skills.',
-      'Workflows must be approved and valid for the session scope (work / coding / aim) or they stay hidden.',
+      'Workflows must be approved and valid for the session scope (work / coding) or they stay hidden.',
       '/compact early when the context budget bar climbs — waiting for failure wastes a turn.',
-      '/init is Coding-oriented for AGENTS.md; do not expect it to scaffold AIM rulebooks.',
+      '/init is Coding-oriented for AGENTS.md scaffolding.',
       '/stop is the panic button for runaway specialist fan-out; pair with a clearer next instruction.',
-      'Prefer /btw over polluting the main transcript with meta questions during a long run.',
-    ],
+      'Prefer /btw over polluting the main transcript with meta questions during a long run.'
+],
     blocks: [
       {
         type: 'p',
@@ -778,8 +763,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           { cmd: '/goal:resume', desc: 'Resume a paused goal' },
           { cmd: '/goal:stop', desc: 'Remove the session goal' },
           { cmd: '/skill:…', desc: 'Attach a skill for the next message (nested: /skill:parent:child)' },
-          { cmd: '/workflow <name>', desc: 'Run an approved workflow (may open RunInputsDialog)' },
-        ],
+          { cmd: '/workflow <name>', desc: 'Run an approved workflow (may open RunInputsDialog)' }
+],
       },
       {
         type: 'p',
@@ -792,13 +777,12 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Custom — usually inserts; append $ARGUMENTS',
           'Skill — /skill: after Settings → Skills validation',
           'Workflow — scope + approval required or hidden',
-          'AIM seeds — copy seed/commands/ → .evoflux/commands/',
-          'Longest prefix — parent:child nesting with : or /',
-        ],
+          'Longest prefix — parent:child nesting with : or /'
+],
       },
       {
         type: 'p',
-        text: 'Step-by-step custom command: (1) add a Markdown/YAML command under `.evoflux/commands/`, (2) reload or reopen the slash menu, (3) pick the command so it inserts, (4) fill arguments, (5) send. For AIM seeds, copy only the prompts you need — unused seeds stay out of the menu on purpose.',
+        text: 'Step-by-step custom command: (1) add a Markdown/YAML command under `.evoflux/commands/`, (2) reload or reopen the slash menu, (3) pick the command so it inserts, (4) fill arguments, (5) send. Add only the custom commands you need — unused prompts stay out of the menu on purpose.',
       },
       {
         type: 'p',
@@ -810,17 +794,16 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'When to /new — topic change with a polluted context bar.',
           'When to /compact — same topic, rising budget, keep continuity.',
           'When to /stop — runaway tools or wrong fan-out; then restate the ask.',
-          'Cross-feature: /init + Coding Overview after opening a new repo.',
-        ],
-      },
-    ],
+          'Cross-feature: /init + Coding Overview after opening a new repo.'
+],
+      }
+],
     related: [
       'slash-goal',
       'side-chat',
       'composer-power',
-      'aim-overview',
-      'coding-workspaces',
-    ],
+      'coding-workspaces'
+],
   },
   {
     id: 'slash-goal',
@@ -846,8 +829,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'tạm dừng',
       'ゴール',
       '予算',
-      '一時停止',
-    ],
+      '一時停止'
+],
     setup:
       'Start with `/goal <objective>` in any mode. Optional: `/goal:budget <tokens>` before or during the run. Set permission mode and Settings → Sandbox deliberately first — Goal never widens them.',
     tricks: [
@@ -859,8 +842,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Goal never expands permission mode or sandbox scope — set those deliberately before starting.',
       'Prefer a clear objective and a token budget for unattended overnight runs.',
       'Draft with plan mode first on large goals, Accept, then `/goal` so autonomy starts from an approved outline.',
-      'Use /btw for meta questions while a goal runs so you do not derail the objective transcript.',
-    ],
+      'Use /btw for meta questions while a goal runs so you do not derail the objective transcript.'
+],
     blocks: [
       {
         type: 'p',
@@ -882,8 +865,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           { cmd: '/goal:budget <tokens|none>', desc: 'Set or clear token budget' },
           { cmd: '/goal:pause', desc: 'Pause execution' },
           { cmd: '/goal:resume', desc: 'Resume after pause or budget hold' },
-          { cmd: '/goal:stop', desc: 'Clear the session goal' },
-        ],
+          { cmd: '/goal:stop', desc: 'Clear the session goal' }
+],
       },
       {
         type: 'tips',
@@ -892,8 +875,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Set a token budget before overnight runs.',
           'Watch blocker streak — same blocker ×3 stops progress.',
           'Do not expect Goal to flip ask → bypass for you.',
-          'Use /goal:pause before large manual edits in the same tree.',
-        ],
+          'Use /goal:pause before large manual edits in the same tree.'
+],
       },
       {
         type: 'p',
@@ -909,17 +892,17 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Step — shield + sandbox → optional plan Accept → /goal:budget → /goal <objective>.',
           'Step — stuck → read blocker → /goal:pause → fix environment → /goal:resume.',
           'Cross-feature: Scheduler is for cron prompts; Goal is in-session autonomy.',
-          'Cross-feature: Dream cron is separate under Settings → Memory.',
-        ],
-      },
-    ],
+          'Cross-feature: Dream cron is separate under Settings → Memory.'
+],
+      }
+],
     related: [
       'permissions-modes',
       'slash-commands',
       'chat-team',
       'plan-review',
-      'scheduler-tasks',
-    ],
+      'scheduler-tasks'
+],
   },
   {
     id: 'sessions-folders',
@@ -945,10 +928,10 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'chia sẻ ngữ cảnh',
       'フォルダ',
       'ピン',
-      'セッション',
-    ],
+      'セッション'
+],
     setup:
-      'Work mode sidebar → Folders section. Coding/AIM use their own session trees; folder filing is a Work organization feature. Use Ctrl+R to refresh the Work session list after external changes.',
+      'Work mode sidebar → Folders section. Coding use their own session trees; folder filing is a Work organization feature. Use Ctrl+R to refresh the Work session list after external changes.',
     tricks: [
       'Drag a session row onto a folder header (desktop), or use Move to folder… on touch.',
       'The link icon on a folder toggles share_context — siblings receive a bounded digest of each other.',
@@ -959,12 +942,12 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Filing only sets folder_id — history, model, and workspace settings stay with the session.',
       'Turn share_context off for sensitive client folders that must not digest into siblings.',
       'Name folders by outcome (“RFP research”, “incident 4821”), not by date — dates already group unfiled chats.',
-      'Unfile via Move to folder… → none when a thread no longer belongs with its siblings.',
-    ],
+      'Unfile via Move to folder… → none when a thread no longer belongs with its siblings.'
+],
     blocks: [
       {
         type: 'p',
-        text: 'Work sessions can be pinned and filed into named folders. Folders optionally enable share_context so sibling chats exchange a bounded digest. Unfiled sessions still group by Pinned / Today / Yesterday / Older. Coding and AIM keep their own trees — do not look for Work folders there.',
+        text: 'Work sessions can be pinned and filed into named folders. Folders optionally enable share_context so sibling chats exchange a bounded digest. Unfiled sessions still group by Pinned / Today / Yesterday / Older. and Coding keep their own trees — do not look for Work folders there.',
       },
       {
         type: 'p',
@@ -983,8 +966,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Delete folder — unfiles only; chats remain.',
           'Ctrl+R — refresh Work session list.',
           'Move to folder… — touch-friendly filing / unfiling.',
-          'Today / Yesterday / Older — automatic groups for unfiled chats.',
-        ],
+          'Today / Yesterday / Older — automatic groups for unfiled chats.'
+],
       },
       {
         type: 'p',
@@ -1004,17 +987,17 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Cross-feature: WorkFolderSelector sets the on-disk folder for tools; sidebar folders organize chats.',
           'Cross-feature: pin + Goal on the decision chat for long engagements.',
           'Cross-feature: /new inside a folder keeps filing if you started from Folder +.',
-          'Refresh with Ctrl+R if a moved session does not appear where you expect.',
-        ],
-      },
-    ],
+          'Refresh with Ctrl+R if a moved session does not appear where you expect.'
+],
+      }
+],
     related: [
       'composer-power',
       'modes-overview',
       'getting-started',
       'slash-goal',
-      'side-chat',
-    ],
+      'side-chat'
+],
   },
   {
     id: 'workbench-tools',
@@ -1039,8 +1022,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'bảng',
       'bảng công cụ',
       'ワークベンチ',
-      'パネル',
-    ],
+      'パネル'
+],
     setup:
       'Open a session first. Coding Overview, Graph, Changes, and Review need a Coding workspace. Built-in Browser must be enabled under Settings → Browser before Ctrl+T is useful.',
     tricks: [
@@ -1052,8 +1035,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Terminal and Browser support multiple tab instances; other tools are single-instance toggles.',
       'Changes (Ctrl+G) and Review are Coding-only; Graph needs a Coding workspace.',
       'Toggle the same tool again to close it — the workbench is not a pile of permanent cards.',
-      'When opening the workbench with a Coding workspace and no tool selected, Overview opens by default.',
-    ],
+      'When opening the workbench with a Coding workspace and no tool selected, Overview opens by default.'
+],
     blocks: [
       {
         type: 'p',
@@ -1072,8 +1055,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           { keys: 'Ctrl+;', action: 'Side chat (label may show ⌥⌘S)' },
           { keys: 'Ctrl+M', action: 'Memory (wiki)' },
           { keys: 'Ctrl+S', action: 'Scheduler' },
-          { keys: 'Ctrl+G', action: 'Git Changes (Coding)' },
-        ],
+          { keys: 'Ctrl+G', action: 'Git Changes (Coding)' }
+],
       },
       {
         type: 'tips',
@@ -1087,8 +1070,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Memory — wiki + pending notes.',
           'Scheduler — cron / one-shot tasks (panel only; /scheduler redirects home).',
           'Changes — stage, commit, branch operations (Coding).',
-          'Review — PR/MR list for connected hosts (Coding).',
-        ],
+          'Review — PR/MR list for connected hosts (Coding).'
+],
       },
       {
         type: 'p',
@@ -1104,18 +1087,18 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'When to use Terminal vs ! — interactive/long vs short chat-tied commands.',
           'When to use Files vs @ — browse/explore vs pin a known path into the ask.',
           'Cross-feature: Changes after Accept in plan mode to verify diffs.',
-          'Cross-feature: Memory after research sessions so Dream has material.',
-        ],
-      },
-    ],
+          'Cross-feature: Memory after research sessions so Dream has material.'
+],
+      }
+],
     related: [
       'side-chat',
       'memory-dream',
       'scheduler-tasks',
       'coding-git',
       'keyboard-shortcuts',
-      'browser-webbridge',
-    ],
+      'browser-webbridge'
+],
   },
   {
     id: 'side-chat',
@@ -1134,8 +1117,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'chat phụ',
       'hỏi thêm',
       'サイドチャット',
-      'ちなみに',
-    ],
+      'ちなみに'
+],
     setup:
       'Open with /btw, Ctrl+;, the workbench Side chat tool, or the session-row icon. Optionally select transcript text → Send to side chat to carry a quote. Live shortcut is Ctrl+; even if a label still shows ⌥⌘S.',
     tricks: [
@@ -1147,8 +1130,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Keep side chat short and factual; dump long implementation work back on the Lead thread.',
       'Close the panel when done so you do not accidentally type the next main instruction into /btw.',
       'Side chat sees parent context read-only — it should not be your primary editor for repo-wide refactors.',
-      'If you need a durable parallel thread with its own tools, prefer a sibling Work session (optionally share_context) instead of overloading /btw.',
-    ],
+      'If you need a durable parallel thread with its own tools, prefer a sibling Work session (optionally share_context) instead of overloading /btw.'
+],
     blocks: [
       {
         type: 'p',
@@ -1170,8 +1153,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Send to side chat — quote selection into /btw',
           'Read-only parent context — no history merge back',
           'Session-row icon — open without the slash menu',
-          '⌥⌘S label — ignore; live binding is Ctrl+;',
-        ],
+          '⌥⌘S label — ignore; live binding is Ctrl+;'
+],
       },
       {
         type: 'p',
@@ -1191,17 +1174,17 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Cross-feature: pair with Plan review quotes for “explain this bullet” without Rejecting.',
           'Cross-feature: Work sibling chats + share_context for heavier parallel research.',
           'Cross-feature: /stop still targets the main team — side chat is not a second Lead.',
-          'If side chat lacks a tool you need, you are probably past the /btw use case.',
-        ],
-      },
-    ],
+          'If side chat lacks a tool you need, you are probably past the /btw use case.'
+],
+      }
+],
     related: [
       'composer-power',
       'workbench-tools',
       'slash-commands',
       'slash-goal',
-      'plan-review',
-    ],
+      'plan-review'
+],
     openAction: { type: 'workbench', tool: 'side-chat' },
   },
   {
@@ -1225,8 +1208,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'cây làm việc',
       'ワークスペース',
       'プロジェクト',
-      'ワークツリー',
-    ],
+      'ワークツリー'
+],
     setup:
       'Switch to Coding (`/coding`) and add a repository or create a project. Configure worktree location under Settings → Sandbox (repository vs user_data). Run /init in a session once conventions should live in AGENTS.md.',
     tricks: [
@@ -1239,8 +1222,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Run /init in a Coding session to create or update AGENTS.md for agent conventions.',
       'Open Coding Overview from the workbench when a workspace is selected for status at a glance.',
       'Commit or stash before spawning a worktree if you need those dirty changes elsewhere — they will not appear in the new tree.',
-      'Prefer a project when services share APIs across repos; prefer a single repo when the change set is local.',
-    ],
+      'Prefer a project when services share APIs across repos; prefer a single repo when the change set is local.'
+],
     blocks: [
       {
         type: 'p',
@@ -1262,8 +1245,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Worktrees — clean trees; uncommitted source not copied.',
           '/init — AGENTS.md for Coding conventions.',
           'Sandbox — worktree location policy.',
-          'Overview — status once a workspace is focused.',
-        ],
+          'Overview — status once a workspace is focused.'
+],
       },
       {
         type: 'p',
@@ -1283,17 +1266,17 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'When to project — cross-repo types, shared contracts, multi-service changes.',
           'When not to project — one app repo with vendored code you rarely touch.',
           'Cross-feature: graph cross-repo resolution needs a project_id.',
-          'Cross-feature: Review/Changes attach to the focused workspace.',
-        ],
-      },
-    ],
+          'Cross-feature: Review/Changes attach to the focused workspace.'
+],
+      }
+],
     related: [
       'coding-git',
       'coding-graph',
       'slash-commands',
       'sandbox-settings',
-      'modes-overview',
-    ],
+      'modes-overview'
+],
     openAction: { type: 'route', to: '/coding' },
   },
   {
@@ -1324,8 +1307,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'cam kết',
       'ギット',
       'プルリクエスト',
-      'コミット',
-    ],
+      'コミット'
+],
     setup:
       'Coding mode with a git workspace. Connect hosts under Settings → Git & reviews for remote PR/MR actions. Review timeouts, max diff size, and force-with-lease before aggressive operations.',
     tricks: [
@@ -1337,8 +1320,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Use stash / branch / rebase from Changes or agent tools depending on comfort level.',
       'Prefer small commits with clear messages — agents write better follow-ups against clean history.',
       'Connect the host before asking for Create PR; otherwise local commits succeed and remote steps fail late.',
-      'If a diff is huge, raise max diff size only temporarily — oversized reviews hide risk.',
-    ],
+      'If a diff is huge, raise max diff size only temporarily — oversized reviews hide risk.'
+],
     blocks: [
       {
         type: 'p',
@@ -1360,8 +1343,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'GitHub / GitLab / Bitbucket / Gitea / Azure DevOps — host integrations',
           'force-with-lease — gated; not a casual default',
           'max diff size — raise only when you must',
-          'stash / branch / rebase — UI or agent tools',
-        ],
+          'stash / branch / rebase — UI or agent tools'
+],
       },
       {
         type: 'p',
@@ -1380,17 +1363,17 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'Cross-feature: Plan Accept → Changes to verify the plan became the diff you expected.',
           'Cross-feature: worktrees keep experimental commits off your main checkout.',
-          'Cross-feature: permission ask mode before first push on a production remote.',
-        ],
-      },
-    ],
+          'Cross-feature: permission ask mode before first push on a production remote.'
+],
+      }
+],
     related: [
       'coding-workspaces',
       'workbench-tools',
       'settings-safety',
       'permissions-modes',
-      'plan-review',
-    ],
+      'plan-review'
+],
     openAction: { type: 'workbench', tool: 'source-control' },
   },
   {
@@ -1414,8 +1397,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'đồ thị mã',
       'biểu tượng',
       'コードグラフ',
-      'シンボル',
-    ],
+      'シンボル'
+],
     setup:
       'Coding workspace or project — indexing runs incrementally on file changes. Open the Graph workbench tool to explore visually and reindex when the tree looks stale after large external edits.',
     tricks: [
@@ -1427,8 +1410,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Verify material findings in live source after graph navigation — indexes can lag external edits.',
       'Ask structural questions (“who calls X?”) instead of “read the whole package.”',
       'Multi-repo projects get cross-repo edges; standalone repos still benefit inside one tree.',
-      'If answers ignore the graph, check that code-graph-navigation is not in skills_opt_out.',
-    ],
+      'If answers ignore the graph, check that code-graph-navigation is not in skills_opt_out.'
+],
     blocks: [
       {
         type: 'p',
@@ -1446,8 +1429,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'code_graph — callers/references and dependencies',
           'code_path — how are A and B connected?',
           'grep — literals, comments, prose, config keys',
-          'skills_opt_out: [code-graph-navigation] — disable default preload',
-        ],
+          'skills_opt_out: [code-graph-navigation] — disable default preload'
+],
       },
       {
         type: 'p',
@@ -1470,113 +1453,12 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'Cross-feature: pair graph hits with Changes to see if your edit set matches the call neighborhood.',
           'Cross-feature: AGENTS.md can tell agents to prefer graph-first navigation.',
-          'Cross-feature: specialists inherit tools per Settings → Agents — ensure workers can search code.',
-        ],
-      },
-    ],
+          'Cross-feature: specialists inherit tools per Settings → Agents — ensure workers can search code.'
+],
+      }
+],
     related: ['coding-workspaces', 'agents-settings', 'composer-power', 'coding-git'],
     openAction: { type: 'workbench', tool: 'graph' },
-  },
-  {
-    id: 'aim-overview',
-    category: 'aim',
-    title: 'AIM modernization factory',
-    summary:
-      'Governed pipelines across Source, Target, and Knowledge Base repositories with Overview, KB, Traceability, Pipelines, rulebook packs, and seed commands you must copy to activate. Discussion chat is secondary to mission-control surfaces.',
-    keywords: [
-      'aim',
-      'migration',
-      'modernization',
-      'pipeline',
-      'kb',
-      'cutover',
-      'rulebook',
-      'aim-assess',
-      'aim-understand',
-      'aim-convert-unit',
-      'aim-convert-wave',
-      'aim-test-compare',
-      'aim-cutover-check',
-      'cobol-java21',
-      'vb6-dotnet',
-      'java8-java21',
-      'seed/commands',
-      'hiện đại hóa',
-      'di cư',
-      'sổ quy tắc',
-      '移行',
-      'モダナイゼーション',
-      'パイプライン',
-    ],
-    setup:
-      'AIM mode → New or Join project; detect Source / Document / Target layout and pick a rulebook pack. Copy needed seed slash prompts into `.evoflux/commands/` before using them — seed/commands/ copies are inert until activated.',
-    tricks: [
-      'Overview is mission control: units, health, approvals, cutover fields.',
-      'Pipelines: aim-assess, aim-understand, aim-convert-unit/wave, aim-test-compare, aim-cutover-check.',
-      'Built-in rulebook packs include cobol-java21, vb6-dotnet, and java8-java21; KB can override.',
-      'Seed AIM slash prompts under seed/commands/ are inert until copied into .evoflux/commands/.',
-      'Panels: Overview, Knowledge Base, Traceability, Pipelines — discussion chat is secondary.',
-      'Compare verdicts are deterministic: pass / fail / acceptable-diff after rulebook canonicalization.',
-      'Specialists include Archaeologist, Architect, Converter, Appraiser, Test, and Triage under the Lead.',
-      'Run assess → understand before convert waves; skipping inventory creates untraceable units.',
-      'Treat acceptable-diff as a ruled exception, not as a soft pass you ignore in cutover-check.',
-      'Open Discussion from pipeline results when you need free-form follow-up — do not live in Discussion by default.',
-    ],
-    blocks: [
-      {
-        type: 'p',
-        text: 'AIM is a governed modernization factory spanning three repositories: Base source (legacy, typically read-only), Target source (scaffolded destination), and a Knowledge Base repo (inventory, understanding, rules, mappings, evidence). Discussion chat exists, but Overview, KB, Traceability, and Pipelines are the primary surfaces.',
-      },
-      {
-        type: 'p',
-        text: 'Ad-hoc migration chats lose approvals, traceability, and comparable test verdicts. AIM pipelines move units through assess → understand → convert → test-compare → cutover-check with rulebook-aware comparison so cutover decisions rest on evidence, not vibes.',
-      },
-      {
-        type: 'p',
-        text: 'Switch to AIM (`/aim`). New or Join a project; confirm Source / Document / Target detection and choose a rulebook pack. Use Overview for mission control, KB for knowledge artifacts, Traceability for unit lineage, and Pipelines to launch named workflows. Copy seed commands from seed/commands/ into `.evoflux/commands/` when you want those slash prompts in the composer. Open Discussion from pipeline results when you need free-form follow-up.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'aim-assess — inventory estate and plan waves',
-          'aim-understand — KB docs and candidate business rules',
-          'aim-convert-unit / aim-convert-wave — implement into target',
-          'aim-test-compare — golden-master vs target behavior',
-          'aim-cutover-check — readiness and phase advance',
-          'Rulebooks — cobol-java21, vb6-dotnet, java8-java21 (+ KB overrides)',
-          'Verdicts — pass / fail / acceptable-diff after canonicalization',
-        ],
-      },
-      {
-        type: 'p',
-        text: 'Step-by-step first AIM project: (1) New or Join, (2) confirm Source / Document / Target paths, (3) pick a rulebook pack, (4) run aim-assess, (5) aim-understand for priority units, (6) convert a thin vertical slice, (7) aim-test-compare, (8) only then plan waves and cutover-check. Copy seed slash prompts before you rely on them in the composer.',
-      },
-      {
-        type: 'p',
-        text: 'When to use AIM vs Coding: use AIM when modernization needs governed multi-repo evidence, rulebooks, and comparable verdicts. Use Coding for ordinary feature work inside a modern repo. Do not force a single-service bugfix through AIM pipelines.',
-      },
-      {
-        type: 'p',
-        text: 'Common mistakes: living in Discussion instead of Overview; converting before assess/understand; treating seed/commands/ as live slash entries; ignoring Traceability until cutover week; accepting acceptable-diff without recording why the rulebook allows it; expecting Work-style folders to organize AIM units.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'Specialists — Archaeologist, Architect, Converter, Appraiser, Test, Triage under Lead.',
-          'KB overrides — project knowledge can refine built-in rulebook packs.',
-          'Cross-feature: activate seed commands via `.evoflux/commands/` like other custom slash files.',
-          'Cross-feature: permission plan mode before convert waves that touch shared target modules.',
-        ],
-      },
-    ],
-    related: [
-      'modes-overview',
-      'getting-started',
-      'slash-commands',
-      'permissions-modes',
-      'coding-workspaces',
-    ],
-    openAction: { type: 'route', to: '/aim' },
   },
   {
     id: 'memory-dream',
@@ -1602,8 +1484,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'ghi chú',
       'メモリ',
       'ドリーム',
-      'ノート',
-    ],
+      'ノート'
+],
     setup:
       'Open Memory with Ctrl+M or the workbench tool. Configure Dream under Settings → Memory (cron and related options). Default Dream cron is `0 2 * * *` if you leave the schedule untouched.',
     tricks: [
@@ -1615,8 +1497,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Pair Dream with Scheduler only when you need arbitrary agent prompts; Dream has its own schedule.',
       'Skim LOG.md after overnight Dream runs to see what changed before you cite a page in chat.',
       'Prefer writing short pending notes during the day over hoping the model will remember next week.',
-      'If Dream confidence is low, treat the page as a draft hypothesis and verify in source systems.',
-    ],
+      'If Dream confidence is low, treat the page as a draft hypothesis and verify in source systems.'
+],
     blocks: [
       {
         type: 'p',
@@ -1640,8 +1522,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'INDEX.md — entry map',
           'LOG.md — append-only synthesis log',
           'Ctrl+M — open Memory workbench',
-          'Run Dream — manual synthesis trigger',
-        ],
+          'Run Dream — manual synthesis trigger'
+],
       },
       {
         type: 'p',
@@ -1659,17 +1541,17 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'tips',
         items: [
           'Cross-feature: Scheduler for arbitrary prompts; Dream for wiki synthesis only.',
-          'Cross-feature: after big AIM understand waves, Run Dream so KB-adjacent facts land in wiki form if you use both.',
-          'Cross-feature: sandbox/outbound policy still matters when Dream content later flows to providers via chat.',
-        ],
-      },
-    ],
+          'Cross-feature: after a large research or coding push, Run Dream so new facts land in wiki form.',
+          'Cross-feature: sandbox/outbound policy still matters when Dream content later flows to providers via chat.'
+],
+      }
+],
     related: [
       'scheduler-tasks',
       'workbench-tools',
       'settings-safety',
-      'sessions-folders',
-    ],
+      'sessions-folders'
+],
     openAction: { type: 'workbench', tool: 'wiki' },
   },
   {
@@ -1693,8 +1575,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'đặt lịch',
       'nhắc nhở',
       'スケジュール',
-      'クロン',
-    ],
+      'クロン'
+],
     setup:
       'Open Scheduler with Ctrl+S (workbench tool). The `/scheduler` route redirects home — always use the panel. Pick work or coding mode on the task so the prompt lands on the right Lead.',
     tricks: [
@@ -1706,8 +1588,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Trigger manually after editing a prompt to verify it before trusting overnight cron.',
       'Keep scheduled prompts idempotent — reruns should not create duplicate messy side effects.',
       'Pause tasks before long laptop sleeps if your backend is local-only and will miss the window anyway.',
-      'Name tasks by outcome (“weekday repo chore”) so the panel stays scannable.',
-    ],
+      'Name tasks by outcome (“weekday repo chore”) so the panel stays scannable.'
+],
     blocks: [
       {
         type: 'p',
@@ -1730,8 +1612,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Pause / resume / trigger — lifecycle controls in-panel',
           'Mode — work or coding Lead target',
           '/scheduler — redirects home; do not bookmark',
-          'Dream cron — separate under Settings → Memory',
-        ],
+          'Dream cron — separate under Settings → Memory'
+],
       },
       {
         type: 'p',
@@ -1751,16 +1633,16 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Cross-feature: set permission mode carefully on sessions that scheduled prompts will hit.',
           'Cross-feature: HealthDot must be green when the cron fires on a local sidecar.',
           'Cross-feature: for wiki consolidation use Dream; for “ask the Lead every Monday” use Scheduler.',
-          'Idempotent prompts — safe if a trigger runs twice.',
-        ],
-      },
-    ],
+          'Idempotent prompts — safe if a trigger runs twice.'
+],
+      }
+],
     related: [
       'memory-dream',
       'workbench-tools',
       'slash-goal',
-      'troubleshooting-connection',
-    ],
+      'troubleshooting-connection'
+],
     openAction: { type: 'workbench', tool: 'scheduler' },
   },
   {
@@ -1785,8 +1667,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'dạy',
       'ブラウザ',
       '拡張機能',
-      'ティーチ',
-    ],
+      'ティーチ'
+],
     setup:
       'Built-in: enable under Settings → Browser, then Ctrl+T. WebBridge: install the Chrome/Edge extension, enable master policy in Settings → Browser, pair from the desktop status control, then enable WebBridge per chat that should use it.',
     tricks: [
@@ -1798,8 +1680,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'WebBridge is not a web version of EvoFlux — it is a CDP companion to the desktop app.',
       'Use built-in Browser for sandboxed agent browsing; use WebBridge when you need real SSO cookies or corporate extensions.',
       'Revoke pairing when lending a machine or rotating access — outstanding tickets die with the revoke.',
-      'Confirm teach replays before sharing monitored results into the agent loop.',
-    ],
+      'Confirm teach replays before sharing monitored results into the agent loop.'
+],
     blocks: [
       {
         type: 'p',
@@ -1822,8 +1704,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Teach — meaningful actions, no raw keystrokes',
           'Revoke pairing — kills relay + outstanding tickets',
           'Settings → Browser — master policy for both paths',
-          'Untrusted input — selections/page context from the real browser',
-        ],
+          'Untrusted input — selections/page context from the real browser'
+],
       },
       {
         type: 'p',
@@ -1842,16 +1724,16 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'Cross-feature: sandbox/outbound policy still applies to what leaves toward providers.',
           'Cross-feature: if WebBridge is offline, check Troubleshooting before reinstalling the app.',
-          'Cross-feature: side chat can clarify a page quote without stopping a main browser run.',
-        ],
-      },
-    ],
+          'Cross-feature: side chat can clarify a page quote without stopping a main browser run.'
+],
+      }
+],
     related: [
       'workbench-tools',
       'settings-safety',
       'troubleshooting-connection',
-      'sandbox-settings',
-    ],
+      'sandbox-settings'
+],
     openAction: { type: 'settings', path: 'browser' },
   },
   {
@@ -1880,8 +1762,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'khóa api',
       'プロバイダ',
       'モデル',
-      'APIキー',
-    ],
+      'APIキー'
+],
     openAction: { type: 'settings', path: 'providers' },
     setup:
       'Settings → Providers. Have an API key, OAuth access, or a running local daemon URL ready. Confirm HealthDot is green before debugging empty model lists as a network outage.',
@@ -1894,8 +1776,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Context budget bar uses the selected model’s context_length from the registry.',
       'Use a fast model for Lead triage and a stronger model for Coding specialists when cost matters.',
       'After rotating keys, re-test with a tiny Work ping before starting Goal.',
-      'OAuth providers still need a successful connect state — a half-finished OAuth leaves you model-less.',
-    ],
+      'OAuth providers still need a successful connect state — a half-finished OAuth leaves you model-less.'
+],
     blocks: [
       {
         type: 'p',
@@ -1917,8 +1799,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Composer pills — per-session model / thinking / fast mode',
           'context_length — drives the context budget bar',
           'Ollama — set base URL when not on the default port',
-          'Empty model list — configure Providers first',
-        ],
+          'Empty model list — configure Providers first'
+],
       },
       {
         type: 'p',
@@ -1933,23 +1815,23 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'Cross-feature: Diagnostics after credentials look right but streams fail.',
           'Cross-feature: stronger models raise context_length — watch /compact habits.',
-          'Cross-feature: MCP and tools still need permission mode even with a perfect model.',
-        ],
-      },
-    ],
+          'Cross-feature: MCP and tools still need permission mode even with a perfect model.'
+],
+      }
+],
     related: [
       'agents-settings',
       'getting-started',
       'connection-settings',
-      'troubleshooting-connection',
-    ],
+      'troubleshooting-connection'
+],
   },
   {
     id: 'agents-settings',
     category: 'settings',
     title: 'Agents, skills, and MCP',
     summary:
-      'Configure Markdown agents, skill packs, and MCP servers under Settings — tools inherit the same permission rules as native tools. Teams stay scoped to work / coding / aim so the right specialists appear in each mode.',
+      'Configure Markdown agents, skill packs, and MCP servers under Settings — tools inherit the same permission rules as native tools. Teams stay scoped to work / coding so the right specialists appear in each mode.',
     keywords: [
       'agents',
       'skills',
@@ -1965,8 +1847,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'máy chủ mcp',
       'スキル',
       'エージェント',
-      'MCP',
-    ],
+      'MCP'
+],
     setup:
       'Settings → Agents for team members; Settings → Skills to validate packs; Settings → MCP to add servers. From chat, use /skill: or the command palette for New Agent / New Skill shortcuts.',
     tricks: [
@@ -1974,12 +1856,12 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Skills appear under /skill: after they are valid in Settings → Skills.',
       'MCP status dots: ready / starting / auth / error / stopped.',
       'MCP tools inherit the same permission rules as native tools.',
-      'Teams are scoped to work / coding / aim.',
+      'Teams are scoped to work / coding.',
       'Command palette jumps to Edit <agent>… or create new agents and skills.',
       'Use skills_opt_out in frontmatter to disable defaults like code-graph-navigation.',
       'Lead-only tools (ask_user, plan mode helpers, some worktree helpers) are never granted to specialists.',
-      'If an MCP server sits on auth, finish the auth flow before blaming the composer slash menu.',
-    ],
+      'If an MCP server sits on auth, finish the auth flow before blaming the composer slash menu.'
+],
     blocks: [
       {
         type: 'p',
@@ -2001,9 +1883,9 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'MCP — stdio / HTTP / SSE',
           'Status dots — ready / starting / auth / error / stopped',
           'skills_opt_out — disable default skill preloads',
-          'Mode scope — work / coding / aim teams',
-          'Lead-only tools — never on specialists',
-        ],
+          'Mode scope — work / coding teams',
+          'Lead-only tools — never on specialists'
+],
       },
       {
         type: 'p',
@@ -2018,16 +1900,16 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'Cross-feature: code-graph-navigation preload pairs with Coding graph tools.',
           'Cross-feature: workflows and skills both need scope validity to show in /.',
-          'Cross-feature: permission Always rules apply to MCP tools too — prefer Once first.',
-        ],
-      },
-    ],
+          'Cross-feature: permission Always rules apply to MCP tools too — prefer Once first.'
+],
+      }
+],
     related: [
       'composer-power',
       'permissions-modes',
       'coding-graph',
-      'slash-commands',
-    ],
+      'slash-commands'
+],
     openAction: { type: 'settings', path: 'agents' },
   },
   {
@@ -2050,8 +1932,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'bảo vệ',
       'サンドボックス',
       '拒否',
-      '隔離',
-    ],
+      '隔離'
+],
     openAction: { type: 'settings', path: 'sandbox' },
     setup:
       'Settings → Sandbox. Review deny patterns before enabling aggressive auto/bypass permission modes. Help popovers on the page explain ** and * glob syntax.',
@@ -2064,8 +1946,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Combine accept-edits or auto with a tight denylist for day-to-day coding speed.',
       'Deny credential caches and unrelated disks even if you trust the model.',
       'Re-test a sample tool call after editing globs — silent mis-globs feel like “tools are broken.”',
-      'Pair filesystem denylist with Settings → Browser domain policy for WebBridge.',
-    ],
+      'Pair filesystem denylist with Settings → Browser domain policy for WebBridge.'
+],
     blocks: [
       {
         type: 'p',
@@ -2087,8 +1969,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Outbound PII — redact/block before provider',
           'Symlinks — rejected into blocked roots',
           'Shell tokenization — denied-path checks on commands',
-          'Goal — never widens sandbox scope',
-        ],
+          'Goal — never widens sandbox scope'
+],
       },
       {
         type: 'p',
@@ -2103,16 +1985,16 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'Cross-feature: plan Reject when a plan targets denied paths instead of fighting the sandbox.',
           'Cross-feature: Troubleshooting “tools denied” checklist includes shield + denylist.',
-          'Cross-feature: Coding worktrees follow the Sandbox location policy.',
-        ],
-      },
-    ],
+          'Cross-feature: Coding worktrees follow the Sandbox location policy.'
+],
+      }
+],
     related: [
       'permissions-modes',
       'settings-safety',
       'coding-workspaces',
-      'slash-goal',
-    ],
+      'slash-goal'
+],
   },
   {
     id: 'connection-settings',
@@ -2133,8 +2015,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'kết nối',
       'máy chủ',
       '接続',
-      'サイドカー',
-    ],
+      'サイドカー'
+],
     openAction: { type: 'settings', path: 'connection' },
     setup:
       'Settings → Connection (or click HealthDot). Packaged apps default to the bundled sidecar. From source, ensure `make dev` is up before `make -C desktop dev`.',
@@ -2147,8 +2029,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Click HealthDot anytime for a shortcut into Connection.',
       'Relaunch the packaged app to restart a wedged bundled sidecar before editing unrelated settings.',
       'Do not paste access keys into chat transcripts when configuring external mode.',
-      'If you toggle external → bundled, confirm HealthDot returns green before assuming Providers broke.',
-    ],
+      'If you toggle external → bundled, confirm HealthDot returns green before assuming Providers broke.'
+],
     blocks: [
       {
         type: 'p',
@@ -2170,8 +2052,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'HealthDot — shortcut into Connection',
           'Welcome — wait for sidecar/team ready',
           'From source — `make dev` then `make -C desktop dev`',
-          'Diagnostics — when URL is fine but a subsystem fails',
-        ],
+          'Diagnostics — when URL is fine but a subsystem fails'
+],
       },
       {
         type: 'p',
@@ -2190,16 +2072,16 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'Cross-feature: Getting started cold-start order matches Connection recovery.',
           'Cross-feature: Scheduler cron on a local sidecar still needs the machine awake and healthy.',
-          'Cross-feature: Troubleshooting checklist starts at HealthDot → Connection.',
-        ],
-      },
-    ],
+          'Cross-feature: Troubleshooting checklist starts at HealthDot → Connection.'
+],
+      }
+],
     related: [
       'troubleshooting-connection',
       'getting-started',
       'settings-safety',
-      'providers-settings',
-    ],
+      'providers-settings'
+],
   },
   {
     id: 'settings-safety',
@@ -2221,8 +2103,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'cài đặt',
       'bản đồ',
       '設定',
-      'マップ',
-    ],
+      'マップ'
+],
     openAction: { type: 'settings', path: '' },
     tricks: [
       'Desktop shows settings categories in the sidebar rail; mobile uses the About hub as a nav list.',
@@ -2233,8 +2115,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Diagnostics is for live subsystem checks — complementary to HealthDot’s binary signal.',
       'Intelligence vs System vs Application groupings keep risky toggles from mixing with theme picks.',
       'Notifications include a test ping — use it before trusting unfocused alerts.',
-      'Open the command palette if you forget which settings page owns a toggle.',
-    ],
+      'Open the command palette if you forget which settings page owns a toggle.'
+],
     blocks: [
       {
         type: 'p',
@@ -2260,8 +2142,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Appearance — theme, accent, fonts, motion, locale (en / vi / ja)',
           'Telemetry — traces and summary (also /telemetry)',
           'Diagnostics — live subsystem health checks',
-          'About — app info + Guidelines link',
-        ],
+          'About — app info + Guidelines link'
+],
       },
       {
         type: 'p',
@@ -2276,17 +2158,17 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'Cross-feature: each major Guidelines article deep-links via openAction to the right page when available.',
           'Cross-feature: locale changes UI chrome only — chat content stays as written.',
-          'Cross-feature: empty telemetry often means extras disabled, not a chat outage.',
-        ],
-      },
-    ],
+          'Cross-feature: empty telemetry often means extras disabled, not a chat outage.'
+],
+      }
+],
     related: [
       'providers-settings',
       'agents-settings',
       'sandbox-settings',
       'connection-settings',
-      'troubleshooting-connection',
-    ],
+      'troubleshooting-connection'
+],
   },
   {
     id: 'keyboard-shortcuts',
@@ -2308,8 +2190,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'phím tắt',
       'bàn phím',
       'ショートカット',
-      'キーボード',
-    ],
+      'キーボード'
+],
     tricks: [
       'Ctrl+P opens the command palette (Search in the sidebar). Help opens this Guidelines modal — not the palette.',
       'Some workbench labels still show ⌘P / ⌥⌘S — the live shortcuts are Ctrl+F and Ctrl+;.',
@@ -2319,8 +2201,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Ctrl+R refreshes Work sessions only (not a full app reload).',
       'Prefer Ctrl+P search by action name when you forget a binding.',
       'Keys 1–5 only switch permission modes while the shield menu is open.',
-      'Ctrl+I focuses chat input — useful after clicking through workbench panels.',
-    ],
+      'Ctrl+I focuses chat input — useful after clicking through workbench panels.'
+],
     blocks: [
       {
         type: 'p',
@@ -2346,8 +2228,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           { keys: 'Ctrl+I', action: 'Focus chat input' },
           { keys: 'Ctrl+;', action: 'Side chat (label may show ⌥⌘S)' },
           { keys: 'Ctrl+R', action: 'Refresh Work sessions' },
-          { keys: '1–5', action: 'Permission modes when shield menu is open' },
-        ],
+          { keys: '1–5', action: 'Permission modes when shield menu is open' }
+],
       },
       {
         type: 'p',
@@ -2361,8 +2243,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           '⌘P / ⌥⌘S labels — stale; use Ctrl+F / Ctrl+;',
           'Ctrl+V — view cycle suppressed while pasting',
           'Ctrl+R — Work sessions refresh only',
-          '1–5 — only with shield menu open',
-        ],
+          '1–5 — only with shield menu open'
+],
       },
       {
         type: 'p',
@@ -2373,16 +2255,16 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'Cross-feature: permission shield + 1–5 is faster than clicking modes.',
           'Cross-feature: Ctrl+; side chat during Goal without /stop.',
-          'Cross-feature: Ctrl+G after plan Accept to verify diffs.',
-        ],
-      },
-    ],
+          'Cross-feature: Ctrl+G after plan Accept to verify diffs.'
+],
+      }
+],
     related: [
       'workbench-tools',
       'getting-started',
       'permissions-modes',
-      'side-chat',
-    ],
+      'side-chat'
+],
     openAction: { type: 'palette' },
   },
   {
@@ -2405,8 +2287,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'chẩn đoán',
       '接続',
       '診断',
-      'トラブル',
-    ],
+      'トラブル'
+],
     setup:
       'Start at HealthDot in the sidebar footer. Keep Settings → Connection and Settings → Diagnostics nearby. From source, have two terminals ready: `make dev` and `make -C desktop dev`.',
     tricks: [
@@ -2419,8 +2301,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'WebBridge offline → extension installed, pairing valid, Browser settings enabled, per-chat toggle on.',
       'Empty telemetry → observability/DuckDB extras may be disabled — not necessarily a chat outage.',
       'Goal stuck → inspect blocker streak, budget pause, or /goal:stop.',
-      '/scheduler 404-feeling → use Ctrl+S panel; route redirects home.',
-    ],
+      '/scheduler 404-feeling → use Ctrl+S panel; route redirects home.'
+],
     blocks: [
       {
         type: 'p',
@@ -2446,8 +2328,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Empty telemetry → observability extras disabled (often non-blocking)',
           'Goal stuck → inspect blocker streak, budget pause, or /goal:stop',
           '/scheduler 404-feeling → use Ctrl+S panel; route redirects home',
-          'Stale graph → reindex from Graph tool after huge external edits',
-        ],
+          'Stale graph → reindex from Graph tool after huge external edits'
+],
       },
       {
         type: 'p',
@@ -2455,7 +2337,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Common mistakes: reinstalling for a missing provider key; debugging MCP while HealthDot is red; assuming green health means Ollama is up; treating acceptable AIM diffs as app errors; force-refreshing with Ctrl+R expecting a full reload (it refreshes Work sessions only).',
+        text: 'Common mistakes: reinstalling for a missing provider key; debugging MCP while HealthDot is red; assuming green health means Ollama is up; force-refreshing with Ctrl+R expecting a full reload (it refreshes Work sessions only).',
       },
       {
         type: 'tips',
@@ -2463,17 +2345,17 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Cross-feature: Getting started cold-start order matches this checklist.',
           'Cross-feature: plan review pending Accept is not a hang — resolve the panel.',
           'Cross-feature: side chat focus mistakes look like “Lead ignored me.”',
-          'When in doubt — Diagnostics + a tiny Work ping beat speculative resets.',
-        ],
-      },
-    ],
+          'When in doubt — Diagnostics + a tiny Work ping beat speculative resets.'
+],
+      }
+],
     related: [
       'getting-started',
       'connection-settings',
       'settings-safety',
       'providers-settings',
-      'browser-webbridge',
-    ],
+      'browser-webbridge'
+],
     openAction: { type: 'settings', path: 'diagnostics' },
-  },
+  }
 ]

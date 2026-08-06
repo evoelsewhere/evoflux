@@ -12,7 +12,7 @@ Single root per session — uploads live *inside* the workspace:
   Fed to the LLM via curated multimodal rehydration
   (``build_parts_from_metas``) and mounted read-only into every session
   sandbox. Work sessions can also address them as ``uploads/<filename>``;
-  Coding/AIM sessions use the absolute path supplied in the model-facing
+  Coding sessions use the absolute path supplied in the model-facing
   attachment hint so repositories remain untouched.
 
   The absolute file path is persisted in the attachment meta dict
@@ -43,7 +43,7 @@ def uploads_dir(session_id: str) -> Path:
     """Return the per-session directory for user-uploaded attachments.
 
     Lives under the app-managed Work session root. ``SandboxConfig`` mounts
-    it read-only for Coding/AIM sessions whose primary workspace is a repo.
+    it read-only for Coding sessions whose primary workspace is a repo.
     """
     return workspace_dir(session_id) / "uploads"
 
