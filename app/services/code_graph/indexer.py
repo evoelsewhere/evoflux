@@ -46,6 +46,10 @@ if TYPE_CHECKING:
 # Skip files larger than this — generated bundles/minified blobs aren't worth
 # parsing and can be huge.
 _MAX_FILE_BYTES = 1_500_000
+# Bump whenever parser or relationship extraction semantics change. Salting
+# file hashes forces an incremental rebuild even when repository source did
+# not change, so a newly deployed parser cannot silently reuse stale edges.
+INDEX_FORMAT_VERSION = "3"
 
 # Definition kinds a name-based call/reference may resolve to.
 _CALLABLE_KINDS = frozenset(
@@ -82,9 +86,9 @@ _CROSS_REPO_CANDIDATE_KINDS = frozenset({EDGE_USES, EDGE_INHERITS, EDGE_IMPLEMEN
 
 def _allowed_kinds_for(kind: str) -> frozenset[str]:
     """Definition kinds a name-based edge of this ``kind`` may resolve to."""
-    if kind in {EDGE_INHERITS, EDGE_IMPLEMENTS, EDGE_REFERENCES}:
+    if kind in {EDGE_INHERITS, EDGE_IMPLEMENTS}:
         return _TYPE_KINDS
-    if kind == EDGE_IMPORTS:
+    if kind in {EDGE_IMPORTS, EDGE_REFERENCES}:
         return _ANY_KINDS
     return _CALLABLE_KINDS
 
@@ -239,7 +243,7 @@ def hash_workspace_files(
     registry = registry or default_registry()
     root_path = Path(root).expanduser().resolve()
     return {
-        rel: _hash_bytes(source)
+        rel: content_hash(source)
         for rel, source in _iter_source_files(root_path, registry)
     }
 
@@ -346,7 +350,7 @@ def _build_index(
             FileIndex(
                 file_path=file_path,
                 language=result.language,
-                content_hash=_hash_bytes(source),
+                content_hash=content_hash(source),
                 node_count=node_count,
                 edge_count=0,  # filled in after resolution
             )
@@ -452,20 +456,32 @@ def _resolve_edges(
                     )
 
             if dst_key is None and kind != EDGE_IMPORTS:
-                # Try scope-aware resolution first (Phase 2): use import
-                # context to narrow the search to a specific file before
-                # falling back to the global name heuristic.
+                src_file = file_by_key.get(src_key, "")
+                # A definition in the caller's own file is the narrowest
+                # possible scope and must win over an identical private name
+                # elsewhere in the repository.
+                dst_key = _resolve_same_file(
+                    dst_name,
+                    src_file,
+                    name_to_keys,
+                    qname_to_keys,
+                    kind_by_key,
+                    file_by_key,
+                    allowed,
+                )
+                # Then use import context to narrow the search before falling
+                # back to the global name heuristic.
                 if module_resolution is not None:
-                    src_file = file_by_key.get(src_key, "")
-                    dst_key = _resolve_scoped(
-                        dst_name,
-                        src_file,
-                        module_resolution,
-                        name_to_keys,
-                        kind_by_key,
-                        file_by_key,
-                        allowed,
-                    )
+                    if dst_key is None:
+                        dst_key = _resolve_scoped(
+                            dst_name,
+                            src_file,
+                            module_resolution,
+                            name_to_keys,
+                            kind_by_key,
+                            file_by_key,
+                            allowed,
+                        )
                 if dst_key is None:
                     dst_key = _resolve_qualified(
                         dst_name, name_to_keys, qname_to_keys, kind_by_key, allowed
@@ -590,6 +606,33 @@ def _resolve_qualified(
             return short_candidates[0]
 
     return None
+
+
+def _resolve_same_file(
+    dst_name: str,
+    src_file: str,
+    name_to_keys: dict[str, list[str]],
+    qname_to_keys: dict[str, list[str]],
+    kind_by_key: dict[str, str],
+    file_by_key: dict[str, str],
+    allowed_kinds: frozenset[str],
+) -> str | None:
+    """Resolve an otherwise ambiguous target inside the caller's file."""
+    possible = [
+        *name_to_keys.get(dst_name, []),
+        *qname_to_keys.get(dst_name, []),
+    ]
+    if "." in dst_name:
+        possible.extend(name_to_keys.get(dst_name.rsplit(".", 1)[1], []))
+    candidates = list(
+        dict.fromkeys(
+            key
+            for key in possible
+            if kind_by_key.get(key) in allowed_kinds
+            and file_by_key.get(key) == src_file
+        )
+    )
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def _collect_candidates(
@@ -772,5 +815,6 @@ def _iter_source_files(
             yield rel, source
 
 
-def _hash_bytes(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+def content_hash(data: bytes) -> str:
+    prefix = f"evoflux-code-graph:{INDEX_FORMAT_VERSION}\0".encode()
+    return hashlib.sha256(prefix + data).hexdigest()

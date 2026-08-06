@@ -27,6 +27,7 @@ from sqlmodel import SQLModel, col, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import current_sqlite_path, sqlite_write_guard
+from app.core.runtime_settings import CodeQueryPolicySettings, load_runtime_settings
 from app.models.chat import CodingProjectWorkspace, CodingWorkspace, _utcnow
 from app.models.code_graph import (
     CodeAmbiguousEdge,
@@ -988,6 +989,7 @@ async def search_nodes_ranked(
     relevant matches below the FTS cutoff.
     """
     capped = max(1, min(limit, 100))
+    policy = load_runtime_settings().code_graph.query_policy
     paths = tuple(
         dict.fromkeys(
             normalized
@@ -995,7 +997,13 @@ async def search_nodes_ranked(
             if (normalized := value.replace("\\", "/").strip("/")) and normalized != "."
         )
     )
-    overfetch = min(500, max(capped * 5, 50))
+    overfetch = min(
+        policy.search_overfetch_max,
+        max(
+            capped * policy.search_overfetch_multiplier,
+            policy.search_overfetch_min,
+        ),
+    )
     nodes = await _lexical_search(
         db,
         workspace_id=workspace_id,
@@ -1008,13 +1016,12 @@ async def search_nodes_ranked(
     query_folded = query.strip().casefold()
     query_tokens = query_terms(query)
     # Natural-language questions rarely have every token in one symbol row.
-    # Use the longest informative tokens as an OR-style candidate expansion;
-    # reranking below still rewards candidates that match several signals.
-    if len(nodes) < capped and len(query_tokens) > 1:
+    # Expand evidence in source order so short code names (SSE, UI, R, Go)
+    # cannot be displaced by earlier prose. Reranking below still requires
+    # corroboration before a candidate reaches the context pack.
+    if len(query_tokens) > 1:
         by_id = {node.id: node for node in nodes}
-        for token in sorted(query_tokens, key=lambda value: len(value), reverse=True)[
-            :5
-        ]:
+        for token in query_tokens[: policy.max_expanded_query_terms]:
             for node in await _lexical_search(
                 db,
                 workspace_id=workspace_id,
@@ -1025,8 +1032,6 @@ async def search_nodes_ranked(
                 limit=overfetch,
             ):
                 by_id.setdefault(node.id, node)
-            if len(by_id) >= overfetch:
-                break
         nodes = list(by_id.values())
     ranked: list[RankedCodeNode] = []
     for node in nodes:
@@ -1037,6 +1042,7 @@ async def search_nodes_ranked(
             requested_kind=kind,
             requested_language=language,
             requested_paths=paths,
+            policy=policy,
         )
         ranked.append(
             RankedCodeNode(node=node, score=score, match_reasons=tuple(reasons))
@@ -1060,7 +1066,9 @@ def _rank_node(
     requested_kind: str | None,
     requested_language: str | None,
     requested_paths: Sequence[str],
+    policy: CodeQueryPolicySettings | None = None,
 ) -> tuple[float, list[str]]:
+    policy = policy or load_runtime_settings().code_graph.query_policy
     name = node.name.casefold()
     qualified = node.qualified_name.casefold()
     path = node.file_path.casefold()
@@ -1070,52 +1078,58 @@ def _rank_node(
     score = 0.0
 
     if query and name == query:
-        score += 120.0
+        score += policy.score_exact_name
         reasons.append("exact name")
     elif query and qualified == query:
-        score += 115.0
+        score += policy.score_exact_qualified_name
         reasons.append("exact qualified name")
     elif query and qualified.endswith(f".{query}"):
-        score += 100.0
+        score += policy.score_qualified_suffix
         reasons.append("qualified-name suffix")
     elif query and name.startswith(query):
-        score += 80.0
+        score += policy.score_name_prefix
         reasons.append("name prefix")
     elif query and query in name:
-        score += 65.0
+        score += policy.score_name_fragment
         reasons.append("name fragment")
 
     token_hits = sum(1 for token in query_tokens if token in name or token in qualified)
     if token_hits:
-        score += min(35.0, token_hits * 8.0)
+        score += min(
+            policy.score_identifier_cap,
+            token_hits * policy.score_identifier_hit,
+        )
         reasons.append(f"{token_hits} identifier token(s)")
     path_hits = sum(1 for token in query_tokens if token in path)
     if path_hits:
-        score += min(18.0, path_hits * 4.0)
+        score += min(policy.score_path_cap, path_hits * policy.score_path_hit)
         reasons.append("path match")
     signature_hits = sum(1 for token in query_tokens if token in signature)
     if signature_hits:
-        score += min(12.0, signature_hits * 3.0)
+        score += min(
+            policy.score_signature_cap,
+            signature_hits * policy.score_signature_hit,
+        )
         reasons.append("signature match")
     doc_hits = sum(1 for token in query_tokens if token in docstring)
     if doc_hits:
-        score += min(8.0, doc_hits * 2.0)
+        score += min(policy.score_doc_cap, doc_hits * policy.score_doc_hit)
         reasons.append("documentation match")
     if requested_kind and node.kind == requested_kind:
-        score += 12.0
+        score += policy.score_requested_kind
         reasons.append("requested kind")
     if requested_language and node.language == requested_language:
-        score += 8.0
+        score += policy.score_requested_language
         reasons.append("requested language")
     if requested_paths and any(
         path == prefix.casefold().rstrip("/")
         or path.startswith(prefix.casefold().rstrip("/") + "/")
         for prefix in requested_paths
     ):
-        score += 15.0
+        score += policy.score_requested_path
         reasons.append("requested path")
     if node.kind == "file":
-        score -= 5.0
+        score -= policy.score_file_penalty
     return score, reasons or ["full-text match"]
 
 

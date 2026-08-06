@@ -14,6 +14,8 @@ from app.agent.schemas.chat import (
     ChatCompletionDelta,
     FunctionCallDelta,
     ToolCallDelta,
+    FunctionCall,
+    ToolCall,
 )
 
 
@@ -260,6 +262,37 @@ class TestOnModelDeltaToolCall:
 
 
 class TestWrapToolCall:
+    @pytest.mark.asyncio
+    async def test_blocked_tool_closes_pending_action_without_running_handler(self):
+        hook = _make_hook()
+        pushed = []
+
+        async def fake_push(sid, event):
+            pushed.append(event)
+
+        hook._resolver.register("code_query", "queued-query-id")
+        tool_call = ToolCall(
+            id="internal-query-id",
+            function=FunctionCall(name="code_query", arguments='{"query":"flow"}'),
+        )
+        state = MagicMock()
+        state.metadata = {}
+
+        with patch("app.services.memory_stream_store.push_event", new=fake_push):
+            await hook.on_tool_blocked(
+                MagicMock(), state, tool_call, "Use existing evidence."
+            )
+
+        assert [event.event for event in pushed] == ["tool_start", "tool_end"]
+        assert all(event.data["tool_call_id"] == "queued-query-id" for event in pushed)
+        assert pushed[0].data["metadata"] == {"blocked": True}
+        assert pushed[1].data["result"] == "Use existing evidence."
+        assert pushed[1].data["metadata"] == {
+            "blocked": True,
+            "duration_ms": 0.0,
+        }
+        assert state.metadata["_tool_duration_ms"]["internal-query-id"] == 0.0
+
     @pytest.mark.asyncio
     async def test_pushes_tool_start_and_tool_end(self):
         hook = _make_hook()

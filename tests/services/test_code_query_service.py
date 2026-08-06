@@ -11,7 +11,9 @@ import app.models.chat  # noqa: F401 -- register SQLModel tables for isolated ru
 import app.models.code_graph  # noqa: F401 -- register SQLModel tables for isolated run
 
 
-def test_query_terms_preserve_symbol_and_path_structure_without_stopword_cases() -> None:
+def test_query_terms_preserve_symbol_and_path_structure_without_stopword_cases() -> (
+    None
+):
     from app.services.code_graph.query import query_terms
 
     terms = query_terms("explain CodeContextHook in app/agent/loader.py:640")
@@ -20,9 +22,105 @@ def test_query_terms_preserve_symbol_and_path_structure_without_stopword_cases()
     assert "context" in terms
     assert "app/agent/loader.py" in terms
 
+    member_terms = query_terms("useTeamStore.sendMessage")
+    assert "sendmessage" in member_terms
+    assert "useteamstore.sendmessage" in member_terms
 
-def test_source_scan_respects_gitignored_vendor_tree(tmp_path: Path) -> None:
-    from app.services.code_query_service import _iter_sourceish_files
+    long_question = " ".join(
+        [*(f"ordinary{index}" for index in range(40)), "useStreamingReveal/render"]
+    )
+    prioritized = query_terms(long_question)
+    assert "usestreamingreveal/render" in prioritized
+    assert "usestreamingreveal" in prioritized
+
+    flow_question = query_terms(
+        "trace TeamChatView submit useTeamStore.sendMessage via "
+        "useTeamSse and useStreamingReveal"
+    )
+    assert "submit" in flow_question[:24]
+    assert "usestreamingreveal" in flow_question[:24]
+
+
+def test_candidate_diversity_keeps_structural_evidence_ahead_of_file_matches():
+    from app.services.code_query_service import CodeQueryCandidate, _dedupe
+
+    candidates = [
+        CodeQueryCandidate(
+            handle="match-a",
+            file_path="flow.py",
+            line_start=1,
+            line_end=2,
+            score=200,
+        ),
+        CodeQueryCandidate(
+            handle="other",
+            file_path="other.py",
+            line_start=1,
+            line_end=2,
+            score=190,
+        ),
+        CodeQueryCandidate(
+            handle="spine-a",
+            file_path="flow.py",
+            line_start=10,
+            line_end=20,
+            score=100,
+            context_role="spine",
+        ),
+    ]
+
+    ranked = _dedupe(candidates)
+
+    assert [candidate.handle for candidate in ranked] == [
+        "spine-a",
+        "other",
+        "match-a",
+    ]
+
+
+def test_required_source_is_bounded_per_structural_file():
+    from app.services.code_query_service import (
+        CodeQueryCandidate,
+        _required_evidence_candidates,
+    )
+
+    candidates = [
+        CodeQueryCandidate(
+            handle="root",
+            file_path="flow.py",
+            line_start=1,
+            line_end=2,
+            context_role="root",
+        ),
+        *[
+            CodeQueryCandidate(
+                handle=f"spine-{index}",
+                file_path="flow.py",
+                line_start=10 + index,
+                line_end=11 + index,
+                context_role="spine",
+            )
+            for index in range(5)
+        ],
+        CodeQueryCandidate(
+            handle="other-spine",
+            file_path="transport.py",
+            line_start=1,
+            line_end=2,
+            context_role="spine",
+        ),
+    ]
+
+    required = _required_evidence_candidates(candidates)
+
+    assert [candidate.handle for candidate in required] == [
+        "root",
+        "other-spine",
+    ]
+
+
+def test_bounded_fallback_respects_gitignored_vendor_tree(tmp_path: Path) -> None:
+    from app.services.code_query_service import _rg_lexical
 
     (tmp_path / ".gitignore").write_text("desktop/sidecar-bundle/\n", encoding="utf-8")
     (tmp_path / "src").mkdir()
@@ -35,10 +133,8 @@ def test_source_scan_respects_gitignored_vendor_tree(tmp_path: Path) -> None:
         "def reconnect_session():\n    return False\n", encoding="utf-8"
     )
 
-    scanned = {
-        path.relative_to(tmp_path).as_posix()
-        for path in _iter_sourceish_files(tmp_path, ())
-    }
+    hits, _counts = _rg_lexical(tmp_path, "reconnect_session", (), 10)
+    scanned = {hit.file_path for hit in hits}
 
     assert scanned == {"src/service.py"}
 
@@ -71,8 +167,8 @@ async def test_query_falls_back_for_unsupported_language(setup_db, tmp_path: Pat
     from app.core.db import async_session_factory
     from app.services.code_query_service import query_code
 
-    (tmp_path / "worker.ex").write_text(
-        "defmodule Worker do\n  def reconnect_session(id), do: id\nend\n",
+    (tmp_path / "worker.fluxlang").write_text(
+        "service Worker { reconnect_session(id) = id }\n",
         encoding="utf-8",
     )
     async with async_session_factory() as db:
@@ -86,7 +182,7 @@ async def test_query_falls_back_for_unsupported_language(setup_db, tmp_path: Pat
 
     assert result.strategy == "lexical"
     assert result.freshness == "unavailable"
-    assert result.results[0].file_path == "worker.ex"
+    assert result.results[0].file_path == "worker.fluxlang"
     assert result.results[0].provenance == "lexical"
     assert any(not item.graph for item in result.capabilities)
     assert any("no graph parser" in item.lower() for item in result.limitations)
@@ -265,7 +361,135 @@ async def test_query_returns_graph_handle_snippet_and_relationships(
     assert candidate.provenance == "graph"
     assert "def helper" in (candidate.snippet or "")
     assert any("caller" in relationship for relationship in candidate.callers)
-    assert result.strategy.endswith("graph+lexical")
+    assert result.strategy == "graph"
+
+
+@pytest.mark.asyncio
+async def test_query_keeps_incoming_and_outgoing_relationships_separate(
+    setup_db, tmp_path: Path
+):
+    from app.core.db import async_session_factory
+    from app.services.code_query_service import query_code
+
+    (tmp_path / "service.py").write_text(
+        "def leaf():\n    return 1\n\n"
+        "def middle():\n    return leaf()\n\n"
+        "def entry():\n    return middle()\n",
+        encoding="utf-8",
+    )
+    workspace_id = await _index(tmp_path)
+    async with async_session_factory() as db:
+        result = await query_code(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            query="middle",
+            intent="explain",
+            enable_lsp=False,
+        )
+
+    candidate = next(item for item in result.results if item.symbol == "middle")
+    assert any("entry" in relationship for relationship in candidate.callers)
+    assert not any("entry" in relationship for relationship in candidate.callees)
+    assert any("leaf" in relationship for relationship in candidate.callees)
+    assert not any("leaf" in relationship for relationship in candidate.callers)
+
+
+@pytest.mark.asyncio
+async def test_query_returns_named_flow_and_compact_blast_radius(
+    setup_db, tmp_path: Path
+):
+    from app.core.db import async_session_factory
+    from app.services.code_query_service import query_code
+
+    (tmp_path / "flow.py").write_text(
+        "def omega():\n    return 1\n\n"
+        "def bridge():\n    return omega()\n\n"
+        "def alpha():\n    return bridge()\n",
+        encoding="utf-8",
+    )
+    workspace_id = await _index(tmp_path)
+    async with async_session_factory() as db:
+        result = await query_code(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            query="alpha omega",
+            enable_lsp=False,
+        )
+
+    assert [hop.source for hop in result.flow] == ["alpha", "bridge"]
+    assert [hop.target for hop in result.flow] == ["bridge", "omega"]
+    assert {impact.root for impact in result.blast_radius} == {"alpha", "omega"}
+    assert any(
+        "bridge" in ref for impact in result.blast_radius for ref in impact.references
+    )
+
+
+@pytest.mark.asyncio
+async def test_named_root_includes_resolved_cross_file_call_source(
+    setup_db, tmp_path: Path
+):
+    from app.core.db import async_session_factory
+    from app.services.code_query_service import query_code
+
+    (tmp_path / "api.py").write_text(
+        "def post_message():\n    return 'ok'\n", encoding="utf-8"
+    )
+    (tmp_path / "store.py").write_text(
+        "from api import post_message\n\ndef send_message():\n    return post_message()\n",
+        encoding="utf-8",
+    )
+    workspace_id = await _index(tmp_path)
+    async with async_session_factory() as db:
+        result = await query_code(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            query="send_message transport",
+            enable_lsp=False,
+        )
+
+    transport = next(item for item in result.results if item.symbol == "post_message")
+    assert transport.file_path == "api.py"
+    assert transport.context_role == "spine"
+    assert "return 'ok'" in (transport.snippet or "")
+
+
+@pytest.mark.asyncio
+async def test_query_named_file_expands_distinct_flow_stages(setup_db, tmp_path: Path):
+    from app.core.db import async_session_factory
+    from app.services.code_query_service import query_code
+
+    (tmp_path / "preview.py").write_text(
+        "def validate_port():\n    return True\n\n"
+        "def start_server():\n    return True\n\n"
+        "def stop_server():\n    return True\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "unrelated.py").write_text(
+        "def start_worker():\n    return True\n", encoding="utf-8"
+    )
+    workspace_id = await _index(tmp_path)
+    async with async_session_factory() as db:
+        result = await query_code(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            query=(
+                "explain the complete preview lifecycle including configuration "
+                "validation port start health reuse stop shutdown cleanup"
+            ),
+            enable_lsp=False,
+        )
+
+    symbols = {item.symbol for item in result.results}
+    assert {"validate_port", "start_server", "stop_server"} <= symbols
+    assert "start_worker" not in symbols
+    by_symbol = {item.symbol: item for item in result.results}
+    assert by_symbol["start_server"].context_role in {"root", "spine"}
+    assert by_symbol["stop_server"].context_role in {"root", "spine"}
+    assert result.truncated is False
 
 
 @pytest.mark.asyncio
@@ -453,7 +677,7 @@ async def test_fallback_honors_language_and_kind_filters(setup_db, tmp_path: Pat
 
 
 @pytest.mark.asyncio
-async def test_fast_policy_avoids_live_scan_but_balanced_verifies_dirty_source(
+async def test_clean_graph_hit_avoids_lexical_scan_with_unrelated_dirty_source(
     setup_db, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     import app.services.code_query_service as query_service
@@ -495,7 +719,7 @@ async def test_fast_policy_avoids_live_scan_but_balanced_verifies_dirty_source(
             enable_lsp=False,
         )
 
-    assert calls == 1
+    assert calls == 0
 
 
 @pytest.mark.asyncio
@@ -631,8 +855,18 @@ async def test_code_query_tool_is_always_visible():
     assert code_query.read_only is True
     assert code_query.definition["function"]["name"] == "code_query"
     schema = code_query.definition["function"]["parameters"]
-    assert set(schema["properties"]) == {"query", "max_files"}
+    assert set(schema["properties"]) == {"query", "operation", "max_files"}
     assert schema["required"] == ["query"]
+    assert set(schema["properties"]["operation"]["enum"]) == {
+        "locate",
+        "explain",
+        "impact",
+        "trace",
+        "change",
+    }
+    assert schema["properties"]["max_files"]["maximum"] == 6
+    assert code_query.max_calls_per_batch is None
+    assert code_query.deduplicate_in_batch is True
 
 
 @pytest.mark.asyncio
@@ -661,10 +895,14 @@ async def test_large_change_parses_query_relevant_overlay_first(
             source="watcher",
         )
 
-    async def lexical(_root, _query, _paths, _limit):  # noqa: ANN001, ANN202
+    async def lexical(  # noqa: ANN001, ANN202
+        _root, _query, _paths, _limit, _policy
+    ):
         return [lexical_hit], __import__("collections").Counter({".py": 250})
 
-    async def overlay(_root, paths, _query, _registry, _limit, _languages, _kinds):  # noqa: ANN001, ANN202
+    async def overlay(  # noqa: ANN001, ANN202
+        _root, paths, _query, _registry, _limit, _languages, _kinds, _policy
+    ):
         captured.extend(paths)
         return []
 

@@ -311,6 +311,38 @@ class StreamPublisherHook(BaseAgentHook):
         )
         return result
 
+    async def on_tool_blocked(
+        self,
+        ctx: "RunContext",
+        state: "AgentState",
+        tool_call: "ToolCall",
+        reason: str,
+    ) -> None:
+        """Close the pending UI action without executing or authorizing it."""
+        fn_name = tool_call.function.name if tool_call.function else ""
+        tc_id = self._resolver.resolve_start(fn_name, tool_call.id)
+        await self._push(
+            ToolStartEvent(
+                agent=self._agent_name,
+                tool_call_id=tc_id,
+                name=fn_name,
+                arguments=(
+                    tool_call.function.arguments if tool_call.function else None
+                ),
+                metadata={"blocked": True},
+            )
+        )
+        state.metadata.setdefault("_tool_duration_ms", {})[tool_call.id] = 0.0
+        await self._push(
+            ToolEndEvent(
+                agent=self._agent_name,
+                tool_call_id=self._resolver.resolve_end(tool_call.id),
+                name=fn_name,
+                result=reason,
+                metadata={"blocked": True, "duration_ms": 0.0},
+            )
+        )
+
     async def on_rate_limit(
         self,
         ctx: "RunContext",

@@ -55,6 +55,7 @@ export async function queryCodeGraph(
     kinds?: string[]
     budgetTokens?: number
     limit?: number
+    enableLsp?: boolean
     signal?: AbortSignal
   },
 ): Promise<CodeQueryResponse> {
@@ -71,6 +72,7 @@ export async function queryCodeGraph(
       kinds: options?.kinds ?? [],
       budget_tokens: options?.budgetTokens ?? 1500,
       limit: options?.limit ?? 20,
+      enable_lsp: options?.enableLsp ?? true,
     }),
     signal: options?.signal,
   })

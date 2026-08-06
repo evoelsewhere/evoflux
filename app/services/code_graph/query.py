@@ -35,8 +35,16 @@ def _identifier_parts(value: str) -> list[str]:
     return parts
 
 
-def query_terms(query: str, *, limit: int = 12) -> tuple[str, ...]:
-    """Return deterministic terms without language- or message-specific rules."""
+def query_terms(query: str, *, limit: int = 32) -> tuple[str, ...]:
+    """Return structural query evidence before ordinary prose.
+
+    Compound identifiers, camel-case names, and acronyms are the strongest
+    code-shaped evidence.  They are collected across the whole query before
+    ordinary words, so a named symbol near the end of a long question cannot
+    be displaced by the prose that introduces it.  Order remains stable within
+    each evidence class and no language- or intent-specific vocabulary is
+    involved.
+    """
     runs: list[str] = []
     current: list[str] = []
     connectors = frozenset("_.$/-")
@@ -49,8 +57,10 @@ def query_terms(query: str, *, limit: int = 12) -> tuple[str, ...]:
     if current:
         runs.append("".join(current))
 
-    discovered: list[tuple[int, str]] = []
-    for position, run in enumerate(runs):
+    structural: list[str] = []
+    derived: list[str] = []
+    prose: list[str] = []
+    for run in runs:
         normalized_run = run.strip("".join(connectors))
         components: list[str] = []
         component: list[str] = []
@@ -63,20 +73,46 @@ def query_terms(query: str, *, limit: int = 12) -> tuple[str, ...]:
                 component.append(char)
         if component:
             components.append("".join(component))
-        values = [
-            normalized_run,
-            *(part for value in components for part in _identifier_parts(value)),
+        identifier_parts = [
+            part for value in components for part in _identifier_parts(value)
         ]
-        for value in values:
+        is_structural = bool(
+            any(char in connectors for char in normalized_run)
+            or len(identifier_parts) > len(components)
+            or (len(normalized_run) > 1 and normalized_run.isupper())
+        )
+        destination = structural if is_structural else prose
+        for value in (normalized_run,):
             normalized = value.casefold()
             if len(normalized) >= 2:
-                discovered.append((position, normalized))
+                destination.append(normalized)
+        if is_structural:
+            for value in (*components, *identifier_parts):
+                normalized = value.casefold()
+                if len(normalized) >= 2:
+                    derived.append(normalized)
 
-    unique: dict[str, int] = {}
-    for position, term in discovered:
-        unique.setdefault(term, position)
-    ranked = sorted(unique, key=lambda term: (-len(term), unique[term], term))
-    return tuple(ranked[: max(1, limit)])
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def add(term: str) -> None:
+        if term not in seen:
+            seen.add(term)
+            ordered.append(term)
+
+    for term in structural:
+        add(term)
+
+    # Full prose terms carry the user's own granularity, while derived pieces
+    # add identifier recall. Interleave both classes so neither a standalone
+    # action nor the component of a late compound symbol can consume the
+    # other's entire bounded expansion.
+    for index in range(max(len(prose), len(derived))):
+        if index < len(prose):
+            add(prose[index])
+        if index < len(derived):
+            add(derived[index])
+    return tuple(ordered[: max(1, limit)])
 
 
 @dataclass(frozen=True, slots=True)

@@ -438,6 +438,7 @@ lsp_definition = Tool(
     read_only=True,
     deferred=True,
     deferred_summary="Resolve a source position with a language server.",
+    capabilities=("source_navigation",),
 )
 
 lsp_references = Tool(
@@ -451,4 +452,5 @@ lsp_references = Tool(
     read_only=True,
     deferred=True,
     deferred_summary="Find live references with a language server.",
+    capabilities=("source_navigation",),
 )
