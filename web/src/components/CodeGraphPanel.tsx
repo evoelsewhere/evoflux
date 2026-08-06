@@ -5,13 +5,13 @@ import {
   getCodeGraphCapabilities,
   getCodeGraphFreshness,
   getCodeGraphStatus,
-  queryCodeGraph,
+  searchCodeGraph,
   reindexCodeGraph,
 } from '@/api/client'
 import { queryKeys } from '@/queries'
-import type { CodeQueryCandidate, WorkspaceFileInfo } from '@/api/types'
+import type { CodeGraphNode, WorkspaceFileInfo } from '@/api/types'
 
-function candidateToFile(candidate: CodeQueryCandidate): WorkspaceFileInfo {
+function candidateToFile(candidate: CodeGraphNode): WorkspaceFileInfo {
   return {
     path: candidate.file_path,
     name: candidate.file_path.split('/').pop() ?? candidate.file_path,
@@ -77,11 +77,7 @@ export function CodeGraphPanel({
 
   const results = useQuery({
     queryKey: queryKeys.codeGraph.query(workspace, debounced),
-    queryFn: ({ signal }) => queryCodeGraph(workspace, debounced, {
-      limit: 20,
-      budgetTokens: 1800,
-      signal,
-    }),
+    queryFn: () => searchCodeGraph(workspace, debounced, { limit: 20 }),
     enabled: debounced.length > 0,
     staleTime: 5_000,
   })
@@ -93,15 +89,15 @@ export function CodeGraphPanel({
     },
   })
 
-  const candidates = results.data?.results ?? []
+  const candidates = results.data?.nodes ?? []
   const reindexing = reindex.isPending || serverIndexing
   const unsupportedLanguages = capabilities.data?.filter((item) => !item.graph).length ?? 0
   const freshnessLabel =
     freshness.data?.freshness === 'fresh'
       ? 'Fresh'
       : freshness.data?.freshness === 'partial'
-        ? 'Overlay active'
-        : 'Source fallback'
+        ? 'Index has pending changes'
+        : 'Index unavailable'
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -185,12 +181,8 @@ export function CodeGraphPanel({
         {(freshness.data?.dirty_files ?? 0) > 0 && (
           <span>{freshness.data?.dirty_files} dirty file(s)</span>
         )}
-        {unsupportedLanguages > 0 && <span>{unsupportedLanguages} lexical fallback(s)</span>}
-        {results.data && (
-          <span title={results.data.limitations.join('\n')}>
-            {results.data.strategy} · {Math.round(results.data.coverage * 100)}% graph coverage
-          </span>
-        )}
+        {unsupportedLanguages > 0 && <span>{unsupportedLanguages} unsupported language(s)</span>}
+        {results.data && <span>Indexed symbol search</span>}
       </div>
 
       {/* Search */}
@@ -201,7 +193,7 @@ export function CodeGraphPanel({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search symbols or describe behavior…"
+            placeholder="Search symbol names…"
             className="min-w-0 flex-1 bg-transparent text-xs text-(--color-text) outline-none placeholder:text-(--color-text-subtle)"
           />
           {results.isFetching && <Loader2 size={12} className="shrink-0 animate-spin text-(--color-text-subtle)" />}
@@ -211,7 +203,7 @@ export function CodeGraphPanel({
       {/* Results */}
       <div className="min-h-0 flex-1 overflow-auto p-2">
         {debounced.length === 0 ? (
-          <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Search uses the graph when fresh and source fallback otherwise.</p>
+          <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Search indexed symbol names; graph navigation starts from an exact symbol.</p>
         ) : results.isLoading ? (
           <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Searching…</p>
         ) : results.isError ? (
@@ -222,24 +214,24 @@ export function CodeGraphPanel({
           <div className="space-y-0.5">
             {candidates.map((candidate) => (
               <button
-                key={candidate.handle}
+                key={candidate.id}
                 type="button"
                 onClick={() => onFileSelect?.(candidateToFile(candidate))}
                 className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-left text-xs text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-                title={`${candidate.match_reasons.join(', ')} — confidence ${Math.round(candidate.confidence * 100)}%`}
+                title={candidate.signature ?? candidate.qualified_name}
               >
                 <FileCode size={13} className="mt-0.5 shrink-0 text-(--color-accent)" />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
                     <span className="truncate font-mono font-medium text-(--color-text)">
-                      {candidate.symbol ?? candidate.file_path.split('/').pop()}
+                      {candidate.qualified_name}
                     </span>
                     <span className="shrink-0 rounded bg-(--bg-key) px-1 py-0.5 font-mono text-xs uppercase tracking-wide text-(--color-text-subtle)">
-                      {candidate.kind ?? candidate.provenance}
+                      {candidate.kind}
                     </span>
                   </span>
                   <span className="mt-0.5 flex items-center gap-1 truncate font-mono text-xs text-(--color-text-subtle)">
-                    {candidate.file_path}:{candidate.line_start} · {candidate.provenance}
+                    {candidate.file_path}:{candidate.line_start} · {candidate.language}
                   </span>
                 </span>
               </button>

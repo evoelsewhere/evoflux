@@ -50,6 +50,6 @@ uv run ruff check app/ tests/ && uv run ruff format --check app/ tests/ && uv ru
 
 ## Documentation pointers
 
-- Backend and testing conventions: `documents/docs/guidelines.md`.
-- Architecture overview: `documents/docs/architecture.md`.
-- Feature catalogue: `documents/docs/features.md`.
+- Harness contract: `documents/architecture/application-harness.md`.
+- Coding navigation: `documents/architecture/coding-agent-code-navigation.md`.
+- Model capability flow: `documents/architecture/model-capability-flow.md`.

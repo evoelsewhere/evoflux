@@ -211,15 +211,6 @@ class CodeGraphSettings(BaseModel):
     # Build the index automatically the first time a never-indexed workspace
     # is opened in a coding session (background job; UI shows progress).
     auto_index_enabled: bool = True
-    # Above this dirty-file count, parse only files proven relevant by lexical
-    # retrieval and leave the rest to background indexing.
-    query_large_change_files: int = Field(default=200, ge=10, le=10_000)
-    query_cache_ttl_seconds: float = Field(default=30.0, ge=0.0, le=600.0)
-    query_policy: CodeQueryPolicySettings = Field(
-        default_factory=CodeQueryPolicySettings
-    )
-
-
 class CrossRepoSettings(BaseModel):
     """Cross-repo reference resolution for multi-repo CodingProjects.
 

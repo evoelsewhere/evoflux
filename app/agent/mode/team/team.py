@@ -51,6 +51,7 @@ from app.agent.schemas.chat import AssistantMessage, HumanMessage, ToolMessage
 from app.agent.schemas.events import DoneEvent
 from app.agent.tools.registry import Tool
 from app.core.db import DbFactory, resolve_db_factory
+from app.core.app_mode import parse_app_mode
 from app.core.paths import session_workspace_dir
 from app.models.chat import ChatSession, SessionMessage
 from app.models.goal import SessionGoal
@@ -316,7 +317,7 @@ class AgentTeam:
         self._provider_factory = provider_factory
         self._extra_tools = extra_tools
         self._db_factory = db_factory
-        self.mode = mode
+        self.mode = parse_app_mode(mode).value
         self.workspace = workspace
         self.permission_mode = permission_mode
         self.session_tags: frozenset[str] = session_tags or frozenset()
@@ -1705,7 +1706,12 @@ class AgentTeam:
         background.
         """
         if mode is not None:
-            self.mode = mode
+            requested_mode = parse_app_mode(mode).value
+            if requested_mode != self.mode:
+                raise ValueError(
+                    f"Session mode '{requested_mode}' does not match team mode "
+                    f"'{self.mode}'."
+                )
         if workspace is not None:
             self.workspace = workspace
 

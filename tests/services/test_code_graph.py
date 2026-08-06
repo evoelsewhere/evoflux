@@ -29,6 +29,15 @@ def test_content_hash_changes_when_index_format_changes(monkeypatch):
     assert indexer.content_hash(b"unchanged source") != current
 
 
+def test_content_hash_embeds_the_current_index_format_tag():
+    from app.services.code_graph import indexer
+
+    digest = indexer.content_hash(b"source")
+
+    assert len(digest) == 64
+    assert digest.startswith(indexer.index_format_tag())
+
+
 # ── Python parser ─────────────────────────────────────────────────────────────
 
 

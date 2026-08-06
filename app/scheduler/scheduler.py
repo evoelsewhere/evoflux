@@ -825,8 +825,7 @@ class TaskScheduler:
                     )
                 # If this scheduled session belongs to a multi-repo project,
                 # pass the project's other repos so the agent gets full
-                # multi-repo context (installs MultiRepoContextHook), mirroring
-                # POST /team/chat.
+                # multi-repo context, mirroring POST /team/chat.
                 extra_ws_paths = await self._project_extra_paths(
                     resolved_sid, task.workspace, task.project_id
                 )

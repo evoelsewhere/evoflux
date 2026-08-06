@@ -12,16 +12,16 @@ description: >-
 This skill lets the agent modify its own on-disk configuration in
 response to a user request. All changes are surgical edits to files
 under `{EVOFLUX_CONFIG_DIR}/`. No code changes, no restarts. Agent
-`.md` edits take effect on the **next turn** of the affected agent;
-`SKILL.md` edits take effect on the **next turn** of the affected agent.
+`.md` edits take effect on the **next turn** of the affected agent. Skill
+bodies are loaded independently and are intentionally outside this workflow.
 
 ## Scope — what this skill can change
 
 | Target | File | Typical request |
 |--------|------|-----------------|
 | Agent model / params | `{EVOFLUX_CONFIG_DIR}/agents/{name}.md` frontmatter | "switch to gpt-5", "use Claude", "turn on high thinking", "add a fallback model" |
-| Agent tools | same file, `tools:` list | Additive local overrides on top of any built-in first-party profile tools. "give yourself shell access", "let yourself browse the web" |
-| Agent skill metadata | same file, `skills:` list | Rare additive explicit metadata/drift hooks. Installing a new skill normally does **not** require editing agent files; the `skill` tool discovers skills from project/global roots. |
+| Agent tools | same file, `tools:` / `tools_opt_out:` lists | Add extras or exclude code-owned tier tools. "give yourself shell access", "disable shell for this specialist" |
+| Agent skill metadata | same file, `skills:` list | Rare explicit catalog metadata only. Bodies are never preloaded; installing a skill normally does **not** require editing agent files. |
 | Agent MCP tools | same file, `mcp:` list (bulk) or `tools:` list (selective) | Additive local overrides on top of any built-in first-party profile MCP servers/tools. "let yourself use the filesystem MCP", "remove the github MCP from yourself" — see "MCP tools on agents" below |
 | New skills | `{EVOFLUX_CONFIG_DIR}/skills/{name}/SKILL.md` | "install a skill for reviewing pull requests" — **delegate to `skill-installer`** |
 
@@ -38,7 +38,8 @@ Use this self-healing workflow for root/blueprint config changes:
 - Adding persistent first-party extras to `tools:` / `mcp:` in an agent `.md` file.
 - Editing `skills:` only when the user explicitly wants agent-file metadata changed; do not add a skill there as part of normal skill installation.
 - Removing user-added extras from an agent `.md` file.
-- Explaining that built-in first-party capabilities cannot be removed through `.md` overrides; `.md` files are additive only.
+- Removing code-owned default tools through `tools_opt_out`; implicit lifecycle
+  and team tools remain runtime invariants and cannot be opted out.
 - Edits to the **lead's own** `.md`.
 - Multi-field changes (e.g. model + thinking level + tools in one diff).
 - Anything outside `tools` / `skills` / `mcp` — `model`,
@@ -144,8 +145,8 @@ No team teardown, no in-flight turn disruption, no restart.
 |--------|-------------------|
 | Agent `.md` frontmatter or system prompt | **Next turn** of that agent (drift detection). |
 | `mcp.json` (server added / removed / edited) | After `mcp-installer apply`, on the **next turn** of every agent that references the server. |
-| `SKILL.md` body edited | **Next turn** of any agent listing the skill (drift detection re-stamps the file). |
-| New skill installed via `skill-installer` | Immediately loadable by exact `skill("name")`; the visible skill catalog refreshes on the next catalog/tool-description rebuild. No agent `.md` edit is required. |
+| `SKILL.md` body edited | The next explicit `skill(action="load", ...)` in a fresh conversation reads the updated body. Already-visible instructions remain stable for the current conversation. |
+| New skill installed via `skill-installer` | Immediately discoverable through `skill(action="list")` and loadable by exact name. No agent `.md` edit is required. |
 
 The only changes that still require a process restart are: adding or
 removing **agent files** themselves (team shape change), manually editing `.env` /
@@ -162,9 +163,9 @@ Only these keys are valid. Reject any request to invent new ones.
 | `model` | `provider:model` — e.g. `googlegenai:gemini-3.1-flash`, `openai:gpt-5.5`, `zai:glm-5-turbo`, `openrouter:...`, `copilot:...`, `codex:...`, `vertexai:...`, `nvidia:...`, `xai:grok-4.20`, `ollama:llama3.2`, `ollama:kimi-k2.6-cloud` |
 | `fallback_model` | same format as `model` |
 | `thinking_level` | a level advertised by the selected model, such as `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or `ultra` |
-| `tools` | extra tools layered on top of any built-in first-party profile tools: `web_search`, `web_fetch`, `date`, `read`, `write`, `edit`, `ls`, `grep`, `glob`, `rm`, `shell`, `bg`, `wiki_search`, plus `mcp_<server>_<tool>` entries from configured MCP servers. Never list `skill` or `team_message` — injected automatically. Lead-only tools (`note`, `schedule_task`, `todo_manage`) are also injected automatically. |
-| `skills` | optional explicit skill metadata/drift hooks; names of discovered skill directories (project/global EvoFlux, opencode-compatible, or bundled read-only skills). Do not use this as the normal skill-install wiring step. |
-| `skills_opt_out` | explicit mode-default skill opt-outs. In Coding mode, use `[code-graph-navigation]` only when this agent must not receive the default graph-first navigation guidance. |
+| `tools` | extra names from the current tool registry, including selective `mcp_<server>_<tool>` entries. Never copy a stale example list; inspect the current catalog. Implicit lifecycle/team tools are injected automatically. |
+| `tools_opt_out` | exclusions applied to code-owned mode-tier tools. Implicit lifecycle/team tools cannot be excluded. |
+| `skills` | optional explicit skill metadata; names of discovered project/global/bundled skill directories. Bodies are never preloaded. Do not use this as the normal skill-install wiring step. |
 | `responses_api` | `true` to force OpenAI Responses API |
 
 Validation invariants to preserve:
@@ -172,7 +173,8 @@ Validation invariants to preserve:
 - Exactly one file in `agents/` has `role: lead`. Never change `role`.
 - `model` must contain a `:` separator.
 - Tool names must match the built-in registry (see table above).
-- If a skill is listed but not discoverable, the agent still loads but logs `skill_not_found` and omits that skill's instructions — verify before adding.
+- Verify a skill name through `skill(action="list")` before adding metadata;
+  unknown names remain inert metadata and cannot be loaded.
 
 ## MCP tools on agents
 
@@ -244,7 +246,7 @@ tools:
 
 If the user wants a **new** skill body — "install a code-review skill",
 "add a skill for generating SVGs", "fetch this skill from https://…" — call
-`skill("skill-installer")` and follow its workflow. Do not write `SKILL.md`
+`skill(action="load", skill_name="skill-installer")` and follow its workflow. Do not write `SKILL.md`
 files from inside this skill, and do not edit agent `.md` `skills:` lists unless
 the user explicitly asked for that metadata change.
 
@@ -271,7 +273,7 @@ sandbox and is gated by the permission system."
 
 ### 3. "Install a skill for writing release notes"
 
-Delegate: call `skill("skill-installer")` and follow that workflow.
+Load `skill-installer` progressively and follow that workflow.
 
 ### 4. "Use a warmer tone"
 

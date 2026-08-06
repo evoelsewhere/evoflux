@@ -1342,39 +1342,34 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'coding',
     title: 'Structural code graph',
     summary:
-      'Tree-sitter index symbol và edge để agent đi theo cấu trúc trước khi đổ cả file — gồm resolve cross-repo xác định và skill preload. Ưu tiên graph tool cho identifier; dùng grep cho literal và comment.',
+      'Tree-sitter index symbol và edge để điều hướng cấu trúc chính xác, gồm resolve cross-repo xác định. Dùng code_graph sau khi đã biết symbol; dùng search source để khám phá identifier, literal và comment.',
     keywords: [
       'code graph',
       'symbols',
       'cross-repo',
       'index',
-      'code_search',
-      'code_overview',
       'code_graph',
-      'code_path',
       'tree-sitter',
-      'code-graph-navigation',
-      'skills_opt_out',
       'đồ thị mã',
       'biểu tượng'
 ],
     setup:
       'Coding workspace hoặc project — indexing chạy incremental khi file đổi. Mở Graph workbench để khám trực quan và reindex khi cây trông cũ sau edit ngoài lớn.',
     tricks: [
-      'Agent preload skill code-graph-navigation mặc định; opt out bằng skills_opt_out trong agent frontmatter.',
-      'Ưu tiên graph tool cho identifier và quan hệ; dùng grep cho literal, comment và config key.',
+      'Schema và service native của code_graph sở hữu điều hướng graph; không cần graph skill hay prompt injection.',
+      'Dùng code_graph cho exact symbol đã biết và quan hệ cấu trúc; dùng search source để khám phá, tìm literal, comment và config key.',
       'Mở Graph workbench để khám trực quan và reindex khi cần.',
       'Resolve cross-repo dùng ba tier xác định (reattach, manifests/FQNs, sibling FTS5) không gọi LLM để link.',
-      'code_overview → cái gì đã index; code_search → tìm symbol; code_graph → caller/deps; code_path → A nối B thế nào.',
+      'Các operation của code_graph gồm definition, callers, callees, references, impact và neighborhood.',
       'Verify phát hiện quan trọng trên source live sau khi đi graph — index có thể trễ edit ngoài.',
       'Hỏi câu cấu trúc (“ai gọi X?”) thay vì “đọc cả package”.',
       'Multi-repo project có edge cross-repo; repo standalone vẫn lợi trong một cây.',
-      'Câu trả lời bỏ qua graph → kiểm code-graph-navigation có nằm trong skills_opt_out không.'
+      'Graph không bao giờ được inject hoặc route từ wording của request.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Structural code graph index symbol và edge bằng tree-sitter (nhiều language parser) vào index local. Agent query overview, search, neighborhood và path thay vì đọc cả file mặc định. Bạn khám cùng cấu trúc trực quan trong Graph workbench.',
+        text: 'Structural code graph index symbol và edge bằng tree-sitter vào index local. Native code_graph tool trả lời một operation cấu trúc rõ ràng cho một symbol đã biết. Cùng index đó vẫn có thể khám trực quan trong Graph workbench.',
       },
       {
         type: 'p',
@@ -1383,12 +1378,11 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'code_overview — trạng thái index và symbol trung tâm',
-          'code_search — symbol này có không, ở đâu?',
-          'code_graph — caller/reference và dependency',
-          'code_path — A và B nối thế nào?',
-          'grep — literal, comment, prose, config key',
-          'skills_opt_out: [code-graph-navigation] — tắt preload mặc định'
+          'code_graph definition — resolve exact symbol và hiện body',
+          'code_graph callers/callees — quan hệ call trực tiếp',
+          'code_graph references/impact — inbound use và blast radius',
+          'code_graph neighborhood — khám hai chiều có chủ ý',
+          'grep — literal, comment, prose, config key'
 ],
       },
       {
@@ -1397,7 +1391,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Điều tra từng bước: (1) code_overview xem coverage, (2) code_search cho symbol, (3) code_graph cho caller/deps, (4) code_path nếu cần connectivity A→B, (5) mở hot file trong Files hoặc @ mention, (6) verify bằng test hoặc grep khi câu hỏi kiểu string.',
+        text: 'Điều tra từng bước: (1) khám phá exact identifier bằng source search nếu chưa biết, (2) gọi code_graph với một operation cấu trúc, (3) disambiguate definition trùng bằng path hoặc repository, (4) kiểm freshness và limitation, (5) verify hành vi dynamic/string bằng source, test, log hoặc runtime evidence.',
       },
       {
         type: 'p',
@@ -1405,7 +1399,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: đổ cả thư mục vào chat “cho chắc”; chờ link cross-repo khi không có project; không bao giờ reindex sau `git checkout` lớn; opt out code-graph-navigation rồi đổ lỗi model điều hướng nông; coi hit FTS5 sibling mạnh hơn tier reattach/manifest.',
+        text: 'Sai thường gặp: truyền nguyên prose request làm graph symbol; đổ cả thư mục vào chat “cho chắc”; chờ link cross-repo khi không có project; không reindex sau checkout ngoài lớn; hoặc coi lexical suggestion là graph root đã resolve.',
       },
       {
         type: 'tips',
@@ -1789,7 +1783,6 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'sse',
       'tools',
       'frontmatter',
-      'skills_opt_out',
       'kỹ năng',
       'tác nhân',
       'máy chủ mcp',
@@ -1805,7 +1798,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'MCP tool chịu cùng rule permission như tool native.',
       'Team scope theo work / coding.',
       'Command palette nhảy tới Edit <agent>… hoặc tạo agent và skill mới.',
-      'Dùng skills_opt_out trong frontmatter để tắt mặc định như code-graph-navigation.',
+      'Dùng tools_opt_out để tắt default tool code-owned; bỏ skill đã assign trực tiếp khỏi danh sách skills.',
       'Tool chỉ Lead (ask_user, plan mode helper, một số worktree helper) không bao giờ cấp cho specialist.',
       'MCP server kẹt auth thì hoàn tất auth flow trước khi đổ lỗi slash menu composer.'
 ],
@@ -1829,7 +1822,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Skills — /skill: sau validation',
           'MCP — stdio / HTTP / SSE',
           'Status dots — ready / starting / auth / error / stopped',
-          'skills_opt_out — tắt skill preload mặc định',
+          'tools_opt_out — tắt default tool code-owned',
           'Mode scope — team work / coding',
           'Lead-only tools — không bao giờ trên specialist'
 ],
@@ -1845,7 +1838,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Preload code-graph-navigation ghép với Coding graph tool.',
+          'code_graph là native Coding tool và không cần skill đi kèm.',
           'Workflow và skill đều cần scope hợp lệ mới hiện trong /.',
           'Rule Always của permission áp cả MCP tool — ưu tiên Once trước.'
 ],

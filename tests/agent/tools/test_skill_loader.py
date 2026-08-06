@@ -267,7 +267,7 @@ class TestLoadSkill:
 
     def test_tool_description_tells_agent_not_to_reload_visible_skills(self):
         description = _skill_tool_description()
-        assert "at most once per skill" in description
+        assert "at most once per selected skill" in description
         assert "reuse instructions already visible" in description
         assert "action='list'" in description
 
@@ -285,7 +285,7 @@ class TestLoadSkill:
         assert "analysis" in result
         assert "Full catalog description" in result
 
-    def test_tool_description_lists_names_without_full_descriptions(
+    def test_tool_description_omits_catalog_until_list_action(
         self, tmp_path, monkeypatch
     ):
         d = tmp_path / "analysis"
@@ -297,7 +297,7 @@ class TestLoadSkill:
 
         description = _skill_tool_description()
 
-        assert "analysis" in description
+        assert "analysis" not in description
         assert "Expensive full description" not in description
 
 
@@ -305,8 +305,7 @@ class TestLoadSkill:
 # Path-token substitution
 #
 # The skill tool replaces a small whitelist of ``{TOKEN}`` placeholders in
-# both the discovered description (which gets injected into the agent's
-# system prompt) and the body returned by ``load_skill``. This is what
+# both catalog output and the body returned by ``load_skill``. This is what
 # lets a skill say ``cat {EVOFLUX_CONFIG_DIR}/mcp.json`` and have the
 # agent receive a concrete absolute path it can hand to its file/shell
 # tools without further interpretation.
@@ -619,6 +618,23 @@ class TestBuiltinSkills:
             "review-pull-requests",
         }.issubset(result)
         assert (_builtin_skills_dir() / "mcp-installer" / "mcp_apply.py").is_file()
+
+    def test_builtin_catalog_is_intentionally_small(self):
+        assert set(discover_skills()) == {
+            "algorithmic-art",
+            "canvas-design",
+            "docx",
+            "frontend-design",
+            "mcp-installer",
+            "pdf",
+            "plugin-installer",
+            "pptx",
+            "review-pull-requests",
+            "self-healing",
+            "skill-installer",
+            "theme-factory",
+            "xlsx",
+        }
 
     def test_all_builtin_skills_follow_bundle_contract(self):
         """Keep bundled skills portable and compatible with progressive disclosure."""

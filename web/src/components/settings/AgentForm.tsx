@@ -57,7 +57,7 @@ import {
 import { useAgentFilesQuery, useMcpServersQuery, useRegistryQuery } from '@/queries'
 import { MultiSelect, type MultiSelectOption } from './MultiSelect'
 import {
-  combine,
+  combinePreservingUnknown,
   normalizeYamlScalarContinuations,
   splitFrontmatter,
   unquoteYamlScalar,
@@ -183,7 +183,7 @@ export function AgentForm({
   const updateFromForm = (next: AgentFrontmatter, nextBody: string) => {
     setFm(next)
     setBody(nextBody)
-    const r = combine(next, nextBody)
+    const r = combinePreservingUnknown(raw, next, nextBody)
     setRaw(r)
     onChange(r)
     setParseError(null)
@@ -222,7 +222,6 @@ export function AgentForm({
           modelOptions={modelOptions}
           agentPath={agentPath}
           effectiveTools={agentSummary?.tools}
-          effectiveSkills={agentSummary?.skills}
           updateFromForm={updateFromForm}
         />
       ) : (
@@ -286,7 +285,6 @@ function FormFields({
   modelOptions,
   agentPath,
   effectiveTools,
-  effectiveSkills,
   updateFromForm,
 }: {
   fm: AgentFrontmatter
@@ -300,7 +298,6 @@ function FormFields({
   modelOptions: ModelOption[]
   agentPath?: string
   effectiveTools?: string[]
-  effectiveSkills?: string[]
   updateFromForm: (next: AgentFrontmatter, nextBody: string) => void
 }) {
   // Per-field errors computed fresh from zod on render. For the scalar
@@ -343,22 +340,24 @@ function FormFields({
   // Every agent gets its mode tier's tools — the server's effective
   // toolset (tier grant + implicit adds) minus explicit frontmatter
   // extras is what we show as always-included chips.
-  const grantedTools = (effectiveTools ?? []).filter(
-    (tool) => !(fm.tools ?? []).includes(tool),
+  const defaultToolNames = new Set([
+    ...(effectiveTools ?? []).filter((tool) => !(fm.tools ?? []).includes(tool)),
+    ...(fm.tools_opt_out ?? []),
+  ])
+  const grantedTools = [...defaultToolNames].filter(
+    (tool) => !(fm.tools_opt_out ?? []).includes(tool),
   )
   const isMember = fm.role !== 'lead'
   const extraToolOptions = toolOptions
-    .filter((option) => !grantedTools.includes(option.value))
+    .filter((option) => !defaultToolNames.has(option.value))
     .filter((option) => !implicitToolNames.has(option.value))
     // Lead-only tools would be silently skipped by the loader for members
     // — don't offer them in the first place.
     .filter((option) => !(isMember && leadOnlyTools.has(option.value)))
-  const builtInSkills = (effectiveSkills ?? [])
-    .filter(() => hasBuiltInProfile)
-    .filter((skill) => !(fm.skills ?? []).includes(skill))
-  const extraSkillOptions = hasBuiltInProfile
-    ? skillOptions.filter((option) => !builtInSkills.includes(option.value))
-    : skillOptions
+  const extraSkillOptions = skillOptions
+  const defaultToolOptions = toolOptions.filter((option) =>
+    defaultToolNames.has(option.value),
+  )
   const promptWordCount = body.trim() ? body.trim().split(/\s+/).length : 0
 
   return (
@@ -371,7 +370,7 @@ function FormFields({
           <div className="min-w-0">
             <p className="font-semibold text-(--color-text)">Built-in EvoFlux profile</p>
             <p className="mt-0.5">
-              Default tools, skills, and instructions are versioned in EvoFlux. Changes here stay as additive overrides, so upgrades never overwrite your custom setup.
+              Default tools and instructions are versioned in EvoFlux. Skill selections are user-owned and loaded only on demand. Upgrades never overwrite your custom setup.
             </p>
           </div>
         </div>
@@ -539,7 +538,7 @@ function FormFields({
         icon={Boxes}
         title="Capabilities"
         description="Built-in access stays visible but compact. Add only what this agent needs beyond its team defaults."
-        meta={`${(fm.tools ?? []).length + (fm.mcp ?? []).length + (fm.skills ?? []).length} custom`}
+        meta={`${(fm.tools ?? []).length + (fm.mcp ?? []).length + (fm.skills ?? []).length} custom · ${(fm.tools_opt_out ?? []).length} disabled`}
       >
         <div className="grid divide-y divide-(--color-border-subtle) lg:grid-cols-3 lg:divide-x lg:divide-y-0">
           <div className="min-w-0 p-4 sm:p-5">
@@ -561,6 +560,22 @@ function FormFields({
                 onChange={(value) => updateFromForm({ ...fm, tools: value }, body)}
                 placeholder="Add extra tools…"
               />
+              {defaultToolOptions.length > 0 && (
+                <div className="mt-3 border-t border-(--color-border-subtle) pt-3">
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--color-text-muted)">
+                    Disabled team defaults
+                  </p>
+                  <MultiSelect
+                    ariaLabel="Disabled default tools"
+                    options={defaultToolOptions}
+                    value={fm.tools_opt_out ?? []}
+                    onChange={(value) =>
+                      updateFromForm({ ...fm, tools_opt_out: value }, body)
+                    }
+                    placeholder="Disable a default tool…"
+                  />
+                </div>
+              )}
             </Field>
           </div>
 
@@ -587,15 +602,8 @@ function FormFields({
           <div className="min-w-0 p-4 sm:p-5">
             <Field
               label="Skills"
-              hint={
-                hasBuiltInProfile
-                  ? `${(fm.skills ?? []).length} extra selected.`
-                  : `${(fm.skills ?? []).length} selected of ${extraSkillOptions.length}.`
-              }
+              hint={`${(fm.skills ?? []).length} selected of ${extraSkillOptions.length}. Loaded only on demand.`}
             >
-              {builtInSkills.length > 0 && (
-                <CapabilityChips label="Built-in skills" values={builtInSkills} />
-              )}
               <MultiSelect
                 ariaLabel="Skills"
                 options={extraSkillOptions}
@@ -889,7 +897,9 @@ function parseFormState(raw: string): {
     if (typeof parsed.model === 'string') fm.model = parsed.model
     if (typeof parsed.fallback_model === 'string') fm.fallback_model = parsed.fallback_model
     if (typeof parsed.thinking_level === 'string') fm.thinking_level = parsed.thinking_level
+    if (typeof parsed.responses_api === 'boolean') fm.responses_api = parsed.responses_api
     if (Array.isArray(parsed.tools)) fm.tools = parsed.tools.filter((x) => typeof x === 'string')
+    if (Array.isArray(parsed.tools_opt_out)) fm.tools_opt_out = parsed.tools_opt_out.filter((x) => typeof x === 'string')
     if (Array.isArray(parsed.skills)) fm.skills = parsed.skills.filter((x) => typeof x === 'string')
     if (Array.isArray(parsed.mcp)) fm.mcp = parsed.mcp.filter((x) => typeof x === 'string')
     return { fm, body, error: null }

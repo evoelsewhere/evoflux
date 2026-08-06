@@ -1142,7 +1142,7 @@
   "Default Git pull strategy": "デフォルトの Git プル戦略",
   "Default session folder": "Default session folder",
   "Default team lead": "デフォルトのチームリーダー",
-  "Default tools, skills, and instructions are versioned in EvoFlux. Changes here stay as additive overrides, so upgrades never overwrite your custom setup.": "デフォルトのツール、スキル、および手順は EvoFlux でバージョン管理されます。ここでの変更は追加的なオーバーライドとして残るため、アップグレードによってカスタム設定が上書きされることはありません。",
+  "Default tools and instructions are versioned in EvoFlux. Skill selections are user-owned and loaded only on demand. Upgrades never overwrite your custom setup.": "デフォルトのツールと手順は EvoFlux でバージョン管理されます。スキル選択はユーザー所有で、必要時のみ読み込まれます。アップグレードでカスタム設定は上書きされません。",
   "Default zoom": "デフォルトのズーム",
   "default_pull_strategy": "デフォルト_プル_戦略",
   "Defaults used by fetch, pull, push, tag push, and the create-pull-request agent tool.": "フェッチ、プル、プッシュ、タグ プッシュ、および作成-プル-リクエスト エージェント ツールで使用されるデフォルト。",

@@ -166,14 +166,29 @@ def resolve_module_paths(
         if kind != "imports" or not module_path:
             continue
         src_file = src_key.split("::", 1)[0] if "::" in src_key else ""
-        target_file = _resolve_module_path_to_file(
-            module_path, src_file, known_files, repo_ctx
-        )
+        target_file = None
+        # ``from package import submodule`` binds the submodule, not the
+        # package's ``__init__.py``. Prefer that precise Python target when it
+        # exists so qualified callbacks such as ``submodule.run`` stay scoped.
+        if (
+            Path(src_file).suffix.lower() in _PYTHON_EXTENSIONS
+            and dst_name
+            and not module_path.startswith(".")
+        ):
+            target_file = _resolve_python_absolute(
+                f"{module_path}.{dst_name}", known_files, repo_ctx
+            )
         if target_file is None:
-            continue
+            target_file = _resolve_module_path_to_file(
+                module_path, src_file, known_files, repo_ctx
+            )
         imported_name = dst_name or module_path.rsplit(".", 1)[-1].split("/", 1)[-1]
         binding_name = local_name or imported_name
-        dst_key = _find_symbol_in_file(imported_name, target_file, symbols_by_file)
+        dst_key = (
+            _find_symbol_in_file(imported_name, target_file, symbols_by_file)
+            if target_file is not None
+            else None
+        )
         resolved = ResolvedImport(
             src_key=src_key,
             dst_file_path=target_file,

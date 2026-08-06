@@ -1,12 +1,14 @@
 import uuid
 from datetime import datetime, timezone
-from uuid import UUID, uuid7
+from uuid import UUID, uuid7  # ty: ignore[unresolved-import]
 
 import sqlalchemy as sa
 from sqlalchemy import Column, DateTime, ForeignKey, JSON
 import sqlalchemy.dialects.postgresql as pg
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, SQLModel
+
+from app.core.app_mode import normalize_app_mode
 
 
 def normalize_mode(mode: str) -> str:
@@ -17,7 +19,7 @@ def normalize_mode(mode: str) -> str:
     send either value. Accept both at input boundaries, but store and emit
     only ``work``.
     """
-    return "work" if mode in {"normal", "forge"} else mode
+    return normalize_app_mode(mode)
 
 
 def _utcnow() -> datetime:

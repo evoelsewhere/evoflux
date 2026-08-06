@@ -140,19 +140,30 @@ async def test_nested_override_preflights_mutation_once(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_multi_repo_hook_truncates_oversized_agents_md(tmp_path):
-    """Multi-repo AGENTS.md over its cap is truncated, not dropped."""
-    from app.agent.hooks.multi_repo_context import (
-        MAX_AGENTS_MD_BYTES as MULTI_CAP,
-        _read_agents_md,
-    )
+async def test_multi_repo_context_lists_roots_and_injects_each_instruction_once(
+    tmp_path,
+):
+    primary = tmp_path / "primary"
+    sibling = tmp_path / "sibling"
+    primary.mkdir()
+    sibling.mkdir()
+    (primary / "AGENTS.md").write_text("primary unique rule", encoding="utf-8")
+    (sibling / "AGENTS.md").write_text("sibling unique rule", encoding="utf-8")
+    hook = WorkspaceInstructionsHook(str(primary), [str(sibling)])
+    seen: dict[str, str] = {}
 
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    (repo / "AGENTS.md").write_text("y" * (MULTI_CAP + 100), encoding="utf-8")
+    class Request:
+        system_prompt = "Base prompt"
 
-    content = _read_agents_md(repo)
+        def override(self, **kwargs):
+            return SimpleNamespace(**kwargs)
 
-    assert content.startswith("y" * 100)
-    assert "[AGENTS.md truncated" in content
-    assert len(content) <= MULTI_CAP + 200
+    async def handler(request):
+        seen["prompt"] = request.system_prompt
+        return SimpleNamespace(content="ok")
+
+    await hook.wrap_model_call(None, None, Request(), handler)  # type: ignore[arg-type]
+
+    assert "## Available Repositories" in seen["prompt"]
+    assert seen["prompt"].count("primary unique rule") == 1
+    assert seen["prompt"].count("sibling unique rule") == 1

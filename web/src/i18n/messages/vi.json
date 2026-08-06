@@ -1142,7 +1142,7 @@
   "Default Git pull strategy": "Chiến lược pull Git mặc định",
   "Default session folder": "Default session folder",
   "Default team lead": "Trưởng nhóm mặc định",
-  "Default tools, skills, and instructions are versioned in EvoFlux. Changes here stay as additive overrides, so upgrades never overwrite your custom setup.": "Các công cụ, kỹ năng và hướng dẫn mặc định được phiên bản trong EvoFlux. Các thay đổi ở đây vẫn ở dạng ghi đè bổ sung, vì vậy các bản nâng cấp không bao giờ ghi đè thiết lập tùy chỉnh của bạn.",
+  "Default tools and instructions are versioned in EvoFlux. Skill selections are user-owned and loaded only on demand. Upgrades never overwrite your custom setup.": "Công cụ và hướng dẫn mặc định được quản lý phiên bản trong EvoFlux. Lựa chọn skill thuộc người dùng và chỉ được tải khi cần. Nâng cấp không ghi đè thiết lập tùy chỉnh.",
   "Default zoom": "Thu phóng mặc định",
   "default_pull_strategy": "default_pull_strategy",
   "Defaults used by fetch, pull, push, tag push, and the create-pull-request agent tool.": "Các giá trị mặc định được sử dụng bởi fetch, pull, push, push thẻ và công cụ agent tạo-pull-yêu cầu.",

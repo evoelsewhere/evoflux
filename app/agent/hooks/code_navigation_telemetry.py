@@ -1,4 +1,4 @@
-"""Coding-mode telemetry for graph-first navigation and query efficiency."""
+"""Coding-mode telemetry for symbol-graph navigation efficiency."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from app.agent.code_query_observation import consume_code_query_observation
+from app.agent.code_graph_observation import consume_code_graph_observation
 from app.agent.hooks.base import BaseAgentHook
 from app.core.metrics import (
     CODE_GRAPH_QUERIES,
@@ -18,8 +18,7 @@ from app.core.metrics import (
     CODE_NAVIGATION_CALLS_PER_TURN,
     CODE_NAVIGATION_TOOL_CALLS,
     CODE_NAVIGATION_TURNS,
-    CODE_QUERY_CACHE,
-    CODE_QUERY_ROUTING,
+    CODE_GRAPH_ROUTING,
     CODE_GRAPH_RESULT_TOKENS_PER_TURN,
 )
 
@@ -84,7 +83,7 @@ def _call_fingerprint(tool_call: "ToolCall") -> tuple[str, str]:
 
 
 class CodeNavigationTelemetryHook(BaseAgentHook):
-    """Measure graph-first adoption and graph-query efficiency in Coding mode."""
+    """Measure graph adoption without changing model or tool behavior."""
 
     def __init__(self) -> None:
         self._first_strategy: str | None = None
@@ -136,7 +135,7 @@ class CodeNavigationTelemetryHook(BaseAgentHook):
                 self._seen_calls.add(fingerprint)
             return await handler(ctx, state, tool_call)
 
-        consume_code_query_observation()
+        consume_code_graph_observation()
         started = time.perf_counter()
         try:
             result = await handler(ctx, state, tool_call)
@@ -150,7 +149,7 @@ class CodeNavigationTelemetryHook(BaseAgentHook):
 
         CODE_GRAPH_QUERIES.labels(tool=tool_name, status="ok").inc()
         self._seen_calls.add(fingerprint)
-        observation = consume_code_query_observation()
+        observation = consume_code_graph_observation()
         result_tokens = (
             observation.result_tokens
             if observation is not None
@@ -159,11 +158,8 @@ class CodeNavigationTelemetryHook(BaseAgentHook):
         CODE_GRAPH_RESULT_TOKENS.labels(tool=tool_name).inc(result_tokens)
         self._graph_result_tokens += result_tokens
         if observation is not None:
-            CODE_QUERY_ROUTING.labels(
+            CODE_GRAPH_ROUTING.labels(
                 strategy=observation.strategy,
                 freshness=observation.freshness,
-            ).inc()
-            CODE_QUERY_CACHE.labels(
-                outcome="hit" if observation.cache_hit else "miss"
             ).inc()
         return result

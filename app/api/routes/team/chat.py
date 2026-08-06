@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, AsyncGenerator, Literal
+from typing import TYPE_CHECKING, AsyncGenerator, Literal, cast
 from uuid import UUID
-from uuid import uuid7
+from uuid import uuid7  # ty: ignore[unresolved-import]
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from loguru import logger
@@ -327,24 +327,50 @@ async def team_chat(
         async with db.begin():
             existing.tags = sorted(session_tags) or None
 
-    if existing and existing.mode == "coding" and existing.workspace:
-        persisted_workspace = _validate_workspace_or_422(existing.workspace)
-        if mode == existing.mode and workspace is not None:
-            requested_workspace = _validate_workspace_or_422(workspace)
-            if requested_workspace != persisted_workspace:
+    # A persisted session owns its mode and workspace. Request fields select
+    # the context only when creating a new session; they can never migrate an
+    # existing Work session into Coding (or vice versa) as a side effect.
+    if existing is not None:
+        try:
+            persisted_mode = normalize_mode(existing.mode)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Session has unsupported persisted mode: {existing.mode}",
+            ) from exc
+        if persisted_mode == "coding":
+            if not existing.workspace:
                 raise HTTPException(
                     status_code=409,
-                    detail=(
-                        f"Session belongs to a different {existing.mode} workspace: "
-                        f"{persisted_workspace}"
-                    ),
+                    detail="Coding session has no persisted workspace.",
                 )
-        mode = existing.mode
-        workspace = persisted_workspace
-        assert session_id is not None
-        extra_ws_paths, read_only_paths = await _project_paths_for_session(
-            db, existing, workspace
-        )
+            persisted_workspace = _validate_workspace_or_422(existing.workspace)
+            if mode == persisted_mode and workspace is not None:
+                requested_workspace = _validate_workspace_or_422(workspace)
+                if requested_workspace != persisted_workspace:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "Session belongs to a different coding workspace: "
+                            f"{persisted_workspace}"
+                        ),
+                    )
+            workspace = persisted_workspace
+        else:
+            workspace = existing.workspace
+        mode = persisted_mode
+
+    if mode == "coding":
+        if session_id is None:
+            session_id = str(uuid7())
+        assert workspace is not None
+        workspace = _validate_workspace_or_422(workspace)
+        extra_ws_paths: list[str] = []
+        read_only_paths: list[str] = []
+        if existing is not None:
+            extra_ws_paths, read_only_paths = await _project_paths_for_session(
+                db, existing, workspace
+            )
         try:
             team_obj = await team_manager.get_or_start_coding_team(
                 workspace,
@@ -352,17 +378,6 @@ async def team_chat(
                 extra_workspace_paths=extra_ws_paths or None,
                 mode=mode,
                 read_only_paths=read_only_paths or None,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-    elif mode == "coding":
-        if session_id is None:
-            session_id = str(uuid7())
-        assert workspace is not None
-        workspace = _validate_workspace_or_422(workspace)
-        try:
-            team_obj = await team_manager.get_or_start_coding_team(
-                workspace, session_id, mode=mode
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -882,9 +897,7 @@ async def list_team_sessions(
         if mode not in {"work", "coding"}:
             raise HTTPException(status_code=422, detail="Invalid mode")
     if workspace is not None and mode != "coding":
-        raise HTTPException(
-            status_code=422, detail="workspace requires mode=coding"
-        )
+        raise HTTPException(status_code=422, detail="workspace requires mode=coding")
 
     try:
         sessions, next_cursor, has_more = await list_sessions_page(
@@ -921,9 +934,7 @@ async def resolve_team_session(
     """Return the newest matching top-level session, creating one if absent."""
     body.mode = normalize_mode(body.mode)
     if body.mode not in {"work", "coding"}:
-        raise HTTPException(
-            status_code=422, detail="mode must be 'work' or 'coding'."
-        )
+        raise HTTPException(status_code=422, detail="mode must be 'work' or 'coding'.")
     model = body.model.strip() if body.model else None
     thinking_level = body.thinking_level.strip() if body.thinking_level else None
     if model and not await is_registered_model_id(model):
@@ -1063,10 +1074,9 @@ async def resolve_team_session(
                 logger.warning("code_graph_watch_paths_failed err={}", exc)
 
         # Build the code index in the background the first time a
-        # never-indexed workspace is opened. ``code_query`` can fall back to
-        # source immediately, but topology tools and cross-repo impact remain
-        # unavailable until the first graph snapshot exists. The watcher only
-        # reacts to file *changes*, never to the initial open.
+        # never-indexed workspace is opened. Symbol graph navigation remains
+        # unavailable until the first snapshot exists; the watcher only reacts
+        # to file *changes*, never to the initial open.
         await _kick_auto_index(db, watch_targets, project_id=project_id)
 
     data = SessionResponse.model_validate(session).model_dump()
@@ -1325,11 +1335,11 @@ async def set_session_permission_mode(
     # Flip live permission services (agents mid-run) to the new mode.  Each
     # service auto-resolves pending requests the new mode no longer gates and
     # publishes permission_replied events that close open approval UIs.
-    from app.agent.permission import get_services_for_stream
+    from app.agent.permission import Mode, get_services_for_stream
 
     auto_resolved: list[str] = []
     for service in get_services_for_stream(sid):
-        auto_resolved.extend(service.set_mode(body.mode))  # type: ignore[arg-type]
+        auto_resolved.extend(service.set_mode(cast(Mode, body.mode)))
     if auto_resolved:
         logger.info(
             "permission_mode_switch_resolved session_id={} mode={} request_ids={}",
@@ -1499,6 +1509,7 @@ async def get_side_chat_messages(
     side_chat = await db.get(ChatSession, side_chat_id)
     if not _side_chat_belongs_to_source(side_chat, session_id):
         raise HTTPException(status_code=404, detail="Side chat not found")
+    assert side_chat is not None
 
     from app.services.chat_service import get_visible_session_rows
 
@@ -1527,6 +1538,7 @@ async def send_side_chat_message(
 
     if not _side_chat_belongs_to_source(side_chat, session_id):
         raise HTTPException(status_code=404, detail="Side chat not found")
+    assert side_chat is not None
 
     # Kick off the side chat agent run in the background. The team flow
     # persists the user message itself (AgentTeam.handle_user_message), so

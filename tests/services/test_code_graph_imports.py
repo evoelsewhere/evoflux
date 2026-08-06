@@ -11,7 +11,7 @@ from app.services.code_graph.parsers.ecmascript import (
 from app.services.code_graph.parsers.go import GoParser
 from app.services.code_graph.parsers.python import PythonParser
 from app.services.code_graph.parsers.rust import RustParser
-from app.services.code_graph.types import EDGE_IMPORTS
+from app.services.code_graph.types import EDGE_IMPORTS, EDGE_REFERENCES
 
 
 def _import_names(result):
@@ -300,6 +300,30 @@ def test_python_import_alias_resolves_calls(tmp_path: Path):
 
     assert len(call_edges) == 1
     assert "lib.py::Original" in call_edges[0].dst_key
+
+
+def test_python_module_callback_resolves_as_reference(tmp_path: Path):
+    """A module-qualified callback passed to a dispatcher remains navigable."""
+    from app.services.code_graph.indexer import index_workspace
+
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "pkg" / "worker.py").write_text(
+        "def run():\n    return 1\n", encoding="utf-8"
+    )
+    (tmp_path / "main.py").write_text(
+        "import asyncio\n"
+        "from pkg import worker\n\n"
+        "async def dispatch():\n"
+        "    return await asyncio.to_thread(worker.run)\n",
+        encoding="utf-8",
+    )
+
+    result = index_workspace(tmp_path)
+    references = [edge for edge in result.edges if edge.kind == EDGE_REFERENCES]
+
+    assert len(references) == 1
+    assert "pkg/worker.py::run" in references[0].dst_key
 
 
 def test_ts_import_alias_resolves_calls(tmp_path: Path):

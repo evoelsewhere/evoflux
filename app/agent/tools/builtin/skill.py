@@ -328,14 +328,13 @@ def format_available_skills(*, verbose: bool = False) -> str:
 
 
 def _skill_tool_description() -> str:
-    names = sorted(discover_skills())
-    available = ", ".join(names) if names else "(none)"
     return (
-        "List or load specialized skill instructions. The description keeps "
-        "only skill names to minimize repeated schema tokens; call with "
-        "action='list' for the full catalog. Call action='load' at most once "
-        "per skill and reuse instructions already visible in the conversation.\n\n"
-        f"Available skill names: {available}"
+        "Progressively disclose an optional specialized workflow. Call "
+        "action='list' only when the task genuinely needs a workflow beyond "
+        "the visible tool schemas and agent instructions. Call action='load' "
+        "at most once per selected skill and reuse instructions already "
+        "visible in the conversation. The catalog is intentionally omitted "
+        "from this always-visible schema to keep context focused."
     )
 
 

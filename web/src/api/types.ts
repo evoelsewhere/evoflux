@@ -224,27 +224,38 @@ export interface CodeGraphSearchResponse {
   nodes: CodeGraphNode[]
 }
 
-export type CodeQueryIntent = 'locate' | 'explain' | 'impact' | 'trace' | 'change'
-export type CodeQueryFreshnessPolicy = 'fast' | 'balanced' | 'strict'
+export type CodeGraphOperation =
+  | 'definition'
+  | 'callers'
+  | 'callees'
+  | 'references'
+  | 'impact'
+  | 'neighborhood'
+export type CodeGraphFreshnessPolicy = 'fast' | 'balanced' | 'strict'
 
-export interface CodeQueryCandidate {
-  handle: string
+export interface CodeGraphSymbol {
+  repository: string
   file_path: string
   line_start: number
   line_end: number
-  symbol: string | null
-  kind: string | null
-  language: string | null
+  symbol: string
+  kind: string
+  language: string
   signature: string | null
-  snippet: string | null
-  score: number
-  confidence: number
-  provenance: string
-  match_reasons: string[]
-  callers: string[]
-  callees: string[]
-  tests: string[]
-  repository: string | null
+  resolution: string
+  source: string | null
+}
+
+export interface CodeGraphRelation {
+  kind: string
+  depth: number
+  cross_repo: boolean
+  source_symbol: string
+  source_location: string
+  target_symbol: string
+  target_location: string
+  callsite_location: string
+  callsite_source: string | null
 }
 
 export interface CodeGraphLanguageCapability {
@@ -257,23 +268,21 @@ export interface CodeGraphLanguageCapability {
   coverage: number
 }
 
-export interface CodeQueryResponse {
-  query: string
-  intent: CodeQueryIntent
+export interface CodeGraphNavigateResponse {
+  symbol: string
+  operation: CodeGraphOperation
   strategy: string
   graph_version: string | null
   working_tree_revision: string
-  freshness: 'fresh' | 'partial' | 'stale' | 'unavailable'
-  coverage: number
-  confidence: number
+  freshness: 'fresh' | 'partial' | 'unavailable'
   dirty_files: number
   pending_edges: number
-  results: CodeQueryCandidate[]
+  matches: CodeGraphSymbol[]
+  relations: CodeGraphRelation[]
+  suggestions: CodeGraphSymbol[]
   capabilities: CodeGraphLanguageCapability[]
   limitations: string[]
-  next_read_ranges: string[]
   truncated: boolean
-  cache_hit: boolean
 }
 
 export interface CodeGraphFreshnessResponse {
@@ -833,7 +842,6 @@ export interface AgentConfig {
   system_prompt?: string
   tools?: string[]
   skills?: string[]
-  skills_opt_out?: string[]
   model?: string | null
   fallback_model?: string | null
   thinking_level?: string | null

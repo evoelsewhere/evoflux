@@ -202,6 +202,7 @@ async def _docx_document(
 docx_document = Tool(
     _docx_document,
     name="docx_document",
+    tiers=("work",),
     deferred=True,
     deferred_summary="Create, inspect, render, validate, and template-edit Word-native DOCX documents with package fidelity checks.",
     search_aliases=(

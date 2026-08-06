@@ -1381,19 +1381,14 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'coding',
     title: 'Structural code graph',
     summary:
-      'Tree-sitter indexes symbols and edges so agents navigate structure before dumping whole files — including deterministic cross-repo resolution and skill preload. Prefer graph tools for identifiers; use grep for literals and comments.',
+      'Tree-sitter indexes symbols and edges for exact structural navigation, including deterministic cross-repo resolution. Use code_graph after a symbol is known; use normal source search to discover identifiers, literals, and comments.',
     keywords: [
       'code graph',
       'symbols',
       'cross-repo',
       'index',
-      'code_search',
-      'code_overview',
       'code_graph',
-      'code_path',
       'tree-sitter',
-      'code-graph-navigation',
-      'skills_opt_out',
       'đồ thị mã',
       'biểu tượng',
       'コードグラフ',
@@ -1402,20 +1397,20 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     setup:
       'Coding workspace or project — indexing runs incrementally on file changes. Open the Graph workbench tool to explore visually and reindex when the tree looks stale after large external edits.',
     tricks: [
-      'Agents preload the code-graph-navigation skill by default; opt out with skills_opt_out in agent frontmatter.',
-      'Prefer graph tools for identifiers and relationships; use grep for literals, comments, and config keys.',
+      'The native code_graph schema and service own graph navigation; no graph skill or prompt injection is required.',
+      'Use code_graph for a known exact symbol and structural relationship; use source search for discovery, literals, comments, and config keys.',
       'Open the Graph workbench tool to explore visually and reindex when needed.',
       'Cross-repo resolution uses three deterministic tiers (reattach, manifests/FQNs, sibling FTS5) without an LLM call for linking.',
-      'code_overview → what is indexed; code_search → find symbols; code_graph → callers/deps; code_path → how A connects to B.',
+      'code_graph operations cover definition, callers, callees, references, impact, and neighborhood.',
       'Verify material findings in live source after graph navigation — indexes can lag external edits.',
       'Ask structural questions (“who calls X?”) instead of “read the whole package.”',
       'Multi-repo projects get cross-repo edges; standalone repos still benefit inside one tree.',
-      'If answers ignore the graph, check that code-graph-navigation is not in skills_opt_out.'
+      'Graph guidance is never injected or selected from user wording.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'The structural code graph indexes symbols and edges with tree-sitter (many language parsers) into a local index. Agents query overview, search, neighborhood, and path tools instead of reading entire files by default. You can explore the same structure visually in the Graph workbench tool.',
+        text: 'The structural code graph indexes symbols and edges with tree-sitter into a local index. The native code_graph tool answers an explicit structural operation for one known symbol. The same index remains available visually in the Graph workbench.',
       },
       {
         type: 'p',
@@ -1424,12 +1419,11 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'code_overview — indexed status and central symbols',
-          'code_search — does this symbol exist, and where?',
-          'code_graph — callers/references and dependencies',
-          'code_path — how are A and B connected?',
-          'grep — literals, comments, prose, config keys',
-          'skills_opt_out: [code-graph-navigation] — disable default preload'
+          'code_graph definition — resolve the exact symbol and show its body',
+          'code_graph callers/callees — direct call relationships',
+          'code_graph references/impact — inbound uses and blast radius',
+          'code_graph neighborhood — deliberate two-way exploration',
+          'grep — literals, comments, prose, config keys'
 ],
       },
       {
@@ -1438,7 +1432,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Step-by-step investigation: (1) code_overview to see coverage, (2) code_search for the symbol, (3) code_graph for callers/deps, (4) code_path if you need A→B connectivity, (5) open the hot files in Files or @ mention them, (6) verify with tests or grep when the question is stringly-typed.',
+        text: 'Step-by-step investigation: (1) discover an exact identifier with source search when it is not already known, (2) call code_graph with one structural operation, (3) disambiguate exact duplicate definitions by path or repository, (4) inspect freshness and limitations, and (5) verify dynamic or string-based behavior with source, tests, logs, or runtime evidence.',
       },
       {
         type: 'p',
@@ -1446,7 +1440,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Common mistakes: dumping whole directories into chat “to be safe”; expecting cross-repo links without a project; never reindexing after a huge `git checkout`; opting out of code-graph-navigation then blaming the model for shallow navigation; treating FTS5 sibling hits as stronger than reattach/manifest tiers.',
+        text: 'Common mistakes: passing the prose request as the graph symbol; dumping whole directories into chat “to be safe”; expecting cross-repo links without a project; never reindexing after a huge external checkout; or treating lexical suggestions as resolved graph roots.',
       },
       {
         type: 'tips',
@@ -1841,7 +1835,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'sse',
       'tools',
       'frontmatter',
-      'skills_opt_out',
       'kỹ năng',
       'tác nhân',
       'máy chủ mcp',
@@ -1858,7 +1851,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'MCP tools inherit the same permission rules as native tools.',
       'Teams are scoped to work / coding.',
       'Command palette jumps to Edit <agent>… or create new agents and skills.',
-      'Use skills_opt_out in frontmatter to disable defaults like code-graph-navigation.',
+      'Use tools_opt_out to disable code-owned tool defaults for one agent; remove an assigned skill directly from its skills list.',
       'Lead-only tools (ask_user, plan mode helpers, some worktree helpers) are never granted to specialists.',
       'If an MCP server sits on auth, finish the auth flow before blaming the composer slash menu.'
 ],
@@ -1882,7 +1875,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Skills — /skill: after validation',
           'MCP — stdio / HTTP / SSE',
           'Status dots — ready / starting / auth / error / stopped',
-          'skills_opt_out — disable default skill preloads',
+          'tools_opt_out — disable code-owned tool defaults',
           'Mode scope — work / coding teams',
           'Lead-only tools — never on specialists'
 ],
@@ -1898,7 +1891,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Cross-feature: code-graph-navigation preload pairs with Coding graph tools.',
+          'Cross-feature: code_graph is a native Coding tool and does not require a companion skill.',
           'Cross-feature: workflows and skills both need scope validity to show in /.',
           'Cross-feature: permission Always rules apply to MCP tools too — prefer Once first.'
 ],

@@ -18,6 +18,7 @@ from app.agent.tools.builtin.visualize.guidelines import (
 
 @tool(
     name="visualize_read_me",
+    tiers=("work",),
     description=lambda: (
         "Load design guidelines for creating interactive HTML widgets. "
         "Call this once before your first show_widget call to understand "

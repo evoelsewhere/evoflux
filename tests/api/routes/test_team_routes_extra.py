@@ -396,6 +396,60 @@ class TestTeamAgentsRouteExtra:
         assert test_team.workspace == expected
         assert dispatch.await_args.kwargs["workspace"] == expected
 
+    def test_persisted_work_session_cannot_be_migrated_by_coding_request(
+        self, app_without_team, test_team, monkeypatch, tmp_path
+    ):
+        session_id = uuid.uuid7()
+        work_workspace = tmp_path / "work-context"
+        requested_coding_workspace = tmp_path / "repo"
+        work_workspace.mkdir()
+        requested_coding_workspace.mkdir()
+        asyncio.run(
+            _save_chat_session(
+                ChatSession(
+                    id=session_id,
+                    title="Work task",
+                    agent_name="lead",
+                    mode="work",
+                    workspace=str(work_workspace),
+                )
+            )
+        )
+
+        async def fake_get_work(_session_id: str):
+            test_team.mode = "work"
+            return test_team
+
+        async def fail_get_coding(*_args, **_kwargs):
+            raise AssertionError("persisted Work session must not enter Coding")
+
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.team_manager.get_or_start_team_for_session",
+            fake_get_work,
+        )
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.team_manager.get_or_start_coding_team",
+            fail_get_coding,
+        )
+
+        with patch(
+            "app.api.routes.team.chat.agent_service.dispatch_user_message",
+            new=AsyncMock(return_value=(str(session_id), 0)),
+        ) as dispatch:
+            resp = TestClient(app_without_team).post(
+                "/api/team/chat",
+                data={
+                    "message": "continue",
+                    "session_id": str(session_id),
+                    "mode": "coding",
+                    "workspace": str(requested_coding_workspace),
+                },
+            )
+
+        assert resp.status_code == 202
+        assert dispatch.await_args.kwargs["mode"] == "work"
+        assert dispatch.await_args.kwargs["workspace"] == str(work_workspace.resolve())
+
     def test_workspace_validate_returns_resolved_path(self, app_without_team, tmp_path):
         workspace = tmp_path / "project"
         workspace.mkdir()

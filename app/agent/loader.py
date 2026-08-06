@@ -6,9 +6,9 @@ Configuration philosophy
 ------------------------
 
 Each agent lives in its own ``.md`` file inside a directory (default
-``{CONFIG_DIR}/agents/``).  YAML frontmatter carries all config fields; the
-Markdown body is the system prompt.  A thin ``team.yaml`` (optional) in the
-same directory holds team-level metadata (name, description).
+``{CONFIG_DIR}/agents/``). YAML frontmatter and the Markdown body are the
+user-owned override surface. First-party role defaults are compiled with those
+overrides by :mod:`app.agent.effective_config`; the loader itself is read-only.
 
 File format
 -----------
@@ -28,7 +28,6 @@ Each file::
     thinking_level: low
     tools: [date, read, ls]
     skills: [mcp-installer]
-    skills_opt_out: [code-graph-navigation]
     fallback_model: copilot:gpt-5-mini
     ---
 
@@ -63,7 +62,6 @@ from app.agent.config import (
     PROVIDER_MODEL_TOKEN,
     AgentConfig,
     _FRONTMATTER_RE,
-    apply_mode_skill_defaults,
     member_model_is_configured,
     parse_agent_md,
 )
@@ -77,6 +75,7 @@ from app.agent.drift import ConfigStamp, detect_drift, stamp_agent_files
 from app.agent.providers.factory import ProviderFactory, build_provider
 from app.agent.tools.registry import Tool
 from app.core.db import DbFactory, resolve_db_factory
+from app.core.app_mode import parse_app_mode
 
 # Re-exports for callers that historically imported these symbols from
 # ``app.agent.loader``.
@@ -100,7 +99,6 @@ def _builtin_agent_md(
     description: str,
     model: str | None,
     thinking_level: str,
-    skills: list[str] | None = None,
 ) -> str:
     frontmatter: dict[str, Any] = {
         "name": name,
@@ -109,8 +107,6 @@ def _builtin_agent_md(
         "model": model,
         "thinking_level": thinking_level,
     }
-    if skills:
-        frontmatter["skills"] = skills
     return f"---\n{yaml.safe_dump(frontmatter, sort_keys=False)}---\n\n"
 
 
@@ -153,7 +149,6 @@ def ensure_builtin_agent_blueprints(agents_dir: Path, *, mode: str) -> list[str]
                 description=blueprint["description"],
                 model=model,
                 thinking_level=blueprint["thinking_level"],
-                skills=blueprint.get("skills"),
             ),
         )
         written.append(target.name)
@@ -297,7 +292,7 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.tools.builtin.docx_document import docx_document
     from app.agent.tools.builtin.xlsx_artifact import xlsx_artifact
     from app.agent.tools.builtin.wiki_search import wiki_search
-    from app.agent.tools.builtin.code_graph import code_query
+    from app.agent.tools.builtin.code_graph import code_graph
     from app.agent.tools.builtin.plan import enter_plan_mode, exit_plan_mode
     from app.agent.tools.builtin.ask_user import ask_user
     from app.agent.tools.builtin.bg_tasks import (
@@ -348,7 +343,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         "wiki_search": wiki_search,
         "memory_search": memory_search,
         "note": note_tool,
-        "code_query": code_query,
+        "code_graph": code_graph,
         "enter_plan_mode": enter_plan_mode,
         "exit_plan_mode": exit_plan_mode,
         "ask_user": ask_user,
@@ -399,77 +394,10 @@ def _build_agent(
     mode: str = "work",
 ) -> Agent:
     """Construct one Agent.  ``source_path`` enables drift detection."""
+    from app.agent.effective_config import compile_agent_config
+
+    cfg = compile_agent_config(cfg, mode=mode, tool_registry=tool_registry)
     system_prompt = cfg.system_prompt
-    if cfg.role == "lead" and cfg.name.lower() == "evoflux":
-        from app.agent.builtin_prompts import (
-            apply_EVOFLUX_extra_prompt,
-            EVOFLUX_description_for_mode,
-        )
-
-        cfg.description = cfg.description or EVOFLUX_description_for_mode(mode)
-        system_prompt = apply_EVOFLUX_extra_prompt(mode, cfg.system_prompt)
-    elif cfg.role == "member":
-        from app.agent.builtin_prompts import (
-            apply_member_extra_prompt,
-            builtin_member_profile,
-        )
-
-        profile = builtin_member_profile(mode, cfg.name)
-        if profile is not None:
-            built_in_prompt = profile["prompt"]
-            cfg.description = cfg.description or profile["description"]
-            cfg.skills = [*profile["skills"], *cfg.skills]
-            cfg.mcp = [*profile["mcp"], *cfg.mcp]
-            system_prompt = apply_member_extra_prompt(
-                cfg.name, built_in_prompt, cfg.system_prompt
-            )
-
-    # Coding navigation is a mode-level capability, not a persona convention:
-    # leads and custom members need the same graph-first guidance as built-in
-    # specialists. An explicit opt-out wins over profile defaults.
-    apply_mode_skill_defaults(cfg, mode=mode)
-
-    # Tier grant: every agent gets all tools of its mode's tier (filtered by
-    # role for lead_only tools). Frontmatter ``tools:`` entries remain as
-    # extras on top — useful for custom agents referencing MCP tools by name.
-    from app.agent.builtin_prompts import tier_tools
-
-    cfg.tools = [*tier_tools(tool_registry, mode=mode, role=cfg.role), *cfg.tools]
-
-    # Validate assigned skills exist and pre-load their bodies for injection
-    # as synthetic tool messages (via SkillPreloadHook) rather than bloating
-    # the system prompt on every turn.
-    preloaded_skills: dict[str, str] = {}
-    if cfg.skills:
-        from app.agent.tools.builtin.skill import (
-            _parse_frontmatter,
-            _render_tokens,
-            discover_skills as _discover,
-        )
-
-        available = _discover()
-        for sk in cfg.skills:
-            if sk not in available:
-                logger.warning(
-                    "agent_skill_not_found agent={} skill={}",
-                    cfg.name,
-                    sk,
-                )
-                continue
-            skill_path = Path(available[sk]["dir"]) / "SKILL.md"
-            try:
-                text = skill_path.read_text(encoding="utf-8")
-                _, body = _parse_frontmatter(text)
-                if body:
-                    rendered = _render_tokens(body, skill_dir=skill_path.parent)
-                    preloaded_skills[sk] = rendered
-            except OSError:
-                logger.warning(
-                    "agent_skill_read_failed agent={} skill={} path={}",
-                    cfg.name,
-                    sk,
-                    skill_path,
-                )
 
     from app.agent.tools.builtin.schedule import schedule_task as _schedule_task_tool
     from app.agent.tools.builtin.skill import load_skill as _load_skill_tool
@@ -604,30 +532,19 @@ def _build_agent(
         fallback_model_id=cfg.fallback_model,
     )
 
-    # Attach skill preload hook — injects skill bodies as synthetic tool
-    # messages on first activation, saving tokens on subsequent turns.
-    if preloaded_skills:
-        from app.agent.hooks.skill_preload import SkillPreloadHook
+    # A normal request is never keyword-routed. The only deterministic
+    # selection path is an explicit composer ``/skill:<name>`` directive.
+    from app.agent.hooks.explicit_skill_selection import ExplicitSkillSelectionHook
 
-        agent.hooks.append(SkillPreloadHook(preloaded_skills))
-
-    # Attach skill auto-routing hook — matches user intent to unloaded skills
-    # and injects relevant ones automatically on each turn.
-    from app.agent.hooks.skill_auto_routing import SkillAutoRoutingHook
-
-    agent.hooks.append(SkillAutoRoutingHook())
+    agent.hooks.append(ExplicitSkillSelectionHook())
 
     # Stamp config dependencies for end-of-turn drift detection.
     if source_path is not None:
         from app.agent.mcp.config import config_path as _mcp_config_path
-        from app.core.config import settings as _settings
 
-        skills_root = Path(_settings.SKILLS_DIR)
         agent.source_path = source_path
         agent.config_stamp = stamp_agent_files(
             agent_md_path=source_path,
-            skill_names=cfg.skills,
-            skills_dir=skills_root,
             mcp_config_path=_mcp_config_path(),
         )
 
@@ -661,6 +578,7 @@ def load_team_from_dir(
     from app.agent.mode.team.member import TeamLead
     from app.agent.mode.team.team import AgentTeam, MemberBlueprint
 
+    mode = parse_app_mode(mode).value
     agents_dir = Path(agents_dir).resolve()
     if not agents_dir.exists():
         return None
@@ -668,10 +586,6 @@ def load_team_from_dir(
     md_files = sorted(agents_dir.glob("*.md"))
     if not md_files:
         return None
-
-    if mode in ("work", "coding"):
-        ensure_builtin_agent_blueprints(agents_dir, mode=mode)
-        md_files = sorted(agents_dir.glob("*.md"))
 
     # Carry source path so _build_agent can stamp config dependencies.
     agent_configs: list[tuple[AgentConfig, Path]] = []

@@ -136,18 +136,12 @@ async def test_list_includes_coding_agents(fs_dirs, client: AsyncClient):
 
     assert res.status_code == 200
     names = [row["name"] for row in res.json()["agents"]]
-    assert names == [
-        "coding/architect",
-        "coding/coder",
-        "coding/debate",
-        "coding/evoflux",
-        "coding/explorer",
-        "lead",
-    ]
+    assert names == ["coding/evoflux", "lead"]
+    assert sorted(p.name for p in coding_dir.glob("*.md")) == ["evoflux.md"]
 
 
 @pytest.mark.asyncio
-async def test_list_materialized_coding_explorer_uses_builtin_tools(
+async def test_list_existing_coding_explorer_uses_builtin_profile(
     fs_dirs, client: AsyncClient
 ):
     agents_dir, _ = fs_dirs
@@ -155,6 +149,9 @@ async def test_list_materialized_coding_explorer_uses_builtin_tools(
     coding_dir.mkdir()
     (coding_dir / "evoflux.md").write_text(
         "---\nname: evoflux\nrole: lead\nmodel: codex:gpt-5.4\n---\n"
+    )
+    (coding_dir / "explorer.md").write_text(
+        "---\nname: explorer\nrole: member\nmodel: codex:gpt-5.4\n---\n"
     )
 
     res = await client.get("/api/agents")
@@ -171,27 +168,40 @@ async def test_list_materialized_coding_explorer_uses_builtin_tools(
     assert "write" in explorer["tools"]
     assert "ask_user" not in explorer["tools"]
     assert "worktree_start" not in explorer["tools"]
-    assert "code-graph-navigation" in explorer["skills"]
-    assert "code-graph-navigation" in rows["coding/evoflux"]["skills"]
+    assert explorer["skills"] == []
+    assert rows["coding/evoflux"]["skills"] == []
 
 
 @pytest.mark.asyncio
-async def test_list_coding_agent_respects_graph_navigation_opt_out(
+async def test_list_ignores_retired_or_unknown_mode_directories(
     fs_dirs, client: AsyncClient
 ):
+    agents_dir, _ = fs_dirs
+    _seed_files(agents_dir)
+    retired = agents_dir / "aim"
+    retired.mkdir()
+    (retired / "old.md").write_text(MEMBER_MD.replace("name: worker", "name: old"))
+
+    res = await client.get("/api/agents")
+
+    assert res.status_code == 200
+    assert [row["name"] for row in res.json()["agents"]] == ["lead"]
+
+
+@pytest.mark.asyncio
+async def test_list_coding_agent_has_no_implicit_skills(fs_dirs, client: AsyncClient):
     agents_dir, _ = fs_dirs
     coding_dir = agents_dir / "coding"
     coding_dir.mkdir()
     (coding_dir / "evoflux.md").write_text(
-        "---\nname: evoflux\nrole: lead\nmodel: codex:gpt-5.4\n"
-        "skills_opt_out:\n  - code-graph-navigation\n---\n"
+        "---\nname: evoflux\nrole: lead\nmodel: codex:gpt-5.4\n---\n"
     )
 
     res = await client.get("/api/agents")
 
     assert res.status_code == 200
     rows = {row["name"]: row for row in res.json()["agents"]}
-    assert "code-graph-navigation" not in rows["coding/evoflux"]["skills"]
+    assert rows["coding/evoflux"]["skills"] == []
 
 
 @pytest.mark.asyncio
@@ -255,6 +265,28 @@ Extra prompt.
 
 
 @pytest.mark.asyncio
+async def test_list_applies_agent_tool_opt_outs(fs_dirs, client: AsyncClient):
+    agents_dir, _ = fs_dirs
+    (agents_dir / "explorer.md").write_text(
+        """---
+name: explorer
+role: member
+model: zai:glm-5-turbo
+tools_opt_out:
+  - shell
+---
+"""
+    )
+    (agents_dir / "lead.md").write_text(LEAD_MD)
+
+    res = await client.get("/api/agents")
+
+    row = {item["name"]: item for item in res.json()["agents"]}["explorer"]
+    assert "shell" not in row["tools"]
+    assert row["skills"] == []
+
+
+@pytest.mark.asyncio
 async def test_list_surfaces_invalid_file(fs_dirs, client: AsyncClient):
     agents_dir, _ = fs_dirs
     (agents_dir / "bad.md").write_text("no frontmatter here")
@@ -294,6 +326,9 @@ async def test_registry_returns_catalog(
     assert by_name["ask_user"]["lead_only"] is True
     assert by_name["read"]["lead_only"] is False
     assert by_name["wiki_search"]["tiers"] == ["work"]
+    assert by_name["docx_document"]["tiers"] == ["work"]
+    assert by_name["lsp_diagnostics"]["tiers"] == ["coding"]
+    assert by_name["worktree_start"]["tiers"] == ["coding"]
     assert by_name["read"]["tiers"] is None
 
 
@@ -478,6 +513,7 @@ async def test_update_coding_agent_validates_coding_team(fs_dirs, client: AsyncC
 
     assert res.status_code == 200, res.text
     assert "The coding lead." in (coding_dir / "evoflux.md").read_text()
+    assert sorted(p.name for p in coding_dir.glob("*.md")) == ["evoflux.md"]
 
 
 @pytest.mark.asyncio

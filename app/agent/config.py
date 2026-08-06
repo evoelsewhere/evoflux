@@ -21,9 +21,9 @@ class AgentConfig(BaseModel):
     description: str | None = None
     system_prompt: str = ""
     tools: list[str] = []
+    tools_opt_out: list[str] = []
     mcp: list[str] = []
     skills: list[str] = []
-    skills_opt_out: list[str] = []
     model: str | None = None
     fallback_model: str | None = None
     thinking_level: str | None = None
@@ -39,18 +39,13 @@ class AgentConfig(BaseModel):
         return self
 
 
-def apply_mode_skill_defaults(config: AgentConfig, *, mode: str) -> AgentConfig:
-    """Apply mode-wide skill policy in place and return *config*.
+def apply_tool_opt_outs(config: AgentConfig) -> AgentConfig:
+    """Apply explicit tool exclusions after mode defaults are compiled."""
 
-    Runtime loading and the agent-management API both use this helper so the
-    effective configuration shown to users matches what an agent will preload.
-    """
-    if mode == "coding" and "code-graph-navigation" not in config.skills_opt_out:
-        config.skills = ["code-graph-navigation", *config.skills]
-    if config.skills_opt_out:
-        opted_out = set(config.skills_opt_out)
-        config.skills = [skill for skill in config.skills if skill not in opted_out]
-    config.skills = list(dict.fromkeys(config.skills))
+    if config.tools_opt_out:
+        opted_out = set(config.tools_opt_out)
+        config.tools = [tool for tool in config.tools if tool not in opted_out]
+    config.tools = list(dict.fromkeys(config.tools))
     return config
 
 

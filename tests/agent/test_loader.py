@@ -66,7 +66,7 @@ def test_agent_config_defaults():
     cfg = AgentConfig(name="bot")
     assert cfg.role == "member"
     assert cfg.tools == []
-    assert cfg.skills_opt_out == []
+    assert cfg.tools_opt_out == []
     assert cfg.description is None
     assert cfg.model is None
     assert cfg.system_prompt == ""
@@ -191,11 +191,10 @@ def test_default_tool_registry_keys():
         "memory_search",
     }
     assert expected.issubset(registry.keys())
-    assert "code_query" in registry
+    assert "code_graph" in registry
     assert {
         "code_overview",
         "code_search",
-        "code_graph",
         "code_path",
     }.isdisjoint(registry)
     assert {"code_symbol", "code_neighbors"}.isdisjoint(registry)
@@ -228,26 +227,27 @@ def test_tier_tools_lead_only_and_tier_filters():
     lead_normal = set(tier_tools(registry, mode="work", role="lead"))
     lead_coding = set(tier_tools(registry, mode="coding", role="lead"))
 
-    # User-interaction and worktree tools are lead-only
+    # User-interaction tools are lead-only in Work. Worktree tools are both
+    # lead-only and Coding-only.
     for name in (
         "ask_user",
         "enter_plan_mode",
         "exit_plan_mode",
-        "worktree_start",
-        "worktree_finish",
     ):
         assert name in lead_normal
         assert name not in member_normal
+    for name in ("worktree_start", "worktree_finish"):
+        assert name not in lead_normal
+        assert name in lead_coding
 
     # wiki_search belongs to the work tier only
     assert "wiki_search" in lead_normal
     assert "wiki_search" not in lead_coding
 
-    # Newly registered tools default to every tier — the visualize pair
-    # regression: they must be available without per-agent wiring.
+    # Visual deliverables belong to Work, not Coding.
     for name in ("visualize_read_me", "show_widget"):
         assert name in lead_normal
-        assert name in lead_coding
+        assert name not in lead_coding
         assert name in member_normal
 
 
@@ -286,7 +286,7 @@ def test_lead_frontmatter_keeps_lead_only_tools(tmp_path):
     agent = rebuild_agent_from_disk(f, provider_factory=factory, mode="work")
 
     assert "ask_user" in agent._tools
-    assert "worktree_start" in agent._tools
+    assert "worktree_start" not in agent._tools
 
 
 # ---------------------------------------------------------------------------
@@ -503,9 +503,7 @@ def test_build_agent_skill_tool_deduped():
 # ---------------------------------------------------------------------------
 
 
-def test_build_agent_skills_attaches_preload_hook(tmp_path, monkeypatch):
-    from app.agent.hooks.skill_preload import SkillPreloadHook
-
+def test_build_agent_skills_are_metadata_only(tmp_path, monkeypatch):
     d = tmp_path / "myskill"
     d.mkdir()
     (d / "SKILL.md").write_text(
@@ -515,28 +513,25 @@ def test_build_agent_skills_attaches_preload_hook(tmp_path, monkeypatch):
     factory, _ = _make_provider_factory()
     cfg = AgentConfig(name="bot", system_prompt="Base prompt", skills=["myskill"])
     agent = _build_agent(cfg, {}, factory)
-    # System prompt stays clean — no skill body injected
     assert agent.system_prompt == "Base prompt"
-    # SkillPreloadHook is attached with the skill body
-    preload_hooks = [h for h in agent.hooks if isinstance(h, SkillPreloadHook)]
-    assert len(preload_hooks) == 1
-    assert "Do the thing carefully." in preload_hooks[0]._skills["myskill"]
     assert agent.skills == ["myskill"]
+    assert [hook.__class__.__name__ for hook in agent.hooks] == [
+        "ExplicitSkillSelectionHook"
+    ]
 
 
-def test_build_agent_skills_missing_skill_not_injected(tmp_path, monkeypatch):
-    """Skills listed in frontmatter that don't exist on disk are silently skipped."""
+def test_build_agent_missing_skill_metadata_does_not_mutate_prompt(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr("app.agent.tools.builtin.skill._SKILLS_DIR", tmp_path)
     factory, _ = _make_provider_factory()
     cfg = AgentConfig(name="bot", system_prompt="Base prompt", skills=["nonexistent"])
     agent = _build_agent(cfg, {}, factory)
-    # No valid skills → no hook attached, prompt unchanged
     assert agent.system_prompt == "Base prompt"
+    assert agent.skills == ["nonexistent"]
 
 
-def test_coding_mode_preloads_graph_navigation_for_lead_and_custom_member():
-    from app.agent.hooks.skill_preload import SkillPreloadHook
-
+def test_coding_mode_does_not_inject_graph_navigation_policy():
     factory, _ = _make_provider_factory()
     lead = _build_agent(
         AgentConfig(name="lead", role="lead", system_prompt="Lead."),
@@ -552,29 +547,56 @@ def test_coding_mode_preloads_graph_navigation_for_lead_and_custom_member():
     )
 
     for agent in (lead, custom):
-        assert "code-graph-navigation" in agent.skills
-        preload_hooks = [
-            hook for hook in agent.hooks if isinstance(hook, SkillPreloadHook)
-        ]
-        assert len(preload_hooks) == 1
-        assert "code-graph-navigation" in preload_hooks[0]._skills
+        assert agent.skills == []
+        assert "Structural code navigation contract" not in agent.system_prompt
 
 
-def test_coding_mode_graph_navigation_supports_explicit_opt_out():
-    from app.agent.hooks.skill_preload import SkillPreloadHook
-
-    factory, _ = _make_provider_factory()
-    cfg = AgentConfig(
-        name="isolated-reviewer",
-        role="member",
-        system_prompt="Use only supplied artifacts.",
-        skills=["code-graph-navigation"],
-        skills_opt_out=["code-graph-navigation"],
+def test_code_owned_role_prompts_do_not_name_optional_tool_schemas():
+    from app.agent.builtin_prompts import (
+        BUILTIN_MEMBER_PROFILES,
+        CODING_EVOFLUX_PROMPT,
+        WORK_EVOFLUX_PROMPT,
     )
-    agent = _build_agent(cfg, {}, factory, mode="coding")
 
-    assert "code-graph-navigation" not in agent.skills
-    assert not any(isinstance(hook, SkillPreloadHook) for hook in agent.hooks)
+    prompt_text = "\n".join(
+        [
+            WORK_EVOFLUX_PROMPT,
+            CODING_EVOFLUX_PROMPT,
+            *(
+                profile["prompt"]
+                for mode in BUILTIN_MEMBER_PROFILES.values()
+                for profile in mode.values()
+            ),
+        ]
+    )
+    for optional_schema in (
+        "ask_user",
+        "browser_use",
+        "static_diagnostics",
+        "lsp_diagnostics",
+        "preview",
+        "web_search",
+        "load_tool",
+        ".evoflux/launch.json",
+    ):
+        assert optional_schema not in prompt_text
+
+
+def test_mode_tool_grant_supports_explicit_opt_out():
+    factory, _ = _make_provider_factory()
+    registry = _default_tool_registry()
+    cfg = AgentConfig(
+        name="focused",
+        role="member",
+        system_prompt="Stay focused.",
+        tools_opt_out=["shell"],
+    )
+
+    agent = _build_agent(cfg, registry, factory, mode="coding")
+
+    assert "shell" not in agent._tools
+    assert "read" in agent._tools
+    assert "skill" in agent._tools
 
 
 # ---------------------------------------------------------------------------
@@ -670,13 +692,13 @@ def test_load_team_from_dir_valid_minimal(tmp_path):
     team = load_team_from_dir(d, provider_factory=factory)
     assert team is not None
     assert team.lead.name == "lead"
-    assert set(team.blueprints) == {"executor", "explorer", "consultant", "debate"}
+    assert set(team.blueprints) == set()
     assert team.members == {}
 
 
-def test_load_team_from_dir_materializes_coding_builtin_members(tmp_path):
+def test_bootstrap_materializes_then_loader_reads_coding_builtin_members(tmp_path):
     from app.agent.builtin_prompts import BUILTIN_MEMBER_PROFILES
-    from app.agent.loader import load_team_from_dir
+    from app.agent.loader import ensure_builtin_agent_blueprints, load_team_from_dir
 
     d = _make_agents_dir(
         tmp_path,
@@ -684,6 +706,7 @@ def test_load_team_from_dir_materializes_coding_builtin_members(tmp_path):
             {"name": "EvoFlux", "role": "lead", "model": "zai:glm-5-turbo"},
         ],
     )
+    ensure_builtin_agent_blueprints(d, mode="coding")
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory, mode="coding")
     assert team is not None
@@ -697,7 +720,7 @@ def test_load_team_from_dir_materializes_coding_builtin_members(tmp_path):
     )
     for name in team.blueprints:
         materialized = (d / f"{name}.md").read_text(encoding="utf-8")
-        assert "- code-graph-navigation" in materialized
+        assert "\nskills:" not in materialized
 
 
 def test_load_team_from_dir_does_not_overwrite_existing_builtin_member(tmp_path):
@@ -720,7 +743,7 @@ def test_load_team_from_dir_does_not_overwrite_existing_builtin_member(tmp_path)
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory, mode="coding")
     assert team is not None
-    assert set(team.blueprints) == {"coder", "explorer", "debate", "architect"}
+    assert set(team.blueprints) == {"explorer"}
     assert (d / "explorer.md").read_text(encoding="utf-8") == before
     assert team.blueprints["explorer"].description == "Custom explorer."
 
@@ -738,7 +761,7 @@ def test_coding_mode_hides_retired_executor_member(tmp_path):
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory, mode="coding")
     assert team is not None
-    assert set(team.blueprints) == {"coder", "explorer", "debate", "architect"}
+    assert set(team.blueprints) == set()
 
 
 def test_EVOFLUX_lead_uses_builtin_prompt_with_extra(tmp_path):
@@ -900,11 +923,10 @@ def test_builtin_member_profiles_are_curated_to_default_agents():
         "debate",
         "architect",
     }
-    assert (
-        "review-pull-requests" in BUILTIN_MEMBER_PROFILES["coding"]["debate"]["skills"]
-    )
+    for profiles in BUILTIN_MEMBER_PROFILES.values():
+        for profile in profiles.values():
+            assert "skills" not in profile
     for profile in BUILTIN_MEMBER_PROFILES["coding"].values():
-        assert "code-graph-navigation" in profile["skills"]
         assert "## Navigation strategy" not in profile["prompt"]
 
 
@@ -942,7 +964,8 @@ def test_coding_builtin_member_profile_is_mode_scoped(tmp_path):
     profile = BUILTIN_MEMBER_PROFILES["coding"]["coder"]
     assert normal_agent.system_prompt == "<!-- Add extra prompt text below. -->"
     assert coding_agent.description == profile["description"]
-    assert coding_agent.system_prompt == profile["prompt"]
+    assert coding_agent.system_prompt.startswith(profile["prompt"])
+    assert "Structural code navigation contract" not in coding_agent.system_prompt
     assert "shell" in coding_agent._tools
 
 
@@ -959,8 +982,9 @@ def test_coding_explorer_builtin_member_profile_checks_codebase(tmp_path):
     coding_agent = rebuild_agent_from_disk(f, provider_factory=factory, mode="coding")
     profile = BUILTIN_MEMBER_PROFILES["coding"]["explorer"]
     assert coding_agent.description == profile["description"]
-    assert coding_agent.system_prompt == profile["prompt"]
-    assert "code-graph-navigation" in coding_agent.skills
+    assert coding_agent.system_prompt.startswith(profile["prompt"])
+    assert "Structural code navigation contract" not in coding_agent.system_prompt
+    assert coding_agent.skills == []
     assert "current codebase" in coding_agent.system_prompt
     assert "grep" in coding_agent._tools
     # Tier grant: members get every tier tool, including write — but never
@@ -1162,12 +1186,12 @@ def test_load_team_injects_teammates(tmp_path):
     team = load_team_from_dir(d, provider_factory=factory)
     assert team is not None
 
-    # The lead system prompt stays static for prompt caching: the dynamic
-    # blueprint/member roster is never injected into it.
+    # The raw agent prompt stays static; runtime routing is compiled from the
+    # actual blueprint metadata instead of hard-coded specialist names.
     lead_prompt = team.lead.build_protocol(team.lead.agent.system_prompt, team)
     assert "\n## Spawnable blueprints" not in lead_prompt
-    assert "Worker A" not in lead_prompt
-    assert "Worker B" not in lead_prompt
+    assert "**a** — Worker A" in lead_prompt
+    assert "**b** — Worker B" in lead_prompt
     # Member protocols are only relevant for live instances; spawning
     # touches the DB, so only verify that the blueprints are registered
     # with the expected descriptions.
@@ -1241,14 +1265,7 @@ def test_load_team_discovers_all_agents(tmp_path):
     assert team is not None
     assert team.lead.name == "lead"
     # Members are lazy blueprints; nothing is live until spawned.
-    assert set(team.blueprints.keys()) == {
-        "executor",
-        "explorer",
-        "consultant",
-        "debate",
-        "worker",
-        "helper",
-    }
+    assert set(team.blueprints.keys()) == {"worker", "helper"}
     assert team.members == {}
 
 
@@ -1270,13 +1287,7 @@ def test_load_team_skips_unconfigured_members(tmp_path):
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory)
     assert team is not None
-    assert set(team.blueprints.keys()) == {
-        "executor",
-        "explorer",
-        "consultant",
-        "debate",
-        "worker",
-    }
+    assert set(team.blueprints.keys()) == {"worker"}
 
 
 def test_load_team_parse_error_raises(tmp_path):

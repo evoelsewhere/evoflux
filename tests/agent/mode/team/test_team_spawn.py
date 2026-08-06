@@ -153,7 +153,7 @@ class TestLoaderLeadOnly:
         )
         assert team.lead.name == "lead"
         assert team.members == {}
-        assert set(team.blueprints) == {"executor", "explorer", "consultant", "debate"}
+        assert set(team.blueprints) == {"executor", "explorer"}
         assert team.blueprints["executor"].description == "writes files"
 
     def test_builtin_blueprint_description_is_effective_without_user_description(

@@ -1,9 +1,4 @@
-"""The single model-facing code exploration tool.
-
-The model supplies a question and an output file budget. Retrieval policy,
-freshness checks, graph expansion, and source fallback stay behind this stable
-function contract.
-"""
+"""The model-facing native symbol graph tool."""
 
 from __future__ import annotations
 
@@ -13,143 +8,169 @@ from uuid import UUID
 
 from pydantic import Field
 
-from app.agent.code_query_observation import (
-    CODE_QUERY_DEFAULT_MAX_FILES,
-    CodeQueryObservation,
-    publish_code_query_observation,
+from app.agent.code_graph_observation import (
+    CodeGraphObservation,
+    publish_code_graph_observation,
 )
 from app.agent.sandbox import get_sandbox
 from app.agent.tools.registry import Tool
 from app.core.db import async_session_factory
 from app.services import code_graph_service as graph_service
 
-
-def _selected_files(result, max_files: int):  # noqa: ANN001
-    grouped: dict[tuple[str | None, str], list[object]] = {}
-    for candidate in result.results:
-        key = (candidate.repository, candidate.file_path)
-        if key not in grouped and len(grouped) >= max_files:
-            continue
-        grouped.setdefault(key, []).append(candidate)
-    return list(grouped.items())
+_INLINE_CHAR_LIMIT = 38_000
 
 
-def _render_code_query(
-    result, *, max_files: int = CODE_QUERY_DEFAULT_MAX_FILES
-) -> str:  # noqa: ANN001
-    """Render current source grouped by file with structural evidence attached."""
+def _render_code_graph(result) -> str:  # noqa: ANN001
+    """Render exact definitions and graph relationships below offload size."""
     sections = [
-        "Code exploration\n"
+        "Native code graph\n"
+        f"symbol: {result.symbol}\n"
+        f"operation: {result.operation}\n"
         f"strategy: {result.strategy}\n"
         f"freshness: {result.freshness}\n"
-        f"coverage: {result.coverage:.0%}\n"
-        f"confidence: {result.confidence:.2f}\n"
+        f"matches: {len(result.matches)}\n"
+        f"relationships: {len(result.relations)}\n"
         f"dirty files: {result.dirty_files}\n"
-        f"pending edges: {result.pending_edges}"
+        f"pending cross-repo edges: {result.pending_edges}"
     ]
-    if result.flow:
-        sections.append(
-            "Flow\n"
-            + "\n".join(
-                f"- {hop.source} [{hop.source_location}] --{hop.relation}--> "
-                f"{hop.target} [{hop.target_location}]"
-                for hop in result.flow
-            )
-        )
-    if result.blast_radius:
-        lines = ["Blast radius"]
-        for impact in result.blast_radius:
-            lines.append(f"- {impact.root}")
-            if impact.references:
-                lines.extend(f"  - {reference}" for reference in impact.references)
-            else:
-                lines.append("  - no indexed inbound references")
-            if impact.truncated:
-                lines.append("  - additional references omitted")
-        sections.append("\n".join(lines))
-    for (repository, file_path), candidates in _selected_files(result, max_files):
-        display_path = f"{repository}/{file_path}" if repository else file_path
-        lines = [f"## {display_path}"]
-        for candidate in candidates:
-            label = candidate.symbol or "source match"
-            metadata = [candidate.provenance]
-            if candidate.kind:
-                metadata.append(candidate.kind)
-            if candidate.language:
-                metadata.append(candidate.language)
+    length = len(sections[0])
+    output_truncated = False
+
+    def append(section: str) -> bool:
+        nonlocal length, output_truncated
+        required = len(section) + 2
+        if length + required > _INLINE_CHAR_LIMIT:
+            output_truncated = True
+            return False
+        sections.append(section)
+        length += required
+        return True
+
+    if result.matches:
+        append("Definitions")
+    for match in result.matches:
+        node = match.node
+        location = f"{match.scope.label}/{node.file_path}:{node.line_start}"
+        lines = [
+            f"## {location}",
+            f"- {node.qualified_name} ({node.kind}, {node.language}; {match.resolution})",
+        ]
+        if match.source:
+            lines.append(f"```text\n{match.source}\n```")
+        else:
             lines.append(
-                f"- {label} ({', '.join(metadata)}) "
-                f"lines {candidate.line_start}-{candidate.line_end}"
+                f"source range: {match.scope.label}/{node.file_path}:"
+                f"{node.line_start}-{node.line_end}"
             )
-            if candidate.signature:
-                lines.append(f"  signature: {candidate.signature}")
-            if candidate.callers:
-                lines.append("  inbound:\n    " + "\n    ".join(candidate.callers[:8]))
-            if candidate.callees:
-                lines.append("  outbound:\n    " + "\n    ".join(candidate.callees[:8]))
-            if candidate.tests:
-                lines.append("  tests: " + ", ".join(candidate.tests[:8]))
-            if candidate.snippet:
-                lines.append(f"```text\n{candidate.snippet}\n```")
-        sections.append("\n".join(lines))
-    if not result.results:
-        sections.append("No indexed or current-source candidates matched the query.")
-    if result.limitations:
-        sections.append(
-            "Limitations:\n" + "\n".join(f"- {item}" for item in result.limitations)
+        if not append("\n".join(lines)):
+            break
+
+    if result.relations:
+        append("Relationships")
+    for relation in result.relations:
+        source = relation.source
+        target = relation.target
+        cross = " cross-repo" if relation.cross_repo else ""
+        section = (
+            f"- [depth {relation.depth}{cross}] {relation.kind}: "
+            f"{source.node.qualified_name} "
+            f"[{source.scope.label}/{source.node.file_path}:{source.node.line_start}] "
+            f"-> {target.node.qualified_name} "
+            f"[{target.scope.label}/{target.node.file_path}:{target.node.line_start}]\n"
+            f"  callsite: {source.scope.label}/{relation.callsite_file}:"
+            f"{relation.callsite_line}"
         )
-    if result.next_read_ranges:
-        sections.append("Source not included: " + ", ".join(result.next_read_ranges))
-    if result.truncated:
-        sections.append(
-            "Output reached its budget. Query a named symbol or file for more source."
+        if relation.callsite_source:
+            section += f"\n```text\n{relation.callsite_source}\n```"
+        if not append(section):
+            break
+
+    if result.suggestions:
+        lines = ["Exact symbol not found. Prefix suggestions (not traversed):"]
+        lines.extend(
+            f"- {item.node.qualified_name} — "
+            f"{item.scope.label}/{item.node.file_path}:{item.node.line_start}"
+            for item in result.suggestions
+        )
+        append("\n".join(lines))
+    if result.limitations:
+        append("Limitations:\n" + "\n".join(f"- {item}" for item in result.limitations))
+    if result.truncated or output_truncated:
+        append(
+            "Output truncated. Narrow with path/repository, reduce depth, or query "
+            "a returned neighbor symbol."
         )
     return "\n\n".join(sections)
 
 
-async def _code_query(
-    query: Annotated[
+async def _code_graph(
+    symbol: Annotated[
         str,
         Field(
             min_length=1,
+            max_length=512,
+            pattern=r"^\S+$",
             description=(
-                "Natural-language code question or related symbol/file names."
+                "One raw symbol identifier or qualified symbol, for example "
+                "calculate_total or ClassName.method. Derive it only from an "
+                "identifier present in source. Never pass, translate, or summarize "
+                "the user's natural-language request into this field."
             ),
         ),
     ],
     operation: Annotated[
-        Literal["locate", "explain", "impact", "trace", "change"],
+        Literal[
+            "definition",
+            "callers",
+            "callees",
+            "references",
+            "impact",
+            "neighborhood",
+        ],
         Field(
             description=(
-                "Structural operation to perform: locate definitions, explain "
-                "implementation, inspect inbound impact, trace a flow, or analyze "
-                "working-tree changes."
+                "Structural direction to navigate: definition only; direct or "
+                "transitive callers/callees; all inbound references; inbound impact; "
+                "or a bidirectional neighborhood."
             )
         ),
-    ] = "explain",
-    max_files: Annotated[
+    ] = "definition",
+    path: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Optional repository-relative path fragment used only to disambiguate "
+                "same-named symbols."
+            )
+        ),
+    ] = None,
+    repository: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Optional linked repository label used only to disambiguate a symbol."
+            )
+        ),
+    ] = None,
+    depth: Annotated[
         int,
         Field(
             ge=1,
-            le=CODE_QUERY_DEFAULT_MAX_FILES,
-            description=(
-                "Maximum source files to include. Usually leave at the default."
-            ),
+            le=3,
+            description="Relationship depth. Leave at 1 unless transitive impact is required.",
         ),
-    ] = CODE_QUERY_DEFAULT_MAX_FILES,
+    ] = 1,
+    limit: Annotated[
+        int,
+        Field(ge=1, le=100, description="Maximum resolved relationships to return."),
+    ] = 40,
 ) -> str:
-    """Explore code and return current source plus structural relationships.
-
-    Included line-numbered source is equivalent to reading those ranges. The
-    tool automatically checks dirty files and uses bounded source fallback when
-    a language or recent change is not represented by the graph.
-    """
-    from app.services.code_query_service import query_code_across_workspaces
-    from app.core.runtime_settings import load_runtime_settings
+    """Resolve one symbol and navigate its native structural graph."""
+    from app.services.code_graph_navigation_service import (
+        navigate_code_graph_across_workspaces,
+    )
 
     sandbox = get_sandbox()
-    query_settings = load_runtime_settings().code_graph
-    policy = query_settings.query_policy
     roots = [
         str(sandbox.workspace_root),
         *getattr(sandbox, "extra_workspace_paths", []),
@@ -166,52 +187,43 @@ async def _code_query(
                     Path(root).name or root,
                 )
             )
-        result = await query_code_across_workspaces(
+        result = await navigate_code_graph_across_workspaces(
             db,
             workspaces=workspaces,
-            query=query,
-            intent=operation,
-            budget_tokens=min(
-                policy.max_budget_tokens,
-                max(
-                    policy.tool_min_budget_tokens,
-                    max_files * policy.tokens_per_file,
-                ),
-            ),
-            limit=min(
-                policy.max_candidates,
-                max_files * policy.candidates_per_file,
-            ),
-            enable_lsp=True,
-            settings=query_settings,
+            symbol=symbol,
+            operation=operation,
+            path=path,
+            repository=repository,
+            depth=depth,
+            limit=limit,
         )
 
-    rendered = _render_code_query(result, max_files=max_files)
-    publish_code_query_observation(
-        CodeQueryObservation(
+    rendered = _render_code_graph(result)
+    publish_code_graph_observation(
+        CodeGraphObservation(
             strategy=result.strategy,
             freshness=result.freshness,
-            cache_hit=result.cache_hit,
             result_tokens=(len(rendered.encode("utf-8")) + 3) // 4,
         )
     )
     return rendered
 
 
-code_query = Tool(
-    _code_query,
-    name="code_query",
+code_graph = Tool(
+    _code_graph,
+    name="code_graph",
     description=(
-        "Primary code explorer. Pass a natural-language question or symbol/file "
-        "names and select the structural operation. Each call returns current "
-        "line-numbered source grouped by file, relevant relationships and change "
-        "impact, with explicit fallback when the graph cannot cover a language "
-        "or recent edits."
+        "Native structural navigator for a known code symbol, not a search engine. "
+        "Given one exact identifier, returns its "
+        "definition and requested callers, callees, references, impact, or graph "
+        "neighborhood across authorized repositories with exact call-site lines. "
+        "If multiple definitions match, disambiguate before traversal. This tool "
+        "does not search natural-language requests."
     ),
     concurrency_safe=True,
     read_only=True,
     tiers=("coding",),
     deferred=False,
-    capabilities=("code_navigation", "code_graph_navigation"),
+    capabilities=("code_graph_navigation",),
     deduplicate_in_batch=True,
 )

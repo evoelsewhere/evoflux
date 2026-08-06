@@ -1,4 +1,4 @@
-"""API contracts for task-oriented code retrieval diagnostics."""
+"""API contracts for symbol-first code-graph navigation."""
 
 from __future__ import annotations
 
@@ -7,22 +7,22 @@ from pathlib import Path
 import pytest
 from fastapi import HTTPException
 
-from app.api.schemas.code_graph import CodeQueryRequest
+from app.api.schemas.code_graph import CodeGraphNavigateRequest
 
 
 @pytest.mark.asyncio
-async def test_query_endpoint_rejects_unregistered_source_directory(
+async def test_navigate_endpoint_rejects_unregistered_source_directory(
     setup_db, tmp_path: Path
-):
-    from app.api.routes.code_graph import code_query
+) -> None:
+    from app.api.routes.code_graph import navigate_code_graph
     from app.core.db import async_session_factory
 
-    (tmp_path / "secret.py").write_text("token = 'hidden'\n", encoding="utf-8")
+    (tmp_path / "secret.py").write_text("def hidden():\n    pass\n", encoding="utf-8")
     async with async_session_factory() as db:
         with pytest.raises(HTTPException) as exc:
-            await code_query(
+            await navigate_code_graph(
                 db,
-                CodeQueryRequest(query="hidden"),
+                CodeGraphNavigateRequest(symbol="hidden"),
                 workspace=str(tmp_path),
             )
 
@@ -30,8 +30,10 @@ async def test_query_endpoint_rejects_unregistered_source_directory(
 
 
 @pytest.mark.asyncio
-async def test_query_endpoint_supports_unindexed_workspace(setup_db, tmp_path: Path):
-    from app.api.routes.code_graph import code_query
+async def test_navigate_endpoint_has_no_unsupported_source_fallback(
+    setup_db, tmp_path: Path
+) -> None:
+    from app.api.routes.code_graph import navigate_code_graph
     from app.core.db import async_session_factory
     from app.services.coding_workspace_service import upsert_coding_workspace
 
@@ -42,16 +44,23 @@ async def test_query_endpoint_supports_unindexed_workspace(setup_db, tmp_path: P
     async with async_session_factory() as db:
         await upsert_coding_workspace(db, path=str(tmp_path))
         await db.commit()
-        response = await code_query(
+        response = await navigate_code_graph(
             db,
-            CodeQueryRequest(query="reconnect_session"),
+            CodeGraphNavigateRequest(symbol="reconnect_session"),
             workspace=str(tmp_path),
         )
 
-    assert response.strategy == "lexical"
+    assert response.strategy == "native-index-unavailable"
     assert response.freshness == "unavailable"
-    assert response.results[0].file_path == "worker.ex"
-    assert any(not item.graph for item in response.capabilities)
+    assert response.matches == []
+    assert any("no source files" in item.lower() for item in response.limitations)
+
+
+def test_navigate_request_rejects_natural_language() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        CodeGraphNavigateRequest(symbol="where is this function called")
 
 
 @pytest.mark.asyncio

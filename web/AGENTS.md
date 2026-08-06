@@ -51,5 +51,5 @@ bun run lint && bun run typecheck
 
 ## Documentation pointers
 
-- Frontend conventions and test layout: `../documents/docs/guidelines.md`.
-- Desktop packaging context: `../documents/docs/desktop.md`.
+- Harness contract: `../documents/architecture/application-harness.md`.
+- Desktop packaging context: `../documents/research/desktop-packaging-signing.md`.

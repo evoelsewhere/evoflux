@@ -125,11 +125,17 @@ EvoFlux operates under a **lead-and-specialists** model. Each request is analyze
 | Configuration | Why it matters |
 |---|---|
 | **LLM model** | Use a fast model for routine execution and a stronger reasoning model for architecture or review |
-| **Temperature and thinking level** | Tune determinism, exploration, latency, and depth by role |
-| **Skills and tools** | Give each specialist the methods and actions required for its job |
+| **Thinking level** | Tune latency and reasoning depth by role and model capability |
+| **Skills and tools** | Add agent-specific capabilities or disable code-owned defaults with explicit opt-outs |
 | **Permissions and access scope** | Limit what an agent can read, write, execute, or approve |
 
 The result is higher parallel capacity, less context noise, the right model for each job, verified delivery, and an execution history that can be inspected instead of trusted blindly.
+
+Agent Markdown is the user-owned override surface. Runtime and Settings compile
+the same effective config from the mode profile plus frontmatter additions and
+`tools_opt_out`; reads and validation never materialise
+configuration files. See
+[`documents/architecture/application-harness.md`](documents/architecture/application-harness.md).
 
 ---
 
@@ -201,16 +207,19 @@ A `CodingProject` can contain several repositories. Graph tools automatically us
   <summary><strong>Token-efficient code graph investigation</strong></summary>
   <br />
 
-  Coding mode preloads the `code-graph-navigation` skill for the Lead and every specialist, including custom agents. An agent can explicitly disable that default with `skills_opt_out: [code-graph-navigation]` in its Markdown frontmatter.
+  `code_graph` is a native Coding tool, not a skill or natural-language search layer. EvoFlux does not inject graph policy into prompts or route user requests with hard-coded keywords.
 
-  | Question | Current graph tool |
+  | Question | Action |
   |---|---|
-  | What is indexed and which symbols are central? | `code_overview` |
-  | Does this symbol exist, and where? | `code_search` |
-  | Who calls/references X, and what does X depend on? | `code_graph` |
-  | How are A and B connected? | `code_path` |
+  | Where is known symbol X defined? | `code_graph(symbol=X, operation="definition")` |
+  | Who calls X? | `code_graph(symbol=X, operation="callers")` |
+  | What does X call? | `code_graph(symbol=X, operation="callees")` |
+  | What references or transitively depends on X? | `references` or `impact` |
+  | Which symbol does the request mean? | Discover an identifier with normal source search, then call `code_graph` |
 
-  Use graph tools first for indexed identifiers and structural relationships, then verify material findings in live source. Use `grep` for literals, comments, configuration keys, and prose; use LSP, tests, or runtime evidence where static resolution is insufficient.
+  `code_graph` is not semantic search: it accepts one raw identifier, resolves exact definitions, and traverses structural edges. Reuse its returned definition and call-site evidence instead of re-reading the same ranges. Use `grep` for symbol discovery, literals, comments, configuration keys, prose, generated files, and unsupported languages; use LSP, tests, logs, or runtime evidence only where the graph reports limitations or static analysis cannot observe the behavior.
+
+  The complete prompt, schema, ambiguity, fallback, evidence, and regression rules are documented in [`documents/architecture/coding-agent-code-navigation.md`](documents/architecture/coding-agent-code-navigation.md).
 
   The `/metrics` endpoint exposes graph-first versus fallback-first navigation turns, per-tool query count and latency, result-token volume, and estimated file-read/token savings. Saving estimates use a transparent baseline: each unique source location returned by the graph replaces one full-file read, with UTF-8 bytes divided by four as the token estimate.
 </details>
@@ -225,7 +234,7 @@ Twelve provider integrations ship behind one streaming abstraction, including An
 
 ### Skills and MCP
 
-Fifty built-in skills cover research, security review, TDD, debugging, CI/CD, documentation, browser testing, and migration methodology. EvoFlux is also an MCP client for stdio, HTTP, and SSE servers; connected tools inherit the same permission rules as native tools.
+Thirteen built-in skills cover specialized artifact/design workflows, EvoFlux configuration/installers, and provider-neutral PR lifecycle operations. The catalog and bodies use progressive disclosure and never enter normal context until deliberately listed or loaded. EvoFlux is also an MCP client for stdio, HTTP, and SSE servers; connected tools inherit the same permission rules as native tools.
 
 ### Permissions and sandboxing
 

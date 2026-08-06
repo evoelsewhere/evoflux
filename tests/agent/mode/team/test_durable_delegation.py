@@ -43,6 +43,7 @@ async def _make_dynamic_team(agents_dir: Path, session_id: str) -> AgentTeam:
     if not (agents_dir / "lead.md").exists():
         _write_agent(agents_dir / "lead.md", name="lead", role="lead")
         _write_agent(agents_dir / "coder.md", name="coder", role="member")
+        _write_agent(agents_dir / "executor.md", name="executor", role="member")
     team = load_team_from_dir(
         agents_dir,
         provider_factory=_mock_provider,

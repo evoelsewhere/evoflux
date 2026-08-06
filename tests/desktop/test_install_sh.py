@@ -104,10 +104,10 @@ class TestHelpFlag:
         proc = _run(["--help"])
         out = proc.stdout + proc.stderr
         # The header explains macOS + Linux are covered here and points
-        # Windows users at the MSI.
+        # Windows users at the setup executable.
         assert "macOS" in out
         assert "Linux" in out
-        assert "MSI" in out or "msi" in out.lower()
+        assert "setup.exe" in out.lower()
 
     def test_help_documents_install_flag(self):
         proc = _run(["--help"])
@@ -167,7 +167,7 @@ class TestPlatformDispatch:
         # case statement. This is a doc-pin test.
         text = SCRIPT.read_text()
         assert "Unsupported platform" in text
-        assert "EvoFlux-*.msi" in text  # Windows hint
+        assert "EvoFlux_*-setup.exe" in text  # Windows hint
 
 
 class TestMissingBundle:

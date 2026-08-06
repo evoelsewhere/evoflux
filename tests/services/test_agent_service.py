@@ -522,6 +522,7 @@ async def test_dispatch_passes_session_model_settings():
         message_extra=None,
         mode="work",
         workspace=None,
+        project_id=None,
         model="openai:gpt-5.5",
         model_provided=True,
         thinking_level="high",
@@ -618,6 +619,7 @@ async def test_deferred_dispatch_returns_before_message_preparation_finishes():
         session_id="existing-123",
         mode="work",
         workspace=None,
+        project_id=None,
     )
     team.reserve_user_turn.assert_called_once_with()
     assert team.handle_user_message.await_args_list[0] is not None

@@ -25,7 +25,7 @@ Use progressive disclosure:
 - Never approve, request changes, resolve a thread, update metadata, merge, close, or reopen based on stale review state.
 - Keep review findings about the code, not the author.
 
-Local code inspection remains allowed through normal Coding tools such as `code_query`, `grep`, `read`, and `lsp_diagnostics`. Prefer `code_query` for indexed source because it returns source and relationships together. Use the repository's normal verification commands when evidence requires running tests.
+Local code inspection remains allowed through normal Coding tools such as `code_graph`, `grep`, `read`, and `lsp_diagnostics`. Prefer `code_graph` for callers, callees, and references of known symbols. Use the repository's normal verification commands when evidence requires running tests.
 
 ## Resolve scope first
 

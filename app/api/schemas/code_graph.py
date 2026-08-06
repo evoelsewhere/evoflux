@@ -74,36 +74,46 @@ class CodeSearchResponse(BaseModel):
     nodes: list[CodeNodeOut]
 
 
-class CodeQueryRequest(BaseModel):
-    query: str = Field(min_length=1)
-    intent: Literal["locate", "explain", "impact", "trace", "change"] = "locate"
-    paths: list[str] = Field(default_factory=list)
-    languages: list[str] = Field(default_factory=list)
-    kinds: list[str] = Field(default_factory=list)
-    budget_tokens: int = Field(default=2500, ge=500, le=12000)
+class CodeGraphNavigateRequest(BaseModel):
+    symbol: str = Field(min_length=1, max_length=512, pattern=r"^\S+$")
+    operation: Literal[
+        "definition",
+        "callers",
+        "callees",
+        "references",
+        "impact",
+        "neighborhood",
+    ] = "definition"
+    path: str | None = None
+    repository: str | None = None
+    depth: int = Field(default=1, ge=1, le=3)
+    limit: int = Field(default=40, ge=1, le=100)
     freshness: Literal["fast", "balanced", "strict"] = "balanced"
-    limit: int = Field(default=10, ge=1, le=30)
-    enable_lsp: bool = True
 
 
-class CodeQueryCandidateOut(BaseModel):
-    handle: str
+class CodeGraphSymbolOut(BaseModel):
+    repository: str
     file_path: str
     line_start: int
     line_end: int
-    symbol: str | None = None
-    kind: str | None = None
-    language: str | None = None
+    symbol: str
+    kind: str
+    language: str
     signature: str | None = None
-    snippet: str | None = None
-    score: float
-    confidence: float
-    provenance: str
-    match_reasons: list[str]
-    callers: list[str]
-    callees: list[str]
-    tests: list[str]
-    repository: str | None = None
+    resolution: str
+    source: str | None = None
+
+
+class CodeGraphRelationOut(BaseModel):
+    kind: str
+    depth: int
+    cross_repo: bool
+    source_symbol: str
+    source_location: str
+    target_symbol: str
+    target_location: str
+    callsite_location: str
+    callsite_source: str | None = None
 
 
 class LanguageCapabilityOut(BaseModel):
@@ -116,23 +126,21 @@ class LanguageCapabilityOut(BaseModel):
     coverage: float
 
 
-class CodeQueryResponse(BaseModel):
-    query: str
-    intent: str
+class CodeGraphNavigateResponse(BaseModel):
+    symbol: str
+    operation: str
     strategy: str
     graph_version: str | None
     working_tree_revision: str
     freshness: str
-    coverage: float
-    confidence: float
     dirty_files: int
     pending_edges: int
-    results: list[CodeQueryCandidateOut]
+    matches: list[CodeGraphSymbolOut]
+    relations: list[CodeGraphRelationOut]
+    suggestions: list[CodeGraphSymbolOut]
     capabilities: list[LanguageCapabilityOut]
     limitations: list[str]
-    next_read_ranges: list[str]
     truncated: bool
-    cache_hit: bool
 
 
 class CodeGraphFreshnessResponse(BaseModel):

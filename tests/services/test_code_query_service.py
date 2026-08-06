@@ -1,142 +1,14 @@
-"""Task-oriented code retrieval, fallback, and freshness regression tests."""
+"""Regression coverage for native, symbol-first graph navigation."""
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import pytest
+from sqlmodel import select
 
-import app.models.chat  # noqa: F401 -- register SQLModel tables for isolated run
-import app.models.code_graph  # noqa: F401 -- register SQLModel tables for isolated run
-
-
-def test_query_terms_preserve_symbol_and_path_structure_without_stopword_cases() -> (
-    None
-):
-    from app.services.code_graph.query import query_terms
-
-    terms = query_terms("explain CodeContextHook in app/agent/loader.py:640")
-
-    assert "codecontexthook" in terms
-    assert "context" in terms
-    assert "app/agent/loader.py" in terms
-
-    member_terms = query_terms("useTeamStore.sendMessage")
-    assert "sendmessage" in member_terms
-    assert "useteamstore.sendmessage" in member_terms
-
-    long_question = " ".join(
-        [*(f"ordinary{index}" for index in range(40)), "useStreamingReveal/render"]
-    )
-    prioritized = query_terms(long_question)
-    assert "usestreamingreveal/render" in prioritized
-    assert "usestreamingreveal" in prioritized
-
-    flow_question = query_terms(
-        "trace TeamChatView submit useTeamStore.sendMessage via "
-        "useTeamSse and useStreamingReveal"
-    )
-    assert "submit" in flow_question[:24]
-    assert "usestreamingreveal" in flow_question[:24]
-
-
-def test_candidate_diversity_keeps_structural_evidence_ahead_of_file_matches():
-    from app.services.code_query_service import CodeQueryCandidate, _dedupe
-
-    candidates = [
-        CodeQueryCandidate(
-            handle="match-a",
-            file_path="flow.py",
-            line_start=1,
-            line_end=2,
-            score=200,
-        ),
-        CodeQueryCandidate(
-            handle="other",
-            file_path="other.py",
-            line_start=1,
-            line_end=2,
-            score=190,
-        ),
-        CodeQueryCandidate(
-            handle="spine-a",
-            file_path="flow.py",
-            line_start=10,
-            line_end=20,
-            score=100,
-            context_role="spine",
-        ),
-    ]
-
-    ranked = _dedupe(candidates)
-
-    assert [candidate.handle for candidate in ranked] == [
-        "spine-a",
-        "other",
-        "match-a",
-    ]
-
-
-def test_required_source_is_bounded_per_structural_file():
-    from app.services.code_query_service import (
-        CodeQueryCandidate,
-        _required_evidence_candidates,
-    )
-
-    candidates = [
-        CodeQueryCandidate(
-            handle="root",
-            file_path="flow.py",
-            line_start=1,
-            line_end=2,
-            context_role="root",
-        ),
-        *[
-            CodeQueryCandidate(
-                handle=f"spine-{index}",
-                file_path="flow.py",
-                line_start=10 + index,
-                line_end=11 + index,
-                context_role="spine",
-            )
-            for index in range(5)
-        ],
-        CodeQueryCandidate(
-            handle="other-spine",
-            file_path="transport.py",
-            line_start=1,
-            line_end=2,
-            context_role="spine",
-        ),
-    ]
-
-    required = _required_evidence_candidates(candidates)
-
-    assert [candidate.handle for candidate in required] == [
-        "root",
-        "other-spine",
-    ]
-
-
-def test_bounded_fallback_respects_gitignored_vendor_tree(tmp_path: Path) -> None:
-    from app.services.code_query_service import _rg_lexical
-
-    (tmp_path / ".gitignore").write_text("desktop/sidecar-bundle/\n", encoding="utf-8")
-    (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "service.py").write_text(
-        "def reconnect_session():\n    return True\n", encoding="utf-8"
-    )
-    vendor = tmp_path / "desktop" / "sidecar-bundle" / "stdlib"
-    vendor.mkdir(parents=True)
-    (vendor / "inspect.py").write_text(
-        "def reconnect_session():\n    return False\n", encoding="utf-8"
-    )
-
-    hits, _counts = _rg_lexical(tmp_path, "reconnect_session", (), 10)
-    scanned = {hit.file_path for hit in hits}
-
-    assert scanned == {"src/service.py"}
+import app.models.chat  # noqa: F401 -- register SQLModel tables
+import app.models.code_graph  # noqa: F401 -- register SQLModel tables
 
 
 async def _index(root: Path):  # noqa: ANN202
@@ -152,848 +24,432 @@ async def _index(root: Path):  # noqa: ANN202
         return workspace.id
 
 
-def _git(root: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
-
-
-def _init_git(root: Path) -> None:
-    _git(root, "init")
-    _git(root, "config", "user.email", "test@example.com")
-    _git(root, "config", "user.name", "Test")
-
-
 @pytest.mark.asyncio
-async def test_query_falls_back_for_unsupported_language(setup_db, tmp_path: Path):
+async def test_definition_resolves_exact_symbol_and_complete_source(
+    setup_db, tmp_path: Path
+) -> None:
     from app.core.db import async_session_factory
-    from app.services.code_query_service import query_code
+    from app.services.code_graph_navigation_service import navigate_code_graph
 
-    (tmp_path / "worker.fluxlang").write_text(
-        "service Worker { reconnect_session(id) = id }\n",
+    (tmp_path / "service.py").write_text(
+        "def calculate_total(values):\n    total = sum(values)\n    return total\n",
         encoding="utf-8",
     )
+    workspace_id = await _index(tmp_path)
     async with async_session_factory() as db:
-        result = await query_code(
+        result = await navigate_code_graph(
             db,
             root_path=str(tmp_path),
-            workspace_id=None,
-            query="reconnect_session",
-            enable_lsp=False,
+            workspace_id=workspace_id,
+            symbol="calculate_total",
+            operation="definition",
         )
 
-    assert result.strategy == "lexical"
-    assert result.freshness == "unavailable"
-    assert result.results[0].file_path == "worker.fluxlang"
-    assert result.results[0].provenance == "lexical"
-    assert any(not item.graph for item in result.capabilities)
-    assert any("no graph parser" in item.lower() for item in result.limitations)
+    assert result.strategy == "native-exact-symbol-graph"
+    assert result.freshness == "fresh"
+    assert len(result.matches) == 1
+    assert result.matches[0].node.qualified_name == "calculate_total"
+    assert "def calculate_total" in (result.matches[0].source or "")
+    assert "return total" in (result.matches[0].source or "")
+    assert result.relations == []
 
 
 @pytest.mark.asyncio
-async def test_dirty_file_overlay_shadows_stale_graph(setup_db, tmp_path: Path):
+async def test_callers_returns_exact_callsite_instead_of_search_hits(
+    setup_db, tmp_path: Path
+) -> None:
     from app.core.db import async_session_factory
-    from app.services.code_query_service import query_code
+    from app.services.code_graph_navigation_service import navigate_code_graph
+
+    (tmp_path / "service.py").write_text(
+        "def helper():\n"
+        "    return 1\n\n"
+        "def first_caller():\n"
+        "    return helper()\n\n"
+        "def unrelated_helper_text():\n"
+        "    return 'helper'\n",
+        encoding="utf-8",
+    )
+    workspace_id = await _index(tmp_path)
+    async with async_session_factory() as db:
+        result = await navigate_code_graph(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            symbol="helper",
+            operation="callers",
+        )
+
+    assert [relation.source.node.qualified_name for relation in result.relations] == [
+        "first_caller"
+    ]
+    relation = result.relations[0]
+    assert relation.kind == "calls"
+    assert relation.callsite_file == "service.py"
+    assert relation.callsite_line == 5
+    assert "return helper()" in (relation.callsite_source or "")
+    assert "unrelated_helper_text" not in {
+        item.source.node.qualified_name for item in result.relations
+    }
+
+
+@pytest.mark.asyncio
+async def test_callers_includes_callable_passed_to_dispatcher(
+    setup_db, tmp_path: Path
+) -> None:
+    from app.core.db import async_session_factory
+    from app.services.code_graph_navigation_service import navigate_code_graph
+
+    (tmp_path / "worker.py").write_text(
+        "import asyncio\n\n"
+        "def blocking_job():\n"
+        "    return 1\n\n"
+        "async def run_job():\n"
+        "    return await asyncio.to_thread(blocking_job)\n",
+        encoding="utf-8",
+    )
+    workspace_id = await _index(tmp_path)
+    async with async_session_factory() as db:
+        result = await navigate_code_graph(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            symbol="blocking_job",
+            operation="callers",
+        )
+
+    relation = next(item for item in result.relations if item.kind == "references")
+    assert relation.source.node.qualified_name == "run_job"
+    assert relation.callsite_line == 7
+
+
+@pytest.mark.asyncio
+async def test_callees_only_follows_outbound_call_edges(
+    setup_db, tmp_path: Path
+) -> None:
+    from app.core.db import async_session_factory
+    from app.services.code_graph_navigation_service import navigate_code_graph
+
+    (tmp_path / "flow.py").write_text(
+        "def load_data():\n    return []\n\n"
+        "def save_data(value):\n    return value\n\n"
+        "def orchestrate():\n"
+        "    rows = load_data()\n"
+        "    return save_data(rows)\n",
+        encoding="utf-8",
+    )
+    workspace_id = await _index(tmp_path)
+    async with async_session_factory() as db:
+        result = await navigate_code_graph(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            symbol="orchestrate",
+            operation="callees",
+        )
+
+    assert {relation.target.node.qualified_name for relation in result.relations} == {
+        "load_data",
+        "save_data",
+    }
+    assert {relation.callsite_line for relation in result.relations} == {8, 9}
+
+
+@pytest.mark.asyncio
+async def test_same_named_symbol_is_explicitly_ambiguous_and_path_disambiguates(
+    setup_db, tmp_path: Path
+) -> None:
+    from app.core.db import async_session_factory
+    from app.services.code_graph_navigation_service import navigate_code_graph
+
+    (tmp_path / "alpha.py").write_text(
+        "def handler():\n    return 'a'\n", encoding="utf-8"
+    )
+    (tmp_path / "beta.py").write_text(
+        "def handler():\n    return 'b'\n", encoding="utf-8"
+    )
+    workspace_id = await _index(tmp_path)
+    async with async_session_factory() as db:
+        ambiguous = await navigate_code_graph(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            symbol="handler",
+        )
+        selected = await navigate_code_graph(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            symbol="handler",
+            path="beta.py",
+        )
+
+    assert len(ambiguous.matches) == 2
+    assert any("2 exact definitions" in item for item in ambiguous.limitations)
+    assert [item.node.file_path for item in selected.matches] == ["beta.py"]
+    assert "return 'b'" in (selected.matches[0].source or "")
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_symbol_is_not_traversed_until_root_is_disambiguated(
+    setup_db, tmp_path: Path
+) -> None:
+    from app.core.db import async_session_factory
+    from app.services.code_graph_navigation_service import navigate_code_graph
+
+    (tmp_path / "alpha.py").write_text(
+        "def handler():\n    return 'a'\n\ndef alpha_caller():\n    return handler()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "beta.py").write_text(
+        "def handler():\n    return 'b'\n\ndef beta_caller():\n    return handler()\n",
+        encoding="utf-8",
+    )
+    workspace_id = await _index(tmp_path)
+    async with async_session_factory() as db:
+        ambiguous = await navigate_code_graph(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            symbol="handler",
+            operation="callers",
+        )
+        selected = await navigate_code_graph(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            symbol="handler",
+            operation="callers",
+            path="beta.py",
+        )
+
+    assert len(ambiguous.matches) == 2
+    assert ambiguous.relations == []
+    assert any("Traversal was not executed" in item for item in ambiguous.limitations)
+    assert [item.source.node.qualified_name for item in selected.relations] == [
+        "beta_caller"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_prefix_suggestions_are_never_used_as_graph_roots(
+    setup_db, tmp_path: Path
+) -> None:
+    from app.core.db import async_session_factory
+    from app.services.code_graph_navigation_service import navigate_code_graph
+
+    (tmp_path / "service.py").write_text(
+        "def calculate_total():\n    return 1\n", encoding="utf-8"
+    )
+    workspace_id = await _index(tmp_path)
+    async with async_session_factory() as db:
+        result = await navigate_code_graph(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            symbol="calculate",
+            operation="callers",
+        )
+
+    assert result.matches == []
+    assert result.relations == []
+    assert [item.node.name for item in result.suggestions] == ["calculate_total"]
+    assert any("not traversed" in item for item in result.limitations)
+
+
+@pytest.mark.asyncio
+async def test_natural_language_is_rejected_at_the_graph_boundary(
+    setup_db, tmp_path: Path
+) -> None:
+    from app.core.db import async_session_factory
+    from app.services.code_graph_navigation_service import navigate_code_graph
+
+    workspace_id = await _index(tmp_path)
+    async with async_session_factory() as db:
+        with pytest.raises(ValueError, match="raw symbol identifier"):
+            await navigate_code_graph(
+                db,
+                root_path=str(tmp_path),
+                workspace_id=workspace_id,
+                symbol="how does authentication work",
+                operation="neighborhood",
+            )
+
+
+@pytest.mark.asyncio
+async def test_strict_navigation_reindexes_dirty_source(
+    setup_db, tmp_path: Path
+) -> None:
+    from app.core.db import async_session_factory
+    from app.services.code_graph_navigation_service import navigate_code_graph
 
     source = tmp_path / "service.py"
     source.write_text("def old_handler():\n    return 1\n", encoding="utf-8")
     workspace_id = await _index(tmp_path)
     source.write_text("def fresh_handler():\n    return 2\n", encoding="utf-8")
-
     async with async_session_factory() as db:
-        fresh = await query_code(
+        fresh = await navigate_code_graph(
             db,
             root_path=str(tmp_path),
             workspace_id=workspace_id,
-            query="fresh_handler",
-            intent="change",
+            symbol="fresh_handler",
             freshness_policy="strict",
-            enable_lsp=False,
         )
-        stale = await query_code(
+        old = await navigate_code_graph(
             db,
             root_path=str(tmp_path),
             workspace_id=workspace_id,
-            query="old_handler",
-            intent="change",
+            symbol="old_handler",
             freshness_policy="strict",
-            enable_lsp=False,
         )
 
-    assert fresh.freshness == "partial"
-    assert fresh.dirty_files == 1
-    assert fresh.results[0].provenance == "overlay"
-    assert fresh.results[0].symbol == "fresh_handler"
-    assert "return 2" in (fresh.results[0].snippet or "")
-    assert not any(item.provenance == "graph" for item in stale.results)
-    assert all("return 1" not in (item.snippet or "") for item in stale.results)
-
-
-def test_git_rename_reports_destination_changed_and_source_deleted(tmp_path: Path):
-    from app.services.code_query_service import _git_working_tree
-
-    _init_git(tmp_path)
-    (tmp_path / "old.py").write_text("value = 1\n", encoding="utf-8")
-    _git(tmp_path, "add", "old.py")
-    _git(tmp_path, "commit", "-m", "initial")
-    _git(tmp_path, "mv", "old.py", "new.py")
-
-    state = _git_working_tree(tmp_path)
-
-    assert state.changed == frozenset({"new.py"})
-    assert state.deleted == frozenset({"old.py"})
+    assert fresh.freshness == "fresh"
+    assert fresh.dirty_files == 0
+    assert fresh.matches[0].node.name == "fresh_handler"
+    assert "return 2" in (fresh.matches[0].source or "")
+    assert old.matches == []
 
 
 @pytest.mark.asyncio
-async def test_cache_revision_changes_when_same_dirty_file_changes_again(
+async def test_cross_repo_call_is_traversed_in_same_directional_graph(
     setup_db, tmp_path: Path
-):
-    import app.services.code_query_service as query_service
+) -> None:
     from app.core.db import async_session_factory
-
-    _init_git(tmp_path)
-    source = tmp_path / "service.py"
-    source.write_text('def target():\n    return "indexed"\n', encoding="utf-8")
-    _git(tmp_path, "add", "service.py")
-    _git(tmp_path, "commit", "-m", "initial")
-    workspace_id = await _index(tmp_path)
-    query_service._query_cache.clear()
-
-    source.write_text('def target():\n    return "first-dirty"\n', encoding="utf-8")
-    async with async_session_factory() as db:
-        first = await query_service.query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="target",
-            freshness_policy="strict",
-            enable_lsp=False,
-        )
-    source.write_text('def target():\n    return "second-dirty"\n', encoding="utf-8")
-    async with async_session_factory() as db:
-        second = await query_service.query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="target",
-            freshness_policy="strict",
-            enable_lsp=False,
-        )
-
-    assert "first-dirty" in (first.results[0].snippet or "")
-    assert "second-dirty" in (second.results[0].snippet or "")
-    assert first.working_tree_revision != second.working_tree_revision
-    assert second.cache_hit is False
-
-
-@pytest.mark.asyncio
-async def test_clean_branch_switch_invalidates_cached_graph_result(
-    setup_db, tmp_path: Path
-):
-    import app.services.code_query_service as query_service
-    from app.core.db import async_session_factory
-
-    _init_git(tmp_path)
-    source = tmp_path / "service.py"
-    source.write_text('def target():\n    return "main"\n', encoding="utf-8")
-    _git(tmp_path, "add", "service.py")
-    _git(tmp_path, "commit", "-m", "main")
-    main_branch = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    workspace_id = await _index(tmp_path)
-    query_service._query_cache.clear()
-    async with async_session_factory() as db:
-        first = await query_service.query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="target",
-            freshness_policy="strict",
-            enable_lsp=False,
-        )
-    _git(tmp_path, "switch", "-c", "alternate")
-    source.write_text('def target():\n    return "alternate"\n', encoding="utf-8")
-    _git(tmp_path, "add", "service.py")
-    _git(tmp_path, "commit", "-m", "alternate")
-    async with async_session_factory() as db:
-        switched = await query_service.query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="target",
-            freshness_policy="strict",
-            enable_lsp=False,
-        )
-
-    assert "main" in (first.results[0].snippet or "")
-    assert "alternate" in (switched.results[0].snippet or "")
-    assert switched.cache_hit is False
-    _git(tmp_path, "switch", main_branch)
-
-
-@pytest.mark.asyncio
-async def test_query_returns_graph_handle_snippet_and_relationships(
-    setup_db, tmp_path: Path
-):
-    from app.core.db import async_session_factory
-    from app.services.code_query_service import query_code
-
-    (tmp_path / "service.py").write_text(
-        "def helper():\n    return 1\n\ndef caller():\n    return helper()\n",
-        encoding="utf-8",
+    from app.models.code_graph import CodeNode, CrossRepoEdge
+    from app.services.code_graph_navigation_service import (
+        navigate_code_graph_across_workspaces,
     )
-    workspace_id = await _index(tmp_path)
-    async with async_session_factory() as db:
-        result = await query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="helper",
-            intent="impact",
-            enable_lsp=False,
-        )
+    from app.services.coding_project_service import create_project
 
-    candidate = next(item for item in result.results if item.symbol == "helper")
-    assert candidate.handle.startswith(f"cg:{workspace_id}:")
-    assert candidate.provenance == "graph"
-    assert "def helper" in (candidate.snippet or "")
-    assert any("caller" in relationship for relationship in candidate.callers)
-    assert result.strategy == "graph"
-
-
-@pytest.mark.asyncio
-async def test_query_keeps_incoming_and_outgoing_relationships_separate(
-    setup_db, tmp_path: Path
-):
-    from app.core.db import async_session_factory
-    from app.services.code_query_service import query_code
-
-    (tmp_path / "service.py").write_text(
-        "def leaf():\n    return 1\n\n"
-        "def middle():\n    return leaf()\n\n"
-        "def entry():\n    return middle()\n",
-        encoding="utf-8",
+    frontend = tmp_path / "frontend"
+    backend = tmp_path / "backend"
+    frontend.mkdir()
+    backend.mkdir()
+    (frontend / "entry.py").write_text(
+        "def frontend_entry():\n    return 'request'\n", encoding="utf-8"
     )
-    workspace_id = await _index(tmp_path)
-    async with async_session_factory() as db:
-        result = await query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="middle",
-            intent="explain",
-            enable_lsp=False,
-        )
-
-    candidate = next(item for item in result.results if item.symbol == "middle")
-    assert any("entry" in relationship for relationship in candidate.callers)
-    assert not any("entry" in relationship for relationship in candidate.callees)
-    assert any("leaf" in relationship for relationship in candidate.callees)
-    assert not any("leaf" in relationship for relationship in candidate.callers)
-
-
-@pytest.mark.asyncio
-async def test_query_returns_named_flow_and_compact_blast_radius(
-    setup_db, tmp_path: Path
-):
-    from app.core.db import async_session_factory
-    from app.services.code_query_service import query_code
-
-    (tmp_path / "flow.py").write_text(
-        "def omega():\n    return 1\n\n"
-        "def bridge():\n    return omega()\n\n"
-        "def alpha():\n    return bridge()\n",
-        encoding="utf-8",
+    (backend / "remote.py").write_text(
+        "def backend_handler():\n    return 'response'\n", encoding="utf-8"
     )
-    workspace_id = await _index(tmp_path)
-    async with async_session_factory() as db:
-        result = await query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="alpha omega",
-            enable_lsp=False,
-        )
-
-    assert [hop.source for hop in result.flow] == ["alpha", "bridge"]
-    assert [hop.target for hop in result.flow] == ["bridge", "omega"]
-    assert {impact.root for impact in result.blast_radius} == {"alpha", "omega"}
-    assert any(
-        "bridge" in ref for impact in result.blast_radius for ref in impact.references
-    )
-
-
-@pytest.mark.asyncio
-async def test_named_root_includes_resolved_cross_file_call_source(
-    setup_db, tmp_path: Path
-):
-    from app.core.db import async_session_factory
-    from app.services.code_query_service import query_code
-
-    (tmp_path / "api.py").write_text(
-        "def post_message():\n    return 'ok'\n", encoding="utf-8"
-    )
-    (tmp_path / "store.py").write_text(
-        "from api import post_message\n\ndef send_message():\n    return post_message()\n",
-        encoding="utf-8",
-    )
-    workspace_id = await _index(tmp_path)
-    async with async_session_factory() as db:
-        result = await query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="send_message transport",
-            enable_lsp=False,
-        )
-
-    transport = next(item for item in result.results if item.symbol == "post_message")
-    assert transport.file_path == "api.py"
-    assert transport.context_role == "spine"
-    assert "return 'ok'" in (transport.snippet or "")
-
-
-@pytest.mark.asyncio
-async def test_query_named_file_expands_distinct_flow_stages(setup_db, tmp_path: Path):
-    from app.core.db import async_session_factory
-    from app.services.code_query_service import query_code
-
-    (tmp_path / "preview.py").write_text(
-        "def validate_port():\n    return True\n\n"
-        "def start_server():\n    return True\n\n"
-        "def stop_server():\n    return True\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "unrelated.py").write_text(
-        "def start_worker():\n    return True\n", encoding="utf-8"
-    )
-    workspace_id = await _index(tmp_path)
-    async with async_session_factory() as db:
-        result = await query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query=(
-                "explain the complete preview lifecycle including configuration "
-                "validation port start health reuse stop shutdown cleanup"
-            ),
-            enable_lsp=False,
-        )
-
-    symbols = {item.symbol for item in result.results}
-    assert {"validate_port", "start_server", "stop_server"} <= symbols
-    assert "start_worker" not in symbols
-    by_symbol = {item.symbol: item for item in result.results}
-    assert by_symbol["start_server"].context_role in {"root", "spine"}
-    assert by_symbol["stop_server"].context_role in {"root", "spine"}
-    assert result.truncated is False
-
-
-@pytest.mark.asyncio
-async def test_locate_query_does_not_expand_relationship_lists(
-    setup_db, tmp_path: Path
-):
-    from app.core.db import async_session_factory
-    from app.services.code_query_service import query_code
-
-    (tmp_path / "service.py").write_text(
-        "def helper():\n    return 1\n\ndef caller():\n    return helper()\n",
-        encoding="utf-8",
-    )
-    workspace_id = await _index(tmp_path)
-    async with async_session_factory() as db:
-        result = await query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="helper",
-            intent="locate",
-            enable_lsp=False,
-        )
-
-    candidate = next(item for item in result.results if item.symbol == "helper")
-    assert candidate.callers == []
-    assert candidate.callees == []
-    assert candidate.tests == []
-
-
-@pytest.mark.asyncio
-async def test_natural_query_rejects_single_generic_token_match(
-    setup_db, tmp_path: Path
-):
-    from app.core.db import async_session_factory
-    from app.services.code_query_service import query_code
-
-    (tmp_path / "card.py").write_text(
-        "def summary_behavior():\n    return 'text'\n", encoding="utf-8"
-    )
-    workspace_id = await _index(tmp_path)
-    query_parts = [
-        "check " + "summary",
-        "suggestion " + "rendering",
-        "behavior",
-    ]
-    async with async_session_factory() as db:
-        result = await query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query=" ".join(query_parts),
-            enable_lsp=False,
-        )
-
-    assert result.results == []
-
-
-@pytest.mark.asyncio
-async def test_natural_query_matches_identifier_without_message_routing(
-    setup_db, tmp_path: Path
-):
-    from app.core.db import async_session_factory
-    from app.services.code_query_service import query_code
-
-    (tmp_path / "session.py").write_text(
-        "def reconnect_session():\n    return True\n", encoding="utf-8"
-    )
-    workspace_id = await _index(tmp_path)
-    async with async_session_factory() as db:
-        result = await query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="please explain how reconnect_session handles recovery",
-            enable_lsp=False,
-        )
-
-    assert any(item.symbol == "reconnect_session" for item in result.results)
-
-
-@pytest.mark.asyncio
-async def test_coverage_uses_only_requested_path_scope(setup_db, tmp_path: Path):
-    from app.core.db import async_session_factory
-    from app.services.code_query_service import query_code
-
-    (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "service.py").write_text(
-        "def scoped_target():\n    return True\n", encoding="utf-8"
-    )
-    (tmp_path / "elsewhere").mkdir()
-    for index in range(4):
-        (tmp_path / "elsewhere" / f"other_{index}.py").write_text(
-            f"def other_{index}():\n    return {index}\n", encoding="utf-8"
-        )
-    workspace_id = await _index(tmp_path)
-    async with async_session_factory() as db:
-        result = await query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="scoped_target",
-            paths=("src",),
-            enable_lsp=False,
-        )
-
-    python = next(item for item in result.capabilities if item.language == "python")
-    assert python.indexed_files == 1
-    assert python.workspace_files == 1
-    assert result.coverage == 1.0
-
-
-@pytest.mark.asyncio
-async def test_live_overlay_reports_new_caller_and_partial_relationships(
-    setup_db, tmp_path: Path
-):
-    from app.core.db import async_session_factory
-    from app.services.code_query_service import query_code
-
-    (tmp_path / "service.py").write_text(
-        "def helper():\n    return 1\n", encoding="utf-8"
-    )
-    workspace_id = await _index(tmp_path)
-    (tmp_path / "caller.py").write_text(
-        "from service import helper\n\ndef new_caller():\n    return helper()\n",
-        encoding="utf-8",
-    )
+    frontend_id = await _index(frontend)
+    backend_id = await _index(backend)
 
     async with async_session_factory() as db:
-        result = await query_code(
+        project = await create_project(
             db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="helper",
-            intent="impact",
-            freshness_policy="strict",
-            enable_lsp=False,
+            name="Native cross repo",
+            workspace_paths=[str(frontend), str(backend)],
         )
-
-    assert result.freshness == "partial"
-    assert result.pending_edges >= 1
-    assert any(item.symbol == "new_caller" for item in result.results)
-    assert any(
-        "helper" in relation for item in result.results for relation in item.callees
-    )
-
-
-@pytest.mark.asyncio
-async def test_fallback_honors_language_and_kind_filters(setup_db, tmp_path: Path):
-    from app.core.db import async_session_factory
-    from app.services.code_query_service import query_code
-
-    (tmp_path / "worker.ex").write_text(
-        "defmodule Worker do\n  def target(id), do: id\nend\n", encoding="utf-8"
-    )
-    async with async_session_factory() as db:
-        included = await query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=None,
-            query="target",
-            languages=("unsupported:.ex",),
-            enable_lsp=False,
-        )
-        excluded_language = await query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=None,
-            query="target",
-            languages=("python",),
-            enable_lsp=False,
-        )
-        excluded_kind = await query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=None,
-            query="target",
-            kinds=("function",),
-            enable_lsp=False,
-        )
-
-    assert included.results[0].language == "unsupported:.ex"
-    assert excluded_language.results == []
-    assert excluded_kind.results == []
-
-
-@pytest.mark.asyncio
-async def test_clean_graph_hit_avoids_lexical_scan_with_unrelated_dirty_source(
-    setup_db, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    import app.services.code_query_service as query_service
-    from app.core.db import async_session_factory
-
-    _init_git(tmp_path)
-    (tmp_path / "target.py").write_text(
-        "def exact_target():\n    return 1\n", encoding="utf-8"
-    )
-    (tmp_path / "other.py").write_text("value = 1\n", encoding="utf-8")
-    _git(tmp_path, "add", ".")
-    _git(tmp_path, "commit", "-m", "initial")
-    workspace_id = await _index(tmp_path)
-    (tmp_path / "other.py").write_text("value = 2\n", encoding="utf-8")
-    calls = 0
-
-    async def lexical(*_args, **_kwargs):  # noqa: ANN002, ANN003, ANN202
-        nonlocal calls
-        calls += 1
-        return [], __import__("collections").Counter({".py": 2})
-
-    monkeypatch.setattr(query_service, "_lexical_search", lexical)
-    query_service._query_cache.clear()
-    async with async_session_factory() as db:
-        await query_service.query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="exact_target",
-            freshness_policy="fast",
-            enable_lsp=False,
-        )
-        await query_service.query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="exact_target",
-            freshness_policy="balanced",
-            enable_lsp=False,
-        )
-
-    assert calls == 0
-
-
-@pytest.mark.asyncio
-async def test_changed_graph_metadata_marks_relationships_partial(
-    setup_db, tmp_path: Path
-):
-    from app.core.db import async_session_factory
-    from app.services.code_query_service import query_code
-
-    _init_git(tmp_path)
-    (tmp_path / "service.py").write_text(
-        "def target():\n    return 1\n", encoding="utf-8"
-    )
-    manifest = tmp_path / "pyproject.toml"
-    manifest.write_text('[project]\nname = "before"\n', encoding="utf-8")
-    _git(tmp_path, "add", ".")
-    _git(tmp_path, "commit", "-m", "initial")
-    workspace_id = await _index(tmp_path)
-    manifest.write_text('[project]\nname = "after"\n', encoding="utf-8")
-
-    async with async_session_factory() as db:
-        result = await query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="target",
-            freshness_policy="fast",
-            enable_lsp=False,
-        )
-
-    assert result.freshness == "partial"
-    assert result.pending_edges >= 1
-    assert any("graph metadata" in item for item in result.limitations)
-
-
-@pytest.mark.asyncio
-async def test_clean_exact_graph_hit_skips_full_source_scan(
-    setup_db, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    import app.services.code_query_service as query_service
-    from app.core.db import async_session_factory
-
-    (tmp_path / "service.py").write_text(
-        "def exact_graph_symbol():\n    return 1\n", encoding="utf-8"
-    )
-    workspace_id = await _index(tmp_path)
-
-    async def unexpected_scan(*_args, **_kwargs):  # noqa: ANN002, ANN003, ANN202
-        raise AssertionError("exact clean graph hit should not scan source contents")
-
-    monkeypatch.setattr(query_service, "_lexical_search", unexpected_scan)
-    async with async_session_factory() as db:
-        result = await query_service.query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=workspace_id,
-            query="exact_graph_symbol",
-            enable_lsp=False,
-        )
-
-    assert result.strategy == "graph"
-    assert result.results[0].symbol == "exact_graph_symbol"
-
-
-@pytest.mark.asyncio
-async def test_hybrid_search_filters_kind_before_limit(setup_db, tmp_path: Path):
-    from app.core.db import async_session_factory
-    from app.services import code_graph_service as service
-
-    classes = "\n".join(f"class Target{i}:\n    pass\n" for i in range(20))
-    (tmp_path / "symbols.py").write_text(
-        f"{classes}\ndef TargetFunction():\n    return 1\n", encoding="utf-8"
-    )
-    workspace_id = await _index(tmp_path)
-    async with async_session_factory() as db:
-        ranked = await service.search_nodes_ranked(
-            db,
-            workspace_id=workspace_id,
-            query="Target",
-            kind="function",
-            limit=1,
-        )
-
-    assert len(ranked) == 1
-    assert ranked[0].node.name == "TargetFunction"
-    assert "requested kind" in ranked[0].match_reasons
-
-    async with async_session_factory() as db:
-        natural = await service.search_nodes_ranked(
-            db,
-            workspace_id=workspace_id,
-            query="where does TargetFunction handle the request",
-            limit=3,
-        )
-    assert any(item.node.name == "TargetFunction" for item in natural)
-
-
-@pytest.mark.asyncio
-async def test_graph_path_filter_does_not_match_sibling_prefix(
-    setup_db, tmp_path: Path
-):
-    from app.core.db import async_session_factory
-    from app.services import code_graph_service as service
-
-    (tmp_path / "src" / "app").mkdir(parents=True)
-    (tmp_path / "src" / "application").mkdir(parents=True)
-    (tmp_path / "src" / "app" / "inside.py").write_text(
-        "def shared_target():\n    return 'inside'\n", encoding="utf-8"
-    )
-    (tmp_path / "src" / "application" / "outside.py").write_text(
-        "def shared_target():\n    return 'outside'\n", encoding="utf-8"
-    )
-    workspace_id = await _index(tmp_path)
-
-    async with async_session_factory() as db:
-        ranked = await service.search_nodes_ranked(
-            db,
-            workspace_id=workspace_id,
-            query="shared_target",
-            paths=("src/app",),
-            limit=20,
-        )
-
-    assert ranked
-    assert {item.node.file_path for item in ranked} == {"src/app/inside.py"}
-
-
-@pytest.mark.asyncio
-async def test_code_query_tool_is_always_visible():
-    from app.agent.tools.builtin.code_graph import code_query
-
-    assert code_query.deferred is False
-    assert code_query.read_only is True
-    assert code_query.definition["function"]["name"] == "code_query"
-    schema = code_query.definition["function"]["parameters"]
-    assert set(schema["properties"]) == {"query", "operation", "max_files"}
-    assert schema["required"] == ["query"]
-    assert set(schema["properties"]["operation"]["enum"]) == {
-        "locate",
-        "explain",
-        "impact",
-        "trace",
-        "change",
-    }
-    assert schema["properties"]["max_files"]["maximum"] == 6
-    assert code_query.max_calls_per_batch is None
-    assert code_query.deduplicate_in_batch is True
-
-
-@pytest.mark.asyncio
-async def test_large_change_parses_query_relevant_overlay_first(
-    setup_db, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    import app.services.code_query_service as query_service
-    from app.core.db import async_session_factory
-
-    dirty = frozenset(f"src/file_{index}.py" for index in range(250))
-    lexical_hit = query_service._LexicalHit(
-        file_path="src/file_7.py",
-        line=3,
-        column=5,
-        text="def reconnect_session():",
-        score=100,
-        reasons=("definition-like line",),
-    )
-    captured: list[str] = []
-
-    async def working(_root):  # noqa: ANN001, ANN202
-        return query_service._WorkingTreeState(
-            revision="large",
-            changed=dirty,
-            deleted=frozenset(),
-            source="watcher",
-        )
-
-    async def lexical(  # noqa: ANN001, ANN202
-        _root, _query, _paths, _limit, _policy
-    ):
-        return [lexical_hit], __import__("collections").Counter({".py": 250})
-
-    async def overlay(  # noqa: ANN001, ANN202
-        _root, paths, _query, _registry, _limit, _languages, _kinds, _policy
-    ):
-        captured.extend(paths)
-        return []
-
-    monkeypatch.setattr(query_service, "_working_tree", working)
-    monkeypatch.setattr(query_service, "_lexical_search", lexical)
-    monkeypatch.setattr(query_service, "_overlay_candidates", overlay)
-    async with async_session_factory() as db:
-        result = await query_service.query_code(
-            db,
-            root_path=str(tmp_path),
-            workspace_id=None,
-            query="reconnect_session",
-            enable_lsp=False,
-        )
-
-    assert captured == ["src/file_7.py"]
-    assert result.pending_edges == 249
-    assert any("Large working-tree change" in item for item in result.limitations)
-
-
-@pytest.mark.asyncio
-async def test_code_query_searches_authorized_sibling_repositories(
-    setup_db, tmp_path: Path
-):
-    from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
-    from app.agent.tools.builtin.code_graph import code_query
-
-    primary = tmp_path / "frontend"
-    sibling = tmp_path / "backend"
-    primary.mkdir()
-    sibling.mkdir()
-    (primary / "view.py").write_text("def render_view():\n    pass\n", encoding="utf-8")
-    (sibling / "session.py").write_text(
-        "def restore_remote_session():\n    return True\n", encoding="utf-8"
-    )
-    await _index(primary)
-    await _index(sibling)
-
-    token = set_sandbox(
-        SandboxConfig(workspace=str(primary), extra_workspace_paths=[str(sibling)])
-    )
-    try:
-        rendered = await code_query(query="restore_remote_session")
-    finally:
-        _sandbox_ctx.reset(token)
-
-    assert "strategy: project:" in rendered
-    assert "backend/session.py" in rendered
-    assert "restore_remote_session" in rendered
-
-
-@pytest.mark.asyncio
-async def test_multi_workspace_query_applies_one_global_output_budget(
-    setup_db, tmp_path: Path
-):
-    from app.core.db import async_session_factory
-    from app.services.code_query_service import query_code_across_workspaces
-
-    roots = [tmp_path / "frontend", tmp_path / "backend"]
-    for root in roots:
-        root.mkdir()
-        for index in range(4):
-            (root / f"target_{index}.py").write_text(
-                "def shared_target():\n"
-                + "    payload = '"
-                + ("x" * 900)
-                + "'\n"
-                + "    return payload\n",
-                encoding="utf-8",
+        source = (
+            await db.exec(
+                select(CodeNode).where(
+                    CodeNode.workspace_id == frontend_id,
+                    CodeNode.name == "frontend_entry",
+                )
             )
-
-    async with async_session_factory() as db:
-        result = await query_code_across_workspaces(
+        ).one()
+        target = (
+            await db.exec(
+                select(CodeNode).where(
+                    CodeNode.workspace_id == backend_id,
+                    CodeNode.name == "backend_handler",
+                )
+            )
+        ).one()
+        db.add(
+            CrossRepoEdge(
+                project_id=project.id,
+                src_workspace_id=frontend_id,
+                src_node_id=source.id,
+                src_file_path=source.file_path,
+                src_line=source.line_start,
+                raw_reference="backend.backend_handler",
+                dst_name_hint="backend_handler",
+                kind="calls",
+                status="resolved",
+                method="static_fqn",
+                confidence=1.0,
+                dst_workspace_id=backend_id,
+                dst_node_id=target.id,
+                dst_qualified_name=target.qualified_name,
+            )
+        )
+        await db.commit()
+        callees = await navigate_code_graph_across_workspaces(
             db,
             workspaces=[
-                (str(roots[0]), None, "frontend"),
-                (str(roots[1]), None, "backend"),
+                (str(frontend), frontend_id, "frontend"),
+                (str(backend), backend_id, "backend"),
             ],
-            query="shared_target",
-            budget_tokens=500,
-            limit=10,
-            enable_lsp=False,
+            symbol="frontend_entry",
+            operation="callees",
+        )
+        callers = await navigate_code_graph_across_workspaces(
+            db,
+            workspaces=[
+                (str(frontend), frontend_id, "frontend"),
+                (str(backend), backend_id, "backend"),
+            ],
+            symbol="backend_handler",
+            operation="callers",
         )
 
-    rendered_chars = sum(
-        len(item.snippet or "")
-        + len(item.file_path)
-        + len(item.symbol or "")
-        + sum(map(len, item.match_reasons + item.callers + item.callees + item.tests))
-        + 120
-        for item in result.results
-    )
-    assert rendered_chars <= 2_000
-    assert result.truncated is True
+    assert callees.strategy == "native-cross-repo-exact-symbol-graph"
+    assert callers.relations[0].source.scope.label == "frontend"
+    assert callers.relations[0].target.scope.label == "backend"
+    assert callers.relations[0].cross_repo is True
+
+
+def test_code_graph_tool_is_symbol_first_and_always_visible() -> None:
+    from app.agent.tools.builtin.code_graph import code_graph
+
+    assert code_graph.deferred is False
+    assert code_graph.read_only is True
+    schema = code_graph.definition["function"]["parameters"]
+    assert set(schema["properties"]) == {
+        "symbol",
+        "operation",
+        "path",
+        "repository",
+        "depth",
+        "limit",
+    }
+    assert schema["required"] == ["symbol"]
+    assert schema["properties"]["symbol"]["pattern"] == r"^\S+$"
+    symbol_description = schema["properties"]["symbol"]["description"]
+    assert "identifier present in source" in symbol_description
+    assert "Never pass, translate, or summarize" in symbol_description
+    assert "exact call-site lines" in code_graph.description
+    assert code_graph.deduplicate_in_batch is True
+
+
+def test_code_graph_tool_owns_navigation_contract() -> None:
+    from app.agent.tools.builtin.code_graph import code_graph
+
+    expected_operations = {
+        "definition",
+        "callers",
+        "callees",
+        "references",
+        "impact",
+        "neighborhood",
+    }
+    schema = code_graph.definition["function"]["parameters"]
+    assert set(schema["properties"]["operation"]["enum"]) == expected_operations
+
+    assert "known code symbol" in code_graph.description
+    assert "request" in schema["properties"]["symbol"]["description"]
+
+
+@pytest.mark.asyncio
+async def test_code_graph_tool_schema_rejects_natural_language_before_execution() -> (
+    None
+):
+    from app.agent.errors import ToolArgumentError
+    from app.agent.tools.builtin.code_graph import code_graph
+
+    with pytest.raises(ToolArgumentError, match="string_pattern_mismatch"):
+        await code_graph.arun(
+            symbol="where is calculate_total called",
+            operation="callers",
+        )
