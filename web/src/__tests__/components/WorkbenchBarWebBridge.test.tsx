@@ -61,6 +61,7 @@ describe('WorkbenchBar browser access control', () => {
         onOpenMobileSidebar={vi.fn()}
         isMobile={false}
         isMacOverlay={false}
+        mode="work"
         webBridgeEnabled={enabled}
         onWebBridgeEnabledChange={onChange}
         webBridgePopoverOpen={popoverOpen}

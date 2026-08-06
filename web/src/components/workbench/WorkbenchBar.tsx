@@ -43,6 +43,8 @@ interface WorkbenchBarProps {
   onOpenMobileSidebar: () => void
   isMobile: boolean
   isMacOverlay: boolean
+  /** Current mode — 'work' or 'coding'. */
+  mode: 'work' | 'coding'
   /** Absolute workspace root for the "Open in" menu. */
   workspace?: string | null
   /** Opens the workspace picker when no workspace is active. */
@@ -105,7 +107,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
         ? SplitViewIcon
         : MonitorViewIcon
   const handleWorkbenchToggle = () => {
-    if (!workbenchOpen && props.workspace && activeWorkbenchTool === null) {
+    if (!workbenchOpen && props.mode === 'coding' && props.workspace && activeWorkbenchTool === null) {
       openWorkbenchTool('overview')
       return
     }
