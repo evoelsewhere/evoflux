@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 const DEFAULT_BOTTOM_THRESHOLD = 48
 const USER_SCROLL_DETACH_DELTA = 4
+const FOLLOW_TIME_CONSTANT_MS = 52
 
 interface UsePinnedTranscriptOptions {
   /** Reset the viewport to its initial pinned state when the transcript clears. */
@@ -20,6 +21,25 @@ interface UsePinnedTranscriptOptions {
 /** Content growth must never detach a viewport that was already following. */
 export function pinnedAfterViewportUpdate(wasPinned: boolean, isAtBottom: boolean): boolean {
   return wasPinned || isAtBottom
+}
+
+/** One frame of the pinned transcript's exponential bottom-follow. */
+export function nextPinnedScrollTop(
+  current: number,
+  target: number,
+  elapsedMs: number,
+): number {
+  if (target <= current) return target
+  const elapsed = Math.min(48, Math.max(8, elapsedMs))
+  const progress = 1 - Math.exp(-elapsed / FOLLOW_TIME_CONSTANT_MS)
+  const next = current + ((target - current) * progress)
+  return target - next < 0.75 ? target : next
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
 /**
@@ -62,23 +82,49 @@ export function usePinnedTranscript({
     return element.scrollHeight - element.scrollTop - element.clientHeight <= bottomThreshold
   }, [bottomThreshold])
 
+  const cancelFollow = useCallback(() => {
+    if (followFrameRef.current === null) return
+    cancelAnimationFrame(followFrameRef.current)
+    followFrameRef.current = null
+  }, [])
+
   const detach = useCallback(() => {
     pinnedRef.current = false
+    cancelFollow()
     setScrollButtonVisible(true)
-  }, [setScrollButtonVisible])
+  }, [cancelFollow, setScrollButtonVisible])
 
   const followRenderedHeight = useCallback(() => {
     if (followFrameRef.current !== null) return
-    followFrameRef.current = requestAnimationFrame(() => {
+    let previousTimestamp: number | null = null
+
+    const tick = (timestamp: number) => {
       followFrameRef.current = null
       const element = scrollRef.current
-      if (element && pinnedRef.current) element.scrollTop = element.scrollHeight
-    })
+      if (!element || !pinnedRef.current) return
+
+      const target = Math.max(0, element.scrollHeight - element.clientHeight)
+      if (prefersReducedMotion()) {
+        element.scrollTop = target
+        return
+      }
+
+      const elapsed = previousTimestamp === null ? 16 : timestamp - previousTimestamp
+      previousTimestamp = timestamp
+      const next = nextPinnedScrollTop(element.scrollTop, target, elapsed)
+      element.scrollTop = next
+      if (Math.abs(target - next) > 0.5) {
+        followFrameRef.current = requestAnimationFrame(tick)
+      }
+    }
+
+    followFrameRef.current = requestAnimationFrame(tick)
   }, [])
 
   const scrollToBottom = useCallback((smooth = false) => {
     const element = scrollRef.current
     if (!element) return
+    cancelFollow()
     pinnedRef.current = true
     setScrollButtonVisible(false)
     if (smooth) {
@@ -86,7 +132,7 @@ export function usePinnedTranscript({
       return
     }
     element.scrollTop = element.scrollHeight
-  }, [setScrollButtonVisible])
+  }, [cancelFollow, setScrollButtonVisible])
 
   const restorePrependOffset = useCallback((previousScrollHeight: number) => {
     const element = scrollRef.current
@@ -96,6 +142,7 @@ export function usePinnedTranscript({
 
   const reattach = useCallback(() => {
     pinnedRef.current = true
+    cancelFollow()
     if (reattachFrameRef.current !== null) return
     reattachFrameRef.current = requestAnimationFrame(() => {
       reattachFrameRef.current = null
@@ -103,7 +150,7 @@ export function usePinnedTranscript({
       const element = scrollRef.current
       if (element) element.scrollTop = element.scrollHeight
     })
-  }, [setScrollButtonVisible])
+  }, [cancelFollow, setScrollButtonVisible])
 
   useEffect(() => {
     const element = scrollRef.current
@@ -193,15 +240,12 @@ export function usePinnedTranscript({
   }, [isEmpty, setScrollButtonVisible])
 
   useEffect(() => () => {
-    if (followFrameRef.current !== null) {
-      cancelAnimationFrame(followFrameRef.current)
-      followFrameRef.current = null
-    }
+    cancelFollow()
     if (reattachFrameRef.current !== null) {
       cancelAnimationFrame(reattachFrameRef.current)
       reattachFrameRef.current = null
     }
-  }, [])
+  }, [cancelFollow])
 
   return {
     contentRef,

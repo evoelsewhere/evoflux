@@ -1398,6 +1398,16 @@ a svg.lucide,
   contain: layout style;
 }
 
+/* Let the browser skip paint/layout work for completed off-screen turns. The
+ * remembered intrinsic size keeps the scrollbar stable after a turn has been
+ * measured; active streaming turns deliberately opt out. */
+@supports (content-visibility: auto) {
+  .oa-transcript-turn {
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto 18rem;
+  }
+}
+
 /* Codex-style conversation runway. While a turn is live, its minimum height
  * keeps the latest prompt in the upper quarter of the viewport and reserves
  * the remaining space for the response to grow before bottom-follow begins. */

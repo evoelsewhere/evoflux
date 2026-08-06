@@ -353,13 +353,14 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                        {groupedBlocks.map((renderItem, j) => {
                          if ('kind' in renderItem && (renderItem as ToolBlockGroup).kind === 'group') {
                            return (
-                             <ToolCallGroupCard
-                               key={(renderItem as ToolBlockGroup).id}
-                               group={renderItem as ToolBlockGroup}
-                               isStreaming={isLatestStreamingItem(turnIsStreaming, j, groupedBlocks.length)}
-                               sessionId={sessionId}
-                               latestMCPAppBlockIds={latestMCPAppBlockIds}
-                             />
+                             <BlockEnter key={(renderItem as ToolBlockGroup).id}>
+                               <ToolCallGroupCard
+                                 group={renderItem as ToolBlockGroup}
+                                 isStreaming={isLatestStreamingItem(turnIsStreaming, j, groupedBlocks.length)}
+                                 sessionId={sessionId}
+                                 latestMCPAppBlockIds={latestMCPAppBlockIds}
+                               />
+                             </BlockEnter>
                            )
                          }
                          const block = renderItem as ContentBlock

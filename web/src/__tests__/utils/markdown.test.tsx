@@ -1,7 +1,33 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { MarkdownBlock } from '@/utils/markdown'
+import { MarkdownBlock, splitStreamingMarkdown } from '@/utils/markdown'
+
+describe('splitStreamingMarkdown', () => {
+  it('freezes completed prose blocks and leaves the growing tail isolated', () => {
+    expect(splitStreamingMarkdown('First paragraph.\n\nSecond paragraph.')).toEqual([
+      'First paragraph.\n\n',
+      'Second paragraph.',
+    ])
+  })
+
+  it('does not split blank lines inside a fenced code block', () => {
+    expect(splitStreamingMarkdown(
+      'Intro.\n\n```ts\nconst first = 1\n\nconst second = 2\n```\n\nOutro.',
+    )).toEqual([
+      'Intro.\n\n',
+      '```ts\nconst first = 1\n\nconst second = 2\n```\n\n',
+      'Outro.',
+    ])
+  })
+
+  it('keeps loose list items in the same markdown segment', () => {
+    expect(splitStreamingMarkdown('1. First\n\n2. Second\n\nAfter the list.')).toEqual([
+      '1. First\n\n2. Second\n\n',
+      'After the list.',
+    ])
+  })
+})
 
 describe('MarkdownBlock code fences', () => {
   it('renders a full-height native code block instead of a Monaco editor', () => {

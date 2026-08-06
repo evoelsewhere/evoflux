@@ -10,13 +10,14 @@ function block(
   id: string,
   type: ContentBlock['type'],
   toolName?: string,
+  toolDone = true,
 ): ContentBlock {
   return {
     id,
     type,
     content: type === 'thinking' ? `reasoning ${id}` : '',
     toolName,
-    toolDone: type === 'tool' ? true : undefined,
+    toolDone: type === 'tool' ? toolDone : undefined,
   }
 }
 
@@ -78,17 +79,29 @@ describe('groupConsecutiveToolCalls', () => {
     expect((result[0] as ToolBlockGroup).blocks).toHaveLength(3)
   })
 
-  it('keeps unfinished tools visible while streaming', () => {
-    const pending = block('read-2', 'tool', 'read')
-    pending.toolDone = false
+  it('creates the final group container as soon as the first tool starts', () => {
+    const pending = block('read-1', 'tool', 'read', false)
+    const pendingResult = groupConsecutiveToolCalls([pending])
+    const completed = { ...pending, toolDone: true }
+    const completedResult = groupConsecutiveToolCalls([completed])
+
+    expect(pendingResult).toHaveLength(1)
+    expect((pendingResult[0] as ToolBlockGroup).kind).toBe('group')
+    expect((pendingResult[0] as ToolBlockGroup).id).toBe('tool-group-read-1')
+    expect((pendingResult[0] as ToolBlockGroup).blocks).toEqual([pending])
+    expect((completedResult[0] as ToolBlockGroup).id).toBe('tool-group-read-1')
+  })
+
+  it('keeps consecutive pending and completed tools in one activity run', () => {
+    const pending = block('read-2', 'tool', 'read', false)
     const result = groupConsecutiveToolCalls([
       block('read-1', 'tool', 'read'),
       pending,
       block('read-3', 'tool', 'read'),
     ])
 
-    expect(result).toHaveLength(3)
-    expect(result[1]).toBe(pending)
-    expect(result.every((item) => !('kind' in item))).toBe(true)
+    expect(result).toHaveLength(1)
+    expect((result[0] as ToolBlockGroup).blocks).toHaveLength(3)
+    expect((result[0] as ToolBlockGroup).blocks[1]).toBe(pending)
   })
 })
