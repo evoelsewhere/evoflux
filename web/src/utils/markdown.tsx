@@ -6,7 +6,7 @@
  * across all views.
  */
 
-import { memo, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -491,6 +491,27 @@ const MarkdownSegment = memo(function MarkdownSegment({
   )
 })
 
+function useNearViewport(
+  ref: React.RefObject<HTMLDivElement | null>,
+  enabled: boolean,
+): boolean {
+  const [nearViewport, setNearViewport] = useState(true)
+
+  useEffect(() => {
+    const element = ref.current
+    if (!enabled || !element || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver(
+      ([entry]) => setNearViewport(entry?.isIntersecting ?? true),
+      // Start catching up before the user actually reaches the live tail.
+      { rootMargin: '800px 0px' },
+    )
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [enabled, ref])
+
+  return !enabled || nearViewport
+}
+
 // ── MarkdownBlock ─────────────────────────────────────────────────────────────
 
 /** Shared prose markdown renderer — handles nested fences with math and syntax highlighting.
@@ -519,7 +540,13 @@ export const MarkdownBlock = memo(function MarkdownBlock({
   allowHtml?: boolean
   transformImageSrc?: (src: string) => string
 }) {
-  const displayedContent = useStreamingReveal(content, Boolean(isStreaming))
+  const containerRef = useRef<HTMLDivElement>(null)
+  const isNearViewport = useNearViewport(containerRef, Boolean(isStreaming))
+  const displayedContent = useStreamingReveal(
+    content,
+    Boolean(isStreaming),
+    isNearViewport,
+  )
   // Me: the ``components`` map MUST be referentially stable across renders.
   // If we rebuild it inline every render, ReactMarkdown treats each call
   // as a new custom-component type and unmounts+remounts every ``<img>`` /
@@ -598,6 +625,7 @@ export const MarkdownBlock = memo(function MarkdownBlock({
 
   return (
     <div
+      ref={containerRef}
       data-i18n-ignore
       className={cn('oa-prose text-sm', isStreaming && 'oa-streaming-prose')}
       aria-busy={isStreaming || undefined}
