@@ -62,6 +62,7 @@ import { resolveTeamSession } from "@/api/client";
 import { prependSession } from "@/stores/cache-invalidation-bridge";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/stores/useToastStore";
+import { useTeamStore } from "@/stores/useTeamStore";
 import type { SessionFolder, SessionResponse } from "@/api/types";
 import { cn } from "@/lib/utils";
 
@@ -298,13 +299,19 @@ export function Sidebar({
         : null;
     deleteSession.mutate(target.id);
     if (target.id === currentSessionId) {
+      // Reset the team store so the deleted session's UI state is cleared
+      // before navigating away.  Without this, the store keeps the stale
+      // session id and the chat view continues to render the deleted session.
+      useTeamStore.getState().beginResolvedSession(null, { mode });
       if (fallbackSession) {
+        useTeamStore.getState().beginResolvedSession(fallbackSession.id, { mode });
         navigate({
           to: "/$sessionId",
           params: { sessionId: fallbackSession.id },
           replace: true,
         });
       } else {
+        // Navigate to "/" — TeamLayoutBase will auto-resolve a new empty session.
         navigate({ to: "/", replace: true });
       }
     }
