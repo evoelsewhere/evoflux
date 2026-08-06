@@ -212,22 +212,24 @@ def _scrubbed_env(*, inherit: bool = False) -> dict[str, str]:
     The secure default is an allowlist of process-discovery and locale values,
     which keeps provider API keys, OAuth tokens, SSH agent sockets and other
     host credentials out of model-controlled commands. Users may explicitly
-    opt into inheritance in Sandbox settings. EvoFlux internal values and
-    daemon-Python runtime pointers are never inherited.
+    opt into full host inheritance in Sandbox settings. EvoFlux internal
+    values are never inherited. Python/uv activation variables are removed
+    only in the secure default; an explicit inheritance opt-in preserves the
+    active Coding environment as advertised.
     """
     # Windows env names are case-insensitive; match allow/block lists that way
     # so ``SYSTEMROOT`` (common) is not dropped while ``SystemRoot`` is listed.
     if sys.platform == "win32":
-        blocked_upper = set(_PYTHON_ENV_LEAK_KEYS_UPPER)
-        blocked_upper.update(
+        internal_upper = {
             key.upper() for key in os.environ if key.upper().startswith("EVOFLUX_")
-        )
+        }
         if inherit:
             return {
                 key: value
                 for key, value in os.environ.items()
-                if key.upper() not in blocked_upper
+                if key.upper() not in internal_upper
             }
+        blocked_upper = {*_PYTHON_ENV_LEAK_KEYS_UPPER, *internal_upper}
         return {
             key: value
             for key, value in os.environ.items()
@@ -238,12 +240,10 @@ def _scrubbed_env(*, inherit: bool = False) -> dict[str, str]:
             )
         }
 
-    blocked = {
-        *(_PYTHON_ENV_LEAK_KEYS),
-        *(key for key in os.environ if key.startswith("EVOFLUX_")),
-    }
+    internal = {key for key in os.environ if key.startswith("EVOFLUX_")}
     if inherit:
-        return {key: value for key, value in os.environ.items() if key not in blocked}
+        return {key: value for key, value in os.environ.items() if key not in internal}
+    blocked = {*_PYTHON_ENV_LEAK_KEYS, *internal}
     return {
         key: value
         for key, value in os.environ.items()

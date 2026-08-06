@@ -347,7 +347,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'chat',
     title: 'Permission modes and plan review',
     summary:
-      'Control how freely tools run with ask, accept-edits, plan, auto, or bypass — then approve tools Once/Always/Reject and review plans with Accept/Revise/Reject. Sandbox deny globs still apply underneath every mode.',
+      'Control how freely tools run with ask, accept-edits, plan, auto, or bypass — then approve tools Once/Always/Reject and review plans with Accept/Revise/Reject. Sandbox deny globs apply underneath every mode when native isolation is Required.',
     keywords: [
       'permission',
       'ask',
@@ -389,7 +389,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Fine-grained control lets you stay hands-on for risky work (ask), move faster on edits (accept-edits), force an explicit plan gate (plan), run unattended in a trusted tree (auto), or skip prompts entirely (bypass). Sandbox deny globs still apply underneath — permissions decide when to ask, sandbox decides what is never allowed.',
+        text: 'Fine-grained control lets you stay hands-on for risky work (ask), move faster on edits (accept-edits), force an explicit plan gate (plan), run unattended in a trusted tree (auto), or skip prompts entirely (bypass). Permissions decide when to ask; Required isolation enforces deny globs, while Best effort intentionally disables sandbox enforcement for compatibility.',
       },
       {
         type: 'p',
@@ -403,7 +403,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           '3 Plan — plan then approve before execution.',
           '4 Auto — automatically approve operations.',
           '5 Bypass — skip permission checks entirely.',
-          'Sandbox — still blocks deny globs even under bypass.'
+          'Required sandbox — still blocks deny globs even under bypass.'
 ],
       },
       {
@@ -1917,7 +1917,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'settings',
     title: 'Sandbox and outbound protection',
     summary:
-      'Configure deny globs, isolation, worktree location, network policy, and PII redaction so agents stay inside safe filesystem and outbound bounds. Permissions decide when to ask; sandbox decides what is never allowed.',
+      'Configure deny globs, isolation, worktree location, network policy, and PII redaction. Required enforces filesystem bounds; Best effort disables sandbox enforcement for trusted Coding compatibility.',
     keywords: [
       'sandbox',
       'deny',
@@ -1941,7 +1941,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Deny patterns use ** and * globs; help popovers in Settings explain syntax.',
       'Worktree location (repository vs user_data) lives on the Sandbox page.',
       'Outbound redact/block runs before content reaches the provider when enabled.',
-      'Sandbox still applies under Goal mode — goals do not widen scope.',
+      'Required sandbox still applies under Goal mode; Best effort remains an explicit enforcement opt-out.',
       'Symlinks into blocked roots are rejected; shell commands are tokenized for denied-path checks.',
       'Combine accept-edits or auto with a tight denylist for day-to-day coding speed.',
       'Deny credential caches and unrelated disks even if you trust the model.',
@@ -1951,11 +1951,11 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'The denylist filesystem sandbox protects EvoFlux state and cache directories, constrains agent file/process access, and can redact or block outbound sensitive content before it reaches a model provider. It is the hard floor under every permission mode.',
+        text: 'With native isolation set to Required, the denylist filesystem sandbox protects EvoFlux state and cache directories and constrains agent file/process access under every permission mode. Best effort intentionally skips those filesystem controls for trusted Coding compatibility.',
       },
       {
         type: 'p',
-        text: 'Permission modes decide when to ask; sandbox decides what is never allowed. That split keeps bypass usable for trusted trees without exposing credential caches and unrelated disks. Goal mode inherits the same floor.',
+        text: 'Permission modes decide when to ask. Required isolation decides what is never allowed; Best effort runs without that floor. Goal mode keeps the selected isolation policy unchanged.',
       },
       {
         type: 'p',

@@ -64,7 +64,7 @@ _posix_only = pytest.mark.skipif(_IS_WINDOWS, reason="POSIX-only command")
 
 @pytest.fixture
 def sandbox(tmp_path):
-    sb = SandboxConfig(workspace=str(tmp_path))
+    sb = SandboxConfig(workspace=str(tmp_path), native_process_isolation="required")
     token = set_sandbox(sb)
     yield sb
     from app.agent.sandbox import _sandbox_ctx
@@ -77,7 +77,10 @@ def sandbox_workspace(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     config = SandboxConfig(
-        workspace=str(workspace), session_id="session-1", max_execution_seconds=120
+        workspace=str(workspace),
+        session_id="session-1",
+        max_execution_seconds=120,
+        native_process_isolation="required",
     )
     token = set_sandbox(config)
     yield workspace
@@ -184,11 +187,17 @@ def test_scrubbed_env_keeps_systemroot_case_variants(monkeypatch):
 
 def test_scrubbed_env_can_inherit_host_values_but_never_internal_token(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "user-opted-in")
+    monkeypatch.setenv("PYTHONPATH", "/project/src")
+    monkeypatch.setenv("VIRTUAL_ENV", "/project/.venv")
+    monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", "/project/.venv")
     monkeypatch.setenv("EVOFLUX_DESKTOP_TOKEN", "internal")
 
     env = _scrubbed_env(inherit=True)
 
     assert env["OPENAI_API_KEY"] == "user-opted-in"
+    assert env["PYTHONPATH"] == "/project/src"
+    assert env["VIRTUAL_ENV"] == "/project/.venv"
+    assert env["UV_PROJECT_ENVIRONMENT"] == "/project/.venv"
     assert "EVOFLUX_DESKTOP_TOKEN" not in env
 
 
@@ -725,6 +734,7 @@ class TestSandboxCommandScan:
             memory=str(tmp_path / "mem"),
             denied_roots=[forbidden],
             denied_patterns=[],
+            native_process_isolation="required",
         )
         token = set_sandbox(sandbox)
         try:
@@ -743,6 +753,7 @@ class TestSandboxCommandScan:
             memory=str(tmp_path / "mem"),
             denied_roots=[],
             denied_patterns=["**/.env"],
+            native_process_isolation="required",
         )
         token = set_sandbox(sandbox)
         try:
@@ -783,6 +794,7 @@ class TestSandboxCommandScan:
             workspace=str(tmp_path / "ws"),
             denied_roots=[Path(settings.EVOFLUX_STATE_DIR).resolve()],
             denied_patterns=[],
+            native_process_isolation="required",
         )
         token = set_sandbox(sandbox)
         try:
@@ -804,6 +816,7 @@ class TestSandboxCommandScan:
             workspace=str(tmp_path / "ws"),
             denied_roots=[Path(settings.EVOFLUX_STATE_DIR).resolve()],
             denied_patterns=[],
+            native_process_isolation="required",
         )
         token = set_sandbox(sandbox)
         try:
@@ -822,6 +835,7 @@ class TestSandboxCommandScan:
             memory=str(tmp_path / "mem"),
             denied_roots=[tmp_path / "secrets"],
             denied_patterns=[],
+            native_process_isolation="required",
         )
         (tmp_path / "secrets").mkdir()
         token = set_sandbox(sandbox)

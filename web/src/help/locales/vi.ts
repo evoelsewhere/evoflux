@@ -337,7 +337,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'chat',
     title: 'Permission mode và plan review',
     summary:
-      'Điều khiển độ tự do của tool bằng ask, accept-edits, plan, auto hoặc bypass — rồi duyệt tool Once/Always/Reject và review plan bằng Accept/Revise/Reject. Deny globs của sandbox vẫn áp dưới mọi mode.',
+      'Điều khiển độ tự do của tool bằng ask, accept-edits, plan, auto hoặc bypass — rồi duyệt tool Once/Always/Reject và review plan bằng Accept/Revise/Reject. Deny globs áp dưới mọi mode khi isolation là Required.',
     keywords: [
       'permission',
       'ask',
@@ -376,7 +376,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Kiểm soát mịn giúp bạn giữ tay trên việc rủi ro (ask), nhanh hơn với edit (accept-edits), buộc cổng plan rõ (plan), chạy không người canh trong cây tin cậy (auto), hoặc bỏ prompt hẳn (bypass). Deny globs sandbox vẫn nằm dưới — permission quyết định khi nào hỏi, sandbox quyết định cái gì không bao giờ được phép.',
+        text: 'Kiểm soát mịn giúp bạn giữ tay trên việc rủi ro (ask), nhanh hơn với edit (accept-edits), buộc cổng plan rõ (plan), chạy không người canh trong cây tin cậy (auto), hoặc bỏ prompt hẳn (bypass). Permission quyết định khi nào hỏi; Required enforce deny globs, còn Best effort chủ đích tắt sandbox để tương thích Coding.',
       },
       {
         type: 'p',
@@ -1864,7 +1864,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'settings',
     title: 'Sandbox và outbound protection',
     summary:
-      'Cấu hình deny globs, isolation, vị trí worktree, network policy và PII redaction để agent nằm trong biên filesystem và outbound an toàn. Permission quyết định khi nào hỏi; sandbox quyết định cái gì không bao giờ được phép.',
+      'Cấu hình deny globs, isolation, vị trí worktree, network policy và PII redaction. Required enforce biên filesystem; Best effort tắt enforcement cho workspace Coding tin cậy.',
     keywords: [
       'sandbox',
       'deny',
@@ -1895,11 +1895,11 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Denylist filesystem sandbox bảo vệ thư mục state và cache của EvoFlux, giới hạn truy cập file/process của agent, và có thể redact hoặc chặn nội dung nhạy cảm outbound trước khi tới model provider. Đó là sàn cứng dưới mọi permission mode.',
+        text: 'Khi isolation là Required, denylist filesystem sandbox bảo vệ thư mục state và cache của EvoFlux, đồng thời giới hạn truy cập file/process dưới mọi permission mode. Best effort chủ đích bỏ các giới hạn filesystem này để tương thích Coding.',
       },
       {
         type: 'p',
-        text: 'Permission mode quyết định khi nào hỏi; sandbox quyết định cái gì không bao giờ được phép. Tách đó giữ bypass dùng được trên cây tin cậy mà không lộ credential cache và đĩa không liên quan. Goal mode kế thừa cùng sàn.',
+        text: 'Permission mode quyết định khi nào hỏi. Required quyết định cái gì không bao giờ được phép; Best effort chạy không có sàn sandbox đó. Goal giữ nguyên isolation policy đang chọn.',
       },
       {
         type: 'p',

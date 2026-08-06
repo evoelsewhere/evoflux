@@ -21,6 +21,7 @@ def _make(tmp_path: Path, patterns: list[str]) -> SandboxConfig:
         memory=str(tmp_path / "mem"),
         denied_roots=[],
         denied_patterns=patterns,
+        native_process_isolation="required",
     )
 
 

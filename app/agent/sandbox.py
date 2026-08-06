@@ -4,6 +4,10 @@ Agent filesystem operations are confined to the active workspace, explicitly
 granted project roots, read-only roots, and session artifact locations.
 Sensitive deny patterns are applied even inside allowed roots.
 
+Those boundaries are enforced when native process isolation is ``required``.
+``best_effort`` is the explicit compatibility mode: it still supplies workspace
+context and limits/timeouts, but skips filesystem/path enforcement.
+
 - ``EVOFLUX_DATA_DIR``    — EvoFlux's SQLite DB and other internal data.
 - ``EVOFLUX_STATE_DIR``   — logs, telemetry, OTEL rollups
 - ``EVOFLUX_CACHE_DIR``   — regeneratable cache including OAuth tokens
@@ -49,7 +53,7 @@ from loguru import logger
 from app.core.config import settings
 
 # ── Module-level defaults (no env-var overrides) ──────────────────────────
-DEFAULT_MAX_EXECUTION_SECONDS = 120
+DEFAULT_MAX_EXECUTION_SECONDS = 600
 DEFAULT_MAX_OUTPUT_BYTES = 131072
 DEFAULT_ALLOW_NETWORK = False
 

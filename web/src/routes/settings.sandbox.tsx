@@ -75,8 +75,8 @@ export function SandboxSettingsPage() {
     outboundDataPolicy: 'redact',
     sourceOutboundPiiPolicy: 'standard',
     outboundPiiPolicy: 'standard',
-    sourceMaxExecutionSeconds: 120,
-    maxExecutionSeconds: 120,
+    sourceMaxExecutionSeconds: 600,
+    maxExecutionSeconds: 600,
     sourceMaxOutputBytes: 131072,
     maxOutputBytes: 131072,
   })
@@ -170,7 +170,7 @@ export function SandboxSettingsPage() {
     const cleaned = patterns.map((p) => p.trim()).filter(Boolean)
     const maxExecutionSeconds = Math.min(
       3600,
-      Math.max(5, Math.round(draft.maxExecutionSeconds || 120)),
+      Math.max(5, Math.round(draft.maxExecutionSeconds || 600)),
     )
     const maxOutputBytes = Math.min(
       1048576,
@@ -368,8 +368,8 @@ export function SandboxSettingsPage() {
             label="Native process isolation"
             description={
               data.native_backend
-                ? `Detected backend: ${data.native_backend}. Required mode fails closed if it becomes unavailable.`
-                : 'No native backend detected. Required mode blocks shell execution instead of falling back.'
+                ? `Detected backend: ${data.native_backend}. Required enforces it; Best effort disables sandbox enforcement for Coding compatibility.`
+                : 'No native backend detected. Required blocks shell execution; Best effort runs commands without sandbox enforcement.'
             }
             control={
               <SegmentedControl
@@ -473,11 +473,15 @@ export function SandboxSettingsPage() {
               </div>
             }
           />
-          {(draft.allowNetwork || draft.inheritEnvironment || draft.loadShellProfile) && (
+          {(draft.nativeIsolation === 'best_effort'
+            || draft.allowNetwork
+            || draft.inheritEnvironment
+            || draft.loadShellProfile) && (
             <div className="px-4 py-4 sm:px-5">
               <SettingsCallout tone="warning" icon={AlertTriangle}>
-                This configuration exposes additional host capabilities to agent-run
-                commands. Enable only what the active project requires.
+                {draft.nativeIsolation === 'best_effort'
+                  ? 'Best effort runs agent commands without filesystem or native process sandbox enforcement. Use it only for trusted Coding workspaces.'
+                  : 'This configuration exposes additional host capabilities to agent-run commands. Enable only what the active project requires.'}
               </SettingsCallout>
             </div>
           )}
