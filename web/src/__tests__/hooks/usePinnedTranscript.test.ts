@@ -2,7 +2,11 @@ import { act, renderHook } from '@testing-library/react'
 import { StrictMode, createElement, type PropsWithChildren } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { pinnedAfterViewportUpdate, usePinnedTranscript } from '@/hooks/usePinnedTranscript'
+import {
+  nextPinnedScrollTop,
+  pinnedAfterViewportUpdate,
+  usePinnedTranscript,
+} from '@/hooks/usePinnedTranscript'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -19,6 +23,20 @@ describe('pinnedAfterViewportUpdate', () => {
 
   it('keeps an explicitly detached reader detached above the bottom', () => {
     expect(pinnedAfterViewportUpdate(false, false)).toBe(false)
+  })
+})
+
+describe('nextPinnedScrollTop', () => {
+  it('eases toward new streamed height without jumping a full line', () => {
+    const next = nextPinnedScrollTop(500, 524, 16)
+
+    expect(next).toBeGreaterThan(500)
+    expect(next).toBeLessThan(524)
+  })
+
+  it('settles exactly and handles content shrinking', () => {
+    expect(nextPinnedScrollTop(523.6, 524, 16)).toBe(524)
+    expect(nextPinnedScrollTop(540, 524, 16)).toBe(524)
   })
 })
 
@@ -49,7 +67,9 @@ describe('usePinnedTranscript follow boundaries', () => {
       while (frames.length > 0) frames.shift()?.(16)
     })
 
-    expect(scroller.scrollTop).toBe(1_000)
+    // A real scrolling element clamps `scrollHeight` assignments to its
+    // maximum scrollTop (scrollHeight - clientHeight).
+    expect(scroller.scrollTop).toBe(600)
     expect(result.current.showScrollButton).toBe(false)
   })
 

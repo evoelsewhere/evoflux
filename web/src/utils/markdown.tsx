@@ -369,6 +369,128 @@ function MarkdownImage({
   )
 }
 
+// ── Incremental streaming markdown ──────────────────────────────────────────
+
+const LIST_MARKER = /^\s{0,3}(?:[-+*]|\d+[.)])\s+/
+const INDENTED_CONTINUATION = /^\s{2,}\S/
+
+/**
+ * Split a growing Markdown document only at completed block boundaries.
+ *
+ * Each returned string keeps its trailing blank-line separator. React can
+ * therefore retain already-parsed segments while only the live tail changes.
+ * Fenced code/math and loose lists stay together so their temporary streaming
+ * representation remains structurally correct.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function splitStreamingMarkdown(content: string): string[] {
+  if (!content) return [content]
+
+  const chunks: string[] = []
+  let segmentStart = 0
+  let cursor = 0
+  let pendingBoundary: number | null = null
+  let fence: { marker: '`' | '~'; length: number } | null = null
+  let inDisplayMath = false
+  let segmentHasList = false
+  let lastNonBlankLine = ''
+  const lines = content.match(/[^\n]*(?:\n|$)/g) ?? []
+
+  for (const rawLine of lines) {
+    if (!rawLine) continue
+    cursor += rawLine.length
+    const line = rawLine.endsWith('\n') ? rawLine.slice(0, -1) : rawLine
+    const trimmed = line.trim()
+
+    if (!trimmed) {
+      if (!fence && !inDisplayMath) pendingBoundary = cursor
+      continue
+    }
+
+    if (pendingBoundary !== null && !fence && !inDisplayMath) {
+      const continuesLooseList = segmentHasList && (
+        LIST_MARKER.test(line) || INDENTED_CONTINUATION.test(line)
+      )
+      const continuesBlockquote = /^\s{0,3}>/.test(lastNonBlankLine)
+        && /^\s{0,3}>/.test(line)
+      if (!continuesLooseList && !continuesBlockquote && pendingBoundary > segmentStart) {
+        chunks.push(content.slice(segmentStart, pendingBoundary))
+        segmentStart = pendingBoundary
+        segmentHasList = false
+      }
+      pendingBoundary = null
+    }
+
+    const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/)
+    if (fenceMatch) {
+      const run = fenceMatch[1]
+      const marker = run[0] as '`' | '~'
+      if (!fence) {
+        fence = { marker, length: run.length }
+      } else if (
+        fence.marker === marker
+        && run.length >= fence.length
+        && fenceMatch[2].trim() === ''
+      ) {
+        fence = null
+      }
+    } else if (!fence && trimmed === '$$') {
+      inDisplayMath = !inDisplayMath
+    }
+
+    if (!fence && !inDisplayMath && LIST_MARKER.test(line)) segmentHasList = true
+    lastNonBlankLine = line
+  }
+
+  if (segmentStart < content.length || chunks.length === 0) {
+    chunks.push(content.slice(segmentStart))
+  }
+  return chunks
+}
+
+type MarkdownComponents = NonNullable<React.ComponentProps<typeof ReactMarkdown>['components']>
+
+function markdownSegmentsWithOffsets(chunks: string[]): Array<{ content: string; offset: number }> {
+  const segments: Array<{ content: string; offset: number }> = []
+  let offset = 0
+  for (const content of chunks) {
+    segments.push({ content, offset })
+    offset += content.length
+  }
+  return segments
+}
+
+const MarkdownSegment = memo(function MarkdownSegment({
+  content,
+  components,
+  allowHtml,
+  streamingTail,
+}: {
+  content: string
+  components: MarkdownComponents
+  allowHtml?: boolean
+  streamingTail: boolean
+}) {
+  const fixedContent = useMemo(() => fixNestedFences(content), [content])
+  const rehypePlugins = streamingTail
+    ? allowHtml
+      ? _REHYPE_STREAMING_PLUGINS_WITH_HTML
+      : _REHYPE_STREAMING_PLUGINS
+    : allowHtml
+      ? _REHYPE_PLUGINS_WITH_HTML
+      : _REHYPE_PLUGINS
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={_REMARK_PLUGINS}
+      rehypePlugins={rehypePlugins}
+      components={components}
+    >
+      {fixedContent}
+    </ReactMarkdown>
+  )
+})
+
 // ── MarkdownBlock ─────────────────────────────────────────────────────────────
 
 /** Shared prose markdown renderer — handles nested fences with math and syntax highlighting.
@@ -467,20 +589,11 @@ export const MarkdownBlock = memo(function MarkdownBlock({
     [allowHtml, onLinkClick, sessionId, transformImageSrc],
   )
 
-  // Me: fixNestedFences is pure; memoize so we don't re-walk the whole
-  // string on scroll-triggered parent re-renders either.
-  const fixedContent = useMemo(() => fixNestedFences(displayedContent), [displayedContent])
-  const markdownTree = useMemo(
-    () => (
-      <ReactMarkdown
-        remarkPlugins={_REMARK_PLUGINS}
-        rehypePlugins={allowHtml ? _REHYPE_PLUGINS_WITH_HTML : _REHYPE_PLUGINS}
-        components={components}
-      >
-        {fixedContent}
-      </ReactMarkdown>
+  const segments = useMemo(
+    () => markdownSegmentsWithOffsets(
+      isStreaming ? splitStreamingMarkdown(displayedContent) : [displayedContent],
     ),
-    [allowHtml, components, fixedContent],
+    [displayedContent, isStreaming],
   )
 
   return (
@@ -489,7 +602,15 @@ export const MarkdownBlock = memo(function MarkdownBlock({
       className={cn('oa-prose text-sm', isStreaming && 'oa-streaming-prose')}
       aria-busy={isStreaming || undefined}
     >
-      {markdownTree}
+      {segments.map((segment, index) => (
+        <MarkdownSegment
+          key={segment.offset}
+          content={segment.content}
+          components={components}
+          allowHtml={allowHtml}
+          streamingTail={Boolean(isStreaming && index === segments.length - 1)}
+        />
+      ))}
     </div>
   )
 })
@@ -508,4 +629,15 @@ const _REHYPE_PLUGINS_WITH_HTML: React.ComponentProps<typeof ReactMarkdown>['reh
   rehypeRaw,
   rehypeSanitize,
   ..._REHYPE_PLUGINS,
+]
+// Syntax highlighting is the expensive pass and its output is unstable while
+// a code fence is still growing. The live tail keeps math/HTML semantics, then
+// receives full highlighting once it becomes a frozen segment or the turn ends.
+const _REHYPE_STREAMING_PLUGINS: React.ComponentProps<typeof ReactMarkdown>['rehypePlugins'] = [
+  rehypeKatex,
+]
+const _REHYPE_STREAMING_PLUGINS_WITH_HTML: React.ComponentProps<typeof ReactMarkdown>['rehypePlugins'] = [
+  rehypeRaw,
+  rehypeSanitize,
+  ..._REHYPE_STREAMING_PLUGINS,
 ]

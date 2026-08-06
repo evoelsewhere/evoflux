@@ -173,14 +173,15 @@ export function AssistantTurn({
       {renderItems.map((renderItem, j) => {
         if ('kind' in renderItem && (renderItem as ToolBlockGroup).kind === 'group') {
           return (
-            <ToolCallGroupCard
-              key={(renderItem as ToolBlockGroup).id}
-              group={renderItem as ToolBlockGroup}
-              isStreaming={isLatestStreamingItem(turnIsStreaming, j, renderItems.length)}
-              sessionId={sessionId}
-              latestMCPAppBlockIds={latestMCPAppBlockIds}
-              compact={size === 'compact'}
-            />
+            <BlockEnter key={(renderItem as ToolBlockGroup).id}>
+              <ToolCallGroupCard
+                group={renderItem as ToolBlockGroup}
+                isStreaming={isLatestStreamingItem(turnIsStreaming, j, renderItems.length)}
+                sessionId={sessionId}
+                latestMCPAppBlockIds={latestMCPAppBlockIds}
+                compact={size === 'compact'}
+              />
+            </BlockEnter>
           )
         }
         const block = renderItem as ContentBlock

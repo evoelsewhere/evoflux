@@ -1,16 +1,16 @@
 /**
  * ToolCallGroup — collapses a consecutive agent activity run into one row.
  *
- * Completed tools from one uninterrupted activity phase are grouped. Thinking
- * and in-flight tools remain visible boundaries so live activity stays legible.
- * Expanding preserves the original ordered detail through the shared
- * `BlockRenderer` pipeline (tools and MCP apps).
+ * Tools from one uninterrupted activity phase are grouped from the moment the
+ * first call starts. Thinking/text remain visible boundaries, while pending →
+ * completed state changes never re-parent the activity row. Expanding preserves
+ * the original ordered detail through the shared `BlockRenderer` pipeline.
  *
  * Latest MCP app UIs stay visible while collapsed — interactive surfaces
  * should not require expand just to remain usable.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Terminal, FileText, Search, Globe, Code2,
@@ -81,7 +81,6 @@ export function getToolIcon(toolName: string): React.ElementType {
 
 // ── Grouping utility ─────────────────────────────────────────────────────────
 
-const MIN_GROUP_SIZE = 2
 const FILE_ACTIVITY_TOOLS = new Set([
   'read',
   'read_file',
@@ -138,37 +137,33 @@ export function groupConsecutiveToolCalls(blocks: ContentBlock[]): RenderBlock[]
 
   while (i < blocks.length) {
     const block = blocks[i]
-    if (block.type !== 'tool' || !block.toolName || !block.toolDone) {
+    if (block.type !== 'tool' || !block.toolName) {
       result.push(block)
       i++
       continue
     }
 
-    // Collapse one uninterrupted completed activity phase. A reasoning/text
-    // update or an in-flight call remains a strong visual boundary.
+    // Give an activity run its final container as soon as the first tool-call
+    // delta arrives. Waiting for completion (and a second tool) used to
+    // re-parent the same ToolCall from a standalone row into a group after it
+    // finished, which caused a visible layout jump during bottom-follow.
+    // Reasoning/text remains the boundary; completion state does not.
     let j = i + 1
     while (
       j < blocks.length &&
       blocks[j].type === 'tool' &&
-      Boolean(blocks[j].toolName) &&
-      blocks[j].toolDone === true
+      Boolean(blocks[j].toolName)
     ) {
       j++
     }
 
     const activityBlocks = blocks.slice(i, j)
-    if (activityBlocks.length >= MIN_GROUP_SIZE) {
-      result.push({
-        kind: 'group',
-        id: `tool-group-${block.id}`,
-        toolName: block.toolName,
-        blocks: activityBlocks,
-      })
-    } else {
-      for (let k = i; k < j; k++) {
-        result.push(blocks[k])
-      }
-    }
+    result.push({
+      kind: 'group',
+      id: `tool-group-${block.id}`,
+      toolName: block.toolName,
+      blocks: activityBlocks,
+    })
     i = j
   }
 
@@ -187,7 +182,14 @@ interface ToolCallGroupProps {
   compact?: boolean
 }
 
-export function ToolCallGroupCard({
+function sameGroupBlocks(left: ToolBlockGroup, right: ToolBlockGroup): boolean {
+  return left.id === right.id
+    && left.toolName === right.toolName
+    && left.blocks.length === right.blocks.length
+    && left.blocks.every((block, index) => block === right.blocks[index])
+}
+
+export const ToolCallGroupCard = memo(function ToolCallGroupCard({
   group,
   className,
   isStreaming = false,
@@ -202,6 +204,7 @@ export function ToolCallGroupCard({
   const Icon = getToolIcon(group.toolName)
   const toolBlocks = group.blocks.filter((block) => block.type === 'tool')
   const label = groupLabel(toolBlocks)
+  const actionLabel = `${toolBlocks.length} ${toolBlocks.length === 1 ? 'action' : 'actions'}`
   const groupIsStreaming = isStreaming && toolBlocks.some((block) => !block.toolDone)
   const groupedAttachments = toolBlocks.flatMap(
     (block) =>
@@ -238,15 +241,24 @@ export function ToolCallGroupCard({
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
         )}
         aria-expanded={expanded}
-        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${label}, ${toolBlocks.length} actions`}
+        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${label}, ${actionLabel}`}
       >
         <Icon className="h-3.5 w-3.5 shrink-0 text-(--color-text-muted)" />
         {/* eslint-enable react-hooks/static-components */}
         <span className="flex-1 text-xs text-(--color-text-muted)">
           <span className="font-medium text-(--color-text-2)">{label}</span>
-          <span className="ml-1 text-(--color-text-subtle)">
-            · {toolBlocks.length} actions
-          </span>
+          <AnimatePresence initial={false} mode="popLayout">
+            <motion.span
+              key={toolBlocks.length}
+              initial={preset.intensity === 'reduced' ? false : { opacity: 0, y: 3 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={preset.intensity === 'reduced' ? undefined : { opacity: 0, y: -3 }}
+              transition={preset.transition}
+              className="ml-1 inline-block text-(--color-text-subtle)"
+            >
+              · {toolBlocks.length} {toolBlocks.length === 1 ? 'action' : 'actions'}
+            </motion.span>
+          </AnimatePresence>
           {groupIsStreaming && (
             <ActivityStatus label="Running" className="ml-1 text-xs" />
           )}
@@ -318,4 +330,11 @@ export function ToolCallGroupCard({
       </AnimatePresence>
     </div>
   )
-}
+}, (previous, next) => (
+  sameGroupBlocks(previous.group, next.group)
+  && previous.className === next.className
+  && previous.isStreaming === next.isStreaming
+  && previous.sessionId === next.sessionId
+  && previous.latestMCPAppBlockIds === next.latestMCPAppBlockIds
+  && previous.compact === next.compact
+))
