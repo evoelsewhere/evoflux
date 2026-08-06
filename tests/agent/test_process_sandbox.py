@@ -73,6 +73,25 @@ def test_best_effort_keeps_application_sandbox_without_backend(
     ) == ("cmd.exe", ["/c", "echo ok"])
 
 
+def test_best_effort_skips_native_process_sandbox_even_when_available(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sandbox = _sandbox(tmp_path, isolation="best_effort")
+    monkeypatch.setattr("app.agent.process_sandbox.sys.platform", "darwin")
+    monkeypatch.setattr(
+        "app.agent.process_sandbox.shutil.which",
+        lambda name: "/usr/bin/sandbox-exec" if name == "sandbox-exec" else None,
+    )
+
+    assert sandboxed_process_argv(
+        "/bin/sh",
+        ["-c", "uv run ruff check ."],
+        sandbox=sandbox,
+        cwd=sandbox.workspace_root,
+    ) == ("/bin/sh", ["-c", "uv run ruff check ."])
+
+
 def test_macos_profile_allows_the_null_device_for_shell_and_git(
     tmp_path: Path,
 ) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from uuid import UUID
 
 import pytest
 from pydantic import ValidationError
@@ -321,12 +322,22 @@ class TestModeWorkspace:
                 prompt="hi",
             )
 
-    def test_work_mode_rejects_workspace(self):
-        with pytest.raises(ValidationError, match="workspace must be empty"):
+    def test_work_mode_accepts_workspace(self):
+        body = ScheduledTaskCreate(
+            name="c",
+            mode="work",
+            workspace="/tmp/foo",
+            schedule_type="every",
+            every_seconds=60,
+            prompt="hi",
+        )
+        assert body.workspace == "/tmp/foo"
+
+    def test_project_id_requires_coding_mode(self):
+        with pytest.raises(ValidationError, match="project_id is only valid"):
             ScheduledTaskCreate(
                 name="c",
-                mode="work",
-                workspace="/tmp/foo",
+                project_id=UUID(int=1),
                 schedule_type="every",
                 every_seconds=60,
                 prompt="hi",
@@ -344,9 +355,9 @@ class TestModeWorkspace:
         assert body.mode == "coding"
         assert body.workspace == "/tmp/foo"
 
-    def test_update_work_mode_rejects_workspace(self):
-        with pytest.raises(ValidationError, match="workspace must be empty"):
-            ScheduledTaskUpdate(mode="work", workspace="/tmp/foo")
+    def test_update_work_mode_accepts_workspace(self):
+        body = ScheduledTaskUpdate(mode="work", workspace="/tmp/foo")
+        assert body.workspace == "/tmp/foo"
 
     def test_update_mode_alone_accepted(self):
         # Workspace not in payload — service layer merges with row state.

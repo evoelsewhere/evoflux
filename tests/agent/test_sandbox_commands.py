@@ -32,7 +32,19 @@ def _make(
         workspace=str(tmp_path / "ws"),
         denied_roots=denied_roots if denied_roots is not None else [],
         denied_patterns=denied_patterns if denied_patterns is not None else [],
+        native_process_isolation="required",
     )
+
+
+def test_best_effort_does_not_scan_commands(tmp_path):
+    sandbox = SandboxConfig(
+        workspace=str(tmp_path / "ws"),
+        native_process_isolation="best_effort",
+        denied_roots=[Path("/etc")],
+        denied_patterns=["**/.env"],
+    )
+
+    assert sandbox.check_command("cat /etc/passwd ~/.ssh/id_rsa") is None
 
 
 # ---------------------------------------------------------------------------
