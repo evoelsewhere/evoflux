@@ -32,7 +32,6 @@ from app.uuid7 import uuid7
 from app.agent.execution_policy import resolve_execution_policy
 from app.agent.checkpointer import SQLiteCheckpointer
 from app.agent.drift import detect_drift, stamp_agent_files
-from app.agent.hooks.base import BaseAgentHook
 from app.agent.hooks.code_navigation_telemetry import CodeNavigationTelemetryHook
 from app.agent.hooks.continuation import ContinuationHook
 from app.agent.hooks.folder_context import FolderContextHook
@@ -40,9 +39,9 @@ from app.agent.hooks.goal import GoalContextHook, GoalUsageHook
 from app.agent.hooks.dynamic_prompt import inject_current_date
 from app.agent.hooks.memory_context import default_memory_context_hook
 from app.agent.hooks.memory_flush import build_memory_flush_hook
+from app.agent.hooks.pipeline import HookPipeline, HookStage
 from app.agent.hooks.wiki_injection import default_wiki_injection_hook
 from app.agent.hooks.workspace_instructions import WorkspaceInstructionsHook
-from app.agent.hooks.multi_repo_context import MultiRepoContextHook
 from app.agent.hooks.post_edit_diagnostics import PostEditDiagnosticsHook
 from app.agent.verification import CompletionVerificationHook
 from app.agent.hooks.otel import OpenTelemetryHook
@@ -132,12 +131,7 @@ LEAD_COMMUNICATION_RULES = """\
   - **Context hygiene** — it would flood your own context with noise (long build logs, large file dumps, exhaustive search results).
   - **Sustained multi-step work** — a real workstream, not just two quick tool calls.
 - **Prefer reusing a live member** over spawning a fresh one, and skip delegation entirely when you can finish the task yourself in a step or two.
-- **Routing guide** (when you do delegate):
-  - Building, writing files, running commands → **executor**
-  - Research, web search, reading docs or codebases → **explorer**
-  - Hard decisions, architecture review, trade-off analysis → **consultant**
-  - Stress-test a proposal, surface counter-arguments, adversarial review → **debate**
-  - Multiple concerns → spawn / message multiple members in parallel
+{{ROUTING_GUIDE}}
 - **Roster management — `team_manage`.** Members are spawned on demand. Use the `team_manage` tool description and schema for spawn/restore/dismiss usage and available blueprint discovery. Spawn what you need, address returned handles via `team_message`, and **keep useful members alive across turns** — reusing a live instance preserves its warm context and is faster and cheaper than dismiss-then-respawn. Dismiss only to free resources or clear clutter when an instance clearly won't be needed again.
 - Coordination with members must go through `team_delegate` (structured task assignments with goal + expected output + constraints), `team_message` (quick questions, instructions, status queries), or `team_handoff` (structured deliverables). Use `team_state` to share persistent key-value data (URLs, config, discoveries) across the team. Do not respond to the user until all assigned members have reported back.
 - **Waiting on a member? Respond with exactly `<sleep>`** — just the token, no tool calls and no plain text. After delegating you may send one brief "work is underway" note (see workflow step 3), but every wake after that where you're still waiting on outstanding delegations and have nothing new to verify or synthesise — no partial answer, no "here's what I have so far," no guessed conclusion — must be exactly `<sleep>`. Answering on your own before a member reports back defeats the delegation and shows the user an answer the team hasn't actually produced yet; your next real response after their handoff arrives is the answer.
@@ -151,7 +145,7 @@ LEAD_PROTOCOL = """\
 ## Lead workflow
 1. Receive user request. **If it's genuinely ambiguous or has more than one reasonable interpretation, use `ask_user` before delegating or executing anything** — batch every clarifying question you need into a single call rather than guessing or asking one at a time. `ask_user` is always visible to you — use the tool, not plain text: it renders a real question UI and blocks until the user answers, whereas a question written as plain text just ends your turn and leaves the request unanswered until the user happens to reply. Reserve this for choices that would waste real work if guessed wrong (irreversible actions, large refactors, a fork between genuinely different approaches); don't ask about things you can reasonably infer or that are cheap to redo. **Assess scope next.** For small, quick requests, just handle them yourself — don't spin up members for trivia. For substantial work, plan delegation: break the request into pieces, match each to the right blueprint, and prefer reusing a live member over spawning a fresh one.
    - **Use task tiers** when creating todos: `trivial` (handle yourself), `simple` (one member, straightforward), `multi_step` (one member, multiple steps), `complex` (multi-member coordination). Tiers guide delegation — never delegate `trivial` tasks.
-2. **Before delegating, consult your skills.** If the user's request matches one of your declared skills (e.g. install/setup/configure/add a skill body → `skill-installer`; MCP server → `mcp-installer`; plugin → `plugin-installer`; agent config/model/tools → `self-healing`; brand or design work → relevant skill), call `skill(skill_name='<name>')` *before* spawning members. Skills carry canonical paths, file formats, and conventions members would otherwise guess wrong. Skipping this step is the #1 cause of members writing to the wrong location.
+2. **Load specialized workflows only on demand.** The visible tool schemas and your role instructions are sufficient for ordinary work. Use the `skill` tool progressively only when the task needs a specialized artifact or operational workflow; do not list or load skills as a generic first step.
 3. When delegating:
    - For multi-step work, create a todo plan first. Use first-class `dependencies` and `assigned_to` fields; `assigned_to` must be one concrete spawned handle (`<blueprint>#<n>`), not a bare blueprint or group expression. Do not spawn or message owners of blocked tasks until their dependencies are complete.
    - Identify which blueprints cover the work using the routing guide above.
@@ -220,7 +214,7 @@ MEMBER_PROTOCOL = """\
     - **When you receive a structured delegation:** retain its delegation **Task ID** and pass it as `task_id` in every partial/final `team_handoff`. This UUID is distinct from a todo `task_id`. Your deliverable MUST satisfy the stated **Expected output** and respect all **Constraints**. Use the **Goal** as your north star and **Context** as starting knowledge. Do not deviate from the spec — if you believe the spec is wrong or unclear, ask the lead via `team_message` before proceeding.
     - **When you receive a rejection (`❌ REJECTED`):** retain the same delegation **Task ID**, read **Reason** and **Issues** carefully, and address EVERY listed issue. Follow the **Suggestions** — they are actionable fixes, not optional hints. Then re-deliver via `team_handoff(task_id='<same UUID>', ...)` with improvements. Do NOT argue with the rejection or repeat the same output — fix the problems.
 2. If the instruction names a todo task, call `todo_manage(actions=[{{"action":"claim","task_id":"..."}}])` before starting. If the claim is blocked, respond `<sleep>` and wait for the dependency owner to finish instead of starting early.
-3. **Before starting work, check your skills.** If your task matches one of your declared skills (visible in the `skill` tool description), call `skill(skill_name='<name>')` to load the relevant instructions before proceeding. Skills contain canonical procedures, file conventions, and quality gates that improve your output. Do not skip this step when a matching skill exists.
+3. **Use skills progressively.** Start from the visible tool schemas and this role contract. List or load a skill only when the task needs a specialized workflow that those surfaces do not already define; never load skills speculatively.
 4. Do your work (research, write, calculate, etc.).
 5. If you need help or input from any teammate, call `team_message(to=[teammate_name])`, then `<sleep>` — the answer arrives next wake.
 6. **Deliver output via `team_handoff`** (not `team_message`) to the task's delegator, always passing the delegation `task_id` shown in the task brief. Use `status: "partial"` for incremental batches and `status: "final"` for the complete deliverable. Fill `findings` with key points, `evidence` with supporting data, and `confidence` with your self-assessed certainty (0.0–1.0). For tasks declared with `depends_on`, the runtime forwards your final artifact to downstream owners.
@@ -655,12 +649,9 @@ class TeamMemberBase(abc.ABC):
                 exc,
             )
             from app.agent.mcp.config import config_path as _mcp_config_path
-            from app.core.config import settings as _settings
 
             self.agent.config_stamp = stamp_agent_files(
                 agent_md_path=source,
-                skill_names=self.agent.skills,
-                skills_dir=Path(_settings.SKILLS_DIR),
                 mcp_config_path=_mcp_config_path(),
             )
             self._config_dirty = False
@@ -1229,41 +1220,57 @@ class TeamMemberBase(abc.ABC):
             lead_session_id=lead_session_id,
         )
 
-        hooks: list[BaseAgentHook] = [
-            inject_current_date,
-            default_wiki_injection_hook,
-            default_memory_context_hook,
-            team_prompt_hook,
-            team_inbox_hook,
-            publisher_hook,
-            otel_hook,
-        ]
+        pipeline = HookPipeline()
+        pipeline.add(HookStage.BASE_CONTEXT, "clock", inject_current_date)
+        pipeline.add(
+            HookStage.BASE_CONTEXT, "wiki-context", default_wiki_injection_hook
+        )
+        pipeline.add(
+            HookStage.BASE_CONTEXT, "memory-context", default_memory_context_hook
+        )
+        pipeline.add(HookStage.BASE_CONTEXT, "team-protocol", team_prompt_hook)
+        pipeline.add(HookStage.BASE_CONTEXT, "team-inbox", team_inbox_hook)
+        pipeline.add(HookStage.BASE_CONTEXT, "stream-publisher", publisher_hook)
+        pipeline.add(HookStage.BASE_CONTEXT, "telemetry", otel_hook)
         if self.db_factory:
-            hooks.append(
+            pipeline.add(
+                HookStage.SESSION_CONTEXT,
+                "goal-usage",
                 GoalUsageHook(
                     db_factory=self.db_factory,
                     session_id=lead_session_id,
-                )
+                ),
             )
             if self._role_label == "lead":
-                hooks.append(
+                pipeline.add(
+                    HookStage.SESSION_CONTEXT,
+                    "goal-context",
                     GoalContextHook(
                         db_factory=self.db_factory,
                         session_id=lead_session_id,
-                    )
+                    ),
                 )
                 # Sidebar-folder siblings are shared with the lead only:
                 # members work from the lead's delegation brief, so adding
                 # the digest to every member run would repeat the same
                 # tokens without adding information.
-                hooks.append(
+                pipeline.add(
+                    HookStage.SESSION_CONTEXT,
+                    "folder-context",
                     FolderContextHook(
                         db_factory=self.db_factory,
                         session_id=lead_session_id,
-                    )
+                    ),
                 )
-        if self._team.mode == "coding":
-            hooks.append(CodeNavigationTelemetryHook())
+        if any(
+            "code_graph_navigation" in tool.capabilities
+            for tool in self.agent._tools.values()
+        ):
+            pipeline.add(
+                HookStage.CAPABILITY,
+                "code-navigation-telemetry",
+                CodeNavigationTelemetryHook(),
+            )
         # Splice user-queued messages into the running turn — lead only, since
         # the user-facing queue lives on the lead's session.  Must precede
         # summarization so a freshly-injected message participates in window
@@ -1279,32 +1286,37 @@ class TeamMemberBase(abc.ABC):
             except Exception:  # noqa: BLE001 — hook attach must never fail
                 workflow_driving = False
             if not workflow_driving:
-                hooks.append(
+                pipeline.add(
+                    HookStage.INGRESS,
+                    "queued-user-messages",
                     QueuedMessageInjectionHook(
                         session_id=self.session_id,
                         agent_name=self.name,
                         db_factory=self.db_factory,
-                    )
+                    ),
                 )
         if self._team.mode == "coding":
-            if task_workspace.extra_workspace_paths:
-                hooks.append(
-                    MultiRepoContextHook(
-                        primary_workspace=task_workspace.workspace,
-                        extra_workspace_paths=task_workspace.extra_workspace_paths,
-                    )
-                )
-            hooks.append(
+            pipeline.add(
+                HookStage.WORKSPACE,
+                "workspace-context",
                 WorkspaceInstructionsHook(
                     task_workspace.workspace,
                     task_workspace.extra_workspace_paths or None,
-                )
+                ),
             )
             # Surface ruff issues introduced by an edit in the same tool
             # round — the prompt-only "run lsp_diagnostics after edits"
             # guidance has no enforcement otherwise.
-            hooks.append(PostEditDiagnosticsHook())
-            hooks.append(CompletionVerificationHook())
+            pipeline.add(
+                HookStage.WORKSPACE,
+                "post-edit-diagnostics",
+                PostEditDiagnosticsHook(),
+            )
+            pipeline.add(
+                HookStage.WORKSPACE,
+                "completion-verification",
+                CompletionVerificationHook(),
+            )
 
         # Title generation — lead only (members don't need session titles).
         # Always enabled; uses the same runtime provider as the chat turn so
@@ -1316,7 +1328,7 @@ class TeamMemberBase(abc.ABC):
                 wait_timeout=3.0,
             )
             if title_hook is not None:
-                hooks.append(title_hook)
+                pipeline.add(HookStage.LIFECYCLE, "title-generation", title_hook)
 
         # Auto-extract memory facts at session end (lead only, fire-and-forget).
         if self._role_label == "lead":
@@ -1324,13 +1336,13 @@ class TeamMemberBase(abc.ABC):
                 provider=runtime_provider or self.agent.llm_provider,
             )
             if mem_hook is not None:
-                hooks.append(mem_hook)
+                pipeline.add(HookStage.LIFECYCLE, "memory-extraction", mem_hook)
 
         # Continuation stamp — one-shot, flags the first assistant message
         # of this run as a continuation of the prior assistant turn so the
         # frontend can render it tight against that prior bubble.
         if is_continuation:
-            hooks.append(ContinuationHook())
+            pipeline.add(HookStage.LIFECYCLE, "continuation", ContinuationHook())
 
         # Build checkpointer — stream_session_id + agent_name let it clear
         # this agent's stream buffer after each persist, preventing
@@ -1345,7 +1357,11 @@ class TeamMemberBase(abc.ABC):
             checkpointer.mark_loaded(self.session_id, history)
             # Tool result offload uses the hook's module-level defaults
             # (see app.agent.hooks.tool_result_offload.DEFAULT_CHAR_THRESHOLD).
-            hooks.append(ToolResultOffloadHook())
+            pipeline.add(
+                HookStage.CONTEXT_CONTROL,
+                "tool-result-offload",
+                ToolResultOffloadHook(),
+            )
             summarization_provider = runtime_provider or self.agent.llm_provider
             summarization_model = runtime_model or self.agent.model_id
             # Build team-aware summarization hook so compacted context
@@ -1370,8 +1386,10 @@ class TeamMemberBase(abc.ABC):
                     prompt_token_threshold=summ_hook.prompt_token_threshold,
                 )
                 if flush_hook is not None:
-                    hooks.append(flush_hook)
-                hooks.append(summ_hook)
+                    pipeline.add(HookStage.CONTEXT_CONTROL, "memory-flush", flush_hook)
+                pipeline.add(HookStage.CONTEXT_CONTROL, "summarization", summ_hook)
+
+        hooks = pipeline.build()
 
         # Inject team tools
         injected = self._team.get_injected_tools(self.name)
@@ -1484,9 +1502,13 @@ class TeamMemberBase(abc.ABC):
         # Scope agent role for plugin applies_to filtering ("lead"/"member").
         role_token = set_role(self._role_label)
 
-        # Pause code-graph watcher to avoid CPU/RAM spikes from reindexing
-        # while the agent is rapidly writing files.
-        watcher = _get_index_watcher()
+        # Only a Coding run that actually owns graph navigation coordinates
+        # with the indexer. Work sessions must never pause global code state.
+        owns_code_graph = self._team.mode == "coding" and any(
+            "code_graph_navigation" in tool.capabilities
+            for tool in self.agent._tools.values()
+        )
+        watcher = _get_index_watcher() if owns_code_graph else None
         if watcher is not None:
             await watcher.pause()
 
@@ -1762,43 +1784,20 @@ class TeamLead(TeamMemberBase):
 
     def build_protocol(self, base_prompt: str, team: "AgentTeam") -> str:
         """Assemble lead protocol into the system prompt."""
-        # Build mode-aware routing guide from the team's actual blueprints.
-        builder = "coder" if "coder" in team.blueprints else "executor"
-        has_architect = "architect" in team.blueprints
-        has_consultant = "consultant" in team.blueprints
-        has_debate = "debate" in team.blueprints
-        architect_line = (
-            "\n  - Design, decomposition, interface/spec decisions before coding → **architect**"
-            if has_architect
-            else ""
-        )
-        consultant_line = (
-            "\n  - Hard decisions, architecture review, trade-off analysis → **consultant**"
-            if has_consultant
-            else ""
-        )
-        debate_line = (
-            "\n  - Stress-test a proposal, surface counter-arguments, adversarial review → **debate**"
-            if has_debate
-            else ""
-        )
-        routing = (
-            f"- **Routing guide** (when you do delegate):\n"
-            f"  - Building, writing files, running commands → **{builder}**\n"
-            f"  - Research, web search, reading docs or codebases → **explorer**"
-            f"{architect_line}"
-            f"{consultant_line}"
-            f"{debate_line}\n"
-            f"  - Multiple concerns → spawn / message multiple members in parallel"
+        # Runtime roster metadata is the routing source of truth. Custom names
+        # and changed descriptions work without adding another heuristic.
+        roster_lines = ["- **Available specialists** (when you do delegate):"]
+        for name, blueprint in sorted(team.blueprints.items()):
+            description = " ".join((blueprint.description or name).split())
+            roster_lines.append(f"  - **{name}** — {description}")
+        if not team.blueprints:
+            roster_lines.append("  - No member blueprints are configured.")
+        roster_lines.append(
+            "  - For multiple independent concerns, use multiple suitable "
+            "specialists in parallel."
         )
         rules = LEAD_COMMUNICATION_RULES.replace(
-            "- **Routing guide** (when you do delegate):\n"
-            "  - Building, writing files, running commands → **executor**\n"
-            "  - Research, web search, reading docs or codebases → **explorer**\n"
-            "  - Hard decisions, architecture review, trade-off analysis → **consultant**\n"
-            "  - Stress-test a proposal, surface counter-arguments, adversarial review → **debate**\n"
-            "  - Multiple concerns → spawn / message multiple members in parallel",
-            routing,
+            "{{ROUTING_GUIDE}}", "\n".join(roster_lines)
         )
         sections: list[str] = [rules, LEAD_MESSAGE_FORMAT]
         # Keep the activation contract ahead of instructions that may name

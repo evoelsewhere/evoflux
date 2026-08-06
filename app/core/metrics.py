@@ -147,22 +147,15 @@ CODE_NAVIGATION_CALLS_PER_TURN = Histogram(
 
 CODE_GRAPH_RESULT_TOKENS_PER_TURN = Histogram(
     "EVOFLUX_code_graph_result_tokens_per_turn",
-    "Actual code-query result tokens returned in one agent turn.",
+    "Actual code-graph result tokens returned in one agent turn.",
     buckets=(0, 256, 512, 1_024, 2_048, 4_096, 8_192, 12_288),
     registry=REGISTRY,
 )
 
-CODE_QUERY_ROUTING = Counter(
-    "EVOFLUX_code_query_routing_total",
-    "Task-oriented code queries grouped by retrieval strategy and freshness.",
+CODE_GRAPH_ROUTING = Counter(
+    "EVOFLUX_code_graph_routing_total",
+    "Symbol graph calls grouped by traversal strategy and freshness.",
     labelnames=("strategy", "freshness"),
-    registry=REGISTRY,
-)
-
-CODE_QUERY_CACHE = Counter(
-    "EVOFLUX_code_query_cache_total",
-    "Task-oriented code-query cache outcomes.",
-    labelnames=("outcome",),
     registry=REGISTRY,
 )
 

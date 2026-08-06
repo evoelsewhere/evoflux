@@ -191,6 +191,7 @@ async def _xlsx_artifact(
 xlsx_artifact = Tool(
     _xlsx_artifact,
     name="xlsx_artifact",
+    tiers=("work",),
     deferred=True,
     deferred_summary="Create, inspect, render, validate, and template-edit formula-driven XLSX workbooks with @oai/artifact-tool.",
     search_aliases=(

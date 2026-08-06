@@ -13,9 +13,9 @@ import type {
   CodeGraphReindexResponse,
   CodeGraphSearchResponse,
   CodeGraphStatusResponse,
-  CodeQueryFreshnessPolicy,
-  CodeQueryIntent,
-  CodeQueryResponse,
+  CodeGraphFreshnessPolicy,
+  CodeGraphNavigateResponse,
+  CodeGraphOperation,
 } from '../types'
 
 export async function getCodeGraphStatus(
@@ -44,39 +44,35 @@ export async function searchCodeGraph(
   return res.json()
 }
 
-export async function queryCodeGraph(
+export async function navigateCodeGraph(
   workspace: string,
-  query: string,
+  symbol: string,
   options?: {
-    intent?: CodeQueryIntent
-    freshness?: CodeQueryFreshnessPolicy
-    paths?: string[]
-    languages?: string[]
-    kinds?: string[]
-    budgetTokens?: number
+    operation?: CodeGraphOperation
+    freshness?: CodeGraphFreshnessPolicy
+    path?: string
+    repository?: string
+    depth?: number
     limit?: number
-    enableLsp?: boolean
     signal?: AbortSignal
   },
-): Promise<CodeQueryResponse> {
+): Promise<CodeGraphNavigateResponse> {
   const params = new URLSearchParams({ workspace })
-  const res = await fetch(`${apiBaseUrl()}/code-graph/query?${params}`, {
+  const res = await fetch(`${apiBaseUrl()}/code-graph/navigate?${params}`, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      query,
-      intent: options?.intent ?? 'locate',
+      symbol,
+      operation: options?.operation ?? 'definition',
       freshness: options?.freshness ?? 'balanced',
-      paths: options?.paths ?? [],
-      languages: options?.languages ?? [],
-      kinds: options?.kinds ?? [],
-      budget_tokens: options?.budgetTokens ?? 1500,
-      limit: options?.limit ?? 20,
-      enable_lsp: options?.enableLsp ?? true,
+      path: options?.path ?? null,
+      repository: options?.repository ?? null,
+      depth: options?.depth ?? 1,
+      limit: options?.limit ?? 40,
     }),
     signal: options?.signal,
   })
-  if (!res.ok) await parseDetailOrThrow(res, 'queryCodeGraph')
+  if (!res.ok) await parseDetailOrThrow(res, 'navigateCodeGraph')
   return res.json()
 }
 

@@ -39,8 +39,8 @@ has, so re-running `init` after a release won't clobber edits.
   `EvoFlux init` to match the provider/model the user picked. The same
   selected model is written into generated `settings.yaml` for title generation
   and Dream defaults.
-  After install, users can run `self-healing` to swap individual member
-  models (e.g. give the executor a faster model than the lead).
+  Individual member models can then be changed in Settings → Agents (for
+  example, give the executor a faster model than the lead).
 - **No secrets, ever.** These files are public. `mcp.json` should
   reference env vars (`${VAR}`) for any auth headers, never inline
   values.

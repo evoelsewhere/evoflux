@@ -16,7 +16,9 @@ export interface AgentFrontmatter {
   fallback_model?: string | null
   thinking_level?: string | null
   tools?: string[]
+  tools_opt_out?: string[]
   skills?: string[]
+  responses_api?: boolean | null
   /** MCP server names; agent receives every tool from each listed server. */
   mcp?: string[]
 }
@@ -87,12 +89,19 @@ export function buildFrontmatter(fm: AgentFrontmatter): string {
   if (fm.model) lines.push(`model: ${fm.model}`)
   if (fm.fallback_model) lines.push(`fallback_model: ${fm.fallback_model}`)
   if (fm.thinking_level) lines.push(`thinking_level: ${fm.thinking_level}`)
+  if (fm.responses_api !== undefined && fm.responses_api !== null) {
+    lines.push(`responses_api: ${fm.responses_api ? 'true' : 'false'}`)
+  }
   // tools/skills are sets conceptually — order has no semantic meaning.
   // Emit them in sorted order so that reorders in the editor don't flip the
   // `dirty` flag and so saved files produce stable diffs.
   if (fm.tools && fm.tools.length > 0) {
     lines.push('tools:')
     for (const t of [...fm.tools].sort()) lines.push(`  - ${t}`)
+  }
+  if (fm.tools_opt_out && fm.tools_opt_out.length > 0) {
+    lines.push('tools_opt_out:')
+    for (const t of [...fm.tools_opt_out].sort()) lines.push(`  - ${t}`)
   }
   if (fm.skills && fm.skills.length > 0) {
     lines.push('skills:')
@@ -108,6 +117,49 @@ export function buildFrontmatter(fm: AgentFrontmatter): string {
 /** Combine frontmatter + body into a full .md file. */
 export function combine(fm: AgentFrontmatter, body: string): string {
   return `---\n${buildFrontmatter(fm)}\n---\n\n${body.trim()}\n`
+}
+
+const MANAGED_KEYS = new Set([
+  'name',
+  'role',
+  'description',
+  'model',
+  'fallback_model',
+  'thinking_level',
+  'responses_api',
+  'tools',
+  'tools_opt_out',
+  'skills',
+  // Retired field: remove it on the next Form save instead of preserving stale
+  // metadata as an unknown block.
+  'skills_opt_out',
+  'mcp',
+])
+
+/** Update form-owned fields while retaining unknown YAML blocks and comments. */
+export function combinePreservingUnknown(
+  originalRaw: string,
+  fm: AgentFrontmatter,
+  body: string,
+): string {
+  const original = splitFrontmatter(originalRaw)
+  if (!original.fm) return combine(fm, body)
+
+  const retained: string[] = []
+  let skipManagedBlock = false
+  for (const line of original.fm.split(/\r?\n/)) {
+    const topLevel = /^([A-Za-z_][\w-]*):(?:\s|$)/.exec(line)
+    if (topLevel) skipManagedBlock = MANAGED_KEYS.has(topLevel[1])
+    if (line.trim().startsWith('#')) {
+      retained.push(line)
+      continue
+    }
+    if (!skipManagedBlock) retained.push(line)
+  }
+
+  const unknown = retained.join('\n').trim()
+  const frontmatter = [buildFrontmatter(fm), unknown].filter(Boolean).join('\n')
+  return `---\n${frontmatter}\n---\n\n${body.trim()}\n`
 }
 
 // ── Semantic equality ──────────────────────────────────────────────────────

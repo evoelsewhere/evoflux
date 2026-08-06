@@ -133,7 +133,7 @@ class TestDefaultDeferredTools:
         assert registry["preview"].tiers == frozenset({"work", "coding"})
         for mode in ("work", "coding"):
             assert "preview" in tier_tools(registry, mode=mode, role="lead")
-            assert "preview" in EVOFLUX_prompt_for_mode(mode)
+            assert "preview" not in EVOFLUX_prompt_for_mode(mode)
 
     def test_includes_long_tail_tools(self):
         from app.agent.loader import _default_tool_registry
@@ -208,7 +208,7 @@ class TestDefaultDeferredTools:
             assert 10 <= len(eager) <= 16
             expected = set(expected_core)
             if mode == "coding":
-                expected.add("code_query")
+                expected.add("code_graph")
             assert eager == expected
 
     def test_work_mode_excludes_every_code_graph_tool(self):
@@ -217,7 +217,7 @@ class TestDefaultDeferredTools:
 
         registry = _default_tool_registry()
         graph_tools = {
-            "code_query",
+            "code_graph",
         }
 
         work_tools = set(tier_tools(registry, mode="work", role="lead"))
@@ -248,7 +248,7 @@ class TestDefaultDeferredTools:
 
         assert eager == {
             "ask_user",
-            "code_query",
+            "code_graph",
             "edit",
             "glob",
             "grep",

@@ -18,12 +18,15 @@ from typing import Iterator
 
 from loguru import logger
 
+from app.services.code_graph.query import identifier_search_text
+
 _FTS_TABLE = "code_node_fts"
 _FTS_COLUMNS = (
     "node_id",
     "workspace_id",
     "name",
     "qualified_name",
+    "identifiers",
     "file_path",
     "signature",
     "docstring",
@@ -74,6 +77,7 @@ def ensure_fts_table(db_path: str) -> None:
                 workspace_id UNINDEXED,
                 name,
                 qualified_name,
+                identifiers,
                 file_path,
                 signature,
                 docstring,
@@ -94,19 +98,46 @@ def _bootstrap_workspace(conn: sqlite3.Connection, workspace_id: str) -> None:
     if present is not None:
         return
     try:
-        conn.execute(
-            f"""
-            INSERT INTO {_FTS_TABLE}(
-                node_id, workspace_id, name, qualified_name, file_path,
-                signature, docstring, kind, language
-            )
-            SELECT CAST(id AS TEXT), ?, name,
-                   qualified_name, file_path, COALESCE(signature, ''),
-                   COALESCE(docstring, ''), kind, language
+        rows = conn.execute(
+            """
+            SELECT CAST(id AS TEXT), name, qualified_name, file_path,
+                   COALESCE(signature, ''), COALESCE(docstring, ''),
+                   kind, language
             FROM code_nodes
             WHERE REPLACE(CAST(workspace_id AS TEXT), '-', '') = ?
             """,
-            (workspace_id, workspace_id.replace("-", "")),
+            (workspace_id.replace("-", ""),),
+        ).fetchall()
+        conn.executemany(
+            f"""INSERT INTO {_FTS_TABLE}(
+                node_id, workspace_id, name, qualified_name, identifiers,
+                file_path, signature, docstring, kind, language
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [
+                _stored_row(
+                    workspace_id,
+                    (
+                        node_id,
+                        name,
+                        qualified_name,
+                        file_path,
+                        signature,
+                        docstring,
+                        kind,
+                        language,
+                    ),
+                )
+                for (
+                    node_id,
+                    name,
+                    qualified_name,
+                    file_path,
+                    signature,
+                    docstring,
+                    kind,
+                    language,
+                ) in rows
+            ],
         )
         conn.commit()
     except sqlite3.OperationalError as exc:
@@ -131,10 +162,10 @@ def rebuild_workspace_fts(
         )
         conn.executemany(
             f"""INSERT INTO {_FTS_TABLE}(
-                node_id, workspace_id, name, qualified_name, file_path,
-                signature, docstring, kind, language
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            [(node_id, workspace_id, *values) for node_id, *values in rows],
+                node_id, workspace_id, name, qualified_name, identifiers,
+                file_path, signature, docstring, kind, language
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [_stored_row(workspace_id, row) for row in rows],
         )
         conn.commit()
         return len(rows)
@@ -161,12 +192,28 @@ def update_workspace_fts(
                 conn.execute(f"DELETE FROM {_FTS_TABLE} WHERE node_id = ?", (node_id,))
             conn.executemany(
                 f"""INSERT INTO {_FTS_TABLE}(
-                    node_id, workspace_id, name, qualified_name, file_path,
-                    signature, docstring, kind, language
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                [(node_id, workspace_id, *values) for node_id, *values in upserts],
+                    node_id, workspace_id, name, qualified_name, identifiers,
+                    file_path, signature, docstring, kind, language
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [_stored_row(workspace_id, row) for row in upserts],
             )
         conn.commit()
+
+
+def _stored_row(workspace_id: str, row: FtsRow) -> tuple[str, ...]:
+    node_id, name, qualified_name, file_path, signature, docstring, kind, language = row
+    return (
+        node_id,
+        workspace_id,
+        name,
+        qualified_name,
+        identifier_search_text(name, qualified_name, file_path, signature),
+        file_path,
+        signature,
+        docstring,
+        kind,
+        language,
+    )
 
 
 def _search_fts_conn(
@@ -176,6 +223,8 @@ def _search_fts_conn(
     limit: int,
     kind: str | None = None,
     language: str | None = None,
+    *,
+    match_all: bool = True,
 ) -> list[str]:
     try:
         conn.execute(f"SELECT 1 FROM {_FTS_TABLE} LIMIT 0")
@@ -189,7 +238,8 @@ def _search_fts_conn(
     if not tokens:
         return []
 
-    fts_expr = " AND ".join(f'"{t}"*' for t in tokens)
+    operator = " AND " if match_all else " OR "
+    fts_expr = operator.join(f'"{t}"*' for t in tokens)
     try:
         clauses = ["workspace_id = ?", f"{_FTS_TABLE} MATCH ?"]
         params: list[str | int] = [workspace_id, fts_expr]
@@ -202,7 +252,9 @@ def _search_fts_conn(
         params.append(limit)
         cursor = conn.execute(
             f"SELECT node_id FROM {_FTS_TABLE} "
-            f"WHERE {' AND '.join(clauses)} ORDER BY rank LIMIT ?",
+            f"WHERE {' AND '.join(clauses)} "
+            f"ORDER BY bm25({_FTS_TABLE}, 0, 0, 12, 9, 8, 5, 3, 1, 0, 0) "
+            f"LIMIT ?",
             params,
         )
         return [row[0] for row in cursor.fetchall()]
@@ -218,16 +270,25 @@ def search_fts(
     limit: int = 50,
     kind: str | None = None,
     language: str | None = None,
+    *,
+    match_all: bool = True,
 ) -> list[str]:
     """Search FTS5 and return matching ``node_id`` strings, ranked by relevance.
 
     The query is tokenized and matched with implicit prefix: ``hello`` matches
-    ``hello_world``. Multi-word queries use AND logic.
+    ``hello_world``. Multi-word queries use AND logic unless ``match_all`` is
+    false, which is useful for broad candidate generation before reranking.
     """
     ensure_fts_table(db_path)
     with _open(db_path) as conn:
         return _search_fts_conn(
-            conn, workspace_id, query, limit, kind=kind, language=language
+            conn,
+            workspace_id,
+            query,
+            limit,
+            kind=kind,
+            language=language,
+            match_all=match_all,
         )
 
 

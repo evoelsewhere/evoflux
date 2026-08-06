@@ -1357,19 +1357,14 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'coding',
     title: '構造コードグラフ',
     summary:
-      'Tree-sitter がシンボルとエッジをインデックスし、エージェントはファイル全体をダンプする前に構造をナビゲートします — 決定的なクロスレポ解決とスキル preload を含みます。識別子は graph ツール; リテラルやコメントは grep。',
+      'Tree-sitter がシンボルとエッジをインデックスし、決定的なクロスレポ解決を含む正確な構造ナビゲーションを提供します。既知のシンボルには code_graph、識別子・リテラル・コメントの発見には通常のソース検索を使います。',
     keywords: [
       'code graph',
       'symbols',
       'cross-repo',
       'index',
-      'code_search',
-      'code_overview',
       'code_graph',
-      'code_path',
       'tree-sitter',
-      'code-graph-navigation',
-      'skills_opt_out',
       'コードグラフ',
       'シンボル',
       'インデックス',
@@ -1378,20 +1373,20 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     setup:
       'Coding ワークスペースまたはプロジェクト — インデックスはファイル変更で増分実行。Graph workbench ツールを開き視覚探索し、大きな外部編集後にツリーが古く見えたら再インデックス。',
     tricks: [
-      'エージェントは既定で code-graph-navigation スキルを preload; エージェント frontmatter の skills_opt_out でオプトアウト。',
-      '識別子と関係には graph ツールを優先; リテラル、コメント、設定キーは grep。',
+      'ネイティブ code_graph のスキーマとサービスが graph ナビゲーションを所有し、graph skill や prompt injection は不要です。',
+      '既知の正確なシンボルと構造関係には code_graph、発見・リテラル・コメント・設定キーにはソース検索を使います。',
       'Graph workbench ツールを開き視覚探索し、必要なら再インデックス。',
       'クロスレポ解決は 3 つの決定的ティア（reattach、manifests/FQNs、sibling FTS5）で、リンクに LLM 呼び出しなし。',
-      'code_overview → 何がインデックス済み; code_search → シンボル検索; code_graph → 呼び出し元/依存; code_path → A と B のつながり。',
+      'code_graph の operation は definition、callers、callees、references、impact、neighborhood。',
       'graph ナビ後の重要な発見はライブソースで検証 — インデックスは外部編集に遅れることがあります。',
       '「パッケージ全体を読んで」ではなく構造質問（「誰が X を呼ぶ？」）。',
       'マルチレポプロジェクトはクロスレポエッジ; スタンドアロンレポも 1 ツリー内で恩恵。',
-      '答えが graph を無視するなら、code-graph-navigation が skills_opt_out に入っていないか確認。'
+      'リクエスト文から graph が注入または暗黙ルーティングされることはありません。'
 ],
     blocks: [
       {
         type: 'p',
-        text: '構造コードグラフは tree-sitter（多数言語パーサ）でシンボルとエッジをローカルインデックスに入れます。エージェントは既定でファイル全体を読む代わりに overview、search、neighborhood、path ツールを問い合わせます。同じ構造を Graph workbench ツールで視覚探索できます。',
+        text: '構造コードグラフは tree-sitter でシンボルとエッジをローカルインデックスに入れます。ネイティブ code_graph ツールは、既知の 1 シンボルに対する明示的な構造 operation を処理します。同じインデックスを Graph workbench で視覚探索できます。',
       },
       {
         type: 'p',
@@ -1400,12 +1395,11 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'code_overview — インデックス状態と中心シンボル',
-          'code_search — このシンボルはあるか、どこか？',
-          'code_graph — 呼び出し元/参照と依存',
-          'code_path — A と B はどうつながるか？',
-          'grep — リテラル、コメント、散文、設定キー',
-          'skills_opt_out: [code-graph-navigation] — 既定 preload を無効化'
+          'code_graph definition — 正確なシンボルを解決して本体を表示',
+          'code_graph callers/callees — 直接呼び出し関係',
+          'code_graph references/impact — 入力参照と影響範囲',
+          'code_graph neighborhood — 意図的な双方向探索',
+          'grep — リテラル、コメント、散文、設定キー'
 ],
       },
       {
@@ -1414,7 +1408,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '調査手順: (1) code_overview でカバレッジ確認、(2) シンボルを code_search、(3) 呼び出し元/依存を code_graph、(4) A→B 接続が必要なら code_path、(5) ホットファイルを Files で開くか @ メンション、(6) 文字列型の質問ならテストや grep で検証。',
+        text: '調査手順: (1) 未知ならソース検索で正確な識別子を発見、(2) 1 つの構造 operation で code_graph を呼ぶ、(3) 重複定義は path または repository で曖昧性を解消、(4) freshness と limitation を確認、(5) 動的・文字列ベースの挙動はソース、テスト、ログ、ランタイム証拠で検証。',
       },
       {
         type: 'p',
@@ -1422,7 +1416,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'よくある失敗: 「安全のため」ディレクトリ全体をチャットにダンプ; プロジェクトなしでクロスレポリンクを期待; 巨大 `git checkout` 後に再インデックスしない; code-graph-navigation をオプトアウトして浅いナビをモデルのせいにする; FTS5 sibling ヒットを reattach/manifest ティアより強いと扱う。',
+        text: 'よくある失敗: リクエスト文章全体を graph symbol に渡す; 「安全のため」ディレクトリ全体をダンプ; プロジェクトなしでクロスレポリンクを期待; 大きな外部 checkout 後に再インデックスしない; lexical suggestion を解決済み graph root と扱う。',
       },
       {
         type: 'tips',
@@ -1810,7 +1804,6 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'sse',
       'tools',
       'frontmatter',
-      'skills_opt_out',
       'スキル',
       'エージェント',
       'MCP',
@@ -1825,7 +1818,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'MCP ツールはネイティブと同じ権限ルールを継承。',
       'チームは work / coding にスコープ。',
       'コマンドパレットで Edit <agent>… や新規エージェント/スキル作成へジャンプ。',
-      'frontmatter の skills_opt_out で code-graph-navigation などの既定を無効化。',
+      'tools_opt_out で code-owned ツール既定を無効化し、割り当て済み skill は skills リストから直接削除。',
       'Lead 専用ツール（ask_user、plan mode ヘルパー、一部 worktree ヘルパー）は specialist に付与されません。',
       'MCP サーバーが auth に留まるなら、composer スラッシュメニューを責める前に認証フローを完了。'
 ],
@@ -1849,7 +1842,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Skills — 検証後の /skill:',
           'MCP — stdio / HTTP / SSE',
           'Status dots — ready / starting / auth / error / stopped',
-          'skills_opt_out — 既定スキル preload を無効化',
+          'tools_opt_out — code-owned ツール既定を無効化',
           'Mode scope — work / coding チーム',
           'Lead-only tools — specialist には付かない'
 ],
@@ -1865,7 +1858,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          '横断: code-graph-navigation preload は Coding graph ツールと対になる。',
+          '横断: code_graph はネイティブ Coding ツールで、付随 skill は不要です。',
           '横断: workflows と skills はどちらも / に出るにはスコープ有効性が必要。',
           '横断: 権限 Always ルールは MCP ツールにも適用 — まず Once を優先。'
 ],

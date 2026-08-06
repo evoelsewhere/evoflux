@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from app.agent.code_query_observation import (
-    CodeQueryObservation,
-    publish_code_query_observation,
+from app.agent.code_graph_observation import (
+    CodeGraphObservation,
+    publish_code_graph_observation,
 )
 from app.agent.hooks.code_navigation_telemetry import (
     CodeNavigationTelemetryHook,
@@ -23,7 +23,7 @@ def _state() -> AgentState:
         messages=[],
         metadata={
             "_tool_capabilities": {
-                "code_query": ("code_graph_navigation",),
+                "code_graph": ("code_graph_navigation",),
                 "grep": ("source_navigation",),
                 "read": ("workspace_read",),
             }
@@ -56,7 +56,7 @@ async def test_graph_first_strategy_is_counted_once_per_run() -> None:
     before = _counter("EVOFLUX_code_navigation_turns_total", strategy="graph_first")
 
     await hook.before_agent(ctx, state)
-    await hook.wrap_tool_call(ctx, state, _call("code_query"), _ok_handler)
+    await hook.wrap_tool_call(ctx, state, _call("code_graph"), _ok_handler)
     await hook.wrap_tool_call(ctx, state, _call("grep"), _ok_handler)
 
     after = _counter("EVOFLUX_code_navigation_turns_total", strategy="graph_first")
@@ -76,7 +76,7 @@ async def test_source_read_before_graph_is_counted_as_fallback_first() -> None:
         _call("read", '{"path":"app/service.py"}'),
         _ok_handler,
     )
-    await hook.wrap_tool_call(ctx, state, _call("code_query"), _ok_handler)
+    await hook.wrap_tool_call(ctx, state, _call("code_graph"), _ok_handler)
 
     after = _counter("EVOFLUX_code_navigation_turns_total", strategy="fallback_first")
     assert after - before == 1
@@ -87,30 +87,29 @@ async def test_graph_query_records_structured_observation() -> None:
     ctx = _ctx()
     state = _state()
     query_before = _counter(
-        "EVOFLUX_code_graph_queries_total", tool="code_query", status="ok"
+        "EVOFLUX_code_graph_queries_total", tool="code_graph", status="ok"
     )
 
     async def handler(_ctx, _state, _tool_call) -> str:
-        publish_code_query_observation(
-            CodeQueryObservation(
-                strategy="graph+overlay",
+        publish_code_graph_observation(
+            CodeGraphObservation(
+                strategy="native-exact-symbol-graph",
                 freshness="fresh",
-                cache_hit=False,
                 result_tokens=200,
             )
         )
         return "rendered output whose wording is irrelevant to metrics"
 
     await hook.before_agent(ctx, state)
-    await hook.wrap_tool_call(ctx, state, _call("code_query"), handler)
+    await hook.wrap_tool_call(ctx, state, _call("code_graph"), handler)
 
     assert (
-        _counter("EVOFLUX_code_graph_queries_total", tool="code_query", status="ok")
+        _counter("EVOFLUX_code_graph_queries_total", tool="code_graph", status="ok")
         - query_before
         == 1
     )
     duration_count = _counter(
-        "EVOFLUX_code_graph_query_duration_seconds_count", tool="code_query"
+        "EVOFLUX_code_graph_query_duration_seconds_count", tool="code_graph"
     )
     assert duration_count >= 1
 
@@ -122,11 +121,10 @@ async def test_telemetry_never_blocks_source_navigation() -> None:
     fallback_executed = False
 
     async def graph_handler(_ctx, _state, _tool_call) -> str:
-        publish_code_query_observation(
-            CodeQueryObservation(
-                strategy="graph",
+        publish_code_graph_observation(
+            CodeGraphObservation(
+                strategy="native-exact-symbol-graph",
                 freshness="fresh",
-                cache_hit=False,
                 result_tokens=100,
             )
         )
@@ -138,7 +136,7 @@ async def test_telemetry_never_blocks_source_navigation() -> None:
         return "fallback evidence"
 
     await hook.before_agent(ctx, state)
-    await hook.wrap_tool_call(ctx, state, _call("code_query"), graph_handler)
+    await hook.wrap_tool_call(ctx, state, _call("code_graph"), graph_handler)
     result = await hook.wrap_tool_call(
         ctx,
         state,
@@ -164,21 +162,21 @@ async def test_distinct_graph_queries_are_all_executed() -> None:
     first = await hook.wrap_tool_call(
         ctx,
         state,
-        _call("code_query", '{"query":"authentication flow","max_files":4}'),
+        _call("code_graph", '{"symbol":"authenticate","depth":1}'),
         handler,
     )
     second = await hook.wrap_tool_call(
         ctx,
         state,
-        _call("code_query", '{"query":"billing flow","max_files":4}'),
+        _call("code_graph", '{"symbol":"bill_account","depth":1}'),
         handler,
     )
 
     assert first == "evidence"
     assert second == "evidence"
     assert executed_arguments == [
-        '{"query":"authentication flow","max_files":4}',
-        '{"query":"billing flow","max_files":4}',
+        '{"symbol":"authenticate","depth":1}',
+        '{"symbol":"bill_account","depth":1}',
     ]
 
 
@@ -188,7 +186,7 @@ async def test_duplicate_graph_query_is_measured_but_not_blocked() -> None:
     state = _state()
     executions = 0
     duplicate_before = _counter(
-        "EVOFLUX_code_navigation_duplicate_calls_total", tool="code_query"
+        "EVOFLUX_code_navigation_duplicate_calls_total", tool="code_graph"
     )
 
     async def handler(_ctx, _state, _tool_call) -> str:
@@ -200,22 +198,20 @@ async def test_duplicate_graph_query_is_measured_but_not_blocked() -> None:
     await hook.wrap_tool_call(
         ctx,
         state,
-        _call("code_query", '{"query":"authentication flow","operation":"trace"}'),
+        _call("code_graph", '{"symbol":"authenticate","operation":"impact"}'),
         handler,
     )
     result = await hook.wrap_tool_call(
         ctx,
         state,
-        _call("code_query", '{"operation":"trace","query":"authentication flow"}'),
+        _call("code_graph", '{"operation":"impact","symbol":"authenticate"}'),
         handler,
     )
 
     assert executions == 2
     assert result == "evidence"
     assert (
-        _counter(
-            "EVOFLUX_code_navigation_duplicate_calls_total", tool="code_query"
-        )
+        _counter("EVOFLUX_code_navigation_duplicate_calls_total", tool="code_graph")
         - duplicate_before
         == 1
     )
@@ -234,7 +230,7 @@ async def test_failed_graph_query_can_be_retried_with_identical_arguments() -> N
             raise RuntimeError("temporary failure")
         return "recovered evidence"
 
-    call = _call("code_query", '{"query":"authentication flow"}')
+    call = _call("code_graph", '{"symbol":"authenticate"}')
     await hook.before_agent(ctx, state)
     try:
         await hook.wrap_tool_call(ctx, state, call, handler)

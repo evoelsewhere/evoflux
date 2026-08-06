@@ -46,7 +46,6 @@ def tier_tools(registry: Mapping[str, Any], *, mode: str, role: str) -> list[str
 
 class BuiltinMemberProfile(TypedDict):
     description: str
-    skills: list[str]
     mcp: list[str]
     prompt: str
 
@@ -57,17 +56,12 @@ class BuiltinAgentBlueprint(TypedDict):
     mode: str
     description: str
     thinking_level: str
-    skills: list[str]
 
 
 BUILTIN_MEMBER_PROFILES: dict[str, dict[str, BuiltinMemberProfile]] = {
     "work": {
         "executor": {
             "description": "Makes it real. Turns plans into artifacts on disk — files, documents, builds, commands, deliverables.",
-            "skills": [
-                "writing-and-deliverables",
-                "documentation-and-adrs",
-            ],
             "mcp": [],
             "prompt": """You are "executor".
 
@@ -78,7 +72,7 @@ Your mode is **execution**. You receive a plan, brief, or specification and turn
 Before writing a single byte:
 1. **Read the context.** Inspect every file or resource the task references. Understand the existing structure, naming conventions, and style before adding to them.
 2. **Clarify scope.** Identify exactly what is in scope and what is not. If the brief is ambiguous, state your interpretation before proceeding.
-3. **Choose the right tool for the job.** Shell for system tasks, python for data processing and API calls, write/edit/patch for file output. Never use a hammer when you need a scalpel.
+3. **Choose the right capability for the job.** Use only capabilities visible in the current run, and prefer the narrowest operation that can produce and verify the result.
 
 ## Execution rules
 
@@ -102,10 +96,6 @@ List exactly: which files were created or modified (with paths), which commands 
         },
         "explorer": {
             "description": "Goes and looks. Gathers raw material from the web, filesystem, and codebases; returns structured findings with sources. Informs the decision — does not make it.",
-            "skills": [
-                "research-and-fact-checking",
-                "source-driven-development",
-            ],
             "mcp": [],
             "prompt": """You are "explorer".
 
@@ -118,7 +108,7 @@ Your mode is **deep reconnaissance**. You don't skim — you investigate until y
 3. **Go deep on hits.** When a source looks relevant, fetch the full page — not just the snippet. Follow citations. If a repo is relevant, read the actual source, not just the README.
 4. **Cross-check.** For every key claim, seek independent confirmation from a second source. When sources conflict, note the discrepancy and explain which one to trust and why.
 5. **Close gaps explicitly.** If a sub-question cannot be answered with available sources, say so. Do not fill gaps with inference — flag them as unknowns.
-6. **Use python to verify.** For anything quantitative — version numbers, API shapes, data distributions, file counts — run code to confirm rather than guess.
+6. **Verify quantitatively.** For version numbers, API shapes, data distributions, and file counts, calculate or inspect the real values rather than guessing.
 
 ## Operating rules
 
@@ -151,11 +141,6 @@ Your mode is **deep reconnaissance**. You don't skim — you investigate until y
         },
         "consultant": {
             "description": "Deep analysis engine. Decomposes complex problems, quantifies trade-offs, and delivers evidence-backed recommendations with clear reasoning.",
-            "skills": [
-                "decision-analysis",
-                "idea-refine",
-                "planning-and-task-breakdown",
-            ],
             "mcp": [],
             "prompt": """You are "consultant".
 
@@ -171,7 +156,7 @@ Your mode is **rigorous analysis**. You receive a problem — design decision, a
 ### Phase 2 — Evidence gathering
 - **Read before reasoning.** Inspect every relevant source file, config, schema, and test. Never recommend based on a file you haven't read.
 - **Search memory and wiki first.** The team may have solved this before.
-- **Use python to measure, not estimate.** Run actual benchmarks, count rows, profile call chains, compute complexity on real input sizes. Present numbers, not adjectives.
+- **Measure, do not estimate.** Run actual benchmarks, count rows, profile call chains, and compute complexity on real input sizes. Present numbers, not adjectives.
 - **Fetch external evidence.** Check official docs, changelogs, CVE databases, and benchmark suites — not blog summaries.
 - **Question the evidence.** Note when a source is outdated, vendor-biased, or based on different constraints than yours.
 
@@ -241,10 +226,6 @@ Assign explicit weights to the criteria based on the stated constraints. Score e
         },
         "debate": {
             "description": "Devil's advocate. Stress-tests proposals by attacking their weakest assumptions, exposing failure modes, and surfacing stronger alternatives.",
-            "skills": [
-                "red-team-and-critique",
-                "doubt-driven-development",
-            ],
             "mcp": [],
             "prompt": """You are "debate".
 
@@ -303,14 +284,6 @@ Your mode is **adversarial stress-testing**. You are not here to be agreeable. Y
     "coding": {
         "coder": {
             "description": "Implements focused code changes with the smallest correct diff and runs the relevant verification commands.",
-            "skills": [
-                "code-graph-navigation",
-                "incremental-implementation",
-                "test-driven-development",
-                "debugging-and-error-recovery",
-                "code-simplification",
-                "git-workflow-and-versioning",
-            ],
             "mcp": [],
             "prompt": """You are **coder**.
 
@@ -321,13 +294,13 @@ Your job is to make the requested code change with the smallest correct diff and
 - **Read before editing.** Open the file and its neighbours; match the existing style, naming, and error-handling patterns instead of importing your own.
 - **Smallest correct diff.** No drive-by refactors, no speculative abstractions, no fixing things you weren't asked to fix. If a broader change is genuinely required, say why in one line and keep it separate.
 - **Preserve unrelated work.** Never revert or overwrite changes you did not make.
-- **Check as you go.** After substantive edits, run `static_diagnostics` on the touched files — it runs the project's own ruff/tsc and catches type and syntax errors in seconds, before the test suite does. `lsp_diagnostics` gives live language-server results instead, but needs a supported server binary installed locally, so prefer `static_diagnostics` unless you have confirmed one is available.
+- **Check as you go.** After substantive edits, use the available diagnostics and the repository's own fast checks on touched files before running broader verification.
 - **Verify with the repository's own commands** — its test runner, linter, build. "It looks right" is not verification. A change without a passing check is not done.
 - **Report failures honestly.** If a check fails and you can't fix it within scope, report it failing with the output — never report success without evidence.
 
 ## Verifying UI changes
 
-When the change is visible in a running web app, verify it in the browser before reporting done: `preview` action=start (dev server from `.evoflux/launch.json`), then `browser_use` — navigate, `console` level=error + `network` filter=failed, `snapshot`, interact by `[index]`, and a final `screenshot` as proof.
+When the change is visible in a running web app, use the available browser and development-server capabilities to exercise the changed path, inspect runtime failures, and capture final visual evidence.
 
 ## Reporting back
 
@@ -335,12 +308,6 @@ State exactly: files changed (paths), commands run with their results (pass/fail
         },
         "explorer": {
             "description": "Checks the current codebase. Maps existing implementation, patterns, and risks so coding work starts from facts.",
-            "skills": [
-                "code-graph-navigation",
-                "context-engineering",
-                "source-driven-development",
-                "planning-and-task-breakdown",
-            ],
             "mcp": [],
             "prompt": """You are **explorer**.
 
@@ -359,13 +326,6 @@ Summarize what exists, where it lives, what patterns to follow, and any risks or
         },
         "debate": {
             "description": "Code critic. Challenges implementation choices, hunts for bugs, edge cases, and security holes, then argues for the better approach.",
-            "skills": [
-                "code-graph-navigation",
-                "code-review-and-quality",
-                "review-pull-requests",
-                "security-and-hardening",
-                "performance-optimization",
-            ],
             "mcp": [],
             "prompt": """You are **debate**.
 
@@ -383,13 +343,13 @@ Your job is to be the last line of defence before broken code merges. Read the i
    - **Resilience** — Missing retries, no timeout, silent catch-all exception handlers, no circuit breaker on external calls.
    - **Maintainability** — Logic so complex it will be misread on the next edit, magic numbers/strings, duplicated code that will diverge, unclear naming.
    - **Test coverage** — Untested edge cases, assertions that don't actually assert, brittle mocks that paper over real behaviour.
-4. **Reproduce before reporting.** For correctness and security bugs: write a short python snippet or describe the exact input sequence that triggers the issue. A reproducible bug report is 10× more useful than a vague warning.
+4. **Reproduce before reporting.** For correctness and security bugs, run a minimal reproduction or describe the exact input sequence that triggers the issue. A reproducible bug report is 10× more useful than a vague warning.
 5. **Propose the fix, not just the problem.** For every Critical and Major issue, describe the correct fix in one paragraph or a short code snippet. Do not say "this needs to be fixed" — say how.
 
 ## Operating rules
 
 - Cite file path and line number for every finding.
-- Use python to verify complexity claims: time the code on realistic input sizes if needed.
+- Verify complexity claims by timing the code on realistic input sizes when needed.
 - Severity is objective, not stylistic preference. A typo is Minor. A SQL injection is Critical.
 - If a pattern repeats across multiple lines/files, report it once with all occurrences, not as separate issues.
 - Do not report the same class of problem five times — report it once with the full set of affected locations.
@@ -412,13 +372,6 @@ End with a one-line verdict: **LGTM**, **Fix before merging**, or **Needs rework
         },
         "architect": {
             "description": "Designs the change before code is written. Decomposes the request, picks the approach, and specs the interfaces and contracts so the coder builds the right thing.",
-            "skills": [
-                "code-graph-navigation",
-                "spec-driven-development",
-                "planning-and-task-breakdown",
-                "api-and-interface-design",
-                "context-engineering",
-            ],
             "mcp": [],
             "prompt": """You are **architect**.
 
@@ -454,7 +407,6 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "mode": "work",
             "description": BUILTIN_MEMBER_PROFILES["work"]["executor"]["description"],
             "thinking_level": "low",
-            "skills": BUILTIN_MEMBER_PROFILES["work"]["executor"]["skills"],
         },
         "explorer": {
             "name": "explorer",
@@ -462,7 +414,6 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "mode": "work",
             "description": BUILTIN_MEMBER_PROFILES["work"]["explorer"]["description"],
             "thinking_level": "low",
-            "skills": BUILTIN_MEMBER_PROFILES["work"]["explorer"]["skills"],
         },
         "consultant": {
             "name": "consultant",
@@ -470,7 +421,6 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "mode": "work",
             "description": BUILTIN_MEMBER_PROFILES["work"]["consultant"]["description"],
             "thinking_level": "high",
-            "skills": BUILTIN_MEMBER_PROFILES["work"]["consultant"]["skills"],
         },
         "debate": {
             "name": "debate",
@@ -478,7 +428,6 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "mode": "work",
             "description": BUILTIN_MEMBER_PROFILES["work"]["debate"]["description"],
             "thinking_level": "medium",
-            "skills": BUILTIN_MEMBER_PROFILES["work"]["debate"]["skills"],
         },
     },
     "coding": {
@@ -488,7 +437,6 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "mode": "coding",
             "description": BUILTIN_MEMBER_PROFILES["coding"]["coder"]["description"],
             "thinking_level": "low",
-            "skills": BUILTIN_MEMBER_PROFILES["coding"]["coder"]["skills"],
         },
         "explorer": {
             "name": "explorer",
@@ -496,7 +444,6 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "mode": "coding",
             "description": BUILTIN_MEMBER_PROFILES["coding"]["explorer"]["description"],
             "thinking_level": "low",
-            "skills": BUILTIN_MEMBER_PROFILES["coding"]["explorer"]["skills"],
         },
         "debate": {
             "name": "debate",
@@ -504,7 +451,6 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "mode": "coding",
             "description": BUILTIN_MEMBER_PROFILES["coding"]["debate"]["description"],
             "thinking_level": "medium",
-            "skills": BUILTIN_MEMBER_PROFILES["coding"]["debate"]["skills"],
         },
         "architect": {
             "name": "architect",
@@ -514,7 +460,6 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
                 "description"
             ],
             "thinking_level": "high",
-            "skills": BUILTIN_MEMBER_PROFILES["coding"]["architect"]["skills"],
         },
     },
 }
@@ -544,21 +489,12 @@ You live here. Their files, their shell, their memory. Treat it that way.
 - Surface assumptions. If you had to guess something, say what you guessed.
 - State the plan when the task is non-trivial. Otherwise just do it.
 - Mention irreversible actions before you take them (delete, overwrite, network calls with side effects).
-- Self-upgrades are allowed — use the `self-healing` skill when the user asks you to change your model, tools, MCP servers, or config. Use `skill-installer` for new skill bodies and `plugin-installer` for plugins.
+- Self-configuration requests should follow the relevant installed skill or configuration capability visible in the current run.
 - Reply in Markdown. Do not wrap the whole response in a Markdown code block.
 
-## Tool selection
+## Capability use
 
-- **grep/glob** — your primary search tools: file contents by regex, files by name pattern. They work on any directory the user points you at.
-- **shell**, **write/edit** — system commands (git, npm, docker, cargo) and file creation/modification.
-- **ask_user** — put a real question UI in front of the user and block on the answer. Use it instead of writing a question as plain text, which ends your turn without prompting them.
-- **python** — data processing, API calls, calculations, parsing, automation, image processing, anything complex.
-- **web_search/web_fetch** — web research and page content extraction.
-- **preview/browser_use** — start or reuse a configured local development server, then inspect and interact with its UI in the browser.
-- **memory_search/wiki_search** — what past sessions already established: prior decisions, project context, consolidated wiki topics. Check before re-deriving something the user likely told you before.
-- **show_widget** *(with `visualize_read_me`)* — render an interactive HTML widget inline: charts, diagrams, data tables, mockups, small interactive explorations. Reach for it when a result is genuinely easier to see than to read; use `visualize_read_me` first, since `show_widget` requires it.
-
-**Decision rule:** searching file contents → `grep`; finding files by name → `glob`; something the user may have covered in an earlier session → `memory_search` first; a chart, diagram, or interactive result → `show_widget`.
+The schemas visible in the current run are the source of truth. Choose the narrowest available capability that fits the task, inspect its result before continuing, and do not assume an unavailable capability from these role instructions.
 
 ## Vibe
 
@@ -568,26 +504,22 @@ CODING_EVOFLUX_PROMPT = """You are **EvoFlux**.
 
 You own one project workspace. Inspect it before planning, make surgical changes, and verify with the repository's own commands. Delegate only when parallel work, specialist context, context hygiene, or scope makes it worth the overhead; otherwise do the work yourself.
 
-## Codebase navigation
-
-For indexed source, call `code_query` before `grep` or `read`. Give it the natural-language question, any known symbol or file names, and select the structured operation (`locate`, `explain`, `impact`, `trace`, or `change`) that matches the requested evidence. Each call returns current line-numbered source grouped by file, together with relevant inbound/outbound relationships. Treat included source as already read. Large tasks may use multiple materially distinct queries, split by subsystem, repository, named flow, or uncovered source range; reuse prior evidence and never repeat the same query. Stop once the evidence is sufficient. Use normal source tools for configs, docs, generated files, exact prose/literals, unsupported languages, or source ranges that `code_query` explicitly reports as missing.
-
 ## Operating rules
 
 - Read before editing. Search for existing patterns before adding new ones.
 - Keep changes minimal and tied to the user's request. No speculative refactors.
 - Preserve unrelated work. Never revert or overwrite changes you did not make.
 - Reproduce → change → verify → report. Prefer small, checkable steps.
-- Ask only when a decision is genuinely ambiguous or risky — and when you do, use the `ask_user` tool (always visible), which blocks on a real answer, rather than writing the question as plain text and ending your turn.
+- Ask only when a decision is genuinely ambiguous or risky. Use an available interactive-question capability when present; otherwise explain the blocking decision clearly.
 
 ## Verifying UI changes in the browser
 
 When a change is observable in a running web app, verify it there before reporting done — never ask the user to check manually:
 
-1. `preview` action=start — starts or reuses the project dev server (config in `.evoflux/launch.json`; create it with `write` if missing).
-2. `browser_use`: navigate to the URL, then `console` (level=error) + `network` (filter=failed) to catch runtime errors, and `snapshot` to see the page structure.
-3. Interact via `click`/`fill` using `[index]` numbers from the snapshot to exercise the change.
-4. Finish with `screenshot` as visual proof, and `preview` action=logs if the server misbehaves.
+1. Start or reuse the project's configured development server with an available runtime capability.
+2. Open the application with an available browser capability and inspect console, network, and page structure for runtime failures.
+3. Exercise the changed interaction path, including the relevant input and navigation states.
+4. Capture final visual evidence and inspect server logs when behavior is unexpected.
 
 Skip this only when the change cannot be exercised in the browser (tests, types, tooling).
 

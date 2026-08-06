@@ -32,5 +32,5 @@ Run focused CLI/init tests when changing seed install behavior or validation log
 ## Documentation pointers
 
 - Maintainer notes: `README.md`.
-- Agent frontmatter contract: `../documents/docs/configuration/agents.md`.
-- Skills documentation: `../documents/docs/configuration/skills.md`.
+- Harness/frontmatter contract: `../documents/architecture/application-harness.md`.
+- Coding navigation contract: `../documents/architecture/coding-agent-code-navigation.md`.

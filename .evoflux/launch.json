@@ -1,0 +1,17 @@
+{
+  "version": "0.0.2",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "/usr/local/bin/bun",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "cwd": "web",
+      "port": 5173,
+      "reuseExisting": true,
+      "startupTimeoutSeconds": 60
+    }
+  ]
+}

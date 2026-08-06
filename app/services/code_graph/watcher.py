@@ -507,7 +507,7 @@ def is_graph_metadata_path(path: str) -> bool:
     return name in _GRAPH_METADATA_NAMES or name.endswith(_GRAPH_METADATA_SUFFIXES)
 
 
-# Module-level reference set by the lifespan to allow hooks (e.g. IndexPauseHook)
+# Module-level reference used by Coding-run/index coordination.
 # to access the watcher without importing app.state or FastAPI.
 _global_watcher: CodeGraphWatcher | None = None
 

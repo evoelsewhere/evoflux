@@ -24,6 +24,7 @@ async def test_render_requires_matching_desktop_task() -> None:
             document="<html></html>",
             inspection_script="() => ({})",
             inspection_params={},
+            canvas={},
         )
 
 

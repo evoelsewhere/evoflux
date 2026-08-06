@@ -31,8 +31,9 @@ Live-config refresh — no team reload
 ------------------------------------
 
 Agents now refresh themselves at the start of their next turn when
-their tracked config files (their own ``.md``, ``mcp.json``, referenced
-``SKILL.md``) change on disk.  See ``app.agent.loader.stamp_agent_files``
+their tracked config files (their own ``.md`` and ``mcp.json``) change on
+disk. Skill bodies are progressively loaded and are not agent-config
+dependencies. See ``app.agent.loader.stamp_agent_files``
 and ``TeamMemberBase._detect_config_drift``.  Production code paths
 (``/api/mcp``, ``/api/skills``, ``/api/agents``) therefore do **not**
 call :func:`reload`.
@@ -55,6 +56,7 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 
 from app.core.config import settings
+from app.core.app_mode import AppMode, parse_app_mode
 
 if TYPE_CHECKING:
     from app.agent.mode.team.team import AgentTeam
@@ -326,7 +328,7 @@ async def get_or_start_team() -> "AgentTeam | None":
             result: "AgentTeam | None" = _team
         else:
             agents_dir = _resolve_agents_dir()
-            # Sync file IO (glob + md parsing + blueprint writes) — keep it
+            # Sync file IO (glob + Markdown parsing) — keep it
             # off the event loop so concurrent requests aren't stalled.
             candidate = await asyncio.to_thread(load_team_from_dir, agents_dir)
             if candidate is None:
@@ -439,6 +441,10 @@ async def get_or_start_coding_team(
     ``read_only_paths`` marks repos as write-denied — see
     ``SandboxConfig.read_only_paths``.
     """
+    resolved_mode = parse_app_mode(mode)
+    if resolved_mode is not AppMode.CODING:
+        raise ValueError("Coding team manager only accepts mode='coding'.")
+    mode = resolved_mode.value
     resolved_workspace = validate_workspace(workspace)
     key = (resolved_workspace, session_id)
     async with _lock:

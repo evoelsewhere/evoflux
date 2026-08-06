@@ -48,6 +48,43 @@ def test_fts_searches_path_signature_and_docstring(tmp_path):
     ) == [rows[1][0]]
 
 
+def test_fts_expands_compound_identifiers_and_supports_broad_candidates(tmp_path):
+    database = str(tmp_path / "graph.sqlite")
+    workspace = "workspace"
+    rows: list[fts_store.FtsRow] = [
+        (
+            "camel",
+            "restoreRemoteSession",
+            "SessionService.restoreRemoteSession",
+            "src/sessionService.ts",
+            "restoreRemoteSession(id: string)",
+            "",
+            "method",
+            "typescript",
+        ),
+        (
+            "noise",
+            "render_panel",
+            "Panel.render_panel",
+            "src/render_panel.py",
+            "render_panel()",
+            "",
+            "function",
+            "python",
+        ),
+    ]
+    fts_store.rebuild_workspace_fts(database, workspace, rows)
+
+    assert fts_store.search_fts(database, workspace, "remote session") == ["camel"]
+    assert fts_store.search_fts(
+        database,
+        workspace,
+        "remote rendering",
+        match_all=False,
+    ) == ["camel"]
+    assert fts_store.search_fts(database, workspace, "render panel") == ["noise"]
+
+
 def test_fts_replaces_outdated_schema_in_place(tmp_path):
     import sqlite3
 
@@ -70,6 +107,7 @@ def test_fts_replaces_outdated_schema_in_place(tmp_path):
         "workspace_id",
         "name",
         "qualified_name",
+        "identifiers",
         "file_path",
         "signature",
         "docstring",

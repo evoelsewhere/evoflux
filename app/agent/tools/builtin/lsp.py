@@ -5,8 +5,8 @@ The contracts are deliberately distinct:
 - ``static_diagnostics`` — one-shot Ruff/tsc checks.
 - ``lsp_*`` — a persistent JSON-RPC language server using didOpen/didChange.
 
-These sit alongside ``code_query``: use it for indexed source and topology,
-and lsp_* for live correctness checks and precise location queries.
+These sit alongside ``code_graph``: use it for callers/callees/references of a
+known symbol, and lsp_* for live correctness checks and location queries.
 """
 
 from __future__ import annotations
@@ -315,7 +315,7 @@ async def _real_lsp_definition(
         client = await get_language_server(get_sandbox().workspace_root, target)
         locations = await client.definition(target, line, column)
     except LanguageServerUnavailable as exc:
-        return f"[Unavailable] {exc} Use code_query as a fallback."
+        return f"[Unavailable] {exc} Use code_graph for a known symbol."
     return _format_lsp_locations(locations, "definition")
 
 
@@ -345,7 +345,7 @@ async def _real_lsp_references(
             include_declaration=include_declaration,
         )
     except LanguageServerUnavailable as exc:
-        return f"[Unavailable] {exc} Use code_query as a fallback."
+        return f"[Unavailable] {exc} Use code_graph for a known symbol."
     return _format_lsp_locations(locations[:limit], "reference")
 
 
@@ -377,6 +377,7 @@ def _format_lsp_locations(locations: list[dict[str, Any]], kind: str) -> str:
 static_diagnostics = Tool(
     _lsp_diagnostics,
     name="static_diagnostics",
+    tiers=("coding",),
     description=(
         "Run static analysis (ruff for Python, tsc for TypeScript) on a file "
         "or directory and return errors and warnings with file:line locations."
@@ -406,6 +407,7 @@ static_diagnostics = Tool(
 lsp_diagnostics = Tool(
     _real_lsp_diagnostics,
     name="lsp_diagnostics",
+    tiers=("coding",),
     description=(
         "Return live publishDiagnostics results from a persistent language server. "
         "Requires a supported local language-server binary."
@@ -430,6 +432,7 @@ lsp_diagnostics = Tool(
 lsp_definition = Tool(
     _real_lsp_definition,
     name="lsp_definition",
+    tiers=("coding",),
     description=(
         "Go to definition at an exact source file, line, and column through "
         "the Language Server Protocol."
@@ -444,6 +447,7 @@ lsp_definition = Tool(
 lsp_references = Tool(
     _real_lsp_references,
     name="lsp_references",
+    tiers=("coding",),
     description=(
         "Find references at an exact source position through the Language "
         "Server Protocol."

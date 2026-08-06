@@ -59,6 +59,14 @@ def test_python_qualified_call():
     assert "obj.method" in calls
 
 
+def test_python_builtin_call_is_not_a_graph_edge():
+    source = b"def render(value):\n    return str(value)\n"
+
+    result = PythonParser().parse(file_path="main.py", source=source)
+
+    assert "str" not in _call_names(result)
+
+
 def test_ts_qualified_call():
     source = b"""function run() {
     Animal.create("cat");
@@ -162,3 +170,33 @@ def test_simple_call_still_resolves_unique():
         call_edges = [e for e in result.edges if e.kind == EDGE_CALLS]
         assert len(call_edges) == 1
         assert "helper" in call_edges[0].dst_key
+
+
+def test_unscoped_qualified_call_does_not_bind_by_method_name():
+    """Receiver-less type inference must not invent a cross-file method edge."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with open(os.path.join(tmpdir, "helpers.py"), "w") as f:
+            f.write("def append(value):\n    return value\n")
+        with open(os.path.join(tmpdir, "main.py"), "w") as f:
+            f.write("def collect(items):\n    items.append(1)\n")
+
+        result = index_files(
+            tmpdir, ["helpers.py", "main.py"], registry=default_registry()
+        )
+
+        assert [edge for edge in result.edges if edge.kind == EDGE_CALLS] == []
+
+
+def test_external_import_binding_does_not_fall_back_to_local_name():
+    """An unresolved third-party import must not bind to an unrelated symbol."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with open(os.path.join(tmpdir, "helpers.py"), "w") as f:
+            f.write("def select(value):\n    return value\n")
+        with open(os.path.join(tmpdir, "main.py"), "w") as f:
+            f.write("from vendor import select\n\ndef run():\n    return select(1)\n")
+
+        result = index_files(
+            tmpdir, ["helpers.py", "main.py"], registry=default_registry()
+        )
+
+        assert [edge for edge in result.edges if edge.kind == EDGE_CALLS] == []

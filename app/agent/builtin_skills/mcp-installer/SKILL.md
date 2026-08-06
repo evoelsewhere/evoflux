@@ -90,7 +90,7 @@ app watches that file and hot-applies the change; no app restart is required.
 | Restart a crashed server                     | `restart`                                    |
 | Re-read mcp.json after manual edit           | `apply`                                      |
 | Check what's running                         | `status`                                     |
-| Attach server tools to an agent              | **Call `skill("self-healing")`** after add   |
+| Attach server tools to an agent              | Edit the target agent's `mcp:` or `tools:` frontmatter after add |
 
 
 ## When NOT to Use
@@ -178,7 +178,9 @@ app watches that file and hot-applies the change; no app restart is required.
 6. **Wire into an agent.** Installing alone does NOT make the tools callable.
    This step is **mandatory** — do not consider the install complete until done.
 
-   **The lead must wire it.** Call `skill("self-healing")` and follow its diff workflow.
+   **The lead must wire it.** Read the target agent file, show the minimal
+   frontmatter diff, then add the server name to `mcp:` (all server tools) or
+   selected `mcp_<server>_<tool>` names to `tools:` as the user requested.
 
    Do not delegate this step to a member agent, even if the member ran the steps above.
 
@@ -193,7 +195,7 @@ app watches that file and hot-applies the change; no app restart is required.
    ```
 
    If any agent has the server in `mcp:` or `mcp_<name>_*` in `tools:`,
-   **call `skill("self-healing")`** to remove those entries *before* removing
+   remove those entries with a minimal agent-frontmatter edit *before* removing
    the server. Otherwise the next-turn rebuild logs `agent_config_refresh_failed`.
 
 2. **Remove the server:**
@@ -236,7 +238,7 @@ Verify package names with the user — npm names drift.
   take effect on next daemon restart.
 - **`agent_config_refresh_failed`** (next turn's logs) → an agent's `tools:`
   list references a removed tool. Run `rg 'mcp_' {EVOFLUX_CONFIG_DIR}/agents/`
-  then call `skill("self-healing")`.
+  then remove stale entries from the affected agent frontmatter.
 
 A failing MCP server does NOT block other servers, the team, or any
 in-flight turn — tell the user that, they often assume the worst.

@@ -49,7 +49,7 @@ _MAX_FILE_BYTES = 1_500_000
 # Bump whenever parser or relationship extraction semantics change. Salting
 # file hashes forces an incremental rebuild even when repository source did
 # not change, so a newly deployed parser cannot silently reuse stale edges.
-INDEX_FORMAT_VERSION = "3"
+INDEX_FORMAT_VERSION = "6"
 
 # Definition kinds a name-based call/reference may resolve to.
 _CALLABLE_KINDS = frozenset(
@@ -418,6 +418,7 @@ def _resolve_edges(
     ) in raw_edges:
         dst_key: str | None = None
         local_import_target_found = False
+        import_binding_found = False
         if dst_local_id is not None:
             src_file = file_by_key.get(src_key, "")
             dst_key = local_to_key.get((src_file, dst_local_id))
@@ -429,6 +430,7 @@ def _resolve_edges(
                     resolved = module_resolution.by_import_edge.get(
                         (src_key, module_path, dst_name, local_name)
                     )
+                    import_binding_found = resolved is not None
                     if resolved is not None and resolved.dst_key is not None:
                         local_import_target_found = True
                         dst_key = resolved.dst_key
@@ -472,6 +474,9 @@ def _resolve_edges(
                 # Then use import context to narrow the search before falling
                 # back to the global name heuristic.
                 if module_resolution is not None:
+                    import_binding_found = _has_import_binding(
+                        dst_name, src_file, module_resolution
+                    )
                     if dst_key is None:
                         dst_key = _resolve_scoped(
                             dst_name,
@@ -482,7 +487,7 @@ def _resolve_edges(
                             file_by_key,
                             allowed,
                         )
-                if dst_key is None:
+                if dst_key is None and not import_binding_found:
                     dst_key = _resolve_qualified(
                         dst_name, name_to_keys, qname_to_keys, kind_by_key, allowed
                     )
@@ -574,7 +579,9 @@ def _resolve_qualified(
     Resolution order:
     1. Exact match on simple ``name`` — if exactly 1 candidate, return it.
     2. Exact match on ``qualified_name`` — handles ``Class.method`` calls.
-    3. If ``name`` contains ``.``, try the last segment as simple name.
+    3. A dotted call may fall back to a distinctive last segment. This retains
+       useful untyped instance flows such as ``svc.get_user()`` while generic
+       members such as ``append`` and ``select`` cannot bind across files.
     """
     # Step 1: direct name lookup
     candidates = [
@@ -594,18 +601,31 @@ def _resolve_qualified(
     if len(qcandidates) == 1:
         return qcandidates[0]
 
-    # Step 3: for dotted names like "obj.method", fall back to last segment
+    # Step 3: untyped instance receivers cannot be scoped without data-flow
+    # inference. Preserve only names distinctive enough to be credible across
+    # files; common collection/query methods are worse than a missing edge.
     if "." in name:
         short = name.rsplit(".", 1)[1]
-        short_candidates = [
-            key
-            for key in name_to_keys.get(short, [])
-            if kind_by_key.get(key) in allowed_kinds
-        ]
-        if len(short_candidates) == 1:
-            return short_candidates[0]
+        if _is_distinctive_member(short):
+            short_candidates = [
+                key
+                for key in name_to_keys.get(short, [])
+                if kind_by_key.get(key) in allowed_kinds
+            ]
+            if len(short_candidates) == 1:
+                return short_candidates[0]
 
     return None
+
+
+def _is_distinctive_member(name: str) -> bool:
+    """Whether an unscoped member name is safe enough for global fallback."""
+    # Exported Go methods and conventional PascalCase members carry a useful
+    # type/API signal even when short (for example ``a.Run()`` -> the only
+    # indexed ``Animal.Run``). Lowercase collection/query verbs remain gated
+    # by length so calls such as ``items.append`` cannot bind to an unrelated
+    # project helper merely because it is the only same-named definition.
+    return name[:1].isupper() or len(name) >= 8 or ("_" in name and len(name) >= 6)
 
 
 def _resolve_same_file(
@@ -736,6 +756,14 @@ def _resolve_scoped(
     return None
 
 
+def _has_import_binding(
+    dst_name: str, src_file: str, module_resolution: ModuleResolution
+) -> bool:
+    """Whether the reference head is a known local or external import binding."""
+    head = dst_name.split(".", 1)[0]
+    return head in module_resolution.imports_by_file.get(src_file, {})
+
+
 def _file_matches_scope(file_path: str, target: str) -> bool:
     if target.endswith("/"):
         return file_path.startswith(target)
@@ -816,5 +844,13 @@ def _iter_source_files(
 
 
 def content_hash(data: bytes) -> str:
-    prefix = f"evoflux-code-graph:{INDEX_FORMAT_VERSION}\0".encode()
-    return hashlib.sha256(prefix + data).hexdigest()
+    # Keep the 64-character database representation while reserving a visible
+    # prefix for the parser/index format. A query can then detect an upgrade
+    # from one stored row without rescanning the repository on every request.
+    return index_format_tag() + hashlib.sha256(data).hexdigest()[8:]
+
+
+def index_format_tag() -> str:
+    """Stable prefix embedded in every code-index content hash."""
+    payload = f"evoflux-code-graph:{INDEX_FORMAT_VERSION}".encode()
+    return hashlib.sha256(payload).hexdigest()[:8]

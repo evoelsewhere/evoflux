@@ -86,8 +86,9 @@ def _validate_skill_name(name: str) -> Path:
 
 
 def _validate_agent_name(name: str) -> Path:
-    # Agent names are POSIX-style (``coding/lead``). Reject backslashes so
-    # Windows Path() cannot reinterpret ``a\b`` as nested ``a/b``.
+    # The application has exactly two namespaces: flat Work agents and one
+    # ``coding/`` level. Reject retired/arbitrary product-mode directories so
+    # they cannot silently fall back to Work behavior.
     if "\\" in name:
         raise AgentFsPathError(
             f"Invalid name '{name}'. Use '/' for nested agents, not '\\'."
@@ -95,6 +96,11 @@ def _validate_agent_name(name: str) -> Path:
     parts = PurePosixPath(name).parts
     if not parts:
         raise AgentFsPathError("Agent name cannot be empty.")
+    if len(parts) > 2 or (len(parts) == 2 and parts[0] != "coding"):
+        raise AgentFsPathError(
+            f"Invalid agent path '{name}'. Use '<name>' for Work or "
+            "'coding/<name>' for Coding."
+        )
     return Path(*(_validate_name(part) for part in parts))
 
 
@@ -252,17 +258,9 @@ def list_agents() -> list[str]:
     root = agents_dir()
     if not root.exists():
         return []
-    from app.agent.loader import ensure_builtin_agent_blueprints
-
-    coding_root = root / "coding"
-    if any(coding_root.glob("*.md")):
-        ensure_builtin_agent_blueprints(coding_root, mode="coding")
-    return sorted(
-        name
-        for p in root.rglob("*.md")
-        if (name := str(p.relative_to(root).with_suffix("")).replace("\\", "/"))
-        != "coding/executor"
-    )
+    work = [p.stem for p in root.glob("*.md")]
+    coding = [f"coding/{p.stem}" for p in (root / "coding").glob("*.md")]
+    return sorted([*work, *coding])
 
 
 def read_agent(name: str) -> AgentFileRecord:

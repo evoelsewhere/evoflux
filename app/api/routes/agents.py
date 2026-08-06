@@ -102,52 +102,19 @@ def _mode_for_agent_path(name: str) -> str:
 
 
 def _effective_config(cfg: AgentConfig, *, mode: str) -> AgentConfig:
-    """Return config with built-in first-party defaults applied.
+    """Compile the same effective config used by the runtime."""
 
-    This mirrors runtime merging for metadata/capability fields without
-    changing the raw saved file. Prompts are intentionally left as saved body in
-    API config; callers edit extras, not the expanded runtime prompt.
-    """
-    data = cfg.model_copy(deep=True)
-    implicit_tools = ["skill"]
-    if data.role == "lead":
-        implicit_tools += ["todo_manage", "schedule_task", "note"]
-    if data.role == "lead" and data.name.lower() == "evoflux":
-        from app.agent.builtin_prompts import EVOFLUX_description_for_mode
-
-        data.description = data.description or EVOFLUX_description_for_mode(mode)
-        data.mcp = list(dict.fromkeys(data.mcp))
-    elif data.role == "member":
-        from app.agent.builtin_prompts import builtin_member_profile
-
-        profile = builtin_member_profile(mode, data.name)
-        if profile is not None:
-            data.description = data.description or profile["description"]
-            data.skills = list(dict.fromkeys([*profile["skills"], *data.skills]))
-            data.mcp = list(dict.fromkeys([*profile["mcp"], *data.mcp]))
-
-    from app.agent.config import apply_mode_skill_defaults
-
-    apply_mode_skill_defaults(data, mode=mode)
-
-    # Mirror the loader's tier grant so the API shows the effective toolset:
-    # implicit + tier grant first, then frontmatter extras — with lead_only
-    # extras dropped for members exactly like ``_build_agent`` does.
-    from app.agent.builtin_prompts import tier_tools
+    from app.agent.effective_config import compile_agent_config
     from app.agent.loader import _default_tool_registry
 
     registry = _default_tool_registry()
-    extras = [
-        name
-        for name in data.tools
-        if data.role == "lead" or not getattr(registry.get(name), "lead_only", False)
-    ]
-    data.tools = [
-        *implicit_tools,
-        *tier_tools(registry, mode=mode, role=data.role),
-        *extras,
-    ]
-    data.tools = list(dict.fromkeys(data.tools))
+    data = compile_agent_config(cfg, mode=mode, tool_registry=registry)
+    if data.role != "lead":
+        data.tools = [
+            name
+            for name in data.tools
+            if not getattr(registry.get(name), "lead_only", False)
+        ]
     return data
 
 
@@ -217,7 +184,8 @@ async def _validate_or_restore(
             if rollback_name is None
             else _validation_dir_for_name(rollback_name)
         )
-        candidate = load_team_from_dir(validation_dir)
+        mode = _mode_for_agent_path(rollback_name or "")
+        candidate = load_team_from_dir(validation_dir, mode=mode)
         if candidate is None:
             raise ValueError(
                 f"No agents would remain in '{validation_dir}'. "

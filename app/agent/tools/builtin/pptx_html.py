@@ -236,6 +236,7 @@ async def _pptx_html(
 pptx_html = Tool(
     _pptx_html,
     name="pptx_html",
+    tiers=("work",),
     deferred=True,
     deferred_summary=(
         "Create visually rich, highly editable PowerPoint decks without an "

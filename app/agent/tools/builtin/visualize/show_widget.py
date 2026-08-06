@@ -14,6 +14,7 @@ from app.agent.tools import tool
 
 @tool(
     name="show_widget",
+    tiers=("work",),
     description="Render an interactive HTML widget inline in the conversation. Call visualize_read_me first to load design guidelines.",
     concurrency_safe=False,
     read_only=True,

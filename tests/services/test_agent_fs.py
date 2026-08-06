@@ -146,17 +146,10 @@ def test_list_agents_sorted(fs_dirs):
 def test_list_agents_includes_nested_files(fs_dirs):
     agent_fs.write_agent("evoflux", "x", create=True)
     agent_fs.write_agent("coding/evoflux", "x", create=True)
-    assert agent_fs.list_agents() == [
-        "coding/architect",
-        "coding/coder",
-        "coding/debate",
-        "coding/evoflux",
-        "coding/explorer",
-        "evoflux",
-    ]
+    assert agent_fs.list_agents() == ["coding/evoflux", "evoflux"]
 
 
-def test_list_agents_materializes_coding_builtins_when_coding_lead_exists(fs_dirs):
+def test_list_agents_is_read_only_when_coding_lead_exists(fs_dirs):
     agents_dir, _ = fs_dirs
     agent_fs.write_agent(
         "coding/evoflux",
@@ -164,18 +157,17 @@ def test_list_agents_materializes_coding_builtins_when_coding_lead_exists(fs_dir
         create=True,
     )
 
-    assert "coding/explorer" in agent_fs.list_agents()
-    explorer = (agents_dir / "coding" / "explorer.md").read_text(encoding="utf-8")
-    assert "description: Checks the current codebase" in explorer
-    assert "model: codex:gpt-5.4" in explorer
-    assert "temperature:" not in explorer
+    assert agent_fs.list_agents() == ["coding/evoflux"]
+    assert sorted(p.name for p in (agents_dir / "coding").glob("*.md")) == [
+        "evoflux.md"
+    ]
 
 
-def test_list_agents_hides_retired_coding_executor(fs_dirs):
+def test_list_agents_does_not_special_case_user_owned_coding_names(fs_dirs):
     agent_fs.write_agent("coding/evoflux", "x", create=True)
     agent_fs.write_agent("coding/executor", "x", create=True)
 
-    assert "coding/executor" not in agent_fs.list_agents()
+    assert "coding/executor" in agent_fs.list_agents()
 
 
 # ── Skills ───────────────────────────────────────────────────────────────────

@@ -23,6 +23,46 @@ if TYPE_CHECKING:
     from tree_sitter import Node
 
 
+_BUILTIN_CALLS = frozenset(
+    {
+        "all",
+        "any",
+        "bool",
+        "bytes",
+        "dict",
+        "enumerate",
+        "float",
+        "format",
+        "frozenset",
+        "getattr",
+        "hasattr",
+        "int",
+        "isinstance",
+        "issubclass",
+        "iter",
+        "len",
+        "list",
+        "max",
+        "min",
+        "next",
+        "open",
+        "print",
+        "range",
+        "repr",
+        "reversed",
+        "set",
+        "setattr",
+        "sorted",
+        "str",
+        "sum",
+        "super",
+        "tuple",
+        "type",
+        "zip",
+    }
+)
+
+
 class PythonParser(TreeSitterParser):
     name: ClassVar[str] = "python"
     extensions: ClassVar[tuple[str, ...]] = (".py", ".pyi")
@@ -53,7 +93,8 @@ class PythonParser(TreeSitterParser):
         if func is None:
             return None
         if func.type == "identifier":
-            return node_text(func, source)
+            target = node_text(func, source)
+            return None if target in _BUILTIN_CALLS else target
         if func.type == "attribute":
             obj = func.child_by_field_name("object")
             attr = func.child_by_field_name("attribute")
@@ -65,6 +106,29 @@ class PythonParser(TreeSitterParser):
                 return f"{node_text(obj, source)}.{attr_name}"
             return attr_name
         return None
+
+    def reference_targets(self, node: Node, source: bytes) -> list[str]:
+        """Capture named callables passed through dispatch boundaries.
+
+        Python frequently invokes work indirectly (for example
+        ``asyncio.to_thread(module.fn, ...)`` or ``executor.submit(fn)``). The
+        callback is not the syntax tree's callee, but it is still a structural
+        dependency that code navigation must retain.
+        """
+        if node.type != "call":
+            return []
+        arguments = node.child_by_field_name("arguments")
+        if arguments is None:
+            return []
+        targets: list[str] = []
+        for child in arguments.named_children:
+            candidate = child
+            if child.type == "keyword_argument":
+                candidate = child.child_by_field_name("value") or child
+            name = _qualified_value_name(candidate, source)
+            if name is not None and name not in _BUILTIN_CALLS:
+                targets.append(name)
+        return targets
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
         supers = node.child_by_field_name("superclasses")
@@ -257,6 +321,22 @@ def _strip_py_string(text: str) -> str:
             s = s[len(quote) : len(s) - len(quote)]
             break
     return s.strip()
+
+
+def _qualified_value_name(node: Node, source: bytes) -> str | None:
+    """Return an identifier/attribute chain used as a first-class value."""
+    if node.type == "identifier":
+        return node_text(node, source)
+    if node.type != "attribute":
+        return None
+    obj = node.child_by_field_name("object")
+    attr = node.child_by_field_name("attribute")
+    if obj is None or attr is None:
+        return None
+    prefix = _qualified_value_name(obj, source)
+    if prefix is None:
+        return None
+    return f"{prefix}.{node_text(attr, source)}"
 
 
 def _decorator_name(node: Node, source: bytes) -> str | None:

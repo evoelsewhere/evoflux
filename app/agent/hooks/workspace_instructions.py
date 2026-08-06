@@ -54,6 +54,7 @@ class WorkspaceInstructionsHook(BaseAgentHook):
         request: "ModelRequest",
         handler: "ModelCallHandler",
     ) -> "AssistantMessage":
+        repository_map = self._repository_map()
         sections = self._root_sections()
         loaded = (
             state.metadata.get("_loaded_workspace_instruction_files") or []
@@ -61,13 +62,34 @@ class WorkspaceInstructionsHook(BaseAgentHook):
             else []
         )
         sections.extend(self._read_instruction_file(Path(path)) for path in loaded)
-        block = _render_sections(sections)
+        instruction_block = _render_sections(sections)
+        block = "\n\n".join(
+            part for part in (repository_map, instruction_block) if part
+        )
         if not block:
             return await handler(request)
         prompt = (
             f"{request.system_prompt}\n\n{block}" if request.system_prompt else block
         )
         return await handler(request.override(system_prompt=prompt))
+
+    def _repository_map(self) -> str:
+        """Render repository locations without re-reading their instructions."""
+
+        roots = list(dict.fromkeys(self._roots))
+        if len(roots) < 2:
+            return ""
+        lines = [
+            "## Available Repositories",
+            "",
+            "Use the repository path that owns the target code. The first "
+            "repository is the primary workspace.",
+            "",
+        ]
+        for index, root in enumerate(roots):
+            marker = " **(primary)**" if index == 0 else ""
+            lines.append(f"- **{root.name}**: `{root}`{marker}")
+        return "\n".join(lines)
 
     async def wrap_tool_call(
         self,

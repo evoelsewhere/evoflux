@@ -235,6 +235,7 @@ async def _pptx_template(
 pptx_template = Tool(
     _pptx_template,
     name="pptx_template",
+    tiers=("work",),
     deferred=True,
     deferred_summary=(
         "Inspect and edit an uploaded PPTX as the actual inherited template: "

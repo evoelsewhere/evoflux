@@ -149,7 +149,7 @@ _SAFE_TOOLS: frozenset[str] = frozenset(
         "lsp_definition",
         "lsp_references",
         "static_diagnostics",
-        "code_query",
+        "code_graph",
         # read-only web / info retrieval
         "date",
         "web_search",

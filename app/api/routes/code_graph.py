@@ -21,9 +21,10 @@ from app.api.schemas.code_graph import (
     CodeNodeOut,
     CodeOverviewResponse,
     CodeSearchResponse,
-    CodeQueryCandidateOut,
-    CodeQueryRequest,
-    CodeQueryResponse,
+    CodeGraphNavigateRequest,
+    CodeGraphNavigateResponse,
+    CodeGraphRelationOut,
+    CodeGraphSymbolOut,
     LanguageCapabilityOut,
     NeighborOut,
     NeighborsResponse,
@@ -153,62 +154,89 @@ async def search(
     return CodeSearchResponse(nodes=[CodeNodeOut.from_model(n) for n in nodes])
 
 
-@router.post("/query")
-async def code_query(
+@router.post("/navigate")
+async def navigate_code_graph(
     db: DbSession,
-    body: CodeQueryRequest,
+    body: CodeGraphNavigateRequest,
     workspace: str | None = Query(None, description="Coding workspace directory."),
-) -> CodeQueryResponse:
-    """Return one freshness-aware code context pack with automatic fallback."""
-    from app.services.code_query_service import query_code
+) -> CodeGraphNavigateResponse:
+    """Resolve one exact symbol and return its structural graph relationships."""
+    from app.services.code_graph_navigation_service import navigate_code_graph
 
     path, workspace_id = await _require_registered_workspace(db, workspace)
-    result = await query_code(
+    result = await navigate_code_graph(
         db,
         root_path=str(path),
         workspace_id=workspace_id,
-        query=body.query,
-        intent=body.intent,
-        paths=body.paths,
-        languages=body.languages,
-        kinds=body.kinds,
-        budget_tokens=body.budget_tokens,
+        symbol=body.symbol,
+        operation=body.operation,
+        path=body.path,
+        repository=body.repository,
+        depth=body.depth,
         freshness_policy=body.freshness,
         limit=body.limit,
-        enable_lsp=body.enable_lsp,
     )
-    return CodeQueryResponse(
-        query=result.query,
-        intent=result.intent,
+    return CodeGraphNavigateResponse(
+        symbol=result.symbol,
+        operation=result.operation,
         strategy=result.strategy,
         graph_version=result.graph_version,
         working_tree_revision=result.working_tree_revision,
         freshness=result.freshness,
-        coverage=result.coverage,
-        confidence=result.confidence,
         dirty_files=result.dirty_files,
         pending_edges=result.pending_edges,
-        results=[
-            CodeQueryCandidateOut(
-                handle=item.handle,
-                file_path=item.file_path,
-                line_start=item.line_start,
-                line_end=item.line_end,
-                symbol=item.symbol,
-                kind=item.kind,
-                language=item.language,
-                signature=item.signature,
-                snippet=item.snippet,
-                score=item.score,
-                confidence=item.confidence,
-                provenance=item.provenance,
-                match_reasons=item.match_reasons,
-                callers=item.callers,
-                callees=item.callees,
-                tests=item.tests,
-                repository=item.repository,
+        matches=[
+            CodeGraphSymbolOut(
+                repository=item.scope.label,
+                file_path=item.node.file_path,
+                line_start=item.node.line_start,
+                line_end=item.node.line_end,
+                symbol=item.node.qualified_name,
+                kind=item.node.kind,
+                language=item.node.language,
+                signature=item.node.signature,
+                resolution=item.resolution,
+                source=item.source,
             )
-            for item in result.results
+            for item in result.matches
+        ],
+        relations=[
+            CodeGraphRelationOut(
+                kind=item.kind,
+                depth=item.depth,
+                cross_repo=item.cross_repo,
+                source_symbol=item.source.node.qualified_name,
+                source_location=(
+                    f"{item.source.scope.label}/{item.source.node.file_path}:"
+                    f"{item.source.node.line_start}"
+                ),
+                target_symbol=item.target.node.qualified_name,
+                target_location=(
+                    f"{item.target.scope.label}/{item.target.node.file_path}:"
+                    f"{item.target.node.line_start}"
+                ),
+                callsite_location=(
+                    f"{item.source.scope.label}/{item.callsite_file}:"
+                    f"{item.callsite_line}"
+                ),
+                callsite_source=item.callsite_source,
+            )
+            for item in result.relations
+        ],
+        suggestions=[
+            CodeGraphSymbolOut(
+                repository=item.scope.label,
+                file_path=item.node.file_path,
+                line_start=item.node.line_start,
+                line_end=item.node.line_end,
+                symbol=item.node.qualified_name,
+                kind=item.node.kind,
+                language=item.node.language,
+                signature=item.node.signature,
+                resolution=item.resolution,
+                source=None,
+            )
+            for item in result.suggestions
         ],
         capabilities=[
             LanguageCapabilityOut(
@@ -223,9 +251,7 @@ async def code_query(
             for item in result.capabilities
         ],
         limitations=result.limitations,
-        next_read_ranges=result.next_read_ranges,
         truncated=result.truncated,
-        cache_hit=result.cache_hit,
     )
 
 
@@ -234,7 +260,7 @@ async def capabilities(
     db: DbSession,
     workspace: str | None = Query(None, description="Coding workspace directory."),
 ) -> list[LanguageCapabilityOut]:
-    from app.services.code_query_service import get_capabilities
+    from app.services.code_graph_navigation_service import get_capabilities
 
     path, workspace_id = await _require_registered_workspace(db, workspace)
     values = await get_capabilities(db, root_path=str(path), workspace_id=workspace_id)
@@ -257,7 +283,7 @@ async def freshness(
     db: DbSession,
     workspace: str | None = Query(None, description="Coding workspace directory."),
 ) -> CodeGraphFreshnessResponse:
-    from app.services.code_query_service import get_freshness
+    from app.services.code_graph_navigation_service import get_freshness
 
     path, workspace_id = await _require_registered_workspace(db, workspace)
     value = await get_freshness(db, root_path=str(path), workspace_id=workspace_id)
