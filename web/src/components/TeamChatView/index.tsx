@@ -1604,6 +1604,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           viewMode={displayedViewMode}
           onViewModeChange={setViewMode}
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
+          mode={mode}
           workspace={workbenchWorkspace}
           onChooseWorkspace={mode === 'coding' ? handleOpenWorkspaceDialog : undefined}
           reviewContext={mode === 'coding' ? reviewSessionContext : null}
