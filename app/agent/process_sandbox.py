@@ -33,6 +33,13 @@ def sandboxed_process_argv(
     installed. Other hosts keep the application-level allowlist and emit an
     explicit warning instead of pretending OS containment exists.
     """
+    # ``best_effort`` is an explicit user opt-out from sandbox enforcement,
+    # not merely a fallback mode when native containment is unavailable.
+    # Return the original argv so macOS Seatbelt/Bubblewrap cannot impose a
+    # second, invisible policy on commands such as ``uv run``.
+    if sandbox.native_process_isolation == "best_effort":
+        return executable, args
+
     backend = native_process_sandbox_backend()
     if backend == "seatbelt":
         sandbox_exec = shutil.which("sandbox-exec")

@@ -6,7 +6,7 @@ from datetime import datetime
 from uuid import UUID, uuid7
 
 import sqlalchemy as sa
-from sqlalchemy import Column
+from sqlalchemy import Column, ForeignKey
 from sqlmodel import Field, SQLModel
 
 from app.models.chat import TZDateTime, _utcnow
@@ -28,6 +28,15 @@ class ScheduledTask(SQLModel, table=True):
     )
     workspace: str | None = Field(
         default=None, sa_column=Column(sa.String, nullable=True)
+    )
+    project_id: UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey("coding_projects.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        ),
     )
 
     # Schedule — exactly one of these must be set

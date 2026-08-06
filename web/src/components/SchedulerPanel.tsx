@@ -28,6 +28,8 @@ import type { ScheduledTaskResponse, ScheduledTaskCreate, ScheduledTaskMode } fr
 import { formatRelativeDate, formatInTimezone, wallClockToISO, isoToWallClock } from '@/utils/format'
 import { useModalFocus } from '@/hooks/useModalFocus'
 import { loadCodingWorkspaceEntries, workspaceLabel } from '@/utils/workspace'
+import { useCodingOverviewQuery } from '@/queries/useProjectsQuery'
+import { WorkspaceFolderPicker } from '@/components/WorkspaceFolderPicker'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { fadeRise, staggerDelay, useListEnterIndex, useMotionPreset } from '@/lib/motion'
 import { translate } from '@/i18n'
@@ -187,21 +189,98 @@ function ModeBadge({ task }: { task: Pick<ScheduledTaskResponse, 'mode' | 'works
 export function ModeWorkspaceFields({
   mode,
   workspace,
+  projectId,
   onChange,
 }: {
   mode: ScheduledTaskMode
   workspace: string | null
-  /** Emits both fields together so the parent applies them in a single
-   *  setState — preventing the stale-snapshot bug where switching
-   *  ``coding → normal`` would clear the workspace but leave ``mode``
-   *  unchanged (two sequential setState calls on the same snapshot). */
-  onChange: (next: { mode: ScheduledTaskMode; workspace: string | null }) => void
+  projectId: string | null
+  onChange: (next: { mode: ScheduledTaskMode; workspace: string | null; projectId: string | null }) => void
 }) {
   const savedWorkspaces = useMemo(() => {
     const paths = loadCodingWorkspaceEntries().map((entry) => entry.path)
     if (workspace && !paths.includes(workspace)) paths.push(workspace)
     return paths.sort()
   }, [workspace])
+  const overviewQuery = useCodingOverviewQuery()
+  const projects = overviewQuery.data?.projects ?? []
+
+  // Build unified workspace options: projects (grouped) and standalone workspaces
+  type WorkspaceOption = {
+    value: string
+    label: string
+    projectId: string | null
+    path: string
+    isProject: boolean
+  }
+
+  const workspaceOptions: WorkspaceOption[] = useMemo(() => {
+    const options: WorkspaceOption[] = []
+    // Projects first - each project appears once with its primary workspace
+    for (const project of projects) {
+      if (project.workspaces.length > 0) {
+        const primaryWs = project.workspaces[0]
+        options.push({
+          value: `project:${project.id}`,
+          label: project.name,
+          projectId: project.id,
+          path: primaryWs.path,
+          isProject: true,
+        })
+      }
+    }
+    // Standalone workspaces (not in any project)
+    const projectPaths = new Set(projects.flatMap(p => p.workspaces.map(w => w.path)))
+    for (const path of savedWorkspaces) {
+      if (!projectPaths.has(path)) {
+        options.push({
+          value: `ws:${path}`,
+          label: workspaceLabel(path),
+          projectId: null,
+          path,
+          isProject: false,
+        })
+      }
+    }
+    // If current workspace is set but not in options, add it
+    if (workspace && !options.some(o => o.path === workspace)) {
+      const isProjectWs = projects.some(p => p.workspaces.some(w => w.path === workspace))
+      if (!isProjectWs) {
+        options.push({
+          value: `ws:${workspace}`,
+          label: workspaceLabel(workspace),
+          projectId: null,
+          path: workspace,
+          isProject: false,
+        })
+      }
+    }
+    return options
+  }, [workspace, projects, savedWorkspaces])
+
+  // Current selected value
+  const selectedValue = useMemo(() => {
+    if (projectId) {
+      const projectOpt = workspaceOptions.find(o => o.projectId === projectId)
+      if (projectOpt) return projectOpt.value
+    }
+    if (workspace) {
+      const wsOpt = workspaceOptions.find(o => o.path === workspace && !o.isProject)
+      if (wsOpt) return wsOpt.value
+    }
+    return ''
+  }, [projectId, workspace, workspaceOptions])
+
+  const handleWorkspaceChange = (value: string) => {
+    if (!value) {
+      onChange({ mode, workspace: null, projectId: null })
+      return
+    }
+    const option = workspaceOptions.find(o => o.value === value)
+    if (option) {
+      onChange({ mode, workspace: option.path, projectId: option.projectId })
+    }
+  }
 
   const modeOptions: { key: ScheduledTaskMode; label: string }[] = [
     { key: 'work', label: 'Work' },
@@ -214,8 +293,6 @@ export function ModeWorkspaceFields({
       <div
         role="radiogroup"
         aria-label="Task mode"
-        // ``inline-flex`` so two short labels ("Work" / "Coding") do not
-        // sprawl across the full form width.
         className="mt-2 inline-flex gap-1 rounded-md border border-(--color-border) bg-(--bg-page) p-1"
       >
         {modeOptions.map((opt) => {
@@ -229,10 +306,8 @@ export function ModeWorkspaceFields({
               onClick={() => {
                 onChange({
                   mode: opt.key,
-                  // Drop the workspace when leaving coding mode; preserve it
-                  // when staying on coding so the user does not lose their
-                  // typed-in path by tapping the active tab.
                   workspace: opt.key === 'coding' ? workspace : null,
+                  projectId: opt.key === 'coding' ? projectId : null,
                 })
               }}
               className={
@@ -250,34 +325,75 @@ export function ModeWorkspaceFields({
       <p className="mt-1 text-xs text-(--color-text-muted)">
         {mode === 'work'
           ? 'Delivers to the default team lead.'
-          : 'Delivers to the lead of the coding team for the workspace below.'}
+          : 'Delivers to the lead of the coding team for the selected workspace.'}
       </p>
 
       {mode === 'coding' && (
         <div className="mt-3">
           <label className="block text-sm font-medium text-(--color-text)">Workspace</label>
           <Select
-            value={workspace ?? ''}
-            onValueChange={(v) => onChange({ mode, workspace: v || null })}
+            value={selectedValue}
+            onValueChange={(v) => handleWorkspaceChange(v ?? '')}
           >
             <SelectTrigger
               className={`mt-1 w-full ${FIELD_CLASS}`}
               aria-label="Select workspace"
             >
               <SelectValue>
-                {workspace ? workspaceLabel(workspace) : 'Select a saved workspace…'}
+                {selectedValue
+                  ? workspaceOptions.find(o => o.value === selectedValue)?.label ?? 'Select…'
+                  : 'Select a workspace…'}
               </SelectValue>
             </SelectTrigger>
             <SelectContent className={SELECT_CONTENT_CLASS}>
-              {savedWorkspaces.map((path) => (
-                <SelectItem key={path} value={path}>
-                  {workspaceLabel(path)}
-                </SelectItem>
-              ))}
+              {workspaceOptions.length === 0 ? (
+                <SelectItem value="__none__" disabled>No saved workspaces</SelectItem>
+              ) : (
+                workspaceOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.isProject ? `📁 ${option.label}` : option.label}
+                  </SelectItem>
+                ))
+              )}
             </SelectContent>
           </Select>
           <p className="mt-1 text-xs text-(--color-text-muted)">
-            Workspaces come from saved coding workspaces.
+            Projects and standalone workspaces from your saved coding workspaces.
+          </p>
+        </div>
+      )}
+
+      {mode === 'work' && (
+        <div className="mt-3">
+          <label className="block text-sm font-medium text-(--color-text)">Workspace (optional)</label>
+          <div className={`mt-1 flex items-center gap-2 rounded-md border border-(--color-border) px-3 py-2 ${FIELD_CLASS}`}>
+            <FolderOpen size={14} className="shrink-0 text-(--color-text-subtle)" aria-hidden="true" />
+            <span
+              className={`min-w-0 flex-1 truncate text-sm ${workspace ? 'text-(--color-text)' : 'text-(--color-text-muted)'}`}
+              title={workspace ?? undefined}
+            >
+              {workspace ? workspaceLabel(workspace) : 'Default workspace'}
+            </span>
+            {workspace && (
+              <button
+                type="button"
+                onClick={() => onChange({ mode, workspace: null, projectId: null })}
+                className="shrink-0 rounded p-0.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                aria-label="Clear workspace, use default"
+              >
+                <X size={14} aria-hidden="true" />
+              </button>
+            )}
+            <WorkspaceFolderPicker
+              workspace={workspace}
+              onSelect={(path) => onChange({ mode, workspace: path, projectId: null })}
+              title="Choose workspace folder"
+            />
+          </div>
+          <p className="mt-1 text-xs text-(--color-text-muted)">
+            {workspace
+              ? workspace
+              : 'Leave empty to use the default workspace.'}
           </p>
         </div>
       )}
@@ -586,6 +702,7 @@ function CreateTaskForm({
     name: '',
     mode: initialMode,
     workspace: initialWorkspace,
+    project_id: null,
     schedule_type: 'every',
     every_seconds: 3600,
     timezone: localTz,
@@ -631,7 +748,8 @@ function CreateTaskForm({
     const payload: ScheduledTaskCreate = {
       name: formData.name.trim(),
       mode,
-      workspace: mode === 'coding' ? workspace!.trim() : null,
+      workspace: workspace?.trim() || null,
+      project_id: mode === 'coding' ? formData.project_id ?? null : null,
       schedule_type: formData.schedule_type,
       timezone: tz,
       prompt: formData.prompt.trim(),
@@ -684,11 +802,13 @@ function CreateTaskForm({
           <ModeWorkspaceFields
             mode={formData.mode ?? 'work'}
             workspace={formData.workspace ?? null}
+            projectId={formData.project_id ?? null}
             onChange={(next) =>
               setFormData((prev) => ({
                 ...prev,
                 mode: next.mode,
                 workspace: next.workspace,
+                project_id: next.projectId,
               }))
             }
           />
@@ -1089,6 +1209,7 @@ function EditTaskForm({
     name: task.name,
     mode: task.mode,
     workspace: task.workspace,
+    project_id: task.project_id,
     schedule_type: task.schedule_type,
     at_datetime: initialAt,
     every_seconds: task.every_seconds ?? undefined,
@@ -1128,7 +1249,8 @@ function EditTaskForm({
     const atIso = formData.at_datetime ? wallClockToISO(formData.at_datetime, tz) : undefined
     const payload: Partial<ScheduledTaskCreate> = {
       mode,
-      workspace: mode === 'coding' ? workspace!.trim() : null,
+      workspace: workspace?.trim() || null,
+      project_id: mode === 'coding' ? formData.project_id ?? null : null,
       schedule_type: formData.schedule_type,
       timezone: tz,
       prompt: formData.prompt.trim(),
@@ -1156,11 +1278,13 @@ function EditTaskForm({
           <ModeWorkspaceFields
             mode={formData.mode ?? 'work'}
             workspace={formData.workspace ?? null}
+            projectId={formData.project_id ?? null}
             onChange={(next) =>
               setFormData((prev) => ({
                 ...prev,
                 mode: next.mode,
                 workspace: next.workspace,
+                project_id: next.projectId,
               }))
             }
           />

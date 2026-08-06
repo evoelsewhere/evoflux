@@ -104,21 +104,54 @@ def _validate_schedule_values(
 
 
 def _validate_target(mode: str, workspace: str | None) -> None:
-    """Raise :exc:`InvalidTaskTargetError` if (mode, workspace) cannot route.
+    """Raise :exc:`InvalidTaskTargetError` for an unroutable target."""
+    if mode == "coding" and not workspace:
+        raise InvalidTaskTargetError("workspace is required when mode='coding'")
+    if workspace:
+        from app.services import team_manager
 
-    Cheap on-disk check only — no team is loaded.  Pairs with the Pydantic
-    ``mode``/``workspace`` cross-field validator (which only checks
-    presence) by adding the filesystem-existence check.
-    """
-    from app.services import team_manager
-
-    if mode == "coding":
-        if not workspace:
-            raise InvalidTaskTargetError("workspace is required when mode='coding'")
         try:
             team_manager.validate_workspace(workspace)
         except ValueError as exc:
             raise InvalidTaskTargetError(str(exc)) from exc
+
+
+def _validate_project_target(mode: str, project_id: UUID | None) -> None:
+    if project_id is not None and mode != "coding":
+        raise InvalidTaskTargetError("project_id is only valid when mode='coding'")
+
+
+async def _validate_project_compat(
+    db_factory: DbFactory,
+    *,
+    mode: str,
+    workspace: str | None,
+    project_id: UUID | None,
+) -> None:
+    if project_id is None:
+        return
+    from app.models.chat import CodingProject
+    from app.services.coding_project_service import get_project_workspace_paths
+
+    async with db_factory() as db:
+        project = await db.get(CodingProject, project_id)
+        if project is None or project.deleted_at is not None or project.hidden:
+            raise InvalidTaskTargetError(f"Coding project {project_id} was not found")
+        paths = await get_project_workspace_paths(db, project_id)
+    if mode != "coding":
+        raise InvalidTaskTargetError("project_id is only valid when mode='coding'")
+    if workspace is None:
+        raise InvalidTaskTargetError("workspace is required when mode='coding'")
+    from app.services.team_manager import validate_workspace
+
+    try:
+        resolved_workspace = validate_workspace(workspace)
+    except ValueError as exc:
+        raise InvalidTaskTargetError(str(exc)) from exc
+    if resolved_workspace not in paths:
+        raise InvalidTaskTargetError(
+            "workspace is not part of the selected coding project"
+        )
 
 
 async def _validate_session_compat(
@@ -127,8 +160,9 @@ async def _validate_session_compat(
     session_id: str | None,
     mode: str,
     workspace: str | None,
+    project_id: UUID | None = None,
 ) -> None:
-    """Ensure ``session_id`` (if explicit) matches the task's (mode, workspace).
+    """Ensure ``session_id`` (if explicit) matches the task's routing target.
 
     Skipped for:
 
@@ -169,6 +203,16 @@ async def _validate_session_compat(
             raise InvalidTaskTargetError(
                 f"Session {session_id} is bound to workspace "
                 f"'{row.workspace}', but task targets '{workspace}'."
+            )
+        if mode == "work" and row.workspace != workspace:
+            raise InvalidTaskTargetError(
+                f"Session {session_id} is bound to workspace "
+                f"'{row.workspace}', but task targets '{workspace}'."
+            )
+        if mode == "coding" and row.project_id != project_id:
+            raise InvalidTaskTargetError(
+                f"Session {session_id} is bound to project '{row.project_id}', "
+                f"but task targets '{project_id}'."
             )
 
 
@@ -290,17 +334,26 @@ class TaskScheduler:
             sqlalchemy.exc.IntegrityError: On duplicate task name.
         """
         _validate_target(body.mode, body.workspace)
+        _validate_project_target(body.mode, body.project_id)
+        await _validate_project_compat(
+            self._db,
+            mode=body.mode,
+            workspace=body.workspace,
+            project_id=body.project_id,
+        )
         await _validate_session_compat(
             self._db,
             session_id=body.session_id,
             mode=body.mode,
             workspace=body.workspace,
+            project_id=body.project_id,
         )
 
         task = ScheduledTask(
             name=body.name,
             mode=body.mode,
             workspace=body.workspace,
+            project_id=body.project_id,
             schedule_type=body.schedule_type,
             at_datetime=body.at_datetime,
             every_seconds=body.every_seconds,
@@ -337,19 +390,35 @@ class TaskScheduler:
         if body.mode == "work" and "workspace" not in fields:
             new_workspace = None
         new_session_id = body.session_id if "session_id" in fields else task.session_id
-        if "mode" in fields or "workspace" in fields:
+        new_project_id = body.project_id if "project_id" in fields else task.project_id
+        if body.mode == "work" and "project_id" not in fields:
+            new_project_id = None
+        _validate_project_target(new_mode, new_project_id)
+        if "mode" in fields or "workspace" in fields or "project_id" in fields:
             _validate_target(new_mode, new_workspace)
+            await _validate_project_compat(
+                self._db,
+                mode=new_mode,
+                workspace=new_workspace,
+                project_id=new_project_id,
+            )
 
         # Re-validate the session pairing whenever any of (mode, workspace,
         # session_id) change.  A mode-only change can newly conflict with an
         # already-stored session_id, so we always check against the merged
         # state.
-        if "mode" in fields or "workspace" in fields or "session_id" in fields:
+        if (
+            "mode" in fields
+            or "workspace" in fields
+            or "session_id" in fields
+            or "project_id" in fields
+        ):
             await _validate_session_compat(
                 self._db,
                 session_id=new_session_id,
                 mode=new_mode,
                 workspace=new_workspace,
+                project_id=new_project_id,
             )
 
         schedule_type = (
@@ -401,6 +470,7 @@ class TaskScheduler:
 
         task.mode = new_mode
         task.workspace = new_workspace
+        task.project_id = new_project_id
         task.schedule_type = schedule_type
         task.at_datetime = at_datetime
         task.every_seconds = every_seconds
@@ -641,7 +711,10 @@ class TaskScheduler:
             self._start_timer(fresh)
 
     async def _project_extra_paths(
-        self, session_id: str | None, primary_workspace: str
+        self,
+        session_id: str | None,
+        primary_workspace: str,
+        project_id: UUID | None = None,
     ) -> list[str] | None:
         """Return a project session's non-primary repo paths, or ``None``.
 
@@ -650,10 +723,10 @@ class TaskScheduler:
         session the row may not exist yet, so multi-repo context attaches from
         the next run onward. Mirrors the derivation in POST /team/chat.
         """
-        if not session_id:
+        if project_id is None and not session_id:
             return None
         try:
-            sid_uuid = UUID(session_id)
+            sid_uuid = UUID(session_id) if session_id else None
         except ValueError:
             return None
 
@@ -661,11 +734,19 @@ class TaskScheduler:
         from app.services.coding_project_service import get_project_workspace_paths
 
         async with self._db() as db:
-            row = await db.get(ChatSession, sid_uuid)
-            if row is None or row.project_id is None:
-                return None
-            all_paths = await get_project_workspace_paths(db, row.project_id)
-        extras = [p for p in all_paths if p != primary_workspace]
+            if project_id is None:
+                row = await db.get(ChatSession, sid_uuid)
+                if row is None or row.project_id is None:
+                    return None
+                project_id = row.project_id
+            all_paths = await get_project_workspace_paths(db, project_id)
+        from app.services.team_manager import validate_workspace
+
+        try:
+            resolved_primary = validate_workspace(primary_workspace)
+        except ValueError:
+            resolved_primary = primary_workspace
+        extras = [p for p in all_paths if p != resolved_primary]
         return extras or None
 
     async def _fire_task(
@@ -747,7 +828,7 @@ class TaskScheduler:
                 # multi-repo context (installs MultiRepoContextHook), mirroring
                 # POST /team/chat.
                 extra_ws_paths = await self._project_extra_paths(
-                    resolved_sid, task.workspace
+                    resolved_sid, task.workspace, task.project_id
                 )
                 team = await team_manager.get_or_start_coding_team(
                     task.workspace,
@@ -755,15 +836,24 @@ class TaskScheduler:
                     extra_workspace_paths=extra_ws_paths,
                 )
             else:
-                team = await team_manager.get_or_start_team()
-                if team is None:
-                    raise NoTeamConfigured("No team configured.")
+                if task.workspace:
+                    team = await team_manager.get_or_start_team_for_session(
+                        f"scheduler:{task.id}"
+                    )
+                    if team is None:
+                        raise NoTeamConfigured("No team configured.")
+                    team.workspace = task.workspace
+                else:
+                    team = await team_manager.get_or_start_team()
+                    if team is None:
+                        raise NoTeamConfigured("No team configured.")
             fired_sid, _ = await dispatch_user_message(
                 team,
                 content=f"[Scheduled Task: {task.name}]\n{task.prompt}",
                 session_id=resolved_sid,
                 mode=task.mode,
                 workspace=task.workspace,
+                project_id=task.project_id,
             )
         except NoTeamConfigured as exc:
             error = str(exc)

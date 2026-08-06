@@ -1064,6 +1064,7 @@ export interface ScheduledTaskResponse {
   // See documents/docs/agent/tools.md#scheduler-builtinschedulepy.
   mode: ScheduledTaskMode
   workspace: string | null
+  project_id: string | null
   schedule_type: 'at' | 'every' | 'cron'
   at_datetime: string | null
   every_seconds: number | null
@@ -1085,6 +1086,7 @@ export interface ScheduledTaskCreate {
   name: string
   mode?: ScheduledTaskMode
   workspace?: string | null
+  project_id?: string | null
   schedule_type: 'at' | 'every' | 'cron'
   at_datetime?: string | null
   every_seconds?: number | null
