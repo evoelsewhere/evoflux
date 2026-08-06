@@ -61,12 +61,17 @@ function prefersReducedMotion(): boolean {
  * and uses a catch-up step for large bursts. React transitions keep Markdown
  * parsing below input and scroll interactions in scheduling priority.
  */
-export function useStreamingReveal(content: string, isStreaming: boolean): string {
+export function useStreamingReveal(
+  content: string,
+  isStreaming: boolean,
+  isRenderActive = true,
+): string {
   const initial = isStreaming && !prefersReducedMotion() ? '' : content
   const [displayedContent, setDisplayedContent] = useState(initial)
   const displayedRef = useRef(initial)
   const targetRef = useRef(content)
   const streamingRef = useRef(isStreaming)
+  const renderActiveRef = useRef(isRenderActive)
   const frameRef = useRef<number | null>(null)
   const lastPaintRef = useRef(0)
   const scheduleRef = useRef<() => void>(() => {})
@@ -81,7 +86,7 @@ export function useStreamingReveal(content: string, isStreaming: boolean): strin
 
     const tick = (timestamp: number) => {
       frameRef.current = null
-      if (!active || !streamingRef.current) return
+      if (!active || !streamingRef.current || !renderActiveRef.current) return
 
       const target = targetRef.current
       const current = displayedRef.current
@@ -107,7 +112,7 @@ export function useStreamingReveal(content: string, isStreaming: boolean): strin
     }
 
     scheduleRef.current = schedule
-    schedule()
+    if (renderActiveRef.current) schedule()
 
     return () => {
       active = false
@@ -120,12 +125,22 @@ export function useStreamingReveal(content: string, isStreaming: boolean): strin
   useEffect(() => {
     targetRef.current = content
     streamingRef.current = isStreaming
+    renderActiveRef.current = isRenderActive
 
     if (!isStreaming || prefersReducedMotion()) {
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
       frameRef.current = null
       displayedRef.current = content
       setDisplayedContent(content) // eslint-disable-line react-hooks/set-state-in-effect
+      return
+    }
+
+    // When the live tail is well outside the viewport, keep only the newest
+    // authoritative target in a ref. This avoids parsing/reconciling invisible
+    // Markdown on every SSE frame; becoming visible schedules a normal catch-up.
+    if (!isRenderActive) {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+      frameRef.current = null
       return
     }
 
@@ -137,7 +152,7 @@ export function useStreamingReveal(content: string, isStreaming: boolean): strin
       setDisplayedContent(content)
     }
     scheduleRef.current()
-  }, [content, isStreaming])
+  }, [content, isRenderActive, isStreaming])
 
   return displayedContent
 }

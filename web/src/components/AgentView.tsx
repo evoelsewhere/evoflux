@@ -18,7 +18,7 @@
  * `AgentPane` for split/unified modes.
  */
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { memo, useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { ChatWelcome } from './ChatWelcome'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { BlockRenderer } from './BlockRenderer'
@@ -83,6 +83,83 @@ interface AgentViewProps {
   /** Latest completed turn changes, shown only by Coding mode for the lead. */
   turnChanges?: TurnChangesPending | null
 }
+
+interface AssistantTranscriptTurnProps {
+  blocks: ContentBlock[]
+  canContinue?: () => void
+  latestMCPAppBlockIds: Set<string>
+  sessionId?: string
+  turnChanges: TurnChangesPending | null
+  turnIsStreaming: boolean
+}
+
+/** Historical turns keep stable block-array identities and skip live ticks. */
+const AssistantTranscriptTurn = memo(function AssistantTranscriptTurn({
+  blocks,
+  canContinue,
+  latestMCPAppBlockIds,
+  sessionId,
+  turnChanges,
+  turnIsStreaming,
+}: AssistantTranscriptTurnProps) {
+  const groupedBlocks = useMemo(() => groupConsecutiveToolCalls(blocks), [blocks])
+  const turnStartedAt = useMemo(
+    () => blocks.find((block) => block.startedAt)?.startedAt,
+    [blocks],
+  )
+
+  return (
+    <div className={turnIsStreaming ? 'oa-active-turn-runway' : 'oa-transcript-turn'}>
+      {turnIsStreaming && <StreamingTurnHeader startedAt={turnStartedAt} />}
+      <div className="space-y-2">
+        {groupedBlocks.map((renderItem, index) => {
+          if ('kind' in renderItem && (renderItem as ToolBlockGroup).kind === 'group') {
+            return (
+              <BlockEnter key={(renderItem as ToolBlockGroup).id}>
+                <ToolCallGroupCard
+                  group={renderItem as ToolBlockGroup}
+                  isStreaming={isLatestStreamingItem(
+                    turnIsStreaming,
+                    index,
+                    groupedBlocks.length,
+                  )}
+                  sessionId={sessionId}
+                  latestMCPAppBlockIds={latestMCPAppBlockIds}
+                />
+              </BlockEnter>
+            )
+          }
+          const block = renderItem as ContentBlock
+          const isStreaming = isLatestStreamingItem(
+            turnIsStreaming,
+            index,
+            groupedBlocks.length,
+          )
+          return (
+            <BlockEnter key={block.id} disabled={isStreaming && block.type === 'text'}>
+              <BlockRenderer
+                block={block}
+                isStreaming={isStreaming}
+                sessionId={sessionId}
+                latestMCPAppBlockIds={latestMCPAppBlockIds}
+              />
+            </BlockEnter>
+          )
+        })}
+        {!turnIsStreaming && (
+          <AssistantTurnFooter
+            turnBlocks={blocks}
+            size="roomy"
+            onContinue={canContinue}
+          />
+        )}
+        {!turnIsStreaming && turnChanges && turnChanges.files.length > 0 && (
+          <TurnChangesCard changes={turnChanges} />
+        )}
+      </div>
+    </div>
+  )
+})
 
 export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, onAddSelectionToChat, onRequestSelectionDetails, onSendToSideChat, turnChanges }: AgentViewProps) {
   const [renderedTurnCount, setRenderedTurnCount] = useState(INITIAL_RENDERED_TURNS)
@@ -340,62 +417,23 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                  // Me only the trailing turn (no user block after) can be "live"
                   const isTrailingTurn = globalTurnIndex === turnItems.length - 1
                   const turnIsStreaming = isWorking && isTrailingTurn
-                  const canContinue = isTrailingTurn && !isWorking ? onContinue : undefined
-                  const groupedBlocks = groupConsecutiveToolCalls(item.blocks)
-                  const turnStartedAt = item.blocks.find((block) => block.startedAt)?.startedAt
                  return (
-                   <div
+                   <AssistantTranscriptTurn
                      key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}
-                     className={turnIsStreaming ? 'oa-active-turn-runway' : 'oa-transcript-turn'}
-                   >
-                     {turnIsStreaming && <StreamingTurnHeader startedAt={turnStartedAt} />}
-                     <div className="space-y-2">
-                       {groupedBlocks.map((renderItem, j) => {
-                         if ('kind' in renderItem && (renderItem as ToolBlockGroup).kind === 'group') {
-                           return (
-                             <BlockEnter key={(renderItem as ToolBlockGroup).id}>
-                               <ToolCallGroupCard
-                                 group={renderItem as ToolBlockGroup}
-                                 isStreaming={isLatestStreamingItem(turnIsStreaming, j, groupedBlocks.length)}
-                                 sessionId={sessionId}
-                                 latestMCPAppBlockIds={latestMCPAppBlockIds}
-                               />
-                             </BlockEnter>
-                           )
-                         }
-                         const block = renderItem as ContentBlock
-                         // A live turn can already contain several completed
-                         // thinking/tool phases. Only its newest visible item
-                         // should retain the streaming animation.
-                         const isStreaming = isLatestStreamingItem(turnIsStreaming, j, groupedBlocks.length)
-                         return (
-                           <BlockEnter key={block.id} disabled={isStreaming && block.type === 'text'}>
-                             <BlockRenderer
-                               block={block}
-                               isStreaming={isStreaming}
-                               sessionId={sessionId}
-                               onRevert={isDirectUserBlock(block) && block.id === latestUserBlockId ? handleRevert : undefined}
-                               latestMCPAppBlockIds={latestMCPAppBlockIds}
-                             />
-                           </BlockEnter>
-                         )
-                       })}
-                       {!turnIsStreaming && (
-                         <AssistantTurnFooter
-                           turnBlocks={item.blocks}
-                           size="roomy"
-                           onContinue={canContinue}
-                         />
-                       )}
-                       {!isWorking
-                         && globalTurnIndex === turnItems.length - 1
+                     blocks={item.blocks}
+                     turnIsStreaming={turnIsStreaming}
+                     canContinue={isTrailingTurn && !isWorking ? onContinue : undefined}
+                     sessionId={sessionId}
+                     latestMCPAppBlockIds={latestMCPAppBlockIds}
+                     turnChanges={
+                       !isWorking
+                         && isTrailingTurn
                          && turnChanges
-                         && turnChanges.files.length > 0
-                         && turnChanges.sessionId === sessionId && (
-                         <TurnChangesCard changes={turnChanges} />
-                       )}
-                     </div>
-                   </div>
+                         && turnChanges.sessionId === sessionId
+                         ? turnChanges
+                         : null
+                     }
+                   />
                  )
                 })}
 

@@ -32,6 +32,7 @@ import {
   postTeamChat,
 } from '@/api/client'
 import { readSSE } from '@/api/sse'
+import { createStreamScheduler } from '@/api/stream-scheduler'
 import { parseTeamBlocks } from '@/utils/messages'
 import {
   appendText,
@@ -150,94 +151,101 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
       const isStale = () =>
         abort.signal.aborted || activeMainSessionRef.current !== streamMainSessionId
 
+      const dispatchStreamEvent = (type: string, data: unknown) => {
+        if (isStale()) return
+        const d = data as Record<string, unknown>
+        switch (type) {
+          case 'agent_status':
+            // Replayed on mid-turn attach — restores the working flag
+            // after a page reload / panel reopen.
+            setIsWorking(d.status === 'working')
+            break
+          case 'thinking':
+            setIsWorking(true)
+            setCurrentBlocks((prev) => appendThinking(prev, d.text as string))
+            break
+          case 'message':
+            setIsWorking(true)
+            setCurrentBlocks((prev) => appendText(prev, d.text as string))
+            break
+          case 'tool_call':
+            setIsWorking(true)
+            setCurrentBlocks((prev) =>
+              initTool(
+                prev,
+                d.name as string,
+                d.tool_call_id as string | undefined,
+                typeof d.duration_ms === 'number' ? d.duration_ms : undefined,
+              ),
+            )
+            break
+          case 'tool_start':
+            setCurrentBlocks((prev) =>
+              addTool(
+                prev,
+                d.name as string,
+                d.arguments as string | undefined,
+                d.tool_call_id as string | undefined,
+                typeof d.duration_ms === 'number' ? d.duration_ms : undefined,
+              ),
+            )
+            break
+          case 'tool_output_delta':
+            setCurrentBlocks((prev) =>
+              appendToolOutput(
+                prev,
+                d.name as string,
+                d.tool_call_id as string | undefined,
+                d.text as string,
+              ),
+            )
+            break
+          case 'tool_end': {
+            const metadata = d.metadata as Record<string, unknown> | undefined
+            const durationMs =
+              typeof d.duration_ms === 'number'
+                ? d.duration_ms
+                : typeof metadata?.duration_ms === 'number'
+                  ? metadata.duration_ms
+                  : undefined
+            setCurrentBlocks((prev) =>
+              completeTool(
+                prev,
+                d.name as string,
+                d.tool_call_id as string | undefined,
+                d.result as string | undefined,
+                durationMs,
+                metadata,
+              ),
+            )
+            break
+          }
+          case 'done':
+            // Finalize: history refetch replaces the live tail with the
+            // persisted blocks.
+            setIsWorking(false)
+            setCurrentBlocks([])
+            void queryClient.invalidateQueries({ queryKey: ['sideChatMessages', sideId] })
+            break
+          case 'error':
+            setError((d.message as string) ?? 'Stream error')
+            setIsWorking(false)
+            break
+        }
+      }
+      const streamScheduler = createStreamScheduler(dispatchStreamEvent)
+      abort.signal.addEventListener('abort', streamScheduler.cancel, { once: true })
+
       fetch(getSideChatStreamUrl(streamMainSessionId, sideId), { signal: abort.signal })
         .then((res) => {
           if (!res.ok) throw new Error(`SSE stream failed: ${res.status}`)
           readSSE(res, {
             onEvent: (type, data) => {
-              if (isStale()) return
-              const d = data as Record<string, unknown>
-              switch (type) {
-                case 'agent_status':
-                  // Replayed on mid-turn attach — restores the working flag
-                  // after a page reload / panel reopen.
-                  setIsWorking(d.status === 'working')
-                  break
-                case 'thinking':
-                  setIsWorking(true)
-                  setCurrentBlocks((prev) => appendThinking(prev, d.text as string))
-                  break
-                case 'message':
-                  setIsWorking(true)
-                  setCurrentBlocks((prev) => appendText(prev, d.text as string))
-                  break
-                case 'tool_call':
-                  setIsWorking(true)
-                  setCurrentBlocks((prev) =>
-                    initTool(
-                      prev,
-                      d.name as string,
-                      d.tool_call_id as string | undefined,
-                      typeof d.duration_ms === 'number' ? d.duration_ms : undefined,
-                    ),
-                  )
-                  break
-                case 'tool_start':
-                  setCurrentBlocks((prev) =>
-                    addTool(
-                      prev,
-                      d.name as string,
-                      d.arguments as string | undefined,
-                      d.tool_call_id as string | undefined,
-                      typeof d.duration_ms === 'number' ? d.duration_ms : undefined,
-                    ),
-                  )
-                  break
-                case 'tool_output_delta':
-                  setCurrentBlocks((prev) =>
-                    appendToolOutput(
-                      prev,
-                      d.name as string,
-                      d.tool_call_id as string | undefined,
-                      d.text as string,
-                    ),
-                  )
-                  break
-                case 'tool_end': {
-                  const metadata = d.metadata as Record<string, unknown> | undefined
-                  const durationMs =
-                    typeof d.duration_ms === 'number'
-                      ? d.duration_ms
-                      : typeof metadata?.duration_ms === 'number'
-                        ? metadata.duration_ms
-                        : undefined
-                  setCurrentBlocks((prev) =>
-                    completeTool(
-                      prev,
-                      d.name as string,
-                      d.tool_call_id as string | undefined,
-                      d.result as string | undefined,
-                      durationMs,
-                      metadata,
-                    ),
-                  )
-                  break
-                }
-                case 'done':
-                  // Finalize: history refetch replaces the live tail with the
-                  // persisted blocks.
-                  setIsWorking(false)
-                  setCurrentBlocks([])
-                  void queryClient.invalidateQueries({ queryKey: ['sideChatMessages', sideId] })
-                  break
-                case 'error':
-                  setError((d.message as string) ?? 'Stream error')
-                  setIsWorking(false)
-                  break
-              }
+              streamScheduler.push(type, data)
             },
             onError: (err) => {
               if (isStale() || err.name === 'AbortError') return
+              streamScheduler.flush()
               setError(err.message)
               setIsWorking(false)
             },
@@ -245,6 +253,7 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
         })
         .catch((err) => {
           if (isStale() || err.name === 'AbortError') return
+          streamScheduler.flush()
           setError(err.message)
           setIsWorking(false)
         })

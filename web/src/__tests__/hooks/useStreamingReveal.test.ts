@@ -82,4 +82,36 @@ describe('useStreamingReveal', () => {
     rerender({ content: burst, isStreaming: false })
     expect(result.current).toBe(burst)
   })
+
+  it('holds an offscreen stream and catches up when rendering becomes active', () => {
+    const frames = new Map<number, FrameRequestCallback>()
+    let frameId = 0
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frameId += 1
+      frames.set(frameId, callback)
+      return frameId
+    })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+      frames.delete(id)
+    })
+
+    const burst = 'x'.repeat(100)
+    const { result, rerender } = renderHook(
+      ({ active }) => useStreamingReveal(burst, true, active),
+      { initialProps: { active: false } },
+    )
+
+    expect(result.current).toBe('')
+    expect(frames).toHaveLength(0)
+
+    rerender({ active: true })
+    expect(frames).toHaveLength(1)
+
+    act(() => {
+      const [id, callback] = frames.entries().next().value as [number, FrameRequestCallback]
+      frames.delete(id)
+      callback(40)
+    })
+    expect(result.current).toHaveLength(30)
+  })
 })

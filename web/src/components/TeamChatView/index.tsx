@@ -81,6 +81,7 @@ import type {
   AgentCapabilities as AgentCapabilitiesType,
   CodeReviewItem,
   RepositoryCodeReviews,
+  TurnChangesPending,
   WorkspaceFileInfo,
 } from '@/api/types'
 import { useTeamCommands } from './useTeamCommands'
@@ -211,6 +212,67 @@ interface PendingCodeReviewStart {
   model: string | null
   thinkingLevel: string | null
   fastMode: boolean
+}
+
+interface ActiveAgentTranscriptProps {
+  activeAgent: string
+  emptyState?: React.ReactNode
+  isContinuing: boolean
+  isLead: boolean
+  onAddSelectionToChat: (selectedText: string) => void
+  onContinue?: () => void
+  onRequestSelectionDetails: (selectedText: string) => void
+  onSendToSideChat: (selectedText: string) => void
+  turnChanges: TurnChangesPending | null
+}
+
+/**
+ * Per-frame stream subscription boundary.
+ *
+ * Keeping `currentBlocks` here prevents every token from re-rendering the
+ * route shell, workbench, panels, and composer. Those surfaces now update only
+ * for structural/primitive state changes; the live transcript remains hot.
+ */
+function ActiveAgentTranscript({
+  activeAgent,
+  emptyState,
+  isContinuing,
+  isLead,
+  onAddSelectionToChat,
+  onContinue,
+  onRequestSelectionDetails,
+  onSendToSideChat,
+  turnChanges,
+}: ActiveAgentTranscriptProps) {
+  const blocks = useTeamStore(
+    (state) => state.agentStreams[activeAgent]?.blocks ?? EMPTY_BLOCKS,
+  )
+  const currentBlocks = useTeamStore(
+    (state) => state.agentStreams[activeAgent]?.currentBlocks ?? EMPTY_BLOCKS,
+  )
+  const status = useTeamStore(
+    (state) => state.agentStreams[activeAgent]?.status,
+  )
+  const lastError = useTeamStore(
+    (state) => state.agentStreams[activeAgent]?.lastError,
+  )
+
+  return (
+    <AgentView
+      blocks={blocks}
+      currentBlocks={currentBlocks}
+      isWorking={status === 'working'}
+      isError={status === 'error'}
+      lastError={lastError}
+      isContinuing={isContinuing}
+      onContinue={isLead ? onContinue : undefined}
+      onAddSelectionToChat={onAddSelectionToChat}
+      onRequestSelectionDetails={onRequestSelectionDetails}
+      onSendToSideChat={onSendToSideChat}
+      turnChanges={turnChanges}
+      emptyState={emptyState}
+    />
+  )
 }
 
 export function TeamChatView({ sessionId, mode = 'work', workspace = null, codingSessionLoading = false }: TeamChatViewProps) {
@@ -425,12 +487,13 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const toggleSidebarCollapsed = useUIStore((s) => s.toggleSidebarCollapsed)
   const setSidebarCollapsed = useUIStore((s) => s.setSidebarCollapsed)
 
-  // Subscribe to active-agent stream fields directly to avoid recomputing on
-  // every other agent's tick.
+  // Finalized blocks update on turn boundaries and feed composer history.
+  // The hot `currentBlocks` array is intentionally subscribed inside
+  // ActiveAgentTranscript so each token cannot re-render this route shell.
   const activeBlocks        = useTeamStore((s) => s.activeAgent ? s.agentStreams[s.activeAgent]?.blocks : undefined)
-  const activeCurrentBlocks = useTeamStore((s) => s.activeAgent ? s.agentStreams[s.activeAgent]?.currentBlocks : undefined)
-  const activeStatus        = useTeamStore((s) => s.activeAgent ? s.agentStreams[s.activeAgent]?.status : undefined)
-  const activeLastError     = useTeamStore((s) => s.activeAgent ? s.agentStreams[s.activeAgent]?.lastError : undefined)
+  const activeCurrentBlockCount = useTeamStore(
+    (s) => s.activeAgent ? s.agentStreams[s.activeAgent]?.currentBlocks.length ?? 0 : 0,
+  )
   const hasActiveStream     = useTeamStore((s) => Boolean(s.activeAgent && s.agentStreams[s.activeAgent]))
   const activeGoal          = useTeamStore((s) => s.activeGoal)
 
@@ -1166,7 +1229,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     !!sessionId &&
     isSessionLoading &&
     (activeBlocks?.length ?? 0) === 0 &&
-    (activeCurrentBlocks?.length ?? 0) === 0
+    activeCurrentBlockCount === 0
   const historySkeleton = (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden" aria-hidden="true">
       <div className="flex-1 overflow-hidden">
@@ -1760,14 +1823,11 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         ) : showHistorySkeleton ? (
           historySkeleton
         ) : activeAgent && hasActiveStream ? (
-          <AgentView
-            blocks={activeBlocks ?? EMPTY_BLOCKS}
-            currentBlocks={activeCurrentBlocks ?? EMPTY_BLOCKS}
-            isWorking={activeStatus === 'working'}
-            isError={activeStatus === 'error'}
-            lastError={activeLastError}
+          <ActiveAgentTranscript
+            activeAgent={activeAgent}
             isContinuing={isContinuing && activeAgent === leadName}
-            onContinue={activeAgent === leadName ? continueTeam : undefined}
+            isLead={activeAgent === leadName}
+            onContinue={continueTeam}
             onAddSelectionToChat={handleAddSelectionToChat}
             onRequestSelectionDetails={handleRequestSelectionDetails}
             onSendToSideChat={handleSendToSideChat}
