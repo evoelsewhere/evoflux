@@ -33,8 +33,12 @@ class ScheduledTaskCreate(BaseModel):
     _mode_alias = field_validator("mode", mode="before")(_coerce_legacy_mode)
     workspace: str | None = Field(
         default=None,
-        description="Absolute path to a workspace directory. "
-        "Required when mode='coding'.",
+        description="Optional absolute path to a workspace directory. "
+        "Required when mode='coding'; empty uses the default work workspace.",
+    )
+    project_id: UUID | None = Field(
+        default=None,
+        description="Optional coding project id; valid only when mode='coding'.",
     )
 
     schedule_type: str = Field(description='"at" | "every" | "cron"')
@@ -66,8 +70,8 @@ class ScheduledTaskCreate(BaseModel):
 
         if self.mode == "coding" and not self.workspace:
             raise ValueError("workspace is required when mode='coding'")
-        if self.mode == "work" and self.workspace:
-            raise ValueError("workspace must be empty when mode='work'")
+        if self.project_id is not None and self.mode != "coding":
+            raise ValueError("project_id is only valid when mode='coding'")
 
         st = self.schedule_type
         if st == "at":
@@ -110,6 +114,7 @@ class ScheduledTaskUpdate(BaseModel):
 
     mode: TaskMode | None = None
     workspace: str | None = None
+    project_id: UUID | None = None
 
     _mode_alias = field_validator("mode", mode="before")(_coerce_legacy_mode)
     schedule_type: str | None = None
@@ -139,8 +144,8 @@ class ScheduledTaskUpdate(BaseModel):
         # service layer validates against the merged row state.
         if self.mode == "coding" and self.workspace == "":
             raise ValueError("workspace is required when mode='coding'")
-        if self.mode == "work" and self.workspace:
-            raise ValueError("workspace must be empty when mode='work'")
+        if self.project_id is not None and self.mode not in (None, "coding"):
+            raise ValueError("project_id is only valid when mode='coding'")
 
         st = self.schedule_type
         if st is None:
@@ -184,6 +189,7 @@ class ScheduledTaskResponse(BaseModel):
     mode: TaskMode
     _mode_alias = field_validator("mode", mode="before")(_coerce_legacy_mode)
     workspace: str | None
+    project_id: UUID | None = None
     schedule_type: str
     at_datetime: datetime | None
     every_seconds: int | None

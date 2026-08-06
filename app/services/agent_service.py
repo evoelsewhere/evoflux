@@ -548,6 +548,7 @@ async def dispatch_user_message(
     message_extra: dict | None = None,
     mode: str = "work",
     workspace: str | None = None,
+    project_id: uuid.UUID | None = None,
     model: str | None = None,
     model_provided: bool = False,
     thinking_level: str | None = None,
@@ -598,6 +599,7 @@ async def dispatch_user_message(
             message_extra=message_extra,
             mode=mode,
             workspace=workspace,
+            project_id=project_id,
             model=model,
             model_provided=model_provided or model is not None,
             thinking_level=thinking_level,
@@ -619,6 +621,7 @@ async def dispatch_user_message(
             session_id=sid,
             mode=mode,
             workspace=workspace,
+            project_id=project_id,
         )
         # Create the replayable stream state before the HTTP route returns.
         # The background handler will reset it with keep_subscribers=True once

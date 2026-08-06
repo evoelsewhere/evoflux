@@ -272,6 +272,15 @@ class SandboxConfig:
                 tilde expansion, or (when ``is_write``) falls under a
                 read-only root.
         """
+        if self.native_process_isolation == "best_effort":
+            # Best effort is the explicit opt-out from sandbox enforcement. Keep
+            # path resolution/normalisation for callers, but do not apply the
+            # workspace, deny-root, read-only, or write-claim policy.
+            raw_path = os.path.expanduser(str(path))
+            p = Path(raw_path)
+            candidate = p if p.is_absolute() else self.workspace_root / p
+            return candidate.resolve()
+
         if str(path).startswith("~"):
             raise PermissionError(
                 f"Tilde paths are not allowed inside the sandbox: {path}"
@@ -371,6 +380,9 @@ class SandboxConfig:
         base-source repo remain the last line of defence, same caveat the
         denied-root scan below already carries.
         """
+        if self.native_process_isolation == "best_effort":
+            return None
+
         try:
             tokens = _tokenize_command(command)
         except ValueError:

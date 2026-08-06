@@ -36,6 +36,7 @@ def _make_sandbox(
         workspace=str(tmp_path / "ws"),
         denied_roots=denied if denied is not None else [],
         denied_patterns=denied_patterns if denied_patterns is not None else [],
+        native_process_isolation="required",
     )
 
 
@@ -160,6 +161,7 @@ def test_workspace_under_denied_root_still_allowed(tmp_path):
         workspace=str(workspace),
         memory=str(tmp_path / "mem"),
         denied_roots=[denied],
+        native_process_isolation="required",
     )
     # Files inside workspace are fine
     sandbox.validate_path("file.txt")
@@ -173,6 +175,7 @@ def test_state_logs_under_denied_root_allowed(tmp_path):
         workspace=str(tmp_path / "ws"),
         denied_roots=[Path(settings.EVOFLUX_STATE_DIR).resolve()],
         denied_patterns=[],
+        native_process_isolation="required",
     )
     log_path = (Path(settings.EVOFLUX_STATE_DIR) / "logs" / "app" / "app.log").resolve()
 
@@ -184,6 +187,7 @@ def test_state_non_log_paths_still_rejected(tmp_path):
         workspace=str(tmp_path / "ws"),
         denied_roots=[Path(settings.EVOFLUX_STATE_DIR).resolve()],
         denied_patterns=[],
+        native_process_isolation="required",
     )
 
     state_path = (Path(settings.EVOFLUX_STATE_DIR) / "private").resolve()
@@ -198,9 +202,27 @@ def test_state_non_log_paths_still_rejected(tmp_path):
 
 def test_tilde_prefix_rejected(tmp_path):
     """Paths starting with ~ are rejected — tilde expansion is a traversal risk."""
-    sandbox = _make_sandbox(tmp_path)
+    sandbox = SandboxConfig(
+        workspace=str(tmp_path / "ws"),
+        denied_roots=[],
+        denied_patterns=[],
+        native_process_isolation="required",
+    )
     with pytest.raises(PermissionError, match="Tilde paths are not allowed"):
         sandbox.validate_path("~/foo")
+
+
+def test_best_effort_allows_paths_outside_sandbox(tmp_path):
+    sandbox = SandboxConfig(
+        workspace=str(tmp_path / "ws"),
+        native_process_isolation="best_effort",
+        denied_roots=[tmp_path / "denied"],
+        denied_patterns=["**/.env"],
+        read_only_paths=[str(tmp_path / "readonly")],
+        write_allowed_paths=["claimed"],
+    )
+
+    assert sandbox.validate_path("~/.cache/uv") == (Path.home() / ".cache/uv").resolve()
 
 
 # ---------------------------------------------------------------------------

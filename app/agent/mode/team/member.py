@@ -428,6 +428,7 @@ class TeamMemberBase(abc.ABC):
         title: str | None = None,
         mode: str = "work",
         workspace: str | None = None,
+        project_id: uuid.UUID | None = None,
     ) -> None:
         """Ensure a DB chat session row exists for self.session_id."""
         db_factory = resolve_db_factory(self.db_factory)
@@ -442,6 +443,7 @@ class TeamMemberBase(abc.ABC):
                         agent_name=self.name,
                         mode=mode,
                         workspace=workspace,
+                        project_id=project_id,
                         tags=sorted(self._team.session_tags) or None
                         if self._team
                         else None,
@@ -457,6 +459,8 @@ class TeamMemberBase(abc.ABC):
                     existing.title = title or f"Team {self._role_label}: {self.name}"
                     existing.mode = mode
                     existing.workspace = workspace
+                    if project_id is not None:
+                        existing.project_id = project_id
                     db.add(existing)
                     await db.commit()
                     logger.info(
