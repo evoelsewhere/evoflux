@@ -18,6 +18,14 @@ defects that change production behavior, not commentary volume.
 3. Trace affected producers, callers, consumers, persistence, asynchronous
    work, and independently deployed dependents where behavior can propagate.
 
+For exact changed symbols, use native `code_graph` to verify direct
+`callers`/`references`, outbound `callees`, and bounded `impact` rather than
+guessing propagation from filenames. Start at depth 1, disambiguate duplicate
+definitions, preserve repository labels, and reuse returned call-site source.
+Read [references/code-graph-contract.md](references/code-graph-contract.md)
+when graph freshness, dirty files, pending cross-repository edges, dynamic
+wiring, or truncation limits review coverage.
+
 ## Review by risk
 
 Check in this order:

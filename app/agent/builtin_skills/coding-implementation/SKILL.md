@@ -23,6 +23,16 @@ not demand.
    change crosses a public boundary, touches persistence, alters asynchronous
    state, or affects more than one independently deployed consumer.
 
+When an exact changed symbol is known, use native `code_graph` before editing:
+`references` or `callers` to enumerate direct consumers, `callees` to confirm
+outbound dependencies, and `impact` only for explicitly transitive risk. Start
+at depth 1 and keep repository identity on cross-repository edges. Do not send
+the feature request itself as a graph symbol.
+
+Read [references/code-graph-contract.md](references/code-graph-contract.md)
+when the result is ambiguous, stale, truncated, cross-repository, or mixed
+with dynamic wiring.
+
 ## Implement
 
 1. Choose the narrowest owning boundary and reuse established abstractions.
@@ -43,7 +53,9 @@ command that was not run, was skipped, or failed as unverified.
 
 Before finishing, inspect the final diff for accidental scope, stale names,
 debug output, unreachable compatibility branches, and tests that only mirror
-the implementation.
+the implementation. Re-run the smallest relevant graph query when the edit
+changes a public symbol boundary, and compare the post-change consumer set to
+the established contract.
 
 ## Deliverable
 

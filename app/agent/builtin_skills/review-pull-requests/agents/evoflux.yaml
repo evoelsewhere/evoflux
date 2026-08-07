@@ -4,3 +4,8 @@ interface:
   default_prompt: "Use $review-pull-requests to perform a risk-based end-to-end review of the current PR or MR."
 policy:
   allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: builtin
+      value: code_graph
+      description: "Native exact-symbol relationships for changed-code impact and cross-repository review"

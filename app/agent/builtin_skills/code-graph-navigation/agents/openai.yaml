@@ -1,6 +1,0 @@
-interface:
-  display_name: "Navigate Code Graph"
-  short_description: "Trace exact symbols and structural relationships"
-  default_prompt: "Use $code-graph-navigation to trace the callers and impact of this exact code symbol."
-policy:
-  allow_implicit_invocation: true

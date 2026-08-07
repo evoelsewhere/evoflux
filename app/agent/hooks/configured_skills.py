@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import json
-import uuid
 from typing import TYPE_CHECKING, Sequence
 
 from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
-from app.agent.schemas.chat import AssistantMessage, FunctionCall, ToolCall, ToolMessage
-from app.agent.skills.activation import activate_skill
+from app.agent.skills.activation import activate_skill, inject_skill_activation
 
 if TYPE_CHECKING:
     from app.agent.state import AgentState, RunContext
@@ -80,27 +77,15 @@ class ConfiguredSkillsHook(BaseAgentHook):
                     MAX_CONFIGURED_SKILL_BYTES,
                 )
                 continue
-            call_id = f"configured_{uuid.uuid4().hex[:12]}"
-            state.messages[insert_at:insert_at] = [
-                AssistantMessage(
-                    content=None,
-                    tool_calls=[
-                        ToolCall(
-                            id=call_id,
-                            function=FunctionCall(
-                                name="skill",
-                                arguments=json.dumps(
-                                    {"action": "load", "skill_name": name}
-                                ),
-                            ),
-                        )
-                    ],
-                ),
-                ToolMessage(tool_call_id=call_id, name="skill", content=content),
-            ]
+            inject_skill_activation(
+                state,
+                skill_name=name,
+                content=content,
+                source="configured",
+                insert_at=insert_at,
+            )
             insert_at += 2
             used_bytes += content_bytes
-            loaded[name] = content
             logger.info(
                 "configured_skill_loaded agent={} skill={}", ctx.agent_name, name
             )

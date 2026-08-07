@@ -35,10 +35,10 @@ MAX_DISCOVERY_DIRECTORIES = 2_000
 MAX_DISCOVERY_ENTRIES = 20_000
 MAX_DESCRIPTION_CHARS = 1_024
 MAX_SKILL_FILE_BYTES = 512 * 1024
-MAX_OPENAI_METADATA_BYTES = 256 * 1024
+MAX_AGENT_METADATA_BYTES = 256 * 1024
 MAX_DEPENDENCY_RECORDS = 64
 RECOMMENDED_SKILL_LINES = 500
-OPENAI_INTERFACE_FIELD_LIMITS = {
+AGENT_INTERFACE_FIELD_LIMITS = {
     "display_name": 128,
     "short_description": 1_024,
     "default_prompt": 4_096,
@@ -46,6 +46,8 @@ OPENAI_INTERFACE_FIELD_LIMITS = {
     "icon_large": 1_024,
     "brand_color": 64,
 }
+EVOFLUX_AGENT_METADATA = "evoflux.yaml"
+PORTABLE_AGENT_METADATA = "openai.yaml"
 _PORTABLE_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _LEGACY_NAME_RE = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*$"
@@ -386,50 +388,54 @@ def _render_metadata_tokens(text: str, skill_dir: Path) -> str:
     return text
 
 
-def _read_openai_metadata(
-    record: SkillRecord,
-) -> None:
-    metadata_path = record.skill_dir / "agents" / "openai.yaml"
+def _read_agent_metadata(record: SkillRecord) -> None:
+    """Read EvoFlux-native metadata, falling back to portable Codex metadata."""
+
+    agents_dir = record.skill_dir / "agents"
+    native_path = agents_dir / EVOFLUX_AGENT_METADATA
+    portable_path = agents_dir / PORTABLE_AGENT_METADATA
+    metadata_path = native_path if native_path.is_file() else portable_path
     if not metadata_path.is_file():
         return
+    label = metadata_path.relative_to(record.skill_dir).as_posix()
     try:
         size = metadata_path.stat().st_size
-        if size > MAX_OPENAI_METADATA_BYTES:
+        if size > MAX_AGENT_METADATA_BYTES:
             record.add_diagnostic(
-                "openai-metadata-too-large",
-                "agents/openai.yaml is "
+                "agent-metadata-too-large",
+                f"{label} is "
                 f"{size} bytes; metadata is not read above the "
-                f"{MAX_OPENAI_METADATA_BYTES}-byte limit.",
+                f"{MAX_AGENT_METADATA_BYTES}-byte limit.",
             )
             return
         with metadata_path.open("rb") as handle:
-            payload = handle.read(MAX_OPENAI_METADATA_BYTES + 1)
-        if len(payload) > MAX_OPENAI_METADATA_BYTES:
+            payload = handle.read(MAX_AGENT_METADATA_BYTES + 1)
+        if len(payload) > MAX_AGENT_METADATA_BYTES:
             record.add_diagnostic(
-                "openai-metadata-too-large",
-                "agents/openai.yaml changed while being read and now exceeds "
-                f"the {MAX_OPENAI_METADATA_BYTES}-byte limit.",
+                "agent-metadata-too-large",
+                f"{label} changed while being read and now exceeds "
+                f"the {MAX_AGENT_METADATA_BYTES}-byte limit.",
             )
             return
         raw = yaml.safe_load(payload.decode("utf-8")) or {}
     except (OSError, UnicodeError, yaml.YAMLError, RecursionError) as exc:
         record.add_diagnostic(
-            "invalid-openai-metadata",
-            f"agents/openai.yaml could not be parsed: {exc}",
+            "invalid-agent-metadata",
+            f"{label} could not be parsed: {exc}",
         )
         return
     if not isinstance(raw, dict):
         record.add_diagnostic(
-            "invalid-openai-metadata",
-            "agents/openai.yaml must contain a YAML mapping.",
+            "invalid-agent-metadata",
+            f"{label} must contain a YAML mapping.",
         )
         return
 
     interface = raw.get("interface") or {}
     if not isinstance(interface, dict):
         record.add_diagnostic(
-            "invalid-openai-interface",
-            "agents/openai.yaml interface must be a mapping.",
+            "invalid-agent-interface",
+            f"{label} interface must be a mapping.",
         )
         interface = {}
     for key in ("display_name", "short_description"):
@@ -438,23 +444,23 @@ def _read_openai_metadata(
             or not interface.get(key, "").strip()
         ):
             record.add_diagnostic(
-                "missing-openai-interface-field",
-                f"agents/openai.yaml interface.{key} is required when the file exists.",
+                "missing-agent-interface-field",
+                f"{label} interface.{key} is required when the file exists.",
             )
-    for key, limit in OPENAI_INTERFACE_FIELD_LIMITS.items():
+    for key, limit in AGENT_INTERFACE_FIELD_LIMITS.items():
         value = interface.get(key)
         if value is None:
             continue
         if not isinstance(value, str):
             record.add_diagnostic(
-                "invalid-openai-interface-field",
-                f"agents/openai.yaml interface.{key} must be a string.",
+                "invalid-agent-interface-field",
+                f"{label} interface.{key} must be a string.",
             )
             continue
         if len(value) > limit:
             record.add_diagnostic(
-                "openai-interface-field-too-long",
-                f"agents/openai.yaml interface.{key} exceeds {limit} characters.",
+                "agent-interface-field-too-long",
+                f"{label} interface.{key} exceeds {limit} characters.",
             )
             continue
         setattr(record, key, value.strip() or None)
@@ -462,8 +468,8 @@ def _read_openai_metadata(
     policy = raw.get("policy") or {}
     if not isinstance(policy, dict):
         record.add_diagnostic(
-            "invalid-openai-policy",
-            "agents/openai.yaml policy must be a mapping.",
+            "invalid-agent-policy",
+            f"{label} policy must be a mapping.",
         )
     elif "allow_implicit_invocation" in policy:
         implicit = policy["allow_implicit_invocation"]
@@ -471,21 +477,21 @@ def _read_openai_metadata(
             record.allow_implicit_invocation = implicit
         else:
             record.add_diagnostic(
-                "invalid-openai-policy",
+                "invalid-agent-policy",
                 "policy.allow_implicit_invocation must be a boolean.",
             )
 
     dependencies = raw.get("dependencies") or {}
     if not isinstance(dependencies, dict):
         record.add_diagnostic(
-            "invalid-openai-dependencies",
-            "agents/openai.yaml dependencies must be a mapping.",
+            "invalid-agent-dependencies",
+            f"{label} dependencies must be a mapping.",
         )
     else:
         tools = dependencies.get("tools") or []
         if not isinstance(tools, list):
             record.add_diagnostic(
-                "invalid-openai-dependencies",
+                "invalid-agent-dependencies",
                 "dependencies.tools must be a list of mappings.",
             )
         else:
@@ -493,7 +499,7 @@ def _read_openai_metadata(
             for index, item in enumerate(tools[:MAX_DEPENDENCY_RECORDS]):
                 if not isinstance(item, dict):
                     record.add_diagnostic(
-                        "invalid-openai-dependency",
+                        "invalid-agent-dependency",
                         f"dependencies.tools[{index}] must be a mapping.",
                     )
                     continue
@@ -508,7 +514,7 @@ def _read_openai_metadata(
                     or len(value.strip()) > MAX_DESCRIPTION_CHARS
                 ):
                     record.add_diagnostic(
-                        "invalid-openai-dependency",
+                        "invalid-agent-dependency",
                         f"dependencies.tools[{index}] requires bounded string fields type and value.",
                     )
                     continue
@@ -528,7 +534,7 @@ def _read_openai_metadata(
                         continue
                     if not isinstance(raw_value, str) or len(raw_value.strip()) > limit:
                         record.add_diagnostic(
-                            "invalid-openai-dependency",
+                            "invalid-agent-dependency",
                             f"dependencies.tools[{index}].{key} must be a bounded string.",
                         )
                         valid = False
@@ -539,7 +545,7 @@ def _read_openai_metadata(
                     normalized_tools.append(normalized)
             if len(tools) > MAX_DEPENDENCY_RECORDS:
                 record.add_diagnostic(
-                    "openai-dependencies-truncated",
+                    "agent-dependencies-truncated",
                     f"Only the first {MAX_DEPENDENCY_RECORDS} tool dependencies are cataloged.",
                 )
             record.dependencies = tuple(normalized_tools)
@@ -682,7 +688,7 @@ def _build_record(
     if isinstance(user_invocable, bool):
         record.user_invocable = user_invocable
 
-    _read_openai_metadata(record)
+    _read_agent_metadata(record)
     record.resource_count = _count_resources(record.skill_dir)
     return record
 
@@ -724,7 +730,12 @@ def skills_tree_signature(directory: Path) -> int:
         except OSError:
             pass
         for path in files:
-            if path.name not in {"SKILL.md", "openai.yaml", SKILL_SCOPE_FILENAME}:
+            if path.name not in {
+                "SKILL.md",
+                EVOFLUX_AGENT_METADATA,
+                PORTABLE_AGENT_METADATA,
+                SKILL_SCOPE_FILENAME,
+            }:
                 continue
             try:
                 maximum = max(maximum, path.stat().st_mtime_ns)
@@ -833,8 +844,10 @@ def list_skill_resources(skill_dir: Path, *, limit: int = 200) -> list[dict[str,
 __all__ = [
     "MAX_DESCRIPTION_CHARS",
     "MAX_DEPENDENCY_RECORDS",
-    "MAX_OPENAI_METADATA_BYTES",
-    "OPENAI_INTERFACE_FIELD_LIMITS",
+    "AGENT_INTERFACE_FIELD_LIMITS",
+    "EVOFLUX_AGENT_METADATA",
+    "MAX_AGENT_METADATA_BYTES",
+    "PORTABLE_AGENT_METADATA",
     "MAX_SKILL_FILE_BYTES",
     "RECOMMENDED_SKILL_LINES",
     "SkillDiagnostic",

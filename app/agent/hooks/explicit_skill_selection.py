@@ -2,21 +2,14 @@
 
 from __future__ import annotations
 
-import json
 import re
-import uuid
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
-from app.agent.schemas.chat import (
-    AssistantMessage,
-    FunctionCall,
-    HumanMessage,
-    ToolCall,
-    ToolMessage,
-)
+from app.agent.schemas.chat import HumanMessage
 
 if TYPE_CHECKING:
     from app.agent.state import AgentState, RunContext
@@ -61,6 +54,11 @@ class ExplicitSkillSelectionHook(BaseAgentHook):
                 selector,
             )
             return
+        # An exact user directive owns this turn even when its durable
+        # activation pair already exists in history. Mark precedence before
+        # the idempotency check so implicit resolution cannot select a second
+        # workflow for the same request.
+        state.metadata["explicit_skill_selected"] = skill_name
         if skill_name in self._loaded_skills(state):
             return
         if await self._inject(state, skill_name, discovered, insert_at=user_index + 1):
@@ -85,14 +83,12 @@ class ExplicitSkillSelectionHook(BaseAgentHook):
         for line in message.splitlines():
             if not line or line == ">" or line.startswith("> "):
                 continue
-            match = _SLASH_DIRECTIVE_RE.match(line) or _DOLLAR_DIRECTIVE_RE.search(
-                line
-            )
+            match = _SLASH_DIRECTIVE_RE.match(line) or _DOLLAR_DIRECTIVE_RE.search(line)
             return match.group(1) if match else None
         return None
 
     @staticmethod
-    def _resolve_name(selector: str, discovered: dict[str, object]) -> str | None:
+    def _resolve_name(selector: str, discovered: Mapping[str, object]) -> str | None:
         if selector in discovered:
             return selector
         nested = selector.replace(":", "/", 1)
@@ -115,11 +111,11 @@ class ExplicitSkillSelectionHook(BaseAgentHook):
     async def _inject(
         state: "AgentState",
         skill_name: str,
-        discovered: dict[str, object],
+        discovered: Mapping[str, object],
         *,
         insert_at: int,
     ) -> bool:
-        from app.agent.skills.activation import activate_skill
+        from app.agent.skills.activation import activate_skill, inject_skill_activation
         from app.agent.skills.models import SkillRecord
 
         record = discovered.get(skill_name)
@@ -129,27 +125,11 @@ class ExplicitSkillSelectionHook(BaseAgentHook):
             rendered = await activate_skill(record)
         except (OSError, UnicodeError, ValueError):
             return False
-        call_id = f"explicit_{uuid.uuid4().hex[:12]}"
-        state.messages[insert_at:insert_at] = [
-            AssistantMessage(
-                content=None,
-                tool_calls=[
-                    ToolCall(
-                        id=call_id,
-                        function=FunctionCall(
-                            name="skill",
-                            arguments=json.dumps(
-                                {"action": "load", "skill_name": skill_name}
-                            ),
-                        ),
-                    )
-                ],
-            ),
-            ToolMessage(
-                tool_call_id=call_id,
-                name="skill",
-                content=rendered,
-            ),
-        ]
-        state.metadata.setdefault("loaded_skills", {})[skill_name] = rendered
+        inject_skill_activation(
+            state,
+            skill_name=skill_name,
+            content=rendered,
+            source="explicit",
+            insert_at=insert_at,
+        )
         return True

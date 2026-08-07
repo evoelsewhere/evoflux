@@ -68,12 +68,10 @@ async def test_openai_default_prompt_dollar_mention_loads_selected_skill():
 
 
 @pytest.mark.asyncio
-async def test_code_graph_default_prompt_loads_skill_only_in_coding_mode():
+async def test_coding_investigation_default_prompt_loads_only_in_coding_mode():
     state = _state(
         HumanMessage(
-            content=(
-                "Use $code-graph-navigation to find callers of calculate_total."
-            )
+            content=("Use $coding-investigation to find callers of calculate_total.")
         )
     )
 
@@ -83,7 +81,7 @@ async def test_code_graph_default_prompt_loads_skill_only_in_coding_mode():
     state.metadata["team_mode"] = "coding"
     await ExplicitSkillSelectionHook().before_agent(_ctx(), state)
 
-    assert set(state.metadata["loaded_skills"]) == {"code-graph-navigation"}
+    assert set(state.metadata["loaded_skills"]) == {"coding-investigation"}
 
 
 @pytest.mark.asyncio
@@ -130,6 +128,7 @@ async def test_canonical_visible_activation_is_not_injected_twice():
 
     assert len(state.messages) == 3
     assert set(state.metadata["loaded_skills"]) == {"pdf"}
+    assert state.metadata["explicit_skill_selected"] == "pdf"
 
 
 @pytest.mark.asyncio

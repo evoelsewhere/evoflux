@@ -3,4 +3,4 @@ interface:
   short_description: "Choose one option with explicit tradeoffs"
   default_prompt: "Use $work-decision to compare these options and make an evidence-backed recommendation."
 policy:
-  allow_implicit_invocation: false
+  allow_implicit_invocation: true

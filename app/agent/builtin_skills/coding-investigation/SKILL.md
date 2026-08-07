@@ -1,6 +1,6 @@
 ---
 name: coding-investigation
-description: Investigate unfamiliar code behavior when the exact source root is unknown or static relationships alone cannot explain activation, ownership, data flow, configuration, registration, or runtime wiring. It produces a bounded source-and-runtime evidence chain without mutating code. Do not use it for a known symbol's purely structural graph question; use code-graph-navigation for that workflow.
+description: Investigate unfamiliar code behavior, or answer an exact symbol's definition, callers, callees, references, impact, and cross-repository relationship questions. Use it to trace activation, ownership, data flow, configuration, registration, and runtime wiring with bounded source evidence without mutating code; do not use it for a reproducible failure, implementation request, or review of an existing diff.
 ---
 
 # Investigate code behavior
@@ -17,9 +17,10 @@ resolve exact identifiers, configuration keys, or runtime boundaries.
 2. Locate the exact root identifier. Use literal discovery for user-facing
    strings, routes, feature flags, configuration, registration keys, comments,
    generated names, and dynamic wiring.
-3. If locating the root reduces the remaining question to a known symbol's
-   structural relationships, switch to the `code-graph-navigation` workflow;
-   this skill does not redefine that operation contract.
+3. If the root is now an exact symbol, use native `code_graph` for the smallest
+   structural operation: `definition`, `callers`, `callees`, `references`,
+   `impact`, or `neighborhood`. Start at depth 1 and disambiguate duplicate
+   definitions before traversal.
 4. Otherwise, inspect only the branches, state changes, configuration,
    registration, generated wiring, and repository boundaries needed to explain
    the behavior.
@@ -33,6 +34,12 @@ resolve exact identifiers, configuration keys, or runtime boundaries.
 Read [references/evidence-chain.md](references/evidence-chain.md) when the path
 crosses repositories, contains duplicate symbols, mixes static and dynamic
 wiring, or needs an impact assessment rather than a simple caller answer.
+
+Read [references/code-graph-contract.md](references/code-graph-contract.md)
+before structural traversal. Never pass request prose, a feature description,
+an error sentence, a route, or a configuration question as `symbol`; first
+discover an exact identifier. Reuse graph-returned source instead of grepping
+or rereading the same ranges.
 
 ## Evidence discipline
 

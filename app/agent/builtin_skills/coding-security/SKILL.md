@@ -22,6 +22,14 @@ exploit without tracing control and impact.
    when the path crosses tenants, interpreters, file/network boundaries,
    redirects, deserializers, privileged workers, or third-party dependencies.
 
+When exact source identifiers are known, use native `code_graph` to bound the
+trust path: `callers` for reachable entry sites, `callees` for sensitive sinks,
+`references` for registration or callback wiring, and `impact` for upstream
+exposure. Start at depth 1. Static relationships support reachability analysis
+but never replace runtime authorization, data-flow, or exploit evidence.
+Read [references/code-graph-contract.md](references/code-graph-contract.md) for
+ambiguity, cross-repository limits, and dynamic-wiring fallbacks.
+
 ## Prove findings
 
 For each candidate issue, establish:

@@ -3,4 +3,9 @@ interface:
   short_description: "Stage compatible transitions with rollback gates"
   default_prompt: "Use $coding-migration to design and execute this transition with compatibility and rollback proof."
 policy:
-  allow_implicit_invocation: false
+  allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: builtin
+      value: code_graph
+      description: "Native exact-symbol definitions, callers, callees, references, impact, and cross-repository relationships"

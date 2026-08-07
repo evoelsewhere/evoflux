@@ -17,20 +17,20 @@ def test_validator_reports_deep_yaml_without_crashing(tmp_path) -> None:
     assert any(item.code == "invalid-frontmatter" for item in result.findings)
 
 
-def test_validator_reports_deep_openai_yaml_without_crashing(tmp_path) -> None:
-    skill_dir = tmp_path / "deep-openai"
+def test_validator_reports_deep_agent_yaml_without_crashing(tmp_path) -> None:
+    skill_dir = tmp_path / "deep-agent"
     (skill_dir / "agents").mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
-        "---\nname: deep-openai\ndescription: Validate metadata.\n---\nBody."
+        "---\nname: deep-agent\ndescription: Validate metadata.\n---\nBody."
     )
     nested_yaml = "".join(("  " * index) + "a:\n" for index in range(500))
-    assert len(nested_yaml.encode("utf-8")) < validator.MAX_OPENAI_METADATA_BYTES
-    (skill_dir / "agents" / "openai.yaml").write_text(nested_yaml)
+    assert len(nested_yaml.encode("utf-8")) < validator.MAX_AGENT_METADATA_BYTES
+    (skill_dir / "agents" / "evoflux.yaml").write_text(nested_yaml)
 
     result = validator.validate_skill(skill_dir)
 
     assert result.valid is False
-    assert any(item.code == "invalid-openai-metadata" for item in result.findings)
+    assert any(item.code == "invalid-agent-metadata" for item in result.findings)
 
 
 def test_validator_reports_deep_eval_json_without_crashing(

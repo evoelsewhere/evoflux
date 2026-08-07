@@ -3,4 +3,4 @@ interface:
   short_description: "Turn validated data into reproducible decisions"
   default_prompt: "Use $work-data-analysis to validate this dataset and produce decision-ready findings."
 policy:
-  allow_implicit_invocation: false
+  allow_implicit_invocation: true

@@ -1,6 +1,0 @@
-interface:
-  display_name: "Investigate Code Paths"
-  short_description: "Find unknown roots, flags, wiring, and ownership"
-  default_prompt: "Use $coding-investigation to trace this behavior and explain it from bounded source evidence."
-policy:
-  allow_implicit_invocation: false

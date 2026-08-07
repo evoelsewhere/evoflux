@@ -20,6 +20,14 @@ reversible until evidence proves the old path can be removed.
    for a compatibility matrix and phase gates when the transition spans
    deployments, stored data, or multiple repositories.
 
+For every exact API, type, event, schema adapter, or migration entry-point
+symbol, use native `code_graph` to establish direct `references`/`callers` and
+bounded `impact` before sequencing rollout. Start at depth 1; preserve
+repository identity and treat pending cross-repository edges as an inventory
+gap, not as absence of consumers. Read
+[references/code-graph-contract.md](references/code-graph-contract.md) for
+operation choice, ambiguity, freshness, and dynamic-wiring fallbacks.
+
 ## Choose and sequence a strategy
 
 Select the smallest safe strategy: expand/contract, adapter, dual read, dual

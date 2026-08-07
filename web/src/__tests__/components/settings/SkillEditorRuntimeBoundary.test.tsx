@@ -21,13 +21,13 @@ vi.mock('@/queries', () => ({
     mocks.queryScope = scope
     return {
       data: {
-        name: 'code-graph-navigation',
-        path: '/builtin/code-graph-navigation/SKILL.md',
-        content: '---\nname: code-graph-navigation\ndescription: Navigate code.\n---\n',
+        name: 'coding-investigation',
+        path: '/builtin/coding-investigation/SKILL.md',
+        content: '---\nname: coding-investigation\ndescription: Investigate code.\n---\n',
         description: 'Navigate code.',
         display_name: 'Navigate Code Graph',
         short_description: 'Trace exact symbols',
-        default_prompt: 'Use $code-graph-navigation.',
+        default_prompt: 'Use $coding-investigation.',
         allow_implicit_invocation: true,
         user_invocable: true,
         resource_count: 3,
@@ -44,7 +44,7 @@ vi.mock('@/queries', () => ({
         built_in: true,
         editable: false,
         settings_editable: true,
-        settings_id: 'builtin:code-graph-navigation',
+        settings_id: 'builtin:coding-investigation',
         settings_overridden: false,
         source: 'builtin',
         modes: ['coding'],
@@ -122,7 +122,7 @@ vi.mock('@/components/settings/SkillModeSelector', () => ({
 }))
 
 vi.mock('@/contexts/SettingsContext', () => ({
-  useSettingsParams: () => ({ name: 'code-graph-navigation' }),
+  useSettingsParams: () => ({ name: 'coding-investigation' }),
   useSettingsNavigate: () => mocks.navigate,
   useSettingsSearch: () => ({ mode: mocks.searchMode }),
 }))

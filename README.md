@@ -207,7 +207,7 @@ A `CodingProject` can contain several repositories. Graph tools automatically us
   <summary><strong>Token-efficient code graph investigation</strong></summary>
   <br />
 
-  Code graph has two clean layers: `code-graph-navigation` is a progressively disclosed Coding skill for exact-symbol workflow guidance, while `code_graph` is the native execution tool. EvoFlux does not inject the skill body into mode prompts or route user requests with hard-coded keywords.
+  Code graph has one native execution tool, `code_graph`, while exact-symbol workflow guidance is progressively disclosed inside the relevant Coding skills. EvoFlux does not inject graph prose into mode prompts, create a graph-routing skill, or route user requests with hard-coded keywords.
 
   | Question | Action |
   |---|---|

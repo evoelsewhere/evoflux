@@ -153,7 +153,7 @@ def format_available_skills(
 def _skill_tool_description() -> str:
     return (
         "Load one exact skill workflow or one resource from a skill named in "
-        "the model-visible Skills catalog or by an already-loaded router. Use action='load' before "
+        "the model-visible Skills catalog. Use action='load' before "
         "applying a selected workflow, action='read_resource' only when its "
         "loaded instructions direct you to a bundled text file, and "
         "action='list' only for catalog recovery. Do not pass the user's "
@@ -188,7 +188,11 @@ def _loaded_skills_from_messages(state: Any) -> dict[str, str]:
             pending_by_tool_call_id.get(call_id) if isinstance(call_id, str) else None
         )
         content = getattr(message, "content", None)
-        if name and is_skill_activation_content(content, name):
+        if (
+            name
+            and isinstance(content, str)
+            and is_skill_activation_content(content, name)
+        ):
             loaded[name] = content
     return loaded
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 from loguru import logger
 
@@ -43,15 +43,18 @@ class SkillCatalogHook(BaseAgentHook):
 
             records = discover_skill_records_runtime(mode=self._mode).values()
             context_window = get_model_limits(self._model_id).context_length
+            latest_user_text = self._latest_user_text(request.messages)
             rendered = render_skill_catalog(
                 records,
                 mode=self._mode,
                 context_window=context_window,
                 preferred=self._preferred_skills,
+                query=latest_user_text,
             )
             state.metadata["skill_catalog"] = {
                 "included": list(rendered.included),
                 "omitted": list(rendered.omitted),
+                "query_ranked": list(rendered.query_ranked),
                 "descriptions_shortened": rendered.descriptions_shortened,
                 "budget_chars": rendered.budget_chars,
             }
@@ -69,6 +72,13 @@ class SkillCatalogHook(BaseAgentHook):
                     ctx.agent_name,
                     self._mode,
                 )
+            logger.debug(
+                "skill_catalog_ready agent={} mode={} included={} query_ranked={}",
+                ctx.agent_name,
+                self._mode,
+                list(rendered.included),
+                list(rendered.query_ranked),
+            )
 
         if not rendered.text:
             return None
@@ -78,6 +88,20 @@ class SkillCatalogHook(BaseAgentHook):
             else rendered.text
         )
         return request.override(system_prompt=prompt)
+
+    @staticmethod
+    def _latest_user_text(messages: Sequence[Any]) -> str:
+        for message in reversed(messages):
+            if getattr(message, "role", None) != "user":
+                continue
+            text_content = getattr(message, "text_content", None)
+            value = (
+                text_content()
+                if callable(text_content)
+                else getattr(message, "content", "")
+            )
+            return value if isinstance(value, str) else ""
+        return ""
 
 
 __all__ = ["SkillCatalogHook"]

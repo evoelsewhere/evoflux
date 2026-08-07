@@ -1,0 +1,11 @@
+interface:
+  display_name: "Investigate Code Paths"
+  short_description: "Trace exact symbols, unknown roots, wiring, and ownership"
+  default_prompt: "Use $coding-investigation to trace this behavior or exact symbol through native graph and bounded source evidence."
+policy:
+  allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: builtin
+      value: code_graph
+      description: "Native exact-symbol definitions, callers, callees, references, impact, and cross-repository relationships"

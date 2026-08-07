@@ -1397,7 +1397,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     setup:
       'Coding workspace or project — indexing runs incrementally on file changes. Open the Graph workbench tool to explore visually and reindex when the tree looks stale after large external edits.',
     tricks: [
-      'code-graph-navigation is progressively disclosed workflow guidance; code_graph is the native exact-symbol execution tool.',
+      'Coding skills embed progressively disclosed graph guidance; code_graph is the native exact-symbol execution tool.',
       'Use code_graph for a known exact symbol and structural relationship; use source search for discovery, literals, comments, and config keys.',
       'Open the Graph workbench tool to explore visually and reindex when needed.',
       'Cross-repo resolution uses three deterministic tiers (reattach, manifests/FQNs, sibling FTS5) without an LLM call for linking.',
@@ -1891,7 +1891,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Cross-feature: code-graph-navigation teaches the workflow; native code_graph validates and executes exact-symbol operations.',
+          'Cross-feature: activated Coding skills teach graph workflow; native code_graph validates and executes exact-symbol operations.',
           'Cross-feature: workflows and skills both need scope validity to show in /.',
           'Cross-feature: permission Always rules apply to MCP tools too — prefer Once first.'
 ],

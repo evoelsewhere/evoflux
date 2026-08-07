@@ -3,6 +3,8 @@
 The package follows the Agent Skills progressive-disclosure contract:
 
 * discovery exposes only routing metadata;
+* implicit resolution validates one exact eligible workflow before the main
+  model call;
 * the model-visible catalog is bounded by the active model context window;
 * ``SKILL.md`` and bundled resources are read only after activation.
 
@@ -16,11 +18,14 @@ from app.agent.skills.discovery import (
     SkillRecord,
     discover_skill_records,
 )
+from app.agent.skills.resolution import SkillResolutionDecision, resolve_skill
 
 __all__ = [
     "SkillCatalogRender",
     "SkillDiagnostic",
     "SkillRecord",
+    "SkillResolutionDecision",
     "discover_skill_records",
     "render_skill_catalog",
+    "resolve_skill",
 ]

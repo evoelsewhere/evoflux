@@ -17,7 +17,7 @@ The same contract is enforced at several independent layers:
 
 | Layer | Responsibility |
 |---|---|
-| Skill catalog/body | Exposes a narrow exact-symbol trigger, then teaches workflow only after selection |
+| Coding skill body | Teaches exact-symbol workflow only after the relevant Coding workflow activates |
 | Tool JSON schema | Accepts one non-whitespace symbol and a closed operation enum |
 | Native service boundary | Rejects empty/prose symbols even when invoked outside the agent tool |
 | Exact resolver | Matches `name`/`qualified_name`; suggestions are never traversed |
@@ -26,11 +26,11 @@ The same contract is enforced at several independent layers:
 | Renderer | Returns definition source and bounded call-site windows |
 | Telemetry/tests | Detects duplicate/fallback navigation and locks the contract in regression tests |
 
-The loader never appends graph workflow policy at mode level. It exposes only
-bounded `code-graph-navigation` metadata until the model or user selects that
-exact skill; the body then enters history as a normal revisioned activation.
-Schema and service validation protect execution independently of whether the
-skill was loaded.
+The loader never appends graph workflow policy at mode level. Exact-symbol
+guidance lives inside activated Coding skills such as investigation, debugging,
+implementation, review, testing, security, migration, and performance. Schema
+and service validation protect execution independently of which workflow is
+loaded.
 
 ## Agent decision flow
 
@@ -112,10 +112,9 @@ static edge was indexed; it is not proof that runtime invocation is impossible.
 Any change to coding navigation must verify:
 
 - No coding agent receives graph policy through mode-level system-prompt
-  injection or request-text routing. `code-graph-navigation` enters context only
-  through semantic catalog selection, explicit `$code-graph-navigation`, or
-  agent assignment. `coding-investigation` remains the broader, tool-agnostic
-  workflow for discovering an unknown root. Unselected agents receive only the
+  injection or request-text routing. Graph guidance enters context only with a
+  relevant activated Coding workflow. `coding-investigation` owns exact-symbol
+  questions and discovery of unknown roots. Unselected agents receive only the
   native tool schema and bounded skill metadata.
 - `symbol` rejects whitespace/prose at both tool-schema and service boundaries.
 - Prefix suggestions never become traversal roots.
