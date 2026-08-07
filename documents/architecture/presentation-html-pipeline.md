@@ -34,6 +34,13 @@ ellipses, rules, and images are extracted from the DOM and rebuilt as individual
 PowerPoint objects. `balanced` limits automatic promotion to text and images;
 `explicit` only exports elements carrying `data-pptx-native` markers.
 
+Promoted text retains computed inline runs rather than flattening its containing
+element. Font family, size, weight, italic, underline, strike, color, tracking,
+explicit line breaks, and list markers are recreated as editable PowerPoint
+runs. The QA report records eligible object count, promoted object count,
+coverage percentage, and rich-text run count; coverage below 85% is surfaced for
+review instead of silently accepting a largely raster slide.
+
 Authors use `data-pptx-raster` for gradients, clipping, filters, transformed
 objects, text strokes, and decorative compounds that PowerPoint cannot reproduce
 faithfully. The project JSON remains authoritative for that residual visual

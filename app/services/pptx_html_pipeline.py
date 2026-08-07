@@ -397,6 +397,7 @@ class SlideRender:
     native_text: list[dict[str, Any]]
     native_shapes: list[dict[str, Any]] = field(default_factory=list)
     native_images: list[dict[str, Any]] = field(default_factory=list)
+    editability: dict[str, Any] = field(default_factory=dict)
     issues: list[QaIssue] = field(default_factory=list)
 
 
@@ -413,6 +414,15 @@ class HtmlDeckBuildResult:
         return not any(issue.severity == "error" for issue in self.issues)
 
     def to_dict(self) -> dict[str, Any]:
+        eligible_objects = sum(
+            int(slide.editability.get("eligibleObjects", 0)) for slide in self.slides
+        )
+        promoted_objects = sum(
+            int(slide.editability.get("promotedObjects", 0)) for slide in self.slides
+        )
+        rich_text_runs = sum(
+            int(slide.editability.get("richTextRuns", 0)) for slide in self.slides
+        )
         return {
             "passed": self.passed,
             "output": str(self.output) if self.output else None,
@@ -434,6 +444,16 @@ class HtmlDeckBuildResult:
                 + len(slide.native_images)
                 for slide in self.slides
             ),
+            "editability": {
+                "eligible_objects": eligible_objects,
+                "promoted_objects": promoted_objects,
+                "coverage_percent": (
+                    round(promoted_objects / eligible_objects * 100, 2)
+                    if eligible_objects
+                    else 100.0
+                ),
+                "rich_text_runs": rich_text_runs,
+            },
             "errors": [
                 issue.to_dict() for issue in self.issues if issue.severity == "error"
             ],
@@ -479,8 +499,8 @@ def html_catalog(
         },
         "native_export": {
             "editable_mode": {
-                "max": "default; auto-promotes semantic text, data-box regions, rules, and images",
-                "balanced": "auto-promotes semantic text and images; shapes require markers",
+                "max": "default; auto-promotes semantic text with inline runs, data-box regions, rules, and images",
+                "balanced": "auto-promotes semantic text with inline runs and images; shapes require markers",
                 "explicit": "only data-pptx-native markers are exported",
             },
             "markers": {
@@ -492,7 +512,8 @@ def html_catalog(
                 "selection_name": "data-pptx-name gives the object a useful PowerPoint Selection Pane name",
                 "raster_opt_out": "data-pptx-raster",
             },
-            "behavior": "supported objects are removed from the rendered background and recreated as individually editable PowerPoint objects",
+            "behavior": "supported objects are removed from the rendered background and recreated as individually editable PowerPoint objects; text preserves inline font, size, weight, italic, underline, strike, color, tracking, line breaks, and list markers",
+            "coverage": "qa.json reports eligible objects, promoted objects, percentage coverage, and preserved rich-text run count",
         },
         "qa_markers": {
             "box": "data-box marks structural regions for collision checks",
@@ -663,6 +684,53 @@ _INSPECTION_SCRIPT = r"""
   const domOrder = new Map([...slide.querySelectorAll('*')].map((el, index) => [el, index]));
   const rasterized = (el) => Boolean(el.closest('[data-pptx-raster]'));
   const unique = (items) => [...new Set(items)];
+  const textStyle = (el) => {
+    const style = getComputedStyle(el);
+    return {
+      fontFamily: style.fontFamily,
+      fontSize: parseFloat(style.fontSize || '20'),
+      fontWeight: style.fontWeight,
+      fontStyle: style.fontStyle,
+      textDecoration: style.textDecorationLine,
+      letterSpacing: style.letterSpacing,
+      color: style.color,
+    };
+  };
+  const sameRunStyle = (a, b) => a.fontFamily === b.fontFamily
+    && a.fontSize === b.fontSize
+    && a.fontWeight === b.fontWeight
+    && a.fontStyle === b.fontStyle
+    && a.textDecoration === b.textDecoration
+    && a.letterSpacing === b.letterSpacing
+    && a.color === b.color;
+  const inlineRuns = (root) => {
+    const runs = [];
+    const append = (text, style) => {
+      if (!text) return;
+      const normalized = text.replace(/[\t\r\f\v ]+/g, ' ');
+      if (!normalized) return;
+      const previous = runs[runs.length - 1];
+      if (previous && sameRunStyle(previous, style)) previous.text += normalized;
+      else runs.push({ text: normalized, ...style });
+    };
+    const walk = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        append(node.nodeValue || '', textStyle(node.parentElement || root));
+        return;
+      }
+      if (!(node instanceof Element)) return;
+      if (node.tagName === 'BR') {
+        append('\n', textStyle(node.parentElement || root));
+        return;
+      }
+      [...node.childNodes].forEach(walk);
+    };
+    [...root.childNodes].forEach(walk);
+    if (!runs.length) return [];
+    runs[0].text = runs[0].text.replace(/^\s+/, '');
+    runs[runs.length - 1].text = runs[runs.length - 1].text.replace(/\s+$/, '');
+    return runs.filter((run) => run.text);
+  };
   const semanticTextSelector = 'h1,h2,h3,h4,h5,h6,p,li,blockquote,figcaption,th,td';
   const explicitText = [...slide.querySelectorAll('[data-pptx-native="text"]')];
   explicitText.forEach((el) => {
@@ -674,9 +742,16 @@ _INSPECTION_SCRIPT = r"""
   const nativeText = nativeElements.map((el) => {
     const rect = el.getBoundingClientRect();
     const style = getComputedStyle(el);
+    const runs = inlineRuns(el);
+    const list = el.tagName === 'LI' ? el.closest('ol,ul') : null;
+    const listItems = list ? [...list.children].filter((child) => child.tagName === 'LI') : [];
+    const listIndex = list ? Math.max(0, listItems.indexOf(el)) : 0;
+    const listStart = list && list.tagName === 'OL' ? parseInt(list.getAttribute('start') || '1', 10) : 1;
     return {
       text: (el.innerText || '').trim(),
+      runs,
       role: el.getAttribute('data-pptx-role') || '',
+      listMarker: list ? (list.tagName === 'OL' ? `${listStart + listIndex}.` : '•') : '',
       x: rect.left - slideRect.left,
       y: rect.top - slideRect.top,
       width: rect.width,
@@ -713,12 +788,14 @@ _INSPECTION_SCRIPT = r"""
   const automaticShapes = editableMode === 'max' ? [...slide.querySelectorAll('[data-box],.panel,.step,.rule,[data-pptx-line]')] : [];
   const shapeElements = unique([...explicitShapes, ...automaticShapes]).filter((el) => !rasterized(el));
   const nativeShapes = [];
+  let eligibleShapeObjects = 0;
   shapeElements.forEach((el) => {
     const rect = el.getBoundingClientRect();
     const style = getComputedStyle(el);
     const explicit = el.hasAttribute('data-pptx-native');
     const unsupported = style.transform !== 'none' || style.backgroundImage !== 'none' || style.clipPath !== 'none' || style.filter !== 'none';
     if (unsupported) {
+      eligibleShapeObjects += 1;
       if (explicit) issues.push({ severity: 'warning', code: 'native_shape_raster_fallback', message: 'A transformed, gradient, clipped, or filtered shape stays in the raster layer.', element: label(el) });
       return;
     }
@@ -733,10 +810,12 @@ _INSPECTION_SCRIPT = r"""
     const hasBorder = borderWidth > 0 && borderStyle !== 'none' && borderStyle !== 'hidden';
     const lineLike = el.getAttribute('data-pptx-native') === 'line' || el.hasAttribute('data-pptx-line') || el.classList.contains('rule');
     if (!lineLike && !uniformBorder) {
+      if (hasFill || hasBorder || explicit) eligibleShapeObjects += 1;
       if (explicit) issues.push({ severity: 'warning', code: 'native_shape_raster_fallback', message: 'A shape with asymmetric borders stays in the raster layer.', element: label(el) });
       return;
     }
     if (!hasFill && !hasBorder && !lineLike) return;
+    eligibleShapeObjects += 1;
     const radius = parseFloat(style.borderTopLeftRadius || '0');
     let shapeType = el.getAttribute('data-pptx-shape') || 'rect';
     if (!el.hasAttribute('data-pptx-shape')) {
@@ -778,7 +857,24 @@ _INSPECTION_SCRIPT = r"""
       order: domOrder.get(el) || 0
     };
   });
-  return { issues, nativeText, nativeShapes, nativeImages };
+  const eligibleObjects = nativeElements.length + eligibleShapeObjects + imageElements.length;
+  const promotedObjects = nativeText.length + nativeShapes.length + nativeImages.length;
+  const richTextRuns = nativeText.reduce((total, item) => total + item.runs.length, 0);
+  if (eligibleObjects && promotedObjects / eligibleObjects < .85) {
+    issues.push({
+      severity: 'warning',
+      code: 'editable_coverage_low',
+      message: `Only ${promotedObjects} of ${eligibleObjects} eligible HTML elements became editable PowerPoint objects. Mark unsupported decoration data-pptx-raster or simplify its CSS.`,
+      element: 'slide',
+    });
+  }
+  return {
+    issues,
+    nativeText,
+    nativeShapes,
+    nativeImages,
+    editability: { eligibleObjects, promotedObjects, richTextRuns },
+  };
 }
 """
 
@@ -891,6 +987,7 @@ async def render_html_deck(
             native_text=list(inspection.get("nativeText", [])),
             native_shapes=list(inspection.get("nativeShapes", [])),
             native_images=native_images,
+            editability=dict(inspection.get("editability", {})),
             issues=issues,
         )
 
@@ -934,6 +1031,90 @@ def _rgb(value: str) -> tuple[int, int, int]:
 def _font_name(value: str) -> str:
     first = value.split(",", 1)[0].strip().strip("'\"")
     return first or "Aptos"
+
+
+def _text_lines(item: dict[str, Any]) -> list[list[dict[str, Any]]]:
+    raw_runs = item.get("runs")
+    runs = (
+        [run for run in raw_runs if isinstance(run, dict)]
+        if isinstance(raw_runs, list)
+        else []
+    )
+    if not runs:
+        runs = [{"text": str(item.get("text", ""))}]
+    lines: list[list[dict[str, Any]]] = [[]]
+    for raw_run in runs:
+        run_text = str(raw_run.get("text", ""))
+        for index, part in enumerate(run_text.split("\n")):
+            if index:
+                lines.append([])
+            if part:
+                lines[-1].append({**raw_run, "text": part})
+    marker = str(item.get("listMarker", "")).strip()
+    if marker:
+        lines[0].insert(0, {"text": f"{marker} "})
+    return lines or [[]]
+
+
+def _format_text_run(run: Any, style: dict[str, Any], fallback: dict[str, Any]) -> None:
+    font_family = str(style.get("fontFamily") or fallback.get("fontFamily") or "Aptos")
+    font_size = float(style.get("fontSize") or fallback.get("fontSize") or 20)
+    color = str(style.get("color") or fallback.get("color") or "")
+    red, green, blue = _rgb(color)
+    run.font.name = _font_name(font_family)
+    run.font.size = Pt(font_size * PPTX_POINTS_PER_PX)
+    weight = str(style.get("fontWeight") or fallback.get("fontWeight") or "400")
+    run.font.bold = weight == "bold" or (weight.isdigit() and int(weight) >= 600)
+    run.font.italic = (
+        str(style.get("fontStyle") or fallback.get("fontStyle") or "normal") == "italic"
+    )
+    decoration = str(
+        style.get("textDecoration") or fallback.get("textDecoration") or ""
+    )
+    run.font.underline = "underline" in decoration
+    run.font.color.rgb = RGBColor(red, green, blue)
+    properties = run._r.get_or_add_rPr()
+    if "line-through" in decoration:
+        properties.set("strike", "sngStrike")
+    letter_spacing = str(
+        style.get("letterSpacing") or fallback.get("letterSpacing") or ""
+    )
+    spacing_match = re.match(r"(-?[0-9.]+)px$", letter_spacing)
+    if spacing_match:
+        properties.set(
+            "spc",
+            str(round(float(spacing_match.group(1)) * PPTX_POINTS_PER_PX * 100)),
+        )
+
+
+def _populate_text_frame(frame: Any, item: dict[str, Any]) -> None:
+    frame.clear()
+    frame.word_wrap = True
+    frame.margin_left = 0
+    frame.margin_right = 0
+    frame.margin_top = 0
+    frame.margin_bottom = 0
+    frame.vertical_anchor = MSO_ANCHOR.TOP
+    text_align = str(item.get("textAlign", "left"))
+    font_size = float(item.get("fontSize", 20))
+    line_height = str(item.get("lineHeight", ""))
+    line_height_match = re.match(r"([0-9.]+)px$", line_height)
+    for index, line_runs in enumerate(_text_lines(item)):
+        paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
+        paragraph.alignment = {
+            "center": PP_ALIGN.CENTER,
+            "right": PP_ALIGN.RIGHT,
+            "justify": PP_ALIGN.JUSTIFY,
+        }.get(text_align, PP_ALIGN.LEFT)
+        if line_height_match and font_size > 0:
+            paragraph.line_spacing = max(
+                0.8,
+                min(2.0, float(line_height_match.group(1)) / font_size),
+            )
+        for run_style in line_runs:
+            run = paragraph.add_run()
+            run.text = str(run_style.get("text", ""))
+            _format_text_run(run, run_style, item)
 
 
 def _is_transparent(value: str) -> bool:
@@ -1081,7 +1262,10 @@ def assemble_hybrid_pptx(
         ):
             _add_native_image(slide, item)
 
-        for item in render.native_text:
+        for item in sorted(
+            render.native_text,
+            key=lambda value: int(value.get("order", 0)),
+        ):
             left_px = float(item["x"]) + float(item.get("paddingLeft", 0))
             top_px = float(item["y"]) + float(item.get("paddingTop", 0))
             width_px = max(
@@ -1119,51 +1303,7 @@ def assemble_hybrid_pptx(
             shape.name = (
                 f"[evoflux-html][role:{role or 'text'}] {str(item['text'])[:60]}"
             )
-            frame = shape.text_frame
-            frame.clear()
-            frame.word_wrap = True
-            frame.margin_left = 0
-            frame.margin_right = 0
-            frame.margin_top = 0
-            frame.margin_bottom = 0
-            frame.vertical_anchor = MSO_ANCHOR.TOP
-            lines = str(item["text"]).splitlines() or [""]
-            red, green, blue = _rgb(str(item.get("color", "")))
-            for index, line in enumerate(lines):
-                paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
-                paragraph.text = line
-                paragraph.alignment = {
-                    "center": PP_ALIGN.CENTER,
-                    "right": PP_ALIGN.RIGHT,
-                    "justify": PP_ALIGN.JUSTIFY,
-                }.get(text_align, PP_ALIGN.LEFT)
-                line_height = str(item.get("lineHeight", ""))
-                match = re.match(r"([0-9.]+)px$", line_height)
-                if match and font_size > 0:
-                    paragraph.line_spacing = max(
-                        0.8,
-                        min(2.0, float(match.group(1)) / font_size),
-                    )
-                run = paragraph.runs[0]
-                run.font.name = _font_name(str(item.get("fontFamily", "Aptos")))
-                run.font.size = Pt(font_size * PPTX_POINTS_PER_PX)
-                weight = str(item.get("fontWeight", "400"))
-                run.font.bold = weight == "bold" or (
-                    weight.isdigit() and int(weight) >= 600
-                )
-                run.font.italic = str(item.get("fontStyle", "normal")) == "italic"
-                run.font.color.rgb = RGBColor(red, green, blue)
-                letter_spacing = str(item.get("letterSpacing", ""))
-                spacing_match = re.match(r"(-?[0-9.]+)px$", letter_spacing)
-                if spacing_match:
-                    run._r.get_or_add_rPr().set(
-                        "spc",
-                        str(
-                            round(
-                                float(spacing_match.group(1)) * PPTX_POINTS_PER_PX * 100
-                            )
-                        ),
-                    )
+            _populate_text_frame(shape.text_frame, item)
 
         note_text = _notes(slide_spec)
         if note_text:
