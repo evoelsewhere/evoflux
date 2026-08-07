@@ -82,8 +82,29 @@ Skill loading follows three disclosure tiers:
    name, the user names `$skill-name` (or legacy `/skill:<name>`), or the user
    explicitly assigns that skill to an agent. Agent assignment is the sole
    unconditional preload path.
-3. Bundle resources are enumerated on activation and read individually only
-   when the selected workflow needs them.
+3. Task resources are enumerated on activation without their contents. The
+   skill body states a narrow evidence condition for each optional reference,
+   and the model reads one only after that condition is observed. Control-plane
+   metadata (`agents/`) and evaluation fixtures (`evals/`) are neither
+   advertised nor readable as task resources.
+
+Bundled skill quality is behavioral rather than a prose-length requirement.
+Each description defines positive triggers and near-miss boundaries. The body
+keeps only the core workflow, selects a degree of freedom proportional to the
+task, names observable stop conditions, and routes every optional resource by
+an evidence condition. Fragile workflows use explicit states and transition
+gates; judgment-heavy workflows keep flexible criteria. A rule such as
+"exact identifier → graph" must identify when the transition fires, which
+operation follows, and which observations are forbidden after the transition,
+not merely recommend the graph somewhere in a narrative checklist.
+
+Every bundled skill carries balanced activation evals. Deterministic workflow
+boundaries may additionally declare `expected_operation`,
+`expected_trajectory`, and `forbidden_behaviors`; the validator rejects
+malformed trajectory metadata. These fixtures are control-plane artifacts and
+never enter model context. Generic filler, duplicated reference content, eager
+resource reads, and examples that contradict the live runtime contract are
+catalog defects even when the bundle is structurally valid.
 
 Implicit invocation is a first-class pre-model stage. It sends only the latest
 user request, application mode, and eligible Tier-1 metadata to the active
@@ -139,6 +160,32 @@ budget; resource reads and catalog listings may be summarized. If an old
 activation falls outside that budget, the runtime clears its ephemeral loaded
 marker so the skill can be loaded exactly again.
 
+Command execution has one continuation contract. `shell` starts a
+non-interactive command, journals raw combined stdout/stderr to a
+session-scoped artifact, and returns a bounded head/tail observation. If the
+command outlives `yield_time_ms`, `shell` returns an opaque process ID and
+activates the deferred `process` tool. `process` owns list, poll, wait, and
+terminate; poll and wait consume only output produced since the previous
+observation. There are no parallel `bg` or `shell_bg_*` APIs. Preview servers
+reuse the same journalled process runtime but keep their specialized lifecycle
+inside `preview`, so they do not leak into the model's command-process registry.
+
+The durable transcript remains authoritative for reload, audit, and UI
+rendering; oversized raw payloads remain available through their artifact
+references. At the provider boundary, `ToolContextProjectionHook` keeps the most recent
+tool-call batches exact and replaces older oversized text-only results with
+deterministic receipts containing status, bounded head/tail context, and the
+artifact locator when available. It never mutates persisted messages, never
+projects multimodal parts, and never projects `skill` results. This prevents
+every later model call from paying again for historical grep, read, graph,
+shell, or future tool output while preserving exact skill instructions.
+
+Large generic tool results use the same metadata channel as shell artifacts:
+the tool hook records per-call artifact metadata, the live `tool_end` event
+exposes it to the UI, and the agent loop attaches it to `ToolMessage.extra` for
+reload. User-entered `!command` execution passes through the same shell
+formatter and metadata path instead of maintaining a second output protocol.
+
 ## Required regression invariants
 
 - Agent CRUD validates with the namespace's explicit mode and never creates
@@ -156,6 +203,22 @@ marker so the skill can be loaded exactly again.
 - Manual-only operational skills stay out of implicit resolution but remain
   addressable through `$skill-name` or `/skill:<name>`.
 - Activated skill instructions remain exact through compaction.
+- Skill activation advertises task-resource paths but never eagerly loads their
+  contents; control-plane metadata and eval fixtures stay outside task context.
+- Loading a skill atomically validates and activates every declared built-in
+  tool dependency; durable activations rehydrate the same runtime contract.
+- Observation handling is declared by tool metadata rather than tool-name or
+  feature-specific branches. Revision-aware tools return a receipt instead of
+  rereading an unchanged source range; no fixed investigation quota can block
+  a legitimate evidence chain.
+- Shell output is journalled once, model-visible observations are bounded, and
+  repeated `process` polls never replay already consumed bytes.
+- Application shutdown terminates every tracked command and Preview process
+  group before the sidecar exits.
+- Work and Coding project old tool results only at the model boundary; durable
+  history, multimodal results, and exact skill bodies remain unchanged.
+- Live tool events and reloaded ToolMessages expose the same artifact metadata,
+  including for `!command` execution.
 - Symlinked bundles cannot be updated or deleted through Settings CRUD.
 - Runtime preference edits never rewrite `SKILL.md`, `agents/evoflux.yaml`,
   fallback `agents/openai.yaml`, or `.evoflux.json`, including for built-in and
