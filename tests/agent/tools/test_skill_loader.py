@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -698,12 +699,22 @@ class TestLoadSkill:
     ):
         skill_dir = tmp_path / "analysis"
         references = skill_dir / "references"
+        agents = skill_dir / "agents"
+        evals = skill_dir / "evals"
         references.mkdir(parents=True)
+        agents.mkdir()
+        evals.mkdir()
         (skill_dir / "SKILL.md").write_text(
             "---\nname: analysis\ndescription: Analyze data.\n---\n"
             "Read references/checks.md only when validating output."
         )
         (references / "checks.md").write_text("# Quality checks\n- Reconcile totals.")
+        (agents / "evoflux.yaml").write_text(
+            "interface:\n"
+            "  display_name: Analysis\n"
+            "  short_description: Analyze supplied data\n"
+        )
+        (evals / "trigger-cases.json").write_text("[]")
         monkeypatch.setattr("app.agent.tools.builtin.skill._SKILLS_DIR", tmp_path)
         state = SimpleNamespace(metadata={}, messages_for_llm=[])
 
@@ -720,10 +731,19 @@ class TestLoadSkill:
             resource_path="../outside.md",
             _state=state,
         )
+        internal = await load_skill(
+            "analysis",
+            action="read_resource",
+            resource_path="agents/evoflux.yaml",
+            _state=state,
+        )
 
         assert "references/checks.md" in activated
+        assert "agents/evoflux.yaml" not in activated
+        assert "evals/trigger-cases.json" not in activated
         assert "Reconcile totals" in resource
         assert "stay inside" in traversal
+        assert "control-plane files" in internal
 
     def test_tool_description_omits_catalog_until_list_action(
         self, tmp_path, monkeypatch
@@ -1172,7 +1192,9 @@ class TestBuiltinSkills:
 
     @pytest.mark.asyncio
     async def test_implicit_specialist_is_directly_visible_and_loadable(self):
-        state = SimpleNamespace(metadata={}, messages_for_llm=[])
+        state = SimpleNamespace(
+            metadata={}, messages_for_llm=[], tool_names=["code_graph"]
+        )
 
         specialist = await load_skill(
             "coding-investigation", _mode="coding", _state=state
@@ -1203,13 +1225,7 @@ class TestBuiltinSkills:
             assert body.strip(), skill_file
 
     def test_native_code_graph_contract_is_embedded_in_coding_workflows(self):
-        owners = [
-            skill_file.parent.name
-            for skill_file in sorted(_builtin_skills_dir().glob("*/SKILL.md"))
-            if "code_graph" in skill_file.read_text(encoding="utf-8")
-        ]
-
-        assert owners == [
+        expected_owners = [
             "coding-debugging",
             "coding-implementation",
             "coding-investigation",
@@ -1220,6 +1236,59 @@ class TestBuiltinSkills:
             "coding-testing",
             "review-pull-requests",
         ]
+        roots = [_builtin_skills_dir() / owner for owner in expected_owners]
+        owners = [
+            skill_file.parent.name
+            for skill_file in sorted(_builtin_skills_dir().glob("*/SKILL.md"))
+            if "code_graph" in skill_file.read_text(encoding="utf-8")
+        ]
+
+        assert owners == expected_owners
+        for root in roots:
+            normalized = " ".join(
+                (root / "SKILL.md").read_text(encoding="utf-8").split()
+            )
+            assert 'Use `freshness_policy="fast"` for the first graph call' in normalized
+            assert 'retry once with `"balanced"`' in normalized
+            assert "After an edit that can change relationships" in normalized
+            assert '`"strict"` only for a final' in normalized
+
+        contracts = {
+            (root / "references" / "code-graph-contract.md").read_text(
+                encoding="utf-8"
+            )
+            for root in roots
+        }
+        assert len(contracts) == 1
+        contract = contracts.pop()
+        assert "## Choose freshness deliberately" in contract
+        assert "Never use it for discovery or as the first call" in contract
+
+    def test_coding_investigation_locks_graph_first_trajectory(self):
+        root = _builtin_skills_dir() / "coding-investigation"
+        skill = (root / "SKILL.md").read_text(encoding="utf-8")
+        normalized = " ".join(skill.split())
+        cases = json.loads(
+            (root / "evals" / "trigger-cases.json").read_text(encoding="utf-8")
+        )
+
+        assert (
+            "Promotion from unknown-root to exact-symbol ends broad discovery"
+            in normalized
+        )
+        assert (
+            "the **next structural observation must be** native `code_graph`"
+            in normalized
+        )
+        assert "repeat_broad_discovery_after_exact_anchor" in {
+            behavior
+            for case in cases
+            for behavior in case.get("forbidden_behaviors", [])
+        }
+        exact_callers = next(
+            case for case in cases if case.get("expected_operation") == "callers"
+        )
+        assert exact_callers["expected_trajectory"] == ["code_graph"]
 
     def test_builtin_skill_resource_links_exist(self):
         root = _builtin_skills_dir()

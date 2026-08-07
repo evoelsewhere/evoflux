@@ -1,110 +1,73 @@
 ---
 name: plugin-installer
-description: >-
-  Install a user plugin from a URL into `{EVOFLUX_CONFIG_DIR}/plugins/`.
-  Use when the user provides a URL and asks to add / install a plugin.
+description: Install or update a trusted single-file EvoFlux agent-loop plugin from a raw Python URL into the user plugin directory. Use only when the user explicitly supplies a URL for a legacy hook plugin; do not use for plugin authoring, package/archive installation, skills, MCP servers, or project dependencies.
 ---
 
-# Plugin Installer
+# Install a single-file EvoFlux plugin
 
-A plugin is a single `.py` file in `{EVOFLUX_CONFIG_DIR}/plugins/` that
-hooks into the agent loop. Two contracts are valid:
+Plugins run in-process with agent permissions. Treat installation as executable
+code review, not ordinary file download. The supported runtime contract is one
+`.py` file under `{EVOFLUX_CONFIG_DIR}/plugins/` exporting either
+`async def plugin()` or `class Plugin(BaseAgentHook)`.
 
-**Functional** — `async def plugin()` returning an event dict:
+## State machine
 
-```python
-async def plugin():
-    async def before(input, output):
-        # input: {tool, session_id, run_id, agent_name, call_id}
-        # output: {args}  ← mutate in place to rewrite tool args
-        # raise to abort: result becomes "Error: <message>"
-        ...
+### 1. FETCH
 
-    async def after(input, output):
-        # input: {tool, session_id, run_id, agent_name, call_id, args}
-        # output: {output}  ← mutate to rewrite the result the LLM sees
-        ...
+Require an explicit `https://` raw Python URL. Fetch read-only into a temporary
+location. Reject redirects or responses that produce HTML, an archive,
+multiple files, a dependency manifest, an absolute/traversal filename, a
+leading-underscore filename, or a non-`.py` basename.
 
-    return {
-        "tool.before": before,
-        "tool.after": after,
-        "applies_to": lambda agent_name, role: True,  # optional
-    }
-```
+### 2. INSPECT
 
-**Class-based** — `class Plugin(BaseAgentHook)` for the full hook surface.
-Override only the methods you need — all defaults are transparent no-ops or
-pass-throughs.
+Read the complete file. Require one supported entry point and inspect imports,
+top-level execution, subprocess/network/file access, secret handling, dynamic
+evaluation, persistence, and hook mutations. Show the user the source URL,
+target filename, entry point, material capabilities, and suspicious behavior;
+do not reduce review to checking one string.
 
-*Observe hooks* (read/mutate state; no return value unless noted):
+Do not install code that downloads additional executable content, embeds
+credentials, disables permission boundaries, or cannot be understood as a
+single-file hook. Do not author or repair untrusted plugin code inside this
+workflow.
 
-| Method | When called |
-|--------|-------------|
-| `on_start()` | Agent system starts up |
-| `on_end()` | Agent system shuts down |
-| `before_agent(ctx, state)` | Before the agent loop begins |
-| `after_agent(ctx, state, response)` | After the loop completes |
-| `before_model(ctx, state, request)` | Before each LLM call — return a modified `ModelRequest` or `None` |
-| `on_model_delta(ctx, state, chunk)` | Each streaming chunk from the LLM |
-| `after_model(ctx, state, response)` | After each full LLM response is assembled |
-| `on_rate_limit(ctx, state, retry_after, attempt, max_attempts)` | Provider returns 429 |
+### 3. RESOLVE COLLISION
 
-*Intercept hooks* (must call and return the handler result):
+If the target exists, read it and show the material diff. An explicit request
+to “update” authorizes replacement only after the fetched code and diff have
+been shown; an ambiguous install collision requires confirmation. Preserve the
+existing file when validation or approval fails.
 
-| Method | Wraps |
-|--------|-------|
-| `wrap_model_call(ctx, state, request, handler)` | Each LLM call — `await handler(request)` |
-| `wrap_tool_call(ctx, state, tool_call, handler)` | Each tool execution — `await handler(ctx, state, tool_call)` |
+### 4. INSTALL
 
-Files prefixed with `_` are skipped. Roles are `lead` (team orchestrator),
-`member` (team worker), `agent` (direct callers).
+Write exactly one file to
+`{EVOFLUX_CONFIG_DIR}/plugins/<validated-basename>.py`. Do not create package
+directories, install dependencies, or touch unrelated plugins.
 
-## Install from URL
+### 5. VERIFY
 
-Plugin installs are global in `{EVOFLUX_CONFIG_DIR}/plugins/`.
+Read the installed file back, confirm its hash/content matches the reviewed
+payload, and validate that the entry point remains present. Legacy hook plugins
+are cached per agent/role, so report that a runtime restart is required before
+the new or replaced hook is reliably active. Never claim activation merely
+from a successful write.
 
-1. Fetch the URL with an available read-only URL capability. If the response
-   is HTML (for example a GitHub `blob` URL), ask for the raw URL and stop.
-2. **Validate** the body contains `async def plugin(` or `class Plugin(`.
-   If not, refuse — it's not a plugin.
-3. **Filename** = URL basename. Must end in `.py`, no leading `_`.
-4. **Collision** → read existing, show diff, confirm before overwrite.
-5. **Show** the first ~40 lines of the fetched content before writing.
-   The user is installing in-process Python — let them see it.
-6. **Write** to `{EVOFLUX_CONFIG_DIR}/plugins/<name>.py`.
-7. **Tell the user to restart EvoFlux.** No hot reload — hooks are cached
-   per `(Agent, role)` on first call.
+## Other operations
 
-## Other intents
+- List: inspect `.py` files in `{EVOFLUX_CONFIG_DIR}/plugins/`, excluding
+  leading-underscore disabled files.
+- Disable/remove: perform only when explicitly requested, identify the exact
+  file first, and prefer a recoverable leading-underscore rename when suitable.
 
-| User says           | Do                                                       |
-| ------------------- | -------------------------------------------------------- |
-| "list plugins"      | `ls {EVOFLUX_CONFIG_DIR}/plugins/`                        |
-| "remove X"          | Delete or rename `…/plugins/X.py` to `_X.py`             |
-| "write me a plugin" | Decline. LLM-authored in-process Python isn't worth it.  |
+## Stop conditions
 
-## Rules
+Stop when the URL and target are exact, the complete code has been reviewed,
+collision handling is resolved, the installed bytes match the approved source,
+and activation timing is accurately reported.
 
-- **No URL → no install.** Authoring is a developer task.
-- **One file, no dependencies.** Refuse multi-file packages.
-- **Never silently overwrite.** Always diff and confirm.
+## Deliverable
 
-
-
-## Verification
-
-- Validate the body contains `async def plugin(` or `class Plugin(`.
-- On collision, read the existing file, show the diff, and confirm before overwrite.
-- Read the installed file back and report its exact path.
-
-## Failure modes
-
-- **HTML instead of Python** → user pasted a `blob` URL; ask for raw.
-- **Validation fails** → not a plugin; show first 200 chars and stop.
-- **Plugin missing after restart** → check EvoFlux log for
-  `plugin_load_failed` (the loader skips broken files defensively).
-
-## When NOT to Use
-
-- When the task doesn't match this skill's domain
-- For simple tasks that don't require structured workflows
+Report URL, exact target path, entry point, reviewed capabilities, collision
+decision, verification, and restart requirement. If refused, name the concrete
+contract or safety violation.

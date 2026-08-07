@@ -1,6 +1,8 @@
 # Source evidence chain
 
-Use this reference for cross-repository, dynamic, or ambiguous investigations.
+Read this only after evidence confirms a cross-repository boundary, competing
+exact roots, or a static path that ends at a dynamic/generated boundary. Do not
+load it preemptively for an ordinary multi-file flow.
 
 ## Evidence record
 

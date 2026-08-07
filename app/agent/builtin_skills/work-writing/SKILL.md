@@ -7,6 +7,7 @@ description: Use this skill to draft or substantially revise publication-ready p
 
 Make the audience's next action easier without changing the underlying facts.
 Treat missing evidence as a visible gap, not an invitation to invent detail.
+Do not load bundled references or templates when this skill activates.
 
 ## Establish the writing contract
 
@@ -36,7 +37,7 @@ Do not force emails, announcements, or short updates into the template.
 
 ## Revise and risk-check
 
-Read [references/editorial-checklist.md](references/editorial-checklist.md) for
+Read [references/editorial-checklist.md](references/editorial-checklist.md) only for
 executive, external, policy, incident, legal-adjacent, or high-stakes content,
 and whenever the draft contains numbers, dates, commitments, or sensitive
 claims.

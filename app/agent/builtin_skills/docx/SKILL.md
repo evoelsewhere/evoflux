@@ -10,6 +10,8 @@ separate paths: design-preset creation for new documents and package-preserving
 OOXML patches for uploaded templates. Never turn a document into screenshots,
 HTML pages, flattened PDF content, or a fresh generic document when the user
 asked to edit their template.
+Do not load example projects when this skill activates; call the live catalog
+first and inspect an example only when the selected path needs a starter.
 
 ## Choose the path
 

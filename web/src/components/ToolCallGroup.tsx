@@ -24,6 +24,7 @@ import { ActivityStatus } from './motion/ActivityStatus'
 import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
 import { panelTransition, useMotionPreset } from '@/lib/motion'
 import type { ContentBlock, MessageAttachment } from '@/api/types'
+import { getSkillCallPresentation } from './ToolCall/skillPresentation'
 
 // ── Grouped block type ────────────────────────────────────────────────────────
 
@@ -99,11 +100,15 @@ const WRITE_ACTIVITY_TOOLS = new Set([
   'patch',
 ])
 
-function toolFamily(toolName: string): string {
+function toolFamily(block: ContentBlock): string {
+  const toolName = block.toolName ?? ''
   if (FILE_ACTIVITY_TOOLS.has(toolName)) return 'files'
   if (BROWSER_ACTIVITY_TOOLS.has(toolName)) return 'browser'
   if (SHELL_ACTIVITY_TOOLS.has(toolName)) return 'shell'
   if (WRITE_ACTIVITY_TOOLS.has(toolName)) return 'write'
+  if (toolName === 'skill') {
+    return getSkillCallPresentation(block.toolArgs)?.family ?? 'skill'
+  }
   return toolName
 }
 
@@ -115,14 +120,18 @@ function familyLabel(family: string): string {
     case 'write': return 'Changed files'
     case 'python': return 'Ran Python'
     case 'git': return 'Ran Git'
-    case 'skill': return 'Loaded a skill'
+    case 'skill-load': return 'Loaded a skill'
+    case 'skill-resource': return 'Read skill resources'
+    case 'skill-list': return 'Listed skills'
+    case 'skill': return 'Used skill tool'
     default: return 'Used tools'
   }
 }
 
-function groupLabel(blocks: ContentBlock[]): string {
+// eslint-disable-next-line react-refresh/only-export-components
+export function groupLabel(blocks: ContentBlock[]): string {
   const families = [...new Set(blocks.flatMap((block) => (
-    block.toolName ? [toolFamily(block.toolName)] : []
+    block.toolName ? [toolFamily(block)] : []
   )))]
   const labels = families.map(familyLabel)
   return labels

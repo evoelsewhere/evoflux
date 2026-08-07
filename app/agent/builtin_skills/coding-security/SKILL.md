@@ -8,6 +8,7 @@ description: Use this skill to audit or harden a concrete code path involving tr
 Model the reachable attacker and protected operation before enumerating
 vulnerability categories. Never treat a dangerous-looking primitive as an
 exploit without tracing control and impact.
+Do not load bundled references when this skill activates.
 
 ## Establish the security boundary
 
@@ -27,8 +28,22 @@ trust path: `callers` for reachable entry sites, `callees` for sensitive sinks,
 `references` for registration or callback wiring, and `impact` for upstream
 exposure. Start at depth 1. Static relationships support reachability analysis
 but never replace runtime authorization, data-flow, or exploit evidence.
+Once the boundary exposes an exact source and sink relationship, make the graph
+the next structural observation instead of continuing broad grep.
+
+Use `freshness_policy="fast"` for the first graph call and normal interactive
+navigation. If it returns `fresh`, do not rerun with a stronger policy. If it
+returns `partial` and a reported dirty file overlaps the question, use a
+targeted source read for a local gap or retry once with `"balanced"` when the
+relationships must be recomputed. After an edit that can change relationships,
+use `"balanced"` once before relying on the updated structure. Use `"strict"`
+only for a final,
+high-consequence completeness check when watcher coverage is unavailable or
+untrusted; never use it for discovery.
+
 Read [references/code-graph-contract.md](references/code-graph-contract.md) for
-ambiguity, cross-repository limits, and dynamic-wiring fallbacks.
+ambiguity, cross-repository limits, and dynamic-wiring fallbacks only after the
+graph reports such a gap.
 
 ## Prove findings
 

@@ -7,6 +7,7 @@ description: Use this skill to turn an ambiguous but actionable choice into one 
 
 Reduce ambiguity enough for an owner to commit. Do not return an unranked menu
 or manufacture numeric precision from weak evidence.
+Do not load bundled references or templates when this skill activates.
 
 ## Frame the decision
 
@@ -24,7 +25,7 @@ burden, lock-in, opportunity cost, and second-order effects that matter to this
 decision. Use a weighted matrix only when explicit weights reveal a real
 priority; show uncertain scores as ranges or qualitative judgments.
 
-Read [references/decision-rubric.md](references/decision-rubric.md) when stakes
+Read [references/decision-rubric.md](references/decision-rubric.md) only when stakes
 are high, evidence conflicts, criteria need weighting, or the team is arguing
 from different time horizons.
 

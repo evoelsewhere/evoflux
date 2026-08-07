@@ -1,6 +1,6 @@
 interface:
-  display_name: "Install EvoFlux Plugins"
-  short_description: "Install trusted plugin bundles from a URL"
-  default_prompt: "Use $plugin-installer to validate and install this EvoFlux plugin URL."
+  display_name: "Install Hook Plugins"
+  short_description: "Review and install raw single-file Python hooks"
+  default_prompt: "Use $plugin-installer to review and install this trusted raw Python hook URL."
 policy:
   allow_implicit_invocation: false

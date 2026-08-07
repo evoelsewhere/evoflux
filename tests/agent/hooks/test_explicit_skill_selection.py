@@ -74,6 +74,7 @@ async def test_coding_investigation_default_prompt_loads_only_in_coding_mode():
             content=("Use $coding-investigation to find callers of calculate_total.")
         )
     )
+    state.tool_names = ["code_graph"]
 
     await ExplicitSkillSelectionHook().before_agent(_ctx(), state)
     assert len(state.messages) == 1
@@ -229,6 +230,7 @@ async def test_explicit_skill_respects_application_mode():
     state = _state(
         HumanMessage(content="/skill:coding-investigation Trace enable_webbridge")
     )
+    state.tool_names = ["code_graph"]
 
     await ExplicitSkillSelectionHook().before_agent(_ctx(), state)
     assert len(state.messages) == 1

@@ -25,7 +25,9 @@ from pydantic import Field
 
 from app.agent.sandbox import get_sandbox
 from app.agent.skills.activation import (
+    SkillDependencyError,
     activate_skill,
+    activate_skill_with_runtime,
     is_skill_activation_content,
     read_skill_instructions,
     read_skill_resource,
@@ -310,8 +312,12 @@ async def load_skill(
         )
 
     try:
-        rendered = await activate_skill(record)
-    except (OSError, UnicodeError, ValueError) as exc:
+        rendered = (
+            await activate_skill_with_runtime(_state, record)
+            if _state is not None
+            else await activate_skill(record)
+        )
+    except (OSError, UnicodeError, ValueError, SkillDependencyError) as exc:
         return f"Could not load skill '{skill_name}': {exc}"
     logger.info("skill_loaded name={} file={}", skill_name, record.skill_file)
     if _state is not None:

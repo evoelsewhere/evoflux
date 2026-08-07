@@ -1,14 +1,14 @@
 [
   {
-    "query": "Use $plugin-installer to install the EvoFlux plugin from https://plugins.example.com/calendar.zip.",
+    "query": "Use $plugin-installer to review and install the EvoFlux hook plugin from https://plugins.example.com/calendar.py.",
     "should_trigger": true
   },
   {
-    "query": "Use $plugin-installer to validate and update the existing plugin from this new release URL without touching other plugins.",
+    "query": "Use $plugin-installer to validate and update the existing hook from https://plugins.example.com/audit_hook.py without touching other plugins.",
     "should_trigger": true
   },
   {
-    "query": "Use $plugin-installer to add this trusted internal plugin bundle URL and report its installed manifest.",
+    "query": "Use $plugin-installer to add this trusted internal raw Python hook URL and report the reviewed entry point.",
     "should_trigger": true
   },
   {

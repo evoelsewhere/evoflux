@@ -8,6 +8,7 @@ description: Use this skill to turn tabular, experimental, operational, or busin
 Anchor analysis to a decision and make every material transformation
 reproducible. A polished chart cannot rescue an undefined population or broken
 join.
+Do not load bundled references when this skill activates.
 
 ## Frame the analysis
 
@@ -24,7 +25,7 @@ Inspect schema, types, keys, cardinality, duplicates, missingness, coverage,
 units, time zones, impossible values, and join behavior. Reconcile headline
 counts or totals to a trusted baseline when one exists.
 
-Read [references/data-quality-gates.md](references/data-quality-gates.md) when
+Read [references/data-quality-gates.md](references/data-quality-gates.md) only when
 joining sources, excluding rows, treating outliers, analyzing experiments,
 forecasting, or resolving a mismatch with a reported metric.
 

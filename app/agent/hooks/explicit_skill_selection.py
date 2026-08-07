@@ -115,15 +115,19 @@ class ExplicitSkillSelectionHook(BaseAgentHook):
         *,
         insert_at: int,
     ) -> bool:
-        from app.agent.skills.activation import activate_skill, inject_skill_activation
+        from app.agent.skills.activation import (
+            SkillDependencyError,
+            activate_skill_with_runtime,
+            inject_skill_activation,
+        )
         from app.agent.skills.models import SkillRecord
 
         record = discovered.get(skill_name)
         if not isinstance(record, SkillRecord):
             return False
         try:
-            rendered = await activate_skill(record)
-        except (OSError, UnicodeError, ValueError):
+            rendered = await activate_skill_with_runtime(state, record)
+        except (OSError, UnicodeError, ValueError, SkillDependencyError):
             return False
         inject_skill_activation(
             state,

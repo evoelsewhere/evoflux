@@ -7,6 +7,7 @@ description: Use this skill to design or repair a test strategy around observabl
 
 Build proof around failures the system must detect. Coverage percentage is a
 signal, not the test strategy.
+Do not load bundled references when this skill activates.
 
 ## Define the proof obligation
 
@@ -24,8 +25,23 @@ For an exact symbol under test, use native `code_graph` to identify direct
 contract or require compatibility coverage. Use `impact` only for a named
 transitive risk and start at depth 1. Graph edges choose test boundaries; they
 do not prove runtime ordering, concurrency, reflection, or environment state.
-Read [references/code-graph-contract.md](references/code-graph-contract.md) for
-ambiguity, cross-repository coverage, and fallback rules.
+Once the proof obligation selects an exact symbol, make the graph the next
+structural observation instead of continuing broad discovery.
+
+Use `freshness_policy="fast"` for the first graph call and normal interactive
+navigation. If it returns `fresh`, do not rerun with a stronger policy. If it
+returns `partial` and a reported dirty file overlaps the question, use a
+targeted source read for a local gap or retry once with `"balanced"` when the
+relationships must be recomputed. After an edit that can change relationships,
+use `"balanced"` once before relying on the updated structure. Use `"strict"`
+only for a final,
+high-consequence completeness check when watcher coverage is unavailable or
+untrusted; never use it for discovery.
+
+Read
+[references/code-graph-contract.md](references/code-graph-contract.md) only
+after a result exposes ambiguity, cross-repository coverage, or another static
+fallback gap.
 
 ## Design resilient tests
 

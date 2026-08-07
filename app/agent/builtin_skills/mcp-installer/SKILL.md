@@ -1,244 +1,106 @@
 ---
 name: mcp-installer
-description: >-
-  Install, update, remove, or restart Model Context Protocol (MCP) servers
-  in `{EVOFLUX_CONFIG_DIR}/mcp.json`. Use when the user asks to add / remove /
-  list / restart an MCP, or to enable a server like filesystem, github,
-  postgres, puppeteer, brave-search.
+description: Install, inspect, update, restart, authenticate, or remove EvoFlux Model Context Protocol servers and wire their tools to a selected agent. Use only for explicit MCP configuration requests; do not use to call an already-configured integration, author a new MCP server, or install a plugin or skill.
 ---
 
-# MCP Installer
+# Manage MCP servers
 
-Use **`mcp_apply.py`** — a script bundled in this skill directory — for all
-MCP operations. It wraps the daemon API so you don't construct curl commands
-by hand.
+Use the bundled `{SKILL_DIR}/mcp_apply.py` for daemon and configuration
+operations. Do not construct raw daemon requests or edit `mcp.json` by hand
+while the helper can perform the operation. Run the helper with `--help` only
+when the exact subcommand or argument is not already known.
 
-```bash
-# The script lives next to this SKILL.md:
-SCRIPT="{SKILL_DIR}/mcp_apply.py"
+## State machine
 
-python3 "$SCRIPT" <command> [options]
-```
+### 1. RESOLVE
 
-The script talks to the daemon at `http://localhost:4082/api/mcp` by default.
-Pass `--base <url>` to override. MCP server config is global in
-`{EVOFLUX_CONFIG_DIR}/mcp.json`.
-
-## Commands
+Identify the exact server name, transport (`http` or `stdio`), endpoint or
+command, required arguments, environment variable names, target agent, and
+whether all or selected tools should be wired. Inspect current state first:
 
 ```bash
-# Add a remote HTTP server
-python "$SCRIPT" add <name> --http <url>
-python "$SCRIPT" add <name> --http <url> --header Authorization='Bearer ${TOKEN_ENV}'
-
-# Add an OAuth HTTP server. OAuth may be dynamic-registration (no app creds),
-# public-client (client ID only), or confidential-client (client ID + secret).
-# Direct credential values are stored as <SERVER>_MCP_CLIENT_ID /
-# <SERVER>_MCP_CLIENT_SECRET in .env and written as ${...} refs to mcp.json.
-python "$SCRIPT" add <name> --http <url> --oauth
-python "$SCRIPT" add <name> --http <url> --oauth --oauth-client-id <client-id>
-python "$SCRIPT" add slack --http https://mcp.slack.com/mcp \
-  --oauth-client-id <client-id> --oauth-client-secret <client-secret>
-
-# Add a stdio server
-python "$SCRIPT" add <name> --stdio <command> --args arg1 arg2 --env KEY=VALUE
-
-# Update an existing server
-python "$SCRIPT" update <name> --http <url>
-python "$SCRIPT" update <name> --http <url> --header Authorization='Bearer ${TOKEN_ENV}'
-python "$SCRIPT" update <name> --stdio <command> --args ...
-
-# Remove a server
-python "$SCRIPT" remove <name>
-
-# Restart a runner (no config change)
-python "$SCRIPT" restart <name>
-
-# Start an explicit OAuth browser flow
-python "$SCRIPT" connect-oauth <name>
-
-# Re-read mcp.json and reconcile all runners
-python3 "$SCRIPT" apply
-
-# Check state of one or all servers
-python3 "$SCRIPT" status [<name>]
-
-# Poll until a server is ready (useful after add/update)
-python3 "$SCRIPT" wait <name> [--timeout 30]
+python3 "{SKILL_DIR}/mcp_apply.py" status [name]
 ```
 
-## Exit codes
+Do not invent package names, endpoints, headers, OAuth mode, commands, tool
+names, or agent targets. Ask only for a missing value that cannot be derived
+from the provided server documentation or current configuration.
 
-| Code | Meaning |
-|------|---------|
-| `0` | Success — or daemon unreachable but `mcp.json` updated as fallback |
-| `1` | API / validation error — detail on stderr |
-| `2` | Server ended up in `error` or still needs OAuth (`auth_required`) |
-| `3` | `wait` timed out — server still `starting` |
+### 2. SAFETY
 
-`add`, `update`, `remove`, and `apply` never exit 1 on connection refused —
-they fall back to editing `mcp.json` directly and exit 0. The running desktop
-app watches that file and hot-applies the change; no app restart is required.
+Use `${ENV_VAR}` references for secrets. Never print, request in chat, embed in
+command history, or persist a raw API token when an environment reference or
+OAuth flow is available. Direct confidential OAuth credentials, when required
+by the helper, must be stored through its supported credential flow rather
+than written into `mcp.json`.
 
-## When to use
+Resolve relative filesystem arguments to absolute paths because stdio runners
+do not inherit the user's interactive working directory. Inspect existing
+agent references before removing or renaming a server.
 
-| User intent                                  | Command                                      |
-| -------------------------------------------- | -------------------------------------------- |
-| Install / update a remote (HTTP) server      | `add` or `update` with `--http`; add repeated `--header KEY=VALUE` when required |
-| Install / update a local (stdio) server      | `add` or `update` with `--stdio`             |
-| Remove a server                              | `remove` — but wire agent files first        |
-| Restart a crashed server                     | `restart`                                    |
-| Re-read mcp.json after manual edit           | `apply`                                      |
-| Check what's running                         | `status`                                     |
-| Attach server tools to an agent              | Edit the target agent's `mcp:` or `tools:` frontmatter after add |
+### 3. MUTATE
 
+Choose exactly one operation and run it once:
 
-## When NOT to Use
+```text
+add NAME --http URL [--header KEY=VALUE] [--oauth ...]
+add NAME --stdio COMMAND --args ... [--env KEY=VALUE]
+update NAME <transport options>
+restart NAME
+connect-oauth NAME
+remove NAME
+apply
+```
 
-- When the task doesn't match this skill's domain
-- For simple tasks that don't require structured workflows
-## Workflow — install / update
+Invoke it as `python3 "{SKILL_DIR}/mcp_apply.py" <operation> ...`. Treat exit
+codes as follows:
 
-1. **Handle secrets safely** before installing servers that need them:
+- `0`: configuration applied, or safely written while the daemon was offline;
+- `1`: validation/API error—correct the reported input before retrying;
+- `2`: runner error or authentication required—inspect status and fix that
+  condition;
+- `3`: readiness wait timed out—report the current state instead of looping.
 
-   **When you generate a custom MCP server script** (e.g. Jira, Confluence, any API wrapper):
-   - Do **not** ask the user to manually edit `.env` or restart the daemon.
-   - Register the server immediately using `${VAR}` placeholders for all secrets:
-     ```bash
-     python3 "$SCRIPT" add jira --stdio python /path/to/server.py \
-       --env JIRA_SERVER_URL='${JIRA_SERVER_URL}' \
-       --env JIRA_USERNAME='${JIRA_USERNAME}' \
-       --env JIRA_PAT='${JIRA_PAT}'
-     ```
-   - The server appears in **Settings → MCP** immediately. The env vars show an
-     orange **unset** badge — user clicks the server, fills in the values, saves.
-     The backend writes them to `{EVOFLUX_CONFIG_DIR}/.env` automatically.
-   - Tell the user: *"The server is registered. Go to Settings → MCP → `<name>` and fill in
-     your credentials, then save."*
+Do not retry a state-changing operation after an ambiguous result until status
+shows whether it already applied.
 
-   - For stdio servers that read env vars directly, confirm the env var exists with `printenv KEY | head -c 4`. Empty → use the `${VAR}` pattern above so the user can fill it in Settings.
-   - For HTTP headers, prefer env refs (`--header Authorization='Bearer ${TOKEN_ENV}'`) over pasting raw bearer tokens.
-   - For HTTP OAuth servers, choose the server's supported mode:
-     - Dynamic registration, e.g. Notion: use `--oauth` without credential values.
-     - Public client: use `--oauth --oauth-client-id <id>`.
-     - Confidential client, e.g. Slack: use `--oauth-client-id <id> --oauth-client-secret <secret>`.
-   - When direct OAuth credential values are passed, the API stores generated `<SERVER>_MCP_CLIENT_ID` / `<SERVER>_MCP_CLIENT_SECRET` keys in `{EVOFLUX_CONFIG_DIR}/.env` and writes `${...}` refs to `mcp.json`. You may also pass existing `${ENV_VAR}` refs directly.
+### 4. WIRE
 
-2. **Expand `~` and relative paths** for stdio args — the daemon spawns under
-   its own cwd. Use `realpath`:
+Installation is incomplete until the requested agent can use the tools. Read
+the target agent file and make one minimal frontmatter edit:
 
-   ```bash
-   realpath ~/Documents   # → /Users/<you>/Documents
-   ```
+- add the server name to `mcp:` for all current and future server tools; or
+- add exact returned `mcp_<server>_<tool>` names to `tools:` for selective
+  access.
 
-3. **Add or update** the server:
+Never guess selective tool names. Preserve existing frontmatter and code-owned
+defaults. When removing a server, remove its `mcp:` and selective `tools:`
+references from every affected agent **before** running `remove`, preventing a
+stale next-turn configuration.
 
-   ```bash
-    # Remote HTTP (preferred when the server offers a hosted URL)
-    python3 "$SCRIPT" add excalidraw --http https://mcp.excalidraw.com
+### 5. VERIFY
 
-    # Remote HTTP with a bearer-token header stored in the user's .env
-    python3 "$SCRIPT" add private --http https://mcp.example.com/mcp \
-      --header Authorization='Bearer ${PRIVATE_MCP_TOKEN}'
+Run:
 
-    # HTTP OAuth, dynamic registration
-    python3 "$SCRIPT" add notion --http https://mcp.notion.com/mcp --oauth
+```bash
+python3 "{SKILL_DIR}/mcp_apply.py" wait NAME --timeout 30
+python3 "{SKILL_DIR}/mcp_apply.py" status NAME
+```
 
-    # HTTP OAuth, public-client app credentials
-    python3 "$SCRIPT" add publicapp --http https://mcp.example.com/mcp \
-      --oauth --oauth-client-id <client-id>
+Confirm the expected runner state and returned tool names, then reread the
+target agent frontmatter. If the daemon is offline but the helper safely wrote
+configuration, report that readiness remains unverified and when the runtime
+will reconcile it. Do not claim the MCP is usable from a successful file edit
+alone.
 
-    # HTTP OAuth, app credentials required
-    python3 "$SCRIPT" add slack --http https://mcp.slack.com/mcp \
-     --oauth-client-id <client-id> --oauth-client-secret <client-secret>
+## Stop conditions
 
-   # Local stdio
-   python3 "$SCRIPT" add filesystem --stdio npx \
-     --args -y @modelcontextprotocol/server-filesystem /Users/you/Documents
-   ```
+Stop when the exact configuration is present, secrets are referenced safely,
+the runner state is known, requested agent wiring is verified, and no stale
+agent reference remains after removal.
 
-   - Exit `0`: runner started (may still be `starting` — use `wait` if needed).
-   - Exit `1`: API validation error — fix the config and retry.
-   - Exit `2`: runner hit `error` or `auth_required` — show the error, fix
-     config or run `connect-oauth`, then retry.
+## Deliverable
 
-4. **Connect OAuth if needed.** If status is `auth_required`, run the explicit
-   browser flow:
-
-   ```bash
-   python3 "$SCRIPT" connect-oauth <name>
-   ```
-
-5. **Wait for ready** (optional but recommended):
-
-   ```bash
-   python3 "$SCRIPT" wait excalidraw --timeout 30
-   ```
-
-6. **Wire into an agent.** Installing alone does NOT make the tools callable.
-   This step is **mandatory** — do not consider the install complete until done.
-
-   **The lead must wire it.** Read the target agent file, show the minimal
-   frontmatter diff, then add the server name to `mcp:` (all server tools) or
-   selected `mcp_<server>_<tool>` names to `tools:` as the user requested.
-
-   Do not delegate this step to a member agent, even if the member ran the steps above.
-
-   Only skip if the user explicitly says they will wire it manually.
-
-## Workflow — removal
-
-1. **Strip agent references first.** Check all agent files:
-
-   ```bash
-   rg '<name>' {EVOFLUX_CONFIG_DIR}/agents/
-   ```
-
-   If any agent has the server in `mcp:` or `mcp_<name>_*` in `tools:`,
-   remove those entries with a minimal agent-frontmatter edit *before* removing
-   the server. Otherwise the next-turn rebuild logs `agent_config_refresh_failed`.
-
-2. **Remove the server:**
-
-   ```bash
-   python3 "$SCRIPT" remove <name>
-   ```
-
-## Common servers
-
-| Name         | Command                                                             |
-| ------------ | ------------------------------------------------------------------- |
-| filesystem   | `--stdio npx --args -y @modelcontextprotocol/server-filesystem <path>` |
-| github       | `--stdio npx --args -y @modelcontextprotocol/server-github` (needs token env) |
-| brave-search | `--stdio npx --args -y @modelcontextprotocol/server-brave-search` (needs key env) |
-| postgres     | `--stdio npx --args -y @modelcontextprotocol/server-postgres <conn-string>` |
-| sqlite       | `--stdio uvx --args mcp-server-sqlite --db-path <path>` |
-| excalidraw   | `--http https://mcp.excalidraw.com` |
-| notion       | `--http https://mcp.notion.com/mcp --oauth`, then `connect-oauth notion` |
-| slack        | `--http https://mcp.slack.com/mcp --oauth-client-id <id> --oauth-client-secret <secret>`, then `connect-oauth slack` |
-
-Verify package names with the user — npm names drift.
-
-
-
-## Verification
-
-- # Check state of one or all servers
-- | Check what's running                         | `status`                                     |
-- - For stdio servers that read env vars directly, confirm the env var exists with `printenv KEY | head -c 4`. Empty → use the `${VAR}` pattern above so the user can fill it in Settings.
-
-## Failure modes
-
-- **Exit 2 (`error`)** → show the error field; suggest the obvious fix
-  (missing package, wrong path, missing env var). Don't retry blindly.
-- **`auth_required` state** → run `connect-oauth <name>`. If it still returns
-  a conflict, ask for the missing OAuth app credentials and update the server.
-- **Exit 0 with "daemon unreachable" message** → `mcp.json` was updated
-  as fallback. Proceed to step 6 (wire into agent) as normal. Changes
-  take effect on next daemon restart.
-- **`agent_config_refresh_failed`** (next turn's logs) → an agent's `tools:`
-  list references a removed tool. Run `rg 'mcp_' {EVOFLUX_CONFIG_DIR}/agents/`
-  then remove stale entries from the affected agent frontmatter.
-
-A failing MCP server does NOT block other servers, the team, or any
-in-flight turn — tell the user that, they often assume the worst.
+Report server name, transport, final state, target agent and wiring mode,
+available tool names when known, operations actually completed, and any OAuth,
+credential, daemon, or readiness action still required.

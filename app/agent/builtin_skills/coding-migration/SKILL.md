@@ -7,6 +7,7 @@ description: Use this skill for compatibility-sensitive transitions across APIs,
 
 Make each migration stage independently deployable, observable, and
 reversible until evidence proves the old path can be removed.
+Do not load bundled references when this skill activates.
 
 ## Inventory the transition
 
@@ -24,9 +25,22 @@ For every exact API, type, event, schema adapter, or migration entry-point
 symbol, use native `code_graph` to establish direct `references`/`callers` and
 bounded `impact` before sequencing rollout. Start at depth 1; preserve
 repository identity and treat pending cross-repository edges as an inventory
-gap, not as absence of consumers. Read
-[references/code-graph-contract.md](references/code-graph-contract.md) for
-operation choice, ambiguity, freshness, and dynamic-wiring fallbacks.
+gap, not as absence of consumers. Once an exact boundary is selected, make the
+graph the next structural observation instead of continuing broad discovery.
+
+Use `freshness_policy="fast"` for the first graph call and normal interactive
+navigation. If it returns `fresh`, do not rerun with a stronger policy. If it
+returns `partial` and a reported dirty file overlaps the question, use a
+targeted source read for a local gap or retry once with `"balanced"` when the
+relationships must be recomputed. After an edit that can change relationships,
+use `"balanced"` once before relying on the updated structure. Use `"strict"`
+only for a final,
+high-consequence completeness check when watcher coverage is unavailable or
+untrusted; never use it for discovery.
+
+Read [references/code-graph-contract.md](references/code-graph-contract.md)
+only after a result exposes ambiguity, freshness, cross-repository, truncation,
+or dynamic-wiring limits.
 
 ## Choose and sequence a strategy
 

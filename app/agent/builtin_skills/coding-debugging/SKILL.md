@@ -7,6 +7,7 @@ description: Use this skill when a test, build, runtime path, integration, or co
 
 Treat debugging as a causal investigation. A passing build after an edit is not
 proof unless the edit explains the original symptom.
+Do not load bundled references when this skill activates.
 
 ## Establish the failure contract
 
@@ -39,9 +40,24 @@ non-call uses, or `neighborhood` for the immediate boundary. Start at depth 1.
 Static edges narrow the causal path but do not prove runtime order, state, or a
 race; preserve the reproduction as the final causal test.
 
+After an exact symbol and structural hypothesis exist, make `code_graph` the
+next structural observation. Do not continue broad grep or reread source that
+the graph returns. Runtime reproduction may still come first when it is the
+cheapest test that can falsify the current causal hypothesis.
+
+Use `freshness_policy="fast"` for the first graph call and normal interactive
+navigation. If it returns `fresh`, do not rerun with a stronger policy. If it
+returns `partial` and a reported dirty file overlaps the question, use a
+targeted source read for a local gap or retry once with `"balanced"` when the
+relationships must be recomputed. After an edit that can change relationships,
+use `"balanced"` once before relying on the updated structure. Use `"strict"`
+only for a final,
+high-consequence completeness check when watcher coverage is unavailable or
+untrusted; never use it for discovery.
+
 Read [references/code-graph-contract.md](references/code-graph-contract.md)
-before graph traversal when a symbol is ambiguous, the path crosses
-repositories, or freshness/dirty-file limitations can affect the conclusion.
+only after a graph result exposes ambiguity, cross-repository scope,
+freshness/dirty-file limits, or truncation.
 
 ## Fix and prove
 

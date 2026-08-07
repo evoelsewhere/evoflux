@@ -7,6 +7,7 @@ description: Use this skill for a read-only audit of a local diff or supplied im
 
 Remain read-only unless the user separately authorizes fixes. Optimize for
 defects that change production behavior, not commentary volume.
+Do not load bundled references when this skill activates.
 
 ## Establish intent and scope
 
@@ -22,9 +23,22 @@ For exact changed symbols, use native `code_graph` to verify direct
 `callers`/`references`, outbound `callees`, and bounded `impact` rather than
 guessing propagation from filenames. Start at depth 1, disambiguate duplicate
 definitions, preserve repository labels, and reuse returned call-site source.
+Once a changed symbol and propagation question are selected, make the graph the
+next structural observation rather than continuing broad discovery.
+
+Use `freshness_policy="fast"` for the first graph call and normal interactive
+navigation. If it returns `fresh`, do not rerun with a stronger policy. If it
+returns `partial` and a reported dirty file overlaps the question, use a
+targeted source read for a local gap or retry once with `"balanced"` when the
+relationships must be recomputed. After an edit that can change relationships,
+use `"balanced"` once before relying on the updated structure. Use `"strict"`
+only for a final,
+high-consequence completeness check when watcher coverage is unavailable or
+untrusted; never use it for discovery.
+
 Read [references/code-graph-contract.md](references/code-graph-contract.md)
-when graph freshness, dirty files, pending cross-repository edges, dynamic
-wiring, or truncation limits review coverage.
+only when a result exposes freshness, dirty files, pending cross-repository
+edges, dynamic wiring, or truncation that limits review coverage.
 
 ## Review by risk
 

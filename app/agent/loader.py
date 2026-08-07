@@ -535,6 +535,7 @@ def _build_agent(
     from app.agent.hooks.explicit_skill_selection import ExplicitSkillSelectionHook
     from app.agent.hooks.skill_catalog import SkillCatalogHook
     from app.agent.hooks.skill_resolution import SkillResolutionHook
+    from app.agent.hooks.skill_runtime_contract import SkillRuntimeContractHook
 
     if cfg.skills:
         agent.hooks.append(ConfiguredSkillsHook(cfg.skills, mode=mode))
@@ -542,6 +543,7 @@ def _build_agent(
         [
             ExplicitSkillSelectionHook(),
             SkillResolutionHook(mode=mode),
+            SkillRuntimeContractHook(mode=mode),
             SkillCatalogHook(
                 mode=mode,
                 model_id=cfg.model,

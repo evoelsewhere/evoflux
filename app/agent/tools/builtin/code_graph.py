@@ -152,6 +152,18 @@ async def _code_graph(
             )
         ),
     ] = None,
+    freshness_policy: Annotated[
+        Literal["fast", "balanced", "strict"],
+        Field(
+            description=(
+                "Index freshness policy. Use fast for the first interactive query; "
+                "use balanced once when dirty files overlap the question or current "
+                "post-edit relationships are required; use strict only for a final "
+                "high-consequence completeness check when watcher coverage is "
+                "unavailable or untrusted."
+            )
+        ),
+    ] = "fast",
     depth: Annotated[
         int,
         Field(
@@ -196,6 +208,9 @@ async def _code_graph(
             repository=repository,
             depth=depth,
             limit=limit,
+            # Keep the latency-sensitive path as the default while allowing a
+            # skill to request explicit freshness at a justified proof gate.
+            freshness_policy=freshness_policy,
         )
 
     rendered = _render_code_graph(result)
@@ -223,6 +238,7 @@ code_graph = Tool(
     concurrency_safe=True,
     read_only=True,
     tiers=("coding",),
+    observation_kind="structural",
     deferred=False,
     capabilities=("code_graph_navigation",),
     deduplicate_in_batch=True,

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   groupConsecutiveToolCalls,
+  groupLabel,
   type ToolBlockGroup,
 } from './ToolCallGroup'
 import type { ContentBlock } from '@/api/types'
@@ -36,6 +37,30 @@ describe('groupConsecutiveToolCalls', () => {
     expect((result[0] as ToolBlockGroup).id).toBe('tool-group-read-1')
     expect((result[0] as ToolBlockGroup).toolName).toBe('read')
     expect((result[0] as ToolBlockGroup).blocks).toEqual(blocks)
+  })
+
+  it('distinguishes skill activation from resource reads', () => {
+    const load = block('skill-load', 'tool', 'skill')
+    load.toolArgs = JSON.stringify({
+      action: 'load',
+      skill_name: 'coding-investigation',
+    })
+    const contract = block('skill-contract', 'tool', 'skill')
+    contract.toolArgs = JSON.stringify({
+      action: 'read_resource',
+      skill_name: 'coding-investigation',
+      resource_path: 'references/code-graph-contract.md',
+    })
+    const evidence = block('skill-evidence', 'tool', 'skill')
+    evidence.toolArgs = JSON.stringify({
+      action: 'read_resource',
+      skill_name: 'coding-investigation',
+      resource_path: 'references/evidence-chain.md',
+    })
+
+    expect(groupLabel([load, contract, evidence])).toBe(
+      'Loaded a skill, read skill resources',
+    )
   })
 
   it('keeps thinking as a visible boundary', () => {

@@ -94,3 +94,55 @@ def test_validator_caps_scandir_before_materializing_wide_bundle(
 
     assert consumed <= 4
     assert any(item.code == "bundle-entry-limit" for item in result.findings)
+
+
+def test_validator_accepts_behavioral_trajectory_fields(tmp_path) -> None:
+    skill_dir = tmp_path / "investigate-code"
+    (skill_dir / "agents").mkdir(parents=True)
+    (skill_dir / "evals").mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: investigate-code\ndescription: Trace code behavior.\n---\n"
+        "Resolve an exact anchor, then use the graph."
+    )
+    (skill_dir / "agents" / "evoflux.yaml").write_text(
+        "interface:\n"
+        "  display_name: Investigate code\n"
+        "  short_description: Trace exact code behavior\n"
+    )
+    (skill_dir / "evals" / "trigger-cases.json").write_text(
+        '[{"query":"Who calls parse?","should_trigger":true,'
+        '"expected_operation":"callers",'
+        '"expected_trajectory":["code_graph"],'
+        '"forbidden_behaviors":["broad_grep"]},'
+        '{"query":"Write docs","should_trigger":false}]'
+    )
+
+    result = validator.validate_skill(skill_dir, require_evals=True)
+
+    assert result.valid is True
+
+
+def test_validator_rejects_invalid_behavioral_trajectory_fields(tmp_path) -> None:
+    skill_dir = tmp_path / "investigate-code"
+    (skill_dir / "agents").mkdir(parents=True)
+    (skill_dir / "evals").mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: investigate-code\ndescription: Trace code behavior.\n---\n"
+        "Resolve an exact anchor, then use the graph."
+    )
+    (skill_dir / "agents" / "evoflux.yaml").write_text(
+        "interface:\n"
+        "  display_name: Investigate code\n"
+        "  short_description: Trace exact code behavior\n"
+    )
+    (skill_dir / "evals" / "trigger-cases.json").write_text(
+        '[{"query":"Who calls parse?","should_trigger":true,'
+        '"expected_operation":"search",'
+        '"expected_trajectory":[]},'
+        '{"query":"Write docs","should_trigger":false}]'
+    )
+
+    result = validator.validate_skill(skill_dir, require_evals=True)
+
+    assert result.valid is False
+    assert sum(item.code == "invalid-trigger-case" for item in result.findings) == 2

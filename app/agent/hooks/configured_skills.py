@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING, Sequence
 from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
-from app.agent.skills.activation import activate_skill, inject_skill_activation
+from app.agent.skills.activation import (
+    SkillDependencyError,
+    activate_skill_with_runtime,
+    inject_skill_activation,
+)
 
 if TYPE_CHECKING:
     from app.agent.state import AgentState, RunContext
@@ -59,8 +63,8 @@ class ConfiguredSkillsHook(BaseAgentHook):
                 )
                 continue
             try:
-                content = await activate_skill(record)
-            except (OSError, UnicodeError, ValueError) as exc:
+                content = await activate_skill_with_runtime(state, record)
+            except (OSError, UnicodeError, ValueError, SkillDependencyError) as exc:
                 logger.warning(
                     "configured_skill_load_failed agent={} skill={} error={}",
                     ctx.agent_name,
