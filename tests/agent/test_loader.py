@@ -520,8 +520,28 @@ def test_build_agent_skills_wire_configured_activation_and_catalog(
     assert [hook.__class__.__name__ for hook in agent.hooks] == [
         "ConfiguredSkillsHook",
         "ExplicitSkillSelectionHook",
+        "SkillResolutionHook",
         "SkillCatalogHook",
     ]
+    assert agent.hooks[-1]._preferred_skills == ("myskill",)
+
+
+def test_build_agent_wires_coding_resolution_without_router_preload():
+    factory, _ = _make_provider_factory()
+    agent = _build_agent(
+        AgentConfig(name="bot", system_prompt="Base prompt"),
+        {},
+        factory,
+        mode="coding",
+    )
+
+    resolver_hook = agent.hooks[-2]
+    catalog_hook = agent.hooks[-1]
+    assert resolver_hook.__class__.__name__ == "SkillResolutionHook"
+    assert resolver_hook._mode == "coding"
+    assert catalog_hook.__class__.__name__ == "SkillCatalogHook"
+    assert catalog_hook._preferred_skills == ()
+    assert agent.skills == []
 
 
 def test_build_agent_missing_skill_metadata_does_not_mutate_prompt(

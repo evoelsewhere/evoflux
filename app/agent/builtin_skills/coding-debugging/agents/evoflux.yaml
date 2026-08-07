@@ -3,4 +3,9 @@ interface:
   short_description: "Find root causes and prove regression fixes"
   default_prompt: "Use $coding-debugging to reproduce this failure, identify its root cause, and prove the fix."
 policy:
-  allow_implicit_invocation: false
+  allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: builtin
+      value: code_graph
+      description: "Native exact-symbol definitions, callers, callees, references, impact, and cross-repository relationships"

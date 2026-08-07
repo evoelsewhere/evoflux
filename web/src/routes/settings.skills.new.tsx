@@ -43,7 +43,7 @@ description: Describe what this skill does and the concrete situations where it 
 - Report evidence, uncertainty, and remaining risks.
 `
 
-const OPENAI_METADATA = `interface:
+const EVOFLUX_METADATA = `interface:
   display_name: New skill
   short_description: A focused reusable workflow for EvoFlux
   default_prompt: Use $new-skill for this task.
@@ -71,8 +71,8 @@ const TRIGGER_EVALS = `{
 function scaffoldFiles(): SkillBundleDraftFile[] {
   return [
     {
-      path: 'agents/openai.yaml',
-      content: OPENAI_METADATA,
+      path: 'agents/evoflux.yaml',
+      content: EVOFLUX_METADATA,
       encoding: 'utf-8',
       size: 0,
       mediaType: 'application/yaml',

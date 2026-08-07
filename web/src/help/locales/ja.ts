@@ -1373,7 +1373,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     setup:
       'Coding ワークスペースまたはプロジェクト — インデックスはファイル変更で増分実行。Graph workbench ツールを開き視覚探索し、大きな外部編集後にツリーが古く見えたら再インデックス。',
     tricks: [
-      'code-graph-navigation は段階的に読み込む workflow ガイダンスで、code_graph は正確なシンボルを実行するネイティブツールです。',
+      'Coding スキルは段階的な graph ガイダンスを内包し、code_graph は正確なシンボルを実行するネイティブツールです。',
       '既知の正確なシンボルと構造関係には code_graph、発見・リテラル・コメント・設定キーにはソース検索を使います。',
       'Graph workbench ツールを開き視覚探索し、必要なら再インデックス。',
       'クロスレポ解決は 3 つの決定的ティア（reattach、manifests/FQNs、sibling FTS5）で、リンクに LLM 呼び出しなし。',
@@ -1858,7 +1858,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          '横断: code-graph-navigation が workflow を案内し、ネイティブ code_graph が正確なシンボル operation を検証・実行します。',
+          '横断: 有効化された Coding スキルが graph workflow を案内し、ネイティブ code_graph が正確なシンボル operation を検証・実行します。',
           '横断: workflows と skills はどちらも / に出るにはスコープ有効性が必要。',
           '横断: 権限 Always ルールは MCP ツールにも適用 — まず Once を優先。'
 ],

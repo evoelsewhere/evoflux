@@ -240,7 +240,7 @@ async def test_builtin_runtime_settings_override_and_reset_without_bundle_write(
     builtin_root = skills_routes._builtin_skills_root()
     skill_dir = builtin_root / "self-healing"
     skill_bytes = (skill_dir / "SKILL.md").read_bytes()
-    metadata_bytes = (skill_dir / "agents" / "openai.yaml").read_bytes()
+    metadata_bytes = (skill_dir / "agents" / "evoflux.yaml").read_bytes()
     monkeypatch.setattr(skill_module, "_iter_skill_roots", lambda: [builtin_root])
     skill_module._discover_skills_cached.cache_clear()
 
@@ -268,7 +268,7 @@ async def test_builtin_runtime_settings_override_and_reset_without_bundle_write(
     assert updated.json()["user_invocable"] is False
     assert updated.json()["settings_overridden"] is True
     assert (skill_dir / "SKILL.md").read_bytes() == skill_bytes
-    assert (skill_dir / "agents" / "openai.yaml").read_bytes() == metadata_bytes
+    assert (skill_dir / "agents" / "evoflux.yaml").read_bytes() == metadata_bytes
     assert (Path(settings.EVOFLUX_CONFIG_DIR) / "skill-settings.json").is_file()
 
     hidden_from_work = await client.get(

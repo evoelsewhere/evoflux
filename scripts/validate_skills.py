@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Validate portable Agent Skills bundles without enforcing prose templates.
+"""Validate EvoFlux and portable Agent Skills bundles.
 
-The validator checks the Agent Skills contract, Codex interface metadata,
+The validator checks the Agent Skills contract, EvoFlux/Codex interface metadata,
 relative resource links, and activation-evaluation fixtures. It deliberately
 does not require arbitrary headings or minimum prose length: a concise skill is
 valid when its workflow is precise, while generic filler does not improve it.
@@ -28,13 +28,13 @@ FRONTMATTER_RE = re.compile(r"^---[ \t]*\r?\n(.*?)\r?\n---[ \t]*\r?\n?(.*)$", re
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 MAX_DESCRIPTION_CHARS = 1_024
 MAX_SKILL_BYTES = 512 * 1024
-MAX_OPENAI_METADATA_BYTES = 256 * 1024
+MAX_AGENT_METADATA_BYTES = 256 * 1024
 MAX_RESOURCE_BYTES = 2 * 1024 * 1024
 MAX_BUNDLE_BYTES = 20 * 1024 * 1024
 MAX_BUNDLE_ENTRIES = 20_000
 MAX_SKILL_DIRECTORIES = 2_000
 RECOMMENDED_BODY_LINES = 500
-OPENAI_INTERFACE_FIELD_LIMITS = {
+AGENT_INTERFACE_FIELD_LIMITS = {
     "display_name": 128,
     "short_description": 1_024,
     "default_prompt": 4_096,
@@ -42,6 +42,8 @@ OPENAI_INTERFACE_FIELD_LIMITS = {
     "icon_large": 1_024,
     "brand_color": 64,
 }
+EVOFLUX_AGENT_METADATA = "evoflux.yaml"
+PORTABLE_AGENT_METADATA = "openai.yaml"
 
 
 @dataclass
@@ -167,79 +169,81 @@ def _validate_frontmatter(
         )
 
 
-def _validate_openai_metadata(skill_dir: Path, result: SkillResult) -> None:
-    path = skill_dir / "agents" / "openai.yaml"
+def _validate_agent_metadata(skill_dir: Path, result: SkillResult) -> None:
+    agents_dir = skill_dir / "agents"
+    native_path = agents_dir / EVOFLUX_AGENT_METADATA
+    portable_path = agents_dir / PORTABLE_AGENT_METADATA
+    path = native_path if native_path.exists() else portable_path
     if not path.exists():
         result.add(
             "warning",
-            "missing-openai-metadata",
-            "No agents/openai.yaml; portable runtime defaults will be used.",
+            "missing-agent-metadata",
+            "No agents/evoflux.yaml or agents/openai.yaml; runtime defaults will be used.",
         )
         return
+    label = path.relative_to(skill_dir).as_posix()
     try:
         text = _read_bounded_utf8(
             path,
-            limit=MAX_OPENAI_METADATA_BYTES,
-            label="agents/openai.yaml",
+            limit=MAX_AGENT_METADATA_BYTES,
+            label=label,
         )
         raw = yaml.safe_load(text) or {}
     except (OSError, ValueError, yaml.YAMLError, RecursionError) as exc:
-        result.add("error", "invalid-openai-metadata", str(exc))
+        result.add("error", "invalid-agent-metadata", str(exc))
         return
     if not isinstance(raw, dict):
-        result.add("error", "invalid-openai-metadata", "Root must be a mapping.")
+        result.add("error", "invalid-agent-metadata", "Root must be a mapping.")
         return
     interface = raw.get("interface")
     if not isinstance(interface, dict):
-        result.add(
-            "error", "missing-openai-interface", "interface mapping is required."
-        )
+        result.add("error", "missing-agent-interface", "interface mapping is required.")
     else:
         for key in ("display_name", "short_description"):
             if not isinstance(interface.get(key), str) or not interface[key].strip():
                 result.add(
                     "error",
-                    "missing-openai-interface-field",
+                    "missing-agent-interface-field",
                     f"interface.{key} is required and must be non-empty.",
                 )
-        for key, limit in OPENAI_INTERFACE_FIELD_LIMITS.items():
+        for key, limit in AGENT_INTERFACE_FIELD_LIMITS.items():
             value = interface.get(key)
             if value is None:
                 continue
             if not isinstance(value, str):
                 result.add(
                     "error",
-                    "invalid-openai-interface-field",
+                    "invalid-agent-interface-field",
                     f"interface.{key} must be a string.",
                 )
             elif len(value) > limit:
                 result.add(
                     "error",
-                    "openai-interface-field-too-long",
+                    "agent-interface-field-too-long",
                     f"interface.{key} exceeds {limit} characters.",
                 )
     policy = raw.get("policy") or {}
     if not isinstance(policy, dict):
-        result.add("error", "invalid-openai-policy", "policy must be a mapping.")
+        result.add("error", "invalid-agent-policy", "policy must be a mapping.")
     elif "allow_implicit_invocation" in policy and not isinstance(
         policy["allow_implicit_invocation"], bool
     ):
         result.add(
             "error",
-            "invalid-openai-policy",
+            "invalid-agent-policy",
             "policy.allow_implicit_invocation must be boolean.",
         )
     dependencies = raw.get("dependencies") or {}
     if not isinstance(dependencies, dict):
         result.add(
-            "error", "invalid-openai-dependencies", "dependencies must be a mapping."
+            "error", "invalid-agent-dependencies", "dependencies must be a mapping."
         )
         return
     tools = dependencies.get("tools") or []
     if not isinstance(tools, list):
         result.add(
             "error",
-            "invalid-openai-dependencies",
+            "invalid-agent-dependencies",
             "dependencies.tools must be a list.",
         )
         return
@@ -247,7 +251,7 @@ def _validate_openai_metadata(skill_dir: Path, result: SkillResult) -> None:
         if not isinstance(tool, dict):
             result.add(
                 "error",
-                "invalid-openai-dependency",
+                "invalid-agent-dependency",
                 f"dependencies.tools[{index}] must be a mapping.",
             )
             continue
@@ -263,7 +267,7 @@ def _validate_openai_metadata(skill_dir: Path, result: SkillResult) -> None:
         ):
             result.add(
                 "error",
-                "invalid-openai-dependency",
+                "invalid-agent-dependency",
                 f"dependencies.tools[{index}] requires bounded type and value strings.",
             )
 
@@ -407,7 +411,7 @@ def validate_skill(skill_dir: Path, *, require_evals: bool = False) -> SkillResu
     result = SkillResult(name=skill_dir.name, path=str(skill_dir / "SKILL.md"))
     metadata, body = _parse_skill(skill_dir / "SKILL.md", result)
     _validate_frontmatter(skill_dir, metadata, body, result)
-    _validate_openai_metadata(skill_dir, result)
+    _validate_agent_metadata(skill_dir, result)
     _validate_links(skill_dir, body, result)
     _validate_evals(skill_dir, result, require_evals=require_evals)
     _validate_resources(skill_dir, result)

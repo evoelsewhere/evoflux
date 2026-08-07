@@ -18,8 +18,8 @@
   },
   {
     "query": "List the direct callers of AuthMiddleware.verify_token.",
-    "should_trigger": false,
-    "near_miss": "A known symbol's structural callers belong to code-graph-navigation."
+    "should_trigger": true,
+    "expected_operation": "callers"
   },
   {
     "query": "Change WebBright so it is enabled for all enterprise workspaces.",

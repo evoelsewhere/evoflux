@@ -1356,7 +1356,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     setup:
       'Coding workspace hoặc project — indexing chạy incremental khi file đổi. Mở Graph workbench để khám trực quan và reindex khi cây trông cũ sau edit ngoài lớn.',
     tricks: [
-      'code-graph-navigation là hướng dẫn workflow được load dần; code_graph là tool native thực thi trên exact symbol.',
+      'Các Coding skill chứa hướng dẫn graph được load dần; code_graph là tool native thực thi trên exact symbol.',
       'Dùng code_graph cho exact symbol đã biết và quan hệ cấu trúc; dùng search source để khám phá, tìm literal, comment và config key.',
       'Mở Graph workbench để khám trực quan và reindex khi cần.',
       'Resolve cross-repo dùng ba tier xác định (reattach, manifests/FQNs, sibling FTS5) không gọi LLM để link.',
@@ -1838,7 +1838,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'code-graph-navigation hướng dẫn workflow; code_graph native validate và thực thi operation trên exact symbol.',
+          'Coding skill đã activate hướng dẫn graph; code_graph native validate và thực thi operation trên exact symbol.',
           'Workflow và skill đều cần scope hợp lệ mới hiện trong /.',
           'Rule Always của permission áp cả MCP tool — ưu tiên Once trước.'
 ],

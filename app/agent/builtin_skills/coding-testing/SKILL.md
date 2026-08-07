@@ -19,6 +19,14 @@ signal, not the test strategy.
    when choosing between adjacent levels, testing independently deployed
    consumers, or replacing a flaky high-level test.
 
+For an exact symbol under test, use native `code_graph` to identify direct
+`callers`, `references`, and outbound `callees` that define the observable
+contract or require compatibility coverage. Use `impact` only for a named
+transitive risk and start at depth 1. Graph edges choose test boundaries; they
+do not prove runtime ordering, concurrency, reflection, or environment state.
+Read [references/code-graph-contract.md](references/code-graph-contract.md) for
+ambiguity, cross-repository coverage, and fallback rules.
+
 ## Design resilient tests
 
 Prefer public behavior and stable seams over private calls. Make fixtures

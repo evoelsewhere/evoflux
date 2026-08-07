@@ -406,6 +406,9 @@ class Agent(Generic[TContext]):
         if ctx.session_id is not None:
             state.metadata["session_id"] = ctx.session_id
         state.metadata["agent_name"] = ctx.agent_name
+        # Keep pre-model stages aligned with per-run provider overrides.
+        # The value is ephemeral and is never persisted or model-visible.
+        state.metadata["_runtime_provider"] = active_provider
 
         # Surface caller-supplied per-run metadata to tools/hooks.  Used by
         # team leads to pass ``mode`` and ``workspace`` so the schedule tool

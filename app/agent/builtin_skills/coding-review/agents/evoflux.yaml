@@ -3,4 +3,9 @@ interface:
   short_description: "Find actionable defects in local code changes"
   default_prompt: "Use $coding-review to audit this change for production-impacting defects without editing it."
 policy:
-  allow_implicit_invocation: false
+  allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: builtin
+      value: code_graph
+      description: "Native exact-symbol definitions, callers, callees, references, impact, and cross-repository relationships"

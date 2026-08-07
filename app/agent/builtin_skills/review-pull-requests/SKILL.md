@@ -26,8 +26,11 @@ Use progressive disclosure:
 - Keep review findings about the code, not the author.
 
 Local code inspection remains allowed through normal read-only Coding tools and
-specialist workflows. Select `code-graph-navigation` when review evidence needs
-known-symbol structural navigation instead of restating its tool contract here.
+specialist workflows. For an exact changed symbol, use native `code_graph`
+with `callers`, `references`, `callees`, or bounded `impact` at depth 1.
+Read [references/code-graph-contract.md](references/code-graph-contract.md)
+when results are ambiguous, cross-repository, stale, dirty, pending, dynamic,
+or truncated. Never pass PR prose or a feature description as `symbol`.
 Use the repository's normal verification commands when evidence requires
 running tests.
 

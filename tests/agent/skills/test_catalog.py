@@ -42,19 +42,73 @@ def _record(
 def test_catalog_filters_mode_policy_and_invalid_records():
     rendered = render_skill_catalog(
         [
-            _record("work-router", "Route substantial work tasks.", modes=("work",)),
-            _record("coding-router", "Route coding tasks.", modes=("coding",)),
+            _record(
+                "work-writing", "Draft substantial work products.", modes=("work",)
+            ),
+            _record("coding-review", "Review coding changes.", modes=("coding",)),
             _record("manual", "Explicit specialist.", implicit=False),
             _record("broken", "Invalid.", valid=False),
         ],
         mode="work",
     )
 
-    assert "work-router" in rendered.text
-    assert "coding-router" not in rendered.text
+    assert "work-writing" in rendered.text
+    assert "coding-review" not in rendered.text
     assert "manual" not in rendered.text
     assert "broken" not in rendered.text
-    assert "Route substantial work tasks" in rendered.text
+    assert "Draft substantial work products" in rendered.text
+
+
+def test_catalog_ranks_matching_metadata_without_filtering_other_skills():
+    rendered = render_skill_catalog(
+        [
+            _record("work-writing", "Draft substantial knowledge-work products."),
+            _record("pdf", "Create, edit, inspect, and verify PDF files."),
+            _record("xlsx", "Create and edit spreadsheet workbooks."),
+        ],
+        mode="work",
+        preferred=("work-writing",),
+        query="Please create and verify a PDF report.",
+    )
+
+    assert rendered.included == ("pdf", "work-writing", "xlsx")
+    assert rendered.query_ranked[0] == "pdf"
+    assert set(rendered.included) == {"pdf", "work-writing", "xlsx"}
+    assert "server-selected workflow" in rendered.text
+
+
+def test_catalog_uses_preferred_skill_when_query_has_no_lexical_match():
+    rendered = render_skill_catalog(
+        [
+            _record("coding-investigation", "Trace exact symbols and callers."),
+            _record("coding-review", "Review software engineering changes."),
+        ],
+        mode="coding",
+        preferred=("coding-review",),
+        query="Tìm giúp mình logic bật WebBridge và luồng dữ liệu.",
+    )
+
+    assert rendered.query_ranked == ()
+    assert rendered.included[0] == "coding-review"
+
+
+def test_catalog_ranking_never_bypasses_mode_or_invocation_policy():
+    rendered = render_skill_catalog(
+        [
+            _record("work-writing", "Draft work products.", modes=("work",)),
+            _record(
+                "coding-investigation",
+                "Investigate enablement and data flow.",
+                modes=("coding",),
+                implicit=False,
+            ),
+        ],
+        mode="work",
+        query="Investigate enablement and data flow.",
+    )
+
+    assert rendered.included == ("work-writing",)
+    assert rendered.query_ranked == ()
 
 
 def test_catalog_shortens_descriptions_then_omits_entries_under_budget():
@@ -105,7 +159,7 @@ async def test_catalog_hook_exposes_metadata_but_never_skill_body(
         lambda _model: SimpleNamespace(context_length=128_000),
     )
     hook = SkillCatalogHook(mode="work", model_id="test:model")
-    state = AgentState(messages=[HumanMessage(content="Investigate this")])
+    state = AgentState(messages=[HumanMessage(content="Research current facts")])
     request = ModelRequest(messages=tuple(state.messages), system_prompt="Base")
 
     updated = await hook.before_model(
@@ -116,11 +170,53 @@ async def test_catalog_hook_exposes_metadata_but_never_skill_body(
     assert "research" in updated.system_prompt
     assert "Research current facts" in updated.system_prompt
     assert "SECRET FULL WORKFLOW BODY" not in updated.system_prompt
+    assert "Skills are optional" not in updated.system_prompt
+    assert "you must call `skill`" in updated.system_prompt
+    assert state.metadata["skill_catalog"]["query_ranked"] == ["research"]
     assert state.messages == [state.messages[0]]
 
 
 @pytest.mark.asyncio
-async def test_code_graph_is_visible_in_coding_catalog_without_body_preload(
+async def test_catalog_hook_ranks_from_latest_user_turn(monkeypatch):
+    records = {
+        "work-writing": _record("work-writing", "Draft substantial knowledge work."),
+        "pdf": _record("pdf", "Create, edit, and verify PDF files."),
+    }
+    monkeypatch.setattr(
+        "app.agent.tools.builtin.skill.discover_skill_records_runtime",
+        lambda **_kwargs: records,
+    )
+    monkeypatch.setattr(
+        "app.agent.hooks.skill_catalog.get_model_limits",
+        lambda _model: SimpleNamespace(context_length=128_000),
+    )
+    hook = SkillCatalogHook(
+        mode="work",
+        model_id="test:model",
+        preferred_skills=("work-writing",),
+    )
+    state = AgentState(
+        messages=[
+            HumanMessage(content="Earlier unrelated request"),
+            HumanMessage(content="Create and verify this PDF report"),
+        ]
+    )
+    request = ModelRequest(messages=tuple(state.messages), system_prompt="Base")
+
+    updated = await hook.before_model(
+        SimpleNamespace(agent_name="agent"), state, request
+    )
+
+    assert updated is not None
+    assert state.metadata["skill_catalog"]["included"][:2] == [
+        "pdf",
+        "work-writing",
+    ]
+    assert state.metadata["skill_catalog"]["query_ranked"][0] == "pdf"
+
+
+@pytest.mark.asyncio
+async def test_integrated_code_navigation_is_visible_without_body_preload(
     monkeypatch,
 ):
     monkeypatch.setattr(
@@ -136,8 +232,8 @@ async def test_code_graph_is_visible_in_coding_catalog_without_body_preload(
     )
 
     assert updated is not None
-    assert "code-graph-navigation" in updated.system_prompt
-    assert "Never translate the user's sentence" not in updated.system_prompt
+    assert "coding-investigation" in updated.system_prompt
+    assert "Never pass request prose" not in updated.system_prompt
     assert "loaded_skills" not in state.metadata
     assert state.messages == [state.messages[0]]
 

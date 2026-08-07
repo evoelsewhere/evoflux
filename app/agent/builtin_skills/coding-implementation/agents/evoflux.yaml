@@ -3,4 +3,9 @@ interface:
   short_description: "Ship focused changes with contract-level proof"
   default_prompt: "Use $coding-implementation to implement this scoped change and verify its observable contract."
 policy:
-  allow_implicit_invocation: false
+  allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: builtin
+      value: code_graph
+      description: "Native exact-symbol definitions, callers, callees, references, impact, and cross-repository relationships"

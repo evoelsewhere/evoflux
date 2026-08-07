@@ -179,11 +179,11 @@ describe('NewSkillPage runtime settings', () => {
     expect(request.files).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: 'agents/openai.yaml',
+          path: 'agents/evoflux.yaml',
           content: expect.stringContaining('display_name: Audit Runtime Skill'),
         }),
         expect.objectContaining({
-          path: 'agents/openai.yaml',
+          path: 'agents/evoflux.yaml',
           content: expect.stringContaining('default_prompt: Use $audit-runtime-skill'),
         }),
         expect.objectContaining({

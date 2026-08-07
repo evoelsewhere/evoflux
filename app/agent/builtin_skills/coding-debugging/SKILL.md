@@ -30,6 +30,19 @@ test expectation or environment mismatch.
    Read [references/hypothesis-led-debugging.md](references/hypothesis-led-debugging.md)
    for the ledger format, failure classes, and causal-proof standard.
 
+## Navigate structural evidence
+
+Once source evidence reveals an exact function, method, class, or qualified
+symbol, use native `code_graph` to test the relevant structural hypothesis:
+`callers` for inbound paths, `callees` for downstream calls, `references` for
+non-call uses, or `neighborhood` for the immediate boundary. Start at depth 1.
+Static edges narrow the causal path but do not prove runtime order, state, or a
+race; preserve the reproduction as the final causal test.
+
+Read [references/code-graph-contract.md](references/code-graph-contract.md)
+before graph traversal when a symbol is ambiguous, the path crosses
+repositories, or freshness/dirty-file limitations can affect the conclusion.
+
 ## Fix and prove
 
 Fix the invariant at the boundary that owns it. Avoid retries, broad catches,

@@ -1,6 +1,0 @@
-interface:
-  display_name: "Coding Workflow Router"
-  short_description: "Routes engineering work to focused specialists"
-  default_prompt: "Use $coding-router to choose the right workflow for this coding request."
-policy:
-  allow_implicit_invocation: true

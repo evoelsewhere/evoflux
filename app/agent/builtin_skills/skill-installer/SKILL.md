@@ -25,7 +25,7 @@ sharing. A writable skill may intentionally override a bundled skill.
 ```text
 skill-name/
 ├── SKILL.md              # required
-├── agents/openai.yaml    # optional UI metadata
+├── agents/evoflux.yaml   # optional EvoFlux UI/runtime metadata
 ├── references/           # optional docs loaded on demand
 ├── scripts/              # optional deterministic helpers
 └── assets/               # optional output templates/media

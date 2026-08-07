@@ -26,6 +26,13 @@ transfer, render, lock, serialization step, or external wait that owns the
 material cost. A hot function is not necessarily the optimization boundary;
 confirm how often it runs and whether its work is avoidable.
 
+After profiling exposes an exact symbol, use native `code_graph` to bound its
+structural context: `callers` for invocation sites, `callees` for delegated
+work, and `references` for dispatch/registration uses. Start at depth 1 and do
+not infer frequency, timing, allocation, or runtime order from static edges.
+Read [references/code-graph-contract.md](references/code-graph-contract.md)
+for ambiguity, cross-repository traversal, and index limitations.
+
 Form one bottleneck hypothesis and choose the smallest change that could
 falsify it. Prefer eliminating work, improving algorithmic complexity, reducing
 round trips, batching, indexing, bounded caching, or reducing allocation over

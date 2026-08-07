@@ -33,12 +33,11 @@ validation, and GET routes are pure.
 
 ## Skills and tools
 
-Bundled skills are a curated, code-scoped catalog. `work-router` and
-`coding-router` are the implicit entry points for broad mode-specific work;
-their specialists are explicit-only to avoid thirteen generic descriptions
-competing on every request. Narrow artifact, operational, and native-tool
-workflows such as `code-graph-navigation` remain independently discoverable
-when their concrete output or exact-symbol operation is relevant.
+Bundled skills are a curated, code-scoped catalog. Safe specialists participate
+directly in implicit resolution; there is no router skill or circular
+"skill-to-select-a-skill" bootstrap layer. Native code-graph guidance is
+embedded in the Coding workflows that use it; there is no separate graph
+routing skill competing with debugging, investigation, review, or delivery.
 
 Runtime catalogs, the agent editor, composer, explicit-selection hook, and
 `skill` tool all apply the same valid, mode-aware projection. Settings keeps a
@@ -49,9 +48,10 @@ valid implementation exists in the requested mode, Settings alone may expose
 the invalid winner so its bundle can be repaired; this fallback never enters a
 runtime catalog. User/project skills default to both modes; a hidden
 `.evoflux.json` sidecar beside `SKILL.md` stores the portable bundle default.
-Optional `agents/openai.yaml` provides UI metadata and implicit-invocation
-policy; references, scripts, assets, and evals remain part of the portable
-bundle.
+Optional `agents/evoflux.yaml` provides native UI metadata,
+implicit-invocation policy, and tool dependencies. Portable third-party
+`agents/openai.yaml` remains a fallback when no EvoFlux metadata exists;
+references, scripts, assets, and evals remain part of the bundle.
 
 Settings exposes three user-owned runtime preferences: Work/Coding
 availability, bounded catalog auto-discovery, and manual invocation through
@@ -77,12 +77,21 @@ Skill loading follows three disclosure tiers:
 1. Valid, implicit skill `name + description + SKILL.md locator` metadata is
    present in a mode-filtered catalog. The catalog is capped at 2% of a known
    model context window, or 8,000 UTF-8 bytes when the window is unknown.
-2. The full `SKILL.md` body is loaded only after the model selects an exact
-   catalog/router name, the user names `$skill-name` (or legacy
-   `/skill:<name>`), or the user explicitly assigns that skill to an agent.
-   Agent assignment is the sole preload path.
+2. The full `SKILL.md` body is loaded only after the structured implicit stage
+   selects an exact eligible name, the main model selects an exact catalog
+   name, the user names `$skill-name` (or legacy `/skill:<name>`), or the user
+   explicitly assigns that skill to an agent. Agent assignment is the sole
+   unconditional preload path.
 3. Bundle resources are enumerated on activation and read individually only
    when the selected workflow needs them.
+
+Implicit invocation is a first-class pre-model stage. It sends only the latest
+user request, application mode, and eligible Tier-1 metadata to the active
+runtime provider and requires one structured decision: one exact skill or no
+skill. The runtime validates mode, policy, exact identity, and confidence before
+using the canonical activation pair. Resolver failure is non-fatal and falls
+back to the bounded model-visible catalog. The resolver never receives skill
+bodies or repository/tool output and never executes task tools.
 
 Discovery covers `.agents/skills`, `.claude/skills`, `.evoflux/skills`, and
 `.opencode/skills` across every authorized repository, followed by user,
@@ -90,12 +99,15 @@ administrator, and bundled roots. Malformed bundles are fault-isolated;
 collisions, legacy names, policy errors, and symlinks surface as diagnostics.
 Symlinked bundles are readable but never editable through Settings.
 
-Request prose is never keyword-routed to a skill. Code graph has an optional
-progressively disclosed workflow skill and a native execution tool. The
-`code-graph-navigation` body is loaded only after semantic or explicit
-selection; the native `code_graph` tool accepts a known exact symbol and one
-structural operation, with its contract enforced independently by the schema
-and service boundary.
+Request prose may rank eligible Tier-1 skill metadata with deterministic
+lexical/reciprocal-rank retrieval so relevant routing cards survive a tight
+catalog budget. Ranking never filters the eligible catalog, loads a skill, or
+leaves the skill-discovery boundary. In particular, request prose is never
+forwarded to repository search or code graph. The native `code_graph` tool
+accepts a known exact symbol and one structural operation; schema and service
+boundaries enforce that contract independently. Coding skill bodies carry the
+operation-selection, ambiguity, cross-repository, and fallback discipline only
+after the relevant workflow is activated.
 
 Tools declare their mode tier and role constraints in tool metadata. The
 effective agent config may add allowed extras or opt out of defaults. Runtime
@@ -136,16 +148,18 @@ marker so the skill can be loaded exactly again.
 - Runtime and API effective configs are identical.
 - Unknown frontmatter fields survive a Form/Raw round trip.
 - Multi-repo system prompts contain every root instruction once.
-- Normal prose is not transformed into a skill search query or server-selected
-  skill call.
+- Normal prose may rank or semantically resolve skill metadata but is never
+  transformed into a repository query. A resolver decision is bounded to one
+  exact eligible name and passes through canonical policy validation.
 - The bounded Tier-1 catalog contains metadata but no `SKILL.md` body.
 - Assigned skills preload exact bodies; unassigned skills remain on demand.
-- Explicit-only specialists stay out of the implicit catalog but remain
-  addressable by a router or `/skill:<name>`.
+- Manual-only operational skills stay out of implicit resolution but remain
+  addressable through `$skill-name` or `/skill:<name>`.
 - Activated skill instructions remain exact through compaction.
 - Symlinked bundles cannot be updated or deleted through Settings CRUD.
-- Runtime preference edits never rewrite `SKILL.md`, `agents/openai.yaml`, or
-  `.evoflux.json`, including for built-in and symlinked bundles.
+- Runtime preference edits never rewrite `SKILL.md`, `agents/evoflux.yaml`,
+  fallback `agents/openai.yaml`, or `.evoflux.json`, including for built-in and
+  symlinked bundles.
 - Same-name skill variants in different repositories have isolated runtime
   preferences, and reset always targets the opaque variant identity.
 - An invalid higher-precedence bundle remains visible and repairable in the

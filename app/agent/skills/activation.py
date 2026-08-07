@@ -4,8 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
+import re
+import uuid
 from html import escape
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
+
+from app.agent.schemas.chat import AssistantMessage, FunctionCall, ToolCall, ToolMessage
 
 from app.agent.sandbox import get_sandbox
 from app.agent.skills.discovery import (
@@ -15,9 +21,47 @@ from app.agent.skills.discovery import (
 )
 from app.agent.skills.models import SkillRecord
 
+if TYPE_CHECKING:
+    from app.agent.state import AgentState
+
 
 MAX_RESOURCE_BYTES = 256 * 1024
 MAX_ACTIVATED_SKILL_BYTES = 95_000
+_ACTIVATION_SOURCE_RE = re.compile(r"[^a-z0-9_]+")
+
+
+def inject_skill_activation(
+    state: AgentState,
+    *,
+    skill_name: str,
+    content: str,
+    source: str,
+    insert_at: int | None = None,
+) -> None:
+    """Insert one canonical, durable skill tool-call/result pair."""
+
+    prefix = _ACTIVATION_SOURCE_RE.sub("_", source.casefold()).strip("_") or "skill"
+    call_id = f"{prefix}_{uuid.uuid4().hex[:12]}"
+    pair = [
+        AssistantMessage(
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id=call_id,
+                    function=FunctionCall(
+                        name="skill",
+                        arguments=json.dumps(
+                            {"action": "load", "skill_name": skill_name}
+                        ),
+                    ),
+                )
+            ],
+        ),
+        ToolMessage(tool_call_id=call_id, name="skill", content=content),
+    ]
+    index = len(state.messages) if insert_at is None else insert_at
+    state.messages[index:index] = pair
+    state.metadata.setdefault("loaded_skills", {})[skill_name] = content
 
 
 def _read_bounded_utf8(path: Path, *, limit: int, label: str) -> str:
@@ -206,6 +250,7 @@ __all__ = [
     "MAX_ACTIVATED_SKILL_BYTES",
     "MAX_RESOURCE_BYTES",
     "activate_skill",
+    "inject_skill_activation",
     "is_skill_activation_content",
     "read_skill_instructions",
     "read_skill_resource",

@@ -3,4 +3,9 @@ interface:
   short_description: "Measure bottlenecks and prove performance gains"
   default_prompt: "Use $coding-performance to measure this workload, isolate its bottleneck, and verify an optimization."
 policy:
-  allow_implicit_invocation: false
+  allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: builtin
+      value: code_graph
+      description: "Native exact-symbol definitions, callers, callees, references, impact, and cross-repository relationships"

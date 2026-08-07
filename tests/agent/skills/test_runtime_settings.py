@@ -23,7 +23,7 @@ def _write_skill(root: Path, name: str) -> Path:
         f"---\nname: {name}\ndescription: Test {name}.\n"
         "user-invocable: false\n---\nWorkflow body.\n"
     )
-    (skill_dir / "agents" / "openai.yaml").write_text(
+    (skill_dir / "agents" / "evoflux.yaml").write_text(
         "interface:\n"
         f'  display_name: "{name}"\n'
         '  short_description: "Test runtime settings"\n'
@@ -50,7 +50,7 @@ def test_runtime_override_is_final_layer_and_content_digest_invalidates_cache(
     settings_path.chmod(0o644)
 
     before_skill = (skill_dir / "SKILL.md").read_bytes()
-    before_metadata = (skill_dir / "agents" / "openai.yaml").read_bytes()
+    before_metadata = (skill_dir / "agents" / "evoflux.yaml").read_bytes()
     before_scope = (skill_dir / ".evoflux.json").read_bytes()
     inherited = discover_skill_records([skills_root])["research"]
     assert inherited.modes == ("work",)
@@ -71,7 +71,7 @@ def test_runtime_override_is_final_layer_and_content_digest_invalidates_cache(
     assert overridden.user_invocable is True
     assert overridden.settings_overridden is True
     assert (skill_dir / "SKILL.md").read_bytes() == before_skill
-    assert (skill_dir / "agents" / "openai.yaml").read_bytes() == before_metadata
+    assert (skill_dir / "agents" / "evoflux.yaml").read_bytes() == before_metadata
     assert (skill_dir / ".evoflux.json").read_bytes() == before_scope
 
     assert stat.S_IMODE(settings_path.stat().st_mode) == 0o600

@@ -3,4 +3,9 @@ interface:
   short_description: "Audit trust boundaries and prove secure fixes"
   default_prompt: "Use $coding-security to audit this trust boundary and harden any reachable vulnerability."
 policy:
-  allow_implicit_invocation: false
+  allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: builtin
+      value: code_graph
+      description: "Native exact-symbol definitions, callers, callees, references, impact, and cross-repository relationships"

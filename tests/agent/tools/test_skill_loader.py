@@ -101,13 +101,13 @@ class TestDiscoverSkills:
         result = discover_skills(skills_dir=tmp_path)
         assert result == {}
 
-    def test_openai_interface_and_invocation_policy_are_parsed(self, tmp_path):
+    def test_evoflux_interface_and_invocation_policy_are_parsed(self, tmp_path):
         skill_dir = tmp_path / "specialist"
         (skill_dir / "agents").mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text(
             "---\nname: specialist\ndescription: Specialist workflow.\n---\nBody."
         )
-        (skill_dir / "agents" / "openai.yaml").write_text(
+        (skill_dir / "agents" / "evoflux.yaml").write_text(
             "interface:\n"
             "  display_name: Deep specialist\n"
             "  short_description: Run the exact specialist workflow\n"
@@ -124,19 +124,58 @@ class TestDiscoverSkills:
         assert result["allow_implicit_invocation"] is False
         assert result["resource_count"] == 1
 
-    def test_oversized_openai_metadata_is_not_read(self, tmp_path, monkeypatch):
+    def test_portable_openai_metadata_remains_a_fallback(self, tmp_path):
+        skill_dir = tmp_path / "portable"
+        (skill_dir / "agents").mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: portable\ndescription: Portable workflow.\n---\nBody."
+        )
+        (skill_dir / "agents" / "openai.yaml").write_text(
+            "interface:\n"
+            "  display_name: Portable skill\n"
+            "  short_description: Portable Codex metadata\n"
+        )
+
+        result = discover_skills(skills_dir=tmp_path)["portable"]
+
+        assert result["display_name"] == "Portable skill"
+        assert result["short_description"] == "Portable Codex metadata"
+
+    def test_evoflux_metadata_wins_over_portable_fallback(self, tmp_path):
+        skill_dir = tmp_path / "layered"
+        (skill_dir / "agents").mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: layered\ndescription: Layered workflow.\n---\nBody."
+        )
+        (skill_dir / "agents" / "openai.yaml").write_text(
+            "interface:\n"
+            "  display_name: Portable name\n"
+            "  short_description: Portable metadata\n"
+        )
+        (skill_dir / "agents" / "evoflux.yaml").write_text(
+            "interface:\n"
+            "  display_name: EvoFlux name\n"
+            "  short_description: Native metadata\n"
+        )
+
+        result = discover_skills(skills_dir=tmp_path)["layered"]
+
+        assert result["display_name"] == "EvoFlux name"
+        assert result["short_description"] == "Native metadata"
+
+    def test_oversized_agent_metadata_is_not_read(self, tmp_path, monkeypatch):
         skill_dir = tmp_path / "specialist"
         (skill_dir / "agents").mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text(
             "---\nname: specialist\ndescription: Specialist workflow.\n---\nBody."
         )
-        metadata_path = skill_dir / "agents" / "openai.yaml"
+        metadata_path = skill_dir / "agents" / "evoflux.yaml"
         metadata_path.write_text("x" * (256 * 1024 + 1))
         original_read_text = Path.read_text
 
         def guarded_read_text(path, *args, **kwargs):
             if path == metadata_path:
-                raise AssertionError("oversized agents/openai.yaml was read")
+                raise AssertionError("oversized agents/evoflux.yaml was read")
             return original_read_text(path, *args, **kwargs)
 
         monkeypatch.setattr(Path, "read_text", guarded_read_text)
@@ -145,17 +184,16 @@ class TestDiscoverSkills:
 
         assert result["valid"] is True
         assert any(
-            item["code"] == "openai-metadata-too-large"
-            for item in result["diagnostics"]
+            item["code"] == "agent-metadata-too-large" for item in result["diagnostics"]
         )
 
-    def test_openai_tool_dependencies_are_bounded_and_projected(self, tmp_path):
+    def test_agent_tool_dependencies_are_bounded_and_projected(self, tmp_path):
         skill_dir = tmp_path / "specialist"
         (skill_dir / "agents").mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text(
             "---\nname: specialist\ndescription: Specialist workflow.\n---\nBody."
         )
-        (skill_dir / "agents" / "openai.yaml").write_text(
+        (skill_dir / "agents" / "evoflux.yaml").write_text(
             "interface:\n"
             "  display_name: Specialist\n"
             "  short_description: Run a specialist workflow\n"
@@ -178,17 +216,16 @@ class TestDiscoverSkills:
             }
         ]
         assert any(
-            item["code"] == "invalid-openai-dependency"
-            for item in result["diagnostics"]
+            item["code"] == "invalid-agent-dependency" for item in result["diagnostics"]
         )
 
-    def test_openai_interface_fields_are_individually_bounded(self, tmp_path):
+    def test_agent_interface_fields_are_individually_bounded(self, tmp_path):
         skill_dir = tmp_path / "specialist"
         (skill_dir / "agents").mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text(
             "---\nname: specialist\ndescription: Specialist workflow.\n---\nBody."
         )
-        (skill_dir / "agents" / "openai.yaml").write_text(
+        (skill_dir / "agents" / "evoflux.yaml").write_text(
             "interface:\n"
             "  display_name: Specialist\n"
             "  short_description: Run a specialist workflow\n"
@@ -199,7 +236,7 @@ class TestDiscoverSkills:
 
         assert result["default_prompt"] is None
         assert any(
-            item["code"] == "openai-interface-field-too-long"
+            item["code"] == "agent-interface-field-too-long"
             for item in result["diagnostics"]
         )
 
@@ -267,7 +304,7 @@ class TestDiscoverSkills:
         assert result["broken"]["valid"] is False
         assert result["valid"]["valid"] is True
 
-    def test_deeply_nested_openai_yaml_becomes_diagnostic(self, tmp_path):
+    def test_deeply_nested_agent_yaml_becomes_diagnostic(self, tmp_path):
         skill_dir = tmp_path / "specialist"
         (skill_dir / "agents").mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text(
@@ -275,13 +312,13 @@ class TestDiscoverSkills:
         )
         nested_yaml = "".join(("  " * index) + "a:\n" for index in range(500))
         assert len(nested_yaml.encode("utf-8")) < 256 * 1024
-        (skill_dir / "agents" / "openai.yaml").write_text(nested_yaml)
+        (skill_dir / "agents" / "evoflux.yaml").write_text(nested_yaml)
 
         result = discover_skills(skills_dir=tmp_path)["specialist"]
 
         assert result["valid"] is True
         assert any(
-            item["code"] == "invalid-openai-metadata" for item in result["diagnostics"]
+            item["code"] == "invalid-agent-metadata" for item in result["diagnostics"]
         )
 
     def test_wide_root_is_capped_while_consuming_scandir(self, tmp_path, monkeypatch):
@@ -1063,14 +1100,12 @@ class TestBuiltinSkills:
         assert set(discover_skills()) == {
             "algorithmic-art",
             "canvas-design",
-            "code-graph-navigation",
             "coding-debugging",
             "coding-implementation",
             "coding-investigation",
             "coding-migration",
             "coding-performance",
             "coding-review",
-            "coding-router",
             "coding-security",
             "coding-testing",
             "docx",
@@ -1087,7 +1122,6 @@ class TestBuiltinSkills:
             "work-data-analysis",
             "work-planning",
             "work-research",
-            "work-router",
             "work-writing",
             "xlsx",
         }
@@ -1100,7 +1134,6 @@ class TestBuiltinSkills:
 
         assert {"work-research", "work-decision", "docx", "xlsx"} <= work
         assert {
-            "code-graph-navigation",
             "coding-investigation",
             "coding-implementation",
             "coding-debugging",
@@ -1111,7 +1144,6 @@ class TestBuiltinSkills:
             "coding-security",
             "coding-testing",
         } <= coding
-        assert "code-graph-navigation" not in work
         assert "coding-investigation" not in work
         assert "work-research" not in coding
 
@@ -1135,48 +1167,29 @@ class TestBuiltinSkills:
         assert "not available in work mode" in result
 
         work_catalog = await load_skill(action="list", _mode="work")
-        assert "work-router" in work_catalog
-        assert "work-research" not in work_catalog
+        assert "work-research" in work_catalog
         assert "coding-investigation" not in work_catalog
 
     @pytest.mark.asyncio
-    async def test_router_can_delegate_to_explicit_only_specialist(self):
+    async def test_implicit_specialist_is_directly_visible_and_loadable(self):
         state = SimpleNamespace(metadata={}, messages_for_llm=[])
 
-        router = await load_skill("coding-router", _mode="coding", _state=state)
         specialist = await load_skill(
             "coding-investigation", _mode="coding", _state=state
         )
         catalog = await load_skill(action="list", _mode="coding", _state=state)
 
-        assert "coding-investigation" in router
         assert '<skill_content name="coding-investigation"' in specialist
-        assert "coding-investigation" not in catalog
-        assert "code-graph-navigation" in catalog
-        assert "switch to the `code-graph-navigation` workflow" in specialist
-        assert (
-            "definition, callers, callees, references, neighborhood" not in specialist
-        )
+        assert "coding-investigation" in catalog
+        assert "code-graph-navigation" not in catalog
+        assert "native `code_graph`" in specialist
+        assert "`definition`, `callers`, `callees`" in specialist
 
     @pytest.mark.asyncio
-    async def test_code_graph_skill_is_visible_and_loads_native_tool_contract(self):
-        state = SimpleNamespace(metadata={}, messages_for_llm=[])
+    async def test_removed_code_graph_skill_is_not_loadable(self):
+        result = await load_skill("code-graph-navigation", _mode="coding")
 
-        catalog = await load_skill(action="list", _mode="coding", _state=state)
-        navigation = await load_skill(
-            "code-graph-navigation", _mode="coding", _state=state
-        )
-
-        assert "code-graph-navigation" in catalog
-        assert '<skill_content name="code-graph-navigation"' in navigation
-        assert "native `code_graph` tool" in navigation
-        assert "Never translate the user's sentence" in navigation
-
-    @pytest.mark.asyncio
-    async def test_code_graph_skill_is_unavailable_in_work_mode(self):
-        result = await load_skill("code-graph-navigation", _mode="work")
-
-        assert "not available in work mode" in result
+        assert "not found" in result
 
     def test_all_builtin_skills_follow_bundle_contract(self):
         """Keep bundled skills portable and compatible with progressive disclosure."""
@@ -1189,14 +1202,24 @@ class TestBuiltinSkills:
             assert isinstance(meta["description"], str) and meta["description"].strip()
             assert body.strip(), skill_file
 
-    def test_native_code_graph_contract_has_one_skill_owner(self):
+    def test_native_code_graph_contract_is_embedded_in_coding_workflows(self):
         owners = [
             skill_file.parent.name
             for skill_file in sorted(_builtin_skills_dir().glob("*/SKILL.md"))
             if "code_graph" in skill_file.read_text(encoding="utf-8")
         ]
 
-        assert owners == ["code-graph-navigation"]
+        assert owners == [
+            "coding-debugging",
+            "coding-implementation",
+            "coding-investigation",
+            "coding-migration",
+            "coding-performance",
+            "coding-review",
+            "coding-security",
+            "coding-testing",
+            "review-pull-requests",
+        ]
 
     def test_builtin_skill_resource_links_exist(self):
         root = _builtin_skills_dir()
