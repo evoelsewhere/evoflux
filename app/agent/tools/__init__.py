@@ -6,11 +6,11 @@ from typing import Any
 from .registry import Tool, tool
 
 _BUILTIN_EXPORTS = {
-    "background_process",
     "browser_use",
     "discover_skills",
     "webbridge",
     "shell_tool",
+    "process_tool",
     "get_date",
     "glob_files",
     "grep_files",
@@ -39,11 +39,11 @@ __all__ = [
     "Tool",
     "tool",
     # builtin
-    "background_process",
     "browser_use",
     "discover_skills",
     "webbridge",
     "shell_tool",
+    "process_tool",
     "get_date",
     "glob_files",
     "grep_files",

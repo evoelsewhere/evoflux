@@ -50,7 +50,7 @@ class TestDeniedToolsForTier:
     def test_trivial_denies_execution_tools(self):
         denied = denied_tools_for_tier("trivial")
         assert "shell" in denied
-        assert "bg" in denied
+        assert "process" in denied
         assert "python" in denied
 
     def test_trivial_denies_new_side_effecting_tools_from_metadata(self):

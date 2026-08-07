@@ -15,6 +15,7 @@ which:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from collections.abc import Set
@@ -39,7 +40,7 @@ def sanitize_error(message: str) -> str:
 
 # Tools intercepted in plan mode — recorded rather than executed.
 _PLAN_INTERCEPTED: frozenset[str] = frozenset(
-    {"edit", "write", "patch", "rm", "shell", "python", "bg"}
+    {"edit", "write", "patch", "rm", "shell", "python", "process"}
 )
 
 
@@ -50,15 +51,74 @@ def _plan_summary(tool_name: str, args: dict) -> str:
         return path
     if tool_name == "rm":
         return str(args.get("path") or "?")
-    if tool_name in ("shell", "bg"):
+    if tool_name == "shell":
         cmd = str(args.get("command") or "")
         return (cmd[:120] + "…") if len(cmd) > 120 else cmd or "(no command)"
     if tool_name == "python":
         code = str(args.get("code") or "")
         first = code.split("\n")[0].strip()
         return (first[:120] + "…") if len(first) > 120 else first or "(python code)"
+    if tool_name == "process":
+        action = str(args.get("action") or "?")
+        process_id = str(args.get("process_id") or "")
+        return f"{action} {process_id}".strip()
     raw = str(args)
     return (raw[:120] + "…") if len(raw) > 120 else raw
+
+
+def _observation_cache_key(tool: Tool, args: dict[str, Any]) -> str | None:
+    key_builder = getattr(tool, "observation_key", None)
+    if not callable(key_builder):
+        return None
+    raw_key = key_builder(args)
+    if not raw_key:
+        return None
+    payload = f"{tool.name}\0{raw_key}".encode("utf-8", errors="replace")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _prepare_observation(
+    state: AgentState,
+    tool: Tool,
+    args: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    """Return a revision cache key and an optional reuse receipt."""
+
+    kind = getattr(tool, "observation_kind", None)
+    if not isinstance(kind, str) or not kind:
+        return None, None
+
+    stats = state.metadata.setdefault(
+        "tool_observation_stats",
+        {"requests": 0, "executed": 0, "reused": 0, "by_kind": {}},
+    )
+    stats["requests"] += 1
+    by_kind = stats.setdefault("by_kind", {})
+    by_kind[kind] = int(by_kind.get(kind, 0)) + 1
+
+    cache_key: str | None = None
+    try:
+        cache_key = _observation_cache_key(tool, args)
+    except Exception as exc:  # noqa: BLE001 - caching must never break the tool
+        logger.warning("tool_observation_key_failed tool={} error={}", tool.name, exc)
+    if cache_key:
+        cached = (state.metadata.get("_tool_observation_cache") or {}).get(cache_key)
+        if isinstance(cached, dict):
+            stats["reused"] += 1
+            return (
+                cache_key,
+                (
+                    "[Observation reused — source revision unchanged]\n"
+                    f"tool: {tool.name}\n"
+                    f"original_call_id: {cached.get('tool_call_id', 'unknown')}\n"
+                    f"result_sha256: {cached.get('result_sha256', 'unknown')}\n"
+                    "The prior result remains authoritative. Request a different range "
+                    "or wait for the source revision to change before reading it again."
+                ),
+            )
+
+    stats["executed"] = int(stats.get("executed", 0)) + 1
+    return cache_key, None
 
 
 def make_tool_executor(
@@ -110,6 +170,7 @@ def make_tool_executor(
 
             if tc.function.name not in run_tools:
                 raise ToolNotFoundError(f"Tool '{tc.function.name}' not found.")
+            active_tool = run_tools[tc.function.name]
 
             # ── Deferred-tool activation gate ───────────────────────────────
             # Visibility (tool_defs) says "call load_tool first"; this is the
@@ -128,6 +189,18 @@ def make_tool_executor(
                     f"call '{tc.function.name}' again on your next turn."
                 )
             # ─────────────────────────────────────────────────────────────
+
+            observation_cache_key, observation_short_circuit = _prepare_observation(
+                s, active_tool, args
+            )
+            if observation_short_circuit is not None:
+                logger.info(
+                    "tool_observation_short_circuit agent={} tool={} result={}",
+                    agent_name,
+                    tc.function.name,
+                    observation_short_circuit.splitlines()[0],
+                )
+                return observation_short_circuit
 
             # ── Plan mode intercept ────────────────────────────────────────
             # When the agent is in plan mode, record destructive tool calls
@@ -192,7 +265,7 @@ def make_tool_executor(
                 else None
             )
 
-            result_raw = await run_tools[tc.function.name].arun(
+            result_raw = await active_tool.arun(
                 _injected={
                     "_state": s,
                     "_mode": injected_mode,
@@ -245,6 +318,14 @@ def make_tool_executor(
             else:
                 result = str(result_raw)
 
+            if observation_cache_key and not result.startswith("Error:"):
+                state_cache = s.metadata.setdefault("_tool_observation_cache", {})
+                state_cache[observation_cache_key] = {
+                    "tool_call_id": tc.id,
+                    "result_sha256": hashlib.sha256(
+                        result.encode("utf-8", errors="replace")
+                    ).hexdigest()[:16],
+                }
             tool_elapsed = time.monotonic() - tool_start
             logger.debug(
                 "tool_done agent={} tool={} elapsed={:.2f}s result_len={}",

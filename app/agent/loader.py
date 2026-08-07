@@ -249,7 +249,6 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.tools.builtin import (
         add_code_review_comment,
         add_code_review_inline_comment,
-        background_process,
         browser_use,
         close_code_review,
         create_pull_request,
@@ -295,11 +294,7 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.tools.builtin.code_graph import code_graph
     from app.agent.tools.builtin.plan import enter_plan_mode, exit_plan_mode
     from app.agent.tools.builtin.ask_user import ask_user
-    from app.agent.tools.builtin.bg_tasks import (
-        shell_bg_start,
-        shell_bg_status,
-        shell_bg_wait,
-    )
+    from app.agent.tools.builtin.process import process_tool
     from app.agent.tools.builtin.worktree import worktree_start, worktree_finish
     from app.agent.tools.builtin.lsp import (
         lsp_diagnostics,
@@ -335,7 +330,6 @@ def _default_tool_registry() -> dict[str, Tool]:
         "docx_document": docx_document,
         "xlsx_artifact": xlsx_artifact,
         "shell": shell_tool,
-        "bg": background_process,
         "skill": load_skill,
         "load_tool": load_tool,
         "schedule_task": schedule_task,
@@ -347,9 +341,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         "enter_plan_mode": enter_plan_mode,
         "exit_plan_mode": exit_plan_mode,
         "ask_user": ask_user,
-        "shell_bg_start": shell_bg_start,
-        "shell_bg_status": shell_bg_status,
-        "shell_bg_wait": shell_bg_wait,
+        "process": process_tool,
         "worktree_start": worktree_start,
         "worktree_finish": worktree_finish,
         "create_pull_request": create_pull_request,

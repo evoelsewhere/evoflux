@@ -429,6 +429,36 @@ class TestWrapToolCall:
         assert state.metadata["_tool_duration_ms"]["int-id"] == 456.0
 
     @pytest.mark.asyncio
+    async def test_tool_end_carries_artifact_metadata(self):
+        hook = _make_hook()
+        pushed = []
+
+        async def fake_push(sid, event):
+            pushed.append(event)
+
+        hook._resolver.register("shell", "tc-shell")
+        tool_call = MagicMock()
+        tool_call.id = "internal-shell"
+        tool_call.function = MagicMock()
+        tool_call.function.name = "shell"
+        tool_call.function.arguments = '{"command":"build"}'
+        state = MagicMock()
+        state.metadata = {}
+
+        async def mock_handler(ctx, state, tc):
+            state.metadata["_tool_result_metadata"] = {
+                tc.id: {"artifact": "/tmp/build.txt", "output_bytes": 42}
+            }
+            return "[Succeeded]"
+
+        with patch("app.services.memory_stream_store.push_event", new=fake_push):
+            await hook.wrap_tool_call(MagicMock(), state, tool_call, mock_handler)
+
+        end_event = next(e for e in pushed if e.event == "tool_end")
+        assert end_event.data["metadata"]["artifact"] == "/tmp/build.txt"
+        assert end_event.data["metadata"]["output_bytes"] == 42
+
+    @pytest.mark.asyncio
     async def test_tool_end_carries_materialized_attachment_metadata(self):
         hook = _make_hook()
         pushed = []

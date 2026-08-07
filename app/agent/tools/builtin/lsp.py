@@ -386,6 +386,7 @@ static_diagnostics = Tool(
     read_only=True,
     deferred=True,
     deferred_summary="Run static diagnostics for a file or directory.",
+    observation_kind="runtime",
     search_aliases=(
         "lint",
         "linter",
@@ -416,6 +417,7 @@ lsp_diagnostics = Tool(
     read_only=True,
     deferred=True,
     deferred_summary="Get live diagnostics from a language server.",
+    observation_kind="runtime",
     search_aliases=(
         "lint",
         "typecheck",
@@ -442,6 +444,7 @@ lsp_definition = Tool(
     deferred=True,
     deferred_summary="Resolve a source position with a language server.",
     capabilities=("source_navigation",),
+    observation_kind="structural",
 )
 
 lsp_references = Tool(
@@ -457,4 +460,5 @@ lsp_references = Tool(
     deferred=True,
     deferred_summary="Find live references with a language server.",
     capabilities=("source_navigation",),
+    observation_kind="structural",
 )

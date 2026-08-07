@@ -9,7 +9,7 @@ export const FS_MUTATING_TOOLS = new Set([
   'rm',
   'patch',
   'shell',
-  'bg',
+  'process',
 ])
 
 export const NOTE_TOOLS = new Set(['note'])

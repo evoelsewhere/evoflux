@@ -53,6 +53,9 @@ from app.agent.mode.team.hooks.queued_injection import QueuedMessageInjectionHoo
 from app.agent.mode.team.hooks.team_inbox import TeamInboxHook
 from app.agent.mode.team.hooks.team_prompt import AgentTeamProtocolHook
 from app.agent.hooks.tool_result_offload import ToolResultOffloadHook
+from app.agent.hooks.tool_context_projection import (
+    build_tool_context_projection_hook,
+)
 from app.agent.mode.team.shared_state import format_state_snapshot
 from app.agent.mode.team.tier_policy import (
     NON_WEBBRIDGE_SESSION_DENIED_TOOLS,
@@ -1387,6 +1390,13 @@ class TeamMemberBase(abc.ABC):
                 if flush_hook is not None:
                     pipeline.add(HookStage.CONTEXT_CONTROL, "memory-flush", flush_hook)
                 pipeline.add(HookStage.CONTEXT_CONTROL, "summarization", summ_hook)
+        # Projection is a provider-boundary concern, not a persistence feature:
+        # apply it to ephemeral/test runs as well as database-backed sessions.
+        pipeline.add(
+            HookStage.CONTEXT_CONTROL,
+            "tool-context-projection",
+            build_tool_context_projection_hook(self._team.mode),
+        )
 
         hooks = pipeline.build()
 

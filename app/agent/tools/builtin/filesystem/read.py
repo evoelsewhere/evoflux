@@ -69,6 +69,27 @@ def _has_vision(state: AgentState | None) -> bool:
     return state.capabilities.input.vision
 
 
+def _read_observation_key(args: dict[str, Any]) -> str | None:
+    """Return a revision-aware identity for one text-file slice."""
+
+    path = args.get("path")
+    if not isinstance(path, str) or not path:
+        return None
+    try:
+        resolved = get_sandbox().validate_path(path)
+        if not resolved.is_file() or classify_file(resolved) != "text":
+            return None
+        stat = resolved.stat()
+    except OSError:
+        return None
+    offset = args.get("offset", 1)
+    limit = args.get("limit")
+    return (
+        f"{resolved.resolve()}:{stat.st_ino}:{stat.st_size}:{stat.st_mtime_ns}:"
+        f"{offset}:{limit}"
+    )
+
+
 async def _read_file(
     path: Annotated[
         str, Field(description="Relative path to the file inside the workspace.")
@@ -162,4 +183,6 @@ read_file = Tool(
     concurrency_safe=True,
     read_only=True,
     capabilities=("workspace_read",),
+    observation_kind="source",
+    observation_key=_read_observation_key,
 )

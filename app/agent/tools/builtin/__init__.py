@@ -34,13 +34,13 @@ _EXPORT_MODULES = {
     "load_tool": "load_tool",
     "memory_search": "memory_search",
     "note_tool": "note",
+    "process_tool": "process",
     "python_tool": "python",
     "pptx_html": "pptx_html",
     "pptx_template": "pptx_template",
     "docx_document": "docx_document",
     "xlsx_artifact": "xlsx_artifact",
     "schedule_task": "schedule",
-    "background_process": "shell",
     "shell_tool": "shell",
     "discover_skills": "skill",
     "load_skill": "skill",
@@ -52,8 +52,8 @@ _EXPORT_MODULES = {
 }
 
 _SUBMODULES = {
-    "bg_tasks",
     "browser_use_tool",
+    "process",
     "preview",
     "shell_runtime",
     "skill",
@@ -74,7 +74,6 @@ def __getattr__(name: str) -> Any:  # noqa: ANN401 - public lazy re-export
 
 
 __all__ = [
-    "background_process",
     "browser_use",
     "create_pull_request",
     "add_code_review_comment",
@@ -104,6 +103,7 @@ __all__ = [
     "load_skill",
     "memory_search",
     "note_tool",
+    "process_tool",
     "python_tool",
     "pptx_html",
     "pptx_template",

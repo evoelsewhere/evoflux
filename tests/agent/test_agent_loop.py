@@ -9,6 +9,7 @@ Covers:
 from __future__ import annotations
 
 import re
+from typing import Annotated
 from unittest.mock import MagicMock
 
 import pytest
@@ -28,7 +29,7 @@ from app.agent.schemas.chat import (
 )
 from app.agent.schemas.agent import RunConfig
 from app.agent.state import AgentState, ModelRequest, RunContext
-from app.agent.tools.registry import DeferredToolEntry
+from app.agent.tools.registry import DeferredToolEntry, InjectedArg
 
 
 # ---------------------------------------------------------------------------
@@ -494,6 +495,59 @@ async def test_tool_result_creates_tool_message_with_parts():
         and attachment.get("preview_url", "").endswith("generated.pptx")
         for attachment in (tool_msg.extra or {}).get("attachments", [])
     )
+
+
+@pytest.mark.asyncio
+async def test_tool_result_metadata_is_attached_to_durable_message():
+    captured_messages: list = []
+
+    class CapturingHook(BaseAgentHook):
+        async def after_agent(self, ctx, state, assistant_msg):
+            captured_messages.extend(state.messages)
+
+    async def artifact_tool(
+        _state: Annotated[AgentState, InjectedArg()],
+        tool_call_id: Annotated[str, InjectedArg()],
+    ) -> str:
+        _state.metadata.setdefault("_tool_result_metadata", {})[tool_call_id] = {
+            "artifact": "/tmp/full-output.txt",
+            "output_bytes": 120_000,
+        }
+        return "bounded observation"
+
+    async def _tool_response():
+        yield _tool_chunk(0, "call_artifact", "artifact_tool", "")
+        yield _finish_chunk()
+
+    async def _final_response():
+        yield _text_chunk("Done")
+        yield _finish_chunk()
+
+    mock_provider = MagicMock()
+    mock_provider.stream.side_effect = [_tool_response(), _final_response()]
+
+    from app.agent.tools.registry import Tool
+
+    agent = Agent(
+        llm_provider=mock_provider,
+        name="test-agent",
+        tools=[Tool(artifact_tool)],
+        hooks=[CapturingHook()],
+    )
+    await agent.run(
+        [HumanMessage(content="run artifact tool")],
+        config=RunConfig(session_id="metadata-session", run_id="metadata-run"),
+    )
+
+    tool_message = next(
+        message
+        for message in captured_messages
+        if isinstance(message, ToolMessage) and message.name == "artifact_tool"
+    )
+    assert tool_message.extra == {
+        "artifact": "/tmp/full-output.txt",
+        "output_bytes": 120_000,
+    }
 
 
 async def test_tool_result_content_derived_from_text_blocks():

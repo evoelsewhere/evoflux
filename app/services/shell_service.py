@@ -25,6 +25,7 @@ from app.agent.schemas.events import (
     ToolOutputDeltaEvent,
     ToolStartEvent,
 )
+from app.agent.state import AgentState
 from app.agent.tools.builtin.shell import shell_tool
 from app.core.db import resolve_db_factory
 from app.core.paths import session_workspace_dir
@@ -92,6 +93,7 @@ async def dispatch_shell_command(
         }
     )
     result: str | None = None
+    result_metadata: dict[str, object] = {}
     error: Exception | None = None
 
     await team._emit(team.lead.name, "agent_status", status="working")
@@ -141,10 +143,18 @@ async def dispatch_shell_command(
     sandbox = SandboxConfig(workspace=str(workspace_path), session_id=session_id)
     token = set_sandbox(sandbox)
     try:
+        shell_state = AgentState(messages=[])
         result = await shell_tool.arun(
             command=command,
             description="Run user shell command",
-            _injected={"_tool_output": emit_output},
+            _injected={
+                "_tool_output": emit_output,
+                "_state": shell_state,
+                "tool_call_id": tool_call_id,
+            },
+        )
+        result_metadata = shell_state.metadata.get("_tool_result_metadata", {}).get(
+            tool_call_id, {}
         )
     except Exception as exc:
         error = exc
@@ -162,7 +172,7 @@ async def dispatch_shell_command(
                 tool_call_id=tool_call_id,
                 name="shell",
                 result=result,
-                metadata={"duration_ms": duration_ms},
+                metadata={"duration_ms": duration_ms, **result_metadata},
             )
         ),
     )
@@ -224,7 +234,7 @@ async def dispatch_shell_command(
             db,
             lead_uuid,
             ToolMessage(content=result, tool_call_id=tool_call_id, name="shell"),
-            extra={"duration_ms": duration_ms},
+            extra={"duration_ms": duration_ms, **result_metadata},
         )
         await db.commit()
 

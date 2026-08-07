@@ -929,6 +929,9 @@ class Agent(Generic[TContext]):
                 "_tool_attachments", {}
             )
             mcp_apps: dict[str, dict[str, Any]] = state.metadata.pop("_mcp_apps", {})
+            tool_result_metadata: dict[str, dict[str, Any]] = state.metadata.pop(
+                "_tool_result_metadata", {}
+            )
 
             cancelled = interrupt_event is not None and interrupt_event.is_set()
             tool_durations = state.metadata.pop("_tool_duration_ms", {})
@@ -943,6 +946,11 @@ class Agent(Generic[TContext]):
                 )
                 if tc.id in tool_durations:
                     tool_msg.extra = {"duration_ms": tool_durations[tc.id]}
+                if tc.id in tool_result_metadata:
+                    tool_msg.extra = {
+                        **(tool_msg.extra or {}),
+                        **tool_result_metadata[tc.id],
+                    }
                 if tc.id in tool_attachments:
                     if tool_msg.extra is None:
                         tool_msg.extra = {}

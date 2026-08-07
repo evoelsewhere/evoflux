@@ -128,4 +128,5 @@ glob_files = Tool(
     concurrency_safe=True,
     read_only=True,
     capabilities=("source_navigation",),
+    observation_kind="discovery",
 )
