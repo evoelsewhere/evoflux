@@ -235,11 +235,11 @@ class TestLargeResult:
 
             await hook.wrap_tool_call(ctx, state, tc, handler)
 
-            offloaded = state.metadata.get("_offloaded_tool_results", {})
+            offloaded = state.metadata.get("_tool_result_metadata", {})
             assert "tc_meta" in offloaded
             meta = offloaded["tc_meta"]
             assert meta["offloaded"] is True
-            assert "path" in meta
+            assert "artifact" in meta
             assert "lines" in meta
             assert "chars" in meta
         finally:

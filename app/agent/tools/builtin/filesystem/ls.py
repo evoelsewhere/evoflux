@@ -43,4 +43,5 @@ list_directory = Tool(
     description="List immediate children of a directory with type and size.",
     concurrency_safe=True,
     read_only=True,
+    observation_kind="discovery",
 )

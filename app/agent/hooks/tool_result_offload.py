@@ -30,7 +30,7 @@ verbose view without re-reading the file::
 
     {
         "offloaded": True,
-        "path": "{absolute_artifact_path}",
+        "artifact": "{absolute_artifact_path}",
         "lines": N,
         "chars": N,
     }
@@ -172,27 +172,15 @@ class ToolResultOffloadHook(BaseAgentHook):
             path,
         )
 
-        # Me stash metadata on the ToolMessage that the loop will create.
-        # The loop appends ToolMessage(content=result, tool_call_id=...) after wrap_tool_call
-        # returns. We can't mutate it here — instead we store on state.metadata and let
-        # the checkpointer read it. But ToolMessage.extra is set by the loop from the
-        # tool result string, not from hooks.
-        #
-        # Workaround: embed metadata as a structured comment at the END of the compact
-        # result. The checkpointer persists whatever content is in ToolMessage.content.
-        # The UI parses this metadata block for display.
-        # A cleaner solution would require the agent loop to expose a post-tool hook
-        # that receives the assembled ToolMessage — left as a future improvement.
-        #
-        # For now, store metadata in state so UI-facing hooks (e.g. StreamPublisherHook)
-        # can include it in tool_end events if needed.
-        if state.metadata.get("_offloaded_tool_results") is None:
-            state.metadata["_offloaded_tool_results"] = {}
-        state.metadata["_offloaded_tool_results"][tool_call_id] = {
+        # The loop and stream publisher consume this per-call metadata and attach it
+        # to the durable ToolMessage plus the live tool_end event.
+        state.metadata.setdefault("_tool_result_metadata", {})[tool_call_id] = {
             "offloaded": True,
-            "path": artifact_path,
+            "artifact": artifact_path,
             "lines": lines,
             "chars": chars,
+            "shown_chars": len(compact),
+            "omitted_chars": max(0, chars - len(head) - len(tail)),
         }
 
         return compact

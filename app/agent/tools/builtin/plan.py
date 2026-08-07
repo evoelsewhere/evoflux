@@ -23,7 +23,7 @@ async def _enter_plan_mode(
     """Activate plan mode to review destructive operations before executing them.
 
     While plan mode is active, the tools ``edit``, ``write``, ``patch``,
-    ``rm``, ``shell``, ``python``, and ``bg`` are **recorded** instead of
+    ``rm``, ``shell``, ``python``, and ``process`` are **recorded** instead of
     executed.  Each call returns a ``[PLAN]`` acknowledgement.
 
     Call ``exit_plan_mode`` with a markdown plan document when you have
@@ -43,7 +43,7 @@ async def _enter_plan_mode(
     logger.info("plan_mode_entered session={}", svc.session_id)
     return (
         "Plan mode activated. The tools edit, write, patch, rm, shell, python, "
-        "and bg will now be recorded instead of executed. "
+        "and process will now be recorded instead of executed. "
         "Call exit_plan_mode when you have recorded all planned changes."
     )
 
@@ -128,7 +128,7 @@ enter_plan_mode = Tool(
     deferred_summary="Enter interactive plan-review mode before making destructive changes.",
     description=(
         "Activate plan mode: subsequent destructive tool calls (edit, write, "
-        "patch, rm, shell, python, bg) are recorded instead of executed. "
+        "patch, rm, shell, python, process) are recorded instead of executed. "
         "Call exit_plan_mode with a markdown plan document when ready to "
         "present the plan for review."
     ),

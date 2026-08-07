@@ -27,7 +27,9 @@ ALL_KINDS = ENGINE_KINDS_V1 | PHASE2_KINDS
 FOREACH_BODY_KINDS = frozenset({"tool", "transform", "notify", "agent"})
 
 #: Tools whose presence on an ungated path triggers the advisory lint.
-DESTRUCTIVE_TOOLS = frozenset({"edit", "write", "patch", "rm", "shell", "python", "bg"})
+DESTRUCTIVE_TOOLS = frozenset(
+    {"edit", "write", "patch", "rm", "shell", "python", "process"}
+)
 
 WorkflowScope = Literal["work", "coding"]
 

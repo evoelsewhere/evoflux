@@ -328,6 +328,11 @@ class StreamPublisherHook(BaseAgentHook):
         attachments = state.metadata.get("_tool_attachments", {}).get(tool_call.id)
         if attachments:
             event_metadata["attachments"] = attachments
+        result_metadata = state.metadata.get("_tool_result_metadata", {}).get(
+            tool_call.id
+        )
+        if result_metadata:
+            event_metadata.update(result_metadata)
         end_tc_id = self._resolver.resolve_end(tool_call.id)
         await self._push(
             ToolEndEvent(

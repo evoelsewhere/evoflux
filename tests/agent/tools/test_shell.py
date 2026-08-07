@@ -1,4 +1,4 @@
-"""Tests for app/tools/builtin/shell.py — shell & bg.
+"""Tests for app/tools/builtin/shell.py.
 
 Covers the rewritten shell tool:
 - $SHELL detection via app.agent.tools.builtin.shell_runtime
@@ -6,12 +6,11 @@ Covers the rewritten shell tool:
 - workdir parameter
 - timeout handling
 - output spilling to the XDG session artifact directory
-- background process management
+- tracked process yielding
 """
 
 from __future__ import annotations
 
-import asyncio
 import shutil
 import signal
 import sys
@@ -20,16 +19,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.agent.errors import ToolArgumentError, ToolExecutionError
+from app.agent.errors import ToolExecutionError
 from app.agent.sandbox import SandboxConfig, set_sandbox
 from app.agent.tools.builtin.shell import (
     _PYTHON_ENV_LEAK_KEYS,
-    _BgProcess,
-    _bg_processes,
     _scrubbed_env,
     _shell,
     _tail_text,
-    background_process,
     shell_tool,
 )
 from app.core.config import settings
@@ -411,11 +407,9 @@ async def test_shell_output_spill_file_readable(sandbox_workspace):
 
     import re
 
-    match = re.search(r"([a-f0-9]+\.txt)", result)
+    match = re.search(r"Full output: (.+\.txt)", result)
     assert match is not None
-    from app.agent.artifacts import shell_output_dir
-
-    spill_file = shell_output_dir("session-1") / match.group(1)
+    spill_file = Path(match.group(1))
     content = spill_file.read_text(encoding="utf-8")
     assert "some longer output that will be truncated" in content
 
@@ -457,7 +451,7 @@ async def test_sandbox_timeout_caps_larger_tool_request(tmp_path):
 
         _sandbox_ctx.reset(token)
 
-    assert "[Timed out after 0.1s]" in result
+    assert "[Timed out]" in result
 
 
 # ---------------------------------------------------------------------------
@@ -485,201 +479,6 @@ async def test_shell_permission_error_reraises(sandbox):
     ):
         with pytest.raises(PermissionError, match="denied"):
             await _shell("echo hello")
-
-
-# ---------------------------------------------------------------------------
-# Background execution
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def _clear_bg_registry():
-    """Ensure background registry is clean before and after each test."""
-    _bg_processes.clear()
-    yield
-    for bg in list(_bg_processes.values()):
-        if bg.alive:
-            bg.proc.kill()
-    _bg_processes.clear()
-
-
-@pytest.fixture()
-def fast_bg(monkeypatch):
-    """Skip the production 3-5s warmup sleep so background tests finish fast.
-
-    The warmup exists to (a) drain initial echo output via the reader task
-    and (b) detect immediate exits.  We replace it with a short polling loop
-    that yields the event loop just enough times for the reader task to
-    consume any pending stdout — typically a single iteration is enough.
-
-    We also force a bare shell so we skip login + rc-file sourcing
-    (~200ms boot cost), which would otherwise blow past the short sleep
-    budget before the spawned process finishes echoing.
-    """
-    _real_sleep = asyncio.sleep
-
-    async def _short_sleep(_seconds):
-        # 5 yields × 5 ms = 25 ms max.  Enough for the reader task to drain
-        # ``echo`` output on every platform tested here.
-        for _ in range(5):
-            await _real_sleep(0.005)
-
-    monkeypatch.setattr("app.agent.tools.builtin.shell.asyncio.sleep", _short_sleep)
-    monkeypatch.setattr(
-        "app.agent.tools.builtin.shell._shell_mod.acceptable", lambda: _TEST_SHELL
-    )
-
-
-@_posix_only
-@pytest.mark.asyncio
-async def test_background_captures_initial_output_and_registry(
-    sandbox_workspace, fast_bg
-):
-    """background=True returns PID, registers process, captures initial output."""
-    result = await shell_tool.arun(
-        command="echo 'server started on port 3000' && sleep 30",
-        background=True,
-        timeout_seconds=1,
-    )
-    assert "[Background" in result
-    assert "PID" in result
-    assert "server started on port 3000" in result
-    assert len(_bg_processes) == 1
-    pid = next(iter(_bg_processes))
-    assert _bg_processes[pid].alive
-
-    _bg_processes[pid].proc.kill()
-
-
-@_posix_only
-@pytest.mark.asyncio
-async def test_background_immediate_exit_treated_as_failure(sandbox_workspace, fast_bg):
-    """If a background process exits immediately, it should report failure."""
-    result = await shell_tool.arun(command="exit 1", background=True, timeout_seconds=1)
-    assert "[Failed" in result
-    assert len(_bg_processes) == 0
-
-
-@_posix_only
-@pytest.mark.asyncio
-async def test_background_process_list(sandbox_workspace, fast_bg):
-    """background_process list shows running processes; empty list when none."""
-    assert "No background processes" in await background_process.arun(action="list")
-
-    await shell_tool.arun(command="sleep 30", background=True, timeout_seconds=1)
-    pid = next(iter(_bg_processes))
-    result = await background_process.arun(action="list")
-    assert "running" in result
-    assert "sleep 30" in result
-
-    _bg_processes[pid].proc.kill()
-
-
-@_posix_only
-@pytest.mark.asyncio
-async def test_background_process_output_and_status(sandbox_workspace, fast_bg):
-    """output returns buffered lines; last_n_lines limits them; status reports running."""
-    await shell_tool.arun(
-        command="echo line1 && echo line2 && echo line3 && sleep 30",
-        background=True,
-        timeout_seconds=1,
-    )
-    pid = next(iter(_bg_processes))
-
-    out_all = await background_process.arun(action="output", pid=pid)
-    assert "line1" in out_all
-    assert "line3" in out_all
-
-    out_last = await background_process.arun(action="output", pid=pid, last_n_lines=1)
-    assert "line3" in out_last
-    assert "line1" not in out_last
-
-    status = await background_process.arun(action="status", pid=pid)
-    assert "running" in status
-    assert str(pid) in status
-
-    _bg_processes[pid].proc.kill()
-
-
-@_posix_only
-@pytest.mark.asyncio
-async def test_background_process_wait(sandbox_workspace, fast_bg):
-    """wait blocks until the process exits and returns final output."""
-    await shell_tool.arun(
-        command="printf 'start\\n' && sleep 0.05 && printf 'done\\n'",
-        background=True,
-        timeout_seconds=1,
-    )
-    pid = next(iter(_bg_processes))
-
-    result = await background_process.arun(action="wait", pid=pid)
-
-    assert f"PID {pid}: exited (code 0)" in result
-    assert "start" in result
-    assert "done" in result
-    assert pid in _bg_processes
-
-
-@_posix_only
-@pytest.mark.asyncio
-async def test_background_process_stop(sandbox_workspace, fast_bg):
-    """background_process stop removes the process from the registry."""
-    await shell_tool.arun(command="sleep 30", background=True, timeout_seconds=1)
-    pid = next(iter(_bg_processes))
-
-    _bg_processes[pid].proc.kill()
-    await asyncio.sleep(0.05)
-
-    result = await background_process.arun(action="stop", pid=pid)
-    assert "stopped" in result
-    assert pid not in _bg_processes
-
-
-@pytest.mark.asyncio
-async def test_background_process_error_cases(sandbox_workspace):
-    """Unknown pid, missing pid, and unknown action all return errors."""
-    assert "99999" in await background_process.arun(action="status", pid=99999)
-    assert "pid" in (await background_process.arun(action="status")).lower()
-
-    with pytest.raises(ToolArgumentError, match="action"):
-        await background_process.arun(action="restart")
-
-
-@_posix_only
-@pytest.mark.asyncio
-async def test_background_process_output_empty(sandbox_workspace, fast_bg):
-    """background_process output returns 'no output' when buffer is empty."""
-    await shell_tool.arun(command="sleep 30", background=True, timeout_seconds=1)
-    pid = next(iter(_bg_processes))
-    _bg_processes[pid].output.clear()
-
-    result = await background_process.arun(action="output", pid=pid)
-    assert "no output captured yet" in result
-
-    _bg_processes[pid].proc.kill()
-
-
-@_posix_only
-@pytest.mark.asyncio
-async def test_background_process_status_exited(sandbox_workspace):
-    """background_process status shows exit code when process has finished."""
-    proc = await asyncio.create_subprocess_shell(
-        "true",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    await proc.wait()
-
-    bg = _BgProcess(proc, "true")
-    pid = bg.pid
-    _bg_processes[pid] = bg
-    await asyncio.sleep(0.05)
-
-    result = await background_process.arun(action="status", pid=pid)
-    assert "exited" in result
-    assert str(pid) in result
-
-    _bg_processes.pop(pid, None)
 
 
 # ---------------------------------------------------------------------------

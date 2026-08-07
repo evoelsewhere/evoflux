@@ -35,7 +35,7 @@ _TRIVIAL_DENIED: frozenset[str] = frozenset(
         "patch",
         "rm",
         "shell",
-        "bg",
+        "process",
         "python",
         "browser_use",
         "webbridge",

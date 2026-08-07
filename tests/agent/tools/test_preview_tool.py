@@ -67,8 +67,8 @@ def workspace(tmp_path, monkeypatch):
 async def _clean_servers():
     yield
     for key, server in list(pv._servers.items()):
-        if server._bg is not None:
-            await server._bg.stop()
+        if server._process is not None:
+            await server._process.terminate()
         pv._servers.pop(key, None)
     pv._server_locks.clear()
     pv._port_locks.clear()

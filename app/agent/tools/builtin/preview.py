@@ -48,6 +48,7 @@ from loguru import logger
 from pydantic import Field
 
 from app.agent.process_sandbox import sandboxed_process_argv
+from app.agent.tools.builtin.process import TrackedProcess, command_process_scope
 from app.agent.tools.registry import InjectedArg, Tool
 
 _PORT_WAIT_SECONDS = 60.0
@@ -71,20 +72,20 @@ class PreviewServer:
     workdir: str
     config_fingerprint: str
     started_at: float = field(default_factory=time.monotonic)
-    # _BgProcess from shell.py; None when we reused an externally-started server.
-    _bg: Any = field(default=None, repr=False)
+    # None when an externally-started server was reused.
+    _process: TrackedProcess | None = field(default=None, repr=False)
 
     @property
     def reused(self) -> bool:
-        return self._bg is None
+        return self._process is None
 
     @property
     def running(self) -> bool:
-        return self.reused or bool(self._bg and self._bg.alive)
+        return self.reused or bool(self._process and self._process.running)
 
     @property
     def pid(self) -> int | None:
-        return self._bg.pid if self._bg else None
+        return self._process.pid if self._process else None
 
 
 # Keyed by (workspace_root, config name).
@@ -374,17 +375,17 @@ async def _wait_for_port(server: PreviewServer, timeout: float) -> str | None:
     """Wait until the port opens. Returns an error string on failure."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if server._bg is not None and not server._bg.alive:
-            tail = server._bg.read_output(last_n=30)
+        if server._process is not None and not server._process.running:
+            tail = server._process.read_output(last_n=30)
             return (
                 f"Server '{server.name}' exited with code "
-                f"{server._bg.proc.returncode} before opening port {server.port}.\n"
+                f"{server._process.exit_code} before opening port {server.port}.\n"
                 f"--- last output ---\n{tail}"
             )
         if await _port_open(server.port):
             return None
         await asyncio.sleep(_PORT_POLL_INTERVAL)
-    tail = server._bg.read_output(last_n=30) if server._bg else ""
+    tail = server._process.read_output(last_n=30) if server._process else ""
     return (
         f"Server '{server.name}' did not open port {server.port} within "
         f"{int(timeout)}s.\n--- last output ---\n{tail}"
@@ -412,7 +413,7 @@ async def _start_locked(
     key: tuple[str, str],
 ) -> str:
     from app.agent.sandbox import get_sandbox
-    from app.agent.tools.builtin.shell import _BgProcess, _scrubbed_env
+    from app.agent.tools.builtin.shell import _scrubbed_env
 
     sandbox = get_sandbox()
     if not sandbox.allow_network:
@@ -431,8 +432,8 @@ async def _start_locked(
                 f"Server '{cfg.name}' already running on http://localhost:{existing.port} "
                 f"({label}). Use browser_use navigate to open it."
             )
-        if existing._bg is not None:
-            await existing._bg.stop()
+        if existing._process is not None:
+            await existing._process.terminate()
         _servers.pop(key, None)
         logger.info(
             "preview_server_replaced name={} old_port={} config_changed={} port_ready={}",
@@ -544,7 +545,13 @@ async def _start_locked(
         command=command,
         workdir=str(cwd),
         config_fingerprint=cfg.fingerprint,
-        _bg=_BgProcess(proc, command),
+        _process=TrackedProcess(
+            proc,
+            command=command,
+            cwd=cwd,
+            timeout_seconds=None,
+            scope=command_process_scope(sandbox.session_id, sandbox.workspace_root),
+        ),
     )
     _servers[key] = server
     logger.info(
@@ -558,14 +565,16 @@ async def _start_locked(
     try:
         error = await _wait_for_port(server, cfg.startup_timeout_seconds)
     except asyncio.CancelledError:
-        await server._bg.stop()
+        assert server._process is not None
+        await server._process.terminate()
         _servers.pop(key, None)
         logger.info(
             "preview_server_start_cancelled name={} pid={}", cfg.name, server.pid
         )
         raise
     if error:
-        await server._bg.stop()
+        assert server._process is not None
+        await server._process.terminate()
         _servers.pop(key, None)
         logger.warning(
             "preview_server_start_failed name={} port={}", cfg.name, cfg.port
@@ -597,9 +606,9 @@ async def _stop(name: str | None, workspace: Path) -> str:
                 server = _servers.pop(key, None)
                 if server is None:
                     continue
-                if server._bg is not None:
+                if server._process is not None:
                     pid = server.pid
-                    await server._bg.stop()
+                    await server._process.terminate()
                     lines.append(f"Stopped '{server.name}' (was pid {pid}).")
                 else:
                     lines.append(
@@ -647,8 +656,8 @@ async def _status(workspace: Path) -> str:
             if server.reused:
                 state = "running"
                 origin = "reused external"
-            elif not server.running:
-                state = f"exited ({server._bg.proc.returncode})"
+            elif server._process is not None and not server._process.running:
+                state = f"exited ({server._process.exit_code})"
                 origin = f"pid {server.pid}"
             elif not port_ready:
                 state = "unhealthy (process alive, port closed)"
@@ -691,9 +700,9 @@ async def _logs(
         server = _servers.get(key)
         if server is None:
             return "No preview server to read logs from. Start one first."
-        if server._bg is None:
+        if server._process is None:
             return f"'{server.name}' is an external server — logs unavailable."
-        output = server._bg.read_output()
+        output = server._process.read_output()
         out_lines = output.splitlines()
         if search:
             out_lines = [ln for ln in out_lines if search in ln]
@@ -710,9 +719,9 @@ async def stop_all_servers() -> None:
     sidecar otherwise. External (reused) servers are left alone.
     """
     for key, server in list(_servers.items()):
-        if server._bg is not None:
+        if server._process is not None:
             try:
-                await server._bg.stop()
+                await server._process.terminate()
             except Exception:
                 pass
         _servers.pop(key, None)

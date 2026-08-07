@@ -258,11 +258,13 @@ async def lifespan(app: FastAPI):
     await team_manager.stop()
     await mcp_manager.stop()
 
-    # Preview dev servers run in their own process groups and would outlive
-    # the sidecar without this. The in-app browser is owned by Tauri.
+    # Command and Preview process groups would outlive the sidecar without
+    # explicit shutdown. The in-app browser is owned by Tauri.
+    from app.agent.tools.builtin.process import stop_all_processes
     from app.agent.tools.builtin.preview import stop_all_servers
     from app.agent.lsp_manager import close_language_servers
 
+    await stop_all_processes()
     await stop_all_servers()
     await close_language_servers()
 

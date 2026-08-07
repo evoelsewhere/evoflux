@@ -150,6 +150,8 @@ class Tool:
         capabilities: tuple[str, ...] = (),
         max_calls_per_batch: int | None = None,
         deduplicate_in_batch: bool = False,
+        observation_kind: str | None = None,
+        observation_key: Callable[[dict[str, Any]], str | None] | None = None,
     ) -> None:
         self._func = func
         # ``Callable`` is the abstract type; only function objects guarantee
@@ -195,6 +197,8 @@ class Tool:
         self.origin = "builtin"
         self.max_calls_per_batch = max_calls_per_batch
         self.deduplicate_in_batch = deduplicate_in_batch
+        self.observation_kind = observation_kind
+        self.observation_key = observation_key
 
         self._model, self._definition, self._injected_params = self._build()
         self._description_factory: Callable[[], str] | None = (
@@ -434,6 +438,8 @@ def tool(
     capabilities: tuple[str, ...] = (),
     max_calls_per_batch: int | None = None,
     deduplicate_in_batch: bool = False,
+    observation_kind: str | None = None,
+    observation_key: Callable[[dict[str, Any]], str | None] | None = None,
 ) -> Callable[[Callable], Tool]: ...
 
 
@@ -452,6 +458,8 @@ def tool(
     capabilities: tuple[str, ...] = (),
     max_calls_per_batch: int | None = None,
     deduplicate_in_batch: bool = False,
+    observation_kind: str | None = None,
+    observation_key: Callable[[dict[str, Any]], str | None] | None = None,
 ) -> Tool | Callable[[Callable], Tool]:
     """Decorator that converts a function into a :class:`Tool`.
 
@@ -499,6 +507,8 @@ def tool(
             capabilities=capabilities,
             max_calls_per_batch=max_calls_per_batch,
             deduplicate_in_batch=deduplicate_in_batch,
+            observation_kind=observation_kind,
+            observation_key=observation_key,
         )
 
     return decorator
