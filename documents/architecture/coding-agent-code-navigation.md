@@ -36,7 +36,11 @@ loaded.
 
 ```text
 Does the task name a code identifier?
-  no  -> discover an identifier/file with glob or grep
+  no  -> discover a literal/config/route anchor with glob or grep
+           |
+           v
+        promote it only when source ties it to the behavior through an
+        assignment, branch, call, registration, serialization, or transition
   yes -> normalize only syntax such as trailing ()
            |
            v
@@ -51,6 +55,11 @@ Does the task name a code identifier?
            +-- exact match -> use returned definition and callsites directly
            +-- static limitation -> declare it, then use the narrow fallback
 ```
+
+Promotion ends broad discovery. Once an exact anchor and structural question
+exist, `code_graph` is the next structural observation. Repeating repo-wide
+literal searches, preloading a reference, or rereading already-returned source
+before the graph is a trajectory defect, not harmless extra diligence.
 
 ### Operation semantics
 

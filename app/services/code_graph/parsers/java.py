@@ -15,6 +15,7 @@ from app.services.code_graph.types import (
     EDGE_IMPLEMENTS,
     EDGE_INHERITS,
     NODE_CLASS,
+    NODE_ENUM,
     NODE_INTERFACE,
     NODE_METHOD,
 )
@@ -79,7 +80,7 @@ class JavaParser(TreeSitterParser):
         elif ntype == "enum_declaration":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=True)
+                return Definition(kind=NODE_ENUM, name=name, is_class=True)
         elif ntype == "record_declaration":
             name = self._name(node, source)
             if name:
@@ -102,7 +103,14 @@ class JavaParser(TreeSitterParser):
         if node.type == "method_invocation":
             name_node = node.child_by_field_name("name")
             if name_node is not None:
-                return node_text(name_node, source)
+                name = node_text(name_node, source)
+                receiver = node.child_by_field_name("object")
+                if receiver is not None:
+                    raw_receiver = node_text(receiver, source)
+                    if raw_receiver in {"this", "super"}:
+                        raw_receiver = "this"
+                    return f"{raw_receiver}.{name}"
+                return name
         elif node.type == "object_creation_expression":
             type_node = node.child_by_field_name("type")
             if type_node is not None:

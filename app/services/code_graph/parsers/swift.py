@@ -15,9 +15,11 @@ from app.services.code_graph.types import (
     EDGE_IMPLEMENTS,
     EDGE_INHERITS,
     NODE_CLASS,
+    NODE_ENUM,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
+    NODE_STRUCT,
 )
 
 if TYPE_CHECKING:
@@ -41,7 +43,19 @@ class SwiftParser(TreeSitterParser):
             # Covers: class, struct, enum, actor
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=True)
+                declaration_kind = next(
+                    (
+                        child.type
+                        for child in node.children
+                        if child.type in {"class", "struct", "enum", "actor"}
+                    ),
+                    "class",
+                )
+                kind = {
+                    "struct": NODE_STRUCT,
+                    "enum": NODE_ENUM,
+                }.get(declaration_kind, NODE_CLASS)
+                return Definition(kind=kind, name=name, is_class=True)
         elif ntype == "function_declaration":
             name = self._func_name(node, source)
             if name:

@@ -14,10 +14,12 @@ from app.services.code_graph.parsers.base import (
 from app.services.code_graph.types import (
     EDGE_IMPLEMENTS,
     NODE_CLASS,
+    NODE_ENUM,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
     NODE_MODULE,
+    NODE_STRUCT,
     NODE_VARIABLE,
 )
 
@@ -41,15 +43,15 @@ class RustParser(TreeSitterParser):
         elif ntype == "struct_item":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=True)
+                return Definition(kind=NODE_STRUCT, name=name, is_class=True)
         elif ntype == "enum_item":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=True)
+                return Definition(kind=NODE_ENUM, name=name, is_class=True)
         elif ntype == "union_item":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=True)
+                return Definition(kind=NODE_STRUCT, name=name, is_class=True)
         elif ntype == "trait_item":
             name = self._name(node, source)
             if name:

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import re
 
-_WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# ``[^\W\d]`` is the Unicode-aware equivalent of "letter or underscore".
+# Code identifiers are not ASCII-only (Python, Java, Kotlin, Swift, and most
+# modern languages accept Unicode identifiers), so restricting this expansion
+# to ``A-Z`` silently made those symbols undiscoverable through FTS.
+_WORD_RE = re.compile(r"[^\W\d]\w*", re.UNICODE)
 
 
 def _identifier_parts(value: str) -> tuple[str, ...]:

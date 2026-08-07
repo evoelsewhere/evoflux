@@ -115,3 +115,22 @@ def test_fts_replaces_outdated_schema_in_place(tmp_path):
         "language",
     )
     assert fts_store.search_fts(database, "workspace", "stale") == []
+
+
+def test_fts_indexes_unicode_identifiers(tmp_path):
+    database = str(tmp_path / "graph.sqlite")
+    rows: list[fts_store.FtsRow] = [
+        (
+            "unicode",
+            "tínhTổng",
+            "BáoCáo.tínhTổng",
+            "src/báo_cáo.py",
+            "def tínhTổng(values)",
+            "",
+            "method",
+            "python",
+        )
+    ]
+    fts_store.rebuild_workspace_fts(database, "workspace", rows)
+
+    assert fts_store.search_fts(database, "workspace", "tính tổng") == ["unicode"]

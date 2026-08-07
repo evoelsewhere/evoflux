@@ -17,9 +17,11 @@ from app.services.code_graph.types import (
     EDGE_INHERITS,
     EDGE_USES,
     NODE_CLASS,
+    NODE_ENUM,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
+    NODE_STRUCT,
 )
 
 
@@ -46,13 +48,13 @@ func helper() {}
 """
     result = GoParser().parse(file_path="main.go", source=source)
 
-    classes = _by_kind(result.nodes, NODE_CLASS)
+    structs = _by_kind(result.nodes, NODE_STRUCT)
     interfaces = _by_kind(result.nodes, NODE_INTERFACE)
     functions = _by_kind(result.nodes, NODE_FUNCTION)
 
-    assert [c.name for c in classes] == ["Animal"]
-    assert classes[0].docstring is not None
-    assert "living creature" in classes[0].docstring
+    assert [item.name for item in structs] == ["Animal"]
+    assert structs[0].docstring is not None
+    assert "living creature" in structs[0].docstring
     assert [i.name for i in interfaces] == ["Runner"]
     assert [f.name for f in functions] == ["helper"]
 
@@ -134,13 +136,13 @@ fn helper() {}
 """
     result = RustParser().parse(file_path="lib.rs", source=source)
 
-    classes = _by_kind(result.nodes, NODE_CLASS)
+    structs = _by_kind(result.nodes, NODE_STRUCT)
     interfaces = _by_kind(result.nodes, NODE_INTERFACE)
     functions = _by_kind(result.nodes, NODE_FUNCTION)
 
-    assert [c.name for c in classes] == ["Animal"]
-    assert classes[0].docstring is not None
-    assert "animal in the zoo" in classes[0].docstring
+    assert [item.name for item in structs] == ["Animal"]
+    assert structs[0].docstring is not None
+    assert "animal in the zoo" in structs[0].docstring
     assert [i.name for i in interfaces] == ["Runner"]
     assert [f.name for f in functions] == ["helper"]
 
@@ -204,8 +206,8 @@ def test_rust_parser_enum():
 }
 """
     result = RustParser().parse(file_path="lib.rs", source=source)
-    classes = _by_kind(result.nodes, NODE_CLASS)
-    assert [c.name for c in classes] == ["Direction"]
+    enums = _by_kind(result.nodes, NODE_ENUM)
+    assert [item.name for item in enums] == ["Direction"]
 
 
 # ── Java parser ───────────────────────────────────────────────────────────────
@@ -274,7 +276,7 @@ def test_java_parser_extracts_calls():
     calls = [e for e in result.edges if e.kind == EDGE_CALLS]
     call_names = {e.dst_name for e in calls}
     assert "Animal" in call_names
-    assert "run" in call_names
+    assert "a.run" in call_names
     assert "helper" in call_names
 
 
@@ -285,9 +287,9 @@ public record Point(int x, int y) {}
 """
     result = JavaParser().parse(file_path="Types.java", source=source)
     classes = _by_kind(result.nodes, NODE_CLASS)
-    names = {c.name for c in classes}
-    assert "Direction" in names
-    assert "Point" in names
+    enums = _by_kind(result.nodes, NODE_ENUM)
+    assert [item.name for item in enums] == ["Direction"]
+    assert [item.name for item in classes] == ["Point"]
 
 
 # ── C# parser ─────────────────────────────────────────────────────────────────
@@ -354,7 +356,7 @@ def test_csharp_parser_extracts_calls():
     calls = [e for e in result.edges if e.kind == EDGE_CALLS]
     call_names = {e.dst_name for e in calls}
     assert "Animal" in call_names
-    assert "Run" in call_names
+    assert "a.Run" in call_names
     assert "Helper" in call_names
 
 
@@ -365,10 +367,11 @@ public record Person(string Name, int Age);
 """
     result = CSharpParser().parse(file_path="Types.cs", source=source)
     classes = _by_kind(result.nodes, NODE_CLASS)
-    names = {c.name for c in classes}
-    assert "Point" in names
-    assert "Direction" in names
-    assert "Person" in names
+    structs = _by_kind(result.nodes, NODE_STRUCT)
+    enums = _by_kind(result.nodes, NODE_ENUM)
+    assert [item.name for item in structs] == ["Point"]
+    assert [item.name for item in enums] == ["Direction"]
+    assert [item.name for item in classes] == ["Person"]
 
 
 def test_csharp_parser_docstring():
@@ -517,8 +520,8 @@ def test_rust_union_item():
     source = b"""pub union FloatOrInt { f: f64, i: i64 }
 """
     result = RustParser().parse(file_path="lib.rs", source=source)
-    classes = _by_kind(result.nodes, NODE_CLASS)
-    assert [c.name for c in classes] == ["FloatOrInt"]
+    structs = _by_kind(result.nodes, NODE_STRUCT)
+    assert [item.name for item in structs] == ["FloatOrInt"]
 
 
 def test_rust_type_alias():

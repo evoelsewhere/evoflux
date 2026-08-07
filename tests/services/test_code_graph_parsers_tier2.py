@@ -14,9 +14,11 @@ from app.services.code_graph.types import (
     EDGE_IMPLEMENTS,
     EDGE_INHERITS,
     NODE_CLASS,
+    NODE_ENUM,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
+    NODE_STRUCT,
 )
 
 
@@ -45,10 +47,10 @@ int main() {
 """
     result = CParser().parse(file_path="main.c", source=source)
 
-    classes = _by_kind(result.nodes, NODE_CLASS)
+    structs = _by_kind(result.nodes, NODE_STRUCT)
     functions = _by_kind(result.nodes, NODE_FUNCTION)
 
-    assert [c.name for c in classes] == ["Animal"]
+    assert [item.name for item in structs] == ["Animal"]
     assert "animal_run" in [f.name for f in functions]
     assert "main" in [f.name for f in functions]
 
@@ -180,12 +182,14 @@ enum Direction {
 
     interfaces = _by_kind(result.nodes, NODE_INTERFACE)
     classes = _by_kind(result.nodes, NODE_CLASS)
+    structs = _by_kind(result.nodes, NODE_STRUCT)
+    enums = _by_kind(result.nodes, NODE_ENUM)
     methods = _by_kind(result.nodes, NODE_METHOD)
 
     assert [i.name for i in interfaces] == ["Runner"]
     assert "Animal" in [c.name for c in classes]
-    assert "Point" in [c.name for c in classes]
-    assert "Direction" in [c.name for c in classes]
+    assert [item.name for item in structs] == ["Point"]
+    assert [item.name for item in enums] == ["Direction"]
     assert "init" in [m.name for m in methods]
     assert "run" in [m.name for m in methods]
 

@@ -27,6 +27,7 @@ from app.services.code_graph.parsers.registry import default_registry
 from app.services.code_graph.watcher import (
     flush_code_graph_index,
     get_dirty_code_paths,
+    is_code_graph_watcher_active,
 )
 from app.services.code_intelligence.context import attach_source
 from app.services.code_intelligence.models import (
@@ -45,6 +46,19 @@ class _PreparedScope:
     scope: WorkspaceScope
     states: tuple[CodeIndexState, ...]
     dirty_paths: frozenset[str]
+
+
+# A live watcher makes repeated full ``git status`` + content-hash validation
+# redundant after one successful check of a given graph snapshot. Keying by
+# the stored state fingerprint naturally invalidates this cache after reindex.
+_VALIDATED_SNAPSHOTS: dict[UUID, tuple[int, str]] = {}
+
+
+def _state_fingerprint(states: tuple[CodeIndexState, ...]) -> tuple[int, str]:
+    if not states:
+        return (0, "")
+    latest = max(state.indexed_at.isoformat() for state in states)
+    return (len(states), latest)
 
 
 async def _states(db: AsyncSession, workspace_id: UUID) -> tuple[CodeIndexState, ...]:
@@ -140,7 +154,8 @@ async def _prepare_scope(
     scope: WorkspaceScope,
     freshness_policy: FreshnessPolicy,
 ) -> _PreparedScope:
-    if get_dirty_code_paths(str(scope.root)):
+    watcher_dirty = get_dirty_code_paths(str(scope.root))
+    if watcher_dirty and freshness_policy != "fast":
         await flush_code_graph_index(str(scope.root))
     states = await _states(db, scope.workspace_id)
     if not states:
@@ -151,6 +166,17 @@ async def _prepare_scope(
             incremental=False,
         )
         states = await _states(db, scope.workspace_id)
+    if freshness_policy == "fast":
+        return _PreparedScope(scope, states, watcher_dirty)
+
+    state_count, state_latest = _state_fingerprint(states)
+    if (
+        freshness_policy == "balanced"
+        and is_code_graph_watcher_active()
+        and not get_dirty_code_paths(str(scope.root))
+        and _VALIDATED_SNAPSHOTS.get(scope.workspace_id) == (state_count, state_latest)
+    ):
+        return _PreparedScope(scope, states, frozenset())
     changed = await asyncio.to_thread(_git_changed_paths, scope.root)
     dirty = await asyncio.to_thread(_index_dirty_paths, scope, states, changed)
     if dirty and freshness_policy != "fast":
@@ -162,6 +188,9 @@ async def _prepare_scope(
         )
         states = await _states(db, scope.workspace_id)
         dirty = await asyncio.to_thread(_index_dirty_paths, scope, states, changed)
+    if not dirty and is_code_graph_watcher_active():
+        state_count, state_latest = _state_fingerprint(states)
+        _VALIDATED_SNAPSHOTS[scope.workspace_id] = (state_count, state_latest)
     return _PreparedScope(scope, states, dirty)
 
 

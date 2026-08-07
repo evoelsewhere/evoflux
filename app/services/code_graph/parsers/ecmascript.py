@@ -19,6 +19,7 @@ from app.services.code_graph.types import (
     EDGE_IMPLEMENTS,
     EDGE_INHERITS,
     NODE_CLASS,
+    NODE_ENUM,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
@@ -58,7 +59,7 @@ class EcmaScriptParser(TreeSitterParser):
         elif ntype == "enum_declaration":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=True)
+                return Definition(kind=NODE_ENUM, name=name, is_class=True)
         elif ntype in {
             "function_declaration",
             "generator_function_declaration",
@@ -241,7 +242,7 @@ class EcmaScriptParser(TreeSitterParser):
                 return None
             prop_name = node_text(prop, source)
             # Emit "Object.method" for qualified resolution
-            if obj is not None and obj.type == "identifier":
+            if obj is not None and obj.type in {"identifier", "this"}:
                 return f"{node_text(obj, source)}.{prop_name}"
             return prop_name
         return None

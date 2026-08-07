@@ -531,3 +531,8 @@ def get_dirty_code_paths(workspace: str) -> frozenset[str]:
     if watcher is None:
         return frozenset()
     return watcher.dirty_paths(workspace)
+
+
+def is_code_graph_watcher_active() -> bool:
+    """Whether the process has an authoritative live workspace watcher."""
+    return _global_watcher is not None

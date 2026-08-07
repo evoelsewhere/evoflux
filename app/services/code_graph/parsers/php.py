@@ -15,6 +15,7 @@ from app.services.code_graph.types import (
     EDGE_IMPLEMENTS,
     EDGE_INHERITS,
     NODE_CLASS,
+    NODE_ENUM,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
@@ -70,7 +71,7 @@ class PhpParser(TreeSitterParser):
         elif ntype == "enum_declaration":
             name = self._field_name(node, source)
             if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=True)
+                return Definition(kind=NODE_ENUM, name=name, is_class=True)
         elif ntype == "method_declaration":
             name = self._field_name(node, source)
             if name:
@@ -144,10 +145,20 @@ class PhpParser(TreeSitterParser):
         elif ntype == "member_call_expression":
             name = node.child_by_field_name("name")
             if name is not None:
+                receiver = node.child_by_field_name("object")
+                if receiver is not None:
+                    raw_receiver = node_text(receiver, source).lstrip("$")
+                    return f"{raw_receiver}.{node_text(name, source)}"
                 return node_text(name, source)
         elif ntype == "scoped_call_expression":
             name = node.child_by_field_name("name")
             if name is not None:
+                scope = node.child_by_field_name("scope")
+                if scope is not None:
+                    raw_scope = node_text(scope, source).lstrip("$")
+                    if raw_scope in {"self", "static", "parent"}:
+                        raw_scope = "this"
+                    return f"{raw_scope}.{node_text(name, source)}"
                 return node_text(name, source)
         elif ntype == "object_creation_expression":
             for child in node.children:
