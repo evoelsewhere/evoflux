@@ -106,6 +106,22 @@ class UsageInfo:
     last_usage: dict[str, Any] | None = None
 
 
+@dataclass(frozen=True)
+class PendingToolLifecycle:
+    """One tool lifecycle inserted by the harness instead of model dispatch.
+
+    The canonical messages remain the durable source of truth. This transient
+    record lets streaming transports render the same lifecycle immediately,
+    before a later reload hydrates those messages from the checkpointer.
+    """
+
+    tool_call_id: str
+    name: str
+    arguments: str
+    result: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
 @dataclass
 class AgentState:
     """Per-run mutable state shared across the agent loop and hooks.
@@ -145,6 +161,7 @@ class AgentState:
     capabilities: ModelCapabilities = field(default_factory=ModelCapabilities)
     tool_names: list[str] = field(default_factory=list)
     tool_defs: list[dict[str, Any]] = field(default_factory=list)
+    pending_tool_lifecycles: list[PendingToolLifecycle] = field(default_factory=list)
 
     @property
     def messages_for_llm(self) -> list[ChatMessage]:

@@ -166,6 +166,16 @@ async def test_resolution_hook_activates_through_canonical_pair(monkeypatch, tmp
     assert '<skill_content name="coding-investigation"' in state.messages[2].content
     assert state.metadata["skill_resolution"]["status"] == "selected"
     assert "coding-investigation" in state.metadata["loaded_skills"]
+    assert len(state.pending_tool_lifecycles) == 1
+    lifecycle = state.pending_tool_lifecycles[0]
+    assert lifecycle.tool_call_id == state.messages[1].tool_calls[0].id
+    assert lifecycle.name == "skill"
+    assert json.loads(lifecycle.arguments) == {
+        "action": "load",
+        "skill_name": "coding-investigation",
+    }
+    assert lifecycle.result == state.messages[2].content
+    assert lifecycle.metadata["activation_source"] == "resolved"
 
 
 @pytest.mark.asyncio
