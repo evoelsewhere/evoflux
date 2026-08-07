@@ -2,18 +2,41 @@
  * /settings/skills — inline list of skill packs in the detail pane.
  */
 import { Sparkles } from 'lucide-react'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
 import { SettingsListView, type ListViewRow } from '@/components/settings/SettingsListView'
+import { SegmentedControl } from '@/components/ui/segmented-control'
+import { resolveSkillDetailMode } from '@/lib/skill-detail-mode'
+import { skillAvailabilityLabel, type SkillAvailability } from '@/lib/skill-modes'
 import { useSkillFilesQuery } from '@/queries'
 import { useSettingsParams } from '@/contexts/SettingsContext'
+import { useActiveSkillDiscoveryScope } from '@/hooks/useActiveSkillDiscoveryScope'
+
+type SkillFilter = 'all' | SkillAvailability
 
 export function SkillsListPage() {
-  const { data, isLoading, isFetching, isError, error, refetch } = useSkillFilesQuery()
+  const skillScope = useActiveSkillDiscoveryScope()
+  const { data, isLoading, isFetching, isError, error, refetch } =
+    useSkillFilesQuery(skillScope)
   const { name: selected } = useSettingsParams() as { name?: string }
+  const [modeFilter, setModeFilter] = useState<SkillFilter>('all')
+  const allSkills = useMemo(() => data?.skills ?? [], [data?.skills])
+  const counts = useMemo(
+    () => ({
+      all: allSkills.length,
+      work: allSkills.filter((skill) => skill.modes.includes('work')).length,
+      coding: allSkills.filter((skill) => skill.modes.includes('coding')).length,
+      both: allSkills.filter((skill) => skill.modes.length === 2).length,
+    }),
+    [allSkills],
+  )
 
   const rows = useMemo<ListViewRow[]>(() => {
-    const skills = data?.skills ?? []
+    const skills = allSkills.filter((skill) => {
+      if (modeFilter === 'all') return true
+      if (modeFilter === 'both') return skill.modes.length === 2
+      return skill.modes.includes(modeFilter)
+    })
     const flat = skills.filter((s) => !s.name.includes('/'))
     const nested = skills.filter((s) => s.name.includes('/'))
     const nestedByParent = new Map<string, typeof nested>()
@@ -26,22 +49,45 @@ export function SkillsListPage() {
 
     const toRow = (s: (typeof skills)[number]): ListViewRow => {
       const slash = s.name.indexOf('/')
-      const title = slash === -1 ? s.name : s.name.replace('/', ':')
-      const badge = slash === -1 ? undefined : 'sub-skill'
+      const portableName = slash === -1 ? s.name : s.name.replace('/', ':')
+      const title = s.display_name || portableName
+      const modeCollision = s.diagnostics.some(
+        (diagnostic) => diagnostic.code === 'mode-specific-collision',
+      )
+      const badge = modeCollision
+        ? 'Mode-specific variants'
+        : s.allow_implicit_invocation
+          ? 'Auto-discoverable'
+          : 'Hidden from catalog'
+      const detailMode = resolveSkillDetailMode({
+        valid: s.valid,
+        modes: s.modes,
+        modeFilter,
+        workspaceScoped: Boolean(skillScope.workspaces?.length),
+      })
       return {
         key: s.name,
         to: '/settings/skills/$name',
         params: { name: s.name },
+        search: detailMode ? { mode: detailMode } : undefined,
         active: selected === s.name,
         title,
         badge,
         description: [
           s.description || 'No description',
+          skillAvailabilityLabel(s.modes),
+          `${s.resource_count} resource${s.resource_count === 1 ? '' : 's'}`,
+          modeCollision ? 'Filter by Work or Coding to inspect runtime policy' : null,
+          !modeCollision && !s.user_invocable ? 'Manual invocation disabled' : null,
           s.built_in ? 'Built-in' : null,
-          !s.editable ? 'Read-only' : null,
+          !s.editable ? 'Bundle read-only' : null,
+          s.symlinked ? 'Symlink' : null,
+          s.diagnostics.length > 0
+            ? `${s.diagnostics.length} diagnostic${s.diagnostics.length === 1 ? '' : 's'}`
+            : null,
           s.source !== 'global-EvoFlux' ? s.source : null,
         ].filter(Boolean).join(' · '),
-        meta: slash === -1 ? undefined : s.name,
+        meta: title === portableName ? undefined : s.name,
         invalidReason: !s.valid ? (s.error ?? 'Invalid configuration') : undefined,
         trailing: (
           <span
@@ -64,16 +110,31 @@ export function SkillsListPage() {
       rows.push(...group.sort((a, b) => a.name.localeCompare(b.name)).map(toRow))
     }
     return rows
-  }, [data?.skills, selected])
+  }, [allSkills, modeFilter, selected, skillScope])
 
   return (
     <SettingsListView
       title="Skills"
       icon={Sparkles}
-      lede="Reusable instruction packs any agent can load on demand. Flat skills and one-level sub-skills (shown as parent:sub) both live in .evoflux/skills/."
+      lede="Portable Agent Skills discovered from project, user, Claude, Codex, and EvoFlux roots. Metadata is cataloged; instructions and resources load only when activated."
       newTo="/settings/skills/new"
       newLabel="New skill"
       filterPlaceholder="Filter skills…"
+      tabs={
+        <SegmentedControl
+          options={[
+            { value: 'all', label: `All ${counts.all}` },
+            { value: 'work', label: `Work ${counts.work}` },
+            { value: 'coding', label: `Coding ${counts.coding}` },
+            { value: 'both', label: `Both ${counts.both}` },
+          ]}
+          value={modeFilter}
+          onChange={setModeFilter}
+          layoutId="skills-mode-filter"
+          ariaLabel="Filter skills by mode"
+          className="max-w-full overflow-x-auto"
+        />
+      }
       rows={rows}
       isLoading={isLoading}
       isFetching={isFetching}

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Optimize Code Performance"
+  short_description: "Measure bottlenecks and prove performance gains"
+  default_prompt: "Use $coding-performance to measure this workload, isolate its bottleneck, and verify an optimization."
+policy:
+  allow_implicit_invocation: false

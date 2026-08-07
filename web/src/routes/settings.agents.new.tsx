@@ -157,6 +157,7 @@ export function NewAgentPage() {
         isNew
         mode={mode}
         onModeChange={setMode}
+        skillMode={agentMode}
       />
     </SettingsPage>
   )

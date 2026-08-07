@@ -1397,7 +1397,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     setup:
       'Coding workspace or project — indexing runs incrementally on file changes. Open the Graph workbench tool to explore visually and reindex when the tree looks stale after large external edits.',
     tricks: [
-      'The native code_graph schema and service own graph navigation; no graph skill or prompt injection is required.',
+      'code-graph-navigation is progressively disclosed workflow guidance; code_graph is the native exact-symbol execution tool.',
       'Use code_graph for a known exact symbol and structural relationship; use source search for discovery, literals, comments, and config keys.',
       'Open the Graph workbench tool to explore visually and reindex when needed.',
       'Cross-repo resolution uses three deterministic tiers (reattach, manifests/FQNs, sibling FTS5) without an LLM call for linking.',
@@ -1405,7 +1405,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Verify material findings in live source after graph navigation — indexes can lag external edits.',
       'Ask structural questions (“who calls X?”) instead of “read the whole package.”',
       'Multi-repo projects get cross-repo edges; standalone repos still benefit inside one tree.',
-      'Graph guidance is never injected or selected from user wording.'
+      'The skill body is never injected by Coding mode, and raw request prose is never keyword-routed into a graph query.'
 ],
     blocks: [
       {
@@ -1846,7 +1846,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Settings → Agents for team members; Settings → Skills to validate packs; Settings → MCP to add servers. From chat, use /skill: or the command palette for New Agent / New Skill shortcuts.',
     tricks: [
       'Agents are .md files with YAML frontmatter — diffable and versionable.',
-      'Skills appear under /skill: after they are valid in Settings → Skills.',
+      'Settings → Skills creates, edits, displays, and filters skills by Work, Coding, or Both; valid skills appear under /skill: only in matching sessions.',
       'MCP status dots: ready / starting / auth / error / stopped.',
       'MCP tools inherit the same permission rules as native tools.',
       'Teams are scoped to work / coding.',
@@ -1891,7 +1891,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Cross-feature: code_graph is a native Coding tool and does not require a companion skill.',
+          'Cross-feature: code-graph-navigation teaches the workflow; native code_graph validates and executes exact-symbol operations.',
           'Cross-feature: workflows and skills both need scope validity to show in /.',
           'Cross-feature: permission Always rules apply to MCP tools too — prefer Once first.'
 ],

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Work with PDFs"
+  short_description: "Create, edit, inspect, and verify PDF files"
+  default_prompt: "Use $pdf to process this PDF request and verify the resulting document."
+policy:
+  allow_implicit_invocation: true

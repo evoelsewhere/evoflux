@@ -40,6 +40,8 @@ interface UseSlashCommandRegistryArgs {
   mode: 'work' | 'coding'
   workspace: string | null
   agentWorkspace: string | null
+  /** Every repository root for a project session; single-repo sessions pass one root. */
+  workspaceRoots?: readonly string[]
   /** Route prop — fallback for ``startWorkflowRun`` before the store commits. */
   sessionId: string | undefined
   sessionIdState: string | null
@@ -53,6 +55,7 @@ export function useSlashCommandRegistry({
   mode,
   workspace,
   agentWorkspace,
+  workspaceRoots,
   sessionId,
   sessionIdState,
   selectedModel,
@@ -69,7 +72,14 @@ export function useSlashCommandRegistry({
   // into the textarea (``keepInputOpen``) so the user can append
   // ``$ARGUMENTS`` before submitting.
   const commandsQ = useCommandsQuery(agentWorkspace)
-  const skillsQ = useSkillFilesQuery()
+  const skillsQ = useSkillFilesQuery({
+    workspaces: workspaceRoots?.length
+      ? workspaceRoots
+      : agentWorkspace
+        ? [agentWorkspace]
+        : [],
+    mode,
+  })
   const snippetsQ = useSnippetsQuery(mode === 'coding' ? agentWorkspace : null)
   const userCommandNames = useMemo(
     () => new Set<string>((commandsQ.data?.commands ?? []).map((c) => c.name)),
@@ -118,16 +128,25 @@ export function useSlashCommandRegistry({
       hideAfterPrefix: 'skill:',
     },
     ...(skillsQ.data?.skills ?? [])
-      .filter((skill) => skill.valid)
+      .filter(
+        (skill) =>
+          skill.valid &&
+          skill.user_invocable !== false &&
+          (skill.modes ?? ['work', 'coding']).includes(mode),
+      )
       .map((skill) => {
         const skillName = skill.name.replace('/', ':')
         const directive = `skill:${skillName}`
+        const starter = (skill.default_prompt ?? '')
+          .replaceAll(`$${skill.name}`, '')
+          .trim()
         return {
           id: directive,
-          label: skillName,
+          label: skill.display_name || skillName,
           displayName: directive,
-          insertText: directive,
-          description: skill.description || `Load the ${skillName} skill`,
+          insertText: starter ? `${directive} ${starter}` : directive,
+          description:
+            skill.short_description || skill.description || `Load the ${skillName} skill`,
           category: 'skill',
           keepInputOpen: true,
           // Keep the root ``/`` menu compact. Skill choices appear only once

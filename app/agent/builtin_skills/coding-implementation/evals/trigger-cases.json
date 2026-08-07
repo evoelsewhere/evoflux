@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Add workspace-level notification preferences across the API, persistence model, UI, and tests using the existing settings patterns.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fix the confirmed pagination off-by-one in listProjects and add a regression test for the final page.",
+    "should_trigger": true
+  },
+  {
+    "query": "Make the upload cancellation state visible in the component and preserve the current retry contract.",
+    "should_trigger": true
+  },
+  {
+    "query": "Why does upload cancellation sometimes hang? Find the cause, but don't fix it yet.",
+    "should_trigger": false,
+    "near_miss": "Unknown-cause diagnosis with a read-only posture."
+  },
+  {
+    "query": "Review my notification preferences patch for defects.",
+    "should_trigger": false,
+    "near_miss": "Review of an existing change rather than implementation."
+  },
+  {
+    "query": "Rename the typo in this comment.",
+    "should_trigger": false,
+    "near_miss": "A trivial edit needs no specialist workflow."
+  }
+]

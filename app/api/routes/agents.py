@@ -10,9 +10,9 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 from pydantic import ValidationError
 
@@ -232,7 +232,15 @@ async def list_agents() -> AgentListResponse:
 
 
 @router.get("/registry")
-async def get_registry() -> RegistryResponse:
+async def get_registry(
+    workspace: Annotated[
+        list[str] | None,
+        Query(
+            description="Repeat for every repository in the active workspace/project."
+        ),
+    ] = None,
+    mode: Annotated[Literal["work", "coding"] | None, Query()] = None,
+) -> RegistryResponse:
     """Dropdown catalog: tools, skills, providers, known models."""
     from app.agent.hooks.summarization import prompt_token_threshold_for_model
     from app.agent.loader import _default_tool_registry
@@ -244,7 +252,7 @@ async def get_registry() -> RegistryResponse:
         get_model_metadata,
         get_model_thinking_levels,
     )
-    from app.agent.tools.builtin.skill import discover_skills
+    from app.api.routes.skills import _discover_runtime_skills, _workspace_paths
 
     tool_registry = _default_tool_registry()
     hidden_tools = {"skill", "load_tool", "todo_manage", "schedule_task", "note"}
@@ -262,10 +270,21 @@ async def get_registry() -> RegistryResponse:
         key=lambda t: t.name,
     )
 
-    skill_map = discover_skills()
+    skill_map = _discover_runtime_skills(_workspace_paths(workspace), mode=mode)
     skills = sorted(
         (
-            SkillCatalogEntry(name=k, description=v.get("description", ""))
+            SkillCatalogEntry(
+                name=k,
+                description=v.get("description", ""),
+                display_name=v.get("display_name"),
+                short_description=v.get("short_description"),
+                allow_implicit_invocation=bool(
+                    v.get("allow_implicit_invocation", True)
+                ),
+                user_invocable=bool(v.get("user_invocable", True)),
+                dependencies=list(v.get("dependencies") or []),
+                modes=list(v.get("modes", ("work", "coding"))),
+            )
             for k, v in skill_map.items()
         ),
         key=lambda s: s.name,

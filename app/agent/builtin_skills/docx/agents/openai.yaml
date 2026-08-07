@@ -1,0 +1,6 @@
+interface:
+  display_name: "Create and Edit DOCX"
+  short_description: "Author and verify editable Word documents"
+  default_prompt: "Use $docx to create or edit this Word document and verify every rendered page."
+policy:
+  allow_implicit_invocation: true

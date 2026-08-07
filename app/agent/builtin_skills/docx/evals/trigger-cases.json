@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Create an editable Word proposal from these approved notes, with a professional cover, tables, and page-level visual QA.",
+    "should_trigger": true
+  },
+  {
+    "query": "Update the attached contract.docx using its existing styles and layout; preserve the original template and return a new DOCX.",
+    "should_trigger": true
+  },
+  {
+    "query": "Inspect this Word file for clipped tables and inconsistent headings, fix them, and verify every rendered page.",
+    "should_trigger": true
+  },
+  {
+    "query": "Draft the wording for a short policy memo in Markdown; I do not need a document file.",
+    "should_trigger": false,
+    "near_miss": "Professional prose without a Word deliverable belongs to writing."
+  },
+  {
+    "query": "Fill the fields in this PDF form and return a verified PDF.",
+    "should_trigger": false,
+    "near_miss": "The requested file format is PDF."
+  },
+  {
+    "query": "Create an Excel tracker with formulas, filters, and a summary chart.",
+    "should_trigger": false,
+    "near_miss": "A structured workbook requires the XLSX workflow."
+  }
+]

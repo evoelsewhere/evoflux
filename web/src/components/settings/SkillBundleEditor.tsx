@@ -304,10 +304,14 @@ export function SkillBundleEditor({
               ) : (
                 <div className="flex min-h-112 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
                   <File className="size-8 text-(--color-text-subtle)" aria-hidden="true" />
-                  <p className="text-sm font-medium text-(--color-text)">Binary asset</p>
+                  <p className="text-sm font-medium text-(--color-text)">
+                    {selected.encoding === 'utf-8'
+                      ? 'Text preview unavailable'
+                      : 'Binary asset'}
+                  </p>
                   <p className="max-w-sm text-xs text-(--color-text-muted)">
                     {selected.mediaType} · {formatBytes(selected.size)}. It remains part of the
-                    bundle, but is not edited as text.
+                    bundle and will stay unchanged when you save.
                   </p>
                 </div>
               )}

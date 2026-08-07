@@ -40,6 +40,8 @@ export {
   useSkillFileQuery,
   useCreateSkillMutation,
   useUpdateSkillMutation,
+  useUpdateSkillSettingsMutation,
+  useResetSkillSettingsMutation,
   useDeleteSkillMutation,
 } from './useSkillFilesQuery'
 export { useObservabilitySummaryQuery } from './useObservabilitySummaryQuery'

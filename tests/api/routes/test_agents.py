@@ -310,6 +310,23 @@ async def test_registry_returns_catalog(
     monkeypatch.setattr(
         agents_routes, "discover_provider_models", AsyncMock(return_value=[])
     )
+    monkeypatch.setattr(
+        "app.api.routes.skills._discover_runtime_skills",
+        lambda *_args, **_kwargs: {
+            "work-research": {
+                "description": "Research work.",
+                "modes": ["work"],
+            },
+            "coding-investigation": {
+                "description": "Investigate code.",
+                "modes": ["coding"],
+            },
+            "self-healing": {
+                "description": "Repair configuration.",
+                "modes": ["work", "coding"],
+            },
+        },
+    )
 
     res = await client.get("/api/agents/registry")
     assert res.status_code == 200
@@ -330,6 +347,41 @@ async def test_registry_returns_catalog(
     assert by_name["lsp_diagnostics"]["tiers"] == ["coding"]
     assert by_name["worktree_start"]["tiers"] == ["coding"]
     assert by_name["read"]["tiers"] is None
+
+    skills_by_name = {skill["name"]: skill for skill in body["skills"]}
+    assert skills_by_name["work-research"]["modes"] == ["work"]
+    assert skills_by_name["coding-investigation"]["modes"] == ["coding"]
+    assert skills_by_name["self-healing"]["modes"] == ["work", "coding"]
+
+
+@pytest.mark.asyncio
+async def test_registry_discovers_explicit_workspace_skills(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    import app.api.routes.agents as agents_routes
+
+    agents_routes._registry_model_cache.clear()
+    monkeypatch.setattr(
+        agents_routes, "discover_provider_models", AsyncMock(return_value=[])
+    )
+    workspace = tmp_path / "repo"
+    skill_dir = workspace / ".agents" / "skills" / "project-only"
+    skill_dir.mkdir(parents=True)
+    (workspace / ".git").mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: project-only\ndescription: Project workflow.\n---\nBody.\n"
+    )
+
+    response = await client.get(
+        "/api/agents/registry",
+        params=[("workspace", str(workspace)), ("mode", "coding")],
+    )
+
+    assert response.status_code == 200
+    skills = {item["name"]: item for item in response.json()["skills"]}
+    assert skills["project-only"]["modes"] == ["work", "coding"]
 
 
 @pytest.mark.asyncio

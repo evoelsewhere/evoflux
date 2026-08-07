@@ -13,7 +13,7 @@ The code graph parser layer is now structurally sound for its intended role: pro
 
 Those failures were corrected with AST-backed regressions. The shared walker now also supports synthetic leaf definitions, which is required when one syntax node creates several symbols, such as Ruby accessors, Objective-C property accessors, and Liquid variables.
 
-An earlier revision used a code-graph skill, but it was retired because it duplicated the native tool contract and polluted the catalog. Parser correctness remains owned by [the parser service](../../app/services/code_graph/parsers), and every language claim below is tied to executable syntax evidence.
+At the time of this audit, an earlier code-graph skill had been retired because it duplicated the native tool contract and polluted the catalog. That catalog decision was superseded on 2026-08-07: `code-graph-navigation` returned as progressively disclosed Coding-only workflow guidance, while the native `code_graph` tool still owns execution. Parser correctness remains owned by [the parser service](../../app/services/code_graph/parsers), and every language claim below is tied to executable syntax evidence.
 
 ## 2. Audit method
 

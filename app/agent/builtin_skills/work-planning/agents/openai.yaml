@@ -1,0 +1,6 @@
+interface:
+  display_name: "Plan Coordinated Work"
+  short_description: "Build executable plans with owners and gates"
+  default_prompt: "Use $work-planning to turn this outcome into an executable plan with dependencies and verification gates."
+policy:
+  allow_implicit_invocation: false

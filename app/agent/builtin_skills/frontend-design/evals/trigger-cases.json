@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Design and implement a distinctive responsive landing page for a neighborhood astronomy club; avoid generic SaaS styling.",
+    "should_trigger": true
+  },
+  {
+    "query": "Reshape this existing dashboard so its hierarchy, typography, and interactions reflect the logistics operators who use it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Build the new onboarding flow from this product brief with a deliberate visual system, keyboard focus, and reduced motion.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fix the API client retry bug without changing the interface.",
+    "should_trigger": false,
+    "near_miss": "Backend correctness implementation with no design outcome."
+  },
+  {
+    "query": "Create a static exhibition poster as a high-resolution PNG.",
+    "should_trigger": false,
+    "near_miss": "Static visual art belongs to canvas design."
+  },
+  {
+    "query": "Apply the existing Ocean Depths theme to this completed slide deck.",
+    "should_trigger": false,
+    "near_miss": "Applying an established artifact theme does not require frontend design."
+  }
+]

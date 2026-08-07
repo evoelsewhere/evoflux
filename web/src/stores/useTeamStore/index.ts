@@ -58,7 +58,7 @@ function effectiveLeadModel(state: TeamStore, leadName: string | null, requested
 function availableModelRegistry() {
   return queryClient.fetchQuery({
     queryKey: queryKeys.agentFiles.registry(),
-    queryFn: getRegistry,
+    queryFn: () => getRegistry(),
     staleTime: Infinity,
   }).catch(() => null)
 }

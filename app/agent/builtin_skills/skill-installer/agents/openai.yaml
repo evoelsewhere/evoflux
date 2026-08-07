@@ -1,0 +1,6 @@
+interface:
+  display_name: "Install and Author Skills"
+  short_description: "Create and manage portable skill bundles"
+  default_prompt: "Use $skill-installer to create, import, or update this portable skill bundle."
+policy:
+  allow_implicit_invocation: false

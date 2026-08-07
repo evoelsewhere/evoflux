@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Create an original museum poster about deep-sea exploration and deliver both PNG and print-ready PDF versions.",
+    "should_trigger": true
+  },
+  {
+    "query": "Design a static album cover using geometric forms, minimal text, and a strong editorial composition.",
+    "should_trigger": true
+  },
+  {
+    "query": "Make a high-resolution piece of wall art from this brief, using only original visual language and the bundled fonts.",
+    "should_trigger": true
+  },
+  {
+    "query": "Build an interactive p5.js particle field whose composition changes with a seed.",
+    "should_trigger": false,
+    "near_miss": "Interactive code-generated artwork belongs to algorithmic art."
+  },
+  {
+    "query": "Redesign the onboarding screen in our React application and implement it responsively.",
+    "should_trigger": false,
+    "near_miss": "Product interface design rather than a static canvas artifact."
+  },
+  {
+    "query": "Create a twelve-slide investor presentation from these notes.",
+    "should_trigger": false,
+    "near_miss": "A presentation deck requires the PowerPoint workflow."
+  }
+]

@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Review pull request 482 in the payments repository, report only actionable defects, and summarize check status.",
+    "should_trigger": true
+  },
+  {
+    "query": "Re-review the current merge request after the author's fixes and resolve only discussions that are actually addressed.",
+    "should_trigger": true
+  },
+  {
+    "query": "Follow the checks on this PR and merge it only if required approvals and protections pass.",
+    "should_trigger": true
+  },
+  {
+    "query": "Audit my uncommitted local diff for correctness, but do not contact a Git provider.",
+    "should_trigger": false,
+    "near_miss": "A local read-only diff review has no PR lifecycle operation."
+  },
+  {
+    "query": "Create a commit from these files and push my current branch.",
+    "should_trigger": false,
+    "near_miss": "Branch and commit operations are not pull-request review."
+  },
+  {
+    "query": "Investigate where the merge policy is implemented in this codebase.",
+    "should_trigger": false,
+    "near_miss": "Source investigation rather than reviewing a specific PR or MR."
+  }
+]

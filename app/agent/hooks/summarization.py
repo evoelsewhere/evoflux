@@ -36,6 +36,7 @@ Usage::
 
 from __future__ import annotations
 
+import json
 import time
 from typing import TYPE_CHECKING
 
@@ -50,6 +51,7 @@ from app.agent.outbound_redaction import (
 )
 from app.agent.providers.base import LLMProviderBase
 from app.agent.providers.model_metadata import get_model_limits
+from app.agent.skills.activation import is_skill_activation_content
 from app.agent.schemas.chat import (
     AssistantMessage,
     HumanMessage,
@@ -88,6 +90,15 @@ DEFAULT_KEEP_LAST_ASSISTANTS = 3
 CODING_KEEP_LAST_ASSISTANTS = 2
 DEFAULT_MAX_TOKEN_LENGTH = 30000
 DEFAULT_MIN_MESSAGES_SINCE_LAST_SUMMARY = 4
+# Activated skills are executable policy, not ordinary conversation history.
+# Preserve the newest exact activation for each skill across compaction up to a
+# bounded aggregate. The bound is measured over the UTF-8 bytes of the complete
+# assistant/tool group, not only the skill result, so a mixed tool-call batch
+# cannot smuggle unrelated output into durable context.
+MAX_DURABLE_SKILL_BYTES = 100_000
+# Compatibility for extensions importing the old constant. Budget accounting
+# itself is byte-based below.
+MAX_DURABLE_SKILL_CHARS = MAX_DURABLE_SKILL_BYTES
 
 
 # ── Bundled summariser prompts ────────────────────────────────────────────
@@ -314,6 +325,89 @@ def _expand_tool_pair_ids(messages: list, seed_ids: set[int]) -> set[int]:
                 changed = True
 
     return expanded
+
+
+def _durable_skill_message_ids(
+    messages: list,
+    *,
+    max_bytes: int = MAX_DURABLE_SKILL_BYTES,
+) -> set[int]:
+    """Return exact activation pairs that must survive summarisation.
+
+    Resource reads and catalog listings are ordinary evidence and may be
+    compacted. Only successful ``action=load`` calls whose result contains the
+    canonical ``<skill_content>`` wrapper are durable. Newest activations win
+    when duplicate history exists.
+    """
+
+    tool_messages_by_call: dict[str, ToolMessage] = {
+        message.tool_call_id: message
+        for message in messages
+        if isinstance(message, ToolMessage) and message.tool_call_id
+    }
+    protected: set[int] = set()
+    protected_names: set[str] = set()
+    used_bytes = 0
+
+    def context_bytes(message: object) -> int:
+        """Approximate provider-visible size without serialising model objects."""
+
+        total = len(str(getattr(message, "content", "") or "").encode("utf-8"))
+        if isinstance(message, AssistantMessage) and message.tool_calls:
+            for call in message.tool_calls:
+                total += len(str(call.id or "").encode("utf-8"))
+                total += len(str(call.function.name or "").encode("utf-8"))
+                total += len(str(call.function.arguments or "").encode("utf-8"))
+        elif isinstance(message, ToolMessage):
+            total += len(str(message.tool_call_id or "").encode("utf-8"))
+            total += len(str(message.name or "").encode("utf-8"))
+        return total
+
+    for message in reversed(messages):
+        if not isinstance(message, AssistantMessage) or not message.tool_calls:
+            continue
+        durable_names: list[str] = []
+        durable_results: list[ToolMessage] = []
+        for call in message.tool_calls:
+            if call.function.name != "skill":
+                continue
+            try:
+                arguments = json.loads(call.function.arguments or "{}")
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if arguments.get("action", "load") != "load":
+                continue
+            name = arguments.get("skill_name")
+            result = tool_messages_by_call.get(call.id)
+            if (
+                not isinstance(name, str)
+                or not name
+                or name in protected_names
+                or result is None
+                or not is_skill_activation_content(result.content, name)
+            ):
+                continue
+            durable_names.append(name)
+            durable_results.append(result)
+
+        if not durable_results:
+            continue
+        # Providers require a tool-call assistant row and all its outputs to
+        # remain together. Charge that entire atomic group to the durable
+        # budget before protecting any part of it.
+        group_ids = _expand_tool_pair_ids(messages, {id(message)})
+        group_bytes = sum(
+            context_bytes(candidate)
+            for candidate in messages
+            if id(candidate) in group_ids and id(candidate) not in protected
+        )
+        if used_bytes + group_bytes > max_bytes:
+            continue
+        protected.update(group_ids)
+        protected_names.update(durable_names)
+        used_bytes += group_bytes
+
+    return protected
 
 
 def prompt_token_threshold_for_model(model_id: str | None) -> int:
@@ -602,9 +696,17 @@ class SummarizationHook(BaseAgentHook):
         else:
             to_summarise = eligible
 
+        durable_skill_ids = _durable_skill_message_ids(eligible)
+        if durable_skill_ids:
+            to_summarise = [
+                message
+                for message in to_summarise
+                if id(message) not in durable_skill_ids
+            ]
         to_summarise_ids = _expand_tool_pair_ids(
             eligible, {id(m) for m in to_summarise}
         )
+        to_summarise_ids.difference_update(durable_skill_ids)
         to_summarise = [m for m in eligible if id(m) in to_summarise_ids]
 
         if not to_summarise:
@@ -704,6 +806,16 @@ class SummarizationHook(BaseAgentHook):
             is_summary=True,
         )
         state.messages.insert(first_kept_idx, summary_msg)
+        # Reconcile the ephemeral fast-path cache with exact activations that
+        # are still visible. If an old skill fell outside the durable budget,
+        # the next exact use may load it again instead of incorrectly claiming
+        # that paraphrased/hidden instructions remain active.
+        try:
+            from app.agent.tools.builtin.skill import _loaded_skills_from_messages
+
+            state.metadata["loaded_skills"] = _loaded_skills_from_messages(state)
+        except Exception as exc:  # noqa: BLE001 - compaction must remain available
+            logger.warning("skill_activation_reconcile_failed error={}", exc)
         # checkpointer.sync() (called by the loop after before_model)
         # persists the mutated state.messages.
 

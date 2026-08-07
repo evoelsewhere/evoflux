@@ -1373,7 +1373,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     setup:
       'Coding ワークスペースまたはプロジェクト — インデックスはファイル変更で増分実行。Graph workbench ツールを開き視覚探索し、大きな外部編集後にツリーが古く見えたら再インデックス。',
     tricks: [
-      'ネイティブ code_graph のスキーマとサービスが graph ナビゲーションを所有し、graph skill や prompt injection は不要です。',
+      'code-graph-navigation は段階的に読み込む workflow ガイダンスで、code_graph は正確なシンボルを実行するネイティブツールです。',
       '既知の正確なシンボルと構造関係には code_graph、発見・リテラル・コメント・設定キーにはソース検索を使います。',
       'Graph workbench ツールを開き視覚探索し、必要なら再インデックス。',
       'クロスレポ解決は 3 つの決定的ティア（reattach、manifests/FQNs、sibling FTS5）で、リンクに LLM 呼び出しなし。',
@@ -1381,7 +1381,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'graph ナビ後の重要な発見はライブソースで検証 — インデックスは外部編集に遅れることがあります。',
       '「パッケージ全体を読んで」ではなく構造質問（「誰が X を呼ぶ？」）。',
       'マルチレポプロジェクトはクロスレポエッジ; スタンドアロンレポも 1 ツリー内で恩恵。',
-      'リクエスト文から graph が注入または暗黙ルーティングされることはありません。'
+      'Coding モードは skill 本文を注入せず、生のリクエスト文をキーワードで graph query にルーティングしません。'
 ],
     blocks: [
       {
@@ -1813,7 +1813,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'チームメンバーは Settings → Agents; パック検証は Settings → Skills; サーバー追加は Settings → MCP。チャットからは /skill: またはコマンドパレットの New Agent / New Skill ショートカット。',
     tricks: [
       'エージェントは YAML frontmatter 付き .md — diff 可能でバージョン管理しやすい。',
-      'Skills は Settings → Skills で有効後に /skill: 下に出ます。',
+      'Settings → Skills では Work、Coding、Both ごとにスキルを作成・編集・表示・絞り込みでき、有効なスキルは一致するセッションの /skill: にだけ表示されます。',
       'MCP ステータスドット: ready / starting / auth / error / stopped。',
       'MCP ツールはネイティブと同じ権限ルールを継承。',
       'チームは work / coding にスコープ。',
@@ -1858,7 +1858,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          '横断: code_graph はネイティブ Coding ツールで、付随 skill は不要です。',
+          '横断: code-graph-navigation が workflow を案内し、ネイティブ code_graph が正確なシンボル operation を検証・実行します。',
           '横断: workflows と skills はどちらも / に出るにはスコープ有効性が必要。',
           '横断: 権限 Always ルールは MCP ツールにも適用 — まず Once を優先。'
 ],

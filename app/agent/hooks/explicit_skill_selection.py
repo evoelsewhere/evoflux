@@ -1,17 +1,10 @@
-"""Load only a skill explicitly selected by the user.
-
-There is deliberately no keyword, intent, or prose classification here. A
-normal request remains untouched and the model can call the ordinary ``skill``
-tool. The composer directive is deterministic user input, so it is safe to
-materialise as the equivalent tool exchange.
-"""
+"""Materialise a user-selected skill through the canonical activation path."""
 
 from __future__ import annotations
 
 import json
 import re
 import uuid
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -29,15 +22,20 @@ if TYPE_CHECKING:
     from app.agent.state import AgentState, RunContext
 
 
-_DIRECTIVE_RE = re.compile(
+_SLASH_DIRECTIVE_RE = re.compile(
     r"^/skill:"
     r"([a-zA-Z0-9][a-zA-Z0-9._-]*(?::[a-zA-Z0-9][a-zA-Z0-9._-]*)?)"
     r"(?=\s|$)"
 )
+_DOLLAR_DIRECTIVE_RE = re.compile(
+    r"(?<![a-zA-Z0-9_$])\$"
+    r"([a-zA-Z0-9][a-zA-Z0-9._-]*(?::[a-zA-Z0-9][a-zA-Z0-9._-]*)?)"
+    r"(?=\s|[.,!?;:]|$)"
+)
 
 
 class ExplicitSkillSelectionHook(BaseAgentHook):
-    """Materialise a composer-selected ``/skill:<name>`` directive."""
+    """Materialise an exact ``$name`` or ``/skill:<name>`` directive."""
 
     async def before_agent(self, ctx: "RunContext", state: "AgentState") -> None:
         user_index, user_text = self._latest_user_message(state)
@@ -47,9 +45,14 @@ class ExplicitSkillSelectionHook(BaseAgentHook):
         if selector is None:
             return
 
-        from app.agent.tools.builtin.skill import discover_skills
+        from app.agent.tools.builtin.skill import discover_skill_records_runtime
 
-        discovered = discover_skills()
+        mode = "coding" if state.metadata.get("team_mode") == "coding" else "work"
+        discovered = {
+            name: record
+            for name, record in discover_skill_records_runtime(mode=mode).items()
+            if record.valid and record.user_invocable and mode in record.modes
+        }
         skill_name = self._resolve_name(selector, discovered)
         if skill_name is None:
             logger.warning(
@@ -60,7 +63,7 @@ class ExplicitSkillSelectionHook(BaseAgentHook):
             return
         if skill_name in self._loaded_skills(state):
             return
-        if self._inject(state, skill_name, discovered, insert_at=user_index + 1):
+        if await self._inject(state, skill_name, discovered, insert_at=user_index + 1):
             logger.info(
                 "skill_explicit_selected agent={} skill={}",
                 ctx.agent_name,
@@ -82,12 +85,14 @@ class ExplicitSkillSelectionHook(BaseAgentHook):
         for line in message.splitlines():
             if not line or line == ">" or line.startswith("> "):
                 continue
-            match = _DIRECTIVE_RE.match(line)
+            match = _SLASH_DIRECTIVE_RE.match(line) or _DOLLAR_DIRECTIVE_RE.search(
+                line
+            )
             return match.group(1) if match else None
         return None
 
     @staticmethod
-    def _resolve_name(selector: str, discovered: dict[str, dict]) -> str | None:
+    def _resolve_name(selector: str, discovered: dict[str, object]) -> str | None:
         if selector in discovered:
             return selector
         nested = selector.replace(":", "/", 1)
@@ -95,42 +100,35 @@ class ExplicitSkillSelectionHook(BaseAgentHook):
 
     @staticmethod
     def _loaded_skills(state: "AgentState") -> set[str]:
-        loaded = set(state.metadata.get("loaded_skills", {}).keys())
-        for message in state.messages:
-            if not isinstance(message, AssistantMessage):
-                continue
-            for call in message.tool_calls or []:
-                if call.function.name != "skill":
-                    continue
-                try:
-                    name = json.loads(call.function.arguments).get("skill_name")
-                except (json.JSONDecodeError, TypeError, AttributeError):
-                    continue
-                if isinstance(name, str) and name:
-                    loaded.add(name)
-        return loaded
+        # Use the same canonical rehydration contract as the runtime tool:
+        # only a visible, paired ``action=load`` result containing the
+        # structured <skill_content> activation counts. Metadata is an
+        # ephemeral cache and may be stale after restore/compaction, while a
+        # list/resource/failed or excluded historical call is not activation.
+        from app.agent.tools.builtin.skill import _loaded_skills_from_messages
+
+        loaded = _loaded_skills_from_messages(state)
+        state.metadata["loaded_skills"] = loaded
+        return set(loaded)
 
     @staticmethod
-    def _inject(
+    async def _inject(
         state: "AgentState",
         skill_name: str,
-        discovered: dict[str, dict],
+        discovered: dict[str, object],
         *,
         insert_at: int,
     ) -> bool:
-        from app.agent.tools.builtin.skill import _parse_frontmatter, _render_tokens
+        from app.agent.skills.activation import activate_skill
+        from app.agent.skills.models import SkillRecord
 
-        info = discovered.get(skill_name)
-        if info is None:
+        record = discovered.get(skill_name)
+        if not isinstance(record, SkillRecord):
             return False
-        skill_dir = Path(info["dir"])
-        skill_file = skill_dir / "SKILL.md"
         try:
-            text = skill_file.read_text(encoding="utf-8")
-        except OSError:
+            rendered = await activate_skill(record)
+        except (OSError, UnicodeError, ValueError):
             return False
-        _, body = _parse_frontmatter(text)
-        rendered = _render_tokens(body, skill_dir=skill_dir)
         call_id = f"explicit_{uuid.uuid4().hex[:12]}"
         state.messages[insert_at:insert_at] = [
             AssistantMessage(
@@ -140,7 +138,9 @@ class ExplicitSkillSelectionHook(BaseAgentHook):
                         id=call_id,
                         function=FunctionCall(
                             name="skill",
-                            arguments=json.dumps({"skill_name": skill_name}),
+                            arguments=json.dumps(
+                                {"action": "load", "skill_name": skill_name}
+                            ),
                         ),
                     )
                 ],

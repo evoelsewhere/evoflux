@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Use $plugin-installer to install the EvoFlux plugin from https://plugins.example.com/calendar.zip.",
+    "should_trigger": true
+  },
+  {
+    "query": "Use $plugin-installer to validate and update the existing plugin from this new release URL without touching other plugins.",
+    "should_trigger": true
+  },
+  {
+    "query": "Use $plugin-installer to add this trusted internal plugin bundle URL and report its installed manifest.",
+    "should_trigger": true
+  },
+  {
+    "query": "Install lodash into the web application's package.json.",
+    "should_trigger": false,
+    "near_miss": "A project package dependency is not an EvoFlux plugin."
+  },
+  {
+    "query": "Import this Agent Skill folder and make it available in Coding mode.",
+    "should_trigger": false,
+    "near_miss": "Portable skills use the skill installation workflow."
+  },
+  {
+    "query": "Create a new plugin architecture from scratch with a manifest and source code.",
+    "should_trigger": false,
+    "near_miss": "Plugin authoring is not URL-based installation."
+  }
+]

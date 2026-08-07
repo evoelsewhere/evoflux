@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Move the user identifier from integer to UUID across three services while old mobile clients remain active for 60 days.",
+    "should_trigger": true
+  },
+  {
+    "query": "Plan an expand-contract database migration for renaming customer_id, including backfill, mixed-version tests, and rollback.",
+    "should_trigger": true
+  },
+  {
+    "query": "Replace the shared event schema across two repositories without dropping events during independent deploys.",
+    "should_trigger": true
+  },
+  {
+    "query": "Refactor this private helper to return a dataclass and update its only caller in the same commit.",
+    "should_trigger": false,
+    "near_miss": "Atomic internal implementation with no coexistence window."
+  },
+  {
+    "query": "Investigate which services currently consume CustomerUpdated.",
+    "should_trigger": false,
+    "near_miss": "Read-only dependency investigation, not a transition."
+  },
+  {
+    "query": "Compare Kafka and SQS for a future event system.",
+    "should_trigger": false,
+    "near_miss": "A technology decision, not an executable migration."
+  }
+]

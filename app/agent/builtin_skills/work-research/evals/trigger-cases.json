@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Research the EU AI Act obligations that apply to a customer-support classifier as of today and cite the governing sources.",
+    "should_trigger": true
+  },
+  {
+    "query": "Compare the current pricing and data-retention terms of our three shortlisted observability vendors using primary sources.",
+    "should_trigger": true
+  },
+  {
+    "query": "Produce a brief on recent evidence for four-day workweeks, separating trial outcomes from causal claims and noting methodology limits.",
+    "should_trigger": true
+  },
+  {
+    "query": "What is the official website for PostgreSQL?",
+    "should_trigger": false,
+    "near_miss": "A trivial lookup does not need a research workflow."
+  },
+  {
+    "query": "Analyze the customer survey CSV I attached and identify churn drivers.",
+    "should_trigger": false,
+    "near_miss": "Analysis of supplied data rather than source gathering."
+  },
+  {
+    "query": "Brainstorm ten names for our internal research program.",
+    "should_trigger": false,
+    "near_miss": "Creative ideation with no evidence requirement."
+  }
+]

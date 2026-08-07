@@ -1,0 +1,32 @@
+[
+  {
+    "query": "Can you find every place that enables WebBright and explain the runtime path?",
+    "should_trigger": true,
+    "expected_route": ["coding-investigation"]
+  },
+  {
+    "query": "The checkout test hangs only in CI; reproduce it, find the race, and fix it.",
+    "should_trigger": true,
+    "expected_route": ["coding-debugging"]
+  },
+  {
+    "query": "Move these API consumers to v2 without breaking the older mobile release, with rollback gates.",
+    "should_trigger": true,
+    "expected_route": ["coding-migration"]
+  },
+  {
+    "query": "Review this authentication diff for tenant escapes; don't edit anything.",
+    "should_trigger": true,
+    "expected_route": ["coding-security"]
+  },
+  {
+    "query": "Open package.json and tell me the package name.",
+    "should_trigger": false,
+    "expected_route": []
+  },
+  {
+    "query": "Rename this local variable from n to count.",
+    "should_trigger": false,
+    "expected_route": []
+  }
+]

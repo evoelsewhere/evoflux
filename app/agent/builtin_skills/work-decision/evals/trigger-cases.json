@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Recommend build versus buy for identity verification given a six-month launch, two engineers, and strict data residency.",
+    "should_trigger": true
+  },
+  {
+    "query": "Choose between the two shortlisted analytics vendors, show what would reverse the recommendation, and define a pilot.",
+    "should_trigger": true
+  },
+  {
+    "query": "We disagree whether to pause the rollout after these experiment results. Make the decision and record assumptions.",
+    "should_trigger": true
+  },
+  {
+    "query": "Research identity verification vendors and summarize their current pricing.",
+    "should_trigger": false,
+    "near_miss": "Evidence gathering with no requested choice."
+  },
+  {
+    "query": "Document our final decision to use Vendor A in a short memo.",
+    "should_trigger": false,
+    "near_miss": "The choice is already made; this is writing or knowledge capture."
+  },
+  {
+    "query": "Create the rollout tasks for the already-approved vendor.",
+    "should_trigger": false,
+    "near_miss": "Execution planning after a settled decision."
+  }
+]

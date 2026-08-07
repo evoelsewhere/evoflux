@@ -13,12 +13,35 @@ import type {
   SkillListResponse,
   SkillDetail,
   SkillBundleFileWrite,
+  SkillMode,
+  SkillRuntimeSettingsUpdate,
   SkillDeleteResponse,
   CommandListResponse,
   CommandRenderResponse,
   SnippetListResponse,
   SnippetRenderResponse,
 } from '../types'
+
+/** Discovery scope shared by the skill catalog and the agent registry. */
+export interface SkillDiscoveryScope {
+  /** Authorized workspace roots, in discovery-precedence order. */
+  workspaces?: readonly string[] | null
+  mode?: SkillMode | null
+}
+
+function skillDiscoveryQuery(scope?: SkillDiscoveryScope): string {
+  const params = new URLSearchParams()
+  const seen = new Set<string>()
+  for (const rawWorkspace of scope?.workspaces ?? []) {
+    const workspace = rawWorkspace.trim()
+    if (!workspace || seen.has(workspace)) continue
+    seen.add(workspace)
+    params.append('workspace', workspace)
+  }
+  if (scope?.mode) params.set('mode', scope.mode)
+  const query = params.toString()
+  return query ? `?${query}` : ''
+}
 
 export async function listAgents(): Promise<AgentListResponse> {
   const res = await fetch(`${apiBaseUrl()}/agents`)
@@ -58,8 +81,8 @@ export async function deleteAgent(name: string): Promise<AgentDeleteResponse> {
   return res.json()
 }
 
-export async function getRegistry(): Promise<RegistryResponse> {
-  const res = await fetch(`${apiBaseUrl()}/agents/registry`)
+export async function getRegistry(scope?: SkillDiscoveryScope): Promise<RegistryResponse> {
+  const res = await fetch(`${apiBaseUrl()}/agents/registry${skillDiscoveryQuery(scope)}`)
   if (!res.ok) await parseDetailOrThrow(res, 'getRegistry')
   return res.json()
 }
@@ -79,14 +102,19 @@ export async function bulkUpdateAgentModel(
 
 // ── /skills ──────────────────────────────────────────────────────────────────
 
-export async function listSkillFiles(): Promise<SkillListResponse> {
-  const res = await fetch(`${apiBaseUrl()}/skills`)
+export async function listSkillFiles(scope?: SkillDiscoveryScope): Promise<SkillListResponse> {
+  const res = await fetch(`${apiBaseUrl()}/skills${skillDiscoveryQuery(scope)}`)
   if (!res.ok) await parseDetailOrThrow(res, 'listSkills')
   return res.json()
 }
 
-export async function getSkill(name: string): Promise<SkillDetail> {
-  const res = await fetch(`${apiBaseUrl()}/skills/${encodeURIComponent(name)}`)
+export async function getSkill(
+  name: string,
+  scope?: SkillDiscoveryScope,
+): Promise<SkillDetail> {
+  const res = await fetch(
+    `${apiBaseUrl()}/skills/${encodeURIComponent(name)}${skillDiscoveryQuery(scope)}`,
+  )
   if (!res.ok) await parseDetailOrThrow(res, `GET /skills/${name}`)
   return res.json()
 }
@@ -95,11 +123,12 @@ export async function createSkill(
   name: string,
   content: string,
   files: SkillBundleFileWrite[] = [],
+  modes: SkillMode[] = ['work', 'coding'],
 ): Promise<SkillDetail> {
   const res = await fetch(`${apiBaseUrl()}/skills`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, content, files }),
+    body: JSON.stringify({ name, content, files, modes }),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'POST /skills')
   return res.json()
@@ -110,8 +139,9 @@ export async function updateSkill(
   content: string,
   files: SkillBundleFileWrite[] = [],
   deletedFiles: string[] = [],
+  scope?: SkillDiscoveryScope,
 ): Promise<SkillDetail> {
-  const res = await fetch(`${apiBaseUrl()}/skills/${encodeURIComponent(name)}`, {
+  const res = await fetch(`${apiBaseUrl()}/skills/${encodeURIComponent(name)}${skillDiscoveryQuery(scope)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, content, files, deleted_files: deletedFiles }),
@@ -120,8 +150,47 @@ export async function updateSkill(
   return res.json()
 }
 
-export async function deleteSkill(name: string): Promise<SkillDeleteResponse> {
-  const res = await fetch(`${apiBaseUrl()}/skills/${encodeURIComponent(name)}`, { method: 'DELETE' })
+export async function updateSkillSettings(
+  name: string,
+  settings: SkillRuntimeSettingsUpdate,
+  scope?: SkillDiscoveryScope,
+): Promise<SkillDetail> {
+  const res = await fetch(
+    `${apiBaseUrl()}/skills/${encodeURIComponent(name)}${skillDiscoveryQuery(scope)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, `PATCH /skills/${name}`)
+  return res.json()
+}
+
+export async function resetSkillSettings(
+  name: string,
+  settingsId: string,
+  scope?: SkillDiscoveryScope,
+): Promise<SkillDetail> {
+  const scopedQuery = skillDiscoveryQuery(scope)
+  const settingsQuery =
+    `${scopedQuery}${scopedQuery ? '&' : '?'}settings_id=${encodeURIComponent(settingsId)}`
+  const res = await fetch(
+    `${apiBaseUrl()}/skills/${encodeURIComponent(name)}${settingsQuery}`,
+    { method: 'DELETE' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, `DELETE /skills/${name} runtime settings`)
+  return res.json()
+}
+
+export async function deleteSkill(
+  name: string,
+  scope?: SkillDiscoveryScope,
+): Promise<SkillDeleteResponse> {
+  const res = await fetch(
+    `${apiBaseUrl()}/skills/${encodeURIComponent(name)}${skillDiscoveryQuery(scope)}`,
+    { method: 'DELETE' },
+  )
   if (!res.ok) await parseDetailOrThrow(res, `DELETE /skills/${name}`)
   return res.json()
 }

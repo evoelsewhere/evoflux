@@ -1,0 +1,6 @@
+interface:
+  display_name: "Migrate Code Systems"
+  short_description: "Stage compatible transitions with rollback gates"
+  default_prompt: "Use $coding-migration to design and execute this transition with compatibility and rollback proof."
+policy:
+  allow_implicit_invocation: false

@@ -20,7 +20,7 @@
 | P1 | Watcher filtering covered source extensions only. | Manifest, path-dependency, `.gitignore`, and TS alias edits did not refresh graph relationships. | Recognize graph metadata, perform a full relationship rebuild, and re-run cross-repo resolution. |
 | P1 | Previously resolved cross-repo links survived package/layout metadata changes without reevaluation. | A link could remain confidently attached after its evidence changed. | Invalidate active resolver-produced links involving that workspace; preserve rejected/manual decisions. |
 | P1 | The watcher was paused for an entire agent run, including graph queries made after edits in that run. | The same agent could write a symbol and immediately receive a stale graph result. | All four graph tools now cross a synchronous incremental freshness barrier before their first DB query; the barrier bypasses pause, folds pending debounce work, and waits for active index jobs/passes. |
-| P1 | Earlier revisions attached graph-navigation preload through Coding-mode policy. | The mode-specific default coupled duplicated skill prose to loader behavior and prompt policy. | Superseded: the graph skill and preload path were removed; `code_graph` is the single native Coding contract and no mode-level graph injection remains. |
+| P1 | Earlier revisions attached graph-navigation preload through Coding-mode policy. | The mode-specific default coupled duplicated skill prose to loader behavior and prompt policy. | Historical remediation: the preload path was removed and execution moved behind the single native `code_graph` contract. Superseded on 2026-08-07: `code-graph-navigation` is again available as progressively disclosed Coding-only workflow guidance, while no mode-level graph injection remains. |
 | P2 | There was no product metric for graph-first adoption or the efficiency of graph results. | Regressions in navigation behavior or result cost could not be detected from production telemetry. | Record first navigation strategy, per-tool count/latency, result tokens, and explicitly labeled estimates of avoided full-file reads and tokens. |
 
 ## Accuracy policy
@@ -42,7 +42,7 @@ The following groups pass after remediation:
 - code-graph, project reindex, project cross-repo, filtering, path-dependency, usage-edge, and auto-index API tests;
 - Ruff check and format verification for every changed Python file.
 
-New regressions specifically cover qualified unchanged targets, live `tsconfig` edits, metadata-triggered full indexing, non-cancellable in-flight indexing, retry after background indexing, query-time flush while paused, freshness waiting on in-flight work, project-membership bootstrap, metadata invalidation, first-open cross-repo chaining, queued resolver follow-up passes, absence of graph prompt/skill preload, explicit opt-out, graph-first classification, latency recording, and saving estimates.
+New regressions specifically cover qualified unchanged targets, live `tsconfig` edits, metadata-triggered full indexing, non-cancellable in-flight indexing, retry after background indexing, query-time flush while paused, freshness waiting on in-flight work, project-membership bootstrap, metadata invalidation, first-open cross-repo chaining, queued resolver follow-up passes, absence of mode-level graph prompt and skill-body preload, explicit opt-out, graph-first classification, latency recording, and saving estimates.
 
 ## Residual limits
 

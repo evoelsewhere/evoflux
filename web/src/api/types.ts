@@ -877,14 +877,43 @@ export interface AgentBulkModelResponse {
 
 // ── Skill management ────────────────────────────────────────────────────────
 
+export type SkillMode = 'work' | 'coding'
+
+export interface SkillRuntimeSettingsUpdate {
+  settings_id: string
+  modes: SkillMode[]
+  allow_implicit_invocation: boolean
+  user_invocable: boolean
+}
+
+export interface SkillDiagnostic {
+  code: string
+  message: string
+  severity: 'warning' | 'error'
+}
+
 export interface SkillSummary {
   name: string
   description: string
+  display_name: string | null
+  short_description: string | null
+  default_prompt: string | null
+  allow_implicit_invocation: boolean
+  user_invocable: boolean
+  resource_count: number
+  symlinked: boolean
+  diagnostics: SkillDiagnostic[]
+  shadowed_paths: string[]
   valid: boolean
   error: string | null
   built_in: boolean
   editable: boolean
+  settings_editable: boolean
+  settings_id: string
+  settings_overridden: boolean
   source: string
+  modes: SkillMode[]
+  dependencies: Record<string, unknown>[]
 }
 
 export interface SkillBundleFile {
@@ -907,10 +936,25 @@ export interface SkillDetail {
   path: string
   content: string
   description: string
+  display_name: string | null
+  short_description: string | null
+  default_prompt: string | null
+  allow_implicit_invocation: boolean
+  user_invocable: boolean
+  resource_count: number
+  symlinked: boolean
+  diagnostics: SkillDiagnostic[]
+  shadowed_paths: string[]
   error: string | null
   built_in: boolean
   editable: boolean
+  settings_editable: boolean
+  settings_id: string
+  settings_overridden: boolean
   source: string
+  modes: SkillMode[]
+  dependencies: Record<string, unknown>[]
+  bundle_truncated: boolean
   files: SkillBundleFile[]
 }
 
@@ -997,6 +1041,12 @@ export interface ToolCatalogEntry {
 export interface SkillCatalogEntry {
   name: string
   description: string
+  display_name?: string | null
+  short_description?: string | null
+  allow_implicit_invocation?: boolean
+  user_invocable?: boolean
+  modes: SkillMode[]
+  dependencies: Record<string, unknown>[]
 }
 
 export interface ModelCatalogEntry {

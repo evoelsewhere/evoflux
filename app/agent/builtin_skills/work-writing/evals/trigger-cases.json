@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Draft an executive memo recommending the approved pricing change from these analysis notes, preserving every caveat and citation.",
+    "should_trigger": true
+  },
+  {
+    "query": "Rewrite this incident update for affected customers: clear, accountable, no unsupported root-cause claim, and with exact next-update time.",
+    "should_trigger": true
+  },
+  {
+    "query": "Turn the attached policy decisions into publication-ready employee guidance for a global audience.",
+    "should_trigger": true
+  },
+  {
+    "query": "Research whether our incident was caused by the vendor's latest release.",
+    "should_trigger": false,
+    "near_miss": "Evidence gathering must precede writing."
+  },
+  {
+    "query": "Convert this finalized memo to DOCX without changing the wording.",
+    "should_trigger": false,
+    "near_miss": "File-format production rather than substantive writing."
+  },
+  {
+    "query": "Reply 'thanks, received' to this message.",
+    "should_trigger": false,
+    "near_miss": "A trivial reply needs no professional-writing workflow."
+  }
+]
