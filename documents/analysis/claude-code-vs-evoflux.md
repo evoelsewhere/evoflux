@@ -140,11 +140,12 @@ Claude Code can expose its own tools as an MCP server (`src/entrypoints/mcp.ts`)
 #### P1.3: Background shell task tool
 **Problem:** Agent blocks on long-running commands (test suites, builds) and can't multi-task.
 
-**Plan:**
-- Add `shell_bg` tool: runs a command in a detached subprocess, stores PID + output path in session metadata, returns a `task_id`.
-- Add `shell_bg_status` tool: returns `{running: bool, exit_code, tail: str}` for a given `task_id`.
-- Add `shell_bg_wait` tool: blocks until the task completes (with timeout).
-- Backend: reuse `shell_service.py` + a `BgTaskRegistry` similar to `IndexJobRegistry`.
+**Implemented contract:**
+- `shell` yields a session-scoped opaque `process_id` when a command outlives
+  its initial wait window; there is no separate background launch schema.
+- One deferred `process` tool handles list, delta-only poll/wait, and terminate.
+- Full output is journalled once as a session artifact, while every
+  model-facing observation stays bounded.
 
 #### P1.4: Git worktree agent tools
 **Problem:** The agent works directly on `main`/working branch; risky changes can't be isolated.

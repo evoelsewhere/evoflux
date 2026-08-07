@@ -28,7 +28,7 @@ Nguyên tắc xuyên suốt: **ưu tiên kênh có cấu trúc (shell, AX tree, 
 
 | Lớp năng lực | Hiện có trong EvoFlux | Mức độ |
 |---|---|---|
-| Chạy lệnh tùy ý | `shell` (POSIX shell, pipe/`&&`/`$VAR`, background, spill file), `terminal_run` (lead-only, **live PTY chung với user**), `bg`/`shell_bg_*` | Toàn bộ CLI macOS: `open`, `osascript`/JXA, `shortcuts run`, `defaults`, `pbpaste/pbcopy`, `caffeinate`, `screencapture`, `launchctl`, `kill`, AppleScript per-app… |
+| Chạy lệnh tùy ý | `shell` (POSIX shell, pipe/`&&`/`$VAR`, output artifact), `process` (tiếp tục lệnh chạy lâu với delta-only output), `terminal_run` (lead-only, **live PTY chung với user**) | Toàn bộ CLI macOS: `open`, `osascript`/JXA, `shortcuts run`, `defaults`, `pbpaste/pbcopy`, `caffeinate`, `screencapture`, `launchctl`, `kill`, AppleScript per-app… |
 | Filesystem | `read/write/edit/patch/rm/ls/glob/grep`; absolute path đi khắp máy (trừ denylist) | Đầy đủ |
 | Web | `browser_use`: navigate/snapshot/click/fill/select/extract/**screenshot multimodal**/evaluate JS/tab/network; `web_search`, `web_fetch`, `image_search` | Browser = solved |
 | App-level workflows | `preview` (dev server), `worktree_*`, `create_pull_request`, LSP tools, code graph | Đầy đủ cho coding |
