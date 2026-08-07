@@ -1,0 +1,6 @@
+interface:
+  display_name: "Update Agent Configuration"
+  short_description: "Safely modify explicit agent configuration"
+  default_prompt: "Use $self-healing to apply this explicit agent configuration change safely."
+policy:
+  allow_implicit_invocation: false

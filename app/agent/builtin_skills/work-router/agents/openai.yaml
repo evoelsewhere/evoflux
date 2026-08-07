@@ -1,0 +1,6 @@
+interface:
+  display_name: "Work Workflow Router"
+  short_description: "Routes knowledge work to focused specialists"
+  default_prompt: "Use $work-router to choose the right workflow for this work request."
+policy:
+  allow_implicit_invocation: true

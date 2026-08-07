@@ -11,7 +11,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.agent.state import AgentState, ModelRequest, RunContext, UsageInfo
-from app.agent.hooks.summarization import CODING_SUMMARY_PROMPT, SummarizationHook
+from app.agent.hooks.summarization import (
+    CODING_SUMMARY_PROMPT,
+    MAX_DURABLE_SKILL_CHARS,
+    SummarizationHook,
+    _durable_skill_message_ids,
+)
 from app.agent.schemas.chat import (
     AssistantMessage,
     FunctionCall,
@@ -1686,14 +1691,100 @@ async def test_assistant_with_none_content_renders_as_empty_string(mock_provider
 # ---------------------------------------------------------------------------
 
 
+def test_oversized_first_skill_activation_is_outside_durable_budget():
+    skill_asst = AssistantMessage(
+        content=None,
+        tool_calls=[
+            ToolCall(
+                id="call_oversized_skill",
+                function=FunctionCall(
+                    name="skill",
+                    arguments='{"action":"load","skill_name":"oversized"}',
+                ),
+            )
+        ],
+    )
+    skill_result = ToolMessage(
+        tool_call_id="call_oversized_skill",
+        name="skill",
+        content=(
+            '<skill_content name="oversized">'
+            + "x" * MAX_DURABLE_SKILL_CHARS
+            + "</skill_content>"
+        ),
+    )
+
+    assert _durable_skill_message_ids([skill_asst, skill_result]) == set()
+
+
+def test_mixed_skill_tool_group_charges_every_output_to_durable_budget():
+    mixed = AssistantMessage(
+        content=None,
+        tool_calls=[
+            ToolCall(
+                id="call_skill",
+                function=FunctionCall(
+                    name="skill",
+                    arguments='{"action":"load","skill_name":"compact"}',
+                ),
+            ),
+            ToolCall(
+                id="call_shell",
+                function=FunctionCall(name="shell", arguments='{"cmd":"large"}'),
+            ),
+        ],
+    )
+    skill_result = ToolMessage(
+        tool_call_id="call_skill",
+        name="skill",
+        content='<skill_content name="compact">Small.</skill_content>',
+    )
+    shell_result = ToolMessage(
+        tool_call_id="call_shell",
+        name="shell",
+        content="x" * 1_000,
+    )
+
+    assert (
+        _durable_skill_message_ids([mixed, skill_result, shell_result], max_bytes=500)
+        == set()
+    )
+
+
+def test_mixed_skill_tool_group_is_preserved_atomically_when_within_budget():
+    mixed = AssistantMessage(
+        content=None,
+        tool_calls=[
+            ToolCall(
+                id="call_skill",
+                function=FunctionCall(
+                    name="skill",
+                    arguments='{"action":"load","skill_name":"compact"}',
+                ),
+            ),
+            ToolCall(
+                id="call_shell",
+                function=FunctionCall(name="shell", arguments='{"cmd":"pwd"}'),
+            ),
+        ],
+    )
+    skill_result = ToolMessage(
+        tool_call_id="call_skill",
+        name="skill",
+        content='<skill_content name="compact">Small.</skill_content>',
+    )
+    shell_result = ToolMessage(
+        tool_call_id="call_shell", name="shell", content="/workspace"
+    )
+
+    assert _durable_skill_message_ids(
+        [mixed, skill_result, shell_result], max_bytes=2_000
+    ) == {id(mixed), id(skill_result), id(shell_result)}
+
+
 @pytest.mark.asyncio
 async def test_skill_tool_messages_preserved_through_summarisation(mock_provider):
-    """Skill tool call/result pairs are sent to the summariser and compacted.
-
-    The summariser request should mirror the normal provider-visible transcript
-    for prompt-cache reuse, so skill tool output is included instead of being
-    filtered out as a special preserved message.
-    """
+    """Exact activated instructions remain visible and bypass paraphrasing."""
     hook = SummarizationHook(
         llm_provider=mock_provider,
         summary_prompt="test summary prompt",
@@ -1707,14 +1798,20 @@ async def test_skill_tool_messages_preserved_through_summarisation(mock_provider
         tool_calls=[
             ToolCall(
                 id="call_skill_1",
-                function=FunctionCall(name="skill", arguments='{"name":"guidelines"}'),
+                function=FunctionCall(
+                    name="skill",
+                    arguments='{"action":"load","skill_name":"guidelines"}',
+                ),
             )
         ],
     )
     skill_result = ToolMessage(
         tool_call_id="call_skill_1",
         name="skill",
-        content="# Guidelines\nLong skill instructions body...",
+        content=(
+            '<skill_content name="guidelines" revision="abc">\n'
+            "# Guidelines\nLong skill instructions body...\n</skill_content>"
+        ),
     )
     other_asst = AssistantMessage(
         content=None,
@@ -1765,15 +1862,15 @@ async def test_skill_tool_messages_preserved_through_summarisation(mock_provider
         _noop_model_handler,
     )
 
-    # 1) Skill and non-skill tool calls both appear in summariser input.
-    assert skill_asst in captured
-    assert skill_result in captured
-    assert "Long skill instructions body" in (skill_result.content or "")
+    # 1) Durable skill policy is not sent to the summariser; ordinary tool
+    # evidence still is.
+    assert skill_asst not in captured
+    assert skill_result not in captured
     assert other_asst in captured
 
-    # 2) Skill and other messages got excluded as part of summarisation.
-    assert skill_asst.exclude_from_context is True
-    assert skill_result.exclude_from_context is True
+    # 2) Skill activation remains exact and visible; other messages compact.
+    assert skill_asst.exclude_from_context is False
+    assert skill_result.exclude_from_context is False
     assert other_asst.exclude_from_context is True
     assert other_result.exclude_from_context is True
 

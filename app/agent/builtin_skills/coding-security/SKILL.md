@@ -1,0 +1,60 @@
+---
+name: coding-security
+description: Use this skill to audit or harden a concrete code path involving trust boundaries, attacker-controlled input, authentication, authorization, tenant isolation, secrets, unsafe parsing, injection, external requests, or supply-chain-sensitive execution. It requires a reachable abuse case and invariant-level remediation; do not use it for generic quality review with no security boundary.
+---
+
+# Secure a code path
+
+Model the reachable attacker and protected operation before enumerating
+vulnerability categories. Never treat a dangerous-looking primitive as an
+exploit without tracing control and impact.
+
+## Establish the security boundary
+
+1. Identify assets, actors, credentials, trust zones, entry points, privilege
+   transitions, and the exact operation being protected.
+2. Define authorization invariants at the resource and action boundary,
+   including object ownership, tenant isolation, role changes, replay, and
+   confused-deputy behavior.
+3. Trace attacker-controlled data through parsing, normalization, validation,
+   policy checks, persistence, rendering, logging, and outbound calls.
+4. Read [references/threat-boundary-checklist.md](references/threat-boundary-checklist.md)
+   when the path crosses tenants, interpreters, file/network boundaries,
+   redirects, deserializers, privileged workers, or third-party dependencies.
+
+## Prove findings
+
+For each candidate issue, establish:
+
+- attacker capability and required preconditions;
+- exact source-to-sink or authorization path;
+- input or state sequence that violates an invariant;
+- confidentiality, integrity, availability, or privilege impact;
+- existing controls and why they do not block the path.
+
+Check injection, traversal, unsafe parsing, request forgery, cross-site output,
+secret exposure, cryptographic misuse, dependency execution, denial of
+service, race conditions, and fail-open behavior only where the boundary makes
+them relevant.
+
+Assign severity from reachability, privilege, blast radius, persistence, and
+recoverability—not from the vulnerability label alone. Avoid live secrets and
+destructive exploitation against real systems.
+
+## Remediate when authorized
+
+Restore the invariant at the narrowest owning boundary. Prefer allowlists,
+parameterization, established parsers, resource-level authorization, bounded
+work, and vetted cryptographic primitives. Do not invent sanitizers or custom
+cryptography.
+
+Add negative tests for bypasses and adjacent tenants/resources. Verify secure
+failure behavior, auditability, and any required key rotation, data cleanup,
+configuration change, or deployment sequence.
+
+## Deliverable
+
+Report scope and threat model, proven findings with severity and evidence,
+invariant-level fixes, negative regression coverage, and residual or
+operational risk. If no reachable issue is found, state the examined boundary
+and remaining verification gaps.

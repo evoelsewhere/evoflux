@@ -1,41 +1,112 @@
 import { useState } from 'react'
 import { Sparkles } from 'lucide-react'
 
-import { useCreateSkillMutation } from '@/queries'
+import { useCreateSkillMutation, useUpdateSkillSettingsMutation } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
 import { ApiValidationError } from '@/api/client'
 import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
-import {
-  SettingsGroup,
-  SettingsPage,
-} from '@/components/settings/SettingsLayout'
-import {
-  SkillBundleEditor,
-} from '@/components/settings/SkillBundleEditor'
+import { SettingsGroup, SettingsPage } from '@/components/settings/SettingsLayout'
+import { SkillBundleEditor } from '@/components/settings/SkillBundleEditor'
+import { SkillModeSelector } from '@/components/settings/SkillModeSelector'
+import { SkillRuntimeControls } from '@/components/settings/SkillRuntimeControls'
 import {
   getSkillBundleChanges,
   type SkillBundleDraftFile,
 } from '@/components/settings/skillBundle'
-import { validateSkillDraft } from '@/components/settings/schema'
+import { validateNewSkillDraft } from '@/components/settings/schema'
 import { useSettingsNavigate } from '@/contexts/SettingsContext'
 import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
+import { modesFromAvailability, type SkillAvailability } from '@/lib/skill-modes'
 
 const TEMPLATE = `---
 name: new-skill
-description: One-line description shown to agents when they see the skill list.
+description: Describe what this skill does and the concrete situations where it should activate. Include boundaries that distinguish it from nearby skills.
 ---
 
 # New skill
 
-Replace this with the instructions an agent should follow when applying
-this skill. Keep it focused on a single concern.
+## Use this skill when
+
+- State the positive activation conditions.
+- State important near-misses that should not activate it.
+
+## Workflow
+
+1. Define required inputs and the intended output.
+2. Perform the smallest reliable workflow for this specialty.
+3. Read a bundled reference only at the step that needs it.
+4. Verify the result with observable checks before handing it off.
+
+## Output contract
+
+- Specify the artifact, answer, or code change the skill must produce.
+- Report evidence, uncertainty, and remaining risks.
 `
+
+const OPENAI_METADATA = `interface:
+  display_name: New skill
+  short_description: A focused reusable workflow for EvoFlux
+  default_prompt: Use $new-skill for this task.
+policy:
+  allow_implicit_invocation: true
+`
+
+const TRIGGER_EVALS = `{
+  "skill": "new-skill",
+  "cases": [
+    {
+      "prompt": "A realistic request that should activate this workflow.",
+      "should_trigger": true,
+      "reason": "Replace with the distinguishing activation signal."
+    },
+    {
+      "prompt": "A nearby request that the base agent can handle without this workflow.",
+      "should_trigger": false,
+      "reason": "Replace with the boundary that prevents over-triggering."
+    }
+  ]
+}
+`
+
+function scaffoldFiles(): SkillBundleDraftFile[] {
+  return [
+    {
+      path: 'agents/openai.yaml',
+      content: OPENAI_METADATA,
+      encoding: 'utf-8',
+      size: 0,
+      mediaType: 'application/yaml',
+      editable: true,
+    },
+    {
+      path: 'evals/trigger-cases.json',
+      content: TRIGGER_EVALS,
+      encoding: 'utf-8',
+      size: 0,
+      mediaType: 'application/json',
+      editable: true,
+    },
+  ]
+}
+
+function scaffoldDisplayName(name: string): string {
+  if (name === 'new-skill') return 'New skill'
+  return name
+    .split('-')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
 
 export function NewSkillPage() {
   const [content, setContent] = useState(TEMPLATE)
-  const [files, setFiles] = useState<SkillBundleDraftFile[]>([])
+  const [files, setFiles] = useState<SkillBundleDraftFile[]>(scaffoldFiles)
   const [name, setName] = useState('new-skill')
+  const [availability, setAvailability] = useState<SkillAvailability>('both')
+  const [allowImplicitInvocation, setAllowImplicitInvocation] = useState(true)
+  const [userInvocable, setUserInvocable] = useState(true)
   const createMut = useCreateSkillMutation()
+  const updateSettingsMut = useUpdateSkillSettingsMutation()
   const push = useToastStore((s) => s.push)
   const navigate = useSettingsNavigate()
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -43,13 +114,37 @@ export function NewSkillPage() {
   const handleContentChange = (raw: string) => {
     setContent(raw)
     const match = /^\s*---[\s\S]*?name:\s*([A-Za-z0-9._/-]+)/m.exec(raw)
-    if (match) setName(match[1])
+    if (match && match[1] !== name) {
+      const nextName = match[1]
+      setFiles((current) =>
+        current.map((file) =>
+          file.originalPath || file.content === null
+            ? file
+            : {
+                ...file,
+                content: file.content
+                  .replaceAll(name, nextName)
+                  .replace(
+                    `display_name: ${scaffoldDisplayName(name)}`,
+                    `display_name: ${scaffoldDisplayName(nextName)}`,
+                  ),
+              },
+        ),
+      )
+      setName(nextName)
+    }
   }
 
-  const draftErrors = validateSkillDraft(content)
+  const draftErrors = validateNewSkillDraft(content)
   const invalid = draftErrors !== null
   const firstDraftError = draftErrors ? Object.values(draftErrors)[0] : null
-  const dirty = content !== TEMPLATE || files.length > 0
+  const dirty =
+    content !== TEMPLATE ||
+    files.length > 0 ||
+    availability !== 'both' ||
+    !allowImplicitInvocation ||
+    !userInvocable
+  const saving = createMut.isPending || updateSettingsMut.isPending
   useRegisterSettingsDirty(dirty)
 
   const handleCreate = async () => {
@@ -58,19 +153,50 @@ export function NewSkillPage() {
       setSaveError(firstDraftError ?? 'Form has validation errors.')
       return
     }
+    let created = false
     try {
       const bundle = getSkillBundleChanges(files, [])
-      await createMut.mutateAsync({ name, content, files: bundle.files })
+      const result = await createMut.mutateAsync({
+        name,
+        content,
+        files: bundle.files,
+        modes: modesFromAvailability(availability),
+      })
+      created = true
+      if (
+        result.allow_implicit_invocation !== allowImplicitInvocation ||
+        result.user_invocable !== userInvocable
+      ) {
+        await updateSettingsMut.mutateAsync({
+          name,
+          settings: {
+            settings_id: result.settings_id,
+            modes: modesFromAvailability(availability),
+            allow_implicit_invocation: allowImplicitInvocation,
+            user_invocable: userInvocable,
+          },
+        })
+      }
       push({
         tone: 'success',
         title: `Created skill "${name}"`,
         description: 'Active on next turn.',
       })
-      navigate('/settings/skills/$name', { params: { name } })
+      navigate('/settings/skills/$name', { params: { name }, force: true })
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
-      setSaveError(msg)
-      push({ tone: 'error', title: 'Create failed', description: msg })
+      if (created) {
+        const partial = `The skill bundle was created, but its runtime settings were not saved: ${msg}`
+        push({
+          tone: 'info',
+          title: 'Skill created; settings failed',
+          description: partial,
+        })
+        navigate('/settings/skills/$name', { params: { name }, force: true })
+      } else {
+        setSaveError(msg)
+        push({ tone: 'error', title: 'Create failed', description: msg })
+      }
     }
   }
 
@@ -82,13 +208,38 @@ export function NewSkillPage() {
         <EditorHeaderActions
           dirty={dirty}
           invalid={invalid}
-          saving={createMut.isPending}
+          saving={saving}
           error={saveError}
           validationHint={firstDraftError}
           onSave={handleCreate}
         />
       }
     >
+      <SettingsGroup
+        title="Availability"
+        description="Choose the application mode where this workflow is relevant. Both keeps it available across EvoFlux."
+      >
+        <SkillModeSelector
+          value={availability}
+          onChange={setAvailability}
+          disabled={saving}
+          layoutId="new-skill-availability"
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Discovery"
+        description="Choose how agents and users can find and activate this skill after creation. These controls are independent."
+      >
+        <SkillRuntimeControls
+          allowImplicitInvocation={allowImplicitInvocation}
+          userInvocable={userInvocable}
+          onAllowImplicitInvocationChange={setAllowImplicitInvocation}
+          onUserInvocableChange={setUserInvocable}
+          disabled={saving}
+        />
+      </SettingsGroup>
+
       <SettingsGroup
         title="Skill bundle"
         description={
@@ -103,7 +254,7 @@ export function NewSkillPage() {
           onSkillContentChange={handleContentChange}
           files={files}
           onFilesChange={setFiles}
-          disabled={createMut.isPending}
+          disabled={saving}
           invalid={invalid}
         />
       </SettingsGroup>

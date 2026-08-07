@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Design a test matrix proving v1 and v2 event producers remain compatible with both consumer releases.",
+    "should_trigger": true
+  },
+  {
+    "query": "This browser test flakes around autosave. Find the nondeterministic boundary and replace sleeps with reliable proof.",
+    "should_trigger": true
+  },
+  {
+    "query": "We have 92% coverage but missed a cross-tenant deletion bug. Redesign tests around the authorization contract.",
+    "should_trigger": true
+  },
+  {
+    "query": "Run the existing unit test named test_parse_invoice.",
+    "should_trigger": false,
+    "near_miss": "One-step execution needs no test-strategy workflow."
+  },
+  {
+    "query": "Fix the parser bug and add the obvious unit assertion described in the ticket.",
+    "should_trigger": false,
+    "near_miss": "Focused implementation with already-defined coverage."
+  },
+  {
+    "query": "Why is this integration test failing only on CI?",
+    "should_trigger": false,
+    "near_miss": "Unknown-cause debugging is primary."
+  }
+]

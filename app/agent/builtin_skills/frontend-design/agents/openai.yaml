@@ -1,0 +1,6 @@
+interface:
+  display_name: "Design Distinctive Frontends"
+  short_description: "Build intentional, non-generic interface design"
+  default_prompt: "Use $frontend-design to design and build a distinctive interface for this product brief."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Apply Artifact Themes"
+  short_description: "Style artifacts with curated colors and fonts"
+  default_prompt: "Use $theme-factory to select and apply a cohesive visual theme to this artifact."
+policy:
+  allow_implicit_invocation: true

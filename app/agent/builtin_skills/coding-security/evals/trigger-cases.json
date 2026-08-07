@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Audit the export endpoint for cross-tenant access and fix any authorization bypass with negative tests.",
+    "should_trigger": true
+  },
+  {
+    "query": "User-supplied callback URLs are fetched by a privileged worker. Trace SSRF and redirect risks and harden the boundary.",
+    "should_trigger": true
+  },
+  {
+    "query": "Review this archive upload flow for path traversal, decompression abuse, and unsafe cleanup.",
+    "should_trigger": true
+  },
+  {
+    "query": "Review this formatting helper for general bugs and maintainability.",
+    "should_trigger": false,
+    "near_miss": "No trust boundary or security-sensitive operation is in scope."
+  },
+  {
+    "query": "The OAuth callback returns 500 after login; reproduce the failure.",
+    "should_trigger": false,
+    "near_miss": "A correctness symptom does not establish a security task."
+  },
+  {
+    "query": "Summarize OWASP Top 10 for a training slide.",
+    "should_trigger": false,
+    "near_miss": "General security research, not a concrete code-path audit."
+  }
+]

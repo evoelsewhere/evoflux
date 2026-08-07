@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Use $self-healing to switch the lead agent to the configured Claude model with high thinking on its next turn.",
+    "should_trigger": true
+  },
+  {
+    "query": "Use $self-healing to grant the coding specialist the existing browser tool while preserving its other settings.",
+    "should_trigger": true
+  },
+  {
+    "query": "Use $self-healing to remove the user-added fallback model from this agent's configuration only.",
+    "should_trigger": true
+  },
+  {
+    "query": "Change the application's production database URL in .env.",
+    "should_trigger": false,
+    "near_miss": "Project secrets and application configuration are outside agent self-configuration."
+  },
+  {
+    "query": "Install and start a new GitHub MCP server in EvoFlux.",
+    "should_trigger": false,
+    "near_miss": "Server installation belongs to the MCP installer."
+  },
+  {
+    "query": "Refactor the model provider implementation to reduce latency.",
+    "should_trigger": false,
+    "near_miss": "Source-code work is not a surgical agent configuration change."
+  }
+]

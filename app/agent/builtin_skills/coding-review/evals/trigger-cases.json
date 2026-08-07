@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Audit my local diff for correctness and regression risks. Do not modify files.",
+    "should_trigger": true
+  },
+  {
+    "query": "Review the supplied caching implementation and report only actionable defects with file and line anchors.",
+    "should_trigger": true
+  },
+  {
+    "query": "Check this cross-repository event change for rollout compatibility and missing tests before merge.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fix every issue in this patch and run the tests.",
+    "should_trigger": false,
+    "near_miss": "The primary request authorizes implementation, not a read-only audit."
+  },
+  {
+    "query": "Why does this test fail on Windows? Diagnose the cause.",
+    "should_trigger": false,
+    "near_miss": "Causal debugging, not review of a change."
+  },
+  {
+    "query": "Open a pull request and request reviewers.",
+    "should_trigger": false,
+    "near_miss": "Remote pull-request lifecycle operation."
+  }
+]

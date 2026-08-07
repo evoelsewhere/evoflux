@@ -78,12 +78,22 @@ export const queryKeys = {
     all: () => ['agentFiles'] as const,
     list: () => ['agentFiles', 'list'] as const,
     detail: (name: string) => ['agentFiles', 'detail', name] as const,
-    registry: () => ['agentFiles', 'registry'] as const,
+    // No-arg form is the invalidation prefix for every discovery scope.
+    registry: (workspaces?: readonly string[], mode?: string | null) =>
+      workspaces === undefined && mode === undefined
+        ? (['agentFiles', 'registry'] as const)
+        : (['agentFiles', 'registry', workspaces ?? [], mode ?? null] as const),
   },
   skillFiles: {
     all: () => ['skillFiles'] as const,
-    list: () => ['skillFiles', 'list'] as const,
-    detail: (name: string) => ['skillFiles', 'detail', name] as const,
+    list: (workspaces?: readonly string[], mode?: string | null) =>
+      workspaces === undefined && mode === undefined
+        ? (['skillFiles', 'list'] as const)
+        : (['skillFiles', 'list', workspaces ?? [], mode ?? null] as const),
+    detail: (name: string, workspaces?: readonly string[], mode?: string | null) =>
+      workspaces === undefined && mode === undefined
+        ? (['skillFiles', 'detail', name] as const)
+        : (['skillFiles', 'detail', name, workspaces ?? [], mode ?? null] as const),
   },
   commands: {
     list: (workspace?: string | null) => ['commands', 'list', workspace ?? null] as const,

@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Use $skill-installer to import this portable skill bundle and scope it to Coding mode.",
+    "should_trigger": true
+  },
+  {
+    "query": "Use $skill-installer to create a project-local incident-response skill with one reference and proper UI metadata.",
+    "should_trigger": true
+  },
+  {
+    "query": "Use $skill-installer to update our existing reporting skill without deleting its scripts or assets.",
+    "should_trigger": true
+  },
+  {
+    "query": "Install this EvoFlux plugin archive from a URL.",
+    "should_trigger": false,
+    "near_miss": "Plugin bundles use a separate installer."
+  },
+  {
+    "query": "Add the filesystem MCP server to the daemon configuration.",
+    "should_trigger": false,
+    "near_miss": "MCP configuration is not a portable Agent Skill bundle."
+  },
+  {
+    "query": "Use the existing work-research skill for this market brief.",
+    "should_trigger": false,
+    "near_miss": "Invoking an installed skill is not installing or authoring one."
+  }
+]

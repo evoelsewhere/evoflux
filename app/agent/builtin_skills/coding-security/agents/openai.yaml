@@ -1,0 +1,6 @@
+interface:
+  display_name: "Secure Code Paths"
+  short_description: "Audit trust boundaries and prove secure fixes"
+  default_prompt: "Use $coding-security to audit this trust boundary and harden any reachable vulnerability."
+policy:
+  allow_implicit_invocation: false

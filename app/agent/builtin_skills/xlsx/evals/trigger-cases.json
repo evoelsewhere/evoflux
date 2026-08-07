@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Create an editable Excel budget model with assumptions, formulas, validation, and a summary chart; verify every sheet.",
+    "should_trigger": true
+  },
+  {
+    "query": "Update the attached workbook using its existing styles, fix the broken formulas, and return a new XLSX without overwriting the source.",
+    "should_trigger": true
+  },
+  {
+    "query": "Build a project tracker in Excel with filters, conditional formatting, and formula-driven status metrics.",
+    "should_trigger": true
+  },
+  {
+    "query": "Analyze this CSV for churn drivers and return a written conclusion; no workbook is needed.",
+    "should_trigger": false,
+    "near_miss": "Data analysis without an XLSX deliverable belongs to the analysis workflow."
+  },
+  {
+    "query": "Create a Word report containing a small static table.",
+    "should_trigger": false,
+    "near_miss": "The requested artifact is DOCX, not an editable workbook."
+  },
+  {
+    "query": "Render these final spreadsheet values as a one-page PDF invoice.",
+    "should_trigger": false,
+    "near_miss": "The requested output is a PDF rather than an XLSX workbook."
+  }
+]

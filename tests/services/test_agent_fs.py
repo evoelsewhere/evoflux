@@ -233,9 +233,95 @@ def test_skill_bundle_files_round_trip(fs_dirs):
     assert files["assets/icon.bin"].editable is False
 
 
+def test_skill_bundle_listing_has_item_and_aggregate_content_budgets(fs_dirs):
+    _, skills_dir = fs_dirs
+    record = agent_fs.write_skill("research", "body", create=True)
+    skill_dir = Path(record.path).parent
+    resources = skill_dir / "references"
+    resources.mkdir()
+    payload = "x" * (450 * 1024)
+    for index in range(205):
+        (resources / f"{index:03}.md").write_text(payload if index < 5 else "x")
+
+    files = agent_fs.list_skill_bundle_files(skill_dir)
+
+    assert len(files) == 200
+    assert sum(len(file.content or "") for file in files) <= 2 * 1024 * 1024
+    assert sum(file.content is not None for file in files[:5]) == 4
+
+
+def test_skill_bundle_listing_caps_scandir_before_materializing_wide_directory(
+    fs_dirs, monkeypatch
+):
+    _, skills_dir = fs_dirs
+    record = agent_fs.write_skill("research", "body", create=True)
+    skill_dir = Path(record.path).parent
+    for index in range(10):
+        (skill_dir / f"{index:02}.md").write_text(str(index))
+
+    real_scandir = agent_fs.os.scandir
+    consumed = 0
+
+    class GuardedScandir:
+        def __init__(self, path):
+            self._iterator = real_scandir(path)
+
+        def __enter__(self):
+            self._iterator.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self._iterator.__exit__(*args)
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            nonlocal consumed
+            consumed += 1
+            if consumed > 4:
+                raise AssertionError("bundle listing consumed beyond its hard cap")
+            return next(self._iterator)
+
+    monkeypatch.setattr(agent_fs, "_MAX_SKILL_BUNDLE_ENTRIES", 3)
+    monkeypatch.setattr(agent_fs.os, "scandir", GuardedScandir)
+
+    files = agent_fs.list_skill_bundle_files(skill_dir)
+
+    assert consumed <= 4
+    assert len(files) <= 3
+    assert [file.path for file in files] == sorted(file.path for file in files)
+
+
+def test_updating_skill_resource_preserves_executable_mode(fs_dirs):
+    _, skills_dir = fs_dirs
+    record = agent_fs.write_skill("research", "body", create=True)
+    skill_dir = Path(record.path).parent
+    script = skill_dir / "scripts" / "run.sh"
+    script.parent.mkdir()
+    script.write_text("#!/bin/sh\necho old\n")
+    script.chmod(0o755)
+
+    agent_fs.apply_skill_bundle_files(
+        skill_dir,
+        [("scripts/run.sh", "#!/bin/sh\necho new\n", "utf-8")],
+        [],
+    )
+
+    assert script.stat().st_mode & 0o777 == 0o755
+    assert "echo new" in script.read_text()
+
+
 @pytest.mark.parametrize(
     "path",
-    ["", "../secret", "nested/SKILL.md", "/absolute.md", "bad\\path.md"],
+    [
+        "",
+        "../secret",
+        "nested/SKILL.md",
+        ".evoflux.json",
+        "/absolute.md",
+        "bad\\path.md",
+    ],
 )
 def test_skill_bundle_rejects_unsafe_resource_paths(fs_dirs, path):
     _, skills_dir = fs_dirs

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Design Code Tests"
+  short_description: "Prove contracts with reliable test boundaries"
+  default_prompt: "Use $coding-testing to design the smallest reliable test strategy for this behavior."
+policy:
+  allow_implicit_invocation: false

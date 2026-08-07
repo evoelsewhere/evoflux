@@ -1146,6 +1146,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     mode,
     workspace,
     agentWorkspace,
+    workspaceRoots: activeProject?.workspaces.map((item) => item.path),
     sessionId,
     sessionIdState,
     selectedModel,

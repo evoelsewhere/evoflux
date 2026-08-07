@@ -40,6 +40,7 @@ import {
   useSandboxSettingsQuery,
   useSkillFilesQuery,
 } from '@/queries'
+import { useActiveSkillDiscoveryScope } from '@/hooks/useActiveSkillDiscoveryScope'
 
 interface NavRow {
   to: string
@@ -94,7 +95,8 @@ export function SettingsHubPage() {
   const isMobile = useIsMobile()
   const navigate = useSettingsNavigate()
   const agentsQ = useAgentFilesQuery()
-  const skillsQ = useSkillFilesQuery()
+  const skillScope = useActiveSkillDiscoveryScope()
+  const skillsQ = useSkillFilesQuery(skillScope)
   const mcpQ = useMcpServersQuery()
   const providersQ = useProvidersQuery()
   const sandboxQ = useSandboxSettingsQuery()

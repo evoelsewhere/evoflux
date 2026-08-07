@@ -1,0 +1,6 @@
+interface:
+  display_name: "Review Code Changes"
+  short_description: "Find actionable defects in local code changes"
+  default_prompt: "Use $coding-review to audit this change for production-impacting defects without editing it."
+policy:
+  allow_implicit_invocation: false

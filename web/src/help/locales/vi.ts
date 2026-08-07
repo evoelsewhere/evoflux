@@ -1356,7 +1356,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     setup:
       'Coding workspace hoặc project — indexing chạy incremental khi file đổi. Mở Graph workbench để khám trực quan và reindex khi cây trông cũ sau edit ngoài lớn.',
     tricks: [
-      'Schema và service native của code_graph sở hữu điều hướng graph; không cần graph skill hay prompt injection.',
+      'code-graph-navigation là hướng dẫn workflow được load dần; code_graph là tool native thực thi trên exact symbol.',
       'Dùng code_graph cho exact symbol đã biết và quan hệ cấu trúc; dùng search source để khám phá, tìm literal, comment và config key.',
       'Mở Graph workbench để khám trực quan và reindex khi cần.',
       'Resolve cross-repo dùng ba tier xác định (reattach, manifests/FQNs, sibling FTS5) không gọi LLM để link.',
@@ -1364,7 +1364,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Verify phát hiện quan trọng trên source live sau khi đi graph — index có thể trễ edit ngoài.',
       'Hỏi câu cấu trúc (“ai gọi X?”) thay vì “đọc cả package”.',
       'Multi-repo project có edge cross-repo; repo standalone vẫn lợi trong một cây.',
-      'Graph không bao giờ được inject hoặc route từ wording của request.'
+      'Skill body không bao giờ bị inject theo Coding mode, và prose thô của request không bao giờ bị route bằng keyword thành graph query.'
 ],
     blocks: [
       {
@@ -1793,7 +1793,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Settings → Agents cho thành viên team; Settings → Skills để validate pack; Settings → MCP để thêm server. Từ chat, dùng /skill: hoặc command palette cho shortcut New Agent / New Skill.',
     tricks: [
       'Agent là file .md với YAML frontmatter — diff và version được.',
-      'Skill hiện dưới /skill: sau khi hợp lệ trong Settings → Skills.',
+      'Settings → Skills cho phép tạo, sửa, hiển thị và lọc theo Work, Coding hoặc Both; skill hợp lệ chỉ hiện dưới /skill: trong session đúng mode.',
       'Chấm trạng thái MCP: ready / starting / auth / error / stopped.',
       'MCP tool chịu cùng rule permission như tool native.',
       'Team scope theo work / coding.',
@@ -1838,7 +1838,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'code_graph là native Coding tool và không cần skill đi kèm.',
+          'code-graph-navigation hướng dẫn workflow; code_graph native validate và thực thi operation trên exact symbol.',
           'Workflow và skill đều cần scope hợp lệ mới hiện trong /.',
           'Rule Always của permission áp cả MCP tool — ưu tiên Once trước.'
 ],

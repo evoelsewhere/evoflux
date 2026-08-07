@@ -15,7 +15,9 @@ from __future__ import annotations
 import base64
 import binascii
 import mimetypes
+import os
 import re
+import stat
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -24,6 +26,7 @@ from typing import Literal
 from loguru import logger
 
 from app.core.config import settings
+from app.core.skill_scope import SKILL_SCOPE_FILENAME
 
 
 # ── Errors ───────────────────────────────────────────────────────────────────
@@ -52,6 +55,71 @@ _AGENT_TEMPERATURE_LINE_RE = re.compile(r"^temperature[ \t]*:")
 _MAX_SKILL_FILE_BYTES = 2 * 1024 * 1024
 _MAX_SKILL_BUNDLE_BYTES = 20 * 1024 * 1024
 _MAX_SKILL_TEXT_PREVIEW_BYTES = 512 * 1024
+_MAX_SKILL_BUNDLE_FILES = 200
+_MAX_SKILL_BUNDLE_ENTRIES = 2_000
+_MAX_SKILL_BUNDLE_INLINE_BYTES = 2 * 1024 * 1024
+
+
+def _bounded_skill_bundle_walk(
+    root: Path,
+) -> list[tuple[Path, list[Path], list[Path]]]:
+    """Collect a deterministic tree while capping scandir consumption.
+
+    The returned structure is itself bounded by
+    :data:`_MAX_SKILL_BUNDLE_ENTRIES`; importantly, no individual wide
+    directory is first materialized by ``os.walk`` or ``list(scandir(...))``.
+    """
+
+    rows: list[tuple[Path, list[Path], list[Path]]] = []
+    stack = [root]
+    entries_seen = 0
+    while stack:
+        current = stack.pop()
+        remaining = _MAX_SKILL_BUNDLE_ENTRIES - entries_seen
+        if remaining <= 0:
+            logger.warning(
+                "skill_bundle_listing_entry_limit root={} limit={}",
+                root,
+                _MAX_SKILL_BUNDLE_ENTRIES,
+            )
+            break
+        entries: list[tuple[Path, bool, bool]] = []
+        truncated = False
+        try:
+            with os.scandir(current) as iterator:
+                for entry in iterator:
+                    if len(entries) >= remaining:
+                        truncated = True
+                        break
+                    try:
+                        is_symlink = entry.is_symlink()
+                        is_directory = entry.is_dir(follow_symlinks=True)
+                    except OSError:
+                        is_symlink = False
+                        is_directory = False
+                    entries.append((Path(entry.path), is_directory, is_symlink))
+        except OSError:
+            continue
+        entries_seen += len(entries)
+        entries.sort(key=lambda item: item[0].name)
+        directories = [
+            path
+            for path, is_directory, is_symlink in entries
+            if is_directory and not is_symlink
+        ]
+        files = [
+            path for path, is_directory, _is_symlink in entries if not is_directory
+        ]
+        rows.append((current, directories, files))
+        if truncated:
+            logger.warning(
+                "skill_bundle_listing_entry_limit root={} limit={}",
+                root,
+                _MAX_SKILL_BUNDLE_ENTRIES,
+            )
+            break
+        stack.extend(reversed(directories))
+    return rows
 
 
 def _validate_name(name: str) -> str:
@@ -83,6 +151,12 @@ def _validate_skill_name(name: str) -> Path:
     if not parts or not parts[0]:
         raise AgentFsPathError("Skill name cannot be empty.")
     return Path(*(_validate_name(p) for p in parts))
+
+
+def validate_skill_name(name: str) -> None:
+    """Validate skill route syntax without resolving or reading the target."""
+
+    _validate_skill_name(name)
 
 
 def _validate_agent_name(name: str) -> Path:
@@ -145,6 +219,7 @@ def _validate_skill_resource_path(path: str) -> PurePosixPath:
         rel.is_absolute()
         or any(part in {"", ".", ".."} for part in rel.parts)
         or rel.name == "SKILL.md"
+        or rel == PurePosixPath(SKILL_SCOPE_FILENAME)
     ):
         raise AgentFsPathError(f"Invalid skill resource path '{path}'.")
     return rel
@@ -153,6 +228,13 @@ def _validate_skill_resource_path(path: str) -> PurePosixPath:
 def _skill_resource_file(skill_dir: Path, path: str) -> Path:
     root = skill_dir.resolve()
     rel = _validate_skill_resource_path(path)
+    current = root
+    for part in rel.parts[:-1]:
+        current = current / part
+        if current != root and (current / "SKILL.md").is_file():
+            raise AgentFsPathError(
+                f"Skill resource path enters nested skill bundle: '{path}'."
+            )
     file = (root / Path(*rel.parts)).resolve()
     if not file.is_relative_to(root):
         raise AgentFsPathError(f"Path escapes skill directory: '{path}'.")
@@ -165,6 +247,10 @@ def _skill_resource_file(skill_dir: Path, path: str) -> Path:
 def _atomic_write(path: Path, content: str) -> None:
     """Write *content* to *path* atomically (tmp file + rename)."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        existing_mode = stat.S_IMODE(path.stat().st_mode)
+    except OSError:
+        existing_mode = 0o644
     with tempfile.NamedTemporaryFile(
         mode="w",
         encoding="utf-8",
@@ -175,6 +261,7 @@ def _atomic_write(path: Path, content: str) -> None:
     ) as tmp:
         tmp.write(content)
         tmp_path = Path(tmp.name)
+    tmp_path.chmod(existing_mode)
     tmp_path.replace(path)
 
 
@@ -348,48 +435,70 @@ def write_skill(name: str, content: str, *, create: bool) -> SkillFileRecord:
 
 
 def list_skill_bundle_files(skill_dir: Path) -> list[SkillBundleFileRecord]:
-    """List resource files without following symlinks.
+    """Return a bounded resource preview without following symlinks.
 
-    Small UTF-8 files are returned inline for editing. Binary and oversized
-    files remain visible as metadata without inflating the API response.
+    The Settings API is allowed to inspect workspace-owned bundles, so this
+    function must remain bounded even when a repository is hostile or simply
+    very large. At most 200 resource records and 2 MiB of aggregate UTF-8
+    content are returned. Binary, oversized, and out-of-budget files remain
+    visible as metadata without inflating the response.
     """
     root = skill_dir.resolve()
     if not root.is_dir():
         raise AgentFsNotFoundError(f"Skill directory '{skill_dir}' not found.")
     records: list[SkillBundleFileRecord] = []
-    for file in sorted(root.rglob("*")):
-        if file.name == "SKILL.md" or not file.is_file() or file.is_symlink():
-            continue
-        try:
-            resolved = file.resolve()
-            resolved.relative_to(root)
-            size = file.stat().st_size
-        except (OSError, ValueError):
-            continue
-        media_type = mimetypes.guess_type(file.name)[0] or "application/octet-stream"
-        content: str | None = None
-        encoding: str | None = None
-        editable = size <= _MAX_SKILL_TEXT_PREVIEW_BYTES
-        if editable:
+    inline_bytes = 0
+    for _base, _directories, files in _bounded_skill_bundle_walk(root):
+        for file in files:
+            filename = file.name
             try:
-                candidate = file.read_text(encoding="utf-8")
-                if "\x00" in candidate:
-                    editable = False
-                else:
-                    content = candidate
-                    encoding = "utf-8"
-            except (OSError, UnicodeDecodeError):
-                editable = False
-        records.append(
-            SkillBundleFileRecord(
-                path=resolved.relative_to(root).as_posix(),
-                size=size,
-                media_type=media_type,
-                content=content,
-                encoding=encoding,
-                editable=editable,
+                relative = file.relative_to(root).as_posix()
+            except ValueError:
+                continue
+            if (
+                filename == "SKILL.md"
+                or relative == SKILL_SCOPE_FILENAME
+                or file.is_symlink()
+            ):
+                continue
+            try:
+                if not file.is_file():
+                    continue
+                resolved = file.resolve()
+                resolved.relative_to(root)
+                size = file.stat().st_size
+            except (OSError, ValueError):
+                continue
+            media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+            content: str | None = None
+            encoding: str | None = None
+            editable = (
+                size <= _MAX_SKILL_TEXT_PREVIEW_BYTES
+                and inline_bytes + size <= _MAX_SKILL_BUNDLE_INLINE_BYTES
             )
-        )
+            if editable:
+                try:
+                    candidate = file.read_text(encoding="utf-8")
+                    if "\x00" in candidate:
+                        editable = False
+                    else:
+                        content = candidate
+                        encoding = "utf-8"
+                        inline_bytes += size
+                except (OSError, UnicodeDecodeError):
+                    editable = False
+            records.append(
+                SkillBundleFileRecord(
+                    path=relative,
+                    size=size,
+                    media_type=media_type,
+                    content=content,
+                    encoding=encoding,
+                    editable=editable,
+                )
+            )
+            if len(records) >= _MAX_SKILL_BUNDLE_FILES:
+                return records
     return records
 
 
@@ -444,6 +553,10 @@ def apply_skill_bundle_files(
         if file.is_symlink():
             raise AgentFsPathError(f"Skill resource '{file.name}' is a symlink.")
         file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            existing_mode = stat.S_IMODE(file.stat().st_mode)
+        except OSError:
+            existing_mode = 0o644
         with tempfile.NamedTemporaryFile(
             mode="wb",
             dir=file.parent,
@@ -453,7 +566,75 @@ def apply_skill_bundle_files(
         ) as tmp:
             tmp.write(payload)
             tmp_path = Path(tmp.name)
+        tmp_path.chmod(existing_mode)
         tmp_path.replace(file)
+
+
+def assert_skill_bundle_limits(skill_dir: Path) -> None:
+    """Validate limits against the complete on-disk bundle.
+
+    Update payload limits alone are insufficient because repeated requests can
+    accumulate resources. Call this on the transaction's staging directory
+    before publication so the final state, including preserved files, remains
+    bounded.
+    """
+
+    root = skill_dir.resolve()
+    stack = [root]
+    entries_seen = 0
+    total_bytes = 0
+    while stack:
+        current = stack.pop()
+        directories: list[Path] = []
+        try:
+            with os.scandir(current) as iterator:
+                for entry in iterator:
+                    entries_seen += 1
+                    if entries_seen > _MAX_SKILL_BUNDLE_ENTRIES:
+                        raise AgentFsPathError(
+                            "Skill bundle exceeds the 2,000-entry limit."
+                        )
+                    path = Path(entry.path)
+                    try:
+                        if entry.is_symlink():
+                            raise AgentFsPathError(
+                                "Symlinked files and directories are not allowed "
+                                "in editable skill bundles."
+                            )
+                        if entry.is_dir(follow_symlinks=False):
+                            directories.append(path)
+                            continue
+                        if not entry.is_file(follow_symlinks=False):
+                            raise AgentFsPathError(
+                                f"Skill bundle entry '{path.name}' is not a regular file."
+                            )
+                        relative = path.relative_to(root).as_posix()
+                        if relative in {"SKILL.md", SKILL_SCOPE_FILENAME}:
+                            continue
+                        size = entry.stat(follow_symlinks=False).st_size
+                    except AgentFsPathError:
+                        raise
+                    except (OSError, ValueError) as exc:
+                        raise AgentFsPathError(
+                            f"Could not validate skill bundle entry '{path.name}': {exc}"
+                        ) from exc
+                    if size > _MAX_SKILL_FILE_BYTES:
+                        raise AgentFsPathError(
+                            f"Skill resource '{relative}' exceeds the 2 MiB per-file limit."
+                        )
+                    total_bytes += size
+                    if total_bytes > _MAX_SKILL_BUNDLE_BYTES:
+                        raise AgentFsPathError(
+                            "Final skill bundle resources exceed the 20 MiB limit."
+                        )
+        except AgentFsPathError:
+            raise
+        except OSError as exc:
+            raise AgentFsPathError(
+                f"Could not inspect skill bundle directory '{current}': {exc}"
+            ) from exc
+        directories.sort(key=lambda path: path.name)
+        stack.extend(reversed(directories))
 
 
 def delete_skill(name: str) -> None:

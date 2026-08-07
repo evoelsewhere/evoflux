@@ -2,3 +2,5 @@ interface:
   display_name: "Review Pull Requests"
   short_description: "Risk-based PR/MR review and lifecycle operations"
   default_prompt: "Use $review-pull-requests to perform a risk-based end-to-end review of the current PR or MR."
+policy:
+  allow_implicit_invocation: true

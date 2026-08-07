@@ -61,7 +61,7 @@ export const thinkingLevelSchema = z
 /** Short one-line description; empty string is allowed. */
 export const descriptionSchema = z
   .string()
-  .max(500, 'Max 500 characters')
+  .max(1024, 'Max 1024 characters')
 
 // ── Skill field schemas ─────────────────────────────────────────────────────
 
@@ -79,15 +79,29 @@ export const skillNameSchema = z
     message: "Each segment must use letters, digits, '.', '_', '-' and start with a letter or digit",
   })
 
+/** Portable Agent Skills name used for newly scaffolded packages. */
+export const portableSkillNameSchema = z
+  .string()
+  .min(1, 'Required')
+  .max(64, 'Max 64 characters')
+  .regex(
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+    "Use lowercase letters, digits, and single hyphens (for example 'code-review')",
+  )
+
 /** Skill one-line description that the agent sees when browsing skills. */
 export const skillDescriptionSchema = z
   .string()
   .min(1, 'Required — shown to agents when they browse skills')
-  .max(500, 'Max 500 characters')
+  .max(1024, 'Max 1024 characters')
 
 export const skillFrontmatterSchema = z.object({
   name: skillNameSchema,
   description: skillDescriptionSchema,
+})
+
+export const newSkillFrontmatterSchema = skillFrontmatterSchema.extend({
+  name: portableSkillNameSchema,
 })
 
 export type SkillFrontmatterParsed = z.infer<typeof skillFrontmatterSchema>
@@ -96,6 +110,19 @@ export function validateSkillForm(
   fm: unknown
 ): Record<string, string> | null {
   const result = skillFrontmatterSchema.safeParse(fm)
+  if (result.success) return null
+  const errors: Record<string, string> = {}
+  for (const issue of result.error.issues) {
+    const path = issue.path.join('.') || '_root'
+    if (!(path in errors)) errors[path] = issue.message
+  }
+  return errors
+}
+
+export function validateNewSkillForm(
+  fm: unknown,
+): Record<string, string> | null {
+  const result = newSkillFrontmatterSchema.safeParse(fm)
   if (result.success) return null
   const errors: Record<string, string> = {}
   for (const issue of result.error.issues) {
@@ -221,6 +248,21 @@ export function validateSkillDraft(raw: string): Record<string, string> | null {
     return { _root: (err as Error).message }
   }
   return validateSkillForm(fm)
+}
+
+/** Validate a new package against the portable Agent Skills naming contract. */
+export function validateNewSkillDraft(raw: string): Record<string, string> | null {
+  const { fm: fmText } = splitFrontmatter(raw)
+  if (!fmText.trim()) {
+    return { _root: 'Missing YAML frontmatter (needs --- … --- header).' }
+  }
+  let fm: Record<string, unknown>
+  try {
+    fm = parseLooseYaml(fmText)
+  } catch (err) {
+    return { _root: (err as Error).message }
+  }
+  return validateNewSkillForm(fm)
 }
 
 /**

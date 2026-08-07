@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Use $mcp-installer to add the filesystem MCP server to EvoFlux and verify that it starts successfully.",
+    "should_trigger": true
+  },
+  {
+    "query": "Use $mcp-installer to update the configured GitHub MCP server and restart it without changing unrelated entries.",
+    "should_trigger": true
+  },
+  {
+    "query": "Use $mcp-installer to remove the obsolete postgres MCP configuration and confirm the server is gone.",
+    "should_trigger": true
+  },
+  {
+    "query": "Build a new MCP server in TypeScript for our internal ticketing API.",
+    "should_trigger": false,
+    "near_miss": "Authoring an MCP server is different from managing EvoFlux server configuration."
+  },
+  {
+    "query": "Install this EvoFlux plugin from https://example.com/plugin.zip.",
+    "should_trigger": false,
+    "near_miss": "Plugin installation uses a separate bundle workflow."
+  },
+  {
+    "query": "Use the already-configured filesystem integration to list project files.",
+    "should_trigger": false,
+    "near_miss": "Using an existing integration does not change MCP configuration."
+  }
+]

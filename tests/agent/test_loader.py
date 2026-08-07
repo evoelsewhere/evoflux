@@ -503,7 +503,9 @@ def test_build_agent_skill_tool_deduped():
 # ---------------------------------------------------------------------------
 
 
-def test_build_agent_skills_are_metadata_only(tmp_path, monkeypatch):
+def test_build_agent_skills_wire_configured_activation_and_catalog(
+    tmp_path, monkeypatch
+):
     d = tmp_path / "myskill"
     d.mkdir()
     (d / "SKILL.md").write_text(
@@ -516,7 +518,9 @@ def test_build_agent_skills_are_metadata_only(tmp_path, monkeypatch):
     assert agent.system_prompt == "Base prompt"
     assert agent.skills == ["myskill"]
     assert [hook.__class__.__name__ for hook in agent.hooks] == [
-        "ExplicitSkillSelectionHook"
+        "ConfiguredSkillsHook",
+        "ExplicitSkillSelectionHook",
+        "SkillCatalogHook",
     ]
 
 

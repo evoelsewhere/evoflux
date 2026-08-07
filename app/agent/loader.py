@@ -532,11 +532,29 @@ def _build_agent(
         fallback_model_id=cfg.fallback_model,
     )
 
-    # A normal request is never keyword-routed. The only deterministic
-    # selection path is an explicit composer ``/skill:<name>`` directive.
+    # Progressive skill disclosure has two complementary paths:
+    #
+    # * a bounded metadata catalog lets the model select by meaning without
+    #   request-to-query/keyword routing;
+    # * an explicit composer directive deterministically activates one skill.
+    #
+    # Full SKILL.md bodies stay out of the base prompt in both cases.
+    from app.agent.hooks.configured_skills import ConfiguredSkillsHook
     from app.agent.hooks.explicit_skill_selection import ExplicitSkillSelectionHook
+    from app.agent.hooks.skill_catalog import SkillCatalogHook
 
-    agent.hooks.append(ExplicitSkillSelectionHook())
+    if cfg.skills:
+        agent.hooks.append(ConfiguredSkillsHook(cfg.skills, mode=mode))
+    agent.hooks.extend(
+        [
+            ExplicitSkillSelectionHook(),
+            SkillCatalogHook(
+                mode=mode,
+                model_id=cfg.model,
+                preferred_skills=cfg.skills,
+            ),
+        ]
+    )
 
     # Stamp config dependencies for end-of-turn drift detection.
     if source_path is not None:

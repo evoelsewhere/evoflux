@@ -1,0 +1,6 @@
+interface:
+  display_name: "Install EvoFlux Plugins"
+  short_description: "Install trusted plugin bundles from a URL"
+  default_prompt: "Use $plugin-installer to validate and install this EvoFlux plugin URL."
+policy:
+  allow_implicit_invocation: false

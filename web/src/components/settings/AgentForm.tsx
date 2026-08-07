@@ -55,6 +55,8 @@ import {
 } from '@/lib/model-settings'
 
 import { useAgentFilesQuery, useMcpServersQuery, useRegistryQuery } from '@/queries'
+import { useActiveSkillDiscoveryScope } from '@/hooks/useActiveSkillDiscoveryScope'
+import type { SkillMode } from '@/api/types'
 import { MultiSelect, type MultiSelectOption } from './MultiSelect'
 import {
   combinePreservingUnknown,
@@ -88,6 +90,10 @@ interface Props {
    *  toggle stays in sync with the form body. */
   mode: 'form' | 'raw'
   onModeChange: (next: 'form' | 'raw') => void
+  /** Runtime mode used to resolve mode-specific skill collisions. */
+  skillMode?: SkillMode
+  /** Project repositories; falls back to the active coding workspace. */
+  workspaceRoots?: readonly string[]
 }
 
 export function AgentForm({
@@ -98,6 +104,8 @@ export function AgentForm({
   isNew,
   mode,
   onModeChange,
+  skillMode,
+  workspaceRoots,
 }: Props) {
   const [raw, setRaw] = useState(initial)
 
@@ -133,7 +141,13 @@ export function AgentForm({
     }
   }
 
-  const registry = useRegistryQuery()
+  const agentMode = skillMode ?? (agentPath?.startsWith('coding/') ? 'coding' : 'work')
+  const activeSkillScope = useActiveSkillDiscoveryScope(agentMode)
+  const registry = useRegistryQuery(
+    workspaceRoots?.length
+      ? { workspaces: workspaceRoots, mode: agentMode }
+      : activeSkillScope,
+  )
   const mcpServers = useMcpServersQuery()
   const agentFiles = useAgentFilesQuery()
 
@@ -156,11 +170,13 @@ export function AgentForm({
   )
 
   const skillOptions: MultiSelectOption[] =
-    registry.data?.skills.map((s) => ({
-      value: s.name,
-      label: s.name,
-      description: s.description,
-    })) ?? []
+    registry.data?.skills
+      .filter((s) => (s.modes ?? ['work', 'coding']).includes(agentMode))
+      .map((s) => ({
+        value: s.name,
+        label: s.display_name || s.name,
+        description: `${s.short_description || s.description}${s.allow_implicit_invocation === false ? ' · explicit catalog' : ''}`,
+      })) ?? []
 
   // Show every server, including disabled / errored ones, so an agent can
   // still reference a server that's temporarily down without the picker
@@ -370,7 +386,7 @@ function FormFields({
           <div className="min-w-0">
             <p className="font-semibold text-(--color-text)">Built-in EvoFlux profile</p>
             <p className="mt-0.5">
-              Default tools and instructions are versioned in EvoFlux. Skill selections are user-owned and loaded only on demand. Upgrades never overwrite your custom setup.
+              Default tools and instructions are versioned in EvoFlux. Assigned skills are preloaded for this agent; the remaining catalog stays on demand. Upgrades never overwrite your custom setup.
             </p>
           </div>
         </div>
@@ -602,7 +618,7 @@ function FormFields({
           <div className="min-w-0 p-4 sm:p-5">
             <Field
               label="Skills"
-              hint={`${(fm.skills ?? []).length} selected of ${extraSkillOptions.length}. Loaded only on demand.`}
+              hint={`${(fm.skills ?? []).length} selected of ${extraSkillOptions.length}. Assigned skills preload; all others remain on demand.`}
             >
               <MultiSelect
                 ariaLabel="Skills"

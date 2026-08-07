@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Create an editable twelve-slide investor deck from these notes, with a coherent visual system and rendered-slide QA.",
+    "should_trigger": true
+  },
+  {
+    "query": "Redesign the attached PowerPoint while preserving its content hierarchy, then return a verified PPTX.",
+    "should_trigger": true
+  },
+  {
+    "query": "Use this uploaded deck as the editable template for a customer workshop presentation and inspect every final slide.",
+    "should_trigger": true
+  },
+  {
+    "query": "Create a one-page static conference poster and export it as PDF.",
+    "should_trigger": false,
+    "near_miss": "A static poster is not a presentation deck."
+  },
+  {
+    "query": "Draft an executive memo from these findings; plain text is enough.",
+    "should_trigger": false,
+    "near_miss": "Professional writing without a slide deliverable."
+  },
+  {
+    "query": "Apply the Ocean Depths colors and fonts to this already-complete deck without changing its content.",
+    "should_trigger": false,
+    "near_miss": "A pure theme application belongs to the theme workflow."
+  }
+]

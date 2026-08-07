@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Our invoice worker sometimes marks the job complete before the PDF exists. Reproduce the race and fix the root cause.",
+    "should_trigger": true
+  },
+  {
+    "query": "This integration test passes locally but times out in CI after the database upgrade. Diagnose it before changing anything.",
+    "should_trigger": true
+  },
+  {
+    "query": "Login returns 403 for only users moved between tenants; find why and add a regression test.",
+    "should_trigger": true
+  },
+  {
+    "query": "Where is the login handler defined and who calls it?",
+    "should_trigger": false,
+    "near_miss": "Investigation request with no failure symptom."
+  },
+  {
+    "query": "Implement the already-specified null handling in parseInvoice and update its unit test.",
+    "should_trigger": false,
+    "near_miss": "Cause and contract are already known; this is implementation."
+  },
+  {
+    "query": "Review this patch for possible regressions but do not run or change code.",
+    "should_trigger": false,
+    "near_miss": "Read-only review, not causal debugging."
+  }
+]

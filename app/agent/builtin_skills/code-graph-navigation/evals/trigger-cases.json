@@ -1,0 +1,32 @@
+[
+  {
+    "query": "Where is `calculate_total` defined and which exact call sites invoke it?",
+    "should_trigger": true,
+    "expected_operation": "callers"
+  },
+  {
+    "query": "Trace the direct callees of AuthMiddleware.verify_token across the authorized repositories.",
+    "should_trigger": true,
+    "expected_operation": "callees"
+  },
+  {
+    "query": "What is the transitive change impact of UserService.archive? Keep repository labels on every edge.",
+    "should_trigger": true,
+    "expected_operation": "impact"
+  },
+  {
+    "query": "Find the logic that enables WebBright; I do not know the function or flag name.",
+    "should_trigger": false,
+    "near_miss": "The identifier must first be discovered with coding investigation or literal source search."
+  },
+  {
+    "query": "Search every YAML file for the literal FEATURE_X_ENABLED value.",
+    "should_trigger": false,
+    "near_miss": "Literal and configuration search is not structural graph navigation."
+  },
+  {
+    "query": "The checkout worker intermittently deadlocks in production; reproduce and diagnose it.",
+    "should_trigger": false,
+    "near_miss": "A runtime failure with an unknown cause requires debugging rather than exact-symbol navigation."
+  }
+]

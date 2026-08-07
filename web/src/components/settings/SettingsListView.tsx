@@ -42,6 +42,8 @@ export interface ListViewRow {
   to?: string
   /** Path params for parameterised routes (e.g. `{ name }`). */
   params?: Record<string, string>
+  /** Search params to preserve discovery scope when opening a detail row. */
+  search?: Record<string, string>
   /** Whether the row is selected in the URL (controls highlight). */
   active?: boolean
   /** Render as a non-clickable group header. */
@@ -249,7 +251,7 @@ function ListRow({
     <button
       type="button"
       onClick={() => {
-        if (row.to) navigate(row.to, { params: row.params })
+        if (row.to) navigate(row.to, { params: row.params, search: row.search })
       }}
       aria-current={row.active ? 'page' : undefined}
       className={cn(

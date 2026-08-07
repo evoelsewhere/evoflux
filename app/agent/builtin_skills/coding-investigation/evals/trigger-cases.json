@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Find the unknown function or flag that enables WebBright and explain why it stays disabled by default.",
+    "should_trigger": true
+  },
+  {
+    "query": "Which repository consumes the UserArchived event and what state transition does it trigger?",
+    "should_trigger": true
+  },
+  {
+    "query": "Explain how a request reaches the billing adapter and where retries are configured.",
+    "should_trigger": true
+  },
+  {
+    "query": "The billing adapter throws duplicate-key errors in production; reproduce and diagnose it.",
+    "should_trigger": false,
+    "near_miss": "A failure with an unknown cause requires debugging."
+  },
+  {
+    "query": "List the direct callers of AuthMiddleware.verify_token.",
+    "should_trigger": false,
+    "near_miss": "A known symbol's structural callers belong to code-graph-navigation."
+  },
+  {
+    "query": "Change WebBright so it is enabled for all enterprise workspaces.",
+    "should_trigger": false,
+    "near_miss": "The user asked for implementation, not a read-only explanation."
+  }
+]

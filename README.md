@@ -207,7 +207,7 @@ A `CodingProject` can contain several repositories. Graph tools automatically us
   <summary><strong>Token-efficient code graph investigation</strong></summary>
   <br />
 
-  `code_graph` is a native Coding tool, not a skill or natural-language search layer. EvoFlux does not inject graph policy into prompts or route user requests with hard-coded keywords.
+  Code graph has two clean layers: `code-graph-navigation` is a progressively disclosed Coding skill for exact-symbol workflow guidance, while `code_graph` is the native execution tool. EvoFlux does not inject the skill body into mode prompts or route user requests with hard-coded keywords.
 
   | Question | Action |
   |---|---|
@@ -234,7 +234,7 @@ Twelve provider integrations ship behind one streaming abstraction, including An
 
 ### Skills and MCP
 
-Thirteen built-in skills cover specialized artifact/design workflows, EvoFlux configuration/installers, and provider-neutral PR lifecycle operations. The catalog and bodies use progressive disclosure and never enter normal context until deliberately listed or loaded. EvoFlux is also an MCP client for stdio, HTTP, and SSE servers; connected tools inherit the same permission rules as native tools.
+Twenty-eight built-in skills cover mode-scoped Work and Coding workflows, specialized artifacts/design, EvoFlux configuration/installers, and provider-neutral PR lifecycle operations. Work and Coding each expose one implicit router; broad specialists are explicit-only so they do not compete on every request. Custom skills can be created, edited, diagnosed, and filtered as Work, Coding, or Both in Settings. A bounded 2%/8K metadata catalog is always available for model-driven selection, while `SKILL.md` bodies and bundle resources load only after exact activation. EvoFlux is also an MCP client for stdio, HTTP, and SSE servers; connected tools inherit the same permission rules as native tools.
 
 ### Permissions and sandboxing
 

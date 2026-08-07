@@ -4,9 +4,11 @@ Date: 2026-08-06
 
 ## Final decision
 
-EvoFlux's model-facing code graph is now a native **symbol navigation**
-primitive. It is not a natural-language retrieval engine and it is not an MCP
-adapter.
+EvoFlux's model-facing code graph has two deliberately separate layers: the
+native `code_graph` **symbol navigation** primitive executes graph operations,
+while the Coding-only `code-graph-navigation` skill provides progressively
+disclosed workflow guidance. Neither layer is a natural-language retrieval
+engine or an MCP adapter.
 
 The final boundary is intentionally strict:
 
@@ -66,7 +68,13 @@ That concept/FTS/set-cover pipeline was removed. The current path is:
 - `engine.py`: watcher/index freshness, graph versioning, resolution, traversal,
   and limitations;
 - `code_graph_navigation_service.py`: application/API facade;
-- model tool `code_graph`: a native, always-visible symbol-first contract.
+- model tool `code_graph`: a native, always-visible symbol-first contract;
+- skill `code-graph-navigation`: optional selection, ambiguity, evidence, and
+  fallback guidance loaded only after semantic or explicit selection.
+
+The skill never wraps or replaces tool execution. Its body is not injected by
+Coding mode, and server code does not turn raw request prose into a graph
+symbol or route it with hard-coded keywords.
 
 The old `code_query` tool and service were removed. The Graph UI search box now
 uses indexed symbol search and explicitly asks for symbol names rather than
@@ -96,6 +104,8 @@ ask about a known symbol. Success means:
 
 - the agent calls `code_graph` rather than `code_query` or grep;
 - arguments contain the raw symbol and an explicit structural operation;
+- `code-graph-navigation` can be selected or explicitly activated without
+  mode-level body injection or server-side keyword routing;
 - callers/callees contain exact source and target symbols plus the call-site
   file and line;
 - only one graph call is needed for the requested direction;

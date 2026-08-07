@@ -1,32 +1,48 @@
-"""Skill loader tool — lets agents dynamically load skill instructions.
+"""Native Agent Skills tool facade.
 
-Skills live in directory roots using the layout
-``skills/{skill_name}/SKILL.md``.  Each ``SKILL.md`` has YAML frontmatter
-(name, description) followed by a markdown body. Extra files (e.g.
-``creating.md``, ``reference/``) may sit alongside ``SKILL.md`` for the
-agent to read separately via file tools.
+Discovery, prompt rendering, and activation are intentionally separate:
 
-The ``load_skill`` tool reads the skill file and returns its content
-so the LLM can apply the instructions in subsequent reasoning.
+* :mod:`app.agent.skills.discovery` reads Tier-1 metadata only;
+* :class:`app.agent.hooks.skill_catalog.SkillCatalogHook` exposes a bounded
+  model-visible catalog;
+* this tool loads one exact skill or one exact resource on demand.
+
+No user request is converted into a search query and no keyword router lives
+here. Selection is made by the model from portable skill descriptions or by an
+explicit ``/skill:<name>`` directive.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
-import re
 import textwrap
 from difflib import get_close_matches
-from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
-
-import yaml
 
 from loguru import logger
 from pydantic import Field
 
 from app.agent.sandbox import get_sandbox
+from app.agent.skills.activation import (
+    activate_skill,
+    is_skill_activation_content,
+    read_skill_instructions,
+    read_skill_resource,
+    render_path_tokens,
+)
+from app.agent.skills.catalog import render_skill_catalog
+from app.agent.skills.discovery import (
+    _walk_skill_paths,
+    builtin_skills_dir,
+    discover_skill_records,
+    discover_skill_records_cached,
+    parse_frontmatter,
+    select_skill_records_for_mode,
+    skills_tree_signature,
+    standard_skill_roots,
+)
+from app.agent.skills.models import SkillRecord
 from app.agent.tools.registry import InjectedArg, tool
 
 
@@ -40,366 +56,182 @@ _SKILLS_DIR: Path = _default_skills_dir()
 
 
 def _project_root() -> Path:
-    """Return the active project root for project-local skill discovery."""
     try:
         return get_sandbox().workspace_root
     except Exception:
         return Path.cwd()
 
 
+def _workspace_roots() -> list[Path]:
+    try:
+        return list(get_sandbox().allowed_workspace_roots)
+    except Exception:
+        return [_project_root()]
+
+
 def _iter_skill_roots() -> list[Path]:
-    """Roots scanned by discovery, in precedence order.
+    """Return project/user/admin/bundled roots in precedence order."""
 
-    Mirrors the slash-command precedence so a user's curated library
-    works in both tools:
-
-    1. ``{workspace}/.evoflux/skills/``  (project, EvoFlux-native)
-    2. ``{workspace}/.opencode/skills/``    (project, opencode reuse)
-    3. ``_SKILLS_DIR``                     (global, EvoFlux — typically
-                                             ``{EVOFLUX_CONFIG_DIR}/skills``)
-    4. ``~/.config/opencode/skills/``      (global, opencode reuse)
-    5. bundled EvoFlux skills           (read-only fallback)
-
-    Earlier entries win on a name collision. ``_SKILLS_DIR`` is
-    referenced indirectly (via the module-level binding) so existing
-    tests that monkeypatch it keep working.
-    """
-    project_root = _project_root()
-    return [
-        project_root / ".evoflux" / "skills",
-        project_root / ".opencode" / "skills",
-        _SKILLS_DIR,
-        Path.home() / ".config" / "opencode" / "skills",
-        _builtin_skills_dir(),
-    ]
+    return standard_skill_roots(
+        workspace_roots=_workspace_roots(),
+        evoflux_global=_SKILLS_DIR,
+    )
 
 
 def _builtin_skills_dir() -> Path:
-    """Directory containing bundled read-only EvoFlux skills."""
-    return Path(__file__).resolve().parents[2] / "builtin_skills"
+    return builtin_skills_dir()
 
 
-def _render_tokens(text: str, *, skill_dir: Path | None = None) -> str:
-    """Replace ``{EVOFLUX_CONFIG_DIR}`` / ``{SKILLS_DIR}`` / ``{AGENTS_DIR}`` /
-    ``{SKILL_DIR}`` placeholders so the agent sees concrete paths it can
-    hand straight to its file and shell tools.
-
-    Only the four names below are substituted — anything else inside
-    braces (JSON examples, format strings) is left untouched.
-    """
-    if not text:
-        return text
-    # Lazy import matches the existing convention in this module
-    # (see ``_default_skills_dir``) — builtin tools avoid pulling
-    # ``settings`` at import time.
-    from app.core.config import settings
-
-    tokens = {
-        "EVOFLUX_CONFIG_DIR": settings.EVOFLUX_CONFIG_DIR,
-        "AGENTS_DIR": settings.AGENTS_DIR,
-        "SKILLS_DIR": settings.SKILLS_DIR,
-    }
-    if skill_dir is not None:
-        tokens["SKILL_DIR"] = str(skill_dir.resolve())
-    for name, value in tokens.items():
-        text = text.replace("{" + name + "}", value)
-    return text
+# Compatibility aliases for existing cache invalidation and extension imports.
+_parse_frontmatter = parse_frontmatter
+_render_tokens = render_path_tokens
+_iter_skill_paths = _walk_skill_paths
+_skills_dir_signature = skills_tree_signature
+_discover_skills_cached = discover_skill_records_cached
 
 
-def _parse_frontmatter(text: str) -> tuple[dict, str]:
-    """Split YAML frontmatter from markdown body.
-
-    Returns ``(metadata_dict, body_str)``.  If no frontmatter is
-    found, metadata is empty and body is the full text.
-    """
-    match = re.match(
-        r"^---\s*\n(.*?)\n---\s*\n(.*)$",
-        text,
-        re.DOTALL,
-    )
-    if not match:
-        return {}, text.strip()
-    meta = yaml.safe_load(match.group(1)) or {}
-    body = match.group(2).strip()
-    return meta, body
-
-
-def extract_triggers(skill_dir: Path) -> list[str]:
-    """Extract trigger keywords from a skill's description.
-
-    Explicit ``Triggers on`` / ``Triggers include`` / ``Trigger when`` phrases
-    in the description define automatic-routing terms. Other description prose
-    is never interpreted as routing metadata.
-
-    Returns a de-duplicated list of lowercase keyword strings.
-    """
-    skill_file = skill_dir / "SKILL.md"
-    try:
-        text = skill_file.read_text(encoding="utf-8")
-    except OSError:
-        return []
-    meta, _ = _parse_frontmatter(text)
-    description = meta.get("description", "")
-    if not isinstance(description, str) or not description:
-        return []
-
-    triggers: list[str] = []
-    for match in re.finditer(
-        r"Trigger[s]?\s+(?:on|include|for|when)(?=\s|:|-)\s*[:\-]?\s*",
-        description,
-        re.IGNORECASE,
-    ):
-        rest = description[match.end() :].strip()
-        chunk = re.split(r"\.(?:\s|$)", rest, maxsplit=1)[0]
-        for item in re.split(r",\s*(?:or\s+)?|\s+or\s+", chunk):
-            cleaned = item.strip().strip('"').strip("'").strip(",; ")
-            if 1 < len(cleaned) <= 50 and cleaned.count(" ") <= 4:
-                triggers.append(cleaned.lower())
-
-    # De-duplicate while preserving order.
-    seen: set[str] = set()
-    unique: list[str] = []
-    for t in triggers:
-        if t not in seen:
-            seen.add(t)
-            unique.append(t)
-    return unique
-
-
-def discover_skills(
+def discover_skill_records_runtime(
     skills_dir: Path | None = None,
-) -> dict[str, dict]:
-    """Discover all available skills and their metadata.
-
-    Returns a dict mapping skill name → metadata dict.
-
-    With ``skills_dir`` omitted, walks the roots in
-    ``_iter_skill_roots()`` (project + global, EvoFlux + opencode) in
-    precedence order, ending with bundled read-only EvoFlux skills —
-    first source wins on a name collision. Pass an explicit
-    ``skills_dir`` to scan a single root (used by tests).
-
-    Uses an mtime-keyed cache so the next call after a skill is added,
-    removed, or its ``SKILL.md`` edited returns the fresh listing
-    without an explicit invalidation. The signature aggregates every
-    root we scan, so a mutation in any one of them invalidates the
-    cache.
-    """
-    if skills_dir is not None:
-        if not skills_dir.is_dir():
-            return {}
-        return _discover_skills_cached(
-            (str(skills_dir),), _skills_dir_signature(skills_dir)
-        )
-
-    roots = [r for r in _iter_skill_roots() if r.is_dir()]
-    if not roots:
-        return {}
-    signature = tuple(_skills_dir_signature(r) for r in roots)
-    return _discover_skills_cached(tuple(str(r) for r in roots), signature)
+    *,
+    mode: str | None = None,
+) -> dict[str, SkillRecord]:
+    roots = [skills_dir] if skills_dir is not None else _iter_skill_roots()
+    records = discover_skill_records(root for root in roots if root.is_dir())
+    return select_skill_records_for_mode(records, mode) if mode is not None else records
 
 
-def _skills_dir_signature(directory: Path) -> int:
-    """Cheap fingerprint that changes whenever any SKILL.md in the tree changes.
+def discover_skills(skills_dir: Path | None = None) -> dict[str, dict]:
+    """Return the compatibility catalog shape backed by the typed registry."""
 
-    ~1ms for a typical user's <20 skills.  Returns the max of the directory's
-    own mtime_ns and every ``{name}/SKILL.md`` (flat) or
-    ``{parent}/{sub}/SKILL.md`` (one nested level) mtime_ns we can stat — so
-    in-place edits, additions, and removals all change the signature.
-    """
-    try:
-        max_mtime = directory.stat().st_mtime_ns
-    except OSError:
-        return 0
-    for subdir in directory.iterdir():
-        if not subdir.is_dir():
-            continue
-        # Flat skill: {parent}/SKILL.md
-        skill_file = subdir / "SKILL.md"
-        try:
-            mtime = skill_file.stat().st_mtime_ns
-            if mtime > max_mtime:
-                max_mtime = mtime
-        except OSError:
-            pass
-        # One nested level: {parent}/{sub}/SKILL.md
-        for nested in subdir.iterdir():
-            if not nested.is_dir():
-                continue
-            nested_file = nested / "SKILL.md"
-            try:
-                mtime = nested_file.stat().st_mtime_ns
-                if mtime > max_mtime:
-                    max_mtime = mtime
-            except OSError:
-                continue
-    return max_mtime
+    return {
+        name: record.as_legacy_dict()
+        for name, record in discover_skill_records_runtime(skills_dir).items()
+    }
 
 
-@lru_cache(maxsize=16)
-def _discover_skills_cached(
-    directories: tuple[str, ...], signature: int | tuple[int, ...]
-) -> dict[str, dict]:
-    """Cache keyed by ``(roots, mtime signature)``.
-
-    *directories* is the ordered tuple of roots to walk; the first
-    occurrence of a skill name wins. The signature changes on any
-    add/remove/edit inside any root, so subsequent calls automatically
-    pick up filesystem mutations.  Stale cache entries from prior
-    signatures are evicted by the LRU bound.
-    """
-    skills: dict[str, dict] = {}
-    for directory_str in directories:
-        directory = Path(directory_str)
-        for path, stem in _iter_skill_paths(directory):
-            try:
-                text = path.read_text(encoding="utf-8")
-                meta, _ = _parse_frontmatter(text)
-                name = meta.get("name", stem)
-                description = _render_tokens(
-                    meta.get("description", ""), skill_dir=path.parent
-                )
-            except OSError:
-                # Keep unreadable skills discoverable by their path stem so UI
-                # routes can surface the read error instead of the whole
-                # catalog failing to load. ``format_available_skills`` filters
-                # empty descriptions, so broken entries are not advertised to
-                # agents in prompts.
-                name = stem
-                description = ""
-            if name in skills:
-                continue  # earlier root wins on collision
-            skills[name] = {
-                "name": name,
-                "description": description,
-                "file": path.relative_to(directory).as_posix(),
-                # Absolute path to the skill's directory — needed by callers
-                # that want to render {SKILL_DIR} in the body without a
-                # second filesystem walk.
-                "dir": str(path.parent),
-            }
-    return skills
+def skills_for_mode(skills: dict[str, dict], mode: str) -> dict[str, dict]:
+    resolved = "coding" if mode == "coding" else "work"
+    return {
+        name: info
+        for name, info in skills.items()
+        if resolved in info.get("modes", ("work", "coding"))
+    }
 
 
 def _short_description(description: str, *, max_len: int = 90) -> str:
-    """Truncate a skill's full description to a single terse line.
-
-    The tool description embeds one line per skill on every LLM call, so it
-    uses this short form; ``discover_skills()`` and verbose rendering keep
-    the full text for intent-matching (``extract_triggers``) and other
-    consumers.  ``textwrap.shorten`` collapses embedded newlines/whitespace
-    and truncates on word boundaries — no sentence-detection heuristic, so
-    abbreviations like "e.g."/"etc." can't cause a premature cut.
-    """
     return textwrap.shorten(description.strip(), width=max_len, placeholder="…")
 
 
-def format_available_skills(*, verbose: bool = False) -> str:
-    """Render discovered skills for prompt/tool-description context."""
-    skills = [
-        info
-        for info in discover_skills().values()
-        if str(info.get("description", "")).strip()
+def format_available_skills(
+    *,
+    verbose: bool = False,
+    mode: str | None = None,
+    implicit_only: bool = True,
+) -> str:
+    """Render the bounded runtime catalog; never include skill bodies."""
+
+    resolved_mode = "coding" if mode == "coding" else "work"
+    records = [
+        record
+        for record in discover_skill_records_runtime(mode=resolved_mode).values()
+        if record.valid and (record.allow_implicit_invocation or not implicit_only)
     ]
-    if not skills:
+    if not records:
         return "No skills are currently available."
-
-    skills.sort(key=lambda info: str(info.get("name", "")))
     if verbose:
-        lines = ["<available_skills>"]
-        for info in skills:
-            lines += [
-                "  <skill>",
-                f"    <name>{info['name']}</name>",
-                f"    <description>{info['description']}</description>",
-                f"    <location>{Path(str(info['dir'])).as_uri()}</location>",
-                "  </skill>",
-            ]
-        lines.append("</available_skills>")
-        return "\n".join(lines)
-
+        rendered = render_skill_catalog(records, mode=resolved_mode)
+        return rendered.text or "No skills fit within the catalog budget."
     return "\n".join(
         ["## Available Skills"]
         + [
-            f"- **{info['name']}**: {_short_description(str(info['description']))}"
-            for info in skills
+            f"- **{record.name}**: {_short_description(record.description)}"
+            for record in sorted(records, key=lambda item: item.name)
         ]
     )
 
 
 def _skill_tool_description() -> str:
     return (
-        "Progressively disclose an optional specialized workflow. Call "
-        "action='list' only when the task genuinely needs a workflow beyond "
-        "the visible tool schemas and agent instructions. Call action='load' "
-        "at most once per selected skill and reuse instructions already "
-        "visible in the conversation. The catalog is intentionally omitted "
-        "from this always-visible schema to keep context focused."
+        "Load one exact skill workflow or one resource from a skill named in "
+        "the model-visible Skills catalog or by an already-loaded router. Use action='load' before "
+        "applying a selected workflow, action='read_resource' only when its "
+        "loaded instructions direct you to a bundled text file, and "
+        "action='list' only for catalog recovery. Do not pass the user's "
+        "request as a skill name or search query. Load at most once per selected "
+        "skill and reuse instructions already visible in the conversation."
     )
 
 
-def _iter_skill_paths(directory: Path):
-    """Yield ``(skill_file_path, stem)`` for all skills in *directory*.
-
-    Supports two layouts (one nested level maximum):
-
-    * Flat:   ``skills/{name}/SKILL.md``          → stem ``name``
-    * Nested: ``skills/{parent}/{sub}/SKILL.md``  → stem ``parent/sub``
-
-    Sub-directories that contain *neither* a ``SKILL.md`` nor any
-    nested ``{sub}/SKILL.md`` are silently skipped, so auxiliary files
-    (``scripts/``, ``reference/``, …) sitting alongside the skill file
-    are never exposed as skills themselves.
-
-    Returns nothing for non-existent or non-directory paths so callers
-    can pass roots that may not be present on this machine.
-    """
-    if not directory.is_dir():
-        return
-    for subdir in sorted(p for p in directory.iterdir() if p.is_dir()):
-        skill_file = subdir / "SKILL.md"
-        if skill_file.is_file():
-            # Flat skill — yield and *also* check for nested sub-skills
-            # below (they coexist with the parent's own SKILL.md).
-            yield skill_file, subdir.name
-        # One level of nesting: {parent}/{sub}/SKILL.md → "parent/sub"
-        for nested in sorted(p for p in subdir.iterdir() if p.is_dir()):
-            nested_file = nested / "SKILL.md"
-            if nested_file.is_file():
-                yield nested_file, f"{subdir.name}/{nested.name}"
-
-
 def _loaded_skills_from_messages(state: Any) -> dict[str, str]:
-    """Return skill names and content already loaded in visible conversation."""
+    """Rehydrate durable activations from visible assistant/tool pairs."""
+
     loaded: dict[str, str] = {}
     pending_by_tool_call_id: dict[str, str] = {}
     for message in getattr(state, "messages_for_llm", []):
-        tool_calls = getattr(message, "tool_calls", None) or []
-        for tool_call in tool_calls:
-            fn = getattr(tool_call, "function", None)
-            if fn is None:
-                continue
-            if getattr(fn, "name", None) != "skill":
+        for tool_call in getattr(message, "tool_calls", None) or []:
+            function = getattr(tool_call, "function", None)
+            if function is None or getattr(function, "name", None) != "skill":
                 continue
             try:
-                args = json.loads(getattr(fn, "arguments", "{}"))
+                arguments = json.loads(getattr(function, "arguments", "{}"))
             except (json.JSONDecodeError, TypeError):
                 continue
-            skill_name = args.get("skill_name")
-            if isinstance(skill_name, str) and skill_name:
-                loaded.setdefault(skill_name, "")
-                tool_call_id = getattr(tool_call, "id", None)
-                if isinstance(tool_call_id, str) and tool_call_id:
-                    pending_by_tool_call_id[tool_call_id] = skill_name
+            if arguments.get("action", "load") != "load":
+                continue
+            name = arguments.get("skill_name")
+            call_id = getattr(tool_call, "id", None)
+            if isinstance(name, str) and name and isinstance(call_id, str) and call_id:
+                pending_by_tool_call_id[call_id] = name
 
-        tool_call_id = getattr(message, "tool_call_id", None)
-        if not isinstance(tool_call_id, str):
-            continue
-        skill_name = pending_by_tool_call_id.get(tool_call_id)
+        call_id = getattr(message, "tool_call_id", None)
+        name = (
+            pending_by_tool_call_id.get(call_id) if isinstance(call_id, str) else None
+        )
         content = getattr(message, "content", None)
-        if skill_name and isinstance(content, str) and content:
-            loaded[skill_name] = content
+        if name and is_skill_activation_content(content, name):
+            loaded[name] = content
     return loaded
+
+
+def _resolve_record(
+    skill_name: str, mode: str
+) -> tuple[SkillRecord | None, str | None]:
+    all_records = discover_skill_records_runtime()
+    winner = all_records.get(skill_name)
+    if winner is None:
+        matches = get_close_matches(skill_name, sorted(all_records), n=3, cutoff=0.5)
+        suggestion = f" Did you mean: {', '.join(matches)}?" if matches else ""
+        return None, (
+            f"Skill '{skill_name}' not found.{suggestion} "
+            "Use an exact name from the Skills catalog or call action='list' "
+            "to recover the bounded catalog."
+        )
+
+    candidates = [winner, *winner.alternates]
+    applicable = [candidate for candidate in candidates if mode in candidate.modes]
+    record = next((candidate for candidate in applicable if candidate.valid), None)
+    if record is not None:
+        return record, None
+    if applicable:
+        invalid = applicable[0]
+        details = "; ".join(
+            item.message for item in invalid.diagnostics if item.severity == "error"
+        )
+        return None, (
+            f"Skill '{skill_name}' is invalid: {details or 'metadata validation failed'}."
+        )
+
+    available_modes = sorted(
+        {
+            candidate_mode
+            for candidate in candidates
+            for candidate_mode in candidate.modes
+        }
+    )
+    return None, (
+        f"Skill '{skill_name}' is not available in {mode} mode. "
+        f"Available modes: {', '.join(available_modes)}."
+    )
 
 
 @tool(
@@ -411,73 +243,100 @@ def _loaded_skills_from_messages(state: Any) -> dict[str, str]:
 async def load_skill(
     skill_name: Annotated[
         str | None,
-        Field(description="Exact skill name to load. Required when action='load'."),
+        Field(
+            description="Exact catalog skill name. Required except for action='list'."
+        ),
     ] = None,
     action: Annotated[
-        Literal["list", "load"],
-        Field(description="List the full catalog or load one skill's instructions."),
+        Literal["list", "load", "read_resource"],
+        Field(
+            description="List routing metadata, load SKILL.md, or read one bundled text resource."
+        ),
     ] = "load",
+    resource_path: Annotated[
+        str | None,
+        Field(
+            description="POSIX path relative to the selected skill directory for action='read_resource'."
+        ),
+    ] = None,
     _state: Annotated[Any, InjectedArg()] = None,
+    _mode: Annotated[Literal["work", "coding"], InjectedArg()] = "work",
 ) -> str:
-    """List available skills or load one skill's instructions into context."""
+    """Progressively disclose an exact skill or a referenced bundle resource."""
+
     if action == "list":
-        return format_available_skills(verbose=True)
+        return format_available_skills(verbose=True, mode=_mode, implicit_only=True)
     if not skill_name:
-        return "skill_name is required when action='load'."
+        return f"skill_name is required when action='{action}'."
 
-    if _state is not None:
-        loaded_skills = _state.metadata.get("loaded_skills")
-        if loaded_skills is None:
-            loaded_skills = _loaded_skills_from_messages(_state)
-            _state.metadata["loaded_skills"] = loaded_skills
-        if loaded_skills.get(skill_name):
-            logger.info("skill_reused name={}", skill_name)
-            return loaded_skills[skill_name]
-
-    roots = [r for r in _iter_skill_roots() if r.is_dir()]
-    if not roots:
+    if not any(root.is_dir() for root in _iter_skill_roots()):
         return "Skills directory not found."
 
-    # Use the cached discover_skills() lookup to find the exact file path,
-    # avoiding a fresh filesystem walk on every on-demand load.
-    discovered = discover_skills()
-    skill_info = discovered.get(skill_name)
-    if skill_info is not None:
-        skill_dir = Path(skill_info["dir"])
-        skill_file = skill_dir / "SKILL.md"
-        if skill_file.is_file():
-            text = await asyncio.to_thread(skill_file.read_text, encoding="utf-8")
-            _, body = _parse_frontmatter(text)
-            logger.info(
-                "skill_loaded name={} file={}",
-                skill_name,
-                skill_info.get("file", skill_file),
+    record, error = _resolve_record(skill_name, _mode)
+    if record is None:
+        return error or f"Skill '{skill_name}' is unavailable."
+
+    if _state is not None:
+        loaded = _state.metadata.get("loaded_skills")
+        if not isinstance(loaded, dict):
+            loaded = _loaded_skills_from_messages(_state)
+            _state.metadata["loaded_skills"] = loaded
+    else:
+        loaded = {}
+
+    if action == "read_resource":
+        if not resource_path:
+            return "resource_path is required when action='read_resource'."
+        if _state is not None and skill_name not in loaded:
+            return (
+                f"Load skill '{skill_name}' before reading its resources so the "
+                "resource is interpreted under the correct workflow."
             )
-            rendered = _render_tokens(body, skill_dir=skill_dir)
-            if _state is not None:
-                loaded_skills[skill_name] = rendered
-            return rendered
+        try:
+            return await read_skill_resource(record, resource_path)
+        except (OSError, UnicodeError, ValueError) as exc:
+            return (
+                f"Could not read resource '{resource_path}' from '{skill_name}': {exc}"
+            )
 
-    # Fallback: walk all roots for stem-based matches not captured by
-    # discover_skills (e.g. unreadable skills that are listed by stem
-    # but have no description).
-    for skills_dir in roots:
-        for path, stem in _iter_skill_paths(skills_dir):
-            text = await asyncio.to_thread(path.read_text, encoding="utf-8")
-            meta, body = _parse_frontmatter(text)
-            name = meta.get("name", stem)
-            if name == skill_name or stem == skill_name:
-                rel = path.relative_to(skills_dir)
-                logger.info("skill_loaded name={} file={}", name, rel)
-                rendered = _render_tokens(body, skill_dir=path.parent)
-                if _state is not None:
-                    loaded_skills[skill_name] = rendered
-                return rendered
+    if skill_name in loaded:
+        logger.info("skill_reused name={}", skill_name)
+        return (
+            f"Skill '{skill_name}' is already loaded; reuse its visible instructions."
+        )
 
-    available = sorted(discover_skills())
-    matches = get_close_matches(skill_name, available, n=3, cutoff=0.5)
-    suggestion = f" Did you mean: {', '.join(matches)}?" if matches else ""
-    return (
-        f"Skill '{skill_name}' not found.{suggestion} "
-        "Call action='list' to inspect the full catalog."
-    )
+    try:
+        rendered = await activate_skill(record)
+    except (OSError, UnicodeError, ValueError) as exc:
+        return f"Could not load skill '{skill_name}': {exc}"
+    logger.info("skill_loaded name={} file={}", skill_name, record.skill_file)
+    if _state is not None:
+        loaded[skill_name] = rendered
+        return rendered
+
+    # Preserve the historical direct-Python-call contract for extensions and
+    # unit tests. Real tool execution always injects AgentState and therefore
+    # receives the structured activation wrapper above.
+    try:
+        return await read_skill_instructions(record)
+    except (OSError, UnicodeError, ValueError) as exc:
+        return f"Could not load skill '{skill_name}': {exc}"
+
+
+__all__ = [
+    "_SKILLS_DIR",
+    "_builtin_skills_dir",
+    "_discover_skills_cached",
+    "_iter_skill_paths",
+    "_iter_skill_roots",
+    "_parse_frontmatter",
+    "_project_root",
+    "_render_tokens",
+    "_skill_tool_description",
+    "_skills_dir_signature",
+    "discover_skill_records_runtime",
+    "discover_skills",
+    "format_available_skills",
+    "load_skill",
+    "skills_for_mode",
+]

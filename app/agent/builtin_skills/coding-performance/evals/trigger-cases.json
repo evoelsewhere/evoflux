@@ -1,0 +1,29 @@
+[
+  {
+    "query": "The search endpoint p95 rose from 180 ms to 900 ms at 50 concurrent users. Profile it and prove a fix against the same workload.",
+    "should_trigger": true
+  },
+  {
+    "query": "Our worker grows by 300 MB per hour under a replay workload. Find the retained objects and add a stable regression guard.",
+    "should_trigger": true
+  },
+  {
+    "query": "Reduce the dashboard JavaScript bundle by 20% without delaying first interaction; provide before/after measurements.",
+    "should_trigger": true
+  },
+  {
+    "query": "Clean up this loop because it looks inefficient.",
+    "should_trigger": false,
+    "near_miss": "No workload, metric, or observed bottleneck."
+  },
+  {
+    "query": "The endpoint returns the wrong total under load.",
+    "should_trigger": false,
+    "near_miss": "Correctness failure is primary until evidence identifies a performance cause."
+  },
+  {
+    "query": "Review this caching patch for correctness and security issues.",
+    "should_trigger": false,
+    "near_miss": "Read-only code review rather than measurement-led optimization."
+  }
+]

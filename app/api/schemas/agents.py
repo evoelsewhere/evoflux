@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.core.skill_scope import SkillMode, default_skill_modes
+
 
 class AgentSummary(BaseModel):
     name: str
@@ -70,6 +72,14 @@ class ToolCatalogEntry(BaseModel):
 class SkillCatalogEntry(BaseModel):
     name: str
     description: str
+    display_name: str | None = None
+    short_description: str | None = None
+    allow_implicit_invocation: bool = True
+    user_invocable: bool = True
+    dependencies: list[dict] = Field(default_factory=list)
+    # User/project skills default to both modes; bundled workflows have an
+    # explicit scope in the code-owned catalog.
+    modes: list[SkillMode] = Field(default_factory=default_skill_modes)
 
 
 class ModelCatalogEntry(BaseModel):
