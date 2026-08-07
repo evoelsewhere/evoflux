@@ -15,6 +15,7 @@ from app.services.code_graph.types import (
     EDGE_IMPLEMENTS,
     EDGE_INHERITS,
     NODE_CLASS,
+    NODE_ENUM,
     NODE_FUNCTION,
     NODE_METHOD,
 )
@@ -42,7 +43,7 @@ class DartParser(TreeSitterParser):
             name = node.child_by_field_name("name")
             if name is not None:
                 return Definition(
-                    kind=NODE_CLASS, name=node_text(name, source), is_class=True
+                    kind=NODE_ENUM, name=node_text(name, source), is_class=True
                 )
         elif ntype == "mixin_declaration":
             name = node.child_by_field_name("name")

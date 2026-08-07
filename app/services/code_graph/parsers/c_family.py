@@ -20,9 +20,11 @@ from app.services.code_graph.parsers.base import (
 from app.services.code_graph.types import (
     EDGE_INHERITS,
     NODE_CLASS,
+    NODE_ENUM,
     NODE_FUNCTION,
     NODE_METHOD,
     NODE_NAMESPACE,
+    NODE_STRUCT,
 )
 
 if TYPE_CHECKING:
@@ -45,11 +47,11 @@ class CFamilyParser(TreeSitterParser):
         elif ntype in ("struct_specifier", "union_specifier"):
             name = self._specifier_name(node, source)
             if name and self._has_body(node):
-                return Definition(kind=NODE_CLASS, name=name, is_class=True)
+                return Definition(kind=NODE_STRUCT, name=name, is_class=True)
         elif ntype == "enum_specifier":
             name = self._specifier_name(node, source)
             if name and self._has_body(node):
-                return Definition(kind=NODE_CLASS, name=name, is_class=False)
+                return Definition(kind=NODE_ENUM, name=name, is_class=False)
         elif ntype == "class_specifier":
             # C++ only
             name = self._specifier_name(node, source)

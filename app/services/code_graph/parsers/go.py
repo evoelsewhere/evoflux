@@ -17,6 +17,7 @@ from app.services.code_graph.types import (
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
+    NODE_STRUCT,
     NODE_VARIABLE,
 )
 
@@ -58,7 +59,9 @@ class GoParser(TreeSitterParser):
                 body = spec.child_by_field_name("type")
                 if body is not None and body.type == "interface_type":
                     return Definition(kind=NODE_INTERFACE, name=name, is_class=True)
-                # struct_type, or other named types
+                if body is not None and body.type == "struct_type":
+                    return Definition(kind=NODE_STRUCT, name=name, is_class=True)
+                # Other named types retain the broad type/class category.
                 return Definition(kind=NODE_CLASS, name=name, is_class=True)
             # type alias: type Foo = ...
             alias = _first_child_of_type(node, "type_alias")

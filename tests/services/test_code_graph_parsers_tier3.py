@@ -108,8 +108,8 @@ function test() {
     result = PhpParser().parse(file_path="main.php", source=source)
     calls = _edge_names(result.edges, EDGE_CALLS)
     assert "helper" in calls
-    assert "run" in calls
-    assert "create" in calls
+    assert "obj.run" in calls
+    assert "Animal.create" in calls
 
 
 def test_php_namespace_qualifies_classes_functions_and_methods():

@@ -49,7 +49,7 @@ _MAX_FILE_BYTES = 1_500_000
 # Bump whenever parser or relationship extraction semantics change. Salting
 # file hashes forces an incremental rebuild even when repository source did
 # not change, so a newly deployed parser cannot silently reuse stale edges.
-INDEX_FORMAT_VERSION = "6"
+INDEX_FORMAT_VERSION = "7"
 
 # Definition kinds a name-based call/reference may resolve to.
 _CALLABLE_KINDS = frozenset(
@@ -189,6 +189,7 @@ class ExistingDef:
     kind: str
     file_path: str = ""
     qualified_name: str | None = None
+    language: str = ""
 
 
 def index_workspace(
@@ -272,6 +273,8 @@ def _build_index(
     qname_to_keys: dict[str, list[str]] = {}
     extra_kinds: dict[str, str] = {}
     extra_files: dict[str, str] = {}
+    qualified_by_key: dict[str, str] = {}
+    language_by_key: dict[str, str] = {}
     for definition in existing_defs:
         name_to_keys.setdefault(definition.name, []).append(definition.key)
         if definition.qualified_name and definition.qualified_name != definition.name:
@@ -280,6 +283,8 @@ def _build_index(
             )
         extra_kinds[definition.key] = definition.kind
         extra_files[definition.key] = definition.file_path
+        qualified_by_key[definition.key] = definition.qualified_name or definition.name
+        language_by_key[definition.key] = definition.language
 
     raw_edges: list[
         tuple[str, str | None, str | None, str, int | None, str | None, str | None]
@@ -324,6 +329,8 @@ def _build_index(
                 )
             )
             name_to_keys.setdefault(node.name, []).append(key)
+            qualified_by_key[key] = node.qualified_name
+            language_by_key[key] = result.language
             if node.qualified_name != node.name:
                 qname_to_keys.setdefault(node.qualified_name, []).append(key)
             file_symbols = symbols_by_file.setdefault(file_path, {})
@@ -373,6 +380,8 @@ def _build_index(
         qname_to_keys,
         extra_kinds,
         extra_files,
+        qualified_by_key,
+        language_by_key,
         module_resolution=module_resolution,
     )
     _backfill_edge_counts(index)
@@ -397,6 +406,8 @@ def _resolve_edges(
     qname_to_keys: dict[str, list[str]],
     extra_kinds: dict[str, str] | None = None,
     extra_files: dict[str, str] | None = None,
+    qualified_by_key: dict[str, str] | None = None,
+    language_by_key: dict[str, str] | None = None,
     module_resolution: ModuleResolution | None = None,
 ) -> None:
     kind_by_key = {n.key: n.kind for n in index.nodes}
@@ -459,18 +470,33 @@ def _resolve_edges(
 
             if dst_key is None and kind != EDGE_IMPORTS:
                 src_file = file_by_key.get(src_key, "")
+                # Calls within a type are best resolved against that lexical
+                # container. This disambiguates ``self.run()``/``this.run()``
+                # and bare ``run()`` when several classes in one file expose
+                # the same method name.
+                if qualified_by_key is not None and language_by_key is not None:
+                    dst_key = _resolve_lexical_scope(
+                        dst_name,
+                        src_key,
+                        qname_to_keys,
+                        qualified_by_key,
+                        language_by_key,
+                        kind_by_key,
+                        allowed,
+                    )
                 # A definition in the caller's own file is the narrowest
                 # possible scope and must win over an identical private name
                 # elsewhere in the repository.
-                dst_key = _resolve_same_file(
-                    dst_name,
-                    src_file,
-                    name_to_keys,
-                    qname_to_keys,
-                    kind_by_key,
-                    file_by_key,
-                    allowed,
-                )
+                if dst_key is None:
+                    dst_key = _resolve_same_file(
+                        dst_name,
+                        src_file,
+                        name_to_keys,
+                        qname_to_keys,
+                        kind_by_key,
+                        file_by_key,
+                        allowed,
+                    )
                 # Then use import context to narrow the search before falling
                 # back to the global name heuristic.
                 if module_resolution is not None:
@@ -626,6 +652,67 @@ def _is_distinctive_member(name: str) -> bool:
     # by length so calls such as ``items.append`` cannot bind to an unrelated
     # project helper merely because it is the only same-named definition.
     return name[:1].isupper() or len(name) >= 8 or ("_" in name and len(name) >= 6)
+
+
+def _resolve_lexical_scope(
+    dst_name: str,
+    src_key: str,
+    qname_to_keys: dict[str, list[str]],
+    qualified_by_key: dict[str, str],
+    language_by_key: dict[str, str],
+    kind_by_key: dict[str, str],
+    allowed_kinds: frozenset[str],
+) -> str | None:
+    """Resolve a call/reference inside its nearest enclosing symbol.
+
+    Parsers normalize qualified names to dots across languages. A source
+    method such as ``pkg.Service.execute`` can therefore resolve a bare
+    implicit-receiver ``validate`` or an explicit
+    ``self.validate``/``this.validate`` to
+    ``pkg.Service.validate`` before same-file/global heuristics are attempted.
+    Arbitrary receivers (``client.validate``) are deliberately excluded: they
+    require type-flow inference and guessing would create false edges.
+    """
+    if "." in dst_name:
+        receiver, short_name = dst_name.rsplit(".", 1)
+        if receiver.casefold() not in {"self", "this", "cls"}:
+            return None
+    else:
+        # A bare call is an implicit receiver only in these language models.
+        # In Python/JavaScript/PHP, ``validate()`` is a local/global function;
+        # treating it as ``this.validate()`` would create a false method edge.
+        if language_by_key.get(src_key) not in {
+            "cpp",
+            "csharp",
+            "dart",
+            "java",
+            "kotlin",
+            "objc",
+            "pascal",
+            "ruby",
+            "scala",
+            "swift",
+        }:
+            return None
+        short_name = dst_name
+
+    source_qualified = qualified_by_key.get(src_key)
+    if not source_qualified or "." not in source_qualified:
+        return None
+    container = source_qualified.rsplit(".", 1)[0]
+    while container:
+        candidate_name = f"{container}.{short_name}"
+        candidates = [
+            key
+            for key in qname_to_keys.get(candidate_name, [])
+            if kind_by_key.get(key) in allowed_kinds and key != src_key
+        ]
+        if len(candidates) == 1:
+            return candidates[0]
+        if "." not in container:
+            break
+        container = container.rsplit(".", 1)[0]
+    return None
 
 
 def _resolve_same_file(

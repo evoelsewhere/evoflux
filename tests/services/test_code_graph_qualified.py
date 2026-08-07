@@ -11,7 +11,7 @@ from app.services.code_graph.parsers.go import GoParser
 from app.services.code_graph.parsers.python import PythonParser
 from app.services.code_graph.parsers.registry import default_registry
 from app.services.code_graph.parsers.rust import RustParser
-from app.services.code_graph.types import EDGE_CALLS, NODE_CLASS
+from app.services.code_graph.types import EDGE_CALLS, NODE_CLASS, NODE_ENUM
 
 
 def _call_names(result):
@@ -27,7 +27,7 @@ type Result<T> = T | Error;
 """
     result = TypeScriptParser().parse(file_path="types.ts", source=source)
     classes = [n for n in result.nodes if n.kind == NODE_CLASS]
-    names = {c.name for c in classes}
+    names = {item.name for item in classes}
     assert "Props" in names
     assert "Result" in names
 
@@ -37,8 +37,8 @@ def test_ts_enum_captured():
 const enum Status { Active = 1, Inactive = 0 }
 """
     result = TypeScriptParser().parse(file_path="enums.ts", source=source)
-    classes = [n for n in result.nodes if n.kind == NODE_CLASS]
-    names = {c.name for c in classes}
+    enums = [n for n in result.nodes if n.kind == NODE_ENUM]
+    names = {item.name for item in enums}
     assert "Direction" in names
     assert "Status" in names
 
@@ -185,6 +185,27 @@ def test_unscoped_qualified_call_does_not_bind_by_method_name():
         )
 
         assert [edge for edge in result.edges if edge.kind == EDGE_CALLS] == []
+
+
+def test_self_call_uses_lexical_class_scope():
+    """Same-named methods in one file resolve through the caller's class."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with open(os.path.join(tmpdir, "services.py"), "w") as f:
+            f.write(
+                "class Alpha:\n"
+                "    def run(self):\n        return 1\n"
+                "    def execute(self):\n        return self.run()\n\n"
+                "class Beta:\n"
+                "    def run(self):\n        return 2\n"
+                "    def execute(self):\n        return self.run()\n"
+            )
+
+        result = index_files(tmpdir, ["services.py"], registry=default_registry())
+
+    calls = [edge for edge in result.edges if edge.kind == EDGE_CALLS]
+    resolved = {(edge.src_key, edge.dst_key) for edge in calls}
+    assert any("Alpha.execute" in src and "Alpha.run" in dst for src, dst in resolved)
+    assert any("Beta.execute" in src and "Beta.run" in dst for src, dst in resolved)
 
 
 def test_external_import_binding_does_not_fall_back_to_local_name():

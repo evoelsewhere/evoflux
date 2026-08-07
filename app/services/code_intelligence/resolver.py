@@ -78,7 +78,11 @@ async def resolve_symbol(
     if not selected:
         return SymbolResolution((), ())
     workspace_ids = [scope.workspace_id for scope in selected]
-    folded = symbol.casefold()
+    # Parsers store a language-neutral dotted qualified name. Accept native
+    # qualified spellings such as Rust/C++ ``Type::method`` and PHP namespace
+    # separators without forcing callers to know the storage convention.
+    canonical_symbol = symbol.replace("::", ".").replace("\\", ".")
+    folded = canonical_symbol.casefold()
     exact_rows = list(
         (
             await db.exec(
@@ -86,25 +90,43 @@ async def resolve_symbol(
                     col(CodeNode.workspace_id).in_(workspace_ids),
                     CodeNode.kind != "file",
                     or_(
-                        CodeNode.name == symbol,
-                        CodeNode.qualified_name == symbol,
-                        sa.func.lower(CodeNode.name) == folded,
-                        sa.func.lower(CodeNode.qualified_name) == folded,
+                        CodeNode.name == canonical_symbol,
+                        CodeNode.qualified_name == canonical_symbol,
                     ),
                 )
             )
         ).all()
     )
+    # The common exact spelling above uses the workspace/name indexes. Only
+    # pay for SQLite's non-sargable lower(column) scan when exact case did not
+    # match (useful for user-entered symbols in case-sensitive languages).
+    if not exact_rows:
+        exact_rows = list(
+            (
+                await db.exec(
+                    select(CodeNode).where(
+                        col(CodeNode.workspace_id).in_(workspace_ids),
+                        CodeNode.kind != "file",
+                        or_(
+                            sa.func.lower(CodeNode.name) == folded,
+                            sa.func.lower(CodeNode.qualified_name) == folded,
+                        ),
+                    )
+                )
+            ).all()
+        )
     exact_rows = [node for node in exact_rows if _path_matches(node.file_path, path)]
 
     # A qualified spelling is an explicit disambiguator.  An unqualified name
     # intentionally returns every exact definition rather than silently
     # choosing whichever repository happened to sort first.
-    qualified_request = any(separator in symbol for separator in (".", "::", "/"))
+    qualified_request = any(separator in symbol for separator in (".", "::", "\\", "/"))
     if qualified_request:
-        strongest = [node for node in exact_rows if node.qualified_name == symbol]
+        strongest = [
+            node for node in exact_rows if node.qualified_name == canonical_symbol
+        ]
     else:
-        strongest = [node for node in exact_rows if node.name == symbol]
+        strongest = [node for node in exact_rows if node.name == canonical_symbol]
     if not strongest:
         strongest = [
             node
@@ -124,7 +146,7 @@ async def resolve_symbol(
     )
     total = len(strongest)
     matches = tuple(
-        _as_match(node, by_workspace[node.workspace_id], symbol=symbol)
+        _as_match(node, by_workspace[node.workspace_id], symbol=canonical_symbol)
         for node in strongest[:match_limit]
     )
     if matches:
@@ -168,7 +190,7 @@ async def resolve_symbol(
         _as_match(
             node,
             by_workspace[node.workspace_id],
-            symbol=symbol,
+            symbol=canonical_symbol,
             suggestion=True,
         )
         for node in suggestion_rows[:suggestion_limit]

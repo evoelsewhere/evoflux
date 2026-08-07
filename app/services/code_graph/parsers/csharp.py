@@ -15,10 +15,12 @@ from app.services.code_graph.types import (
     EDGE_IMPLEMENTS,
     EDGE_INHERITS,
     NODE_CLASS,
+    NODE_ENUM,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
     NODE_NAMESPACE,
+    NODE_STRUCT,
 )
 
 if TYPE_CHECKING:
@@ -62,11 +64,11 @@ class CSharpParser(TreeSitterParser):
         elif ntype == "struct_declaration":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=True)
+                return Definition(kind=NODE_STRUCT, name=name, is_class=True)
         elif ntype == "enum_declaration":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=True)
+                return Definition(kind=NODE_ENUM, name=name, is_class=True)
         elif ntype == "record_declaration":
             name = self._name(node, source)
             if name:
@@ -137,7 +139,17 @@ class CSharpParser(TreeSitterParser):
             if func.type == "member_access_expression":
                 name_node = func.child_by_field_name("name")
                 if name_node is not None:
-                    return node_text(name_node, source)
+                    receiver = next(
+                        (child for child in func.named_children if child != name_node),
+                        None,
+                    )
+                    name = node_text(name_node, source)
+                    if receiver is not None:
+                        raw_receiver = node_text(receiver, source)
+                        if raw_receiver in {"this", "base"}:
+                            raw_receiver = "this"
+                        return f"{raw_receiver}.{name}"
+                    return name
         elif node.type == "object_creation_expression":
             type_node = node.child_by_field_name("type")
             if type_node is not None:

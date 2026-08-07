@@ -55,6 +55,31 @@ async def test_definition_resolves_exact_symbol_and_complete_source(
 
 
 @pytest.mark.asyncio
+async def test_native_qualified_separator_resolves_dotted_index_symbol(
+    setup_db, tmp_path: Path
+) -> None:
+    from app.core.db import async_session_factory
+    from app.services.code_graph_navigation_service import navigate_code_graph
+
+    (tmp_path / "animal.rs").write_text(
+        "struct Animal;\nimpl Animal { fn create() -> Self { Animal } }\n",
+        encoding="utf-8",
+    )
+    workspace_id = await _index(tmp_path)
+    async with async_session_factory() as db:
+        result = await navigate_code_graph(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            symbol="Animal::create",
+            operation="definition",
+            freshness_policy="fast",
+        )
+
+    assert [item.node.qualified_name for item in result.matches] == ["Animal.create"]
+
+
+@pytest.mark.asyncio
 async def test_callers_returns_exact_callsite_instead_of_search_hits(
     setup_db, tmp_path: Path
 ) -> None:
@@ -411,6 +436,7 @@ def test_code_graph_tool_is_symbol_first_and_always_visible() -> None:
         "operation",
         "path",
         "repository",
+        "freshness_policy",
         "depth",
         "limit",
     }
@@ -419,6 +445,9 @@ def test_code_graph_tool_is_symbol_first_and_always_visible() -> None:
     symbol_description = schema["properties"]["symbol"]["description"]
     assert "identifier present in source" in symbol_description
     assert "Never pass, translate, or summarize" in symbol_description
+    freshness_schema = schema["properties"]["freshness_policy"]
+    assert freshness_schema["default"] == "fast"
+    assert freshness_schema["enum"] == ["fast", "balanced", "strict"]
     assert "exact call-site lines" in code_graph.description
     assert code_graph.deduplicate_in_batch is True
 
@@ -439,6 +468,61 @@ def test_code_graph_tool_owns_navigation_contract() -> None:
 
     assert "known code symbol" in code_graph.description
     assert "request" in schema["properties"]["symbol"]["description"]
+
+
+@pytest.mark.asyncio
+async def test_code_graph_tool_defaults_to_fast_and_accepts_stricter_freshness(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from uuid import uuid4
+
+    import app.agent.tools.builtin.code_graph as tool_module
+
+    @asynccontextmanager
+    async def fake_session_factory():
+        yield object()
+
+    result = SimpleNamespace(
+        symbol="target",
+        operation="definition",
+        strategy="native-exact-symbol-graph",
+        freshness="fresh",
+        matches=[],
+        relations=[],
+        dirty_files=0,
+        pending_edges=0,
+        suggestions=[],
+        limitations=[],
+        truncated=False,
+    )
+    navigate = AsyncMock(return_value=result)
+    monkeypatch.setattr(
+        tool_module,
+        "get_sandbox",
+        lambda: SimpleNamespace(workspace_root=tmp_path, extra_workspace_paths=[]),
+    )
+    monkeypatch.setattr(tool_module, "async_session_factory", fake_session_factory)
+    monkeypatch.setattr(
+        tool_module.graph_service,
+        "resolve_workspace_id",
+        AsyncMock(return_value=uuid4()),
+    )
+    monkeypatch.setattr(
+        "app.services.code_graph_navigation_service.navigate_code_graph_across_workspaces",
+        navigate,
+    )
+    monkeypatch.setattr(
+        tool_module, "publish_code_graph_observation", lambda _obs: None
+    )
+
+    await tool_module._code_graph(symbol="target")
+    assert navigate.await_args.kwargs["freshness_policy"] == "fast"
+
+    await tool_module._code_graph(symbol="target", freshness_policy="balanced")
+    assert navigate.await_args.kwargs["freshness_policy"] == "balanced"
 
 
 @pytest.mark.asyncio

@@ -510,6 +510,7 @@ async def _reindex_incremental(
             kind=n.kind,
             file_path=n.file_path,
             qualified_name=n.qualified_name,
+            language=n.language,
         )
         for n in existing_nodes
         if n.file_path not in affected
@@ -977,25 +978,58 @@ async def search_nodes_ranked(
     folded = query.strip().casefold()
     if not folded:
         return []
-    clauses = [
-        CodeNode.workspace_id == workspace_id,
-        or_(
-            sa_func.lower(CodeNode.name).contains(folded),
-            sa_func.lower(CodeNode.qualified_name).contains(folded),
-            sa_func.lower(CodeNode.file_path).contains(folded),
-        ),
-    ]
-    if kind:
-        clauses.append(CodeNode.kind == kind)
-    if language:
-        clauses.append(CodeNode.language == language)
-    nodes = list(
-        (
-            await db.exec(
-                select(CodeNode).where(*clauses).limit(max(100, min(1000, limit * 10)))
+    candidate_limit = max(100, min(1000, limit * 10))
+    nodes: list[CodeNode] = []
+    db_path = current_sqlite_path()
+    if db_path is not None:
+        candidate_ids = await _run_in_query(
+            fts.search_fts,
+            db_path,
+            str(workspace_id),
+            query,
+            candidate_limit,
+            kind,
+            language,
+        )
+        parsed_ids: list[UUID] = []
+        for value in candidate_ids:
+            try:
+                parsed_ids.append(UUID(value))
+            except ValueError:
+                continue
+        if parsed_ids:
+            nodes = list(
+                (
+                    await db.exec(
+                        select(CodeNode).where(
+                            CodeNode.workspace_id == workspace_id,
+                            col(CodeNode.id).in_(parsed_ids),
+                        )
+                    )
+                ).all()
             )
-        ).all()
-    )
+
+    # FTS prefix matching cannot implement arbitrary infix queries (``store``
+    # matching ``restore``). Preserve that legacy behavior as a slow fallback,
+    # while common exact/prefix/token searches stay on the indexed fast path.
+    if not nodes:
+        clauses = [
+            CodeNode.workspace_id == workspace_id,
+            or_(
+                sa_func.lower(CodeNode.name).contains(folded),
+                sa_func.lower(CodeNode.qualified_name).contains(folded),
+                sa_func.lower(CodeNode.file_path).contains(folded),
+            ),
+        ]
+        if kind:
+            clauses.append(CodeNode.kind == kind)
+        if language:
+            clauses.append(CodeNode.language == language)
+        nodes = list(
+            (
+                await db.exec(select(CodeNode).where(*clauses).limit(candidate_limit))
+            ).all()
+        )
     normalized_paths = tuple(
         value.replace("\\", "/").casefold().strip("/")
         for value in paths
@@ -1025,7 +1059,11 @@ async def search_nodes_ranked(
             return 65.0, ("symbol-name fragment",)
         if folded in qualified:
             return 50.0, ("qualified-symbol fragment",)
-        return 20.0, ("file-path fragment",)
+        if folded in node.file_path.casefold():
+            return 20.0, ("file-path fragment",)
+        if node.signature and folded in node.signature.casefold():
+            return 15.0, ("signature fragment",)
+        return 10.0, ("documentation fragment",)
 
     ranked = [
         RankedCodeNode(node=node, score=score, match_reasons=reasons)
