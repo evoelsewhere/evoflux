@@ -83,6 +83,8 @@ async def test_catalog_exposes_html_project_contract() -> None:
     assert payload["canvas"] == {"width": 1600, "height": 900, "ratio": "16:9"}
     assert payload["native_export"]["markers"]["text"] == ('data-pptx-native="text"')
     assert payload["native_export"]["editable_mode"]["max"].startswith("default")
+    assert "inline font" in payload["native_export"]["behavior"]
+    assert "coverage" in payload["native_export"]
     assert payload["project_json_schema"]["properties"]["editable_mode"]["default"] == (
         "max"
     )

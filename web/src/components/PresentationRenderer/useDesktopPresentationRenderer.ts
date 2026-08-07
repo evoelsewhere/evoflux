@@ -33,6 +33,11 @@ interface InspectionResult {
   nativeText: unknown[]
   nativeShapes: unknown[]
   nativeImages: NativeImage[]
+  editability: {
+    eligibleObjects: number
+    promotedObjects: number
+    richTextRuns: number
+  }
 }
 
 export interface DesktopSlideRenderResult {

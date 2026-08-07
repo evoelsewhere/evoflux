@@ -8,6 +8,7 @@ from typing import cast
 from PIL import Image
 import pytest
 from pptx import Presentation
+from pptx.dml.color import RGBColor
 from pydantic import ValidationError
 
 from app.services import pptx_html_pipeline as pipeline
@@ -143,6 +144,11 @@ async def test_render_html_deck_uses_desktop_webview(
                 "nativeText": [],
                 "nativeShapes": [],
                 "nativeImages": [],
+                "editability": {
+                    "eligibleObjects": 4,
+                    "promotedObjects": 4,
+                    "richTextRuns": 6,
+                },
             },
             "preview": png,
             "background": png,
@@ -165,6 +171,13 @@ async def test_render_html_deck_uses_desktop_webview(
     assert calls[0]["session_id"] == "desktop-session"
     assert "A clear title" in str(calls[0]["document"])
     assert "getBoundingClientRect" in str(calls[0]["inspection_script"])
+    assert "inlineRuns" in str(calls[0]["inspection_script"])
+    assert result.to_dict()["editability"] == {
+        "eligible_objects": 4,
+        "promoted_objects": 4,
+        "coverage_percent": 100.0,
+        "rich_text_runs": 6,
+    }
 
 
 @pytest.mark.asyncio
@@ -466,6 +479,71 @@ def test_assemble_hybrid_pptx_restores_native_text_and_notes(tmp_path: Path) -> 
     assert "Presenter note" in notes
     assert "[Sources]" in notes
     assert "https://example.invalid/source" in notes
+
+
+def test_assemble_preserves_inline_text_runs_and_list_marker(tmp_path: Path) -> None:
+    project = _project("<p><strong>Editable</strong> emphasis</p>")
+    preview = tmp_path / "slide.png"
+    background = tmp_path / "background.png"
+    Image.new("RGB", (1600, 900), "white").save(preview)
+    Image.new("RGB", (1600, 900), "white").save(background)
+    render = SlideRender(
+        number=1,
+        slide_id="one",
+        preview_path=preview,
+        background_path=background,
+        native_text=[
+            {
+                "text": "Editable emphasis",
+                "listMarker": "•",
+                "runs": [
+                    {
+                        "text": "Editable",
+                        "fontFamily": "Aptos",
+                        "fontSize": 24,
+                        "fontWeight": "700",
+                        "fontStyle": "normal",
+                        "textDecoration": "underline",
+                        "letterSpacing": "0px",
+                        "color": "rgb(37, 99, 235)",
+                    },
+                    {
+                        "text": " emphasis",
+                        "fontFamily": "Aptos",
+                        "fontSize": 24,
+                        "fontWeight": "400",
+                        "fontStyle": "italic",
+                        "textDecoration": "none",
+                        "letterSpacing": "0px",
+                        "color": "rgb(23, 36, 45)",
+                    },
+                ],
+                "x": 100,
+                "y": 120,
+                "width": 900,
+                "height": 80,
+                "fontFamily": "Aptos",
+                "fontSize": 24,
+                "fontWeight": "400",
+                "fontStyle": "normal",
+                "color": "rgb(23, 36, 45)",
+                "textAlign": "left",
+                "lineHeight": "30px",
+                "order": 1,
+            }
+        ],
+    )
+    output = tmp_path / "rich-text.pptx"
+
+    assemble_hybrid_pptx(project, [render], output)
+
+    reopened = Presentation(output)
+    runs = reopened.slides[0].shapes[1].text_frame.paragraphs[0].runs
+    assert [run.text for run in runs] == ["• ", "Editable", " emphasis"]
+    assert runs[1].font.bold is True
+    assert runs[1].font.underline is True
+    assert runs[1].font.color.rgb == RGBColor(37, 99, 235)
+    assert runs[2].font.italic is True
 
 
 def test_assemble_restores_editable_shapes_and_images(tmp_path: Path) -> None:
