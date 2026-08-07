@@ -17,6 +17,7 @@ from app.agent.schemas.chat import (
     FunctionCall,
     ToolCall,
 )
+from app.agent.state import AgentState, PendingToolLifecycle
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +62,43 @@ def _make_chunk(
 
 
 class TestModelTiming:
+    @pytest.mark.asyncio
+    async def test_before_agent_publishes_pending_skill_activation(self):
+        hook = _make_hook(agent_name="evoflux")
+        state = AgentState(messages=[])
+        state.pending_tool_lifecycles.append(
+            PendingToolLifecycle(
+                tool_call_id="resolved-1",
+                name="skill",
+                arguments=('{"action":"load","skill_name":"coding-investigation"}'),
+                result=(
+                    '<skill_content name="coding-investigation">body</skill_content>'
+                ),
+                metadata={"duration_ms": 0.0, "activation_source": "resolved"},
+            )
+        )
+        pushed = []
+
+        async def fake_push(sid, event):
+            pushed.append(event)
+
+        with patch("app.services.memory_stream_store.push_event", new=fake_push):
+            await hook.before_agent(MagicMock(), state)
+
+        assert [event.event for event in pushed] == [
+            "tool_call",
+            "tool_start",
+            "tool_end",
+        ]
+        assert {event.data["tool_call_id"] for event in pushed} == {"resolved-1"}
+        assert pushed[1].data["name"] == "skill"
+        assert pushed[1].data["arguments"] == (
+            '{"action":"load","skill_name":"coding-investigation"}'
+        )
+        assert pushed[2].data["result"].startswith("<skill_content")
+        assert pushed[2].data["metadata"]["duration_ms"] == 0.0
+        assert state.pending_tool_lifecycles == []
+
     @pytest.mark.asyncio
     async def test_after_model_persists_duration_in_response_extra(self):
         hook = _make_hook()

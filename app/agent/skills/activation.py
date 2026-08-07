@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from app.agent.schemas.chat import AssistantMessage, FunctionCall, ToolCall, ToolMessage
+from app.agent.state import PendingToolLifecycle
 
 from app.agent.sandbox import get_sandbox
 from app.agent.skills.discovery import (
@@ -62,6 +63,22 @@ def inject_skill_activation(
     index = len(state.messages) if insert_at is None else insert_at
     state.messages[index:index] = pair
     state.metadata.setdefault("loaded_skills", {})[skill_name] = content
+    state.pending_tool_lifecycles.append(
+        PendingToolLifecycle(
+            tool_call_id=call_id,
+            name="skill",
+            arguments=json.dumps(
+                {"action": "load", "skill_name": skill_name},
+                separators=(",", ":"),
+            ),
+            result=content,
+            metadata={
+                "duration_ms": 0.0,
+                "synthetic": True,
+                "activation_source": source,
+            },
+        )
+    )
 
 
 def _read_bounded_utf8(path: Path, *, limit: int, label: str) -> str:

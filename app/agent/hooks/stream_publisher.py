@@ -87,6 +87,35 @@ class StreamPublisherHook(BaseAgentHook):
 
     async def before_agent(self, ctx: "RunContext", state: "AgentState") -> None:
         self._turn_started = time.monotonic()
+        pending = tuple(state.pending_tool_lifecycles)
+        state.pending_tool_lifecycles.clear()
+        for lifecycle in pending:
+            await self._push(
+                ToolCallEvent(
+                    agent=self._agent_name,
+                    tool_call_id=lifecycle.tool_call_id,
+                    name=lifecycle.name,
+                    metadata=lifecycle.metadata,
+                )
+            )
+            await self._push(
+                ToolStartEvent(
+                    agent=self._agent_name,
+                    tool_call_id=lifecycle.tool_call_id,
+                    name=lifecycle.name,
+                    arguments=lifecycle.arguments,
+                    metadata=lifecycle.metadata,
+                )
+            )
+            await self._push(
+                ToolEndEvent(
+                    agent=self._agent_name,
+                    tool_call_id=lifecycle.tool_call_id,
+                    name=lifecycle.name,
+                    result=lifecycle.result,
+                    metadata=lifecycle.metadata,
+                )
+            )
 
     async def before_model(
         self,
