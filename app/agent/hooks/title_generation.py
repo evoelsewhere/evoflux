@@ -1,15 +1,15 @@
 """TitleGenerationHook — generates a session title on the first turn.
 
-Fires a background ``asyncio.create_task`` in ``before_agent`` when the
-conversation has no prior assistant messages (i.e. the first user turn).
-The LLM call, DB write, and ``title_update`` SSE event are handled entirely
-by :func:`~app.services.title_service.generate_and_save_title` — this hook
-just decides *when* to trigger it.
+``before_agent`` records the first user message but deliberately does not
+start title generation yet. The background task starts only after the main
+model stream emits its first chunk, ensuring the user's request reaches the
+provider before the secondary title request. ``after_model`` is the fallback
+for providers that complete without emitting a stream chunk.
 
-Because the task is fire-and-forget, the agent loop is never blocked by the
-LLM call itself. ``after_agent`` performs a best-effort ``await`` on the task
-so the ``title_update`` SSE arrives before ``done`` is emitted, but the wait
-is capped by ``wait_timeout`` (default ``3.0`` s).
+The LLM call, DB write, and ``title_update`` SSE event are handled entirely by
+:func:`~app.services.title_service.generate_and_save_title`. The task is never
+awaited by the agent lifecycle, so title generation cannot delay the first
+model call or the final ``done`` event.
 
 Usage::
 
@@ -32,7 +32,11 @@ from uuid import UUID
 from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
-from app.agent.schemas.chat import AssistantMessage, HumanMessage
+from app.agent.schemas.chat import (
+    AssistantMessage,
+    ChatCompletionChunk,
+    HumanMessage,
+)
 
 if TYPE_CHECKING:
     from app.agent.providers.base import LLMProviderBase
@@ -41,10 +45,6 @@ if TYPE_CHECKING:
 
 
 # ── Module-level defaults (no env-var overrides) ──────────────────────────
-# Best-effort cap (seconds) on how long the agent loop waits for the
-# background title task to land before completing. ``0`` skips the wait
-# entirely — the title still arrives via SSE when the task finishes.
-DEFAULT_WAIT_TIMEOUT_SECONDS = 3.0
 TITLE_GENERATION_PROMPT = """\
 You are a title generator. You output ONLY a conversation title. Nothing else.
 
@@ -64,6 +64,12 @@ Rules:
 """
 
 
+# Keep strong references to detached tasks until they finish. The hook itself
+# is scoped to one agent run and may be released while title generation is
+# still updating the session in the background.
+_background_title_tasks: set[asyncio.Task[None]] = set()
+
+
 class TitleGenerationHook(BaseAgentHook):
     """Fires background title generation on the first turn of a session.
 
@@ -76,9 +82,6 @@ class TitleGenerationHook(BaseAgentHook):
             configured chat model.
         db_factory: Async session factory for persisting the title.
         system_prompt: Title-generator system prompt (required, non-empty).
-        wait_timeout: Seconds to wait in ``after_agent`` for the background
-            task to complete before the agent loop finishes. ``0`` skips the
-            wait entirely (fully non-blocking). Default ``3.0``.
     """
 
     def __init__(
@@ -86,19 +89,17 @@ class TitleGenerationHook(BaseAgentHook):
         provider: "LLMProviderBase",
         db_factory: "DbFactory",
         system_prompt: str,
-        *,
-        wait_timeout: float = DEFAULT_WAIT_TIMEOUT_SECONDS,
     ) -> None:
         if not system_prompt or not system_prompt.strip():
             raise ValueError("TitleGenerationHook requires a non-empty system_prompt.")
         self._provider = provider
         self._db_factory = db_factory
         self._system_prompt = system_prompt
-        self._wait_timeout = max(0.0, wait_timeout)
+        self._pending: tuple[UUID, str] | None = None
         self._task: asyncio.Task[None] | None = None
 
     async def before_agent(self, ctx: "RunContext", state: "AgentState") -> None:
-        """Spawn background title generation if this is the first turn."""
+        """Queue title generation if this is the first turn."""
         if ctx.session_id is None:
             return
 
@@ -127,53 +128,63 @@ class TitleGenerationHook(BaseAgentHook):
             )
             return
 
+        self._pending = (UUID(ctx.session_id), user_text)
+        logger.info(
+            "title_generation_hook_queued session_id={} model={}",
+            ctx.session_id,
+            getattr(self._provider, "model", None),
+        )
+
+    def _spawn_pending(self) -> None:
+        pending = self._pending
+        if pending is None:
+            return
+
+        self._pending = None
+        session_id, user_text = pending
+
         from app.services.title_service import generate_and_save_title
 
-        self._task = asyncio.create_task(
+        task = asyncio.create_task(
             generate_and_save_title(
-                session_id=UUID(ctx.session_id),
+                session_id=session_id,
                 user_message=user_text,
                 provider=self._provider,
                 db_factory=self._db_factory,
                 system_prompt=self._system_prompt,
             )
         )
+        self._task = task
+        _background_title_tasks.add(task)
+        task.add_done_callback(_background_title_tasks.discard)
         logger.info(
             "title_generation_hook_spawned session_id={} model={}",
-            ctx.session_id,
+            session_id,
             getattr(self._provider, "model", None),
         )
 
-    async def after_agent(
+    async def on_model_delta(
+        self,
+        ctx: "RunContext",
+        state: "AgentState",
+        chunk: ChatCompletionChunk,
+    ) -> None:
+        """Start title generation only after the primary request is streaming."""
+        del ctx, state, chunk
+        self._spawn_pending()
+
+    async def after_model(
         self, ctx: "RunContext", state: "AgentState", response: AssistantMessage
     ) -> None:
-        """Best-effort wait for the title task so the SSE event lands before done.
-
-        If ``wait_timeout`` is ``0`` the hook skips the wait entirely and the
-        title is delivered via SSE whenever the background task finishes.
-        """
-        task = self._task
-        self._task = None
-
-        if task is None or task.done():
-            return
-
-        if self._wait_timeout <= 0:
-            # Non-blocking mode: leave the task running in the background.
-            # It will push the title_update SSE event when it finishes.
-            return
-
-        try:
-            await asyncio.wait_for(asyncio.shield(task), timeout=self._wait_timeout)
-        except (TimeoutError, Exception):
-            pass
+        """Fallback for providers that return without yielding stream chunks."""
+        del ctx, state, response
+        self._spawn_pending()
 
 
 def build_title_generation_hook(
     *,
     provider: "LLMProviderBase",
     db_factory: "DbFactory",
-    wait_timeout: float = DEFAULT_WAIT_TIMEOUT_SECONDS,
 ) -> "TitleGenerationHook | None":
     """Construct a :class:`TitleGenerationHook`.
 
@@ -185,5 +196,4 @@ def build_title_generation_hook(
         provider=provider,
         db_factory=db_factory,
         system_prompt=TITLE_GENERATION_PROMPT,
-        wait_timeout=wait_timeout,
     )
