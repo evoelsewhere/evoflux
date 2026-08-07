@@ -7,6 +7,7 @@ description: Use this skill when a work question requires gathering, validating,
 
 Produce a source-governed answer to a decision-relevant question. More links do
 not automatically create more confidence.
+Do not load bundled references when this skill activates.
 
 ## Define the research contract
 

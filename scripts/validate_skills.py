@@ -34,6 +34,14 @@ MAX_BUNDLE_BYTES = 20 * 1024 * 1024
 MAX_BUNDLE_ENTRIES = 20_000
 MAX_SKILL_DIRECTORIES = 2_000
 RECOMMENDED_BODY_LINES = 500
+CODE_GRAPH_OPERATIONS = {
+    "definition",
+    "callers",
+    "callees",
+    "references",
+    "impact",
+    "neighborhood",
+}
 AGENT_INTERFACE_FIELD_LIMITS = {
     "display_name": 128,
     "short_description": 1_024,
@@ -398,6 +406,32 @@ def _validate_evals(
             continue
         positive += int(trigger)
         negative += int(not trigger)
+        expected_operation = case.get("expected_operation")
+        if (
+            expected_operation is not None
+            and expected_operation not in CODE_GRAPH_OPERATIONS
+        ):
+            result.add(
+                "error",
+                "invalid-trigger-case",
+                f"Case {index} has unsupported expected_operation '{expected_operation}'.",
+            )
+        for field_name in ("expected_trajectory", "forbidden_behaviors"):
+            values = case.get(field_name)
+            if values is None:
+                continue
+            if (
+                not isinstance(values, list)
+                or not values
+                or any(
+                    not isinstance(value, str) or not value.strip() for value in values
+                )
+            ):
+                result.add(
+                    "error",
+                    "invalid-trigger-case",
+                    f"Case {index} {field_name} must be a non-empty string list.",
+                )
     result.eval_count = len(cases)
     if positive == 0 or negative == 0:
         result.add(

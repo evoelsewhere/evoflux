@@ -1,6 +1,6 @@
 interface:
   display_name: "Create Algorithmic Art"
-  short_description: "Build seeded interactive generative artwork"
-  default_prompt: "Use $algorithmic-art to create an original seeded generative artwork from this brief."
+  short_description: "Build verified seeded interactive generative art"
+  default_prompt: "Use $algorithmic-art to design, build, and browser-verify an original seeded generative artwork from this brief."
 policy:
   allow_implicit_invocation: true

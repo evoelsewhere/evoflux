@@ -14,6 +14,10 @@ export interface ToolDisplay {
   headerTitle: string | null
   /** Simplified args body; ``null`` hides the args section entirely. */
   formattedArgs: string | null
+  /** Completed-state verb used instead of the generic tool-name label. */
+  completedLabel?: string
+  /** Running-state label used instead of the generic activity label. */
+  activityLabel?: string
   /** When set, render args as a code block with this language label. */
   language?: 'bash' | null
   /**

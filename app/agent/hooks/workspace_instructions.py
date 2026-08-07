@@ -23,7 +23,9 @@ if TYPE_CHECKING:
 
 
 MAX_AGENTS_MD_BYTES = 128 * 1024
-_MUTATING_TOOLS = frozenset({"edit", "write", "patch", "rm", "shell", "python", "bg"})
+_MUTATING_TOOLS = frozenset(
+    {"edit", "write", "patch", "rm", "shell", "python", "process"}
+)
 _PATH_KEYS = ("path", "file_path", "directory", "workdir", "target")
 
 

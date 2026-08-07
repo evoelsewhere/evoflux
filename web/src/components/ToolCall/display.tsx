@@ -17,6 +17,7 @@
 import type { ReactNode } from 'react'
 import type { ToolDisplay } from './types'
 import { parsePatchText } from './diffUtils'
+import { getSkillCallPresentation } from './skillPresentation'
 
 /**
  * Keep argument values in headers easy to restyle consistently.
@@ -278,11 +279,13 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
 
   // ── skill: conversational header, hide raw args ─────────────
   if (name === 'skill') {
-    const skillName = str(parsed, 'skill_name')
+    const presentation = getSkillCallPresentation(args)
     return {
-      header: skillName ? <Arg>{skillName}</Arg> : null,
-      headerTitle: skillName ? skillName : null,
+      header: presentation?.headerTitle ? <Arg>{presentation.headerTitle}</Arg> : null,
+      headerTitle: presentation?.headerTitle ?? null,
       formattedArgs: null,
+      completedLabel: presentation?.completedLabel,
+      activityLabel: presentation?.activityLabel,
     }
   }
 

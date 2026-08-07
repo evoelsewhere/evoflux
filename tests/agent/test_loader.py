@@ -521,6 +521,7 @@ def test_build_agent_skills_wire_configured_activation_and_catalog(
         "ConfiguredSkillsHook",
         "ExplicitSkillSelectionHook",
         "SkillResolutionHook",
+        "SkillRuntimeContractHook",
         "SkillCatalogHook",
     ]
     assert agent.hooks[-1]._preferred_skills == ("myskill",)
@@ -535,10 +536,13 @@ def test_build_agent_wires_coding_resolution_without_router_preload():
         mode="coding",
     )
 
-    resolver_hook = agent.hooks[-2]
+    resolver_hook = agent.hooks[-3]
+    runtime_hook = agent.hooks[-2]
     catalog_hook = agent.hooks[-1]
     assert resolver_hook.__class__.__name__ == "SkillResolutionHook"
     assert resolver_hook._mode == "coding"
+    assert runtime_hook.__class__.__name__ == "SkillRuntimeContractHook"
+    assert runtime_hook._mode == "coding"
     assert catalog_hook.__class__.__name__ == "SkillCatalogHook"
     assert catalog_hook._preferred_skills == ()
     assert agent.skills == []

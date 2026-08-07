@@ -1,7 +1,20 @@
 [
   {
     "query": "Find the unknown function or flag that enables WebBright and explain why it stays disabled by default.",
-    "should_trigger": true
+    "should_trigger": true,
+    "expected_trajectory": [
+      "literal_discovery",
+      "promote_exact_anchor",
+      "code_graph",
+      "targeted_semantic_verification"
+    ],
+    "forbidden_behaviors": [
+      "repeat_broad_discovery_after_exact_anchor",
+      "graph_filename_or_module_as_symbol",
+      "create_task_tracker_for_single_investigation",
+      "read_optional_resource_without_observed_gap",
+      "reread_graph_returned_source"
+    ]
   },
   {
     "query": "Which repository consumes the UserArchived event and what state transition does it trigger?",
@@ -19,7 +32,13 @@
   {
     "query": "List the direct callers of AuthMiddleware.verify_token.",
     "should_trigger": true,
-    "expected_operation": "callers"
+    "expected_operation": "callers",
+    "expected_trajectory": [
+      "code_graph"
+    ],
+    "forbidden_behaviors": [
+      "literal_discovery_before_exact_symbol_graph"
+    ]
   },
   {
     "query": "Change WebBright so it is enabled for all enterprise workspaces.",

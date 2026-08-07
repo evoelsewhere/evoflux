@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import re
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Iterator, Sequence
 
 import yaml
@@ -480,7 +480,6 @@ def _read_agent_metadata(record: SkillRecord) -> None:
                 "invalid-agent-policy",
                 "policy.allow_implicit_invocation must be a boolean.",
             )
-
     dependencies = raw.get("dependencies") or {}
     if not isinstance(dependencies, dict):
         record.add_diagnostic(
@@ -822,13 +821,18 @@ def select_skill_records_for_mode(
 
 
 def list_skill_resources(skill_dir: Path, *, limit: int = 200) -> list[dict[str, Any]]:
-    """Return a safe, bounded resource manifest without following symlinks."""
+    """Return task resources, excluding control-plane metadata and eval fixtures."""
 
     resources: list[dict[str, Any]] = []
     for _base, _directories, files in _bounded_bundle_walk(skill_dir):
         for path in files:
             relative = path.relative_to(skill_dir).as_posix()
-            if relative in {"SKILL.md", SKILL_SCOPE_FILENAME} or path.is_symlink():
+            parts = PurePosixPath(relative).parts
+            if (
+                relative in {"SKILL.md", SKILL_SCOPE_FILENAME}
+                or parts[0] in {"agents", "evals"}
+                or path.is_symlink()
+            ):
                 continue
             try:
                 size = path.stat().st_size

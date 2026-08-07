@@ -1,310 +1,87 @@
 ---
 name: self-healing
-description: >-
-  Update or upgrade the agent's own configuration on request — swap the model,
-  tune thinking depth, add tools or MCP servers, or install a new skill.
-  Use when the user says things like "upgrade yourself", "switch your model to
-  X", "make yourself faster/smarter".
+description: Update an EvoFlux agent's own explicit configuration on request, including model, fallback model, thinking level, prompt, extra tools, tool opt-outs, skills metadata, MCP attachment, or creation of a user agent file. Use only for deliberate agent-configuration changes; do not use for application source, secrets, provider implementation, MCP installation, or skill/plugin installation.
 ---
 
-# Self-Healing Skill
-
-This skill lets the agent modify its own on-disk configuration in
-response to a user request. All changes are surgical edits to files
-under `{EVOFLUX_CONFIG_DIR}/`. No code changes, no restarts. Agent
-`.md` edits take effect on the **next turn** of the affected agent. Skill
-bodies are loaded independently and are intentionally outside this workflow.
-
-## Scope — what this skill can change
-
-| Target | File | Typical request |
-|--------|------|-----------------|
-| Agent model / params | `{EVOFLUX_CONFIG_DIR}/agents/{name}.md` frontmatter | "switch to gpt-5", "use Claude", "turn on high thinking", "add a fallback model" |
-| Agent tools | same file, `tools:` / `tools_opt_out:` lists | Add extras or exclude code-owned tier tools. "give yourself shell access", "disable shell for this specialist" |
-| Agent skill metadata | same file, `skills:` list | Rare explicit catalog metadata only. Bodies are never preloaded; installing a skill normally does **not** require editing agent files. |
-| Agent MCP tools | same file, `mcp:` list (bulk) or `tools:` list (selective) | Additive local overrides on top of any built-in first-party profile MCP servers/tools. "let yourself use the filesystem MCP", "remove the github MCP from yourself" — see "MCP tools on agents" below |
-| New skills | `{EVOFLUX_CONFIG_DIR}/skills/{name}/SKILL.md` | "install a skill for reviewing pull requests" — **delegate to `skill-installer`** |
-
-Out of scope (refuse and explain): editing `.env` / secrets, changing provider
-source code, adding built-in tools, touching files outside
-`{EVOFLUX_CONFIG_DIR}/`. Note that the sandbox workspace is **not** the
-config directory — pass the absolute config path to `read` / `write` / `edit`
-rather than relative names.
-
-## Agent capability changes
-
-Use this self-healing workflow for root/blueprint config changes:
-
-- Adding persistent first-party extras to `tools:` / `mcp:` in an agent `.md` file.
-- Editing `skills:` only when the user explicitly wants agent-file metadata changed; do not add a skill there as part of normal skill installation.
-- Removing user-added extras from an agent `.md` file.
-- Removing code-owned default tools through `tools_opt_out`; implicit lifecycle
-  and team tools remain runtime invariants and cannot be opted out.
-- Edits to the **lead's own** `.md`.
-- Multi-field changes (e.g. model + thinking level + tools in one diff).
-- Anything outside `tools` / `skills` / `mcp` — `model`,
-  `thinking_level`, `fallback_model`, system prompt body. (Summarisation
-  tuning is not editable per-agent — it lives in code; refuse and refer
-  the user to `app/agent/hooks/summarization.py`.)
-- Creating a new agent file.
-
-For those, follow the read → diff → confirm → edit recipe.
-
-## Workflow — any change
-
-1. **Identify the target file.** Ask the user "which agent?" only if ambiguous;
-   otherwise pick the agent that matches the conversation (most often the lead).
-2. **Read the current file** so you know the exact existing frontmatter / YAML.
-   If the file doesn't exist yet, note that — you will `write` it from scratch
-   (step 6) rather than `edit` it.
-3. **Compute the minimal diff** — change only the fields the user asked about.
-   Never reformat unrelated lines, never drop existing fields.
-4. **Show the diff to the user** as a fenced ```diff block (old → new) with a
-   one-line summary of what it does.
-5. **Wait for confirmation** — do NOT write until the user says "go" /
-   "yes" / "apply". If the user's original message was already explicit
-   ("update yourself to use gpt-5 now"), treat that as pre-approval and skip
-   the wait — but still show the diff in the same turn as the write.
-6. **Apply with `edit`** (preferred — preserves the rest of the file verbatim).
-   Use `write` only when creating a new file.
-7. **Report what changed and which file.** Tell the user when it
-   takes effect (see table below). Do **not** mention restarts —
-   there are none.
-
-## Recipes
-
-### Find your own agent file
-
-When the user says "upgrade *yourself*", you (the lead) need your own
-`.md` path. The lead is the only file with `role: lead`:
-
-```bash
-grep -l 'role: lead' {AGENTS_DIR}/*.md
-```
-
-For member agents, match by `name:` — e.g. the executor has `name: executor`
-in its frontmatter. Don't hard-code filenames; agent files are user-renamable.
-
-### Provider sanity check before swapping `model`
-
-Before recommending a switch to a new provider, confirm the API key is
-already exported. One `shell` call, four chars max so secrets don't
-land in transcripts:
-
-```bash
-printenv OPENAI_API_KEY | head -c 4
-```
-
-Empty output → key is missing; refuse the swap and tell the user
-which env var to add to `{EVOFLUX_CONFIG_DIR}/.env`. Provider →
-key var (matches `EvoFlux init`):
-
-| Provider | Env var |
-|----------|---------|
-| `googlegenai` | `GOOGLE_API_KEY` |
-| `openai` | `OPENAI_API_KEY` |
-| `openrouter` | `OPENROUTER_API_KEY` |
-| `zai` | `ZAI_API_KEY` |
-| `nvidia` | `NVIDIA_API_KEY` |
-| `xai` | `XAI_API_KEY` |
-| `deepseek` | `DEEPSEEK_API_KEY` |
-| `router9` | `ROUTER9_API_KEY` |
-| `cliproxy` | `CLIPROXY_API_KEY` |
-
-Providers with managed credentials (`copilot`, `codex`, `vertexai`,
-`ollama`) have no env var to check — `copilot` / `codex` use their
-own CLI, `vertexai` uses ADC, and `ollama` talks to the local
-daemon (or to Ollama Cloud after `ollama signin`). Skip this step
-for them.
-
-### Relative tweaks ("a bit", "more", "less")
-
-The user says "warmer", "more focused", "more thoughtful" — **read
-the current configuration and prompt first**, then make the smallest explicit
-change that expresses the intent.
-
-| Request | Step (typical) |
-|---------|----------------|
-| "warmer" / "more creative" | Add a precise tone or creativity instruction to the system prompt |
-| "more focused" / "deterministic" | Add a precise focus/consistency instruction to the system prompt |
-| "think harder" | `thinking_level` one rung up: `none → low → medium → high` |
-| "respond faster" | `thinking_level` one rung down |
-
-Show the exact prompt or thinking-level change in the diff so the user can
-veto it if the interpretation feels wrong.
-
-## Reload semantics — when changes take effect
-
-Drift detection runs at end of every turn: each member compares
-mtimes of `mcp.json`, its own `.md`, and each referenced
-`SKILL.md`. If any changed, the agent rebuilds itself in place at
-the start of its next turn (model, prompt, tools, MCP — all fresh).
-No team teardown, no in-flight turn disruption, no restart.
-
-| Change | Takes effect when |
-|--------|-------------------|
-| Agent `.md` frontmatter or system prompt | **Next turn** of that agent (drift detection). |
-| `mcp.json` (server added / removed / edited) | After `mcp-installer apply`, on the **next turn** of every agent that references the server. |
-| `SKILL.md` body edited | The next explicit `skill(action="load", ...)` in a fresh conversation reads the updated body. Already-visible instructions remain stable for the current conversation. |
-| New skill installed via `skill-installer` | Immediately discoverable through `skill(action="list")` and loadable by exact name. No agent `.md` edit is required. |
-
-The only changes that still require a process restart are: adding or
-removing **agent files** themselves (team shape change), manually editing `.env` /
-secrets, and code changes. MCP OAuth credentials saved through the MCP API are
-an exception: the API updates the current process environment immediately.
-Don't claim a restart for anything else.
-
-## Agent frontmatter — fields you may edit
-
-Only these keys are valid. Reject any request to invent new ones.
-
-| Field | Values |
-|-------|--------|
-| `model` | `provider:model` — e.g. `googlegenai:gemini-3.1-flash`, `openai:gpt-5.5`, `zai:glm-5-turbo`, `openrouter:...`, `copilot:...`, `codex:...`, `vertexai:...`, `nvidia:...`, `xai:grok-4.20`, `ollama:llama3.2`, `ollama:kimi-k2.6-cloud` |
-| `fallback_model` | same format as `model` |
-| `thinking_level` | a level advertised by the selected model, such as `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or `ultra` |
-| `tools` | extra names from the current tool registry, including selective `mcp_<server>_<tool>` entries. Never copy a stale example list; inspect the current catalog. Implicit lifecycle/team tools are injected automatically. |
-| `tools_opt_out` | exclusions applied to code-owned mode-tier tools. Implicit lifecycle/team tools cannot be excluded. |
-| `skills` | optional explicit skill metadata; names of discovered project/global/bundled skill directories. Bodies are never preloaded. Do not use this as the normal skill-install wiring step. |
-| `responses_api` | `true` to force OpenAI Responses API |
-
-Validation invariants to preserve:
-
-- Exactly one file in `agents/` has `role: lead`. Never change `role`.
-- `model` must contain a `:` separator.
-- Tool names must match the built-in registry (see table above).
-- Verify a skill name through `skill(action="list")` before adding metadata;
-  unknown names remain inert metadata and cannot be loaded.
+# Update agent configuration
 
-## MCP tools on agents
+Make surgical edits only under `{EVOFLUX_CONFIG_DIR}/`. Do not load bundled
+references when this skill activates. Never edit application code, `.env`,
+secrets, built-in tool definitions, or bundled/read-only agent profiles through
+this workflow.
 
-MCP servers are managed by `mcp-installer` (it edits `mcp.json`). This
-skill wires the resulting tools onto a specific agent. For first-party
-built-in profiles, `mcp:` and selective `mcp_*` tools in the `.md` are
-additive local overrides; they do not replace built-in capabilities.
+## Route the request
 
-The recipes below are for agent `.md` edits, including lead targets and
-selective `tools:` entries.
+- Agent model, thinking, fallback, prompt, `tools`, `tools_opt_out`, `skills`,
+  or `mcp` metadata: continue here.
+- Install or update an MCP server: load `$mcp-installer` instead.
+- Create, import, or update a skill bundle: load `$skill-installer` instead.
+- Install a plugin: load `$plugin-installer` instead.
 
-Two ways:
+## State machine
 
-### `mcp:` list — bulk attach (recommended for new servers)
+### 1. RESOLVE
 
-Grants the agent **every** tool the server exposes, now and in the
-future. One line; future server-side tool additions are picked up
-automatically.
+Resolve the exact writable agent file. Use the current lead when “yourself” is
+unambiguous; otherwise inspect `{EVOFLUX_CONFIG_DIR}/agents/` by `role:` and
+`name:`. Do not hard-code filenames. Ask only if multiple writable candidates
+remain.
 
-```yaml
-mcp:
-  - context7
-  - shadcn          # ← grants all shadcn tools
-```
+### 2. INSPECT
 
-### `tools:` list — selective attach
+Read the complete current file before proposing a change. Preserve unrelated
+frontmatter, prompt text, comments, order, and formatting. If the file does not
+exist, treat the request as explicit creation and preserve the invariant that
+exactly one configured agent is the lead.
 
-Pick specific `mcp_<server>_<tool>` names. Use when the agent only
-needs one or two tools from a multi-tool server.
+Read [references/agent-config-contract.md](references/agent-config-contract.md)
+only when changing a model, thinking level, fallback, prompt, tools,
+`tools_opt_out`, skills metadata, or creating a file. Read
+[references/mcp-agent-wiring.md](references/mcp-agent-wiring.md) only when
+attaching, selecting, or removing MCP tools from an agent.
 
-```yaml
-tools:
-  - read
-  - shell
-  - mcp_shadcn_get_component
-```
+### 3. VALIDATE
 
-| User intent | Action |
-|-------------|--------|
-| "Let me use the shadcn MCP" | Add `shadcn` to `mcp:` (bulk) |
-| "Add only the search tool from filesystem" | Add `mcp_filesystem_search` to `tools:` |
-| "Remove the github MCP from this agent" | Strip `github` from `mcp:` AND every `mcp_github_*` entry from `tools:` |
+Validate the requested value against runtime-visible state before editing:
 
-### Workflow
+- model/provider and advertised thinking levels must exist;
+- tool names must come from the current registry;
+- skill names must come from the current discovered catalog;
+- MCP server/tool names must come from current MCP status when reachable;
+- implicit lifecycle/team invariants cannot be opted out;
+- never expose or probe more than whether a required credential is configured.
 
-1. **Verify the server is configured and `ready`:**
-   ```bash
-   curl -sS http://localhost:4082/api/mcp/servers/<name> | jq '{state, tool_names}'
-   ```
-   - If `ready`: proceed.
-   - If `starting`: wait a moment and retry once.
-   - If `error`, `auth_required`, or absent from `mcp.json`: **delegate to `mcp-installer`** first.
-   - If the daemon is unreachable: proceed anyway — add the `mcp:` entry to the agent file and note it takes effect on the next turn.
+For relative requests such as “think harder” or “respond faster,” move one
+advertised thinking rung from the current value. For tone requests, add the
+smallest precise prompt instruction that expresses the intent.
 
-2. **For selective `tools:` entries**, pick names from `tool_names`.
-   Don't invent names.
+### 4. APPLY
 
-3. **Standard diff workflow** (read → diff → confirm → edit). Active
-   on the agent's next turn — no reload step.
+Compute one minimal diff. If the user's current message explicitly authorizes
+the exact change, apply it without a second approval turn and show the diff in
+the same response. If the request is exploratory or the target/value remains a
+choice, show the proposed diff and wait.
 
-4. **Removal ordering** — when removing tools as part of decommissioning
-   the server itself, edit agent files **before** running
-   `mcp-installer apply`. Otherwise the next-turn rebuild logs
-   `agent_config_refresh_failed` ("unknown tool") and the agent keeps
-   its previous (stale) config until you fix it. `mcp-installer`
-   delegates here for exactly this reason.
+Use a targeted edit for an existing file and a create operation only for a new
+file. Never reserialize the whole frontmatter when a line-level edit preserves
+the user's formatting.
 
-## Delegating to `skill-installer`
+### 5. VERIFY
 
-If the user wants a **new** skill body — "install a code-review skill",
-"add a skill for generating SVGs", "fetch this skill from https://…" — call
-`skill(action="load", skill_name="skill-installer")` and follow its workflow. Do not write `SKILL.md`
-files from inside this skill, and do not edit agent `.md` `skills:` lists unless
-the user explicitly asked for that metadata change.
+Read the resulting file and confirm the exact requested value, valid YAML, and
+preserved invariants. Agent file edits take effect on that agent's next turn;
+skill-body edits apply on the next fresh activation; agent-file additions or
+removals change team shape and may require runtime restart. Report the actual
+case without a generic restart instruction.
 
-## Examples
+## Stop conditions
 
-### 1. "Switch yourself to gpt-5 with medium thinking"
+Stop when the target is exact, the value is registry-valid, the minimal diff is
+applied or explicitly awaiting approval, the resulting file is verified, and
+activation timing is accurately reported.
 
-Read the lead agent's file (e.g. `agents/EvoFlux.md`), show:
+## Deliverable
 
-```diff
-- model: zai:glm-5v-turbo
-- thinking_level: low
-+ model: openai:gpt-5
-+ thinking_level: medium
-```
-
-Apply with `edit`. Tell user: "Applied. Active on my next turn."
-
-### 2. "Give yourself shell access"
-
-Read the current agent's `.md`, add `shell` (and probably `bg`) to the
-`tools:` list. Show diff, confirm, apply. Warn: "Shell runs inside the
-sandbox and is gated by the permission system."
-
-### 3. "Install a skill for writing release notes"
-
-Load `skill-installer` progressively and follow that workflow.
-
-### 4. "Use a warmer tone"
-
-Read the lead's `.md` and add the smallest clear instruction to its prompt:
-
-```diff
- You are the team orchestrator. Coordinate the work and keep updates concise.
-+Use a warm, approachable tone while staying precise.
-```
-
-Apply and confirm "Active on my next turn."
-
-
-
-## Verification
-
-- Read the resulting file and confirm the requested values exactly.
-- Validate the provider and model before changing `model`.
-- Report which agent changes on its next turn and which runtime changes need a restart.
-
-## Failure modes — bail out instead of guessing
-
-- Target file not found → ask the user to confirm the path / agent name.
-- Frontmatter malformed (no closing `---`, YAML parse error) → show the
-  problem, do not attempt repair unless asked.
-- User request violates an invariant (two leads, unknown tool, unsupported
-  provider) → explain why and suggest the nearest valid alternative.
-- Env var for a new provider isn't set → refuse to switch; tell the user
-  what key is needed and where to put it (`{EVOFLUX_CONFIG_DIR}/.env`).
-
-## When NOT to Use
-
-- When the task doesn't match this skill's domain
-- For simple tasks that don't require structured workflows
+Lead with what changed and which agent it affects. Include the exact file,
+minimal diff, validation performed, effective timing, and any unresolved
+credential, registry, or runtime requirement.

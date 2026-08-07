@@ -277,13 +277,14 @@ async def test_configured_skill_larger_than_preload_budget_is_never_loaded(
         lambda **_kwargs: {"oversized": oversized, "compact": compact},
     )
 
-    async def fake_activate(record):
+    async def fake_activate(_state, record):
         if record.name == "oversized":
             return "x" * (MAX_CONFIGURED_SKILL_CHARS + 1)
         return '<skill_content name="compact">Compact.</skill_content>'
 
     monkeypatch.setattr(
-        "app.agent.hooks.configured_skills.activate_skill", fake_activate
+        "app.agent.hooks.configured_skills.activate_skill_with_runtime",
+        fake_activate,
     )
     state = AgentState(messages=[HumanMessage(content="Do the assigned work")])
     hook = ConfiguredSkillsHook(["oversized", "compact"], mode="work")

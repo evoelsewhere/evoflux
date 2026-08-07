@@ -1,70 +1,58 @@
 ---
 name: theme-factory
-description: Toolkit for styling artifacts with a theme. These artifacts can be slides, docs, reportings, HTML landing pages, etc. There are 10 pre-set themes with colors/fonts that you can apply to any artifact that has been creating, or can generate a new theme on-the-fly.
+description: Select, create, and apply a cohesive color-and-typography theme to an existing slide deck, document, report, workbook, or HTML artifact without changing its content hierarchy. Use when visual theming is the requested outcome; do not use to author the artifact's substantive content or redesign a product interface.
 ---
 
-# Theme Factory
+# Apply an artifact theme
 
-License terms are in `LICENSE.txt`.
+Preserve the artifact's content, hierarchy, semantics, and editability. Change
+only the visual system the user requested. Do not load the showcase or any
+theme specification when this skill activates.
 
-This skill provides a curated collection of professional font and color themes themes, each with carefully selected color palettes and font pairings. Once a theme is chosen, it can be applied to any artifact.
+## Select the theme
 
-## Purpose
+- If the user names a bundled theme, read only its file in `themes/` and apply
+  it without asking for reconfirmation.
+- If the brief supplies a clear palette, tone, brand rule, or visual reference,
+  map it to the closest bundled theme or create a compatible custom theme and
+  continue without asking about internal preset names.
+- If visual direction is genuinely absent and different choices would
+  materially change the artifact, show `theme-showcase.pdf` and ask once for a
+  choice. Do not show the showcase merely because it exists.
 
-To apply consistent, professional styling to presentation slide decks, use this skill. Each theme includes:
-- A cohesive color palette with hex codes
-- Complementary font pairings for headers and body text
-- A distinct visual identity suitable for different contexts and audiences
+Bundled themes are Ocean Depths, Sunset Boulevard, Forest Canopy, Modern
+Minimalist, Golden Hour, Arctic Frost, Desert Rose, Tech Innovation, Botanical
+Garden, and Midnight Galaxy.
 
-## Usage Instructions
+## Define the contract
 
-To apply styling to a slide deck or other artifact:
+Record background, surface, primary text, muted text, accent, success/warning
+roles, heading/body/utility fonts, contrast requirements, and any brand-fixed
+values. For a custom theme, give it a descriptive name and define the same
+roles. Do not invent a logo, brand color, or font license.
 
-1. **Show the theme showcase**: Display the `theme-showcase.pdf` file to allow users to see all available themes visually. Do not make any modifications to it; simply show the file for viewing.
-2. **Ask for their choice**: Ask which theme to apply to the deck
-3. **Wait for selection**: Get explicit confirmation about the chosen theme
-4. **Apply the theme**: Once a theme has been chosen, apply the selected theme's colors and fonts to the deck/artifact
+## Apply
 
-## Themes Available
+Use the artifact's native styling mechanism: masters/themes for slides, styles
+for documents, cell styles for workbooks, or tokens/CSS variables for HTML.
+Update repeated components consistently. Preserve charts, data encodings,
+semantic status colors, template lineage, formulas, and accessible reading
+order unless the user explicitly asks to change them.
 
-The following 10 themes are available, each showcased in `theme-showcase.pdf`:
+## Verify
 
-1. **Ocean Depths** - Professional and calming maritime theme
-2. **Sunset Boulevard** - Warm and vibrant sunset colors
-3. **Forest Canopy** - Natural and grounded earth tones
-4. **Modern Minimalist** - Clean and contemporary grayscale
-5. **Golden Hour** - Rich and warm autumnal palette
-6. **Arctic Frost** - Cool and crisp winter-inspired theme
-7. **Desert Rose** - Soft and sophisticated dusty tones
-8. **Tech Innovation** - Bold and modern tech aesthetic
-9. **Botanical Garden** - Fresh and organic garden colors
-10. **Midnight Galaxy** - Dramatic and cosmic deep tones
+Render or preview the full artifact after applying the theme. Check contrast,
+font availability/substitution, hierarchy, chart legibility, table density,
+links, clipping, and consistency across representative and edge pages/slides/
+sheets. Correct local overrides that accidentally retain the old theme.
 
-## Theme Details
+## Stop conditions
 
-Each theme is defined in the `themes/` directory with complete specifications including:
-- Cohesive color palette with hex codes
-- Complementary font pairings for headers and body text
-- Distinct visual identity suitable for different contexts and audiences
+Stop when the theme roles are applied consistently, the artifact remains
+editable and semantically unchanged, and visual verification exposes no
+unresolved contrast, substitution, clipping, or stale-style defect.
 
-## Application Process
+## Deliverable
 
-After a preferred theme is selected:
-1. Read the corresponding theme file from the `themes/` directory
-2. Apply the specified colors and fonts consistently throughout the deck
-3. Ensure proper contrast and readability
-4. Maintain the theme's visual identity across all slides
-
-
-
-## Verification
-
-- 3. **Wait for selection**: Get explicit confirmation about the chosen theme
-
-## Create your Own Theme
-To handle cases where none of the existing themes work for an artifact, create a custom theme. Based on provided inputs, generate a new theme similar to the ones above. Give the theme a similar name describing what the font/color combinations represent. Use any basic description provided to choose appropriate colors/fonts. After generating the theme, show it for review and verification. Following that, apply the theme as described above.
-
-## When NOT to Use
-
-- When the task doesn't match this skill's domain
-- For simple tasks that don't require structured workflows
+Return the themed artifact first. Name the theme, fonts and key colors, state
+what was intentionally preserved, and summarize rendering/preview verification.

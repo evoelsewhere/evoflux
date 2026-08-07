@@ -21,6 +21,18 @@ include callable references used through dispatchers or executors;
 `references` includes other inbound structural uses. `impact` is static
 dependency reachability, not a runtime execution trace.
 
+## Choose freshness deliberately
+
+| Policy | Use when | Cost and constraint |
+| --- | --- | --- |
+| `fast` | First call and normal interactive navigation | Uses the latest indexed snapshot without a blocking repository validation. It may return `partial` with dirty files. A workspace with no index still requires its initial build. |
+| `balanced` | A `fast` result is `partial` and dirty files overlap the question, or current post-edit relationships are required | Flushes watcher changes and validates/reindexes before answering, so it may block. Retry once, then use the result. |
+| `strict` | Final high-consequence completeness proof when watcher coverage is unavailable or untrusted | Performs an independent repository check and is the most expensive policy. Never use it for discovery or as the first call. |
+
+If `fast` returns `fresh`, do not rerun the same query with a stronger policy.
+For a small dirty-file gap, a targeted source read is cheaper than rebuilding
+relationships. Never repeat an unchanged `balanced` or `strict` query.
+
 ## Interpret results before claiming coverage
 
 - Treat multiple definitions as ambiguity. Disambiguate with qualified symbol,

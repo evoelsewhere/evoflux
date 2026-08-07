@@ -1,21 +1,60 @@
 # Native code-graph contract
 
 Use the graph only after an exact source identifier is visible in user input or
-source evidence. Never translate request prose, errors, routes, configuration,
-or feature names into the `symbol` field.
+source evidence. Never translate a natural-language request, error sentence,
+route description, configuration question, or feature name into the `symbol`
+field.
 
-Choose the smallest operation at depth 1: `definition`, `callers`, `callees`,
-`references`, `impact`, or `neighborhood`. Increase depth only for a named
-transitive-impact question. Disambiguate duplicate definitions with qualified
-symbol, repository, or path before combining relationships.
+## Choose one operation
 
-Preserve relationship direction, repository identity, and call-site anchors.
-Treat freshness, dirty files, pending cross-repository edges, limitations, and
-truncation as coverage bounds. An empty edge set means no resolved static edge,
-not that dynamic wiring is absent. Reuse graph-returned source rather than
-immediately grepping or rereading the same range.
+| Structural question | Operation | Initial depth |
+| --- | --- | --- |
+| Where is this exact symbol declared? | `definition` | 1 |
+| Which call sites invoke it? | `callers` | 1 |
+| Which symbols does it invoke? | `callees` | 1 |
+| Where is it structurally used? | `references` | 1 |
+| What can this change affect upstream? | `impact` | 1 |
+| What immediately surrounds it? | `neighborhood` | 1 |
 
-Use literal search for unknown identifiers, routes, flags, config, comments,
-and error text; LSP for aliases/types/overrides; and tests, logs, debugger, or
-runtime evidence for reflection, registries, dependency injection, generated
-code, and dynamic imports. Do not repeat an unsuccessful graph call unchanged.
+Increase depth only for a named transitive impact question. `callers` may
+include callable references used through dispatchers or executors;
+`references` includes other inbound structural uses. `impact` is static
+dependency reachability, not a runtime execution trace.
+
+## Choose freshness deliberately
+
+| Policy | Use when | Cost and constraint |
+| --- | --- | --- |
+| `fast` | First call and normal interactive navigation | Uses the latest indexed snapshot without a blocking repository validation. It may return `partial` with dirty files. A workspace with no index still requires its initial build. |
+| `balanced` | A `fast` result is `partial` and dirty files overlap the question, or current post-edit relationships are required | Flushes watcher changes and validates/reindexes before answering, so it may block. Retry once, then use the result. |
+| `strict` | Final high-consequence completeness proof when watcher coverage is unavailable or untrusted | Performs an independent repository check and is the most expensive policy. Never use it for discovery or as the first call. |
+
+If `fast` returns `fresh`, do not rerun the same query with a stronger policy.
+For a small dirty-file gap, a targeted source read is cheaper than rebuilding
+relationships. Never repeat an unchanged `balanced` or `strict` query.
+
+## Interpret results before claiming coverage
+
+- Treat multiple definitions as ambiguity. Disambiguate with qualified symbol,
+  repository, or path before combining relationships.
+- Preserve relationship direction, repository identity, and exact call-site
+  anchors.
+- Treat `freshness`, dirty files, pending cross-repository edges,
+  `limitations`, and truncation as answer constraints.
+- Treat an empty edge set as no resolved static relationship, not proof that no
+  dynamic relationship exists.
+- Reuse definition and call-site source returned by the graph. Do not
+  immediately grep or reread the same ranges.
+
+## Use the narrow fallback for the actual gap
+
+- Unknown identifier, literal, route, flag, config, comment, or error text:
+  narrow `grep`/`glob` and targeted source reading.
+- Alias, receiver type, override, or live diagnostic: LSP.
+- Reflection, registry, dependency injection, generated code, or dynamic
+  import: source plus tests, logs, debugger, or runtime evidence.
+- Unsupported language, stale index, pending edges, or truncation: report the
+  bound and verify only the unresolved source surface.
+
+Do not repeat an unsuccessful graph call unchanged. Correct the exact symbol,
+operation, disambiguator, or evidence source.

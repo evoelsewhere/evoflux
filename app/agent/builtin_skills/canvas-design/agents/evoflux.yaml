@@ -1,6 +1,6 @@
 interface:
   display_name: "Create Canvas Artwork"
-  short_description: "Design original static posters and visual art"
-  default_prompt: "Use $canvas-design to create an original static visual artwork from this brief."
+  short_description: "Create and render-verify original static artwork"
+  default_prompt: "Use $canvas-design to create and visually verify the requested original PNG or PDF artwork."
 policy:
   allow_implicit_invocation: true

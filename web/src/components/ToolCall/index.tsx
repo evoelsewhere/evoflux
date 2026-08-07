@@ -229,7 +229,15 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
 
   // getToolDisplay JSON.parses args and getDiffStats runs a line diff —
   // memoized so parent re-renders (streaming ticks) don't redo the work.
-  const { header, headerTitle, formattedArgs, language, suppressResult } =
+  const {
+    header,
+    headerTitle,
+    formattedArgs,
+    language,
+    suppressResult,
+    completedLabel,
+    activityLabel: customActivityLabel,
+  } =
     useMemo(() => getToolDisplay(name, args), [name, args])
   const usesDiffView = name === 'edit' || name === 'patch' || name === 'write'
   const usesReadView = name === 'read'
@@ -295,12 +303,12 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
   const expanded = manualExpanded ?? Boolean(isRunning && shownLiveOutput)
   const displayName = name || 'tool'
   const toolLabel = state === 'success' || state === 'failed'
-    ? completedToolLabel(displayName)
+    ? completedLabel ?? completedToolLabel(displayName)
     : formatToolLabel(displayName)
   const title = headerTitle ? `${toolLabel}: ${headerTitle}` : toolLabel
   const elapsedMs = durationMs ?? (!done && startedAt ? now - startedAt : undefined)
   const activityLabel = state === 'start' || state === 'running'
-    ? toolActivityLabel(name, state, headerTitle)
+    ? customActivityLabel ?? toolActivityLabel(name, state, headerTitle)
     : null
 
   // Cursor-like Task chrome for team_delegate — replace generic tool row.

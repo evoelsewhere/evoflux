@@ -7,6 +7,7 @@ description: Use this skill to convert an agreed outcome into an executable proj
 
 Create an execution control surface, not a decorative list of phases. Every
 work item must produce an observable deliverable and unblock a named outcome.
+Do not load bundled references or templates when this skill activates.
 
 ## Establish the planning contract
 
@@ -32,7 +33,7 @@ Order slices by dependency and risk. Put discovery and proof before commitments
 that depend on feasibility. Show the critical path, external handoffs,
 decision gates, and work that can proceed in parallel.
 
-Read [references/plan-quality-gates.md](references/plan-quality-gates.md) for
+Read [references/plan-quality-gates.md](references/plan-quality-gates.md) only for
 multi-team plans, fixed deadlines, rollout or migration work, external
 dependencies, or plans that need estimates.
 

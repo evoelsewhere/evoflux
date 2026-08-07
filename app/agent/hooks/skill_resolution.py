@@ -8,7 +8,11 @@ from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
 from app.agent.schemas.chat import HumanMessage
-from app.agent.skills.activation import activate_skill, inject_skill_activation
+from app.agent.skills.activation import (
+    SkillDependencyError,
+    activate_skill_with_runtime,
+    inject_skill_activation,
+)
 from app.agent.skills.resolution import resolve_skill
 
 if TYPE_CHECKING:
@@ -84,8 +88,8 @@ class SkillResolutionHook(BaseAgentHook):
         if decision.skill_name in loaded:
             return
         try:
-            content = await activate_skill(record)
-        except (OSError, UnicodeError, ValueError) as exc:
+            content = await activate_skill_with_runtime(state, record)
+        except (OSError, UnicodeError, ValueError, SkillDependencyError) as exc:
             logger.warning(
                 "skill_resolution_activation_failed agent={} skill={} error={}",
                 ctx.agent_name,

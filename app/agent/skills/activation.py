@@ -26,6 +26,62 @@ if TYPE_CHECKING:
     from app.agent.state import AgentState
 
 
+class SkillDependencyError(RuntimeError):
+    """Raised when a required runtime tool is outside the current grant."""
+
+
+def _resolve_builtin_dependencies(
+    state: AgentState,
+    record: SkillRecord,
+) -> tuple[frozenset[str], frozenset[str]]:
+    """Return visible and deferred built-in dependencies without mutating state."""
+
+    required = frozenset(
+        str(item.get("value", "")).strip()
+        for item in record.dependencies
+        if str(item.get("type", "")).strip().casefold() == "builtin"
+        and str(item.get("value", "")).strip()
+    )
+    if not required:
+        return frozenset(), frozenset()
+    available = set(getattr(state, "tool_names", ()))
+    missing = required - available
+    if missing:
+        raise SkillDependencyError(
+            f"Skill '{record.name}' requires unavailable built-in tools: "
+            f"{', '.join(sorted(missing))}."
+        )
+    deferred_catalog = state.metadata.get("deferred_tool_catalog") or {}
+    deferred = required & set(deferred_catalog)
+    return required, frozenset(deferred)
+
+
+def apply_skill_runtime_contract(state: AgentState, record: SkillRecord) -> None:
+    """Atomically apply one skill's declarative runtime dependencies and policy."""
+
+    required, deferred = _resolve_builtin_dependencies(state, record)
+    activated = state.metadata.setdefault("activated_deferred_tools", set())
+    activated.update(deferred)
+    state.metadata.setdefault("skill_runtime_contracts", {})[record.name] = {
+        "required_tools": tuple(sorted(required)),
+        "activated_tools": tuple(sorted(deferred)),
+    }
+
+
+async def activate_skill_with_runtime(
+    state: AgentState,
+    record: SkillRecord,
+) -> str:
+    """Load a skill body and commit its runtime contract as one operation."""
+
+    # Validate grants before reading or exposing the workflow body. Commit only
+    # after the body has loaded successfully, so neither half can leak alone.
+    _resolve_builtin_dependencies(state, record)
+    content = await activate_skill(record)
+    apply_skill_runtime_contract(state, record)
+    return content
+
+
 MAX_RESOURCE_BYTES = 256 * 1024
 MAX_ACTIVATED_SKILL_BYTES = 95_000
 _ACTIVATION_SOURCE_RE = re.compile(r"[^a-z0-9_]+")
@@ -146,13 +202,19 @@ async def activate_skill(record: SkillRecord) -> str:
 
     text, rendered = await _read_skill_instructions(record)
     revision = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
-    resources = await asyncio.to_thread(list_skill_resources, record.skill_dir)
+    manifest_limit = 200
+    discovered_resources = await asyncio.to_thread(
+        list_skill_resources,
+        record.skill_dir,
+        limit=manifest_limit + 1,
+    )
+    resources = discovered_resources[:manifest_limit]
     _grant_skill_read_access(record.skill_dir)
 
     resource_lines = [f"- {item['path']} ({item['size']} bytes)" for item in resources]
-    if record.resource_count > len(resources):
+    if len(discovered_resources) > manifest_limit:
         resource_lines.append(
-            f"- … {record.resource_count - len(resources)} more resources omitted from the manifest"
+            "- … additional task resources omitted from the bounded manifest"
         )
     manifest = "\n".join(resource_lines) if resource_lines else "- (none)"
     output = (
@@ -221,6 +283,10 @@ def resolve_resource_path(record: SkillRecord, resource_path: str) -> Path:
         raise ValueError(
             "Use action='load' for SKILL.md; internal scope metadata is not a resource."
         )
+    if relative.parts[0] in {"agents", "evals"}:
+        raise ValueError(
+            "Agent metadata and eval fixtures are control-plane files, not task resources."
+        )
 
     candidate = record.skill_dir.joinpath(*relative.parts)
     current = record.skill_dir
@@ -267,10 +333,13 @@ __all__ = [
     "MAX_ACTIVATED_SKILL_BYTES",
     "MAX_RESOURCE_BYTES",
     "activate_skill",
+    "activate_skill_with_runtime",
+    "apply_skill_runtime_contract",
     "inject_skill_activation",
     "is_skill_activation_content",
     "read_skill_instructions",
     "read_skill_resource",
     "render_path_tokens",
     "resolve_resource_path",
+    "SkillDependencyError",
 ]

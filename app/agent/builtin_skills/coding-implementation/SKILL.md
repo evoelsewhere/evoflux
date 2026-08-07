@@ -8,6 +8,7 @@ description: Use this skill for a focused feature or bug-fix implementation whos
 Deliver the smallest coherent change that satisfies the observable contract.
 Preserve unrelated user work and avoid architecture that the requirement does
 not demand.
+Do not load bundled references when this skill activates.
 
 ## Establish the change contract
 
@@ -29,9 +30,23 @@ outbound dependencies, and `impact` only for explicitly transitive risk. Start
 at depth 1 and keep repository identity on cross-repository edges. Do not send
 the feature request itself as a graph symbol.
 
+Once the contract identifies an exact changed symbol, make the graph the next
+structural observation. Do not continue broad discovery or reread source
+returned by the graph before choosing the owning edit boundary.
+
+Use `freshness_policy="fast"` for the first graph call and normal interactive
+navigation. If it returns `fresh`, do not rerun with a stronger policy. If it
+returns `partial` and a reported dirty file overlaps the question, use a
+targeted source read for a local gap or retry once with `"balanced"` when the
+relationships must be recomputed. After an edit that can change relationships,
+use `"balanced"` once before relying on the updated structure. Use `"strict"`
+only for a final,
+high-consequence completeness check when watcher coverage is unavailable or
+untrusted; never use it for discovery.
+
 Read [references/code-graph-contract.md](references/code-graph-contract.md)
-when the result is ambiguous, stale, truncated, cross-repository, or mixed
-with dynamic wiring.
+only when the result is ambiguous, stale, truncated, cross-repository, or
+mixed with dynamic wiring.
 
 ## Implement
 

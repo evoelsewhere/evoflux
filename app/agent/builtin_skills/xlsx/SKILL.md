@@ -10,6 +10,8 @@ workbooks with `openpyxl`, `xlsxwriter`, pandas, HTML tables, screenshots, or
 manually assembled OpenXML. Supporting analysis may use Python or JavaScript,
 but the final workbook must be imported/created and exported by
 `@oai/artifact-tool`.
+Do not load example projects when this skill activates; call the live catalog
+first and inspect an example only when the selected path needs a starter.
 
 ## Choose the path
 

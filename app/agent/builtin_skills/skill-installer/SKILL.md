@@ -1,81 +1,89 @@
 ---
 name: skill-installer
-description: Install or create portable skill bundles in the agent's skills directory. Use when the user asks to add, import, author, or update a skill, including skills with references, scripts, assets, or UI metadata.
+description: Create, import, update, validate, or relocate portable Agent Skill bundles with SKILL.md, on-demand references, deterministic scripts, output assets, UI metadata, and EvoFlux mode settings. Use for explicit skill authoring or installation; do not use for invoking an existing skill, changing agent configuration, or installing MCP servers or plugins.
 ---
 
-# Skill Installer
+# Create or install a skill bundle
 
-Treat a skill as a directory bundle, not a single Markdown file.
+Treat a skill as a runtime bundle, not a standalone prompt file. Do not load an
+existing bundle's references, scripts, or assets before the requested workflow
+creates a concrete need for them.
 
-## Discovery order
+## Resolve destination and identity
 
-The first matching skill name wins:
+Use the first matching name in project EvoFlux, project OpenCode, user
+EvoFlux, user OpenCode, then bundled roots. Default new user-owned skills to
+`{SKILLS_DIR}` unless the user requests project-local sharing. Never overwrite
+a higher-precedence variant without identifying the exact selected root.
 
-1. `{cwd}/.evoflux/skills/{skill-name}/`
-2. `{cwd}/.opencode/skills/{skill-name}/`
-3. `{SKILLS_DIR}/{skill-name}/`
-4. `~/.config/opencode/skills/{skill-name}/`
-5. Bundled EvoFlux skills (read-only fallback)
+Use a lowercase hyphenated name under 64 characters. `SKILL.md` frontmatter
+contains only `name` and `description`; the description must explain both what
+the skill does and which requests should trigger it.
 
-Default to `{SKILLS_DIR}` unless the user requests project-local or opencode
-sharing. A writable skill may intentionally override a bundled skill.
+## State machine
 
-## Bundle contract
+### 1. SPECIFY
+
+Derive concrete positive and near-miss trigger examples. Choose the degree of
+freedom: prose for judgment-heavy work, a state machine/decision table for
+fragile workflows, and a script for repeated deterministic operations.
+
+### 2. PLAN THE BUNDLE
+
+Use only necessary paths:
 
 ```text
 skill-name/
-├── SKILL.md              # required
-├── agents/evoflux.yaml   # optional EvoFlux UI/runtime metadata
-├── references/           # optional docs loaded on demand
-├── scripts/              # optional deterministic helpers
-└── assets/               # optional output templates/media
+├── SKILL.md
+├── agents/evoflux.yaml
+├── references/
+├── scripts/
+├── assets/
+└── evals/trigger-cases.json
 ```
 
-`SKILL.md` frontmatter contains only:
+Keep the core workflow, state transitions, stop conditions, and resource
+routing in `SKILL.md`. Put detailed knowledge in `references/`, repeated exact
+work in `scripts/`, and output material in `assets/`. Every optional resource
+must be linked directly from `SKILL.md` with the evidence condition for reading
+or running it. Do not add README, changelog, setup guide, or placeholder files.
 
-```yaml
----
-name: skill-name
-description: What the skill does and the requests that should trigger it.
----
-```
+Put UI fields and implicit-invocation policy in `agents/evoflux.yaml`. Keep
+Work/Coding/Both and slash-menu preferences in EvoFlux runtime settings or the
+supported `.evoflux.json` sidecar rather than adding non-portable frontmatter.
 
-Keep the core workflow in `SKILL.md`. Put detailed schemas, examples, policies,
-and variant-specific guidance in `references/`; repeated deterministic work in
-`scripts/`; and output resources in `assets/`. Link every relevant resource
-directly from `SKILL.md` and state when to read or run it.
+### 3. IMPORT OR UPDATE
 
-## Install from a URL
+For a URL, fetch to a temporary location, reject HTML masquerading as raw
+content, inspect every archive/repository path, and reject absolute paths,
+traversal, escaping symlinks, oversized content, and executable surprises.
 
-1. Determine whether the URL identifies one file or a bundle archive/repository.
-2. Fetch to a temporary location. Reject HTML returned in place of raw content.
-3. Inspect every extracted path before writing; reject absolute paths, `..`, and
-   symlinks that escape the bundle.
-4. Validate `SKILL.md`, the directory/name match, and all referenced resources.
-5. On collision, read the existing bundle and show the material differences
-   before overwriting.
-6. Copy the complete bundle to the selected writable root.
+For an existing destination, read the complete bundle inventory and show the
+material diff before replacement. Preserve unrelated scripts/assets and never
+silently turn a bundle update into a fresh minimal `SKILL.md`.
 
-## Create or update
+### 4. VALIDATE
 
-1. Derive concrete trigger examples from the request.
-2. Plan which content belongs in `SKILL.md`, `references/`, `scripts/`, and
-   `assets/`.
-3. Read the existing bundle before modifying it.
-4. Write the minimum complete bundle. Do not add README, changelog, or setup
-   documents that the agent does not need at runtime.
-5. Test added scripts and remove placeholders.
+Require matching directory/frontmatter names, non-empty body and description,
+valid UI metadata, balanced positive/near-miss trigger evals, safe resource
+paths, and existing direct links. Run every added or changed script on a safe
+representative input. Ensure the body is concise and resources are not
+duplicated in it.
 
-## Verification
+### 5. VERIFY DISCOVERY
 
-- Parse `SKILL.md`; require non-empty `name`, `description`, and body.
-- Confirm the skill name matches its directory.
-- Confirm every resource referenced by `SKILL.md` exists.
-- Read back the complete file list and report the bundle root.
-- Confirm the skill appears in discovery; refresh the Skills page only if its
-  cached catalog is stale.
+Read back the complete file list and changed files. Confirm the exact variant
+appears in discovery with the requested mode, implicit invocation, and slash
+menu settings. Refresh the Skills UI only when its cached catalog is stale.
 
-## Boundaries
+## Stop conditions
 
-Do not use this skill to change agent models/tools, install MCP servers, or
-install plugins. Use the corresponding configuration skill instead.
+Stop when trigger boundaries are concrete, the bundle has only necessary
+files, every resource has conditional routing, scripts and eval schemas pass,
+the exact discovered variant is verified, and no existing material was lost.
+
+## Deliverable
+
+Report bundle root, mode and invocation settings, files created/updated,
+validation performed, discovery result, and any manual dependency or approval
+still required.
