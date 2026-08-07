@@ -1325,7 +1325,6 @@ class TeamMemberBase(abc.ABC):
             title_hook = build_title_generation_hook(
                 provider=runtime_provider or self.agent.llm_provider,
                 db_factory=self.db_factory,
-                wait_timeout=3.0,
             )
             if title_hook is not None:
                 pipeline.add(HookStage.LIFECYCLE, "title-generation", title_hook)

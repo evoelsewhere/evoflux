@@ -1429,14 +1429,14 @@ a svg.lucide,
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-block: 1.25rem;
+  padding-block: 0.375rem;
   scrollbar-color: color-mix(in srgb, var(--color-text-subtle) 42%, transparent) transparent;
   scrollbar-width: thin;
   mask-image: linear-gradient(
     to bottom,
     transparent 0,
-    black 1.25rem,
-    black calc(100% - 1.25rem),
+    black 0.375rem,
+    black calc(100% - 0.375rem),
     transparent 100%
   );
 }
@@ -1450,8 +1450,25 @@ a svg.lucide,
   background: color-mix(in srgb, var(--color-text-subtle) 42%, transparent);
 }
 
+.activity-group-row {
+  margin-inline-start: 0.75rem;
+}
+
 .activity-group-row > div > div {
   margin-block: 0;
+}
+
+/* Nested tool-call headers should read as children of the activity summary,
+ * while regaining contrast when the user interacts with them. Keep the
+ * inspector body at full opacity so expanded output remains easy to read. */
+.activity-group-row > div > div > button:first-child {
+  opacity: 0.68;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+.activity-group-row > div > div > button:first-child:hover,
+.activity-group-row > div > div > button:first-child:focus-visible {
+  opacity: 0.92;
 }
 
 /* A quiet caret gives the live response a clear edge without moving the text.

@@ -90,8 +90,8 @@ async def test_title_hook_is_added_for_lead_on_first_turn(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_title_generation_spawns_for_first_user_message():
-    """TitleGenerationHook.before_agent spawns generate_and_save_title on first turn."""
+async def test_title_generation_starts_after_primary_stream_for_first_message():
+    """The main model stream starts before background title generation."""
     from app.agent.hooks.title_generation import TitleGenerationHook
 
     provider = MockTeamProvider("title response")
@@ -111,6 +111,10 @@ async def test_title_generation_spawns_for_first_user_message():
         new_callable=AsyncMock,
     ) as mock_gen:
         await hook.before_agent(ctx, state)
+        assert hook._task is None
+        mock_gen.assert_not_awaited()
+
+        await hook.on_model_delta(ctx, state, MagicMock())
         assert hook._task is not None
         await hook._task
 

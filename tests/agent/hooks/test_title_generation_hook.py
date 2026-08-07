@@ -1,7 +1,4 @@
-"""Tests for app/agent/hooks/title_generation.py — TitleGenerationHook.
-
-Covers uncovered lines: 68, 73, 78-80, 85-95, 105-109.
-"""
+"""Tests for the non-blocking session title generation hook."""
 
 from __future__ import annotations
 
@@ -12,13 +9,7 @@ from app.agent.hooks.title_generation import TitleGenerationHook
 from app.agent.schemas.chat import AssistantMessage, HumanMessage, SystemMessage
 from app.agent.state import AgentState, RunContext
 
-# A fixed UUID for deterministic tests
 _TEST_SESSION_ID = "12345678-1234-5678-1234-567812345678"
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def make_ctx(
@@ -33,86 +24,84 @@ def make_state(messages: list | None = None) -> AgentState:
     return AgentState(messages=messages or [])
 
 
-def make_hook(wait_timeout: float = 3.0) -> TitleGenerationHook:
-    provider = MagicMock()
-    db_factory = MagicMock()
+def make_hook() -> TitleGenerationHook:
     return TitleGenerationHook(
-        provider=provider,
-        db_factory=db_factory,
+        provider=MagicMock(),
+        db_factory=MagicMock(),
         system_prompt="test title prompt",
-        wait_timeout=wait_timeout,
     )
 
 
-# ---------------------------------------------------------------------------
-# before_agent — early returns
-# ---------------------------------------------------------------------------
+async def start_primary_stream(
+    hook: TitleGenerationHook,
+    ctx: RunContext,
+    state: AgentState,
+) -> None:
+    await hook.on_model_delta(ctx, state, MagicMock())
 
 
 class TestBeforeAgentEarlyReturns:
-    """Test that before_agent exits early in the right conditions."""
-
     async def test_no_session_id_does_nothing(self):
-        """Line 68: session_id is None → return immediately, no task spawned."""
         hook = make_hook()
-        ctx = make_ctx(session_id=None)
-        state = make_state(messages=[HumanMessage(content="Hello")])
+        await hook.before_agent(
+            make_ctx(session_id=None),
+            make_state([HumanMessage(content="Hello")]),
+        )
 
-        await hook.before_agent(ctx, state)
-
+        assert hook._pending is None
         assert hook._task is None
 
     async def test_has_assistant_message_does_nothing(self):
-        """Line 73: assistant message already exists → not the first turn."""
         hook = make_hook()
-        ctx = make_ctx()
         state = make_state(
-            messages=[
+            [
                 HumanMessage(content="Hello"),
                 AssistantMessage(content="Hi there"),
                 HumanMessage(content="Follow up"),
             ]
         )
 
-        await hook.before_agent(ctx, state)
+        await hook.before_agent(make_ctx(), state)
 
+        assert hook._pending is None
         assert hook._task is None
 
     async def test_no_human_message_does_nothing(self):
-        """Lines 78-80, 82: no HumanMessage with content → return."""
         hook = make_hook()
-        ctx = make_ctx()
-        # Only a system message, no human messages at all
-        state = make_state(messages=[SystemMessage(content="You are helpful.")])
+        await hook.before_agent(
+            make_ctx(),
+            make_state([SystemMessage(content="You are helpful.")]),
+        )
 
-        await hook.before_agent(ctx, state)
-
+        assert hook._pending is None
         assert hook._task is None
 
     async def test_empty_human_content_does_nothing(self):
-        """Lines 78-80: HumanMessage exists but content is empty string."""
         hook = make_hook()
-        ctx = make_ctx()
-        state = make_state(messages=[HumanMessage(content="")])
+        await hook.before_agent(
+            make_ctx(),
+            make_state([HumanMessage(content="")]),
+        )
 
-        await hook.before_agent(ctx, state)
+        assert hook._pending is None
+        assert hook._task is None
 
+    async def test_scheduled_task_does_nothing(self):
+        hook = make_hook()
+        await hook.before_agent(
+            make_ctx(),
+            make_state([HumanMessage(content="[Scheduled Task: nightly] run")]),
+        )
+
+        assert hook._pending is None
         assert hook._task is None
 
 
-# ---------------------------------------------------------------------------
-# before_agent — spawns task
-# ---------------------------------------------------------------------------
-
-
-class TestBeforeAgentSpawnsTask:
-    """Test that before_agent spawns the title generation task."""
-
-    async def test_first_turn_spawns_task(self):
-        """Lines 85-95: first user message triggers background task."""
+class TestDeferredTitleGeneration:
+    async def test_primary_stream_starts_before_title_request(self):
         hook = make_hook()
-        ctx = make_ctx(session_id=_TEST_SESSION_ID)
-        state = make_state(messages=[HumanMessage(content="Write a sorting algorithm")])
+        ctx = make_ctx()
+        state = make_state([HumanMessage(content="Write a sorting algorithm")])
 
         with patch(
             "app.services.title_service.generate_and_save_title",
@@ -120,8 +109,12 @@ class TestBeforeAgentSpawnsTask:
         ) as mock_gen:
             await hook.before_agent(ctx, state)
 
+            assert hook._pending is not None
+            assert hook._task is None
+            mock_gen.assert_not_awaited()
+
+            await start_primary_stream(hook, ctx, state)
             assert hook._task is not None
-            # Let the task run
             await hook._task
 
             mock_gen.assert_awaited_once()
@@ -132,47 +125,78 @@ class TestBeforeAgentSpawnsTask:
             assert call_kwargs["db_factory"] is hook._db_factory
             assert call_kwargs["system_prompt"] == "test title prompt"
 
-    async def test_short_or_greeting_turns_are_not_language_classified(self):
-        for message in ("Good morning!", "fix tests", "xin chào"):
-            hook = make_hook()
-            state = make_state(messages=[HumanMessage(content=message)])
-            with patch(
-                "app.services.title_service.generate_and_save_title",
-                new_callable=AsyncMock,
-            ) as mock_gen:
-                await hook.before_agent(make_ctx(), state)
-                assert hook._task is not None
-                await hook._task
-                assert mock_gen.call_args.kwargs["user_message"] == message
-
-    async def test_picks_last_human_message(self):
-        """Lines 78-80: iterates reversed, picks the last HumanMessage."""
+    async def test_repeated_stream_chunks_spawn_only_one_task(self):
         hook = make_hook()
         ctx = make_ctx()
-        state = make_state(
-            messages=[
-                SystemMessage(content="System prompt"),
-                HumanMessage(content="First question"),
-                HumanMessage(content="Actually, this one"),
-            ]
-        )
+        state = make_state([HumanMessage(content="Hello")])
 
         with patch(
             "app.services.title_service.generate_and_save_title",
             new_callable=AsyncMock,
         ) as mock_gen:
             await hook.before_agent(ctx, state)
+            await start_primary_stream(hook, ctx, state)
+            first_task = hook._task
+            await start_primary_stream(hook, ctx, state)
+
+            assert hook._task is first_task
+            assert first_task is not None
+            await first_task
+            mock_gen.assert_awaited_once()
+
+    async def test_after_model_is_fallback_when_no_chunk_was_emitted(self):
+        hook = make_hook()
+        ctx = make_ctx()
+        state = make_state([HumanMessage(content="Hello")])
+
+        with patch(
+            "app.services.title_service.generate_and_save_title",
+            new_callable=AsyncMock,
+        ) as mock_gen:
+            await hook.before_agent(ctx, state)
+            await hook.after_model(ctx, state, AssistantMessage(content="Done"))
+
+            assert hook._task is not None
+            await hook._task
+            mock_gen.assert_awaited_once()
+
+    async def test_after_agent_never_waits_for_pending_title(self):
+        hook = make_hook()
+        ctx = make_ctx()
+        state = make_state([HumanMessage(content="Hello")])
+        title_started = asyncio.Event()
+        release_title = asyncio.Event()
+
+        async def blocked_title(**_kwargs):
+            title_started.set()
+            await release_title.wait()
+
+        with patch(
+            "app.services.title_service.generate_and_save_title",
+            new=AsyncMock(side_effect=blocked_title),
+        ):
+            await hook.before_agent(ctx, state)
+            await start_primary_stream(hook, ctx, state)
+            await title_started.wait()
+
+            await asyncio.wait_for(
+                hook.after_agent(ctx, state, AssistantMessage(content="Done")),
+                timeout=0.05,
+            )
+
+            assert hook._task is not None
+            assert not hook._task.done()
+            release_title.set()
             await hook._task
 
-            assert mock_gen.call_args.kwargs["user_message"] == "Actually, this one"
-
-    async def test_skips_empty_human_messages(self):
-        """Lines 78-80: skips HumanMessage with empty content, finds earlier one."""
+    async def test_picks_last_non_empty_human_message(self):
         hook = make_hook()
         ctx = make_ctx()
         state = make_state(
-            messages=[
-                HumanMessage(content="Good question here"),
+            [
+                SystemMessage(content="System prompt"),
+                HumanMessage(content="First question"),
+                HumanMessage(content="Actually, this one"),
                 HumanMessage(content=""),
             ]
         )
@@ -182,106 +206,23 @@ class TestBeforeAgentSpawnsTask:
             new_callable=AsyncMock,
         ) as mock_gen:
             await hook.before_agent(ctx, state)
+            await start_primary_stream(hook, ctx, state)
+            assert hook._task is not None
             await hook._task
 
-            assert mock_gen.call_args.kwargs["user_message"] == "Good question here"
+            assert mock_gen.call_args.kwargs["user_message"] == "Actually, this one"
 
-
-# ---------------------------------------------------------------------------
-# after_agent — task cleanup
-# ---------------------------------------------------------------------------
-
-
-class TestAfterAgent:
-    """Test after_agent awaits/cleans up the background task."""
-
-    async def test_no_task_is_noop(self):
-        """Line 101-103: no task set → nothing to do."""
-        hook = make_hook()
-        ctx = make_ctx()
-        state = make_state()
-        response = AssistantMessage(content="Done")
-
-        await hook.after_agent(ctx, state, response)
-
-        assert hook._task is None
-
-    async def test_already_done_task_is_cleared(self):
-        """Line 101-103: task already finished → just clear it."""
-        hook = make_hook()
-        ctx = make_ctx()
-        state = make_state()
-        response = AssistantMessage(content="Done")
-
-        # Create a task that finishes immediately
-        async def noop():
-            pass
-
-        hook._task = asyncio.create_task(noop())
-        await hook._task  # let it finish
-
-        await hook.after_agent(ctx, state, response)
-
-        assert hook._task is None
-
-    async def test_waits_for_pending_task(self):
-        """Lines 105-106: pending task → await with 3s timeout."""
-        hook = make_hook()
-        ctx = make_ctx()
-        state = make_state()
-        response = AssistantMessage(content="Done")
-
-        completed = False
-
-        async def slow_title():
-            nonlocal completed
-            await asyncio.sleep(0.05)
-            completed = True
-
-        hook._task = asyncio.create_task(slow_title())
-
-        await hook.after_agent(ctx, state, response)
-
-        assert completed
-        assert hook._task is None
-
-    async def test_timeout_does_not_crash(self):
-        """Lines 107-108: task exceeds 3s timeout → swallowed, no crash."""
-        hook = make_hook()
-        ctx = make_ctx()
-        state = make_state()
-        response = AssistantMessage(content="Done")
-
-        async def very_slow():
-            await asyncio.sleep(999)
-
-        hook._task = asyncio.create_task(very_slow())
-
-        # Patch wait_for timeout to a tiny value so test doesn't wait 3s
-        with patch(
-            "app.agent.hooks.title_generation.asyncio.wait_for",
-            side_effect=TimeoutError,
-        ):
-            await hook.after_agent(ctx, state, response)
-
-        # Should not raise, task ref cleared
-        assert hook._task is None
-
-    async def test_exception_in_task_does_not_crash(self):
-        """Lines 107-108: task raises an exception → swallowed gracefully."""
-        hook = make_hook()
-        ctx = make_ctx()
-        state = make_state()
-        response = AssistantMessage(content="Done")
-
-        async def failing_title():
-            raise RuntimeError("LLM call failed")
-
-        hook._task = asyncio.create_task(failing_title())
-
-        # Give the task a moment to fail
-        await asyncio.sleep(0.01)
-
-        await hook.after_agent(ctx, state, response)
-
-        assert hook._task is None
+    async def test_short_messages_are_forwarded_unchanged(self):
+        for message in ("Good morning!", "fix tests", "xin chào"):
+            hook = make_hook()
+            ctx = make_ctx()
+            state = make_state([HumanMessage(content=message)])
+            with patch(
+                "app.services.title_service.generate_and_save_title",
+                new_callable=AsyncMock,
+            ) as mock_gen:
+                await hook.before_agent(ctx, state)
+                await start_primary_stream(hook, ctx, state)
+                assert hook._task is not None
+                await hook._task
+                assert mock_gen.call_args.kwargs["user_message"] == message

@@ -18,7 +18,6 @@ class TitleGenerationSettings(BaseModel):
 
     enabled: bool = True
     model: str | None = None
-    wait_timeout_seconds: float = 3.0
 
 
 class DreamSettings(BaseModel):
@@ -211,6 +210,8 @@ class CodeGraphSettings(BaseModel):
     # Build the index automatically the first time a never-indexed workspace
     # is opened in a coding session (background job; UI shows progress).
     auto_index_enabled: bool = True
+
+
 class CrossRepoSettings(BaseModel):
     """Cross-repo reference resolution for multi-repo CodingProjects.
 

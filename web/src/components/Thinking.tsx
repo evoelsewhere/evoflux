@@ -8,8 +8,8 @@
  * Design language (GitHub Copilot-inspired):
  *   • Collapsed  — a single muted line: "Thinking…" with a subtle chevron.
  *                   No border, no background card — just quiet text.
- *   • Streaming  — collapsed status by default; click to inspect the live trace.
- *   • Finalized  — stays collapsed unless the user explicitly opens it.
+ *   • Streaming  — expanded by default so the live trace stays visible.
+ *   • Finalized  — automatically collapses when streaming finishes.
  */
 import { ChevronRight } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -28,8 +28,14 @@ interface ThinkingProps {
 
 export function Thinking({ content, isStreaming }: ThinkingProps) {
   const preset = useMotionPreset()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(Boolean(isStreaming))
   const contentRef = useRef<HTMLDivElement>(null)
+
+  // Follow the stream lifecycle by default: reveal live reasoning, then put
+  // the completed trace away. Users can still toggle it manually afterward.
+  useEffect(() => {
+    setOpen(Boolean(isStreaming))
+  }, [isStreaming])
 
   // Auto-scroll to bottom during streaming.
   useEffect(() => {

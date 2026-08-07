@@ -3,9 +3,9 @@
 Generates a short, descriptive title for a chat session from the user's
 first message, using a lightweight LLM call with the agent's existing provider.
 
-Intended to be called as a fire-and-forget ``asyncio.create_task`` immediately
-after the first user message is saved — before the agent runs. Failures are
-logged and swallowed; the session keeps its raw-truncation fallback title.
+Intended to be called as a fire-and-forget ``asyncio.create_task`` after the
+primary model request has started streaming. Failures are logged and swallowed;
+the session keeps its raw-truncation fallback title.
 
 The system prompt is *required* and must be provided by the caller.
 """
