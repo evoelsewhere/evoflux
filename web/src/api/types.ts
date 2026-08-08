@@ -480,18 +480,8 @@ export interface AddWorkspaceToProjectRequest {
   display_name?: string
 }
 
-// method distinguishes "certain" links (static_fqn/static_manifest_exact)
-// from lower-confidence ones (static_manifest_package/lexical) and
-// AI-inferred ones (llm) — the UI badges these differently. 'embedding' is
-// no longer produced (the vector layer was removed in favor of FTS5 lexical
-// search) but stays valid so historical rows still deserialize/display.
-export type CrossRepoEdgeMethod =
-  | 'static_fqn'
-  | 'static_manifest_exact'
-  | 'static_manifest_package'
-  | 'embedding'
-  | 'lexical'
-  | 'llm'
+// Cross-repository links are resolved from the current repository targets.
+export type CrossRepoEdgeMethod = 'dynamic-symbol-resolution'
 
 export type CrossRepoEdgeStatus = 'unresolved' | 'resolved' | 'rejected'
 

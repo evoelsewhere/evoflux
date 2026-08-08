@@ -5,8 +5,13 @@ from pathlib import Path
 import pytest
 
 from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
-from app.agent.tools.builtin.code_context import code_context
+from app.agent.tools.builtin.code_context import (
+    _INLINE_CHAR_LIMIT,
+    _render_code_context,
+    code_context,
+)
 from app.core.config import settings
+from app.services.code_index.models import CodeContextResult, SearchHit
 from app.services.code_index.project import RepositoryIndexRegistry
 
 
@@ -28,6 +33,51 @@ def test_code_context_owns_discovery_and_graph_navigation() -> None:
         "neighborhood",
     ]
     assert parameters["properties"]["refresh"]["default"] is True
+
+
+def test_code_context_renderer_keeps_evidence_when_one_section_is_oversized() -> None:
+    result = CodeContextResult(
+        action="search",
+        query="needle",
+        strategy="code-index-test",
+        index_version="abc123",
+        repositories=("repo",),
+        hits=[
+            SearchHit(
+                repository="repo",
+                file_path="minified.js",
+                language="javascript",
+                line_start=1,
+                line_end=1,
+                content="needle " + ("payload" * 5_000),
+                score=1.0,
+            )
+        ],
+    )
+
+    rendered = _render_code_context(result)
+
+    assert "repo/minified.js:1-1" in rendered
+    assert "needle payload" in rendered
+    assert "[section truncated]" in rendered
+    assert "Output truncated." in rendered
+    assert len(rendered) <= _INLINE_CHAR_LIMIT
+
+
+def test_code_context_renderer_bounds_oversized_repository_metadata() -> None:
+    result = CodeContextResult(
+        action="search",
+        query="needle",
+        strategy="code-index-test",
+        index_version="abc123",
+        repositories=tuple(f"repository-{ordinal:04d}" for ordinal in range(2_000)),
+    )
+
+    rendered = _render_code_context(result)
+
+    assert "[metadata truncated]" in rendered
+    assert "Output truncated." in rendered
+    assert len(rendered) <= _INLINE_CHAR_LIMIT
 
 
 @pytest.mark.asyncio

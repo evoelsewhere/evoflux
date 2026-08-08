@@ -91,6 +91,34 @@ def test_graph_action_rejects_prose_at_http_boundary(
     assert "one exact symbol" in response.json()["detail"]
 
 
+@pytest.mark.parametrize(
+    ("contents", "expected"),
+    [
+        ("include_patterns: not-a-list\n", "include_patterns must be a list"),
+        ("language_overrides: invalid\n", "language_overrides must be a list"),
+        ("max_file_size: invalid\n", "max_file_size must be a positive integer"),
+    ],
+)
+def test_index_reports_invalid_repository_settings_as_validation_error(
+    code_context_client: tuple[TestClient, Path],
+    contents: str,
+    expected: str,
+) -> None:
+    client, repository = code_context_client
+    settings_directory = repository / ".code-index"
+    settings_directory.mkdir()
+    (settings_directory / "settings.yml").write_text(contents, encoding="utf-8")
+
+    response = client.post(
+        "/api/code-context/index",
+        params={"workspace": str(repository)},
+        json={"full": False},
+    )
+
+    assert response.status_code == 422
+    assert expected in response.json()["detail"]
+
+
 def test_project_graph_namespaces_repository_local_symbol_ids() -> None:
     first = UUID("00000000-0000-0000-0000-000000000001")
     second = UUID("00000000-0000-0000-0000-000000000002")

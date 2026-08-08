@@ -61,7 +61,10 @@ def load_project_settings(root: Path) -> ProjectSettings:
     path = root / ".code-index" / "settings.yml"
     if not path.is_file():
         return ProjectSettings()
-    raw = path.read_bytes()
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"Cannot read code-index settings: {exc}") from exc
     try:
         value = yaml.safe_load(raw) or {}
     except yaml.YAMLError as exc:
@@ -81,8 +84,11 @@ def load_project_settings(root: Path) -> ProjectSettings:
         if excludes_value is not None
         else DEFAULT_EXCLUDED_PATTERNS
     )
+    overrides_value = value.get("language_overrides")
+    if overrides_value is not None and not isinstance(overrides_value, list):
+        raise ValueError("language_overrides must be a list.")
     overrides: list[LanguageOverride] = []
-    for item in value.get("language_overrides") or []:
+    for item in overrides_value or []:
         if not isinstance(item, dict) or not item.get("ext") or not item.get("lang"):
             raise ValueError("Each language override requires 'ext' and 'lang'.")
         overrides.append(
@@ -92,13 +98,15 @@ def load_project_settings(root: Path) -> ProjectSettings:
             )
         )
     maximum = value.get("max_file_size")
-    if maximum is not None and (isinstance(maximum, bool) or int(maximum) < 1):
+    if maximum is not None and (
+        isinstance(maximum, bool) or not isinstance(maximum, int) or maximum < 1
+    ):
         raise ValueError("max_file_size must be a positive integer or null.")
     return ProjectSettings(
         include_patterns=includes,
         exclude_patterns=excludes,
         language_overrides=tuple(overrides),
-        max_file_size=int(maximum) if maximum is not None else None,
+        max_file_size=maximum,
         warnings=tuple(warnings),
         digest=hashlib.sha256(raw).hexdigest(),
     )
