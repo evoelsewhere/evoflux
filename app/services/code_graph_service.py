@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 import asyncio
+import json
 from uuid import UUID, uuid7
 
 from loguru import logger
@@ -42,13 +43,13 @@ from app.services.code_graph.indexer import (
     WorkspaceIndex,
     hash_workspace_files,
     index_files,
-    index_workspace,
 )
 from app.services.code_graph.manifest import (
     is_likely_external,
     read_declared_dependencies,
 )
 from app.services.code_graph.parsers.registry import ParserRegistry, build_registry
+from app.services.codeindex.reconcile import plan_reconciliation
 
 # Cap how many errors we keep on the stats payload.
 _MAX_REPORTED_ERRORS = 20
@@ -168,173 +169,26 @@ async def reindex_workspace(
 ) -> ReindexStats:
     """Re-parse ``root_path`` and update the workspace's stored graph.
 
-    With ``incremental=False`` (default) this is a full rebuild: existing
-    nodes/edges/state are deleted, then the freshly parsed graph is inserted.
+    With ``incremental=False`` (default) every current source component is
+    reprocessed through the same desired-state reconciler while stable symbol
+    ids are retained.
 
     With ``incremental=True`` only files whose content hash changed (plus any
     deleted files) are re-parsed; stable symbols keep their node ids so
-    cross-file edges pointing *into* them survive. See
-    :func:`_reindex_incremental`.
+    cross-file edges pointing *into* them survive. Both modes delete target
+    state owned by source components that disappeared.
     """
     report = progress_cb or _noop_progress
     # Extra structural parsers are reserved for future project rulebooks;
     # the registry is exactly the builtin language set.
     registry = build_registry(languages, extra_parsers=[])
-    if incremental:
-        return await _reindex_incremental(
-            db,
-            workspace_id=workspace_id,
-            root_path=root_path,
-            registry=registry,
-            progress_cb=report,
-        )
-    report("parsing", 0.0, "Scanning files…")
-    index: WorkspaceIndex = await _run_in_indexer(
-        index_workspace, root_path, registry=registry
-    )
-    report(
-        "parsing", 0.3, f"Parsed {len(index.files)} files, {len(index.nodes)} symbols"
-    )
-
-    report("saving", 0.35, "Saving graph to database…")
-    key_to_id: dict[str, UUID] = {}
-    node_rows: list[dict] = []
-    edge_rows: list[dict] = []
-    async with sqlite_write_guard():
-        await db.execute(
-            sa_delete(CodeEdge).where(col(CodeEdge.workspace_id) == workspace_id)
-        )
-        await db.execute(
-            sa_delete(CodeAmbiguousEdge).where(
-                col(CodeAmbiguousEdge.workspace_id) == workspace_id
-            )
-        )
-        await db.execute(
-            sa_delete(CodeNode).where(col(CodeNode.workspace_id) == workspace_id)
-        )
-        await db.execute(
-            sa_delete(CodeIndexState).where(
-                col(CodeIndexState.workspace_id) == workspace_id
-            )
-        )
-
-        now = _utcnow()
-        for node in index.nodes:
-            node_id = uuid7()
-            key_to_id[node.key] = node_id
-            node_rows.append(
-                {
-                    "id": node_id,
-                    "workspace_id": workspace_id,
-                    "kind": node.kind,
-                    "name": node.name,
-                    "qualified_name": node.qualified_name,
-                    "file_path": node.file_path,
-                    "language": node.language,
-                    "line_start": node.line_start,
-                    "line_end": node.line_end,
-                    "signature": node.signature,
-                    "docstring": node.docstring,
-                    "created_at": now,
-                }
-            )
-        await _bulk_insert_chunked(db, CodeNode, node_rows)
-
-        for edge in index.edges:
-            src_id = key_to_id.get(edge.src_key)
-            dst_id = key_to_id.get(edge.dst_key)
-            if src_id is None or dst_id is None:
-                continue
-            edge_rows.append(
-                {
-                    "id": uuid7(),
-                    "workspace_id": workspace_id,
-                    "src_id": src_id,
-                    "dst_id": dst_id,
-                    "kind": edge.kind,
-                    "file_path": edge.file_path,
-                    "line": edge.line,
-                    "created_at": now,
-                }
-            )
-        await _bulk_insert_chunked(db, CodeEdge, edge_rows)
-
-        # Persist ambiguous edges — targets that matched 2+ candidates.
-        import json
-
-        ambiguous_rows = []
-        for amb in index.ambiguous_edges:
-            src_id = key_to_id.get(amb.src_key)
-            if src_id is None:
-                continue
-            candidate_ids = [
-                str(key_to_id[k]) for k in amb.candidate_keys if k in key_to_id
-            ]
-            if len(candidate_ids) < 2:
-                continue
-            ambiguous_rows.append(
-                {
-                    "id": uuid7(),
-                    "workspace_id": workspace_id,
-                    "src_id": src_id,
-                    "dst_name": amb.dst_name,
-                    "kind": amb.kind,
-                    "candidate_node_ids": json.dumps(candidate_ids),
-                    "file_path": amb.file_path,
-                    "line": amb.line,
-                    "created_at": now,
-                }
-            )
-        await _bulk_insert_chunked(db, CodeAmbiguousEdge, ambiguous_rows)
-
-        await _bulk_insert_chunked(
-            db,
-            CodeIndexState,
-            [
-                {
-                    "id": uuid7(),
-                    "workspace_id": workspace_id,
-                    "file_path": f.file_path,
-                    "language": f.language,
-                    "content_hash": f.content_hash,
-                    "node_count": f.node_count,
-                    "edge_count": f.edge_count,
-                    "indexed_at": now,
-                }
-                for f in index.files
-            ],
-        )
-
-        await _persist_unresolved_references(
-            db,
-            workspace_id=workspace_id,
-            root_path=root_path,
-            unresolved_references=index.unresolved_references,
-            key_to_id=key_to_id,
-        )
-
-        await db.commit()
-        report("saving", 0.5, f"Saved {len(node_rows)} nodes, {len(edge_rows)} edges")
-
-        # Rebuild full-text search index (separate sqlite conn) — inside the
-        # guard too, since it writes to the same on-disk file as the ORM.
-        await _rebuild_fts(workspace_id=workspace_id, index=index, key_to_id=key_to_id)
-    report("saving", 1.0, "Index saved")
-
-    logger.info(
-        "code_graph reindex workspace={} files={} nodes={} edges={} errors={}",
-        workspace_id,
-        len(index.files),
-        len(node_rows),
-        len(edge_rows),
-        len(index.errors),
-    )
-    return ReindexStats(
-        node_count=len(node_rows),
-        edge_count=len(edge_rows),
-        file_count=len(index.files),
-        error_count=len(index.errors),
-        errors=index.errors[:_MAX_REPORTED_ERRORS],
+    return await _reconcile_workspace(
+        db,
+        workspace_id=workspace_id,
+        root_path=root_path,
+        registry=registry,
+        force=not incremental,
+        progress_cb=report,
     )
 
 
@@ -460,20 +314,21 @@ async def _persist_unresolved_references(
             )
 
 
-async def _reindex_incremental(
+async def _reconcile_workspace(
     db: AsyncSession,
     *,
     workspace_id: UUID,
     root_path: str,
     registry: ParserRegistry,
+    force: bool,
     progress_cb: ProgressCallback = _noop_progress,
 ) -> ReindexStats:
-    """Re-parse only files whose content hash changed since the last index.
+    """Reconcile a keyed source snapshot into graph target state.
 
-    Stable symbols (matched by ``file_path + kind + qualified_name``) keep
-    their existing node id, so cross-file edges pointing *into* them survive.
-    Symbols that vanished — and every node of a deleted file — are removed
-    along with any edge that references them.
+    The same path owns both explicit full refreshes and incremental updates.
+    Stable symbols (``file_path + kind + qualified_name``) keep their ids;
+    missing source components delete their target states. ``force`` reprocesses
+    all current components for parser upgrades without discarding identity.
     """
     progress_cb("parsing", 0.0, "Checking for changes…")
     current = await _run_in_indexer(hash_workspace_files, root_path, registry=registry)
@@ -484,11 +339,12 @@ async def _reindex_incremental(
     ).all()
     stored = {s.file_path: s.content_hash for s in stored_states}
 
-    changed = sorted(f for f, h in current.items() if stored.get(f) != h)
-    deleted = sorted(f for f in stored if f not in current)
-    affected = set(changed) | set(deleted)
+    plan = plan_reconciliation(current, stored, force=force)
+    changed = list(plan.reprocess)
+    deleted = list(plan.deletes)
+    affected = set(plan.affected)
 
-    if not affected:
+    if plan.is_noop:
         counts = await get_index_status(db, workspace_id=workspace_id)
         return ReindexStats(
             node_count=counts["nodes"],
@@ -627,6 +483,37 @@ async def _reindex_incremental(
         # edges' FKs — safe to bulk-insert via Core without an ORM flush.
         await _bulk_insert_chunked(db, CodeEdge, edge_rows)
 
+        ambiguous_rows: list[dict] = []
+        for ambiguous in index.ambiguous_edges:
+            src_id = key_to_id.get(ambiguous.src_key)
+            if src_id is None:
+                continue
+            candidate_ids = {
+                candidate_id
+                for key in ambiguous.candidate_keys
+                if (candidate_id := _resolve_incremental_dst(key, key_to_id))
+                is not None
+                and candidate_id not in removed_ids
+            }
+            if len(candidate_ids) < 2:
+                continue
+            ambiguous_rows.append(
+                {
+                    "id": uuid7(),
+                    "workspace_id": workspace_id,
+                    "src_id": src_id,
+                    "dst_name": ambiguous.dst_name,
+                    "kind": ambiguous.kind,
+                    "candidate_node_ids": json.dumps(
+                        sorted(str(candidate_id) for candidate_id in candidate_ids)
+                    ),
+                    "file_path": ambiguous.file_path,
+                    "line": ambiguous.line,
+                    "created_at": now,
+                }
+            )
+        await _bulk_insert_chunked(db, CodeAmbiguousEdge, ambiguous_rows)
+
         if removed_ids:
             await db.execute(
                 sa_delete(CodeNode).where(
@@ -684,8 +571,9 @@ async def _reindex_incremental(
 
     counts = await get_index_status(db, workspace_id=workspace_id)
     logger.info(
-        "code_graph incremental workspace={} changed={} deleted={} nodes={} edges={} errors={}",
+        "codeindex reconcile workspace={} force={} changed={} deleted={} nodes={} edges={} errors={}",
         workspace_id,
+        force,
         len(changed),
         len(deleted),
         counts["nodes"],

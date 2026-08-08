@@ -9,17 +9,12 @@ cross-repository references are retained explicitly for later resolution.
 
 from __future__ import annotations
 
-import hashlib
-import os
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from app.agent.tools.builtin.filesystem._ignore import (
-    is_ignored_workspace_path,
-    load_gitignore_rules,
-)
+from app.services.codeindex import source as codeindex_source
 from app.services.code_graph.parsers.registry import ParserRegistry, default_registry
 from app.services.code_graph.types import (
     EDGE_IMPLEMENTS,
@@ -43,14 +38,12 @@ from app.services.code_graph.types import (
 if TYPE_CHECKING:
     from app.services.code_graph.path_resolve import ModuleResolution
 
+# Compatibility export for callers/tests that inspect the graph format tag.
+INDEX_FORMAT_VERSION = codeindex_source.INDEX_FORMAT_VERSION
+
 # Skip files larger than this — generated bundles/minified blobs aren't worth
 # parsing and can be huge.
 _MAX_FILE_BYTES = 1_500_000
-# Bump whenever parser or relationship extraction semantics change. Salting
-# file hashes forces an incremental rebuild even when repository source did
-# not change, so a newly deployed parser cannot silently reuse stale edges.
-INDEX_FORMAT_VERSION = "8"
-
 # Definition kinds a name-based call/reference may resolve to.
 _CALLABLE_KINDS = frozenset(
     {NODE_FUNCTION, NODE_METHOD, NODE_CLASS, NODE_ENUM, NODE_STRUCT}
@@ -880,67 +873,33 @@ def _iter_named_files(
     root: Path, rel_paths: Iterable[str], registry: ParserRegistry
 ) -> Iterator[tuple[str, bytes]]:
     """Yield ``(rel_path, bytes)`` for the given paths that are still readable."""
-    extensions = registry.supported_extensions()
-    gitignore_rules = load_gitignore_rules(root)
-    for rel in rel_paths:
-        rel = rel.replace("\\", "/").strip("/")
-        if is_ignored_workspace_path(rel, is_dir=False, rules=gitignore_rules):
-            continue
-        if Path(rel).suffix.lower() not in extensions:
-            continue
-        fpath = root / rel
-        try:
-            if not fpath.is_file() or fpath.stat().st_size > _MAX_FILE_BYTES:
-                continue
-            source = fpath.read_bytes()
-        except OSError:
-            continue
-        yield rel, source
+    for record in codeindex_source.read_source_records(
+        root,
+        rel_paths,
+        extensions=registry.supported_extensions(),
+        max_bytes=_MAX_FILE_BYTES,
+    ):
+        yield record.key, record.content
 
 
 def _iter_source_files(
     root: Path, registry: ParserRegistry
 ) -> Iterator[tuple[str, bytes]]:
     """Yield ``(relative_posix_path, bytes)`` for supported, non-ignored files."""
-    extensions = registry.supported_extensions()
-    gitignore_rules = load_gitignore_rules(root)
-    for current_root, dirs, files in os.walk(root):
-        current = Path(current_root)
-        dirs[:] = [
-            d
-            for d in dirs
-            if not is_ignored_workspace_path(
-                (current / d).relative_to(root).as_posix(),
-                is_dir=True,
-                rules=gitignore_rules,
-            )
-        ]
-        for fname in files:
-            if fname.startswith("."):
-                continue
-            if Path(fname).suffix.lower() not in extensions:
-                continue
-            fpath = current / fname
-            rel = fpath.relative_to(root).as_posix()
-            if is_ignored_workspace_path(rel, is_dir=False, rules=gitignore_rules):
-                continue
-            try:
-                if fpath.stat().st_size > _MAX_FILE_BYTES:
-                    continue
-                source = fpath.read_bytes()
-            except OSError:
-                continue
-            yield rel, source
+    for record in codeindex_source.walk_source_records(
+        root,
+        extensions=registry.supported_extensions(),
+        max_bytes=_MAX_FILE_BYTES,
+    ):
+        yield record.key, record.content
 
 
 def content_hash(data: bytes) -> str:
     # Keep the 64-character database representation while reserving a visible
     # prefix for the parser/index format. A query can then detect an upgrade
     # from one stored row without rescanning the repository on every request.
-    return index_format_tag() + hashlib.sha256(data).hexdigest()[8:]
+    return codeindex_source.fingerprint_source(data, INDEX_FORMAT_VERSION)
 
 
 def index_format_tag() -> str:
-    """Stable prefix embedded in every code-index content hash."""
-    payload = f"evoflux-code-graph:{INDEX_FORMAT_VERSION}".encode()
-    return hashlib.sha256(payload).hexdigest()[:8]
+    return codeindex_source.index_format_tag(INDEX_FORMAT_VERSION)
