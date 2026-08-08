@@ -383,14 +383,6 @@ class TreeSitterParser:
 
 
 _IDENTIFIER_NODE_TYPES = frozenset({"identifier"})
-_DECLARATION_TYPE_PARTS = (
-    "declaration",
-    "declarator",
-    "definition",
-    "parameter",
-    "pattern",
-    "specifier",
-)
 _CALL_NODE_TYPES = frozenset(
     {
         "call",
@@ -448,19 +440,21 @@ def _is_reference_identifier(node: Node) -> bool:
     # use after callsite de-duplication.
     ancestor = parent
     for _ in range(5):
-        if "import" in ancestor.type:
+        if "import" in ancestor.type or ancestor.type in {
+            "use_declaration",
+            "using_directive",
+        }:
             return False
         ancestor = ancestor.parent
         if ancestor is None:
             break
 
     # Names introduced by declarations/parameters are definitions, not reads.
-    if any(part in parent.type for part in _DECLARATION_TYPE_PARTS):
-        if "parameter" in parent.type:
+    if "parameter" in parent.type:
+        return False
+    for field in ("name", "declarator", "pattern", "alias"):
+        if _same_span(parent.child_by_field_name(field), node):
             return False
-        for field in ("name", "declarator", "pattern", "alias"):
-            if _same_span(parent.child_by_field_name(field), node):
-                return False
     if "assignment" in parent.type and _same_span(
         parent.child_by_field_name("left"), node
     ):

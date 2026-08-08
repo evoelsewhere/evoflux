@@ -54,6 +54,9 @@ def _select_scopes(
     if selector in {".", "./", ".\\"}:
         return scopes[:1]
     folded = selector.casefold().rstrip("/\\")
+    label_matches = tuple(scope for scope in scopes if scope.label.casefold() == folded)
+    if label_matches:
+        return label_matches
     path: Path | None = None
     candidate = Path(selector).expanduser()
     if candidate.is_absolute():
@@ -64,8 +67,7 @@ def _select_scopes(
     return tuple(
         scope
         for scope in scopes
-        if scope.label.casefold() == folded
-        or scope.root.name.casefold() == folded
+        if scope.root.name.casefold() == folded
         or (path is not None and scope.root == path)
     )
 
@@ -80,9 +82,16 @@ async def _prepare_indexes(
     selected = _select_scopes(selected, repository)
     if not selected:
         return [], {}, ["No authorized repository matched the requested scope."]
-    indexes = await asyncio.gather(
-        *(repository_indexes.get(scope.root) for scope in selected)
+    index_values = await asyncio.gather(
+        *(repository_indexes.get(scope.root) for scope in selected),
+        return_exceptions=True,
     )
+    cancelled = next(
+        (value for value in index_values if isinstance(value, asyncio.CancelledError)),
+        None,
+    )
+    if cancelled is not None:
+        raise cancelled
     prepared: list[tuple[str, RepositoryIndex]] = []
     stats: dict[str, IndexStats] = {}
     limitations: list[str] = []
@@ -93,8 +102,16 @@ async def _prepare_indexes(
         except Exception as exc:
             limitations.append(f"{scope.label}: indexing failed ({exc})")
             return
-        prepared.append((scope.label, index))
         stats[scope.label] = value
+        database_error = next(
+            (error for path, error in value.errors if path == "<index>"), None
+        )
+        if database_error is not None:
+            limitations.append(
+                f"{scope.label}: index unavailable ({database_error}); refresh to repair it."
+            )
+            return
+        prepared.append((scope.label, index))
         limitations.extend(
             f"{scope.label}: {warning}"
             for warning in load_project_settings(scope.root).warnings
@@ -109,7 +126,16 @@ async def _prepare_indexes(
             )
 
     await asyncio.gather(
-        *(prepare(scope, index) for scope, index in zip(selected, indexes, strict=True))
+        *(
+            prepare(scope, index)
+            for scope, index in zip(selected, index_values, strict=True)
+            if isinstance(index, RepositoryIndex)
+        )
+    )
+    limitations.extend(
+        f"{scope.label}: index initialization failed ({index})"
+        for scope, index in zip(selected, index_values, strict=True)
+        if isinstance(index, Exception)
     )
     prepared.sort(key=lambda item: item[0].casefold())
     return prepared, stats, limitations

@@ -51,6 +51,8 @@ def _record(
         if not path.is_file() or path.stat().st_size > max_bytes:
             return None
         content = path.read_bytes()
+        if len(content) > max_bytes:
+            return None
     except (OSError, ValueError):
         return None
     return SourceRecord(
