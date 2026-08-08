@@ -24,10 +24,10 @@ Do not load bundled references when this skill activates.
    redirects, deserializers, privileged workers, or third-party dependencies.
 
 When the source, sink, or policy boundary is known only by behavior, route,
-error, field, or API text, call `code_search` once to locate its declared
+error, field, or API text, call `code_context` with `action="search"` once to locate its declared
 identifier. Skip search when exact source identifiers are already known.
 
-Use native `code_graph` on exact identifiers to bound the
+Use `code_context` on exact identifiers to bound the
 trust path: `callers` for reachable entry sites, `callees` for sensitive sinks,
 `references` for registration or callback wiring, and `impact` for upstream
 exposure. Start at depth 1. Static relationships support reachability analysis
@@ -35,16 +35,9 @@ but never replace runtime authorization, data-flow, or exploit evidence.
 Once the boundary exposes an exact source and sink relationship, make the graph
 the next structural observation instead of continuing broad grep.
 
-Use `freshness_policy="fast"` for the first graph call and normal interactive
-navigation. If it returns `fresh`, do not rerun with a stronger policy. If it
-returns `partial` and a reported dirty file overlaps the question, use a
-targeted source read for a local gap or retry once with `"balanced"` when the
-relationships must be recomputed. After an edit that can change relationships,
-use `"balanced"` once before relying on the updated structure. Use `"strict"`
-only for a final, high-consequence completeness check when watcher coverage is unavailable or
-untrusted; never use it for discovery.
+Keep `refresh=true` for the first indexed query and after edits. Use `refresh=false` only for an immediate follow-up that intentionally reuses the same index version.
 
-Read [references/code-graph-contract.md](references/code-graph-contract.md) for
+Read [references/code-context-contract.md](references/code-context-contract.md) for
 ambiguity, cross-repository limits, and dynamic-wiring fallbacks only after the
 graph reports such a gap.
 

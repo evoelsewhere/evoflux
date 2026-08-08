@@ -7,8 +7,5 @@ policy:
 dependencies:
   tools:
     - type: builtin
-      value: code_search
-      description: "Parser-aligned source discovery across authorized repositories when the exact identifier is unknown"
-    - type: builtin
-      value: code_graph
-      description: "Native exact-symbol relationships for changed-code impact and cross-repository review"
+      value: code_context
+      description: "Unified indexed search, structural grep, exact-symbol graph navigation, and dynamic cross-repository resolution"

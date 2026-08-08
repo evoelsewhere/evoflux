@@ -49,7 +49,7 @@ describe('groupConsecutiveToolCalls', () => {
     contract.toolArgs = JSON.stringify({
       action: 'read_resource',
       skill_name: 'coding-investigation',
-      resource_path: 'references/code-graph-contract.md',
+      resource_path: 'references/code-context-contract.md',
     })
     const evidence = block('skill-evidence', 'tool', 'skill')
     evidence.toolArgs = JSON.stringify({

@@ -20,28 +20,21 @@ Do not load bundled references when this skill activates.
    work, and independently deployed dependents where behavior can propagate.
 
 When a changed behavior cannot yet be tied to an exact declaration, call
-`code_search` once with a stable changed literal, interface term, or code
+`code_context` with `action="search"` once with a stable changed literal, interface term, or code
 fragment. Use the result only to select an exact symbol; skip search when the
 diff already names it.
 
-For exact changed symbols, use native `code_graph` to verify direct
+For exact changed symbols, use `code_context` to verify direct
 `callers`/`references`, outbound `callees`, and bounded `impact` rather than
 guessing propagation from filenames. Start at depth 1, disambiguate duplicate
 definitions, preserve repository labels, and reuse returned call-site source.
 Once a changed symbol and propagation question are selected, make the graph the
 next structural observation rather than continuing broad discovery.
 
-Use `freshness_policy="fast"` for the first graph call and normal interactive
-navigation. If it returns `fresh`, do not rerun with a stronger policy. If it
-returns `partial` and a reported dirty file overlaps the question, use a
-targeted source read for a local gap or retry once with `"balanced"` when the
-relationships must be recomputed. After an edit that can change relationships,
-use `"balanced"` once before relying on the updated structure. Use `"strict"`
-only for a final, high-consequence completeness check when watcher coverage is unavailable or
-untrusted; never use it for discovery.
+Keep `refresh=true` for the first indexed query and after edits. Use `refresh=false` only for an immediate follow-up that intentionally reuses the same index version.
 
-Read [references/code-graph-contract.md](references/code-graph-contract.md)
-only when a result exposes freshness, dirty files, pending cross-repository
+Read [references/code-context-contract.md](references/code-context-contract.md)
+only when a result exposes limitations or truncation in cross-repository
 edges, dynamic wiring, or truncation that limits review coverage.
 
 ## Review by risk

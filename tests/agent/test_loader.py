@@ -191,8 +191,7 @@ def test_default_tool_registry_keys():
         "memory_search",
     }
     assert expected.issubset(registry.keys())
-    assert "code_graph" in registry
-    assert "code_search" in registry
+    assert "code_context" in registry
     assert {
         "code_overview",
         "code_path",

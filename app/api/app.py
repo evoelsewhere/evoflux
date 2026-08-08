@@ -13,7 +13,7 @@ from loguru import logger
 from app.agent.mcp import mcp_manager
 from app.api.routes.agents import router as agents_router
 from app.api.routes.auth import router as auth_router
-from app.api.routes.code_graph import router as code_graph_router
+from app.api.routes.code_context import router as code_context_router
 from app.api.routes.commands import router as commands_router
 from app.api.routes.diagnostics import router as diagnostics_router
 from app.api.routes.dream import router as dream_router
@@ -124,18 +124,6 @@ async def _start_optional_services(app: FastAPI, process_started: float) -> None
         )
     _log_startup_timing("dream_scheduler", phase_started, process_started)
 
-    phase_started = perf_counter()
-    try:
-        if runtime_settings.code_graph.watch_enabled:
-            await app.state.code_graph_watcher.start()
-        else:
-            logger.info("code_graph_watcher_disabled enabled=false")
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "optional_service_start_failed service=code_graph_watcher error={}", exc
-        )
-    _log_startup_timing("code_graph_watcher", phase_started, process_started)
-
     app.state.optional_services_ready = True
     logger.info(
         "optional_services_ready total_ms={}",
@@ -207,12 +195,6 @@ async def lifespan(app: FastAPI):
     app.state.dream_scheduler = dream_scheduler
     app.state.runtime_settings = runtime_settings
 
-    from app.services.code_graph.watcher import CodeGraphWatcher, set_global_watcher
-
-    code_graph_watcher = CodeGraphWatcher(db_factory=async_session_factory)
-    set_global_watcher(code_graph_watcher)
-    app.state.code_graph_watcher = code_graph_watcher
-
     app.state.optional_services_ready = False
 
     # Start WebBridge extension cleanup task
@@ -244,7 +226,9 @@ async def lifespan(app: FastAPI):
     if not optional_startup_task.done():
         optional_startup_task.cancel()
     await asyncio.gather(optional_startup_task, return_exceptions=True)
-    await code_graph_watcher.stop()
+    from app.services.code_index.project import repository_indexes
+
+    repository_indexes.close_all()
     webbridge_cleanup_task = getattr(app.state, "webbridge_cleanup_task", None)
     if webbridge_cleanup_task:
         webbridge_cleanup_task.cancel()
@@ -317,7 +301,11 @@ def create_app() -> FastAPI:
     app.include_router(skills_router, prefix="/api/skills", tags=["skills"])
     app.include_router(commands_router, prefix="/api/commands", tags=["commands"])
     app.include_router(workflows_router, prefix="/api/workflows", tags=["workflows"])
-    app.include_router(code_graph_router, prefix="/api/code-graph", tags=["code-graph"])
+    app.include_router(
+        code_context_router,
+        prefix="/api/code-context",
+        tags=["code-context"],
+    )
     app.include_router(snippets_router, prefix="/api/snippets", tags=["snippets"])
     app.include_router(
         observability_router, prefix="/api/observability", tags=["observability"]

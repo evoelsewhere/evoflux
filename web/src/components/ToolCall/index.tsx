@@ -141,7 +141,7 @@ function completedToolLabel(name: string): string {
     case 'edit_file':
     case 'patch': return 'Edited'
     case 'grep':
-    case 'code_search': return 'Searched'
+    case 'code_context': return 'Searched'
     case 'glob':
     case 'ls': return 'Listed'
     case 'shell':
@@ -157,7 +157,7 @@ function ToolActivityIcon({ name }: { name: string }) {
   const props = { size: 13, strokeWidth: 1.7, 'aria-hidden': true as const }
   if (name === 'read' || name === 'read_file') return <FileText {...props} />
   if (name === 'write' || name === 'write_file' || name === 'edit' || name === 'edit_file' || name === 'patch') return <Pencil {...props} />
-  if (name === 'grep' || name === 'code_search') return <Search {...props} />
+  if (name === 'grep' || name === 'code_context') return <Search {...props} />
   if (name === 'glob' || name === 'ls') return <FolderOpen {...props} />
   if (name === 'browser_use' || name === 'webbridge' || name === 'web_search' || name === 'web_fetch') return <Globe2 {...props} />
   return <SquareTerminal {...props} />
@@ -200,7 +200,7 @@ function toolActivityLabel(
     case 'web_fetch': return target ? `Reading ${target}` : 'Reading page'
     case 'wiki_search': return target ? `Searching memory for ${target}` : 'Searching memory'
     case 'grep':
-    case 'code_search': return target || 'Searching code'
+    case 'code_context': return target || 'Querying code context'
     case 'glob': return target || 'Scanning files'
     case 'ls': return target || 'Listing files'
     default: return target || `Running ${formatToolLabel(name)}`

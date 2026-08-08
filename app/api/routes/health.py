@@ -327,37 +327,37 @@ async def health_diagnostics(session: AsyncSession = Depends(get_session)) -> di
             _check("disk", "Disk Space", "warn", f"Could not read disk usage: {exc}")
         )
 
-    # ── 6. Code graph ────────────────────────────────────────────────────────
+    # ── 6. Code context ──────────────────────────────────────────────────────
     try:
-        from sqlmodel import select as sql_select
-
-        from app.models.code_graph import CodeIndexState
-
-        result = await session.exec(  # ty: ignore[no-matching-overload]
-            sql_select(CodeIndexState.workspace_id).limit(1)
-        )
-        has_index = result.first() is not None
+        cache_root = Path(settings.EVOFLUX_CACHE_DIR) / "code-index"
+        has_index = any(cache_root.glob("*/code-context.sqlite3"))
         if has_index:
             checks.append(
                 _check(
-                    "code_graph", "Code Graph", "ok", "At least one workspace indexed"
+                    "code_context",
+                    "Code Context",
+                    "ok",
+                    "At least one repository index is cached",
                 )
             )
         else:
             checks.append(
                 _check(
-                    "code_graph",
-                    "Code Graph",
+                    "code_context",
+                    "Code Context",
                     "warn",
-                    "No workspaces indexed yet",
-                    hint="Open a coding workspace and click 'Build index' in the Graph tab.",
+                    "No repositories indexed yet",
+                    hint="Run a code-context query from a coding workspace.",
                 )
             )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("diagnostics_code_graph_failed error={}", exc)
+        logger.warning("diagnostics_code_context_failed error={}", exc)
         checks.append(
             _check(
-                "code_graph", "Code Graph", "warn", f"Could not query code graph: {exc}"
+                "code_context",
+                "Code Context",
+                "warn",
+                f"Could not inspect the code-context cache: {exc}",
             )
         )
 

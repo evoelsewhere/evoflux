@@ -24,12 +24,12 @@ Do not load bundled references when this skill activates.
    change crosses a public boundary, touches persistence, alters asynchronous
    state, or affects more than one independently deployed consumer.
 
-When the owning location or exact identifier is unknown, call `code_search`
+When the owning location or exact identifier is unknown, call `code_context` with `action="search"`
 once with the observable behavior, stable literal, or code terms. Promote a
 repository-qualified result to a declared symbol, then stop broad discovery.
-If the exact changed symbol is already known, skip `code_search`.
+If the exact changed symbol is already known, skip `code_context` with `action="search"`.
 
-Use native `code_graph` on the exact changed symbol before editing:
+Use `code_context` on the exact changed symbol before editing:
 `references` or `callers` to enumerate direct consumers, `callees` to confirm
 outbound dependencies, and `impact` only for explicitly transitive risk. Start
 at depth 1 and keep repository identity on cross-repository edges. Do not send
@@ -39,16 +39,9 @@ Once the contract identifies an exact changed symbol, make the graph the next
 structural observation. Do not continue broad discovery or reread source
 returned by the graph before choosing the owning edit boundary.
 
-Use `freshness_policy="fast"` for the first graph call and normal interactive
-navigation. If it returns `fresh`, do not rerun with a stronger policy. If it
-returns `partial` and a reported dirty file overlaps the question, use a
-targeted source read for a local gap or retry once with `"balanced"` when the
-relationships must be recomputed. After an edit that can change relationships,
-use `"balanced"` once before relying on the updated structure. Use `"strict"`
-only for a final, high-consequence completeness check when watcher coverage is unavailable or
-untrusted; never use it for discovery.
+Keep `refresh=true` for the first indexed query and after edits. Use `refresh=false` only for an immediate follow-up that intentionally reuses the same index version.
 
-Read [references/code-graph-contract.md](references/code-graph-contract.md)
+Read [references/code-context-contract.md](references/code-context-contract.md)
 only when the result is ambiguous, stale, truncated, cross-repository, or
 mixed with dynamic wiring.
 
