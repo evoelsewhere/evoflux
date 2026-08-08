@@ -106,6 +106,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
       : props.viewMode === 'split'
         ? SplitViewIcon
         : MonitorViewIcon
+  const activeAgentLabel = props.activeAgent ?? props.identity
   const handleWorkbenchToggle = () => {
     if (!workbenchOpen && props.mode === 'coding' && props.workspace && activeWorkbenchTool === null) {
       openWorkbenchTool('overview')
@@ -159,14 +160,14 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             />
             <AnimatePresence initial={false} mode="popLayout">
               <motion.span
-                key={props.identity}
+                key={activeAgentLabel}
                 initial={{ opacity: 0, y: 4 * motionPreset.distance }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 * motionPreset.distance }}
                 transition={motionPreset.transition}
                 className="workbench-identity-label max-w-44 truncate"
               >
-                {props.identity}
+                {activeAgentLabel}
               </motion.span>
             </AnimatePresence>
             <ChevronDown
