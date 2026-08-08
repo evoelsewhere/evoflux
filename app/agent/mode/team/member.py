@@ -385,6 +385,11 @@ class TeamMemberBase(abc.ABC):
             "total_tokens": 0,
             "cached_tokens": 0,
         }
+        # Session-level runtime selection can differ from the blueprint model.
+        # Roster introspection uses these fields so routing decisions reflect
+        # the model the member will actually execute with.
+        self.runtime_model_id: str | None = None
+        self.runtime_thinking_level: str | None = None
 
         # Bound at register() time
         self._team: AgentTeam | None = None
@@ -1227,6 +1232,8 @@ class TeamMemberBase(abc.ABC):
         # Prefer the per-message requested model when available; fall back to the
         # session model stored on ChatSession, then the lead agent default.
         effective_model = last_user_model or session_model or self.agent.model_id
+        self.runtime_model_id = effective_model
+        self.runtime_thinking_level = session_thinking_level
         # Provider-owned catalogs are authoritative for context
         # limits, modalities, tool support, and configurable thinking controls.
         # Hydrate them before provider routing, execution policy, and

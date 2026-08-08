@@ -140,8 +140,10 @@ _DELEGATE_DESCRIPTION = (
     "when assigning substantial work — it gives the member a clear contract "
     "of what 'done' looks like, reducing back-and-forth and improving output "
     "quality. A bare blueprint name auto-spawns its first instance when none "
-    "is live; use team_manage first only for intentional parallel instances "
-    "or restoring a specific handle. For quick questions or coordination, "
+    "is live. A unique busy instance accepts the task into its queue and the "
+    "result explicitly says Queued; use team_manage(action='status') before "
+    "parallel routing and team_manage(action='spawn') when work must start "
+    "immediately on another instance. For quick questions or coordination, "
     "use team_message instead."
 )
 
@@ -399,7 +401,12 @@ def make_team_delegate_tool(
         resolved: list[str] = []
         errors: list[str] = []
         for name in requested:
-            target = _resolve(team, mailbox, name, agent_name)
+            target = (
+                team.resolve_delegation_recipient(name)
+                if team is not None
+                and hasattr(team, "resolve_delegation_recipient")
+                else _resolve(team, mailbox, name, agent_name)
+            )
             if target is None and team is not None and name in team.blueprints:
                 live = team.live_instances_for_blueprint(name)
                 if not live:
@@ -433,6 +440,14 @@ def make_team_delegate_tool(
         parent_request = (
             team.current_user_request_for_delegation() if team is not None else None
         )
+        recipient_was_working = {
+            recipient: bool(
+                team is not None
+                and recipient in team.members
+                and team.members[recipient].state == "working"
+            )
+            for recipient in resolved
+        }
 
         # Build task spec. Runtime-owned context keeps the shared objective in
         # every member brief even when the lead writes a terse summary.
@@ -502,7 +517,38 @@ def make_team_delegate_tool(
         suffix = f" Task IDs: {', '.join(task_ids)}."
         if blocked:
             suffix += f" Blocked on dependencies: {', '.join(blocked)}."
-        return f"Task delegated to {', '.join(resolved)}.{suffix}"
+        if team is None:
+            return f"Task delegated to {', '.join(resolved)}.{suffix}"
+
+        blocked_recipients = {
+            task.recipient for task in tasks if task.status == "blocked"
+        }
+        running = [
+            recipient
+            for recipient in resolved
+            if recipient not in blocked_recipients
+            and not recipient_was_working[recipient]
+        ]
+        queued = [
+            recipient
+            for recipient in resolved
+            if recipient not in blocked_recipients
+            and recipient_was_working[recipient]
+        ]
+        states: list[str] = []
+        if running:
+            states.append(f"Running now: {', '.join(running)}.")
+        if queued:
+            states.append(
+                f"Queued behind active work: {', '.join(queued)}. "
+                "Spawn another instance if this task must start immediately."
+            )
+        if blocked_recipients:
+            states.append(
+                "Blocked on dependencies: "
+                f"{', '.join(sorted(blocked_recipients))}."
+            )
+        return f"Task accepted by {', '.join(resolved)}. {' '.join(states)}{suffix}"
 
     return Tool(team_delegate, name="team_delegate", description=_DELEGATE_DESCRIPTION)
 
