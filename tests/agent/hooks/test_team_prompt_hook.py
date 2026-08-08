@@ -414,6 +414,14 @@ class TestProtocolConstants:
         assert "consultant#1" not in LEAD_PROTOCOL
         assert "executor#1" not in LEAD_PROTOCOL
 
+    def test_lead_protocol_is_queue_aware_and_avoids_duplicate_verification(self):
+        prompt = f"{LEAD_COMMUNICATION_RULES}\n\n{LEAD_PROTOCOL}"
+        assert "team_manage(action='status')" in prompt
+        assert "Queued behind active work" in prompt
+        assert "verify proportionately" in prompt
+        assert "Never redo the member's full investigation" in prompt
+        assert "Verify at least ONE claim" not in prompt
+
     def test_member_protocol_no_old_params(self):
         """Member protocol does not reference old mode/stop params."""
         assert "stop=true" not in MEMBER_PROTOCOL
