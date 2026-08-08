@@ -62,7 +62,7 @@ class IndexJob:
     finished_at: float | None = None
     error: str | None = None
     # Progress tracking
-    phase: str = "starting"  # starting | parsing | saving | embedding | done
+    phase: str = "starting"  # starting | parsing | saving | done
     progress: float = 0.0  # 0.0 – 1.0
     message: str = ""
 

@@ -41,9 +41,6 @@ if TYPE_CHECKING:
 # Compatibility export for callers/tests that inspect the graph format tag.
 INDEX_FORMAT_VERSION = codeindex_source.INDEX_FORMAT_VERSION
 
-# Skip files larger than this — generated bundles/minified blobs aren't worth
-# parsing and can be huge.
-_MAX_FILE_BYTES = 1_500_000
 # Definition kinds a name-based call/reference may resolve to.
 _CALLABLE_KINDS = frozenset(
     {NODE_FUNCTION, NODE_METHOD, NODE_CLASS, NODE_ENUM, NODE_STRUCT}
@@ -877,7 +874,6 @@ def _iter_named_files(
         root,
         rel_paths,
         extensions=registry.supported_extensions(),
-        max_bytes=_MAX_FILE_BYTES,
     ):
         yield record.key, record.content
 
@@ -889,7 +885,6 @@ def _iter_source_files(
     for record in codeindex_source.walk_source_records(
         root,
         extensions=registry.supported_extensions(),
-        max_bytes=_MAX_FILE_BYTES,
     ):
         yield record.key, record.content
 

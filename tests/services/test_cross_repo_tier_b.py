@@ -16,7 +16,7 @@ import pytest
 
 import app.core.db as db_module
 from app.services.code_graph import fts_store
-from app.services.code_graph.cross_repo_llm import resolve_project_tier_b
+from app.services.code_graph.cross_repo_lexical import resolve_project_tier_b
 from app.services.coding_project_service import create_project
 from app.services.coding_workspace_service import upsert_coding_workspace
 
@@ -220,7 +220,7 @@ async def test_tier_b_does_not_guess_when_ambiguous(setup_db, tmp_path: Path):
 @pytest.mark.asyncio
 async def test_tier_b_row_cap(setup_db, tmp_path: Path, monkeypatch):
     from app.core import runtime_settings as rs_module
-    from app.services.code_graph import cross_repo_llm
+    from app.services.code_graph import cross_repo_lexical
 
     project_id, repo_a_id, repo_b_id = await _setup_project(tmp_path)
 
@@ -241,7 +241,7 @@ async def test_tier_b_row_cap(setup_db, tmp_path: Path, monkeypatch):
         settings.cross_repo.max_rows_per_run = 2
         return settings
 
-    monkeypatch.setattr(cross_repo_llm, "load_runtime_settings", _capped_settings)
+    monkeypatch.setattr(cross_repo_lexical, "load_runtime_settings", _capped_settings)
 
     async with db_module.async_session_factory() as db:
         stats = await resolve_project_tier_b(db, project_id=project_id)
@@ -259,7 +259,7 @@ async def test_tier_b_rotates_through_capped_rows_across_runs(
     cap sit unresolved forever no matter how many times resolve runs."""
     from app.core import runtime_settings as rs_module
     from app.models.code_graph import CrossRepoEdge
-    from app.services.code_graph import cross_repo_llm
+    from app.services.code_graph import cross_repo_lexical
 
     project_id, repo_a_id, repo_b_id = await _setup_project(tmp_path)
 
@@ -294,7 +294,7 @@ async def test_tier_b_rotates_through_capped_rows_across_runs(
         settings.cross_repo.max_rows_per_run = 2
         return settings
 
-    monkeypatch.setattr(cross_repo_llm, "load_runtime_settings", _capped_settings)
+    monkeypatch.setattr(cross_repo_lexical, "load_runtime_settings", _capped_settings)
 
     total_resolved = 0
     for _ in range(3):  # ceil(5 / 2) — enough rounds to sweep every row once

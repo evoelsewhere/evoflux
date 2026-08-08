@@ -11,7 +11,7 @@ import pytest
 from app.services.code_graph import cross_repo_jobs as jobs_module
 from app.services.code_graph.cross_repo import CrossRepoResolveStats
 from app.services.code_graph.cross_repo_jobs import CrossRepoResolveJobRegistry
-from app.services.code_graph.cross_repo_llm import TierBStats
+from app.services.code_graph.cross_repo_lexical import TierBStats
 
 
 @asynccontextmanager

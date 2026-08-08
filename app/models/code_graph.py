@@ -191,15 +191,11 @@ class CodeIndexChunk(SQLModel, table=True):
 class CrossRepoEdge(SQLModel, table=True):
     """A candidate reference from one repo to a symbol in a sibling repo.
 
-    Scoped to a ``CodingProject`` (cross-repo links only make sense within a
-    project's own repo set). Deliberately NOT a ``CodeEdge`` row: a full
-    reindex of a workspace deletes and recreates all of its ``CodeNode``/
-    ``CodeEdge`` rows with fresh ids (see ``reindex_workspace``), and
-    ``CodeEdge``'s FKs are ``ondelete="CASCADE"`` — a cross-repo edge stored
-    there would be silently destroyed by an unrelated reindex of the *target*
-    repo. Here the node FKs are ``SET NULL`` instead, and ``dst_qualified_name``
-    is kept denormalized so a stale link can be cheaply re-attached by name on
-    the next resolution pass rather than re-matched from scratch.
+    Scoped to a ``CodingProject`` because cross-repository links only make sense
+    within a project's repository set. This is not a ``CodeEdge``: candidates
+    can be unresolved and carry matching provenance before a target node exists.
+    Node FKs use ``SET NULL`` and ``dst_qualified_name`` stays denormalized so a
+    removed target symbol can be re-attached by name on the next resolution pass.
     """
 
     __tablename__: str = "code_cross_repo_edges"  # type: ignore[reportIncompatibleVariableOverride]
@@ -247,9 +243,9 @@ class CrossRepoEdge(SQLModel, table=True):
         default="unresolved",
         sa_column=Column(sa.String(20), nullable=False, server_default="unresolved"),
     )
-    # NULL until a resolution pass touches this row. static_fqn |
-    # static_manifest_exact | static_manifest_package | embedding | llm —
-    # the UI uses this to distinguish certain links from AI-inferred ones.
+    # NULL until a resolution pass touches this row. Current resolver values are
+    # static path/FQN/manifest methods and deterministic lexical matching.
+    # Keep the column open-ended so historical provenance remains readable.
     method: str | None = Field(default=None, sa_column=Column(sa.String(30)))
     confidence: float | None = Field(default=None)
     rationale: str | None = Field(default=None, sa_column=Column(sa.Text()))
