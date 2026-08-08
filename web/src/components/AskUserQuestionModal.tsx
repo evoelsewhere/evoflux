@@ -5,7 +5,7 @@
  * next/back; the last question shows Submit instead of Next.
  */
 import { forwardRef, useState } from 'react'
-import { Bot, ChevronLeft, ChevronRight, HelpCircle, Send, X } from 'lucide-react'
+import { Bot, ChevronDown, ChevronLeft, ChevronRight, HelpCircle, Send, X } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 import { replyAskUserQuestion } from '@/api/client'
@@ -69,6 +69,7 @@ const AskUserQuestionForm = forwardRef<
   const [step, setStep] = useState(() => initial.step)
   const [replying, setReplying] = useState(false)
   const [replyError, setReplyError] = useState<string | null>(null)
+  const [modelPickerOpen, setModelPickerOpen] = useState(false)
 
   const q = questions[step]
   if (!q) return null
@@ -151,10 +152,16 @@ const AskUserQuestionForm = forwardRef<
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 6 * preset.distance }}
       transition={preset.spring}
-      className="mx-auto w-full max-w-3xl px-4 pb-2"
+      className={cn(
+        'mx-auto w-full px-4 pb-2',
+        isAgentSpawn ? 'max-w-2xl' : 'max-w-3xl',
+      )}
     >
       <div className="overflow-hidden rounded-xl border border-(--color-primary)/35 bg-(--bg-page) shadow-sm">
-        <div className="flex items-center gap-2 border-b border-(--color-border) bg-(--color-primary)/5 px-4 py-2.5">
+        <div className={cn(
+          'flex items-center gap-2 border-b border-(--color-border) bg-(--color-primary)/5',
+          isAgentSpawn ? 'px-3 py-2' : 'px-4 py-2.5',
+        )}>
           {isAgentSpawn ? (
             <Bot size={14} className="shrink-0 text-(--color-primary)" aria-hidden="true" />
           ) : (
@@ -175,34 +182,71 @@ const AskUserQuestionForm = forwardRef<
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -8 * preset.distance }}
             transition={preset.spring}
-            className="space-y-2 px-4 py-3"
+            className={cn(
+              'space-y-2',
+              isAgentSpawn ? 'px-3 py-2.5' : 'px-4 py-3',
+            )}
           >
-            <p className="text-sm text-(--color-text)">{q.question}</p>
+            {!isAgentSpawn && <p className="text-sm text-(--color-text)">{q.question}</p>}
             {isAgentSpawn && spawnSelection ? (
-              <div className="space-y-3">
-                <div className="rounded-lg border border-(--color-border) bg-(--bg-card) p-2.5">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-(--color-text)">Execution model</span>
-                    <span className="max-w-52 truncate font-mono text-[10px] text-(--color-text-muted)">
-                      {shortModelName(spawnSelection.model)}
+              <div className="space-y-2">
+                <div className="rounded-lg border border-(--color-border) bg-(--bg-card) p-2">
+                  <button
+                    type="button"
+                    aria-expanded={modelPickerOpen}
+                    onClick={() => setModelPickerOpen((open) => !open)}
+                    className="flex h-7 w-full items-center justify-between gap-3 rounded-md px-1.5 text-left transition-colors hover:bg-(--bg-key)"
+                  >
+                    <span className="text-[11px] font-medium text-(--color-text-muted)">Model</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate font-mono text-xs text-(--color-text)">
+                        {shortModelName(spawnSelection.model)}
+                      </span>
+                      <ChevronDown
+                        size={13}
+                        aria-hidden="true"
+                        className={cn(
+                          'shrink-0 text-(--color-text-muted) transition-transform',
+                          modelPickerOpen && 'rotate-180',
+                        )}
+                      />
                     </span>
-                  </div>
-                  <ModelOptions
-                    models={registry.data?.models ?? []}
-                    selectedModel={spawnSelection.model}
-                    onSelect={(modelId) => {
-                      const nextModel = registry.data?.models.find((model) => model.id === modelId)
-                      setSpawnSelection(
-                        modelId,
-                        reconcileThinkingLevel(spawnSelection.thinkingLevel, nextModel),
-                      )
-                    }}
-                  />
+                  </button>
+                  <AnimatePresence initial={false}>
+                    {modelPickerOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={preset.spring}
+                        className="overflow-hidden pt-1.5"
+                      >
+                        <ModelOptions
+                          models={registry.data?.models ?? []}
+                          selectedModel={spawnSelection.model}
+                          limit={20}
+                          listClassName="max-h-28"
+                          onSelect={(modelId) => {
+                            const nextModel = registry.data?.models.find((model) => model.id === modelId)
+                            setSpawnSelection(
+                              modelId,
+                              reconcileThinkingLevel(spawnSelection.thinkingLevel, nextModel),
+                            )
+                            setModelPickerOpen(false)
+                          }}
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
 
-                <div className="rounded-lg border border-(--color-border) bg-(--bg-card) p-2.5">
-                  <p className="mb-2 text-xs font-medium text-(--color-text)">Thinking effort</p>
-                  <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Agent thinking effort">
+                <div className="flex items-center gap-2 rounded-lg border border-(--color-border) bg-(--bg-card) p-2">
+                  <p className="shrink-0 text-[11px] font-medium text-(--color-text-muted)">Thinking</p>
+                  <div
+                    className="flex min-w-0 flex-1 gap-1 overflow-x-auto overscroll-contain pb-0.5"
+                    role="radiogroup"
+                    aria-label="Agent thinking effort"
+                  >
                     {thinkingOptions.map((option) => {
                       const selected = option.value === spawnSelection.thinkingLevel
                       return (
@@ -214,7 +258,7 @@ const AskUserQuestionForm = forwardRef<
                           disabled={replying}
                           onClick={() => setSpawnSelection(spawnSelection.model, option.value)}
                           className={cn(
-                            'flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors',
+                            'flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition-colors',
                             selected
                               ? 'border-(--color-primary) bg-(--color-primary)/10 text-(--color-text)'
                               : 'border-(--color-border) text-(--color-text-muted) hover:bg-(--bg-key)',
@@ -273,7 +317,10 @@ const AskUserQuestionForm = forwardRef<
           </motion.div>
         </AnimatePresence>
 
-        <div className="flex items-center justify-between gap-3 border-t border-(--color-border) px-4 py-2.5">
+        <div className={cn(
+          'flex items-center justify-between gap-3 border-t border-(--color-border)',
+          isAgentSpawn ? 'px-3 py-2' : 'px-4 py-2.5',
+        )}>
           {isAgentSpawn ? (
             <button
               type="button"
