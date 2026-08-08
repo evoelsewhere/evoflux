@@ -287,7 +287,7 @@ def _create_spans_window_view(
         """
     )
     con.execute(
-        f"""
+        """
         CREATE TEMP VIEW spans_window_map AS
         SELECT * EXCLUDE (attributes),
           attributes::MAP(VARCHAR, VARCHAR) AS attributes

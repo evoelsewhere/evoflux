@@ -56,6 +56,9 @@ def _mock_member(name: str = "test_agent") -> MagicMock:
     member.name = name
     member._mailbox = TeamMailbox()
     member._mailbox.register(name)
+    member._drain_midturn_inbox = MagicMock(
+        side_effect=lambda: member._mailbox.drain_nowait(member.name)
+    )
     member._team = MagicMock()
     member._team._emit = AsyncMock()  # _emit is async
     member._persist_inbox = AsyncMock()
