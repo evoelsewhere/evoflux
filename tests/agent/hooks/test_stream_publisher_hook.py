@@ -308,10 +308,10 @@ class TestWrapToolCall:
         async def fake_push(sid, event):
             pushed.append(event)
 
-        hook._resolver.register("code_graph", "queued-query-id")
+        hook._resolver.register("code_context", "queued-query-id")
         tool_call = ToolCall(
             id="internal-query-id",
-            function=FunctionCall(name="code_graph", arguments='{"symbol":"flow"}'),
+            function=FunctionCall(name="code_context", arguments='{"symbol":"flow"}'),
         )
         state = MagicMock()
         state.metadata = {}

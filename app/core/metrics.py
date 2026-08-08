@@ -101,24 +101,24 @@ CODE_NAVIGATION_TURNS = Counter(
     registry=REGISTRY,
 )
 
-CODE_GRAPH_QUERIES = Counter(
-    "EVOFLUX_code_graph_queries_total",
-    "Code-graph queries grouped by tool and execution status.",
+CODE_CONTEXT_QUERIES = Counter(
+    "EVOFLUX_code_context_queries_total",
+    "Code-context queries grouped by tool and execution status.",
     labelnames=("tool", "status"),
     registry=REGISTRY,
 )
 
-CODE_GRAPH_QUERY_DURATION = Histogram(
-    "EVOFLUX_code_graph_query_duration_seconds",
-    "End-to-end code-graph tool latency, including the freshness barrier.",
+CODE_CONTEXT_QUERY_DURATION = Histogram(
+    "EVOFLUX_code_context_query_duration_seconds",
+    "End-to-end code-context tool latency, including the freshness barrier.",
     labelnames=("tool",),
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30),
     registry=REGISTRY,
 )
 
-CODE_GRAPH_RESULT_TOKENS = Counter(
-    "EVOFLUX_code_graph_result_tokens_total",
-    "Estimated tokens returned by code-graph tools (UTF-8 bytes divided by four).",
+CODE_CONTEXT_RESULT_TOKENS = Counter(
+    "EVOFLUX_code_context_result_tokens_total",
+    "Estimated tokens returned by code-context tools (UTF-8 bytes divided by four).",
     labelnames=("tool",),
     registry=REGISTRY,
 )
@@ -145,15 +145,15 @@ CODE_NAVIGATION_CALLS_PER_TURN = Histogram(
     registry=REGISTRY,
 )
 
-CODE_GRAPH_RESULT_TOKENS_PER_TURN = Histogram(
-    "EVOFLUX_code_graph_result_tokens_per_turn",
-    "Actual code-graph result tokens returned in one agent turn.",
+CODE_CONTEXT_RESULT_TOKENS_PER_TURN = Histogram(
+    "EVOFLUX_code_context_result_tokens_per_turn",
+    "Actual code-context result tokens returned in one agent turn.",
     buckets=(0, 256, 512, 1_024, 2_048, 4_096, 8_192, 12_288),
     registry=REGISTRY,
 )
 
-CODE_GRAPH_ROUTING = Counter(
-    "EVOFLUX_code_graph_routing_total",
+CODE_CONTEXT_ROUTING = Counter(
+    "EVOFLUX_code_context_routing_total",
     "Symbol graph calls grouped by traversal strategy and freshness.",
     labelnames=("strategy", "freshness"),
     registry=REGISTRY,
