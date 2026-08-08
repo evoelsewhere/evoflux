@@ -144,7 +144,7 @@ async def list_workspace_paths_with_sessions(db: AsyncSession) -> list[str]:
     one it was resolved with), so every workspace belonging to a project with
     at least one session counts as "active" alongside workspaces referenced
     directly by a standalone (non-project) session. Used to scope the
-    code-graph file watcher to workspaces someone has actually opened, rather
+    workspace event stream to repositories someone has actually opened, rather
     than every workspace ever registered (e.g. added to a project but never
     used).
     """
