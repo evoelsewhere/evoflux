@@ -824,6 +824,20 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
             options: Array.isArray(q.options)
               ? q.options.filter((opt): opt is string => typeof opt === 'string')
               : [],
+            kind: q.kind === 'agent_spawn' ? 'agent_spawn' as const : 'text' as const,
+            agentSpawn: q.kind === 'agent_spawn' && q.agent_spawn && typeof q.agent_spawn === 'object'
+              ? {
+                  blueprint: typeof (q.agent_spawn as Record<string, unknown>).blueprint === 'string'
+                    ? (q.agent_spawn as Record<string, unknown>).blueprint as string
+                    : '',
+                  defaultModel: typeof (q.agent_spawn as Record<string, unknown>).default_model === 'string'
+                    ? (q.agent_spawn as Record<string, unknown>).default_model as string
+                    : '',
+                  defaultThinkingLevel: typeof (q.agent_spawn as Record<string, unknown>).default_thinking_level === 'string'
+                    ? (q.agent_spawn as Record<string, unknown>).default_thinking_level as string
+                    : null,
+                }
+              : undefined,
           }))
           .filter((q) => q.question.length > 0)
         if (questions.length === 0) break

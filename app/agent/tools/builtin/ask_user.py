@@ -7,6 +7,8 @@ all replies together, which resolves the future this tool is awaiting.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -25,6 +27,16 @@ class BrowserHandoffSpec(BaseModel):
     action: str = Field(default="", max_length=500)
     consequence: str = Field(default="", max_length=1_000)
     target: str = Field(default="", max_length=500)
+
+
+class AgentSpawnSpec(BaseModel):
+    """Presentation metadata for a runtime agent-spawn confirmation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    blueprint: str = Field(min_length=1, max_length=100)
+    default_model: str = Field(min_length=1, max_length=255)
+    default_thinking_level: str | None = Field(default=None, max_length=50)
 
 
 class QuestionSpec(BaseModel):
@@ -46,6 +58,8 @@ class QuestionSpec(BaseModel):
     #: ``options`` are only soft suggestions over a free-text field.
     strict: bool = Field(default=False)
     browser_handoff: BrowserHandoffSpec | None = None
+    kind: Literal["text", "agent_spawn"] = "text"
+    agent_spawn: AgentSpawnSpec | None = None
 
 
 async def _ask_user(questions: list[QuestionSpec]) -> str:

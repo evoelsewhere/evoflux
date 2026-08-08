@@ -29,7 +29,16 @@ async def pending_questions(session_id: str) -> dict:
                 "request_id": request_id,
                 "session_id": service.session_id,
                 "items": [
-                    {"question": q.question, "options": q.options}
+                    {
+                        "question": q.question,
+                        "options": q.options,
+                        "kind": q.kind,
+                        **(
+                            {"agent_spawn": q.agent_spawn.model_dump()}
+                            if q.agent_spawn is not None
+                            else {}
+                        ),
+                    }
                     for q in request.questions
                 ],
             }

@@ -98,6 +98,12 @@ class AskUserService:
                             {
                                 "question": q.question,
                                 "options": q.options,
+                                "kind": q.kind,
+                                **(
+                                    {"agent_spawn": q.agent_spawn.model_dump()}
+                                    if q.agent_spawn is not None
+                                    else {}
+                                ),
                                 **(
                                     {"browser_handoff": q.browser_handoff.model_dump()}
                                     if q.browser_handoff is not None
@@ -236,6 +242,15 @@ def get_ask_user_service() -> AskUserService:
         if _default_service is None:
             _default_service = AskUserService(session_id="default")
         return _default_service
+
+
+def get_active_ask_user_service() -> AskUserService | None:
+    """Return the scoped runtime service, without creating a test fallback."""
+
+    try:
+        return _ask_user_ctx.get()
+    except LookupError:
+        return None
 
 
 def set_ask_user_service(service: AskUserService) -> contextvars.Token:

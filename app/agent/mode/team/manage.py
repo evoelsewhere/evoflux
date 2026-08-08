@@ -94,7 +94,11 @@ async def _manage_spawn(team: "AgentTeam", members: list[str]) -> str:
             blueprint, instance_id = parsed
 
         try:
-            member = await team.spawn(blueprint, instance_id=instance_id)
+            member = await team.spawn(
+                blueprint,
+                instance_id=instance_id,
+                confirm=True,
+            )
         except ValueError as exc:
             if "already live" in str(exc):
                 already_live.append(item)

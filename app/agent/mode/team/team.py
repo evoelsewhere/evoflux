@@ -19,6 +19,7 @@ so the frontend receives one unified event feed per session.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -150,6 +151,18 @@ class MemberBlueprint:
     # sessions for the *current* lead session.  Reset when the lead session
     # changes so a fresh chat starts the counter at #1 again.
     counter_reconciled_for: str | None = field(default=None)
+
+
+@dataclass(frozen=True)
+class SpawnRuntimeConfig:
+    """User-confirmed model configuration for one materialized member."""
+
+    model: str
+    thinking_level: str | None
+
+
+class SpawnCancelledError(ValueError):
+    """Raised when the user declines an interactive member spawn."""
 
 
 # ---------------------------------------------------------------------------
@@ -2440,6 +2453,7 @@ class AgentTeam:
         blueprint: str,
         *,
         instance_id: int | None = None,
+        confirm: bool = False,
         _refresh_delegations: bool = True,
     ) -> TeamMember:
         """Materialise a member instance from a blueprint and register it.
@@ -2457,11 +2471,16 @@ class AgentTeam:
             KeyError: blueprint not found.
             ValueError: instance with that handle is already live.
         """
+        runtime_config = (
+            await self._confirm_spawn_runtime(blueprint) if confirm else None
+        )
         try:
             async with asyncio.timeout(30):
                 async with self._roster_lock:
                     member = await self._spawn_locked(
-                        blueprint, instance_id=instance_id
+                        blueprint,
+                        instance_id=instance_id,
+                        runtime_config=runtime_config,
                     )
         except TimeoutError:
             raise RuntimeError(
@@ -2479,6 +2498,7 @@ class AgentTeam:
         blueprint: str,
         *,
         instance_id: int | None,
+        runtime_config: SpawnRuntimeConfig | None = None,
     ) -> TeamMember:
         bp = self.blueprints.get(blueprint)
         if bp is None:
@@ -2540,6 +2560,8 @@ class AgentTeam:
         # and the counter reconciler can find it.
         await member._ensure_db_session(mode=self.mode, workspace=self.workspace)
         await self._parent_member_session(member)
+        if runtime_config is not None:
+            await self._persist_member_runtime_config(member, runtime_config)
 
         # Register with mailbox.  The team is currently started iff the
         # lead has a registered inbox; in that case we activate immediately
@@ -2562,6 +2584,88 @@ class AgentTeam:
         )
         await self._persist_roster_change(f"Member spawned: {handle}.")
         return member
+
+    async def _confirm_spawn_runtime(self, blueprint: str) -> SpawnRuntimeConfig | None:
+        """Ask the user to approve model/effort before an interactive spawn."""
+
+        bp = self.blueprints.get(blueprint)
+        if bp is None:
+            raise KeyError(
+                f"Unknown blueprint '{blueprint}'. Available: {sorted(self.blueprints)}."
+            )
+
+        from app.agent.ask_user import get_active_ask_user_service
+        from app.agent.config import parse_agent_md
+        from app.agent.tools.builtin.ask_user import AgentSpawnSpec, QuestionSpec
+
+        cfg = parse_agent_md(bp.source_path)
+        default_model = cfg.model
+        default_thinking = cfg.thinking_level
+        service = get_active_ask_user_service()
+        if service is None:
+            # Recovery, tests, and non-agent callers have no user round-trip.
+            return SpawnRuntimeConfig(default_model, default_thinking)
+
+        answers = await service.ask(
+            [
+                QuestionSpec(
+                    kind="agent_spawn",
+                    question=(
+                        f"Confirm model and thinking effort before spawning "
+                        f"'{blueprint}'."
+                    ),
+                    agent_spawn=AgentSpawnSpec(
+                        blueprint=blueprint,
+                        default_model=default_model,
+                        default_thinking_level=default_thinking,
+                    ),
+                )
+            ]
+        )
+        raw = answers[0] if answers else ""
+        if raw == "__cancel__":
+            raise SpawnCancelledError(f"Spawn of '{blueprint}' was cancelled by user.")
+        try:
+            selection = json.loads(raw)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("Invalid agent spawn selection returned by the UI.") from exc
+        if not isinstance(selection, dict):
+            raise ValueError("Invalid agent spawn selection returned by the UI.")
+        model = selection.get("model")
+        thinking_level = selection.get("thinking_level")
+        if not isinstance(model, str) or not model.strip() or ":" not in model:
+            raise ValueError("Agent spawn requires a valid provider:model selection.")
+        if thinking_level is not None and not isinstance(thinking_level, str):
+            raise ValueError("Agent spawn thinking_level must be a string or null.")
+
+        from app.agent.providers.model_metadata import get_model_thinking_levels
+
+        supported = get_model_thinking_levels(model)
+        if thinking_level and supported and thinking_level not in supported:
+            raise ValueError(
+                f"Model '{model}' does not support thinking level "
+                f"'{thinking_level}'. Supported: {list(supported)}."
+            )
+        return SpawnRuntimeConfig(model.strip(), thinking_level or None)
+
+    async def _persist_member_runtime_config(
+        self,
+        member: TeamMember,
+        runtime_config: SpawnRuntimeConfig,
+    ) -> None:
+        """Persist the approved execution model on the child session."""
+
+        db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+        async with db_factory() as db:
+            row = await db.get(ChatSession, UUID(member.session_id))
+            if row is None:
+                raise RuntimeError(
+                    f"Child session '{member.session_id}' disappeared during spawn."
+                )
+            row.model = runtime_config.model
+            row.thinking_level = runtime_config.thinking_level
+            db.add(row)
+            await db.commit()
 
     async def _persist_roster_change(self, change: str) -> None:
         """Persist an LLM-visible, UI-hidden roster-change marker."""
