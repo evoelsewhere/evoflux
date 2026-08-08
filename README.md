@@ -46,7 +46,7 @@ One desktop app. One harness. Two different kinds of work.
 | Workspace | Temporary sandbox | Persistent repo or multi-repo project |
 | Best for | Research, documents, data, browser work, quick scripts | Build, test, refactor, review, git operations |
 | Default specialists | Executor, Explorer, Consultant, Debate | Coder, Explorer, Architect, Debate |
-| Verification | Artifact and tool-result review | Tests, diffs, code graph, git |
+| Verification | Artifact and tool-result review | Tests, diffs, code context, git |
 
 ### Work · cowork without a repository
 
@@ -54,7 +54,7 @@ Work is the fast execution sandbox. Start with a request instead of a project: r
 
 ### Coding · persistent engineering
 
-Coding opens your real repository — or several repositories as one project — and keeps that workspace available across sessions. Agents can navigate the structural code graph, inspect the file tree, edit and test code, review diffs, and use the complete git surface.
+Coding opens your real repository — or several repositories as one project — and keeps that workspace available across sessions. Agents can search indexed source, navigate structural relationships, inspect the file tree, edit and test code, review diffs, and use the complete git surface.
 
 <table>
   <tr>
@@ -145,7 +145,7 @@ EvoFlux is desktop-only:
 
 `Tauri Desktop → React UI → local FastAPI sidecar → local state / model providers`
 
-The production app launches a local sidecar through an ephemeral port and token handshake. The React interface, agent runtime, code graph, memory engine, scheduler, permissions, and MCP client all run on the user's machine.
+The production app launches a local sidecar through an ephemeral port and token handshake. The React interface, agent runtime, repository-local code indexes, memory engine, scheduler, permissions, and MCP client all run on the user's machine.
 
 <p align="center">
   <img src="documents/images/generated/system-architecture.jpg" width="780" alt="EvoFlux desktop-only local-first system architecture" />
@@ -159,7 +159,7 @@ A language model generates reasoning. The harness turns that reasoning into cont
 |---|---|
 | **1. Tool orchestration** | Shell, filesystem, git, browser automation, MCP, and agent-to-agent actions |
 | **2. Guardrails** | Permissions, policies, approvals, filesystem sandboxing, command checks |
-| **3. Context and memory** | Workspace state, sessions, code graph, compaction, knowledge wiki |
+| **3. Context and memory** | Workspace state, sessions, code indexes, compaction, knowledge wiki |
 | **4. Verification loops** | Test, compare, review, debate, reject, rework, and evidence |
 | **5. Observability** | Streaming events, telemetry, logs, metrics, diagnostics, and audit history |
 
@@ -185,44 +185,25 @@ the session's permissions or sandbox scope.
 Use `/goal` to inspect status, `/goal:budget <tokens|none>` to change the budget,
 and `/goal:pause`, `/goal:resume`, or `/goal:stop` to control the objective.
 
-### Structural code knowledge graph
+### Repository-local code context
 
-Twenty-five tree-sitter parsers cover Python, TypeScript/TSX, JavaScript, Go, Rust, Java, C#, C, C++, Swift, Kotlin, PHP, Ruby, Scala, Dart, Objective-C, Lua, Luau, R, Pascal, Svelte, Vue, Astro, and Liquid.
+EvoFlux ships a repository-local code index based on stable source keys and desired-state reconciliation. The implementation is part of the application and adds no indexing framework dependency. Twenty-five tree-sitter parsers cover Python, TypeScript/TSX, JavaScript, Go, Rust, Java, C#, C, C++, Swift, Kotlin, PHP, Ruby, Scala, Dart, Objective-C, Lua, Luau, R, Pascal, Svelte, Vue, Astro, and Liquid.
 
-Indexing extracts symbols and typed edges — including `calls`, `inherits`, `implements`, `imports`, `references`, `overrides`, `reads`, and `writes` — and links a reference only when it resolves unambiguously. Incremental indexing follows file changes automatically; every graph query also performs a synchronous incremental freshness pass, including while background indexing is paused during an agent run.
+Each repository owns a managed SQLite target in the EvoFlux cache. A refresh fingerprints source bytes, parser and pipeline implementations, and project settings; parses only additions and changes; removes deleted components; and atomically replaces their committed source snapshot, AST-aware overlapping chunks, local code vectors, symbols, relations, and FTS rows. The vectorizer is implemented with Python's standard library, so the runtime adds no model or vector-database package. Parse failures preserve the last good component and are surfaced in status/query limitations. The application database stores projects and sessions but no code-index or graph data.
 
-#### Cross-repository resolution
+Cross-repository links are resolved at query time across only the repositories authorized for the active project. Resolution prefers same-file and lexical definitions, import bindings and module paths, then a unique cross-repository definition. There is no persisted cross-repository guess, resolver tier, background resolver job, or model-facing scope switch.
 
-A `CodingProject` can contain several repositories. Graph tools automatically use the active repository and its linked project when sibling lookup is needed; there is no model-facing scope argument. Three deterministic resolver tiers reconnect cross-repo references without an LLM call:
+The model receives one native `code_context` tool:
 
-1. Reattach a previously resolved edge.
-2. Match static manifests, identities, and Java fully qualified names.
-3. Search sibling FTS5 indexes for remaining lexical candidates.
+| Question | Action |
+|---|---|
+| Find code from a concept or source phrase | `search` |
+| Match a syntax shape with metavariables | `grep` |
+| Locate a known symbol | `definition` |
+| Follow incoming or outgoing calls | `callers` or `callees` |
+| Inspect direct or transitive relationships | `references`, `impact`, or `neighborhood` |
 
-<p align="center">
-  <img src="documents/images/generated/code-graph-cross-repo.jpg" width="760" alt="Deterministic three-tier cross-repository code graph resolution" />
-</p>
-
-<details>
-  <summary><strong>Token-efficient code graph investigation</strong></summary>
-  <br />
-
-  Code graph has one native execution tool, `code_graph`, while exact-symbol workflow guidance is progressively disclosed inside the relevant Coding skills. EvoFlux does not inject graph prose into mode prompts, create a graph-routing skill, or route user requests with hard-coded keywords.
-
-  | Question | Action |
-  |---|---|
-  | Where is known symbol X defined? | `code_graph(symbol=X, operation="definition")` |
-  | Who calls X? | `code_graph(symbol=X, operation="callers")` |
-  | What does X call? | `code_graph(symbol=X, operation="callees")` |
-  | What references or transitively depends on X? | `references` or `impact` |
-  | Which symbol does the request mean? | Discover an identifier with normal source search, then call `code_graph` |
-
-  `code_graph` is not semantic search: it accepts one raw identifier, resolves exact definitions, and traverses structural edges. Reuse its returned definition and call-site evidence instead of re-reading the same ranges. Use `grep` for symbol discovery, literals, comments, configuration keys, prose, generated files, and unsupported languages; use LSP, tests, logs, or runtime evidence only where the graph reports limitations or static analysis cannot observe the behavior.
-
-  The complete prompt, schema, ambiguity, fallback, evidence, and regression rules are documented in [`documents/architecture/coding-agent-code-navigation.md`](documents/architecture/coding-agent-code-navigation.md).
-
-  The `/metrics` endpoint exposes graph-first versus fallback-first navigation turns, per-tool query count and latency, result-token volume, and estimated file-read/token savings. Saving estimates use a transparent baseline: each unique source location returned by the graph replaces one full-file read, with UTF-8 bytes divided by four as the token estimate.
-</details>
+The first query normally uses `refresh=true`; immediate follow-ups over the same indexed version can use `refresh=false`. Structural results are static evidence, so runtime-only behavior still requires tests, logs, LSP, or debugger evidence. The full storage, query, ambiguity, and tool contract is documented in [`documents/architecture/coding-agent-code-context.md`](documents/architecture/coding-agent-code-context.md).
 
 ### Memory and Dream
 
@@ -312,7 +293,7 @@ EvoFlux also includes direct control of its persistent in-app browser, PDF/DOCX/
 ## Project layout
 
 ```text
-app/        Local FastAPI sidecar — agents, code graph, memory, scheduler, MCP
+app/        Local FastAPI sidecar — agents, code context, memory, scheduler, MCP
 web/        React interface embedded by the Tauri desktop app
 desktop/    Tauri v2 shell and Python sidecar packaging
 seed/       Work and Coding blueprints, skills, and config

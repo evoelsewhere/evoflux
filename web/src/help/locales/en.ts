@@ -1379,15 +1379,15 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
   {
     id: 'coding-graph',
     category: 'coding',
-    title: 'Structural code graph',
+    title: 'Repository code context',
     summary:
-      'Tree-sitter indexes symbols and edges for exact structural navigation, including deterministic cross-repo resolution. Use code_graph after a symbol is known; use normal source search to discover identifiers, literals, and comments.',
+      'Repository-local indexes combine source search, structural patterns, and exact symbol navigation. Use one code_context tool across every authorized repository.',
     keywords: [
       'code graph',
       'symbols',
       'cross-repo',
       'index',
-      'code_graph',
+      'code_context',
       'tree-sitter',
       'đồ thị mã',
       'biểu tượng',
@@ -1395,14 +1395,14 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'シンボル'
 ],
     setup:
-      'Coding workspace or project — indexing runs incrementally on file changes. Open the Graph workbench tool to explore visually and reindex when the tree looks stale after large external edits.',
+      'Coding workspace or project — the first query refreshes changed source components. Open Graph to inspect the current dynamic repository snapshot.',
     tricks: [
-      'Coding skills embed progressively disclosed graph guidance; code_graph is the native exact-symbol execution tool.',
-      'Use code_graph for a known exact symbol and structural relationship; use source search for discovery, literals, comments, and config keys.',
+      'Coding skills progressively disclose one code_context workflow.',
+      'Use code_context search for discovery, grep for code shapes, and graph actions for one known exact symbol.',
       'Open the Graph workbench tool to explore visually and reindex when needed.',
-      'Cross-repo resolution uses three deterministic tiers (reattach, manifests/FQNs, sibling FTS5) without an LLM call for linking.',
-      'code_graph operations cover definition, callers, callees, references, impact, and neighborhood.',
-      'Verify material findings in live source after graph navigation — indexes can lag external edits.',
+      'Cross-repo relationships resolve dynamically from imports, module paths, and unique definitions; no resolver job or persisted guessed edge exists.',
+      'code_context graph actions cover definition, callers, callees, references, impact, and neighborhood.',
+      'Use refresh=true after edits and refresh=false only for immediate same-version follow-ups.',
       'Ask structural questions (“who calls X?”) instead of “read the whole package.”',
       'Multi-repo projects get cross-repo edges; standalone repos still benefit inside one tree.',
       'The skill body is never injected by Coding mode, and raw request prose is never keyword-routed into a graph query.'
@@ -1410,7 +1410,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'The structural code graph indexes symbols and edges with tree-sitter into a local index. The native code_graph tool answers an explicit structural operation for one known symbol. The same index remains available visually in the Graph workbench.',
+        text: 'Each repository owns a local managed index of AST-aware chunks, symbols, relations, and FTS source. The native code_context tool queries those targets, and Graph renders a dynamic snapshot.',
       },
       {
         type: 'p',
@@ -1419,20 +1419,19 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'code_graph definition — resolve the exact symbol and show its body',
-          'code_graph callers/callees — direct call relationships',
-          'code_graph references/impact — inbound uses and blast radius',
-          'code_graph neighborhood — deliberate two-way exploration',
-          'grep — literals, comments, prose, config keys'
+          'code_context search — identifiers, literals, comments, and concepts',
+          'code_context grep — by-example structural matching',
+          'code_context definition/callers/callees — exact symbol navigation',
+          'code_context references/impact/neighborhood — bounded relationship traversal'
 ],
       },
       {
         type: 'p',
-        text: 'Open a Coding workspace (indexing starts/continues automatically). Ask the agent structural questions or open Graph in the workbench. For multi-repo projects, edges resolve across siblings via reattach → manifests/FQNs → sibling FTS5. Reindex from the Graph tool if the tree looks stale after large external edits.',
+        text: 'Open a Coding workspace and query code_context. The first query reconciles additions, updates, and deletions into repository-local targets. Multi-repo edges resolve over the current authorized target set when queried or visualized.',
       },
       {
         type: 'p',
-        text: 'Step-by-step investigation: (1) discover an exact identifier with source search when it is not already known, (2) call code_graph with one structural operation, (3) disambiguate exact duplicate definitions by path or repository, (4) inspect freshness and limitations, and (5) verify dynamic or string-based behavior with source, tests, logs, or runtime evidence.',
+        text: 'Step-by-step investigation: (1) discover an identifier with search or a code shape with grep, (2) call an exact-symbol action, (3) disambiguate duplicates by path or repository, (4) inspect limitations, and (5) verify dynamic behavior with tests, logs, or runtime evidence.',
       },
       {
         type: 'p',
@@ -1440,7 +1439,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Common mistakes: passing the prose request as the graph symbol; dumping whole directories into chat “to be safe”; expecting cross-repo links without a project; never reindexing after a huge external checkout; or treating lexical suggestions as resolved graph roots.',
+        text: 'Common mistakes: passing prose to an exact-symbol action, dumping directories into chat, querying unauthorized siblings, skipping refresh after external edits, or treating suggestions as resolved roots.',
       },
       {
         type: 'tips',
@@ -1891,7 +1890,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Cross-feature: activated Coding skills teach graph workflow; native code_graph validates and executes exact-symbol operations.',
+          'Cross-feature: activated Coding skills teach the workflow; native code_context validates and executes every retrieval action.',
           'Cross-feature: workflows and skills both need scope validity to show in /.',
           'Cross-feature: permission Always rules apply to MCP tools too — prefer Once first.'
 ],

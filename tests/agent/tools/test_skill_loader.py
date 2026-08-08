@@ -1193,7 +1193,7 @@ class TestBuiltinSkills:
     @pytest.mark.asyncio
     async def test_implicit_specialist_is_directly_visible_and_loadable(self):
         state = SimpleNamespace(
-            metadata={}, messages_for_llm=[], tool_names=["code_graph", "code_search"]
+            metadata={}, messages_for_llm=[], tool_names=["code_context"]
         )
 
         specialist = await load_skill(
@@ -1203,13 +1203,13 @@ class TestBuiltinSkills:
 
         assert '<skill_content name="coding-investigation"' in specialist
         assert "coding-investigation" in catalog
-        assert "code-graph-navigation" not in catalog
-        assert "native `code_graph`" in specialist
+        assert "code-context-navigation" not in catalog
+        assert "`code_context`" in specialist
         assert "`definition`, `callers`, `callees`" in specialist
 
     @pytest.mark.asyncio
-    async def test_removed_code_graph_skill_is_not_loadable(self):
-        result = await load_skill("code-graph-navigation", _mode="coding")
+    async def test_removed_code_context_skill_is_not_loadable(self):
+        result = await load_skill("code-context-navigation", _mode="coding")
 
         assert "not found" in result
 
@@ -1224,7 +1224,7 @@ class TestBuiltinSkills:
             assert isinstance(meta["description"], str) and meta["description"].strip()
             assert body.strip(), skill_file
 
-    def test_native_code_graph_contract_is_embedded_in_coding_workflows(self):
+    def test_native_code_context_contract_is_embedded_in_coding_workflows(self):
         expected_owners = [
             "coding-debugging",
             "coding-implementation",
@@ -1240,7 +1240,7 @@ class TestBuiltinSkills:
         owners = [
             skill_file.parent.name
             for skill_file in sorted(_builtin_skills_dir().glob("*/SKILL.md"))
-            if "code_graph" in skill_file.read_text(encoding="utf-8")
+            if "code_context" in skill_file.read_text(encoding="utf-8")
         ]
 
         assert owners == expected_owners
@@ -1248,24 +1248,22 @@ class TestBuiltinSkills:
             normalized = " ".join(
                 (root / "SKILL.md").read_text(encoding="utf-8").split()
             )
-            assert "`code_search`" in normalized
+            assert "`code_context`" in normalized
             assert "skip" in normalized.casefold()
-            assert 'Use `freshness_policy="fast"` for the first graph call' in normalized
-            assert 'retry once with `"balanced"`' in normalized
-            assert "After an edit that can change relationships" in normalized
-            assert '`"strict"` only for a final' in normalized
+            assert "Keep `refresh=true` for the first indexed query" in normalized
+            assert "`refresh=false` only for an immediate follow-up" in normalized
 
         contracts = {
-            (root / "references" / "code-graph-contract.md").read_text(
+            (root / "references" / "code-context-contract.md").read_text(
                 encoding="utf-8"
             )
             for root in roots
         }
         assert len(contracts) == 1
         contract = contracts.pop()
-        assert "## Choose freshness deliberately" in contract
-        assert "Use `code_search` only while" in contract
-        assert "Never use it for discovery or as the first call" in contract
+        assert "## Choose the action from the evidence you have" in contract
+        assert "`code_context` is the single indexed-code tool" in contract
+        assert "Cross-repository edges are resolved dynamically" in contract
 
     def test_coding_investigation_locks_graph_first_trajectory(self):
         root = _builtin_skills_dir() / "coding-investigation"
@@ -1280,7 +1278,7 @@ class TestBuiltinSkills:
             in normalized
         )
         assert (
-            "the **next structural observation must be** native `code_graph`"
+            "the **next structural observation must be** `code_context`"
             in normalized
         )
         assert "repeat_broad_discovery_after_exact_anchor" in {
@@ -1291,7 +1289,7 @@ class TestBuiltinSkills:
         exact_callers = next(
             case for case in cases if case.get("expected_operation") == "callers"
         )
-        assert exact_callers["expected_trajectory"] == ["code_graph"]
+        assert exact_callers["expected_trajectory"] == ["code_context"]
 
     def test_builtin_skill_resource_links_exist(self):
         root = _builtin_skills_dir()

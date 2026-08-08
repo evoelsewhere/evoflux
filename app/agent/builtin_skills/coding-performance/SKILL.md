@@ -28,24 +28,17 @@ material cost. A hot function is not necessarily the optimization boundary;
 confirm how often it runs and whether its work is avoidable.
 
 If profiling exposes only a query label, trace name, route, allocation text, or
-source fragment, call `code_search` once to locate the owning declaration. Skip
+source fragment, call `code_context` with `action="search"` once to locate the owning declaration. Skip
 search when the profiler already reports an exact declared symbol.
 
-After profiling exposes an exact symbol, use native `code_graph` to bound its
+After profiling exposes an exact symbol, use `code_context` to bound its
 structural context: `callers` for invocation sites, `callees` for delegated
 work, and `references` for dispatch/registration uses. Start at depth 1 and do
 not infer frequency, timing, allocation, or runtime order from static edges.
 
-Use `freshness_policy="fast"` for the first graph call and normal interactive
-navigation. If it returns `fresh`, do not rerun with a stronger policy. If it
-returns `partial` and a reported dirty file overlaps the question, use a
-targeted source read for a local gap or retry once with `"balanced"` when the
-relationships must be recomputed. After an edit that can change relationships,
-use `"balanced"` once before relying on the updated structure. Use `"strict"`
-only for a final, high-consequence completeness check when watcher coverage is unavailable or
-untrusted; never use it for discovery.
+Keep `refresh=true` for the first indexed query and after edits. Use `refresh=false` only for an immediate follow-up that intentionally reuses the same index version.
 
-Read [references/code-graph-contract.md](references/code-graph-contract.md)
+Read [references/code-context-contract.md](references/code-context-contract.md)
 only after a graph result exposes ambiguity, cross-repository traversal, or
 index limitations. Once profiling selects the exact symbol, make the graph the
 next structural observation; do not return to broad source discovery first.

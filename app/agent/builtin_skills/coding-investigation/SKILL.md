@@ -12,32 +12,32 @@ under **Gaps** requires one.
 ## Choose one lane
 
 - **Exact symbol:** the request or observed source names a function, method,
-  class, constant, or qualified symbol. Skip `code_search` and call native
-  `code_graph` immediately.
+  class, constant, or qualified symbol. Skip `code_context` with `action="search"` and call native
+  `code_context` immediately.
 - **Unknown root:** the request names behavior, UI text, route, field, tag,
-  configuration key, event, or runtime effect. Run one `code_search` using that
+  configuration key, event, or runtime effect. Run one `code_context` with `action="search"` using that
   stable artifact, select one declared identifier, then promote it to graph.
 
 Never pass request prose, a filename, module, route, comment, or guessed spelling
-as `code_graph.symbol`. Promotion from unknown-root to exact-symbol ends broad
+as the exact-symbol `query`. Promotion from unknown-root to exact-symbol ends broad
 discovery.
 
 ```text
 exact declared symbol known
-  -> code_graph(symbol, smallest operation)
+  -> code_context(action=smallest operation, query=symbol)
 
 unknown root
-  -> code_search(observed artifact, freshness_policy="fast")
-  -> code_graph(one returned declared identifier, smallest operation)
+  -> code_context(action="search", query=observed artifact, refresh=true)
+  -> code_context(action=smallest operation, query=one returned declared identifier)
   -> targeted source only for one named semantic gap
   -> answer
 ```
 
-After a promotable search result, do not run another `code_search`, `grep`,
+After a promotable search result, do not run another `code_context` with `action="search"`, `grep`,
 `read`, resource load, or filename graph query before the graph call. If search
 has no promotable result, use one narrow literal search or read to expose an
 identifier, then call graph. Once promoted, the **next structural observation
-must be** native `code_graph`.
+must be** `code_context`.
 
 ## Graph operation
 
@@ -57,12 +57,7 @@ Start at depth 1. Increase depth only for an explicitly transitive question.
 Disambiguate multiple definitions before traversal. Reuse graph-returned source
 and callsites; never read the same evidence again.
 
-Use `freshness_policy="fast"` for the first graph call. If the result is `fresh`,
-do not retry with a stronger policy. If a relevant dirty file overlaps the
-question, retry once with `"balanced"`. After an edit that can change
-relationships, use `"balanced"` once before relying on the updated structure.
-Use `"strict"` only for a final, high-consequence completeness check when
-watcher coverage is unavailable.
+Keep `refresh=true` for the first indexed query and after edits. Use `refresh=false` only for an immediate follow-up that intentionally reuses the same index version.
 
 ## Gaps
 
@@ -73,15 +68,15 @@ references question. Otherwise name one gap before observing more source:
 - reflection, DI, registry, generated wiring, concurrency, or environment:
   use a bounded test, log, debugger, or runtime check;
 - empty edges: report no resolved static relationship, not proof of absence;
-- ambiguity, truncation, degraded freshness, or pending cross-repo edges:
+- ambiguity, truncation, or reported index limitations:
   narrow using the limitation reported by the tool.
 
 Keep evidence proportional to the question. Stop when the requested
 relationship is proven; when static analysis reaches a dynamic boundary,
 state that limitation instead of expanding discovery without a new hypothesis.
 
-Read [references/code-graph-contract.md](references/code-graph-contract.md) only
-for ambiguity, degraded freshness, truncation, pending cross-repository edges,
+Read [references/code-context-contract.md](references/code-context-contract.md) only
+for ambiguity, truncation, or reported index limitations,
 or explicitly transitive impact. Read
 [references/evidence-chain.md](references/evidence-chain.md) only for competing
 anchors, repository boundaries, or static paths ending in dynamic wiring.
@@ -93,15 +88,15 @@ Before answering:
 - verify both enable and disable/negative paths;
 - distinguish persisted state from transient UI/process state;
 - distinguish deferred/hidden tools from hard exclusions;
-- preserve direction, scope, repository, freshness, dirty-file, pending-edge,
+- preserve direction, scope, repository, index version,
   truncation, and dynamic-boundary limitations;
 - remove any claim not supported by a cited range or runtime result.
 
 For example, tracing WebBridge should be bounded to:
 
 ```text
-code_search("webbridge_enabled")
-  -> code_graph("WEBBRIDGE_SESSION_TAG", "references")
+code_context(action="search", query="webbridge_enabled")
+  -> code_context(action="references", query="WEBBRIDGE_SESSION_TAG")
   -> targeted reads only for request mapping and branch semantics
   -> enable path + negative path + downstream exclusion effect
 ```
