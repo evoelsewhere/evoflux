@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from pydantic import Field
 
 from app.agent.tools.registry import Tool
+from app.uuid7 import uuid7
 
 if TYPE_CHECKING:
     from app.agent.mode.team.mailbox import TeamMailbox
@@ -30,9 +31,10 @@ if TYPE_CHECKING:
 
 
 _LEAD_DESCRIPTION = (
-    "Send a message to one or more team members. "
-    "Use to: delegate tasks, provide instructions, relay scope changes, "
-    "or ask a member for status."
+    "Send a quick coordination message to one or more live members. Use for "
+    "questions, answers, context corrections, and status queries. Do not assign "
+    "substantial work here; use team_delegate so the assignment is durable and "
+    "has an explicit completion contract."
 )
 
 _MEMBER_DESCRIPTION = (
@@ -76,12 +78,25 @@ def make_team_message_tool(
             Field(
                 description=(
                     "The message body. Must be addressed ONLY to recipients in `to`. "
-                    "Work output only: findings, drafts, data, task instructions, or questions. "
-                    "NEVER greetings, status updates, or acknowledgements. "
+                    "Use concise questions, answers, corrections, or status information. "
+                    "Do not place a new substantial task or final deliverable here. "
                     "Do NOT prefix with your name — the system adds [your-name]: automatically."
                 )
             ),
         ],
+        intent: Annotated[
+            Literal["coordination", "question", "answer", "context", "status"],
+            Field(
+                description=(
+                    "Message intent. Use 'question' when a reply is required and "
+                    "'answer' with reply_to when answering a specific message."
+                )
+            ),
+        ] = "coordination",
+        reply_to: Annotated[
+            str | None,
+            Field(description="Message ID being answered, when intent='answer'."),
+        ] = None,
     ) -> str:
         """Send a message to one or more teammates."""
         from app.agent.mode.team.mailbox import Message
@@ -90,6 +105,10 @@ def make_team_message_tool(
         requested = [r for r in to if r != agent_name]
         if not requested:
             return "No valid recipients (cannot message yourself)."
+        if not content.strip():
+            return "Error: content cannot be empty."
+        if intent == "answer" and not reply_to:
+            return "Error: reply_to is required when intent='answer'."
 
         # Resolve each requested name through the team's recipient
         # resolver (handles bare-blueprint-name shorthand) when available.
@@ -107,17 +126,34 @@ def make_team_message_tool(
 
         # Strip self-prefix in both "[name]: " and "name: " forms (prevents double-prefix)
         stripped = re.sub(r"^\[?" + re.escape(agent_name) + r"\]?:\s*", "", content)
-        formatted = f"[{agent_name}]: {stripped}"
-
+        message_ids: list[str] = []
         for recipient in resolved:
+            message_id = str(uuid7())
+            marker = ""
+            if intent != "coordination":
+                marker = f"[{intent} id={message_id}"
+                if reply_to:
+                    marker += f" reply_to={reply_to}"
+                marker += "] "
+            formatted = f"[{agent_name}]: {marker}{stripped}"
             msg = Message(
+                id=message_id,
                 from_agent=agent_name,
                 to_agent=recipient,
                 content=formatted,
+                extra={
+                    "kind": "team_message",
+                    "intent": intent,
+                    **({"reply_to": reply_to} if reply_to else {}),
+                },
             )
             await mailbox.send(to=recipient, message=msg)
+            message_ids.append(message_id)
 
-        return f"Message sent to {', '.join(resolved)}."
+        return (
+            f"Message sent to {', '.join(resolved)}. "
+            f"Message IDs: {', '.join(message_ids)}."
+        )
 
     description = _LEAD_DESCRIPTION if role == "lead" else _MEMBER_DESCRIPTION
     return Tool(team_message, name="team_message", description=description)

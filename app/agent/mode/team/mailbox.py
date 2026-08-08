@@ -100,6 +100,24 @@ class TeamMailbox:
             raise KeyError(f"No inbox registered for agent '{agent_name}'")
         return self._inboxes[agent_name].get_nowait()
 
+    def drain_nowait(self, agent_name: str) -> list[Message]:
+        """Drain and return the current inbox snapshot in FIFO order."""
+        if agent_name not in self._inboxes:
+            raise KeyError(f"No inbox registered for agent '{agent_name}'")
+        messages: list[Message] = []
+        while True:
+            try:
+                messages.append(self._inboxes[agent_name].get_nowait())
+            except asyncio.QueueEmpty:
+                return messages
+
+    def requeue(self, agent_name: str, messages: list[Message]) -> None:
+        """Put deferred messages back without firing activation callbacks."""
+        if agent_name not in self._inboxes:
+            raise KeyError(f"No inbox registered for agent '{agent_name}'")
+        for message in messages:
+            self._inboxes[agent_name].put_nowait(message)
+
     def inbox_empty(self, agent_name: str) -> bool:
         """Return True if the named inbox has no pending messages."""
         if agent_name not in self._inboxes:

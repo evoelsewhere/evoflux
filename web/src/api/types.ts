@@ -703,6 +703,7 @@ export type SSEEventType =
   | 'queued_turn_start'
   | 'inbox'
   | 'handoff'
+  | 'delegation'
   | 'desktop_notification'
   | 'title_update'
   | 'summarization_start'

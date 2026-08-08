@@ -63,6 +63,17 @@ class TaskSpec(BaseModel):
             "would otherwise have to ask or search for."
         ),
     )
+    parent_request: str | None = Field(
+        default=None,
+        description=(
+            "Runtime-injected user request that the delegated work contributes to. "
+            "This is not supplied by the lead model."
+        ),
+    )
+    peer_recipients: list[str] = Field(
+        default_factory=list,
+        description="Runtime-injected concrete handles receiving the same contract.",
+    )
     priority: Literal["low", "normal", "high", "critical"] = Field(
         default="normal",
         description="Task priority — guides agent urgency and thoroughness.",
@@ -128,7 +139,10 @@ _DELEGATE_DESCRIPTION = (
     "goal, expected output, and constraints. Use this instead of team_message "
     "when assigning substantial work — it gives the member a clear contract "
     "of what 'done' looks like, reducing back-and-forth and improving output "
-    "quality. For quick questions or coordination, use team_message instead."
+    "quality. A bare blueprint name auto-spawns its first instance when none "
+    "is live; use team_manage first only for intentional parallel instances "
+    "or restoring a specific handle. For quick questions or coordination, "
+    "use team_message instead."
 )
 
 
@@ -158,11 +172,22 @@ def format_delegation_message(
         f"**Goal:** {spec.goal}",
         f"**Expected output:** {spec.expected_output}",
     ]
+    if spec.parent_request:
+        formatted_lines.append(f"**Parent user request:** {spec.parent_request}")
     if spec.constraints:
         formatted_lines.append("**Constraints:**")
         formatted_lines.extend(f"  • {constraint}" for constraint in spec.constraints)
     if spec.context:
         formatted_lines.append(f"**Context:** {spec.context}")
+    if len(spec.peer_recipients) > 1:
+        formatted_lines.append(
+            "**Parallel peers:** " + ", ".join(spec.peer_recipients)
+        )
+        formatted_lines.append(
+            "**Parallel contract:** Work independently against the full task brief; "
+            "do not assume peers cover missing parts unless Context explicitly "
+            "assigns a split."
+        )
     if spec.depends_on:
         formatted_lines.append(f"**Depends on:** {', '.join(spec.depends_on)}")
     if spec.target_paths:
@@ -221,7 +246,8 @@ def make_team_delegate_tool(
                 description=(
                     "Recipient handles — exact instance handles "
                     "(e.g. 'executor#1') or bare blueprint name "
-                    "when only one instance is live."
+                    "when only one instance is live. A bare blueprint with no "
+                    "live instance is spawned atomically before assignment."
                 ),
             ),
         ],
@@ -343,23 +369,7 @@ def make_team_delegate_tool(
         if not expected_output.strip():
             return "Error: expected_output cannot be empty — define what 'done' looks like."
 
-        # Resolve recipients
-        requested = [r for r in to if r != agent_name]
-        if not requested:
-            return "No valid recipients (cannot delegate to yourself)."
-
-        resolved: list[str] = []
-        errors: list[str] = []
-        for name in requested:
-            target = _resolve(team, mailbox, name, agent_name)
-            if target is None:
-                errors.append(_recipient_error(team, mailbox, name, agent_name))
-            else:
-                resolved.append(target)
-
-        if errors:
-            return " | ".join(errors)
-
+        # Validate the contract before an auto-spawn can mutate the live roster.
         if deadline_at is not None:
             if deadline_at.tzinfo is None:
                 return "Error: deadline_at must include a timezone offset."
@@ -380,6 +390,34 @@ def make_team_delegate_tool(
             )
         except ValueError as exc:
             return f"Error: {exc}"
+
+        # Resolve recipients
+        requested = [r for r in to if r != agent_name]
+        if not requested:
+            return "No valid recipients (cannot delegate to yourself)."
+
+        resolved: list[str] = []
+        errors: list[str] = []
+        for name in requested:
+            target = _resolve(team, mailbox, name, agent_name)
+            if target is None and team is not None and name in team.blueprints:
+                live = team.live_instances_for_blueprint(name)
+                if not live:
+                    try:
+                        spawned = await team.spawn(name)
+                    except Exception as exc:  # noqa: BLE001 - tool boundary
+                        logger.exception("team_delegate_auto_spawn_failed name={}", name)
+                        errors.append(f"Could not auto-spawn blueprint '{name}': {exc}")
+                        continue
+                    target = spawned.name
+            if target is None:
+                errors.append(_recipient_error(team, mailbox, name, agent_name))
+            elif target not in resolved:
+                resolved.append(target)
+
+        if errors:
+            return " | ".join(errors)
+
         if (
             resolved_isolation == "shared"
             and exclusive_paths
@@ -392,12 +430,19 @@ def make_team_delegate_tool(
                 "or use worktree isolation."
             )
 
-        # Build task spec
+        parent_request = (
+            team.current_user_request_for_delegation() if team is not None else None
+        )
+
+        # Build task spec. Runtime-owned context keeps the shared objective in
+        # every member brief even when the lead writes a terse summary.
         spec = TaskSpec(
             goal=goal,
             expected_output=expected_output,
             constraints=list(constraints),
             context=context,
+            parent_request=parent_request,
+            peer_recipients=list(resolved),
             priority=priority,
             depends_on=list(depends_on),
             deadline_at=deadline_at,

@@ -200,3 +200,27 @@ class TestTeamMessageTool:
         assert "ghost" in result
         # Should not have delivered to bob
         assert mb.inbox_empty("bob")
+
+    async def test_question_and_answer_are_correlated(self):
+        mb = _make_mailbox("alice", "bob")
+        ask = make_team_message_tool(mb, agent_name="alice")
+
+        result = await ask(
+            to=["bob"], content="Which API shape should we keep?", intent="question"
+        )
+        question = await mb.receive("bob")
+
+        assert "[question id=" in question.content
+        assert question.extra["intent"] == "question"
+        assert question.id in result
+
+        answer = make_team_message_tool(mb, agent_name="bob")
+        await answer(
+            to=["alice"],
+            content="Keep the durable TaskSpec contract.",
+            intent="answer",
+            reply_to=question.id,
+        )
+        reply = await mb.receive("alice")
+        assert f"reply_to={question.id}" in reply.content
+        assert reply.extra["reply_to"] == question.id

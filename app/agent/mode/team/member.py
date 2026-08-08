@@ -111,7 +111,7 @@ if TYPE_CHECKING:
 
 LEAD_MESSAGE_FORMAT = """\
 ## Message format
-- `[name]: content` — message from a teammate (the `[name]:` prefix is added automatically by the system)
+- `[name]: content` — coordination from a teammate; typed messages add `[question|answer|context|status id=…]` after the prefix
 - `[name]  FINAL HANDOFF:` — structured deliverable from a teammate via `team_handoff` (contains Summary, Findings, Evidence, Confidence, Next actions)
 - `[user]: content` — message from the user"""
 
@@ -120,7 +120,7 @@ MEMBER_MESSAGE_FORMAT = """\
 - `[{lead_name}]: content` — message from the team lead
 - `[{lead_name}] ● TASK DELEGATION:` — structured task from the lead via `team_delegate` (contains Task ID, Goal, Expected output, Constraints, Context)
 - `[{lead_name}] ❌ REJECTED — REWORK NEEDED:` — structured rejection via `team_reject` (contains Reason, Issues, Suggestions)
-- `[name]: content` — message from a teammate
+- `[name]: content` — coordination from a teammate; typed messages add `[question|answer|context|status id=…]` after the prefix
 - `[name]  FINAL HANDOFF:` — structured deliverable received via `team_handoff`"""
 
 LEAD_COMMUNICATION_RULES = """\
@@ -135,10 +135,10 @@ LEAD_COMMUNICATION_RULES = """\
   - **Sustained multi-step work** — a real workstream, not just two quick tool calls.
 - **Prefer reusing a live member** over spawning a fresh one, and skip delegation entirely when you can finish the task yourself in a step or two.
 {{ROUTING_GUIDE}}
-- **Roster management — `team_manage`.** Members are spawned on demand. Use the `team_manage` tool description and schema for spawn/restore/dismiss usage and available blueprint discovery. Spawn what you need, address returned handles via `team_message`, and **keep useful members alive across turns** — reusing a live instance preserves its warm context and is faster and cheaper than dismiss-then-respawn. Dismiss only to free resources or clear clutter when an instance clearly won't be needed again.
-- Coordination with members must go through `team_delegate` (structured task assignments with goal + expected output + constraints), `team_message` (quick questions, instructions, status queries), or `team_handoff` (structured deliverables). Use `team_state` to share persistent key-value data (URLs, config, discoveries) across the team. Do not respond to the user until all assigned members have reported back.
+- **Roster management.** `team_delegate(to=['<bare-blueprint>'], ...)` atomically spawns the first instance when none is live and reuses it when exactly one is live. Use `team_manage` only to create intentional parallel instances, restore a specific prior handle, or dismiss an unused member. Keep useful members alive across turns.
+- Coordination with members must go through `team_delegate` (structured task assignments), `team_message` (quick questions, answers, clarifications, status), or `team_handoff` (structured deliverables). Use `team_state` for persistent shared facts. Never create a new task through `team_message`, and do not respond to the user until all assigned members have reported back.
 - **Waiting on a member? Respond with exactly `<sleep>`** — just the token, no tool calls and no plain text. After delegating you may send one brief "work is underway" note (see workflow step 3), but every wake after that where you're still waiting on outstanding delegations and have nothing new to verify or synthesise — no partial answer, no "here's what I have so far," no guessed conclusion — must be exactly `<sleep>`. Answering on your own before a member reports back defeats the delegation and shows the user an answer the team hasn't actually produced yet; your next real response after their handoff arrives is the answer.
-- **Structured delegation.** When assigning substantial work to a member, use `team_delegate` — it gives the member an explicit contract (goal, expected_output, constraints, context) and returns a durable delegation Task ID. Use that UUID for `depends_on` and preserve it through handoff/rejection; it is separate from any todo `task_id`. Use `team_message` only for quick follow-ups, clarifications, or coordination that doesn't need a full task spec.
+- **Structured delegation.** Assign substantial work only with `team_delegate`; the runtime adds the original user request, concrete peer handles, and a durable Task ID. Use that UUID for `depends_on` and preserve it through handoff/rejection. Use `team_message` only for quick follow-ups, clarifications, answers, or status; set `intent='question'` when a reply is required and answer with `intent='answer', reply_to='<message id>'`.
 - **Choose workspace isolation.** For code-changing work, set `isolation='worktree'` (or use `auto`) and name every affected repository in `target_repos`; use `shared` only for read-only work or small non-overlapping edits. The runtime gives each recipient its own branch/worktree set. After a final handoff, inspect it with `team_worktree(action='review', task_id=...)`, then explicitly `merge`, `discard`, or `team_reject`. Dependencies do not start until isolated work is merged. When all accepted tasks are merged, call `team_worktree(action='finalize')` to fast-forward clean source repositories.
 - **Structured handoffs.** When a member delivers substantial work output, expect it via `team_handoff` with structured fields (summary, findings, evidence, confidence, next_actions). Use these fields to synthesise your response rather than re-parsing prose. If a handoff has `status: "partial"`, wait for the `"final"` handoff before synthesising.
 - Member capabilities come from their blueprint/root configuration at spawn time. If a member lacks a required capability, use an appropriately configured blueprint or update durable settings rather than mutating a live member.
@@ -150,11 +150,11 @@ LEAD_PROTOCOL = """\
    - **Use task tiers** when creating todos: `trivial` (handle yourself), `simple` (one member, straightforward), `multi_step` (one member, multiple steps), `complex` (multi-member coordination). Tiers guide delegation — never delegate `trivial` tasks.
 2. **Load specialized workflows only on demand.** The visible tool schemas and your role instructions are sufficient for ordinary work. Use the `skill` tool progressively only when the task needs a specialized artifact or operational workflow; do not list or load skills as a generic first step.
 3. When delegating:
-   - For multi-step work, create a todo plan first. Use first-class `dependencies` and `assigned_to` fields; `assigned_to` must be one concrete spawned handle (`<blueprint>#<n>`), not a bare blueprint or group expression. Do not spawn or message owners of blocked tasks until their dependencies are complete.
+   - For multi-step work, create a todo plan first with first-class `dependencies`. Leave a member todo unassigned until its owner is live; once `team_delegate` returns a concrete handle, set `assigned_to` to that handle, never a bare blueprint or group expression. Do not spawn, delegate, or message owners of blocked tasks until their dependencies are complete.
    - Identify which blueprints cover the work using the routing guide above.
    - Prefer restoring a relevant prior instance over spawning fresh when `team_manage` shows a restorable handle whose prior work overlaps with the new task.
-   - **Spawn before assigning member todos.** Call `team_manage` with the needed blueprints or restorable handles, then use the returned concrete handles in `assigned_to`.
-   - Assign every relevant instance **in parallel** via `team_delegate(to=['<handle>'], goal=..., expected_output=..., constraints=[...])` for substantial tasks, or `team_message` for quick instructions that don't need a full spec.
+   - Delegate directly to a bare blueprint for a normal single-worker assignment; `team_delegate` spawns/reuses it atomically. Call `team_manage` first only for intentional parallel instances or restoration, then use returned concrete handles in todos and delegation.
+   - Assign every relevant instance **in parallel** via `team_delegate(to=['<handle>'], goal=..., expected_output=..., constraints=[...])`. Never create a task through `team_message`.
    - **Once a task is delegated to a member, do not execute the same task in parallel yourself.** Stay in coordination/verification mode unless you explicitly reclaim or cancel the member task first.
     - For dependent workflows, keep a **peer handoff chain** and pass the prerequisite delegation UUIDs returned by `team_delegate` in the downstream call's `depends_on`. The runtime keeps that assignment blocked and dispatches it after every dependency has a final handoff.
    - Do not make yourself the default relay for member outputs. Use the lead as the synthesizer/final verifier, not as a message bus between members.
@@ -399,6 +399,10 @@ class TeamMemberBase(abc.ABC):
         # guards against re-nudging the same stopping point on every idle
         # check; a fresh nudge requires the member to have taken a new turn.
         self._last_open_task_nudge_message_id: str | None = None
+        # Concrete durable task currently owning this member's model turn.
+        # Other delegations remain queued so unrelated contracts never share
+        # one reasoning context.
+        self._active_delegation_task_id: str | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -710,19 +714,15 @@ class TeamMemberBase(abc.ABC):
             # Control-command / retry path — no inbox messages; run on DB history.
             pending: list[Message] = []
         else:
-            # Drain all queued messages
-            pending = []
-            while not self._mailbox.inbox_empty(self.name):
-                try:
-                    pending.append(self._mailbox.receive_nowait(self.name))
-                except asyncio.QueueEmpty:
-                    break
+            pending = self._drain_activation_inbox()
 
             if not pending:
                 # Spurious activation — nothing to process. Reset state that
                 # _maybe_activate pre-set to "working" and bail out.
                 self.state = "idle"
                 return
+
+        self._active_delegation_task_id = self._task_id_for_batch(pending)
 
         # state was already set to "working" by _maybe_activate
         await self._team._emit(agent=self.name, event="agent_status", status="working")
@@ -856,6 +856,7 @@ class TeamMemberBase(abc.ABC):
 
         finally:
             self._on_turn_finally()
+            self._active_delegation_task_id = None
             if self.state != "error":
                 self.state = "idle"
                 await self._team._emit(
@@ -892,6 +893,72 @@ class TeamMemberBase(abc.ABC):
                 await self._team._try_activate_queued_after_lead_turn()
 
             await self._team._try_emit_done()
+
+    @staticmethod
+    def _message_task_id(message: Message) -> str | None:
+        """Return the durable task identity for task-bearing coordination."""
+        if message.extra.get("kind") not in {"delegation", "rejection"}:
+            return None
+        task_id = message.extra.get("task_id")
+        return task_id if isinstance(task_id, str) and task_id else None
+
+    @classmethod
+    def _task_id_for_batch(cls, messages: list[Message]) -> str | None:
+        return next(
+            (
+                task_id
+                for message in messages
+                if (task_id := cls._message_task_id(message)) is not None
+            ),
+            None,
+        )
+
+    def _drain_activation_inbox(self) -> list[Message]:
+        """Drain one focused member task, deferring later task contracts."""
+        assert self._mailbox is not None
+        messages = self._mailbox.drain_nowait(self.name)
+        if self._role_label == "lead":
+            return messages
+
+        active_task_id: str | None = None
+        split_at: int | None = None
+        for index, message in enumerate(messages):
+            task_id = self._message_task_id(message)
+            if task_id is None:
+                continue
+            if active_task_id is None:
+                active_task_id = task_id
+            elif task_id != active_task_id:
+                split_at = index
+                break
+        if split_at is None:
+            return messages
+        self._mailbox.requeue(self.name, messages[split_at:])
+        logger.info(
+            "team_member_delegation_deferred name={} active_task={} deferred={}",
+            self.name,
+            active_task_id,
+            len(messages) - split_at,
+        )
+        return messages[:split_at]
+
+    def _drain_midturn_inbox(self) -> list[Message]:
+        """Inject quick coordination but defer unrelated task assignments."""
+        assert self._mailbox is not None
+        messages = self._mailbox.drain_nowait(self.name)
+        if self._role_label == "lead":
+            return messages
+
+        accepted: list[Message] = []
+        deferred: list[Message] = []
+        for message in messages:
+            task_id = self._message_task_id(message)
+            if task_id is not None and task_id != self._active_delegation_task_id:
+                deferred.append(message)
+            else:
+                accepted.append(message)
+        self._mailbox.requeue(self.name, deferred)
+        return accepted
 
     # ------------------------------------------------------------------
     # Abstract / override points
@@ -1087,14 +1154,18 @@ class TeamMemberBase(abc.ABC):
             if self._role_label == "member":
                 try:
                     lead_session_uuid = uuid.UUID(self._team.lead.session_id)
-                    active_tasks = (
-                        await db.exec(
-                            select(DelegationTask).where(
-                                DelegationTask.lead_session_id == lead_session_uuid,
-                                DelegationTask.recipient == self.name,
-                                DelegationTask.status == "pending",
-                            )
+                    task_query = select(DelegationTask).where(
+                        DelegationTask.lead_session_id == lead_session_uuid,
+                        DelegationTask.recipient == self.name,
+                        DelegationTask.status == "pending",
+                    )
+                    if self._active_delegation_task_id is not None:
+                        task_query = task_query.where(
+                            DelegationTask.id
+                            == uuid.UUID(self._active_delegation_task_id)
                         )
+                    active_tasks = (
+                        await db.exec(task_query)
                     ).all()
                     active_task_specs = [dict(task.spec) for task in active_tasks]
                 except (TypeError, ValueError):

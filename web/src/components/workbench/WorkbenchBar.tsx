@@ -7,8 +7,8 @@ import {
   FileDiff,
   GitPullRequest,
   Menu,
-  Orbit,
 } from 'lucide-react'
+import { AgentLogo } from '@/components/AgentLogo'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -151,11 +151,12 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             aria-label="Choose active agent"
             data-no-drag
           >
-            <span className="relative flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-page) text-(--color-accent)">
-              <span className="absolute inset-0 rounded-lg bg-(--color-accent)/6" aria-hidden="true" />
-              <Orbit size={14} strokeWidth={1.8} className="relative z-10" />
-              <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-(--bg-card) bg-(--color-success)" />
-            </span>
+            <AgentLogo
+              name={props.activeAgent ?? 'EvoFlux'}
+              size="sm"
+              className="size-6 rounded-lg"
+              statusClassName="bg-(--color-success)"
+            />
             <AnimatePresence initial={false} mode="popLayout">
               <motion.span
                 key={props.identity}
@@ -183,6 +184,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
                 onClick={() => props.onSelectAgent(agent)}
                 className={cn(agent === props.activeAgent && 'bg-(--bg-key)')}
               >
+                <AgentLogo name={agent} size="xs" />
                 <span className="truncate">{agent}</span>
                 {agent === props.activeAgent && (
                   <Check size={13} className="ml-auto text-(--color-accent)" />

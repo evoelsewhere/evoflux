@@ -533,3 +533,56 @@ class TestLateInboxReactivation:
         worker.agent.run.assert_not_called()
 
         await team.stop()
+
+
+class TestDelegationFocus:
+    async def test_member_processes_one_task_contract_per_activation(
+        self, team_with_db
+    ):
+        team = team_with_db
+        await team.start()
+        worker = team.members["worker"]
+        first = Message(
+            from_agent="lead",
+            to_agent="worker",
+            content="first",
+            extra={"kind": "delegation", "task_id": "task-1"},
+        )
+        clarification = Message(
+            from_agent="lead", to_agent="worker", content="clarification"
+        )
+        second = Message(
+            from_agent="lead",
+            to_agent="worker",
+            content="second",
+            extra={"kind": "delegation", "task_id": "task-2"},
+        )
+        team.mailbox.requeue("worker", [first, clarification, second])
+
+        batch = worker._drain_activation_inbox()
+
+        assert batch == [first, clarification]
+        assert team.mailbox.receive_nowait("worker") == second
+        await team.stop()
+
+    async def test_midturn_new_task_is_deferred_but_coordination_is_injected(
+        self, team_with_db
+    ):
+        team = team_with_db
+        await team.start()
+        worker = team.members["worker"]
+        worker._active_delegation_task_id = "task-1"
+        status = Message(from_agent="lead", to_agent="worker", content="status")
+        next_task = Message(
+            from_agent="lead",
+            to_agent="worker",
+            content="next",
+            extra={"kind": "delegation", "task_id": "task-2"},
+        )
+        team.mailbox.requeue("worker", [status, next_task])
+
+        batch = worker._drain_midturn_inbox()
+
+        assert batch == [status]
+        assert team.mailbox.receive_nowait("worker") == next_task
+        await team.stop()

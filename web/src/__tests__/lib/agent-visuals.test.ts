@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   agentDisplayName,
   agentTeamFromName,
+  agentVisualKind,
   isBuiltInAgentName,
 } from '@/lib/agent-visuals'
 
@@ -20,5 +21,17 @@ describe('agent settings visuals', () => {
 
   it('does not protect custom agents that merely share a team directory', () => {
     expect(isBuiltInAgentName('coding/custom-reviewer', 'member')).toBe(false)
+  })
+
+  it('resolves settings paths and live handles to specialized emblems', () => {
+    expect(agentVisualKind('coding/coder')).toBe('coder')
+    expect(agentVisualKind('architect#2')).toBe('architect')
+    expect(agentVisualKind('debate#3')).toBe('debate')
+    expect(agentVisualKind('explorer#1')).toBe('explorer')
+  })
+
+  it('uses the lead and custom emblems when appropriate', () => {
+    expect(agentVisualKind('anything', 'lead')).toBe('EvoFlux')
+    expect(agentVisualKind('custom-reviewer')).toBe('custom')
   })
 })
