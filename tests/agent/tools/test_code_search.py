@@ -21,5 +21,15 @@ def test_code_search_is_bounded_deferred_discovery() -> None:
         "freshness_policy",
         "limit",
     }
-    assert schema["properties"]["limit"]["maximum"] == 50
+    assert schema["properties"]["limit"]["maximum"] == 20
+    assert schema["properties"]["limit"]["default"] == 5
     assert schema["properties"]["freshness_policy"]["default"] == "fast"
+
+
+def test_code_graph_uses_bounded_relationship_defaults() -> None:
+    from app.agent.tools.builtin.code_graph import code_graph
+
+    schema = code_graph.definition["function"]["parameters"]
+    assert schema["properties"]["limit"]["maximum"] == 50
+    assert schema["properties"]["limit"]["default"] == 20
+    assert schema["properties"]["depth"]["default"] == 1

@@ -14,7 +14,10 @@ from app.services import code_graph_service as graph_service
 from app.services.code_intelligence.models import WorkspaceScope
 from app.services.codeindex.query import CodeIndexResult, search_code_index
 
-_INLINE_CHAR_LIMIT = 38_000
+# Discovery should identify an anchor, not copy a large fraction of the
+# repository into every subsequent model turn. A 16k envelope still carries
+# several parser-aligned snippets while keeping the fixed context cost bounded.
+_INLINE_CHAR_LIMIT = 16_000
 
 
 def _render_code_search(result: CodeIndexResult) -> str:
@@ -93,8 +96,15 @@ async def _code_search(
     ] = "fast",
     limit: Annotated[
         int,
-        Field(ge=1, le=50, description="Maximum merged cross-repository matches."),
-    ] = 10,
+        Field(
+            ge=1,
+            le=20,
+            description=(
+                "Maximum merged cross-repository matches. Keep the default for "
+                "anchor discovery; narrow path/repository before increasing it."
+            ),
+        ),
+    ] = 5,
 ) -> str:
     """Find source ranges before exact structural graph navigation."""
     sandbox = get_sandbox()
