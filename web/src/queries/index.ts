@@ -27,6 +27,10 @@ export {
 export { useQuoteQuery } from './useQuoteQuery'
 export { useWorkspaceFilesQuery } from './useWorkspaceFilesQuery'
 export {
+  useProcessesQuery,
+  useTerminateProcessMutation,
+} from './useProcessesQuery'
+export {
   useAgentFilesQuery,
   useAgentFileQuery,
   useRegistryQuery,

@@ -71,6 +71,7 @@ class PreviewServer:
     command: str
     workdir: str
     config_fingerprint: str
+    session_id: str | None = None
     started_at: float = field(default_factory=time.monotonic)
     # None when an externally-started server was reused.
     _process: TrackedProcess | None = field(default=None, repr=False)
@@ -87,9 +88,21 @@ class PreviewServer:
     def pid(self) -> int | None:
         return self._process.pid if self._process else None
 
+    @property
+    def elapsed_seconds(self) -> float:
+        if self._process is not None:
+            return self._process.elapsed_seconds
+        return time.monotonic() - self.started_at
+
 
 # Keyed by (workspace_root, config name).
 _servers: dict[tuple[str, str], PreviewServer] = {}
+
+
+def preview_servers() -> list[tuple[tuple[str, str], PreviewServer]]:
+    """Return a stable snapshot for the app-level process manager."""
+
+    return sorted(_servers.items(), key=lambda item: item[1].started_at)
 
 
 @dataclass(slots=True)
@@ -471,6 +484,7 @@ async def _start_locked(
             command="(external process)",
             workdir=str(workspace),
             config_fingerprint=cfg.fingerprint,
+            session_id=sandbox.session_id,
         )
         return (
             f"Port {cfg.port} is already serving — reusing the existing server.\n"
@@ -545,6 +559,7 @@ async def _start_locked(
         command=command,
         workdir=str(cwd),
         config_fingerprint=cfg.fingerprint,
+        session_id=sandbox.session_id,
         _process=TrackedProcess(
             proc,
             command=command,
@@ -623,6 +638,27 @@ async def _stop(name: str | None, workspace: Path) -> str:
     if not lines:
         return f"No preview server {'named ' + repr(name) + ' ' if name else ''}is tracked for this workspace."
     return "\n".join(lines)
+
+
+async def terminate_preview_server(workspace: str, name: str) -> bool:
+    """Stop one tracked preview identity from the app process manager."""
+
+    key = (workspace, name)
+    server = _servers.get(key)
+    if server is None:
+        return False
+    async with _locked_server(key):
+        server = _servers.pop(key, None)
+        if server is None:
+            return False
+        if server._process is not None:
+            await server._process.terminate()
+        logger.info(
+            "preview_server_stopped_from_process_panel name={} port={}",
+            server.name,
+            server.port,
+        )
+    return True
 
 
 async def _status(workspace: Path) -> str:

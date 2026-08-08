@@ -337,6 +337,26 @@ class TrackedProcess:
 _processes: dict[str, TrackedProcess] = {}
 
 
+def tracked_processes(*, running_only: bool = True) -> list[TrackedProcess]:
+    """Return a stable snapshot for the app-level process manager."""
+
+    processes = list(_processes.values())
+    if running_only:
+        processes = [process for process in processes if process.running]
+    return sorted(processes, key=lambda process: process.started_at)
+
+
+async def terminate_tracked_process(process_id: str) -> bool:
+    """Terminate and forget one command process by its opaque id."""
+
+    tracked = _processes.get(process_id)
+    if tracked is None:
+        return False
+    await tracked.terminate()
+    _processes.pop(process_id, None)
+    return True
+
+
 def register_process(tracked: TrackedProcess) -> None:
     if len(_processes) >= _PROCESS_REGISTRY_CAP:
         finished = sorted(

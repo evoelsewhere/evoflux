@@ -105,6 +105,11 @@ const WorkspaceFilesPanel = lazy(() =>
     default: module.WorkspaceFilesPanel,
   })),
 )
+const ProcessPanel = lazy(() =>
+  import('@/components/ProcessPanel').then((module) => ({
+    default: module.ProcessPanel,
+  })),
+)
 const CodingFileViewerPanel = lazy(() =>
   import('@/components/CodingFileViewerPanel').then((module) => ({
     default: module.CodingFileViewerPanel,
@@ -1390,6 +1395,11 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
               terminalId={tab.id}
               active={active}
             />
+          )}
+        </WorkbenchSurface>
+        <WorkbenchSurface tool="processes">
+          {(_tab, active) => (
+            <ProcessPanel active={active} currentSessionId={sessionIdState} />
           )}
         </WorkbenchSurface>
         <WorkbenchSurface tool="browser">

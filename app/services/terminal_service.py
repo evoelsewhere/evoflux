@@ -31,6 +31,7 @@ import struct
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -205,6 +206,8 @@ class TerminalSession:
     backend: _PtyBackend
     cols: int
     rows: int
+    cwd: str = ""
+    started_at: float = field(default_factory=time.monotonic)
     buffer: bytearray = field(default_factory=bytearray)
     subscribers: set[asyncio.Queue] = field(default_factory=set)
     closed: bool = False
@@ -305,6 +308,7 @@ class TerminalManager:
             backend=backend,
             cols=cols,
             rows=rows,
+            cwd=cwd,
         )
         self._sessions[_key(session_id, terminal_id)] = session
         backend.start_reading(self, session)
@@ -358,6 +362,7 @@ class TerminalManager:
             backend=backend,
             cols=cols,
             rows=rows,
+            cwd=cwd,
         )
         self._sessions[_key(session_id, terminal_id)] = session
         backend.start_reading(self, session)
@@ -530,6 +535,14 @@ class TerminalManager:
             s.terminal_id
             for s in self._sessions.values()
             if s.session_id == session_id and not s.closed
+        )
+
+    def list_sessions(self) -> list[TerminalSession]:
+        """Return all live terminals for the app-level process manager."""
+
+        return sorted(
+            (session for session in self._sessions.values() if not session.closed),
+            key=lambda session: session.started_at,
         )
 
     # -- teardown -------------------------------------------------------------

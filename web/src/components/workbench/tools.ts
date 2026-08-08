@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   MessageCirclePlus,
   Network,
+  ListTree,
   Terminal,
   type LucideIcon,
 } from 'lucide-react'
@@ -33,6 +34,11 @@ export const WORKBENCH_TOOLS: Record<
     label: 'Terminal',
     description: 'Run commands in the active workspace',
     icon: Terminal,
+  },
+  processes: {
+    label: 'Processes',
+    description: 'See and stop commands, previews, and terminal sessions',
+    icon: ListTree,
   },
   browser: {
     label: 'Browser',
