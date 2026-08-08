@@ -42,7 +42,7 @@ from app.services.code_intelligence.traversal import traverse_symbol_graph
 
 
 @dataclass(frozen=True, slots=True)
-class _PreparedScope:
+class PreparedScope:
     scope: WorkspaceScope
     states: tuple[CodeIndexState, ...]
     dirty_paths: frozenset[str]
@@ -218,11 +218,11 @@ def _index_dirty_paths(
     return frozenset(dirty)
 
 
-async def _prepare_scope(
+async def prepare_scope(
     db: AsyncSession,
     scope: WorkspaceScope,
     freshness_policy: FreshnessPolicy,
-) -> _PreparedScope:
+) -> PreparedScope:
     watcher_dirty = get_dirty_code_paths(str(scope.root))
     if watcher_dirty and freshness_policy != "fast":
         await flush_code_graph_index(str(scope.root))
@@ -236,7 +236,7 @@ async def _prepare_scope(
         )
         states = await _states(db, scope.workspace_id)
     if freshness_policy == "fast":
-        return _PreparedScope(scope, states, watcher_dirty)
+        return PreparedScope(scope, states, watcher_dirty)
 
     state_count, state_latest = _state_fingerprint(states)
     source_revision, source_index_mtime = await asyncio.to_thread(
@@ -249,7 +249,7 @@ async def _prepare_scope(
         and _VALIDATED_SNAPSHOTS.get(scope.workspace_id)
         == (state_count, state_latest, source_revision, source_index_mtime)
     ):
-        return _PreparedScope(scope, states, frozenset())
+        return PreparedScope(scope, states, frozenset())
     changed = await asyncio.to_thread(_git_changed_paths, scope.root)
     if (scope.root / ".git").exists():
         changed |= await asyncio.to_thread(_clean_tree_candidates, scope, states)
@@ -274,10 +274,21 @@ async def _prepare_scope(
             source_revision,
             source_index_mtime,
         )
-    return _PreparedScope(scope, states, dirty)
+    return PreparedScope(scope, states, dirty)
 
 
-def _graph_version(prepared: Sequence[_PreparedScope]) -> str | None:
+async def prepare_scopes(
+    db: AsyncSession,
+    scopes: Sequence[WorkspaceScope],
+    freshness_policy: FreshnessPolicy,
+) -> tuple[PreparedScope, ...]:
+    """Synchronize authorized repositories for graph and source-index queries."""
+    return tuple(
+        [await prepare_scope(db, scope, freshness_policy) for scope in scopes]
+    )
+
+
+def _graph_version(prepared: Sequence[PreparedScope]) -> str | None:
     states = [state for item in prepared for state in item.states]
     if not states:
         return None
@@ -289,7 +300,7 @@ def _graph_version(prepared: Sequence[_PreparedScope]) -> str | None:
     return digest.hexdigest()[:12]
 
 
-def _capabilities(prepared: Sequence[_PreparedScope]) -> list[LanguageCapability]:
+def _capabilities(prepared: Sequence[PreparedScope]) -> list[LanguageCapability]:
     by_language: dict[str, Counter[str]] = defaultdict(Counter)
     for item in prepared:
         for state in item.states:
@@ -366,7 +377,7 @@ async def navigate_code_graph(
             limitations=["No indexed workspace is available."],
         )
 
-    prepared = [await _prepare_scope(db, scope, freshness_policy) for scope in scopes]
+    prepared = await prepare_scopes(db, scopes, freshness_policy)
     active_scopes = tuple(item.scope for item in prepared if item.states)
     version = _graph_version(prepared)
     dirty = frozenset(
