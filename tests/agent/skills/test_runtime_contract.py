@@ -23,27 +23,6 @@ def _call(call_id: str, name: str, arguments: str = "{}") -> ToolCall:
     )
 
 
-def _investigation_state() -> AgentState:
-    return AgentState(
-        messages=[],
-        metadata={
-            "skill_runtime_contracts": {
-                "coding-investigation": {
-                    "required_tools": ("code_graph", "code_search"),
-                    "activated_tools": ("code_search",),
-                }
-            },
-            "loaded_skills": {"coding-investigation": "body"},
-            "_tool_capabilities": {
-                "code_graph": ("code_graph_navigation",),
-                "code_search": ("code_source_search",),
-                "read": ("workspace_read",),
-                "grep": ("source_navigation",),
-            },
-        },
-    )
-
-
 def _record(tmp_path: Path, *, dependency: str = "code_graph") -> SkillRecord:
     skill_dir = tmp_path / "investigate"
     skill_dir.mkdir(exist_ok=True)
@@ -134,99 +113,31 @@ async def test_runtime_hook_rehydrates_contract_from_durable_activation(
 
 
 @pytest.mark.asyncio
-async def test_investigation_promotes_discovery_to_graph_before_source_fallback() -> None:
+async def test_runtime_contract_does_not_restrict_tool_calls_or_completion() -> None:
     hook = SkillRuntimeContractHook(mode="coding")
-    state = _investigation_state()
+    state = AgentState(messages=[])
     ctx = RunContext(session_id="s", run_id="r", agent_name="agent")
     executions: list[str] = []
 
     async def handler(_ctx, _state, tool_call):
         executions.append(tool_call.function.name)
-        if tool_call.function.name == "code_search":
-            return "Indexed code search\nmatches: 3\n## app/service.py:1-5"
-        if tool_call.function.name == "code_graph":
-            return "Native code graph\nmatches: 1\nrelationships: 1"
-        return "source"
+        return "executed"
 
-    await hook.wrap_tool_call(ctx, state, _call("search", "code_search"), handler)
-    blocked = await hook.wrap_tool_call(
-        ctx,
-        state,
-        _call("read-before-graph", "read", '{"path":"app/service.py"}'),
-        handler,
-    )
-    await hook.wrap_tool_call(
-        ctx,
-        state,
-        _call("graph", "code_graph", '{"symbol":"Service"}'),
-        handler,
-    )
-    source = await hook.wrap_tool_call(
-        ctx,
-        state,
-        _call("read-after-graph", "read", '{"path":"app/service.py"}'),
-        handler,
-    )
-
-    assert "Blocked by coding-investigation" in blocked
-    assert source == "source"
-    assert executions == ["code_search", "code_graph", "read"]
-
-
-@pytest.mark.asyncio
-async def test_investigation_reuses_identical_graph_observation() -> None:
-    hook = SkillRuntimeContractHook(mode="coding")
-    state = _investigation_state()
-    ctx = RunContext(session_id="s", run_id="r", agent_name="agent")
-    executions = 0
-
-    async def handler(_ctx, _state, _tool_call):
-        nonlocal executions
-        executions += 1
-        return "Native code graph\nmatches: 1\nrelationships: 2"
-
-    first = _call(
-        "graph-1",
-        "code_graph",
-        '{"symbol":"Service","operation":"callers"}',
-    )
-    duplicate = _call(
-        "graph-2",
-        "code_graph",
-        '{"operation":"callers","symbol":"Service"}',
-    )
-    first_result = await hook.wrap_tool_call(ctx, state, first, handler)
-    assert first_result.startswith("Native code graph")
-    reused = await hook.wrap_tool_call(ctx, state, duplicate, handler)
-
-    assert executions == 1
-    assert "Observation reused" in reused
-    assert "original_call_id: graph-1" in reused
-
-
-@pytest.mark.asyncio
-async def test_investigation_blocks_mutation_and_requires_graph_before_completion() -> None:
-    hook = SkillRuntimeContractHook(mode="coding")
-    state = _investigation_state()
-    ctx = RunContext(session_id="s", run_id="r", agent_name="agent")
-    executed = False
-
-    async def handler(_ctx, _state, _tool_call):
-        nonlocal executed
-        executed = True
-        return "changed"
-
-    blocked = await hook.wrap_tool_call(
-        ctx,
-        state,
-        _call("edit", "edit", '{"path":"app.py"}'),
-        handler,
+    for index in range(12):
+        result = await hook.wrap_tool_call(
+            ctx,
+            state,
+            _call(str(index), "code_graph", '{"symbol":"Service"}'),
+            handler,
+        )
+        assert result == "executed"
+    edit_result = await hook.wrap_tool_call(
+        ctx, state, _call("edit", "edit", '{"path":"app.py"}'), handler
     )
     feedback = await hook.before_completion(
         ctx, state, AssistantMessage(content="done")
     )
 
-    assert executed is False
-    assert "read-only investigation" in blocked
-    assert feedback is not None
-    assert "requires at least one exact-symbol code_graph" in feedback
+    assert edit_result == "executed"
+    assert executions == ["code_graph"] * 12 + ["edit"]
+    assert feedback is None
