@@ -5,182 +5,110 @@ description: Investigate unfamiliar code behavior, or answer an exact symbol's d
 
 # Investigate code behavior
 
-Remain read-only. Resolve one observable relationship at a time and stop as
-soon as its entry point, deciding condition, and downstream effect are proven.
-Do not load any bundled reference when this skill activates.
+Remain read-only. Prove only the requested entry point, deciding condition, and
+downstream effect, then stop. Do not load bundled references unless a condition
+under **Gaps** requires one.
 
-## Select one lane
+## Choose one lane
 
-- **Exact-symbol lane:** the user or current source already names a function,
-  method, class, constant, or qualified symbol. Skip `code_search` and go
-  directly to the graph gate.
-- **Unknown-root lane:** the request names behavior, UI text, a route, flag,
-  configuration key, event, or runtime effect. Discover one source anchor
-  before using the graph. Never pass the request prose itself as `symbol`.
+- **Exact symbol:** the request or observed source names a function, method,
+  class, constant, or qualified symbol. Skip `code_search` and call native
+  `code_graph` immediately.
+- **Unknown root:** the request names behavior, UI text, route, field, tag,
+  configuration key, event, or runtime effect. Run one `code_search` using that
+  stable artifact, select one declared identifier, then promote it to graph.
 
-Do not run both lanes in parallel. Promotion from unknown-root to exact-symbol
-ends broad discovery.
-
-## Required tool transition
-
-Apply this control flow literally:
+Never pass request prose, a filename, module, route, comment, or guessed spelling
+as `code_graph.symbol`. Promotion from unknown-root to exact-symbol ends broad
+discovery.
 
 ```text
-if the request names an exact declared symbol:
-    code_graph(exact_symbol, smallest_operation)
-else:
-    result = code_search(observed_request_artifact, freshness_policy="fast")
-    if result shows a declared symbol tied to the behavior:
-        code_graph(that_symbol, smallest_operation)
-    else:
-        use_one_narrow_literal_search_or_read_for_the_reported_gap
-        code_graph(that_symbol, smallest_operation)
+exact declared symbol known
+  -> code_graph(symbol, smallest operation)
+
+unknown root
+  -> code_search(observed artifact, freshness_policy="fast")
+  -> code_graph(one returned declared identifier, smallest operation)
+  -> targeted source only for one named semantic gap
+  -> answer
 ```
 
-No `read`, second broad `grep`, task-tracker update, resource load, or graph call
-on a filename/module may occur between a promotable declared symbol and the
-required graph call. This transition is the execution contract; the remaining
-sections explain how to choose its inputs and interpret its result.
+After a promotable search result, do not run another `code_search`, `grep`,
+`read`, resource load, or filename graph query before the graph call. If search
+has no promotable result, use one narrow literal search or read to expose an
+identifier, then call graph. Once promoted, the **next structural observation
+must be** native `code_graph`.
 
-Apply the post-graph exit gate literally:
+## Graph operation
 
-```text
-if the graph resolves one exact root, answers the requested structural
-relationship, and reports no relevant ambiguity/freshness/truncation/dynamic gap:
-    stop observing and answer from graph-returned source and call sites
-else:
-    name the one reported gap, then use one narrow observation that can resolve it
-```
+Choose the smallest of `definition`, `callers`, `callees`, `references`,
+`impact`, or `neighborhood` that proves the requested relationship.
 
-For a direct definition, callers, callees, or references question, a clean
-graph result is complete evidence. Reading the returned definition/callsite
-again is forbidden even when more context looks interesting.
-
-## State machine
-
-### 1. FRAME
-
-Rewrite the request internally as one relationship to prove: definition,
-inbound caller, outbound callee, non-call reference, activation condition,
-state transition, impact, or repository boundary. Record the three possible
-stop facts: entry point, deciding condition, downstream effect. Omit any fact
-that the user's narrower question does not require.
-
-Keep this state machine internal for one investigation. Do not create a task
-tracker merely to restate these stages; use one only when the request contains
-independent deliverables that require coordination.
-
-### 2. DISCOVER — unknown-root lane only
-
-Use `code_search` once with the most stable artifact visible in the request:
-exact UI text, route, serialized field, configuration key, event name, tag,
-registration key, or error text. Inspect only enough surrounding source to
-connect a result to the requested behavior.
-
-Search the observed spelling first. Do not combine guessed spelling variants or
-run parallel discovery calls for the feature name and mode name. If the index
-returns no promotable result, use one narrow `grep` or targeted read driven by
-that gap; do not repeat the same indexed query unchanged.
-
-Promote a result to an **anchor** only when source shows that it participates in
-the behavior through an assignment, branch, call, registration, serialization,
-or state transition. The graph anchor must be a declared code identifier such
-as a function, method, class, or constant. A filename, module path, package,
-comment, documentation mention, route string, config value, or same-looking
-name is not a graph symbol. If discovery yields only a file, inspect the narrow
-matching range to expose the declared identifier; never call `definition` on
-`tier_policy.py`, `routes/chat`, or another file/module label.
-
-If several candidates appear, choose the one closest to the requested control
-point. Do not investigate every candidate. Make another broad discovery call
-only when no result can be promoted; narrow the next search using evidence from
-the previous result instead of trying a synonym.
-
-### 3. GRAPH — mandatory transition for exact symbols
-
-Once an anchor is an exact code symbol and a structural relationship is needed,
-the **next structural observation must be** native `code_graph`. Do not continue
-repo-wide grep, load background references, or reread source first.
-Choose among `definition`, `callers`, `callees`, `references`, `impact`, and
-`neighborhood` from the question being proved:
-
-| Question to prove | Operation |
+| Relationship to prove | Operation |
 | --- | --- |
-| Where is this exact symbol declared? | `definition` |
-| Which sites can invoke it? | `callers` |
-| What does it invoke directly? | `callees` |
-| Where is a constant, type, callback, or symbol used? | `references` |
-| What can a change affect transitively? | `impact` |
-| What immediately surrounds this boundary? | `neighborhood` |
+| declaration | `definition` |
+| inbound invocation | `callers` |
+| outbound invocation | `callees` |
+| constant/type/callback use | `references` |
+| transitive inbound effect | `impact` |
+| immediate bidirectional boundary | `neighborhood` |
 
-Use `freshness_policy="fast"` for the first graph call and normal interactive
-navigation. If it returns `fresh`, do not rerun with a stronger policy. If it
-returns `partial` and a reported dirty file overlaps the question, use a
-targeted source read for a local gap or retry once with `"balanced"` when the
-relationships must be recomputed. After an edit that can change relationships,
-use `"balanced"` once before relying on the updated structure. Use `"strict"`
-only for a final, high-consequence completeness check when watcher coverage is unavailable or
-untrusted; never use it for discovery.
+Start at depth 1. Increase depth only for an explicitly transitive question.
+Disambiguate multiple definitions before traversal. Reuse graph-returned source
+and callsites; never read the same evidence again.
 
-Start at depth 1. Use `impact` or a greater depth only for an explicitly
-transitive question. Disambiguate multiple definitions before traversal.
-Treat an empty edge set as no resolved static relationship, not proof that no
-dynamic relationship exists. Reuse graph-returned definition and call-site
-source instead of reading those ranges again.
+Use `freshness_policy="fast"` for the first graph call. If the result is `fresh`,
+do not retry with a stronger policy. If a relevant dirty file overlaps the
+question, retry once with `"balanced"`. After an edit that can change
+relationships, use `"balanced"` once before relying on the updated structure.
+Use `"strict"` only for a final, high-consequence completeness check when
+watcher coverage is unavailable.
 
-### 4. VERIFY — only the unresolved semantic gap
+## Gaps
 
-Read targeted source only for branch conditions, value semantics, persistence,
-configuration, generated wiring, or repository boundaries not established by
-the graph result. Use tests, logs, a debugger, or runtime inspection for
-reflection, dependency injection, registries, dynamic imports, concurrency,
-or environment-specific behavior.
+A clean exact graph result fully answers a direct definition/callers/callees/
+references question. Otherwise name one gap before observing more source:
 
-Every additional observation must name one missing stop fact that it can prove.
-If it cannot, stop. Never repeat an unchanged failed graph query, zero-result
-search, or unchanged file range.
+- branch/value semantics or persistence: read the smallest returned range;
+- reflection, DI, registry, generated wiring, concurrency, or environment:
+  use a bounded test, log, debugger, or runtime check;
+- empty edges: report no resolved static relationship, not proof of absence;
+- ambiguity, truncation, degraded freshness, or pending cross-repo edges:
+  narrow using the limitation reported by the tool.
 
-### 5. STOP AND CHECK
+The runtime contract rejects mutation, repeated broad discovery, identical
+observations, graph fan-out beyond six calls, and more than eight source
+fallbacks. Hitting a budget is a stop signal: synthesize the evidence and state
+the unresolved dynamic limitation.
 
-Stop when every required stop fact has bounded evidence. Before answering:
+Read [references/code-graph-contract.md](references/code-graph-contract.md) only
+for ambiguity, degraded freshness, truncation, pending cross-repository edges,
+or explicitly transitive impact. Read
+[references/evidence-chain.md](references/evidence-chain.md) only for competing
+anchors, repository boundaries, or static paths ending in dynamic wiring.
 
-- test the negative path as well as the enabling path;
-- distinguish persisted state from transient UI or process state;
-- distinguish deferred/hidden capability from hard exclusion;
-- preserve direction, repository identity, freshness, dirty-file, pending-edge,
+## Final evidence check
+
+Before answering:
+
+- verify both enable and disable/negative paths;
+- distinguish persisted state from transient UI/process state;
+- distinguish deferred/hidden tools from hard exclusions;
+- preserve direction, scope, repository, freshness, dirty-file, pending-edge,
   truncation, and dynamic-boundary limitations;
-- remove any claim that is not supported by the cited range or runtime result.
+- remove any claim not supported by a cited range or runtime result.
 
-## Trajectory example
-
-For “find the logic that enables WebBridge,” a valid trajectory is:
+For example, tracing WebBridge should be bounded to:
 
 ```text
-code_search(query="webbridge_enabled")
-  -> source ties WEBBRIDGE_SESSION_TAG to the request handler
-  -> code_graph(symbol="WEBBRIDGE_SESSION_TAG", operation="references")
-  -> targeted reads for the returned branch conditions
-  -> stop after entry, enable/disable conditions, and effect are proven
+code_search("webbridge_enabled")
+  -> code_graph("WEBBRIDGE_SESSION_TAG", "references")
+  -> targeted reads only for request mapping and branch semantics
+  -> enable path + negative path + downstream exclusion effect
 ```
-
-An invalid trajectory repeatedly searches `WebBridge`, `webbridge`, policy
-filenames, and guessed variants, reads whole files, then calls `definition` on
-a symbol already inspected. Calling `definition` on `tier_policy.py` or a
-module name is also invalid. These actions expand context without answering a
-new fact.
-
-## Optional resources
-
-- Read [references/code-graph-contract.md](references/code-graph-contract.md)
-  only after a graph result reports ambiguity, degraded freshness, truncation,
-  pending cross-repository edges, or a named transitive-impact question.
-- Read [references/evidence-chain.md](references/evidence-chain.md) only after
-  evidence confirms competing anchors, a cross-repository boundary, or a
-  static path that ends at dynamic/generated wiring.
 
 ## Deliverable
 
-Lead with the direct answer. Show the smallest evidence chain with file and
-line anchors, relevant conditions, downstream effect, and explicit static or
-runtime limitations. Separate confirmed facts from bounded inference and
-unresolved gaps.
+Lead with the direct answer. Give the smallest evidence chain with file/line
+anchors, deciding conditions, downstream effect, and explicit limitations.
+Separate confirmed facts from bounded inference. Do not narrate the search.
