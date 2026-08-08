@@ -73,21 +73,62 @@ def split_source(
         max_chars=max_chars,
     )
     chunks: list[ChunkRange] = []
-    for ordinal, (start, end, symbol) in enumerate(pending):
+    for start, end, symbol in pending:
         content = "".join(lines[start - 1 : end]).strip("\n")
         if not content.strip():
             continue
-        chunks.append(
-            ChunkRange(
-                ordinal=ordinal,
-                line_start=start,
-                line_end=end,
-                content=content,
-                symbol_id=symbol.id if symbol else None,
-                symbol_name=(symbol.qualified_name if symbol else Path(file_path).name),
+        for bounded_start, bounded_end, bounded_content in _split_content(
+            content,
+            line_start=start,
+            max_chars=max_chars,
+            overlap_chars=overlap_chars,
+        ):
+            chunks.append(
+                ChunkRange(
+                    ordinal=len(chunks),
+                    line_start=bounded_start,
+                    line_end=bounded_end,
+                    content=bounded_content,
+                    symbol_id=symbol.id if symbol else None,
+                    symbol_name=(
+                        symbol.qualified_name if symbol else Path(file_path).name
+                    ),
+                )
             )
-        )
     return chunks
+
+
+def _split_content(
+    content: str,
+    *,
+    line_start: int,
+    max_chars: int,
+    overlap_chars: int,
+) -> list[tuple[int, int, str]]:
+    """Enforce the hard chunk bound even for minified single-line files."""
+    if max_chars < 1:
+        raise ValueError("max_chars must be positive")
+    overlap = max(0, min(overlap_chars, max_chars - 1))
+    step = max_chars - overlap
+    output: list[tuple[int, int, str]] = []
+    offset = 0
+    while offset < len(content):
+        stop = min(len(content), offset + max_chars)
+        raw = content[offset:stop]
+        leading = len(raw) - len(raw.lstrip("\n"))
+        trailing = len(raw) - len(raw.rstrip("\n"))
+        actual_start = offset + leading
+        actual_stop = stop - trailing
+        section = content[actual_start:actual_stop]
+        if section.strip():
+            start = line_start + content.count("\n", 0, actual_start)
+            final_character = max(actual_start, actual_stop - 1)
+            end = line_start + content.count("\n", 0, final_character)
+            output.append((start, end, section))
+        if stop == len(content):
+            break
+        offset += step
+    return output
 
 
 def _merge_small_ranges(

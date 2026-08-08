@@ -18,6 +18,10 @@ from app.services.code_index.models import CodeContextResult, RepositoryScope
 from app.services.code_index.service import query_code_context
 
 _INLINE_CHAR_LIMIT = 20_000
+_TRUNCATION_NOTICE = (
+    "Output truncated. Narrow repository/path/language, reduce depth, or "
+    "query a returned symbol."
+)
 
 
 def _coerce_string_list(value: Any) -> Any:
@@ -43,7 +47,7 @@ def _render_code_context(result: CodeContextResult) -> str:
         f"{label}={value.files} files/{value.symbols} symbols/{value.relations} relations"
         for label, value in result.stats.items()
     )
-    sections = [
+    header = (
         "Code context\n"
         f"action: {result.action}\n"
         f"query: {result.query}\n"
@@ -51,18 +55,33 @@ def _render_code_context(result: CodeContextResult) -> str:
         f"index version: {result.index_version or 'unavailable'}\n"
         f"repositories: {', '.join(result.repositories) or 'none'}\n"
         f"index stats: {stats or 'unavailable'}"
-    ]
-    used = len(sections[0])
-    output_truncated = False
+    )
+    content_limit = _INLINE_CHAR_LIMIT - len(_TRUNCATION_NOTICE) - 2
+    output_truncated = len(header) > content_limit
+    if output_truncated:
+        suffix = "\n… [metadata truncated]"
+        header = header[: content_limit - len(suffix)].rstrip() + suffix
+    sections = [header]
+    used = len(header)
 
-    def append(section: str) -> bool:
+    def append(section: str, *, clip: bool = False) -> bool:
         nonlocal used, output_truncated
-        if used + len(section) + 2 > _INLINE_CHAR_LIMIT:
-            output_truncated = True
-            return False
-        sections.append(section)
-        used += len(section) + 2
-        return True
+        remaining = content_limit - used - 2
+        if len(section) <= remaining:
+            sections.append(section)
+            used += len(section) + 2
+            return True
+        output_truncated = True
+        if clip and remaining > 80:
+            suffix = "\n… [section truncated]"
+            prefix = section[: max(1, remaining - len(suffix))].rstrip()
+            if prefix.count("```") % 2:
+                suffix += "\n```"
+                prefix = section[: max(1, remaining - len(suffix))].rstrip()
+            clipped = prefix + suffix
+            sections.append(clipped)
+            used += len(clipped) + 2
+        return False
 
     if result.hits:
         append("Matches")
@@ -71,7 +90,8 @@ def _render_code_context(result: CodeContextResult) -> str:
         if not append(
             f"## {hit.repository}/{hit.file_path}:{hit.line_start}-{hit.line_end}"
             f"{symbol}\n- language: {hit.language}; score: {hit.score:.4f}\n"
-            f"```text\n{hit.content}\n```"
+            f"```text\n{hit.content}\n```",
+            clip=True,
         ):
             break
 
@@ -86,7 +106,7 @@ def _render_code_context(result: CodeContextResult) -> str:
             body += f"\n```text\n{match.source}\n```"
         else:
             body += f"\nsource range: {match.line_start}-{match.line_end}"
-        if not append(body):
+        if not append(body, clip=True):
             break
 
     if result.relations:
@@ -105,7 +125,7 @@ def _render_code_context(result: CodeContextResult) -> str:
         )
         if relation.callsite_source:
             body += f"\n```text\n{relation.callsite_source}\n```"
-        if not append(body):
+        if not append(body, clip=True):
             break
 
     if result.suggestions:
@@ -121,15 +141,16 @@ def _render_code_context(result: CodeContextResult) -> str:
                 f"- {item.qualified_name} — "
                 f"{item.repository}/{item.file_path}:{item.line_start}"
                 for item in result.suggestions
-            )
+            ),
+            clip=True,
         )
     if result.limitations:
-        append("Limitations:\n" + "\n".join(f"- {item}" for item in result.limitations))
-    if result.truncated or output_truncated:
         append(
-            "Output truncated. Narrow repository/path/language, reduce depth, or "
-            "query a returned symbol."
+            "Limitations:\n" + "\n".join(f"- {item}" for item in result.limitations),
+            clip=True,
         )
+    if result.truncated or output_truncated:
+        sections.append(_TRUNCATION_NOTICE)
     return "\n\n".join(sections)
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import hashlib
 import sqlite3
 import threading
@@ -80,7 +81,17 @@ _REQUIRED_SCHEMA: dict[str, frozenset[str]] = {
         }
     ),
     "index_errors": frozenset({"file_path", "error"}),
+    "source_chunks_fts": frozenset({"content", "file_path", "language"}),
 }
+
+_RECOVERABLE_DATABASE_ERRORS: tuple[str, ...] = (
+    "database disk image is malformed",
+    "file is not a database",
+    "no such column",
+    "no such table",
+    "not a database",
+    "vtable constructor failed",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,7 +163,7 @@ class RepositoryIndex:
         self.root = root
         self.paths = paths
         self.database = database
-        self._update_lock = asyncio.Lock()
+        self._update_lock = threading.RLock()
         self._has_completed_update = False
 
     @classmethod
@@ -165,7 +176,13 @@ class RepositoryIndex:
         paths = paths_for_repository(canonical)
         paths.directory.mkdir(parents=True, exist_ok=True)
         database = ManagedDatabase(paths.target_db)
-        await asyncio.to_thread(_ensure_schema, database)
+        try:
+            await asyncio.to_thread(_ensure_schema, database)
+        except sqlite3.DatabaseError as exc:
+            if not _is_recoverable_database_error(exc):
+                raise
+            logger.warning("code_index_cache_rebuild root={} error={}", canonical, exc)
+            await asyncio.to_thread(_rebuild_database, database)
         return cls(root=canonical, paths=paths, database=database)
 
     async def update(
@@ -174,12 +191,34 @@ class RepositoryIndex:
         full: bool = False,
         progress: ProgressCallback | None = None,
     ) -> IndexStats:
-        async with self._update_lock:
+        return await asyncio.to_thread(self._update_locked, full, progress)
+
+    def _update_locked(
+        self,
+        full: bool,
+        progress: ProgressCallback | None,
+    ) -> IndexStats:
+        with self._update_lock:
             if progress:
                 progress(
                     IndexProgress("snapshot", 0.02, "Scanning keyed source snapshot")
                 )
-            stats = await asyncio.to_thread(self._update_sync, full, progress)
+            try:
+                stats = self._update_sync(full, progress)
+            except sqlite3.DatabaseError as exc:
+                if not _is_recoverable_database_error(exc):
+                    raise
+                logger.warning(
+                    "code_index_cache_rebuild root={} error={}", self.root, exc
+                )
+                if progress:
+                    progress(
+                        IndexProgress(
+                            "repair", 0.03, "Rebuilding invalid repository cache"
+                        )
+                    )
+                _rebuild_database(self.database)
+                stats = self._update_sync(True, progress)
             self._has_completed_update = True
             if progress:
                 progress(IndexProgress("ready", 1.0, "Repository target synchronized"))
@@ -219,12 +258,19 @@ class RepositoryIndex:
                     "SELECT file_path, fingerprint FROM source_files"
                 ).fetchall()
             )
+            previous_errors = {
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT file_path FROM index_errors"
+                ).fetchall()
+            }
         plan = plan_reconciliation(
             {key: record.fingerprint for key, record in records.items()},
             previous,
             force=full,
         )
-        if plan.is_noop:
+        stale_errors = previous_errors - records.keys()
+        if plan.is_noop and not stale_errors:
             return self.stats()
 
         states: dict[str, FileState] = {}
@@ -250,19 +296,25 @@ class RepositoryIndex:
         if progress:
             progress(IndexProgress("commit", 0.85, "Reconciling target rows"))
         with self.database.transaction() as connection:
-            for key in plan.deletes:
-                _delete_component(connection, key)
-            for key in work:
-                state = states.get(key)
-                if state is None:
-                    continue
-                _delete_component(connection, key)
-                _insert_state(connection, state)
-            connection.execute("DELETE FROM index_errors")
-            connection.executemany(
-                "INSERT INTO index_errors(file_path, error) VALUES (?, ?)",
-                sorted(errors.items()),
-            )
+            if plan.is_noop:
+                connection.executemany(
+                    "DELETE FROM index_errors WHERE file_path = ?",
+                    ((key,) for key in sorted(stale_errors)),
+                )
+            else:
+                for key in plan.deletes:
+                    _delete_component(connection, key)
+                for key in work:
+                    state = states.get(key)
+                    if state is None:
+                        continue
+                    _delete_component(connection, key)
+                    _insert_state(connection, state)
+                connection.execute("DELETE FROM index_errors")
+                connection.executemany(
+                    "INSERT INTO index_errors(file_path, error) VALUES (?, ?)",
+                    sorted(errors.items()),
+                )
         return self.stats()
 
     async def ensure_ready(self, *, refresh: bool = True) -> IndexStats:
@@ -294,8 +346,8 @@ class RepositoryIndex:
                 fingerprint_rows = connection.execute(
                     "SELECT file_path, fingerprint FROM source_files ORDER BY file_path"
                 ).fetchall()
-        except sqlite3.OperationalError:
-            return IndexStats()
+        except sqlite3.DatabaseError as exc:
+            return IndexStats(errors=(("<index>", f"{type(exc).__name__}: {exc}"),))
         digest = hashlib.sha256()
         for file_path, fingerprint in fingerprint_rows:
             digest.update(str(file_path).encode("utf-8", "replace"))
@@ -319,7 +371,8 @@ def _ensure_schema(database: ManagedDatabase) -> None:
     with database.transaction() as connection:
         schema_is_current = _schema_is_current(connection)
         if not schema_is_current:
-            connection.executescript(
+            _execute_sql_script(
+                connection,
                 """
                 DROP TRIGGER IF EXISTS source_chunks_fts_ai;
                 DROP TRIGGER IF EXISTS source_chunks_fts_ad;
@@ -330,9 +383,10 @@ def _ensure_schema(database: ManagedDatabase) -> None:
                 DROP TABLE IF EXISTS code_symbols;
                 DROP TABLE IF EXISTS source_files;
                 DROP TABLE IF EXISTS index_errors;
-                """
+                """,
             )
-        connection.executescript(
+        _execute_sql_script(
+            connection,
             """
             CREATE TABLE IF NOT EXISTS source_files (
               file_path TEXT PRIMARY KEY,
@@ -407,8 +461,46 @@ def _ensure_schema(database: ManagedDatabase) -> None:
               INSERT INTO source_chunks_fts(rowid, content, file_path, language)
               VALUES (new.rowid, new.content, new.file_path, new.language);
             END;
-            """
+            """,
         )
+        try:
+            connection.execute(
+                "INSERT INTO source_chunks_fts(source_chunks_fts, rank) "
+                "VALUES ('integrity-check', 1)"
+            )
+        except sqlite3.DatabaseError:
+            # FTS is derived state. Repair it in place without discarding the
+            # parsed source/symbol graph or paying the rebuild cost on startup.
+            connection.execute(
+                "INSERT INTO source_chunks_fts(source_chunks_fts) VALUES ('rebuild')"
+            )
+
+
+def _execute_sql_script(connection: sqlite3.Connection, script: str) -> None:
+    """Execute complete SQL statements without ``executescript`` auto-commits."""
+    statement = ""
+    for line in script.splitlines(keepends=True):
+        statement += line
+        if sqlite3.complete_statement(statement):
+            connection.execute(statement)
+            statement = ""
+    if statement.strip():
+        raise sqlite3.OperationalError("Incomplete code-index schema statement")
+
+
+def _is_recoverable_database_error(error: sqlite3.DatabaseError) -> bool:
+    message = str(error).casefold()
+    return any(value in message for value in _RECOVERABLE_DATABASE_ERRORS)
+
+
+def _rebuild_database(database: ManagedDatabase) -> None:
+    """Replace only regeneratable cache state after a verified SQLite failure."""
+    for suffix in ("-wal", "-shm"):
+        Path(f"{database.path}{suffix}").unlink(missing_ok=True)
+    backup = database.path.with_suffix(f"{database.path.suffix}.corrupt")
+    if database.path.exists():
+        database.path.replace(backup)
+    _ensure_schema(database)
 
 
 def _schema_is_current(connection: sqlite3.Connection) -> bool:
@@ -459,29 +551,47 @@ def _count(connection: sqlite3.Connection, table: str) -> int:
 class RepositoryIndexRegistry:
     def __init__(self) -> None:
         self._indexes: dict[Path, RepositoryIndex] = {}
-        self._lock = asyncio.Lock()
+        self._creating: dict[Path, concurrent.futures.Future[RepositoryIndex]] = {}
+        self._lock = threading.RLock()
 
     async def get(self, root: Path) -> RepositoryIndex:
         canonical = root.expanduser().resolve()
-        cached = self._indexes.get(canonical)
-        if cached is not None:
-            return cached
-        async with self._lock:
+        owner = False
+        with self._lock:
             cached = self._indexes.get(canonical)
-            if cached is None:
-                cached = await RepositoryIndex.create(canonical)
-                self._indexes[canonical] = cached
-            return cached
+            if cached is not None:
+                return cached
+            pending = self._creating.get(canonical)
+            if pending is None:
+                pending = concurrent.futures.Future()
+                self._creating[canonical] = pending
+                owner = True
+        if not owner:
+            return await asyncio.shield(asyncio.wrap_future(pending))
+        try:
+            created = await RepositoryIndex.create(canonical)
+        except BaseException as exc:
+            with self._lock:
+                self._creating.pop(canonical, None)
+                pending.set_exception(exc)
+            raise
+        with self._lock:
+            self._indexes[canonical] = created
+            self._creating.pop(canonical, None)
+            pending.set_result(created)
+        return created
 
     def close_all(self) -> None:
-        for index in self._indexes.values():
+        with self._lock:
+            indexes = list(self._indexes.values())
+            self._indexes.clear()
+        for index in indexes:
             try:
                 index.close()
             except Exception as exc:  # pragma: no cover - shutdown best effort
                 logger.warning(
                     "code_index_close_failed root={} error={}", index.root, exc
                 )
-        self._indexes.clear()
 
 
 repository_indexes = RepositoryIndexRegistry()

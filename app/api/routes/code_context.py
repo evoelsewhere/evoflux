@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
@@ -60,7 +61,7 @@ async def status(
     workspace: str | None = Query(None, description="Coding workspace directory."),
 ) -> CodeContextStatusResponse:
     index = await repository_indexes.get(_workspace_path(workspace))
-    stats = index.stats()
+    stats = await asyncio.to_thread(index.stats)
     return CodeContextStatusResponse(
         indexed=stats.files > 0,
         files=stats.files,
@@ -81,7 +82,10 @@ async def index_repository(
     workspace: str | None = Query(None, description="Coding workspace directory."),
 ) -> CodeContextStatusResponse:
     index = await repository_indexes.get(_workspace_path(workspace))
-    stats = await index.update(full=bool(body and body.full))
+    try:
+        stats = await index.update(full=bool(body and body.full))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return CodeContextStatusResponse(
         indexed=stats.files > 0,
         files=stats.files,
