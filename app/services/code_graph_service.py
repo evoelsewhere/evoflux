@@ -42,6 +42,7 @@ from app.services.code_graph.indexer import (
     ExistingDef,
     UnresolvedReference,
     WorkspaceIndex,
+    hash_named_workspace_files,
     hash_workspace_files,
     index_files,
 )
@@ -168,6 +169,7 @@ async def reindex_workspace(
     root_path: str,
     languages: list[str] | None = None,
     incremental: bool = False,
+    changed_paths: Sequence[str] | None = None,
     progress_cb: ProgressCallback | None = None,
 ) -> ReindexStats:
     """Re-parse ``root_path`` and update the workspace's stored graph.
@@ -178,8 +180,12 @@ async def reindex_workspace(
 
     With ``incremental=True`` only files whose content hash changed (plus any
     deleted files) are re-parsed; stable symbols keep their node ids so
-    cross-file edges pointing *into* them survive. Both modes delete target
-    state owned by source components that disappeared.
+    cross-file edges pointing *into* them survive. When ``changed_paths`` is
+    supplied, hashing is restricted to that watcher- or VCS-validated set.
+    Omitting it deliberately falls back to a full source scan so an explicit
+    freshness barrier remains safe even if its filesystem event has not
+    arrived yet. Both modes delete target state owned by source components
+    that disappeared.
     """
     report = progress_cb or _noop_progress
     # Extra structural parsers are reserved for future project rulebooks;
@@ -191,6 +197,7 @@ async def reindex_workspace(
         root_path=root_path,
         registry=registry,
         force=not incremental,
+        changed_paths=changed_paths if incremental else None,
         progress_cb=report,
     )
 
@@ -270,19 +277,20 @@ async def _persist_unresolved_references(
         # without changing what the reference points at.
         already_handled: set[tuple[str, str, str]] = set()
         if unresolved_references:
-            existing = (
-                await db.exec(
-                    select(
-                        CrossRepoEdge.src_file_path,
-                        CrossRepoEdge.raw_reference,
-                        CrossRepoEdge.kind,
-                    ).where(
-                        col(CrossRepoEdge.project_id) == project_id,
-                        col(CrossRepoEdge.src_workspace_id) == workspace_id,
-                        col(CrossRepoEdge.method).is_not(None),
-                    )
+            existing_stmt = select(
+                CrossRepoEdge.src_file_path,
+                CrossRepoEdge.raw_reference,
+                CrossRepoEdge.kind,
+            ).where(
+                col(CrossRepoEdge.project_id) == project_id,
+                col(CrossRepoEdge.src_workspace_id) == workspace_id,
+                col(CrossRepoEdge.method).is_not(None),
+            )
+            if affected_files is not None:
+                existing_stmt = existing_stmt.where(
+                    col(CrossRepoEdge.src_file_path).in_(list(affected_files))
                 )
-            ).all()
+            existing = (await db.exec(existing_stmt)).all()
             already_handled = set(existing)
 
         fresh_references = [
@@ -324,6 +332,7 @@ async def _reconcile_workspace(
     root_path: str,
     registry: ParserRegistry,
     force: bool,
+    changed_paths: Sequence[str] | None = None,
     progress_cb: ProgressCallback = _noop_progress,
 ) -> ReindexStats:
     """Reconcile a keyed source snapshot into graph target state.
@@ -333,16 +342,53 @@ async def _reconcile_workspace(
     missing source components delete their target states. ``force`` reprocesses
     all current components for parser upgrades without discarding identity.
     """
-    progress_cb("parsing", 0.0, "Checking for changes…")
-    current = await _run_in_indexer(hash_workspace_files, root_path, registry=registry)
-    stored_states = (
+    stored_rows = (
         await db.exec(
-            select(CodeIndexState).where(CodeIndexState.workspace_id == workspace_id)
+            select(CodeIndexState.file_path, CodeIndexState.content_hash).where(
+                CodeIndexState.workspace_id == workspace_id
+            )
         )
     ).all()
-    stored = {s.file_path: s.content_hash for s in stored_states}
-
-    plan = plan_reconciliation(current, stored, force=force)
+    stored = dict(stored_rows)
+    scoped = changed_paths is not None and not force
+    if scoped:
+        # Normalize the journal before using it to select prior state. The
+        # named source reader independently repeats the root-containment and
+        # extension checks before touching disk.
+        supported_extensions = registry.supported_extensions()
+        normalized_paths: set[str] = set()
+        for raw in changed_paths:
+            normalized = raw.replace("\\", "/")
+            if not normalized or normalized.startswith("/"):
+                continue
+            normalized = normalized.strip("/")
+            if not normalized or ".." in Path(normalized).parts:
+                continue
+            if (
+                Path(normalized).suffix.lower() in supported_extensions
+                or normalized in stored
+            ):
+                normalized_paths.add(normalized)
+        candidates = tuple(sorted(normalized_paths))
+        progress_cb(
+            "parsing", 0.0, f"Checking {len(candidates)} changed source paths…"
+        )
+        current = await _run_in_indexer(
+            hash_named_workspace_files,
+            root_path,
+            candidates,
+            registry=registry,
+        )
+        previous = {path: stored[path] for path in candidates if path in stored}
+        plan = plan_reconciliation(current, previous)
+        known_file_paths = (set(stored) - set(plan.deletes)) | set(current)
+    else:
+        progress_cb("parsing", 0.0, "Checking workspace for changes…")
+        current = await _run_in_indexer(
+            hash_workspace_files, root_path, registry=registry
+        )
+        plan = plan_reconciliation(current, stored, force=force)
+        known_file_paths = set(current)
     changed = list(plan.reprocess)
     deleted = list(plan.deletes)
     affected = set(plan.affected)
@@ -358,21 +404,40 @@ async def _reconcile_workspace(
         )
 
     progress_cb("parsing", 0.1, f"{len(changed)} changed, {len(deleted)} deleted")
-    existing_nodes = (
-        await db.exec(select(CodeNode).where(CodeNode.workspace_id == workspace_id))
+    affected_nodes = (
+        await db.exec(
+            select(CodeNode).where(
+                CodeNode.workspace_id == workspace_id,
+                col(CodeNode.file_path).in_(list(affected)),
+            )
+        )
     ).all()
     # Unchanged files' nodes act as resolution targets for cross-file edges.
+    existing_def_rows = (
+        await db.exec(
+            select(
+                CodeNode.id,
+                CodeNode.name,
+                CodeNode.kind,
+                CodeNode.file_path,
+                CodeNode.qualified_name,
+                CodeNode.language,
+            ).where(
+                CodeNode.workspace_id == workspace_id,
+                col(CodeNode.file_path).not_in(list(affected)),
+            )
+        )
+    ).all()
     existing_defs = [
         ExistingDef(
-            key=str(n.id),
-            name=n.name,
-            kind=n.kind,
-            file_path=n.file_path,
-            qualified_name=n.qualified_name,
-            language=n.language,
+            key=str(node_id),
+            name=name,
+            kind=kind,
+            file_path=file_path,
+            qualified_name=qualified_name,
+            language=language,
         )
-        for n in existing_nodes
-        if n.file_path not in affected
+        for node_id, name, kind, file_path, qualified_name, language in existing_def_rows
     ]
 
     index = await _run_in_indexer(
@@ -381,7 +446,7 @@ async def _reconcile_workspace(
         changed,
         registry=registry,
         existing_defs=existing_defs,
-        known_file_paths=frozenset(current.keys()),
+        known_file_paths=frozenset(known_file_paths),
     )
     source_chunks = await _run_in_indexer(
         build_source_chunks,
@@ -399,7 +464,7 @@ async def _reconcile_workspace(
     async with sqlite_write_guard():
         rows_by_sig: dict[tuple[str, str, str], CodeNode] = {
             (n.file_path, n.kind, n.qualified_name): n
-            for n in existing_nodes
+            for n in affected_nodes
             if n.file_path in changed
         }
         key_to_id: dict[str, UUID] = {}
@@ -440,7 +505,7 @@ async def _reconcile_workspace(
         removed_ids: set[UUID] = {
             row.id for row in rows_by_sig.values() if row.id not in reused_ids
         }
-        removed_ids |= {n.id for n in existing_nodes if n.file_path in deleted}
+        removed_ids |= {n.id for n in affected_nodes if n.file_path in deleted}
 
         # Drop outgoing edges from affected files and every edge touching a removed
         # node (covers incoming edges from unchanged files to vanished symbols).
@@ -600,9 +665,10 @@ async def _reconcile_workspace(
 
     counts = await get_index_status(db, workspace_id=workspace_id)
     logger.info(
-        "codeindex reconcile workspace={} force={} changed={} deleted={} nodes={} edges={} errors={}",
+        "codeindex reconcile workspace={} force={} scoped={} changed={} deleted={} nodes={} edges={} errors={}",
         workspace_id,
         force,
+        scoped,
         len(changed),
         len(deleted),
         counts["nodes"],

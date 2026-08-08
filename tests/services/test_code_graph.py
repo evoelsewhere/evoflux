@@ -634,6 +634,79 @@ async def test_incremental_reindex_adds_symbol_and_preserves_node_ids(
 
 
 @pytest.mark.asyncio
+async def test_scoped_incremental_reindex_avoids_workspace_walk(
+    setup_db, tmp_path: Path, monkeypatch
+):
+    from app.core.db import async_session_factory
+    from app.services import code_graph_service
+    from app.services.code_graph_service import find_nodes_by_name, reindex_workspace
+
+    (tmp_path / "a.py").write_text("def alpha():\n    return 1\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("def beta():\n    return 2\n", encoding="utf-8")
+    workspace_id = await _register_and_full_index(tmp_path)
+
+    def fail_full_walk(*args, **kwargs):
+        raise AssertionError("scoped reindex must not walk the workspace")
+
+    monkeypatch.setattr(code_graph_service, "hash_workspace_files", fail_full_walk)
+    (tmp_path / "a.py").write_text(
+        "def alpha():\n    return 3\n\n\ndef added():\n    return 4\n",
+        encoding="utf-8",
+    )
+
+    async with async_session_factory() as db:
+        stats = await reindex_workspace(
+            db,
+            workspace_id=workspace_id,
+            root_path=str(tmp_path),
+            incremental=True,
+            changed_paths=["a.py"],
+        )
+
+    assert stats.changed_files == 1
+    assert stats.deleted_files == 0
+    async with async_session_factory() as db:
+        assert await find_nodes_by_name(
+            db, workspace_id=workspace_id, name="added"
+        )
+        assert await find_nodes_by_name(db, workspace_id=workspace_id, name="beta")
+
+
+@pytest.mark.asyncio
+async def test_scoped_incremental_reindex_handles_delete_and_rename(
+    setup_db, tmp_path: Path, monkeypatch
+):
+    from app.core.db import async_session_factory
+    from app.services import code_graph_service
+    from app.services.code_graph_service import find_nodes_by_name, reindex_workspace
+
+    old_path = tmp_path / "old.py"
+    old_path.write_text("def moved():\n    return 1\n", encoding="utf-8")
+    workspace_id = await _register_and_full_index(tmp_path)
+
+    def fail_full_walk(*args, **kwargs):
+        raise AssertionError("scoped reindex must not walk the workspace")
+
+    monkeypatch.setattr(code_graph_service, "hash_workspace_files", fail_full_walk)
+    old_path.rename(tmp_path / "new.py")
+
+    async with async_session_factory() as db:
+        stats = await reindex_workspace(
+            db,
+            workspace_id=workspace_id,
+            root_path=str(tmp_path),
+            incremental=True,
+            changed_paths=["old.py", "new.py"],
+        )
+
+    assert stats.changed_files == 1
+    assert stats.deleted_files == 1
+    async with async_session_factory() as db:
+        rows = await find_nodes_by_name(db, workspace_id=workspace_id, name="moved")
+        assert [row.file_path for row in rows] == ["new.py"]
+
+
+@pytest.mark.asyncio
 async def test_incremental_reindex_recreates_ambiguous_edges(setup_db, tmp_path: Path):
     import json
 
