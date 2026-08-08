@@ -198,7 +198,7 @@ export interface CodingWorkspaceFilesResponse {
   truncated: boolean
 }
 
-// ── Code knowledge graph (/api/code-graph) ──────────────────────────────────
+// ── Code context (/api/code-context) ────────────────────────────────────────
 
 export interface CodeGraphStatusResponse {
   indexed: boolean
@@ -325,9 +325,7 @@ export interface CodeGraphReindexResponse {
   already_running: boolean
 }
 
-// Result of triggering a project-wide reindex with a single call — the
-// backend starts every repo's index job and, for multi-repo projects, chains
-// into cross-repo resolve automatically once they all settle.
+// Compatibility shape returned after synchronizing all repository targets.
 export interface ProjectReindexStartedResponse {
   indexing: boolean
   repo_count: number
@@ -513,31 +511,6 @@ export interface CrossRepoEdge {
   dst_workspace_id: string | null
   dst_node_id: string | null
   dst_qualified_name: string | null
-}
-
-export type CrossRepoResolveRequest = Record<string, never>
-// Empty: the backend always runs Tier 0 + Tier A + lexical Tier B.
-
-export interface CrossRepoResolveStats {
-  reattached: number
-  static_resolved: number
-  lexical_resolved: number
-  still_unresolved: number
-}
-
-export interface CrossRepoResolveJob {
-  project_id: string
-  status: 'running' | 'done' | 'error'
-  phase: string
-  progress: number
-  message: string
-  error: string | null
-  stats: CrossRepoResolveStats | null
-}
-
-export interface CrossRepoResolveStatusResponse {
-  running: boolean
-  job: CrossRepoResolveJob | null
 }
 
 export interface SessionDetailResponse extends SessionResponse {

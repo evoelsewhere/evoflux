@@ -3,8 +3,7 @@
  *
  * Mirrors CodeGraphPanel.tsx's UX (status header, debounced search, result
  * list) but fans out across every repo in the project via the project-scoped
- * endpoints (`/team/projects/{id}/code-graph/status|search`, backed by
- * `search_across_workspaces` server-side) instead of a single `workspace`
+ * endpoints (`/team/projects/{id}/code-context/status|query`) instead of a single `workspace`
  * query param. Single-repo sessions keep using CodeGraphPanel unchanged —
  * this component only mounts in project mode.
  *
@@ -133,7 +132,7 @@ export function ProjectCodeGraphPanel({ project, onFileSelect }: ProjectCodeGrap
         {!anyIndexed ? (
           <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Build an index for at least one repo to search.</p>
         ) : debounced.length === 0 ? (
-          <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Type to search the code graph across every repo.</p>
+          <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Type to search code context across every repo.</p>
         ) : results.isLoading ? (
           <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Searching…</p>
         ) : results.isError ? (
