@@ -34,9 +34,6 @@ import type {
   AddWorkspaceToProjectRequest,
   ProjectWorkspaceItem,
   CrossRepoEdge,
-  CrossRepoResolveRequest,
-  CrossRepoResolveJob,
-  CrossRepoResolveStatusResponse,
   ProjectRepoStatus,
   ProjectReindexStartedResponse,
   ProjectCodeSearchResponse,
@@ -891,71 +888,45 @@ export async function listCrossRepoEdges(
   projectId: string,
   status?: 'unresolved' | 'resolved' | 'rejected',
 ): Promise<CrossRepoEdge[]> {
-  const params = status ? `?status=${encodeURIComponent(status)}` : ''
   const res = await fetch(
-    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/cross-repo/edges${params}`,
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-context/graph-data`,
   )
   if (!res.ok) await parseDetailOrThrow(res, 'listCrossRepoEdges')
-  return res.json()
+  const data: ProjectCodeGraphData = await res.json()
+  return status ? data.cross_repo_edges.filter((edge) => edge.status === status) : data.cross_repo_edges
 }
 
-// Returns a job snapshot — the backend always runs Tier 0 + Tier A +
-// lexical Tier B as a background job. Poll getCrossRepoResolveStatus for
-// the job's progress.
-export async function startCrossRepoResolve(
-  projectId: string,
-  body: CrossRepoResolveRequest = {},
-): Promise<CrossRepoResolveJob> {
-  const res = await fetch(
-    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/cross-repo/resolve`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    },
-  )
-  if (!res.ok) await parseDetailOrThrow(res, 'startCrossRepoResolve')
-  return res.json()
-}
-
-export async function getCrossRepoResolveStatus(
-  projectId: string,
-): Promise<CrossRepoResolveStatusResponse> {
-  const res = await fetch(
-    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/cross-repo/status`,
-  )
-  if (!res.ok) await parseDetailOrThrow(res, 'getCrossRepoResolveStatus')
-  return res.json()
-}
-
-// Single entry point for the Graph tab's index/reindex button: starts every
-// repo's index job in one call, and (multi-repo projects) auto-chains into
-// cross-repo resolve server-side once they all finish — no per-repo looping
-// or client-side "wait then resolve" chaining needed.
+// Single entry point for refreshing every repository-local target. The graph
+// endpoint resolves cross-repository relationships from those targets on read.
 export async function reindexProjectCodeGraph(
   projectId: string,
   options?: { full?: boolean; languages?: string[] },
 ): Promise<ProjectReindexStartedResponse> {
   const res = await fetch(
-    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-graph/reindex`,
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-context/index`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         full: options?.full ?? false,
-        languages: options?.languages ?? null,
       }),
     },
   )
   if (!res.ok) await parseDetailOrThrow(res, 'reindexProjectCodeGraph')
-  return res.json()
+  const values: Record<string, unknown> = await res.json()
+  return {
+    indexing: false,
+    repo_count: Object.keys(values).length,
+    already_running: 0,
+    will_resolve: false,
+  }
 }
 
 export async function getProjectCodeGraphStatus(
   projectId: string,
 ): Promise<ProjectRepoStatus[]> {
   const res = await fetch(
-    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-graph/status`,
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-context/status`,
   )
   if (!res.ok) await parseDetailOrThrow(res, 'getProjectCodeGraphStatus')
   return res.json()
@@ -966,14 +937,52 @@ export async function searchProjectCodeGraph(
   query: string,
   options?: { kind?: string; limitPerRepo?: number },
 ): Promise<ProjectCodeSearchResponse> {
-  const params = new URLSearchParams({ query })
-  if (options?.kind) params.set('kind', options.kind)
-  if (options?.limitPerRepo) params.set('limit_per_repo', String(options.limitPerRepo))
   const res = await fetch(
-    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-graph/search?${params}`,
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-context/query`,
+    {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'search',
+        query,
+        limit: Math.max(1, (options?.limitPerRepo ?? 10) * 8),
+        refresh: true,
+      }),
+    },
   )
   if (!res.ok) await parseDetailOrThrow(res, 'searchProjectCodeGraph')
-  return res.json()
+  const data: {
+    hits: Array<{
+      repository: string
+      file_path: string
+      language: string
+      line_start: number
+      line_end: number
+      symbol: string | null
+      repository_path: string | null
+    }>
+  } = await res.json()
+  return {
+    results: data.hits.map((hit) => {
+      const qualified = hit.symbol ?? hit.file_path
+      return {
+        path: hit.repository_path ?? hit.repository,
+        node: {
+          id: `${hit.repository}:${hit.file_path}:${hit.line_start}`,
+          workspace_id: hit.repository,
+          kind: options?.kind ?? 'source',
+          name: qualified.split('.').pop() ?? qualified,
+          qualified_name: qualified,
+          file_path: hit.file_path,
+          language: hit.language,
+          line_start: hit.line_start,
+          line_end: hit.line_end,
+          signature: null,
+          docstring: null,
+        },
+      }
+    }),
+  }
 }
 
 export async function getProjectCodeGraphData(
@@ -989,7 +998,7 @@ export async function getProjectCodeGraphData(
   }
   const qs = params.toString()
   const res = await fetch(
-    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-graph/graph-data${qs ? `?${qs}` : ''}`,
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-context/graph-data${qs ? `?${qs}` : ''}`,
   )
   if (!res.ok) await parseDetailOrThrow(res, 'getProjectCodeGraphData')
   return res.json()
