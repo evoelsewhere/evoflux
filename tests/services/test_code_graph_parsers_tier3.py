@@ -4,22 +4,22 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.code_graph.parsers.dart import DartParser
-from app.services.code_graph.parsers.lua import LuaParser, LuauParser
-from app.services.code_graph.parsers.objc import ObjCParser
-from app.services.code_graph.parsers.pascal import PascalParser
-from app.services.code_graph.parsers.php import PhpParser
-from app.services.code_graph.parsers.r_lang import RParser
-from app.services.code_graph.parsers.registry import default_registry
-from app.services.code_graph.parsers.ruby import RubyParser
-from app.services.code_graph.parsers.scala import ScalaParser
-from app.services.code_graph.parsers.web_components import (
+from app.services.code_index.parsers.dart import DartParser
+from app.services.code_index.parsers.lua import LuaParser, LuauParser
+from app.services.code_index.parsers.objc import ObjCParser
+from app.services.code_index.parsers.pascal import PascalParser
+from app.services.code_index.parsers.php import PhpParser
+from app.services.code_index.parsers.r_lang import RParser
+from app.services.code_index.parsers.registry import default_registry
+from app.services.code_index.parsers.ruby import RubyParser
+from app.services.code_index.parsers.scala import ScalaParser
+from app.services.code_index.parsers.web_components import (
     AstroParser,
     LiquidParser,
     SvelteParser,
     VueParser,
 )
-from app.services.code_graph.types import (
+from app.services.code_index.graph_types import (
     EDGE_CALLS,
     EDGE_IMPLEMENTS,
     EDGE_IMPORTS,

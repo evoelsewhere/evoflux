@@ -62,13 +62,12 @@ dependencies = [
     "boto3>=1.35.0",
     "duckdb>=1.1.0",
     "truststore>=0.10.4",
-    # Code knowledge graph: tree-sitter parsing. The language pack bundles
+    # Repository-local code context: tree-sitter parsing. The language pack bundles
     # 160+ grammars behind the stable ABI, so new languages are added without
     # extra wheels.
     "tree-sitter>=0.25.0",
     "tree-sitter-language-pack>=0.10.0",
-    # Filesystem watcher (Rust notify backend) for auto-reindexing the code
-    # graph when source files change. Opt-in via code_graph.watch_enabled.
+    # Filesystem watcher (Rust notify backend) for workspace event streams.
     "watchfiles>=0.24.0",
     # ConPTY backend for the interactive terminal on Windows (POSIX uses the
     # stdlib pty/fcntl/termios stack). Imported lazily by terminal_service.

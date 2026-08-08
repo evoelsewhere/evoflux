@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from app.services.code_graph.parsers.ecmascript import (
+from app.services.code_index.parsers.ecmascript import (
     JavaScriptParser,
     TypeScriptParser,
 )
-from app.services.code_graph.parsers.go import GoParser
-from app.services.code_graph.parsers.python import PythonParser
-from app.services.code_graph.parsers.rust import RustParser
-from app.services.code_graph.types import NODE_FUNCTION, NODE_VARIABLE
+from app.services.code_index.parsers.go import GoParser
+from app.services.code_index.parsers.python import PythonParser
+from app.services.code_index.parsers.rust import RustParser
+from app.services.code_index.graph_types import NODE_FUNCTION, NODE_VARIABLE
 
 
 def _vars(result):
