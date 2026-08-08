@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import hashlib
+import posixpath
 import re
+import sqlite3
 from collections import defaultdict, deque
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -71,6 +73,13 @@ _COMMON_MEMBER_NAMES = frozenset(
     }
 )
 _QUERY_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_]{1,}|[0-9]{2,}")
+_SOURCE_EXTENSIONS: tuple[str, ...] = tuple(
+    sorted(
+        default_registry().supported_extensions(),
+        key=lambda extension: len(extension),
+        reverse=True,
+    )
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,8 +143,11 @@ async def search_index(
     """Merge repository-local FTS ranks into one bounded result set."""
     wanted_languages = {value.casefold() for value in languages or []}
 
-    def search_one(label: str, index: RepositoryIndex) -> list[SearchHit]:
+    def search_one(
+        label: str, index: RepositoryIndex
+    ) -> tuple[list[SearchHit], list[str]]:
         query_embedding = embed_text(query)
+        limitations: list[str] = []
         try:
             with index.database.readonly() as conn:
                 try:
@@ -153,17 +165,21 @@ async def search_index(
                         """,
                         (_fts_query(query), max(50, limit * 8)),
                     ).fetchall()
-                except Exception:
+                except Exception as exc:
                     lexical_rows = []
-                semantic_rows = conn.execute(
-                    """
-                    SELECT file_path, language, line_start, line_end,
-                           content, symbol_name, embedding
-                    FROM source_chunks
-                    """
-                ).fetchall()
-        except Exception:
-            return []
+                    limitations.append(f"{label}: lexical index unavailable ({exc})")
+                try:
+                    semantic_rows = conn.execute(
+                        """
+                        SELECT file_path, language, line_start, line_end,
+                               content, symbol_name, embedding
+                        FROM source_chunks
+                        """
+                    ).fetchall()
+                except Exception as exc:
+                    return [], [f"{label}: source index unavailable ({exc})"]
+        except Exception as exc:
+            return [], [f"{label}: index unavailable ({exc})"]
         lexical_ranks = {
             (str(path), int(start), int(end)): float(rank or 0.0)
             for path, _language, start, end, _content, _symbol, rank in lexical_rows
@@ -215,12 +231,17 @@ async def search_index(
                     repository_path=str(index.root),
                 )
             )
-        return output
+        return output, limitations
 
     groups = await asyncio.gather(
         *(asyncio.to_thread(search_one, label, index) for label, index in indexes)
     )
-    hits = [hit for group in groups for hit in group]
+    hits = [hit for group, _ in groups for hit in group]
+    limitations = list(
+        dict.fromkeys(
+            item for _, group_limitations in groups for item in group_limitations
+        )
+    )
     hits.sort(
         key=lambda hit: (
             -hit.score,
@@ -238,6 +259,7 @@ async def search_index(
         repositories=tuple(label for label, _ in indexes),
         hits=hits[:capped],
         stats=stats,
+        limitations=limitations,
         truncated=len(hits) > capped,
     )
 
@@ -277,7 +299,9 @@ async def structural_grep(
                 continue
             if language not in patterns:
                 try:
-                    parser = registry.for_path(str(file_path))
+                    parser = registry.for_language(language) or registry.for_path(
+                        str(file_path)
+                    )
                     grammar = getattr(parser, "grammar", None)
                     if grammar is None:
                         raise ValueError("language has no tree-sitter grammar")
@@ -653,6 +677,15 @@ class _GraphResolver:
         short = normalized.rsplit(".", 1)[-1]
         allowed = _allowed_symbol_kinds(relation.kind)
 
+        if relation.kind == "imports":
+            candidates = self._module_candidates(relation, short, allowed)
+            if len(candidates) == 1:
+                return _ResolvedRelation(source, candidates[0], relation)
+            if len(candidates) > 1:
+                if report_ambiguity:
+                    self._record_ambiguity(relation, candidates)
+                return None
+
         if allow_import_binding:
             head, _, tail = normalized.partition(".")
             imported = self.imports.get(
@@ -686,6 +719,17 @@ class _GraphResolver:
                 if len(candidates) > 1 and report_ambiguity:
                     self._record_ambiguity(relation, candidates)
                     return None
+                candidates = self._imported_namespace_candidates(
+                    relation,
+                    receiver=head,
+                    short_name=short,
+                    allowed=allowed,
+                )
+                if len(candidates) == 1:
+                    return _ResolvedRelation(source, candidates[0], relation)
+                if len(candidates) > 1 and report_ambiguity:
+                    self._record_ambiguity(relation, candidates)
+                    return None
 
         exact_local = [
             item
@@ -700,13 +744,14 @@ class _GraphResolver:
             self._record_ambiguity(relation, exact_local)
             return None
 
-        source_container = source.value.qualified_name.rsplit(".", 1)[0]
-        lexical = self.by_repo_qualified.get(
-            (relation.repository, f"{source_container}.{short}".casefold()), []
-        )
-        lexical = [item for item in lexical if item.value.kind in allowed]
-        if len(lexical) == 1:
-            return _ResolvedRelation(source, lexical[0], relation)
+        if not explicit_receiver:
+            source_container = source.value.qualified_name.rsplit(".", 1)[0]
+            lexical = self.by_repo_qualified.get(
+                (relation.repository, f"{source_container}.{short}".casefold()), []
+            )
+            lexical = [item for item in lexical if item.value.kind in allowed]
+            if len(lexical) == 1:
+                return _ResolvedRelation(source, lexical[0], relation)
 
         same_file = [
             item
@@ -769,20 +814,30 @@ class _GraphResolver:
     ) -> list[_StoredSymbol]:
         if not relation.module_path:
             return []
-        module = relation.module_path.replace("\\", "/").replace(".", "/")
-        module = module.strip("./")
-        suffixes = {module, f"{module}.py", f"{module}/__init__.py"}
         output = [
             item
             for item in self.symbols
             if item.value.kind in allowed
             and item.value.name.casefold() == short_name.casefold()
-            and any(
-                item.value.file_path.casefold().endswith(suffix.casefold())
-                for suffix in suffixes
+            and _file_matches_module(
+                item.value.file_path,
+                relation.module_path,
+                source_file=relation.file_path,
+            )
+            and (
+                item.repository == relation.repository
+                or not _is_relative_module(relation.module_path)
             )
         ]
-        return list(dict.fromkeys(output))
+        if not output and not _is_relative_module(relation.module_path):
+            output = [
+                item
+                for item in self.symbols
+                if item.value.kind in allowed
+                and item.value.name.casefold() == short_name.casefold()
+                and _repository_matches_module(item, relation.module_path)
+            ]
+        return _prefer_same_repository(output, relation.repository)
 
     def _imported_receiver_candidates(
         self,
@@ -805,19 +860,165 @@ class _GraphResolver:
         }
         output: list[_StoredSymbol] = []
         for module_path in module_paths:
-            module = module_path.replace("\\", "/").replace(".", "/").strip("./")
-            suffixes = {module, f"{module}.py", f"{module}/__init__.py"}
-            output.extend(
+            matched = [
                 item
                 for item in self.symbols
                 if item.value.kind in allowed
                 and item.value.name.casefold() == short_name.casefold()
-                and any(
-                    item.value.file_path.casefold().endswith(suffix.casefold())
-                    for suffix in suffixes
+                and _file_matches_module(
+                    item.value.file_path,
+                    module_path,
+                    source_file=relation.file_path,
+                )
+                and (
+                    item.repository == relation.repository
+                    or not _is_relative_module(module_path)
+                )
+            ]
+            if not matched and not _is_relative_module(module_path):
+                matched = [
+                    item
+                    for item in self.symbols
+                    if item.value.kind in allowed
+                    and item.value.name.casefold() == short_name.casefold()
+                    and _repository_matches_module(item, module_path)
+                ]
+            output.extend(matched)
+        return _prefer_same_repository(output, relation.repository)
+
+    def _imported_namespace_candidates(
+        self,
+        relation: _StoredRelation,
+        *,
+        receiver: str,
+        short_name: str,
+        allowed: frozenset[str],
+    ) -> list[_StoredSymbol]:
+        """Resolve ``Type.member`` made visible by a namespace/package import."""
+        module_paths = {
+            item.module_path
+            for item in self.relations
+            if item.kind == "imports"
+            and item.repository == relation.repository
+            and item.file_path == relation.file_path
+            and item.module_path
+        }
+        receivers: list[_StoredSymbol] = []
+        for module_path in module_paths:
+            receivers.extend(
+                item
+                for item in self.symbols
+                if item.value.kind in _TYPE_KINDS
+                and item.value.name.casefold() == receiver.casefold()
+                and (
+                    _file_matches_module(
+                        item.value.file_path,
+                        module_path,
+                        source_file=relation.file_path,
+                    )
+                    or _repository_matches_module(item, module_path)
                 )
             )
-        return list(dict.fromkeys(output))
+        output = [
+            item
+            for receiver_symbol in dict.fromkeys(receivers)
+            for item in self.symbols
+            if item.repository == receiver_symbol.repository
+            and item.value.kind in allowed
+            and item.value.name.casefold() == short_name.casefold()
+            and item.value.qualified_name.casefold().startswith(
+                f"{receiver_symbol.value.qualified_name}.".casefold()
+            )
+        ]
+        return _prefer_same_repository(output, relation.repository)
+
+
+def _prefer_same_repository(
+    candidates: list[_StoredSymbol], repository: str
+) -> list[_StoredSymbol]:
+    unique = list(dict.fromkeys(candidates))
+    local = [item for item in unique if item.repository == repository]
+    return local or unique
+
+
+def _repository_matches_module(symbol: _StoredSymbol, module_path: str) -> bool:
+    value = module_path.strip().strip("'\"").replace("\\", "/")
+    if value.startswith("package:"):
+        value = value.removeprefix("package:")
+    parts = {
+        part.casefold()
+        for part in value.replace("::", "/").replace(".", "/").split("/")
+        if part and part != "@"
+    }
+    return (
+        symbol.repository.casefold() in parts
+        or symbol.index.root.name.casefold() in parts
+    )
+
+
+def _is_relative_module(module_path: str) -> bool:
+    value = module_path.strip().strip("'\"").replace("\\", "/")
+    return value.startswith(".")
+
+
+def _without_source_suffix(path: str) -> str:
+    folded = path.casefold()
+    for extension in _SOURCE_EXTENSIONS:
+        if folded.endswith(extension.casefold()):
+            return path[: -len(extension)]
+    return path
+
+
+def _relative_module_path(module_path: str, source_file: str) -> str | None:
+    value = module_path.strip().strip("'\"").replace("\\", "/")
+    source_directory = posixpath.dirname(source_file.replace("\\", "/"))
+    if value.startswith(("./", "../")):
+        return posixpath.normpath(posixpath.join(source_directory, value))
+    if not value.startswith("."):
+        return None
+    dots = len(value) - len(value.lstrip("."))
+    remainder = value[dots:].replace(".", "/").strip("/")
+    base = source_directory
+    for _ in range(max(0, dots - 1)):
+        base = posixpath.dirname(base)
+    return posixpath.normpath(posixpath.join(base, remainder))
+
+
+def _file_matches_module(file_path: str, module_path: str, *, source_file: str) -> bool:
+    """Match import modules across Python, JS/TS and directory-based layouts."""
+    candidate = posixpath.normpath(file_path.replace("\\", "/")).strip("./")
+    candidate_base = _without_source_suffix(candidate)
+    candidate_parent = posixpath.dirname(candidate)
+    candidate_stem = posixpath.basename(candidate_base).casefold()
+
+    relative = _relative_module_path(module_path, source_file)
+    if relative is not None:
+        target = _without_source_suffix(relative.strip("./"))
+        return candidate_base.casefold() == target.casefold() or (
+            candidate_parent.casefold() == target.casefold()
+            and candidate_stem in {"index", "__init__", "mod"}
+        )
+
+    module = module_path.strip().strip("'\"").replace("\\", "/")
+    if module.startswith("package:"):
+        module = module.removeprefix("package:")
+    module = _without_source_suffix(module).replace("::", "/")
+    if "/" not in module:
+        module = module.replace(".", "/")
+    module = module.strip("/")
+    module_base = posixpath.normpath(module)
+    folded_module = module_base.casefold()
+    folded_parent = candidate_parent.casefold()
+    if not folded_module or folded_module == ".":
+        return False
+    return (
+        candidate_base.casefold() == folded_module
+        or candidate_base.casefold().endswith(f"/{folded_module}")
+        or folded_parent == folded_module
+        or folded_parent.endswith(f"/{folded_module}")
+        or bool(folded_parent)
+        and folded_module.endswith(f"/{folded_parent}")
+    )
 
 
 def _normalize_symbol(value: str) -> str:
@@ -969,38 +1170,57 @@ def _find_symbols(
         if repository is not None and label.casefold() != repository.casefold():
             continue
         with index.database.readonly() as conn:
-            exact_rows = conn.execute(
-                """
-                SELECT id, file_path, language, kind, name, qualified_name,
-                       line_start, line_end, signature, docstring
-                FROM code_symbols
-                WHERE name = ? COLLATE NOCASE OR qualified_name = ? COLLATE NOCASE
-                LIMIT 101
-                """,
-                (folded, folded),
-            ).fetchall()
-            suggestion_rows = []
-            if not exact_rows:
-                suggestion_rows = conn.execute(
+            exact_rows = _fetch_path_filtered_rows(
+                conn.execute(
                     """
                     SELECT id, file_path, language, kind, name, qualified_name,
                            line_start, line_end, signature, docstring
                     FROM code_symbols
-                    WHERE kind != 'file' AND (
-                      name LIKE ? OR qualified_name LIKE ?
-                    )
-                    ORDER BY name, qualified_name LIMIT 20
+                    WHERE name = ? COLLATE NOCASE OR qualified_name = ? COLLATE NOCASE
+                    ORDER BY file_path, line_start
                     """,
-                    (f"{folded}%", f"%{folded}%"),
-                ).fetchall()
-        for target, rows in ((matches, exact_rows), (suggestions, suggestion_rows)):
-            target.extend(
-                item
-                for row in rows
-                if _path_matches(str(row[1]), paths)
-                for item in [_stored_symbol(label, index, row)]
+                    (folded, folded),
+                ),
+                paths=paths,
+                limit=101,
             )
+            suggestion_rows = []
+            if not exact_rows:
+                suggestion_rows = _fetch_path_filtered_rows(
+                    conn.execute(
+                        """
+                        SELECT id, file_path, language, kind, name, qualified_name,
+                               line_start, line_end, signature, docstring
+                        FROM code_symbols
+                        WHERE kind != 'file' AND (
+                          name LIKE ? OR qualified_name LIKE ?
+                        )
+                        ORDER BY name, qualified_name, file_path, line_start
+                        """,
+                        (f"{folded}%", f"%{folded}%"),
+                    ),
+                    paths=paths,
+                    limit=20,
+                )
+        for target, rows in ((matches, exact_rows), (suggestions, suggestion_rows)):
+            target.extend(_stored_symbol(label, index, row) for row in rows)
     return matches, suggestions[:10]
+
+
+def _fetch_path_filtered_rows(
+    cursor: sqlite3.Cursor,
+    *,
+    paths: list[str] | None,
+    limit: int,
+) -> list[tuple[object, ...]]:
+    """Apply path filters before result caps so late files remain selectable."""
+    output: list[tuple[object, ...]] = []
+    while len(output) < limit:
+        rows = cursor.fetchmany(256)
+        if not rows:
+            break
+        output.extend(row for row in rows if _path_matches(str(row[1]), paths))
+    return output[:limit]
 
 
 def _stored_symbol(

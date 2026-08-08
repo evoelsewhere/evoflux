@@ -262,9 +262,13 @@ async def project_code_context_status(
     indexes = await asyncio.gather(
         *(repository_indexes.get(scope.root) for scope in scopes)
     )
+    stats_values = await asyncio.gather(
+        *(asyncio.to_thread(index.stats) for index in indexes)
+    )
     output: list[dict[str, object]] = []
-    for scope, (_link, workspace), index in zip(scopes, pairs, indexes, strict=True):
-        stats = index.stats()
+    for scope, (_link, workspace), stats in zip(
+        scopes, pairs, stats_values, strict=True
+    ):
         output.append(
             {
                 "workspace_id": str(workspace.id),
@@ -304,9 +308,12 @@ async def index_project_code_context(
     indexes = await asyncio.gather(
         *(repository_indexes.get(scope.root) for scope in scopes)
     )
-    values = await asyncio.gather(
-        *(index.update(full=bool(body and body.full)) for index in indexes)
-    )
+    try:
+        values = await asyncio.gather(
+            *(index.update(full=bool(body and body.full)) for index in indexes)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {
         scope.label: CodeContextStatusResponse(
             indexed=stats.files > 0,
@@ -364,11 +371,14 @@ async def project_code_context_graph_data(
     indexes = await asyncio.gather(
         *(repository_indexes.get(scope.root) for scope in scopes)
     )
+    stats_values = await asyncio.gather(
+        *(asyncio.to_thread(index.stats) for index in indexes)
+    )
     snapshot = await snapshot_graph(
         list(
             (scope.label, index)
-            for scope, index in zip(scopes, indexes, strict=True)
-            if index.stats().files > 0
+            for scope, index, stats in zip(scopes, indexes, stats_values, strict=True)
+            if stats.files > 0
         ),
         node_limit_per_repository=node_limit_per_repo,
         relation_limit_per_repository=edge_limit_per_repo,
