@@ -17,7 +17,10 @@ from app.agent.tools.registry import Tool
 from app.core.db import async_session_factory
 from app.services import code_graph_service as graph_service
 
-_INLINE_CHAR_LIMIT = 38_000
+# Structural evidence is intentionally smaller than the generic offload
+# threshold. Large fan-outs should be narrowed instead of being replayed in
+# every later model request.
+_INLINE_CHAR_LIMIT = 18_000
 
 
 def _render_code_graph(result) -> str:  # noqa: ANN001
@@ -174,8 +177,15 @@ async def _code_graph(
     ] = 1,
     limit: Annotated[
         int,
-        Field(ge=1, le=100, description="Maximum resolved relationships to return."),
-    ] = 40,
+        Field(
+            ge=1,
+            le=50,
+            description=(
+                "Maximum resolved relationships to return. Keep the default for "
+                "direct navigation and narrow ambiguous fan-outs before increasing."
+            ),
+        ),
+    ] = 20,
 ) -> str:
     """Resolve one symbol and navigate its native structural graph."""
     from app.services.code_graph_navigation_service import (
