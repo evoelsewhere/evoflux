@@ -548,7 +548,7 @@ def make_team_delegate_tool(
                 "Blocked on dependencies: "
                 f"{', '.join(sorted(blocked_recipients))}."
             )
-        return f"Task accepted by {', '.join(resolved)}. {' '.join(states)}{suffix}"
+        return f"Task delegated to {', '.join(resolved)}. {' '.join(states)}{suffix}"
 
     return Tool(team_delegate, name="team_delegate", description=_DELEGATE_DESCRIPTION)
 
