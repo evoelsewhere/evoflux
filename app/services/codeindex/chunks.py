@@ -146,7 +146,10 @@ def _partition_range(
     counters: dict[str, int],
 ) -> None:
     symbol = node.symbol or fallback_symbol
-    if _range_length(lines, node.start, node.end) <= max_chars:
+    # The virtual file root always descends into top-level symbols so exact
+    # declarations retain their own searchable identity even in small files.
+    # Real symbols stay intact until their source exceeds the chunk bound.
+    if node.symbol is not None and _range_length(lines, node.start, node.end) <= max_chars:
         _emit_bounded(
             output,
             lines,

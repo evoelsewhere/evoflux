@@ -51,6 +51,7 @@ from app.services.code_graph.manifest import (
 )
 from app.services.code_graph.parsers.registry import ParserRegistry, build_registry
 from app.services.codeindex.chunks import SourceChunk, build_source_chunks
+from app.services.codeindex import fts_store as codeindex_fts
 from app.services.codeindex.reconcile import plan_reconciliation
 
 # Cap how many errors we keep on the stats payload.
@@ -584,6 +585,17 @@ async def _reconcile_workspace(
             key_to_id=key_to_id,
             removed_ids=removed_ids,
         )
+        db_path = current_sqlite_path()
+        if db_path is not None:
+            try:
+                await _run_in_indexer(
+                    codeindex_fts.refresh_workspace_files,
+                    db_path,
+                    str(workspace_id),
+                    sorted(affected),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("codeindex fts refresh failed err={}", exc)
     progress_cb("saving", 1.0, "Index saved")
 
     counts = await get_index_status(db, workspace_id=workspace_id)
