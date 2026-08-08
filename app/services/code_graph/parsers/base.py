@@ -121,6 +121,10 @@ class TreeSitterParser:
             inside_class=False,
             depth=0,
         )
+        # Language-specific dispatch extraction and the shared identifier
+        # pass can intentionally discover the same semantic reference. Keep
+        # one edge per exact source location before cross-file resolution.
+        result.edges[:] = dict.fromkeys(result.edges)
         return result
 
     # -- hooks (override in subclasses) -------------------------------------
@@ -155,6 +159,20 @@ class TreeSitterParser:
     def reference_targets(self, node: Node, source: bytes) -> list[str]:
         """Return statically named values passed across a dispatch boundary."""
         return []
+
+    def identifier_reference_targets(self, node: Node, source: bytes) -> list[str]:
+        """Return direct symbol-value references represented by identifiers.
+
+        Most tree-sitter grammars use ``identifier``/``type_identifier`` for
+        reads of constants, functions-as-values, types, and other named
+        symbols. Keeping this conservative extraction in the shared walker
+        gives every language basic reference coverage while declaration,
+        import, and direct-callee identifiers remain owned by their more
+        precise edge extractors.
+        """
+        if not _is_reference_identifier(node):
+            return []
+        return [node_text(node, source)]
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
         """Return base classes/interfaces for a class definition node."""
@@ -311,7 +329,11 @@ class TreeSitterParser:
                         line=node.start_point[0] + 1,
                     )
                 )
-            for target in self.reference_targets(node, source):
+            reference_targets = [
+                *self.reference_targets(node, source),
+                *self.identifier_reference_targets(node, source),
+            ]
+            for target in dict.fromkeys(reference_targets):
                 result.edges.append(
                     ExtractedEdge(
                         src_local_id=parent_local_id,
@@ -358,3 +380,103 @@ class TreeSitterParser:
                 inside_class=child_inside_class,
                 depth=depth + 1,
             )
+
+
+_IDENTIFIER_NODE_TYPES = frozenset({"identifier"})
+_DECLARATION_TYPE_PARTS = (
+    "declaration",
+    "declarator",
+    "definition",
+    "parameter",
+    "pattern",
+    "specifier",
+)
+_CALL_NODE_TYPES = frozenset(
+    {
+        "call",
+        "call_expression",
+        "invocation_expression",
+        "method_invocation",
+        "new_expression",
+        "object_creation_expression",
+    }
+)
+
+
+def _same_span(left: Node | None, right: Node) -> bool:
+    return bool(
+        left is not None
+        and left.start_byte == right.start_byte
+        and left.end_byte == right.end_byte
+    )
+
+
+def _contains(outer: Node | None, inner: Node) -> bool:
+    return bool(
+        outer is not None
+        and outer.start_byte <= inner.start_byte
+        and outer.end_byte >= inner.end_byte
+    )
+
+
+def _is_reference_identifier(node: Node) -> bool:
+    """Whether ``node`` is a value/type use rather than syntax ownership.
+
+    The checks intentionally use field names and broad grammar categories so
+    the behavior applies across Python, ECMAScript, JVM, .NET, Go, Rust, and
+    the other tree-sitter parsers without framework-specific allowlists.
+    """
+    if node.type not in _IDENTIFIER_NODE_TYPES:
+        return False
+    parent = node.parent
+    if parent is None:
+        return False
+
+    # Type annotations/signatures are handled by each grammar's type_refs()
+    # hook, which knows that language's builtins and generic parameters. The
+    # shared pass is deliberately for runtime value reads only.
+    ancestor = parent
+    for _ in range(4):
+        if "type" in ancestor.type or "annotation" in ancestor.type:
+            return False
+        ancestor = ancestor.parent
+        if ancestor is None:
+            break
+
+    # Imports already emit path-aware EDGE_IMPORTS. Emitting a reference from
+    # the imported spelling would make the import line mask the first runtime
+    # use after callsite de-duplication.
+    ancestor = parent
+    for _ in range(5):
+        if "import" in ancestor.type:
+            return False
+        ancestor = ancestor.parent
+        if ancestor is None:
+            break
+
+    # Names introduced by declarations/parameters are definitions, not reads.
+    if any(part in parent.type for part in _DECLARATION_TYPE_PARTS):
+        if "parameter" in parent.type:
+            return False
+        for field in ("name", "declarator", "pattern", "alias"):
+            if _same_span(parent.child_by_field_name(field), node):
+                return False
+    if "assignment" in parent.type and _same_span(
+        parent.child_by_field_name("left"), node
+    ):
+        return False
+
+    # Direct callees already produce EDGE_CALLS. This also handles member
+    # expressions by checking whether the identifier is contained by the
+    # call's function/constructor field, not just an immediate child.
+    ancestor = parent
+    for _ in range(4):
+        if ancestor.type in _CALL_NODE_TYPES:
+            for field in ("function", "constructor", "name"):
+                if _contains(ancestor.child_by_field_name(field), node):
+                    return False
+            break
+        ancestor = ancestor.parent
+        if ancestor is None:
+            break
+    return True

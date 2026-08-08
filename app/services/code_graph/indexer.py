@@ -49,7 +49,7 @@ _MAX_FILE_BYTES = 1_500_000
 # Bump whenever parser or relationship extraction semantics change. Salting
 # file hashes forces an incremental rebuild even when repository source did
 # not change, so a newly deployed parser cannot silently reuse stale edges.
-INDEX_FORMAT_VERSION = "7"
+INDEX_FORMAT_VERSION = "8"
 
 # Definition kinds a name-based call/reference may resolve to.
 _CALLABLE_KINDS = frozenset(
@@ -416,7 +416,10 @@ def _resolve_edges(
     file_by_key = {n.key: n.file_path for n in index.nodes}
     if extra_files:
         file_by_key.update(extra_files)
-    seen: set[tuple[str, str, str]] = set()
+    # Preserve distinct source locations. A caller can reference the same
+    # symbol more than once and navigation must report each real callsite;
+    # parser overlap on the same line is still de-duplicated.
+    seen: set[tuple[str, str, str, int | None]] = set()
 
     for (
         src_key,
@@ -578,7 +581,7 @@ def _resolve_edges(
                         )
                     )
             continue
-        dedupe = (src_key, dst_key, kind)
+        dedupe = (src_key, dst_key, kind, line)
         if dedupe in seen:
             continue
         seen.add(dedupe)
