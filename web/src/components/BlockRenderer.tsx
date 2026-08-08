@@ -25,6 +25,7 @@ import { CompactionDivider } from './CompactionDivider'
 import { ImageAttachment } from './ImageAttachment'
 import { FileCard } from './FileCard'
 import { extractSleepPrefix, formatTime } from '@/utils/format'
+import { isConsolidatedDelegationMessage } from '@/utils/blocks'
 import { findCommittedMentions } from './InputBar.mentions'
 import { findSkillDirectives } from './InputBar.skills'
 import { resolveApiUrl } from '@/api/client'
@@ -310,6 +311,7 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
       const fromAgent = block.extra?.from_agent as string | undefined
       if (fromAgent && fromAgent !== 'user') {
         const handoffArtifact = block.extra?._handoff_artifact as Record<string, unknown> | undefined
+        if (isConsolidatedDelegationMessage(block)) return null
         if (handoffArtifact) {
           return <HandoffCard artifact={handoffArtifact as never} fromAgent={fromAgent} compact={compact} />
         }
@@ -370,7 +372,7 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
             liveOutput={block.toolOutput}
             result={block.toolResult}
             durationMs={block.durationMs}
-            startedAt={block.startedAt}
+            startedAt={block.startedAt ?? block.timestamp?.getTime()}
             attachments={toolExtra?.attachments}
           />
           {block.toolDone && Boolean(mcpApp) && latestMCPAppBlockIds?.has(block.id) ? (

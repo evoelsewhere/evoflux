@@ -76,4 +76,50 @@ describe('BlockRenderer assistant artifacts', () => {
 
     expect(screen.getByRole('button', { name: 'report.docx' })).toBeInTheDocument()
   })
+
+  it('does not render task-bound handoffs as separate chat bubbles', () => {
+    const { container } = render(
+      <BlockRenderer
+        block={{
+          id: 'delegation-handoff',
+          type: 'user',
+          content: 'The audit is complete.',
+          extra: {
+            from_agent: 'explorer#1',
+            _handoff_artifact: {
+              task_id: '0198a1d2-3456-7890-abcd-ef0123456789',
+              status: 'final',
+              summary: 'The audit is complete.',
+            },
+          },
+        }}
+        isStreaming={false}
+      />,
+    )
+
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('keeps untracked handoffs visible', () => {
+    render(
+      <BlockRenderer
+        block={{
+          id: 'standalone-handoff',
+          type: 'user',
+          content: 'A standalone finding.',
+          extra: {
+            from_agent: 'reviewer#1',
+            _handoff_artifact: {
+              status: 'final',
+              summary: 'A standalone finding.',
+            },
+          },
+        }}
+        isStreaming={false}
+      />,
+    )
+
+    expect(screen.getByText('Handoff from reviewer#1')).toBeInTheDocument()
+    expect(screen.getByText('A standalone finding.')).toBeInTheDocument()
+  })
 })
