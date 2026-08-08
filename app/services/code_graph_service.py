@@ -32,6 +32,7 @@ from app.models.chat import CodingProjectWorkspace, CodingWorkspace, _utcnow
 from app.models.code_graph import (
     CodeAmbiguousEdge,
     CodeEdge,
+    CodeIndexChunk,
     CodeIndexState,
     CodeNode,
     CrossRepoEdge,
@@ -49,6 +50,7 @@ from app.services.code_graph.manifest import (
     read_declared_dependencies,
 )
 from app.services.code_graph.parsers.registry import ParserRegistry, build_registry
+from app.services.codeindex.chunks import SourceChunk, build_source_chunks
 from app.services.codeindex.reconcile import plan_reconciliation
 
 # Cap how many errors we keep on the stats payload.
@@ -380,6 +382,13 @@ async def _reconcile_workspace(
         existing_defs=existing_defs,
         known_file_paths=frozenset(current.keys()),
     )
+    source_chunks = await _run_in_indexer(
+        build_source_chunks,
+        root_path,
+        changed,
+        index.nodes,
+        extensions=registry.supported_extensions(),
+    )
 
     # ── Reconcile nodes of changed files, preserving ids for stable symbols ──
     # Everything below mutates the graph, so it all runs under the write
@@ -514,6 +523,14 @@ async def _reconcile_workspace(
             )
         await _bulk_insert_chunked(db, CodeAmbiguousEdge, ambiguous_rows)
 
+        await _reconcile_source_chunks(
+            db,
+            workspace_id=workspace_id,
+            affected=affected,
+            chunks=source_chunks,
+            key_to_id=key_to_id,
+        )
+
         if removed_ids:
             await db.execute(
                 sa_delete(CodeNode).where(
@@ -589,6 +606,76 @@ async def _reconcile_workspace(
         changed_files=len(changed),
         deleted_files=len(deleted),
     )
+
+
+async def _reconcile_source_chunks(
+    db: AsyncSession,
+    *,
+    workspace_id: UUID,
+    affected: set[str],
+    chunks: list[SourceChunk],
+    key_to_id: dict[str, UUID],
+) -> None:
+    """Apply parser-aligned chunks as keyed target state in the graph commit."""
+    existing = list(
+        (
+            await db.exec(
+                select(CodeIndexChunk).where(
+                    CodeIndexChunk.workspace_id == workspace_id,
+                    col(CodeIndexChunk.file_path).in_(list(affected)),
+                )
+            )
+        ).all()
+    )
+    by_key = {row.component_key: row for row in existing}
+    incoming_keys: set[str] = set()
+    insert_rows: list[dict] = []
+    now = _utcnow()
+    for chunk in chunks:
+        incoming_keys.add(chunk.component_key)
+        node_id = key_to_id.get(chunk.node_key) if chunk.node_key else None
+        row = by_key.get(chunk.component_key)
+        if row is not None:
+            row.node_id = node_id
+            row.file_path = chunk.file_path
+            row.language = chunk.language
+            row.kind = chunk.kind
+            row.name = chunk.name
+            row.qualified_name = chunk.qualified_name
+            row.line_start = chunk.line_start
+            row.line_end = chunk.line_end
+            row.content = chunk.content
+            row.signature = chunk.signature
+            row.docstring = chunk.docstring
+            row.updated_at = now
+            continue
+        insert_rows.append(
+            {
+                "id": uuid7(),
+                "workspace_id": workspace_id,
+                "node_id": node_id,
+                "component_key": chunk.component_key,
+                "file_path": chunk.file_path,
+                "language": chunk.language,
+                "kind": chunk.kind,
+                "name": chunk.name,
+                "qualified_name": chunk.qualified_name,
+                "line_start": chunk.line_start,
+                "line_end": chunk.line_end,
+                "content": chunk.content,
+                "signature": chunk.signature,
+                "docstring": chunk.docstring,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+
+    stale_ids = [row.id for row in existing if row.component_key not in incoming_keys]
+    if stale_ids:
+        await db.execute(
+            sa_delete(CodeIndexChunk).where(col(CodeIndexChunk.id).in_(stale_ids))
+        )
+    await _bulk_insert_chunked(db, CodeIndexChunk, insert_rows)
 
 
 def _resolve_incremental_dst(dst_key: str, key_to_id: dict[str, UUID]) -> UUID | None:

@@ -142,6 +142,52 @@ class CodeIndexState(SQLModel, table=True):
     )
 
 
+class CodeIndexChunk(SQLModel, table=True):
+    """One bounded, parser-aligned source partition used by code search."""
+
+    __tablename__: str = "code_index_chunks"  # type: ignore[reportIncompatibleVariableOverride]
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "workspace_id", "component_key", name="uq_code_index_chunk_component"
+        ),
+        sa.Index("ix_code_index_chunk_workspace_file", "workspace_id", "file_path"),
+        sa.Index("ix_code_index_chunk_workspace_node", "workspace_id", "node_id"),
+    )
+
+    id: UUID = Field(default_factory=uuid7, primary_key=True)
+    workspace_id: UUID = Field(
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey("coding_workspaces.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    node_id: UUID | None = Field(
+        default=None,
+        sa_column=Column(sa.Uuid(), ForeignKey("code_nodes.id", ondelete="SET NULL")),
+    )
+    component_key: str = Field(sa_column=Column(sa.String(), nullable=False))
+    file_path: str = Field(sa_column=Column(sa.String(), nullable=False))
+    language: str = Field(sa_column=Column(sa.String(40), nullable=False))
+    kind: str = Field(sa_column=Column(sa.String(30), nullable=False))
+    name: str = Field(sa_column=Column(sa.String(255), nullable=False))
+    qualified_name: str = Field(sa_column=Column(sa.String(), nullable=False))
+    line_start: int = Field(sa_column=Column(sa.Integer, nullable=False))
+    line_end: int = Field(sa_column=Column(sa.Integer, nullable=False))
+    content: str = Field(sa_column=Column(sa.Text(), nullable=False))
+    signature: str | None = Field(default=None, sa_column=Column(sa.Text()))
+    docstring: str | None = Field(default=None, sa_column=Column(sa.Text()))
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(TZDateTime(), nullable=False),
+    )
+    updated_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(TZDateTime(), nullable=False, onupdate=_utcnow),
+    )
+
+
 class CrossRepoEdge(SQLModel, table=True):
     """A candidate reference from one repo to a symbol in a sibling repo.
 

@@ -4,8 +4,8 @@ Runs ``alembic upgrade head`` against a temp database using the real
 ``app/alembic.ini`` and asserts the latest schema state lands (currently:
 WebBridge pairing, interaction, tab-binding, Teach Mode state, delegation
 tasks, Git server connections, the Work mode rename, retired session-section
-cleanup, durable goals, durable workflow gates, and the AIM table drop
-through revision 00000043).
+cleanup, durable goals, durable workflow gates, the AIM table drop, scheduler
+routing, and parser-aligned code-index chunks through revision 00000045).
 Complements ``tests/core/test_db_extra.py``, which only covers
 ``run_migrations`` error paths with mocks.
 """
@@ -63,6 +63,7 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
         } <= set(inspector.get_table_names())
         assert "session_chapters" not in inspector.get_table_names()
         assert "session_goals" in inspector.get_table_names()
+        assert "code_index_chunks" in inspector.get_table_names()
         goal_columns = {
             column["name"] for column in inspector.get_columns("session_goals")
         }
