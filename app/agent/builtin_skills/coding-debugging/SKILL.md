@@ -33,6 +33,12 @@ test expectation or environment mismatch.
 
 ## Navigate structural evidence
 
+When the failure location or exact identifier is unknown, call `code_search`
+once with the literal error, configuration key, runtime term, or code fragment.
+Use its repository-qualified source range to identify a declared symbol. If the
+exact symbol is already visible, skip `code_search`; it is discovery, not
+structural proof.
+
 Once source evidence reveals an exact function, method, class, or qualified
 symbol, use native `code_graph` to test the relevant structural hypothesis:
 `callers` for inbound paths, `callees` for downstream calls, `references` for
@@ -51,8 +57,7 @@ returns `partial` and a reported dirty file overlaps the question, use a
 targeted source read for a local gap or retry once with `"balanced"` when the
 relationships must be recomputed. After an edit that can change relationships,
 use `"balanced"` once before relying on the updated structure. Use `"strict"`
-only for a final,
-high-consequence completeness check when watcher coverage is unavailable or
+only for a final, high-consequence completeness check when watcher coverage is unavailable or
 untrusted; never use it for discovery.
 
 Read [references/code-graph-contract.md](references/code-graph-contract.md)

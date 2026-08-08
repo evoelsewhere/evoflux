@@ -1,9 +1,15 @@
-# Native code-graph contract
+# Indexed code navigation contract
 
-Use the graph only after an exact source identifier is visible in user input or
-source evidence. Never translate a natural-language request, error sentence,
-route description, configuration question, or feature name into the `symbol`
-field.
+Use `code_search` only while the implementation location or exact identifier is
+unknown. It accepts behavior terms, literals, errors, and code fragments and
+returns parser-aligned, repository-qualified source ranges. Treat those ranges
+as discovery candidates, not call-graph proof.
+
+Use `code_graph` only after an exact source identifier is visible in user input,
+a search result, or source evidence. Never translate a natural-language request,
+error sentence, route description, configuration question, or feature name into
+the `symbol` field. Once a search result reveals a promotable declaration, make
+the graph the next structural observation.
 
 ## Choose one operation
 
@@ -25,7 +31,7 @@ dependency reachability, not a runtime execution trace.
 
 | Policy | Use when | Cost and constraint |
 | --- | --- | --- |
-| `fast` | First call and normal interactive navigation | Uses the latest indexed snapshot without a blocking repository validation. It may return `partial` with dirty files. A workspace with no index still requires its initial build. |
+| `fast` | First `code_search` or graph call and normal interactive navigation | Uses the latest indexed snapshot without a blocking repository validation. It may return `partial` with dirty files. A workspace with no index still requires its initial build. |
 | `balanced` | A `fast` result is `partial` and dirty files overlap the question, or current post-edit relationships are required | Flushes watcher changes and validates/reindexes before answering, so it may block. Retry once, then use the result. |
 | `strict` | Final high-consequence completeness proof when watcher coverage is unavailable or untrusted | Performs an independent repository check and is the most expensive policy. Never use it for discovery or as the first call. |
 
@@ -49,7 +55,8 @@ relationships. Never repeat an unchanged `balanced` or `strict` query.
 ## Use the narrow fallback for the actual gap
 
 - Unknown identifier, literal, route, flag, config, comment, or error text:
-  narrow `grep`/`glob` and targeted source reading.
+  use one `code_search` call, then a narrow `grep`/targeted read only if the
+  indexed result exposes no promotable declaration.
 - Alias, receiver type, override, or live diagnostic: LSP.
 - Reflection, registry, dependency injection, generated code, or dynamic
   import: source plus tests, logs, debugger, or runtime evidence.

@@ -27,6 +27,10 @@ transfer, render, lock, serialization step, or external wait that owns the
 material cost. A hot function is not necessarily the optimization boundary;
 confirm how often it runs and whether its work is avoidable.
 
+If profiling exposes only a query label, trace name, route, allocation text, or
+source fragment, call `code_search` once to locate the owning declaration. Skip
+search when the profiler already reports an exact declared symbol.
+
 After profiling exposes an exact symbol, use native `code_graph` to bound its
 structural context: `callers` for invocation sites, `callees` for delegated
 work, and `references` for dispatch/registration uses. Start at depth 1 and do
@@ -38,8 +42,7 @@ returns `partial` and a reported dirty file overlaps the question, use a
 targeted source read for a local gap or retry once with `"balanced"` when the
 relationships must be recomputed. After an edit that can change relationships,
 use `"balanced"` once before relying on the updated structure. Use `"strict"`
-only for a final,
-high-consequence completeness check when watcher coverage is unavailable or
+only for a final, high-consequence completeness check when watcher coverage is unavailable or
 untrusted; never use it for discovery.
 
 Read [references/code-graph-contract.md](references/code-graph-contract.md)

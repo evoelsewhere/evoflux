@@ -12,7 +12,8 @@ Do not load any bundled reference when this skill activates.
 ## Select one lane
 
 - **Exact-symbol lane:** the user or current source already names a function,
-  method, class, constant, or qualified symbol. Go directly to the graph gate.
+  method, class, constant, or qualified symbol. Skip `code_search` and go
+  directly to the graph gate.
 - **Unknown-root lane:** the request names behavior, UI text, a route, flag,
   configuration key, event, or runtime effect. Discover one source anchor
   before using the graph. Never pass the request prose itself as `symbol`.
@@ -28,11 +29,11 @@ Apply this control flow literally:
 if the request names an exact declared symbol:
     code_graph(exact_symbol, smallest_operation)
 else:
-    result = one_literal_discovery(observed_request_artifact)
+    result = code_search(observed_request_artifact, freshness_policy="fast")
     if result shows a declared symbol tied to the behavior:
         code_graph(that_symbol, smallest_operation)
     else:
-        read_only_the_matching_range_needed_to_reveal_a_declared_symbol
+        use_one_narrow_literal_search_or_read_for_the_reported_gap
         code_graph(that_symbol, smallest_operation)
 ```
 
@@ -71,14 +72,15 @@ independent deliverables that require coordination.
 
 ### 2. DISCOVER — unknown-root lane only
 
-Use one literal search for the most stable artifact visible in the request:
+Use `code_search` once with the most stable artifact visible in the request:
 exact UI text, route, serialized field, configuration key, event name, tag,
 registration key, or error text. Inspect only enough surrounding source to
 connect a result to the requested behavior.
 
 Search the observed spelling first. Do not combine guessed spelling variants or
-run parallel broad searches for the feature name and mode name. A second
-discovery call must be narrowed by a concrete result from the first.
+run parallel discovery calls for the feature name and mode name. If the index
+returns no promotable result, use one narrow `grep` or targeted read driven by
+that gap; do not repeat the same indexed query unchanged.
 
 Promote a result to an **anchor** only when source shows that it participates in
 the behavior through an assignment, branch, call, registration, serialization,
@@ -117,8 +119,7 @@ returns `partial` and a reported dirty file overlaps the question, use a
 targeted source read for a local gap or retry once with `"balanced"` when the
 relationships must be recomputed. After an edit that can change relationships,
 use `"balanced"` once before relying on the updated structure. Use `"strict"`
-only for a final,
-high-consequence completeness check when watcher coverage is unavailable or
+only for a final, high-consequence completeness check when watcher coverage is unavailable or
 untrusted; never use it for discovery.
 
 Start at depth 1. Use `impact` or a greater depth only for an explicitly
@@ -155,7 +156,7 @@ Stop when every required stop fact has bounded evidence. Before answering:
 For “find the logic that enables WebBridge,” a valid trajectory is:
 
 ```text
-literal discovery of "webbridge_enabled"
+code_search(query="webbridge_enabled")
   -> source ties WEBBRIDGE_SESSION_TAG to the request handler
   -> code_graph(symbol="WEBBRIDGE_SESSION_TAG", operation="references")
   -> targeted reads for the returned branch conditions

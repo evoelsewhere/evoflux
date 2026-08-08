@@ -19,6 +19,11 @@ Do not load bundled references when this skill activates.
 3. Trace affected producers, callers, consumers, persistence, asynchronous
    work, and independently deployed dependents where behavior can propagate.
 
+When a changed behavior cannot yet be tied to an exact declaration, call
+`code_search` once with a stable changed literal, interface term, or code
+fragment. Use the result only to select an exact symbol; skip search when the
+diff already names it.
+
 For exact changed symbols, use native `code_graph` to verify direct
 `callers`/`references`, outbound `callees`, and bounded `impact` rather than
 guessing propagation from filenames. Start at depth 1, disambiguate duplicate
@@ -32,8 +37,7 @@ returns `partial` and a reported dirty file overlaps the question, use a
 targeted source read for a local gap or retry once with `"balanced"` when the
 relationships must be recomputed. After an edit that can change relationships,
 use `"balanced"` once before relying on the updated structure. Use `"strict"`
-only for a final,
-high-consequence completeness check when watcher coverage is unavailable or
+only for a final, high-consequence completeness check when watcher coverage is unavailable or
 untrusted; never use it for discovery.
 
 Read [references/code-graph-contract.md](references/code-graph-contract.md)
