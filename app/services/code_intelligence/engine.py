@@ -272,6 +272,7 @@ async def prepare_scope(
             workspace_id=scope.workspace_id,
             root_path=str(scope.root),
             incremental=True,
+            changed_paths=sorted(dirty),
         )
         states = await _states(db, scope.workspace_id)
         dirty = await asyncio.to_thread(_index_dirty_paths, scope, states, changed)

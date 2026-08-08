@@ -239,6 +239,27 @@ def hash_workspace_files(
     }
 
 
+def hash_named_workspace_files(
+    root: str | Path,
+    rel_paths: Iterable[str],
+    *,
+    registry: ParserRegistry | None = None,
+) -> dict[str, str]:
+    """Return fingerprints for explicitly named source files that still exist.
+
+    Missing, ignored, oversized, unsupported, and unsafe paths are omitted.
+    The reconciliation layer compares that omission with prior keyed state to
+    turn watcher delete/rename events into precise deletes without walking the
+    rest of the repository.
+    """
+    registry = registry or default_registry()
+    root_path = Path(root).expanduser().resolve()
+    return {
+        rel: content_hash(source)
+        for rel, source in _iter_named_files(root_path, rel_paths, registry)
+    }
+
+
 def _build_index(
     files_iter: Iterator[tuple[str, bytes]],
     registry: ParserRegistry,
