@@ -25,7 +25,7 @@ def test_app_import_keeps_optional_runtime_modules_lazy() -> None:
                 "print('app.agent.agent_loop.core' in sys.modules); "
                 "print('app.agent.tools.builtin.browser_use_tool' in sys.modules); "
                 "print('app.agent.tools.builtin.webbridge_tool' in sys.modules); "
-                "print('app.services.code_graph.indexer' in sys.modules)"
+                "print('app.services.code_index.project' in sys.modules)"
             ),
         ],
         capture_output=True,
@@ -40,7 +40,7 @@ def test_app_import_keeps_optional_runtime_modules_lazy() -> None:
         "False",
         "False",
         "False",
-        "False",
+        "True",
     ]
 
 
@@ -80,7 +80,6 @@ def slim_lifespan(monkeypatch: pytest.MonkeyPatch):
     # Mock runtime_settings referenced by lifespan
     rt_settings = SimpleNamespace(
         dream=SimpleNamespace(enabled=False),
-        code_graph=SimpleNamespace(watch_enabled=False),
     )
     monkeypatch.setattr(
         app_module, "load_runtime_settings", Mock(return_value=rt_settings)
@@ -123,7 +122,6 @@ async def test_lifespan_starts_configured_services(
         Mock(
             return_value=SimpleNamespace(
                 dream=SimpleNamespace(enabled=True),
-                code_graph=SimpleNamespace(watch_enabled=False),
             )
         ),
     )
