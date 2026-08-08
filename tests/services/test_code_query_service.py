@@ -80,6 +80,55 @@ async def test_native_qualified_separator_resolves_dotted_index_symbol(
 
 
 @pytest.mark.asyncio
+async def test_module_qualified_symbol_resolves_lexical_python_suffix(
+    setup_db, tmp_path: Path
+) -> None:
+    from app.core.db import async_session_factory
+    from app.services.code_graph_navigation_service import navigate_code_graph
+
+    package = tmp_path / "app" / "services"
+    package.mkdir(parents=True)
+    (package / "billing.py").write_text(
+        "def calculate_total():\n    return 42\n", encoding="utf-8"
+    )
+    workspace_id = await _index(tmp_path)
+
+    async with async_session_factory() as db:
+        result = await navigate_code_graph(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            symbol="app.services.billing.calculate_total",
+            freshness_policy="fast",
+        )
+
+    assert [item.node.name for item in result.matches] == ["calculate_total"]
+    assert result.matches[0].resolution == "suffix"
+
+
+@pytest.mark.asyncio
+async def test_nonexistent_lexical_qualifier_does_not_fall_back_to_bare_name(
+    setup_db, tmp_path: Path
+) -> None:
+    from app.core.db import async_session_factory
+    from app.services.code_graph_navigation_service import navigate_code_graph
+
+    (tmp_path / "worker.py").write_text("def run():\n    return 1\n", encoding="utf-8")
+    workspace_id = await _index(tmp_path)
+
+    async with async_session_factory() as db:
+        result = await navigate_code_graph(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            symbol="MissingWorker.run",
+            freshness_policy="fast",
+        )
+
+    assert result.matches == []
+
+
+@pytest.mark.asyncio
 async def test_callers_returns_exact_callsite_instead_of_search_hits(
     setup_db, tmp_path: Path
 ) -> None:

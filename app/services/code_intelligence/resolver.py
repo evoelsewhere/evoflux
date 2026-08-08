@@ -51,9 +51,12 @@ def _as_match(
     *,
     symbol: str,
     suggestion: bool = False,
+    suffix: bool = False,
 ) -> SymbolMatch:
     if suggestion:
         resolution = "suggestion"
+    elif suffix:
+        resolution = "suffix"
     elif node.qualified_name == symbol:
         resolution = "qualified"
     elif node.name == symbol:
@@ -61,6 +64,42 @@ def _as_match(
     else:
         resolution = "casefold"
     return SymbolMatch(node=node, scope=scope, resolution=resolution)
+
+
+def _qualified_suffixes(symbol: str) -> tuple[str, ...]:
+    """Storage-compatible suffixes, longest and most specific first.
+
+    Some parsers can derive a package/namespace from source (Java/C#), while
+    others intentionally store only the lexical symbol path (Python, Go,
+    JavaScript). An agent may still know the full module path. Suffix matching
+    bridges those representations deterministically without fuzzy retrieval.
+    """
+    parts = [part for part in symbol.split(".") if part]
+    if len(parts) < 2:
+        return ()
+    return tuple(".".join(parts[index:]) for index in range(1, len(parts)))
+
+
+def _module_matches_raw_suffix(
+    node: CodeNode, *, requested: str, candidate: str
+) -> bool:
+    """Guard a bare-name suffix with evidence from the node's source path."""
+    if "." in candidate:
+        return True
+    dropped = requested[: -len(candidate)].rstrip(".").casefold()
+    if not dropped:
+        return False
+    module_path = node.file_path.replace("\\", "/")
+    if "." in module_path.rsplit("/", 1)[-1]:
+        module_path = module_path.rsplit(".", 1)[0]
+    module = module_path.replace("/", ".").strip(".").casefold()
+    if module.endswith(".__init__"):
+        module = module.removesuffix(".__init__")
+    return (
+        module == dropped
+        or module.endswith(f".{dropped}")
+        or dropped.endswith(f".{module}")
+    )
 
 
 async def resolve_symbol(
@@ -135,6 +174,96 @@ async def resolve_symbol(
             or node.qualified_name.casefold() == folded
         ]
 
+    suffix_match = False
+    if not strongest:
+        suffixes = _qualified_suffixes(canonical_symbol)
+        if suffixes:
+            suffix_rows = list(
+                (
+                    await db.exec(
+                        select(CodeNode).where(
+                            col(CodeNode.workspace_id).in_(workspace_ids),
+                            CodeNode.kind != "file",
+                            or_(
+                                col(CodeNode.qualified_name).in_(suffixes),
+                                CodeNode.name == suffixes[-1],
+                            ),
+                        )
+                    )
+                ).all()
+            )
+            suffix_rows = [
+                node for node in suffix_rows if _path_matches(node.file_path, path)
+            ]
+            for candidate in suffixes:
+                strongest = [
+                    node
+                    for node in suffix_rows
+                    if node.qualified_name == candidate
+                    and _module_matches_raw_suffix(
+                        node, requested=canonical_symbol, candidate=candidate
+                    )
+                ]
+                if strongest:
+                    break
+            if not strongest:
+                strongest = [
+                    node
+                    for node in suffix_rows
+                    if node.name == suffixes[-1]
+                    and _module_matches_raw_suffix(
+                        node, requested=canonical_symbol, candidate=suffixes[-1]
+                    )
+                ]
+            suffix_match = bool(strongest)
+
+            # Case-insensitive suffix resolution remains a last resort and is
+            # only paid for when every indexed exact candidate failed.
+            if not strongest:
+                folded_suffixes = tuple(item.casefold() for item in suffixes)
+                suffix_rows = list(
+                    (
+                        await db.exec(
+                            select(CodeNode).where(
+                                col(CodeNode.workspace_id).in_(workspace_ids),
+                                CodeNode.kind != "file",
+                                or_(
+                                    sa.func.lower(CodeNode.qualified_name).in_(
+                                        folded_suffixes
+                                    ),
+                                    sa.func.lower(CodeNode.name) == folded_suffixes[-1],
+                                ),
+                            )
+                        )
+                    ).all()
+                )
+                suffix_rows = [
+                    node for node in suffix_rows if _path_matches(node.file_path, path)
+                ]
+                for candidate in folded_suffixes:
+                    strongest = [
+                        node
+                        for node in suffix_rows
+                        if node.qualified_name.casefold() == candidate
+                        and _module_matches_raw_suffix(
+                            node, requested=canonical_symbol, candidate=candidate
+                        )
+                    ]
+                    if strongest:
+                        break
+                if not strongest:
+                    strongest = [
+                        node
+                        for node in suffix_rows
+                        if node.name.casefold() == folded_suffixes[-1]
+                        and _module_matches_raw_suffix(
+                            node,
+                            requested=canonical_symbol,
+                            candidate=folded_suffixes[-1],
+                        )
+                    ]
+                suffix_match = bool(strongest)
+
     by_workspace = {scope.workspace_id: scope for scope in selected}
     strongest.sort(
         key=lambda node: (
@@ -146,7 +275,12 @@ async def resolve_symbol(
     )
     total = len(strongest)
     matches = tuple(
-        _as_match(node, by_workspace[node.workspace_id], symbol=canonical_symbol)
+        _as_match(
+            node,
+            by_workspace[node.workspace_id],
+            symbol=canonical_symbol,
+            suffix=suffix_match,
+        )
         for node in strongest[:match_limit]
     )
     if matches:
@@ -155,7 +289,8 @@ async def resolve_symbol(
     # Suggestions are not traversal roots.  They exist only to let the agent
     # correct a partial or misspelled identifier without turning the graph into
     # natural-language retrieval.
-    escaped = folded.replace("%", "\\%").replace("_", "\\_")
+    suggestion_term = canonical_symbol.rsplit(".", 1)[-1].casefold()
+    escaped = suggestion_term.replace("%", "\\%").replace("_", "\\_")
     suggestion_rows = list(
         (
             await db.exec(
@@ -179,7 +314,7 @@ async def resolve_symbol(
     ]
     suggestion_rows.sort(
         key=lambda node: (
-            0 if node.name.casefold().startswith(folded) else 1,
+            0 if node.name.casefold().startswith(suggestion_term) else 1,
             len(node.name),
             by_workspace[node.workspace_id].label.casefold(),
             node.file_path,

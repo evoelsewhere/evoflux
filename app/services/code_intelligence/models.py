@@ -51,7 +51,7 @@ class SymbolMatch:
 
     node: CodeNode
     scope: WorkspaceScope
-    resolution: Literal["qualified", "name", "casefold", "suggestion"]
+    resolution: Literal["qualified", "name", "suffix", "casefold", "suggestion"]
     source: str | None = None
 
     @property
