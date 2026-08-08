@@ -16,7 +16,7 @@ symbol, in three tiers of increasing cost:
     2. Java fully-qualified-name matching.
     3. manifest-identity matching (package.json/pyproject.toml/go.mod/
        Cargo.toml) for the languages that already extract imports.
-  Tier B — FTS5 lexical matching (``cross_repo_llm.py``) for whatever Tier A
+  Tier B — FTS5 lexical matching (``cross_repo_lexical.py``) for whatever Tier A
     leaves unresolved.
 """
 
@@ -62,14 +62,6 @@ METHOD_STATIC_MANIFEST_PACKAGE = "static_manifest_package"
 # this is what makes a rejection survive the source file being reindexed
 # again (otherwise it would be wiped and recreated as "unresolved").
 METHOD_MANUAL_REJECT = "manual_reject"
-# No longer produced (the embedding layer was removed in favor of FTS5
-# lexical search — see cross_repo_llm.py) — kept only so historical
-# CrossRepoEdge rows with this value still deserialize/display correctly.
-METHOD_EMBEDDING = "embedding"
-# No longer produced (the LLM fallback layer was removed in favor of pure
-# FTS5 lexical search — see cross_repo_llm.py) — kept only so historical
-# CrossRepoEdge rows with this value still deserialize/display correctly.
-METHOD_LLM = "llm"
 METHOD_LEXICAL = "lexical"
 
 

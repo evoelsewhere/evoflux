@@ -1,14 +1,10 @@
-"""Tier B cross-repo resolution: FTS5 lexical matching only.
+"""Tier B cross-repo resolution through deterministic FTS5 lexical matching.
 
 Runs only on rows Tier A (``cross_repo.py``) left unresolved. Each reference is
 narrowed with an FTS5 query against every sibling repo's existing full-text
 index (built during normal reindexing) and resolved when exactly one candidate
 matches the target name or qualified reference. The remainder stays unresolved
-for a future pass.
-
-This module intentionally does not call an LLM: the embedding/vector layer was
-removed in favor of free lexical search, and the LLM fallback was dropped to
-keep cross-repo resolution deterministic, local, and free of provider latency.
+for a future pass. Resolution is deterministic, local, and provider-free.
 """
 
 from __future__ import annotations
@@ -86,7 +82,7 @@ async def resolve_project_tier_b(
         _tier_b_cursor.pop(project_id, None)
     else:
         offset = _tier_b_cursor.get(project_id, 0) % len(all_rows)
-        rows = (all_rows[offset:] + all_rows[:offset])[: cfg.max_rows_per_run]
+        rows = [*all_rows[offset:], *all_rows[:offset]][: cfg.max_rows_per_run]
         capped = len(all_rows) - len(rows)
         _tier_b_cursor[project_id] = (offset + len(rows)) % len(all_rows)
         logger.info(
@@ -110,9 +106,9 @@ async def resolve_project_tier_b(
             if not others or db_path is None:
                 continue
 
-            # Deliberately omit row.kind here (unlike the old embedding query) —
-            # FTS5 ANDs every token together, so an extra word like "import"
-            # could zero out real matches that don't literally contain it.
+            # Deliberately omit row.kind: FTS5 ANDs every token together, so an
+            # extra word like "import" could zero out real matches that don't
+            # literally contain it.
             query_text = f"{row.raw_reference} {row.dst_name_hint or ''}".strip()
             if not query_text:
                 continue

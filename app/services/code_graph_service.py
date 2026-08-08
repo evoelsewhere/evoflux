@@ -705,38 +705,6 @@ def _resolve_incremental_dst(dst_key: str, key_to_id: dict[str, UUID]) -> UUID |
         return None
 
 
-async def _rebuild_fts(
-    *,
-    workspace_id: UUID,
-    index: WorkspaceIndex,
-    key_to_id: dict[str, UUID],
-) -> None:
-    """Rebuild the FTS5 index for a workspace after a full reindex."""
-    db_path = current_sqlite_path()
-    if db_path is None:
-        return
-    rows: list[fts.FtsRow] = [
-        (
-            str(key_to_id[node.key]),
-            node.name,
-            node.qualified_name,
-            node.file_path,
-            node.signature or "",
-            node.docstring or "",
-            node.kind,
-            node.language,
-        )
-        for node in index.nodes
-        if node.key in key_to_id
-    ]
-    try:
-        await _run_in_indexer(
-            fts.rebuild_workspace_fts, db_path, str(workspace_id), rows
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("code_graph fts rebuild failed err={}", exc)
-
-
 async def _update_fts(
     *,
     workspace_id: UUID,

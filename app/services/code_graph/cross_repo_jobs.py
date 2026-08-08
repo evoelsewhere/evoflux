@@ -22,7 +22,7 @@ from loguru import logger
 
 from app.core.db import DbFactory, resolve_db_factory
 from app.services.code_graph.cross_repo import CrossRepoResolveStats, resolve_project
-from app.services.code_graph.cross_repo_llm import resolve_project_tier_b
+from app.services.code_graph.cross_repo_lexical import resolve_project_tier_b
 from app.services.code_graph.jobs import index_jobs
 
 
