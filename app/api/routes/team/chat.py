@@ -992,7 +992,6 @@ async def resolve_team_session(
     else:
         workspace = _validate_workspace_or_422(workspace)
 
-    watch_targets: list[str] = []
     # Normalise to a sorted unique list so tag-set equality is a plain array
     # comparison (see get_latest_top_level_session); empty stays NULL on write.
     session_tags = sorted(set(body.tags))
@@ -1048,104 +1047,15 @@ async def resolve_team_session(
                     managed=True,
                     hidden=False,
                 )
-                watch_targets = [managed_source, workspace]
             else:
                 await upsert_coding_workspace(
                     db, path=workspace, kind="repo", hidden=False
                 )
-                watch_targets = [workspace]
-            # A project session can touch every repo in the project, not just
-            # the primary one it was resolved with — watch all of them.
-            if project_id is not None:
-                watch_targets = paths
         await db.flush()
         await db.refresh(session)
 
-    if watch_targets:
-        # Lazily extend the code-graph watcher to this workspace/project the
-        # first time someone actually opens it — see watcher.py's docstring
-        # for why this isn't done eagerly for every registered workspace.
-        from app.services.code_graph.watcher import _global_watcher
-
-        if _global_watcher is not None:
-            try:
-                await _global_watcher.watch_paths(watch_targets)
-            except Exception as exc:  # noqa: BLE001 — best-effort, never blocks session resolve
-                logger.warning("code_graph_watch_paths_failed err={}", exc)
-
-        # Build the code index in the background the first time a
-        # never-indexed workspace is opened. Symbol graph navigation remains
-        # unavailable until the first snapshot exists; the watcher only reacts
-        # to file *changes*, never to the initial open.
-        await _kick_auto_index(db, watch_targets, project_id=project_id)
-
     data = SessionResponse.model_validate(session).model_dump()
     return TeamSessionResolveResponse(**data, created=created)
-
-
-async def _kick_auto_index(
-    db, paths: list[str], *, project_id: UUID | None = None
-) -> None:
-    """Start a background code-graph build for never-indexed workspaces.
-
-    Best-effort: failures are logged and never block session resolve. The
-    job registry dedupes concurrent starts per workspace.
-    """
-    from app.core.runtime_settings import load_runtime_settings
-    from app.services import code_graph_service as svc
-    from app.services.code_graph.cross_repo_jobs import cross_repo_jobs
-    from app.services.code_graph.jobs import index_jobs
-
-    try:
-        if not load_runtime_settings().code_graph.auto_index_enabled:
-            return
-        workspace_ids: list[UUID] = []
-        index_activity = False
-        for path in dict.fromkeys(paths):
-            workspace_id = await svc.resolve_workspace_id(db, path=path)
-            if workspace_id is None:
-                continue
-            workspace_ids.append(workspace_id)
-            counts = await svc.get_index_status(db, workspace_id=workspace_id)
-            needs_project_bootstrap = bool(
-                project_id is not None
-                and counts["files"] > 0
-                and await svc.requires_project_graph_bootstrap(
-                    db,
-                    project_id=project_id,
-                    workspace_id=workspace_id,
-                )
-            )
-            needs_index = counts["files"] == 0 or needs_project_bootstrap
-            if index_jobs.is_running(workspace_id):
-                index_activity = True
-                continue
-            if not needs_index:
-                continue
-            _, started = await index_jobs.start(
-                workspace_id=workspace_id,
-                root_path=path,
-                languages=None,
-                # Existing standalone indexes need one full rebuild after the
-                # repo joins a project so unchanged files emit project-scoped
-                # cross-repo candidates. A never-indexed repo can use the
-                # normal incremental path (all files are new).
-                full=needs_project_bootstrap,
-            )
-            if started:
-                index_activity = True
-                logger.info("code_graph_auto_index_started workspace={}", path)
-
-        # First-open project indexing is one logical operation: resolve only
-        # after all member jobs settle so links are never matched against a
-        # half-built sibling graph.
-        if project_id is not None and len(workspace_ids) > 1 and index_activity:
-            await cross_repo_jobs.start(
-                project_id=project_id,
-                wait_for_workspaces=workspace_ids,
-            )
-    except Exception as exc:  # noqa: BLE001 — best-effort, never blocks session resolve
-        logger.warning("code_graph_auto_index_failed err={}", exc)
 
 
 @router.patch("/workspace/visibility")

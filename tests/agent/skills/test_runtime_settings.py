@@ -32,7 +32,7 @@ def _write_skill(root: Path, name: str) -> Path:
         "dependencies:\n"
         "  tools:\n"
         "    - type: builtin\n"
-        "      value: code_graph\n"
+        "      value: code_context\n"
     )
     (skill_dir / ".evoflux.json").write_text('{"modes":["work"]}\n')
     return skill_dir
@@ -60,7 +60,7 @@ def test_runtime_override_is_final_layer_and_content_digest_invalidates_cache(
     assert inherited.modes == ("work",)
     assert inherited.allow_implicit_invocation is False
     assert inherited.user_invocable is False
-    assert inherited.dependencies == ({"type": "builtin", "value": "code_graph"},)
+    assert inherited.dependencies == ({"type": "builtin", "value": "code_context"},)
 
     write_skill_runtime_settings(
         inherited.settings_id,

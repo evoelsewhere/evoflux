@@ -208,17 +208,17 @@ class TestDefaultDeferredTools:
             assert 10 <= len(eager) <= 16
             expected = set(expected_core)
             if mode == "coding":
-                expected.add("code_graph")
+                expected.add("code_context")
             assert eager == expected
 
-    def test_work_mode_excludes_every_code_graph_tool(self):
+    def test_work_mode_excludes_every_code_context_tool(self):
         from app.agent.builtin_prompts import tier_tools
         from app.agent.loader import _default_tool_registry
 
         registry = _default_tool_registry()
         graph_tools = {
-            "code_graph",
-            "code_search",
+            "code_context",
+            "code_context",
         }
 
         work_tools = set(tier_tools(registry, mode="work", role="lead"))
@@ -249,7 +249,7 @@ class TestDefaultDeferredTools:
 
         assert eager == {
             "ask_user",
-            "code_graph",
+            "code_context",
             "edit",
             "glob",
             "grep",

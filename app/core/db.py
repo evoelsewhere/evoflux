@@ -60,13 +60,8 @@ if _is_sqlite:
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
-        # WAL still serialises writers — without this, a second writer that
-        # arrives while another connection's transaction is mid-flight gets
-        # an immediate "database is locked" instead of waiting for the lock
-        # to free up. Bites exactly when it sounds like it would: reindexing
-        # every repo in a project concurrently (see CrossRepoLinksPanel's
-        # Promise.all) opens one writer connection per workspace against the
-        # same file.
+        # WAL still serialises writers. Without this, a second application-DB
+        # transaction can fail immediately instead of waiting for the lock.
         cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
@@ -107,13 +102,10 @@ async def sqlite_write_guard() -> AsyncGenerator[None, None]:
     """Serialize the caller's DB writes against every other in-process
     SQLite writer.
 
-    SQLite allows exactly one writer at a time. Reindexing several repos
-    concurrently (one click on a multi-repo project), a cross-repo resolve
-    pass, and the file watcher's own incremental reindex can all be mid
-    write-transaction at once — wrap whichever of those spans actually
-    issues writes (deletes/inserts/updates through the final ``commit()``)
-    in this guard so they queue instead of colliding. No-op on
-    Postgres/MySQL, which serialize concurrent writers natively.
+    SQLite allows exactly one writer at a time. Wrap application-database
+    spans that issue writes through the final ``commit()`` in this guard so
+    they queue instead of colliding. Repository code indexes use independent
+    managed SQLite targets and never enter this guard. No-op on Postgres/MySQL.
     """
     if not _is_sqlite:
         yield
@@ -131,10 +123,8 @@ DbFactory = async_sessionmaker[AsyncSession]
 def current_sqlite_path() -> str | None:
     """Return the on-disk path of the active SQLite database, or ``None``.
 
-    Reads the *live* module-level ``engine`` (tests rebind it to a temp file),
-    so callers that open their own raw connection — e.g. the code-graph FTS5
-    store — target the same database the ORM uses. Returns ``None`` for
-    non-SQLite engines or in-memory databases.
+    Reads the *live* module-level ``engine`` (tests rebind it to a temp file).
+    Returns ``None`` for non-SQLite engines or in-memory databases.
     """
     if engine.url.get_backend_name() != "sqlite":
         return None

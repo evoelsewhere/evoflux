@@ -33,7 +33,7 @@ describe('i18n catalogs', () => {
     expect(vi.Agent).toBe('Agent')
     expect(vi.Branch).toBe('Branch')
     expect(vi.Commit).toBe('Commit')
-    expect(vi.Pipeline).toBe('Pipeline')
+    expect(vi.Model).toBe('Model')
     expect(vi['Pop stash']).toBe('Áp dụng và xóa stash')
     expect(vi['[role="menuitem"]']).toBe(en['[role="menuitem"]'])
 
