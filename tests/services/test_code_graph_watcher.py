@@ -156,6 +156,7 @@ async def test_event_during_background_index_is_retried(monkeypatch) -> None:
     workspace_id = uuid4()
     job_running = True
     reindexed = asyncio.Event()
+    calls: list[dict] = []
 
     class _Jobs:
         def is_running(self, candidate) -> bool:
@@ -166,6 +167,7 @@ async def test_event_during_background_index_is_retried(monkeypatch) -> None:
         return workspace_id
 
     async def reindex_workspace(db, **kwargs):
+        calls.append(kwargs)
         reindexed.set()
         return ReindexStats(0, 0, 0, 0, [])
 
@@ -173,8 +175,43 @@ async def test_event_during_background_index_is_retried(monkeypatch) -> None:
     monkeypatch.setattr(watcher_module, "resolve_workspace_id", resolve_workspace_id)
     monkeypatch.setattr(watcher_module, "reindex_workspace", reindex_workspace)
 
+    watcher._dirty_files["/repo"] = {"main.py"}
     await watcher._reindex("/repo")
     assert not reindexed.is_set()
+    assert watcher.dirty_paths("/repo") == frozenset({"main.py"})
 
     job_running = False
     await asyncio.wait_for(reindexed.wait(), timeout=1)
+    assert calls[0]["changed_paths"] == ["main.py"]
+
+
+@pytest.mark.asyncio
+async def test_failed_metadata_reindex_restores_full_request(monkeypatch) -> None:
+    from app.services.code_graph import watcher as watcher_module
+
+    watcher = CodeGraphWatcher(db_factory=_fake_factory)
+    workspace_id = uuid4()
+
+    async def resolve_workspace_id(db, *, path):
+        return workspace_id
+
+    async def invalidate_workspace_resolutions(db, *, workspace_id):
+        return None
+
+    async def fail_reindex(db, **kwargs):
+        raise RuntimeError("index failed")
+
+    monkeypatch.setattr(watcher_module, "resolve_workspace_id", resolve_workspace_id)
+    monkeypatch.setattr(
+        watcher_module,
+        "invalidate_workspace_resolutions",
+        invalidate_workspace_resolutions,
+    )
+    monkeypatch.setattr(watcher_module, "reindex_workspace", fail_reindex)
+    watcher._dirty_files["/repo"] = {"tsconfig.json"}
+    watcher._full_reindex_pending.add("/repo")
+
+    await watcher._reindex("/repo")
+
+    assert watcher.dirty_paths("/repo") == frozenset({"tsconfig.json"})
+    assert "/repo" in watcher._full_reindex_pending

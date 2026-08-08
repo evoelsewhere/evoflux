@@ -237,11 +237,12 @@ class CodeGraphWatcher:
         """Synchronously bring *workspace* up to date for an imminent query.
 
         Code tools call this as a freshness barrier before reading the graph.
-        It deliberately performs an incremental hash scan even when no watcher
-        event has arrived yet: a tool call can follow a file write closely
-        enough to beat the asynchronous filesystem notification.  Pausing only
-        suppresses background work, so this explicit flush remains active while
-        an agent run has the watcher paused.
+        It uses the exact watcher journal when available. If no event has
+        arrived yet, it deliberately falls back to an incremental workspace
+        scan: a tool call can follow a file write closely enough to beat the
+        asynchronous filesystem notification. Pausing only suppresses
+        background work, so this explicit flush remains active while an agent
+        run has the watcher paused.
 
         A pending debounce is folded into this pass.  If another watcher pass
         or an API index job is already running, wait for its queued follow-up
@@ -411,6 +412,7 @@ class CodeGraphWatcher:
             while True:
                 self._reindex_pending.discard(workspace)
                 journal_batch = self._dirty_files.pop(workspace, set())
+                full_reindex = False
                 try:
                     async with self._db_factory() as db:
                         workspace_id = await resolve_workspace_id(db, path=workspace)
@@ -421,6 +423,11 @@ class CodeGraphWatcher:
                             logger.debug(
                                 "code_graph_watcher_wait_job_running workspace={}",
                                 workspace,
+                            )
+                            # Keep the exact batch: the retry can stay scoped
+                            # instead of degrading to a repository-wide scan.
+                            self._dirty_files.setdefault(workspace, set()).update(
+                                journal_batch
                             )
                             self._debounce_tasks[workspace] = asyncio.create_task(
                                 self._retry_after_index_job(workspace, workspace_id)
@@ -438,6 +445,11 @@ class CodeGraphWatcher:
                             workspace_id=workspace_id,
                             root_path=workspace,
                             incremental=not full_reindex,
+                            changed_paths=(
+                                sorted(journal_batch)
+                                if journal_batch and not full_reindex
+                                else None
+                            ),
                         )
 
                         # Chain into cross-repo resolve for every multi-repo
@@ -469,6 +481,8 @@ class CodeGraphWatcher:
                     )
                 except Exception as exc:  # noqa: BLE001 — one bad reindex shouldn't stop watching
                     self._dirty_files.setdefault(workspace, set()).update(journal_batch)
+                    if full_reindex:
+                        self._full_reindex_pending.add(workspace)
                     logger.error(
                         "code_graph_watcher_reindex_failed workspace={} err={}",
                         workspace,
