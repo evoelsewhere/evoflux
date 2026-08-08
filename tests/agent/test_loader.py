@@ -192,9 +192,9 @@ def test_default_tool_registry_keys():
     }
     assert expected.issubset(registry.keys())
     assert "code_graph" in registry
+    assert "code_search" in registry
     assert {
         "code_overview",
-        "code_search",
         "code_path",
     }.isdisjoint(registry)
     assert {"code_symbol", "code_neighbors"}.isdisjoint(registry)

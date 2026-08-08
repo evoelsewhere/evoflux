@@ -292,6 +292,7 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.tools.builtin.xlsx_artifact import xlsx_artifact
     from app.agent.tools.builtin.wiki_search import wiki_search
     from app.agent.tools.builtin.code_graph import code_graph
+    from app.agent.tools.builtin.code_search import code_search
     from app.agent.tools.builtin.plan import enter_plan_mode, exit_plan_mode
     from app.agent.tools.builtin.ask_user import ask_user
     from app.agent.tools.builtin.process import process_tool
@@ -338,6 +339,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         "memory_search": memory_search,
         "note": note_tool,
         "code_graph": code_graph,
+        "code_search": code_search,
         "enter_plan_mode": enter_plan_mode,
         "exit_plan_mode": exit_plan_mode,
         "ask_user": ask_user,
