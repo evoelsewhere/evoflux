@@ -486,7 +486,11 @@ async def test_reindex_workspace_and_queries(setup_db, tmp_path: Path):
 @pytest.mark.asyncio
 async def test_reindex_workspace_is_idempotent(setup_db, tmp_path: Path):
     from app.core.db import async_session_factory
-    from app.services.code_graph_service import get_index_status, reindex_workspace
+    from app.services.code_graph_service import (
+        find_nodes_by_name,
+        get_index_status,
+        reindex_workspace,
+    )
     from app.services.coding_workspace_service import upsert_coding_workspace
 
     (tmp_path / "m.py").write_text("def f():\n    pass\n", encoding="utf-8")
@@ -505,12 +509,21 @@ async def test_reindex_workspace_is_idempotent(setup_db, tmp_path: Path):
             return stats.node_count
 
     first = await _reindex()
+    async with async_session_factory() as db:
+        node_id = (
+            await find_nodes_by_name(db, workspace_id=workspace_id, name="f")
+        )[0].id
+
     second = await _reindex()
     assert first == second
 
     async with async_session_factory() as db:
         status = await get_index_status(db, workspace_id=workspace_id)
+        refreshed_id = (
+            await find_nodes_by_name(db, workspace_id=workspace_id, name="f")
+        )[0].id
     assert status["nodes"] == second
+    assert refreshed_id == node_id
 
 
 # ── Agent tools (P2) ──────────────────────────────────────────────────────────
@@ -585,7 +598,6 @@ async def test_incremental_reindex_adds_symbol_and_preserves_node_ids(
             edge_kind=EDGE_CALLS,
         )
         assert any(node.name == "caller" for _, node in incoming)
-
     # Edit a.py: change foo's body (still defined) and add a new function.
     (tmp_path / "a.py").write_text(
         "def foo():\n    return 2\n\n\ndef bar():\n    return 0\n", encoding="utf-8"
@@ -619,6 +631,51 @@ async def test_incremental_reindex_adds_symbol_and_preserves_node_ids(
             edge_kind=EDGE_CALLS,
         )
         assert any(node.name == "caller" for _, node in incoming)
+
+
+@pytest.mark.asyncio
+async def test_incremental_reindex_recreates_ambiguous_edges(setup_db, tmp_path: Path):
+    import json
+
+    from sqlmodel import select
+
+    from app.core.db import async_session_factory
+    from app.models.code_graph import CodeAmbiguousEdge
+    from app.services.code_graph_service import reindex_workspace
+
+    (tmp_path / "a.py").write_text("def dup():\n    pass\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("def dup():\n    pass\n", encoding="utf-8")
+    caller_path = tmp_path / "caller.py"
+    caller_path.write_text("def caller():\n    dup()\n", encoding="utf-8")
+    workspace_id = await _register_and_full_index(tmp_path)
+
+    async def _ambiguous_rows():
+        async with async_session_factory() as db:
+            return (
+                await db.exec(
+                    select(CodeAmbiguousEdge).where(
+                        CodeAmbiguousEdge.workspace_id == workspace_id
+                    )
+                )
+            ).all()
+
+    before = await _ambiguous_rows()
+    assert len(before) == 1
+    assert len(json.loads(before[0].candidate_node_ids)) == 2
+
+    caller_path.write_text(
+        "def caller():\n    # shifted call site\n    dup()\n", encoding="utf-8"
+    )
+    async with async_session_factory() as db:
+        await reindex_workspace(
+            db, workspace_id=workspace_id, root_path=str(tmp_path), incremental=True
+        )
+        await db.commit()
+
+    after = await _ambiguous_rows()
+    assert len(after) == 1
+    assert after[0].line == 3
+    assert len(json.loads(after[0].candidate_node_ids)) == 2
 
 
 @pytest.mark.asyncio
