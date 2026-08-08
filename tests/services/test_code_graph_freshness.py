@@ -114,3 +114,49 @@ async def test_balanced_navigation_reindexes_clean_committed_source(
     assert result.dirty_files == 0
     assert [item.node.name for item in result.matches] == ["committed_handler"]
     assert "return 2" in (result.matches[0].source or "")
+
+
+@pytest.mark.asyncio
+async def test_fast_navigation_reconciles_incompatible_index_generation(
+    setup_db, tmp_path: Path
+) -> None:
+    from sqlmodel import select
+
+    from app.core.db import async_session_factory
+    from app.models.code_graph import CodeIndexState
+    from app.services.code_graph.indexer import index_format_tag
+    from app.services.code_graph_navigation_service import navigate_code_graph
+
+    (tmp_path / "service.py").write_text(
+        "def current_handler():\n    return 1\n", encoding="utf-8"
+    )
+    workspace_id = await _index(tmp_path)
+    async with async_session_factory() as db:
+        state = (
+            await db.exec(
+                select(CodeIndexState).where(
+                    CodeIndexState.workspace_id == workspace_id
+                )
+            )
+        ).one()
+        state.content_hash = "0" * 64
+        await db.commit()
+
+    async with async_session_factory() as db:
+        result = await navigate_code_graph(
+            db,
+            root_path=str(tmp_path),
+            workspace_id=workspace_id,
+            symbol="current_handler",
+            freshness_policy="fast",
+        )
+        refreshed = (
+            await db.exec(
+                select(CodeIndexState).where(
+                    CodeIndexState.workspace_id == workspace_id
+                )
+            )
+        ).one()
+
+    assert [match.node.name for match in result.matches] == ["current_handler"]
+    assert refreshed.content_hash.startswith(index_format_tag())

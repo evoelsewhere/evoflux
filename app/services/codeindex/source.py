@@ -14,7 +14,7 @@ from app.agent.tools.builtin.filesystem._ignore import (
 )
 
 MAX_SOURCE_BYTES = 1_500_000
-INDEX_FORMAT_VERSION = "9"
+INDEX_FORMAT_VERSION = "10"
 
 
 @dataclass(frozen=True, slots=True)

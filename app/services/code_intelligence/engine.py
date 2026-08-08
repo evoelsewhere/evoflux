@@ -235,6 +235,18 @@ async def prepare_scope(
             incremental=False,
         )
         states = await _states(db, scope.workspace_id)
+    # Processor/schema fingerprints are lifecycle state, not working-tree
+    # freshness. Never reuse an incompatible generation, even under the
+    # latency-first policy; this is a one-time rebuild after an index upgrade.
+    current_format_tag = index_format_tag()
+    if any(not state.content_hash.startswith(current_format_tag) for state in states):
+        await code_graph_service.reindex_workspace(
+            db,
+            workspace_id=scope.workspace_id,
+            root_path=str(scope.root),
+            incremental=True,
+        )
+        states = await _states(db, scope.workspace_id)
     if freshness_policy == "fast":
         return PreparedScope(scope, states, watcher_dirty)
 

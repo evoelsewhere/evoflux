@@ -102,3 +102,19 @@ def test_source_chunks_partition_oversized_files_at_symbol_ranges(
     assert "".join(chunk.content for chunk in chunks).replace("\n", "") == source.replace(
         "\n", ""
     )
+
+
+def test_source_snapshot_covers_every_structural_parser_extension(
+    tmp_path: Path,
+) -> None:
+    from app.services.code_graph.parsers.registry import default_registry
+
+    extensions = default_registry().supported_extensions()
+    for index, extension in enumerate(sorted(extensions)):
+        (tmp_path / f"sample_{index}{extension}").write_text(
+            "placeholder\n", encoding="utf-8"
+        )
+
+    records = list(walk_source_records(tmp_path, extensions=extensions))
+
+    assert {Path(record.key).suffix.casefold() for record in records} == set(extensions)
