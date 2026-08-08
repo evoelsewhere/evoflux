@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from app.services.code_graph.parsers.java import JavaParser
-from app.services.code_graph.types import EDGE_USES
+from app.services.code_index.parsers.java import JavaParser
+from app.services.code_index.graph_types import EDGE_USES
 
 _java = JavaParser()
 

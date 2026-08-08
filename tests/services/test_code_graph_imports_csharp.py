@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from app.services.code_graph.parsers.csharp import CSharpParser
-from app.services.code_graph.types import EDGE_IMPORTS
+from app.services.code_index.parsers.csharp import CSharpParser
+from app.services.code_index.graph_types import EDGE_IMPORTS
 
 
 def _import_names(result):

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from app.services.code_graph.parsers.csharp import CSharpParser
-from app.services.code_graph.parsers.ecmascript import TypeScriptParser
-from app.services.code_graph.parsers.go import GoParser
-from app.services.code_graph.parsers.java import JavaParser
-from app.services.code_graph.parsers.lua import LuauParser
-from app.services.code_graph.parsers.python import PythonParser
-from app.services.code_graph.types import EDGE_REFERENCES
+from app.services.code_index.parsers.csharp import CSharpParser
+from app.services.code_index.parsers.ecmascript import TypeScriptParser
+from app.services.code_index.parsers.go import GoParser
+from app.services.code_index.parsers.java import JavaParser
+from app.services.code_index.parsers.lua import LuauParser
+from app.services.code_index.parsers.python import PythonParser
+from app.services.code_index.graph_types import EDGE_REFERENCES
 
 
 _py = PythonParser()

@@ -11,13 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from app.services.code_graph.parsers.registry import build_registry
-from app.services.code_graph.parsers.structural import (
+from app.services.code_index.parsers.registry import build_registry
+from app.services.code_index.parsers.structural import (
     StructuralConfig,
     StructuralParser,
     load_structural_parsers,
 )
-from app.services.code_graph.types import (
+from app.services.code_index.graph_types import (
     EDGE_CALLS,
     EDGE_CONTAINS,
     EDGE_IMPORTS,
