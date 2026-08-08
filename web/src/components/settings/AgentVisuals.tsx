@@ -5,10 +5,10 @@ import {
   RefreshCw,
 } from 'lucide-react'
 
+import { AgentLogo } from '@/components/AgentLogo'
 import { ProviderBrandIcon } from '@/components/providers/ProviderBrandIcon'
 import {
   AGENT_TEAM_VISUALS,
-  agentTeamFromName,
   type AgentTeam,
 } from '@/lib/agent-visuals'
 import { providerOf, shortModelName } from '@/lib/model-settings'
@@ -25,30 +25,7 @@ export function AgentGlyph({
   size?: 'sm' | 'md' | 'lg'
   className?: string
 }) {
-  const visual = AGENT_TEAM_VISUALS[agentTeamFromName(name)]
-  const Icon = role === 'lead' ? Crown : Bot
-  const sizes = {
-    sm: 'size-8 rounded-lg',
-    md: 'size-10 rounded-xl',
-    lg: 'size-14 rounded-2xl',
-  } as const
-  const iconSizes = { sm: 14, md: 17, lg: 22 } as const
-
-  return (
-    <span
-      className={cn(
-        'flex shrink-0 items-center justify-center border shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]',
-        visual.soft,
-        visual.border,
-        visual.accent,
-        sizes[size],
-        className,
-      )}
-      aria-hidden="true"
-    >
-      <Icon size={iconSizes[size]} strokeWidth={1.8} />
-    </span>
-  )
+  return <AgentLogo name={name} role={role} size={size} className={className} />
 }
 
 export function AgentTeamBadge({ team }: { team: AgentTeam }) {

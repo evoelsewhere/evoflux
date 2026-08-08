@@ -1,29 +1,23 @@
 /**
- * AgentChip — pill that identifies a canonical agent role.
+ * AgentChip — pill that identifies an agent with its role-specific emblem.
  *
  * Visual structure (per `.diagrams/EvoFlux-ui.pen`, components
  * EvoFluxChip / ExecutorChip / ConsultantChip / ExplorerChip):
  *
- *   [● role]
+ *   [emblem role]
  *
- * - 8×8 colored dot drawn in the role's marker color
+ * - compact role emblem with an optional overlaid status dot
  * - mono label
  * - rounded-md badge, padding 6×12, gap 8
  * - active variant: 1.2px border in role's marker color + bold (600) label in `--color-text`
  * - inactive variant: no border, 500-weight label in `--color-text-2`
- *
- * Roles map to marker tokens (NOT chip-soft tokens — the pencil deliberately
- * uses the more saturated marker palette here):
- *   EvoFlux  → mint    (--color-marker-mint)
- *   executor    → orange  (--color-marker-orange)
- *   consultant  → blue    (--color-marker-blue)
- *   explorer    → muted   (--color-text-muted)
  *
  * The chip is identity-only. For interactive variants pass an `onClick`
  * (the wrapper renders as a `<button>`); read-only variants render a `<span>`.
  */
 
 import { cva, type VariantProps } from 'class-variance-authority'
+import { AgentLogo } from '@/components/AgentLogo'
 import { cn } from '@/lib/utils'
 import type { AgentRole } from '@/lib/agent-roles'
 
@@ -36,6 +30,10 @@ const chipVariants = cva(
         executor: '',
         consultant: '',
         explorer: '',
+        debate: '',
+        coder: '',
+        architect: '',
+        custom: '',
       },
       active: {
         true: 'border font-semibold text-(--color-text)',
@@ -49,6 +47,10 @@ const chipVariants = cva(
       { role: 'executor', active: true, className: 'border-(--color-marker-orange)' },
       { role: 'consultant', active: true, className: 'border-(--color-marker-blue)' },
       { role: 'explorer', active: true, className: 'border-(--color-text-muted)' },
+      { role: 'debate', active: true, className: 'border-(--color-marker-pink)' },
+      { role: 'coder', active: true, className: 'border-(--color-violet)' },
+      { role: 'architect', active: true, className: 'border-(--color-marker-blue)' },
+      { role: 'custom', active: true, className: 'border-(--color-border-strong)' },
     ],
     defaultVariants: {
       role: 'EvoFlux',
@@ -56,13 +58,6 @@ const chipVariants = cva(
     },
   },
 )
-
-const dotColorByRole: Record<AgentRole, string> = {
-  EvoFlux: 'bg-(--color-marker-mint)',
-  executor: 'bg-(--color-marker-orange)',
-  consultant: 'bg-(--color-marker-blue)',
-  explorer: 'bg-(--color-text-muted)',
-}
 
 export interface AgentChipProps
   extends Omit<React.ComponentPropsWithoutRef<'button'>, 'role'>,
@@ -83,11 +78,16 @@ export function AgentChip({
   onClick,
   ...rest
 }: AgentChipProps) {
-  const dotClasses = cn('h-2 w-2 shrink-0 rounded-full', dotColorByRole[role], dotClassName)
+  const visibleLabel = label ?? role
   const content = (
     <>
-      <span className={dotClasses} aria-hidden="true" />
-      <span className="min-w-0 truncate">{label ?? role}</span>
+      <AgentLogo
+        name={visibleLabel}
+        role={role === 'EvoFlux' ? 'lead' : 'member'}
+        size="xs"
+        statusClassName={dotClassName}
+      />
+      <span className="min-w-0 truncate">{visibleLabel}</span>
     </>
   )
 

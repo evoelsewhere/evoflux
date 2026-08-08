@@ -19,6 +19,8 @@ if TYPE_CHECKING:
 
 _MANAGE_DESCRIPTION = (
     "Manage the live team roster and discover spawnable member blueprints. "
+    "Normal single-member assignments do not need this call: team_delegate "
+    "auto-spawns a bare blueprint when no instance is live. "
     "Use action='spawn' with blueprint names like 'executor' to create the next "
     "instance; repeat a blueprint name to create parallel instances. Use explicit "
     "handles like 'executor#1' to restore/reuse that instance's history when a "

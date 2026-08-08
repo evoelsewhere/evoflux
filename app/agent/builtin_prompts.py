@@ -406,7 +406,7 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "role": "member",
             "mode": "work",
             "description": BUILTIN_MEMBER_PROFILES["work"]["executor"]["description"],
-            "thinking_level": "low",
+            "thinking_level": "medium",
         },
         "explorer": {
             "name": "explorer",
@@ -436,7 +436,7 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "role": "member",
             "mode": "coding",
             "description": BUILTIN_MEMBER_PROFILES["coding"]["coder"]["description"],
-            "thinking_level": "low",
+            "thinking_level": "medium",
         },
         "explorer": {
             "name": "explorer",
@@ -450,7 +450,7 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "role": "member",
             "mode": "coding",
             "description": BUILTIN_MEMBER_PROFILES["coding"]["debate"]["description"],
-            "thinking_level": "medium",
+            "thinking_level": "high",
         },
         "architect": {
             "name": "architect",

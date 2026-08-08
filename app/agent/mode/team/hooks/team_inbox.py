@@ -18,8 +18,6 @@ This means a mid-run inbox message is injected exactly here:
 """
 
 from __future__ import annotations
-
-import asyncio
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -49,13 +47,7 @@ class TeamInboxHook(BaseAgentHook):
         member = self._member
         assert member._mailbox is not None
 
-        pending: list[Message] = []
-        while not member._mailbox.inbox_empty(member.name):
-            try:
-                msg = member._mailbox.receive_nowait(member.name)
-                pending.append(msg)
-            except asyncio.QueueEmpty:
-                break
+        pending: list[Message] = member._drain_midturn_inbox()
 
         if not pending:
             return None

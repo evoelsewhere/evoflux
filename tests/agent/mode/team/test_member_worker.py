@@ -203,6 +203,16 @@ async def _seed_worker_assistant(worker: TeamMember, content: str) -> None:
         await db.commit()
 
 
+async def _wait_for_activation(worker: TeamMember, timeout: float = 2.0) -> None:
+    """Wait for the callback-created activation instead of sleeping by timing."""
+    for _ in range(5):
+        await asyncio.sleep(0)
+        if worker._active_task is not None:
+            break
+    if worker._active_task is not None:
+        await asyncio.wait_for(asyncio.shield(worker._active_task), timeout=timeout)
+
+
 @pytest_asyncio.fixture
 async def team_with_db():
     """Create a team with mocked DB factory."""
@@ -518,7 +528,7 @@ class TestOnDemandActivation:
 
         msg = Message(from_agent="lead", to_agent="worker", content="[lead]: do task")
         await team.mailbox.send(to="worker", message=msg)
-        await asyncio.sleep(0.1)
+        await _wait_for_activation(team.members["worker"])
 
         assert team.members["worker"].state == "idle"
 
@@ -533,7 +543,7 @@ class TestOnDemandActivation:
 
         msg = Message(from_agent="lead", to_agent="worker", content="[lead]: task")
         await team.mailbox.send(to="worker", message=msg)
-        await asyncio.sleep(0.1)
+        await _wait_for_activation(team.members["worker"])
 
         events = [c.args[1].event for c in mock_stream_store.call_args_list]
         assert "agent_status" in events
@@ -549,7 +559,7 @@ class TestOnDemandActivation:
 
         msg = Message(from_agent="lead", to_agent="worker", content="[lead]: work")
         await team.mailbox.send(to="worker", message=msg)
-        await asyncio.sleep(0.1)
+        await _wait_for_activation(worker)
 
         assert worker.state == "idle"
 

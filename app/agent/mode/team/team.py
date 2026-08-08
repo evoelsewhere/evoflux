@@ -1,8 +1,8 @@
 """AgentTeam — coordinates a team lead + members via mailbox activation.
 
 Members are not built at startup; they exist as **blueprints** on the team
-and are constructed on demand when the lead calls ``team_manage`` (see
-:meth:`AgentTeam.spawn`).  Each spawn yields an instance handle of the form
+and are constructed on demand by ``team_delegate`` or explicitly through
+``team_manage`` (see :meth:`AgentTeam.spawn`). Each spawn yields a handle of the form
 ``blueprint#N`` so the lead can run multiple parallel instances of the same
 blueprint (e.g. ``executor#1`` and ``executor#2`` working in parallel) and
 each instance has its own DB session / chat history.
@@ -365,6 +365,8 @@ class AgentTeam:
         # Serialise user ingress so quick follow-ups queue behind the active
         # turn instead of racing in as adjacent normal user rows.
         self._user_message_lock = asyncio.Lock()
+        # Runtime-owned source context copied into every delegation contract.
+        self._current_user_request: str | None = None
 
     @property
     def user_message_lock(self) -> asyncio.Lock:
@@ -374,6 +376,16 @@ class AgentTeam:
     def has_active_user_turn(self) -> bool:
         """Return whether a user turn is active or the lead is already running."""
         return self._has_active_turn or self.lead.state == "working"
+
+    def current_user_request_for_delegation(self) -> str | None:
+        """Return a bounded copy of the active turn's original user request."""
+        if not self._current_user_request:
+            return None
+        limit = 8_000
+        value = self._current_user_request.strip()
+        if len(value) <= limit:
+            return value
+        return value[:limit].rstrip() + "\n[truncated by team runtime]"
 
     def reserve_user_turn(self) -> None:
         """Reserve the ingress slot before deferred turn preparation starts.
@@ -1889,6 +1901,24 @@ class AgentTeam:
                 )
                 await stream_store.mark_done(session_id)
             return session_id
+
+        # Capture only messages that actually start/continue a user turn.
+        # Control commands returned above must not replace delegation context.
+        self._current_user_request = content
+        if attachment_metas:
+            attachment_refs: list[str] = []
+            for attachment in attachment_metas:
+                name = attachment.get("original_name") or attachment.get("filename")
+                location = attachment.get("path") or attachment.get("workspace_path")
+                if name and location:
+                    attachment_refs.append(f"- {name}: {location}")
+                elif name:
+                    attachment_refs.append(f"- {name}")
+            if attachment_refs:
+                self._current_user_request += (
+                    "\n\nAttached inputs available to the team:\n"
+                    + "\n".join(attachment_refs)
+                )
 
         saved_user_message_id = existing_message_id
         source_required = isinstance(

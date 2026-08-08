@@ -23,10 +23,11 @@ import {
 } from 'lucide-react'
 import { useTeamStore } from '@/stores/useTeamStore'
 import type { ActivityItem } from '@/stores/useTeamStore'
-import { isAgentRole, resolveAgentRole } from '@/lib/agent-roles'
+import { resolveAgentRole } from '@/lib/agent-roles'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { AgentChip } from '@/components/ui/agent-chip'
+import { AgentLogo } from '@/components/AgentLogo'
 import { SubagentTaskCard } from '@/components/SubagentTaskCard'
 import type { AgentStream } from '@/stores/useTeamStore'
 import type { ContentBlock } from '@/api/types'
@@ -50,19 +51,10 @@ function relativeTime(date: Date): string {
   return date.toLocaleTimeString(getIntlLocale(), { hour: '2-digit', minute: '2-digit' })
 }
 
-function dotClass(name: string, stream: AgentStream): string {
+function dotClass(stream: AgentStream): string {
   if (stream.status === 'error') return 'bg-(--color-error)'
   if (stream.status === 'offline') return 'bg-(--color-text-subtle) opacity-40'
   if (stream.status === 'working') return 'animate-pulse bg-(--color-accent)'
-  if (isAgentRole(name)) {
-    const map: Record<string, string> = {
-      EvoFlux: 'bg-(--color-marker-mint)',
-      executor: 'bg-(--color-marker-orange)',
-      consultant: 'bg-(--color-marker-blue)',
-      explorer: 'bg-(--color-text-muted)',
-    }
-    return map[name] ?? 'bg-(--color-success)'
-  }
   return 'bg-(--color-success)'
 }
 
@@ -137,7 +129,7 @@ function AgentStatusCard({
           label={name}
           active={isLead || isWorking}
           className="min-w-0 flex-1 truncate px-2 py-1"
-          dotClassName={dotClass(name, stream)}
+          dotClassName={dotClass(stream)}
         />
         {isLead && (
           <span className="shrink-0 rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] text-(--color-text-muted)">
@@ -219,6 +211,7 @@ function LifecycleRow({ item }: { item: ActivityItem }) {
 
   return (
     <div className="flex items-center gap-2 px-4 py-1.5 text-xs text-(--color-text-subtle)">
+      <AgentLogo name={item.agent} size="xs" />
       {isSpawn && <LogIn size={11} className="shrink-0 text-(--color-success)" aria-hidden="true" />}
       {item.kind === 'dismiss' && <LogOut size={11} className="shrink-0" aria-hidden="true" />}
       {isDone && <CheckCircle2 size={11} className="shrink-0 text-(--color-success)" aria-hidden="true" />}
@@ -290,12 +283,14 @@ function CommsRow({ item }: { item: ActivityItem }) {
       )}
       style={{ gridTemplateColumns: 'auto auto auto 1fr auto' }}
     >
-      <span className="font-mono text-[11px] font-semibold text-(--color-text)">
-        {fromAgent}
+      <span className="flex min-w-0 items-center gap-1.5 font-mono text-[11px] font-semibold text-(--color-text)">
+        <AgentLogo name={fromAgent} size="xs" />
+        <span className="truncate">{fromAgent}</span>
       </span>
       <ArrowRight size={11} className="text-(--color-text-subtle)" aria-hidden="true" />
-      <span className="font-mono text-[11px] font-semibold text-(--color-accent)">
-        {toAgents.join(', ')}
+      <span className="flex min-w-0 items-center gap-1.5 font-mono text-[11px] font-semibold text-(--color-accent)">
+        <AgentLogo name={toAgents[0] ?? 'agent'} size="xs" />
+        <span className="truncate">{toAgents.join(', ')}</span>
       </span>
       <span
         className="min-w-0 truncate text-xs leading-relaxed text-(--color-text-muted)"

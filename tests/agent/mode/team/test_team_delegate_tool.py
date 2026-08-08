@@ -10,6 +10,10 @@ Covers:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from uuid import uuid7
+
+import app.agent.mode.team.delegate as delegate_module
 from app.agent.mode.team.delegate import TaskSpec, make_team_delegate_tool
 from app.agent.mode.team.mailbox import TeamMailbox
 
@@ -84,6 +88,70 @@ class TestTeamDelegateTool:
         assert "TASK DELEGATION" in msg.content
         assert "Implement retry logic" in msg.content
         assert "Expected output:" in msg.content
+
+    async def test_bare_blueprint_auto_spawns_and_inherits_user_context(
+        self, monkeypatch
+    ):
+        """A normal delegation is one atomic spawn+assign operation."""
+        mb = _make_mailbox("lead")
+
+        class FakeTeam:
+            mode = "work"
+            blueprints = {"executor": object()}
+            turn_allowed_blueprints = None
+            lead = SimpleNamespace(session_id=str(uuid7()))
+
+            def __init__(self):
+                self.members = {}
+                self.created_spec = None
+
+            def resolve_recipient(self, name):
+                if name in self.members:
+                    return name
+                live = self.live_instances_for_blueprint(name)
+                return live[0] if len(live) == 1 else None
+
+            def live_instances_for_blueprint(self, blueprint):
+                return [
+                    name
+                    for name in self.members
+                    if name.startswith(f"{blueprint}#")
+                ]
+
+            def blueprint_allowed_this_turn(self, blueprint):
+                return blueprint in self.blueprints
+
+            async def spawn(self, blueprint):
+                member = SimpleNamespace(name=f"{blueprint}#1")
+                self.members[member.name] = member
+                mb.register(member.name)
+                return member
+
+            def current_user_request_for_delegation(self):
+                return "Audit and improve agent collaboration"
+
+            async def create_delegation_tasks(self, **kwargs):
+                self.created_spec = kwargs["spec"]
+                return [SimpleNamespace(id=uuid7(), status="pending")]
+
+            async def dispatch_delegation_tasks(self, tasks):
+                return None
+
+        team = FakeTeam()
+        monkeypatch.setattr(delegate_module, "_emit_delegation_event", lambda *a: None)
+        tool = make_team_delegate_tool(mb, agent_name="lead", team=team)
+
+        result = await tool(
+            to=["executor"],
+            goal="Implement the runtime changes",
+            expected_output="Verified code and tests",
+        )
+
+        assert "executor#1" in result
+        assert team.created_spec["parent_request"] == (
+            "Audit and improve agent collaboration"
+        )
+        assert team.created_spec["peer_recipients"] == ["executor#1"]
 
     async def test_delegate_to_multiple_recipients(self):
         """Delegate same task to multiple agents."""
