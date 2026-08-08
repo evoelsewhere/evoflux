@@ -5,7 +5,7 @@
     "expected_trajectory": [
       "literal_discovery",
       "promote_exact_anchor",
-      "code_graph",
+      "code_context",
       "targeted_semantic_verification"
     ],
     "forbidden_behaviors": [
@@ -34,7 +34,7 @@
     "should_trigger": true,
     "expected_operation": "callers",
     "expected_trajectory": [
-      "code_graph"
+      "code_context"
     ],
     "forbidden_behaviors": [
       "literal_discovery_before_exact_symbol_graph"

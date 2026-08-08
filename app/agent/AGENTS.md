@@ -24,7 +24,7 @@ sandbox*.py            Shell/filesystem sandbox behavior
 - Agent config/frontmatter change: update the config compiler, seed agents if needed, and `documents/architecture/application-harness.md`.
 - Tool change: check `tools/registry.py`, the tool implementation, permission/sandbox behavior, and UI rendering if the result shape changes.
 - Skill visibility change: keep portable bundle defaults separate from the user-owned `skill-settings.json` overlay. Runtime preferences are keyed to the exact discovered variant, apply before mode-aware collision selection, and must never rewrite built-in, administrator, symlinked, or project bundle files.
-- Coding navigation change: keep the built-in `code_graph` tool schema, service boundary, renderer, telemetry, tests, and the exact-symbol contracts embedded in Coding skills aligned. Do not create a separate graph-routing skill or inject graph prose at mode level. `code_graph` accepts a known raw symbol and structural operation; it must never become natural-language retrieval.
+- Coding context change: keep the built-in `code_context` schema, repository-local index boundary, renderer, telemetry, tests, and Coding-skill contracts aligned. `search` handles natural-language/code discovery, `grep` handles by-example structure, and graph actions require one exact symbol. Cross-repository links are resolved dynamically over authorized repositories; never add application-database graph tables or a detached resolver job.
 - Team behavior change: check `mode/team/`, `services/team_manager.py`, API routes, and SSE event consumers in `web/src/stores/`.
 - Provider change: add/adjust tests under `tests/agent/providers/` and avoid leaking provider-specific shapes into generic schemas.
 

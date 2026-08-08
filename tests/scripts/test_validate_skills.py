@@ -112,7 +112,7 @@ def test_validator_accepts_behavioral_trajectory_fields(tmp_path) -> None:
     (skill_dir / "evals" / "trigger-cases.json").write_text(
         '[{"query":"Who calls parse?","should_trigger":true,'
         '"expected_operation":"callers",'
-        '"expected_trajectory":["code_graph"],'
+        '"expected_trajectory":["code_context"],'
         '"forbidden_behaviors":["broad_grep"]},'
         '{"query":"Write docs","should_trigger":false}]'
     )
