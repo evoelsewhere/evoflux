@@ -76,10 +76,9 @@ references question. Otherwise name one gap before observing more source:
 - ambiguity, truncation, degraded freshness, or pending cross-repo edges:
   narrow using the limitation reported by the tool.
 
-The runtime contract rejects mutation, repeated broad discovery, identical
-observations, graph fan-out beyond six calls, and more than eight source
-fallbacks. Hitting a budget is a stop signal: synthesize the evidence and state
-the unresolved dynamic limitation.
+Keep evidence proportional to the question. Stop when the requested
+relationship is proven; when static analysis reaches a dynamic boundary,
+state that limitation instead of expanding discovery without a new hypothesis.
 
 Read [references/code-graph-contract.md](references/code-graph-contract.md) only
 for ambiguity, degraded freshness, truncation, pending cross-repository edges,
