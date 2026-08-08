@@ -24,3 +24,13 @@ describe('workspace overview workbench tool', () => {
     })).toBe(false)
   })
 })
+
+describe('process manager workbench tool', () => {
+  it('is available even before a session is selected', () => {
+    expect(isWorkbenchToolEnabled('processes', {
+      mode: 'work',
+      sessionId: null,
+      workspace: null,
+    })).toBe(true)
+  })
+})

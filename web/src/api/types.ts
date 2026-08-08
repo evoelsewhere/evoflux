@@ -1110,6 +1110,34 @@ export interface WorkspaceRootResponse {
   workspace_root: string
 }
 
+// ── Process manager ─────────────────────────────────────────────────────────
+
+export type ManagedProcessKind = 'command' | 'preview' | 'terminal'
+
+export interface ManagedProcess {
+  id: string
+  kind: ManagedProcessKind
+  label: string
+  command: string
+  session_id: string | null
+  session_title: string | null
+  pid: number | null
+  cwd: string | null
+  elapsed_seconds: number
+  killable: boolean
+  metadata: {
+    port?: number
+    url?: string
+    reused?: boolean
+    workspace?: string
+    terminal_id?: string
+  }
+}
+
+export interface ProcessListResponse {
+  processes: ManagedProcess[]
+}
+
 // ── Scheduler ───────────────────────────────────────────────────────────────
 
 export type ScheduledTaskMode = 'work' | 'coding'

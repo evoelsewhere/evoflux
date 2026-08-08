@@ -12,6 +12,7 @@ resource):
 - :mod:`app.api.routes.team.todos` — GET /sessions/{sid}/todos
 - :mod:`app.api.routes.team.permissions` — GET /{sid}/permissions,
   POST /{sid}/permissions/{request_id}/reply
+- :mod:`app.api.routes.team.processes` — GET /processes, DELETE /processes/{id}
 - :mod:`app.api.routes.team.questions` — POST /{sid}/questions/{request_id}/reply
 
 The combined :data:`router` is mounted under ``/api/team`` by
@@ -30,6 +31,7 @@ from app.api.routes.team import (
     git,
     permissions,
     presentation_renderer,
+    processes,
     projects,
     questions,
     reviews,
@@ -54,6 +56,7 @@ router.include_router(git.router)
 router.include_router(todos.router)
 router.include_router(permissions.router)
 router.include_router(presentation_renderer.router)
+router.include_router(processes.router)
 router.include_router(questions.router)
 router.include_router(reviews.router)
 router.include_router(terminal.router)

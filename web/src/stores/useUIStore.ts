@@ -20,6 +20,7 @@ const SIDEBAR_COLLAPSED_KEY = STORAGE_KEYS.sidebar.collapsed
 export type WorkbenchTool =
   | 'overview'
   | 'terminal'
+  | 'processes'
   | 'browser'
   | 'files'
   | 'graph'

@@ -47,7 +47,24 @@ import type {
   WebBridgeTeachDraft,
   WebBridgeTeachDraftReplayResponse,
   GoalResponse,
+  ProcessListResponse,
 } from '../types'
+
+export async function getProcesses(): Promise<ProcessListResponse> {
+  const res = await fetch(`${apiBaseUrl()}/team/processes`, {
+    headers: { Accept: 'application/json' },
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'getProcesses')
+  return res.json()
+}
+
+export async function terminateProcess(processId: string): Promise<void> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/processes/${encodeURIComponent(processId)}`,
+    { method: 'DELETE' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'terminateProcess')
+}
 
 export async function postTeamChat(
   message?: string | null,
