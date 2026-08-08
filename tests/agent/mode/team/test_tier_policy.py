@@ -218,6 +218,7 @@ class TestDefaultDeferredTools:
         registry = _default_tool_registry()
         graph_tools = {
             "code_graph",
+            "code_search",
         }
 
         work_tools = set(tier_tools(registry, mode="work", role="lead"))
