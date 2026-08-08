@@ -586,6 +586,66 @@ async def test_same_recipient_tasks_complete_independently_and_round_trip_metada
 
 
 @pytest.mark.asyncio
+async def test_member_error_fails_pending_task_and_releases_lead_wait():
+    team = await _make_team("coder#1")
+    delegate = make_team_delegate_tool(team.mailbox, "lead", team)
+    await delegate(
+        to=["coder#1"],
+        goal="Perform a task that fails",
+        expected_output="A result or an explicit failed task",
+    )
+    task = (await _tasks(team))[0]
+    worker = team.members["coder#1"]
+    worker._active_delegation_task_id = str(task.id)
+
+    await worker._on_turn_error(RuntimeError("provider crashed"))
+
+    failed = (await _tasks(team))[0]
+    assert failed.status == "failed"
+    assert failed.result == {"error": "provider crashed"}
+    assert team.pending_delegation_task_ids("lead", "coder#1") == []
+    notification = team.mailbox.receive_nowait("lead")
+    assert "reassign my work" in notification.content
+    await team.stop()
+
+
+@pytest.mark.asyncio
+async def test_member_error_after_completed_handoff_does_not_request_reassignment():
+    team = await _make_team("coder#1")
+    delegate = make_team_delegate_tool(team.mailbox, "lead", team)
+    await delegate(
+        to=["coder#1"],
+        goal="Complete before a late lifecycle error",
+        expected_output="A final verified handoff",
+    )
+    task = (await _tasks(team))[0]
+    handoff = make_team_handoff_tool(
+        team.mailbox,
+        "coder#1",
+        role="member",
+        team=team,
+    )
+    await handoff(
+        to=["lead"],
+        task_id=str(task.id),
+        summary="The task completed successfully before the late lifecycle error.",
+        findings=["The durable result was delivered"],
+        verified=True,
+        verification_method="checked durable task state",
+    )
+    team.mailbox.receive_nowait("lead")
+    worker = team.members["coder#1"]
+    worker._active_delegation_task_id = str(task.id)
+
+    await worker._on_turn_error(RuntimeError("late hook failure"))
+
+    completed = (await _tasks(team))[0]
+    assert completed.status == "completed"
+    assert team.mailbox.inbox_empty("lead")
+    await team.stop()
+
+
+@pytest.mark.asyncio
 async def test_dependency_is_dispatched_only_after_parent_handoff():
     team = await _make_team("explorer#1", "coder#1")
     delegate = make_team_delegate_tool(team.mailbox, "lead", team)

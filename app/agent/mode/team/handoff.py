@@ -496,6 +496,17 @@ def make_team_handoff_tool(
                 )
             await mailbox.send(to=recipient, message=msg)
 
+        if (
+            _state is not None
+            and status == "final"
+            and linked_task_id is not None
+        ):
+            # The durable task is complete and its handoff is delivered. Ask
+            # the loop to stop after persisting this tool result instead of
+            # making another model call that can duplicate work or fail after
+            # success.
+            _state.metadata["stop_after_tool_call"] = "team_handoff"
+
         return f"Handoff delivered to {', '.join(resolved)}."
 
     description = (
