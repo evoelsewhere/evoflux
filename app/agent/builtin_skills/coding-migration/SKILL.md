@@ -22,27 +22,20 @@ Do not load bundled references when this skill activates.
    deployments, stored data, or multiple repositories.
 
 When a migration surface is known only by behavior, package, schema term, or
-protocol text, call `code_search` once across authorized repositories to find
+protocol text, call `code_context` with `action="search"` once across authorized repositories to find
 its declared boundary. Skip it when the exact identifier is already known.
 
 For every exact API, type, event, schema adapter, or migration entry-point
-symbol, use native `code_graph` to establish direct `references`/`callers` and
+symbol, use `code_context` to establish direct `references`/`callers` and
 bounded `impact` before sequencing rollout. Start at depth 1; preserve
-repository identity and treat pending cross-repository edges as an inventory
+repository identity and treat dynamically unresolved cross-repository references as an inventory
 gap, not as absence of consumers. Once an exact boundary is selected, make the
 graph the next structural observation instead of continuing broad discovery.
 
-Use `freshness_policy="fast"` for the first graph call and normal interactive
-navigation. If it returns `fresh`, do not rerun with a stronger policy. If it
-returns `partial` and a reported dirty file overlaps the question, use a
-targeted source read for a local gap or retry once with `"balanced"` when the
-relationships must be recomputed. After an edit that can change relationships,
-use `"balanced"` once before relying on the updated structure. Use `"strict"`
-only for a final, high-consequence completeness check when watcher coverage is unavailable or
-untrusted; never use it for discovery.
+Keep `refresh=true` for the first indexed query and after edits. Use `refresh=false` only for an immediate follow-up that intentionally reuses the same index version.
 
-Read [references/code-graph-contract.md](references/code-graph-contract.md)
-only after a result exposes ambiguity, freshness, cross-repository, truncation,
+Read [references/code-context-contract.md](references/code-context-contract.md)
+only after a result exposes ambiguity, cross-repository traversal, truncation,
 or dynamic-wiring limits.
 
 ## Choose and sequence a strategy

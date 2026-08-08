@@ -1357,13 +1357,13 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'coding',
     title: '構造コードグラフ',
     summary:
-      'Tree-sitter がシンボルとエッジをインデックスし、決定的なクロスレポ解決を含む正確な構造ナビゲーションを提供します。既知のシンボルには code_graph、識別子・リテラル・コメントの発見には通常のソース検索を使います。',
+      'リポジトリ単位のインデックスがソース検索、構造パターン、正確なシンボルナビゲーションを統合します。許可された全リポジトリを 1 つの code_context ツールで扱います。',
     keywords: [
       'code graph',
       'symbols',
       'cross-repo',
       'index',
-      'code_graph',
+      'code_context',
       'tree-sitter',
       'コードグラフ',
       'シンボル',
@@ -1371,14 +1371,14 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '構造'
 ],
     setup:
-      'Coding ワークスペースまたはプロジェクト — インデックスはファイル変更で増分実行。Graph workbench ツールを開き視覚探索し、大きな外部編集後にツリーが古く見えたら再インデックス。',
+      'Coding ワークスペースまたはプロジェクト — 最初のクエリが変更済みソースを増分更新します。Graph で現在の動的スナップショットを確認できます。',
     tricks: [
-      'Coding スキルは段階的な graph ガイダンスを内包し、code_graph は正確なシンボルを実行するネイティブツールです。',
-      '既知の正確なシンボルと構造関係には code_graph、発見・リテラル・コメント・設定キーにはソース検索を使います。',
+      'Coding スキルは統一された code_context ワークフローを段階的に提示します。',
+      '発見には code_context search、コード形状には grep、既知の正確なシンボルには graph action を使います。',
       'Graph workbench ツールを開き視覚探索し、必要なら再インデックス。',
-      'クロスレポ解決は 3 つの決定的ティア（reattach、manifests/FQNs、sibling FTS5）で、リンクに LLM 呼び出しなし。',
-      'code_graph の operation は definition、callers、callees、references、impact、neighborhood。',
-      'graph ナビ後の重要な発見はライブソースで検証 — インデックスは外部編集に遅れることがあります。',
+      'クロスレポ関係は import、module path、一意な定義から動的に解決され、resolver job や永続化された推測エッジはありません。',
+      'code_context の graph action は definition、callers、callees、references、impact、neighborhood。',
+      '編集後は refresh=true、同一バージョン直後の追跡クエリだけ refresh=false を使います。',
       '「パッケージ全体を読んで」ではなく構造質問（「誰が X を呼ぶ？」）。',
       'マルチレポプロジェクトはクロスレポエッジ; スタンドアロンレポも 1 ツリー内で恩恵。',
       'Coding モードは skill 本文を注入せず、生のリクエスト文をキーワードで graph query にルーティングしません。'
@@ -1386,7 +1386,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: '構造コードグラフは tree-sitter でシンボルとエッジをローカルインデックスに入れます。ネイティブ code_graph ツールは、既知の 1 シンボルに対する明示的な構造 operation を処理します。同じインデックスを Graph workbench で視覚探索できます。',
+        text: '各リポジトリは AST 対応チャンク、シンボル、関係、FTS ソースを持つローカル managed index を所有します。ネイティブ code_context がこれらを検索し、Graph は動的スナップショットを表示します。',
       },
       {
         type: 'p',
@@ -1395,20 +1395,19 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'code_graph definition — 正確なシンボルを解決して本体を表示',
-          'code_graph callers/callees — 直接呼び出し関係',
-          'code_graph references/impact — 入力参照と影響範囲',
-          'code_graph neighborhood — 意図的な双方向探索',
-          'grep — リテラル、コメント、散文、設定キー'
+          'code_context search — 識別子、リテラル、コメント、概念',
+          'code_context grep — 例示による構造マッチ',
+          'code_context definition/callers/callees — 正確なシンボルナビゲーション',
+          'code_context references/impact/neighborhood — 境界付き関係探索'
 ],
       },
       {
         type: 'p',
-        text: 'Coding ワークスペースを開く（インデックスは自動開始/継続）。エージェントに構造質問するか workbench で Graph を開く。マルチレポではエッジが reattach → manifests/FQNs → sibling FTS5 で兄弟横断解決。大きな外部編集後にツリーが古く見えたら Graph ツールから再インデックス。',
+        text: 'Coding ワークスペースで code_context を使います。最初のクエリが追加・更新・削除をリポジトリ単位の target に反映します。マルチレポエッジは、クエリまたは可視化時に現在許可された target 集合から解決されます。',
       },
       {
         type: 'p',
-        text: '調査手順: (1) 未知ならソース検索で正確な識別子を発見、(2) 1 つの構造 operation で code_graph を呼ぶ、(3) 重複定義は path または repository で曖昧性を解消、(4) freshness と limitation を確認、(5) 動的・文字列ベースの挙動はソース、テスト、ログ、ランタイム証拠で検証。',
+        text: '調査手順: (1) search で識別子、または grep でコード形状を発見、(2) exact-symbol action を実行、(3) 重複定義を path/repository で解消、(4) limitation を確認、(5) 動的挙動をテスト、ログ、ランタイム証拠で検証。',
       },
       {
         type: 'p',
@@ -1416,7 +1415,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'よくある失敗: リクエスト文章全体を graph symbol に渡す; 「安全のため」ディレクトリ全体をダンプ; プロジェクトなしでクロスレポリンクを期待; 大きな外部 checkout 後に再インデックスしない; lexical suggestion を解決済み graph root と扱う。',
+        text: 'よくある失敗: exact-symbol action に文章を渡す、ディレクトリ全体をダンプする、未許可の sibling を検索する、外部編集後に refresh しない、suggestion を解決済み root と扱う。',
       },
       {
         type: 'tips',
@@ -1858,7 +1857,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          '横断: 有効化された Coding スキルが graph workflow を案内し、ネイティブ code_graph が正確なシンボル operation を検証・実行します。',
+          '横断: 有効化された Coding スキルが workflow を案内し、ネイティブ code_context がすべての retrieval action を検証・実行します。',
           '横断: workflows と skills はどちらも / に出るにはスコープ有効性が必要。',
           '横断: 権限 Always ルールは MCP ツールにも適用 — まず Once を優先。'
 ],

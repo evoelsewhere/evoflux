@@ -53,27 +53,20 @@ public interfaces, data, migrations, permissions, concurrency, deployment, and
 cross-repository effects. Review high-risk surfaces first and validate each
 finding with a concrete trigger and impact.
 
-When a changed behavior is not tied to an exact declaration, call `code_search`
+When a changed behavior is not tied to an exact declaration, call `code_context` with `action="search"`
 once with a stable diff literal, interface term, or code fragment. Promote its
 repository-qualified range to an exact changed symbol; skip search when the
 diff already exposes that symbol.
 
-For an exact changed symbol, use native `code_graph` with direct `callers`,
+For an exact changed symbol, use `code_context` with direct `callers`,
 `references`, `callees`, or bounded `impact` at depth 1. Once that symbol and
 relationship are selected, make the graph the next structural observation;
 do not continue broad grep or pass PR prose as `symbol`.
 
-Use `freshness_policy="fast"` for the first graph call and normal interactive
-navigation. If it returns `fresh`, do not rerun with a stronger policy. If it
-returns `partial` and a reported dirty file overlaps the question, use a
-targeted source read for a local gap or retry once with `"balanced"` when the
-relationships must be recomputed. After an edit that can change relationships,
-use `"balanced"` once before relying on the updated structure. Use `"strict"`
-only for a final, high-consequence completeness check when watcher coverage is unavailable or
-untrusted; never use it for discovery.
+Keep `refresh=true` for the first indexed query and after edits. Use `refresh=false` only for an immediate follow-up that intentionally reuses the same index version.
 
 Read
-[references/code-graph-contract.md](references/code-graph-contract.md) only
+[references/code-context-contract.md](references/code-context-contract.md) only
 after the result exposes ambiguity, stale/dirty data, cross-repository gaps,
 dynamic wiring, or truncation.
 

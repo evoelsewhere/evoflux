@@ -35,7 +35,7 @@ Never invent a selector. When several repositories contain the same number, reso
 list_code_reviews(repository?)
 ```
 
-Omit `repository` for every repository allowed by the active project session. Pass the exact repository selector for workspace scope or an explicit repository filter.
+Omit `repository` to search every repository allowed by the active project session. For graph actions, an exact repository selector disambiguates the root symbol while authorized siblings remain available for cross-repository traversal.
 
 ### `get_code_review`
 

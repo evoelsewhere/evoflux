@@ -33,36 +33,29 @@ test expectation or environment mismatch.
 
 ## Navigate structural evidence
 
-When the failure location or exact identifier is unknown, call `code_search`
+When the failure location or exact identifier is unknown, call `code_context` with `action="search"`
 once with the literal error, configuration key, runtime term, or code fragment.
 Use its repository-qualified source range to identify a declared symbol. If the
-exact symbol is already visible, skip `code_search`; it is discovery, not
+exact symbol is already visible, skip `code_context` with `action="search"`; it is discovery, not
 structural proof.
 
 Once source evidence reveals an exact function, method, class, or qualified
-symbol, use native `code_graph` to test the relevant structural hypothesis:
+symbol, use `code_context` to test the relevant structural hypothesis:
 `callers` for inbound paths, `callees` for downstream calls, `references` for
 non-call uses, or `neighborhood` for the immediate boundary. Start at depth 1.
 Static edges narrow the causal path but do not prove runtime order, state, or a
 race; preserve the reproduction as the final causal test.
 
-After an exact symbol and structural hypothesis exist, make `code_graph` the
+After an exact symbol and structural hypothesis exist, make `code_context` the
 next structural observation. Do not continue broad grep or reread source that
 the graph returns. Runtime reproduction may still come first when it is the
 cheapest test that can falsify the current causal hypothesis.
 
-Use `freshness_policy="fast"` for the first graph call and normal interactive
-navigation. If it returns `fresh`, do not rerun with a stronger policy. If it
-returns `partial` and a reported dirty file overlaps the question, use a
-targeted source read for a local gap or retry once with `"balanced"` when the
-relationships must be recomputed. After an edit that can change relationships,
-use `"balanced"` once before relying on the updated structure. Use `"strict"`
-only for a final, high-consequence completeness check when watcher coverage is unavailable or
-untrusted; never use it for discovery.
+Keep `refresh=true` for the first indexed query and after edits. Use `refresh=false` only for an immediate follow-up that intentionally reuses the same index version.
 
-Read [references/code-graph-contract.md](references/code-graph-contract.md)
+Read [references/code-context-contract.md](references/code-context-contract.md)
 only after a graph result exposes ambiguity, cross-repository scope,
-freshness/dirty-file limits, or truncation.
+index limitations or truncation.
 
 ## Fix and prove
 

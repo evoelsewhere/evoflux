@@ -1,0 +1,99 @@
+"""HTTP contract tests for the dependency-free code-context runtime."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from uuid import UUID
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.api.routes.code_context import router
+from app.api.routes.team.projects import _graph_node_id
+from app.core.config import settings
+from app.services.code_index.project import RepositoryIndexRegistry
+
+
+@pytest.fixture
+def code_context_client(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[TestClient, Path]:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    (repository / "payments.py").write_text(
+        "def settle_payment():\n    return 'payment accepted'\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+    registry = RepositoryIndexRegistry()
+    monkeypatch.setattr(
+        "app.api.routes.code_context.repository_indexes",
+        registry,
+    )
+    monkeypatch.setattr(
+        "app.services.code_index.service.repository_indexes",
+        registry,
+    )
+    app = FastAPI()
+    app.include_router(router, prefix="/api/code-context")
+    return TestClient(app), repository
+
+
+def test_status_index_and_query_share_repository_target(
+    code_context_client: tuple[TestClient, Path],
+) -> None:
+    client, repository = code_context_client
+    params = {"workspace": str(repository)}
+
+    assert (
+        client.get("/api/code-context/status", params=params).json()["indexed"] is False
+    )
+
+    indexed = client.post(
+        "/api/code-context/index",
+        params=params,
+        json={"full": False},
+    )
+    assert indexed.status_code == 200
+    assert indexed.json()["files"] == 1
+    assert indexed.json()["graph_languages"] == ["python"]
+    assert indexed.json()["index_error"] is None
+
+    response = client.post(
+        "/api/code-context/query",
+        params=params,
+        json={
+            "action": "search",
+            "query": "payment accepted",
+            "refresh": False,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["hits"][0]["file_path"] == "payments.py"
+    assert body["hits"][0]["repository_path"] == str(repository)
+    assert body["strategy"] == "code-index-vector-fts5-cross-repo"
+
+
+def test_graph_action_rejects_prose_at_http_boundary(
+    code_context_client: tuple[TestClient, Path],
+) -> None:
+    client, repository = code_context_client
+    response = client.post(
+        "/api/code-context/query",
+        params={"workspace": str(repository)},
+        json={"action": "callers", "query": "who calls settle payment"},
+    )
+
+    assert response.status_code == 422
+    assert "one exact symbol" in response.json()["detail"]
+
+
+def test_project_graph_namespaces_repository_local_symbol_ids() -> None:
+    first = UUID("00000000-0000-0000-0000-000000000001")
+    second = UUID("00000000-0000-0000-0000-000000000002")
+    assert _graph_node_id(first, "same-local-id") != _graph_node_id(
+        second, "same-local-id"
+    )

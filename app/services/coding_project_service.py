@@ -233,8 +233,8 @@ async def get_projects_for_workspace(
 ) -> list[UUID]:
     """Reverse lookup: which live project(s) contain this workspace as a member.
 
-    Used by the code-graph indexer to scope cross-repo reference tracking —
-    a standalone (non-project) workspace has no sibling repos to link against.
+    Used by repository-scoped services to discover the project's authorized
+    sibling repositories. A standalone workspace has no sibling scope.
     """
     rows = (
         await db.exec(

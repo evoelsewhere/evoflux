@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from app.services.code_graph.parsers.ecmascript import TypeScriptParser
-from app.services.code_graph.parsers.java import JavaParser
-from app.services.code_graph.parsers.python import PythonParser
-from app.services.code_graph.types import EDGE_DECORATED_BY
+from app.services.code_index.parsers.ecmascript import TypeScriptParser
+from app.services.code_index.parsers.java import JavaParser
+from app.services.code_index.parsers.python import PythonParser
+from app.services.code_index.graph_types import EDGE_DECORATED_BY
 
 _py = PythonParser()
 _ts = TypeScriptParser()

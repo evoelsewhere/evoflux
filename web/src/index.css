@@ -1034,7 +1034,7 @@ a svg.lucide,
 }
 
 /* ─────────────────────────────────────────────────────────────
- * Repo-graph edge flow pulse — cross-repo resolve job in flight
+ * Repo-graph edge flow pulse
  * ───────────────────────────────────────────────────────────── */
 @keyframes repo-graph-flow {
   to { stroke-dashoffset: -6; }
@@ -1042,8 +1042,7 @@ a svg.lucide,
 .repo-graph-flow {
   animation: repo-graph-flow 1s linear infinite;
 }
-/* Same pulse, slowed down — the modal's "always alive" synapse animation
- * when no resolve job is actively running. */
+/* Slowed down for the modal's structural-relation animation. */
 .repo-graph-flow-slow {
   animation: repo-graph-flow 3.5s linear infinite;
 }

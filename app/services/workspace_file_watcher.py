@@ -5,12 +5,12 @@ changes in real time. Events are debounced and broadcast to all subscribers
 watching the same workspace.
 
 The watcher starts lazily when the first subscriber (SSE client or internal
-hook like the code-graph indexer) connects and stops when all subscribers
+hook such as a plugin callback) connects and stops when all subscribers
 disconnect.
 
 Two subscription modes:
 - **Queue subscribers** (SSE endpoints): receive batched events via asyncio.Queue.
-- **Callbacks** (code-graph reindexer): invoked directly with the events list.
+- **Callbacks** (plugins): invoked directly with the events list.
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ class WorkspaceFileWatcher:
             self._maybe_stop(workspace)
 
     # ------------------------------------------------------------------
-    # Callback-based subscription (code-graph, plugins)
+    # Callback-based subscription (plugins and local services)
     # ------------------------------------------------------------------
 
     async def add_callback(self, workspace: str, callback: FsChangeCallback) -> None:
@@ -88,7 +88,7 @@ class WorkspaceFileWatcher:
             self._maybe_stop(workspace)
 
     # ------------------------------------------------------------------
-    # Bulk lifecycle helpers (for code-graph watcher starting many at once)
+    # Bulk lifecycle helpers
     # ------------------------------------------------------------------
 
     async def add_callback_many(

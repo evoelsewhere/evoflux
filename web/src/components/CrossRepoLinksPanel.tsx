@@ -1,21 +1,6 @@
-/**
- * CrossRepoLinksPanel — the Graph tab's single index/reindex control for a
- * CodingProject, plus (for multi-repo projects) the resulting cross-repo
- * reference links.
- *
- * A single button drives the whole pipeline: reindex every repo's code
- * graph, wait for indexing to finish, then (when the project has more than
- * one repo) automatically run cross-repo resolution — static matching
- * (Java FQN / manifest identity / explicit path-dependencies) followed by
- * FTS5 lexical matching for whatever's still ambiguous. The LLM fallback
- * that existed in earlier versions has been removed.
- *
- * The compact diagram below the toolbar is a small preview — clicking it
- * (or the expand button) opens RepoGraphModal, a full-screen spatial view
- * with pan/zoom, search, and per-node connection detail.
- */
+/** Project index controls and dynamically resolved cross-repository links. */
 
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -25,11 +10,9 @@ import {
   Maximize2,
   Network,
   RefreshCw,
-  Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
-  getCrossRepoResolveStatus,
   getProjectCodeGraphStatus,
   listCrossRepoEdges,
   reindexProjectCodeGraph,
@@ -51,32 +34,23 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
-import type { CodingProject, CrossRepoEdge, CrossRepoResolveJob, ProjectRepoStatus } from '@/api/types'
+import type { CodingProject, CrossRepoEdge, ProjectRepoStatus } from '@/api/types'
 
 function RepoGraph({
   project,
   edges,
   repos,
-  job,
   onExpand,
 }: {
   project: CodingProject
   edges: CrossRepoEdge[]
   repos: ProjectRepoStatus[]
-  job: CrossRepoResolveJob | null | undefined
   onExpand: () => void
 }) {
   const nodes = layoutRepoNodesCircular(project.workspaces)
   const nodeById = new Map(nodes.map((n) => [n.workspaceId, n]))
   const repoByWorkspaceId = new Map(repos.map((r) => [r.workspace_id, r]))
   const links = buildRepoLinks(edges)
-  // Excludes the 'indexing' phase — the job registers as running immediately
-  // (so cross-repo status polling never dips back to "not running" while it
-  // waits for sibling repos to finish), but the sparkle banner and flow-pulse
-  // should only appear once it's actually reattaching/matching, not while
-  // repos are still showing their own per-node progress rings.
-  const jobRunning = job?.status === 'running' && job.phase !== 'indexing'
-
   return (
     <div className="group relative h-[190px] shrink-0 overflow-hidden rounded-md border border-(--color-border) bg-(--bg-key)/30">
       <button
@@ -133,20 +107,6 @@ function RepoGraph({
                   strokeLinecap="round"
                 />
               )}
-              {/* Flow pulse: only while the global cross-repo resolve job is
-                  actually running — signals "live activity" on every link at
-                  once (the job has no per-pair progress breakdown). */}
-              {jobRunning && (
-                <path
-                  d={d}
-                  fill="none"
-                  pathLength={100}
-                  strokeWidth={0.5}
-                  strokeLinecap="round"
-                  strokeDasharray="3,3"
-                  className="repo-graph-flow stroke-(--color-accent)"
-                />
-              )}
               {count >= 2 && (
                 <g>
                   <circle cx={midX} cy={midY} r={3.2} className="fill-(--bg-card)" />
@@ -166,10 +126,6 @@ function RepoGraph({
           )
         })}
       </svg>
-
-      {/* Subtle scrim while the LLM stage runs — recedes the graph a notch
-          without hurting readability, zero layout cost. */}
-      {jobRunning && <div className="absolute inset-0 z-(--z-panel) bg-(--bg-key)/10" />}
 
       {nodes.map((node) => {
         const repo = repoByWorkspaceId.get(node.workspaceId)
@@ -225,25 +181,6 @@ function RepoGraph({
         )
       })}
 
-      {/* Global LLM/cross-repo resolve stage — pinned banner, distinct from
-          any single repo's ring, mounted only while actually running. */}
-      {jobRunning && job && (
-        <div className="absolute inset-x-0 top-0 z-(--z-header) flex h-5 items-center gap-1.5 border-b border-(--color-border) bg-(--bg-card)/90 px-2 backdrop-blur-sm">
-          <Sparkles size={10} className="shrink-0 animate-pulse text-(--accent-orange-text)" />
-          <span className="shrink-0 text-[10px] font-medium text-(--color-text-muted)">
-            {job.phase === 'lexical' ? 'Lexical match' : job.phase === 'reattach' ? 'Re-attaching stale links' : 'Static match'}
-          </span>
-          <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-(--bg-key)">
-            <div
-              className="h-full rounded-full bg-(--accent-orange-text) transition-[width] duration-500 ease-out"
-              style={{ width: `${Math.round(job.progress * 100)}%` }}
-            />
-          </div>
-          <span className="shrink-0 font-mono text-[10px] text-(--color-text-subtle)">
-            {Math.round(job.progress * 100)}%
-          </span>
-        </div>
-      )}
     </div>
   )
 }
@@ -257,7 +194,7 @@ export function CrossRepoLinksPanel({ project, className }: CrossRepoLinksPanelP
   const queryClient = useQueryClient()
   const isMultiRepo = project.workspaces.length > 1
   const [expanded, setExpanded] = useState(false)
-  const wasResolvingRef = useRef(false)
+  const [isReindexing, setIsReindexing] = useState(false)
 
   const edgesQuery = useQuery({
     queryKey: queryKeys.projects.crossRepoEdges(project.id),
@@ -273,66 +210,38 @@ export function CrossRepoLinksPanel({ project, className }: CrossRepoLinksPanelP
     refetchInterval: (query) => (query.state.data?.some((r) => r.indexing) ? 800 : false),
   })
 
-  const statusQuery = useQuery({
-    queryKey: queryKeys.projects.crossRepoStatus(project.id),
-    queryFn: () => getCrossRepoResolveStatus(project.id),
-    enabled: isMultiRepo,
-    refetchInterval: (query) => (query.state.data?.running ? 800 : false),
-  })
-
   const repos = codeGraphStatusQuery.data ?? []
   const repoIndexing = repos.some((r) => r.indexing)
-  const resolveRunning = statusQuery.data?.running ?? false
-  const isBusy = repoIndexing || resolveRunning
+  const isBusy = repoIndexing || isReindexing
   const indexedCount = repos.filter((r) => r.indexed).length
 
-  // Resolve job just finished (however it started, including one already
-  // running before a page reload) — refresh the edge list once instead of
-  // waiting for its own staleTime to lapse.
-  useEffect(() => {
-    if (wasResolvingRef.current && !resolveRunning) {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.crossRepoEdges(project.id) })
-    }
-    wasResolvingRef.current = resolveRunning
-  }, [resolveRunning, queryClient, project.id])
-
-  // The single Graph-tab entry point: one call starts every repo's index job
-  // server-side; for multi-repo projects the backend auto-chains into
-  // cross-repo resolution once they all finish, so there's no client-side
-  // "wait then resolve" orchestration and no per-repo loop of API calls.
-  // `full` forces a from-scratch rebuild instead of the default incremental
-  // update.
+  // Refresh each repository target, then reload the dynamic graph snapshot.
   const runPipeline = async (full = false) => {
-    await reindexProjectCodeGraph(project.id, { full })
-    // Force both status queries to refetch now — otherwise they keep serving
-    // their pre-reindex snapshots (indexing: false / running: false) until
-    // staleTime lapses, and their own refetchInterval never has a reason to
-    // kick in. The cross-repo job is already running server-side by the time
-    // this resolves (see reindexProjectCodeGraph docs), so this refetch is
-    // what lets the UI notice instead of waiting for the next stale refetch.
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: codeGraphStatusKey }),
-      ...(isMultiRepo
-        ? [queryClient.invalidateQueries({ queryKey: queryKeys.projects.crossRepoStatus(project.id) })]
-        : []),
-    ])
+    setIsReindexing(true)
+    try {
+      await reindexProjectCodeGraph(project.id, { full })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: codeGraphStatusKey }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.crossRepoEdges(project.id) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.codeGraphData(project.id) }),
+      ])
+    } finally {
+      setIsReindexing(false)
+    }
   }
 
   const edges = edgesQuery.data ?? []
   const resolvedCount = edges.filter((e) => e.status === 'resolved').length
-  const job = statusQuery.data?.job
-  const buttonLabel = repoIndexing
+  const buttonLabel = isBusy
     ? 'Indexing…'
-    : resolveRunning
-      ? 'Resolving…'
-      : indexedCount > 0
-        ? 'Reindex'
-        : 'Build index'
+    : indexedCount > 0
+      ? 'Reindex'
+      : 'Build index'
 
   return (
     <div className={cn('flex flex-col gap-2', className)}>
       {isMultiRepo && (
-        <RepoGraph project={project} edges={edges} repos={repos} job={job} onExpand={() => setExpanded(true)} />
+        <RepoGraph project={project} edges={edges} repos={repos} onExpand={() => setExpanded(true)} />
       )}
       <div className="flex items-center justify-between px-1">
         <span className="text-xs font-medium text-(--color-text-muted)">
@@ -419,16 +328,11 @@ export function CrossRepoLinksPanel({ project, className }: CrossRepoLinksPanelP
             })}
         </div>
       )}
-      {resolveRunning && !repoIndexing && (
-        <p className="px-1 text-[11px] text-(--color-text-subtle)">Resolving cross-repo references…</p>
-      )}
-
       {isMultiRepo && (
         <RepoGraphModal
           open={expanded}
           onOpenChange={setExpanded}
           project={project}
-          job={job}
         />
       )}
     </div>

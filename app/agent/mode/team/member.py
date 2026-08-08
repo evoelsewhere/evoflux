@@ -278,16 +278,6 @@ class AlreadyWorkingError(Exception):
         self.agent_name = agent_name
 
 
-def _get_index_watcher():
-    """Return the global CodeGraphWatcher if available, else None."""
-    try:
-        from app.services.code_graph.watcher import _global_watcher
-
-        return _global_watcher
-    except (ImportError, AttributeError):
-        return None
-
-
 async def _mark_last_assistant_interrupted(
     db_factory: DbFactory, session_id: uuid.UUID
 ) -> None:
@@ -1376,7 +1366,7 @@ class TeamMemberBase(abc.ABC):
                     ),
                 )
         if any(
-            "code_graph_navigation" in tool.capabilities
+            "code_context_navigation" in tool.capabilities
             for tool in self.agent._tools.values()
         ):
             pipeline.add(
@@ -1621,16 +1611,6 @@ class TeamMemberBase(abc.ABC):
         # Scope agent role for plugin applies_to filtering ("lead"/"member").
         role_token = set_role(self._role_label)
 
-        # Only a Coding run that actually owns graph navigation coordinates
-        # with the indexer. Work sessions must never pause global code state.
-        owns_code_graph = self._team.mode == "coding" and any(
-            "code_graph_navigation" in tool.capabilities
-            for tool in self.agent._tools.values()
-        )
-        watcher = _get_index_watcher() if owns_code_graph else None
-        if watcher is not None:
-            await watcher.pause()
-
         try:
             await self.agent.run(
                 run_messages,
@@ -1653,10 +1633,6 @@ class TeamMemberBase(abc.ABC):
             reset_permission_service(perm_token, self.session_id)
             reset_plan_mode_service(plan_token, self.session_id)
             reset_ask_user_service(ask_user_token, self.session_id)
-            # Always resume watcher — even on crash — so reindex runs once
-            # with all accumulated changes.
-            if watcher is not None:
-                await watcher.resume()
 
         # If interrupted, mark last assistant message
         if self._cancel_event.is_set() and self.db_factory:

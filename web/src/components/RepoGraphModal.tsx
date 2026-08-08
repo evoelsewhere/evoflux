@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Check, GitBranch, Grid3X3, Loader2, Network, Search, Sparkles, X } from 'lucide-react'
+import { Check, GitBranch, Grid3X3, Loader2, Network, Search, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { getProjectCodeGraphData } from '@/api/client'
@@ -8,7 +8,7 @@ import { queryKeys } from '@/queries/keys'
 import { RepoGraphSpatial } from './RepoGraphSpatial'
 import { RepoGraphMatrix } from './RepoGraphMatrix'
 import { buildSpatialData } from './repoGraphSpatialData'
-import type { CodingProject, CrossRepoResolveJob, ProjectRepoStatus, CodeGraphNode } from '@/api/types'
+import type { CodingProject, ProjectRepoStatus, CodeGraphNode } from '@/api/types'
 import { getIntlLocale } from '@/i18n'
 
 function isRepoData(data: ProjectRepoStatus | CodeGraphNode): data is ProjectRepoStatus {
@@ -23,10 +23,9 @@ export interface RepoGraphModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   project: CodingProject
-  job: CrossRepoResolveJob | null | undefined
 }
 
-export function RepoGraphModal({ open, onOpenChange, project, job }: RepoGraphModalProps) {
+export function RepoGraphModal({ open, onOpenChange, project }: RepoGraphModalProps) {
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [hiddenRepos, setHiddenRepos] = useState<Set<string>>(new Set())
@@ -128,7 +127,6 @@ export function RepoGraphModal({ open, onOpenChange, project, job }: RepoGraphMo
     })
   }
 
-  const jobRunning = job?.status === 'running'
   const repos = data?.repos ?? []
 
   return (
@@ -205,19 +203,6 @@ export function RepoGraphModal({ open, onOpenChange, project, job }: RepoGraphMo
               hiddenRepoIds={hiddenRepos}
             />
           ) : null}
-
-          {jobRunning && job && (
-            <div className="absolute inset-x-0 top-0 z-(--z-header) flex h-7 items-center gap-2 border-b border-(--color-border) bg-(--bg-card)/90 px-3 backdrop-blur-sm">
-              <Sparkles size={12} className="shrink-0 animate-pulse text-(--accent-orange-text)" />
-              <span className="shrink-0 text-xs font-medium text-(--color-text-muted)">
-                {job.phase === 'lexical' ? 'Lexical match' : job.phase === 'reattach' ? 'Re-attaching stale links' : 'Static match'}
-              </span>
-              <div className="h-1 max-w-xs flex-1 overflow-hidden rounded-full bg-(--bg-key)">
-                <div className="h-full rounded-full bg-(--accent-orange-text) transition-[width] duration-500 ease-out" style={{ width: `${Math.round(job.progress * 100)}%` }} />
-              </div>
-              <span className="shrink-0 font-mono text-xs text-(--color-text-subtle)">{Math.round(job.progress * 100)}%</span>
-            </div>
-          )}
 
           {repos.length > 1 && (
             <div className="absolute left-0 top-0 z-(--z-header) flex h-full w-52 flex-col gap-1 overflow-y-auto border-r border-(--color-border) bg-(--bg-card)/95 p-3 backdrop-blur-sm">

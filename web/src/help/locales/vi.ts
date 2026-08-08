@@ -1340,28 +1340,28 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
   {
     id: 'coding-graph',
     category: 'coding',
-    title: 'Structural code graph',
+    title: 'Repository code context',
     summary:
-      'Tree-sitter index symbol và edge để điều hướng cấu trúc chính xác, gồm resolve cross-repo xác định. Dùng code_graph sau khi đã biết symbol; dùng search source để khám phá identifier, literal và comment.',
+      'Index riêng từng repository kết hợp source search, structural pattern và điều hướng exact symbol. Một tool code_context hoạt động trên toàn bộ repository được cấp quyền.',
     keywords: [
       'code graph',
       'symbols',
       'cross-repo',
       'index',
-      'code_graph',
+      'code_context',
       'tree-sitter',
       'đồ thị mã',
       'biểu tượng'
 ],
     setup:
-      'Coding workspace hoặc project — indexing chạy incremental khi file đổi. Mở Graph workbench để khám trực quan và reindex khi cây trông cũ sau edit ngoài lớn.',
+      'Coding workspace hoặc project — query đầu tiên refresh các source component đã đổi. Mở Graph để xem snapshot động hiện tại.',
     tricks: [
-      'Các Coding skill chứa hướng dẫn graph được load dần; code_graph là tool native thực thi trên exact symbol.',
-      'Dùng code_graph cho exact symbol đã biết và quan hệ cấu trúc; dùng search source để khám phá, tìm literal, comment và config key.',
+      'Các Coding skill load dần một workflow code_context thống nhất.',
+      'Dùng code_context search để khám phá, grep để tìm code shape, và graph action cho exact symbol đã biết.',
       'Mở Graph workbench để khám trực quan và reindex khi cần.',
-      'Resolve cross-repo dùng ba tier xác định (reattach, manifests/FQNs, sibling FTS5) không gọi LLM để link.',
-      'Các operation của code_graph gồm definition, callers, callees, references, impact và neighborhood.',
-      'Verify phát hiện quan trọng trên source live sau khi đi graph — index có thể trễ edit ngoài.',
+      'Quan hệ cross-repo được resolve động từ import, module path và unique definition; không có resolver job hay guessed edge lưu lâu dài.',
+      'Graph action của code_context gồm definition, callers, callees, references, impact và neighborhood.',
+      'Dùng refresh=true sau edit; chỉ dùng refresh=false cho follow-up ngay trên cùng version.',
       'Hỏi câu cấu trúc (“ai gọi X?”) thay vì “đọc cả package”.',
       'Multi-repo project có edge cross-repo; repo standalone vẫn lợi trong một cây.',
       'Skill body không bao giờ bị inject theo Coding mode, và prose thô của request không bao giờ bị route bằng keyword thành graph query.'
@@ -1369,7 +1369,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Structural code graph index symbol và edge bằng tree-sitter vào index local. Native code_graph tool trả lời một operation cấu trúc rõ ràng cho một symbol đã biết. Cùng index đó vẫn có thể khám trực quan trong Graph workbench.',
+        text: 'Mỗi repository có managed index local chứa AST-aware chunk, symbol, relation và FTS source. Native code_context query các target này; Graph render snapshot động.',
       },
       {
         type: 'p',
@@ -1378,20 +1378,19 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'code_graph definition — resolve exact symbol và hiện body',
-          'code_graph callers/callees — quan hệ call trực tiếp',
-          'code_graph references/impact — inbound use và blast radius',
-          'code_graph neighborhood — khám hai chiều có chủ ý',
-          'grep — literal, comment, prose, config key'
+          'code_context search — identifier, literal, comment và concept',
+          'code_context grep — structural matching bằng ví dụ',
+          'code_context definition/callers/callees — điều hướng exact symbol',
+          'code_context references/impact/neighborhood — traverse quan hệ có giới hạn'
 ],
       },
       {
         type: 'p',
-        text: 'Mở Coding workspace (indexing bắt đầu/tiếp tự động). Hỏi agent câu cấu trúc hoặc mở Graph trên workbench. Multi-repo project: edge resolve qua sibling bằng reattach → manifests/FQNs → sibling FTS5. Reindex từ Graph tool nếu cây cũ sau edit ngoài lớn.',
+        text: 'Mở Coding workspace rồi query code_context. Query đầu tiên reconcile file thêm, sửa, xóa vào target riêng từng repository. Edge multi-repo được resolve trên tập target đang được cấp quyền khi query hoặc visualize.',
       },
       {
         type: 'p',
-        text: 'Điều tra từng bước: (1) khám phá exact identifier bằng source search nếu chưa biết, (2) gọi code_graph với một operation cấu trúc, (3) disambiguate definition trùng bằng path hoặc repository, (4) kiểm freshness và limitation, (5) verify hành vi dynamic/string bằng source, test, log hoặc runtime evidence.',
+        text: 'Điều tra từng bước: (1) tìm identifier bằng search hoặc code shape bằng grep, (2) gọi exact-symbol action, (3) disambiguate definition trùng bằng path/repository, (4) kiểm limitation, (5) verify hành vi dynamic bằng test, log hoặc runtime evidence.',
       },
       {
         type: 'p',
@@ -1399,7 +1398,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: truyền nguyên prose request làm graph symbol; đổ cả thư mục vào chat “cho chắc”; chờ link cross-repo khi không có project; không reindex sau checkout ngoài lớn; hoặc coi lexical suggestion là graph root đã resolve.',
+        text: 'Sai thường gặp: truyền prose vào exact-symbol action; đổ cả thư mục vào chat; query sibling không được cấp quyền; bỏ refresh sau external edit; hoặc coi suggestion là graph root đã resolve.',
       },
       {
         type: 'tips',
@@ -1838,7 +1837,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Coding skill đã activate hướng dẫn graph; code_graph native validate và thực thi operation trên exact symbol.',
+          'Coding skill đã activate hướng dẫn workflow; code_context native validate và thực thi mọi retrieval action.',
           'Workflow và skill đều cần scope hợp lệ mới hiện trong /.',
           'Rule Always của permission áp cả MCP tool — ưu tiên Once trước.'
 ],
