@@ -6,6 +6,8 @@
  * per assistant turn, regardless of how many internal blocks the turn has.
  */
 import type { ContentBlock } from '@/api/types'
+import { isConsolidatedDelegationMessage } from '@/utils/blocks'
+import { extractSleepPrefix } from '@/utils/format'
 
 export type TurnItem =
   | { kind: 'user'; block: ContentBlock; index: number }
@@ -14,6 +16,32 @@ export type TurnItem =
 export interface VisibleTurnWindow {
   hiddenTurnCount: number
   visibleTurnItems: TurnItem[]
+}
+
+function consolidateDelegationWaitPhase(blocks: ContentBlock[]): ContentBlock[] {
+  const hiddenTextIndexes = new Set<number>()
+  let delegationIndex = -1
+
+  blocks.forEach((block, index) => {
+    if (block.type === 'tool' && block.toolName === 'team_delegate') {
+      delegationIndex = index
+      return
+    }
+    if (
+      delegationIndex >= 0
+      && block.type === 'text'
+      && extractSleepPrefix(block.content) !== null
+    ) {
+      for (let candidate = delegationIndex + 1; candidate <= index; candidate++) {
+        if (blocks[candidate]?.type === 'text') hiddenTextIndexes.add(candidate)
+      }
+      delegationIndex = -1
+    }
+  })
+
+  return hiddenTextIndexes.size > 0
+    ? blocks.filter((_, index) => !hiddenTextIndexes.has(index))
+    : blocks
 }
 
 /** Only the newest rendered item in the trailing live turn may animate. */
@@ -41,6 +69,10 @@ export function partitionTurns(blocks: ContentBlock[]): TurnItem[] {
   let i = 0
   while (i < blocks.length) {
     const b = blocks[i]
+    if (isConsolidatedDelegationMessage(b)) {
+      i++
+      continue
+    }
     if (b.type === 'user') {
       items.push({ kind: 'user', block: b, index: i })
       i++
@@ -48,11 +80,20 @@ export function partitionTurns(blocks: ContentBlock[]): TurnItem[] {
     }
     const startIndex = i
     const turnBlocks: ContentBlock[] = []
-    while (i < blocks.length && blocks[i].type !== 'user') {
-      turnBlocks.push(blocks[i])
+    while (i < blocks.length) {
+      const block = blocks[i]
+      if (isConsolidatedDelegationMessage(block)) {
+        i++
+        continue
+      }
+      if (block.type === 'user') break
+      turnBlocks.push(block)
       i++
     }
-    items.push({ kind: 'assistant', blocks: turnBlocks, startIndex })
+    const visibleTurnBlocks = consolidateDelegationWaitPhase(turnBlocks)
+    if (visibleTurnBlocks.length > 0) {
+      items.push({ kind: 'assistant', blocks: visibleTurnBlocks, startIndex })
+    }
   }
   return items
 }

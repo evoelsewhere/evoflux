@@ -49,4 +49,44 @@ describe('turn partitioning', () => {
     expect(isLatestStreamingItem(true, 2, 3)).toBe(true)
     expect(isLatestStreamingItem(false, 2, 3)).toBe(false)
   })
+
+  it('folds delegation transport into the surrounding assistant lifecycle', () => {
+    const handoff: ContentBlock = {
+      ...block('user', 'handoff'),
+      extra: {
+        from_agent: 'explorer#1',
+        _handoff_artifact: {
+          task_id: '0198a1d2-3456-7890-abcd-ef0123456789',
+          status: 'final',
+          summary: 'Done.',
+        },
+      },
+    }
+    const waitNudge: ContentBlock = {
+      ...block('user', 'You are still waiting on a team_handoff from explorer#1.'),
+      extra: { from_agent: 'system' },
+    }
+
+    const delegationBlock: ContentBlock = {
+      ...block('tool', 'delegate'),
+      toolName: 'team_delegate',
+    }
+
+    const turns = partitionTurns([
+      delegationBlock,
+      waitNudge,
+      block('text', '<sleep>'),
+      handoff,
+      block('text', 'Final synthesis.'),
+    ])
+
+    expect(turns).toHaveLength(1)
+    expect(turns[0]).toMatchObject({ kind: 'assistant' })
+    if (turns[0]?.kind === 'assistant') {
+      expect(turns[0].blocks.map((item) => item.content)).toEqual([
+        'delegate',
+        'Final synthesis.',
+      ])
+    }
+  })
 })

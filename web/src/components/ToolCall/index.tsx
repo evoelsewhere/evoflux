@@ -313,7 +313,14 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
 
   // Cursor-like Task chrome for team_delegate — replace generic tool row.
   if (name === 'team_delegate') {
-    return <DelegationTaskCards args={args} result={result} toolState={state} />
+    return (
+      <DelegationTaskCards
+        args={args}
+        result={result}
+        toolState={state}
+        startedAt={startedAt}
+      />
+    )
   }
 
   return (

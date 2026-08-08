@@ -4,6 +4,7 @@ import {
   delegationActivityLabel,
   delegationDisplayStatus,
   delegationHandoff,
+  delegationHandoffMatch,
   parseDelegationCall,
 } from '@/lib/delegation-activity'
 import { createDefaultAgentStream } from '@/stores/useTeamStore/defaults'
@@ -29,6 +30,15 @@ describe('delegation activity', () => {
       isolation: 'worktree',
       repoCount: 2,
     })
+  })
+
+  it('does not absorb runtime state text into the resolved agent handle', () => {
+    const parsed = parseDelegationCall(
+      JSON.stringify({ to: ['explorer'], goal: 'Inspect the branch' }),
+      `Task delegated to explorer#1. Running now: explorer#1. Task IDs: ${TASK_ID}.`,
+    )
+
+    expect(parsed.targets).toEqual([{ agent: 'explorer#1', taskId: TASK_ID }])
   })
 
   it('does not mark a delegation done merely because team_delegate returned', () => {
@@ -88,6 +98,38 @@ describe('delegation activity', () => {
     expect(delegationActivityLabel('done', stream, handoff)).toBe(
       'Audit completed successfully.',
     )
+  })
+
+  it('restores a task handoff and completion time from transcript history', () => {
+    const receivedAt = new Date('2026-08-08T10:00:05.000Z')
+    const match = delegationHandoffMatch(
+      [],
+      createDefaultAgentStream(),
+      TASK_ID,
+      [{
+        id: 'historical-handoff',
+        type: 'user',
+        content: 'Audit completed.',
+        timestamp: receivedAt,
+        extra: {
+          from_agent: 'executor#1',
+          _handoff_artifact: {
+            task_id: TASK_ID,
+            status: 'final',
+            summary: 'Audit completed.',
+          },
+        },
+      }],
+    )
+
+    expect(match).toEqual({
+      artifact: {
+        task_id: TASK_ID,
+        status: 'final',
+        summary: 'Audit completed.',
+      },
+      receivedAt: receivedAt.getTime(),
+    })
   })
 
   it('keeps isolated changes in review after the final handoff', () => {

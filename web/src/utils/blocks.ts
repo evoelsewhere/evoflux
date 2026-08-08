@@ -25,6 +25,21 @@ export function isDirectUserBlock(block: ContentBlock): boolean {
   return block.type === 'user' && !block.extra?.from_agent
 }
 
+/** Internal delegation transport is represented by the durable task card. */
+export function isConsolidatedDelegationMessage(block: ContentBlock): boolean {
+  if (block.type !== 'user') return false
+  const handoff = block.extra?._handoff_artifact
+  if (
+    handoff
+    && typeof handoff === 'object'
+    && typeof (handoff as Record<string, unknown>).task_id === 'string'
+  ) {
+    return true
+  }
+  return block.extra?.from_agent === 'system'
+    && /still waiting\s+on\s+a\s+team_handoff/i.test(block.content)
+}
+
 export function appendThinking(
   blocks: ContentBlock[],
   text: string

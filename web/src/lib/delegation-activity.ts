@@ -22,6 +22,11 @@ export interface ParsedDelegationCall {
   repoCount?: number
 }
 
+export interface DelegationHandoffMatch {
+  artifact: Record<string, unknown>
+  receivedAt?: number
+}
+
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
 
 function stringList(value: unknown): string[] {
@@ -48,7 +53,7 @@ export function parseDelegationCall(
     ...stringList(parsed.agent),
     ...stringList(parsed.member),
   ]
-  const resolvedMatch = result?.match(/Task delegated to (.+?)\.\s+Task IDs?:/i)
+  const resolvedMatch = result?.match(/Task delegated to ([^.]+)\./i)
   const resolved = resolvedMatch?.[1]
     ?.split(',')
     .map((value) => value.trim())
@@ -96,18 +101,43 @@ function finalHandoffFromStream(stream: AgentStream | undefined, taskId?: string
   })
 }
 
-export function delegationHandoff(
+export function delegationHandoffMatch(
   activityLog: ActivityItem[],
   stream: AgentStream | undefined,
   taskId?: string,
-): Record<string, unknown> | null {
+  inboxBlocks: ContentBlock[] = [],
+): DelegationHandoffMatch | null {
   if (taskId) {
     const activity = [...activityLog].reverse().find((item) =>
       item.kind === 'handoff' && item.artifact?.task_id === taskId,
     )
-    if (activity?.artifact) return activity.artifact
+    if (activity?.artifact) {
+      return { artifact: activity.artifact, receivedAt: activity.timestamp.getTime() }
+    }
+
+    const inboxBlock = [...inboxBlocks].reverse().find((block) =>
+      block.type === 'user' && block.extra?._handoff_artifact
+      && (block.extra._handoff_artifact as Record<string, unknown>).task_id === taskId,
+    )
+    if (inboxBlock?.extra?._handoff_artifact) {
+      return {
+        artifact: inboxBlock.extra._handoff_artifact as Record<string, unknown>,
+        receivedAt: inboxBlock.timestamp?.getTime(),
+      }
+    }
   }
-  return finalHandoffFromStream(stream, taskId) ? { task_id: taskId, status: 'final' } : null
+  return finalHandoffFromStream(stream, taskId)
+    ? { artifact: { task_id: taskId, status: 'final' } }
+    : null
+}
+
+export function delegationHandoff(
+  activityLog: ActivityItem[],
+  stream: AgentStream | undefined,
+  taskId?: string,
+  inboxBlocks: ContentBlock[] = [],
+): Record<string, unknown> | null {
+  return delegationHandoffMatch(activityLog, stream, taskId, inboxBlocks)?.artifact ?? null
 }
 
 export function delegationDisplayStatus({
