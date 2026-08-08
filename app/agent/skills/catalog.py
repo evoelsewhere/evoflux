@@ -22,7 +22,7 @@ Rules:
 - Before answering or using another tool, inspect this catalog. If the user names a skill or the task clearly matches a description, you must call `skill` with `action="load"` and the exact name before applying its workflow.
 - If no description clearly matches, continue normally without loading a skill.
 - Catalog order is a discovery hint, not a server-selected workflow. Decide from meaning, not keyword overlap alone.
-- Never turn the user's request into a code-search or code-graph query. Skill discovery and repository navigation are separate operations.
+- Never turn the user's request into a `code_context` query. Skill discovery and repository navigation are separate operations.
 - Do not assume a skill's workflow from its description; load its full `SKILL.md` first.
 - Read bundled resources only when the loaded skill directs you to them.
 - Reuse an already-loaded skill instead of loading it again.

@@ -1,4 +1,4 @@
-"""Tests for static/code-graph tools and real LSP tool contracts."""
+"""Tests for static source tools and real LSP tool contracts."""
 
 from __future__ import annotations
 
