@@ -15,7 +15,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
-from uuid import UUID, uuid7
+from uuid import UUID, uuid7  # ty: ignore[unresolved-import] - backported in app.__init__
 
 from loguru import logger
 
@@ -375,16 +375,35 @@ class WorkflowRunner:
 
         # 1. Pre-spawn roster blueprints with no live instance (F5/F6).
         subagents = list(getattr(node_like, "subagents", None) or [])
+        from app.agent.ask_user import (
+            AskUserService,
+            get_active_ask_user_service,
+            reset_ask_user_service,
+            set_ask_user_service,
+        )
+        from app.agent.mode.team.team import SpawnCancelledError
+
+        owned_ask_service = None
+        ask_token = None
+        if get_active_ask_user_service() is None:
+            owned_ask_service = AskUserService(
+                session_id=state.session_id,
+                stream_session_id=state.session_id,
+            )
+            ask_token = set_ask_user_service(owned_ask_service)
         try:
             for blueprint in subagents:
                 if not team.live_instances_for_blueprint(blueprint):
-                    await team.spawn(blueprint)
-        except KeyError as exc:
+                    await team.spawn(blueprint, confirm=True)
+        except (KeyError, SpawnCancelledError) as exc:
             error = f"roster spawn failed: {exc}"
             node_run_id = await self._persist_node_start(state, node_id, iteration)
             await self._persist_node_end(node_run_id, status="failed", error=error)
             await self._fail(state, node_id=node_id, error=error)
             return None
+        finally:
+            if owned_ask_service is not None and ask_token is not None:
+                reset_ask_user_service(ask_token, state.session_id)
 
         # 2. Per-turn allowlist — cleared at capture.
         team.turn_allowed_blueprints = set(subagents)

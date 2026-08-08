@@ -33,6 +33,7 @@ class FakeTeam:
     def __init__(self) -> None:
         self.turn_allowed_blueprints: set[str] | None = None
         self.spawned: list[str] = []
+        self.spawn_confirmations: list[bool] = []
         self.injected: list[str] = []
         self.busy_calls: list[bool] = []
         self.interrupted = False
@@ -41,8 +42,9 @@ class FakeTeam:
     def live_instances_for_blueprint(self, blueprint: str) -> list[str]:
         return self._live.get(blueprint, [])
 
-    async def spawn(self, blueprint: str):
+    async def spawn(self, blueprint: str, *, confirm: bool = False):
         self.spawned.append(blueprint)
+        self.spawn_confirmations.append(confirm)
         self._live.setdefault(blueprint, []).append(f"{blueprint}#1")
 
     async def inject_synthetic_turn(self, session_id: str, prompt: str):
@@ -105,6 +107,7 @@ outputs:
     # The drive task pre-spawns, sets the allowlist, injects, then waits.
     await _wait(lambda: len(fake_team.injected) == 1)
     assert fake_team.spawned == ["debate"]
+    assert fake_team.spawn_confirmations == [True]
     assert fake_team.turn_allowed_blueprints == {"debate"}
     assert fake_team.injected[0] == "Analyze the bug"
     assert state.pending_node == "work"
