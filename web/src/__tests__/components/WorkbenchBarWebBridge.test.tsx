@@ -49,12 +49,14 @@ describe('WorkbenchBar browser access control', () => {
     onChange = vi.fn(),
     popoverOpen = false,
     onPopoverOpenChange = vi.fn(),
+    identity = 'Lead',
+    activeAgent = 'Lead',
   ) {
     render(
       <WorkbenchBar
-        identity="Lead"
-        activeAgent="Lead"
-        agentNames={['Lead']}
+        identity={identity}
+        activeAgent={activeAgent}
+        agentNames={['Lead', 'explorer#1']}
         viewMode="agent"
         onViewModeChange={vi.fn()}
         onSelectAgent={vi.fn()}
@@ -80,6 +82,14 @@ describe('WorkbenchBar browser access control', () => {
     fireEvent.click(control)
     expect(onPopoverOpenChange.mock.calls[0]?.[0]).toBe(true)
     expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('labels the agent selector with the selected agent instead of the workspace identity', () => {
+    renderBar(false, vi.fn(), false, vi.fn(), 'evoflux', 'explorer#1')
+
+    const selector = screen.getByRole('button', { name: 'Choose active agent' })
+    expect(selector).toHaveTextContent('explorer#1')
+    expect(selector).not.toHaveTextContent('evoflux')
   })
 
   it('enables WebBridge explicitly when the extension is connected', async () => {
