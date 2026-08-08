@@ -20,6 +20,11 @@ Do not load bundled references when this skill activates.
    when choosing between adjacent levels, testing independently deployed
    consumers, or replacing a flaky high-level test.
 
+When the behavior under test has no exact declaration yet, call `code_search`
+once with the observable contract, error text, route, or code fragment. Use the
+result to choose the symbol and test boundary; skip search when the exact symbol
+is already known.
+
 For an exact symbol under test, use native `code_graph` to identify direct
 `callers`, `references`, and outbound `callees` that define the observable
 contract or require compatibility coverage. Use `impact` only for a named
@@ -34,8 +39,7 @@ returns `partial` and a reported dirty file overlaps the question, use a
 targeted source read for a local gap or retry once with `"balanced"` when the
 relationships must be recomputed. After an edit that can change relationships,
 use `"balanced"` once before relying on the updated structure. Use `"strict"`
-only for a final,
-high-consequence completeness check when watcher coverage is unavailable or
+only for a final, high-consequence completeness check when watcher coverage is unavailable or
 untrusted; never use it for discovery.
 
 Read

@@ -24,7 +24,12 @@ Do not load bundled references when this skill activates.
    change crosses a public boundary, touches persistence, alters asynchronous
    state, or affects more than one independently deployed consumer.
 
-When an exact changed symbol is known, use native `code_graph` before editing:
+When the owning location or exact identifier is unknown, call `code_search`
+once with the observable behavior, stable literal, or code terms. Promote a
+repository-qualified result to a declared symbol, then stop broad discovery.
+If the exact changed symbol is already known, skip `code_search`.
+
+Use native `code_graph` on the exact changed symbol before editing:
 `references` or `callers` to enumerate direct consumers, `callees` to confirm
 outbound dependencies, and `impact` only for explicitly transitive risk. Start
 at depth 1 and keep repository identity on cross-repository edges. Do not send
@@ -40,8 +45,7 @@ returns `partial` and a reported dirty file overlaps the question, use a
 targeted source read for a local gap or retry once with `"balanced"` when the
 relationships must be recomputed. After an edit that can change relationships,
 use `"balanced"` once before relying on the updated structure. Use `"strict"`
-only for a final,
-high-consequence completeness check when watcher coverage is unavailable or
+only for a final, high-consequence completeness check when watcher coverage is unavailable or
 untrusted; never use it for discovery.
 
 Read [references/code-graph-contract.md](references/code-graph-contract.md)

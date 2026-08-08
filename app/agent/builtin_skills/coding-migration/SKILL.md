@@ -21,6 +21,10 @@ Do not load bundled references when this skill activates.
    for a compatibility matrix and phase gates when the transition spans
    deployments, stored data, or multiple repositories.
 
+When a migration surface is known only by behavior, package, schema term, or
+protocol text, call `code_search` once across authorized repositories to find
+its declared boundary. Skip it when the exact identifier is already known.
+
 For every exact API, type, event, schema adapter, or migration entry-point
 symbol, use native `code_graph` to establish direct `references`/`callers` and
 bounded `impact` before sequencing rollout. Start at depth 1; preserve
@@ -34,8 +38,7 @@ returns `partial` and a reported dirty file overlaps the question, use a
 targeted source read for a local gap or retry once with `"balanced"` when the
 relationships must be recomputed. After an edit that can change relationships,
 use `"balanced"` once before relying on the updated structure. Use `"strict"`
-only for a final,
-high-consequence completeness check when watcher coverage is unavailable or
+only for a final, high-consequence completeness check when watcher coverage is unavailable or
 untrusted; never use it for discovery.
 
 Read [references/code-graph-contract.md](references/code-graph-contract.md)

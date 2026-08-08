@@ -1193,7 +1193,7 @@ class TestBuiltinSkills:
     @pytest.mark.asyncio
     async def test_implicit_specialist_is_directly_visible_and_loadable(self):
         state = SimpleNamespace(
-            metadata={}, messages_for_llm=[], tool_names=["code_graph"]
+            metadata={}, messages_for_llm=[], tool_names=["code_graph", "code_search"]
         )
 
         specialist = await load_skill(
@@ -1248,6 +1248,8 @@ class TestBuiltinSkills:
             normalized = " ".join(
                 (root / "SKILL.md").read_text(encoding="utf-8").split()
             )
+            assert "`code_search`" in normalized
+            assert "skip" in normalized.casefold()
             assert 'Use `freshness_policy="fast"` for the first graph call' in normalized
             assert 'retry once with `"balanced"`' in normalized
             assert "After an edit that can change relationships" in normalized
@@ -1262,6 +1264,7 @@ class TestBuiltinSkills:
         assert len(contracts) == 1
         contract = contracts.pop()
         assert "## Choose freshness deliberately" in contract
+        assert "Use `code_search` only while" in contract
         assert "Never use it for discovery or as the first call" in contract
 
     def test_coding_investigation_locks_graph_first_trajectory(self):
