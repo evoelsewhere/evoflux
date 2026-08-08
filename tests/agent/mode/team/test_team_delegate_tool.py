@@ -123,7 +123,7 @@ class TestTeamDelegateTool:
 
             async def spawn(self, blueprint, *, confirm=False):
                 assert confirm is True
-                member = SimpleNamespace(name=f"{blueprint}#1")
+                member = SimpleNamespace(name=f"{blueprint}#1", state="idle")
                 self.members[member.name] = member
                 mb.register(member.name)
                 return member
@@ -133,7 +133,13 @@ class TestTeamDelegateTool:
 
             async def create_delegation_tasks(self, **kwargs):
                 self.created_spec = kwargs["spec"]
-                return [SimpleNamespace(id=uuid7(), status="pending")]
+                return [
+                    SimpleNamespace(
+                        id=uuid7(),
+                        status="pending",
+                        recipient="executor#1",
+                    )
+                ]
 
             async def dispatch_delegation_tasks(self, tasks):
                 return None

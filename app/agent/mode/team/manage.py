@@ -6,6 +6,7 @@ batches.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Annotated, Literal
 
 from loguru import logger
@@ -18,7 +19,9 @@ if TYPE_CHECKING:
 
 
 _MANAGE_DESCRIPTION = (
-    "Manage the live team roster and discover spawnable member blueprints. "
+    "Inspect or manage the live team roster and discover spawnable member "
+    "blueprints. Use action='status' before routing parallel work to see each "
+    "member's state, active task, queue depth, model, and thinking effort. "
     "Normal single-member assignments do not need this call: team_delegate "
     "auto-spawns a bare blueprint when no instance is live. "
     "Use action='spawn' with blueprint names like 'executor' to create the next "
@@ -31,7 +34,7 @@ _MANAGE_DESCRIPTION = (
     "'executor#1' only when an instance clearly won't be reused or the roster is "
     "cluttered; history is preserved either way. Accepts multiple members in one "
     "call. Available blueprints and any live/restorable handles are surfaced in "
-    "this tool's results and in validation errors for unknown blueprints. If no "
+    "status results and in validation errors for unknown blueprints. If no "
     "blueprints are configured, no member blueprints are available to spawn."
 )
 
@@ -41,11 +44,12 @@ def make_team_manage_tool(team: "AgentTeam") -> Tool:
 
     async def team_manage(
         action: Annotated[
-            Literal["spawn", "dismiss"],
+            Literal["status", "spawn", "dismiss"],
             Field(
                 description=(
-                    "'spawn' brings members online; 'dismiss' removes live "
-                    "instances from the roster while preserving history."
+                    "'status' inspects routing capacity; 'spawn' brings members "
+                    "online; 'dismiss' removes live instances from the roster "
+                    "while preserving history."
                 )
             ),
         ],
@@ -60,9 +64,11 @@ def make_team_manage_tool(team: "AgentTeam") -> Tool:
                     "are processed left-to-right."
                 )
             ),
-        ],
+        ] = [],  # noqa: B006
     ) -> str:
         """Spawn or dismiss live member instances in a batch."""
+        if action == "status":
+            return json.dumps(team.status(), ensure_ascii=False, sort_keys=True)
         if not members:
             return "No members provided."
 

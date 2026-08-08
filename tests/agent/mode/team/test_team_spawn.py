@@ -714,6 +714,20 @@ class TestRecipientResolution:
         assert team.resolve_recipient("executor#1") == "executor#1"
         assert team.resolve_recipient("executor#2") == "executor#2"
 
+    def test_delegation_prefers_the_only_idle_instance(self, tmp_path):
+        team = _build_dynamic_team(tmp_path, {"executor": None})
+        for n in (1, 2):
+            handle = f"executor#{n}"
+            agent = Agent(name=handle, llm_provider=MockTeamProvider("ok"))
+            team.members[handle] = TeamMember(agent)
+            team._members_by_name[handle] = team.members[handle]
+            team.mailbox.register(handle)
+        team.members["executor#1"].state = "working"
+
+        assert team.resolve_delegation_recipient("executor") == "executor#2"
+        team.members["executor#2"].state = "working"
+        assert team.resolve_delegation_recipient("executor") is None
+
     def test_resolve_unknown_returns_none(self, tmp_path):
         team = _build_dynamic_team(tmp_path, {"executor": None})
         assert team.resolve_recipient("ghost") is None
@@ -764,6 +778,67 @@ class TestRosterManageTool:
         assert "restore/reuse that instance's history" in tool.description
         assert "live/restorable handles" in tool.description
         assert "no member blueprints are available to spawn" in tool.description
+        assert "action='status'" in tool.description
+
+    async def test_status_exposes_routing_capacity_and_runtime(self, tmp_path):
+        import json
+
+        from app.agent.mode.team.manage import make_team_manage_tool
+
+        team = _build_dynamic_team(tmp_path, {"executor": None})
+        await team.start()
+        try:
+            member = await team.spawn("executor")
+            member.state = "working"
+            member.runtime_model_id = "mock:selected"
+            member.runtime_thinking_level = "high"
+            await team.mailbox.send(
+                to=member.name,
+                message=Message(
+                    from_agent="lead",
+                    to_agent=member.name,
+                    content="queued",
+                ),
+            )
+
+            payload = json.loads(
+                await make_team_manage_tool(team)(action="status")
+            )
+            status = payload["members"][0]
+            assert status["name"] == "executor#1"
+            assert status["state"] == "working"
+            assert status["queue_depth"] == 1
+            assert status["model"] == "mock:selected"
+            assert status["thinking_level"] == "high"
+        finally:
+            await team.stop()
+
+    async def test_delegate_reports_busy_member_as_queued(self, tmp_path, monkeypatch):
+        from app.agent.mode.team.delegate import make_team_delegate_tool
+
+        team = _build_dynamic_team(tmp_path, {"executor": None})
+        monkeypatch.setattr(
+            "app.agent.mode.team.delegate._emit_delegation_event",
+            lambda *args: None,
+        )
+        await team.start()
+        try:
+            member = await team.spawn("executor")
+            member.state = "working"
+            result = await make_team_delegate_tool(
+                team.mailbox,
+                agent_name=team.lead.name,
+                team=team,
+            )(
+                to=["executor"],
+                goal="Inspect routing",
+                expected_output="A verified report",
+            )
+
+            assert "Queued behind active work: executor#1" in result
+            assert "Spawn another instance" in result
+        finally:
+            await team.stop()
 
     async def test_members_do_not_get_manage_tools(self, tmp_path):
         team = _build_dynamic_team(tmp_path, {"executor": None})

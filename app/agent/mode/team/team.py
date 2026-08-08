@@ -2666,6 +2666,8 @@ class AgentTeam:
             row.thinking_level = runtime_config.thinking_level
             db.add(row)
             await db.commit()
+        member.runtime_model_id = runtime_config.model
+        member.runtime_thinking_level = runtime_config.thinking_level
 
     async def _persist_roster_change(self, change: str) -> None:
         """Persist an LLM-visible, UI-hidden roster-change marker."""
@@ -2923,6 +2925,27 @@ class AgentTeam:
             return candidates[0]
         return None
 
+    def resolve_delegation_recipient(self, name: str) -> str | None:
+        """Resolve task assignments with idle-member preference.
+
+        Exact handles remain exact. For a bare blueprint, one idle instance is
+        selected even when other instances are busy. A single busy instance is
+        still addressable (the task will be reported as queued); multiple busy
+        instances stay ambiguous so the lead must choose a handle or spawn.
+        """
+        exact = self.resolve_recipient(name)
+        if exact is not None or parse_instance_handle(name) is not None:
+            return exact
+        if name not in self.blueprints:
+            return None
+        live = self.live_instances_for_blueprint(name)
+        idle = [handle for handle in live if self.members[handle].state != "working"]
+        if len(idle) == 1:
+            return idle[0]
+        if not idle and len(live) == 1:
+            return live[0]
+        return None
+
     def live_instances_for_blueprint(self, blueprint: str) -> list[str]:
         """Return live instance handles for *blueprint* in spawn order."""
         matches: list[tuple[int, str]] = []
@@ -2993,20 +3016,20 @@ class AgentTeam:
 
     def status(self) -> dict:
         """Return current state of all live agents + blueprint roster."""
+        def member_status(member: TeamMemberBase) -> dict:
+            return {
+                "name": member.name,
+                "state": member.state,
+                "model": member.runtime_model_id
+                or member.agent.llm_provider.model,
+                "thinking_level": member.runtime_thinking_level,
+                "active_task_id": member._active_delegation_task_id,
+                "queue_depth": self.mailbox.inbox_size(member.name),
+            }
+
         return {
-            "lead": {
-                "name": self.lead.name,
-                "state": self.lead.state,
-                "model": self.lead.agent.llm_provider.model,
-            },
-            "members": [
-                {
-                    "name": m.name,
-                    "state": m.state,
-                    "model": m.agent.llm_provider.model,
-                }
-                for m in self.members.values()
-            ],
+            "lead": member_status(self.lead),
+            "members": [member_status(m) for m in self.members.values()],
             "blueprints": [
                 {
                     "name": bp.name,

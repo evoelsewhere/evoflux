@@ -124,6 +124,11 @@ class TeamMailbox:
             return True
         return self._inboxes[agent_name].empty()
 
+    def inbox_size(self, agent_name: str) -> int:
+        """Return the number of messages waiting for *agent_name*."""
+        inbox = self._inboxes.get(agent_name)
+        return inbox.qsize() if inbox is not None else 0
+
     # ------------------------------------------------------------------
     # Introspection
     # ------------------------------------------------------------------
