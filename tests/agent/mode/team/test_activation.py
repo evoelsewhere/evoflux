@@ -21,7 +21,8 @@ import pytest_asyncio
 
 from app.agent.agent_loop import Agent
 from app.agent.mode.team.mailbox import Message, TeamMailbox
-from app.agent.mode.team.member import TeamLead, TeamMember
+from app.agent.mode.team.member import TeamLead, TeamMember, _task_scoped_history
+from app.agent.schemas.chat import AssistantMessage, HumanMessage
 from app.agent.mode.team.team import AgentTeam
 from tests.agent.mode.team.conftest import MockTeamProvider
 
@@ -533,6 +534,36 @@ class TestLateInboxReactivation:
         worker.agent.run.assert_not_called()
 
         await team.stop()
+
+
+def test_task_scoped_history_excludes_intervening_assignments():
+    history = [
+        HumanMessage(
+            content="task one",
+            extra={"kind": "delegation", "task_id": "task-1"},
+        ),
+        AssistantMessage(content="task one result"),
+        HumanMessage(
+            content="task two",
+            extra={"kind": "delegation", "task_id": "task-2"},
+        ),
+        AssistantMessage(content="task two result"),
+        HumanMessage(
+            content="rework task one",
+            extra={"kind": "rejection", "task_id": "task-1"},
+        ),
+        AssistantMessage(content="task one revised"),
+    ]
+
+    scoped = _task_scoped_history(history, "task-1")
+
+    assert [message.content for message in scoped] == [
+        "task one",
+        "task one result",
+        "rework task one",
+        "task one revised",
+    ]
+    assert _task_scoped_history(history, "unknown") is history
 
 
 class TestDelegationFocus:

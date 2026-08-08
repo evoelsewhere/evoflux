@@ -87,7 +87,7 @@ from app.agent.ask_user import (
     set_ask_user_service,
 )
 from app.agent.schemas.agent import RunConfig
-from app.agent.schemas.chat import HumanMessage
+from app.agent.schemas.chat import ChatMessage, HumanMessage
 from app.agent.mode.team.mailbox import Message
 from app.core.db import DbFactory, resolve_db_factory
 from app.models.chat import ChatSession, SessionMessage
@@ -105,6 +105,37 @@ if TYPE_CHECKING:
     from app.agent.mode.team.mailbox import TeamMailbox
     from app.agent.mode.team.team import AgentTeam
     from app.agent.providers.base import LLMProviderBase
+
+
+def _task_scoped_history(
+    history: list[ChatMessage], task_id: str | None
+) -> list[ChatMessage]:
+    """Project a member's durable history onto one delegation contract.
+
+    The database remains a complete audit trail. Only the provider input is
+    narrowed: task-bearing user messages establish segment ownership and all
+    messages in unrelated task segments are omitted. Reopened attempts retain
+    their earlier task segments while intervening assignments stay excluded.
+    """
+    if task_id is None:
+        return history
+
+    scoped: list[ChatMessage] = []
+    active_segment: str | None = None
+    found = False
+    for message in history:
+        extra = message.extra or {}
+        if (
+            isinstance(message, HumanMessage)
+            and extra.get("kind") in {"delegation", "rejection"}
+        ):
+            marker = extra.get("task_id")
+            if isinstance(marker, str) and marker:
+                active_segment = marker
+                found = found or marker == task_id
+        if active_segment == task_id:
+            scoped.append(message)
+    return scoped if found else history
 
 
 # -- Protocol prompt blocks (shared by build_protocol) -------------------------
@@ -1176,7 +1207,11 @@ class TeamMemberBase(abc.ABC):
                 except (TypeError, ValueError):
                     active_task_specs = []
 
-        run_messages = history
+        run_messages = (
+            _task_scoped_history(history, self._active_delegation_task_id)
+            if self._role_label == "member"
+            else history
+        )
         runtime_provider: LLMProviderBase | None = None
         runtime_model = None
         session_model = session_row.model if session_row is not None else None
@@ -1185,7 +1220,7 @@ class TeamMemberBase(abc.ABC):
         )
         last_service_tier: str | None = None
         last_user_model: str | None = None
-        for msg in reversed(history):
+        for msg in reversed(run_messages):
             extra = msg.extra or {} if msg.extra else {}
             if msg.role == "user":
                 if last_service_tier is None:
@@ -1942,10 +1977,47 @@ class TeamMember(TeamMemberBase):
         )
         from app.agent.providers.unconfigured import UnconfiguredProviderError
 
-        await super()._on_turn_error(exc)
-
         assert self._team is not None
         assert self._mailbox is not None
+
+        # A successful final handoff may have completed durably immediately
+        # before a later hook/provider failure. Never turn that into a false
+        # "reassign me" message. For an actually pending task, transition the
+        # ledger to failed first so lead wait gates and dependent tasks cannot
+        # remain stranded forever.
+        active_task = None
+        if self._active_delegation_task_id is not None:
+            try:
+                active_task = await self._team.get_delegation_task(
+                    self._active_delegation_task_id
+                )
+            except (TypeError, ValueError) as task_exc:
+                logger.warning(
+                    "team_member_error_task_lookup_failed member={} task={} error={}",
+                    self.name,
+                    self._active_delegation_task_id,
+                    task_exc,
+                )
+        if active_task is not None and active_task.status in {"review", "completed"}:
+            logger.info(
+                "team_member_post_handoff_error_suppressed member={} task={} error={}",
+                self.name,
+                active_task.id,
+                exc,
+            )
+            return
+        if active_task is not None and active_task.status == "pending":
+            try:
+                await self._team.fail_delegation_task(active_task, str(exc))
+            except Exception as task_exc:  # noqa: BLE001 - preserve error reporting
+                logger.warning(
+                    "team_member_task_fail_transition_failed member={} task={} error={}",
+                    self.name,
+                    active_task.id,
+                    task_exc,
+                )
+
+        await super()._on_turn_error(exc)
 
         from app.agent.tools.builtin.todo import release_in_progress_for_actor
         from app.core.paths import session_workspace_dir

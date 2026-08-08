@@ -1175,6 +1175,24 @@ class AgentTeam:
             )
         return task
 
+    async def get_delegation_task(self, task_id: str) -> DelegationTask | None:
+        """Return one durable task for lifecycle reconciliation.
+
+        Legacy in-memory task ids have no ledger row and return ``None``.
+        """
+        if task_id in self._ephemeral_delegation_ids:
+            return None
+        from app.agent.mode.team import delegation_ledger
+
+        lead_session_id = UUID(self.lead.session_id)
+        db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+        async with db_factory() as db:
+            return await delegation_ledger.get_task(
+                db,
+                lead_session_id=lead_session_id,
+                task_id=task_id,
+            )
+
     async def reopen_delegation(
         self,
         *,
@@ -2600,6 +2618,10 @@ class AgentTeam:
 
         cfg = parse_agent_md(bp.source_path)
         default_model = cfg.model
+        if not default_model:
+            raise ValueError(
+                f"Member blueprint '{blueprint}' has no model configured."
+            )
         default_thinking = cfg.thinking_level
         service = get_active_ask_user_service()
         if service is None:

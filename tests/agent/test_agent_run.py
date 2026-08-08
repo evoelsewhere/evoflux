@@ -1,7 +1,7 @@
 """Tests for Agent.run() — the main agentic loop."""
 
 import asyncio
-from typing import AsyncIterator
+from typing import Annotated, Any, AsyncIterator
 from unittest.mock import AsyncMock, MagicMock
 
 from app.agent.agent_loop import Agent
@@ -23,7 +23,7 @@ from app.agent.errors import (
 )
 from app.agent.providers.base import LLMProviderBase
 from app.agent.providers.model_metadata import ModelCost
-from app.agent.tools.registry import Tool
+from app.agent.tools.registry import InjectedArg, Tool
 from app.agent.schemas.chat import (
     AssistantMessage,
     ChatCompletionChunk,
@@ -431,6 +431,29 @@ async def test_agent_run_max_iterations():
     assert last is not None
     # Last response has tool_calls (loop was cut short)
     assert last.tool_calls is not None
+
+
+async def test_agent_run_stops_after_terminal_tool_result():
+    async def finish(
+        _state: Annotated[Any, InjectedArg()] = None,
+    ) -> str:
+        """Finish the current durable task."""
+        _state.metadata["stop_after_tool_call"] = "finish"
+        return "delivered"
+
+    provider = MockProvider(
+        [[make_tool_chunk("finish", "call_terminal", "{}")]]
+    )
+    agent = Agent(name="bot", llm_provider=provider, tools=[Tool(finish)])
+
+    messages = await agent.run([HumanMessage(content="finish")])
+
+    assert [
+        message.content
+        for message in messages
+        if isinstance(message, ToolMessage)
+    ] == ["delivered"]
+    assert agent.stats.messages_count == 1
 
 
 async def test_agent_run_retries_empty_response_after_tool_result():

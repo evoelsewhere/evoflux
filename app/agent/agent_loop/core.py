@@ -981,6 +981,17 @@ class Agent(Generic[TContext]):
             # Me sync after tool execution — captures tool results
             await self._sync(checkpointer, ctx, state)
 
+            stop_after_tool = state.metadata.pop("stop_after_tool_call", None)
+            if stop_after_tool:
+                logger.debug(
+                    "agent_iteration_done agent={} iteration={} "
+                    "action=stop_after_tool tool={}",
+                    self.name,
+                    iteration,
+                    stop_after_tool,
+                )
+                break
+
             # Me sleep + tool calls: tools executed, now exit without another LLM call
             if _is_sleep:
                 logger.debug(

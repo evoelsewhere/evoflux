@@ -11,6 +11,8 @@ Covers:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from app.agent.mode.team.handoff import HandoffArtifact, make_team_handoff_tool
 from app.agent.mode.team.mailbox import TeamMailbox
 
@@ -204,6 +206,24 @@ class TestTeamHandoffTool:
 
         msg = await mb.receive("lead")
         assert "FINAL" in msg.content
+
+    async def test_final_task_handoff_marks_agent_loop_terminal(self):
+        mb = _make_mailbox("explorer", "lead")
+        state = SimpleNamespace(metadata={})
+        tool = make_team_handoff_tool(mb, agent_name="explorer")
+
+        result = await tool(
+            to=["lead"],
+            task_id="01900000-0000-7000-8000-000000000001",
+            summary="The delegated investigation is complete and ready to use.",
+            findings=["All requested evidence was collected"],
+            verified=True,
+            verification_method="checked cited files",
+            _state=state,
+        )
+
+        assert "Handoff delivered" in result
+        assert state.metadata["stop_after_tool_call"] == "team_handoff"
 
     async def test_next_actions_in_content(self):
         """Next actions appear in formatted content."""
