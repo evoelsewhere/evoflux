@@ -51,7 +51,7 @@ class _PreparedScope:
 # A live watcher makes repeated full ``git status`` + content-hash validation
 # redundant after one successful check of a given graph snapshot. Keying by
 # the stored state fingerprint naturally invalidates this cache after reindex.
-_VALIDATED_SNAPSHOTS: dict[UUID, tuple[int, str]] = {}
+_VALIDATED_SNAPSHOTS: dict[UUID, tuple[int, str, str, int]] = {}
 
 
 def _state_fingerprint(states: tuple[CodeIndexState, ...]) -> tuple[int, str]:
@@ -103,6 +103,75 @@ def _git_changed_paths(root: Path) -> frozenset[str]:
             if source:
                 paths.add(source)
     return frozenset(paths)
+
+
+def _git_source_marker(root: Path) -> tuple[str, int]:
+    """Cheap cache marker that changes across commits/branch switches."""
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            check=False,
+            timeout=2,
+            text=True,
+        )
+        revision = head.stdout.strip() if head.returncode == 0 else ""
+    except (OSError, subprocess.TimeoutExpired):
+        revision = ""
+    try:
+        index_mtime = (root / ".git" / "index").stat().st_mtime_ns
+    except OSError:
+        index_mtime = 0
+    return revision, index_mtime
+
+
+def _clean_tree_candidates(
+    scope: WorkspaceScope, states: tuple[CodeIndexState, ...]
+) -> frozenset[str]:
+    """Find source paths that can be stale even when ``git status`` is clean.
+
+    A committed edit disappears from ``git status`` but leaves a newer file
+    mtime than the stored per-file index timestamp. Missing indexed files are
+    always candidates. ``git ls-files`` adds newly committed source files that
+    have no state row yet. Only candidates are hashed by ``_index_dirty_paths``.
+    """
+    indexed = {state.file_path for state in states}
+    candidates: set[str] = set()
+    for state in states:
+        path = scope.root / state.file_path
+        try:
+            if path.stat().st_mtime > state.indexed_at.timestamp():
+                candidates.add(state.file_path)
+        except OSError:
+            candidates.add(state.file_path)
+    try:
+        tracked = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=scope.root,
+            capture_output=True,
+            check=False,
+            timeout=3,
+        )
+        if tracked.returncode == 0:
+            registry = default_registry()
+            for raw_path in tracked.stdout.decode("utf-8", "replace").split("\0"):
+                relative = raw_path.replace("\\", "/")
+                if (
+                    relative
+                    and relative not in indexed
+                    and registry.for_path(relative) is not None
+                ):
+                    candidates.add(relative)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return frozenset(candidates)
+
+
+def _looks_like_source_path(symbol: str) -> bool:
+    normalized = symbol.replace("\\", "/")
+    suffix = Path(normalized).suffix.casefold()
+    return suffix in default_registry().supported_extensions()
 
 
 def _index_dirty_paths(
@@ -170,14 +239,20 @@ async def _prepare_scope(
         return _PreparedScope(scope, states, watcher_dirty)
 
     state_count, state_latest = _state_fingerprint(states)
+    source_revision, source_index_mtime = await asyncio.to_thread(
+        _git_source_marker, scope.root
+    )
     if (
         freshness_policy == "balanced"
         and is_code_graph_watcher_active()
         and not get_dirty_code_paths(str(scope.root))
-        and _VALIDATED_SNAPSHOTS.get(scope.workspace_id) == (state_count, state_latest)
+        and _VALIDATED_SNAPSHOTS.get(scope.workspace_id)
+        == (state_count, state_latest, source_revision, source_index_mtime)
     ):
         return _PreparedScope(scope, states, frozenset())
     changed = await asyncio.to_thread(_git_changed_paths, scope.root)
+    if (scope.root / ".git").exists():
+        changed |= await asyncio.to_thread(_clean_tree_candidates, scope, states)
     dirty = await asyncio.to_thread(_index_dirty_paths, scope, states, changed)
     if dirty and freshness_policy != "fast":
         await code_graph_service.reindex_workspace(
@@ -190,7 +265,15 @@ async def _prepare_scope(
         dirty = await asyncio.to_thread(_index_dirty_paths, scope, states, changed)
     if not dirty and is_code_graph_watcher_active():
         state_count, state_latest = _state_fingerprint(states)
-        _VALIDATED_SNAPSHOTS[scope.workspace_id] = (state_count, state_latest)
+        source_revision, source_index_mtime = await asyncio.to_thread(
+            _git_source_marker, scope.root
+        )
+        _VALIDATED_SNAPSHOTS[scope.workspace_id] = (
+            state_count,
+            state_latest,
+            source_revision,
+            source_index_mtime,
+        )
     return _PreparedScope(scope, states, dirty)
 
 
@@ -261,6 +344,12 @@ async def navigate_code_graph(
     if any(char.isspace() for char in symbol):
         raise ValueError(
             "code_graph accepts one raw symbol identifier, not a natural-language query."
+        )
+    if _looks_like_source_path(symbol):
+        raise ValueError(
+            "code_graph expects a symbol, not a source filename/path. Pass the "
+            "raw symbol in `symbol` and use the optional `path` filter to "
+            "disambiguate it."
         )
     if not scopes:
         return CodeGraphResult(

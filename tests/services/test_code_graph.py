@@ -14,6 +14,7 @@ from app.services.code_graph.types import (
     EDGE_CALLS,
     EDGE_CONTAINS,
     EDGE_INHERITS,
+    EDGE_REFERENCES,
     NODE_CLASS,
     NODE_FUNCTION,
     NODE_METHOD,
@@ -87,6 +88,50 @@ def test_python_method_call_resolves_attribute_name():
     result = PythonParser().parse(file_path="a.py", source=source)
     calls = [e for e in result.edges if e.kind == EDGE_CALLS]
     assert calls[0].dst_name == "obj.run"
+
+
+def test_shared_identifier_indexing_retains_multilanguage_reference_callsites(
+    tmp_path: Path,
+):
+    """Direct symbol reads use one shared extraction contract across grammars."""
+    (tmp_path / "settings.py").write_text(
+        'PY_TAG = "python"\n\n'
+        "def use_python(value):\n"
+        "    if value == PY_TAG:\n"
+        "        return PY_TAG\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "settings.ts").write_text(
+        'export const TS_TAG = "typescript";\n'
+        "export function useTs(value: string) {\n"
+        "  return value === TS_TAG ? TS_TAG : value;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "settings.go").write_text(
+        'package settings\n\nconst GoTag = "go"\n\n'
+        "func useGo(value string) string {\n"
+        "    if value == GoTag { return GoTag }\n"
+        "    return value\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "settings.rs").write_text(
+        'const RUST_TAG: &str = "rust";\n\n'
+        "fn use_rust(value: &str) -> &str {\n"
+        "    if value == RUST_TAG { RUST_TAG } else { value }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    index = index_workspace(tmp_path)
+    nodes = {node.name: node.key for node in index.nodes}
+    references = [edge for edge in index.edges if edge.kind == EDGE_REFERENCES]
+
+    for name in ("PY_TAG", "TS_TAG", "GoTag", "RUST_TAG"):
+        assert any(edge.dst_key == nodes[name] for edge in references), name
+    python_lines = {edge.line for edge in references if edge.dst_key == nodes["PY_TAG"]}
+    assert python_lines == {4, 5}
 
 
 # ── TypeScript parser ─────────────────────────────────────────────────────────
