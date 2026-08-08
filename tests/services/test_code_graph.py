@@ -679,6 +679,57 @@ async def test_incremental_reindex_recreates_ambiguous_edges(setup_db, tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_incremental_reindex_reconciles_stable_source_chunks(
+    setup_db, tmp_path: Path
+):
+    from sqlmodel import select
+
+    from app.core.db import async_session_factory
+    from app.models.code_graph import CodeIndexChunk
+    from app.services.code_graph_service import reindex_workspace
+
+    source_path = tmp_path / "source.py"
+    source_path.write_text("def value():\n    return 1\n", encoding="utf-8")
+    workspace_id = await _register_and_full_index(tmp_path)
+
+    async def _chunks():
+        async with async_session_factory() as db:
+            return list(
+                (
+                    await db.exec(
+                        select(CodeIndexChunk).where(
+                            CodeIndexChunk.workspace_id == workspace_id
+                        )
+                    )
+                ).all()
+            )
+
+    before = await _chunks()
+    assert len(before) == 1
+    chunk_id = before[0].id
+
+    source_path.write_text("def value():\n    return 2\n", encoding="utf-8")
+    async with async_session_factory() as db:
+        await reindex_workspace(
+            db, workspace_id=workspace_id, root_path=str(tmp_path), incremental=True
+        )
+        await db.commit()
+
+    after = await _chunks()
+    assert len(after) == 1
+    assert after[0].id == chunk_id
+    assert "return 2" in after[0].content
+
+    source_path.unlink()
+    async with async_session_factory() as db:
+        await reindex_workspace(
+            db, workspace_id=workspace_id, root_path=str(tmp_path), incremental=True
+        )
+        await db.commit()
+    assert await _chunks() == []
+
+
+@pytest.mark.asyncio
 async def test_incremental_reindex_removes_deleted_file(setup_db, tmp_path: Path):
     import os
 

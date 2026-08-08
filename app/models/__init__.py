@@ -6,7 +6,7 @@ from .chat import (
     MemoryProcessedSource,
     SessionMessage,
 )
-from .code_graph import CodeEdge, CodeIndexState, CodeNode
+from .code_graph import CodeEdge, CodeIndexChunk, CodeIndexState, CodeNode
 from .goal import SessionGoal
 from .team import DelegationTask
 from .workflow import (
@@ -26,6 +26,7 @@ from .webbridge import (
 __all__ = [
     "ChatSession",
     "CodeEdge",
+    "CodeIndexChunk",
     "CodeIndexState",
     "CodeNode",
     "DelegationTask",
