@@ -232,7 +232,16 @@ export async function getPendingQuestions(sessionId: string): Promise<{
     request_id: string
     /** Owning agent session when present — prefer for reply POSTs. */
     session_id?: string | null
-    items: Array<{ question: string; options: string[] }>
+    items: Array<{
+      question: string
+      options: string[]
+      kind?: 'text' | 'agent_spawn'
+      agent_spawn?: {
+        blueprint: string
+        default_model: string
+        default_thinking_level?: string | null
+      }
+    }>
   }>
 }> {
   const res = await fetch(

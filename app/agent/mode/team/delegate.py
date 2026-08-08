@@ -404,7 +404,7 @@ def make_team_delegate_tool(
                 live = team.live_instances_for_blueprint(name)
                 if not live:
                     try:
-                        spawned = await team.spawn(name)
+                        spawned = await team.spawn(name, confirm=True)
                     except Exception as exc:  # noqa: BLE001 - tool boundary
                         logger.exception("team_delegate_auto_spawn_failed name={}", name)
                         errors.append(f"Could not auto-spawn blueprint '{name}': {exc}")

@@ -121,7 +121,8 @@ class TestTeamDelegateTool:
             def blueprint_allowed_this_turn(self, blueprint):
                 return blueprint in self.blueprints
 
-            async def spawn(self, blueprint):
+            async def spawn(self, blueprint, *, confirm=False):
+                assert confirm is True
                 member = SimpleNamespace(name=f"{blueprint}#1")
                 self.members[member.name] = member
                 mb.register(member.name)

@@ -51,6 +51,12 @@ export type PlanDecision = 'approved' | 'rejected' | 'revise'
 export interface AskUserQuestionItem {
   question: string
   options: string[]
+  kind?: 'text' | 'agent_spawn'
+  agentSpawn?: {
+    blueprint: string
+    defaultModel: string
+    defaultThinkingLevel: string | null
+  }
 }
 
 export interface AskUserQuestionPending {

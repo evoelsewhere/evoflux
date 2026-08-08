@@ -19,6 +19,8 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
+import json
 import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -28,12 +30,18 @@ import yaml
 from sqlmodel import select
 
 from app.agent.agent_loop import Agent
+from app.agent.ask_user import (
+    AskUserService,
+    reset_ask_user_service,
+    set_ask_user_service,
+)
 from app.agent.loader import load_team_from_dir
 from app.agent.mode.team.mailbox import Message
 from app.agent.mode.team.member import TeamMember
 from app.agent.mode.team.team import (
     AgentTeam,
     MemberBlueprint,
+    SpawnCancelledError,
     make_instance_handle,
     parse_instance_handle,
 )
@@ -202,6 +210,73 @@ class TestLoaderLeadOnly:
 
 
 class TestSpawn:
+    async def test_confirm_blocks_spawn_and_persists_selected_runtime(
+        self, tmp_path
+    ):
+        team = _build_dynamic_team(tmp_path, {"executor": None})
+        service = AskUserService(
+            session_id=team.lead.session_id,
+            stream_session_id=team.lead.session_id,
+        )
+        token = set_ask_user_service(service)
+        await team.start()
+        try:
+            spawn_task = asyncio.create_task(team.spawn("executor", confirm=True))
+            for _ in range(100):
+                if service._pending:
+                    break
+                await asyncio.sleep(0)
+
+            assert team.members == {}
+            request = next(iter(service._pending.values()))
+            assert request.questions[0].kind == "agent_spawn"
+            assert request.questions[0].agent_spawn is not None
+            assert request.questions[0].agent_spawn.blueprint == "executor"
+            assert request.questions[0].agent_spawn.default_model == "mock:model"
+
+            assert service.reply(
+                request.id,
+                [
+                    json.dumps(
+                        {"model": "mock:selected", "thinking_level": "high"}
+                    )
+                ],
+            )
+            member = await spawn_task
+
+            async with _session_factory()() as db:
+                row = await db.get(ChatSession, uuid.UUID(member.session_id))
+                assert row is not None
+                assert row.model == "mock:selected"
+                assert row.thinking_level == "high"
+        finally:
+            reset_ask_user_service(token, team.lead.session_id)
+            await team.stop()
+
+    async def test_cancel_confirmed_spawn_does_not_materialize_member(self, tmp_path):
+        team = _build_dynamic_team(tmp_path, {"executor": None})
+        service = AskUserService(
+            session_id=team.lead.session_id,
+            stream_session_id=team.lead.session_id,
+        )
+        token = set_ask_user_service(service)
+        await team.start()
+        try:
+            spawn_task = asyncio.create_task(team.spawn("executor", confirm=True))
+            for _ in range(100):
+                if service._pending:
+                    break
+                await asyncio.sleep(0)
+
+            request = next(iter(service._pending.values()))
+            assert service.reply(request.id, ["__cancel__"])
+            with pytest.raises(SpawnCancelledError, match="cancelled"):
+                await spawn_task
+            assert team.members == {}
+        finally:
+            reset_ask_user_service(token, team.lead.session_id)
+            await team.stop()
+
     async def test_first_spawn_returns_hash_one(self, tmp_path):
         team = _build_dynamic_team(tmp_path, {"executor": None})
         await team.start()

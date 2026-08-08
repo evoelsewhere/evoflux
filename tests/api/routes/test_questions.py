@@ -14,7 +14,7 @@ from app.agent.ask_user import (
     reset_ask_user_service,
     set_ask_user_service,
 )
-from app.agent.tools.builtin.ask_user import QuestionSpec
+from app.agent.tools.builtin.ask_user import AgentSpawnSpec, QuestionSpec
 from app.api.routes.team.questions import router as questions_router
 
 
@@ -131,3 +131,40 @@ async def test_pending_empty_when_no_service(client):
     res = await client.get("/api/team/ghost-sess/questions/pending")
     assert res.status_code == 200
     assert res.json() == {"questions": []}
+
+
+@pytest.mark.asyncio
+async def test_pending_preserves_agent_spawn_metadata(client, registered_service):
+    task = asyncio.create_task(
+        registered_service.ask(
+            [
+                QuestionSpec(
+                    kind="agent_spawn",
+                    question="Choose runtime",
+                    agent_spawn=AgentSpawnSpec(
+                        blueprint="executor",
+                        default_model="openai:gpt-5.6-codex",
+                        default_thinking_level="high",
+                    ),
+                )
+            ]
+        )
+    )
+    request_id = await _pending_id(registered_service)
+    try:
+        pending = await client.get("/api/team/lead-sess/questions/pending")
+        item = pending.json()["questions"][0]["items"][0]
+
+        assert item == {
+            "question": "Choose runtime",
+            "options": [],
+            "kind": "agent_spawn",
+            "agent_spawn": {
+                "blueprint": "executor",
+                "default_model": "openai:gpt-5.6-codex",
+                "default_thinking_level": "high",
+            },
+        }
+    finally:
+        registered_service.reply(request_id, ["__cancel__"])
+        await task

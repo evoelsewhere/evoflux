@@ -1244,9 +1244,7 @@ class TeamMemberBase(abc.ABC):
             complexity=active_complexity,
             priority=active_priority,
             target_paths=claimed_paths,
-            explicit_thinking_level=(
-                session_thinking_level if self._role_label == "lead" else None
-            ),
+            explicit_thinking_level=session_thinking_level,
             provider_default_thinking_level=thinking_profile.default_level,
             supported_thinking_levels=thinking_profile.levels,
         )
