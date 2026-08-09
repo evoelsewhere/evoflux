@@ -21,6 +21,7 @@ from app.api.schemas.projects import ProjectResponse, ProjectWorkspaceItem
 from app.models.chat import CodingProjectWorkspace, CodingWorkspace
 from app.services import coding_project_service as svc
 from app.services import team_manager
+from app.services.coding_purge_service import purge_project, purge_project_workspace
 from app.services.code_index.jobs import project_index_jobs
 from app.services.code_index.models import RepositoryScope
 from app.services.code_index.pipeline import stable_id
@@ -188,9 +189,8 @@ async def update_project(
 
 @router.delete("/{project_id}", status_code=204)
 async def delete_project(project_id: UUID, db: DbSession) -> None:
-    if not await svc.soft_delete_project(db, project_id):
+    if await purge_project(db, project_id) is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    await db.commit()
 
 
 @router.post(
@@ -216,9 +216,8 @@ async def add_workspace(
 
 @router.delete("/{project_id}/workspaces/{workspace_id}", status_code=204)
 async def remove_workspace(project_id: UUID, workspace_id: UUID, db: DbSession) -> None:
-    if not await svc.remove_workspace_from_project(db, project_id, workspace_id):
+    if await purge_project_workspace(db, project_id, workspace_id) is None:
         raise HTTPException(status_code=404, detail="Workspace not in project")
-    await db.commit()
 
 
 @router.put(

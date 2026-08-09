@@ -22,6 +22,7 @@ from .webbridge import (
     WebBridgeTeachDraft,
     WebBridgeTeachReplay,
 )
+from app.scheduler.models import ScheduledTask
 
 __all__ = [
     "ArtifactJob",
@@ -34,6 +35,7 @@ __all__ = [
     "GitServerConnection",
     "MemoryProcessedSource",
     "SessionMessage",
+    "ScheduledTask",
     "SessionGoal",
     "WorkflowApproval",
     "WorkflowExecution",

@@ -503,6 +503,11 @@ class TaskScheduler:
                 await session.delete(task)
                 await session.commit()
 
+    def cancel_timers(self, task_ids: set[UUID]) -> None:
+        """Cancel timers before another transaction purges their DB rows."""
+        for task_id in task_ids:
+            self._cancel_timer(task_id)
+
     async def update(
         self, task: ScheduledTask, *, reset_one_shot: bool = False
     ) -> ScheduledTask:

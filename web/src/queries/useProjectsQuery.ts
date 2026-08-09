@@ -70,9 +70,11 @@ export function useDeleteProjectMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => deleteProject(id),
-    onSuccess: async () => {
+    onSuccess: async (_data, id) => {
+      queryClient.removeQueries({ queryKey: queryKeys.projects.detail(id) })
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.projects.all() }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() }),
         refetchCodingOverview(queryClient),
       ])
     },
@@ -111,6 +113,7 @@ export function useRemoveWorkspaceMutation() {
     onSuccess: async (_v, { projectId }) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() }),
         refetchCodingOverview(queryClient),
       ])
     },

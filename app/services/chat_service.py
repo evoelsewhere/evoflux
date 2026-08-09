@@ -1,6 +1,5 @@
 import asyncio
 import json
-import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -20,8 +19,7 @@ from app.agent.schemas.chat import (
     HumanMessage,
     ToolMessage,
 )
-from app.agent.artifacts import session_artifact_dir
-from app.core.paths import session_workspace_dir, uploads_dir, workspace_dir
+from app.core.paths import session_workspace_dir
 from app.models.chat import ChatSession, SessionMessage
 from app.services import snapshot_service
 
@@ -1143,54 +1141,10 @@ async def update_session_title(
 
 
 async def delete_session(db: AsyncSession, session_id: UUID) -> bool:
-    """Delete a session, all its messages, and associated on-disk artifacts.
+    """Permanently delete a session and every app-owned dependent resource."""
+    from app.services.coding_purge_service import purge_session
 
-    Deletes the ``ChatSession`` row plus all ``SessionMessage`` children inside
-    a single transaction, then removes the uploads and workspace directories
-    from disk (outside the transaction — best-effort).
-
-    Args:
-        db: Async database session.
-        session_id: UUID of the session to delete.
-
-    Returns:
-        ``True`` if the session existed and was deleted, ``False`` if not found.
-    """
-    delete_workspace = False
-    async with db.begin():
-        session = await db.get(ChatSession, session_id)
-        if not session:
-            return False
-        delete_workspace = session.workspace is None
-        messages = (
-            await db.exec(
-                select(SessionMessage).where(
-                    col(SessionMessage.session_id) == session_id
-                )
-            )
-        ).all()
-        for msg in messages:
-            await db.delete(msg)
-        await db.delete(session)
-
-    sid_str = str(session_id)
-    uploads = uploads_dir(sid_str)
-    if uploads.exists():
-        await asyncio.to_thread(shutil.rmtree, uploads, ignore_errors=True)
-        logger.info("uploads_dir_deleted session_id={}", session_id)
-
-    workspace = workspace_dir(sid_str)
-    if delete_workspace and workspace.exists():
-        await asyncio.to_thread(shutil.rmtree, workspace, ignore_errors=True)
-        logger.info("workspace_dir_deleted session_id={}", session_id)
-
-    metadata = session_artifact_dir(sid_str)
-    if metadata.exists():
-        await asyncio.to_thread(shutil.rmtree, metadata, ignore_errors=True)
-        logger.info("session_metadata_deleted session_id={}", session_id)
-
-    logger.info("session_deleted session_id={}", session_id)
-    return True
+    return await purge_session(db, session_id)
 
 
 class TeamHistoryMemberData(NamedTuple):

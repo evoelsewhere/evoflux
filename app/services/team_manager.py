@@ -233,6 +233,28 @@ async def _stop_session_teams(teams: list[tuple[str, "AgentTeam"]]) -> None:
             logger.info("team_session_idle_stopped session_id={}", session_id)
 
 
+async def stop_sessions(session_ids: set[str]) -> None:
+    """Stop and evict every live team owned by the supplied sessions."""
+    if not session_ids:
+        return
+    async with _lock:
+        session_teams: list[tuple[str, "AgentTeam"]] = []
+        coding_teams: list[tuple[tuple[str, str], "AgentTeam"]] = []
+        for session_id in session_ids:
+            team = _session_teams.pop(session_id, None)
+            _session_team_last_used.pop(session_id, None)
+            if team is not None:
+                session_teams.append((session_id, team))
+        for key in list(_coding_teams):
+            if key[1] not in session_ids:
+                continue
+            team = _coding_teams.pop(key)
+            _coding_team_last_used.pop(key, None)
+            coding_teams.append((key, team))
+    await _stop_session_teams(session_teams)
+    await _stop_coding_teams(coding_teams)
+
+
 def current_team() -> "AgentTeam | None":
     return _team
 
