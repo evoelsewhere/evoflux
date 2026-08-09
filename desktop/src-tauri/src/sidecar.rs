@@ -8,8 +8,8 @@
 //!
 //! - `sidecar/python/bin/python3`: the bundled CPython interpreter.
 //! - `sidecar/site-packages/`: pre-installed evoflux + dependencies.
-//! - `sidecar/document-runtime/`: pinned Node, artifact-tool, LibreOffice,
-//!   Poppler, fonts, and their integrity manifest.
+//! - `sidecar/document-runtime/`: optional document toolchain. When absent,
+//!   document features resolve explicitly configured or host-installed tools.
 //! - `sidecar/_web_dist/`: the built React frontend (also embedded in
 //!   `site-packages/app/_web_dist/`; either works).
 //!
@@ -59,12 +59,9 @@ impl Sidecar {
             .with_context(|| format!("locate python binary under {}", sidecar_root.display()))?;
         let document_runtime = sidecar_root.join("document-runtime");
         let document_runtime_manifest = document_runtime.join("manifest.json");
-        if !document_runtime_manifest.is_file() {
-            return Err(anyhow!(
-                "sidecar bundle missing document runtime manifest at {}",
-                document_runtime_manifest.display()
-            ));
-        }
+        let document_runtime = document_runtime_manifest
+            .is_file()
+            .then_some(document_runtime);
 
         let log_dir = app.path().app_log_dir().context("resolve app log dir")?;
         std::fs::create_dir_all(&log_dir).context("create app log dir")?;
@@ -176,10 +173,15 @@ impl Sidecar {
             .arg(parent_pid.to_string())
             .env("PYTHONUNBUFFERED", "1")
             .env("APP_ENV", app_env)
-            .env("EVOFLUX_DOCUMENT_RUNTIME_DIR", &document_runtime)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::from(stderr_for_child));
+
+        if let Some(document_runtime) = &document_runtime {
+            cmd.env("EVOFLUX_DOCUMENT_RUNTIME_DIR", document_runtime);
+        } else {
+            log::info!("optional document runtime is not bundled; using configured or host tools");
+        }
 
         // Point the backend at the WebBridge extension bundled alongside the
         // sidecar (tauri.conf.json resources), so its launch-browser and

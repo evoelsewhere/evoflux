@@ -12,7 +12,7 @@ Layout produced under ``<out>/``::
         fastapi/
         pydantic/
         …
-      document-runtime/      ← pinned document generation/rendering stack
+      document-runtime/      ← optional document generation/rendering stack
         manifest.json
         node/
         artifact-tool/
@@ -938,8 +938,8 @@ def main() -> int:
         "--document-runtime",
         default=os.environ.get(DOCUMENT_RUNTIME_SOURCE_ENV),
         help=(
-            "Verified runtime directory/archive. Defaults to "
-            f"${DOCUMENT_RUNTIME_SOURCE_ENV}, then desktop/document-runtime."
+            "Optional verified runtime directory/archive. Defaults to "
+            f"${DOCUMENT_RUNTIME_SOURCE_ENV}; omitted from normal desktop builds."
         ),
     )
     ap.add_argument(
@@ -953,24 +953,22 @@ def main() -> int:
     ap.add_argument(
         "--skip-document-runtime",
         action="store_true",
-        help="Build a server-only sidecar without document support (never for desktop release).",
+        help=(
+            "Ignore a configured document runtime. Kept for compatibility; "
+            "desktop builds no longer require a bundled runtime."
+        ),
     )
     args = ap.parse_args()
 
     root = Path(args.root).resolve()
     out = Path(args.out).resolve()
     runtime_source: Path | None = None
-    if not args.skip_document_runtime:
-        runtime_source = (
-            Path(args.document_runtime or root / "desktop" / "document-runtime")
-            .expanduser()
-            .resolve()
-        )
+    if args.document_runtime and not args.skip_document_runtime:
+        runtime_source = Path(args.document_runtime).expanduser().resolve()
         if not runtime_source.exists():
             raise SystemExit(
-                "document runtime source is required for desktop bundles; "
-                f"set --document-runtime or {DOCUMENT_RUNTIME_SOURCE_ENV}. "
-                "Use --skip-document-runtime only for a server-only development bundle."
+                "configured document runtime source does not exist: "
+                f"{runtime_source}"
             )
         if runtime_source == out or runtime_source.is_relative_to(out):
             raise SystemExit(

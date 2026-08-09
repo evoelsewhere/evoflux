@@ -81,6 +81,47 @@ def codex_runtime_dependencies() -> Path:
     )
 
 
+def host_binary_dirs() -> tuple[Path, ...]:
+    """Return common user-level binary directories missed by desktop GUI PATHs.
+
+    Apps launched from Finder and some Windows shortcuts inherit a much smaller
+    ``PATH`` than an interactive shell. These locations let an explicitly
+    installed host tool remain discoverable without copying it into EvoFlux.
+    """
+    if sys.platform == "darwin":
+        candidates = (
+            Path("/opt/homebrew/bin"),
+            Path("/usr/local/bin"),
+            Path("/opt/local/bin"),
+        )
+    elif sys.platform == "win32":
+        candidates = tuple(
+            path
+            for path in (
+                Path(os.environ["ProgramFiles"]) / "nodejs"
+                if os.environ.get("ProgramFiles")
+                else None,
+                Path(os.environ["LOCALAPPDATA"]) / "Programs" / "nodejs"
+                if os.environ.get("LOCALAPPDATA")
+                else None,
+                Path(os.environ["ChocolateyInstall"]) / "bin"
+                if os.environ.get("ChocolateyInstall")
+                else None,
+                Path(os.environ["USERPROFILE"]) / "scoop" / "shims"
+                if os.environ.get("USERPROFILE")
+                else None,
+            )
+            if path is not None
+        )
+    else:
+        candidates = (
+            Path("/usr/local/bin"),
+            Path("/usr/bin"),
+            Path("/snap/bin"),
+        )
+    return tuple(path for path in candidates if path.is_dir())
+
+
 def _host_platform() -> str:
     return {
         "darwin": "darwin",
@@ -327,7 +368,10 @@ def resolve_node_binary(*, purpose: str) -> str:
         NODE_BIN_ENV,
         ("node",),
         preferred_candidates=(runtime.node,) if runtime else (),
-        fallback_dirs=(codex_runtime_dependencies() / "node" / "bin",),
+        fallback_dirs=(
+            *host_binary_dirs(),
+            codex_runtime_dependencies() / "node" / "bin",
+        ),
         requirement=(
             f"Node.js 20+ is required for {purpose}. "
             f"Set {NODE_BIN_ENV} to a Node 20+ executable."
@@ -348,6 +392,19 @@ def resolve_chromium_binary(*, purpose: str) -> str:
                 "Google Chrome for Testing"
             ),
         )
+    elif sys.platform == "win32":
+        application_candidates = tuple(
+            root / "Google" / "Chrome" / "Application" / "chrome.exe"
+            for root in (
+                Path(value)
+                for value in (
+                    os.environ.get("ProgramFiles"),
+                    os.environ.get("ProgramFiles(x86)"),
+                    os.environ.get("LOCALAPPDATA"),
+                )
+                if value
+            )
+        )
     return resolve_executable(
         CHROMIUM_BIN_ENV,
         (
@@ -362,8 +419,9 @@ def resolve_chromium_binary(*, purpose: str) -> str:
             *((runtime.chromium,) if runtime else ()),
             *application_candidates,
         ),
+        fallback_dirs=host_binary_dirs(),
         requirement=(
-            f"Bundled Chromium is required for {purpose}. "
+            f"Chromium is required for {purpose}. "
             f"Set {CHROMIUM_BIN_ENV} to a compatible Chromium executable."
         ),
     )
@@ -499,6 +557,7 @@ __all__ = [
     "document_runtime_diagnostics",
     "document_runtime_subprocess_env",
     "file_sha256",
+    "host_binary_dirs",
     "resolve_artifact_tool",
     "resolve_chromium_binary",
     "resolve_document_runtime",
