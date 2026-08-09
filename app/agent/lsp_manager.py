@@ -27,7 +27,7 @@ class LanguageServerSpec:
 SPECS: tuple[LanguageServerSpec, ...] = (
     LanguageServerSpec(
         "python",
-        frozenset({".py", ".pyi"}),
+        frozenset({".py", ".pyi", ".pyw"}),
         (
             ("basedpyright-langserver", "--stdio"),
             ("pyright-langserver", "--stdio"),
@@ -35,9 +35,65 @@ SPECS: tuple[LanguageServerSpec, ...] = (
     ),
     LanguageServerSpec(
         "typescript",
-        frozenset({".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}),
+        frozenset({".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}),
         (("typescript-language-server", "--stdio"),),
     ),
+    LanguageServerSpec("c", frozenset({".c", ".h", ".m"}), (("clangd",),)),
+    LanguageServerSpec(
+        "cpp",
+        frozenset({".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx", ".mm"}),
+        (("clangd",),),
+    ),
+    LanguageServerSpec("java", frozenset({".java"}), (("jdtls",),)),
+    LanguageServerSpec(
+        "kotlin", frozenset({".kt", ".kts"}), (("kotlin-language-server", "--stdio"),)
+    ),
+    LanguageServerSpec(
+        "csharp",
+        frozenset({".cs"}),
+        (("OmniSharp", "-lsp"), ("omnisharp", "-lsp")),
+    ),
+    LanguageServerSpec(
+        "php",
+        frozenset({".php", ".phtml"}),
+        (("intelephense", "--stdio"), ("phpactor", "language-server")),
+    ),
+    LanguageServerSpec("swift", frozenset({".swift"}), (("sourcekit-lsp",),)),
+    LanguageServerSpec(
+        "dart", frozenset({".dart"}), (("dart", "language-server", "--protocol=lsp"),)
+    ),
+    LanguageServerSpec(
+        "ruby", frozenset({".rb", ".rake", ".gemspec"}),
+        (("ruby-lsp",), ("solargraph", "stdio")),
+    ),
+    LanguageServerSpec("lua", frozenset({".lua"}), (("lua-language-server",),)),
+    LanguageServerSpec(
+        "html", frozenset({".html", ".htm"}), (("vscode-html-language-server", "--stdio"),)
+    ),
+    LanguageServerSpec(
+        "css",
+        frozenset({".css", ".scss", ".sass", ".less"}),
+        (("vscode-css-language-server", "--stdio"),),
+    ),
+    LanguageServerSpec(
+        "json",
+        frozenset({".json", ".jsonc", ".jsonl"}),
+        (("vscode-json-language-server", "--stdio"),),
+    ),
+    LanguageServerSpec(
+        "yaml", frozenset({".yaml", ".yml"}), (("yaml-language-server", "--stdio"),)
+    ),
+    LanguageServerSpec(
+        "bash", frozenset({".sh", ".bash"}), (("bash-language-server", "start", "--stdio"),)
+    ),
+    LanguageServerSpec(
+        "markdown",
+        frozenset({".md", ".markdown", ".mdx"}),
+        (("marksman", "server"),),
+    ),
+    LanguageServerSpec("toml", frozenset({".toml"}), (("taplo", "lsp", "stdio"),)),
+    LanguageServerSpec("vue", frozenset({".vue"}), (("vue-language-server", "--stdio"),)),
+    LanguageServerSpec("svelte", frozenset({".svelte"}), (("svelteserver", "--stdio"),)),
     LanguageServerSpec("go", frozenset({".go"}), (("gopls",),)),
     LanguageServerSpec("rust", frozenset({".rs"}), (("rust-analyzer",),)),
 )
@@ -321,10 +377,15 @@ _clients: dict[tuple[Path, str], LanguageServerClient] = {}
 _clients_lock = asyncio.Lock()
 
 
-async def get_language_server(workspace: Path, path: Path) -> LanguageServerClient:
-    spec = next(
+def language_server_spec(path: Path) -> LanguageServerSpec | None:
+    """Return the configured server mapping for a source path."""
+    return next(
         (item for item in SPECS if path.suffix.lower() in item.extensions), None
     )
+
+
+async def get_language_server(workspace: Path, path: Path) -> LanguageServerClient:
+    spec = language_server_spec(path)
     if spec is None:
         raise LanguageServerUnavailable(
             f"No language-server mapping for extension '{path.suffix}'."
