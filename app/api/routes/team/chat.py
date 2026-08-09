@@ -55,10 +55,10 @@ from app.services import (
 )
 from app.services.agent_service import AttachmentError, NoTeamConfigured, RawAttachment
 from app.services.coding_workspace_service import (
-    hide_coding_workspace,
     list_visible_coding_workspaces,
     upsert_coding_workspace,
 )
+from app.services.coding_purge_service import PurgeConflictError, purge_workspace
 from app.services.coding_project_service import (
     get_visible_project_ids_for_workspace_path,
 )
@@ -1108,10 +1108,13 @@ async def update_coding_workspace_visibility(
         if body.hidden
         else _validate_workspace_or_422(body.workspace)
     )
-    async with db.begin():
-        if body.hidden:
-            await hide_coding_workspace(db, workspace)
-        else:
+    if body.hidden:
+        try:
+            await purge_workspace(db, workspace)
+        except PurgeConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    else:
+        async with db.begin():
             await upsert_coding_workspace(db, path=workspace, kind="repo", hidden=False)
     return {"workspace": workspace, "hidden": body.hidden}
 

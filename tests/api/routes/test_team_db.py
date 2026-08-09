@@ -876,7 +876,7 @@ class TestDeleteTeamSessionWithData:
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_delete_coding_session_keeps_workspace_dir(
+    async def test_delete_coding_session_purges_app_workspace_dir(
         self, app_with_team, tmp_path, monkeypatch
     ):
         import app.core.db as _db
@@ -905,9 +905,7 @@ class TestDeleteTeamSessionWithData:
         resp = client.delete(f"/api/team/sessions/{lead_id}")
 
         assert resp.status_code == 204
-        assert app_workspace.exists()
-        assert (app_workspace / "keep.txt").read_text(encoding="utf-8") == "keep"
-        assert not upload_root.exists()
+        assert not app_workspace.exists()
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import hashlib
+import shutil
 import sqlite3
 import threading
 from collections.abc import Callable, Iterator
@@ -369,6 +370,24 @@ class RepositoryIndex:
             return await self.update()
         return await run_index_work(self.stats)
 
+    async def purge(self) -> None:
+        """Wait for active work, then remove this regeneratable cache."""
+        with self._dispatch_lock:
+            pending = self._update_future
+        if pending is not None:
+            try:
+                await asyncio.shield(asyncio.wrap_future(pending))
+            except Exception:
+                # A failed refresh must not prevent deleting its broken cache.
+                pass
+        await run_index_work(self._purge_locked)
+
+    def _purge_locked(self) -> None:
+        with self._update_lock:
+            self.database.close()
+            shutil.rmtree(self.paths.directory, ignore_errors=True)
+            self._has_completed_update = False
+
     def stats(self) -> IndexStats:
         try:
             with self.database.readonly() as connection:
@@ -656,6 +675,24 @@ class RepositoryIndexRegistry:
                 logger.warning(
                     "code_index_close_failed root={} error={}", index.root, exc
                 )
+
+    async def purge(self, root: Path) -> None:
+        """Evict one repository index and delete its on-disk graph/cache."""
+        canonical = root.expanduser().resolve()
+        with self._lock:
+            pending = self._creating.get(canonical)
+        if pending is not None:
+            try:
+                await asyncio.shield(asyncio.wrap_future(pending))
+            except Exception:
+                pass
+        with self._lock:
+            index = self._indexes.pop(canonical, None)
+        if index is not None:
+            await index.purge()
+            return
+        paths = paths_for_repository(canonical)
+        await asyncio.to_thread(shutil.rmtree, paths.directory, ignore_errors=True)
 
 
 repository_indexes = RepositoryIndexRegistry()

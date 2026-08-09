@@ -247,6 +247,30 @@ class ArtifactService:
                 task.cancel()
         return await self.status(job_id)
 
+    async def cancel_for_sessions(self, session_ids: set[UUID]) -> None:
+        """Cancel active artifact work before its owning sessions are purged."""
+        if not session_ids:
+            return
+        async with self.db_factory() as db:
+            job_ids = set(
+                (
+                    await db.exec(
+                        select(ArtifactJob.id).where(
+                            col(ArtifactJob.session_id).in_(session_ids)
+                        )
+                    )
+                ).all()
+            )
+        tasks = [
+            task
+            for job_id, task in list(self._active_tasks.items())
+            if job_id in job_ids and task is not asyncio.current_task()
+        ]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
     async def list_jobs(
         self,
         *,

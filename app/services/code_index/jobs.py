@@ -83,6 +83,18 @@ class ProjectIndexJobCoordinator:
             full=full,
         )
 
+    async def cancel(self, project_id: str) -> None:
+        """Cancel a project refresh and forget its process-local UI state."""
+        with self._lock:
+            task = self._tasks.get(project_id)
+            if task is not None and not task.done():
+                task.cancel()
+        if task is not None:
+            await asyncio.gather(task, return_exceptions=True)
+        with self._lock:
+            self._tasks.pop(project_id, None)
+            self._states.pop(project_id, None)
+
     def _update(self, project_id: str, label: str, **changes: object) -> None:
         with self._lock:
             state = self._states.setdefault(project_id, {}).get(label)

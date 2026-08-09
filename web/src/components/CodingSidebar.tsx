@@ -401,6 +401,12 @@ export function CodingSidebar({
     x: number;
     y: number;
   } | null>(null);
+  const [removeProjectWorkspaceTarget, setRemoveProjectWorkspaceTarget] =
+    useState<{
+      project: CodingProject;
+      workspaceId: string;
+      path: string;
+    } | null>(null);
   // When set, the workspace-open dialog (folder picker) is in "add repo to
   // project" mode: confirming adds the folder to this project instead of
   // starting a standalone session.
@@ -789,11 +795,8 @@ export function CodingSidebar({
     }
   };
 
-  // Remove a workspace from the sidebar. Sessions stay in the backend —
-  // reopening the same folder later resurfaces them. If the removed
-  // workspace was the active one, navigate back to the empty /coding
-  // route so the URL doesn't reference a workspace that no longer
-  // appears in the sidebar. Called from the confirmation dialog below.
+  // Purge a standalone workspace's app-owned sessions and indexes. The source
+  // repository remains on disk and can later be opened as a clean workspace.
   const confirmRemoveWorkspace = () => {
     const path = removeWorkspaceTarget;
     if (!path) return;
@@ -812,6 +815,8 @@ export function CodingSidebar({
     });
     void setCodingWorkspaceVisibility(path, true)
       .then(() => {
+        queryClient.removeQueries({ queryKey: queryKeys.codeGraph.all(path) });
+        queryClient.removeQueries({ queryKey: queryKeys.coding.all(path) });
         void queryClient.invalidateQueries({
           queryKey: queryKeys.team.sessions.all(),
         });
@@ -2249,18 +2254,7 @@ export function CodingSidebar({
               onClick={() => {
                 const action = projectRepoActions;
                 setProjectRepoActions(null);
-                removeWorkspaceMutation.mutate(
-                  { projectId: action.project.id, workspaceId: action.workspaceId },
-                  {
-                    onError: (err) => {
-                      useToastStore.getState().push({
-                        tone: "error",
-                        title: "Couldn't remove repository",
-                        description: err instanceof Error ? err.message : String(err),
-                      });
-                    },
-                  },
-                );
+                setRemoveProjectWorkspaceTarget(action);
               }}
             >
               <Trash2 size={14} aria-hidden="true" />
@@ -2305,19 +2299,7 @@ export function CodingSidebar({
               onClick={() => {
                 const action = projectRepoActions;
                 setProjectRepoActions(null);
-                if (action)
-                  removeWorkspaceMutation.mutate(
-                    { projectId: action.project.id, workspaceId: action.workspaceId },
-                    {
-                      onError: (err) => {
-                        useToastStore.getState().push({
-                          tone: "error",
-                          title: "Couldn't remove repository",
-                          description: err instanceof Error ? err.message : String(err),
-                        });
-                      },
-                    },
-                  );
+                if (action) setRemoveProjectWorkspaceTarget(action);
               }}
             >
               <Trash2 size={14} aria-hidden="true" />
@@ -2385,8 +2367,9 @@ export function CodingSidebar({
               {removeWorkspaceTarget
                 ? workspaceLabel(removeWorkspaceTarget)
                 : ""}
-              &rdquo; will be hidden from the sidebar. Its sessions stay on
-              disk — reopening this folder later restores the list.
+              &rdquo; will be removed from EvoFlux. All chat sessions, uploads,
+              snapshots, managed worktrees, and code graph/index data for it
+              will be permanently deleted. The source repository stays on disk.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="p-3">
@@ -2402,7 +2385,81 @@ export function CodingSidebar({
               variant="destructive"
               onClick={confirmRemoveWorkspace}
             >
-              Remove from sidebar
+              Remove and delete data
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={removeProjectWorkspaceTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoveProjectWorkspaceTarget(null);
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Remove repository from project</DialogTitle>
+            <DialogDescription>
+              Removing &ldquo;
+              {removeProjectWorkspaceTarget
+                ? workspaceLabel(removeProjectWorkspaceTarget.path)
+                : ""}
+              &rdquo; resets all chat sessions for this project and deletes this
+              repository&apos;s code graph/index cache. Source files stay on disk.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="p-3">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={removeWorkspaceMutation.isPending}
+              onClick={() => setRemoveProjectWorkspaceTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!removeProjectWorkspaceTarget || removeWorkspaceMutation.isPending}
+              onClick={() => {
+                const target = removeProjectWorkspaceTarget;
+                if (!target) return;
+                const isRemovingFromActiveProject =
+                  currentProjectId === target.project.id ||
+                  params.focusId === target.project.id;
+                removeWorkspaceMutation.mutate(
+                  {
+                    projectId: target.project.id,
+                    workspaceId: target.workspaceId,
+                  },
+                  {
+                    onSuccess: () => {
+                      queryClient.removeQueries({
+                        queryKey: queryKeys.codeGraph.all(target.path),
+                      });
+                      clearLastCodingFocus(target.project.id);
+                      if (isRemovingFromActiveProject) {
+                        useTeamStore.getState().newSession();
+                        navigate({ to: "/coding", replace: true });
+                      }
+                      setRemoveProjectWorkspaceTarget(null);
+                    },
+                    onError: (err) => {
+                      useToastStore.getState().push({
+                        tone: "error",
+                        title: "Couldn't remove repository",
+                        description:
+                          err instanceof Error ? err.message : String(err),
+                      });
+                    },
+                  },
+                );
+              }}
+            >
+              {removeWorkspaceMutation.isPending
+                ? "Removing..."
+                : "Remove and reset sessions"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2419,7 +2476,7 @@ export function CodingSidebar({
             <DialogTitle>Delete project</DialogTitle>
             <DialogDescription>
               {deleteProjectTarget
-                ? `Delete ${deleteProjectTarget.name}? This removes the project grouping only; repositories remain available in Workspaces.`
+                ? `Delete ${deleteProjectTarget.name}? All project chat sessions, scheduled tasks, generated session data, and unshared code graph/index caches will be permanently deleted. Source repositories stay on disk and remain available in Workspaces.`
                 : "Delete this project?"}
             </DialogDescription>
           </DialogHeader>
@@ -2443,6 +2500,11 @@ export function CodingSidebar({
                   currentProjectId === target.id || params.focusId === target.id;
                 deleteProjectMutation.mutate(target.id, {
                   onSuccess: () => {
+                    for (const workspace of target.workspaces ?? []) {
+                      queryClient.removeQueries({
+                        queryKey: queryKeys.codeGraph.all(workspace.path),
+                      });
+                    }
                     clearLastCodingFocus(target.id);
                     setExpandedProjects((current) => {
                       if (!current.has(target.id)) return current;

@@ -133,6 +133,29 @@ async def test_concurrent_refreshes_share_one_committed_target(
 
 
 @pytest.mark.asyncio
+async def test_registry_purge_evicts_and_deletes_repository_cache(
+    tmp_path: Path, isolated_cache: Path
+) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    (repository / "service.py").write_text(
+        "def disposable_index():\n    return 1\n", encoding="utf-8"
+    )
+    registry = RepositoryIndexRegistry()
+    original = await registry.get(repository)
+    await original.update()
+    index_dir = paths_for_repository(repository).directory
+    assert index_dir.is_dir()
+
+    await registry.purge(repository)
+
+    assert not index_dir.exists()
+    recreated = await registry.get(repository)
+    assert recreated is not original
+    assert recreated.paths.target_db.is_file()
+
+
+@pytest.mark.asyncio
 async def test_index_work_does_not_use_asyncio_default_executor(
     tmp_path: Path,
     isolated_cache: Path,
