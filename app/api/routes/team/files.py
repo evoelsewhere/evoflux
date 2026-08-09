@@ -56,7 +56,11 @@ from app.services.office_preview_service import (
     render_office_preview,
 )
 from app.services.workspace_file_watcher import workspace_file_watcher
-from app.agent.lsp_manager import LanguageServerUnavailable, SPECS, get_language_server
+from app.agent.lsp_manager import (
+    LanguageServerUnavailable,
+    get_language_server,
+    language_server_spec,
+)
 from app.agent.sandbox import SandboxConfig, set_sandbox
 
 
@@ -604,9 +608,7 @@ async def get_coding_workspace_diagnostics(
     if not target.is_file():
         raise HTTPException(status_code=404, detail="File not found.")
 
-    spec = next(
-        (item for item in SPECS if target.suffix.lower() in item.extensions), None
-    )
+    spec = language_server_spec(target)
     if spec is None:
         return CodingDiagnosticsResponse(
             workspace=resolved,

@@ -12,6 +12,7 @@ from app.agent.lsp_manager import (
     LanguageServerUnavailable,
     SPECS,
     _content_length,
+    language_server_spec,
     _locations,
     get_language_server,
 )
@@ -19,6 +20,25 @@ from app.agent.lsp_manager import (
 
 def test_content_length_header_is_case_insensitive():
     assert _content_length(b"content-length: 42\r\nOther: x\r\n\r\n") == 42
+
+
+@pytest.mark.parametrize(
+    ("filename", "language"),
+    [
+        ("main.cpp", "cpp"),
+        ("Main.java", "java"),
+        ("app.kt", "kotlin"),
+        ("index.php", "php"),
+        ("styles.scss", "css"),
+        ("config.yaml", "yaml"),
+        ("README.md", "markdown"),
+        ("app.dart", "dart"),
+    ],
+)
+def test_common_language_server_mappings(filename: str, language: str):
+    spec = language_server_spec(Path(filename))
+    assert spec is not None
+    assert spec.language_id == language
 
 
 def test_locations_normalizes_single_and_list_results():
