@@ -347,12 +347,11 @@ export interface CodeGraphReindexResponse {
   already_running: boolean
 }
 
-// Compatibility shape returned after synchronizing all repository targets.
 export interface ProjectReindexStartedResponse {
   indexing: boolean
   repo_count: number
   already_running: number
-  will_resolve: boolean
+  full: boolean
 }
 
 // Per-repo index status for a project-wide code graph view — one entry per

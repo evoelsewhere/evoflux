@@ -39,6 +39,13 @@ class CodeContextIndexRequest(BaseModel):
     full: bool = False
 
 
+class ProjectCodeContextIndexResponse(BaseModel):
+    indexing: bool
+    repo_count: int
+    already_running: int
+    full: bool
+
+
 class CodeContextQueryRequest(BaseModel):
     action: CodeAction = "search"
     query: str = Field(min_length=1, max_length=2_000)
@@ -114,4 +121,5 @@ __all__ = [
     "CodeContextStatusResponse",
     "CodeContextSymbolOut",
     "IndexStatsOut",
+    "ProjectCodeContextIndexResponse",
 ]

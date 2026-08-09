@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react'
-import { Minus, Plus, RotateCcw } from 'lucide-react'
+import type {
+  PointerEvent as ReactPointerEvent,
+  WheelEvent as ReactWheelEvent,
+} from 'react'
+import { Focus, Minus, Plus, RotateCcw } from 'lucide-react'
+import { getIntlLocale } from '@/i18n'
+import { useThemePreference } from '@/hooks/useThemePreference'
 import { cn } from '@/lib/utils'
 import type { SpatialEdge, SpatialGraphData, SpatialNode } from './repoGraphSpatialData'
-import { getIntlLocale } from '@/i18n'
 
 interface ViewState {
   scale: number
@@ -11,88 +15,116 @@ interface ViewState {
   panY: number
 }
 
-function simulateStep(
-  nodes: SpatialNode[],
-  edgeSrcTgt: Array<[SpatialNode, SpatialNode]>,
-  repoCenters: Map<string, { x: number; y: number }>,
-) {
-  const repulsion = 1200
-  const springLen = { intra: 60, cross: 120 }
-  const springK = { intra: 0.003, cross: 0.0015 }
-  const clusterK = 0.002
-  const centerK = 0.0008
-  const damping = 0.88
-
-  for (let i = 0; i < nodes.length; i++) {
-    for (let j = i + 1; j < nodes.length; j++) {
-      const a = nodes[i]
-      const b = nodes[j]
-      const dx = a.x - b.x
-      const dy = a.y - b.y
-      const distSq = Math.max(dx * dx + dy * dy, 1)
-      const dist = Math.sqrt(distSq)
-      const force = repulsion / distSq
-      const fx = (dx / dist) * force
-      const fy = (dy / dist) * force
-      const invA = 1 / a.mass
-      const invB = 1 / b.mass
-      a.vx += fx * invA
-      a.vy += fy * invA
-      b.vx -= fx * invB
-      b.vy -= fy * invB
-    }
-  }
-
-  for (const [a, b] of edgeSrcTgt) {
-    const dx = b.x - a.x
-    const dy = b.y - a.y
-    const dist = Math.hypot(dx, dy) || 0.1
-    const isRepoEdge = a.repo || b.repo
-    const len = isRepoEdge ? springLen.cross : springLen.intra
-    const k = isRepoEdge ? springK.cross : springK.intra
-    const force = (dist - len) * k
-    const fx = (dx / dist) * force
-    const fy = (dy / dist) * force
-    const invA = 1 / a.mass
-    const invB = 1 / b.mass
-    a.vx += fx * invA
-    a.vy += fy * invA
-    b.vx -= fx * invB
-    b.vy -= fy * invB
-  }
-
-  for (const node of nodes) {
-    if (node.repo) {
-      node.vx += -node.x * centerK * 2
-      node.vy += -node.y * centerK * 2
-    } else {
-      const center = repoCenters.get(node.workspaceId)
-      if (center) {
-        node.vx += (center.x - node.x) * clusterK
-        node.vy += (center.y - node.y) * clusterK
-      }
-      node.vx += -node.x * centerK
-      node.vy += -node.y * centerK
-    }
-    node.vx *= damping
-    node.vy *= damping
-    node.x += node.vx
-    node.y += node.vy
-  }
+interface LayoutNode {
+  node: SpatialNode
+  x: number
+  y: number
+  radius: number
+  color: string
+  degree: number
 }
 
-function edgeColor(edge: SpatialEdge): string {
-  if (!edge.crossRepo) return 'rgba(148,163,184,0.35)'
-  switch (edge.status) {
-    case 'resolved':
-      return 'rgba(16,185,129,0.55)'
-    case 'unresolved':
-      return 'rgba(244,63,94,0.45)'
-    case 'rejected':
-      return 'rgba(115,115,115,0.25)'
-    default:
-      return 'rgba(148,163,184,0.3)'
+const WORLD_SIZE = 1_080
+const EDGE_COLORS: Record<string, string> = {
+  calls: '#a855f7',
+  contains: '#6366f1',
+  imports: '#06b6d4',
+  references: '#ec4899',
+  inherits: '#f59e0b',
+  implements: '#22c55e',
+  uses: '#14b8a6',
+}
+
+const LIGHT_EDGE_COLORS: Record<string, string> = {
+  calls: '#7c3aed',
+  contains: '#4f46e5',
+  imports: '#0891b2',
+  references: '#db2777',
+  inherits: '#d97706',
+  implements: '#059669',
+  uses: '#0f766e',
+}
+
+const KIND_COLORS: Record<string, string> = {
+  repo: '#f8fafc',
+  class: '#f43f5e',
+  interface: '#fb7185',
+  struct: '#f97316',
+  function: '#a855f7',
+  method: '#22d3ee',
+  module: '#facc15',
+  namespace: '#eab308',
+  variable: '#84cc16',
+  property: '#34d399',
+  field: '#10b981',
+  enum: '#f59e0b',
+}
+
+const LIGHT_KIND_COLORS: Record<string, string> = {
+  repo: '#1f2937',
+  class: '#e11d48',
+  interface: '#e11d48',
+  struct: '#ea580c',
+  function: '#7c3aed',
+  method: '#0891b2',
+  module: '#ca8a04',
+  namespace: '#a16207',
+  variable: '#65a30d',
+  property: '#059669',
+  field: '#059669',
+  enum: '#d97706',
+}
+
+function stableHash(value: string): number {
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
   }
+  return hash >>> 0
+}
+
+function unitHash(value: string): number {
+  return stableHash(value) / 0xffffffff
+}
+
+function colorForNode(node: SpatialNode, darkMode: boolean): string {
+  return (darkMode ? KIND_COLORS : LIGHT_KIND_COLORS)[node.kind] ?? node.baseColor ?? (darkMode ? '#60a5fa' : '#2563eb')
+}
+
+function colorForEdge(edge: SpatialEdge, darkMode: boolean): string {
+  if (edge.crossRepo) return darkMode ? '#2dd4bf' : '#0f766e'
+  return (darkMode ? EDGE_COLORS : LIGHT_EDGE_COLORS)[edge.kind] ?? (darkMode ? '#64748b' : '#64748b')
+}
+
+function drawShape(
+  context: CanvasRenderingContext2D,
+  layout: LayoutNode,
+  radius: number,
+) {
+  const { node, x, y } = layout
+  context.beginPath()
+  if (node.repo) {
+    context.arc(x, y, radius, 0, Math.PI * 2)
+    return
+  }
+  if (['class', 'interface', 'struct', 'enum'].includes(node.kind)) {
+    context.roundRect(x - radius, y - radius, radius * 2, radius * 2, 1.5)
+    return
+  }
+  if (['module', 'namespace'].includes(node.kind)) {
+    context.moveTo(x, y - radius * 1.25)
+    context.lineTo(x + radius * 1.25, y)
+    context.lineTo(x, y + radius * 1.25)
+    context.lineTo(x - radius * 1.25, y)
+    context.closePath()
+    return
+  }
+  context.arc(x, y, radius, 0, Math.PI * 2)
+}
+
+function shortLabel(value: string): string {
+  return value.length > 28 ? `${value.slice(0, 27)}…` : value
 }
 
 interface RepoGraphSpatialProps {
@@ -104,362 +136,456 @@ interface RepoGraphSpatialProps {
   className?: string
 }
 
-export function RepoGraphSpatial({ data, searchQuery, selectedId, onSelect, hiddenRepoIds, className }: RepoGraphSpatialProps) {
+export function RepoGraphSpatial({
+  data,
+  searchQuery,
+  selectedId,
+  onSelect,
+  hiddenRepoIds,
+  className,
+}: RepoGraphSpatialProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [view, setView] = useState<ViewState>({ scale: 1, panX: 0, panY: 0 })
-  const [hoverId, setHoverId] = useState<string | null>(null)
+  const dragRef = useRef<{
+    x: number
+    y: number
+    panX: number
+    panY: number
+    moved: boolean
+  } | null>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
-  const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null)
-  const viewRef = useRef(view)
-
-  useEffect(() => {
-    viewRef.current = view
-  }, [view])
-
-  const visibleNodes = useMemo(() => {
-    return data.nodes.filter((n) => !hiddenRepoIds.has(n.workspaceId))
-  }, [data.nodes, hiddenRepoIds])
-
-  const visibleNodeIds = useMemo(() => new Set(visibleNodes.map((n) => n.id)), [visibleNodes])
-
-  const visibleEdges = useMemo(() => {
-    return data.edges.filter((e) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target))
-  }, [data.edges, visibleNodeIds])
-
-  const edgePairs = useMemo(() => {
-    const byId = new Map<string, SpatialNode>()
-    for (const n of visibleNodes) byId.set(n.id, n)
-    const pairs: Array<[SpatialNode, SpatialNode]> = []
-    for (const e of visibleEdges) {
-      const a = byId.get(e.source)
-      const b = byId.get(e.target)
-      if (a && b) pairs.push([a, b])
-    }
-    return pairs
-  }, [visibleNodes, visibleEdges])
-
-  const repoCenters = useMemo(() => {
-    const centers = new Map<string, { x: number; y: number }>()
-    for (const node of visibleNodes) {
-      if (node.repo) centers.set(node.workspaceId, { x: node.x, y: node.y })
-    }
-    return centers
-  }, [visibleNodes])
-
-  const visibleNodeById = useMemo(() => {
-    const map = new Map<string, SpatialNode>()
-    for (const n of visibleNodes) map.set(n.id, n)
-    return map
-  }, [visibleNodes])
-
+  const [view, setView] = useState<ViewState>({ scale: 1, panX: 0, panY: 0 })
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [enabledKinds, setEnabledKinds] = useState<Set<string>>(new Set())
+  const { resolved } = useThemePreference()
+  const darkMode = resolved === 'dark'
   const query = searchQuery.trim().toLowerCase()
-  const matchIds = useMemo(() => {
-    if (!query) return new Set<string>()
-    const ids = new Set<string>()
-    for (const n of visibleNodes) {
-      if (n.label.toLowerCase().includes(query) || n.fullLabel.toLowerCase().includes(query)) {
-        ids.add(n.id)
-      }
-    }
-    return ids
-  }, [query, visibleNodes])
 
-  useEffect(() => {
-    if (matchIds.size > 0) {
-      let sumX = 0
-      let sumY = 0
-      let count = 0
-      for (const id of matchIds) {
-        const node = visibleNodeById.get(id)
-        if (node && !node.repo) {
-          sumX += node.x
-          sumY += node.y
-          count++
+  const graph = useMemo(() => {
+    const repositories = data.nodes.filter(
+      (node) => node.repo && !hiddenRepoIds.has(node.workspaceId),
+    )
+    const symbols = data.nodes.filter(
+      (node) => !node.repo && !hiddenRepoIds.has(node.workspaceId),
+    )
+    const symbolIds = new Set(symbols.map((node) => node.id))
+    const allEdges = data.edges.filter(
+      (edge) => symbolIds.has(edge.source) && symbolIds.has(edge.target),
+    )
+    const edgeKindCounts = new Map<string, number>()
+    for (const edge of allEdges) {
+      edgeKindCounts.set(edge.kind, (edgeKindCounts.get(edge.kind) ?? 0) + 1)
+    }
+    const relationKinds = [...edgeKindCounts.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 6)
+    const edges = enabledKinds.size === 0
+      ? allEdges
+      : allEdges.filter((edge) => enabledKinds.has(edge.kind))
+    const degree = new Map<string, number>()
+    for (const edge of edges) {
+      degree.set(edge.source, (degree.get(edge.source) ?? 0) + 1)
+      degree.set(edge.target, (degree.get(edge.target) ?? 0) + 1)
+    }
+    const maxDegree = Math.max(1, ...degree.values())
+    const repositoryIndex = new Map(
+      repositories.map((repository, index) => [repository.workspaceId, index]),
+    )
+    const repositoryCount = Math.max(1, repositories.length)
+    const layoutNodes: LayoutNode[] = []
+
+    for (const repository of repositories) {
+      const index = repositoryIndex.get(repository.workspaceId) ?? 0
+      const angle = (index / repositoryCount) * Math.PI * 2 - Math.PI / 2
+      const anchorRadius = repositoryCount === 1 ? 0 : Math.min(155, 72 * repositoryCount)
+      layoutNodes.push({
+        node: repository,
+        x: Math.cos(angle) * anchorRadius,
+        y: Math.sin(angle) * anchorRadius,
+        radius: 10,
+        color: repository.baseColor,
+        degree: 0,
+      })
+    }
+
+    for (const node of symbols) {
+      const index = repositoryIndex.get(node.workspaceId) ?? 0
+      const repositoryAngle = (index / repositoryCount) * Math.PI * 2 - Math.PI / 2
+      const anchorRadius = repositoryCount === 1 ? 0 : Math.min(155, 72 * repositoryCount)
+      const anchorX = Math.cos(repositoryAngle) * anchorRadius
+      const anchorY = Math.sin(repositoryAngle) * anchorRadius
+      const nodeDegree = degree.get(node.id) ?? 0
+      const importance = Math.sqrt(nodeDegree / maxDegree)
+      const fileSeed = unitHash(`${node.workspaceId}:${node.data && 'file_path' in node.data ? node.data.file_path : node.fullLabel}`)
+      const nodeSeed = unitHash(node.id)
+      const goldenAngle = Math.PI * (3 - Math.sqrt(5))
+      const localAngle = nodeSeed * Math.PI * 2 + fileSeed * goldenAngle * 7
+      const radius = 45 + (1 - importance) * 275 + fileSeed * 62
+      const clusterBias = 0.72 + unitHash(`${node.id}:cluster`) * 0.35
+      layoutNodes.push({
+        node,
+        x: anchorX + Math.cos(localAngle) * radius * clusterBias,
+        y: anchorY + Math.sin(localAngle) * radius * clusterBias,
+        radius: Math.min(7.5, 2.1 + Math.sqrt(nodeDegree) * 0.7 + (node.kind === 'class' ? 1.2 : 0)),
+        color: colorForNode(node, darkMode),
+        degree: nodeDegree,
+      })
+    }
+
+    const nodeById = new Map(layoutNodes.map((layout) => [layout.node.id, layout]))
+    const matchIds = new Set<string>()
+    if (query) {
+      for (const layout of layoutNodes) {
+        if (
+          !layout.node.repo &&
+          (layout.node.label.toLowerCase().includes(query) ||
+            layout.node.fullLabel.toLowerCase().includes(query))
+        ) {
+          matchIds.add(layout.node.id)
         }
       }
-      if (count > 0) {
-        const cx = sumX / count
-        const cy = sumY / count
-        const canvas = canvasRef.current
-        if (canvas) {
-          setView({ scale: 2, panX: -cx * 2, panY: -cy * 2 }) // eslint-disable-line react-hooks/set-state-in-effect
-        }
+    }
+    const selectedNeighborIds = new Set<string>()
+    if (selectedId) {
+      selectedNeighborIds.add(selectedId)
+      for (const edge of edges) {
+        if (edge.source === selectedId) selectedNeighborIds.add(edge.target)
+        if (edge.target === selectedId) selectedNeighborIds.add(edge.source)
       }
     }
-  }, [matchIds, visibleNodeById])
+    const rankedLabels = [...layoutNodes]
+      .filter((layout) => !layout.node.repo)
+      .sort((left, right) => right.degree - left.degree)
+      .slice(0, 22)
+      .map((layout) => layout.node.id)
+
+    return {
+      repositories,
+      layoutNodes,
+      nodeById,
+      edges,
+      relationKinds,
+      matchIds,
+      selectedNeighborIds,
+      rankedLabelIds: new Set(rankedLabels),
+    }
+  }, [darkMode, data.edges, data.nodes, enabledKinds, hiddenRepoIds, query, selectedId])
 
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const obs = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setSize({ width: entry.contentRect.width, height: entry.contentRect.height })
-      }
+    const container = containerRef.current
+    if (!container) return
+    const observer = new ResizeObserver(([entry]) => {
+      setSize({
+        width: Math.max(1, entry.contentRect.width),
+        height: Math.max(1, entry.contentRect.height),
+      })
     })
-    obs.observe(el)
-    return () => obs.disconnect()
+    observer.observe(container)
+    return () => observer.disconnect()
   }, [])
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas) return
-    canvas.width = size.width
-    canvas.height = size.height
-  }, [size])
+    if (!canvas || size.width === 0 || size.height === 0) return
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
+    canvas.width = Math.round(size.width * pixelRatio)
+    canvas.height = Math.round(size.height * pixelRatio)
+    canvas.style.width = `${size.width}px`
+    canvas.style.height = `${size.height}px`
+    const context = canvas.getContext('2d')
+    if (!context) return
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+    const rootStyles = getComputedStyle(document.documentElement)
+    const graphBackground = rootStyles.getPropertyValue('--terminal-bg').trim() || (darkMode ? '#151514' : '#f4f6fa')
+    context.fillStyle = graphBackground
+    context.fillRect(0, 0, size.width, size.height)
 
-  useEffect(() => {
-    let raf = 0
-    const step = () => {
-      simulateStep(visibleNodes, edgePairs, repoCenters)
-      raf = requestAnimationFrame(step)
-    }
-    raf = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(raf)
-  }, [visibleNodes, edgePairs, repoCenters])
+    const fitScale = Math.min(size.width, size.height) / WORLD_SIZE
+    const worldScale = fitScale * view.scale
+    context.save()
+    context.translate(size.width / 2 + view.panX, size.height / 2 + view.panY)
+    context.scale(worldScale, worldScale)
 
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    const draw = () => {
-      const v = viewRef.current
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      ctx.save()
-      ctx.translate(v.panX + canvas.width / 2, v.panY + canvas.height / 2)
-      ctx.scale(v.scale, v.scale)
-
-      const searching = matchIds.size > 0
-
-      ctx.save()
-      ctx.strokeStyle = 'rgba(71,85,105,0.1)'
-      ctx.lineWidth = 1
-      const grid = 80
-      const left = (-v.panX - canvas.width / 2) / v.scale
-      const right = (-v.panX + canvas.width / 2) / v.scale
-      const top = (-v.panY - canvas.height / 2) / v.scale
-      const bottom = (-v.panY + canvas.height / 2) / v.scale
-      for (let x = Math.floor(left / grid) * grid; x < right; x += grid) {
-        ctx.beginPath()
-        ctx.moveTo(x, top)
-        ctx.lineTo(x, bottom)
-        ctx.stroke()
-      }
-      for (let y = Math.floor(top / grid) * grid; y < bottom; y += grid) {
-        ctx.beginPath()
-        ctx.moveTo(left, y)
-        ctx.lineTo(right, y)
-        ctx.stroke()
-      }
-      ctx.restore()
-
-      for (const edge of visibleEdges) {
-        const src = visibleNodeById.get(edge.source)
-        const dst = visibleNodeById.get(edge.target)
-        if (!src || !dst) continue
-        let alpha = 1
-        if (searching) {
-          const srcMatch = matchIds.has(src.id)
-          const dstMatch = matchIds.has(dst.id)
-          alpha = srcMatch || dstMatch ? 0.8 : 0.04
-        }
-        if (alpha < 0.03) continue
-        ctx.beginPath()
-        ctx.moveTo(src.x, src.y)
-        ctx.lineTo(dst.x, dst.y)
-        ctx.strokeStyle = edgeColor(edge)
-        ctx.globalAlpha = alpha
-        ctx.lineWidth = edge.crossRepo ? 1.6 : 0.8
-        ctx.stroke()
-        ctx.globalAlpha = 1
-      }
-
-      const labelNodes: SpatialNode[] = []
-      for (const node of visibleNodes) {
-        const isMatch = matchIds.has(node.id)
-        const isDimmed = searching && !isMatch
-        const isSelected = selectedId === node.id
-        const isHover = hoverId === node.id
-        const r = node.radius * (isSelected || isHover ? 1.35 : 1)
-        const alpha = isDimmed ? 0.12 : 1
-
-        ctx.save()
-        ctx.globalAlpha = alpha
-        ctx.beginPath()
-        ctx.arc(node.x, node.y, r, 0, Math.PI * 2)
-        ctx.fillStyle = node.baseColor
-        ctx.shadowColor = node.glowColor
-        ctx.shadowBlur = node.repo ? 28 : 12
-        ctx.fill()
-        ctx.shadowBlur = 0
-
-        if (isMatch && searching && !node.repo) {
-          ctx.strokeStyle = '#fbbf24'
-          ctx.lineWidth = 2.5
-          ctx.shadowColor = '#fbbf24'
-          ctx.shadowBlur = 10
-          ctx.stroke()
-          ctx.shadowBlur = 0
-        }
-
-        if (isSelected || isHover) {
-          ctx.strokeStyle = '#e2e8f0'
-          ctx.lineWidth = 2
-          ctx.stroke()
-        }
-
-        if (node.repo) {
-          ctx.fillStyle = 'rgba(2,6,23,0.7)'
-          ctx.beginPath()
-          ctx.arc(node.x, node.y, r * 0.55, 0, Math.PI * 2)
-          ctx.fill()
-        }
-
-        ctx.restore()
-
-        if ((node.repo || r * v.scale > 6) && !isDimmed) {
-          labelNodes.push(node)
-        }
-      }
-
-      for (const node of labelNodes) {
-        ctx.save()
-        ctx.globalAlpha = selectedId === node.id || hoverId === node.id || matchIds.has(node.id) ? 1 : 0.75
-        ctx.fillStyle = node.textColor
-        ctx.font = node.repo ? '600 11px JetBrains Mono, monospace' : '400 9px JetBrains Mono, monospace'
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'top'
-        const label = node.repo
-          ? node.label
-          : node.label.length > 22
-            ? `${node.label.slice(0, 22)}…`
-            : node.label
-        ctx.fillText(label, node.x, node.y + node.radius + 4)
-        ctx.restore()
-      }
-
-      ctx.restore()
+    const worldRadius = WORLD_SIZE / 2
+    for (let ring = 1; ring <= 4; ring++) {
+      context.beginPath()
+      context.arc(0, 0, (worldRadius / 4.8) * ring, 0, Math.PI * 2)
+      context.strokeStyle = darkMode ? 'rgba(154,160,191,0.07)' : 'rgba(76,102,214,0.11)'
+      context.lineWidth = 1 / worldScale
+      context.stroke()
     }
 
-    let raf = 0
-    const loop = () => {
-      draw()
-      raf = requestAnimationFrame(loop)
+    for (const edge of graph.edges) {
+      const source = graph.nodeById.get(edge.source)
+      const target = graph.nodeById.get(edge.target)
+      if (!source || !target) continue
+      const selected = Boolean(
+        selectedId && (edge.source === selectedId || edge.target === selectedId),
+      )
+      const matched = query && (graph.matchIds.has(edge.source) || graph.matchIds.has(edge.target))
+      const dimmedBySelection = selectedId && !selected
+      const dimmedBySearch = query && !matched
+      const baseAlpha = edge.crossRepo ? (darkMode ? 0.28 : 0.34) : (darkMode ? 0.095 : 0.15)
+      const alpha = selected
+        ? 0.82
+        : matched
+          ? 0.48
+          : dimmedBySelection || dimmedBySearch
+            ? darkMode ? 0.012 : 0.025
+            : baseAlpha
+      if (alpha < 0.01) continue
+      const midpointX = (source.x + target.x) / 2
+      const midpointY = (source.y + target.y) / 2
+      const curve = edge.crossRepo ? 0.13 : 0.045
+      context.beginPath()
+      context.moveTo(source.x, source.y)
+      context.quadraticCurveTo(
+        midpointX - midpointY * curve,
+        midpointY + midpointX * curve,
+        target.x,
+        target.y,
+      )
+      context.strokeStyle = colorForEdge(edge, darkMode)
+      context.globalAlpha = alpha
+      context.lineWidth = selected ? 2.2 : edge.crossRepo ? 1.15 : 0.6
+      if (selected) {
+        context.shadowColor = colorForEdge(edge, darkMode)
+        context.shadowBlur = 8
+      }
+      context.stroke()
+      context.shadowBlur = 0
+      context.globalAlpha = 1
     }
-    raf = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(raf)
-  }, [canvasRef, visibleNodes, visibleEdges, visibleNodeById, selectedId, hoverId, matchIds])
 
-  const screenToWorld = (sx: number, sy: number) => {
+    const hovered = hoveredId ? graph.nodeById.get(hoveredId) : null
+    const labels: LayoutNode[] = []
+    for (const layout of graph.layoutNodes) {
+      const selected = layout.node.id === selectedId
+      const matched = graph.matchIds.has(layout.node.id)
+      const neighbor = graph.selectedNeighborIds.has(layout.node.id)
+      const hoveredNode = layout.node.id === hoveredId
+      const dimmed = (selectedId && !neighbor && !layout.node.repo) || (query && !matched && !layout.node.repo)
+      const radius = layout.radius * (selected || hoveredNode ? 1.75 : matched ? 1.45 : 1)
+      context.save()
+      context.globalAlpha = dimmed ? 0.09 : 1
+      drawShape(context, layout, radius)
+      context.fillStyle = layout.color
+      if (layout.node.repo || selected || matched || hoveredNode || layout.degree >= 12) {
+        context.shadowColor = layout.color
+        context.shadowBlur = layout.node.repo ? 24 : selected || matched ? 18 : 8
+      }
+      context.fill()
+      context.shadowBlur = 0
+      if (layout.node.repo) {
+        context.lineWidth = 2.5
+        context.strokeStyle = '#f8fafc'
+        context.globalAlpha = 0.7
+        context.stroke()
+        context.beginPath()
+        context.arc(layout.x, layout.y, radius * 0.45, 0, Math.PI * 2)
+        context.fillStyle = graphBackground
+        context.fill()
+      }
+      if (selected || matched) {
+        drawShape(context, layout, radius + 4)
+        context.lineWidth = 1.5
+        context.strokeStyle = selected ? (darkMode ? '#ffffff' : '#111827') : (darkMode ? '#facc15' : '#ca8a04')
+        context.stroke()
+      }
+      context.restore()
+      if (
+        layout.node.repo ||
+        selected ||
+        matched ||
+        hoveredNode ||
+        (view.scale >= 1.35 && graph.rankedLabelIds.has(layout.node.id))
+      ) {
+        labels.push(layout)
+      }
+    }
+
+    for (const layout of labels) {
+      const prominent = layout.node.repo || layout.node.id === selectedId || layout.node.id === hoveredId
+      const label = shortLabel(layout.node.label)
+      context.font = `${prominent ? 600 : 500} ${prominent ? 12 : 9.5}px JetBrains Mono, monospace`
+      const width = context.measureText(label).width + 14
+      const x = layout.x - width / 2
+      const y = layout.y + layout.radius + 8
+      context.fillStyle = darkMode
+        ? prominent ? 'rgba(24,24,23,0.96)' : 'rgba(24,24,23,0.82)'
+        : prominent ? 'rgba(255,255,255,0.96)' : 'rgba(255,255,255,0.86)'
+      context.strokeStyle = layout.color
+      context.lineWidth = prominent ? 1 : 0.6
+      context.beginPath()
+      context.roundRect(x, y, width, prominent ? 24 : 19, 4)
+      context.fill()
+      context.stroke()
+      context.fillStyle = darkMode ? '#f3f2ef' : '#171a21'
+      context.textAlign = 'center'
+      context.textBaseline = 'middle'
+      context.fillText(label, layout.x, y + (prominent ? 12 : 9.5))
+    }
+
+    if (hovered && !labels.some((layout) => layout.node.id === hovered.node.id)) {
+      // Kept for defensive completeness when label LOD rules change.
+      context.fillStyle = '#f8fafc'
+      context.fillText(shortLabel(hovered.node.label), hovered.x, hovered.y)
+    }
+    context.restore()
+  }, [darkMode, graph, hoveredId, query, selectedId, size, view])
+
+  const screenToWorld = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current
     if (!canvas) return { x: 0, y: 0 }
     const rect = canvas.getBoundingClientRect()
-    const v = viewRef.current
+    const fitScale = Math.min(size.width, size.height) / WORLD_SIZE
+    const worldScale = fitScale * view.scale
     return {
-      x: (sx - rect.left - v.panX - canvas.width / 2) / v.scale,
-      y: (sy - rect.top - v.panY - canvas.height / 2) / v.scale,
+      x: (clientX - rect.left - size.width / 2 - view.panX) / worldScale,
+      y: (clientY - rect.top - size.height / 2 - view.panY) / worldScale,
     }
   }
 
-  const findNodeAt = (sx: number, sy: number): SpatialNode | null => {
-    const { x, y } = screenToWorld(sx, sy)
-    let best: SpatialNode | null = null
-    let bestDist = Infinity
-    for (const node of visibleNodes) {
-      const hitR = node.radius * (selectedId === node.id || hoverId === node.id ? 1.5 : 1) + 4 / viewRef.current.scale
-      const dist = Math.hypot(node.x - x, node.y - y)
-      if (dist < hitR && dist < bestDist) {
-        best = node
-        bestDist = dist
+  const nodeAt = (clientX: number, clientY: number): LayoutNode | null => {
+    const point = screenToWorld(clientX, clientY)
+    const fitScale = Math.min(size.width, size.height) / WORLD_SIZE
+    const hitPadding = 7 / Math.max(0.1, fitScale * view.scale)
+    let best: LayoutNode | null = null
+    let distance = Number.POSITIVE_INFINITY
+    for (const layout of graph.layoutNodes) {
+      const current = Math.hypot(layout.x - point.x, layout.y - point.y)
+      if (current <= layout.radius + hitPadding && current < distance) {
+        best = layout
+        distance = current
       }
     }
     return best
   }
 
-  const onWheel = (e: ReactWheelEvent) => {
-    e.preventDefault()
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const rect = canvas.getBoundingClientRect()
-    const mx = e.clientX - rect.left
-    const my = e.clientY - rect.top
-    const worldBefore = screenToWorld(e.clientX, e.clientY)
-    const factor = e.deltaY < 0 ? 1.12 : 0.89
-    const newScale = Math.min(6, Math.max(0.15, viewRef.current.scale * factor))
-    const newPanX = mx - worldBefore.x * newScale - canvas.width / 2
-    const newPanY = my - worldBefore.y * newScale - canvas.height / 2
-    setView({ scale: newScale, panX: newPanX, panY: newPanY })
-  }
-
-  const onPointerDown = (e: ReactPointerEvent) => {
-    const hit = findNodeAt(e.clientX, e.clientY)
-    if (hit) {
-      onSelect(hit.id)
-      dragRef.current = null
-      return
+  const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      panX: view.panX,
+      panY: view.panY,
+      moved: false,
     }
-    dragRef.current = { startX: e.clientX, startY: e.clientY, panX: viewRef.current.panX, panY: viewRef.current.panY }
   }
 
-  const onPointerMove = (e: ReactPointerEvent) => {
-    if (dragRef.current) {
-      setView((v) => ({
-        ...v,
-        panX: dragRef.current!.panX + (e.clientX - dragRef.current!.startX),
-        panY: dragRef.current!.panY + (e.clientY - dragRef.current!.startY),
-      }))
-      return
+  const onPointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const drag = dragRef.current
+    if (drag) {
+      const deltaX = event.clientX - drag.x
+      const deltaY = event.clientY - drag.y
+      if (Math.abs(deltaX) + Math.abs(deltaY) > 3) drag.moved = true
+      if (drag.moved) {
+        setView((current) => ({
+          ...current,
+          panX: drag.panX + deltaX,
+          panY: drag.panY + deltaY,
+        }))
+        return
+      }
     }
-    const hit = findNodeAt(e.clientX, e.clientY)
-    setHoverId(hit?.id ?? null)
+    setHoveredId(nodeAt(event.clientX, event.clientY)?.node.id ?? null)
   }
 
-  const onPointerUp = () => {
+  const onPointerUp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const drag = dragRef.current
     dragRef.current = null
+    if (!drag?.moved) onSelect(nodeAt(event.clientX, event.clientY)?.node.id ?? null)
+  }
+
+  const onWheel = (event: ReactWheelEvent<HTMLCanvasElement>) => {
+    event.preventDefault()
+    const factor = event.deltaY < 0 ? 1.12 : 0.89
+    setView((current) => ({
+      ...current,
+      scale: Math.min(3.2, Math.max(0.55, current.scale * factor)),
+    }))
   }
 
   const resetView = () => setView({ scale: 1, panX: 0, panY: 0 })
-  const zoomIn = () => setView((v) => ({ ...v, scale: Math.min(6, v.scale * 1.25) }))
-  const zoomOut = () => setView((v) => ({ ...v, scale: Math.max(0.15, v.scale * 0.8) }))
-
-  const matchCount = matchIds.size
+  const toggleKind = (kind: string) => {
+    setEnabledKinds((previous) => {
+      const next = new Set(previous)
+      if (next.has(kind)) next.delete(kind)
+      else next.add(kind)
+      return next
+    })
+  }
 
   return (
-    <div ref={containerRef} className={cn('relative h-full w-full overflow-hidden', className)}>
+    <div ref={containerRef} className={cn('relative h-full min-h-0 overflow-hidden bg-(--terminal-bg)', className)}>
       <canvas
         ref={canvasRef}
-        className={cn('absolute inset-0 cursor-grab touch-none active:cursor-grabbing', hoverId && 'cursor-pointer')}
-        onWheel={onWheel}
+        aria-label="Interactive project code constellation"
+        className={cn('absolute inset-0 touch-none cursor-grab active:cursor-grabbing', hoveredId && 'cursor-pointer')}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
+        onPointerLeave={() => {
+          dragRef.current = null
+          setHoveredId(null)
+        }}
+        onWheel={onWheel}
       />
-      <div className="pointer-events-none absolute inset-x-0 bottom-3 left-3 z-(--z-panel) flex items-center gap-2">
-        <div className="pointer-events-auto flex items-center gap-3 rounded-md border border-(--color-border) bg-(--bg-card)/90 px-3 py-1.5 text-[10px] text-(--color-text-muted) backdrop-blur-sm">
-          <span>{visibleNodes.length.toLocaleString(getIntlLocale())} visible</span>
-          <span className="text-(--color-border)">|</span>
-          <span>{visibleEdges.length.toLocaleString(getIntlLocale())} edges</span>
-          {query && matchCount > 0 && (
-            <>
-              <span className="text-(--color-border)">|</span>
-              <span className="text-amber-400">{matchCount} matches</span>
-            </>
-          )}
+
+      <div className="pointer-events-none absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-1.5">
+        <div className="pointer-events-auto flex items-center gap-2 rounded-md border border-(--color-border) bg-(--bg-card)/85 px-2.5 py-1.5 text-[9px] text-(--color-text-muted) shadow-lg backdrop-blur-md">
+          <span className="h-1.5 w-1.5 rounded-full bg-(--accent-purple) shadow-[0_0_8px_currentColor]" />
+          {selectedId ? 'Focused neighborhood' : query ? `${graph.matchIds.size} matches` : 'Project constellation'}
+          <span className="text-(--color-border-strong)">|</span>
+          <span className="font-mono text-(--color-text)">{graph.layoutNodes.length.toLocaleString(getIntlLocale())} nodes</span>
+          <span className="font-mono text-(--color-text-subtle)">{graph.edges.length.toLocaleString(getIntlLocale())} edges</span>
+        </div>
+        <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-md border border-(--color-border) bg-(--bg-card)/85 p-1 shadow-lg backdrop-blur-md">
+          <button
+            type="button"
+            onClick={() => setEnabledKinds(new Set())}
+            className={cn(
+              'rounded px-2 py-1 text-[9px] font-medium transition-colors',
+              enabledKinds.size === 0 ? 'bg-(--bg-hover) text-(--color-text)' : 'text-(--color-text-subtle) hover:text-(--color-text)',
+            )}
+          >
+            All
+          </button>
+          {graph.relationKinds.map(([kind, count]) => {
+            const active = enabledKinds.has(kind)
+            return (
+              <button
+                key={kind}
+                type="button"
+                onClick={() => toggleKind(kind)}
+                className={cn(
+                  'flex items-center gap-1 rounded px-2 py-1 text-[9px] transition-colors',
+                  active ? 'bg-(--bg-hover) text-(--color-text)' : 'text-(--color-text-subtle) hover:text-(--color-text)',
+                )}
+              >
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: (darkMode ? EDGE_COLORS : LIGHT_EDGE_COLORS)[kind] ?? '#64748b' }} />
+                {kind} <span className="font-mono opacity-55">{count}</span>
+              </button>
+            )
+          })}
         </div>
       </div>
-      <div className="absolute bottom-3 right-3 z-(--z-header) flex flex-col gap-1 rounded-md border border-(--color-border) bg-(--bg-card)/90 p-1 backdrop-blur-sm">
-        <button type="button" onClick={zoomIn} className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) hover:bg-(--bg-key)">
-          <Plus size={14} />
-        </button>
-        <button type="button" onClick={zoomOut} className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) hover:bg-(--bg-key)">
-          <Minus size={14} />
-        </button>
-        <button type="button" onClick={resetView} className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) hover:bg-(--bg-key)">
-          <RotateCcw size={13} />
-        </button>
+
+      <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-2 rounded-md border border-(--color-border) bg-(--bg-card)/85 px-2.5 py-1.5 text-[9px] text-(--color-text-muted) shadow-lg backdrop-blur-md">
+        <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-sm bg-rose-500" /> class</span>
+        <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-fuchsia-500" /> function</span>
+        <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rotate-45 bg-yellow-400" /> module</span>
+        <span className="hidden text-(--color-text-subtle) lg:inline">drag to move · scroll to zoom</span>
+      </div>
+
+      <div className="absolute bottom-3 right-3 flex items-center gap-1 rounded-md border border-(--color-border) bg-(--bg-card)/90 p-1 text-(--color-text-muted) shadow-lg backdrop-blur-md">
+        <button type="button" aria-label="Zoom out" onClick={() => setView((current) => ({ ...current, scale: Math.max(0.55, current.scale * 0.85) }))} className="flex h-7 w-7 items-center justify-center rounded hover:bg-(--bg-hover) hover:text-(--color-text)"><Minus size={13} /></button>
+        <span className="w-10 text-center font-mono text-[9px] text-(--color-text-subtle)">{Math.round(view.scale * 100)}%</span>
+        <button type="button" aria-label="Zoom in" onClick={() => setView((current) => ({ ...current, scale: Math.min(3.2, current.scale * 1.15) }))} className="flex h-7 w-7 items-center justify-center rounded hover:bg-(--bg-hover) hover:text-(--color-text)"><Plus size={13} /></button>
+        <button type="button" aria-label="Reset view" onClick={resetView} className="flex h-7 w-7 items-center justify-center rounded hover:bg-(--bg-hover) hover:text-(--color-text)"><RotateCcw size={12} /></button>
+        {selectedId && (
+          <button type="button" aria-label="Clear focus" onClick={() => onSelect(null)} className="flex h-7 w-7 items-center justify-center rounded text-cyan-400 hover:bg-white/10"><Focus size={12} /></button>
+        )}
       </div>
     </div>
   )

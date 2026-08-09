@@ -15,12 +15,13 @@ from app.api.schemas.code_context import (
     CodeContextIndexRequest,
     CodeContextQueryRequest,
     CodeContextQueryResponse,
-    CodeContextStatusResponse,
+    ProjectCodeContextIndexResponse,
 )
 from app.api.schemas.projects import ProjectResponse, ProjectWorkspaceItem
 from app.models.chat import CodingProjectWorkspace, CodingWorkspace
 from app.services import coding_project_service as svc
 from app.services import team_manager
+from app.services.code_index.jobs import project_index_jobs
 from app.services.code_index.models import RepositoryScope
 from app.services.code_index.pipeline import stable_id
 from app.services.code_index.project import repository_indexes
@@ -265,10 +266,12 @@ async def project_code_context_status(
     stats_values = await asyncio.gather(
         *(asyncio.to_thread(index.stats) for index in indexes)
     )
+    job_states = project_index_jobs.snapshot(str(project_id))
     output: list[dict[str, object]] = []
     for scope, (_link, workspace), stats in zip(
         scopes, pairs, stats_values, strict=True
     ):
+        job = job_states.get(scope.label)
         output.append(
             {
                 "workspace_id": str(workspace.id),
@@ -278,12 +281,14 @@ async def project_code_context_status(
                 "files": stats.files,
                 "nodes": stats.symbols,
                 "edges": stats.relations,
-                "indexing": False,
-                "index_phase": None,
-                "index_progress": None,
-                "index_message": None,
+                "indexing": job.indexing if job is not None else False,
+                "index_phase": job.phase if job is not None else None,
+                "index_progress": job.progress if job is not None else None,
+                "index_message": job.message if job is not None else None,
                 "index_error": (
-                    f"{stats.errors[0][0]}: {stats.errors[0][1]}"
+                    job.error
+                    if job is not None and job.error
+                    else f"{stats.errors[0][0]}: {stats.errors[0][1]}"
                     f" (+{len(stats.errors) - 1} more)"
                     if len(stats.errors) > 1
                     else f"{stats.errors[0][0]}: {stats.errors[0][1]}"
@@ -297,40 +302,29 @@ async def project_code_context_status(
 
 @router.post(
     "/{project_id}/code-context/index",
-    response_model=dict[str, CodeContextStatusResponse],
+    response_model=ProjectCodeContextIndexResponse,
+    status_code=202,
 )
 async def index_project_code_context(
     project_id: UUID,
     db: DbSession,
     body: CodeContextIndexRequest | None = None,
-) -> dict[str, CodeContextStatusResponse]:
+) -> ProjectCodeContextIndexResponse:
     scopes = await _project_scopes(db, project_id)
     indexes = await asyncio.gather(
         *(repository_indexes.get(scope.root) for scope in scopes)
     )
-    try:
-        values = await asyncio.gather(
-            *(index.update(full=bool(body and body.full)) for index in indexes)
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {
-        scope.label: CodeContextStatusResponse(
-            indexed=stats.files > 0,
-            files=stats.files,
-            chunks=stats.chunks,
-            symbols=stats.symbols,
-            relations=stats.relations,
-            languages=list(stats.languages),
-            graph_languages=list(stats.graph_languages),
-            errors=list(stats.errors),
-            version=stats.version,
-            index_error=(
-                f"{stats.errors[0][0]}: {stats.errors[0][1]}" if stats.errors else None
-            ),
-        )
-        for scope, stats in zip(scopes, values, strict=True)
-    }
+    started = project_index_jobs.start(
+        str(project_id),
+        tuple(zip((scope.label for scope in scopes), indexes, strict=True)),
+        full=bool(body and body.full),
+    )
+    return ProjectCodeContextIndexResponse(
+        indexing=started.indexing,
+        repo_count=started.repo_count,
+        already_running=started.already_running,
+        full=started.full,
+    )
 
 
 @router.post(
