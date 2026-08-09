@@ -12,6 +12,7 @@ import {
   FolderPlus,
   KeyRound,
   Loader2,
+  MoreHorizontal,
   PackagePlus,
   RefreshCw,
   Server,
@@ -37,7 +38,14 @@ import type {
 import { queryKeys } from '@/queries/keys'
 import { usePlatform } from '@/hooks/use-platform'
 import { useToastStore } from '@/stores/useToastStore'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
@@ -243,8 +251,8 @@ function PluginCard({
               )}
             </div>
 
-            <div className="flex flex-wrap content-start items-center gap-1.5 border-t border-(--color-border) pt-3 @lg/plugin-card:w-42 @lg/plugin-card:justify-end @lg/plugin-card:border-t-0 @lg/plugin-card:pt-0">
-              <div className="mr-auto flex items-center gap-2 @lg/plugin-card:mb-1 @lg/plugin-card:mr-0 @lg/plugin-card:w-full @lg/plugin-card:justify-end">
+            <div className="flex content-start items-center justify-between gap-3 border-t border-(--color-border) pt-3 @lg/plugin-card:w-36 @lg/plugin-card:flex-col @lg/plugin-card:items-end @lg/plugin-card:justify-start @lg/plugin-card:border-t-0 @lg/plugin-card:pt-0">
+              <div className="flex items-center gap-2">
                 <span className="text-xs text-(--color-text-muted)">
                   {installation.enabled ? 'Enabled' : 'Disabled'}
                 </span>
@@ -255,18 +263,30 @@ function PluginCard({
                   onCheckedChange={onToggle}
                 />
               </div>
-              <Button variant="outline" size="sm" disabled={busy} onClick={onCredentials}>
-                <KeyRound /> Credentials
-              </Button>
-              <Button variant="outline" size="sm" disabled={busy} onClick={onOpen}>
-                <Code2 /> Edit
-              </Button>
-              <Button variant="outline" size="sm" disabled={busy} onClick={onPack}>
-                <FileArchive /> Pack
-              </Button>
-              <Button variant="destructive" size="sm" disabled={busy} onClick={onDelete}>
-                <Trash2 /> Uninstall
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  disabled={busy}
+                  aria-label={`Actions for ${installation.name}`}
+                  className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                >
+                  <MoreHorizontal /> Actions <ChevronDown className="transition-transform group-data-[popup-open]:rotate-180" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem onClick={onCredentials}>
+                    <KeyRound /> Credentials
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={onOpen}>
+                    <Code2 /> Edit plugin
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={onPack}>
+                    <FileArchive /> Pack archive
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                    <Trash2 /> Uninstall
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </div>
@@ -460,19 +480,37 @@ export function PluginCenterPanel() {
             <RefreshCw className={cn(query.isFetching && 'animate-spin')} />
           </Button>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button onClick={() => void pickAndImport('install')} disabled={busy !== null}>
-            <PackagePlus /> Import package
-          </Button>
-          <Button variant="outline" onClick={() => void pickAndImport('link')} disabled={busy !== null || (!desktop && !hostPath.trim())}>
-            <FolderInput /> Link folder
-          </Button>
-          <Button variant="outline" onClick={() => void validateFolder()} disabled={busy !== null || (!desktop && !hostPath.trim())}>
-            <CheckCircle2 /> Validate
-          </Button>
-          <Button variant="outline" onClick={() => setShowCreate((value) => !value)} disabled={busy !== null}>
-            <FolderPlus /> Create
-          </Button>
+        <div className="mt-4">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              disabled={busy !== null}
+              className={buttonVariants()}
+            >
+              <PackagePlus /> Add plugin
+              <ChevronDown className="transition-transform group-data-[popup-open]:rotate-180" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-52">
+              <DropdownMenuItem onClick={() => void pickAndImport('install')}>
+                <PackagePlus /> Import package
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!desktop && !hostPath.trim()}
+                onClick={() => void pickAndImport('link')}
+              >
+                <FolderInput /> Link development folder
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!desktop && !hostPath.trim()}
+                onClick={() => void validateFolder()}
+              >
+                <CheckCircle2 /> Validate folder
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setShowCreate(true)}>
+                <FolderPlus /> Create plugin
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <input
             ref={uploadRef}
             hidden
