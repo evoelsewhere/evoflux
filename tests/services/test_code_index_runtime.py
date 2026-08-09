@@ -11,8 +11,12 @@ from pathlib import Path
 import pytest
 
 from app.core.config import settings
-from app.services.code_index.models import RepositoryScope
-from app.services.code_index.project import RepositoryIndex, RepositoryIndexRegistry
+from app.services.code_index.models import IndexStats, RepositoryScope
+from app.services.code_index.project import (
+    ProgressCallback,
+    RepositoryIndex,
+    RepositoryIndexRegistry,
+)
 from app.services.code_index.paths import paths_for_repository
 from app.services.code_index.query import search_index
 from app.services.code_index.service import query_code_context
@@ -71,8 +75,39 @@ async def test_desired_state_add_update_delete_and_noop(
 
 
 @pytest.mark.asyncio
+async def test_noop_refresh_reuses_persisted_file_metadata(
+    tmp_path: Path,
+    isolated_cache: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    source = repository / "service.py"
+    source.write_text("def unchanged():\n    return 1\n", encoding="utf-8")
+    index = await RepositoryIndex.create(repository)
+    initial = await index.update()
+    original_read_bytes = Path.read_bytes
+    source_reads = 0
+
+    def tracked_read_bytes(path: Path) -> bytes:
+        nonlocal source_reads
+        if path == source:
+            source_reads += 1
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", tracked_read_bytes)
+
+    unchanged = await index.update()
+
+    assert unchanged == initial
+    assert source_reads == 0
+
+
+@pytest.mark.asyncio
 async def test_concurrent_refreshes_share_one_committed_target(
-    tmp_path: Path, isolated_cache: Path
+    tmp_path: Path,
+    isolated_cache: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repository = tmp_path / "repo"
     repository.mkdir()
@@ -80,11 +115,53 @@ async def test_concurrent_refreshes_share_one_committed_target(
         "def stable_refresh():\n    return 1\n", encoding="utf-8"
     )
     index = await RepositoryIndex.create(repository)
+    update_calls = 0
+    original_update = index._update_sync
+
+    def tracked_update(full: bool, progress: ProgressCallback | None) -> IndexStats:
+        nonlocal update_calls
+        update_calls += 1
+        return original_update(full, progress)
+
+    monkeypatch.setattr(index, "_update_sync", tracked_update)
 
     results = await asyncio.gather(*(index.update() for _ in range(8)))
 
+    assert update_calls == 1
     assert len({item.version for item in results}) == 1
     assert all(item.files == 1 and not item.errors for item in results)
+
+
+@pytest.mark.asyncio
+async def test_index_work_does_not_use_asyncio_default_executor(
+    tmp_path: Path,
+    isolated_cache: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    (repository / "service.py").write_text(
+        "def isolated_executor():\n    return 1\n", encoding="utf-8"
+    )
+    index = await RepositoryIndex.create(repository)
+
+    async def reject_default_executor(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("code-index used asyncio's shared default executor")
+
+    monkeypatch.setattr(asyncio, "to_thread", reject_default_executor)
+
+    stats = await index.update()
+    result = await search_index(
+        [("repo", index)],
+        query="isolated_executor",
+        languages=None,
+        paths=None,
+        limit=10,
+        stats={"repo": stats},
+    )
+
+    assert stats.files == 1
+    assert result.hits and result.hits[0].file_path == "service.py"
 
 
 def test_registry_and_refresh_are_safe_across_event_loops(
@@ -486,7 +563,84 @@ async def test_search_degrades_to_semantic_results_when_fts_is_missing(
 
 
 @pytest.mark.asyncio
-async def test_repository_open_repairs_an_inconsistent_fts_target(
+async def test_search_scores_only_lexical_candidates_when_available(
+    tmp_path: Path,
+    isolated_cache: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    for ordinal in range(40):
+        (repository / f"module_{ordinal}.py").write_text(
+            f"def unrelated_{ordinal}():\n    return 'ordinary content {ordinal}'\n",
+            encoding="utf-8",
+        )
+    (repository / "target.py").write_text(
+        "def needle_identifier():\n    return 'needle_identifier'\n",
+        encoding="utf-8",
+    )
+    index = await RepositoryIndex.create(repository)
+    stats = await index.update()
+    similarity_calls = 0
+
+    def tracked_similarity(_left: bytes, _right: bytes) -> float:
+        nonlocal similarity_calls
+        similarity_calls += 1
+        return 0.5
+
+    monkeypatch.setattr("app.services.code_index.query.similarity", tracked_similarity)
+
+    result = await search_index(
+        [("repo", index)],
+        query="needle_identifier",
+        languages=None,
+        paths=None,
+        limit=10,
+        stats={"repo": stats},
+    )
+
+    assert result.hits and result.hits[0].file_path == "target.py"
+    assert similarity_calls < stats.chunks
+
+
+@pytest.mark.asyncio
+async def test_search_keeps_semantic_fallback_without_lexical_candidates(
+    tmp_path: Path,
+    isolated_cache: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    (repository / "billing.py").write_text(
+        "def settle_account():\n    return 'balance cleared'\n",
+        encoding="utf-8",
+    )
+    index = await RepositoryIndex.create(repository)
+    stats = await index.update()
+    similarity_calls = 0
+
+    def tracked_similarity(_left: bytes, _right: bytes) -> float:
+        nonlocal similarity_calls
+        similarity_calls += 1
+        return 0.5
+
+    monkeypatch.setattr("app.services.code_index.query.similarity", tracked_similarity)
+
+    result = await search_index(
+        [("repo", index)],
+        query="abstractconcept",
+        languages=None,
+        paths=None,
+        limit=10,
+        stats={"repo": stats},
+    )
+
+    assert result.hits
+    assert similarity_calls == stats.chunks
+
+
+@pytest.mark.asyncio
+async def test_search_repairs_an_inconsistent_fts_target(
     tmp_path: Path, isolated_cache: Path
 ) -> None:
     repository = tmp_path / "repo"
@@ -511,9 +665,15 @@ async def test_repository_open_repairs_an_inconsistent_fts_target(
         limit=10,
         stats={"repo": stats},
     )
+    with reopened.database.readonly() as connection:
+        repaired_rows = connection.execute(
+            "SELECT COUNT(*) FROM source_chunks_fts WHERE source_chunks_fts MATCH ?",
+            ('"durable"',),
+        ).fetchone()
 
     assert result.hits and result.hits[0].file_path == "handler.py"
     assert not result.limitations
+    assert repaired_rows is not None and int(repaired_rows[0]) > 0
 
 
 @pytest.mark.asyncio

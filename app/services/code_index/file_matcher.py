@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
-from collections.abc import Callable, Iterable, Iterator, Set
+from collections.abc import Callable, Iterable, Iterator, Mapping, Set
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,6 +25,21 @@ class SourceRecord:
     fingerprint: str
     processor: str = ""
     language_override: str | None = None
+    byte_size: int = 0
+    modified_ns: int = 0
+    changed_ns: int = 0
+    reused: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class SourceMetadata:
+    """Persisted file identity used to avoid reading unchanged source bytes."""
+
+    fingerprint: str
+    byte_size: int
+    processor: str
+    modified_ns: int
+    changed_ns: int
 
 
 def fingerprint_source(content: bytes, processor: str = "") -> str:
@@ -44,12 +59,34 @@ def _record(
     max_bytes: int,
     processor: str = "",
     language_override: str | None = None,
+    known: SourceMetadata | None = None,
+    force_read: bool = False,
 ) -> SourceRecord | None:
     path = (root / relative).resolve()
     try:
         path.relative_to(root)
-        if not path.is_file() or path.stat().st_size > max_bytes:
+        status = path.stat()
+        if not path.is_file() or status.st_size > max_bytes:
             return None
+        if (
+            not force_read
+            and known is not None
+            and known.processor == processor
+            and known.byte_size == status.st_size
+            and known.modified_ns == status.st_mtime_ns
+            and known.changed_ns == status.st_ctime_ns
+        ):
+            return SourceRecord(
+                relative,
+                b"",
+                known.fingerprint,
+                processor,
+                language_override,
+                status.st_size,
+                status.st_mtime_ns,
+                status.st_ctime_ns,
+                True,
+            )
         content = path.read_bytes()
         if len(content) > max_bytes:
             return None
@@ -61,6 +98,9 @@ def _record(
         fingerprint_source(content, processor),
         processor,
         language_override,
+        len(content),
+        status.st_mtime_ns,
+        status.st_ctime_ns,
     )
 
 
@@ -128,6 +168,8 @@ def walk_source_records(
     max_bytes: int = MAX_SOURCE_BYTES,
     include: Callable[[str], bool] | None = None,
     processor_for: Callable[[str], tuple[str, str | None]] | None = None,
+    known_sources: Mapping[str, SourceMetadata] | None = None,
+    force_read: bool = False,
 ) -> Iterator[SourceRecord]:
     """Yield a sorted, gitignore-aware snapshot with stable component keys."""
     canonical = root.expanduser().resolve()
@@ -164,6 +206,8 @@ def walk_source_records(
                 max_bytes=max_bytes,
                 processor=processor,
                 language_override=override,
+                known=known_sources.get(relative) if known_sources else None,
+                force_read=force_read,
             )
             if record is not None:
                 yield record
@@ -171,6 +215,7 @@ def walk_source_records(
 
 __all__ = [
     "MAX_SOURCE_BYTES",
+    "SourceMetadata",
     "SourceRecord",
     "fingerprint_source",
     "read_source_records",

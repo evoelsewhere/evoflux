@@ -14,7 +14,8 @@ from pathlib import Path
 
 from loguru import logger
 
-from app.services.code_index.file_matcher import walk_source_records
+from app.services.code_index.executor import run_index_work, submit_index_work
+from app.services.code_index.file_matcher import SourceMetadata, walk_source_records
 from app.services.code_index.languages import SEARCH_ONLY_LANGUAGES
 from app.services.code_index.models import IndexStats
 from app.services.code_index.parsers.registry import default_registry
@@ -34,6 +35,8 @@ _REQUIRED_SCHEMA: dict[str, frozenset[str]] = {
             "language",
             "fingerprint",
             "byte_size",
+            "modified_ns",
+            "changed_ns",
             "content",
             "processor",
             "graph_enabled",
@@ -92,6 +95,19 @@ _RECOVERABLE_DATABASE_ERRORS: tuple[str, ...] = (
     "not a database",
     "vtable constructor failed",
 )
+
+_REQUIRED_SCHEMA_OBJECTS: dict[str, str] = {
+    "ix_code_symbols_name": "index",
+    "ix_code_symbols_qualified": "index",
+    "ix_code_symbols_file": "index",
+    "ix_code_relations_src": "index",
+    "ix_code_relations_dst": "index",
+    "ix_code_relations_file": "index",
+    "ix_source_chunks_file": "index",
+    "source_chunks_fts_ai": "trigger",
+    "source_chunks_fts_ad": "trigger",
+    "source_chunks_fts_au": "trigger",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,6 +180,9 @@ class RepositoryIndex:
         self.paths = paths
         self.database = database
         self._update_lock = threading.RLock()
+        self._dispatch_lock = threading.RLock()
+        self._update_future: concurrent.futures.Future[IndexStats] | None = None
+        self._update_future_full = False
         self._has_completed_update = False
 
     @classmethod
@@ -177,12 +196,12 @@ class RepositoryIndex:
         paths.directory.mkdir(parents=True, exist_ok=True)
         database = ManagedDatabase(paths.target_db)
         try:
-            await asyncio.to_thread(_ensure_schema, database)
+            await run_index_work(_ensure_schema, database)
         except sqlite3.DatabaseError as exc:
             if not _is_recoverable_database_error(exc):
                 raise
             logger.warning("code_index_cache_rebuild root={} error={}", canonical, exc)
-            await asyncio.to_thread(_rebuild_database, database)
+            await run_index_work(_rebuild_database, database)
         return cls(root=canonical, paths=paths, database=database)
 
     async def update(
@@ -191,7 +210,17 @@ class RepositoryIndex:
         full: bool = False,
         progress: ProgressCallback | None = None,
     ) -> IndexStats:
-        return await asyncio.to_thread(self._update_locked, full, progress)
+        while True:
+            with self._dispatch_lock:
+                pending = self._update_future
+                if pending is None or pending.done():
+                    pending = submit_index_work(self._update_locked, full, progress)
+                    self._update_future = pending
+                    self._update_future_full = full
+                covers_full_refresh = self._update_future_full
+            result = await asyncio.shield(asyncio.wrap_future(pending))
+            if not full or covers_full_refresh:
+                return result
 
     def _update_locked(
         self,
@@ -240,6 +269,27 @@ class RepositoryIndex:
             identity = processing_identity(path, override)
             return f"{identity}:{project_settings.digest}", override
 
+        with self.database.readonly() as connection:
+            previous_rows = connection.execute(
+                "SELECT file_path, fingerprint, byte_size, processor, "
+                "modified_ns, changed_ns FROM source_files"
+            ).fetchall()
+            previous_errors = {
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT file_path FROM index_errors"
+                ).fetchall()
+            }
+        known_sources = {
+            str(path): SourceMetadata(
+                fingerprint=str(fingerprint),
+                byte_size=int(byte_size),
+                processor=str(processor),
+                modified_ns=int(modified_ns),
+                changed_ns=int(changed_ns),
+            )
+            for path, fingerprint, byte_size, processor, modified_ns, changed_ns in previous_rows
+        }
         records = {
             record.key: record
             for record in walk_source_records(
@@ -250,20 +300,13 @@ class RepositoryIndex:
                 max_bytes=project_settings.max_file_size or 1_500_000,
                 include=project_settings.includes,
                 processor_for=processor_for,
+                known_sources=known_sources,
+                force_read=full,
             )
         }
-        with self.database.readonly() as connection:
-            previous = dict(
-                connection.execute(
-                    "SELECT file_path, fingerprint FROM source_files"
-                ).fetchall()
-            )
-            previous_errors = {
-                str(row[0])
-                for row in connection.execute(
-                    "SELECT file_path FROM index_errors"
-                ).fetchall()
-            }
+        previous = {
+            path: metadata.fingerprint for path, metadata in known_sources.items()
+        }
         plan = plan_reconciliation(
             {key: record.fingerprint for key, record in records.items()},
             previous,
@@ -324,7 +367,7 @@ class RepositoryIndex:
             or not self.paths.target_db.exists()
         ):
             return await self.update()
-        return await asyncio.to_thread(self.stats)
+        return await run_index_work(self.stats)
 
     def stats(self) -> IndexStats:
         try:
@@ -363,6 +406,13 @@ class RepositoryIndex:
             version=digest.hexdigest()[:12] if fingerprint_rows else None,
         )
 
+    def rebuild_lexical_index(self) -> None:
+        """Repair derived FTS state without rebuilding parsed source and graph rows."""
+        with self.database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO source_chunks_fts(source_chunks_fts) VALUES ('rebuild')"
+            )
+
     def close(self) -> None:
         self.database.close()
 
@@ -370,21 +420,22 @@ class RepositoryIndex:
 def _ensure_schema(database: ManagedDatabase) -> None:
     with database.transaction() as connection:
         schema_is_current = _schema_is_current(connection)
-        if not schema_is_current:
-            _execute_sql_script(
-                connection,
-                """
-                DROP TRIGGER IF EXISTS source_chunks_fts_ai;
-                DROP TRIGGER IF EXISTS source_chunks_fts_ad;
-                DROP TRIGGER IF EXISTS source_chunks_fts_au;
-                DROP TABLE IF EXISTS source_chunks_fts;
-                DROP TABLE IF EXISTS code_relations;
-                DROP TABLE IF EXISTS source_chunks;
-                DROP TABLE IF EXISTS code_symbols;
-                DROP TABLE IF EXISTS source_files;
-                DROP TABLE IF EXISTS index_errors;
-                """,
-            )
+        if schema_is_current:
+            return
+        _execute_sql_script(
+            connection,
+            """
+            DROP TRIGGER IF EXISTS source_chunks_fts_ai;
+            DROP TRIGGER IF EXISTS source_chunks_fts_ad;
+            DROP TRIGGER IF EXISTS source_chunks_fts_au;
+            DROP TABLE IF EXISTS source_chunks_fts;
+            DROP TABLE IF EXISTS code_relations;
+            DROP TABLE IF EXISTS source_chunks;
+            DROP TABLE IF EXISTS code_symbols;
+            DROP TABLE IF EXISTS source_files;
+            DROP TABLE IF EXISTS index_errors;
+            """,
+        )
         _execute_sql_script(
             connection,
             """
@@ -393,6 +444,8 @@ def _ensure_schema(database: ManagedDatabase) -> None:
               language TEXT NOT NULL,
               fingerprint TEXT NOT NULL,
               byte_size INTEGER NOT NULL,
+              modified_ns INTEGER NOT NULL,
+              changed_ns INTEGER NOT NULL,
               content TEXT NOT NULL,
               processor TEXT NOT NULL,
               graph_enabled INTEGER NOT NULL
@@ -469,8 +522,7 @@ def _ensure_schema(database: ManagedDatabase) -> None:
                 "VALUES ('integrity-check', 1)"
             )
         except sqlite3.DatabaseError:
-            # FTS is derived state. Repair it in place without discarding the
-            # parsed source/symbol graph or paying the rebuild cost on startup.
+            # FTS is derived state. Repair it without discarding parsed rows.
             connection.execute(
                 "INSERT INTO source_chunks_fts(source_chunks_fts) VALUES ('rebuild')"
             )
@@ -512,6 +564,17 @@ def _schema_is_current(connection: sqlite3.Connection) -> bool:
         }
         if not required_columns.issubset(columns):
             return False
+    object_rows = connection.execute(
+        "SELECT name, type FROM sqlite_master WHERE name IN ("
+        + ",".join("?" for _ in _REQUIRED_SCHEMA_OBJECTS)
+        + ")",
+        tuple(_REQUIRED_SCHEMA_OBJECTS),
+    ).fetchall()
+    objects = {str(name): str(kind) for name, kind in object_rows}
+    if any(
+        objects.get(name) != kind for name, kind in _REQUIRED_SCHEMA_OBJECTS.items()
+    ):
+        return False
     return True
 
 
@@ -522,7 +585,8 @@ def _delete_component(connection: sqlite3.Connection, file_path: str) -> None:
 def _insert_state(connection: sqlite3.Connection, state: FileState) -> None:
     connection.execute(
         "INSERT INTO source_files(file_path, language, fingerprint, byte_size, "
-        "content, processor, graph_enabled) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "modified_ns, changed_ns, content, processor, graph_enabled) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         astuple(state.source),
     )
     connection.executemany(
