@@ -26,6 +26,8 @@ import {
   packPlugin,
   setPluginEnabled,
   uninstallPlugin,
+  updatePluginFromPath,
+  updatePluginFromUpload,
   uploadPlugin,
 } from '@/api/client'
 import type {
@@ -91,6 +93,7 @@ function PluginCard({
   onDelete,
   onOpen,
   onCredentials,
+  onUpdate,
 }: {
   item: PluginListItem
   servers: PluginMcpRuntimeStatus[]
@@ -100,6 +103,7 @@ function PluginCard({
   onDelete: () => void
   onOpen: () => void
   onCredentials: () => void
+  onUpdate: () => void
 }) {
   const { installation, inspection } = item
   const [expanded, setExpanded] = useState(false)
@@ -281,6 +285,11 @@ function PluginCard({
                   <DropdownMenuItem onClick={onPack}>
                     <FileArchive /> Pack archive
                   </DropdownMenuItem>
+                  {installation.source_type === 'installed' && (
+                    <DropdownMenuItem onClick={onUpdate}>
+                      <RefreshCw /> Update package
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem variant="destructive" onClick={onDelete}>
                     <Trash2 /> Uninstall
@@ -301,6 +310,7 @@ export function PluginCenterPanel() {
   const { isTauri, os } = usePlatform()
   const desktop = isTauri && os !== 'ios' && os !== 'android'
   const uploadRef = useRef<HTMLInputElement>(null)
+  const updateUploadRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [inspection, setInspection] = useState<PluginInspection | null>(null)
   const [activeView, setActiveView] = useState<
@@ -310,6 +320,7 @@ export function PluginCenterPanel() {
   >(null)
   const [showCreate, setShowCreate] = useState(false)
   const [hostPath, setHostPath] = useState('')
+  const [updateTarget, setUpdateTarget] = useState<PluginListItem | null>(null)
   const [createParent, setCreateParent] = useState('')
   const [createName, setCreateName] = useState('')
   const [createDescription, setCreateDescription] = useState('')
@@ -396,6 +407,27 @@ export function PluginCenterPanel() {
     const path = desktop ? await choosePath({ directory: true }) : hostPath.trim()
     if (!path) return
     await run(`inspect:${path}`, async () => setInspection(await inspectPlugin(path)))
+  }
+
+  const chooseUpdate = async (item: PluginListItem) => {
+    if (!desktop) {
+      setUpdateTarget(item)
+      updateUploadRef.current?.click()
+      return
+    }
+    const path = await choosePath({ archive: true })
+    if (!path) return
+    await run(`update:${item.installation.id}`, async () => {
+      const result = await updatePluginFromPath(item.installation.id, path)
+      setInspection(result.inspection)
+      pushToast({
+        tone: 'success',
+        title: `${result.installation.name} updated`,
+        description: result.installation.version
+          ? `Version ${result.installation.version}`
+          : undefined,
+      })
+    })
   }
 
   const createPackage = async () => {
@@ -526,6 +558,33 @@ export function PluginCenterPanel() {
               })
             }}
           />
+          <input
+            ref={updateUploadRef}
+            hidden
+            type="file"
+            accept=".evoplugin,.zip"
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              event.currentTarget.value = ''
+              const target = updateTarget
+              setUpdateTarget(null)
+              if (!file || !target) return
+              void run(`update:${target.installation.id}`, async () => {
+                const result = await updatePluginFromUpload(
+                  target.installation.id,
+                  file,
+                )
+                setInspection(result.inspection)
+                pushToast({
+                  tone: 'success',
+                  title: `${result.installation.name} updated`,
+                  description: result.installation.version
+                    ? `Version ${result.installation.version}`
+                    : undefined,
+                })
+              })
+            }}
+          />
         </div>
 
         {!desktop && (
@@ -645,6 +704,7 @@ export function PluginCenterPanel() {
                 }}
                 onOpen={() => setActiveView({ kind: 'editor', root: item.installation.root, name: item.installation.name })}
                 onCredentials={() => setActiveView({ kind: 'credentials', plugin: item })}
+                onUpdate={() => void chooseUpdate(item)}
               />
             ))}
           </div>

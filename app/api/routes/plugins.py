@@ -20,6 +20,7 @@ from app.api.schemas.plugins import (
     PluginOperationResponse,
     PluginPackRequest,
     PluginPathResponse,
+    PluginUpdateRequest,
     PluginWorkspaceDeleteRequest,
     PluginWorkspaceEntryRequest,
     PluginWorkspaceFileRequest,
@@ -37,6 +38,7 @@ from app.plugin_platform import (
     pack_plugin,
     set_enabled,
     uninstall_plugin,
+    update_plugin,
 )
 from app.plugin_platform.installer import MAX_ARCHIVE_BYTES
 from app.plugin_platform.credentials import (
@@ -86,7 +88,9 @@ async def _after_mutation() -> None:
     from app.plugin_platform.runtime import plugin_mcp_runtime
 
     team_manager.invalidate_skill_cache()
-    await plugin_mcp_runtime.refresh()
+    # Workspace saves can change server implementation code while leaving
+    # mcp.json byte-for-byte identical, so unchanged configs must still restart.
+    await plugin_mcp_runtime.refresh(force=True)
 
 
 def _http_error(exc: Exception) -> HTTPException:
@@ -168,6 +172,72 @@ async def upload_plugin_archive(
             install_plugin,
             source,
             enabled=enabled,
+            source_ref=f"upload:{archive.filename}",
+        )
+        await _after_mutation()
+        return PluginOperationResponse(
+            installation=installation,
+            inspection=_inspection_for(installation),
+        )
+    except (OSError, ValueError, KeyError) as exc:
+        raise _http_error(exc) from exc
+    finally:
+        await archive.close()
+        shutil.rmtree(temporary, ignore_errors=True)
+
+
+@router.post(
+    "/{installation_id}/update",
+    response_model=PluginOperationResponse,
+)
+async def update_plugin_path(
+    installation_id: str,
+    body: PluginUpdateRequest,
+) -> PluginOperationResponse:
+    try:
+        installation = await asyncio.to_thread(
+            update_plugin,
+            installation_id,
+            body.path,
+        )
+        await _after_mutation()
+        return PluginOperationResponse(
+            installation=installation,
+            inspection=_inspection_for(installation),
+        )
+    except (OSError, ValueError, KeyError) as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post(
+    "/{installation_id}/update-upload",
+    response_model=PluginOperationResponse,
+)
+async def update_plugin_archive(
+    installation_id: str,
+    archive: UploadFile = File(...),
+) -> PluginOperationResponse:
+    if not (archive.filename or "").casefold().endswith((".evoplugin", ".zip")):
+        raise HTTPException(
+            status_code=422, detail="Upload a .evoplugin or .zip archive."
+        )
+    staging_root().mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix="update-upload-", dir=staging_root()))
+    source = temporary / "update.evoplugin"
+    total = 0
+    try:
+        with source.open("wb") as output:
+            while chunk := await archive.read(1024 * 1024):
+                total += len(chunk)
+                if total > MAX_ARCHIVE_BYTES:
+                    raise PluginInstallError(
+                        f"Archive exceeds the {MAX_ARCHIVE_BYTES}-byte limit."
+                    )
+                output.write(chunk)
+        installation = await asyncio.to_thread(
+            update_plugin,
+            installation_id,
+            source,
             source_ref=f"upload:{archive.filename}",
         )
         await _after_mutation()

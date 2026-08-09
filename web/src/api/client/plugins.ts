@@ -50,6 +50,38 @@ export async function uploadPlugin(file: File): Promise<PluginOperationResponse>
   return response.json()
 }
 
+export async function updatePluginFromPath(
+  id: string,
+  path: string,
+): Promise<PluginOperationResponse> {
+  const response = await fetch(
+    `${apiBaseUrl()}/plugins/${encodeURIComponent(id)}/update`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    },
+  )
+  if (!response.ok) await parseDetailOrThrow(response, 'POST /plugins/:id/update')
+  return response.json()
+}
+
+export async function updatePluginFromUpload(
+  id: string,
+  file: File,
+): Promise<PluginOperationResponse> {
+  const body = new FormData()
+  body.append('archive', file)
+  const response = await fetch(
+    `${apiBaseUrl()}/plugins/${encodeURIComponent(id)}/update-upload`,
+    { method: 'POST', body },
+  )
+  if (!response.ok) {
+    await parseDetailOrThrow(response, 'POST /plugins/:id/update-upload')
+  }
+  return response.json()
+}
+
 export async function setPluginEnabled(
   id: string,
   enabled: boolean,

@@ -1,0 +1,47 @@
+[
+  {
+    "query": "Create a new EvoFlux plugin with a release-audit Skill, a stdio MCP server, API token credentials, and an end-to-end test using a local fixture.",
+    "should_trigger": true
+  },
+  {
+    "query": "The linked Jira plugin reports a runtime error after an mcp.json change; debug it from package validation through a real tool call.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add a read-only project_versions tool to an existing plugin, bump its version, pack it, and verify that managed update preserves installation data.",
+    "should_trigger": true
+  },
+  {
+    "query": "Review this .evoplugin structure, fix stale credential injection, and add a regression test for the Plugin Center API.",
+    "should_trigger": true
+  },
+  {
+    "query": "Build a Jira-style reference plugin for GitLab Data Center with a Skill, MCP tools, credentials, and a full lifecycle test.",
+    "should_trigger": true
+  },
+  {
+    "query": "Import the finished calendar.evoplugin package into Plugin Center and enable it.",
+    "should_trigger": false,
+    "near_miss": "This is an installation-only request for a finished package, not plugin development."
+  },
+  {
+    "query": "Install this legacy Python hook in EvoFlux from its raw GitHub URL.",
+    "should_trigger": false,
+    "near_miss": "Raw trusted single-file hook installation belongs to plugin-installer."
+  },
+  {
+    "query": "Create a standalone Skill for writing weekly reports; it does not need a plugin or MCP server.",
+    "should_trigger": false,
+    "near_miss": "A standalone skill belongs to skill-creator."
+  },
+  {
+    "query": "Add an MCP server to my global EvoFlux user configuration.",
+    "should_trigger": false,
+    "near_miss": "Global MCP configuration belongs to mcp-installer."
+  },
+  {
+    "query": "Design a Chrome extension with a popup UI and publish it to the Chrome Web Store.",
+    "should_trigger": false,
+    "near_miss": "A browser extension is unrelated to portable EvoFlux Agent Plugins."
+  }
+]

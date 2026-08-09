@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 from app.api.routes import plugins as plugin_routes
 from app.core.config import settings
+from app.plugin_platform.installer import pack_plugin
 from app.plugin_platform.runtime import plugin_mcp_runtime
 
 
@@ -203,3 +204,88 @@ async def test_plugin_api_lifecycle(
 
     assert refresh_mock.await_count == 9
     assert invalidate_mock.call_count == 9
+
+
+@pytest.mark.asyncio
+async def test_plugin_api_updates_managed_package_in_place(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "EVOFLUX_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config"))
+    refresh_mock = AsyncMock()
+    monkeypatch.setattr(plugin_mcp_runtime, "refresh", refresh_mock)
+    monkeypatch.setattr(
+        plugin_routes.team_manager,
+        "invalidate_skill_cache",
+        Mock(),
+    )
+    app = FastAPI()
+    app.include_router(plugin_routes.router, prefix="/api/plugins")
+    transport = httpx.ASGITransport(app=app)
+    source = tmp_path / "authoring" / "updatable"
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+    ) as client:
+        created = await client.post(
+            "/api/plugins/create",
+            json={
+                "destination": str(source),
+                "name": "updatable",
+                "version": "1.0.0",
+            },
+        )
+        assert created.status_code == 201
+        installed = await client.post(
+            "/api/plugins/install",
+            json={"path": str(source), "mode": "install", "enabled": True},
+        )
+        assert installed.status_code == 201
+        original = installed.json()["installation"]
+
+        manifest_path = source / "plugin.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["version"] = "2.0.0"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        (source / "new.txt").write_text("updated\n", encoding="utf-8")
+
+        response = await client.post(
+            f"/api/plugins/{original['id']}/update",
+            json={"path": str(source)},
+        )
+        assert response.status_code == 200
+        updated = response.json()["installation"]
+        assert updated["id"] == original["id"]
+        assert updated["version"] == "2.0.0"
+        assert updated["root"] != original["root"]
+        assert not Path(original["root"]).exists()
+        assert (Path(updated["root"]) / "new.txt").read_text() == "updated\n"
+
+        manifest["version"] = "3.0.0"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        archive = pack_plugin(source, tmp_path / "updatable-v3.evoplugin")
+        with archive.open("rb") as package:
+            uploaded = await client.post(
+                f"/api/plugins/{original['id']}/update-upload",
+                files={
+                    "archive": (
+                        archive.name,
+                        package,
+                        "application/zip",
+                    )
+                },
+            )
+        assert uploaded.status_code == 200
+        uploaded_installation = uploaded.json()["installation"]
+        assert uploaded_installation["id"] == original["id"]
+        assert uploaded_installation["version"] == "3.0.0"
+        assert uploaded_installation["source_ref"] == f"upload:{archive.name}"
+
+        removed = await client.delete(f"/api/plugins/{original['id']}")
+        assert removed.status_code == 200
+
+    assert refresh_mock.await_count == 4
+    assert all(call.kwargs == {"force": True} for call in refresh_mock.await_args_list)

@@ -14,6 +14,7 @@ from app.plugin_platform.installer import (
     link_plugin,
     pack_plugin,
     uninstall_plugin,
+    update_plugin,
 )
 from app.plugin_platform.models import MCP_SCHEMA_ID, PLUGIN_SCHEMA_ID
 from app.plugin_platform.registry import list_installations, plugin_data_root
@@ -232,6 +233,60 @@ def test_install_pack_and_uninstall_managed_package(isolated_platform: Path) -> 
     assert removed.id == installation.id
     assert not installed_root.exists()
     assert list_installations() == []
+
+
+def test_update_managed_package_preserves_identity_data_and_enabled_state(
+    isolated_platform: Path,
+) -> None:
+    source = _plugin(isolated_platform / "source")
+    first_archive = pack_plugin(source, isolated_platform / "first.evoplugin")
+    installation = install_plugin(first_archive, enabled=False)
+    original_root = Path(installation.root)
+    data_file = plugin_data_root(installation.id) / "state.json"
+    data_file.parent.mkdir(parents=True)
+    data_file.write_text('{"keep": true}\n', encoding="utf-8")
+
+    manifest_path = source / "plugin.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["version"] = "2.0.0"
+    manifest["description"] = "Updated plugin"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    (source / "updated.txt").write_text("new package\n", encoding="utf-8")
+    second_archive = pack_plugin(source, isolated_platform / "second.evoplugin")
+
+    updated = update_plugin(installation.id, second_archive)
+
+    assert updated.id == installation.id
+    assert updated.installed_at == installation.installed_at
+    assert updated.updated_at != installation.updated_at
+    assert updated.version == "2.0.0"
+    assert updated.description == "Updated plugin"
+    assert updated.enabled is False
+    assert Path(updated.root) != original_root
+    assert (Path(updated.root) / "updated.txt").read_text() == "new package\n"
+    assert not original_root.exists()
+    assert data_file.read_text(encoding="utf-8") == '{"keep": true}\n'
+    assert list_installations() == [updated]
+
+
+def test_update_managed_package_replaces_same_version_atomically(
+    isolated_platform: Path,
+) -> None:
+    source = _plugin(isolated_platform / "source")
+    installation = install_plugin(source)
+    installed_root = Path(installation.root)
+    (source / "implementation.py").write_text("VALUE = 2\n", encoding="utf-8")
+
+    updated = update_plugin(installation.id, source)
+
+    assert updated.id == installation.id
+    assert updated.version == installation.version
+    assert Path(updated.root) == installed_root
+    assert (installed_root / "implementation.py").read_text(encoding="utf-8") == (
+        "VALUE = 2\n"
+    )
+    assert not list(installed_root.parent.glob(".update-backup-*"))
+    assert list_installations() == [updated]
 
 
 def test_archive_traversal_is_rejected(isolated_platform: Path) -> None:

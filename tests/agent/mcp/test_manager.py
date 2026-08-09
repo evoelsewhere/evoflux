@@ -229,7 +229,24 @@ class TestMCPManagerRemoveRunner:
 
             assert "test" in manager._runners
             await manager.remove_runner("test")
-            assert "test" not in manager._runners
+        assert "test" not in manager._runners
+
+
+class TestMCPManagerApplyConfig:
+    @pytest.mark.asyncio
+    async def test_force_restarts_runner_when_config_is_unchanged(self) -> None:
+        manager = MCPManager(watch_config=False)
+        config = MCPConfig(
+            servers={"plugin": StdioServerConfig(command="echo", enabled=False)}
+        )
+
+        await manager.apply_config(config)
+        original = manager._runners["plugin"]
+        await manager.apply_config(config)
+        assert manager._runners["plugin"] is original
+
+        await manager.apply_config(config, force=True)
+        assert manager._runners["plugin"] is not original
 
 
 class TestMCPManagerWithMockedServer:

@@ -30,7 +30,8 @@ Open **Plugins** beneath Scheduler in either Work or Coding mode. Plugin Center 
 - open a plugin in the built-in workspace editor to browse, create, edit, save,
   and delete package files;
 - configure installation-scoped credentials declared by the plugin;
-- enable, disable, pack, and uninstall an installation.
+- enable, disable, pack, update a managed installation in place, and uninstall
+  an installation.
 
 Equivalent CLI commands:
 
@@ -40,6 +41,7 @@ evoflux plugin inspect ./my-plugin
 evoflux plugin link ./my-plugin
 evoflux plugin pack ./my-plugin
 evoflux plugin install ./my-plugin-unversioned.evoplugin
+evoflux plugin update <installation-id> ./my-plugin-v2.evoplugin
 evoflux plugin list
 evoflux plugin show <installation-id>
 evoflux plugin disable <installation-id>
@@ -152,11 +154,10 @@ Registry writes are atomic. Managed archive extraction rejects traversal, duplic
 - An invalid or failed MCP server skips only that server.
 - Disabling a plugin removes its Skills and reconciles/stops its MCP runners without restarting EvoFlux.
 
-## Deferred product layer
+## Product boundary
 
 Agent Plugins 1.0 does not standardize registries, Git install, updates,
-signatures, permissions, connections, storage APIs, or custom UI. EvoFlux's
-credential and MCP-capability extensions are deliberately host-mediated;
-richer connection providers and plugin-defined UI still require a versioned
-EvoFlux client extension with signed provenance and a sandboxed UI bridge. See
-the adoption analysis and plugin-platform plan.
+signatures, permissions, connections, or storage APIs. EvoFlux's credential and
+MCP-capability extensions are deliberately host-mediated. Plugin Center owns
+all management, editor, credential, and runtime-status UI; installed packages
+contribute portable Skills and MCP servers only.

@@ -24,6 +24,7 @@ BUNDLED_SKILL_MODES: dict[str, tuple[SkillMode, ...]] = {
     "frontend-design": ALL_SKILL_MODES,
     "mcp-installer": ALL_SKILL_MODES,
     "pdf": ("work",),
+    "plugin-development": ALL_SKILL_MODES,
     "plugin-installer": ALL_SKILL_MODES,
     "pptx": ("work",),
     "review-pull-requests": ("coding",),

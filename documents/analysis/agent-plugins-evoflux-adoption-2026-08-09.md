@@ -11,7 +11,7 @@ Adopt Agent Plugins v1 as the **portable core** of the EvoFlux plugin platform. 
 The resulting package has two layers:
 
 1. **Portable layer** — root `plugin.json`, immediate-child Agent Skills under `skills/`, and optional portable MCP configuration in root `mcp.json`.
-2. **EvoFlux layer** — Plugin Center metadata, UI contributions, connection forms, permissions, bundled-Python runtime hints, signing inventory, and host bridge files under an EvoFlux-owned extension namespace.
+2. **EvoFlux layer** — Plugin Center metadata, connection forms, permissions, bundled-Python runtime hints, and signing inventory under an EvoFlux-owned extension namespace.
 
 Keep `.evoplugin` only as an EvoFlux **distribution wrapper** around that directory. It is not a competing manifest format and it is not part of the Agent Plugins standard. After extraction, the installed directory must still be a valid Agent Plugins package that another conforming client can inspect and load.
 
@@ -30,7 +30,7 @@ The 2026-08-09 implementation delivers the P0–P3 local vertical slice:
 - `/api/plugins`, `evoflux plugin ...`, and a built-in Plugin Center accessible in Work and Coding sidebars;
 - conformance, archive-safety, runtime-adaptation, precedence, API-lifecycle, type, lint, and regression tests.
 
-Still deferred to the next product layer: Git/registry import, updates and rollback, publisher signatures, EvoFlux extension SDK, sandboxed third-party iframe UI, mediated secrets/connections/storage, and Jira as the reference extension. Portable Skills and MCP are usable now; those deferred EvoFlux-specific capabilities are not implied by the current implementation.
+Still deferred to the next product layer: Git/registry import, updates and rollback, publisher signatures, and broader mediated connections/storage. Portable Skills and MCP are usable now; those deferred EvoFlux-specific capabilities are not implied by the current implementation.
 
 ## Why this is the right boundary
 
@@ -40,7 +40,7 @@ That split matches EvoFlux well:
 
 - EvoFlux already has a mature Agent Skills harness with progressive disclosure, collision diagnostics, resource containment, mode scope, and runtime settings.
 - EvoFlux already has a long-lived MCP client with stdio and Streamable HTTP execution, OAuth, health state, tool namespacing, and graceful failure.
-- The proposed Plugin Center plan already owns the missing product layer: install/update/uninstall, permissions, signatures, sandboxed iframe UI, connections, secret mediation, and diagnostics.
+- Plugin Center owns the host-managed lifecycle, credentials, runtime status, and diagnostics surfaces.
 
 A custom-only `.evoplugin` manifest would duplicate a new ecosystem standard and prevent direct reuse in VS Code, Cursor, GitHub Copilot, ChatGPT/Codex, and Kiro. A standard-only implementation would leave major EvoFlux product and security needs undefined. The layered model avoids both failures.
 
@@ -119,7 +119,6 @@ The official compatible-client catalog currently lists VS Code, Cursor, GitHub C
 | MCP HTTP runtime | Streamable HTTP, headers, OAuth, health state | Partial | Add standard URL/header validation and ensure configured headers are not forwarded across origins. |
 | Legacy plugins | Trusted single-file Python imported in the FastAPI process | Wrong trust model | Keep as “Legacy hooks/providers”; do not expose as managed Agent Plugins. |
 | Install lifecycle | No managed portable plugin registry | Missing | Add staged install/link/enable/disable/uninstall and per-component diagnostics. |
-| Plugin UI | MCP App iframe exists; full Plugin Center is only planned | Reusable concepts | Keep the stricter opaque-origin EvoFlux plugin iframe plan separate from the broader MCP App CSP. |
 | Package security | Existing proposal covers archive limits, checksums, signatures, rollback | Strong plan | Rebase it on root `plugin.json` instead of custom `manifest.json`. |
 
 ### Skill-loader incompatibility to avoid
@@ -315,8 +314,6 @@ Recommended CLI:
 
 ```text
 evoflux plugin init <name> --template portable
-evoflux plugin init <name> --template evoflux-ui
-evoflux plugin init <name> --template evoflux-fullstack
 evoflux plugin validate <directory-or-package>
 evoflux plugin pack <directory>
 evoflux plugin inspect <directory-or-package>
@@ -325,10 +322,8 @@ evoflux plugin inspect <directory-or-package>
 Templates have explicit portability promises:
 
 - `portable`: `plugin.json` plus Skills and/or a portable MCP definition; no EvoFlux extension required.
-- `evoflux-ui`: portable root plus sandboxed UI contributions in the EvoFlux namespace.
-- `evoflux-fullstack`: portable root plus EvoFlux UI, bundled-Python MCP backend, permissions, connections, and SDK fixtures. Only the portable components are promised to work in other clients.
 
-The validator must emit a component inventory and diagnostics grouped by manifest, each skill, each MCP server, EvoFlux extension, distribution, and security review. It should never claim a fullstack plugin is wholly portable when only its Skills are portable.
+The validator must emit a component inventory and diagnostics grouped by manifest, each skill, each MCP server, EvoFlux extension, distribution, and security review. It must describe portability per component rather than overstate package compatibility.
 
 ### Import and install
 
@@ -350,22 +345,18 @@ Enabling is component-aware:
 2. Valid skills join the catalog immediately; invalid siblings remain diagnosed and skipped.
 3. MCP requires a separate execution/remote-connection approval showing commands, args, cwd, environment key names, URLs, and literal headers. Credentials are collected through host OAuth/secret UX, never copied from portable headers.
 4. Valid approved servers start independently. One failure does not disable other servers or Skills.
-5. EvoFlux extension contributions activate only after extension validation and grants.
-6. Disabling removes plugin Skill roots, stops owned MCP runners, closes owned UI instances, and invalidates runtime catalogs without deleting package or data.
+5. EvoFlux credential and MCP-capability extensions activate only after extension validation.
+6. Disabling removes plugin Skill roots, stops owned MCP runners, and invalidates runtime catalogs without deleting package or data.
 
 Agent access stays explicit. Installation or enablement makes tools available for selection, but it must not silently grant every plugin tool to every agent. Reuse agent `mcp:`/tool configuration and the existing permission engine, extended with installation-aware identities.
 
-## Rebase of the existing Plugin Platform plan
+## Retained platform decisions
 
-Keep these decisions from `documents/plans/plugin-platform-jira-reference-plan.md`:
-
-- Plugin Center and dynamic Workbench contributions;
-- opaque-origin iframe UI and typed host bridge;
+- Plugin Center owns lifecycle, editor, credentials, and runtime-status surfaces;
 - subprocess backend isolation and honest “trusted desktop code” warning;
-- namespaced storage, connections, secret mediation, permissions, diagnostics, and audit events;
-- safe archive extraction, checksum/signature verification, staged install, side-by-side update, and rollback;
+- installation-scoped data, declared credentials, permission mediation, and diagnostics;
+- safe archive extraction, deterministic packing, staged install, identity-preserving managed update, and explicit uninstall data policy;
 - no third-party FastAPI routes, SQLModel/Alembic models, React imports, or in-process Python imports;
-- Jira as a normal reference plugin with no core special case.
 
 Change these parts:
 
@@ -373,7 +364,6 @@ Change these parts:
 |---|---|
 | Root `manifest.json` with `schemaVersion`, `id`, runtime, UI, permissions, and contributions | Root standard `plugin.json`; EvoFlux fields live under one versioned `extensions` namespace. |
 | `.evoplugin` is the plugin contract | `.evoplugin` is only a deterministic ZIP distribution of a valid plugin directory. |
-| `com.evoflux.jira` is both plugin ID and trust identity | Portable name such as `evoflux-jira`; installation UUID/source/signature provide host identity. |
 | Backend always declared by custom runtime manifest | Prefer portable `mcp.json` when genuinely runnable across clients; otherwise declare EvoFlux bundled runtime honestly in the client extension. |
 | Skills implied as a custom contribution | Skills remain at the standard fixed `skills/` location and feed the existing harness. |
 | Custom SDK starts from a blank package format | SDK scaffolds and validates the standard core first, then adds the EvoFlux namespace. |
@@ -412,22 +402,14 @@ Exit: mixed Skills+MCP packages continue loading valid components when one skill
 
 ### P3 — package creation and local distribution
 
-- Scaffold `portable`, `evoflux-ui`, and `evoflux-fullstack` templates.
+- Scaffold the portable Skill/MCP template.
 - Add validate/inspect/pack commands using the same host validator.
 - Rebase `.evoplugin` archive, checksum, signature-state, staged install, and rollback on root `plugin.json`.
 - Build Plugin Center Installed/Local install/Developer views and permission review.
 
 Exit: a third party can create, pack, inspect, install, enable, disable, and uninstall a plugin without editing EvoFlux core.
 
-### P4 — EvoFlux client extension
-
-- Publish the versioned extension JSON Schema and SDK contract.
-- Implement sandboxed Workbench UI, commands, settings, connections, agent-tool allowlists, storage, secrets, and lifecycle bridge.
-- Migrate the Jira reference package to the layered layout.
-
-Exit: Jira uses the generic platform while its portable Skills and any portable MCP components remain usable outside EvoFlux.
-
-### P5 — provenance, Git import, and updates
+### P4 — provenance, Git import, and rollback
 
 - Add pinned Git import without submodules.
 - Add signed registry metadata, publisher keys/revocation, update permission diff, side-by-side health check, and rollback.
@@ -460,7 +442,7 @@ Minimum fixtures:
 - subprocess receives only intended environment plus forced `PLUGIN_ROOT`/`PLUGIN_DATA`;
 - persistent data across update and optional deletion on uninstall;
 - Skill and MCP name collisions across plugins;
-- disabled plugin contributes no Skills, tools, UI, or running process;
+- disabled plugin contributes no Skills, tools, or running process;
 - no schema network request during load;
 - malformed EvoFlux extension does not suppress valid portable components.
 
@@ -494,4 +476,4 @@ Minimum fixtures:
 
 The local portable-core sequence is now complete: validation, Skills, plugin-owned MCP, `.evoplugin`, lifecycle API/CLI, and Plugin Center ship as one tested vertical slice. Keep that core stable and conformance-focused.
 
-The next investment should be the versioned EvoFlux client extension and its trust model: mediated secrets/connections/storage, sandboxed third-party UI, explicit permission review, and Jira as a reference plugin. Git/registry import, signed provenance, updates, health-gated rollback, and audit export should follow before enabling broad third-party distribution.
+The next investment should focus on Git/registry import, signed provenance, explicit permission review, health-gated rollback, broader mediated connections/storage, and audit export before enabling broad third-party distribution. Plugin packages should continue contributing portable Skills and MCP servers while Plugin Center remains host-owned.

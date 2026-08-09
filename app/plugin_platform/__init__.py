@@ -11,6 +11,7 @@ from app.plugin_platform.installer import (
     link_plugin,
     pack_plugin,
     uninstall_plugin,
+    update_plugin,
 )
 from app.plugin_platform.registry import (
     get_installation,
@@ -30,4 +31,5 @@ __all__ = [
     "pack_plugin",
     "set_enabled",
     "uninstall_plugin",
+    "update_plugin",
 ]

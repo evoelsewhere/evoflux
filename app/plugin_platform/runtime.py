@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -180,7 +182,38 @@ def _runtime_signature() -> tuple:
             )
         except OSError:
             values.extend((0, 0))
+        if installation.source_type == "linked":
+            values.append(_linked_tree_signature(Path(installation.root)))
     return tuple(values)
+
+
+def _linked_tree_signature(root: Path) -> bytes:
+    """Cheaply detect source edits in a linked development package.
+
+    Content is not read on every watcher tick. Relative paths and filesystem
+    metadata are enough to notice normal editor writes while keeping the
+    one-second development watcher inexpensive.
+    """
+
+    digest = hashlib.blake2b(digest_size=16)
+    ignored = {".git", ".mypy_cache", ".pytest_cache", ".ruff_cache", "__pycache__"}
+    try:
+        for base, directories, files in os.walk(root, followlinks=False):
+            directories[:] = sorted(name for name in directories if name not in ignored)
+            base_path = Path(base)
+            for name in sorted(files):
+                path = base_path / name
+                relative = path.relative_to(root).as_posix()
+                metadata = path.lstat()
+                digest.update(relative.encode("utf-8", errors="surrogateescape"))
+                digest.update(metadata.st_mtime_ns.to_bytes(8, "big", signed=False))
+                digest.update(metadata.st_size.to_bytes(8, "big", signed=False))
+                digest.update(b"x" if metadata.st_mode & stat.S_IXUSR else b"-")
+                if stat.S_ISLNK(metadata.st_mode):
+                    digest.update(os.readlink(path).encode("utf-8", errors="surrogateescape"))
+    except OSError as exc:
+        digest.update(f"error:{exc.errno}".encode())
+    return digest.digest()
 
 
 class PluginMCPRuntime:
@@ -210,10 +243,10 @@ class PluginMCPRuntime:
             await asyncio.gather(task, return_exceptions=True)
         await self._manager.stop()
 
-    async def refresh(self) -> None:
+    async def refresh(self, *, force: bool = False) -> None:
         async with self._refresh_lock:
             config, descriptors = build_plugin_mcp_config()
-            await self._manager.apply_config(config)
+            await self._manager.apply_config(config, force=force)
             self._descriptors = descriptors
             self._signature = _runtime_signature()
         logger.info("plugin_mcp_refreshed servers={}", list(config.servers))
@@ -224,7 +257,7 @@ class PluginMCPRuntime:
                 await asyncio.sleep(self._watch_interval)
                 try:
                     if _runtime_signature() != self._signature:
-                        await self.refresh()
+                        await self.refresh(force=True)
                 except Exception as exc:  # noqa: BLE001
                     # Linked development packages can be observed between two
                     # editor writes. Preserve the last known-good runners and

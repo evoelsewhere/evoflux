@@ -499,17 +499,19 @@ class MCPManager:
             await self._reconcile_runners_locked(cfg)
             self._config_fingerprint = fingerprint
 
-    async def apply_config(self, cfg: MCPConfig) -> None:
+    async def apply_config(self, cfg: MCPConfig, *, force: bool = False) -> None:
         """Reconcile runners with an in-memory config.
 
         Plugin MCP configuration is generated from validated installed
         packages and must never be written into the user's global mcp.json.
         A separate manager instance uses this entry point with file watching
-        disabled, preserving the same per-server failure isolation.
+        disabled, preserving the same per-server failure isolation. ``force``
+        restarts unchanged runners when package code changed without changing
+        the generated MCP config.
         """
 
         async with self._lock:
-            await self._reconcile_runners_locked(cfg)
+            await self._reconcile_runners_locked(cfg, force=force)
 
     async def remove_runner(self, name: str) -> None:
         """Tear down ``name``'s runner if present (no-op if absent)."""
