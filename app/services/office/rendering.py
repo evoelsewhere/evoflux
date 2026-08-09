@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 from typing import Any, Final
 
@@ -18,6 +19,7 @@ from app.services.office.runtime import (
     DOCUMENT_RUNTIME_DIR_ENV,
     codex_runtime_dependencies,
     document_runtime_subprocess_env,
+    host_binary_dirs,
     resolve_document_runtime,
     resolve_executable,
 )
@@ -27,6 +29,29 @@ PDFTOPPM_BIN_ENV: Final = "EVOFLUX_PDFTOPPM_BIN"
 _SOFFICE_NAMES: Final = ("soffice", "libreoffice")
 _PDFTOPPM_NAMES: Final = ("pdftoppm",)
 _CONVERSION_TIMEOUT_SECONDS: Final = 180
+
+
+def _libreoffice_application_candidates() -> tuple[Path, ...]:
+    if os.name == "nt":
+        return tuple(
+            Path(root) / "LibreOffice" / "program" / "soffice.exe"
+            for root in (
+                os.environ.get("ProgramFiles"),
+                os.environ.get("ProgramFiles(x86)"),
+            )
+            if root
+        )
+    if sys.platform == "darwin":
+        return (
+            Path("/Applications/LibreOffice.app/Contents/MacOS/soffice"),
+            Path.home()
+            / "Applications"
+            / "LibreOffice.app"
+            / "Contents"
+            / "MacOS"
+            / "soffice",
+        )
+    return ()
 
 
 def find_render_binary(env_name: str, names: tuple[str, ...]) -> str:
@@ -42,11 +67,16 @@ def find_render_binary(env_name: str, names: tuple[str, ...]) -> str:
         preferred = (
             (runtime.soffice,) if env_name == SOFFICE_BIN_ENV else (runtime.pdftoppm,)
         )
+    if env_name == SOFFICE_BIN_ENV:
+        preferred = (*preferred, *_libreoffice_application_candidates())
     return resolve_executable(
         env_name,
         names,
         preferred_candidates=preferred,
-        fallback_dirs=(codex_runtime_dependencies() / "bin" / "override",),
+        fallback_dirs=(
+            *host_binary_dirs(),
+            codex_runtime_dependencies() / "bin" / "override",
+        ),
         requirement=(
             f"Required rendering binary is unavailable: {', '.join(names)}. "
             f"Set {env_name} to an executable path."

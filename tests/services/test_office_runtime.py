@@ -92,6 +92,7 @@ def _isolate_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     home.mkdir()
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     monkeypatch.setattr(runtime, "_repo_root", lambda: tmp_path / "repo")
+    monkeypatch.setattr(runtime, "host_binary_dirs", lambda: ())
     empty_path = tmp_path / "empty-path"
     empty_path.mkdir()
     monkeypatch.setenv("PATH", str(empty_path))

@@ -20,7 +20,7 @@ Native desktop shell for EvoFlux. Embeds the React Web UI, can spawn the Python 
                               │  python-build-standalone │
                               │  + site-packages         │
                               │  + app/ (FastAPI)        │
-                              │  + document-runtime       │
+                              │  + optional doc tools     │
                               └──────────────────────────┘
 ```
 
@@ -59,13 +59,7 @@ cargo install tauri-cli --version "^2.0" --locked
 # Build the web UI first
 cd web && bun install && bun run build && cd ..
 
-# Stage a licensed, platform-specific document runtime first
-python scripts/build_document_runtime.py stage \
-  --source /secure/evoflux-document-runtime.tar.gz \
-  --sha256 <archive-sha256> \
-  --out desktop/document-runtime
-
-# Build the Python + document runtime sidecar bundle
+# Build the Python sidecar bundle
 make -C desktop sidecar
 
 # Run the desktop shell in dev mode (prefer ``make dev`` from this
@@ -87,28 +81,18 @@ the GitHub packaging workflow imports the configured PFX and supplies its
 thumbprint to Tauri. The sidecar build validates the Alembic head marker and an
 upgrade from the previous revision before packaging.
 
-Desktop packaging is fail-closed unless `desktop/document-runtime` (or
-`EVOFLUX_DOCUMENT_RUNTIME_SOURCE`) is present and verifies against its internal
-manifest. The runtime pins Node, artifact-tool, headless Chromium, LibreOffice,
-Poppler, and fonts. All components are app-local resources; the installer does
-not need Administrator privileges or install document tools machine-wide.
-For a server-only development bundle with no document support, pass
-`--skip-document-runtime` directly to `scripts/build_sidecar.py`.
+Desktop packages do not embed third-party document applications and require no
+document-runtime URL/checksum secrets. DOCX and PDF authoring use the Python
+dependencies already present in the sidecar. Optional Office preview/rendering
+uses explicitly configured or host-installed LibreOffice and Poppler; optional
+Node pipelines similarly resolve Node, Chromium, and artifact-tool from the
+active workspace or explicit environment overrides. A missing optional tool
+disables only the feature that needs it and does not prevent desktop startup.
 
-The desktop packaging workflow expects a controlled runtime archive and
-SHA-256 for each target in these repository secrets:
-
-- `EVOFLUX_DOCUMENT_RUNTIME_MACOS_X64_URL` and
-  `EVOFLUX_DOCUMENT_RUNTIME_MACOS_X64_SHA256`
-- `EVOFLUX_DOCUMENT_RUNTIME_MACOS_ARM64_URL` and
-  `EVOFLUX_DOCUMENT_RUNTIME_MACOS_ARM64_SHA256`
-- `EVOFLUX_DOCUMENT_RUNTIME_WINDOWS_X64_URL` and
-  `EVOFLUX_DOCUMENT_RUNTIME_WINDOWS_X64_SHA256`
-
-The archive is staged only after both its external checksum and internal
-component manifest pass. Artifact-tool input must be licensed for product
-distribution; the assembler requires an explicit authorization assertion and
-never copies a Codex/developer cache automatically.
+For controlled deployments that already have redistribution rights, a verified
+runtime can still be supplied with `--document-runtime` or
+`EVOFLUX_DOCUMENT_RUNTIME_SOURCE`. It remains an opt-in compatibility path and
+is not used by the release workflow.
 
 On Windows, safe pure-Python packages are stored in one zipimport archive to
 reduce the number of small files Defender scans during a cold start. Pass
