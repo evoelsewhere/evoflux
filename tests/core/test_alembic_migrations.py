@@ -6,7 +6,8 @@ WebBridge pairing, interaction, tab-binding, Teach Mode state, delegation
 tasks, Git server connections, the Work mode rename, retired session-section
 cleanup, durable goals, durable workflow gates, the AIM table drop, scheduler
 routing, and application-database graph removal through revision 00000046).
-Artifact Fabric jobs, revisions, and reviews land in revision 00000047.
+Artifact Fabric jobs, revisions, and reviews land in revision 00000047;
+revision 00000048 repairs project-owned Coding sessions hidden by the sidebar.
 Complements ``tests/core/test_db_extra.py``, which only covers
 ``run_migrations`` error paths with mocks.
 """
@@ -238,6 +239,171 @@ def test_work_mode_migration_rewrites_forge_rows_and_defaults(tmp_path, monkeypa
         assert mode == "work"
         assert chat_mode["default"] == "'work'"
         assert task_mode["default"] == "'work'"
+    finally:
+        engine.dispose()
+
+
+def test_project_session_ownership_migration_repairs_only_unambiguous_rows(
+    tmp_path, monkeypatch
+):
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "project-session-ownership.sqlite"
+    monkeypatch.setattr(
+        settings, "DATABASE_URL", SecretStr(f"sqlite+aiosqlite:///{db_path}")
+    )
+    ini = Path(app.__file__).resolve().parent / "alembic.ini"
+    cfg = Config(str(ini))
+    command.upgrade(cfg, "00000047")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    now = datetime.now(timezone.utc)
+    project_a_id = uuid4().hex
+    project_b_id = uuid4().hex
+    owned_workspace_id = uuid4().hex
+    worktree_workspace_id = uuid4().hex
+    ambiguous_workspace_id = uuid4().hex
+    owned_session_id = uuid4().hex
+    worktree_session_id = uuid4().hex
+    ambiguous_session_id = uuid4().hex
+    standalone_session_id = uuid4().hex
+    try:
+        metadata = sa.MetaData()
+        projects = sa.Table("coding_projects", metadata, autoload_with=engine)
+        workspaces = sa.Table("coding_workspaces", metadata, autoload_with=engine)
+        links = sa.Table("coding_project_workspaces", metadata, autoload_with=engine)
+        sessions = sa.Table("chat_sessions", metadata, autoload_with=engine)
+        with engine.begin() as conn:
+            conn.execute(
+                projects.insert(),
+                [
+                    {
+                        "id": project_a_id,
+                        "name": "Project A",
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                    {
+                        "id": project_b_id,
+                        "name": "Project B",
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                ],
+            )
+            conn.execute(
+                workspaces.insert(),
+                [
+                    {
+                        "id": owned_workspace_id,
+                        "path": "/repo/owned",
+                        "kind": "repo",
+                        "source_path": None,
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                    {
+                        "id": worktree_workspace_id,
+                        "path": "/repo/worktree",
+                        "kind": "worktree",
+                        "source_path": "/repo/owned",
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                    {
+                        "id": ambiguous_workspace_id,
+                        "path": "/repo/shared",
+                        "kind": "repo",
+                        "source_path": None,
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                ],
+            )
+            conn.execute(
+                links.insert(),
+                [
+                    {
+                        "id": uuid4().hex,
+                        "project_id": project_a_id,
+                        "workspace_id": owned_workspace_id,
+                        "created_at": now,
+                    },
+                    {
+                        "id": uuid4().hex,
+                        "project_id": project_a_id,
+                        "workspace_id": ambiguous_workspace_id,
+                        "created_at": now,
+                    },
+                    {
+                        "id": uuid4().hex,
+                        "project_id": project_b_id,
+                        "workspace_id": ambiguous_workspace_id,
+                        "created_at": now,
+                    },
+                ],
+            )
+            conn.execute(
+                sessions.insert(),
+                [
+                    {
+                        "id": owned_session_id,
+                        "mode": "coding",
+                        "workspace": "/repo/owned",
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                    {
+                        "id": worktree_session_id,
+                        "mode": "coding",
+                        "workspace": "/repo/worktree",
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                    {
+                        "id": ambiguous_session_id,
+                        "mode": "coding",
+                        "workspace": "/repo/shared",
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                    {
+                        "id": standalone_session_id,
+                        "mode": "coding",
+                        "workspace": "/repo/standalone",
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                ],
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        sessions = sa.Table("chat_sessions", sa.MetaData(), autoload_with=engine)
+        with engine.connect() as conn:
+            ownership = dict(
+                conn.execute(
+                    sa.select(sessions.c.id, sessions.c.project_id).where(
+                        sessions.c.id.in_(
+                            [
+                                owned_session_id,
+                                worktree_session_id,
+                                ambiguous_session_id,
+                                standalone_session_id,
+                            ]
+                        )
+                    )
+                ).all()
+            )
+        assert ownership[owned_session_id] == project_a_id
+        assert ownership[worktree_session_id] == project_a_id
+        assert ownership[ambiguous_session_id] is None
+        assert ownership[standalone_session_id] is None
     finally:
         engine.dispose()
 
