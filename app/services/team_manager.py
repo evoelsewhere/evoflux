@@ -270,6 +270,17 @@ def find_team_for_session(session_id: str) -> "AgentTeam | None":
     return None
 
 
+def has_active_team_turn() -> bool:
+    """Return whether any live Work or Coding team is inside a turn boundary."""
+
+    teams = [
+        team
+        for team in [_team, *_session_teams.values(), *_coding_teams.values()]
+        if team
+    ]
+    return any(team.has_active_user_turn() for team in teams)
+
+
 def set_team(team: "AgentTeam | None") -> None:
     """Replace the current team reference without running the lifecycle.
 
