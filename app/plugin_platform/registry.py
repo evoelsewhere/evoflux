@@ -136,6 +136,20 @@ def set_enabled(installation_id: str, enabled: bool) -> PluginInstallation:
     raise KeyError(installation_id)
 
 
+def replace_installation(installation: PluginInstallation) -> PluginInstallation:
+    """Atomically replace registry metadata for one existing installation."""
+
+    with _LOCK:
+        document = _read_document(strict=True)
+        for index, item in enumerate(document.installations):
+            if item.id != installation.id:
+                continue
+            document.installations[index] = installation
+            _write_document(document)
+            return installation
+    raise KeyError(installation.id)
+
+
 def remove_installation(installation_id: str) -> PluginInstallation:
     with _LOCK:
         document = _read_document(strict=True)
@@ -172,6 +186,7 @@ __all__ = [
     "registry_path",
     "registry_signature",
     "remove_installation",
+    "replace_installation",
     "set_enabled",
     "staging_root",
 ]

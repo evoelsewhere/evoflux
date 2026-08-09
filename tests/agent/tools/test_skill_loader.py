@@ -1111,6 +1111,7 @@ class TestBuiltinSkills:
             "self-healing",
             "skill-installer",
             "mcp-installer",
+            "plugin-development",
             "plugin-installer",
             "review-pull-requests",
         }.issubset(result)
@@ -1132,6 +1133,7 @@ class TestBuiltinSkills:
             "frontend-design",
             "mcp-installer",
             "pdf",
+            "plugin-development",
             "plugin-installer",
             "pptx",
             "review-pull-requests",
@@ -1153,6 +1155,7 @@ class TestBuiltinSkills:
         coding = set(skills_for_mode(discovered, "coding"))
 
         assert {"work-research", "work-decision", "docx", "xlsx"} <= work
+        assert "plugin-development" in work
         assert {
             "coding-investigation",
             "coding-implementation",
@@ -1164,8 +1167,16 @@ class TestBuiltinSkills:
             "coding-security",
             "coding-testing",
         } <= coding
+        assert "plugin-development" in coding
         assert "coding-investigation" not in work
         assert "work-research" not in coding
+
+    @pytest.mark.asyncio
+    async def test_plugin_development_is_loadable_in_both_modes(self):
+        for mode in ("work", "coding"):
+            result = await load_skill("plugin-development", _mode=mode)
+
+            assert "# EvoFlux Plugin Development" in result
 
     def test_custom_skill_mode_scope_comes_from_sidecar(self, tmp_path):
         skill_dir = tmp_path / "custom"

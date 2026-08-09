@@ -186,6 +186,12 @@ class TestMCPToolDefinition:
         assert tool.deferred is True
         assert tool.deferred_summary == mcp_tool.description
 
+        from app.agent.tools.registry import deferred_catalog_entry
+
+        entry = deferred_catalog_entry(tool)
+        assert entry.summary == mcp_tool.description
+        assert entry.aliases == ()
+
     def test_mcp_tool_reads_explicit_capabilities_from_metadata(self) -> None:
         mcp_tool = SimpleNamespace(
             name="navigate",

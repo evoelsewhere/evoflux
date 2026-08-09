@@ -18,6 +18,12 @@ class PluginInstallRequest(BaseModel):
     enabled: bool = True
 
 
+class PluginUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = Field(min_length=1)
+
+
 class PluginCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -128,6 +134,7 @@ __all__ = [
     "PluginOperationResponse",
     "PluginPackRequest",
     "PluginPathResponse",
+    "PluginUpdateRequest",
     "PluginWorkspaceDeleteRequest",
     "PluginWorkspaceEntryRequest",
     "PluginWorkspaceFileRequest",

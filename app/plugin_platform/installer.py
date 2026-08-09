@@ -24,6 +24,7 @@ from app.plugin_platform.registry import (
     installed_root,
     plugin_data_root,
     remove_installation,
+    replace_installation,
     staging_root,
 )
 from app.plugin_platform.validator import (
@@ -229,6 +230,111 @@ def install_plugin(
         except Exception:
             shutil.rmtree(final_path.parent, ignore_errors=True)
             raise
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
+
+
+def update_plugin(
+    installation_id: str,
+    source: str | Path,
+    *,
+    source_ref: str | None = None,
+) -> PluginInstallation:
+    """Replace a managed package while preserving its identity and data."""
+
+    current = get_installation(installation_id)
+    if current is None:
+        raise KeyError(installation_id)
+    if current.source_type != "installed":
+        raise PluginInstallError(
+            "Linked development plugins update directly from their source folder."
+        )
+
+    managed = installed_root().resolve()
+    current_root = Path(current.root).resolve()
+    try:
+        owned = current_root.relative_to(managed)
+    except ValueError as exc:
+        raise PluginInstallError(
+            f"Refusing to replace an unowned install path: {current_root}"
+        ) from exc
+    if len(owned.parts) < 2 or owned.parts[0] != installation_id:
+        raise PluginInstallError(
+            f"Refusing to replace a mismatched install path: {current_root}"
+        )
+
+    source_path = Path(source).expanduser().absolute()
+    cache_root = staging_root()
+    cache_root.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix="update-", dir=cache_root))
+    final_path: Path | None = None
+    backup_path: Path | None = None
+    installed_new = False
+    try:
+        package_source = _source_root(source_path, temporary)
+        inspection = _require_valid(
+            package_source,
+            data_root=plugin_data_root(installation_id),
+        )
+        if package_has_symlinks(package_source):
+            raise PluginInstallError("Managed updates reject package symlinks.")
+        assert inspection.manifest is not None and inspection.content_sha256 is not None
+        if inspection.manifest.name != current.name:
+            raise PluginInstallError(
+                f"Update package name {inspection.manifest.name!r} does not match "
+                f"installed plugin {current.name!r}."
+            )
+
+        staged_package = temporary / "package"
+        shutil.copytree(package_source, staged_package)
+        staged_inspection = _require_valid(
+            staged_package,
+            data_root=plugin_data_root(installation_id),
+        )
+        if staged_inspection.content_sha256 != inspection.content_sha256:
+            raise PluginInstallError("Package changed while it was being staged.")
+
+        version = _version_segment(
+            inspection.manifest.version,
+            inspection.content_sha256,
+        )
+        install_parent = managed / installation_id
+        install_parent.mkdir(parents=True, exist_ok=True)
+        final_path = install_parent / version
+        if final_path == current_root:
+            backup_path = install_parent / f".update-backup-{uuid4().hex}"
+            os.replace(current_root, backup_path)
+        elif final_path.exists():
+            raise PluginInstallError(f"Update target already exists: {final_path}")
+
+        try:
+            os.replace(staged_package, final_path)
+            installed_new = True
+            now = datetime.now(UTC).isoformat()
+            updated = current.model_copy(
+                update={
+                    "name": inspection.manifest.name,
+                    "version": inspection.manifest.version,
+                    "description": inspection.manifest.description,
+                    "root": str(final_path),
+                    "source_ref": source_ref or str(source_path.resolve()),
+                    "content_sha256": inspection.content_sha256,
+                    "updated_at": now,
+                }
+            )
+            replace_installation(updated)
+        except Exception:
+            if installed_new and final_path.exists():
+                shutil.rmtree(final_path, ignore_errors=True)
+            if backup_path is not None and backup_path.exists():
+                os.replace(backup_path, current_root)
+            raise
+
+        if backup_path is not None:
+            shutil.rmtree(backup_path, ignore_errors=True)
+        elif current_root != final_path:
+            shutil.rmtree(current_root, ignore_errors=True)
+        return updated
     finally:
         shutil.rmtree(temporary, ignore_errors=True)
 
@@ -442,4 +548,5 @@ __all__ = [
     "link_plugin",
     "pack_plugin",
     "uninstall_plugin",
+    "update_plugin",
 ]

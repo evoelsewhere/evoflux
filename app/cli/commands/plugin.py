@@ -16,6 +16,7 @@ from app.plugin_platform import (
     pack_plugin,
     set_enabled,
     uninstall_plugin,
+    update_plugin,
 )
 from app.plugin_platform.registry import plugin_data_root
 
@@ -49,6 +50,9 @@ def cmd_plugin(args: argparse.Namespace) -> None:
                     remove_data=args.remove_data,
                 )
             )
+            return
+        if action == "update":
+            _print(update_plugin(args.installation_id, args.path))
             return
         if action == "create":
             path = create_plugin(
@@ -117,6 +121,13 @@ def add_plugin_subparser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Also remove persistent PLUGIN_DATA",
     )
+
+    update = actions.add_parser(
+        "update",
+        help="Replace a managed package while preserving its ID and data",
+    )
+    update.add_argument("installation_id")
+    update.add_argument("path")
 
     create = actions.add_parser("create", help="Scaffold a portable plugin")
     create.add_argument("destination")

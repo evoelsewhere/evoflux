@@ -114,6 +114,10 @@ class MCPTool(Tool):
             if len(compact_description) > 160
             else compact_description
         )
+        # Keep the base Tool metadata contract complete. MCPTool builds its
+        # provider schema directly instead of calling Tool.__init__, so every
+        # newly introduced runtime metadata field needs an explicit default.
+        self.search_aliases: tuple[str, ...] = ()
         self.capabilities = _get_capabilities(mcp_tool) | frozenset(
             capability.strip().casefold()
             for capability in server_capabilities
@@ -122,6 +126,8 @@ class MCPTool(Tool):
         self.origin = "mcp"
         self.max_calls_per_batch = None
         self.deduplicate_in_batch = False
+        self.observation_kind = None
+        self.observation_key = None
 
         self.__name__ = local_name
         self.__doc__ = description
