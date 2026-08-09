@@ -1,72 +1,72 @@
-# New PPTX deck contract
+# High-fidelity new-deck contract
 
-Read this after `pptx_html(action="catalog")` and visual-direction selection.
-Treat the live catalog as authoritative when it differs from examples here.
+Read this after `artifact(action="catalog", format="pptx")` and visual-direction
+selection. Treat the live catalog as authoritative.
 
 ## Tool sequence
 
-1. Query the selected `style_preset` and any selected `base_template` through
-   `catalog` for exact palette and content contracts.
-2. Write the project JSON inside the workspace and call `validate`.
-3. Call `render` for one representative slide and inspect the image.
-4. Correct the project, render all slides, and resolve `qa.json` errors.
-5. Call `compose` only after full render and QA succeed.
+1. Select `fidelity`, `hybrid`, or `native`; use `fidelity` unless the user asks
+   for semantic editability.
+2. Write the schema-version 2 project and required local HTML/assets inside one
+   project directory, then call `validate`.
+3. Call `preview`; inspect every slide image, layout finding, and visual-parity
+   metric.
+4. Correct the project and create a new preview until QA succeeds.
+5. Call `publish` with the accepted preview job ID and final `.pptx` path.
+
+## Static HTML contract
+
+For `fidelity`, each slide's `visual_shell.html_path` is the complete visual
+composition. Use an exact `1280px × 720px` viewport unless the project declares
+another size. Set `html, body` to that size with zero margin and hidden
+overflow. Use static HTML/CSS, inline SVG, data URLs, and project-relative local
+images or fonts. Scripts, event handlers, iframes, forms, remote URLs, imports,
+canvas, video, and audio are rejected. The backend uses bundled headless
+Chromium with JavaScript and network access disabled.
+
+Use `render_scale: 2` for final quality. The shell is embedded as one full-slide
+PNG in PowerPoint. This is a deliberate quality-first representation: do not
+claim that its internal text, charts, or shapes are semantically editable.
+
+For `hybrid`, `html_path` contains only the non-editable visual shell. Add
+native objects in `elements`, and put the desired complete composition in
+`reference_html_path`. The backend renders the reference independently and
+rejects the PPTX if changed-pixel ratio or mean absolute error exceeds the
+declared thresholds. Do not duplicate visible labels in both the shell and
+native overlay.
+
+For `native`, omit `visual_shell` and use native `text`, `shape`, `image`,
+`table`, and `chart` elements only.
 
 ## Authoring rules
 
-Each slide contains the inner content of a fixed 1600×900 canvas. Prefer
-`template + content` over raw HTML when a base template fits; the live catalog
-lists current IDs and item bounds. Do not supply both a template and raw HTML
-for one slide.
+Use one canvas size and visual system for the deck. Keep important content
+inside consistent safe margins. Use one communication job, one takeaway title,
+and normally no more than three major content groups per slide. Vary narrative
+archetypes instead of repeating a card grid.
 
-Keep one deck-level visual system. Vary narrative archetypes across adjacent
-slides rather than repeating the same card grid. Use one communication job,
-one takeaway title, and normally no more than three major content groups per
-slide.
+Prefer `fidelity` for gradients, complex typography, shadows, layered SVG,
+glass effects, clipping, and compositions that already look correct in HTML.
+Choose export-safe fonts from the bundled font pack; local font files must stay
+inside the project directory. Use meaningful alt text for every visual shell
+and image.
 
-Use **Evoflux** for any generator/edition branding visible in the design. Never
-emit Codex logos, watermarks, edition labels, or generator credits; the upstream
-repository name may appear only in source attribution or when it is the actual
-subject of the presentation.
-
-Use `editable_mode: "max"` unless a supplied visual requires unusual CSS.
-Semantic headings, paragraphs, list items, table cells, images, panels, steps,
-rules, and `data-box` regions become native where supported. Use explicit
-`data-pptx-native` markers for custom editable objects and `data-pptx-raster`
-for gradients, clipping, filters, transformed compounds, text strokes, or
-effects that cannot round-trip faithfully.
-
-Native text preserves inline runs for font family, size, weight, italic,
-underline, strike, color, tracking, explicit line breaks, and list markers.
-Review `qa.json.editability`: investigate any `editable_coverage_low` warning,
-and rasterize only effects whose CSS cannot be represented faithfully.
-
-Use explicit `<br>` in display titles when the line break is part of the art
-direction. Editable text must use export-safe fonts or be deliberately
-rasterized; treat `font_not_export_safe` as a real reflow risk.
-
-Use `data-box` for peer structural regions so collision QA and native-shape
-promotion can reason about them. Mark intentional overlap explicitly. Never
-use QA-ignore markers to hide text overflow.
-
-Workspace images and SVG files must use `asset://relative/path`. Reject remote
-URLs, scripts, iframes, forms, imported CSS, executable attributes, and
-filesystem URLs. Prefer inline SVG or CSS geometry for sharp diagrams.
+Use **EvoFlux** for any generator/edition branding visible in the design. Never
+emit Codex logos, watermarks, edition labels, or generator credits; an upstream
+repository name may appear only in attribution or when it is the subject.
 
 ## Visual quality
 
 - Use composition, scale, whitespace, and contrast before adding boxes.
 - Avoid dashboard grids unless the content is genuinely a dashboard.
-- Keep body text generally 18–24 px or larger and titles 44–72 px.
-- Build diagrams with a clear reading order and meaningful edges.
-- Use inline SVG, CSS shapes, or workspace assets instead of emoji icons.
-- Never accept clipped text, broken images, accidental overlap, or off-canvas
-  content.
+- Keep body text generally 18–24 px or larger and titles 40–64 px.
+- Build diagrams with clear reading order and meaningful edges.
+- Use project assets or inline SVG instead of emoji icons.
+- Never accept clipped text, broken images, accidental overlap, off-slide
+  content, or failed parity evidence.
 
-Put presenter guidance in `speaker_notes` and traceable URLs/labels in
-`sources`; do not scatter raw citations over the visual surface unless the
-audience needs them there.
-
-When LibreOffice round-trip comparison runs, inspect any `round_trip_drift`
-warning against both named images. Without a completed round trip, report that
-the final PowerPoint render remains environment-unverified.
+Put presenter guidance in `speaker_notes`. The backend renders every slide,
+emits layout evidence, and compares the accepted preview to its HTML reference
+before candidate acceptance. Without an independent PowerPoint/LibreOffice
+round trip, report that limitation instead of treating structural success as
+visual proof.

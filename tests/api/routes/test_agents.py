@@ -343,7 +343,13 @@ async def test_registry_returns_catalog(
     assert by_name["ask_user"]["lead_only"] is True
     assert by_name["read"]["lead_only"] is False
     assert by_name["wiki_search"]["tiers"] == ["work"]
-    assert by_name["docx_document"]["tiers"] == ["work"]
+    assert by_name["artifact"]["tiers"] == ["work"]
+    assert {
+        "docx_document",
+        "xlsx_artifact",
+        "pptx_template",
+        "pptx_html",
+    }.isdisjoint(by_name)
     assert by_name["lsp_diagnostics"]["tiers"] == ["coding"]
     assert by_name["worktree_start"]["tiers"] == ["coding"]
     assert by_name["read"]["tiers"] is None

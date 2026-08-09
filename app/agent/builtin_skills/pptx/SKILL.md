@@ -1,108 +1,108 @@
 ---
 name: pptx
-description: Create, redesign, render, and verify editable PowerPoint presentations through EvoFlux's new-deck and inherited-template pipelines. Use when PPTX, PowerPoint, slides, a presentation, or a pitch deck is the requested input/output; do not use for a static poster, prose-only memo, or theme-only change to an otherwise complete artifact.
+description: Create, redesign, render, and verify high-fidelity or editable PowerPoint presentations through Artifact Fabric. Use when PPTX, PowerPoint, slides, a presentation, or a pitch deck is the requested input/output; do not use for a static poster, prose-only memo, or theme-only change to an otherwise complete artifact.
 ---
 
-# Author a PowerPoint presentation
+# Author a high-fidelity PowerPoint presentation
 
-Produce one communication job per slide and verify the rendered deck, not just
-the project schema. Do not load bundled references or examples when this skill
-activates.
+Use the deferred `artifact` tool with `format: "pptx"`. Produce one
+communication job per slide and verify rendered slides, not only the project
+schema. Do not load bundled references or examples when this skill activates.
 
 ## Choose one path
 
-- **New deck or image/screenshot reference:** use deferred `pptx_html`.
-- **Uploaded PPTX explicitly used as the visual template:** use deferred
-  `pptx_template`; the source deck itself confirms the visual direction.
+- **New deck or image/screenshot reference:** use the new-deck schema and select
+  a quality profile below.
+- **Uploaded PPTX used as the visual template:** inspect it, then use the
+  inherited-template lane; the source deck confirms the visual direction.
 - **Uploaded PPTX with ambiguous purpose:** ask whether it is the visual
   template or only a content source before authoring.
 
-Never fall back to blank slides, `python-pptx`, or `pptx_html` when the user
-requires preservation of an uploaded template's masters and layouts. Never
-overwrite the uploaded source.
+Never use Desktop WebView capture or `python-pptx`. Static slide HTML is allowed
+only through Artifact Fabric's bundled backend Chromium renderer. Never
+overwrite an uploaded source.
+
+## New-deck quality profiles
+
+- **`fidelity` (default):** author each complete slide as static HTML. This
+  preserves CSS typography, gradients, shadows, SVG, and composition exactly;
+  the PowerPoint slide contains one full-slide visual object.
+- **`hybrid`:** use a decorative HTML shell plus native editable overlays. Also
+  author a complete reference HTML for each slide; Artifact Fabric pixel-diffs
+  the composed PPTX against that reference and rejects drift.
+- **`native`:** use only native text, shape, image, table, and chart objects when
+  full semantic editability matters more than CSS-level fidelity.
 
 ## Required state machine
 
-### 1. FRAME
+### 1. Frame
 
-Identify audience, decision or narrative outcome, supplied facts, required
-slide count or time, source/citation needs, editability expectations, brand
-assets, and final filename. Draft a slide-by-slide story whose titles state the
-takeaway rather than a topic label.
+Identify audience, decision or narrative outcome, supplied facts, slide count
+or time, citation needs, editability expectations, brand assets, and final
+filename. Draft a slide-by-slide story whose titles state takeaways.
 
-### 2. RESOLVE VISUAL DIRECTION
+### 2. Resolve visual direction
 
-Treat the user's visual direction as confirmed whenever the request supplies a
-recognizable design language through colors, typography, tone, density,
-audience, layout references, brand rules, an image, or phrases such as
-“enterprise technology.” Map it to the closest internal preset, preserve the
-stated constraints, set `style_confirmed: true`, and continue without asking
-the user to approve the internal mapping.
+Treat the user's visual direction as confirmed when supplied colors,
+typography, tone, density, audience, layout references, brand rules, images, or
+recognizable design language are sufficient. Translate them into one explicit
+system for palette, type, spacing, geometry, charts, and images, and
+continue without asking the user to approve an internal mapping.
 
-Only when meaningful direction is absent or two interpretations would
-materially change the deck, call the `ask_user` tool once with a short,
-job-aware set of options in the user's language. Batch any other blocking
-presentation question into that call. After it returns, resume outline,
-authoring, rendering, and composition in the same run. Never send a plain
-assistant message asking the user to choose a style or end the run waiting for
-a separate chat reply.
+Only when direction is absent or two interpretations would materially change
+the deck, call the `ask_user` tool once with short, job-aware options in the
+user's language. Batch other blocking presentation questions into that call.
+After it returns, resume outline, authoring, preview, and publication in the
+same run. Never send a plain assistant message asking the user to choose a
+style or end the run waiting for a separate chat reply.
 
-Use `scientific-defense` first for research, technical, thesis, or
-evidence-heavy decks. Other common directions include clean professional,
-McKinsey-style consulting, data dashboard, teaching courseware, and creative
-magazine. Set an exact `style_preset` and `style_confirmed: true`; do not use a
-silent default.
+### 3A. Inherited template
 
-### 3A. INHERITED TEMPLATE
-
-Load `pptx_template`, call `catalog`, then `inspect` the source and review every
-source-slide preview and object manifest. Read
+Call `artifact(action="catalog", format="pptx")`, then `inspect` the source and
+review every source-slide preview and object manifest. Read
 [references/inherited-template-contract.md](references/inherited-template-contract.md)
-only after inspection returns the manifest. Use exact source hash, slide
-numbers, object IDs, names, types, and locators from that result. Validate,
-render, visually inspect, and compose only after lineage and placeholder QA
-pass.
+only after inspection. Use exact source hash, slide numbers, object IDs, names,
+types, and locators. Pass the completed inspect job as `inspect_job_id` when
+calling `validate` and `preview`.
 
-### 3B. NEW DECK
+### 3B. New deck
 
-Load `pptx_html` and call `catalog` for the current schema, templates, editable
-markers, and visual systems. Read
-[references/new-deck-contract.md](references/new-deck-contract.md) only after
-choosing the style and before writing the project. Start from
+Call `artifact(action="catalog", format="pptx")` for the live fidelity, hybrid,
+native element, and visual-shell schema. Read
+[references/new-deck-contract.md](references/new-deck-contract.md) after choosing
+the visual direction and before writing the project. Use
 [examples/project.example.json](examples/project.example.json) only when a
-starter is useful; use a more specific example only for the matching deck type.
+starter is useful.
 
-Write and validate the UTF-8 JSON project. Render one representative slide,
-inspect the returned image, and fix it before producing the full deck. Then
-render every slide and resolve all error-severity QA findings before compose.
-Warnings require deliberate review rather than automatic acceptance.
+Write the UTF-8 JSON project and call `validate`. Call `preview`, inspect every
+returned slide image, and resolve all error-severity findings. Iterate by
+creating a new preview job; never mutate an accepted revision.
 
-### 4. VISUAL AND ROUND-TRIP QA
+### 4. Visual and round-trip QA
 
 Inspect all rendered slides for hierarchy, clipping, accidental overlap,
 broken assets, repeated silhouettes, unreadable density, weak contrast, and
-content outside the 1600×900 canvas. Verify sources and speaker notes when
-required. Treat the written deck as unverified unless round-trip rendering
-completed; if unavailable, report that limitation rather than interpreting an
-absence of warnings as proof.
+off-slide content. Verify sources and speaker notes when required. Treat a deck
+as unverified unless rendering completed; report limitations explicitly.
 
-### 5. COMPOSE
+### 5. Publish
 
-Compose exactly one final PPTX after structural and visual gates pass. Preserve
-inherited master/layout lineage in template mode. In new-deck mode, preserve
-the intended split between editable native objects and pixel-stable complex
-background effects.
+Call `artifact(action="publish", job_id=..., output="...pptx")` only after
+structural and visual gates pass. Publish reuses the immutable bytes already
+rendered and reviewed. Preserve master/layout lineage in template mode. In
+new-deck mode, report whether the accepted deck is fidelity, hybrid, or native
+and do not overstate editability.
 
 ## Stop conditions
 
 Stop when narrative and visual direction are coherent, every slide has been
-rendered and inspected, no error-severity QA issue remains, source/template
-lineage is intact where required, and the final PPTX is independently opened or
-round-trip checked when the environment supports it.
+rendered and inspected, no error remains, template lineage is intact where
+required, and the final PPTX is independently opened or round-trip checked
+when the environment supports it.
 
 ## Deliverable
 
-Return the PPTX path first. Report slide count, selected path and style, QA and
-warning status, editable text/shape/image counts, editability coverage and
-preserved rich-text runs, source/template preservation, which effects remain
-rasterized, and whether round-trip verification completed or was skipped.
+Return the PPTX path first. Report slide count, quality profile, visual
+direction, QA and visual-parity status, semantic editable object count,
+template preservation, and whether round-trip verification completed or was
+skipped.

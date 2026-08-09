@@ -1505,15 +1505,15 @@ async def test_load_tool_search_keeps_short_terms_the_catalog_uses():
     """A two-letter alias like "cv" stays searchable despite the length filter."""
     state = _search_state(
         {
-            "docx_document": DeferredToolEntry(
-                summary="Create or edit a Word document.",
+            "artifact": DeferredToolEntry(
+                summary="Create or edit a durable document artifact.",
                 aliases=("cv", "resume"),
             ),
             "date": DeferredToolEntry(summary="Get the current local date and time."),
         }
     )
 
-    assert await _search(state, "cv") == ["docx_document"]
+    assert await _search(state, "cv") == ["artifact"]
 
 
 async def test_load_tool_search_survives_an_all_filler_query():

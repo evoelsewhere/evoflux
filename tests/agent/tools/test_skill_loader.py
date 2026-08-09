@@ -1278,8 +1278,7 @@ class TestBuiltinSkills:
             in normalized
         )
         assert (
-            "the **next structural observation must be** `code_context`"
-            in normalized
+            "the **next structural observation must be** `code_context`" in normalized
         )
         assert "repeat_broad_discovery_after_exact_anchor" in {
             behavior
@@ -1319,7 +1318,7 @@ class TestBuiltinSkills:
         assert "continue without asking the user to approve" in normalized
         assert "call the `ask_user` tool" in normalized
         assert "deferred `ask_user`" not in normalized
-        assert "resume outline, authoring, rendering, and composition" in normalized
+        assert "resume outline, authoring, preview, and publication" in normalized
         assert "Never send a plain assistant message asking" in normalized
 
     @pytest.mark.asyncio
