@@ -1184,6 +1184,101 @@ async def test_load_tool_refreshes_mcp_granted_during_same_run(tmp_path, monkeyp
     assert "mcp_blocked_search" not in final_names
 
 
+async def test_loading_plugin_skill_grants_its_mcp_tools_in_same_run(
+    tmp_path, monkeypatch
+):
+    """A plugin Skill makes its installation-scoped MCP tools callable on the
+    very next model iteration, without requiring an agent restart or a
+    persistent MCP server assignment.
+    """
+    from app.agent.skills.models import SkillRecord
+    from app.agent.tools.builtin.skill import load_skill
+    from app.agent.tools.registry import Tool
+    from app.plugin_platform.runtime import plugin_mcp_runtime
+
+    plugin_root = tmp_path / "plugin"
+    skill_dir = plugin_root / "skills" / "jira-task-management"
+    skill_dir.mkdir(parents=True)
+    skill_file = skill_dir / "SKILL.md"
+    skill_file.write_text(
+        "---\n"
+        "name: jira-task-management\n"
+        "description: Inspect Jira tasks.\n"
+        "---\n\n"
+        "Use the Jira MCP tools from this plugin.\n",
+        encoding="utf-8",
+    )
+    record = SkillRecord(
+        name="jira-task-management",
+        description="Inspect Jira tasks.",
+        skill_file=skill_file,
+        root=plugin_root / "skills",
+        source="plugin:installation-123",
+        modes=("work",),
+    )
+    jira_search = Tool(
+        lambda: "jira result",
+        name="mcp_plugin_123_jira_issues_search",
+        deferred=True,
+        deferred_summary="Search Jira issues from the installed plugin.",
+    )
+    jira_search.origin = "mcp"
+
+    monkeypatch.setattr(
+        "app.agent.tools.builtin.skill._resolve_record",
+        lambda skill_name, mode: (record, None)
+        if skill_name == record.name and mode == "work"
+        else (None, "not found"),
+    )
+    monkeypatch.setattr(
+        plugin_mcp_runtime,
+        "get_tools_for_installation",
+        lambda installation_id: [jira_search]
+        if installation_id == "installation-123"
+        else [],
+    )
+
+    calls: list[dict] = []
+
+    async def _load_skill_iteration():
+        yield _tool_chunk(
+            0,
+            "call_skill",
+            "skill",
+            '{"action":"load","skill_name":"jira-task-management"}',
+        )
+        yield _finish_chunk()
+
+    async def _finish_iteration():
+        yield _text_chunk("done", finish="stop")
+
+    def _stream_side_effect(**kwargs):
+        calls.append(kwargs)
+        return _load_skill_iteration() if len(calls) == 1 else _finish_iteration()
+
+    mock_provider = MagicMock()
+    mock_provider.stream.side_effect = _stream_side_effect
+    agent = Agent(
+        llm_provider=mock_provider,
+        name="test-agent",
+        tools=[load_skill],
+    )
+
+    await agent.run([HumanMessage(content="Inspect Jira using the plugin Skill")])
+
+    assert len(calls) == 2
+    first_names = {tool["function"]["name"] for tool in calls[0]["tools"]}
+    second_names = {tool["function"]["name"] for tool in calls[1]["tools"]}
+    assert jira_search.name not in first_names
+    assert jira_search.name in second_names
+    skill_results = [
+        message.content
+        for message in calls[1]["messages"]
+        if isinstance(message, ToolMessage)
+    ]
+    assert any("Plugin root:" in result for result in skill_results)
+
+
 async def test_deferred_metadata_stays_visible_without_loader_tool():
     """A standalone Agent cannot strand a deferred tool when no activation
     tool was granted to that agent."""

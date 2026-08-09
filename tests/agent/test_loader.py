@@ -362,6 +362,38 @@ def test_build_agent_mcp_servers_inject_tools(monkeypatch):
     assert "mcp_github_list_repos" not in agent._tools
 
 
+def test_build_agent_resolves_persisted_plugin_mcp_runtime(monkeypatch):
+    """The runtime name saved by Agent Settings resolves through the isolated
+    plugin MCP manager when the agent is rebuilt.
+    """
+    factory, _ = _make_provider_factory()
+    jira_search = _make_tool("mcp_plugin_jira_issues_search")
+
+    from app.agent.mcp import mcp_manager
+    from app.plugin_platform.runtime import plugin_mcp_runtime
+
+    monkeypatch.setattr(mcp_manager, "get_tools_for_server", lambda _: None)
+    monkeypatch.setattr(mcp_manager, "server_names", list)
+    monkeypatch.setattr(
+        plugin_mcp_runtime,
+        "get_tools_for_server",
+        lambda name: [jira_search]
+        if name == "plugin_installation_jira_deadbeef"
+        else None,
+    )
+    monkeypatch.setattr(
+        plugin_mcp_runtime,
+        "server_names",
+        lambda: ["plugin_installation_jira_deadbeef"],
+    )
+
+    cfg = AgentConfig(name="bot", mcp=["plugin_installation_jira_deadbeef"])
+    agent = _build_agent(cfg, {}, factory)
+
+    assert "mcp_plugin_jira_issues_search" in agent._tools
+    assert agent.mcp_servers == ["plugin_installation_jira_deadbeef"]
+
+
 def test_build_agent_mcp_unknown_server_is_skipped(monkeypatch):
     """Unknown MCP server is logged and skipped — agent still loads.
 
