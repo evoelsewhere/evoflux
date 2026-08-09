@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -281,6 +282,7 @@ class TestWorkspaceFilesListing:
         assert body["truncated"] is True
         assert len(body["files"]) == cap
 
+
     # NB: The previous mtime-based "revert boundary" filter is gone. After
     # the move to the Git snapshot service (see app/services/snapshot_service.py),
     # the workspace filesystem is authoritative — restoring a snapshot
@@ -288,6 +290,78 @@ class TestWorkspaceFilesListing:
     # and media endpoints simply report what's on disk. The snapshot
     # round-trip is covered by tests/services/test_snapshot_service.py.
 
+
+class TestCodingLspDiagnostics:
+    def test_diagnoses_unsaved_buffer(self, client, tmp_path, monkeypatch):
+        source = tmp_path / "main.py"
+        source.write_text("value = 1\n")
+        lsp_client = SimpleNamespace(
+            diagnostics=AsyncMock(
+                return_value=[
+                    {
+                        "range": {
+                            "start": {"line": 0, "character": 0},
+                            "end": {"line": 0, "character": 5},
+                        },
+                        "severity": 1,
+                        "message": "Type mismatch",
+                    }
+                ]
+            )
+        )
+
+        from app.api.routes.team import files as team_routes
+
+        monkeypatch.setattr(
+            team_routes, "get_language_server", AsyncMock(return_value=lsp_client)
+        )
+
+        response = client.post(
+            "/api/team/workspace/lsp/diagnostics",
+            params={"workspace": str(tmp_path)},
+            json={"path": "main.py", "content": "value: int = 'bad'\n"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "ready"
+        assert body["language"] == "python"
+        assert body["diagnostics"][0]["message"] == "Type mismatch"
+        lsp_client.diagnostics.assert_awaited_once_with(
+            source.resolve(), "value: int = 'bad'\n"
+        )
+
+    def test_reports_unavailable_language_server(self, client, tmp_path, monkeypatch):
+        source = tmp_path / "main.py"
+        source.write_text("value = 1\n")
+
+        from app.api.routes.team import files as team_routes
+        from app.agent.lsp_manager import LanguageServerUnavailable
+
+        async def unavailable(*_args, **_kwargs):
+            raise LanguageServerUnavailable("Install pyright-langserver")
+
+        monkeypatch.setattr(team_routes, "get_language_server", unavailable)
+        response = client.post(
+            "/api/team/workspace/lsp/diagnostics",
+            params={"workspace": str(tmp_path)},
+            json={"path": "main.py", "content": "value = 1\n"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "unavailable"
+
+    def test_unsupported_file_type_is_not_an_error(self, client, tmp_path):
+        source = tmp_path / "notes.txt"
+        source.write_text("hello\n")
+        response = client.post(
+            "/api/team/workspace/lsp/diagnostics",
+            params={"workspace": str(tmp_path)},
+            json={"path": "notes.txt", "content": "hello\n"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "unsupported"
 
 class TestSessionWorkspaceSelection:
     def test_get_workspace_root_does_not_scan_files(

@@ -90,6 +90,24 @@ class CodingWorkspaceFilesResponse(BaseModel):
     truncated: bool = False
 
 
+class CodingDiagnosticsRequest(BaseModel):
+    """Current editor buffer sent to the coding LSP."""
+
+    path: str = Field(min_length=1, max_length=4096)
+    content: str = Field(max_length=2_000_000)
+
+
+class CodingDiagnosticsResponse(BaseModel):
+    """LSP diagnostics for one coding-editor buffer."""
+
+    workspace: str
+    path: str
+    language: str | None = None
+    status: Literal["ready", "unavailable", "unsupported"]
+    diagnostics: list[dict] = Field(default_factory=list)
+    message: str | None = None
+
+
 # ── Todos ────────────────────────────────────────────────────────────────────
 
 

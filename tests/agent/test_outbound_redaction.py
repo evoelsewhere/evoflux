@@ -6,6 +6,8 @@ import pytest
 
 from app.agent.outbound_redaction import (
     OutboundSensitiveDataError,
+    protect_outbound_text,
+    protect_outbound_value,
     protect_outbound_payload,
 )
 from app.agent.schemas.chat import (
@@ -236,3 +238,30 @@ def test_standard_pii_masks_north_american_phone_format() -> None:
 
     assert messages[0].content == "Call [PHONE_1]"
     assert report.categories == ("phone",)
+
+
+def test_block_policy_blocks_pii_in_scalar_egress_without_echoing_value() -> None:
+    secret = "person@example.com"
+
+    with pytest.raises(OutboundSensitiveDataError) as raised:
+        protect_outbound_text(secret, policy="block", pii_policy="standard")
+
+    assert secret not in str(raised.value)
+    assert "email" in str(raised.value)
+
+
+def test_nested_external_arguments_are_protected() -> None:
+    protected, report = protect_outbound_value(
+        {
+            "filters": [{"headers": {"authorization": "Bearer abcdefghijklmnop"}}],
+            "callback": "https://user:password123@example.com/hook",
+        },
+        policy="redact",
+        pii_policy="off",
+    )
+
+    assert isinstance(protected, dict)
+    serialized = str(protected)
+    assert "abcdefghijklmnop" not in serialized
+    assert "password123" not in serialized
+    assert report.matches >= 2

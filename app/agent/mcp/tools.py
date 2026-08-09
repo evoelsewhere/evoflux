@@ -19,6 +19,7 @@ from loguru import logger
 from pydantic import AnyUrl, BaseModel
 
 from app.agent.errors import ToolExecutionError
+from app.agent.outbound_redaction import protect_outbound_value
 from app.agent.schemas.chat import ContentBlock, ImageDataBlock, TextBlock, ToolResult
 from app.agent.tools.registry import Tool
 
@@ -139,7 +140,7 @@ class MCPTool(Tool):
         ``_injected`` is accepted for interface compatibility with builtins
         but unused — MCP tools cannot consume :class:`AgentState`.
         """
-        del _injected  # unused
+        del _injected  # MCP calls use the active sandbox context
         return await self._invoke(**kwargs)
 
     async def _invoke(self, **kwargs: Any) -> str | ToolResult:
@@ -149,14 +150,30 @@ class MCPTool(Tool):
                 f"MCP server '{self._server_name}' is not connected."
             )
 
+        protected_kwargs_raw, redaction_report = protect_outbound_value(kwargs)
+        protected_kwargs = (
+            protected_kwargs_raw
+            if isinstance(protected_kwargs_raw, dict)
+            else kwargs
+        )
+        if redaction_report.matches:
+            logger.warning(
+                "mcp_outbound_sensitive_data_protected server={} tool={} "
+                "matches={} categories={}",
+                self._server_name,
+                self._remote_name,
+                redaction_report.matches,
+                ",".join(redaction_report.categories),
+            )
+
         logger.debug(
             "mcp_tool_call server={} tool={} args={}",
             self._server_name,
             self._remote_name,
-            list(kwargs.keys()),
+            list(protected_kwargs.keys()),
         )
         try:
-            result = await session.call_tool(self._remote_name, kwargs)
+            result = await session.call_tool(self._remote_name, protected_kwargs)
         except Exception as exc:
             raise ToolExecutionError(
                 f"MCP tool '{self.name}' failed: {type(exc).__name__}: {exc}"
@@ -196,7 +213,7 @@ class MCPTool(Tool):
                             "mimeType": app_resource.get("mimeType"),
                             "resourceMeta": app_resource.get("resourceMeta"),
                             "toolMeta": mcp_app_meta,
-                            "tool_input": kwargs,
+                            "tool_input": protected_kwargs,
                             "result": _dump_mcp_model(result),
                         },
                     )

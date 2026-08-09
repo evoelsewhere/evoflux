@@ -7,6 +7,7 @@ from ddgs import DDGS
 from loguru import logger
 from pydantic import Field
 
+from app.agent.outbound_redaction import protect_outbound_text
 from app.agent.tools.registry import tool
 
 _MAX_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MB
@@ -63,6 +64,16 @@ async def web_search(
     ] = "moderate",
 ) -> list[dict[str, Any]] | str:
     """Search the web. Returns [{title, href, body}]."""
+    # Search providers receive the query verbatim, so protect it before both
+    # the primary backend and the Exa fallback. This covers a common covert
+    # egress path that is outside the model-provider boundary.
+    query, report = protect_outbound_text(query)
+    if report.matches:
+        logger.warning(
+            "web_search_outbound_sensitive_data_protected matches={} categories={}",
+            report.matches,
+            ",".join(report.categories),
+        )
     results = None
     backends = ["auto", "brave", "wikipedia", "mojeek"]
     for backend in backends:
@@ -172,6 +183,13 @@ async def web_fetch(
     """Fetch a URL and return its content. Handles HTML, PDF, and plain text."""
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
+    url, report = protect_outbound_text(url)
+    if report.matches:
+        logger.warning(
+            "web_fetch_outbound_sensitive_data_protected matches={} categories={}",
+            report.matches,
+            ",".join(report.categories),
+        )
 
     timeout_s = min(float(timeout) if timeout else _DEFAULT_TIMEOUT, _MAX_TIMEOUT)
 
@@ -301,6 +319,13 @@ async def image_search(
     for presentations, documents, or design work. Download images via
     shell (curl/wget) using the returned 'image' URL.
     """
+    query, report = protect_outbound_text(query)
+    if report.matches:
+        logger.warning(
+            "image_search_outbound_sensitive_data_protected matches={} categories={}",
+            report.matches,
+            ",".join(report.categories),
+        )
     max_results = max(1, min(max_results, 20))
 
     try:

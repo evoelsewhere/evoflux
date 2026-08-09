@@ -78,7 +78,7 @@ def test_get_sandbox_returns_seed_defaults_when_file_missing(
     assert response.json() == {
         "denied_patterns": list(DEFAULT_DENIED_PATTERNS),
         "worktree_location": "repository",
-        "native_process_isolation": "best_effort",
+        "native_process_isolation": "required",
         "allow_network": False,
         "inherit_shell_environment": False,
         "load_shell_profile": False,
@@ -126,7 +126,7 @@ def test_put_sandbox_strips_blank_patterns(isolated_config: Path) -> None:
     assert response.json() == {
         "denied_patterns": ["**/.env", "bar/*"],
         "worktree_location": "repository",
-        "native_process_isolation": "best_effort",
+        "native_process_isolation": "required",
         "allow_network": False,
         "inherit_shell_environment": False,
         "load_shell_profile": False,

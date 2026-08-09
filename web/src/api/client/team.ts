@@ -28,6 +28,7 @@ import type {
   WorkspaceFilesResponse,
   WorkspaceRootResponse,
   CodingWorkspaceFilesResponse,
+  CodingDiagnosticsResponse,
   TodosResponse,
   CodingProject,
   ProjectCreateRequest,
@@ -663,6 +664,24 @@ export async function writeCodingWorkspaceFile(workspace: string, path: string, 
     body: JSON.stringify({ content }),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'writeCodingWorkspaceFile')
+}
+
+/** Ask the coding workspace LSP to diagnose the current (possibly unsaved) buffer. */
+export async function getCodingWorkspaceDiagnostics(
+  workspace: string,
+  path: string,
+  content: string,
+  signal?: AbortSignal,
+): Promise<CodingDiagnosticsResponse> {
+  const params = new URLSearchParams({ workspace })
+  const res = await fetch(apiUrl(`/team/workspace/lsp/diagnostics?${params}`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ path, content }),
+    signal,
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'getCodingWorkspaceDiagnostics')
+  return res.json()
 }
 
 export async function getTodos(sessionId: string): Promise<TodosResponse> {

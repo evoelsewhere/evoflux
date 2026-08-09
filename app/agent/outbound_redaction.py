@@ -59,6 +59,11 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
         r"\1[REDACTED:authorization]",
     ),
     (
+        "authorization",
+        re.compile(r"(?i)\b(?:bearer|basic|token)\s+[^\s,;}\]]{8,}"),
+        "[REDACTED:authorization]",
+    ),
+    (
         "url-password",
         re.compile(r"(?i)(\b[a-z][a-z0-9+.-]*://[^/\s:@]+:)([^@\s/]+)(@)"),
         r"\1[REDACTED:url-password]\3",
@@ -71,7 +76,8 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
               ["']?
               (?:api[_-]?key|access[_-]?(?:key|token)|auth[_-]?token|
                  client[_-]?secret|credential|password|passwd|
-                 private[_-]?key|secret|session[_-]?token)
+                 private[_-]?key|secret|token|access[_-]?token|
+                 refresh[_-]?token|session[_-]?token)
               ["']?\s*[:=]\s*
             )
             (["'])
@@ -88,7 +94,8 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
             (
               (?:api[_-]?key|access[_-]?(?:key|token)|auth[_-]?token|
                  client[_-]?secret|credential|password|passwd|
-                 private[_-]?key|secret|session[_-]?token)
+                 private[_-]?key|secret|token|refresh[_-]?token|
+                 session[_-]?token)
               \s*[:=]\s*
             )
             ([A-Za-z0-9+/=:@-]{8,})
@@ -341,6 +348,16 @@ def load_outbound_data_policy() -> OutboundDataPolicy:
     """Load the saved policy, defaulting securely if the file is unusable."""
 
     try:
+        from app.agent.sandbox import get_sandbox
+
+        active = get_sandbox()
+        value = getattr(active, "outbound_data_policy", None)
+        if value in {"block", "redact", "off"}:
+            return value
+    except Exception as exc:  # noqa: BLE001 - policy lookup must fail closed
+        logger.warning("active_outbound_policy_lookup_failed err={}", exc)
+
+    try:
         from app.agent.sandbox_config import load_config
 
         return load_config().outbound_data_policy
@@ -353,12 +370,104 @@ def load_outbound_pii_policy() -> OutboundPiiPolicy:
     """Load the saved PII policy, defaulting to standard protection."""
 
     try:
+        from app.agent.sandbox import get_sandbox
+
+        active = get_sandbox()
+        value = getattr(active, "outbound_pii_policy", None)
+        if value in {"off", "standard", "strict"}:
+            return value
+    except Exception as exc:  # noqa: BLE001 - policy lookup must fail closed
+        logger.warning("active_outbound_pii_policy_lookup_failed err={}", exc)
+
+    try:
         from app.agent.sandbox_config import load_config
 
         return load_config().outbound_pii_policy
     except (OSError, ValueError) as exc:
         logger.warning("outbound_pii_policy_load_failed fallback=standard err={}", exc)
         return "standard"
+
+
+def _raise_if_blocked(report: RedactionReport, *, policy: OutboundDataPolicy) -> None:
+    if policy != "block" or not report.matches:
+        return
+    categories = ", ".join(report.categories)
+    raise OutboundSensitiveDataError(
+        "Blocked outbound request because sensitive-data protection detected "
+        f"{report.matches} match(es): {categories}. Remove the sensitive value "
+        "or switch the Sandbox outbound policy to Redact."
+    )
+
+
+def protect_outbound_text(
+    value: str,
+    *,
+    policy: OutboundDataPolicy | None = None,
+    pii_policy: OutboundPiiPolicy | None = None,
+) -> tuple[str, RedactionReport]:
+    """Protect one string before sending it to a third-party endpoint.
+
+    This is the scalar counterpart to :func:`protect_outbound_payload` for
+    web queries, URLs, and MCP arguments. It uses the active session sandbox's
+    policy when the caller does not supply one, keeping Work and Coding runs
+    scoped to the same per-run security context as shell tools.
+    """
+    if policy is None:
+        policy = load_outbound_data_policy()
+    if pii_policy is None:
+        pii_policy = load_outbound_pii_policy()
+    if policy == "off" and pii_policy == "off":
+        return value, RedactionReport()
+
+    redactor = _Redactor(
+        protect_secrets=policy != "off",
+        pii_policy=pii_policy,
+    )
+    protected = redactor.text(value) or ""
+    report = redactor.report()
+    _raise_if_blocked(report, policy=policy)
+    return protected, report
+
+
+def protect_outbound_value(
+    value: object,
+    *,
+    policy: OutboundDataPolicy | None = None,
+    pii_policy: OutboundPiiPolicy | None = None,
+) -> tuple[object, RedactionReport]:
+    """Recursively protect JSON-like values sent to an external tool.
+
+    MCP arguments are structured rather than a chat transcript. Traversing
+    the complete value prevents a secret hidden in a nested object or list
+    from bypassing the provider-boundary redactor.
+    """
+    if policy is None:
+        policy = load_outbound_data_policy()
+    if pii_policy is None:
+        pii_policy = load_outbound_pii_policy()
+    if policy == "off" and pii_policy == "off":
+        return value, RedactionReport()
+
+    redactor = _Redactor(
+        protect_secrets=policy != "off",
+        pii_policy=pii_policy,
+    )
+
+    def walk(item: object) -> object:
+        if isinstance(item, str):
+            return redactor.text(item)
+        if isinstance(item, dict):
+            return {key: walk(child) for key, child in item.items()}
+        if isinstance(item, list):
+            return [walk(child) for child in item]
+        if isinstance(item, tuple):
+            return tuple(walk(child) for child in item)
+        return item
+
+    protected = walk(value)
+    report = redactor.report()
+    _raise_if_blocked(report, policy=policy)
+    return protected, report
 
 
 def protect_outbound_payload(
@@ -384,13 +493,7 @@ def protect_outbound_payload(
     if not report.matches:
         return system_prompt, messages, report
 
-    if policy == "block" and redactor.secret_matches:
-        categories = ", ".join(report.categories)
-        raise OutboundSensitiveDataError(
-            "Blocked model request because outbound sensitive-data protection "
-            f"detected {report.matches} match(es): {categories}. Remove the "
-            "sensitive value or switch the Sandbox outbound policy to Mask."
-        )
+    _raise_if_blocked(report, policy=policy)
 
     return protected_prompt, protected_messages, report
 

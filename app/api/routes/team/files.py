@@ -38,6 +38,8 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from app.api.schemas.team import (
+    CodingDiagnosticsRequest,
+    CodingDiagnosticsResponse,
     CodingWorkspaceFilesResponse,
     WorkspaceFileInfo,
     WorkspaceFilesResponse,
@@ -54,6 +56,8 @@ from app.services.office_preview_service import (
     render_office_preview,
 )
 from app.services.workspace_file_watcher import workspace_file_watcher
+from app.agent.lsp_manager import LanguageServerUnavailable, SPECS, get_language_server
+from app.agent.sandbox import SandboxConfig, set_sandbox
 
 
 class WorkspaceSetRequest(BaseModel):
@@ -567,6 +571,89 @@ async def read_coding_workspace_file(
         path=str(target),
         media_type=mime or "application/octet-stream",
         filename=target.name if download else None,
+    )
+
+
+@router.post(
+    "/workspace/lsp/diagnostics", response_model=CodingDiagnosticsResponse
+)
+async def get_coding_workspace_diagnostics(
+    workspace: str, body: CodingDiagnosticsRequest
+) -> CodingDiagnosticsResponse:
+    """Return live LSP diagnostics for the current coding-editor buffer.
+
+    ``content`` is intentionally accepted separately from the file on disk:
+    Monaco calls this endpoint while a user is typing, before Save.  The
+    language server receives that buffer through ``didOpen``/``didChange`` and
+    can therefore report type and semantic issues immediately.
+    """
+    try:
+        resolved = team_manager.validate_workspace(workspace)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    root = Path(resolved).resolve()
+    candidate = Path(body.path)
+    if candidate.is_absolute() or (len(body.path) >= 2 and body.path[1] == ":"):
+        raise HTTPException(status_code=400, detail="Absolute paths rejected.")
+    target = (root / candidate).resolve(strict=False)
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Path escapes workspace root.") from exc
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="File not found.")
+
+    spec = next(
+        (item for item in SPECS if target.suffix.lower() in item.extensions), None
+    )
+    if spec is None:
+        return CodingDiagnosticsResponse(
+            workspace=resolved,
+            path=body.path,
+            status="unsupported",
+            diagnostics=[],
+            message=f"No language server mapping for extension '{target.suffix}'.",
+        )
+
+    # LSP subprocesses are scoped to the user-selected coding workspace.  The
+    # agent path uses its request-local sandbox already; this route needs an
+    # equivalent context because it is initiated by the editor directly.
+    sandbox_token = set_sandbox(SandboxConfig(workspace=resolved))
+    try:
+        client = await get_language_server(root, target)
+        diagnostics = await client.diagnostics(target, body.content)
+    except LanguageServerUnavailable as exc:
+        return CodingDiagnosticsResponse(
+            workspace=resolved,
+            path=body.path,
+            language=spec.language_id,
+            status="unavailable",
+            diagnostics=[],
+            message=str(exc),
+        )
+    except (OSError, RuntimeError) as exc:
+        # A language server is an optional local process.  Its failure should
+        # degrade the editor to syntax highlighting instead of returning 500.
+        return CodingDiagnosticsResponse(
+            workspace=resolved,
+            path=body.path,
+            language=spec.language_id,
+            status="unavailable",
+            diagnostics=[],
+            message=f"Language server failed: {exc}",
+        )
+    finally:
+        from app.agent.sandbox import _sandbox_ctx
+
+        _sandbox_ctx.reset(sandbox_token)
+
+    return CodingDiagnosticsResponse(
+        workspace=resolved,
+        path=body.path,
+        language=spec.language_id,
+        status="ready",
+        diagnostics=diagnostics,
     )
 
 

@@ -12,7 +12,7 @@ class SandboxSettingsBody(BaseModel):
 
     denied_patterns: list[str] = Field(default_factory=list)
     worktree_location: Literal["repository", "user_data"] = "repository"
-    native_process_isolation: Literal["required", "best_effort"] = "best_effort"
+    native_process_isolation: Literal["required", "best_effort"] = "required"
     allow_network: bool = False
     inherit_shell_environment: bool = False
     load_shell_profile: bool = False
