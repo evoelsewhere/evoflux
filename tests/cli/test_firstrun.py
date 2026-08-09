@@ -139,7 +139,7 @@ def test_ensure_initialised_exits_when_not_a_tty(
 
     assert exc.value.code == 1
     out = capsys.readouterr().out
-    assert "EvoFlux init" in out
+    assert "evoflux init" in out
 
 
 def test_ensure_initialised_runs_init_when_tty(

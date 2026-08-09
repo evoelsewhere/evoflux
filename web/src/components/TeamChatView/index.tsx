@@ -153,6 +153,11 @@ const SchedulerPanel = lazy(() =>
     default: module.SchedulerPanel,
   })),
 )
+const PluginCenterPanel = lazy(() =>
+  import('@/components/PluginCenterPanel').then((module) => ({
+    default: module.PluginCenterPanel,
+  })),
+)
 const loadSplitWorkbench = () =>
   import('./SplitWorkbench').then((module) => ({
     default: module.SplitWorkbench,
@@ -1451,6 +1456,9 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             contextMode={workOrCodingMode}
             contextWorkspace={mode === 'coding' ? workspace : null}
           />
+        </WorkbenchSurface>
+        <WorkbenchSurface tool="plugins">
+          <PluginCenterPanel />
         </WorkbenchSurface>
         {mode === 'coding' && (
           <>

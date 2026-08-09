@@ -37,7 +37,6 @@ from app.agent.skills.catalog import render_skill_catalog
 from app.agent.skills.discovery import (
     _walk_skill_paths,
     builtin_skills_dir,
-    discover_skill_records,
     discover_skill_records_cached,
     parse_frontmatter,
     select_skill_records_for_mode,
@@ -98,7 +97,11 @@ def discover_skill_records_runtime(
     mode: str | None = None,
 ) -> dict[str, SkillRecord]:
     roots = [skills_dir] if skills_dir is not None else _iter_skill_roots()
-    records = discover_skill_records(root for root in roots if root.is_dir())
+    from app.plugin_platform.skills import discover_skill_records_with_plugins
+
+    records = discover_skill_records_with_plugins(
+        root for root in roots if root.is_dir()
+    )
     return select_skill_records_for_mode(records, mode) if mode is not None else records
 
 

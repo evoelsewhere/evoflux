@@ -1,4 +1,4 @@
-"""``EvoFlux restart`` — restart the background server."""
+"""``evoflux restart`` — restart the background server."""
 
 from __future__ import annotations
 

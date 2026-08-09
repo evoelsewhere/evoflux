@@ -21,7 +21,7 @@ Why this is fine:
   un-curated model just refuses images, which is the safe default.
 - The fallback JSON ships *inside* the ``app`` package
   (see ``pyproject.toml`` ``[tool.hatch.build.targets.wheel] packages``).
-  ``uv tool upgrade EvoFlux`` / ``pip install -U`` / Tauri
+  ``uv tool upgrade evoflux`` / ``pip install -U`` / Tauri
   auto-update all replace the package directory atomically, so users
   get the latest registry whenever they upgrade.
 - Live fields are sparse and overlay only the exact facts a provider reports.

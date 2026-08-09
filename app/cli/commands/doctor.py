@@ -1,4 +1,4 @@
-"""``EvoFlux doctor`` — health check for the install and environment.
+"""``evoflux doctor`` — health check for the install and environment.
 
 Exits with code ``1`` if any check fails so the command is useful in CI
 and post-install scripts. Warnings (degraded but bootable) keep the
@@ -58,7 +58,7 @@ def cmd_doctor(_args: argparse.Namespace) -> None:
         print(f"  {_red('✗')}  {msg}")
 
     print()
-    print(f"  {_bold(_cyan('EvoFlux doctor'))}")
+    print(f"  {_bold(_cyan('evoflux doctor'))}")
     print()
 
     # ── 1. Python version ───────────────────────────────────────────────────
@@ -131,7 +131,7 @@ def cmd_doctor(_args: argparse.Namespace) -> None:
     # ── 6. Default port availability ────────────────────────────────────────
     # Probe the production default. Users who pass ``--port`` know what
     # they're doing; this check only surfaces "is the box ready for the
-    # vanilla `EvoFlux` command".
+    # vanilla `evoflux` command".
     default_port = 4082
     port_in_use = False
     try:
@@ -152,7 +152,7 @@ def cmd_doctor(_args: argparse.Namespace) -> None:
     if agents_dir.is_dir() and any(agents_dir.glob("*.md")):
         _ok(f"Agents: {display_agents}")
     else:
-        _fail(f"Agents not found: {display_agents}  (run: EvoFlux init)")
+        _fail(f"Agents not found: {display_agents}  (run: evoflux init)")
 
     # ── Summary ─────────────────────────────────────────────────────────────
     print()

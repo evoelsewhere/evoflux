@@ -1605,6 +1605,97 @@ export interface SideChatMessage {
   timestamp: Date
 }
 
+// ── Portable Agent Plugins ──────────────────────────────────────────────────
+
+export interface PluginDiagnostic {
+  severity: 'warning' | 'error'
+  code: string
+  message: string
+  scope: string
+}
+
+export interface PluginSkillComponent {
+  name: string
+  description: string
+  path: string
+  valid: boolean
+  diagnostics: PluginDiagnostic[]
+}
+
+export interface PluginMcpComponent {
+  name: string
+  transport: string
+  valid: boolean
+  config: Record<string, unknown>
+  diagnostics: PluginDiagnostic[]
+}
+
+export interface PluginManifest {
+  $schema: string
+  name: string
+  version: string | null
+  description: string | null
+  author: { name?: string; email?: string; url?: string } | null
+  homepage: string | null
+  repository: string | null
+  license: string | null
+  keywords: string[] | null
+  extensions: Record<string, Record<string, unknown>>
+}
+
+export interface PluginInspection {
+  root: string
+  valid: boolean
+  manifest: PluginManifest | null
+  diagnostics: PluginDiagnostic[]
+  skills: PluginSkillComponent[]
+  mcp_servers: PluginMcpComponent[]
+  extension_namespaces: string[]
+  content_sha256: string | null
+}
+
+export interface PluginInstallation {
+  id: string
+  name: string
+  version: string | null
+  description: string | null
+  root: string
+  source_type: 'installed' | 'linked'
+  source_ref: string
+  content_sha256: string
+  enabled: boolean
+  installed_at: string
+  updated_at: string
+}
+
+export interface PluginMcpRuntimeStatus {
+  installation_id: string | null
+  plugin_name: string | null
+  server_name: string
+  runtime_name: string
+  transport: string
+  enabled: boolean
+  state: 'stopped' | 'starting' | 'ready' | 'error'
+  error: string | null
+  tool_names: string[]
+  started_at: string | null
+}
+
+export interface PluginListItem {
+  installation: PluginInstallation
+  inspection: PluginInspection
+}
+
+export interface PluginListResponse {
+  plugins: PluginListItem[]
+  mcp_servers: PluginMcpRuntimeStatus[]
+}
+
+export interface PluginOperationResponse {
+  installation: PluginInstallation
+  inspection: PluginInspection
+}
+
 export interface SideChatCreateResponse {
   side_chat_id: string
   title: string

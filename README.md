@@ -217,6 +217,8 @@ Twelve provider integrations ship behind one streaming abstraction, including An
 
 Twenty-eight built-in skills cover mode-scoped Work and Coding workflows, specialized artifacts/design, EvoFlux configuration/installers, and provider-neutral PR lifecycle operations. Work and Coding each expose one implicit router; broad specialists are explicit-only so they do not compete on every request. Custom skills can be created, edited, diagnosed, and filtered as Work, Coding, or Both in Settings. A bounded 2%/8K metadata catalog is always available for model-driven selection, while `SKILL.md` bodies and bundle resources load only after exact activation. EvoFlux is also an MCP client for stdio, HTTP, and SSE servers; connected tools inherit the same permission rules as native tools.
 
+The built-in **Plugin Center** implements the portable [Agent Plugins 1.0](https://agent-plugins.org/) core. It can scaffold, validate, import, developer-link, pack, enable, disable, and uninstall local plugins containing immediate-child Agent Skills and isolated stdio or Streamable HTTP MCP servers. `.evoplugin` is a deterministic ZIP distribution wrapper; the unpacked package remains standards-compatible through root `plugin.json` and optional `mcp.json`.
+
 ### Permissions and sandboxing
 
 Wildcard `(tool, pattern) → allow | deny | ask` rules use last-match-wins evaluation. The denylist filesystem sandbox protects EvoFlux state and cache directories, rejects symlinks into blocked roots, and tokenizes shell commands for denied-path checks.

@@ -72,6 +72,7 @@ def _config_to_body(
             command=cfg.command,
             args=list(cfg.args),
             env=dict(cfg.env),
+            cwd=cfg.cwd,
             capabilities=list(cfg.capabilities),
             enabled=cfg.enabled,
         )
@@ -222,6 +223,7 @@ def _store_stdio_env_secrets(name: str, cfg: StdioServerConfig) -> StdioServerCo
         command=cfg.command,
         args=list(cfg.args),
         env=new_env,
+        cwd=cfg.cwd,
         capabilities=cfg.capabilities,
         enabled=cfg.enabled,
     )

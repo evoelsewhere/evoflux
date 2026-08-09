@@ -9,6 +9,7 @@ import {
   MessageCirclePlus,
   Network,
   ListTree,
+  Blocks,
   Terminal,
   type LucideIcon,
 } from 'lucide-react'
@@ -74,6 +75,11 @@ export const WORKBENCH_TOOLS: Record<
     description: 'Create and manage scheduled tasks',
     icon: CalendarClock,
     shortcut: '⌃S',
+  },
+  plugins: {
+    label: 'Plugins',
+    description: 'Create, import, and manage portable Agent Plugins',
+    icon: Blocks,
   },
   'source-control': {
     label: 'Changes',

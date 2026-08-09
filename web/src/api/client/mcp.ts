@@ -10,6 +10,7 @@ export type StdioServerBody = {
   command: string
   args: string[]
   env: Record<string, string>
+  cwd?: string | null
   capabilities: string[]
   enabled: boolean
 }

@@ -21,7 +21,7 @@ few facets differ:
 Token resolution order (preserved from the previous implementation):
 
 1. Explicit ``github_token`` constructor arg.
-2. ``{CACHE_DIR}/copilot_oauth.json`` (written by ``EvoFlux auth copilot``).
+2. ``{CACHE_DIR}/copilot_oauth.json`` (written by ``evoflux auth copilot``).
 3. ``GITHUB_COPILOT_TOKEN`` env var.
 """
 
@@ -172,7 +172,7 @@ class CopilotProvider(OpenAIProvider):
         if not token:
             raise ValueError(
                 "GitHub token not found.  Run:\n"
-                "  EvoFlux auth copilot\n"
+                "  evoflux auth copilot\n"
                 "Or set GITHUB_COPILOT_TOKEN env var."
             )
         super().__init__(

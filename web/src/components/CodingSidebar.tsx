@@ -39,6 +39,7 @@ import { usePlatform } from "@/hooks/use-platform";
 import { useMotionPreset, useListEnterIndex } from "@/lib/motion";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
 import {
+  Blocks,
   CalendarClock,
   ChevronDown,
   ChevronRight,
@@ -352,6 +353,7 @@ export function CodingSidebar({
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   const toggleScheduler = useUIStore((s) => s.toggleScheduler);
   const toggleSourceControl = useUIStore((s) => s.toggleWorkbenchTool);
+  const togglePlugins = toggleSourceControl;
   const pinnedIds = usePinnedSessions((s) => s.pinnedIds);
   const togglePin = usePinnedSessions((s) => s.togglePin);
   const pinnedIdSet = new Set(pinnedIds);
@@ -1099,6 +1101,12 @@ export function CodingSidebar({
           onClick={toggleScheduler}
         />
         <SidebarItem
+          Icon={Blocks}
+          label="Plugins"
+          collapsed
+          onClick={() => togglePlugins("plugins")}
+        />
+        <SidebarItem
           Icon={GitBranch}
           label="Source Control"
           kbd="^G"
@@ -1505,6 +1513,11 @@ export function CodingSidebar({
           onClick={toggleScheduler}
         />
         <SidebarItem
+          Icon={Blocks}
+          label="Plugins"
+          onClick={() => togglePlugins("plugins")}
+        />
+        <SidebarItem
           Icon={GitBranch}
           label="Source Control"
           kbd="^G"
@@ -1569,6 +1582,14 @@ export function CodingSidebar({
           kbd="^S"
           onClick={() => {
             toggleScheduler();
+            onMobileClose?.();
+          }}
+        />
+        <SidebarItem
+          Icon={Blocks}
+          label="Plugins"
+          onClick={() => {
+            togglePlugins("plugins");
             onMobileClose?.();
           }}
         />

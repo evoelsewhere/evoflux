@@ -156,6 +156,10 @@ export const queryKeys = {
     list: () => ['mcp', 'list'] as const,
     detail: (name: string) => ['mcp', 'detail', name] as const,
   },
+  plugins: {
+    all: () => ['plugins'] as const,
+    list: () => ['plugins', 'list'] as const,
+  },
   settings: {
     sandbox: () => ['settings', 'sandbox'] as const,
     versionControl: () => ['settings', 'version-control'] as const,

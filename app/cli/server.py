@@ -11,7 +11,7 @@ def _resolve_uvicorn() -> list[str]:
     """Pick the right uvicorn invocation for the current install.
 
     1. Sibling of ``sys.executable`` — works for both ``uv tool install``
-       wheels (``~/.local/share/uv/tools/EvoFlux/bin/uvicorn``) and
+       wheels (``~/.local/share/uv/tools/evoflux/bin/uvicorn``) and
        plain venvs (``.venv/bin/uvicorn``). This is the common case for
        end users.
     2. ``shutil.which("uvicorn")`` — covers source-checkout dev where

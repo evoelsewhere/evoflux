@@ -4,6 +4,7 @@
 > Date: 2026-07-29
 > Scope: nền tảng plugin có thể cài đặt cho EvoFlux, gồm Plugin Center, package format, runtime, UI bridge, SDK, skeleton và Jira Task Management làm reference plugin đầu tiên.
 > Companion: [Jira Task Management functional spec](task-management-jira-feature-plan.md)
+> Standards update (2026-08-09): Agent Plugins Specification 1.0.0 is now the recommended portable core. Root `manifest.json`, the custom package identity model, and sections that treat `.evoplugin` as the plugin contract are superseded by [Agent Plugins v1 adoption for EvoFlux](../analysis/agent-plugins-evoflux-adoption-2026-08-09.md). Keep Plugin Center, security, UI bridge, lifecycle, signing, storage, and Jira decisions, but express them through a versioned EvoFlux client extension under standard root `plugin.json`; `.evoplugin` remains only a distribution wrapper.
 
 ---
 

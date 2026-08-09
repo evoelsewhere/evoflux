@@ -1,4 +1,4 @@
-"""Argument parser and ``main()`` entry point for the ``EvoFlux`` CLI.
+"""Argument parser and ``main()`` entry point for the ``evoflux`` CLI.
 
 All command implementations live in :mod:`app.cli.commands`; this module
 only wires them up to ``argparse`` subparsers.
@@ -24,6 +24,7 @@ from app.cli.commands.health import cmd_health
 from app.cli.commands.init import cmd_init
 from app.cli.commands.logs import cmd_logs
 from app.cli.commands.migrate import cmd_migrate
+from app.cli.commands.plugin import add_plugin_subparser
 from app.cli.commands.restart import cmd_restart
 from app.cli.commands.serve import _add_serve_subparser
 from app.cli.commands.start import cmd_start
@@ -36,26 +37,26 @@ from app.core.version import VERSION
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="EvoFlux",
+        prog="evoflux",
         description="EvoFlux — on-machine AI agent platform",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  EvoFlux init           # first-time setup (provider, API key, config)\n"
-            "  EvoFlux migrate openclaw --from ~/.openclaw/workspace --model openai:gpt-5.5\n"
-            "  EvoFlux migrate hermes --from ~/.hermes --model openai:gpt-5.5\n"
-            "  EvoFlux auth copilot   # authenticate with an OAuth provider\n"
-            "  EvoFlux                # start in background\n"
-            "  EvoFlux start --lan    # expose the server to desktop/mobile on your LAN\n"
-            "  EvoFlux stop           # stop background processes\n"
-            "  EvoFlux restart        # restart the background server\n"
-            "  EvoFlux status         # check if running\n"
-            "  EvoFlux address        # print local and LAN server URLs\n"
-            "  EvoFlux health         # run server/mobile diagnostics\n"
-            "  EvoFlux logs           # tail the server log\n"
-            "  EvoFlux doctor         # check system health\n"
-            "  EvoFlux cleanup        # dry-run generated artifact cleanup\n"
-            "  EvoFlux upgrade        # upgrade to the latest version\n"
+            "  evoflux init           # first-time setup (provider, API key, config)\n"
+            "  evoflux migrate openclaw --from ~/.openclaw/workspace --model openai:gpt-5.5\n"
+            "  evoflux migrate hermes --from ~/.hermes --model openai:gpt-5.5\n"
+            "  evoflux auth copilot   # authenticate with an OAuth provider\n"
+            "  evoflux                # start in background\n"
+            "  evoflux start --lan    # expose the server to desktop/mobile on your LAN\n"
+            "  evoflux stop           # stop background processes\n"
+            "  evoflux restart        # restart the background server\n"
+            "  evoflux status         # check if running\n"
+            "  evoflux address        # print local and LAN server URLs\n"
+            "  evoflux health         # run server/mobile diagnostics\n"
+            "  evoflux logs           # tail the server log\n"
+            "  evoflux doctor         # check system health\n"
+            "  evoflux cleanup        # dry-run generated artifact cleanup\n"
+            "  evoflux upgrade        # upgrade to the latest version\n"
         ),
     )
     parser.add_argument("--version", action="version", version=f"EvoFlux v{VERSION}")
@@ -253,6 +254,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "upgrade", help="Upgrade EvoFlux to the latest version"
     ).set_defaults(func=cmd_upgrade)
+
+    # ── plugin ────────────────────────────────────────────────────────────────
+    add_plugin_subparser(sub)
 
     return parser
 

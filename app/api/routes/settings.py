@@ -767,7 +767,7 @@ async def save_provider(
     - Updates ``os.environ`` so the next ``build_provider`` call sees the
       new value without restarting the server.
     - Returns ``is_first_provider=True`` on the first-ever provider save
-      (kept for the CLI's ``EvoFlux init`` flow, which still uses the
+      (kept for the CLI's ``evoflux init`` flow, which still uses the
       seed installer; the web UI no longer triggers seed install on save).
     """
     from app.agent.providers.catalog import find

@@ -2,23 +2,23 @@
 
 Usage
 -----
-  EvoFlux               Start server + web UI in the background
-  EvoFlux init          First-time setup: write .env and seed config files
-  EvoFlux migrate       Import agent config from another local agent tool
-  EvoFlux auth          Authenticate with an OAuth-based provider (e.g. copilot)
-  EvoFlux stop          Stop the background server and web UI
-  EvoFlux restart       Restart the background server
-  EvoFlux status        Show whether the server is running
-  EvoFlux address       Show local and LAN server URLs
-  EvoFlux health        Run server and mobile diagnostics
-  EvoFlux logs          Tail the server log
-  EvoFlux version       Print version and exit
-  EvoFlux doctor        Check system health and report issues
-  EvoFlux upgrade       Upgrade EvoFlux to the latest version
+  evoflux               Start server + web UI in the background
+  evoflux init          First-time setup: write .env and seed config files
+  evoflux migrate       Import agent config from another local agent tool
+  evoflux auth          Authenticate with an OAuth-based provider (e.g. copilot)
+  evoflux stop          Stop the background server and web UI
+  evoflux restart       Restart the background server
+  evoflux status        Show whether the server is running
+  evoflux address       Show local and LAN server URLs
+  evoflux health        Run server and mobile diagnostics
+  evoflux logs          Tail the server log
+  evoflux version       Print version and exit
+  evoflux doctor        Check system health and report issues
+  evoflux upgrade       Upgrade EvoFlux to the latest version
 
 This package replaces the former monolithic ``app/cli.py`` module.  The
 package-level ``__init__`` re-exports the public (and legacy-private) API so
-that ``EvoFlux = "app.cli:main"`` and existing test imports keep working.
+that ``evoflux = "app.cli:main"`` and existing test imports keep working.
 """
 
 from __future__ import annotations
@@ -48,6 +48,7 @@ _LAZY_EXPORTS = {
     "cmd_init": ("app.cli.commands.init", "cmd_init"),
     "cmd_logs": ("app.cli.commands.logs", "cmd_logs"),
     "cmd_migrate": ("app.cli.commands.migrate", "cmd_migrate"),
+    "cmd_plugin": ("app.cli.commands.plugin", "cmd_plugin"),
     "cmd_restart": ("app.cli.commands.restart", "cmd_restart"),
     "cmd_start": ("app.cli.commands.start", "cmd_start"),
     "cmd_status": ("app.cli.commands.status", "cmd_status"),
@@ -90,6 +91,7 @@ __all__ = [
     "cmd_init",
     "cmd_logs",
     "cmd_migrate",
+    "cmd_plugin",
     "cmd_restart",
     "cmd_start",
     "cmd_status",

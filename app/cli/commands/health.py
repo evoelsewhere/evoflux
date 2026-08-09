@@ -1,4 +1,4 @@
-"""``EvoFlux health`` — server-focused diagnostics."""
+"""``evoflux health`` — server-focused diagnostics."""
 
 from __future__ import annotations
 
@@ -106,7 +106,7 @@ def cmd_health(args: argparse.Namespace) -> None:
             Check(
                 "LAN binding",
                 "warn",
-                "local-only; use EvoFlux start --lan for mobile",
+                "local-only; use evoflux start --lan for mobile",
             )
         )
 

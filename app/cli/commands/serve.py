@@ -1,4 +1,4 @@
-"""``EvoFlux serve`` — foreground server for desktop / embedded use.
+"""``evoflux serve`` — foreground server for desktop / embedded use.
 
 Unlike :mod:`app.cli.commands.start`, which double-forks and writes a PID
 file so the user gets their shell back, ``serve`` runs uvicorn in the
@@ -106,7 +106,7 @@ def _add_serve_subparser(sub: argparse._SubParsersAction) -> None:
         description=(
             "Run the API server in the foreground. Intended for embedding "
             "(Tauri desktop shell, CI smoke tests). For a backgrounded "
-            "daemon use 'EvoFlux start' instead."
+            "daemon use 'evoflux start' instead."
         ),
     )
     _configure_serve_parser(p)
@@ -114,7 +114,7 @@ def _add_serve_subparser(sub: argparse._SubParsersAction) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        prog="EvoFlux serve",
+        prog="evoflux serve",
         description="Run the API server in the foreground for an embedding host.",
     )
     _configure_serve_parser(parser)
@@ -219,7 +219,7 @@ def _configure_desktop_token(generate_token: bool) -> str | None:
 
 def cmd_serve(args: argparse.Namespace) -> None:
     command_started = time.perf_counter()
-    # Lazy imports so ``EvoFlux --help`` stays fast.
+    # Lazy imports so ``evoflux --help`` stays fast.
     import uvicorn
 
     from app.core.version import VERSION

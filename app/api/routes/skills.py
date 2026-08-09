@@ -320,12 +320,10 @@ def _discover_runtime_skills(
     tests (and runtime config edits) may patch ``settings.SKILLS_DIR`` after
     import, so keep the binding in sync before discovery.
     """
-    from app.agent.skills.discovery import (
-        discover_skill_records,
-        select_skill_records_for_mode,
-    )
+    from app.agent.skills.discovery import select_skill_records_for_mode
+    from app.plugin_platform.skills import discover_skill_records_with_plugins
 
-    records = discover_skill_records(_discovery_roots(workspaces))
+    records = discover_skill_records_with_plugins(_discovery_roots(workspaces))
     if mode is not None:
         records = select_skill_records_for_mode(records, mode)
         return {name: record.as_legacy_dict() for name, record in records.items()}
@@ -345,12 +343,10 @@ def _discover_management_skill(
     fall back to the winner only when that mode has no usable implementation.
     """
 
-    from app.agent.skills.discovery import (
-        discover_skill_records,
-        select_skill_records_for_mode,
-    )
+    from app.agent.skills.discovery import select_skill_records_for_mode
+    from app.plugin_platform.skills import discover_skill_records_with_plugins
 
-    records = discover_skill_records(_discovery_roots(workspaces))
+    records = discover_skill_records_with_plugins(_discovery_roots(workspaces))
     winner = records.get(name)
     if winner is None:
         return None
@@ -539,9 +535,9 @@ def _runtime_skill_variant_by_settings_id(
 ) -> dict | None:
     """Return one exact variant without applying a post-mutation mode filter."""
 
-    from app.agent.skills.discovery import discover_skill_records
+    from app.plugin_platform.skills import discover_skill_records_with_plugins
 
-    records = discover_skill_records(_discovery_roots(workspaces))
+    records = discover_skill_records_with_plugins(_discovery_roots(workspaces))
     for winner in records.values():
         for candidate in (winner, *winner.alternates):
             if candidate.settings_id == settings_id:

@@ -163,7 +163,12 @@ async def _resolve_stdio_launch(server_cfg: StdioServerConfig) -> _StdioLaunch:
     env: dict[str, str] = {}
     if effective_path:
         env["PATH"] = effective_path
-    env.update({k: resolve_secret_refs(v) for k, v in server_cfg.env.items()})
+    env.update(
+        {
+            key: resolve_secret_refs(value) if server_cfg.resolve_env_refs else value
+            for key, value in server_cfg.env.items()
+        }
+    )
 
     return _StdioLaunch(
         command=resolved_command or server_cfg.command,
@@ -494,6 +499,18 @@ class MCPManager:
             await self._reconcile_runners_locked(cfg)
             self._config_fingerprint = fingerprint
 
+    async def apply_config(self, cfg: MCPConfig) -> None:
+        """Reconcile runners with an in-memory config.
+
+        Plugin MCP configuration is generated from validated installed
+        packages and must never be written into the user's global mcp.json.
+        A separate manager instance uses this entry point with file watching
+        disabled, preserving the same per-server failure isolation.
+        """
+
+        async with self._lock:
+            await self._reconcile_runners_locked(cfg)
+
     async def remove_runner(self, name: str) -> None:
         """Tear down ``name``'s runner if present (no-op if absent)."""
         async with self._lock:
@@ -686,6 +703,7 @@ class MCPManager:
                         command=launch.command,
                         args=list(server_cfg.args),
                         env=launch.env,
+                        cwd=server_cfg.cwd,
                     )
                     read, write = await stack.enter_async_context(stdio_client(params))
                     session = await stack.enter_async_context(
@@ -711,13 +729,46 @@ class MCPManager:
                         raise OAuthRequiredError(
                             _oauth_credentials_required_message(name)
                         )
-                    transport = await stack.enter_async_context(
-                        streamablehttp_client(
-                            server_cfg.url,
-                            headers=resolve_headers(server_cfg.headers) or None,
-                            auth=build_oauth_provider(name, server_cfg),
-                        )
+                    headers = (
+                        resolve_headers(server_cfg.headers)
+                        if server_cfg.resolve_header_refs
+                        else dict(server_cfg.headers)
                     )
+                    httpx_client_factory = None
+                    if not server_cfg.follow_redirects:
+                        import httpx
+
+                        def no_redirect_client(
+                            headers: dict[str, str] | None = None,
+                            timeout: httpx.Timeout | None = None,
+                            auth: httpx.Auth | None = None,
+                        ) -> httpx.AsyncClient:
+                            kwargs: dict = {"follow_redirects": False}
+                            if headers is not None:
+                                kwargs["headers"] = headers
+                            if timeout is not None:
+                                kwargs["timeout"] = timeout
+                            if auth is not None:
+                                kwargs["auth"] = auth
+                            return httpx.AsyncClient(**kwargs)
+
+                        httpx_client_factory = no_redirect_client
+
+                    auth = build_oauth_provider(name, server_cfg)
+                    if httpx_client_factory is None:
+                        client_context = streamablehttp_client(
+                            server_cfg.url,
+                            headers=headers or None,
+                            auth=auth,
+                        )
+                    else:
+                        client_context = streamablehttp_client(
+                            server_cfg.url,
+                            headers=headers or None,
+                            auth=auth,
+                            httpx_client_factory=httpx_client_factory,
+                        )
+                    transport = await stack.enter_async_context(client_context)
                     # streamablehttp_client yields (read, write, get_session_id).
                     read, write = transport[0], transport[1]
                     session = await stack.enter_async_context(

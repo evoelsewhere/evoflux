@@ -16,6 +16,7 @@ class StdioServerBody(BaseModel):
     command: Annotated[str, Field(min_length=1)]
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
+    cwd: str | None = None
     capabilities: list[str] = Field(default_factory=list)
     enabled: bool = True
 
@@ -24,6 +25,7 @@ class StdioServerBody(BaseModel):
             command=self.command,
             args=self.args,
             env=self.env,
+            cwd=self.cwd,
             capabilities=self.capabilities,
             enabled=self.enabled,
         )

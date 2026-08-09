@@ -1,6 +1,6 @@
 # seed/ — Agent Instructions
 
-Default agents, optional skills, and MCP config copied into a user's config directory by `EvoFlux init`.
+Default agents, optional skills, and MCP config copied into a user's config directory by `evoflux init`.
 
 ## Layout
 
@@ -15,7 +15,7 @@ README.md Maintainer notes; not copied by init
 
 - Treat these files as public templates for new installs; never include secrets.
 - Existing users keep their copies, so seed changes affect only new installs or users who manually copy updates.
-- `EvoFlux init` rewrites agent `model:` values to the user's selected provider/model.
+- `evoflux init` rewrites agent `model:` values to the user's selected provider/model.
 - Keep skill directories self-contained with any helper scripts/templates they need.
 - Keep agent prompt bodies tool-agnostic; runtime capabilities can change.
 - The wheel build bundles this tree as `app/_seed/` (`force-include` in `pyproject.toml`) so pip/uv installs seed offline; the repo `seed/` still wins in dev checkouts.
