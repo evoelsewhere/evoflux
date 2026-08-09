@@ -24,6 +24,7 @@ from pydantic import SecretStr
 
 from app.core.config import settings
 from app.core.version import VERSION
+from app.services.office.runtime import document_runtime_diagnostics
 
 router = APIRouter()
 
@@ -169,6 +170,7 @@ async def diagnostics(tail: int = 200) -> dict[str, Any]:
             "machine": platform.machine(),
             "executable": sys.executable,
             "desktop_session": bool(os.environ.get("EVOFLUX_DESKTOP_TOKEN")),
+            "document_runtime": document_runtime_diagnostics(),
             # Versions of the two components that can drift independently
             # in an auto-update window: the Tauri shell and the Python
             # sidecar. Frontend matches whichever bundle is mounted.
