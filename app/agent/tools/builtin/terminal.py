@@ -15,10 +15,8 @@ from typing import Annotated
 
 from pydantic import Field
 
-from app.agent.sandbox import get_sandbox
 from app.agent.state import AgentState
 from app.agent.tools.registry import InjectedArg, Tool
-from app.services.terminal_service import terminal_manager
 
 
 async def _terminal_run(
@@ -47,28 +45,16 @@ async def _terminal_run(
     inside a full-screen program like vim); for scripted/background work that
     the user doesn't need to watch, prefer ``shell``.
     """
-    sandbox = get_sandbox()
-    if sandbox.native_process_isolation == "required":
-        return (
-            "Cannot use the shared terminal while Native process isolation is "
-            "Required. The terminal is an existing interactive host process and "
-            "cannot be contained by the per-command sandbox."
-        )
-    session_id = sandbox.session_id or (
-        _state.metadata.get("session_id") if _state else None
+    # The shared PTY is a pre-existing host process. It inherits the user's
+    # interactive environment and cannot be retrofitted with the workspace
+    # allowlist, deny patterns, or network policy. Keeping this tool available
+    # in best-effort mode was therefore a sandbox escape for both Work and
+    # Coding sessions. The user can still run commands in the visible terminal
+    # themselves; agent execution must use the contained ``shell`` tool.
+    return (
+        "Cannot use the shared terminal from an agent run: it is a host process "
+        "outside the per-command sandbox. Use the sandboxed shell tool instead."
     )
-    if not session_id:
-        return "Cannot open a terminal: no session is bound to this workspace."
-
-    mode = _state.metadata.get("mode") if _state else None
-    env = {"EVOFLUX_MODE": mode} if isinstance(mode, str) and mode else None
-    # Reuses the user's already-open shell if there is one; otherwise spawns
-    # one in this workspace so the user can watch (and take over) afterwards.
-    terminal_manager.attach(session_id, cwd=str(sandbox.workspace_root), env=env)
-    output = await terminal_manager.run_command(
-        session_id, command, timeout_s=float(timeout_s)
-    )
-    return output.strip() or "(command produced no output)"
 
 
 terminal_run = Tool(

@@ -212,7 +212,7 @@ def test_tilde_prefix_rejected(tmp_path):
         sandbox.validate_path("~/foo")
 
 
-def test_best_effort_allows_paths_outside_sandbox(tmp_path):
+def test_best_effort_keeps_application_path_sandbox(tmp_path):
     sandbox = SandboxConfig(
         workspace=str(tmp_path / "ws"),
         native_process_isolation="best_effort",
@@ -222,7 +222,11 @@ def test_best_effort_allows_paths_outside_sandbox(tmp_path):
         write_allowed_paths=["claimed"],
     )
 
-    assert sandbox.validate_path("~/.cache/uv") == (Path.home() / ".cache/uv").resolve()
+    with pytest.raises(PermissionError, match="Tilde paths are not allowed"):
+        sandbox.validate_path("~/.cache/uv")
+
+    with pytest.raises(PermissionError, match="denied sandbox root"):
+        sandbox.validate_path(str(tmp_path / "denied" / "secret"))
 
 
 # ---------------------------------------------------------------------------

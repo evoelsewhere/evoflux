@@ -1,9 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Check, Copy, Download, ExternalLink, FileText, GitCompare, Loader2, PanelRightClose, PanelRightOpen, Pencil, Save, Undo2, X, Eye } from 'lucide-react'
+import { AlertCircle, Check, Copy, Download, ExternalLink, FileText, GitCompare, Loader2, PanelRightClose, PanelRightOpen, Pencil, Save, Undo2, X, Eye } from 'lucide-react'
 import Editor, { DiffEditor, useMonaco } from '@monaco-editor/react'
 
-import { codingWorkspaceFileUrl, getCodingWorkspaceGitDiff, writeCodingWorkspaceFile } from '@/api/client'
+import { codingWorkspaceFileUrl, getCodingWorkspaceDiagnostics, getCodingWorkspaceGitDiff, writeCodingWorkspaceFile } from '@/api/client'
 import { isTauriAvailable, tauriOpenWorkspaceFile } from '@/api/tauri-workspace'
 import { downloadCodingWorkspaceFile } from '@/lib/coding-workspace-download'
 import { openExternalUrl } from '@/lib/open-external'
@@ -15,7 +15,7 @@ import { MarkdownBlock } from '@/utils/markdown'
 import { useMonacoTheme, languageForExt } from '@/hooks/useMonacoTheme'
 import { queryKeys } from '@/queries'
 import { SidePanel } from './shell/SidePanel'
-import type { WorkspaceFileInfo } from '@/api/types'
+import type { CodingLspDiagnostic, WorkspaceFileInfo } from '@/api/types'
 
 const PdfPreview = lazy(() =>
   import('./workspace-pdf-preview').then((module) => ({ default: module.PdfPreview })),
@@ -122,11 +122,15 @@ function TextPreview({
   const [loading, setLoading] = useState(!tooLarge)
   const [saving, setSaving] = useState(false)
   const [editorMounted, setEditorMounted] = useState(false)
+  const [diagnostics, setDiagnostics] = useState<CodingLspDiagnostic[]>([])
+  const [diagnosticStatus, setDiagnosticStatus] = useState<'idle' | 'checking' | 'ready' | 'unavailable' | 'unsupported' | 'error'>('idle')
+  const [diagnosticMessage, setDiagnosticMessage] = useState<string | null>(null)
   const editorRef = useRef<Parameters<NonNullable<Parameters<typeof Editor>[0]['onMount']>>[0] | null>(null)
 
   const monaco = useMonaco()
   const theme = useMonacoTheme(monaco)
   const isDirty = modified !== null && modified !== content
+  const diagnosticContent = modified ?? content
 
   useEffect(() => {
     if (tooLarge) return
@@ -151,6 +155,70 @@ function TextPreview({
       })
     return () => { cancelled = true }
   }, [workspace, file.path, tooLarge])
+
+  // Keep the LSP in sync with the Monaco buffer, including unsaved edits.
+  // Debouncing avoids starting a request for every keystroke while keeping
+  // feedback close enough to feel live during normal typing.
+  useEffect(() => {
+    if (tooLarge || diagnosticContent === null) return
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      setDiagnosticStatus('checking')
+      setDiagnosticMessage(null)
+      void getCodingWorkspaceDiagnostics(workspace, file.path, diagnosticContent, controller.signal)
+        .then((response) => {
+          if (controller.signal.aborted) return
+          setDiagnostics(response.diagnostics)
+          setDiagnosticStatus(response.status)
+          setDiagnosticMessage(response.message)
+        })
+        .catch((reason: unknown) => {
+          if (controller.signal.aborted) return
+          setDiagnostics([])
+          setDiagnosticStatus('error')
+          setDiagnosticMessage(reason instanceof Error ? reason.message : 'Unable to check this file.')
+        })
+    }, 450)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [workspace, file.path, diagnosticContent, tooLarge])
+
+  // Use Monaco's native markers so errors appear on the gutter, overview
+  // ruler, hover tooltip, and the inline editor surface automatically.
+  useEffect(() => {
+    if (!monaco || !editorMounted || !editorRef.current) return
+    const model = editorRef.current.getModel()
+    if (!model) return
+    const markers = diagnostics.map((diagnostic) => {
+      const range = diagnostic.range ?? {}
+      const start = range.start ?? {}
+      const end = range.end ?? start
+      const startLine = Math.max(1, (start.line ?? 0) + 1)
+      const startColumn = Math.max(1, (start.character ?? 0) + 1)
+      const endLine = Math.max(startLine, (end.line ?? start.line ?? 0) + 1)
+      const endColumn = Math.max(startColumn + 1, (end.character ?? start.character ?? 0) + 1)
+      const severity = {
+        1: monaco.MarkerSeverity.Error,
+        2: monaco.MarkerSeverity.Warning,
+        3: monaco.MarkerSeverity.Info,
+        4: monaco.MarkerSeverity.Hint,
+      }[diagnostic.severity ?? 3] ?? monaco.MarkerSeverity.Info
+      return {
+        severity,
+        message: diagnostic.message,
+        source: diagnostic.source ?? 'LSP',
+        code: diagnostic.code !== undefined ? String(diagnostic.code) : undefined,
+        startLineNumber: startLine,
+        startColumn,
+        endLineNumber: endLine,
+        endColumn,
+      }
+    })
+    monaco.editor.setModelMarkers(model, 'evoflux-lsp', markers)
+    return () => monaco.editor.setModelMarkers(model, 'evoflux-lsp', [])
+  }, [monaco, editorMounted, diagnostics])
 
   // Register custom context menu actions
   useEffect(() => {
@@ -270,6 +338,16 @@ function TextPreview({
       editorRef.current.setValue(content)
     }
   }, [content])
+
+  const jumpToDiagnostic = useCallback((diagnostic: CodingLspDiagnostic) => {
+    const range = diagnostic.range ?? {}
+    const start = range.start ?? {}
+    const lineNumber = Math.max(1, (start.line ?? 0) + 1)
+    const column = Math.max(1, (start.character ?? 0) + 1)
+    editorRef.current?.revealLineInCenter(lineNumber)
+    editorRef.current?.setPosition({ lineNumber, column })
+    editorRef.current?.focus()
+  }, [])
 
   if (tooLarge) {
     return (
@@ -399,6 +477,45 @@ function TextPreview({
           automaticLayout: true,
         }}
       />
+      {(diagnosticStatus !== 'idle' || diagnostics.length > 0) && (
+        <div className="shrink-0 border-t border-(--color-border) bg-(--bg-key) text-xs" role="status" aria-live="polite">
+          <div className="flex min-h-8 items-center gap-2 px-3 py-1.5">
+            <AlertCircle size={13} className={diagnostics.length > 0 ? 'text-(--color-error)' : 'text-(--color-text-subtle)'} aria-hidden="true" />
+            {diagnosticStatus === 'checking' ? (
+              <span className="text-(--color-text-subtle)">Checking with LSP…</span>
+            ) : diagnosticStatus === 'ready' ? (
+              <span className={diagnostics.length > 0 ? 'text-(--color-error)' : 'text-(--color-success)'}>
+                {diagnostics.length ? `${diagnostics.length} issue${diagnostics.length === 1 ? '' : 's'} found` : 'No issues detected'}
+              </span>
+            ) : diagnosticStatus === 'unsupported' ? (
+              <span className="text-(--color-text-subtle)">LSP is not configured for this file type</span>
+            ) : (
+              <span className="truncate text-(--color-text-subtle)" title={diagnosticMessage ?? undefined}>
+                {diagnosticStatus === 'error' ? 'LSP check failed' : 'LSP unavailable'}{diagnosticMessage ? ` — ${diagnosticMessage}` : ''}
+              </span>
+            )}
+          </div>
+          {diagnostics.length > 0 && (
+            <div className="max-h-28 overflow-y-auto border-t border-(--color-border)/70">
+              {diagnostics.slice(0, 20).map((diagnostic, index) => {
+                const line = (diagnostic.range?.start?.line ?? 0) + 1
+                const column = (diagnostic.range?.start?.character ?? 0) + 1
+                return (
+                  <button
+                    key={`${line}:${column}:${diagnostic.message}:${index}`}
+                    type="button"
+                    onClick={() => jumpToDiagnostic(diagnostic)}
+                    className="flex w-full items-start gap-2 px-3 py-1 text-left text-(--color-text-muted) hover:bg-(--bg-page)"
+                  >
+                    <span className="shrink-0 font-mono text-(--color-text-subtle)">{line}:{column}</span>
+                    <span className="truncate">{diagnostic.message}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

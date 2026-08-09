@@ -4,9 +4,11 @@ Agent filesystem operations are confined to the active workspace, explicitly
 granted project roots, read-only roots, and session artifact locations.
 Sensitive deny patterns are applied even inside allowed roots.
 
-Those boundaries are enforced when native process isolation is ``required``.
-``best_effort`` is the explicit compatibility mode: it still supplies workspace
-context and limits/timeouts, but skips filesystem/path enforcement.
+Those boundaries are enforced at the application layer for both isolation
+modes. ``required`` additionally wraps child processes in the strongest native
+containment backend available. ``best_effort`` only means that native process
+containment is unavailable or intentionally disabled; it must never disable the
+workspace allowlist, deny patterns, read-only roots, or write leases.
 
 - ``EVOFLUX_DATA_DIR``    — EvoFlux's SQLite DB and other internal data.
 - ``EVOFLUX_STATE_DIR``   — logs, telemetry, OTEL rollups
@@ -96,6 +98,8 @@ class SandboxConfig:
         native_process_isolation: Literal["required", "best_effort"] | None = None,
         inherit_shell_environment: bool | None = None,
         load_shell_profile: bool | None = None,
+        outbound_data_policy: Literal["block", "redact", "off"] | None = None,
+        outbound_pii_policy: Literal["off", "standard", "strict"] | None = None,
         # Other repos in the same CodingProject, if this session is
         # project-scoped. Lets tools that call get_sandbox() (for example,
         # code_context, which traverses every authorized repository)
@@ -201,7 +205,7 @@ class SandboxConfig:
             else (
                 file_config.native_process_isolation
                 if file_config is not None
-                else "best_effort"
+                else "required"
             )
         )
         self.inherit_shell_environment: bool = (
@@ -217,6 +221,24 @@ class SandboxConfig:
             load_shell_profile
             if load_shell_profile is not None
             else (file_config.load_shell_profile if file_config is not None else False)
+        )
+        self.outbound_data_policy: Literal["block", "redact", "off"] = (
+            outbound_data_policy
+            if outbound_data_policy is not None
+            else (
+                getattr(file_config, "outbound_data_policy", "redact")
+                if file_config is not None
+                else "redact"
+            )
+        )
+        self.outbound_pii_policy: Literal["off", "standard", "strict"] = (
+            outbound_pii_policy
+            if outbound_pii_policy is not None
+            else (
+                getattr(file_config, "outbound_pii_policy", "standard")
+                if file_config is not None
+                else "standard"
+            )
         )
 
     def metadata_path(self, name: str) -> Path:
@@ -276,15 +298,6 @@ class SandboxConfig:
                 tilde expansion, or (when ``is_write``) falls under a
                 read-only root.
         """
-        if self.native_process_isolation == "best_effort":
-            # Best effort is the explicit opt-out from sandbox enforcement. Keep
-            # path resolution/normalisation for callers, but do not apply the
-            # workspace, deny-root, read-only, or write-claim policy.
-            raw_path = os.path.expanduser(str(path))
-            p = Path(raw_path)
-            candidate = p if p.is_absolute() else self.workspace_root / p
-            return candidate.resolve()
-
         if str(path).startswith("~"):
             raise PermissionError(
                 f"Tilde paths are not allowed inside the sandbox: {path}"
@@ -384,9 +397,6 @@ class SandboxConfig:
         base-source repo remain the last line of defence, same caveat the
         denied-root scan below already carries.
         """
-        if self.native_process_isolation == "best_effort":
-            return None
-
         try:
             tokens = _tokenize_command(command)
         except ValueError:

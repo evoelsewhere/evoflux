@@ -63,8 +63,8 @@ export function SandboxSettingsPage() {
     patterns: [],
     sourceWorktreeLocation: 'repository',
     worktreeLocation: 'repository',
-    sourceNativeIsolation: 'best_effort',
-    nativeIsolation: 'best_effort',
+    sourceNativeIsolation: 'required',
+    nativeIsolation: 'required',
     sourceAllowNetwork: false,
     allowNetwork: false,
     sourceInheritEnvironment: false,
@@ -87,6 +87,14 @@ export function SandboxSettingsPage() {
     && (
       serverPatterns !== draft.source
       || data.worktree_location !== draft.sourceWorktreeLocation
+      || data.native_process_isolation !== draft.sourceNativeIsolation
+      || data.allow_network !== draft.sourceAllowNetwork
+      || data.inherit_shell_environment !== draft.sourceInheritEnvironment
+      || data.load_shell_profile !== draft.sourceLoadShellProfile
+      || data.outbound_data_policy !== draft.sourceOutboundDataPolicy
+      || data.outbound_pii_policy !== draft.sourceOutboundPiiPolicy
+      || data.max_execution_seconds !== draft.sourceMaxExecutionSeconds
+      || data.max_output_bytes !== draft.sourceMaxOutputBytes
     )
   ) {
     setDraft({
@@ -273,15 +281,16 @@ export function SandboxSettingsPage() {
           title="Outbound data protection"
           description={
             <>
-              Applied to a provider-only copy immediately before each model request.
-              Local conversation history remains unchanged.{' '}
+              Applied immediately before data leaves this session: model provider
+              requests, web requests, and MCP tool arguments. Local conversation
+              history remains unchanged.{' '}
               <OutboundProtectionHelpPopover />
             </>
           }
         >
           <SettingsRow
             label="Sensitive text"
-            description="Detects configured credential values, private keys, authorization headers, credentialed URLs, provider tokens, JWTs, and secret assignments."
+            description="Detects configured credential values, private keys, authorization headers, credentialed URLs, provider tokens, JWTs, and secret assignments in external payloads."
             control={
               <SegmentedControl
                 options={[
@@ -336,17 +345,17 @@ export function SandboxSettingsPage() {
                 <p>
                   Credentials:{' '}
                   {draft.outboundDataPolicy === 'block'
-                    ? 'requests with detected secrets are stopped before the provider call.'
+                    ? 'requests with detected secrets are stopped before any external call.'
                     : draft.outboundDataPolicy === 'redact'
-                      ? 'detected values are replaced with [REDACTED:…] in the provider payload.'
+                      ? 'detected values are replaced with [REDACTED:…] in external payloads.'
                       : 'detected secrets are sent without masking.'}
                 </p>
                 <p>
                   Personal data:{' '}
                   {draft.outboundPiiPolicy === 'standard'
-                    ? 'email, phone, valid payment cards, and public IP addresses are pseudonymized.'
+                    ? 'email, phone, valid payment cards, and public IP addresses are pseudonymized before external calls.'
                     : draft.outboundPiiPolicy === 'strict'
-                      ? 'Standard coverage plus all IPs and structured names, addresses, and identifiers.'
+                      ? 'Standard coverage plus all IPs and structured names, addresses, and identifiers before external calls.'
                       : 'email, phone, payment cards, and IP addresses are sent without masking.'}
                 </p>
                 <p>
@@ -368,14 +377,14 @@ export function SandboxSettingsPage() {
             label="Native process isolation"
             description={
               data.native_backend
-                ? `Detected backend: ${data.native_backend}. Required enforces it; Best effort disables sandbox enforcement for Coding compatibility.`
-                : 'No native backend detected. Required blocks shell execution; Best effort runs commands without sandbox enforcement.'
+                ? `Detected backend: ${data.native_backend}. Required enforces native containment; Compatibility keeps application-level checks while skipping native isolation.`
+                : 'No native backend detected. Required blocks shell execution; Compatibility keeps application-level checks while skipping native isolation.'
             }
             control={
               <SegmentedControl
                 options={[
                   { value: 'required', label: 'Required' },
-                  { value: 'best_effort', label: 'Best effort' },
+                  { value: 'best_effort', label: 'Compatibility' },
                 ]}
                 value={draft.nativeIsolation}
                 onChange={(nativeIsolation) =>
@@ -480,7 +489,7 @@ export function SandboxSettingsPage() {
             <div className="px-4 py-4 sm:px-5">
               <SettingsCallout tone="warning" icon={AlertTriangle}>
                 {draft.nativeIsolation === 'best_effort'
-                  ? 'Best effort runs agent commands without filesystem or native process sandbox enforcement. Use it only for trusted Coding workspaces.'
+                  ? 'Compatibility skips native process isolation, but application-level path, command, timeout, output, and outbound-data protections remain active. Use Required for the strongest containment.'
                   : 'This configuration exposes additional host capabilities to agent-run commands. Enable only what the active project requires.'}
               </SettingsCallout>
             </div>
@@ -622,8 +631,8 @@ function OutboundProtectionHelpPopover() {
         <div className="space-y-1">
           <p className="text-sm font-medium text-(--color-text)">How masking works</p>
           <p className="text-xs leading-relaxed text-(--color-text-muted)">
-            EvoFlux scans the final text payload after tools and prompts are assembled,
-            but before the request is handed to the model provider.
+            EvoFlux scans model payloads after tools and prompts are assembled, plus
+            web and MCP values, immediately before each external call.
           </p>
         </div>
 
@@ -632,7 +641,7 @@ function OutboundProtectionHelpPopover() {
             <span className="font-medium text-(--color-text)">1. Detect — </span>
             matches saved credential values and recognizable private keys, authorization
             headers, provider tokens, and personal data enabled by the selected PII
-            policy.
+            policy across outbound values.
           </li>
           <li>
             <span className="font-medium text-(--color-text)">2. Protect — </span>
@@ -641,8 +650,8 @@ function OutboundProtectionHelpPopover() {
           </li>
           <li>
             <span className="font-medium text-(--color-text)">3. Send a copy — </span>
-            only the protected copy goes to the provider. The original conversation
-            remains available locally.
+            only the protected copy or value goes to the model provider, web service,
+            or MCP server. The original conversation remains available locally.
           </li>
         </ol>
 
@@ -659,7 +668,7 @@ function OutboundProtectionHelpPopover() {
           </div>
           <div className="border-t border-(--color-border-subtle) pt-2">
             <span className="text-[10px] font-medium tracking-wide text-(--color-text-faint) uppercase">
-              Provider receives
+              External service receives
             </span>
             <code className="mt-1 block break-all font-mono text-xs text-(--color-text)">
               Authorization: Bearer [REDACTED:authorization]

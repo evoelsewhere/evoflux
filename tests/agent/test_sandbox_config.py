@@ -60,7 +60,7 @@ def test_worktree_location_defaults_to_repository() -> None:
 def test_security_defaults_fail_safe_for_credentials_and_network() -> None:
     cfg = SandboxFileConfig()
 
-    assert cfg.native_process_isolation == "best_effort"
+    assert cfg.native_process_isolation == "required"
     assert cfg.allow_network is False
     assert cfg.inherit_shell_environment is False
     assert cfg.load_shell_profile is False

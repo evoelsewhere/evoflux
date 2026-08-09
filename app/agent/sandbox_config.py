@@ -13,7 +13,7 @@ File shape (YAML)::
       - "**/.env.*"
       - "**/secrets/**"
     worktree_location: repository
-    native_process_isolation: best_effort  # no sandbox enforcement; required enables containment
+    native_process_isolation: required  # fail closed when native containment is unavailable
     allow_network: false
     inherit_shell_environment: false
     load_shell_profile: false
@@ -63,10 +63,10 @@ class SandboxFileConfig(BaseModel):
         ),
     )
     native_process_isolation: Literal["required", "best_effort"] = Field(
-        default="best_effort",
+        default="required",
         description=(
-            "Require native process and filesystem sandbox enforcement. "
-            "Best effort disables sandbox enforcement for compatibility."
+            "Require native process containment. Best effort keeps application "
+            "allowlists and skips only the native process wrapper."
         ),
     )
     allow_network: bool = Field(

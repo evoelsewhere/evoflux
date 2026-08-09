@@ -36,7 +36,7 @@ def _make(
     )
 
 
-def test_best_effort_does_not_scan_commands(tmp_path):
+def test_best_effort_still_scans_commands(tmp_path):
     sandbox = SandboxConfig(
         workspace=str(tmp_path / "ws"),
         native_process_isolation="best_effort",
@@ -44,7 +44,8 @@ def test_best_effort_does_not_scan_commands(tmp_path):
         denied_patterns=["**/.env"],
     )
 
-    assert sandbox.check_command("cat /etc/passwd ~/.ssh/id_rsa") is None
+    hit = sandbox.check_command("cat /etc/passwd ~/.ssh/id_rsa")
+    assert hit is not None
 
 
 # ---------------------------------------------------------------------------

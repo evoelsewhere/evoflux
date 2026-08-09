@@ -198,6 +198,28 @@ export interface CodingWorkspaceFilesResponse {
   truncated: boolean
 }
 
+export type CodingDiagnosticsStatus = 'ready' | 'unavailable' | 'unsupported'
+
+export interface CodingLspDiagnostic {
+  range?: {
+    start?: { line?: number; character?: number }
+    end?: { line?: number; character?: number }
+  }
+  severity?: 1 | 2 | 3 | 4
+  code?: string | number
+  source?: string
+  message: string
+}
+
+export interface CodingDiagnosticsResponse {
+  workspace: string
+  path: string
+  language: string | null
+  status: CodingDiagnosticsStatus
+  diagnostics: CodingLspDiagnostic[]
+  message: string | null
+}
+
 // ── Code context (/api/code-context) ────────────────────────────────────────
 
 export interface CodeGraphStatusResponse {

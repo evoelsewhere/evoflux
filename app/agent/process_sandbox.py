@@ -30,14 +30,14 @@ def sandboxed_process_argv(
 ) -> tuple[str, list[str]]:
     """Wrap a process with the strongest native sandbox available.
 
-    ``best_effort`` is the compatibility mode and returns the original argv.
-    In ``required`` mode macOS uses Seatbelt via ``sandbox-exec`` and Linux
-    uses Bubblewrap; unsupported hosts fail closed.
+    ``best_effort`` returns the original argv but does not turn off the
+    application-level sandbox checks performed by the calling tool. In
+    ``required`` mode macOS uses Seatbelt via ``sandbox-exec`` and Linux uses
+    Bubblewrap; unsupported hosts fail closed.
     """
-    # ``best_effort`` is an explicit user opt-out from sandbox enforcement,
-    # not merely a fallback mode when native containment is unavailable.
-    # Return the original argv so macOS Seatbelt/Bubblewrap cannot impose a
-    # second, invisible policy on commands such as ``uv run``.
+    # ``best_effort`` skips only native containment. The shell/python callers
+    # still perform application-level path, deny-pattern, and environment
+    # checks before reaching this function.
     if sandbox.native_process_isolation == "best_effort":
         return executable, args
 

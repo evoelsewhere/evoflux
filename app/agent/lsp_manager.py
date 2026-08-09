@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import shutil
 from dataclasses import dataclass
@@ -64,7 +65,10 @@ class LanguageServerClient:
         self._next_id = 0
         self._write_lock = asyncio.Lock()
         self._start_lock = asyncio.Lock()
-        self._versions: dict[str, tuple[int, int]] = {}
+        # Track the document text rather than only its mtime.  The coding
+        # editor can send an unsaved buffer, so mtime is not sufficient to
+        # decide whether a didChange notification is required.
+        self._versions: dict[str, tuple[int, str]] = {}
         self._diagnostics: dict[str, list[dict[str, Any]]] = {}
         self._diagnostic_events: dict[str, asyncio.Event] = {}
 
@@ -156,15 +160,20 @@ class LanguageServerClient:
             await self.start()
         await self._send({"jsonrpc": "2.0", "method": method, "params": params})
 
-    async def sync_document(self, path: Path) -> str:
+    async def sync_document(
+        self, path: Path, content: str | None = None
+    ) -> tuple[str, bool]:
         await self.start()
         resolved = path.resolve()
         uri = resolved.as_uri()
-        content = resolved.read_text(encoding="utf-8", errors="replace")
-        mtime = resolved.stat().st_mtime_ns
+        if content is None:
+            content = resolved.read_text(encoding="utf-8", errors="replace")
+        fingerprint = hashlib.sha1(content.encode("utf-8")).hexdigest()
         previous = self._versions.get(uri)
         event = self._diagnostic_events.setdefault(uri, asyncio.Event())
-        event.clear()
+        changed = previous is None or previous[1] != fingerprint
+        if changed:
+            event.clear()
         if previous is None:
             version = 1
             await self.notify(
@@ -179,7 +188,7 @@ class LanguageServerClient:
                 },
                 ensure_started=False,
             )
-        elif previous[1] != mtime:
+        elif previous[1] != fingerprint:
             version = previous[0] + 1
             await self.notify(
                 "textDocument/didChange",
@@ -191,22 +200,25 @@ class LanguageServerClient:
             )
         else:
             version = previous[0]
-        self._versions[uri] = (version, mtime)
-        return uri
+        self._versions[uri] = (version, fingerprint)
+        return uri, changed
 
-    async def diagnostics(self, path: Path) -> list[dict[str, Any]]:
-        uri = await self.sync_document(path)
+    async def diagnostics(
+        self, path: Path, content: str | None = None
+    ) -> list[dict[str, Any]]:
+        uri, changed = await self.sync_document(path, content)
         event = self._diagnostic_events.setdefault(uri, asyncio.Event())
-        try:
-            await asyncio.wait_for(event.wait(), timeout=2)
-        except TimeoutError:
-            pass
+        if changed:
+            try:
+                await asyncio.wait_for(event.wait(), timeout=2)
+            except TimeoutError:
+                pass
         return list(self._diagnostics.get(uri, []))
 
     async def definition(
         self, path: Path, line: int, column: int
     ) -> list[dict[str, Any]]:
-        uri = await self.sync_document(path)
+        uri, _ = await self.sync_document(path)
         result = await self.request(
             "textDocument/definition",
             {
@@ -224,7 +236,7 @@ class LanguageServerClient:
         *,
         include_declaration: bool,
     ) -> list[dict[str, Any]]:
-        uri = await self.sync_document(path)
+        uri, _ = await self.sync_document(path)
         result = await self.request(
             "textDocument/references",
             {
