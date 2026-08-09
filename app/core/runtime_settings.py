@@ -125,6 +125,28 @@ class WebBridgeSettings(BaseModel):
     )
 
 
+class ConductorSettings(BaseModel):
+    """Connection and enforcement policy for the organization control plane."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+    url: str = ""
+    enrollment_token: str | None = Field(default=None, exclude=True)
+    machine_credential_path: str | None = None
+    sync_interval_seconds: float = Field(default=60.0, ge=5.0, le=86400.0)
+    request_timeout_seconds: float = Field(default=15.0, ge=1.0, le=120.0)
+    enforcement_mode: Literal["report", "enforce"] = "report"
+
+    @model_validator(mode="after")
+    def _validate_connection(self) -> "ConductorSettings":
+        value = self.url.strip().rstrip("/")
+        if value and not value.startswith(("http://", "https://")):
+            raise ValueError("Conductor URL must start with http:// or https://.")
+        self.url = value
+        return self
+
+
 class ProviderUiSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -162,6 +184,7 @@ class RuntimeSettings(BaseModel):
     git: GitSettings = Field(default_factory=GitSettings)
     code_reviews: CodeReviewSettings = Field(default_factory=CodeReviewSettings)
     webbridge: WebBridgeSettings = Field(default_factory=WebBridgeSettings)
+    conductor: ConductorSettings = Field(default_factory=ConductorSettings)
 
 
 def provider_visible_models(provider_id: str) -> list[str]:

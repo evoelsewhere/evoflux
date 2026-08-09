@@ -90,6 +90,18 @@ async def _start_optional_services(app: FastAPI, process_started: float) -> None
 
     phase_started = perf_counter()
     try:
+        from app.conductor import conductor_service
+
+        await conductor_service.start()
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "optional_service_start_failed service=conductor error_type={}",
+            type(exc).__name__,
+        )
+    _log_startup_timing("conductor", phase_started, process_started)
+
+    phase_started = perf_counter()
+    try:
         if not team_manager.validate_agents_dir():
             logger.warning("agents_dir_empty_or_missing path={}", settings.AGENTS_DIR)
     except ValueError as exc:
@@ -241,6 +253,9 @@ async def lifespan(app: FastAPI):
     await dream_scheduler.stop()
     await task_scheduler.stop()
     await team_manager.stop()
+    from app.conductor import conductor_service
+
+    await conductor_service.stop()
     await mcp_manager.stop()
 
     # Command and Preview process groups would outlive the sidecar without

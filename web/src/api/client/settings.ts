@@ -98,6 +98,71 @@ export async function updateWebBridgeSettings(
   return res.json()
 }
 
+export type ConductorSettings = {
+  enabled: boolean
+  url: string
+  machine_credential_path: string | null
+  sync_interval_seconds: number
+  request_timeout_seconds: number
+  enforcement_mode: 'report' | 'enforce'
+}
+
+export type ConductorStatus = {
+  enabled: boolean
+  enrolled: boolean
+  state: string
+  last_sync_at: string | null
+  last_success_at: string | null
+  manifest_revision: string | null
+  offline: boolean
+  maintenance_required: boolean
+  error: string | null
+  resources: Array<{
+    kind: 'agent' | 'skill' | 'mcp'
+    slug: string
+    state: string
+    drift: string[]
+  }>
+}
+
+export async function getConductorSettings(): Promise<ConductorSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/conductor`)
+  if (!res.ok) await parseDetailOrThrow(res, 'GET /settings/conductor')
+  return res.json()
+}
+
+export async function updateConductorSettings(body: ConductorSettings): Promise<ConductorSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/conductor`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'PUT /settings/conductor')
+  return res.json()
+}
+
+export async function getConductorStatus(): Promise<ConductorStatus> {
+  const res = await fetch(`${apiBaseUrl()}/settings/conductor/status`)
+  if (!res.ok) await parseDetailOrThrow(res, 'GET /settings/conductor/status')
+  return res.json()
+}
+
+export async function enrollConductor(enrollmentToken: string): Promise<ConductorStatus> {
+  const res = await fetch(`${apiBaseUrl()}/settings/conductor/enroll`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enrollment_token: enrollmentToken }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'POST /settings/conductor/enroll')
+  return res.json()
+}
+
+export async function syncConductor(): Promise<ConductorStatus> {
+  const res = await fetch(`${apiBaseUrl()}/settings/conductor/sync`, { method: 'POST' })
+  if (!res.ok) await parseDetailOrThrow(res, 'POST /settings/conductor/sync')
+  return res.json()
+}
+
 export type MultimodalSectionSettings = {
   model: string
   [key: string]: string | number | boolean | null

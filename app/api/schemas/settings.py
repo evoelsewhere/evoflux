@@ -53,6 +53,23 @@ class WebBridgeSettingsBody(BaseModel):
     allow_evaluate: bool = True
 
 
+class ConductorSettingsBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    url: str = ""
+    machine_credential_path: str | None = None
+    sync_interval_seconds: float = Field(default=60.0, ge=5.0, le=86400.0)
+    request_timeout_seconds: float = Field(default=15.0, ge=1.0, le=120.0)
+    enforcement_mode: Literal["report", "enforce"] = "report"
+
+
+class ConductorEnrollmentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enrollment_token: str = Field(min_length=1, max_length=4096)
+
+
 class ProviderInfo(BaseModel):
     """One catalog row enriched with the user's current configuration state."""
 

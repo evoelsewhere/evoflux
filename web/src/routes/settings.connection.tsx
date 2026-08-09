@@ -13,6 +13,7 @@ import {
   SettingsPage,
   SettingsRow,
 } from '@/components/settings/SettingsLayout'
+import { ConductorConnectionSettings } from '@/components/settings/ConductorConnectionSettings'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -183,6 +184,8 @@ export function BackendConnectionPage() {
           }
         />
       </SettingsGroup>
+
+      <ConductorConnectionSettings />
 
       <SettingsGroup
         title="Available backends"

@@ -20,6 +20,7 @@ from app.agent.process_sandbox import native_process_sandbox_backend
 from app.core.config import settings
 from app.core.runtime_settings import (
     CodeReviewSettings,
+    ConductorSettings,
     GitSettings,
     WebBridgeSettings,
     load_runtime_settings,
@@ -31,6 +32,8 @@ from app.core.runtime_settings import (
 if TYPE_CHECKING:
     from app.agent.providers.catalog import ProviderEntry
 from app.api.schemas.settings import (
+    ConductorEnrollmentRequest,
+    ConductorSettingsBody,
     ProviderInfo,
     ProviderModelsRequest,
     ProviderModelsResponse,
@@ -75,6 +78,66 @@ _local_reachable_cache: dict[str, tuple[float, bool]] = {}
 # Providers that run as a local-ish daemon — even when authed by API key,
 # "Connected" should mean the daemon actually responds.
 _DAEMON_PROVIDER_IDS = frozenset({"ollama", "router9", "cliproxy"})
+
+
+def _conductor_settings_body() -> ConductorSettingsBody:
+    cfg = load_runtime_settings().conductor
+    return ConductorSettingsBody(
+        enabled=cfg.enabled,
+        url=cfg.url,
+        machine_credential_path=cfg.machine_credential_path,
+        sync_interval_seconds=cfg.sync_interval_seconds,
+        request_timeout_seconds=cfg.request_timeout_seconds,
+        enforcement_mode=cfg.enforcement_mode,
+    )
+
+
+@router.get("/conductor")
+async def get_conductor_settings() -> ConductorSettingsBody:
+    return _conductor_settings_body()
+
+
+@router.put("/conductor")
+async def update_conductor_settings(
+    body: ConductorSettingsBody,
+) -> ConductorSettingsBody:
+    cfg = load_runtime_settings()
+    cfg.conductor = ConductorSettings.model_validate(body.model_dump())
+    save_runtime_settings(cfg)
+    from app.conductor import conductor_service
+
+    await conductor_service.restart()
+    return _conductor_settings_body()
+
+
+@router.post("/conductor/enroll")
+async def enroll_conductor(body: ConductorEnrollmentRequest) -> dict:
+    from app.conductor import conductor_service
+
+    try:
+        status = await conductor_service.enroll(body.enrollment_token)
+    except (ValueError, httpx.HTTPError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return status.model_dump(mode="json")
+
+
+@router.post("/conductor/sync")
+async def sync_conductor() -> dict:
+    from app.conductor import conductor_service
+
+    try:
+        status = await conductor_service.sync_now()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return status.model_dump(mode="json")
+
+
+@router.get("/conductor/status")
+async def get_conductor_status() -> dict:
+    from app.conductor import conductor_service
+
+    return conductor_service.status_payload()
+
 
 # Live-discovered provider models cached per provider so ``GET /providers``
 # doesn't fan out to every configured backend on each render (mirrors
