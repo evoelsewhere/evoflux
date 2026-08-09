@@ -2,6 +2,44 @@
 
 EvoFlux implements the local portable core of [Agent Plugins 1.0](https://agent-plugins.org/specification). Managed Agent Plugins are separate from trusted legacy Python hooks in `app/agent/plugins`.
 
+<p align="center">
+  <img src="../images/generated/agent-plugins-architecture.png" width="820" alt="Portable Agent Plugins flow through the host-owned Plugin Center into Skills and isolated MCP servers" />
+</p>
+
+## Architecture overview
+
+```mermaid
+flowchart LR
+    Package["Portable package<br/>plugin.json · skills/* · mcp.json"]
+    Center["Plugin platform<br/>validate · install/link · registry"]
+    Catalog["Skill catalog<br/>metadata first · load on activation"]
+    Runtime["Plugin MCP manager<br/>isolated runtime · hot reload"]
+    Data["Installation data<br/>credentials · PLUGIN_DATA"]
+    Agent["Agent run<br/>selection · permissions · tools"]
+
+    Package --> Center
+    Center --> Catalog
+    Center --> Runtime
+    Center --> Data
+    Data --> Runtime
+    Catalog --> Agent
+    Runtime --> Agent
+```
+
+| Boundary | Owner | Contract |
+|---|---|---|
+| Portable package | Plugin author | Root `plugin.json`, immediate-child Skills, and optional `mcp.json` |
+| Control plane | EvoFlux | Validation, install/link/update, registry, enable state, editor, credentials, and status |
+| Skill runtime | EvoFlux Skill catalog | Metadata is indexed eagerly; instructions and resources load only after activation |
+| MCP runtime | Plugin MCP manager | Servers are reconciled per installation and never merged into global `mcp.json` |
+| Private state | EvoFlux host | Credentials and `PLUGIN_DATA` live outside the package and survive in-place updates |
+| Tool access | Agent runtime | Same-installation activation and explicit selection still pass through normal permissions |
+
+Plugin Center is host-owned UI. A package cannot inject custom frontend code,
+settings pages, or credential screens; it contributes only portable Skills and
+MCP server declarations. The optional EvoFlux extensions below declare data
+that the host renders and enforces.
+
 ## Package contract
 
 ```text

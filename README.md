@@ -28,7 +28,7 @@
 <br />
 
 <p align="center">
-  <img src="documents/images/generated/harness-and-modes.jpg" width="820" alt="One EvoFlux harness connects any LLM to Work and Coding" />
+  <img src="documents/images/generated/harness-and-modes.png" width="820" alt="One EvoFlux harness connects any LLM to Work and Coding" />
 </p>
 
 > [!NOTE]
@@ -117,7 +117,7 @@ EvoFlux operates under a **lead-and-specialists** model. Each request is analyze
 - The Lead evaluates handoffs and evidence, requests rework when needed, and synthesizes the final response.
 
 <p align="center">
-  <img src="documents/images/generated/agent-working-model.jpg" width="780" alt="Six-stage EvoFlux lead-and-specialists working model" />
+  <img src="documents/images/generated/agent-working-model.png" width="780" alt="Six-stage EvoFlux lead-and-specialists working model" />
 </p>
 
 ### Configurable per agent
@@ -148,7 +148,7 @@ EvoFlux is desktop-only:
 The production app launches a local sidecar through an ephemeral port and token handshake. The React interface, agent runtime, repository-local code indexes, memory engine, scheduler, permissions, and MCP client all run on the user's machine.
 
 <p align="center">
-  <img src="documents/images/generated/system-architecture.jpg" width="780" alt="EvoFlux desktop-only local-first system architecture" />
+  <img src="documents/images/generated/system-architecture.png" width="780" alt="EvoFlux desktop-only local-first system architecture" />
 </p>
 
 ### What makes it a harness
@@ -219,6 +219,12 @@ Twenty-nine built-in skills cover mode-scoped Work and Coding workflows, special
 
 The built-in **Plugin Center** implements the portable [Agent Plugins 1.0](https://agent-plugins.org/) core. It can scaffold, validate, import, developer-link, pack, update, enable, disable, and uninstall local plugins containing immediate-child Agent Skills and isolated stdio or Streamable HTTP MCP servers. `.evoplugin` is a deterministic ZIP distribution wrapper; the unpacked package remains standards-compatible through root `plugin.json` and optional `mcp.json`.
 
+<p align="center">
+  <img src="documents/images/generated/agent-plugins-architecture.png" width="790" alt="Portable Agent Plugins flow through the host-owned Plugin Center into Skills and isolated MCP servers" />
+</p>
+
+Plugin packages remain portable content bundles: they contribute Skills and MCP server declarations, while EvoFlux owns validation, lifecycle, permissions, credentials, installation data, and runtime status. Plugin MCP servers run in an isolated manager instead of being merged into the user's global MCP configuration. See the [portable Agent Plugin architecture](documents/architecture/agent-plugins.md) for the package contract, runtime boundaries, storage model, and failure isolation rules.
+
 ### Permissions and sandboxing
 
 Wildcard `(tool, pattern) → allow | deny | ask` rules use last-match-wins evaluation. The denylist filesystem sandbox protects EvoFlux state and cache directories, rejects symlinks into blocked roots, and tokenizes shell commands for denied-path checks.
@@ -236,7 +242,7 @@ WebBridge is an external browser companion for the EvoFlux desktop app — not a
 It connects an agent to the user's real Chrome or Edge session through a persistent, policy-checked relay. Control flows from the desktop agent to the browser over CDP; selections, page context, and human handoff flow back to the desktop session.
 
 <p align="center">
-  <img src="documents/images/generated/webbridge.jpg" width="790" alt="WebBridge connecting EvoFlux Desktop to the user's real browser" />
+  <img src="documents/images/generated/webbridge.png" width="790" alt="WebBridge connecting EvoFlux Desktop to the user's real browser" />
 </p>
 
 | Capability | What it does |
