@@ -2,20 +2,28 @@
 
 Use this reference to design proportionate tests, prove the packaged artifact, and isolate failures by platform layer.
 
+## Contents
+
+- [Minimum evidence matrix](#minimum-evidence-matrix)
+- [Canonical local E2E fixture](#canonical-local-e2e-fixture)
+- [Suggested repository commands](#suggested-repository-commands)
+- [Debug layers](#debug-layers)
+- [Regression-test rule](#regression-test-rule)
+
 ## Minimum evidence matrix
 
 For a new hybrid Skill + MCP plugin, cover these layers:
 
 | Layer | Minimum proof |
 |---|---|
-| Package | Source inspection succeeds; expected inventory only; deterministic pack succeeds |
+| Package | Source inspection succeeds; expected inventory only; two pack outputs are byte-identical |
 | Manifest | Canonical schema, name/version, and extensions validate |
 | Skill | Immediate-child discovery, matching frontmatter, correct trigger and stable tool lookup |
 | MCP schema | Valid server is accepted; invalid sibling isolation is covered where relevant |
 | Server unit | Inputs, success response, bounds, timeout/error mapping, and secret sanitization |
 | Credentials | Required/missing state, save/read masking, `0600`, injection, clear/refresh |
-| Runtime | Managed install reaches ready; representative tool call traverses actual MCP transport |
-| Lifecycle | Disable/enable; managed update preserves identity/data/state; uninstall policy is explicit |
+| Runtime | Managed install reaches ready; representative tool call traverses actual MCP transport; linked code edits reload |
+| Lifecycle | Disable/enable; versioned and same-version update preserve identity/data/state; rejected update rolls back; uninstall policy is explicit |
 | Security | No traversal/symlink escape; no secret in status, logs, errors, or tool output |
 
 For Skills-only or MCP-only plugins, omit irrelevant rows but explain the omission. Add contract-specific cases for writes, destructive tools, connection files, or multiple servers.
@@ -27,15 +35,20 @@ Prefer a local fixture over a live third-party service:
 1. Start a loopback HTTP fixture that implements the smallest upstream API surface.
 2. Create or copy the plugin into a temporary source directory.
 3. Run platform inspection and assert expected Skills, servers, warnings, and credential schema.
-4. Pack the source and install the artifact into an isolated platform data directory.
+4. Pack the source twice to distinct outputs, compare their bytes, and install
+   one artifact into isolated EvoFlux data, config, and cache roots.
 5. Save credentials through the same platform service or API used by Plugin Center.
 6. Assert the credential file is `0600` and secret reads are masked.
 7. Start or refresh the plugin MCP manager and wait with a bounded timeout for `ready`.
 8. Resolve the generated MCP tool by its stable suffix.
 9. Call a representative tool and assert the fixture observed the expected bounded request.
 10. Inspect status and serialized outputs for absence of the raw secret.
-11. Disable and verify runtime/Skill removal; enable and verify restoration if in scope.
-12. Uninstall in cleanup and explicitly remove isolated test data.
+11. For linked sources, change implementation behavior without editing
+    `mcp.json`; wait with a bound and prove a new tool call observes the change.
+12. Disable and verify runtime/Skill removal; enable and verify restoration if in scope.
+13. Exercise versioned and same-version update plus one rejected update; prove
+    identity/data/state preservation and rollback.
+14. Uninstall in cleanup and explicitly remove isolated test data.
 
 Implement this pattern with a fake upstream endpoint and a real representative tool call through `PluginMCPRuntime`. Do not depend on a live third-party service. There is no general `/api/plugins` endpoint for arbitrary MCP tool invocation; automated E2E tests invoke the plugin runtime in process, while product-level verification can load the plugin Skill in an agent run.
 
@@ -55,8 +68,10 @@ For a standalone package, always include platform CLI evidence where available:
 ```bash
 evoflux plugin inspect ./my-plugin
 evoflux plugin pack ./my-plugin --output ./dist/my-plugin.evoplugin
-evoflux plugin inspect ./dist/my-plugin.evoplugin
 ```
+
+Do not pass an archive to `plugin inspect`; install it in an isolated profile
+and inspect the resulting installation instead.
 
 Use an isolated EvoFlux data directory for destructive lifecycle tests. Do not uninstall or overwrite a user's real installation as a test fixture.
 

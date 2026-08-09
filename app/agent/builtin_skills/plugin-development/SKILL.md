@@ -7,22 +7,23 @@ description: Build, extend, test, debug, package, and maintain portable EvoFlux 
 
 Build portable Agent Plugins as isolated packages, then prove the package through the same lifecycle an EvoFlux user exercises. Keep the package contract portable and isolate EvoFlux-specific behavior in declared extensions.
 
-## Route the request
+## Choose the workflow
 
-Use this skill for any combination of:
+Select the smallest path that covers the requested outcome:
 
-- creating or restructuring a portable plugin;
-- adding a Skill, MCP server, credential fields, or installation-scoped data;
-- testing, packaging, updating, or debugging a plugin;
-- changing the generic EvoFlux Plugin Platform;
-- preparing an end-to-end local plugin fixture.
+- **Package authoring:** create or change the manifest, Skills, MCP servers,
+  credentials, data use, tests, or archive.
+- **Package debugging:** locate the first invalid or stale package/runtime
+  boundary and add a regression test there.
+- **Platform development:** change generic validation, lifecycle, runtime, API,
+  CLI, or Plugin Center behavior without adding a domain-specific bundle.
 
-Do not use it for these adjacent tasks:
+Hand adjacent operations to their owning workflow:
 
 - Use `plugin-installer` for installing the legacy trusted single-file hook from a raw Python URL.
 - Use `skill-creator` for a standalone skill that is not packaged in a plugin.
 - Use `mcp-installer` for global user/project MCP configuration outside a plugin.
-- For a finished package that only needs installation, use Plugin Center or the plugin CLI directly without loading this workflow.
+- For a finished package that only needs installation, use Plugin Center or the plugin CLI directly.
 - Do not invent commands, agents, a storage SDK, signatures, registry import, or rich connection types; those are not current platform contracts.
 
 ## Load the right contracts
@@ -32,7 +33,7 @@ Read only the references required by the work, but read each selected file compl
 - Read [package-contract.md](references/package-contract.md) before creating or changing package structure, `plugin.json`, Skills, packaging, or installation behavior.
 - Read [runtime-and-credentials.md](references/runtime-and-credentials.md) before implementing or debugging MCP, credentials, environment variables, data, tool grants, or runtime readiness.
 - Read [test-and-debug.md](references/test-and-debug.md) before testing, debugging, packing, updating, or declaring completion.
-- Read [evoflux-source-map.md](references/evoflux-source-map.md) when working inside the EvoFlux repository or when exact CLI, API, UI, or reference-plugin ownership matters.
+- Read [evoflux-source-map.md](references/evoflux-source-map.md) when working inside the EvoFlux repository or when exact CLI, API, or host UI ownership matters.
 
 Treat current source and `/api/plugins` OpenAPI as authoritative if a reference and the implementation differ. Update the reference in the same change when the contract changed intentionally.
 
@@ -101,11 +102,19 @@ Give tools accurate read/write/destructive/idempotent annotations where the MCP 
 
 ### 4. Credentials and data
 
-Declare every configurable secret or value under `extensions.evoflux.credentials.fields`. Use unique field keys and environment names. Do not reserve `PATH`, `PLUGIN_ROOT`, or `PLUGIN_DATA`.
+Declare every configurable secret or value under
+`extensions["evoflux.credentials"].fields`. Use unique field keys and
+environment names. Do not reserve `PATH`, `PLUGIN_ROOT`, or `PLUGIN_DATA`.
+
+Credential values are injected only into plugin stdio processes. Do not use
+the credential extension as authentication for `streamable-http`; portable
+remote headers remain literal package data and must not contain secrets.
 
 Treat `${PLUGIN_DATA}` as installation-scoped mutable state. Do not write generated state into the installed package. Persist files with restrictive permissions when they contain secrets, and mask secrets in all list/read responses.
 
-Use `extensions.evoflux.mcp.servers.<name>.capabilities` only for current declared capabilities such as `webbridge-safe`; never infer trust from package installation alone.
+Use `extensions["evoflux.mcp"].servers.<name>.capabilities` only for current
+declared capabilities such as `webbridge-safe`; never infer trust from package
+installation alone.
 
 ## Validate in short loops
 
@@ -134,17 +143,27 @@ Linked edits should hot reload. The runtime keeps the last-known-good server acr
 Do not stop at unit tests for a new or materially changed plugin. Exercise the applicable path:
 
 1. Inspect the unpacked source.
-2. Pack to an output outside the plugin root.
-3. Inspect or install the packed artifact as a managed installation.
+2. Pack twice to separate outputs and compare bytes when deterministic
+   packaging changed; always write outputs outside the plugin root.
+3. Install the packed artifact as a managed installation and inspect the
+   returned installed root. `evoflux plugin inspect` accepts unpacked
+   directories, not archive files.
 4. Configure credentials through Plugin Center or the credentials API when declared.
 5. Wait for each expected MCP server to become ready.
 6. Invoke at least one representative tool through the actual MCP runtime.
 7. Verify secret values never appear in status, logs, tool errors, or serialized results.
-8. Verify disable removes Skills and stops runtime servers; verify enable restores them.
-9. For update work, verify installation ID, data, and enabled state are preserved.
-10. Uninstall the test installation and decide explicitly whether test data should be preserved or removed.
+8. For a linked MCP plugin, edit implementation code without touching
+   `mcp.json`; verify the runner restarts and the changed behavior is visible.
+9. Verify disable removes Skills and stops runtime servers; verify enable restores them.
+10. For update work, verify installation ID, data, and enabled state are
+    preserved for both version changes and same-version replacement; verify a
+    rejected update leaves the current installation runnable.
+11. Uninstall the test installation and decide explicitly whether test data should be preserved or removed.
 
-Use a local deterministic fixture server for external APIs whenever possible. Do not make a release test depend on live credentials or an uncontrolled remote service.
+Perform lifecycle mutations only against isolated EvoFlux data, config, and
+cache roots created for the test. Use a local deterministic fixture server for
+external APIs whenever possible. Do not make a release test depend on live
+credentials, an uncontrolled remote service, or the user's real installations.
 
 ## Debug by ownership layer
 
@@ -157,7 +176,8 @@ Locate the first failing boundary before editing:
 5. **Process startup:** missing executable/dependency, stdout noise, wrong argument, environment, cwd, or permissions.
 6. **Credentials/data:** undeclared env, missing required field, stale runtime refresh, unsafe file mode, or incorrect `${PLUGIN_DATA}` usage.
 7. **Tool behavior:** API contract, auth, timeout, pagination, annotations, response size, or unsanitized exception.
-8. **Lifecycle/UI:** stale validation/runtime snapshot, enable state, update identity, cache invalidation, or managed-versus-linked behavior.
+8. **Lifecycle/host UI:** stale validation/runtime snapshot, enable state,
+   update identity, cache invalidation, or managed-versus-linked behavior.
 
 Capture the smallest reproducer and add a regression test at the owning layer. Do not hide a platform defect by weakening package validation or bypassing the permission pipeline.
 

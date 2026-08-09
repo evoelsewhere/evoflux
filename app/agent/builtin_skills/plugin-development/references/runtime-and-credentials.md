@@ -2,6 +2,15 @@
 
 Use this reference whenever a plugin declares MCP servers, credential fields, installation data, runtime capabilities, or tool calls.
 
+## Contents
+
+- [`mcp.json`](#mcpjson)
+- [Placeholder rules](#placeholder-rules)
+- [Credentials extension](#credentials-extension)
+- [Capabilities and permissions](#capabilities-and-permissions)
+- [Runtime identity and tool lookup](#runtime-identity-and-tool-lookup)
+- [Server implementation discipline](#server-implementation-discipline)
+
 ## `mcp.json`
 
 Use the canonical schema and only `$schema` plus `mcpServers` at the top level:
@@ -90,7 +99,7 @@ Declare configurable values in `plugin.json`:
 
 Allowed field types are `text`, `secret`, `url`, and `boolean`. Field keys and `env` names must be unique. Do not use the reserved environment variables `PATH`, `PLUGIN_ROOT`, or `PLUGIN_DATA`. Credential values are strings or booleans and the serialized file is limited to 256 KiB.
 
-EvoFlux stores values at `data/<installation-id>/credentials.json` with mode `0600`, masks secret fields on read, and injects only declared fields into plugin stdio processes. Credential values overlay `mcp.json` environment entries; EvoFlux then forces the correct `PLUGIN_ROOT` and `PLUGIN_DATA` values.
+EvoFlux stores values at `data/<installation-id>/credentials.json` with mode `0600`, masks secret fields on read, and injects only declared fields into plugin stdio processes. Credential values overlay `mcp.json` environment entries; EvoFlux then forces the correct `PLUGIN_ROOT` and `PLUGIN_DATA` values. Streamable HTTP servers do not receive these values; their headers remain literal and must not embed credentials.
 
 Saving or clearing credentials refreshes the MCP runtime. A required-field warning can coexist with a valid package; readiness depends on the server's actual startup and behavior. Never log credential values, embed them in tool errors, return them through MCP, commit them to the package, or request them in chat.
 
@@ -126,6 +135,7 @@ Runtime behavior:
 
 - enabled valid servers are reconciled at startup and after lifecycle mutations;
 - linked source trees are watched approximately once per second;
+- a linked implementation edit restarts its runner even when `mcp.json` is unchanged;
 - transient invalid linked edits retain the last-known-good runner;
 - a disabled plugin has no discoverable Skills and no running servers;
 - status may be `ready`, `starting`, `error`, `disabled`, or skipped depending on the declaration and state.
