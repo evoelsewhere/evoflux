@@ -4,7 +4,7 @@
     "should_trigger": true
   },
   {
-    "query": "The linked Jira plugin reports a runtime error after an mcp.json change; debug it from package validation through a real tool call.",
+    "query": "The linked CRM plugin keeps running old server.py behavior after an edit even though mcp.json did not change; debug the reload through a real tool call.",
     "should_trigger": true
   },
   {
@@ -16,7 +16,11 @@
     "should_trigger": true
   },
   {
-    "query": "Build a Jira-style reference plugin for GitLab Data Center with a Skill, MCP tools, credentials, and a full lifecycle test.",
+    "query": "Build an external GitLab Data Center plugin with a Skill, MCP tools, credentials, and a full lifecycle test using temporary EvoFlux state.",
+    "should_trigger": true
+  },
+  {
+    "query": "Audit the generic EvoFlux plugin update API so same-version replacement rolls back safely when the incoming package is invalid.",
     "should_trigger": true
   },
   {
@@ -43,5 +47,10 @@
     "query": "Design a Chrome extension with a popup UI and publish it to the Chrome Web Store.",
     "should_trigger": false,
     "near_miss": "A browser extension is unrelated to portable EvoFlux Agent Plugins."
+  },
+  {
+    "query": "Use the installed issue-tracker plugin to list my assigned tickets.",
+    "should_trigger": false,
+    "near_miss": "Invoking an installed plugin is not package or platform development."
   }
 ]

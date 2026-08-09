@@ -28,7 +28,11 @@ Workspace editing is UTF-8 only, capped at 1 MiB per file and 2,000 tree entries
 - Plugin routes under the backend API — inspect/install/upload/update/create/pack, workspace, credentials, enable state, show, and uninstall. Locate the exact route module with `rg 'api/plugins' app`.
 - Plugin Center frontend — create/import/link, compact installation cards, validation/runtime detail, editor, credentials, actions, and lifecycle feedback. Locate current owners with `rg 'Plugin Center|plugin-center|credentials missing'` in the frontend tree.
 
-The CLI Create command currently exposes destination, required name, description, and optional Skill. The underlying scaffold service and Plugin Center may expose version, author, license, and MCP starter fields. Confirm the active surface before documenting commands.
+The CLI Create command currently exposes destination, required name,
+description, and optional Skill. The underlying scaffold service and Plugin
+Center also expose version, author, license, and MCP starter fields. CLI
+`inspect` accepts a directory; install/update accept a directory or archive.
+Confirm the active surface before documenting commands.
 
 ## Platform regression suites
 

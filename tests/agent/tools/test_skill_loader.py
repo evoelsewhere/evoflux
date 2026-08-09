@@ -1178,6 +1178,37 @@ class TestBuiltinSkills:
 
             assert "# EvoFlux Plugin Development" in result
 
+    def test_plugin_development_contract_stays_current(self):
+        root = _builtin_skills_dir() / "plugin-development"
+        skill = (root / "SKILL.md").read_text(encoding="utf-8")
+        package = (root / "references" / "package-contract.md").read_text(
+            encoding="utf-8"
+        )
+        runtime = (root / "references" / "runtime-and-credentials.md").read_text(
+            encoding="utf-8"
+        )
+        playbook = (root / "references" / "test-and-debug.md").read_text(
+            encoding="utf-8"
+        )
+        metadata = (root / "agents" / "evoflux.yaml").read_text(encoding="utf-8")
+        cases = json.loads(
+            (root / "evals" / "trigger-cases.json").read_text(encoding="utf-8")
+        )
+
+        combined = "\n".join((skill, package, runtime, playbook))
+        normalized = " ".join(combined.split())
+        assert 'extensions["evoflux.credentials"]' in skill
+        assert 'extensions["evoflux.mcp"]' in skill
+        assert "accepts unpacked directories, not archive files" in normalized
+        assert "isolated EvoFlux data, config, and cache roots" in normalized
+        assert "evoflux plugin inspect ./dist" not in combined
+        assert "Streamable HTTP servers do not receive these values" in normalized
+        assert "custom plugin UI" not in combined
+        assert "allow_implicit_invocation: false" in metadata
+        assert "Jira" not in json.dumps(cases)
+        assert sum(case["should_trigger"] for case in cases) >= 6
+        assert sum(not case["should_trigger"] for case in cases) >= 6
+
     def test_custom_skill_mode_scope_comes_from_sidecar(self, tmp_path):
         skill_dir = tmp_path / "custom"
         skill_dir.mkdir()
@@ -1325,24 +1356,17 @@ class TestBuiltinSkills:
                 encoding="utf-8"
             )
         )
-        css = (template_dir / "research-paper-briefing.css").read_text(
-            encoding="utf-8"
-        )
+        css = (template_dir / "research-paper-briefing.css").read_text(encoding="utf-8")
         layouts = dna["layouts"]
         layout_ids = [layout["id"] for layout in layouts]
 
         assert dna["schema_version"] == 1
         assert len(layouts) >= 14
         assert len(layout_ids) == len(set(layout_ids))
-        assert {item["layout_id"] for item in dna["layout_selector"]} == set(
-            layout_ids
-        )
-        assert all(f'.{layout["css_class"]}' in css for layout in layouts)
+        assert {item["layout_id"] for item in dna["layout_selector"]} == set(layout_ids)
+        assert all(f".{layout['css_class']}" in css for layout in layouts)
         assert dna["editability_contract"]["handoff_default_profile"] == "hybrid"
-        assert (
-            dna["editability_contract"]["minimum_editable_visible_text_ratio"]
-            >= 0.7
-        )
+        assert dna["editability_contract"]["minimum_editable_visible_text_ratio"] >= 0.7
 
     def test_pptx_skill_keeps_style_questions_inside_the_same_run(self):
         """Presentation style policy must not force avoidable chat turns."""

@@ -2,6 +2,16 @@
 
 Use this reference for package structure, validation, packing, installation, and update semantics. The current EvoFlux implementation follows the portable core of Agent Plugins 1.0 and adds only declared EvoFlux extensions.
 
+## Contents
+
+- [Canonical package](#canonical-package)
+- [`plugin.json`](#pluginjson)
+- [Skill contract](#skill-contract)
+- [Validation and isolation](#validation-and-isolation)
+- [Pack, install, update, and uninstall](#pack-install-update-and-uninstall)
+- [Storage ownership](#storage-ownership)
+- [Current boundary](#current-boundary)
+
 ## Canonical package
 
 The package root contains `plugin.json`. It may also contain immediate-child Skills and one `mcp.json`:
@@ -102,9 +112,14 @@ evoflux plugin install ./dist/release-audit.evoplugin
 
 Write the artifact outside the plugin root. Packing is deterministic and uses a fixed ZIP timestamp. It excludes `.git`, `.mypy_cache`, `.pytest_cache`, `.ruff_cache`, `__pycache__`, `.DS_Store`, `.pyc`, and `.pyo` files and rejects symlinks.
 
+`evoflux plugin inspect` accepts an unpacked directory only. To prove archive
+extraction and normalization, install the archive in an isolated EvoFlux test
+profile and inspect the installation returned by `plugin show` or the lifecycle
+API. Never point `inspect` directly at `.evoplugin` or `.zip`.
+
 Every installation receives a UUID independent of package name/version. EvoFlux prevents installing the same package name from the same source twice, but installation ID—not name—is runtime identity.
 
-Managed update accepts a new local package for a managed installation only. The new manifest name must match. It preserves installation ID, installation data, and enabled state. A linked installation reads changes from its source and does not use managed update.
+Managed update accepts a new local package for a managed installation only. The new manifest name must match. It preserves installation ID, installation data, and enabled state across version changes and same-version replacement. A rejected update must leave the previous registry entry and package runnable. A linked installation reads changes from its source and does not use managed update.
 
 Uninstall preserves installation data by default. Use `--remove-data` only when deletion is intended:
 
