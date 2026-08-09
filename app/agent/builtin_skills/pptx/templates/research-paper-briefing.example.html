@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="research-paper-briefing.css">
+    <style>
+      .comparison-panel { display: grid; grid-template-rows: auto 1fr; }
+      .comparison-body {
+        min-height: 0;
+        padding: 12px 14px 10px;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        gap: 10px;
+      }
+      .sequence-cue {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 14px;
+        align-items: center;
+        padding: 8px 12px;
+        color: var(--paper-muted);
+        background: var(--paper-soft);
+        border: 1px solid var(--paper-line-soft);
+        border-radius: 6px;
+        font-size: 16px;
+      }
+      .sequence-cue strong { color: var(--paper-navy); }
+      .tokens { display: flex; align-items: center; gap: 8px; }
+      .token {
+        width: 22px;
+        height: 22px;
+        display: grid;
+        place-items: center;
+        color: var(--paper-navy);
+        background: #ffffff;
+        border: 1px solid var(--paper-line);
+        border-radius: 3px;
+        font-size: 12px;
+        font-weight: 760;
+      }
+      .token.all { background: #dcebf9; }
+      .token-arrow { color: var(--paper-blue-2); font-weight: 800; }
+      .interpretation-panel { display: grid; grid-template-rows: auto 1fr; }
+      .interpretation-body { padding: 6px 14px; }
+      .interpretation-body .paper-step { padding: 10px 0; }
+      .interpretation-body .paper-step p { font-size: 16px; line-height: 1.25; }
+      .complexity { color: var(--paper-navy); font-family: var(--paper-serif); font-weight: 700; }
+      .paper-source { display: flex; justify-content: space-between; gap: 16px; }
+    </style>
+  </head>
+  <body>
+    <main class="paper-slide">
+      <header class="paper-header">
+        <h1 class="paper-title">Vì sao Self-Attention hiệu quả hơn?</h1>
+        <div class="paper-title-rule"></div>
+      </header>
+
+      <section class="layout-evidence-comparison">
+        <article class="paper-panel comparison-panel">
+          <h2 class="paper-panel-title">So sánh độ phức tạp theo từng lớp</h2>
+          <div class="comparison-body">
+            <div class="sequence-cue">
+              <strong>Mỗi token nhìn thấy toàn chuỗi trong một bước</strong>
+              <div class="tokens" aria-label="mọi token tương tác trực tiếp">
+                <span class="token all">x₁</span><span class="token-arrow">↔</span>
+                <span class="token all">x₂</span><span class="token-arrow">↔</span>
+                <span class="token all">x₃</span><span class="token-arrow">↔</span>
+                <span class="token">…</span><span class="token-arrow">↔</span>
+                <span class="token all">xₙ</span>
+              </div>
+            </div>
+
+            <table class="paper-table">
+              <thead>
+                <tr>
+                  <th style="width: 30%">Loại lớp</th>
+                  <th style="width: 29%">Độ phức tạp / lớp</th>
+                  <th style="width: 20%">Tuần tự</th>
+                  <th style="width: 21%">Đường đi dài nhất</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Self-Attention</strong></td>
+                  <td class="complexity">O(n² · d)</td>
+                  <td><span class="paper-emphasis">O(1)</span></td>
+                  <td><span class="paper-emphasis">O(1)</span></td>
+                </tr>
+                <tr>
+                  <td>Recurrent</td>
+                  <td class="complexity">O(n · d²)</td>
+                  <td>O(n)</td>
+                  <td>O(n)</td>
+                </tr>
+                <tr>
+                  <td>Convolutional</td>
+                  <td class="complexity">O(k · n · d²)</td>
+                  <td>O(1)</td>
+                  <td>O(logₖ n)</td>
+                </tr>
+                <tr>
+                  <td>Restricted Self-Attention</td>
+                  <td class="complexity">O(r · n · d)</td>
+                  <td>O(1)</td>
+                  <td>O(n / r)</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <p class="paper-source">
+              <span>Nguồn: Vaswani et al. (2017), Table 1</span>
+              <span>n: độ dài chuỗi · d: chiều biểu diễn</span>
+            </p>
+          </div>
+        </article>
+
+        <aside class="paper-panel interpretation-panel">
+          <h2 class="paper-panel-title">Kết luận từ Table 1</h2>
+          <div class="interpretation-body">
+            <div class="paper-step">
+              <span class="paper-number">1</span>
+              <div><h3>Song song hóa hoàn toàn</h3><p>Không còn chuỗi trạng thái bắt buộc đi qua từng token như RNN.</p></div>
+            </div>
+            <div class="paper-step">
+              <span class="paper-number">2</span>
+              <div><h3>Đường truyền ngắn nhất</h3><p>Mọi cặp vị trí tương tác trực tiếp: <span class="paper-emphasis">O(1)</span> bước.</p></div>
+            </div>
+            <div class="paper-step">
+              <span class="paper-number">3</span>
+              <div><h3>Lợi thế khi n &lt; d</h3><p>Self-attention rẻ hơn recurrent layers trong miền kích thước paper phân tích.</p></div>
+            </div>
+            <div class="paper-step">
+              <span class="paper-number">4</span>
+              <div><h3>Đổi lại chi phí bậc hai</h3><p><span class="complexity">O(n²)</span> theo độ dài chuỗi là giới hạn cần nêu rõ, không được che khuất.</p></div>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <footer class="paper-takeaway">
+        <span class="paper-takeaway-arrow" aria-hidden="true"></span>
+        <span>Điểm quyết định: <span class="paper-emphasis">khả năng song song + đường đi O(1)</span> là lý do Transformer thay thế vòng lặp tuần tự.</span>
+      </footer>
+    </main>
+  </body>
+</html>

@@ -1307,6 +1307,32 @@ class TestBuiltinSkills:
                     missing.append(f"{skill_file.parent.name}: {raw}")
         assert missing == []
 
+    def test_research_paper_briefing_dna_matches_css_layout_registry(self):
+        template_dir = _builtin_skills_dir() / "pptx" / "templates"
+        dna = json.loads(
+            (template_dir / "research-paper-briefing-dna.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        css = (template_dir / "research-paper-briefing.css").read_text(
+            encoding="utf-8"
+        )
+        layouts = dna["layouts"]
+        layout_ids = [layout["id"] for layout in layouts]
+
+        assert dna["schema_version"] == 1
+        assert len(layouts) >= 14
+        assert len(layout_ids) == len(set(layout_ids))
+        assert {item["layout_id"] for item in dna["layout_selector"]} == set(
+            layout_ids
+        )
+        assert all(f'.{layout["css_class"]}' in css for layout in layouts)
+        assert dna["editability_contract"]["handoff_default_profile"] == "hybrid"
+        assert (
+            dna["editability_contract"]["minimum_editable_visible_text_ratio"]
+            >= 0.7
+        )
+
     def test_pptx_skill_keeps_style_questions_inside_the_same_run(self):
         """Presentation style policy must not force avoidable chat turns."""
         skill = (_builtin_skills_dir() / "pptx" / "SKILL.md").read_text(

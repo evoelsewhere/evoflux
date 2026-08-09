@@ -1,0 +1,20 @@
+{
+  "schema_version": 2,
+  "mode": "new",
+  "quality_profile": "fidelity",
+  "title": "Research paper briefing style example",
+  "width": 1280,
+  "height": 720,
+  "slides": [
+    {
+      "id": "self-attention-efficiency",
+      "background": "#fbfaf7",
+      "visual_shell": {
+        "html_path": "research-paper-briefing.example.html",
+        "alt": "Vietnamese evidence slide comparing self-attention, recurrent, and convolutional layer complexity",
+        "render_scale": 2
+      },
+      "speaker_notes": "[Sources]\n- https://arxiv.org/abs/1706.03762 — Table 1; accessed 2026-08-09\n[/Sources]"
+    }
+  ]
+}

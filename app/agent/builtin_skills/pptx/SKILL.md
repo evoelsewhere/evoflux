@@ -56,6 +56,16 @@ After it returns, resume outline, authoring, preview, and publication in the
 same run. Never send a plain assistant message asking the user to choose a
 style or end the run waiting for a separate chat reply.
 
+When the source is an academic paper, technical report, thesis, or research
+defense—and the requested direction is a dense blue-and-white evidence
+briefing—read
+[references/research-paper-briefing-style.md](references/research-paper-briefing-style.md)
+and the machine-readable
+[templates/research-paper-briefing-dna.json](templates/research-paper-briefing-dna.json),
+then reuse the tokens and layout primitives in
+[templates/research-paper-briefing.css](templates/research-paper-briefing.css).
+Copy the CSS into the deck project and keep it local; do not fetch a web theme.
+
 ### 3A. Inherited template
 
 Call `artifact(action="catalog", format="pptx")`, then `inspect` the source and
