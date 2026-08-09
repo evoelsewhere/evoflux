@@ -7,11 +7,11 @@ Endpoint:  https://chatgpt.com/backend-api/codex/responses
 Auth:      Bearer {access_token} + ChatGPT-Account-Id header
 
 Token resolution order:
-    1. ``{CACHE_DIR}/codex_oauth.json`` (written by ``EvoFlux auth codex``)
+    1. ``{CACHE_DIR}/codex_oauth.json`` (written by ``evoflux auth codex``)
 
 Usage::
 
-    # After running: EvoFlux auth codex
+    # After running: evoflux auth codex
     provider = CodexProvider(model="gpt-5.4")
     msg = await provider.chat([HumanMessage(content="Hi")])
 """
@@ -183,7 +183,7 @@ def _load_token() -> tuple[str, str | None]:
     if not oauth:
         raise ValueError(
             "Codex OAuth credentials not found. Run:\n"
-            "  EvoFlux auth codex\n"
+            "  evoflux auth codex\n"
             "to authenticate with your ChatGPT account."
         )
     if oauth.is_expired():
@@ -192,7 +192,7 @@ def _load_token() -> tuple[str, str | None]:
             oauth = oauth.refresh()
         except Exception as exc:
             raise ValueError(
-                f"Codex token refresh failed: {exc}\nRun: EvoFlux auth codex"
+                f"Codex token refresh failed: {exc}\nRun: evoflux auth codex"
             ) from exc
     return oauth.access_token.get_secret_value(), oauth.account_id
 
@@ -201,7 +201,7 @@ class CodexProvider(LLMProviderBase):
     """OpenAI Codex provider (ChatGPT subscription).
 
     Uses the Responses API endpoint at chatgpt.com, authenticated with a
-    ChatGPT OAuth token obtained via ``EvoFlux auth codex``.
+    ChatGPT OAuth token obtained via ``evoflux auth codex``.
 
     Args:
         model: Model name, e.g. ``"gpt-5.4"``, ``"gpt-5.1-codex"``.

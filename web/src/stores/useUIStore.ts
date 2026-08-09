@@ -27,6 +27,7 @@ export type WorkbenchTool =
   | 'side-chat'
   | 'wiki'
   | 'scheduler'
+  | 'plugins'
   | 'source-control'
   | 'pull-requests'
 

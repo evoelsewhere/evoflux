@@ -1,4 +1,4 @@
-"""``EvoFlux cleanup`` — prune generated artifacts."""
+"""``evoflux cleanup`` — prune generated artifacts."""
 
 from __future__ import annotations
 

@@ -2,13 +2,13 @@
 
 Default agents, optional skills, and file-based configuration shipped to first-time users.
 
-When a user runs `EvoFlux init`, the CLI copies the contents of this
+When a user runs `evoflux init`, the CLI copies the contents of this
 directory (locally if running from a source checkout, otherwise from the
 published GitHub release / `main` branch) into
 `{EVOFLUX_CONFIG_DIR}/`.
 
 Updating these files affects every **new** install. Existing users keep
-their own copies untouched — once `EvoFlux init` has populated their
+their own copies untouched — once `evoflux init` has populated their
 config dir, those files are theirs to edit. Users who want the newest
 prompts or skills can browse this directory and copy what they want
 into their own `{EVOFLUX_CONFIG_DIR}/`.
@@ -36,7 +36,7 @@ has, so re-running `init` after a release won't clobber edits.
 
 - **Lead agent first.** `agents/EvoFlux.md` is the lead; the others are members.
 - **Model placeholder.** Every agent's `model:` field is rewritten by
-  `EvoFlux init` to match the provider/model the user picked. The same
+  `evoflux init` to match the provider/model the user picked. The same
   selected model is written into generated `settings.yaml` for title generation
   and Dream defaults.
   Individual member models can then be changed in Settings → Agents (for

@@ -1,7 +1,7 @@
-"""First-run detection for ``EvoFlux``.
+"""First-run detection for ``evoflux``.
 
-When the user types ``EvoFlux`` and the install hasn't been initialised
-yet, the CLI auto-launches ``EvoFlux init`` before starting the server
+When the user types ``evoflux`` and the install hasn't been initialised
+yet, the CLI auto-launches ``evoflux init`` before starting the server
 — so the headline UX is genuinely one command.
 
 A run is considered uninitialised when **either**:
@@ -79,7 +79,7 @@ def ensure_initialised() -> None:
         print(
             f"  {_yellow('!')}  No \033[1m.env\033[0m or agents detected and stdin is not a TTY."
         )
-        print(f"     Run {_bold('EvoFlux init')} interactively first.")
+        print(f"     Run {_bold('evoflux init')} interactively first.")
         print()
         sys.exit(1)
 
@@ -121,5 +121,5 @@ def _has_agents() -> bool:
 
 
 def _env_file() -> Path:
-    """Path to the ``.env`` we expect ``EvoFlux init`` to have written."""
+    """Path to the ``.env`` we expect ``evoflux init`` to have written."""
     return _config_dir() / ".env"

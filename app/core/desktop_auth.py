@@ -11,7 +11,7 @@ When that env var is set, this middleware rejects any request whose
 for raw browser navigations and ``<a download>`` links) does not match.
 
 When the env var is **not** set, the middleware is a no-op. CLI/server
-users (``EvoFlux start``, etc.) keep the existing open-loopback
+users (``evoflux start``, etc.) keep the existing open-loopback
 behaviour. This makes the desktop tier strictly opt-in.
 
 Routes exempted from the check:

@@ -69,8 +69,13 @@ class StdioServerConfig(BaseModel):
     command: Annotated[str, Field(min_length=1)]
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
+    cwd: str | None = None
     capabilities: list[str] = Field(default_factory=list)
     enabled: bool = True
+    # Portable Agent Plugins pass literal values and explicitly inject only
+    # PLUGIN_ROOT/PLUGIN_DATA. Global EvoFlux config keeps historical secret
+    # expansion. Excluded internal switches let both sources share one runner.
+    resolve_env_refs: bool = Field(default=True, exclude=True)
 
 
 class OAuthConfig(BaseModel):
@@ -93,6 +98,8 @@ class HttpServerConfig(BaseModel):
     oauth: OAuthConfig | None = None
     capabilities: list[str] = Field(default_factory=list)
     enabled: bool = True
+    resolve_header_refs: bool = Field(default=True, exclude=True)
+    follow_redirects: bool = Field(default=True, exclude=True)
 
 
 def resolve_secret_refs(value: str) -> str:

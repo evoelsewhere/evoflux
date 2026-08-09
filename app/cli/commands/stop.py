@@ -1,4 +1,4 @@
-"""``EvoFlux stop`` — terminate background server and web processes."""
+"""``evoflux stop`` — terminate background server and web processes."""
 
 from __future__ import annotations
 

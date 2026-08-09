@@ -2,7 +2,7 @@
 
 Agents seeded by ``install_seed`` carry the literal token
 ``__PROVIDER_MODEL__`` in their ``model:`` frontmatter until the user
-picks a provider via the UI (or runs ``EvoFlux init``). Before the
+picks a provider via the UI (or runs ``evoflux init``). Before the
 substitution, ``build_provider`` cannot resolve the token to a real
 backend — historically this raised ``ValueError`` at load time and
 crashed the whole team manager.
@@ -44,7 +44,7 @@ class UnconfiguredProviderError(ValueError):
             or (
                 f"Agent '{agent_name or '?'}' has no model configured. "
                 f"Open Settings → Providers in the UI to add a provider, "
-                f"or run `EvoFlux init` in a terminal."
+                f"or run `evoflux init` in a terminal."
             )
         )
 

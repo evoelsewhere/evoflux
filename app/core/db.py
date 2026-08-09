@@ -149,7 +149,7 @@ def run_migrations() -> None:
     """Run pending Alembic migrations (upgrade head).
 
     Called once during server startup so users never need a separate
-    ``EvoFlux migrate`` step.  ``alembic.ini`` ships inside the ``app``
+    ``evoflux migrate`` step.  ``alembic.ini`` ships inside the ``app``
     package so it is reachable from both source checkouts and installed
     wheels.
 

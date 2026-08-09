@@ -153,6 +153,9 @@ class TestFindPids:
 
 
 class TestBuildParser:
+    def test_command_name_is_lowercase(self):
+        assert build_parser().prog == "evoflux"
+
     def test_default_command_is_start(self):
         parser = build_parser()
         args = parser.parse_args([])
@@ -252,6 +255,11 @@ class TestBuildParser:
         args = build_parser().parse_args(["upgrade"])
         assert args.func is cli.cmd_upgrade
 
+    def test_plugin_subcommand(self):
+        args = build_parser().parse_args(["plugin", "list"])
+        assert args.func is cli.cmd_plugin
+        assert args.plugin_action == "list"
+
     def test_update_subcommand_removed(self):
         with pytest.raises(SystemExit):
             build_parser().parse_args(["update"])
@@ -304,7 +312,7 @@ class TestCmdStatus:
         cmd_status(args)
         out = capsys.readouterr().out
         assert "stopped" in out
-        assert "EvoFlux start --lan" in out
+        assert "evoflux start --lan" in out
 
 
 # ---------------------------------------------------------------------------
@@ -437,7 +445,7 @@ class TestCmdUpgrade:
         monkeypatch.setattr(
             upgrade_mod,
             "_upgrade_command",
-            lambda: ("uv tool", ["uv", "tool", "upgrade", "EvoFlux"]),
+            lambda: ("uv tool", ["uv", "tool", "upgrade", "evoflux"]),
         )
         monkeypatch.setattr(
             upgrade_mod, "_run", lambda command: run_calls.append(command) or 0
@@ -445,7 +453,7 @@ class TestCmdUpgrade:
 
         upgrade_mod.cmd_upgrade(args)
 
-        assert run_calls == [["uv", "tool", "upgrade", "EvoFlux"]]
+        assert run_calls == [["uv", "tool", "upgrade", "evoflux"]]
 
     def test_brew_upgrade_does_not_relink_formula_without_restart(self, monkeypatch):
         from app.cli.commands import upgrade as upgrade_mod
@@ -487,10 +495,10 @@ class TestCmdUpgrade:
         monkeypatch.setattr(
             upgrade_mod,
             "_upgrade_command",
-            lambda: ("pipx", ["pipx", "upgrade", "EvoFlux"]),
+            lambda: ("pipx", ["pipx", "upgrade", "evoflux"]),
         )
         monkeypatch.setattr(
-            upgrade_mod.shutil, "which", lambda _name: "/usr/local/bin/EvoFlux"
+            upgrade_mod.shutil, "which", lambda _name: "/usr/local/bin/evoflux"
         )
         monkeypatch.setattr(
             upgrade_mod, "_run", lambda command: run_calls.append(command) or 0
@@ -500,9 +508,9 @@ class TestCmdUpgrade:
 
         stop.assert_called_once_with(args)
         assert run_calls == [
-            ["pipx", "upgrade", "EvoFlux"],
+            ["pipx", "upgrade", "evoflux"],
             [
-                "/usr/local/bin/EvoFlux",
+                "/usr/local/bin/evoflux",
                 "--host",
                 "0.0.0.0",
                 "--port",
@@ -522,16 +530,16 @@ class TestCmdUpgrade:
         monkeypatch.setattr(
             upgrade_mod,
             "_upgrade_command",
-            lambda: ("pipx", ["pipx", "upgrade", "EvoFlux"]),
+            lambda: ("pipx", ["pipx", "upgrade", "evoflux"]),
         )
-        monkeypatch.setattr(upgrade_mod.shutil, "which", lambda _name: "EvoFlux")
+        monkeypatch.setattr(upgrade_mod.shutil, "which", lambda _name: "evoflux")
         monkeypatch.setattr(
             upgrade_mod, "_run", lambda command: run_calls.append(command) or 0
         )
 
         upgrade_mod.cmd_upgrade(args)
 
-        assert run_calls[-1] == ["EvoFlux", "--lan", "start"]
+        assert run_calls[-1] == ["evoflux", "--lan", "start"]
 
     def test_upgrade_restart_falls_back_to_original_script_path(self, monkeypatch):
         from app.cli.commands import upgrade as upgrade_mod
@@ -574,7 +582,7 @@ class TestCmdUpgrade:
         monkeypatch.setattr(
             upgrade_mod,
             "_upgrade_command",
-            lambda: ("pipx", ["pipx", "upgrade", "EvoFlux"]),
+            lambda: ("pipx", ["pipx", "upgrade", "evoflux"]),
         )
         monkeypatch.setattr(upgrade_mod, "_run", lambda _command: next(run_results))
 

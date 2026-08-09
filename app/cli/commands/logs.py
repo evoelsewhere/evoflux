@@ -1,4 +1,4 @@
-"""``EvoFlux logs`` — tail the server log file."""
+"""``evoflux logs`` — tail the server log file."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ def cmd_logs(args: argparse.Namespace) -> None:
     if log.exists():
         os.execvp("tail", ["tail", f"-n{args.lines}", "-f", str(log)])
     print(
-        f"  No log file found. Start the server with {_bold('EvoFlux')} first.",
+        f"  No log file found. Start the server with {_bold('evoflux')} first.",
         file=sys.stderr,
     )
     sys.exit(1)

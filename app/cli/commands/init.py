@@ -1,4 +1,4 @@
-"""``EvoFlux init`` — interactive first-time setup.
+"""``evoflux init`` — interactive first-time setup.
 
 Asks the user for a provider + model + credentials, then writes ``.env``
 to the XDG config directory.  When the file already exists, new credentials
@@ -174,7 +174,7 @@ def cmd_init(_args: argparse.Namespace) -> None:  # noqa: C901
     env_file = config_dir / ".env"
 
     print()
-    print(f"  {_bold(_cyan('EvoFlux init'))}")
+    print(f"  {_bold(_cyan('evoflux init'))}")
     print(f"  {_dim('Config:')} {env_file}")
     print()
 
@@ -216,10 +216,10 @@ def cmd_init(_args: argparse.Namespace) -> None:  # noqa: C901
 
     if provider == "copilot":
         print(f"  {_dim('ℹ')}  No API key needed — authenticate via OAuth after setup.")
-        print(f"     Run: {_bold('EvoFlux auth copilot')}")
+        print(f"     Run: {_bold('evoflux auth copilot')}")
     elif provider == "codex":
         print(f"  {_dim('ℹ')}  No API key needed — authenticate via OAuth after setup.")
-        print(f"     Run: {_bold('EvoFlux auth codex')}")
+        print(f"     Run: {_bold('evoflux auth codex')}")
     elif provider == "ollama":
         print(
             f"  {_dim('ℹ')}  Ollama needs no API key — make sure the daemon is running "
@@ -307,7 +307,7 @@ def cmd_init(_args: argparse.Namespace) -> None:  # noqa: C901
         result = install_seed(config_dir, provider_model=full_model)
     except SeedDownloadError as exc:
         print(f"  {_red('✗')}  Could not install seed bundle: {exc}")
-        print(f"     {_dim('Network issue? Retry with')} {_bold('EvoFlux init')}")
+        print(f"     {_dim('Network issue? Retry with')} {_bold('evoflux init')}")
         print(
             f"     {_dim('Or copy manually from')} "
             f"https://github.com/evoelsewhere/evoflux/tree/main/seed"
@@ -335,11 +335,11 @@ def cmd_init(_args: argparse.Namespace) -> None:  # noqa: C901
     print()
     if provider == "copilot":
         print(f"  {_bold('Next:')} authenticate with GitHub Copilot:")
-        print(f"    {_bold('EvoFlux auth copilot')}")
+        print(f"    {_bold('evoflux auth copilot')}")
         print()
     elif provider == "codex":
         print(f"  {_bold('Next:')} authenticate with your ChatGPT subscription:")
-        print(f"    {_bold('EvoFlux auth codex')}")
+        print(f"    {_bold('evoflux auth codex')}")
         print()
-    print(f"  {_bold('Start:')}  {_bold('EvoFlux')}")
+    print(f"  {_bold('Start:')}  {_bold('evoflux')}")
     print()

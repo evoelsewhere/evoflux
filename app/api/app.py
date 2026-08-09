@@ -21,6 +21,7 @@ from app.api.routes.dream import router as dream_router
 from app.api.routes.health import router as health_router
 from app.api.routes.mcp import router as mcp_router
 from app.api.routes.observability import router as observability_router
+from app.api.routes.plugins import router as plugins_router
 from app.api.routes.quote import router as quote_router
 from app.api.routes.scheduler import router as scheduler_router
 from app.api.routes.settings import router as settings_router
@@ -87,6 +88,15 @@ async def _start_optional_services(app: FastAPI, process_started: float) -> None
     except Exception as exc:  # noqa: BLE001
         logger.error("optional_service_start_failed service=mcp error={}", exc)
     _log_startup_timing("mcp", phase_started, process_started)
+
+    phase_started = perf_counter()
+    try:
+        from app.plugin_platform.runtime import plugin_mcp_runtime
+
+        await plugin_mcp_runtime.start()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("optional_service_start_failed service=plugin_mcp error={}", exc)
+    _log_startup_timing("plugin_mcp", phase_started, process_started)
 
     phase_started = perf_counter()
     try:
@@ -256,6 +266,9 @@ async def lifespan(app: FastAPI):
     from app.conductor import conductor_service
 
     await conductor_service.stop()
+    from app.plugin_platform.runtime import plugin_mcp_runtime
+
+    await plugin_mcp_runtime.stop()
     await mcp_manager.stop()
 
     # Command and Preview process groups would outlive the sidecar without
@@ -329,6 +342,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(scheduler_router, prefix="/api/scheduler", tags=["scheduler"])
     app.include_router(mcp_router, prefix="/api/mcp", tags=["mcp"])
+    app.include_router(plugins_router, prefix="/api/plugins", tags=["plugins"])
     app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
     app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
     app.include_router(dream_router, prefix="/api", tags=["dream"])

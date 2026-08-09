@@ -1,4 +1,4 @@
-"""``EvoFlux version`` — print the installed package version."""
+"""``evoflux version`` — print the installed package version."""
 
 from __future__ import annotations
 

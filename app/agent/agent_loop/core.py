@@ -457,11 +457,11 @@ class Agent(Generic[TContext]):
             if not configured_servers:
                 return
 
-            from app.agent.mcp import mcp_manager
+            from app.plugin_platform.runtime import get_mcp_tools_for_server
 
             changed = False
             for server_name in dict.fromkeys(configured_servers):
-                server_tools = mcp_manager.get_tools_for_server(server_name)
+                server_tools = get_mcp_tools_for_server(server_name)
                 if not server_tools:
                     continue
                 for run_tool in server_tools:

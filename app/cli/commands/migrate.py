@@ -1,4 +1,4 @@
-"""``EvoFlux migrate`` — import configs from other local agent tools."""
+"""``evoflux migrate`` — import configs from other local agent tools."""
 
 from __future__ import annotations
 

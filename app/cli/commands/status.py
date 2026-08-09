@@ -1,4 +1,4 @@
-"""``EvoFlux status`` — report whether a background EvoFlux is running."""
+"""``evoflux status`` — report whether a background EvoFlux is running."""
 
 from __future__ import annotations
 
@@ -32,6 +32,6 @@ def cmd_status(_args: argparse.Namespace) -> None:
     else:
         print(f"  {_dim('Status:')} {_yellow('stopped')}")
         print(
-            f"  {_dim('Start:')}  {_bold('EvoFlux start')}  or  {_bold('EvoFlux start --lan')}"
+            f"  {_dim('Start:')}  {_bold('evoflux start')}  or  {_bold('evoflux start --lan')}"
         )
     print()

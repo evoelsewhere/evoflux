@@ -4,8 +4,8 @@ Credentials live in ``{CACHE_DIR}/codex_oauth.json``.
 
 Called by ``app.cli.commands.auth`` central dispatcher::
 
-    EvoFlux auth codex           # opens browser (PKCE)
-    EvoFlux auth codex --device  # headless device-code flow
+    evoflux auth codex           # opens browser (PKCE)
+    evoflux auth codex --device  # headless device-code flow
 
 Ported from opencode's codex.ts plugin (anomalyco/opencode).
 """

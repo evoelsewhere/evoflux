@@ -1,4 +1,4 @@
-"""``EvoFlux`` (default) — launch the API server in the background."""
+"""``evoflux`` (default) — launch the API server in the background."""
 
 from __future__ import annotations
 
@@ -66,11 +66,11 @@ def cmd_start(args: argparse.Namespace) -> None:
     # user for init questions only to refuse to start. ``_find_pids`` only
     # returns when at least one PID is still alive.
     if _find_pids():
-        print(f"  {_yellow('already running')}  (run {_bold('EvoFlux stop')} first)")
+        print(f"  {_yellow('already running')}  (run {_bold('evoflux stop')} first)")
         return
 
     # First-run guard: if .env or agents are missing, run init interactively
-    # before going any further. Headline UX is `EvoFlux` → working server.
+    # before going any further. Headline UX is `evoflux` → working server.
     ensure_initialised()
 
     _save_server_overrides(args)
@@ -101,5 +101,5 @@ def cmd_start(args: argparse.Namespace) -> None:
     if addresses.lan:
         print(f"  {_dim('LAN:')}   {_bold(addresses.lan[0])}")
         print(f"  {_dim('Mobile:')} use the LAN address in the mobile app")
-    print(f"  {_dim('Stop:')}  {_bold('EvoFlux stop')}")
+    print(f"  {_dim('Stop:')}  {_bold('evoflux stop')}")
     print()

@@ -1,4 +1,4 @@
-"""``EvoFlux address`` — print local and LAN server URLs."""
+"""``evoflux address`` — print local and LAN server URLs."""
 
 from __future__ import annotations
 
@@ -30,6 +30,6 @@ def cmd_address(args: argparse.Namespace) -> None:
         print(f"  {_dim('LAN:')}    {_yellow('no LAN address detected')}")
     print()
     print(
-        f"  {_dim('Mobile:')} start with {_bold('EvoFlux start --lan')} to bind on your network"
+        f"  {_dim('Mobile:')} start with {_bold('evoflux start --lan')} to bind on your network"
     )
     print()

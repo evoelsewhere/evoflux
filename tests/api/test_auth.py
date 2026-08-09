@@ -30,7 +30,7 @@ class TestListProviders:
     def test_prints_usage_hint(self, capsys):
         _list_providers()
         out = capsys.readouterr().out
-        assert "EvoFlux auth" in out
+        assert "evoflux auth" in out
 
     def test_all_providers_listed(self, capsys):
         _list_providers()

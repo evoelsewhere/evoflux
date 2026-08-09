@@ -4,7 +4,7 @@ Credentials live in ``{CACHE_DIR}/copilot_oauth.json``.
 
 Called by ``app.cli.commands.auth`` central dispatcher::
 
-    EvoFlux auth copilot
+    evoflux auth copilot
 
 For UI-driven login, ``app.api.routes.auth`` passes an ``event_sink``
 that turns user-facing print calls into structured SSE events so the

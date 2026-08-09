@@ -12,6 +12,7 @@ import { useModalFocus } from "@/hooks/useModalFocus";
 import { useMotionPreset, useListEnterIndex } from "@/lib/motion";
 
 import {
+  Blocks,
   CalendarClock,
   Plus,
   RefreshCw,
@@ -136,6 +137,7 @@ export function Sidebar({
   useModalFocus(isMobile && mobileOpen, onMobileClose);
   const navigate = useNavigate();
   const toggleScheduler = useUIStore((s) => s.toggleScheduler);
+  const togglePlugins = useUIStore((s) => s.toggleWorkbenchTool);
   // Server-filtered to work — coding sessions live in their own sidebar.
   const sessions = useTeamSessionsQuery("work");
   const folders = useSessionFoldersQuery("work");
@@ -592,6 +594,12 @@ export function Sidebar({
             collapsed
             onClick={toggleScheduler}
           />
+          <SidebarItem
+            Icon={Blocks}
+            label="Plugins"
+            collapsed
+            onClick={() => togglePlugins("plugins")}
+          />
         </nav>
       </div>
 
@@ -657,6 +665,11 @@ export function Sidebar({
               label="Scheduler"
               kbd="^S"
               onClick={toggleScheduler}
+            />
+            <SidebarItem
+              Icon={Blocks}
+              label="Plugins"
+              onClick={() => togglePlugins("plugins")}
             />
           </nav>
         </div>
@@ -742,6 +755,11 @@ export function Sidebar({
           label="Scheduler"
           kbd="^S"
           onClick={() => { toggleScheduler(); onMobileClose?.(); }}
+        />
+        <SidebarItem
+          Icon={Blocks}
+          label="Plugins"
+          onClick={() => { togglePlugins("plugins"); onMobileClose?.(); }}
         />
       </nav>
 

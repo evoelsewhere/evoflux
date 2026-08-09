@@ -1,6 +1,6 @@
 """Single source of truth for the LLM provider catalog.
 
-Both ``EvoFlux init`` (the CLI) and ``/api/settings/providers`` (the
+Both ``evoflux init`` (the CLI) and ``/api/settings/providers`` (the
 desktop/web UI) consume this catalog. Adding a new provider means one
 entry here plus a new ``case`` branch in
 :func:`app.agent.providers.factory.build_provider`.
@@ -275,7 +275,7 @@ _CATALOG: list[ProviderEntry] = [
         "kind": "oauth",
         "env_var": "",
         "models_dev_provider_id": "github-copilot",
-        "oauth_command": "EvoFlux auth copilot",
+        "oauth_command": "evoflux auth copilot",
         "docs_url": "https://github.com/features/copilot",
     },
     {
@@ -290,7 +290,7 @@ _CATALOG: list[ProviderEntry] = [
         # thinking levels must come from Codex's live model catalog.
         "metadata_source_exclude": ["thinking"],
         "live_model_metadata": True,
-        "oauth_command": "EvoFlux auth codex",
+        "oauth_command": "evoflux auth codex",
         "docs_url": "https://learn.chatgpt.com/docs/models",
     },
     {

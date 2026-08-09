@@ -1,13 +1,13 @@
-"""``EvoFlux auth`` — central OAuth dispatcher for provider authentication.
+"""``evoflux auth`` — central OAuth dispatcher for provider authentication.
 
 Each provider that needs OAuth implements its own ``oauth.py`` module with
 a ``login()`` function.  This module dispatches to the correct one.
 
 Usage (via CLI):
-    EvoFlux auth copilot            # GitHub Copilot login
-    EvoFlux auth codex              # OpenAI Codex login (browser PKCE)
-    EvoFlux auth codex --device     # OpenAI Codex login (headless device code)
-    EvoFlux auth --list             # show available providers
+    evoflux auth copilot            # GitHub Copilot login
+    evoflux auth codex              # OpenAI Codex login (browser PKCE)
+    evoflux auth codex --device     # OpenAI Codex login (headless device code)
+    evoflux auth --list             # show available providers
 
 Usage (direct):
     uv run python -m app.cli.commands.auth codex
@@ -41,7 +41,7 @@ def _list_providers() -> None:
     print("Available OAuth providers:\n")
     for name, (_, desc) in sorted(_PROVIDERS.items()):
         print(f"  {name:15s}  {desc}")
-    print(f"\nUsage: EvoFlux auth <{'|'.join(_PROVIDERS)}>")
+    print(f"\nUsage: evoflux auth <{'|'.join(_PROVIDERS)}>")
 
 
 def _run_login(provider: str, **kwargs: bool) -> None:
@@ -76,7 +76,7 @@ def cmd_auth(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="OAuth login for LLM providers",
-        usage="EvoFlux auth <provider> [--device]",
+        usage="evoflux auth <provider> [--device]",
     )
     parser.add_argument(
         "provider",

@@ -246,6 +246,7 @@ def _is_retired_builtin_member(mode: str, name: str) -> bool:
 
 def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.mcp import mcp_manager
+    from app.plugin_platform.runtime import plugin_mcp_runtime
     from app.agent.tools.builtin import (
         add_code_review_comment,
         add_code_review_inline_comment,
@@ -363,6 +364,7 @@ def _default_tool_registry() -> dict[str, Tool]:
     # Merge MCP tools from healthy servers. Names follow ``mcp_<server>_<tool>``
     # so they cannot collide with the builtins above.
     registry.update(mcp_manager.get_tools_dict())
+    registry.update(plugin_mcp_runtime.get_tools_dict())
     return registry
 
 
@@ -439,16 +441,19 @@ def _build_agent(
     # agent still loads when an MCP server is disabled, mid-restart, or
     # removed from mcp.json while still referenced by config.
     if cfg.mcp:
-        from app.agent.mcp import mcp_manager
+        from app.plugin_platform.runtime import (
+            all_mcp_server_names,
+            get_mcp_tools_for_server,
+        )
 
         for server_name in cfg.mcp:
-            server_tools = mcp_manager.get_tools_for_server(server_name)
+            server_tools = get_mcp_tools_for_server(server_name)
             if server_tools is None:
                 logger.warning(
                     "agent_unknown_mcp_server agent={} server={} configured={}",
                     cfg.name,
                     server_name,
-                    sorted(mcp_manager.server_names()),
+                    all_mcp_server_names(),
                 )
                 continue
             for tool in server_tools:

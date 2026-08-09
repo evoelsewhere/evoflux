@@ -1,6 +1,6 @@
 """``/api/auth`` — UI-driven OAuth login for LLM providers.
 
-The CLI exposes ``EvoFlux auth <provider>`` for terminal users. This
+The CLI exposes ``evoflux auth <provider>`` for terminal users. This
 module wraps the same per-provider ``login()`` functions in an SSE-based
 HTTP endpoint so the desktop/web UI can drive the same flow from a
 "Connect with GitHub Copilot" button.

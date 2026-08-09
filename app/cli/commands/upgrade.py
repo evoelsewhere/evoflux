@@ -1,4 +1,4 @@
-"""``EvoFlux upgrade`` — self-upgrade.
+"""``evoflux upgrade`` — self-upgrade.
 
 Detection order (first match wins):
 1. Homebrew  — executable lives under a Cellar or opt path, or ``brew`` lists it.
@@ -33,7 +33,7 @@ def _is_brew_managed() -> bool:
             return True
         # Slow path: ask brew directly (spawns a subprocess but only as a fallback).
         result = subprocess.run(
-            [brew, "list", "--formula", "EvoFlux"],
+            [brew, "list", "--formula", "evoflux"],
             capture_output=True,
             timeout=5,
         )
@@ -43,7 +43,7 @@ def _is_brew_managed() -> bool:
 
 
 def _is_uv_tool_managed() -> bool:
-    """Return True when uv is available and EvoFlux is a uv tool."""
+    """Return True when uv is available and evoflux is a uv tool."""
     uv = shutil.which("uv")
     if not uv:
         return False
@@ -54,13 +54,13 @@ def _is_uv_tool_managed() -> bool:
             text=True,
             timeout=5,
         )
-        return "EvoFlux" in result.stdout
+        return "evoflux" in result.stdout.casefold()
     except Exception:
         return False
 
 
 def _is_pipx_managed() -> bool:
-    """Return True when pipx is available and EvoFlux is a pipx package."""
+    """Return True when pipx is available and evoflux is a pipx package."""
     pipx = shutil.which("pipx")
     if not pipx:
         return False
@@ -71,7 +71,7 @@ def _is_pipx_managed() -> bool:
             text=True,
             timeout=5,
         )
-        return "EvoFlux" in result.stdout
+        return "evoflux" in result.stdout.casefold()
     except Exception:
         return False
 
@@ -80,10 +80,10 @@ def _upgrade_command() -> tuple[str, list[str]]:
     if _is_brew_managed():
         return "brew", ["brew", "upgrade", "--formula", "khuonghung/tap/evoflux"]
     if _is_uv_tool_managed():
-        return "uv tool", ["uv", "tool", "upgrade", "EvoFlux"]
+        return "uv tool", ["uv", "tool", "upgrade", "evoflux"]
     if _is_pipx_managed():
-        return "pipx", ["pipx", "upgrade", "EvoFlux"]
-    return "pip", [sys.executable, "-m", "pip", "install", "--upgrade", "EvoFlux"]
+        return "pipx", ["pipx", "upgrade", "evoflux"]
+    return "pip", [sys.executable, "-m", "pip", "install", "--upgrade", "evoflux"]
 
 
 def _pre_upgrade_commands(manager: str) -> list[list[str]]:
@@ -93,13 +93,13 @@ def _pre_upgrade_commands(manager: str) -> list[list[str]]:
 
 
 def _restart_command(args: argparse.Namespace) -> list[str]:
-    executable = shutil.which("EvoFlux")
+    executable = shutil.which("evoflux")
     if executable is None and sys.argv:
         candidate = Path(sys.argv[0])
         if candidate.is_file():
             executable = str(candidate)
     if executable is None:
-        executable = "EvoFlux"
+        executable = "evoflux"
     command = [executable]
     if getattr(args, "lan", False):
         command.append("--lan")
