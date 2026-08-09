@@ -5,72 +5,70 @@ description: Create, edit, inspect, render, and verify Excel XLSX workbooks. Tri
 
 # Editable XLSX authoring
 
-Use the deferred `xlsx_artifact` tool for every XLSX write. Do not author
-workbooks with `openpyxl`, `xlsxwriter`, pandas, HTML tables, screenshots, or
-manually assembled OpenXML. Supporting analysis may use Python or JavaScript,
-but the final workbook must be imported/created and exported by
-`@oai/artifact-tool`.
-Do not load example projects when this skill activates; call the live catalog
-first and inspect an example only when the selected path needs a starter.
+Use the deferred `artifact` tool with `format: "xlsx"` for every XLSX write.
+Do not author final workbooks with `openpyxl`, `xlsxwriter`, pandas, HTML
+tables, screenshots, or manually assembled OpenXML. Supporting analysis may
+use Python or JavaScript, but `@oai/artifact-tool` must create or import and
+export the workbook.
+
+Do not load examples when this skill activates. Call
+`artifact(action="catalog", format="xlsx")` first and treat the live schema as
+authoritative.
 
 ## Choose the path
 
-- New workbook: create a project with `mode: "new"`. Ask for clarification
-  only when the workbook's purpose, inputs, or required outputs are genuinely
-  ambiguous; otherwise use the professional baseline below.
-- Uploaded XLSX explicitly used as a template: inspect and render it first,
-  then use `mode: "template"`, its exact SHA-256, and targeted operations.
-- Uploaded XLSX used only as data: inspect it, but create a new workbook rather
-  than implying that its format is the template.
+- **New workbook:** use `mode: "new"`; clarify only genuinely ambiguous
+  purpose, inputs, or outputs.
+- **Uploaded XLSX used as the template:** call `inspect`, review every sheet
+  preview and the manifest, then use `mode: "template"`, the exact source
+  SHA-256, and targeted operations.
+- **Uploaded XLSX used only as data:** inspect it, then create a new workbook
+  without implying that its formatting is the template.
 
 Never overwrite the uploaded workbook.
 
-## Required workflow
+## Required lifecycle
 
-```text
-XLSX workflow
-- [ ] 1. Identify inputs, derived outputs, units, and edit expectations
-- [ ] 2. Inspect and render every sheet when a workbook was uploaded
-- [ ] 3. Write and validate the JSON project
-- [ ] 4. Keep assumptions/input cells separate from formula cells
-- [ ] 5. Render every sheet and visually inspect the returned images
-- [ ] 6. Resolve formula errors, clipped content, and broken charts
-- [ ] 7. Compose one final XLSX and return its artifact card
-```
+1. Identify inputs, derived outputs, units, and edit expectations.
+2. Inspect and render every sheet when a workbook was uploaded.
+3. Write the format-native JSON project and call `validate`.
+4. Keep assumptions/input cells separate from formula cells.
+5. Call `preview` and visually inspect every returned sheet image.
+6. Resolve formula errors, clipped content, and broken charts; create a new
+   preview revision.
+7. Call `artifact(action="publish", job_id=..., output="...xlsx")` only for the
+   accepted revision, then return its artifact card.
 
-Call `xlsx_artifact(action="catalog")` for the exact schema. For a template,
-call `inspect` and review every returned sheet preview plus the manifest before
-writing the project. `write_range` without `format` deliberately preserves
-existing formatting. Add a format only when the user requested a style change
-or a new range needs to extend the template's conventions.
+`publish` reuses the verified immutable bytes and never rebuilds the workbook.
 
-For a new workbook, create all referenced worksheets before formulas. Prefer
-block writes. Dates use the `dates` matrix with ISO-8601 strings; numbers,
-percentages, and currency remain typed values with invariant number formats.
-Derived cells must contain formulas, not hard-coded results. Quote every
-cross-sheet formula reference, for example `='Inputs'!B4`.
+For a template, `write_range` without `format` preserves existing formatting.
+Add a format only when the user requested a style change or a new range must
+extend the template's conventions.
 
-## Professional baseline for new workbooks
+Create all referenced worksheets before formulas. Prefer block writes. Dates
+use the `dates` matrix with ISO-8601 strings; numbers, percentages, and currency
+remain typed values with invariant number formats. Derived cells must contain
+formulas, not hard-coded results. Quote cross-sheet references, for example
+`='Inputs'!B4`.
 
-- Use a title/summary area, clear section hierarchy, restrained fills, and
-  explicit borders instead of default gridlines.
-- Distinguish input cells, formulas, summaries, and notes consistently.
-- Freeze headers for long tables; use validation for editable categorical
-  fields; use conditional formatting where the visual state must react to edits.
-- Apply semantic number formats, then size columns with `autofit_columns`
-  instead of guessing `column_width`. Avoid formatting unused rows or columns.
-- Use native tables and charts only when they improve analysis. Charts must be
-  backed by editable worksheet cells and placed outside the data range.
+## Professional baseline
+
+- Use a title/summary area, clear hierarchy, restrained fills, and explicit
+  borders instead of default gridlines.
+- Distinguish inputs, formulas, summaries, and notes consistently.
+- Freeze long-table headers; use validation and conditional formatting where
+  edit behavior requires them.
+- Apply semantic number formats, then use `autofit_columns`. Avoid formatting
+  unused rows or columns.
+- Use native tables and data-backed charts only when they improve analysis.
 - Avoid merged cells in calculation areas.
 
 ## Verification gate
 
-`render` and `compose` scan for `#REF!`, `#DIV/0!`, `#VALUE!`, `#NAME?`,
-`#N/A`, `#NUM!`, and `#NULL!`, and render every worksheet. Do not compose until
-the previews are readable at normal zoom and all error-severity issues are
-resolved. A successfully written file is not sufficient verification.
+`preview` scans for `#REF!`, `#DIV/0!`, `#VALUE!`, `#NAME?`, `#N/A`, `#NUM!`,
+and `#NULL!`, and renders every worksheet. Do not publish until previews are
+readable at normal zoom and every error is resolved.
 
-Both actions also measure every used column against the width its content
-needs. A column holding numbers that is too narrow is an error, because Excel
-renders `#####` there; a text-only column that is too narrow is a warning. Fix
-either by adding an `autofit_columns` operation over the affected range.
+QA also measures used columns against content width. A too-narrow numeric
+column is an error because Excel renders `#####`; a too-narrow text-only column
+is a warning. Fix either with `autofit_columns` over the affected range.

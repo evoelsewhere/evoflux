@@ -286,10 +286,7 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.tools.builtin.load_tool import load_tool
     from app.agent.tools.builtin.memory_search import memory_search
     from app.agent.tools.builtin.note import note_tool
-    from app.agent.tools.builtin.pptx_html import pptx_html
-    from app.agent.tools.builtin.pptx_template import pptx_template
-    from app.agent.tools.builtin.docx_document import docx_document
-    from app.agent.tools.builtin.xlsx_artifact import xlsx_artifact
+    from app.agent.tools.builtin.artifact import artifact
     from app.agent.tools.builtin.wiki_search import wiki_search
     from app.agent.tools.builtin.code_context import code_context
     from app.agent.tools.builtin.plan import enter_plan_mode, exit_plan_mode
@@ -307,6 +304,7 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.tools.builtin.terminal import terminal_run
 
     registry: dict[str, Tool] = {
+        "artifact": artifact,
         "web_search": web_search,
         "web_fetch": web_fetch,
         "image_search": image_search,
@@ -325,10 +323,6 @@ def _default_tool_registry() -> dict[str, Tool]:
         "patch": patch_file,
         "rm": remove_path,
         "python": python_tool,
-        "pptx_html": pptx_html,
-        "pptx_template": pptx_template,
-        "docx_document": docx_document,
-        "xlsx_artifact": xlsx_artifact,
         "shell": shell_tool,
         "skill": load_skill,
         "load_tool": load_tool,

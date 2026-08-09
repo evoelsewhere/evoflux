@@ -10,14 +10,22 @@ success is not visual proof: render and inspect every changed or created page
 before delivery. Do not load bundled references or scripts when this skill
 activates.
 
+Use the deferred `artifact` tool with `format: "pdf"` for new authored PDFs and
+fillable AcroForm workflows. Call `catalog` for the live schema. For a form,
+call `inspect`, use the exact source hash and field names, then `validate` and
+`preview`; pass the completed `inspect_job_id` so its durable manifest is
+reused. Publish only the accepted preview job. The published PDF must be the
+exact immutable bytes that were rendered and reviewed.
+
 ## Choose one lane
 
 - **Inspect/extract:** read metadata, text, tables, images, annotations, page
   geometry, or accessibility structure without changing the source.
 - **Transform:** merge, split, reorder, rotate, crop, watermark, redact,
   encrypt, decrypt, or optimize an existing PDF.
-- **Create:** author a new PDF from supplied content and assets.
-- **Form:** inspect or fill AcroForm fields while preserving field behavior.
+- **Create:** author a new PDF through the Artifact Fabric `new` schema.
+- **Form:** inspect or fill AcroForm fields through the Artifact Fabric `form`
+  schema while preserving field behavior.
 - **OCR:** make scanned pages searchable while retaining the visual page.
 
 Do not mix lanes speculatively. Identify page ranges, ordering, output path,
@@ -39,8 +47,9 @@ password handling, and preservation requirements before mutation.
 2. Choose one repository-available implementation that preserves the required
    structure. Prefer pypdf/qpdf for page operations, pdfplumber for extraction,
    ReportLab for new authored pages, and Poppler rendering for verification.
-3. Write to a new output file unless the user explicitly authorizes replacing
-   a generated intermediate. Never overwrite an uploaded source.
+3. For create/form work, write the JSON project, call `validate`, then call
+   `preview` and inspect every returned image. For other lanes, write to a new
+   output file. Never overwrite an uploaded source.
 4. Preserve page order, boxes, bookmarks, metadata, fields, annotations,
    links, and accessibility information whenever the requested operation does
    not require changing them.
@@ -71,6 +80,9 @@ or globally restyling the document.
 Stop when the requested structural operation is independently confirmed, the
 rendered output is visually correct, the source remains intact, and all
 preservation requirements are satisfied.
+
+For Artifact Fabric work, call
+`artifact(action="publish", job_id=..., output="...pdf")` only after this gate.
 
 ## Deliverable
 

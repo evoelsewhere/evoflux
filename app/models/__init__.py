@@ -1,3 +1,4 @@
+from .artifact import ArtifactJob, ArtifactReview, ArtifactRevision
 from .chat import (
     ChatSession,
     DreamLog,
@@ -23,6 +24,9 @@ from .webbridge import (
 )
 
 __all__ = [
+    "ArtifactJob",
+    "ArtifactReview",
+    "ArtifactRevision",
     "ChatSession",
     "DelegationTask",
     "DreamLog",

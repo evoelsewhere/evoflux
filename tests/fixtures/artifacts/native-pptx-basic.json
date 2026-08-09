@@ -1,0 +1,62 @@
+{
+  "schema_version": 2,
+  "mode": "new",
+  "quality_profile": "native",
+  "title": "Artifact Fabric native PPTX smoke test",
+  "width": 1280,
+  "height": 720,
+  "slides": [
+    {
+      "id": "overview",
+      "background": "#f8fafc",
+      "speaker_notes": "Generated entirely with native editable objects.",
+      "elements": [
+        {
+          "type": "text",
+          "name": "title",
+          "position": { "left": 72, "top": 56, "width": 760, "height": 82 },
+          "text": "Artifact Fabric",
+          "font_size": 46,
+          "color": "#0f172a",
+          "bold": true
+        },
+        {
+          "type": "shape",
+          "name": "status-card",
+          "position": { "left": 72, "top": 172, "width": 360, "height": 132 },
+          "geometry": "roundRect",
+          "fill": "#dbeafe",
+          "line_fill": "#93c5fd",
+          "line_width": 1,
+          "border_radius": "rounded-xl",
+          "text": "Immutable revision\nExact-byte publish",
+          "font_size": 23,
+          "text_color": "#1e3a8a",
+          "bold": true,
+          "vertical_alignment": "middle"
+        },
+        {
+          "type": "chart",
+          "name": "format-coverage",
+          "position": { "left": 500, "top": 172, "width": 690, "height": 410 },
+          "chart_type": "bar",
+          "title": "Native driver coverage",
+          "categories": ["DOCX", "XLSX", "PPTX", "PDF"],
+          "series": [
+            { "name": "Native", "values": [1, 1, 1, 1], "fill": "#2563eb" }
+          ],
+          "has_legend": false,
+          "show_values": true
+        },
+        {
+          "type": "text",
+          "name": "footer",
+          "position": { "left": 72, "top": 640, "width": 1118, "height": 28 },
+          "text": "Backend worker · no Desktop WebView dependency",
+          "font_size": 15,
+          "color": "#64748b"
+        }
+      ]
+    }
+  ]
+}

@@ -4,6 +4,7 @@ from importlib import import_module
 from typing import Any
 
 _EXPORT_MODULES = {
+    "artifact": "artifact",
     "browser_use": "browser_use_tool",
     "webbridge": "webbridge_tool",
     "create_pull_request": "pr",
@@ -36,10 +37,6 @@ _EXPORT_MODULES = {
     "note_tool": "note",
     "process_tool": "process",
     "python_tool": "python",
-    "pptx_html": "pptx_html",
-    "pptx_template": "pptx_template",
-    "docx_document": "docx_document",
-    "xlsx_artifact": "xlsx_artifact",
     "schedule_task": "schedule",
     "shell_tool": "shell",
     "discover_skills": "skill",
@@ -74,6 +71,7 @@ def __getattr__(name: str) -> Any:  # noqa: ANN401 - public lazy re-export
 
 
 __all__ = [
+    "artifact",
     "browser_use",
     "create_pull_request",
     "add_code_review_comment",
@@ -105,10 +103,6 @@ __all__ = [
     "note_tool",
     "process_tool",
     "python_tool",
-    "pptx_html",
-    "pptx_template",
-    "docx_document",
-    "xlsx_artifact",
     "read_file",
     "remove_path",
     "schedule_task",

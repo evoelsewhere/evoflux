@@ -54,7 +54,7 @@ describe('BlockRenderer assistant artifacts', () => {
           id: 'tool-result',
           type: 'tool',
           content: '',
-          toolName: 'docx_document',
+          toolName: 'artifact',
           toolArgs: '{}',
           toolDone: true,
           extra: {
