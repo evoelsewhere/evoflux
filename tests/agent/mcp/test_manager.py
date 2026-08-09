@@ -332,6 +332,68 @@ class TestMCPManagerWithMockedServer:
         )
 
     @pytest.mark.asyncio
+    async def test_call_app_tool_protects_outbound_arguments(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "app.agent.outbound_redaction.load_outbound_data_policy",
+            lambda: "redact",
+        )
+        monkeypatch.setattr(
+            "app.agent.outbound_redaction.load_outbound_pii_policy",
+            lambda: "off",
+        )
+        manager = MCPManager()
+        session = MagicMock()
+        session.call_tool = AsyncMock(return_value={"content": []})
+        manager._runners["test"] = SimpleNamespace(
+            session=session,
+            status=MCPServerStatus(
+                name="test", transport="stdio", enabled=True, state="ready"
+            ),
+            tools=[SimpleNamespace(name="mcp_test_send")],
+        )  # type: ignore[assignment]
+
+        await manager.call_app_tool(
+            "test",
+            "send",
+            {"nested": {"authorization": "Bearer abcdefghijklmnop"}},
+        )
+
+        forwarded = session.call_tool.call_args.args[1]
+        assert "abcdefghijklmnop" not in str(forwarded)
+
+    @pytest.mark.asyncio
+    async def test_call_app_tool_blocks_before_mcp_network_call(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "app.agent.outbound_redaction.load_outbound_data_policy",
+            lambda: "block",
+        )
+        monkeypatch.setattr(
+            "app.agent.outbound_redaction.load_outbound_pii_policy",
+            lambda: "off",
+        )
+        manager = MCPManager()
+        session = MagicMock()
+        session.call_tool = AsyncMock(return_value={"content": []})
+        manager._runners["test"] = SimpleNamespace(
+            session=session,
+            status=MCPServerStatus(
+                name="test", transport="stdio", enabled=True, state="ready"
+            ),
+            tools=[SimpleNamespace(name="mcp_test_send")],
+        )  # type: ignore[assignment]
+        secret = "ghp_abcdefghijklmnopqrstuvwxyz123456"
+
+        with pytest.raises(PermissionError) as raised:
+            await manager.call_app_tool("test", "send", {"payload": secret})
+
+        session.call_tool.assert_not_awaited()
+        assert secret not in str(raised.value)
+
+    @pytest.mark.asyncio
     async def test_call_app_tool_rejects_unavailable_tool(self) -> None:
         manager = MCPManager()
         runner = SimpleNamespace(

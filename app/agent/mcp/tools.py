@@ -19,7 +19,7 @@ from loguru import logger
 from pydantic import AnyUrl, BaseModel
 
 from app.agent.errors import ToolExecutionError
-from app.agent.outbound_redaction import protect_outbound_value
+from app.agent.outbound_redaction import OutboundContext, protect_outbound_value
 from app.agent.schemas.chat import ContentBlock, ImageDataBlock, TextBlock, ToolResult
 from app.agent.tools.registry import Tool
 
@@ -150,7 +150,10 @@ class MCPTool(Tool):
                 f"MCP server '{self._server_name}' is not connected."
             )
 
-        protected_kwargs_raw, redaction_report = protect_outbound_value(kwargs)
+        protected_kwargs_raw, redaction_report = protect_outbound_value(
+            kwargs,
+            context=OutboundContext(channel="mcp", destination=self._server_name),
+        )
         protected_kwargs = (
             protected_kwargs_raw
             if isinstance(protected_kwargs_raw, dict)
@@ -159,18 +162,20 @@ class MCPTool(Tool):
         if redaction_report.matches:
             logger.warning(
                 "mcp_outbound_sensitive_data_protected server={} tool={} "
-                "matches={} categories={}",
+                "matches={} secret_matches={} pii_matches={} categories={}",
                 self._server_name,
                 self._remote_name,
                 redaction_report.matches,
+                redaction_report.secret_matches,
+                redaction_report.pii_matches,
                 ",".join(redaction_report.categories),
             )
 
         logger.debug(
-            "mcp_tool_call server={} tool={} args={}",
+            "mcp_tool_call server={} tool={} arg_count={}",
             self._server_name,
             self._remote_name,
-            list(protected_kwargs.keys()),
+            len(protected_kwargs),
         )
         try:
             result = await session.call_tool(self._remote_name, protected_kwargs)

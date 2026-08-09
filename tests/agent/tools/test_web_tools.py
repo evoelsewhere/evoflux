@@ -4,7 +4,7 @@ import httpx
 import pytest
 import respx
 
-from app.agent.tools.builtin.web import web_fetch, web_search
+from app.agent.tools.builtin.web import image_search, web_fetch, web_search
 
 
 @pytest.mark.asyncio
@@ -16,6 +16,60 @@ async def test_web_search_success():
         result = await web_search("query")
         assert len(result) == 1
         assert result[0]["title"] == "t"
+
+
+@pytest.mark.asyncio
+async def test_web_search_redacts_query_before_search_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.agent.outbound_redaction.load_outbound_data_policy",
+        lambda: "redact",
+    )
+    monkeypatch.setattr(
+        "app.agent.outbound_redaction.load_outbound_pii_policy",
+        lambda: "off",
+    )
+    with patch("app.agent.tools.builtin.web.DDGS") as mock_ddgs_class:
+        mock_ddgs = mock_ddgs_class.return_value
+        mock_ddgs.text.return_value = [{"title": "t", "href": "h", "body": "b"}]
+
+        await web_search("https://example.test/?token=abcdefghijklmnop")
+
+        query = mock_ddgs.text.call_args.args[0]
+        assert "abcdefghijklmnop" not in query
+        assert "[REDACTED:url-secret]" in query
+
+
+@pytest.mark.asyncio
+async def test_image_search_redacts_query_before_search_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.agent.outbound_redaction.load_outbound_data_policy",
+        lambda: "redact",
+    )
+    monkeypatch.setattr(
+        "app.agent.outbound_redaction.load_outbound_pii_policy",
+        lambda: "off",
+    )
+    with patch("app.agent.tools.builtin.web.DDGS") as mock_ddgs_class:
+        mock_ddgs = mock_ddgs_class.return_value
+        mock_ddgs.images.return_value = [
+            {
+                "title": "image",
+                "image": "https://example.test/image.png",
+                "thumbnail": "https://example.test/thumb.png",
+                "url": "https://example.test",
+                "source": "example",
+            }
+        ]
+
+        await image_search("token=abcdefghijklmnop")
+
+        query = mock_ddgs.images.call_args.args[0]
+        assert "abcdefghijklmnop" not in query
+        assert "[REDACTED:secret]" in query
 
 
 @pytest.mark.asyncio
@@ -174,6 +228,29 @@ async def test_web_fetch_http_error_returns_error_string():
 
     result = await web_fetch(url)
     assert "Error fetching or converting" in result
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_web_fetch_blocks_url_secret_before_http_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.agent.outbound_redaction.load_outbound_data_policy",
+        lambda: "block",
+    )
+    monkeypatch.setattr(
+        "app.agent.outbound_redaction.load_outbound_pii_policy",
+        lambda: "off",
+    )
+    route = respx.get("https://example.test/?token=abcdefghijklmnop").mock(
+        return_value=httpx.Response(200, text="should not be fetched")
+    )
+
+    with pytest.raises(PermissionError):
+        await web_fetch("https://example.test/?token=abcdefghijklmnop")
+
+    assert not route.called
 
 
 @pytest.mark.asyncio

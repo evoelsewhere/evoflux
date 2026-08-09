@@ -482,7 +482,14 @@ class TerminalManager:
                         queue.get(), timeout=min(idle_s, remaining)
                     )
                 except asyncio.TimeoutError:
-                    if chunks:  # quiet after output → command done
+                    captured = _strip_ansi(
+                        b"".join(chunks).decode("utf-8", "replace")
+                    )
+                    # Interactive PTYs echo submitted input before the command
+                    # starts producing output. Under load that echo can be
+                    # followed by a quiet period longer than ``idle_s``; do not
+                    # mistake it for command completion.
+                    if chunks and not _is_command_echo_only(captured, command):
                         break
                     continue  # nothing yet → keep waiting until the deadline
                 if item is None:  # shell exited
@@ -595,6 +602,13 @@ _ANSI_RE = re.compile(
 
 def _strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text).replace("\r\n", "\n").replace("\r", "")
+
+
+def _is_command_echo_only(captured: str, command: str) -> bool:
+    """Return whether PTY output contains only the shell's input echo."""
+    output_lines = [line.strip() for line in captured.splitlines() if line.strip()]
+    command_lines = [line.strip() for line in command.splitlines() if line.strip()]
+    return bool(command_lines) and output_lines == command_lines
 
 
 def _shell_argv(shell: str) -> list[str]:

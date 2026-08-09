@@ -50,6 +50,7 @@ from app.agent.mcp.config import (
     resolve_headers,
     resolve_secret_refs,
 )
+from app.agent.outbound_redaction import OutboundContext, protect_outbound_value
 from app.agent.mcp.oauth import (
     OAuthRequiredError,
     build_oauth_provider,
@@ -432,13 +433,31 @@ class MCPManager:
         if tool_name not in advertised_tool_names:
             raise ValueError(f"MCP tool '{tool_name}' is not available.")
 
+        protected_raw, report = protect_outbound_value(
+            arguments,
+            context=OutboundContext(channel="mcp", destination=server_name),
+        )
+        protected_arguments = (
+            protected_raw if isinstance(protected_raw, dict) else arguments
+        )
+        if report.matches:
+            logger.warning(
+                "mcp_app_outbound_sensitive_data_protected server={} tool={} "
+                "matches={} secret_matches={} pii_matches={} categories={}",
+                server_name,
+                tool_name,
+                report.matches,
+                report.secret_matches,
+                report.pii_matches,
+                ",".join(report.categories),
+            )
         logger.debug(
-            "mcp_app_tool_call server={} tool={} args={}",
+            "mcp_app_tool_call server={} tool={} arg_count={}",
             server_name,
             tool_name,
-            list(arguments.keys()),
+            len(protected_arguments),
         )
-        return await runner.session.call_tool(tool_name, arguments)
+        return await runner.session.call_tool(tool_name, protected_arguments)
 
     # ── Public mutation API (used by /api/mcp routes) ────────────────────
 

@@ -64,7 +64,7 @@ def test_security_defaults_fail_safe_for_credentials_and_network() -> None:
     assert cfg.allow_network is False
     assert cfg.inherit_shell_environment is False
     assert cfg.load_shell_profile is False
-    assert cfg.outbound_data_policy == "redact"
+    assert cfg.outbound_data_policy == "block"
     assert cfg.outbound_pii_policy == "standard"
     assert cfg.max_execution_seconds == 600
     assert cfg.max_output_bytes == 131072

@@ -45,6 +45,7 @@ from opentelemetry.trace import SpanKind, StatusCode
 
 from app.agent.hooks.base import BaseAgentHook
 from app.agent.outbound_redaction import (
+    OutboundContext,
     load_outbound_data_policy,
     load_outbound_pii_policy,
     protect_outbound_payload,
@@ -920,12 +921,19 @@ class SummarizationHook(BaseAgentHook):
                     messages=list(messages),
                     policy=load_outbound_data_policy(),
                     pii_policy=load_outbound_pii_policy(),
+                    context=OutboundContext(channel="model", destination=provider_name),
                 )
                 if redaction_report.matches:
                     logger.warning(
                         "summarization_sensitive_data_redacted "
-                        "matches={} categories={}",
+                        "channel={} matches={} secret_matches={} pii_matches={} "
+                        "categories={}",
+                        redaction_report.context.label
+                        if redaction_report.context
+                        else "model:external",
                         redaction_report.matches,
+                        redaction_report.secret_matches,
+                        redaction_report.pii_matches,
                         ",".join(redaction_report.categories),
                     )
                 stream = self._llm_provider.stream(
