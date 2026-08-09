@@ -39,6 +39,10 @@ export type ServerStatus = {
   started_at: string | null
   /** Saved config from mcp.json. Null when the server was removed mid-flight. */
   config: ServerBody | null
+  source: 'global' | 'plugin'
+  plugin_installation_id: string | null
+  plugin_name: string | null
+  plugin_server_name: string | null
 }
 
 export type CreateServerRequest = { name: string; server: ServerBody }

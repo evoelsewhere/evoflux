@@ -91,6 +91,10 @@ class ServerStatusResponse(BaseModel):
     tool_names: list[str] = Field(default_factory=list)
     started_at: str | None = None
     config: ServerBody | None = Field(default=None, discriminator="transport")
+    source: Literal["global", "plugin"] = "global"
+    plugin_installation_id: str | None = None
+    plugin_name: str | None = None
+    plugin_server_name: str | None = None
 
 
 class ServerListResponse(BaseModel):

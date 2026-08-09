@@ -1684,6 +1684,7 @@ export interface PluginMcpRuntimeStatus {
 export interface PluginListItem {
   installation: PluginInstallation
   inspection: PluginInspection
+  credentials: PluginCredentialState
 }
 
 export interface PluginListResponse {
@@ -1694,6 +1695,43 @@ export interface PluginListResponse {
 export interface PluginOperationResponse {
   installation: PluginInstallation
   inspection: PluginInspection
+}
+
+export interface PluginWorkspaceEntry {
+  path: string
+  name: string
+  kind: 'file' | 'directory'
+  size: number
+}
+
+export interface PluginWorkspaceFileResponse {
+  root: string
+  path: string
+  content: string
+}
+
+export interface PluginWorkspaceMutationResponse {
+  ok: boolean
+  inspection: PluginInspection
+}
+
+export interface PluginCredentialFieldState {
+  key: string
+  label: string
+  type: 'text' | 'secret' | 'url' | 'boolean'
+  env: string
+  required: boolean
+  description: string
+  placeholder: string
+  configured: boolean
+  value: string | boolean | null
+}
+
+export interface PluginCredentialState {
+  supported: boolean
+  configured: boolean
+  fields: PluginCredentialFieldState[]
+  error: string | null
 }
 
 export interface SideChatCreateResponse {

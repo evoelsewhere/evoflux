@@ -11,6 +11,7 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from app.api.schemas.plugins import (
     PluginCreateRequest,
+    PluginCredentialUpdateRequest,
     PluginEnabledRequest,
     PluginInstallRequest,
     PluginListItem,
@@ -19,6 +20,11 @@ from app.api.schemas.plugins import (
     PluginOperationResponse,
     PluginPackRequest,
     PluginPathResponse,
+    PluginWorkspaceDeleteRequest,
+    PluginWorkspaceEntryRequest,
+    PluginWorkspaceFileRequest,
+    PluginWorkspaceFileResponse,
+    PluginWorkspaceMutationResponse,
 )
 from app.plugin_platform import (
     PluginInstallError,
@@ -33,8 +39,22 @@ from app.plugin_platform import (
     uninstall_plugin,
 )
 from app.plugin_platform.installer import MAX_ARCHIVE_BYTES
+from app.plugin_platform.credentials import (
+    PluginCredentialState,
+    clear_credentials,
+    credential_state,
+    save_credentials,
+)
 from app.plugin_platform.models import PluginInspection, PluginInstallation
 from app.plugin_platform.registry import plugin_data_root, staging_root
+from app.plugin_platform.workspace import (
+    PluginWorkspaceEntry,
+    create_workspace_entry,
+    delete_workspace_entry,
+    list_workspace,
+    read_workspace_file,
+    write_workspace_file,
+)
 from app.services import team_manager
 
 
@@ -46,6 +66,20 @@ def _inspection_for(installation: PluginInstallation) -> PluginInspection:
         installation.root,
         data_root=plugin_data_root(installation.id),
     )
+
+
+def _credential_state_for(
+    installation: PluginInstallation,
+    inspection: PluginInspection,
+) -> PluginCredentialState:
+    try:
+        return credential_state(installation.id, inspection)
+    except (OSError, ValueError) as exc:
+        return PluginCredentialState(
+            supported=True,
+            configured=False,
+            error=str(exc),
+        )
 
 
 async def _after_mutation() -> None:
@@ -71,7 +105,11 @@ async def list_plugins() -> PluginListResponse:
     )
     return PluginListResponse(
         plugins=[
-            PluginListItem(installation=installation, inspection=inspection)
+            PluginListItem(
+                installation=installation,
+                inspection=inspection,
+                credentials=_credential_state_for(installation, inspection),
+            )
             for installation, inspection in zip(installations, items, strict=True)
         ],
         mcp_servers=[
@@ -152,7 +190,11 @@ async def create_plugin_package(body: PluginCreateRequest) -> PluginPathResponse
             body.destination,
             name=body.name,
             description=body.description,
+            version=body.version,
+            author=body.author,
+            license_name=body.license,
             skill_name=body.skill_name,
+            mcp_name=body.mcp_name,
         )
         return PluginPathResponse(path=str(path))
     except (OSError, ValueError) as exc:
@@ -164,6 +206,152 @@ async def pack_plugin_package(body: PluginPackRequest) -> PluginPathResponse:
     try:
         path = await asyncio.to_thread(pack_plugin, body.path, body.output)
         return PluginPathResponse(path=str(path))
+    except (OSError, ValueError) as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get("/workspace/tree", response_model=list[PluginWorkspaceEntry])
+async def list_plugin_workspace(
+    root: str = Query(min_length=1),
+) -> list[PluginWorkspaceEntry]:
+    try:
+        return await asyncio.to_thread(list_workspace, root)
+    except (OSError, ValueError) as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get("/workspace/file", response_model=PluginWorkspaceFileResponse)
+async def get_plugin_workspace_file(
+    root: str = Query(min_length=1),
+    path: str = Query(min_length=1),
+) -> PluginWorkspaceFileResponse:
+    try:
+        content = await asyncio.to_thread(read_workspace_file, root, path)
+        return PluginWorkspaceFileResponse(root=root, path=path, content=content)
+    except (OSError, ValueError) as exc:
+        raise _http_error(exc) from exc
+
+
+@router.put("/workspace/file", response_model=PluginWorkspaceMutationResponse)
+async def put_plugin_workspace_file(
+    body: PluginWorkspaceFileRequest,
+) -> PluginWorkspaceMutationResponse:
+    try:
+        await asyncio.to_thread(
+            write_workspace_file,
+            body.root,
+            body.path,
+            body.content,
+        )
+        await _after_mutation()
+        return PluginWorkspaceMutationResponse(
+            inspection=await asyncio.to_thread(inspect_plugin, body.root)
+        )
+    except (OSError, ValueError) as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post(
+    "/workspace/entry",
+    response_model=PluginWorkspaceMutationResponse,
+    status_code=201,
+)
+async def post_plugin_workspace_entry(
+    body: PluginWorkspaceEntryRequest,
+) -> PluginWorkspaceMutationResponse:
+    try:
+        await asyncio.to_thread(
+            create_workspace_entry,
+            body.root,
+            body.path,
+            body.kind,
+        )
+        await _after_mutation()
+        return PluginWorkspaceMutationResponse(
+            inspection=await asyncio.to_thread(inspect_plugin, body.root)
+        )
+    except (OSError, ValueError) as exc:
+        raise _http_error(exc) from exc
+
+
+@router.delete(
+    "/workspace/entry",
+    response_model=PluginWorkspaceMutationResponse,
+)
+async def remove_plugin_workspace_entry(
+    body: PluginWorkspaceDeleteRequest,
+) -> PluginWorkspaceMutationResponse:
+    try:
+        await asyncio.to_thread(delete_workspace_entry, body.root, body.path)
+        await _after_mutation()
+        return PluginWorkspaceMutationResponse(
+            inspection=await asyncio.to_thread(inspect_plugin, body.root)
+        )
+    except (OSError, ValueError) as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get(
+    "/{installation_id}/credentials",
+    response_model=PluginCredentialState,
+)
+async def get_plugin_credentials(installation_id: str) -> PluginCredentialState:
+    installation = await asyncio.to_thread(get_installation, installation_id)
+    if installation is None:
+        raise HTTPException(status_code=404, detail="Plugin installation not found.")
+    try:
+        inspection = await asyncio.to_thread(_inspection_for, installation)
+        return await asyncio.to_thread(
+            credential_state,
+            installation.id,
+            inspection,
+        )
+    except (OSError, ValueError) as exc:
+        raise _http_error(exc) from exc
+
+
+@router.put(
+    "/{installation_id}/credentials",
+    response_model=PluginCredentialState,
+)
+async def put_plugin_credentials(
+    installation_id: str,
+    body: PluginCredentialUpdateRequest,
+) -> PluginCredentialState:
+    installation = await asyncio.to_thread(get_installation, installation_id)
+    if installation is None:
+        raise HTTPException(status_code=404, detail="Plugin installation not found.")
+    try:
+        inspection = await asyncio.to_thread(_inspection_for, installation)
+        result = await asyncio.to_thread(
+            save_credentials,
+            installation.id,
+            inspection,
+            body.values,
+        )
+        await _after_mutation()
+        return result
+    except (OSError, ValueError) as exc:
+        raise _http_error(exc) from exc
+
+
+@router.delete(
+    "/{installation_id}/credentials",
+    response_model=PluginCredentialState,
+)
+async def delete_plugin_credentials(installation_id: str) -> PluginCredentialState:
+    installation = await asyncio.to_thread(get_installation, installation_id)
+    if installation is None:
+        raise HTTPException(status_code=404, detail="Plugin installation not found.")
+    try:
+        inspection = await asyncio.to_thread(_inspection_for, installation)
+        result = await asyncio.to_thread(
+            clear_credentials,
+            installation.id,
+            inspection,
+        )
+        await _after_mutation()
+        return result
     except (OSError, ValueError) as exc:
         raise _http_error(exc) from exc
 

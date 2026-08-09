@@ -60,11 +60,19 @@ def apply_skill_runtime_contract(state: AgentState, record: SkillRecord) -> None
     """Atomically apply one skill's declarative runtime dependencies and policy."""
 
     required, deferred = _resolve_builtin_dependencies(state, record)
+    plugin_tools: tuple[str, ...] = ()
+    if record.source.startswith("plugin:"):
+        installation_id = record.source.removeprefix("plugin:").strip()
+        grant_plugin_tools = state.metadata.get("_grant_plugin_mcp_tools")
+        if installation_id and callable(grant_plugin_tools):
+            plugin_tools = tuple(grant_plugin_tools(installation_id))
     activated = state.metadata.setdefault("activated_deferred_tools", set())
     activated.update(deferred)
+    activated.update(plugin_tools)
     state.metadata.setdefault("skill_runtime_contracts", {})[record.name] = {
         "required_tools": tuple(sorted(required)),
-        "activated_tools": tuple(sorted(deferred)),
+        "activated_tools": tuple(sorted({*deferred, *plugin_tools})),
+        "plugin_tools": tuple(sorted(plugin_tools)),
     }
 
 
@@ -210,6 +218,10 @@ async def activate_skill(record: SkillRecord) -> str:
     )
     resources = discovered_resources[:manifest_limit]
     _grant_skill_read_access(record.skill_dir)
+    plugin_root: Path | None = None
+    if record.source.startswith("plugin:") and record.skill_dir.parent.name == "skills":
+        plugin_root = record.skill_dir.parent.parent.resolve()
+        _grant_skill_read_access(plugin_root)
 
     resource_lines = [f"- {item['path']} ({item['size']} bytes)" for item in resources]
     if len(discovered_resources) > manifest_limit:
@@ -217,9 +229,17 @@ async def activate_skill(record: SkillRecord) -> str:
             "- … additional task resources omitted from the bounded manifest"
         )
     manifest = "\n".join(resource_lines) if resource_lines else "- (none)"
+    plugin_context = (
+        f"Plugin root: {plugin_root}\n"
+        "Read package files outside the Skill directory with the ordinary read "
+        "tool; skill read_resource remains limited to Skill resources.\n"
+        if plugin_root is not None
+        else ""
+    )
     output = (
         f'<skill_content name="{escape(record.name)}" revision="{revision}">\n'
         f"Skill directory: {record.skill_dir.resolve()}\n"
+        f"{plugin_context}"
         "Resolve every relative path in the instructions against that directory. "
         'Use skill(action="read_resource") for text resources that ordinary '
         "file tools cannot access.\n\n"

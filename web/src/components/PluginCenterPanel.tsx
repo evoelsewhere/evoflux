@@ -5,9 +5,12 @@ import {
   Blocks,
   Box,
   CheckCircle2,
+  ChevronDown,
+  Code2,
   FileArchive,
   FolderInput,
   FolderPlus,
+  KeyRound,
   Loader2,
   PackagePlus,
   RefreshCw,
@@ -25,8 +28,10 @@ import {
   uploadPlugin,
 } from '@/api/client'
 import type {
+  PluginCredentialState,
   PluginInspection,
   PluginListItem,
+  PluginListResponse,
   PluginMcpRuntimeStatus,
 } from '@/api/types'
 import { queryKeys } from '@/queries/keys'
@@ -36,6 +41,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+import { PluginWorkspaceEditor } from '@/components/PluginWorkspaceEditor'
+import { PluginCredentialsPanel } from '@/components/PluginCredentialsPanel'
 
 async function choosePath(options: {
   directory?: boolean
@@ -60,6 +67,13 @@ function diagnosticsCount(inspection: PluginInspection): number {
   ].filter((item) => item.severity === 'error').length
 }
 
+function conciseToolNames(server: PluginMcpRuntimeStatus): string {
+  const generatedPrefix = `mcp_${server.runtime_name}_`
+  return server.tool_names
+    .map((name) => name.startsWith(generatedPrefix) ? name.slice(generatedPrefix.length) : name)
+    .join(', ')
+}
+
 function PluginCard({
   item,
   servers,
@@ -67,6 +81,8 @@ function PluginCard({
   onToggle,
   onPack,
   onDelete,
+  onOpen,
+  onCredentials,
 }: {
   item: PluginListItem
   servers: PluginMcpRuntimeStatus[]
@@ -74,14 +90,34 @@ function PluginCard({
   onToggle: (enabled: boolean) => void
   onPack: () => void
   onDelete: () => void
+  onOpen: () => void
+  onCredentials: () => void
 }) {
   const { installation, inspection } = item
+  const [expanded, setExpanded] = useState(false)
   const errors = diagnosticsCount(inspection)
+  const skillCount = inspection.skills.filter((skill) => skill.valid).length
+  const mcpCount = inspection.mcp_servers.filter((server) => server.valid).length
+  const configuredCredentialCount = item.credentials.fields.filter(
+    (field) => field.configured,
+  ).length
+  const credentialLabel = item.credentials.configured
+    ? 'credentials set'
+    : configuredCredentialCount > 0
+      ? 'credentials incomplete'
+      : 'credentials missing'
+  const detailsId = `plugin-details-${installation.id}`
   return (
-    <article className="rounded-xl border border-(--color-border) bg-(--bg-card) p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
+    <article className="@container/plugin-card overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card) shadow-sm transition-colors hover:border-(--color-accent)/50">
+      <button
+        type="button"
+        className="flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left hover:bg-(--bg-key)/50"
+        aria-expanded={expanded}
+        aria-controls={detailsId}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <div className="min-w-0 flex-1 @lg/plugin-card:flex @lg/plugin-card:items-center @lg/plugin-card:gap-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 @lg/plugin-card:min-w-52">
             <h3 className="truncate font-semibold text-(--color-text)">
               {installation.name}
             </h3>
@@ -94,77 +130,146 @@ function PluginCard({
               {installation.source_type === 'linked' ? 'dev link' : 'installed'}
             </span>
           </div>
-          <p className="mt-1 text-sm text-(--color-text-muted)">
-            {installation.description || 'Portable Agent Plugin'}
-          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-(--color-text-muted) @lg/plugin-card:mt-0">
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 rounded-md px-2 py-1',
+                errors ? 'bg-(--color-error-subtle) text-(--color-error)' : 'bg-(--color-success-subtle) text-(--color-success)',
+              )}
+            >
+              {errors ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
+              {errors ? `${errors} component errors` : 'valid'}
+            </span>
+            {item.credentials.supported && (
+              <span className={cn(
+                'inline-flex items-center gap-1 rounded-md px-2 py-1',
+                item.credentials.configured
+                  ? 'bg-(--color-success-subtle) text-(--color-success)'
+                  : 'bg-(--color-warning-subtle) text-(--color-warning)',
+              )}>
+                <KeyRound size={12} /> {credentialLabel}
+              </span>
+            )}
+          </div>
         </div>
-        <Switch
-          checked={installation.enabled}
-          disabled={busy}
-          aria-label={`${installation.enabled ? 'Disable' : 'Enable'} ${installation.name}`}
-          onCheckedChange={onToggle}
-        />
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2 text-xs text-(--color-text-muted)">
-        <span className="inline-flex items-center gap-1 rounded-md bg-(--bg-key) px-2 py-1">
-          <Blocks size={12} /> {inspection.skills.filter((skill) => skill.valid).length} skills
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-md bg-(--bg-key) px-2 py-1">
-          <Server size={12} /> {inspection.mcp_servers.filter((server) => server.valid).length} MCP
-        </span>
         <span
           className={cn(
-            'inline-flex items-center gap-1 rounded-md px-2 py-1',
-            errors ? 'bg-(--color-error-subtle) text-(--color-error)' : 'bg-(--color-success-subtle) text-(--color-success)',
+            'hidden rounded-full px-2 py-0.5 text-xs @sm/plugin-card:inline-flex',
+            installation.enabled
+              ? 'bg-(--color-success-subtle) text-(--color-success)'
+              : 'bg-(--bg-key) text-(--color-text-muted)',
           )}
         >
-          {errors ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
-          {errors ? `${errors} component errors` : 'valid'}
+          {installation.enabled ? 'Enabled' : 'Disabled'}
         </span>
-      </div>
+        <ChevronDown
+          size={17}
+          className={cn(
+            'shrink-0 text-(--color-text-muted) transition-transform',
+            expanded && 'rotate-180',
+          )}
+          aria-hidden="true"
+        />
+      </button>
 
-      <p className="mt-3 truncate font-mono text-[11px] text-(--color-text-subtle)" title={installation.root}>
-        {installation.root}
-      </p>
-      {servers.length > 0 && (
-        <div className="mt-3 space-y-2 rounded-lg border border-(--color-border) bg-(--bg-key) p-2.5">
-          {servers.map((server) => (
-            <div key={server.runtime_name} className="min-w-0 text-xs">
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={cn(
-                    'h-2 w-2 rounded-full',
-                    server.state === 'ready'
-                      ? 'bg-(--color-success)'
-                      : server.error
-                        ? 'bg-(--color-error)'
-                        : 'bg-(--color-text-subtle)',
-                  )}
-                />
-                <span className="font-medium text-(--color-text)">{server.server_name}</span>
-                <span className="text-(--color-text-muted)">{server.state}</span>
-              </div>
-              <p className="mt-1 truncate font-mono text-[11px] text-(--color-text-subtle)" title={server.runtime_name}>
-                runtime: {server.runtime_name}
+      <div
+        className={cn(
+          'grid transition-[grid-template-rows] duration-200 ease-out',
+          expanded ? 'grid-rows-[1fr] border-t border-(--color-border)' : 'grid-rows-[0fr]',
+        )}
+      >
+        <div
+          className="min-h-0 overflow-hidden"
+          aria-hidden={!expanded}
+          inert={!expanded}
+        >
+          <div
+            id={detailsId}
+            className="grid gap-4 p-4 @lg/plugin-card:grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_auto]"
+          >
+            <div className="min-w-0">
+              <p className="text-sm text-(--color-text-muted)">
+                {installation.description || 'Portable Agent Plugin'}
               </p>
-              {server.tool_names.length > 0 && (
-                <p className="mt-1 break-words text-[11px] text-(--color-text-muted)">
-                  tools: {server.tool_names.join(', ')}
-                </p>
-              )}
-              {server.error && <p className="mt-1 text-[11px] text-(--color-error)">{server.error}</p>}
+              <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-(--color-text-muted)">
+                <span className="inline-flex items-center gap-1 rounded-md bg-(--bg-key) px-2 py-1">
+                  <Blocks size={12} /> {skillCount} skills
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-md bg-(--bg-key) px-2 py-1">
+                  <Server size={12} /> {mcpCount} MCP
+                </span>
+              </div>
+              <p className="mt-2 break-all font-mono text-[10px] text-(--color-text-subtle)">
+                {installation.root}
+              </p>
             </div>
-          ))}
+
+            <div className="min-w-0 border-t border-(--color-border) pt-3 @lg/plugin-card:border-t-0 @lg/plugin-card:border-l @lg/plugin-card:pt-0 @lg/plugin-card:pl-4">
+              <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-(--color-text-subtle)">
+                MCP runtime
+              </p>
+              {servers.length > 0 ? (
+                <div className="space-y-3">
+                  {servers.map((server) => (
+                    <div key={server.runtime_name} className="min-w-0 text-xs">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={cn(
+                            'h-2 w-2 rounded-full',
+                            server.state === 'ready'
+                              ? 'bg-(--color-success)'
+                              : server.error
+                                ? 'bg-(--color-error)'
+                                : 'bg-(--color-text-subtle)',
+                          )}
+                        />
+                        <span className="font-medium text-(--color-text)">{server.server_name}</span>
+                        <span className="text-(--color-text-muted)">{server.state}</span>
+                      </div>
+                      <p className="mt-1 break-all font-mono text-[11px] text-(--color-text-subtle)">
+                        runtime: {server.runtime_name}
+                      </p>
+                      {server.tool_names.length > 0 && (
+                        <p className="mt-1 break-words text-[11px] text-(--color-text-muted)">
+                          tools ({server.tool_names.length}): {conciseToolNames(server)}
+                        </p>
+                      )}
+                      {server.error && <p className="mt-1 text-[11px] text-(--color-error)">{server.error}</p>}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-(--color-text-subtle)">No active MCP runtime</p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap content-start items-center gap-1.5 border-t border-(--color-border) pt-3 @lg/plugin-card:w-42 @lg/plugin-card:justify-end @lg/plugin-card:border-t-0 @lg/plugin-card:pt-0">
+              <div className="mr-auto flex items-center gap-2 @lg/plugin-card:mb-1 @lg/plugin-card:mr-0 @lg/plugin-card:w-full @lg/plugin-card:justify-end">
+                <span className="text-xs text-(--color-text-muted)">
+                  {installation.enabled ? 'Enabled' : 'Disabled'}
+                </span>
+                <Switch
+                  checked={installation.enabled}
+                  disabled={busy}
+                  aria-label={`${installation.enabled ? 'Disable' : 'Enable'} ${installation.name}`}
+                  onCheckedChange={onToggle}
+                />
+              </div>
+              <Button variant="outline" size="sm" disabled={busy} onClick={onCredentials}>
+                <KeyRound /> Credentials
+              </Button>
+              <Button variant="outline" size="sm" disabled={busy} onClick={onOpen}>
+                <Code2 /> Edit
+              </Button>
+              <Button variant="outline" size="sm" disabled={busy} onClick={onPack}>
+                <FileArchive /> Pack
+              </Button>
+              <Button variant="destructive" size="sm" disabled={busy} onClick={onDelete}>
+                <Trash2 /> Uninstall
+              </Button>
+            </div>
+          </div>
         </div>
-      )}
-      <div className="mt-3 flex justify-end gap-2">
-        <Button variant="outline" size="sm" disabled={busy} onClick={onPack}>
-          <FileArchive /> Pack
-        </Button>
-        <Button variant="destructive" size="sm" disabled={busy} onClick={onDelete}>
-          <Trash2 /> Uninstall
-        </Button>
       </div>
     </article>
   )
@@ -178,10 +283,21 @@ export function PluginCenterPanel() {
   const uploadRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [inspection, setInspection] = useState<PluginInspection | null>(null)
+  const [activeView, setActiveView] = useState<
+    | { kind: 'editor'; root: string; name: string }
+    | { kind: 'credentials'; plugin: PluginListItem }
+    | null
+  >(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [hostPath, setHostPath] = useState('')
   const [createParent, setCreateParent] = useState('')
   const [createName, setCreateName] = useState('')
+  const [createDescription, setCreateDescription] = useState('')
+  const [createVersion, setCreateVersion] = useState('0.1.0')
+  const [createAuthor, setCreateAuthor] = useState('')
+  const [createLicense, setCreateLicense] = useState('MIT')
   const [createSkill, setCreateSkill] = useState('')
+  const [createMcp, setCreateMcp] = useState('')
 
   const query = useQuery({
     queryKey: queryKeys.plugins.list(),
@@ -191,6 +307,26 @@ export function PluginCenterPanel() {
 
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: queryKeys.plugins.all() })
+  }
+
+  const syncCredentials = async (
+    installationId: string,
+    credentials: PluginCredentialState,
+  ) => {
+    queryClient.setQueryData<PluginListResponse>(
+      queryKeys.plugins.list(),
+      (current) => current
+        ? {
+            ...current,
+            plugins: current.plugins.map((item) =>
+              item.installation.id === installationId
+                ? { ...item, credentials }
+                : item,
+            ),
+          }
+        : current,
+    )
+    await queryClient.invalidateQueries({ queryKey: queryKeys.plugins.list() })
   }
 
   const run = async (label: string, action: () => Promise<unknown>) => {
@@ -211,7 +347,17 @@ export function PluginCenterPanel() {
 
   const pickAndImport = async (mode: 'install' | 'link') => {
     if (!desktop) {
-      uploadRef.current?.click()
+      if (mode === 'install') {
+        uploadRef.current?.click()
+        return
+      }
+      const path = hostPath.trim()
+      if (!path) return
+      await run(`link:${path}`, async () => {
+        const result = await importPlugin(path, 'link')
+        setInspection(result.inspection)
+        pushToast({ tone: 'success', title: `${result.installation.name} linked` })
+      })
       return
     }
     const path = await choosePath({
@@ -227,8 +373,7 @@ export function PluginCenterPanel() {
   }
 
   const validateFolder = async () => {
-    if (!desktop) return
-    const path = await choosePath({ directory: true })
+    const path = desktop ? await choosePath({ directory: true }) : hostPath.trim()
     if (!path) return
     await run(`inspect:${path}`, async () => setInspection(await inspectPlugin(path)))
   }
@@ -240,13 +385,62 @@ export function PluginCenterPanel() {
       const result = await createPlugin({
         destination,
         name: createName,
-        description: `EvoFlux plugin ${createName}`,
+        description: createDescription || `EvoFlux plugin ${createName}`,
+        version: createVersion || undefined,
+        author: createAuthor || undefined,
+        license: createLicense || undefined,
         skill_name: createSkill || undefined,
+        mcp_name: createMcp || undefined,
       })
-      setInspection(await inspectPlugin(result.path))
+      const resultInspection = await inspectPlugin(result.path)
+      setInspection(resultInspection)
+      setActiveView({
+        kind: 'editor',
+        root: result.path,
+        name: resultInspection.manifest?.name || createName,
+      })
       setShowCreate(false)
       pushToast({ tone: 'success', title: 'Plugin scaffold created', description: result.path })
     })
+  }
+
+  if (activeView?.kind === 'credentials') {
+    const credentialPlugin = activeView.plugin
+    return (
+      <PluginCredentialsPanel
+        installation={credentialPlugin.installation}
+        onBack={() => setActiveView(null)}
+        onEdit={() => {
+          setActiveView({
+            kind: 'editor',
+            root: credentialPlugin.installation.root,
+            name: credentialPlugin.installation.name,
+          })
+        }}
+        onSaved={(credentials) =>
+          syncCredentials(credentialPlugin.installation.id, credentials)
+        }
+      />
+    )
+  }
+
+  if (activeView?.kind === 'editor') {
+    const linked = query.data?.plugins.some((item) => item.installation.root === activeView.root) ?? false
+    return (
+      <PluginWorkspaceEditor
+        root={activeView.root}
+        name={activeView.name}
+        linked={linked}
+        onBack={() => setActiveView(null)}
+        onInspection={setInspection}
+        onLink={async () => {
+          const result = await importPlugin(activeView.root, 'link')
+          setInspection(result.inspection)
+          await refresh()
+          pushToast({ tone: 'success', title: `${result.installation.name} linked` })
+        }}
+      />
+    )
   }
 
   return (
@@ -270,13 +464,13 @@ export function PluginCenterPanel() {
           <Button onClick={() => void pickAndImport('install')} disabled={busy !== null}>
             <PackagePlus /> Import package
           </Button>
-          <Button variant="outline" onClick={() => void pickAndImport('link')} disabled={busy !== null || !desktop}>
+          <Button variant="outline" onClick={() => void pickAndImport('link')} disabled={busy !== null || (!desktop && !hostPath.trim())}>
             <FolderInput /> Link folder
           </Button>
-          <Button variant="outline" onClick={() => void validateFolder()} disabled={busy !== null || !desktop}>
+          <Button variant="outline" onClick={() => void validateFolder()} disabled={busy !== null || (!desktop && !hostPath.trim())}>
             <CheckCircle2 /> Validate
           </Button>
-          <Button variant="outline" onClick={() => setShowCreate((value) => !value)} disabled={!desktop}>
+          <Button variant="outline" onClick={() => setShowCreate((value) => !value)} disabled={busy !== null}>
             <FolderPlus /> Create
           </Button>
           <input
@@ -296,24 +490,54 @@ export function PluginCenterPanel() {
           />
         </div>
 
+        {!desktop && (
+          <div className="mt-3">
+            <Input
+              value={hostPath}
+              onChange={(event) => setHostPath(event.target.value)}
+              placeholder="Plugin folder path on the EvoFlux host"
+              aria-label="Plugin folder path on the EvoFlux host"
+            />
+            <p className="mt-1 text-xs text-(--color-text-subtle)">
+              Link and Validate use a folder that is accessible to the local EvoFlux backend.
+            </p>
+          </div>
+        )}
+
         {showCreate && (
-          <div className="mt-4 grid gap-2 rounded-lg border border-(--color-border) bg-(--bg-card) p-3 md:grid-cols-[1fr_0.7fr_0.7fr_auto]">
-            <div className="flex gap-2">
-              <Input value={createParent} onChange={(event) => setCreateParent(event.target.value)} placeholder="Parent folder" />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => void choosePath({ directory: true }).then((path) => path && setCreateParent(path))}
-                aria-label="Choose parent folder"
-              >
-                <FolderPlus />
+          <div className="mt-4 space-y-3 rounded-lg border border-(--color-border) bg-(--bg-card) p-3">
+            <div>
+              <h3 className="text-sm font-medium text-(--color-text)">Create development plugin</h3>
+              <p className="text-xs text-(--color-text-subtle)">Scaffold the package, then continue in the built-in code editor.</p>
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              <div className="flex gap-2">
+                <Input value={createParent} onChange={(event) => setCreateParent(event.target.value)} placeholder="Parent folder" aria-label="Plugin parent folder" />
+                {desktop && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => void choosePath({ directory: true }).then((path) => path && setCreateParent(path))}
+                    aria-label="Choose parent folder"
+                  >
+                    <FolderPlus />
+                  </Button>
+                )}
+              </div>
+              <Input value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="plugin-name" aria-label="Plugin name" />
+              <Input value={createDescription} onChange={(event) => setCreateDescription(event.target.value)} placeholder="Description" aria-label="Plugin description" />
+              <Input value={createVersion} onChange={(event) => setCreateVersion(event.target.value)} placeholder="Version (0.1.0)" aria-label="Plugin version" />
+              <Input value={createAuthor} onChange={(event) => setCreateAuthor(event.target.value)} placeholder="Author" aria-label="Plugin author" />
+              <Input value={createLicense} onChange={(event) => setCreateLicense(event.target.value)} placeholder="License (MIT)" aria-label="Plugin license" />
+              <Input value={createSkill} onChange={(event) => setCreateSkill(event.target.value)} placeholder="Optional Skill name" aria-label="Starter Skill name" />
+              <Input value={createMcp} onChange={(event) => setCreateMcp(event.target.value)} placeholder="Optional MCP server name" aria-label="Starter MCP server name" />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
+              <Button disabled={!createParent || !createName || busy !== null} onClick={() => void createPackage()}>
+                Create &amp; edit
               </Button>
             </div>
-            <Input value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="plugin-name" />
-            <Input value={createSkill} onChange={(event) => setCreateSkill(event.target.value)} placeholder="optional-skill" />
-            <Button disabled={!createParent || !createName || busy !== null} onClick={() => void createPackage()}>
-              Create
-            </Button>
           </div>
         )}
       </header>
@@ -326,10 +550,22 @@ export function PluginCenterPanel() {
         )}
 
         {inspection && (
-          <div className={cn(
-            'mb-5 rounded-xl border p-4',
-            inspection.valid ? 'border-(--color-success)/30 bg-(--color-success-subtle)' : 'border-(--color-error)/30 bg-(--color-error-subtle)',
-          )}>
+          <div
+            className={cn(
+              'mb-5 cursor-pointer rounded-xl border p-4 transition-opacity hover:opacity-90',
+              inspection.valid ? 'border-(--color-success)/30 bg-(--color-success-subtle)' : 'border-(--color-error)/30 bg-(--color-error-subtle)',
+            )}
+            role="button"
+            tabIndex={0}
+            aria-label={`Edit ${inspection.manifest?.name || 'plugin package'}`}
+            onClick={() => setActiveView({ kind: 'editor', root: inspection.root, name: inspection.manifest?.name || 'Plugin package' })}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                setActiveView({ kind: 'editor', root: inspection.root, name: inspection.manifest?.name || 'Plugin package' })
+              }
+            }}
+          >
             <div className="flex items-center gap-2 font-medium text-(--color-text)">
               {inspection.valid ? <CheckCircle2 className="text-(--color-success)" /> : <AlertTriangle className="text-(--color-error)" />}
               {inspection.manifest?.name || 'Package inspection'}
@@ -351,7 +587,7 @@ export function PluginCenterPanel() {
             {query.error instanceof Error ? query.error.message : 'Could not load plugins.'}
           </div>
         ) : query.data?.plugins.length ? (
-          <div className="grid gap-3 xl:grid-cols-2">
+          <div className="space-y-2">
             {query.data.plugins.map((item) => (
               <PluginCard
                 key={item.installation.id}
@@ -369,6 +605,8 @@ export function PluginCenterPanel() {
                   if (!window.confirm(`Uninstall ${item.installation.name}? Plugin data will be preserved.`)) return
                   void run(`delete:${item.installation.id}`, () => uninstallPlugin(item.installation.id))
                 }}
+                onOpen={() => setActiveView({ kind: 'editor', root: item.installation.root, name: item.installation.name })}
+                onCredentials={() => setActiveView({ kind: 'credentials', plugin: item })}
               />
             ))}
           </div>

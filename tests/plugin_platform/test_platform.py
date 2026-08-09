@@ -127,6 +127,14 @@ def test_mcp_entries_fail_independently_and_runtime_expands_only_plugin_tokens(
     isolated_platform: Path,
 ) -> None:
     root = _plugin(isolated_platform / "plugin", skill=None)
+    manifest_path = root / "plugin.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["extensions"] = {
+        "evoflux.mcp": {
+            "servers": {"local": {"capabilities": ["webbridge-safe"]}}
+        }
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     (root / "run.py").write_text("print('server')\n", encoding="utf-8")
     (root / "mcp.json").write_text(
         json.dumps(
@@ -181,6 +189,7 @@ def test_mcp_entries_fail_independently_and_runtime_expands_only_plugin_tokens(
     assert local.env["LITERAL"] == "$HOME"
     assert local.env["PLUGIN_ROOT"] == str(root.resolve())
     assert local.cwd == str(data / "work")
+    assert local.capabilities == ["webbridge-safe"]
     assert remote.transport == "http"
     assert remote.headers == {"X-Literal": "${TOKEN}"}
     assert remote.resolve_header_refs is False
@@ -199,6 +208,10 @@ def test_plugin_placeholder_expansion_is_single_pass() -> None:
 
 def test_install_pack_and_uninstall_managed_package(isolated_platform: Path) -> None:
     source = _plugin(isolated_platform / "source")
+    cache = source / "backend" / "__pycache__"
+    cache.mkdir(parents=True)
+    (cache / "server.cpython-312.pyc").write_bytes(b"generated")
+    (source / ".DS_Store").write_bytes(b"generated")
     executable = source / "bin" / "server"
     executable.parent.mkdir()
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
@@ -211,6 +224,8 @@ def test_install_pack_and_uninstall_managed_package(isolated_platform: Path) -> 
     installed_root = Path(installation.root)
     assert installed_root.is_dir()
     assert (installed_root / "bin" / "server").stat().st_mode & 0o111
+    assert not (installed_root / "backend" / "__pycache__").exists()
+    assert not (installed_root / ".DS_Store").exists()
     assert [item.id for item in list_installations()] == [installation.id]
 
     removed = uninstall_plugin(installation.id)

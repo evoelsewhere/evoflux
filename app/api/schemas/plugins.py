@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.plugin_platform.models import PluginInspection, PluginInstallation
+from app.plugin_platform.credentials import PluginCredentialState
 
 
 class PluginInstallRequest(BaseModel):
@@ -23,7 +24,11 @@ class PluginCreateRequest(BaseModel):
     destination: str = Field(min_length=1)
     name: str = Field(min_length=1)
     description: str = ""
+    version: str | None = None
+    author: str | None = None
+    license: str | None = None
     skill_name: str | None = None
+    mcp_name: str | None = None
 
 
 class PluginPackRequest(BaseModel):
@@ -47,6 +52,7 @@ class PluginOperationResponse(BaseModel):
 class PluginListItem(BaseModel):
     installation: PluginInstallation
     inspection: PluginInspection
+    credentials: PluginCredentialState
 
 
 class PluginMcpRuntimeStatus(BaseModel):
@@ -71,8 +77,49 @@ class PluginPathResponse(BaseModel):
     path: str
 
 
+class PluginWorkspaceFileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    root: str = Field(min_length=1)
+    path: str = Field(min_length=1)
+    content: str
+
+
+class PluginWorkspaceFileResponse(BaseModel):
+    root: str
+    path: str
+    content: str
+
+
+class PluginWorkspaceMutationResponse(BaseModel):
+    ok: bool = True
+    inspection: PluginInspection
+
+
+class PluginWorkspaceEntryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    root: str = Field(min_length=1)
+    path: str = Field(min_length=1)
+    kind: Literal["file", "directory"]
+
+
+class PluginWorkspaceDeleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    root: str = Field(min_length=1)
+    path: str = Field(min_length=1)
+
+
+class PluginCredentialUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    values: dict[str, str | bool | None]
+
+
 __all__ = [
     "PluginCreateRequest",
+    "PluginCredentialUpdateRequest",
     "PluginEnabledRequest",
     "PluginInstallRequest",
     "PluginListItem",
@@ -81,4 +128,9 @@ __all__ = [
     "PluginOperationResponse",
     "PluginPackRequest",
     "PluginPathResponse",
+    "PluginWorkspaceDeleteRequest",
+    "PluginWorkspaceEntryRequest",
+    "PluginWorkspaceFileRequest",
+    "PluginWorkspaceFileResponse",
+    "PluginWorkspaceMutationResponse",
 ]

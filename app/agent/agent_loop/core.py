@@ -427,6 +427,60 @@ class Agent(Generic[TContext]):
         else:
             state.metadata["activated_deferred_tools"] = set()
 
+        def _merge_dynamic_deferred_tools(
+            candidates: list[Tool],
+        ) -> tuple[str, ...]:
+            """Add permitted runtime MCP tools to this run-local catalog."""
+
+            added: list[str] = []
+            webbridge_session = bool(state.metadata.get("webbridge_session"))
+            side_chat_session = bool(state.metadata.get("side_chat_session"))
+            for run_tool in candidates:
+                if not getattr(run_tool, "deferred", False):
+                    continue
+                if excluded_tools and run_tool.name in excluded_tools:
+                    continue
+                capabilities = getattr(run_tool, "capabilities", frozenset())
+                if webbridge_session and "webbridge-safe" not in capabilities:
+                    continue
+                if side_chat_session and not getattr(run_tool, "read_only", False):
+                    continue
+                changed = False
+                if run_tools.get(run_tool.name) is not run_tool:
+                    run_tools[run_tool.name] = run_tool
+                    changed = True
+                if run_tool.name not in deferred_names:
+                    deferred_names.add(run_tool.name)
+                    changed = True
+                entry = deferred_catalog_entry(run_tool)
+                if deferred_catalog.get(run_tool.name) != entry:
+                    deferred_catalog[run_tool.name] = entry
+                    changed = True
+                if changed:
+                    added.append(run_tool.name)
+            if added:
+                state.tool_names = sorted(run_tools)
+            return tuple(added)
+
+        def _grant_plugin_mcp_tools(installation_id: str) -> tuple[str, ...]:
+            """Grant tools belonging to the plugin Skill being activated."""
+
+            from app.plugin_platform.runtime import plugin_mcp_runtime
+
+            state.metadata.setdefault("plugin_mcp_grants", set()).add(
+                installation_id
+            )
+            tools = plugin_mcp_runtime.get_tools_for_installation(installation_id)
+            added = _merge_dynamic_deferred_tools(tools)
+            if added:
+                logger.info(
+                    "plugin_skill_mcp_tools_granted agent={} installation={} tools={}",
+                    self.name,
+                    installation_id,
+                    list(added),
+                )
+            return tuple(tool.name for tool in tools if tool.name in deferred_names)
+
         def _refresh_deferred_tool_catalog() -> None:
             """Merge newly-ready, newly-granted MCP tools into this live run.
 
@@ -436,6 +490,13 @@ class Agent(Generic[TContext]):
             just before ``load_tool`` searches, while preserving per-agent MCP
             grants and all caller-provided hard exclusions.
             """
+            from app.plugin_platform.runtime import plugin_mcp_runtime
+
+            for installation_id in state.metadata.get("plugin_mcp_grants", set()):
+                _merge_dynamic_deferred_tools(
+                    plugin_mcp_runtime.get_tools_for_installation(installation_id)
+                )
+
             if role == "member":
                 return
 
@@ -464,21 +525,8 @@ class Agent(Generic[TContext]):
                 server_tools = get_mcp_tools_for_server(server_name)
                 if not server_tools:
                     continue
-                for run_tool in server_tools:
-                    if not getattr(run_tool, "deferred", False):
-                        continue
-                    if excluded_tools and run_tool.name in excluded_tools:
-                        continue
-                    if run_tools.get(run_tool.name) is not run_tool:
-                        run_tools[run_tool.name] = run_tool
-                        changed = True
-                    if run_tool.name not in deferred_names:
-                        deferred_names.add(run_tool.name)
-                        changed = True
-                    entry = deferred_catalog_entry(run_tool)
-                    if deferred_catalog.get(run_tool.name) != entry:
-                        deferred_catalog[run_tool.name] = entry
-                        changed = True
+                if _merge_dynamic_deferred_tools(server_tools):
+                    changed = True
 
             if changed:
                 state.tool_names = sorted(run_tools)
@@ -496,6 +544,7 @@ class Agent(Generic[TContext]):
         state.metadata["_refresh_deferred_tool_catalog"] = (
             _refresh_deferred_tool_catalog
         )
+        state.metadata["_grant_plugin_mcp_tools"] = _grant_plugin_mcp_tools
         state.metadata["_tool_capabilities"] = {
             name: tuple(sorted(tool.capabilities)) for name, tool in run_tools.items()
         }
