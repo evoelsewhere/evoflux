@@ -11,7 +11,6 @@ import { useProjectQuery } from '@/queries/useProjectsQuery'
 import { SidePanel } from './shell/SidePanel'
 import { CodeGraphPanel } from './CodeGraphPanel'
 import { CodingFileViewerPanel } from './CodingFileViewerPanel'
-import { CrossRepoLinksPanel } from './CrossRepoLinksPanel'
 import { FileTypeIcon, FolderTypeIcon } from './FileTypeIcon'
 import { MultiRepoFileTree } from './MultiRepoFileTree'
 import { NativeFileTree } from './NativeFileTree'
@@ -428,14 +427,7 @@ export function CodingWorkspacePanel({
           <div className="flex min-h-0 flex-1 flex-col">
             {isProjectMode ? (
               project ? (
-                <>
-                  <div className="shrink-0 border-b border-(--color-border) p-2">
-                    <CrossRepoLinksPanel project={project} />
-                  </div>
-                  <div className="min-h-0 flex-1">
-                    <ProjectCodeGraphPanel project={project} onFileSelect={onFileSelect} />
-                  </div>
-                </>
+                <ProjectCodeGraphPanel project={project} onFileSelect={onFileSelect} />
               ) : (
                 <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Loading project repositories…</p>
               )

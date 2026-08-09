@@ -128,7 +128,10 @@ export const queryKeys = {
     codeGraphStatus: (id: string) => ['projects', 'detail', id, 'code-context-status'] as const,
     codeGraphSearch: (id: string, query: string) =>
       ['projects', 'detail', id, 'code-context-search', query] as const,
-    codeGraphData: (id: string) => ['projects', 'detail', id, 'code-context-data'] as const,
+    codeGraphData: (id: string, nodeLimit?: number, edgeLimit?: number) =>
+      nodeLimit === undefined && edgeLimit === undefined
+        ? (['projects', 'detail', id, 'code-context-data'] as const)
+        : (['projects', 'detail', id, 'code-context-data', nodeLimit, edgeLimit] as const),
   },
   git: {
     reviews: (scope?: string) =>

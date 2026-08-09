@@ -932,13 +932,7 @@ export async function reindexProjectCodeGraph(
     },
   )
   if (!res.ok) await parseDetailOrThrow(res, 'reindexProjectCodeGraph')
-  const values: Record<string, unknown> = await res.json()
-  return {
-    indexing: false,
-    repo_count: Object.keys(values).length,
-    already_running: 0,
-    will_resolve: false,
-  }
+  return res.json()
 }
 
 export async function getProjectCodeGraphStatus(
