@@ -73,7 +73,6 @@ import { type InputBarHandle } from '../InputBar'
 import { FloatingInputBar } from '../FloatingInputBar'
 import { useDirectBrowserPresence } from '@/components/BrowserViewer/useDirectBrowserPresence'
 import { areWebBridgeDefaultsEnabled } from '@/components/BrowserViewer/browserPreferences'
-import { useDesktopPresentationRenderer } from '@/components/PresentationRenderer/useDesktopPresentationRenderer'
 import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
 import { WorkbenchDock, WorkbenchSurface } from '@/components/workbench/WorkbenchDock'
 import { useSideChat } from '../SideChatPanel/useSideChat'
@@ -389,7 +388,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const isContinuing   = useTeamStore((s) => s.isContinuing)
   const sessionIdState = useTeamStore((s) => s.sessionId)
   useDirectBrowserPresence(sessionIdState)
-  useDesktopPresentationRenderer(sessionIdState)
   const projectIdState = useTeamStore((s) => s.projectId)
   // A project session isn't "in" any one repo — chat-level UI (empty state,
   // composer placeholder) must reflect the project, not the primary repo

@@ -228,7 +228,6 @@
   "{0}/team/{1}/history?before={2}": "{0}/team/{1}/history?before={2}",
   "{0}/team/{1}/permissions/{2}/reply": "{0}/team/{1}/permissions/{2}/reply",
   "{0}/team/{1}/plan/reply": "{0}/team/{1}/plan/reply",
-  "{0}/team/{1}/presentation-renderer": "{0}/team/{1}/presentation-renderer",
   "{0}/team/{1}/questions/{2}/reply": "{0}/team/{1}/questions/{2}/reply",
   "{0}/team/{1}/questions/pending": "{0}/team/{1}/questions/pending",
   "{0}/team/{1}/side-chat": "{0}/team/{1}/side-chat",
