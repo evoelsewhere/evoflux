@@ -498,6 +498,25 @@ async def test_run_command_collects_output_until_idle():
     assert session.backend.writes == [b"ls\n"]
 
 
+async def test_run_command_does_not_treat_input_echo_as_completion():
+    manager = TerminalManager()
+    session = _make_session(manager)
+
+    async def feed():
+        manager._handle_data(session, b"echo delayed\r\n")
+        await asyncio.sleep(0.15)  # longer than the collector's idle window
+        manager._handle_data(session, b"delayed\r\nprompt> ")
+
+    feeder = asyncio.create_task(feed())
+    output = await manager.run_command(
+        "s1", "echo delayed", timeout_s=2, idle_s=0.05
+    )
+    await feeder
+
+    assert "delayed\nprompt>" in output
+    assert session.backend.writes == [b"echo delayed\n"]
+
+
 @pytest.mark.parametrize(
     ("shell", "argv"),
     [

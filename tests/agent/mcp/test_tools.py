@@ -322,6 +322,80 @@ class TestMCPToolArun:
         session.call_tool.assert_called_once_with("mytool", {"arg1": "value1"})
 
     @pytest.mark.asyncio
+    async def test_arun_redacts_nested_outbound_arguments(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "app.agent.outbound_redaction.load_outbound_data_policy",
+            lambda: "redact",
+        )
+        monkeypatch.setattr(
+            "app.agent.outbound_redaction.load_outbound_pii_policy",
+            lambda: "off",
+        )
+        session = AsyncMock()
+        session.call_tool.return_value = SimpleNamespace(
+            isError=False,
+            content=[SimpleNamespace(type="text", text="ok")],
+        )
+        mcp_tool = SimpleNamespace(
+            name="send",
+            description="Send data",
+            inputSchema={"type": "object"},
+        )
+        tool = MCPTool(
+            server_name="remote",
+            mcp_tool=mcp_tool,  # type: ignore[arg-type]
+            session_provider=lambda: session,
+        )
+
+        await tool.arun(
+            request={
+                "headers": {"authorization": "Bearer abcdefghijklmnop"},
+                "callback": "https://user:password123@example.test/hook",
+            }
+        )
+
+        forwarded = session.call_tool.call_args.args[1]
+        serialized = str(forwarded)
+        assert "abcdefghijklmnop" not in serialized
+        assert "password123" not in serialized
+        assert forwarded["request"]["headers"]["authorization"] == (
+            "Bearer [REDACTED:authorization]"
+        )
+
+    @pytest.mark.asyncio
+    async def test_arun_blocks_secret_before_mcp_network_call(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "app.agent.outbound_redaction.load_outbound_data_policy",
+            lambda: "block",
+        )
+        monkeypatch.setattr(
+            "app.agent.outbound_redaction.load_outbound_pii_policy",
+            lambda: "off",
+        )
+        session = AsyncMock()
+        mcp_tool = SimpleNamespace(
+            name="send",
+            description="Send data",
+            inputSchema={"type": "object"},
+        )
+        tool = MCPTool(
+            server_name="remote",
+            mcp_tool=mcp_tool,  # type: ignore[arg-type]
+            session_provider=lambda: session,
+        )
+        secret = "ghp_abcdefghijklmnopqrstuvwxyz123456"
+
+        with pytest.raises(PermissionError) as raised:
+            await tool.arun(payload=secret)
+
+        session.call_tool.assert_not_awaited()
+        assert secret not in str(raised.value)
+
+    @pytest.mark.asyncio
     async def test_arun_with_mcp_app_resource_uri_and_html_blob(self) -> None:
         session = AsyncMock()
         session.call_tool.return_value = SimpleNamespace(

@@ -226,9 +226,9 @@ class SandboxConfig:
             outbound_data_policy
             if outbound_data_policy is not None
             else (
-                getattr(file_config, "outbound_data_policy", "redact")
+                getattr(file_config, "outbound_data_policy", "block")
                 if file_config is not None
-                else "redact"
+                else "block"
             )
         )
         self.outbound_pii_policy: Literal["off", "standard", "strict"] = (

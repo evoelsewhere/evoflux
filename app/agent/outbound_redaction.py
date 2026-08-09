@@ -1,8 +1,8 @@
-"""Sensitive-data protection for payloads sent to model providers.
+"""Sensitive-data protection for payloads leaving the agent.
 
-The database and in-memory agent state retain their original content.  This
-module creates a provider-only copy immediately before the network call, so
-redaction cannot corrupt tool-call pairing or the local conversation record.
+The database and in-memory agent state retain their original content. This
+module creates an external-request copy immediately before a model, web, or
+MCP call, so protection cannot corrupt tool-call pairing or local history.
 """
 
 from __future__ import annotations
@@ -28,6 +28,23 @@ from app.agent.schemas.chat import (
 
 OutboundDataPolicy = Literal["block", "redact", "off"]
 OutboundPiiPolicy = Literal["off", "standard", "strict"]
+OutboundChannel = Literal["model", "web", "mcp", "other"]
+
+
+@dataclass(frozen=True)
+class OutboundContext:
+    """Safe routing metadata for an external request.
+
+    Callers must not put payload values, credentials, or raw URLs in this
+    object. It exists only to make policy decisions and audit logs explainable.
+    """
+
+    channel: OutboundChannel
+    destination: str | None = None
+
+    @property
+    def label(self) -> str:
+        return f"{self.channel}:{self.destination or 'external'}"
 
 _SENSITIVE_ENV_NAME = re.compile(
     r"(?:^|_)(?:API_?KEY|ACCESS_?KEY|AUTH|BEARER|CREDENTIAL|"
@@ -53,20 +70,36 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
               \b(?:authorization|proxy-authorization)["']?\s*[:=]\s*["']?
               (?:bearer|basic|token)\s+
             )
-            ([^"'\s,;}]+)
+            ((?!\[REDACTED:)[^"'\s,;}]+)
             """
         ),
         r"\1[REDACTED:authorization]",
     ),
     (
         "authorization",
-        re.compile(r"(?i)\b(?:bearer|basic|token)\s+[^\s,;}\]]{8,}"),
-        "[REDACTED:authorization]",
+        re.compile(
+            r"(?i)(\b(?:bearer|basic|token)\s+)"
+            r"(?!\[REDACTED:)[^\s,;}\]]{8,}"
+        ),
+        r"\1[REDACTED:authorization]",
     ),
     (
         "url-password",
-        re.compile(r"(?i)(\b[a-z][a-z0-9+.-]*://[^/\s:@]+:)([^@\s/]+)(@)"),
+        re.compile(
+            r"(?i)(\b[a-z][a-z0-9+.-]*://[^/\s:@]+:)"
+            r"((?!\[REDACTED:)[^@\s/]+)(@)"
+        ),
         r"\1[REDACTED:url-password]\3",
+    ),
+    (
+        "url-secret-query",
+        re.compile(
+            r"(?ix)([?&](?:api[_-]?key|access[_-]?(?:key|token)|"
+            r"auth[_-]?token|client[_-]?secret|credential|password|passwd|"
+            r"secret|token|refresh[_-]?token|session[_-]?token)=)"
+            r"((?!\[REDACTED:)[^&#\s]{8,})"
+        ),
+        r"\1[REDACTED:url-secret]",
     ),
     (
         "secret-assignment",
@@ -81,7 +114,7 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
               ["']?\s*[:=]\s*
             )
             (["'])
-            ([^"'\r\n]{8,})
+            ((?!\[REDACTED:)[^"'\r\n]{8,})
             \2
             """
         ),
@@ -98,7 +131,7 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
                  session[_-]?token)
               \s*[:=]\s*
             )
-            ([A-Za-z0-9+/=:@-]{8,})
+            ([A-Za-z0-9_+/%=:@.-]{8,})
             """
         ),
         r"\1[REDACTED:secret]",
@@ -159,7 +192,11 @@ class OutboundSensitiveDataError(PermissionError):
 @dataclass(frozen=True)
 class RedactionReport:
     matches: int = 0
+    secret_matches: int = 0
+    pii_matches: int = 0
     categories: tuple[str, ...] = ()
+    secret_categories: tuple[str, ...] = ()
+    context: OutboundContext | None = None
 
 
 class _Redactor:
@@ -168,13 +205,17 @@ class _Redactor:
         *,
         protect_secrets: bool,
         pii_policy: OutboundPiiPolicy,
+        context: OutboundContext | None = None,
     ) -> None:
         self.matches = 0
         self.secret_matches = 0
+        self.pii_matches = 0
         self.categories: set[str] = set()
+        self.secret_categories: set[str] = set()
         self.exact_secrets = _configured_secret_values() if protect_secrets else ()
         self.protect_secrets = protect_secrets
         self.pii_policy = pii_policy
+        self.context = context
         self._pii_aliases: dict[tuple[str, str], str] = {}
         self._pii_counts: dict[str, int] = {}
 
@@ -194,6 +235,7 @@ class _Redactor:
                     self.matches += count
                     self.secret_matches += count
                     self.categories.add("configured-secret")
+                    self.secret_categories.add("configured-secret")
 
             for category, pattern, replacement in _PATTERNS:
                 result, count = pattern.subn(replacement, result)
@@ -201,6 +243,7 @@ class _Redactor:
                     self.matches += count
                     self.secret_matches += count
                     self.categories.add(category)
+                    self.secret_categories.add(category)
 
         if self.pii_policy != "off":
             result = self._mask_pii(result)
@@ -296,13 +339,18 @@ class _Redactor:
             alias = f"[{category.upper()}_{index}]"
             self._pii_aliases[key] = alias
         self.matches += 1
+        self.pii_matches += 1
         self.categories.add(category)
         return alias
 
     def report(self) -> RedactionReport:
         return RedactionReport(
             matches=self.matches,
+            secret_matches=self.secret_matches,
+            pii_matches=self.pii_matches,
             categories=tuple(sorted(self.categories)),
+            secret_categories=tuple(sorted(self.secret_categories)),
+            context=self.context,
         )
 
 
@@ -362,8 +410,8 @@ def load_outbound_data_policy() -> OutboundDataPolicy:
 
         return load_config().outbound_data_policy
     except (OSError, ValueError) as exc:
-        logger.warning("outbound_data_policy_load_failed fallback=redact err={}", exc)
-        return "redact"
+        logger.warning("outbound_data_policy_load_failed fallback=block err={}", exc)
+        return "block"
 
 
 def load_outbound_pii_policy() -> OutboundPiiPolicy:
@@ -389,12 +437,20 @@ def load_outbound_pii_policy() -> OutboundPiiPolicy:
 
 
 def _raise_if_blocked(report: RedactionReport, *, policy: OutboundDataPolicy) -> None:
-    if policy != "block" or not report.matches:
+    """Block secrets while allowing the separate PII policy to pseudonymize."""
+
+    if policy != "block" or not report.secret_matches:
         return
-    categories = ", ".join(report.categories)
+    categories = ", ".join(report.secret_categories)
+    if report.context and report.context.channel == "model":
+        prefix = "Blocked model request"
+        context = f" for {report.context.destination or 'external'}"
+    else:
+        prefix = "Blocked outbound request"
+        context = f" for {report.context.label}" if report.context else ""
     raise OutboundSensitiveDataError(
-        "Blocked outbound request because sensitive-data protection detected "
-        f"{report.matches} match(es): {categories}. Remove the sensitive value "
+        f"{prefix}{context} because sensitive-data protection detected "
+        f"{report.secret_matches} secret match(es): {categories}. Remove the sensitive value "
         "or switch the Sandbox outbound policy to Redact."
     )
 
@@ -404,6 +460,7 @@ def protect_outbound_text(
     *,
     policy: OutboundDataPolicy | None = None,
     pii_policy: OutboundPiiPolicy | None = None,
+    context: OutboundContext | None = None,
 ) -> tuple[str, RedactionReport]:
     """Protect one string before sending it to a third-party endpoint.
 
@@ -417,11 +474,12 @@ def protect_outbound_text(
     if pii_policy is None:
         pii_policy = load_outbound_pii_policy()
     if policy == "off" and pii_policy == "off":
-        return value, RedactionReport()
+        return value, RedactionReport(context=context)
 
     redactor = _Redactor(
         protect_secrets=policy != "off",
         pii_policy=pii_policy,
+        context=context,
     )
     protected = redactor.text(value) or ""
     report = redactor.report()
@@ -434,6 +492,7 @@ def protect_outbound_value(
     *,
     policy: OutboundDataPolicy | None = None,
     pii_policy: OutboundPiiPolicy | None = None,
+    context: OutboundContext | None = None,
 ) -> tuple[object, RedactionReport]:
     """Recursively protect JSON-like values sent to an external tool.
 
@@ -446,18 +505,23 @@ def protect_outbound_value(
     if pii_policy is None:
         pii_policy = load_outbound_pii_policy()
     if policy == "off" and pii_policy == "off":
-        return value, RedactionReport()
+        return value, RedactionReport(context=context)
 
     redactor = _Redactor(
         protect_secrets=policy != "off",
         pii_policy=pii_policy,
+        context=context,
     )
 
     def walk(item: object) -> object:
         if isinstance(item, str):
             return redactor.text(item)
         if isinstance(item, dict):
-            return {key: walk(child) for key, child in item.items()}
+            protected: dict[object, object] = {}
+            for key, child in item.items():
+                protected_key = redactor.text(key) if isinstance(key, str) else key
+                protected[protected_key] = walk(child)
+            return protected
         if isinstance(item, list):
             return [walk(child) for child in item]
         if isinstance(item, tuple):
@@ -476,15 +540,17 @@ def protect_outbound_payload(
     messages: list[ChatMessage],
     policy: OutboundDataPolicy,
     pii_policy: OutboundPiiPolicy = "off",
+    context: OutboundContext | None = None,
 ) -> tuple[str, list[ChatMessage], RedactionReport]:
     """Return a provider-only protected copy of text-bearing payload fields."""
 
     if policy == "off" and pii_policy == "off":
-        return system_prompt, messages, RedactionReport()
+        return system_prompt, messages, RedactionReport(context=context)
 
     redactor = _Redactor(
         protect_secrets=policy != "off",
         pii_policy=pii_policy,
+        context=context,
     )
     protected_prompt = redactor.text(system_prompt) or ""
     protected_messages = [_protect_message(message, redactor) for message in messages]

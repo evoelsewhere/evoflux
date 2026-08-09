@@ -7,7 +7,7 @@ from ddgs import DDGS
 from loguru import logger
 from pydantic import Field
 
-from app.agent.outbound_redaction import protect_outbound_text
+from app.agent.outbound_redaction import OutboundContext, protect_outbound_text
 from app.agent.tools.registry import tool
 
 _MAX_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MB
@@ -67,11 +67,17 @@ async def web_search(
     # Search providers receive the query verbatim, so protect it before both
     # the primary backend and the Exa fallback. This covers a common covert
     # egress path that is outside the model-provider boundary.
-    query, report = protect_outbound_text(query)
+    query, report = protect_outbound_text(
+        query,
+        context=OutboundContext(channel="web", destination="search"),
+    )
     if report.matches:
         logger.warning(
-            "web_search_outbound_sensitive_data_protected matches={} categories={}",
+            "web_search_outbound_sensitive_data_protected matches={} "
+            "secret_matches={} pii_matches={} categories={}",
             report.matches,
+            report.secret_matches,
+            report.pii_matches,
             ",".join(report.categories),
         )
     results = None
@@ -183,11 +189,17 @@ async def web_fetch(
     """Fetch a URL and return its content. Handles HTML, PDF, and plain text."""
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
-    url, report = protect_outbound_text(url)
+    url, report = protect_outbound_text(
+        url,
+        context=OutboundContext(channel="web", destination="fetch"),
+    )
     if report.matches:
         logger.warning(
-            "web_fetch_outbound_sensitive_data_protected matches={} categories={}",
+            "web_fetch_outbound_sensitive_data_protected matches={} "
+            "secret_matches={} pii_matches={} categories={}",
             report.matches,
+            report.secret_matches,
+            report.pii_matches,
             ",".join(report.categories),
         )
 
@@ -210,7 +222,7 @@ async def web_fetch(
                 response.status_code == 403
                 and response.headers.get("cf-mitigated") == "challenge"
             ):
-                logger.debug("web_fetch_cloudflare_retry url={}", url)
+                logger.debug("web_fetch_cloudflare_retry")
                 response = await client.get(
                     url, headers={**headers, "User-Agent": "opencode"}
                 )
@@ -250,7 +262,7 @@ async def web_fetch(
                 )
                 return result.markdown
             except (ImportError, OSError):
-                logger.debug("web_fetch_markitdown_fallback url={}", url)
+                logger.debug("web_fetch_markitdown_fallback")
                 return _fallback_convert(content_bytes, mime)
 
         loop = asyncio.get_running_loop()
@@ -319,11 +331,17 @@ async def image_search(
     for presentations, documents, or design work. Download images via
     shell (curl/wget) using the returned 'image' URL.
     """
-    query, report = protect_outbound_text(query)
+    query, report = protect_outbound_text(
+        query,
+        context=OutboundContext(channel="web", destination="image-search"),
+    )
     if report.matches:
         logger.warning(
-            "image_search_outbound_sensitive_data_protected matches={} categories={}",
+            "image_search_outbound_sensitive_data_protected matches={} "
+            "secret_matches={} pii_matches={} categories={}",
             report.matches,
+            report.secret_matches,
+            report.pii_matches,
             ",".join(report.categories),
         )
     max_results = max(1, min(max_results, 20))
@@ -342,7 +360,7 @@ async def image_search(
             ),
         )
     except Exception as e:
-        logger.debug("image_search_failed query={!r} err={}", query, e)
+        logger.debug("image_search_failed err={}", e)
         return f"Image search failed: {e}"
 
     if not results:

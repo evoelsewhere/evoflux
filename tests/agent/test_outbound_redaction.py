@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from app.agent.outbound_redaction import (
+    OutboundContext,
     OutboundSensitiveDataError,
     protect_outbound_text,
     protect_outbound_value,
@@ -128,6 +129,21 @@ def test_block_policy_stops_request_without_echoing_secret() -> None:
     assert "provider-token" in str(raised.value)
 
 
+def test_block_policy_reports_secret_count_without_echoing_secret() -> None:
+    secret = "ghp_abcdefghijklmnopqrstuvwxyz123456"
+
+    with pytest.raises(OutboundSensitiveDataError) as raised:
+        protect_outbound_text(
+            secret,
+            policy="block",
+            pii_policy="standard",
+            context=OutboundContext(channel="model", destination="github"),
+        )
+
+    assert secret not in str(raised.value)
+    assert "for github" in str(raised.value)
+
+
 def test_off_policy_preserves_payload() -> None:
     message = HumanMessage(content="Authorization: Bearer leave-this-visible")
 
@@ -240,14 +256,19 @@ def test_standard_pii_masks_north_american_phone_format() -> None:
     assert report.categories == ("phone",)
 
 
-def test_block_policy_blocks_pii_in_scalar_egress_without_echoing_value() -> None:
-    secret = "person@example.com"
+def test_block_secret_policy_masks_pii_without_blocking_the_request() -> None:
+    value = "person@example.com"
 
-    with pytest.raises(OutboundSensitiveDataError) as raised:
-        protect_outbound_text(secret, policy="block", pii_policy="standard")
+    protected, report = protect_outbound_text(
+        value,
+        policy="block",
+        pii_policy="standard",
+    )
 
-    assert secret not in str(raised.value)
-    assert "email" in str(raised.value)
+    assert protected == "[EMAIL_1]"
+    assert value not in protected
+    assert report.secret_matches == 0
+    assert report.pii_matches == 1
 
 
 def test_nested_external_arguments_are_protected() -> None:
@@ -265,3 +286,49 @@ def test_nested_external_arguments_are_protected() -> None:
     assert "abcdefghijklmnop" not in serialized
     assert "password123" not in serialized
     assert report.matches >= 2
+
+
+def test_url_query_credentials_are_protected() -> None:
+    protected, report = protect_outbound_text(
+        "https://example.test/callback?token=abcdefghijklmnop&state=ok",
+        policy="redact",
+        pii_policy="off",
+        context=OutboundContext(channel="web", destination="fetch"),
+    )
+
+    assert "abcdefghijklmnop" not in protected
+    assert "[REDACTED:url-secret]" in protected
+    assert "state=ok" in protected
+    assert report.secret_categories == ("url-secret-query",)
+
+
+def test_protected_placeholders_are_idempotent_and_not_double_counted() -> None:
+    protected, first_report = protect_outbound_text(
+        "Authorization: Bearer abcdefghijklmnop",
+        policy="redact",
+        pii_policy="off",
+    )
+    protected_again, second_report = protect_outbound_text(
+        protected,
+        policy="redact",
+        pii_policy="off",
+    )
+
+    assert protected_again == protected
+    assert first_report.secret_matches == 1
+    assert second_report.matches == 0
+
+
+def test_nested_external_object_keys_are_protected() -> None:
+    secret_key = "token=abcdefghijklmnop"
+
+    protected, report = protect_outbound_value(
+        {secret_key: "safe"},
+        policy="redact",
+        pii_policy="off",
+    )
+
+    assert isinstance(protected, dict)
+    assert secret_key not in protected
+    assert "abcdefghijklmnop" not in str(protected)
+    assert report.secret_matches == 1

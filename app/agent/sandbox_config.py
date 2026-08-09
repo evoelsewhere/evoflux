@@ -17,7 +17,7 @@ File shape (YAML)::
     allow_network: false
     inherit_shell_environment: false
     load_shell_profile: false
-    outbound_data_policy: redact
+    outbound_data_policy: block
     outbound_pii_policy: standard
     max_execution_seconds: 600
     max_output_bytes: 131072
@@ -88,10 +88,10 @@ class SandboxFileConfig(BaseModel):
         ),
     )
     outbound_data_policy: Literal["block", "redact", "off"] = Field(
-        default="redact",
+        default="block",
         description=(
-            "Block, redact, or allow detected sensitive text immediately before "
-            "a payload is sent to a model provider."
+            "Block, redact, or allow detected secrets immediately before a payload "
+            "is sent to a model provider, web service, or MCP server."
         ),
     )
     outbound_pii_policy: Literal["off", "standard", "strict"] = Field(
