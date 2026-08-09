@@ -3,7 +3,7 @@
 EvoFlux implements the local portable core of [Agent Plugins 1.0](https://agent-plugins.org/specification). Managed Agent Plugins are separate from trusted legacy Python hooks in `app/agent/plugins`.
 
 <p align="center">
-  <img src="../images/generated/agent-plugins-architecture.png" width="820" alt="Portable Agent Plugins flow through the host-owned Plugin Center into Skills and isolated MCP servers" />
+  <img src="../images/generated/agent-plugins-architecture.png" width="820" alt="Detailed portable Agent Plugin architecture across package, Plugin Center, private state, and runtime boundaries" />
 </p>
 
 ## Architecture overview
