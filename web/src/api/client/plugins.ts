@@ -4,8 +4,12 @@ import { apiBaseUrl } from '../base-url'
 import { parseDetailOrThrow } from './_shared'
 import type {
   PluginInspection,
+  PluginCredentialState,
   PluginListResponse,
   PluginOperationResponse,
+  PluginWorkspaceEntry,
+  PluginWorkspaceFileResponse,
+  PluginWorkspaceMutationResponse,
 } from '../types'
 
 export async function listPlugins(): Promise<PluginListResponse> {
@@ -74,7 +78,11 @@ export async function createPlugin(body: {
   destination: string
   name: string
   description: string
+  version?: string
+  author?: string
+  license?: string
   skill_name?: string
+  mcp_name?: string
 }): Promise<{ path: string }> {
   const response = await fetch(`${apiBaseUrl()}/plugins/create`, {
     method: 'POST',
@@ -92,5 +100,97 @@ export async function packPlugin(path: string): Promise<{ path: string }> {
     body: JSON.stringify({ path }),
   })
   if (!response.ok) await parseDetailOrThrow(response, 'POST /plugins/pack')
+  return response.json()
+}
+
+export async function listPluginWorkspace(root: string): Promise<PluginWorkspaceEntry[]> {
+  const response = await fetch(
+    `${apiBaseUrl()}/plugins/workspace/tree?root=${encodeURIComponent(root)}`,
+  )
+  if (!response.ok) await parseDetailOrThrow(response, 'GET /plugins/workspace/tree')
+  return response.json()
+}
+
+export async function readPluginWorkspaceFile(
+  root: string,
+  path: string,
+): Promise<PluginWorkspaceFileResponse> {
+  const params = new URLSearchParams({ root, path })
+  const response = await fetch(`${apiBaseUrl()}/plugins/workspace/file?${params}`)
+  if (!response.ok) await parseDetailOrThrow(response, 'GET /plugins/workspace/file')
+  return response.json()
+}
+
+export async function writePluginWorkspaceFile(
+  root: string,
+  path: string,
+  content: string,
+): Promise<PluginWorkspaceMutationResponse> {
+  const response = await fetch(`${apiBaseUrl()}/plugins/workspace/file`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ root, path, content }),
+  })
+  if (!response.ok) await parseDetailOrThrow(response, 'PUT /plugins/workspace/file')
+  return response.json()
+}
+
+export async function createPluginWorkspaceEntry(
+  root: string,
+  path: string,
+  kind: 'file' | 'directory',
+): Promise<PluginWorkspaceMutationResponse> {
+  const response = await fetch(`${apiBaseUrl()}/plugins/workspace/entry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ root, path, kind }),
+  })
+  if (!response.ok) await parseDetailOrThrow(response, 'POST /plugins/workspace/entry')
+  return response.json()
+}
+
+export async function deletePluginWorkspaceEntry(
+  root: string,
+  path: string,
+): Promise<PluginWorkspaceMutationResponse> {
+  const response = await fetch(`${apiBaseUrl()}/plugins/workspace/entry`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ root, path }),
+  })
+  if (!response.ok) await parseDetailOrThrow(response, 'DELETE /plugins/workspace/entry')
+  return response.json()
+}
+
+export async function getPluginCredentials(id: string): Promise<PluginCredentialState> {
+  const response = await fetch(
+    `${apiBaseUrl()}/plugins/${encodeURIComponent(id)}/credentials`,
+  )
+  if (!response.ok) await parseDetailOrThrow(response, 'GET /plugins/:id/credentials')
+  return response.json()
+}
+
+export async function updatePluginCredentials(
+  id: string,
+  values: Record<string, string | boolean | null>,
+): Promise<PluginCredentialState> {
+  const response = await fetch(
+    `${apiBaseUrl()}/plugins/${encodeURIComponent(id)}/credentials`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values }),
+    },
+  )
+  if (!response.ok) await parseDetailOrThrow(response, 'PUT /plugins/:id/credentials')
+  return response.json()
+}
+
+export async function clearPluginCredentials(id: string): Promise<PluginCredentialState> {
+  const response = await fetch(
+    `${apiBaseUrl()}/plugins/${encodeURIComponent(id)}/credentials`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) await parseDetailOrThrow(response, 'DELETE /plugins/:id/credentials')
   return response.json()
 }

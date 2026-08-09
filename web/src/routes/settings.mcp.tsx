@@ -50,9 +50,11 @@ export function McpListPage() {
         to: '/settings/mcp/$name',
         params: { name: srv.name },
         active: selected === srv.name,
-        title: srv.name,
-        badge: srv.enabled ? undefined : 'disabled',
-        description: `${srv.transport === 'stdio' ? 'Local stdio process' : 'HTTP server'} · ${srv.tool_names.length} ${srv.tool_names.length === 1 ? 'tool' : 'tools'}`,
+        title: srv.source === 'plugin'
+          ? `${srv.plugin_name ?? 'plugin'} / ${srv.plugin_server_name ?? srv.name}`
+          : srv.name,
+        badge: srv.source === 'plugin' ? 'plugin' : srv.enabled ? undefined : 'disabled',
+        description: `${srv.transport === 'stdio' ? 'Local stdio process' : 'HTTP server'} · ${srv.tool_names.length} ${srv.tool_names.length === 1 ? 'tool' : 'tools'}${srv.source === 'plugin' ? ` · runtime ${srv.name}` : ''}`,
         trailing: (
           <div className="flex items-center gap-2">
             <StatusDot server={srv} />

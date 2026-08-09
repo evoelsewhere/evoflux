@@ -1539,6 +1539,8 @@ class TeamMemberBase(abc.ABC):
         # to specify (or could lie about) the routing target.
         run_metadata: dict[str, object] = {
             "team_mode": self._team.mode,
+            "webbridge_session": is_webbridge_session,
+            "side_chat_session": SIDE_CHAT_SESSION_TAG in self._team.session_tags,
             # Browser ownership belongs to the top-level conversation. Team
             # members keep their own session IDs for history/checkpointing,
             # but WebBridge commands must reuse the lead's tab binding/group.

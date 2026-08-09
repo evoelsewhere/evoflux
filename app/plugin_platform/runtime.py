@@ -13,7 +13,12 @@ from loguru import logger
 from app.agent.mcp.config import HttpServerConfig, MCPConfig, StdioServerConfig
 from app.agent.mcp.manager import MCPManager
 from app.agent.tools.registry import Tool
-from app.plugin_platform.models import PluginInstallation, PluginMCPComponent
+from app.plugin_platform.credentials import credential_environment
+from app.plugin_platform.models import (
+    PluginInspection,
+    PluginInstallation,
+    PluginMCPComponent,
+)
 from app.plugin_platform.registry import (
     list_installations,
     plugin_data_root,
@@ -24,6 +29,7 @@ from app.plugin_platform.validator import inspect_plugin
 
 _SERVER_SLUG_RE = re.compile(r"[^A-Za-z0-9_-]+")
 _PLACEHOLDER_RE = re.compile(r"\$\{(PLUGIN_ROOT|PLUGIN_DATA)\}")
+_MCP_EXTENSION = "evoflux.mcp"
 
 
 def _runtime_server_name(installation_id: str, server_name: str) -> str:
@@ -47,6 +53,7 @@ def _expand(value: str, *, root: Path, data_root: Path) -> str:
 
 def _native_server_config(
     installation: PluginInstallation,
+    inspection: PluginInspection,
     component: PluginMCPComponent,
 ) -> StdioServerConfig | HttpServerConfig | None:
     if not component.valid or component.transport == "sse":
@@ -54,6 +61,24 @@ def _native_server_config(
     root = Path(installation.root).resolve()
     data = plugin_data_root(installation.id).resolve()
     config = component.config
+    capabilities: list[str] = []
+    if inspection.manifest is not None:
+        extension = inspection.manifest.extensions.get(_MCP_EXTENSION, {})
+        servers = extension.get("servers", {}) if isinstance(extension, dict) else {}
+        server_extension = (
+            servers.get(component.name, {}) if isinstance(servers, dict) else {}
+        )
+        raw_capabilities = (
+            server_extension.get("capabilities", [])
+            if isinstance(server_extension, dict)
+            else []
+        )
+        if isinstance(raw_capabilities, list):
+            capabilities = [
+                value.strip().casefold()
+                for value in raw_capabilities
+                if isinstance(value, str) and value.strip()
+            ]
     if component.transport == "stdio":
         data.mkdir(parents=True, exist_ok=True)
         command = (
@@ -65,6 +90,7 @@ def _native_server_config(
             key: _expand(value, root=root, data_root=data)
             for key, value in config.get("env", {}).items()
         }
+        env.update(credential_environment(installation.id, inspection))
         # Reserved values are applied after configured overrides as required
         # by Agent Plugins 1.0.0.
         env["PLUGIN_ROOT"] = str(root)
@@ -85,6 +111,7 @@ def _native_server_config(
             env=env,
             cwd=cwd,
             resolve_env_refs=False,
+            capabilities=capabilities,
         )
     if component.transport == "streamable-http":
         return HttpServerConfig(
@@ -92,6 +119,7 @@ def _native_server_config(
             headers=dict(config.get("headers", {})),
             resolve_header_refs=False,
             follow_redirects=False,
+            capabilities=capabilities,
         )
     return None
 
@@ -116,7 +144,7 @@ def build_plugin_mcp_config() -> tuple[MCPConfig, list[PluginMCPServerDescriptor
         if not inspection.valid:
             continue
         for component in inspection.mcp_servers:
-            native = _native_server_config(installation, component)
+            native = _native_server_config(installation, inspection, component)
             if native is None:
                 continue
             runtime_name = _runtime_server_name(installation.id, component.name)
@@ -143,6 +171,15 @@ def _runtime_signature() -> tuple:
                 values.extend((metadata.st_mtime_ns, metadata.st_size))
             except OSError:
                 values.extend((0, 0))
+        try:
+            credential_metadata = (
+                plugin_data_root(installation.id) / "credentials.json"
+            ).stat()
+            values.extend(
+                (credential_metadata.st_mtime_ns, credential_metadata.st_size)
+            )
+        except OSError:
+            values.extend((0, 0))
     return tuple(values)
 
 
@@ -204,6 +241,16 @@ class PluginMCPRuntime:
 
     def get_tools_for_server(self, name: str) -> list[Tool] | None:
         return self._manager.get_tools_for_server(name)
+
+    def get_tools_for_installation(self, installation_id: str) -> list[Tool]:
+        """Return all ready tools contributed by one plugin installation."""
+
+        tools: list[Tool] = []
+        for descriptor in self._descriptors:
+            if descriptor.installation_id != installation_id:
+                continue
+            tools.extend(self._manager.get_tools_for_server(descriptor.runtime_name) or [])
+        return tools
 
     def list_status(self) -> list[dict[str, object]]:
         by_runtime = {item.runtime_name: item for item in self._descriptors}

@@ -187,8 +187,10 @@ export function AgentForm({
       const detail = `${s.transport} · ${s.state} · ${tools} tool${tools === 1 ? '' : 's'}`
       return {
         value: s.name,
-        label: s.name,
-        description: detail,
+        label: s.source === 'plugin'
+          ? `${s.plugin_name ?? 'plugin'} / ${s.plugin_server_name ?? s.name}`
+          : s.name,
+        description: `${detail}${s.source === 'plugin' ? ` · plugin runtime ${s.name}` : ''}`,
       }
     }) ?? []
 

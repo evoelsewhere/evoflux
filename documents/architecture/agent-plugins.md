@@ -26,7 +26,10 @@ Open **Plugins** beneath Scheduler in either Work or Coding mode. Plugin Center 
 - import a local `.evoplugin` or ZIP;
 - link an unpacked development directory without copying it;
 - validate a directory without installing it;
-- scaffold a plugin with an optional starter Skill;
+- scaffold a plugin with optional starter Skill and MCP server files;
+- open a plugin in the built-in workspace editor to browse, create, edit, save,
+  and delete package files;
+- configure installation-scoped credentials declared by the plugin;
 - enable, disable, pack, and uninstall an installation.
 
 Equivalent CLI commands:
@@ -54,9 +57,78 @@ Plugin Skills join the normal metadata-only catalog and load progressively throu
 2. enabled Agent Plugin installations;
 3. EvoFlux built-ins.
 
-Plugin MCP configuration is adapted in memory into a separate manager. It is never copied to or merged into the user's global `{CONFIG_DIR}/mcp.json`. Runtime server names are exposed by Plugin Center/API and can be granted through an agent's existing `mcp` configuration. Plugin MCP tools also remain subject to the normal tool and permission pipeline; installation alone does not grant every agent every tool.
+Plugin MCP configuration is adapted in memory into a separate manager. It is
+never copied to or merged into the user's global `{CONFIG_DIR}/mcp.json`.
+Runtime servers appear in **Settings → MCP servers** with a `plugin` badge and
+can be selected in an agent's `mcp` configuration. Loading a Skill contributed
+by a plugin also grants and activates the ready MCP tools from that same
+installation for the current run. Installation alone does not grant every
+agent every tool, and calls remain subject to the normal permission pipeline.
 
 For stdio servers, EvoFlux creates a persistent installation-scoped data directory and injects absolute `PLUGIN_ROOT` and `PLUGIN_DATA`. Only those exact placeholders are expanded, once, in `args`, `env` values, and `cwd`. Remote configured headers remain literal, and redirects are disabled to avoid forwarding them to a different origin.
+
+## Credential extension
+
+Agent Plugins 1.0 does not define a credential format. EvoFlux adds the optional
+`evoflux.credentials` extension so a portable plugin can declare a generic setup
+form without shipping product-specific UI:
+
+```json
+{
+  "extensions": {
+    "evoflux.credentials": {
+      "fields": [
+        {
+          "key": "endpoint",
+          "label": "Service URL",
+          "type": "url",
+          "env": "SERVICE_URL",
+          "required": true
+        },
+        {
+          "key": "token",
+          "label": "API token",
+          "type": "secret",
+          "env": "SERVICE_API_TOKEN",
+          "required": true
+        }
+      ]
+    }
+  }
+}
+```
+
+Supported field types are `text`, `secret`, `url`, and `boolean`. Open
+**Plugins → Credentials** on an installed plugin to configure them. Values are
+stored outside the portable package in
+`data/<installation-id>/credentials.json` with mode `0600`. Secret values are
+masked in API responses and injected only into that plugin's stdio MCP process
+using the declared environment-variable names. Saving or clearing the form
+refreshes the MCP runtime automatically.
+
+## MCP capability extension
+
+Plugin MCP servers may declare EvoFlux runtime capabilities without adding
+non-standard fields to the portable `mcp.json` schema:
+
+```json
+{
+  "extensions": {
+    "evoflux.mcp": {
+      "servers": {
+        "service": {
+          "capabilities": ["webbridge-safe"]
+        }
+      }
+    }
+  }
+}
+```
+
+`webbridge-safe` explicitly allows a non-browser MCP server to remain available
+inside a WebBridge-tagged conversation. Servers without that capability remain
+hidden there so an undeclared MCP browser cannot bypass the selected browser
+surface.
 
 ## Storage
 
@@ -82,4 +154,9 @@ Registry writes are atomic. Managed archive extraction rejects traversal, duplic
 
 ## Deferred product layer
 
-Agent Plugins 1.0 does not standardize registries, Git install, updates, signatures, permissions, secrets, connections, storage APIs, or custom UI. EvoFlux currently does not claim those capabilities for managed plugins. They belong in a versioned EvoFlux client extension with signed provenance and a sandboxed UI bridge; see the adoption analysis and plugin-platform plan.
+Agent Plugins 1.0 does not standardize registries, Git install, updates,
+signatures, permissions, connections, storage APIs, or custom UI. EvoFlux's
+credential and MCP-capability extensions are deliberately host-mediated;
+richer connection providers and plugin-defined UI still require a versioned
+EvoFlux client extension with signed provenance and a sandboxed UI bridge. See
+the adoption analysis and plugin-platform plan.

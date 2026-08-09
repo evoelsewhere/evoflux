@@ -13,7 +13,11 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from uuid import uuid4
 
-from app.plugin_platform.models import PLUGIN_SCHEMA_ID, PluginInstallation
+from app.plugin_platform.models import (
+    MCP_SCHEMA_ID,
+    PLUGIN_SCHEMA_ID,
+    PluginInstallation,
+)
 from app.plugin_platform.registry import (
     add_installation,
     get_installation,
@@ -32,6 +36,14 @@ from app.plugin_platform.validator import (
 
 MAX_ARCHIVE_BYTES = 50 * 1024 * 1024
 MAX_ARCHIVE_RATIO = 200
+_PACK_IGNORED_DIRECTORIES = {
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+}
+_PACK_IGNORED_FILES = {".DS_Store"}
 
 
 class PluginInstallError(ValueError):
@@ -273,17 +285,27 @@ def create_plugin(
     *,
     name: str,
     description: str = "",
+    version: str | None = None,
+    author: str | None = None,
+    license_name: str | None = None,
     skill_name: str | None = None,
+    mcp_name: str | None = None,
 ) -> Path:
     root = Path(destination).expanduser().absolute()
     if root.exists():
         raise PluginInstallError(f"Destination already exists: {root}")
-    manifest = {
+    manifest: dict[str, object] = {
         "$schema": PLUGIN_SCHEMA_ID,
         "name": name,
     }
     if description:
         manifest["description"] = description
+    if version:
+        manifest["version"] = version
+    if author:
+        manifest["author"] = {"name": author}
+    if license_name:
+        manifest["license"] = license_name
     root.mkdir(parents=True)
     try:
         (root / "plugin.json").write_text(
@@ -303,6 +325,37 @@ def create_plugin(
                 "---\n\n"
                 f"# {skill_name.replace('-', ' ').title()}\n\n"
                 "Describe the workflow, evidence requirements, and stop conditions here.\n",
+                encoding="utf-8",
+            )
+        if mcp_name:
+            (root / "mcp.json").write_text(
+                json.dumps(
+                    {
+                        "$schema": MCP_SCHEMA_ID,
+                        "mcpServers": {
+                            mcp_name: {
+                                "type": "stdio",
+                                "command": "python",
+                                "args": ["${PLUGIN_ROOT}/server.py"],
+                                "cwd": "${PLUGIN_ROOT}",
+                            }
+                        },
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (root / "server.py").write_text(
+                '"""Starter MCP server for this portable EvoFlux plugin."""\n\n'
+                "from mcp.server.fastmcp import FastMCP\n\n"
+                f"server = FastMCP({json.dumps(mcp_name)})\n\n\n"
+                "@server.tool()\n"
+                "def echo(message: str) -> str:\n"
+                '    """Return a message from the plugin starter server."""\n'
+                '    return f"plugin:{message}"\n\n\n'
+                'if __name__ == "__main__":\n'
+                '    server.run(transport="stdio")\n',
                 encoding="utf-8",
             )
         inspection = inspect_plugin(root)
@@ -350,7 +403,17 @@ def pack_plugin(source: str | Path, output: str | Path | None = None) -> Path:
     else:
         raise PluginInstallError("Output archive must be outside the plugin root.")
     files = sorted(
-        (item for item in root.rglob("*") if item.is_file()),
+        (
+            item
+            for item in root.rglob("*")
+            if item.is_file()
+            and not any(
+                part in _PACK_IGNORED_DIRECTORIES
+                for part in item.relative_to(root).parts[:-1]
+            )
+            and item.name not in _PACK_IGNORED_FILES
+            and item.suffix.casefold() not in {".pyc", ".pyo"}
+        ),
         key=lambda item: item.relative_to(root).as_posix(),
     )
     target.parent.mkdir(parents=True, exist_ok=True)

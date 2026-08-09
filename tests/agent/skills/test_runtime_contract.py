@@ -58,6 +58,36 @@ async def test_activation_atomically_enables_declared_deferred_tools(tmp_path):
     assert state.metadata["skill_runtime_contracts"]["investigate"] == {
         "required_tools": ("code_context",),
         "activated_tools": ("code_context",),
+        "plugin_tools": (),
+    }
+
+
+@pytest.mark.asyncio
+async def test_plugin_skill_activation_grants_its_runtime_mcp_tools(tmp_path):
+    record = _record(tmp_path, dependency="")
+    plugin_root = tmp_path / "plugin"
+    plugin_skill_dir = plugin_root / "skills" / record.name
+    plugin_skill_dir.mkdir(parents=True)
+    record.skill_file = record.skill_file.replace(plugin_skill_dir / "SKILL.md")
+    record.root = plugin_root / "skills"
+    record.source = "plugin:installation-123"
+    granted = ("mcp_plugin_123_jira_issues_search", "mcp_plugin_123_jira_issue_get")
+    state = AgentState(messages=[], tool_names=["skill"])
+    state.metadata["activated_deferred_tools"] = set()
+    state.metadata["_grant_plugin_mcp_tools"] = (
+        lambda installation_id: granted
+        if installation_id == "installation-123"
+        else ()
+    )
+
+    content = await activate_skill_with_runtime(state, record)
+
+    assert "Plugin root:" in content
+    assert state.metadata["activated_deferred_tools"] == set(granted)
+    assert state.metadata["skill_runtime_contracts"]["investigate"] == {
+        "required_tools": (),
+        "activated_tools": tuple(sorted(granted)),
+        "plugin_tools": tuple(sorted(granted)),
     }
 
 

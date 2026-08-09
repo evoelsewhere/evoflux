@@ -245,6 +245,41 @@ def _to_response(
     )
 
 
+def _plugin_to_response(status: dict[str, object]) -> ServerStatusResponse:
+    """Adapt the isolated plugin runtime for the unified Settings surface."""
+
+    raw_tool_names = status.get("tool_names")
+    tool_names = (
+        [str(value) for value in raw_tool_names]
+        if isinstance(raw_tool_names, list)
+        else []
+    )
+    return ServerStatusResponse(
+        name=str(status["runtime_name"]),
+        transport=str(status["transport"]),
+        enabled=bool(status["enabled"]),
+        state=str(status["state"]),
+        error=str(status["error"]) if status.get("error") else None,
+        tool_names=tool_names,
+        started_at=(
+            str(status["started_at"]) if status.get("started_at") else None
+        ),
+        config=None,
+        source="plugin",
+        plugin_installation_id=(
+            str(status["installation_id"])
+            if status.get("installation_id")
+            else None
+        ),
+        plugin_name=(
+            str(status["plugin_name"]) if status.get("plugin_name") else None
+        ),
+        plugin_server_name=(
+            str(status["server_name"]) if status.get("server_name") else None
+        ),
+    )
+
+
 def _dump_mcp_result(value: Any) -> dict[str, Any]:
     if hasattr(value, "model_dump"):
         dumped = value.model_dump(mode="json", by_alias=True, exclude_none=True)
@@ -281,10 +316,19 @@ async def _load_bound_mcp_app(
 
 @router.get("/servers")
 async def list_servers() -> ServerListResponse:
+    from app.plugin_platform.runtime import plugin_mcp_runtime
+
     cfg = load_config()
     return ServerListResponse(
         servers=[
-            _to_response(s, cfg.servers.get(s.name)) for s in mcp_manager.list_status()
+            *(
+                _to_response(s, cfg.servers.get(s.name))
+                for s in mcp_manager.list_status()
+            ),
+            *(
+                _plugin_to_response(status)
+                for status in plugin_mcp_runtime.list_status()
+            ),
         ]
     )
 
@@ -292,10 +336,23 @@ async def list_servers() -> ServerListResponse:
 @router.get("/servers/{name}")
 async def get_server(name: str) -> ServerStatusResponse:
     status = mcp_manager.get_status(name)
-    if status is None:
-        raise HTTPException(status_code=404, detail=f"MCP server '{name}' not found.")
-    cfg = load_config()
-    return _to_response(status, cfg.servers.get(name))
+    if status is not None:
+        cfg = load_config()
+        return _to_response(status, cfg.servers.get(name))
+
+    from app.plugin_platform.runtime import plugin_mcp_runtime
+
+    plugin_status = next(
+        (
+            item
+            for item in plugin_mcp_runtime.list_status()
+            if item.get("runtime_name") == name
+        ),
+        None,
+    )
+    if plugin_status is not None:
+        return _plugin_to_response(plugin_status)
+    raise HTTPException(status_code=404, detail=f"MCP server '{name}' not found.")
 
 
 @router.post("/app-tools/call")

@@ -92,6 +92,38 @@ class TestListServers:
             assert data["servers"][0]["name"] == "filesystem"
             assert data["servers"][1]["name"] == "github"
 
+    def test_list_servers_includes_plugin_runtime(self) -> None:
+        app = _make_app()
+        plugin_status = {
+            "installation_id": "plugin-id",
+            "plugin_name": "evoflux-jira",
+            "server_name": "jira",
+            "runtime_name": "plugin_plugin_i_jira_deadbeef",
+            "transport": "stdio",
+            "enabled": True,
+            "state": "ready",
+            "error": None,
+            "tool_names": ["mcp_plugin_plugin_i_jira_deadbeef_issues_search"],
+            "started_at": "2026-08-09T00:00:00Z",
+        }
+        with (
+            patch("app.api.routes.mcp.mcp_manager") as mock_manager,
+            patch(
+                "app.plugin_platform.runtime.plugin_mcp_runtime.list_status",
+                return_value=[plugin_status],
+            ),
+        ):
+            mock_manager.list_status.return_value = []
+            response = TestClient(app).get("/api/mcp/servers")
+
+        assert response.status_code == 200
+        server = response.json()["servers"][0]
+        assert server["name"] == plugin_status["runtime_name"]
+        assert server["source"] == "plugin"
+        assert server["plugin_name"] == "evoflux-jira"
+        assert server["plugin_server_name"] == "jira"
+        assert server["config"] is None
+
 
 class TestGetServer:
     """Test GET /api/mcp/servers/{name}."""
@@ -123,6 +155,35 @@ class TestGetServer:
             client = TestClient(app)
             response = client.get("/api/mcp/servers/missing")
             assert response.status_code == 404
+
+    def test_get_plugin_server_found(self) -> None:
+        app = _make_app()
+        plugin_status = {
+            "installation_id": "plugin-id",
+            "plugin_name": "evoflux-jira",
+            "server_name": "jira",
+            "runtime_name": "plugin_plugin_i_jira_deadbeef",
+            "transport": "stdio",
+            "enabled": True,
+            "state": "ready",
+            "error": None,
+            "tool_names": [],
+            "started_at": None,
+        }
+        with (
+            patch("app.api.routes.mcp.mcp_manager") as mock_manager,
+            patch(
+                "app.plugin_platform.runtime.plugin_mcp_runtime.list_status",
+                return_value=[plugin_status],
+            ),
+        ):
+            mock_manager.get_status.return_value = None
+            response = TestClient(app).get(
+                f"/api/mcp/servers/{plugin_status['runtime_name']}"
+            )
+
+        assert response.status_code == 200
+        assert response.json()["source"] == "plugin"
 
 
 class TestMCPAppToolCall:

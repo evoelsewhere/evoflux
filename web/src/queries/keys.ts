@@ -159,6 +159,8 @@ export const queryKeys = {
   plugins: {
     all: () => ['plugins'] as const,
     list: () => ['plugins', 'list'] as const,
+    credentials: (installationId: string) =>
+      ['plugins', 'credentials', installationId] as const,
   },
   settings: {
     sandbox: () => ['settings', 'sandbox'] as const,

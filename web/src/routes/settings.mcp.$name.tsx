@@ -152,17 +152,23 @@ export function McpServerDetailPage() {
     <>
       <SettingsPage
         icon={Plug}
-        title={name}
-        lede={<span className="font-mono text-xs">.EvoFlux/config/mcp.json</span>}
+        title={serverQ.data?.source === 'plugin'
+          ? `${serverQ.data.plugin_name ?? 'Plugin'} / ${serverQ.data.plugin_server_name ?? name}`
+          : name}
+        lede={serverQ.data?.source === 'plugin'
+          ? <span>Portable plugin MCP runtime · <span className="font-mono text-xs">{name}</span></span>
+          : <span className="font-mono text-xs">.EvoFlux/config/mcp.json</span>}
         actions={
-          <EditorHeaderActions
-            dirty={dirty}
-            invalid={invalid}
-            saving={updateMut.isPending}
-            error={saveError}
-            validationHint={firstError}
-            onSave={handleSave}
-          />
+          serverQ.data?.source === 'plugin'
+            ? undefined
+            : <EditorHeaderActions
+                dirty={dirty}
+                invalid={invalid}
+                saving={updateMut.isPending}
+                error={saveError}
+                validationHint={firstError}
+                onSave={handleSave}
+              />
         }
       >
         <SettingsAsyncBoundary
@@ -203,7 +209,14 @@ export function McpServerDetailPage() {
               </SettingsCallout>
             )}
 
-            {draft ? (
+            {server.source === 'plugin' ? (
+              <SettingsCallout tone="info">
+                This server is contributed by the <strong>{server.plugin_name}</strong>{' '}
+                plugin and is read-only here. Configure credentials, edit files, enable,
+                disable, or uninstall it from Plugin Center. Select this runtime in an
+                agent's MCP servers field to grant all of its current and future tools.
+              </SettingsCallout>
+            ) : draft ? (
               <SettingsGroup bare>
                 <McpServerForm
                   value={draft}
@@ -220,7 +233,7 @@ export function McpServerDetailPage() {
               </SettingsCallout>
             )}
 
-            <div className="flex items-center justify-between gap-2 text-xs text-(--color-text-muted)">
+            {server.source !== 'plugin' && <div className="flex items-center justify-between gap-2 text-xs text-(--color-text-muted)">
               <div className="flex items-center gap-2">
                 {dirty && (
                   <>
@@ -253,13 +266,15 @@ export function McpServerDetailPage() {
                 <Trash2 size={11} aria-hidden="true" />
                 Delete server
               </Button>
-            </div>
+            </div>}
 
-            <RestartGroup
-              onRestart={handleRestart}
-              pending={restartMut.isPending}
-              enabled={server.enabled}
-            />
+            {server.source !== 'plugin' && (
+              <RestartGroup
+                onRestart={handleRestart}
+                pending={restartMut.isPending}
+                enabled={server.enabled}
+              />
+            )}
           </>
           )}
         </SettingsAsyncBoundary>
