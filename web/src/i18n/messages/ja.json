@@ -228,7 +228,6 @@
   "{0}/team/{1}/history?before={2}": "{0}/チーム/{1}/history?before={2}",
   "{0}/team/{1}/permissions/{2}/reply": "{0}/チーム/{1}/権限/{2}/返信",
   "{0}/team/{1}/plan/reply": "{0}/チーム/{1}/計画/返信",
-  "{0}/team/{1}/presentation-renderer": "{0}/チーム/{1}/プレゼンテーション レンダラー",
   "{0}/team/{1}/questions/{2}/reply": "{0}/チーム/{1}/質問/{2}/返信",
   "{0}/team/{1}/questions/pending": "{0}/チーム/{1}/質問/保留中",
   "{0}/team/{1}/side-chat": "{0}/チーム/{1}/サイドチャット",
