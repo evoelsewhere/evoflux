@@ -61,6 +61,8 @@ def test_tail_param_bounded():
 
 def test_runtime_section_does_not_expose_full_environ():
     body = _client().get("/api/diagnostics").json()
+    document_runtime = body["runtime"]["document_runtime"]
+    assert isinstance(document_runtime["available"], bool)
     env = body["env"]
     # PATH, HOME, USER must never appear.
     for forbidden in ("PATH", "HOME", "USER", "SHELL"):
