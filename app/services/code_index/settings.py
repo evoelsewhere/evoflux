@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,7 @@ class ProjectSettings:
     warnings: tuple[str, ...] = ()
     digest: str = "default"
 
+    @lru_cache(maxsize=32_768)
     def language_for(self, path: str) -> str | None:
         extension = Path(path).suffix.casefold().lstrip(".")
         return next(
@@ -45,6 +47,7 @@ class ProjectSettings:
             None,
         )
 
+    @lru_cache(maxsize=32_768)
     def includes(self, path: str) -> bool:
         normalized = path.replace("\\", "/").strip("/")
         if self.include_patterns and not any(

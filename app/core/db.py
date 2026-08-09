@@ -73,9 +73,9 @@ async_session_factory = async_sessionmaker(
 )
 
 # Backs sqlite_write_guard() below. A single process-wide lock, not per
-# workspace/project — busy_timeout alone isn't enough once a writer (a large
-# repo's full reindex, say) legitimately holds the transaction longer than
-# the timeout; another writer arriving mid-transaction still raises
+# workspace/project — busy_timeout alone isn't enough once a large application
+# write legitimately holds the database longer than the timeout; another
+# writer arriving mid-transaction still raises
 # "database is locked" instead of waiting for the first to finish. This lock
 # removes the race instead of racing the clock.
 #

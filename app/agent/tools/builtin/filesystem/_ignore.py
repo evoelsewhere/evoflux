@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fnmatch import fnmatchcase
+import re
+from fnmatch import fnmatchcase, translate
+from functools import lru_cache
 from pathlib import Path
 
 _SKIPPED_DIR_NAMES = frozenset(
@@ -42,27 +44,94 @@ def load_gitignore_rules(root: Path) -> list[tuple[str, bool]]:
 
 
 def matches_gitignore_pattern(pattern: str, rel: str, *, is_dir: bool) -> bool:
+    return _matches_gitignore_pattern(
+        pattern,
+        rel,
+        is_dir=is_dir,
+        parts=tuple(rel.split("/")),
+    )
+
+
+@lru_cache(maxsize=2_048)
+def _normalized_pattern(pattern: str) -> tuple[bool, str, bool]:
     directory_only = pattern.endswith("/")
-    pattern = pattern.strip("/") if directory_only else pattern.lstrip("/")
-    if not pattern:
+    normalized = pattern.strip("/") if directory_only else pattern.lstrip("/")
+    return directory_only, normalized, "/" in normalized
+
+
+def _matches_gitignore_pattern(
+    pattern: str,
+    rel: str,
+    *,
+    is_dir: bool,
+    parts: tuple[str, ...],
+) -> bool:
+    directory_only, normalized, contains_slash = _normalized_pattern(pattern)
+    if not normalized:
         return False
 
     if directory_only:
-        return rel == pattern if is_dir else rel.startswith(f"{pattern}/")
+        return rel == normalized if is_dir else rel.startswith(f"{normalized}/")
 
-    if "/" in pattern:
-        return fnmatchcase(rel, pattern) or fnmatchcase(rel, f"{pattern}/*")
+    if contains_slash:
+        return fnmatchcase(rel, normalized) or fnmatchcase(rel, f"{normalized}/*")
 
-    parts = rel.split("/")
-    return any(fnmatchcase(part, pattern) for part in parts)
+    return any(fnmatchcase(part, normalized) for part in parts)
 
 
 def is_gitignored(rel: str, *, is_dir: bool, rules: list[tuple[str, bool]]) -> bool:
+    return _is_gitignored_cached(rel, is_dir, tuple(rules))
+
+
+@lru_cache(maxsize=32_768)
+def _is_gitignored_cached(
+    rel: str,
+    is_dir: bool,
+    rules: tuple[tuple[str, bool], ...],
+) -> bool:
+    combined = _combined_exclusion_pattern(rules, is_dir)
+    if combined is not None:
+        return combined.search(rel) is not None
     ignored = False
+    parts = tuple(rel.split("/"))
     for pattern, include in rules:
-        if matches_gitignore_pattern(pattern, rel, is_dir=is_dir):
+        if _matches_gitignore_pattern(
+            pattern,
+            rel,
+            is_dir=is_dir,
+            parts=parts,
+        ):
             ignored = not include
     return ignored
+
+
+@lru_cache(maxsize=128)
+def _combined_exclusion_pattern(
+    rules: tuple[tuple[str, bool], ...], is_dir: bool
+) -> re.Pattern[str] | None:
+    """Compile exclusion-only rule sets into one match for large repositories."""
+    if any(include for _pattern, include in rules):
+        return None
+    expressions: list[str] = []
+    for pattern, _include in rules:
+        directory_only, normalized, contains_slash = _normalized_pattern(pattern)
+        if not normalized:
+            continue
+        if directory_only:
+            expression = re.escape(normalized)
+            expressions.append(
+                rf"^(?:{expression})$" if is_dir else rf"^(?:{expression})/"
+            )
+            continue
+        translated = translate(normalized)
+        if not translated.startswith("(?s:") or not translated.endswith(")\\Z"):
+            return None
+        body = translated[4:-3]
+        if contains_slash:
+            expressions.append(rf"^(?:{body})(?:/.*)?$")
+        else:
+            expressions.append(rf"(?:^|/)(?:{body})(?:/|$)")
+    return re.compile("|".join(expressions)) if expressions else re.compile(r"(?!x)x")
 
 
 def is_ignored_workspace_path(

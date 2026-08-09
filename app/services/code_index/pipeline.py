@@ -22,6 +22,8 @@ class SourceFileRow:
     language: str
     fingerprint: str
     byte_size: int
+    modified_ns: int
+    changed_ns: int
     content: str
     processor: str
     graph_enabled: int
@@ -84,19 +86,25 @@ def stable_id(*parts: object) -> str:
     return digest.hexdigest()
 
 
-@lru_cache(maxsize=64)
 def processing_identity(file_path: str, language_override: str | None = None) -> str:
     """Identify parser + local implementation so parser edits invalidate targets."""
+    extension = Path(file_path).suffix.casefold()
+    return _processing_identity(extension, language_override)
+
+
+@lru_cache(maxsize=64)
+def _processing_identity(extension: str, language_override: str | None) -> str:
+    """Cache implementation digests by parser identity, not by every file path."""
     parser = (
         _REGISTRY.for_language(language_override)
         if language_override
-        else _REGISTRY.for_path(file_path)
+        else _REGISTRY.for_path(f"source{extension}")
     )
     digest = hashlib.sha256()
     digest.update(b"evoflux-code-context-pipeline\0")
     if parser is None:
         digest.update(
-            f"search-only:{language_override or fallback_language(file_path)}".encode()
+            f"search-only:{language_override or fallback_language(f'source{extension}')}".encode()
         )
     else:
         digest.update(
@@ -238,6 +246,8 @@ def build_file_state(record: SourceRecord) -> FileState:
             language=language,
             fingerprint=record.fingerprint,
             byte_size=len(record.content),
+            modified_ns=record.modified_ns,
+            changed_ns=record.changed_ns,
             content=text,
             processor=record.processor,
             graph_enabled=int(parser is not None),

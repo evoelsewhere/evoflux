@@ -8,11 +8,13 @@ import hashlib
 import posixpath
 import re
 import sqlite3
-from collections import defaultdict, deque
+import threading
+from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from app.services.code_index.parsers.registry import default_registry
+from app.services.code_index.executor import run_index_work
 from app.services.code_index.models import (
     CodeContextResult,
     CodeSymbol,
@@ -111,6 +113,13 @@ class _ResolvedRelation:
     relation: _StoredRelation
 
 
+_SYMBOL_CACHE_LIMIT = 32
+_SYMBOL_CACHE_LOCK = threading.RLock()
+_SYMBOL_CACHE: OrderedDict[
+    tuple[int, str], tuple[str | None, tuple[_StoredSymbol, ...]]
+] = OrderedDict()
+
+
 def _fts_query(query: str) -> str:
     tokens = list(dict.fromkeys(_QUERY_TOKEN.findall(query)))
     if not tokens:
@@ -150,11 +159,12 @@ async def search_index(
         limitations: list[str] = []
         try:
             with index.database.readonly() as conn:
+                lexical_available = True
                 try:
                     lexical_rows = conn.execute(
                         """
                         SELECT c.file_path, c.language, c.line_start, c.line_end,
-                               c.content, c.symbol_name,
+                               c.content, c.symbol_name, c.embedding,
                                bm25(source_chunks_fts) AS rank
                         FROM source_chunks_fts
                         JOIN source_chunks AS c
@@ -163,30 +173,44 @@ async def search_index(
                         ORDER BY rank
                         LIMIT ?
                         """,
-                        (_fts_query(query), max(50, limit * 8)),
+                        (_fts_query(query), min(2_000, max(100, limit * 16))),
                     ).fetchall()
                 except Exception as exc:
+                    lexical_available = False
                     lexical_rows = []
                     limitations.append(f"{label}: lexical index unavailable ({exc})")
-                try:
-                    semantic_rows = conn.execute(
-                        """
-                        SELECT file_path, language, line_start, line_end,
-                               content, symbol_name, embedding
-                        FROM source_chunks
-                        """
-                    ).fetchall()
-                except Exception as exc:
-                    return [], [f"{label}: source index unavailable ({exc})"]
+                eligible_lexical_rows = [
+                    row
+                    for row in lexical_rows
+                    if (
+                        not wanted_languages
+                        or str(row[1]).casefold() in wanted_languages
+                    )
+                    and _path_matches(str(row[0]), paths)
+                ]
+                if eligible_lexical_rows:
+                    semantic_rows = [row[:7] for row in eligible_lexical_rows]
+                else:
+                    try:
+                        semantic_rows = conn.execute(
+                            """
+                            SELECT file_path, language, line_start, line_end,
+                                   content, symbol_name, embedding
+                            FROM source_chunks
+                            """
+                        ).fetchall()
+                    except Exception as exc:
+                        return [], [f"{label}: source index unavailable ({exc})"]
         except Exception as exc:
             return [], [f"{label}: index unavailable ({exc})"]
         lexical_ranks = {
             (str(path), int(start), int(end)): float(rank or 0.0)
-            for path, _language, start, end, _content, _symbol, rank in lexical_rows
+            for path, _language, start, end, _content, _symbol, _embedding, rank in lexical_rows
         }
         query_folded = query.casefold()
         tokens = tuple(token.casefold() for token in _QUERY_TOKEN.findall(query))
         output: list[SearchHit] = []
+        stale_lexical_target = False
         for (
             file_path,
             language,
@@ -204,6 +228,13 @@ async def search_index(
             symbol = str(symbol_name) if symbol_name is not None else None
             haystack = f"{file_path} {symbol or ''} {text}".casefold()
             coverage = sum(token in haystack for token in tokens) / max(1, len(tokens))
+            if lexical_available and not lexical_rows and tokens:
+                indexed_tokens = {
+                    token.casefold() for token in _QUERY_TOKEN.findall(haystack)
+                }
+                stale_lexical_target = stale_lexical_target or any(
+                    token in indexed_tokens for token in tokens
+                )
             vector_score = similarity(query_embedding, bytes(embedding))
             rank = lexical_ranks.get((str(file_path), int(start), int(end)))
             score = max(0.0, vector_score) * 100.0 + coverage * 40.0
@@ -231,10 +262,15 @@ async def search_index(
                     repository_path=str(index.root),
                 )
             )
+        if stale_lexical_target:
+            try:
+                index.rebuild_lexical_index()
+            except Exception as exc:
+                limitations.append(f"{label}: lexical index repair failed ({exc})")
         return output, limitations
 
     groups = await asyncio.gather(
-        *(asyncio.to_thread(search_one, label, index) for label, index in indexes)
+        *(run_index_work(search_one, label, index) for label, index in indexes)
     )
     hits = [hit for group, _ in groups for hit in group]
     limitations = list(
@@ -331,7 +367,7 @@ async def structural_grep(
         return hits, limitations
 
     groups = await asyncio.gather(
-        *(asyncio.to_thread(grep_one, label, index) for label, index in indexes)
+        *(run_index_work(grep_one, label, index) for label, index in indexes)
     )
     hits = [hit for group, _ in groups for hit in group]
     limitations = list(
@@ -355,9 +391,22 @@ async def structural_grep(
 
 def _load_symbols(
     indexes: list[tuple[str, RepositoryIndex]],
+    stats: dict[str, IndexStats] | None = None,
 ) -> list[_StoredSymbol]:
     symbols: list[_StoredSymbol] = []
     for label, index in indexes:
+        version = (
+            stats[label].version
+            if stats is not None and label in stats
+            else index.stats().version
+        )
+        cache_key = (id(index), label)
+        with _SYMBOL_CACHE_LOCK:
+            cached = _SYMBOL_CACHE.get(cache_key)
+            if cached is not None and cached[0] == version:
+                _SYMBOL_CACHE.move_to_end(cache_key)
+                symbols.extend(cached[1])
+                continue
         with index.database.readonly() as conn:
             symbol_rows = conn.execute(
                 """
@@ -366,7 +415,7 @@ def _load_symbols(
                 FROM code_symbols
                 """
             ).fetchall()
-        symbols.extend(
+        loaded = tuple(
             _StoredSymbol(
                 repository=label,
                 index=index,
@@ -386,6 +435,12 @@ def _load_symbols(
             )
             for row in symbol_rows
         )
+        with _SYMBOL_CACHE_LOCK:
+            _SYMBOL_CACHE[cache_key] = (version, loaded)
+            _SYMBOL_CACHE.move_to_end(cache_key)
+            while len(_SYMBOL_CACHE) > _SYMBOL_CACHE_LIMIT:
+                _SYMBOL_CACHE.popitem(last=False)
+        symbols.extend(loaded)
     return symbols
 
 
@@ -517,7 +572,7 @@ async def snapshot_graph(
     relation_limit_per_repository: int,
 ) -> GraphSnapshot:
     """Return a bounded graph projection resolved from the current repo set."""
-    stored_symbols = await asyncio.to_thread(_load_symbols, indexes)
+    stored_symbols = await run_index_work(_load_symbols, indexes)
     selected: list[_StoredSymbol] = []
     for label, _index in indexes:
         values = [item for item in stored_symbols if item.repository == label]
@@ -531,7 +586,7 @@ async def snapshot_graph(
         )
         selected.extend(values[:node_limit_per_repository])
     selected_ids = {item.value.identity for item in selected}
-    stored_relations, total_relations = await asyncio.to_thread(
+    stored_relations, total_relations = await run_index_work(
         _relations_from_selected, selected
     )
     resolver = _GraphResolver(stored_symbols, stored_relations)
@@ -567,30 +622,41 @@ async def snapshot_graph(
 
 class _GraphResolver:
     def __init__(
-        self, symbols: list[_StoredSymbol], relations: list[_StoredRelation]
+        self,
+        symbols: list[_StoredSymbol],
+        relations: list[_StoredRelation],
+        *,
+        catalog: _GraphResolver | None = None,
     ) -> None:
-        self.symbols = symbols
+        self.symbols = catalog.symbols if catalog is not None else symbols
         self.relations = relations
-        self.by_identity = {
-            (symbol.repository, symbol.value.id): symbol for symbol in symbols
-        }
-        self.by_repo_name: dict[tuple[str, str], list[_StoredSymbol]] = defaultdict(
-            list
-        )
-        self.by_repo_qualified: dict[tuple[str, str], list[_StoredSymbol]] = (
-            defaultdict(list)
-        )
-        self.by_name: dict[str, list[_StoredSymbol]] = defaultdict(list)
-        self.by_qualified: dict[str, list[_StoredSymbol]] = defaultdict(list)
-        for symbol in symbols:
-            self.by_repo_name[(symbol.repository, symbol.value.name.casefold())].append(
-                symbol
+        if catalog is not None:
+            self.by_identity = catalog.by_identity
+            self.by_repo_name = catalog.by_repo_name
+            self.by_repo_qualified = catalog.by_repo_qualified
+            self.by_name = catalog.by_name
+            self.by_qualified = catalog.by_qualified
+        else:
+            self.by_identity = {
+                (symbol.repository, symbol.value.id): symbol for symbol in symbols
+            }
+            self.by_repo_name: dict[tuple[str, str], list[_StoredSymbol]] = defaultdict(
+                list
             )
-            self.by_repo_qualified[
-                (symbol.repository, symbol.value.qualified_name.casefold())
-            ].append(symbol)
-            self.by_name[symbol.value.name.casefold()].append(symbol)
-            self.by_qualified[symbol.value.qualified_name.casefold()].append(symbol)
+            self.by_repo_qualified: dict[tuple[str, str], list[_StoredSymbol]] = (
+                defaultdict(list)
+            )
+            self.by_name: dict[str, list[_StoredSymbol]] = defaultdict(list)
+            self.by_qualified: dict[str, list[_StoredSymbol]] = defaultdict(list)
+            for symbol in symbols:
+                self.by_repo_name[
+                    (symbol.repository, symbol.value.name.casefold())
+                ].append(symbol)
+                self.by_repo_qualified[
+                    (symbol.repository, symbol.value.qualified_name.casefold())
+                ].append(symbol)
+                self.by_name[symbol.value.name.casefold()].append(symbol)
+                self.by_qualified[symbol.value.qualified_name.casefold()].append(symbol)
         self.imports: dict[tuple[str, str, str], _StoredSymbol] = {}
         self.limitations: list[str] = []
         self.ambiguities: list[_StoredSymbol] = []
@@ -696,9 +762,14 @@ class _GraphResolver:
                     return _ResolvedRelation(source, imported, relation)
                 candidates = [
                     item
-                    for item in self.symbols
+                    for item in self.by_repo_name.get(
+                        (
+                            imported.repository,
+                            tail.rsplit(".", 1)[-1].casefold(),
+                        ),
+                        [],
+                    )
                     if item.repository == imported.repository
-                    and item.value.name.casefold() == tail.rsplit(".", 1)[-1].casefold()
                     and item.value.kind in allowed
                     and _same_module(imported.value.file_path, item.value.file_path)
                 ]
@@ -814,11 +885,11 @@ class _GraphResolver:
     ) -> list[_StoredSymbol]:
         if not relation.module_path:
             return []
+        named_symbols = self.by_name.get(short_name.casefold(), [])
         output = [
             item
-            for item in self.symbols
+            for item in named_symbols
             if item.value.kind in allowed
-            and item.value.name.casefold() == short_name.casefold()
             and _file_matches_module(
                 item.value.file_path,
                 relation.module_path,
@@ -832,9 +903,8 @@ class _GraphResolver:
         if not output and not _is_relative_module(relation.module_path):
             output = [
                 item
-                for item in self.symbols
+                for item in named_symbols
                 if item.value.kind in allowed
-                and item.value.name.casefold() == short_name.casefold()
                 and _repository_matches_module(item, relation.module_path)
             ]
         return _prefer_same_repository(output, relation.repository)
@@ -859,12 +929,12 @@ class _GraphResolver:
             and item.module_path
         }
         output: list[_StoredSymbol] = []
+        named_symbols = self.by_name.get(short_name.casefold(), [])
         for module_path in module_paths:
             matched = [
                 item
-                for item in self.symbols
+                for item in named_symbols
                 if item.value.kind in allowed
-                and item.value.name.casefold() == short_name.casefold()
                 and _file_matches_module(
                     item.value.file_path,
                     module_path,
@@ -878,9 +948,8 @@ class _GraphResolver:
             if not matched and not _is_relative_module(module_path):
                 matched = [
                     item
-                    for item in self.symbols
+                    for item in named_symbols
                     if item.value.kind in allowed
-                    and item.value.name.casefold() == short_name.casefold()
                     and _repository_matches_module(item, module_path)
                 ]
             output.extend(matched)
@@ -904,12 +973,12 @@ class _GraphResolver:
             and item.module_path
         }
         receivers: list[_StoredSymbol] = []
+        named_receivers = self.by_name.get(receiver.casefold(), [])
         for module_path in module_paths:
             receivers.extend(
                 item
-                for item in self.symbols
+                for item in named_receivers
                 if item.value.kind in _TYPE_KINDS
-                and item.value.name.casefold() == receiver.casefold()
                 and (
                     _file_matches_module(
                         item.value.file_path,
@@ -922,10 +991,10 @@ class _GraphResolver:
         output = [
             item
             for receiver_symbol in dict.fromkeys(receivers)
-            for item in self.symbols
-            if item.repository == receiver_symbol.repository
-            and item.value.kind in allowed
-            and item.value.name.casefold() == short_name.casefold()
+            for item in self.by_repo_name.get(
+                (receiver_symbol.repository, short_name.casefold()), []
+            )
+            if item.value.kind in allowed
             and item.value.qualified_name.casefold().startswith(
                 f"{receiver_symbol.value.qualified_name}.".casefold()
             )
@@ -1067,7 +1136,7 @@ async def navigate_graph(
     stats: dict[str, IndexStats],
 ) -> CodeContextResult:
     folded = _normalize_symbol(symbol).casefold()
-    matches, suggestions = await asyncio.to_thread(
+    matches, suggestions = await run_index_work(
         _find_symbols,
         indexes,
         folded,
@@ -1103,7 +1172,7 @@ async def navigate_graph(
             truncated=len(matches) > 20,
         )
 
-    stored_symbols = await asyncio.to_thread(_load_symbols, indexes)
+    stored_symbols = await run_index_work(_load_symbols, indexes, stats)
     root = matches[0]
     root = next(
         (item for item in stored_symbols if item.value.identity == root.value.identity),
@@ -1116,7 +1185,7 @@ async def navigate_graph(
         truncated,
         traversal_limitations,
         traversal_suggestions,
-    ) = await asyncio.to_thread(
+    ) = await run_index_work(
         _traverse_lazy,
         root,
         stored_symbols,
@@ -1260,6 +1329,7 @@ def _traverse_lazy(
     seen_edges: set[tuple[str, str]] = set()
     limitations: list[str] = []
     suggestions: list[_StoredSymbol] = []
+    catalog = _GraphResolver(symbols, [])
     while queue:
         node, current_depth = queue.popleft()
         if current_depth > depth:
@@ -1287,7 +1357,7 @@ def _traverse_lazy(
             inbound=wants_inbound,
             kinds=kinds,
         )
-        resolver = _GraphResolver(symbols, relations)
+        resolver = _GraphResolver(symbols, relations, catalog=catalog)
         edges = resolver.resolve_all()
         limitations.extend(resolver.limitations)
         suggestions.extend(resolver.ambiguities)
