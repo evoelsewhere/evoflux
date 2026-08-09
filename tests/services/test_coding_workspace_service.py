@@ -13,6 +13,9 @@ from app.services.coding_workspace_service import (
     list_workspace_paths_with_sessions,
     upsert_coding_workspace,
 )
+from app.services.coding_project_service import (
+    get_visible_project_ids_for_workspace_path,
+)
 
 
 @pytest_asyncio.fixture
@@ -118,3 +121,25 @@ async def test_worktree_session_also_watches_source_repo(db, tmp_path):
 
     paths = set(await list_workspace_paths_with_sessions(db))
     assert paths == {source_path, worktree_path}
+
+
+@pytest.mark.asyncio
+async def test_worktree_inherits_source_project_ownership(db, tmp_path):
+    source_path = str(tmp_path / "source-repo")
+    worktree_path = str(tmp_path / "worktree")
+    project = CodingProject(name="Owner")
+    db.add(project)
+    await db.flush()
+    source = await _add_project_workspace(db, project.id, source_path)
+    await upsert_coding_workspace(
+        db,
+        path=worktree_path,
+        kind="worktree",
+        source_path=source.path,
+        managed=True,
+    )
+    await db.commit()
+
+    assert await get_visible_project_ids_for_workspace_path(db, worktree_path) == [
+        project.id
+    ]

@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import {
   getCodingWorkspaceTree,
   getProject,
@@ -20,6 +20,13 @@ export function useCodingOverviewQuery() {
   })
 }
 
+function refetchCodingOverview(queryClient: QueryClient) {
+  return queryClient.refetchQueries({
+    queryKey: queryKeys.codingOverview(),
+    type: 'all',
+  })
+}
+
 export function useProjectQuery(id: string | null | undefined) {
   return useQuery({
     queryKey: queryKeys.projects.detail(id ?? ''),
@@ -33,9 +40,11 @@ export function useCreateProjectMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: ProjectCreateRequest) => createProject(body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all() })
-      queryClient.invalidateQueries({ queryKey: queryKeys.codingOverview() })
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.all() }),
+        refetchCodingOverview(queryClient),
+      ])
     },
   })
 }
@@ -50,9 +59,9 @@ export function useUpdateProjectMutation() {
       id: string
       body: Partial<{ name: string; description: string; settings: Record<string, unknown> }>
     }) => updateProject(id, body),
-    onSuccess: (updated: CodingProject) => {
+    onSuccess: async (updated: CodingProject) => {
       queryClient.setQueryData(queryKeys.projects.detail(updated.id), updated)
-      queryClient.invalidateQueries({ queryKey: queryKeys.codingOverview() })
+      await refetchCodingOverview(queryClient)
     },
   })
 }
@@ -61,9 +70,11 @@ export function useDeleteProjectMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => deleteProject(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all() })
-      queryClient.invalidateQueries({ queryKey: queryKeys.codingOverview() })
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.all() }),
+        refetchCodingOverview(queryClient),
+      ])
     },
   })
 }
@@ -78,9 +89,11 @@ export function useAddWorkspaceMutation() {
       projectId: string
       body: AddWorkspaceToProjectRequest
     }) => addWorkspaceToProject(projectId, body),
-    onSuccess: (_ws, { projectId }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.codingOverview() })
+    onSuccess: async (_ws, { projectId }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) }),
+        refetchCodingOverview(queryClient),
+      ])
     },
   })
 }
@@ -95,9 +108,11 @@ export function useRemoveWorkspaceMutation() {
       projectId: string
       workspaceId: string
     }) => removeWorkspaceFromProject(projectId, workspaceId),
-    onSuccess: (_v, { projectId }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.codingOverview() })
+    onSuccess: async (_v, { projectId }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) }),
+        refetchCodingOverview(queryClient),
+      ])
     },
   })
 }
@@ -114,9 +129,11 @@ export function useUpdateWorkspaceInProjectMutation() {
       workspaceId: string
       body: Partial<{ display_name: string; sort_order: number }>
     }) => updateWorkspaceInProject(projectId, workspaceId, body),
-    onSuccess: (_ws, { projectId }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.codingOverview() })
+    onSuccess: async (_ws, { projectId }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) }),
+        refetchCodingOverview(queryClient),
+      ])
     },
   })
 }

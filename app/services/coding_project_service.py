@@ -247,3 +247,57 @@ async def get_projects_for_workspace(
         )
     ).all()
     return list(rows)
+
+
+async def get_visible_project_ids_for_workspace_path(
+    db: AsyncSession, workspace_path: str
+) -> list[UUID]:
+    """Return live Coding projects owning a repo or one of its worktrees.
+
+    The Coding sidebar treats a repository that belongs to a project as
+    project-only: it is intentionally absent from the standalone Workspaces
+    section. Session resolution must use the same ownership rule or it can
+    create a standalone session that the sidebar can never display.
+
+    Worktrees inherit ownership from their source repository. Multiple
+    project memberships are returned rather than arbitrarily choosing one;
+    the caller must require an explicit project in that ambiguous case.
+    """
+
+    resolved_path = str(Path(workspace_path).expanduser().resolve())
+    workspace = (
+        await db.exec(
+            select(CodingWorkspace).where(CodingWorkspace.path == resolved_path)
+        )
+    ).first()
+    if workspace is None or workspace.hidden or workspace.deleted_at is not None:
+        return []
+
+    owner_path = (
+        workspace.source_path
+        if workspace.kind == "worktree" and workspace.source_path
+        else workspace.path
+    )
+    owner = (
+        await db.exec(select(CodingWorkspace).where(CodingWorkspace.path == owner_path))
+    ).first()
+    if owner is None or owner.hidden or owner.deleted_at is not None:
+        return []
+
+    rows = (
+        await db.exec(
+            select(CodingProjectWorkspace.project_id)
+            .join(
+                CodingProject,
+                CodingProject.id == CodingProjectWorkspace.project_id,
+            )
+            .where(
+                CodingProjectWorkspace.workspace_id == owner.id,
+                ~col(CodingProject.hidden),
+                col(CodingProject.deleted_at).is_(None),
+                CodingProject.kind == "coding",
+            )
+            .order_by(col(CodingProject.created_at).asc())
+        )
+    ).all()
+    return list(dict.fromkeys(rows))

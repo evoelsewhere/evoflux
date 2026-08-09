@@ -296,6 +296,74 @@ class TestResolveTeamSession:
         assert data["mode"] == "coding"
         assert data["workspace"] == str(tmp_path.resolve())
 
+        tree = client.get("/api/team/workspace/tree")
+        assert tree.status_code == 200
+        assert [repo["path"] for repo in tree.json()["repositories"]] == [
+            str(tmp_path.resolve())
+        ]
+
+    @pytest.mark.asyncio
+    async def test_resolve_project_owned_workspace_canonicalizes_to_project(
+        self, app_with_team, tmp_path
+    ):
+        import app.core.db as _db
+        from app.services.coding_project_service import create_project
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        async with _db.async_session_factory() as db:
+            project = await create_project(
+                db, name="Canonical owner", workspace_paths=[str(repo)]
+            )
+            await db.commit()
+            project_id = project.id
+
+        client = TestClient(app_with_team)
+        resp = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "coding", "workspace": str(repo)},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["project_id"] == str(project_id)
+        assert data["workspace"] == str(repo.resolve())
+
+        project_sessions = client.get(
+            "/api/team/sessions", params={"mode": "coding", "project_id": project_id}
+        )
+        assert project_sessions.status_code == 200
+        assert [item["id"] for item in project_sessions.json()["data"]] == [data["id"]]
+
+    @pytest.mark.asyncio
+    async def test_resolve_workspace_shared_by_projects_requires_explicit_project(
+        self, app_with_team, tmp_path
+    ):
+        import app.core.db as _db
+        from app.services.coding_project_service import create_project
+
+        repo = tmp_path / "shared"
+        repo.mkdir()
+        async with _db.async_session_factory() as db:
+            await create_project(db, name="First", workspace_paths=[str(repo)])
+            await create_project(db, name="Second", workspace_paths=[str(repo)])
+            await db.commit()
+
+        client = TestClient(app_with_team)
+        resp = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "coding", "workspace": str(repo)},
+        )
+
+        assert resp.status_code == 409
+        assert "multiple projects" in resp.json()["detail"]
+
+        sessions = client.get(
+            "/api/team/sessions", params={"mode": "coding", "workspace": str(repo)}
+        )
+        assert sessions.status_code == 200
+        assert sessions.json()["data"] == []
+
     def test_resolve_requires_workspace_for_coding(self, app_with_team):
         client = TestClient(app_with_team)
 

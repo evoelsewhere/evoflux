@@ -59,6 +59,9 @@ from app.services.coding_workspace_service import (
     list_visible_coding_workspaces,
     upsert_coding_workspace,
 )
+from app.services.coding_project_service import (
+    get_visible_project_ids_for_workspace_path,
+)
 from app.services.webbridge_service import webbridge_manager
 from app.services.interactive_message_service import resolve_team_for_session
 from app.services.chat_service import (
@@ -973,9 +976,27 @@ async def resolve_team_session(
                 status_code=422,
                 detail="worktree_from and worktree_name are required for worktree sessions.",
             )
+        source_workspace = _validate_workspace_or_422(body.worktree_from)
+        # Fail before creating a worktree when its source repo belongs to more
+        # than one project. Picking one here would make the resulting session
+        # disappear into an arbitrary project in the sidebar.
+        async with db.begin():
+            source_project_ids = await get_visible_project_ids_for_workspace_path(
+                db, source_workspace
+            )
+        if len(source_project_ids) > 1:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Workspace belongs to multiple projects. Open the target "
+                    "project first, then create the worktree from there."
+                ),
+            )
+        if source_project_ids:
+            project_id = source_project_ids[0]
         created_worktree = await create_coding_workspace_worktree(
             WorktreeCreateRequest(
-                source_workspace=body.worktree_from,
+                source_workspace=source_workspace,
                 name=body.worktree_name,
                 branch=body.worktree_branch,
             )
@@ -991,6 +1012,26 @@ async def resolve_team_session(
         )
     else:
         workspace = _validate_workspace_or_422(workspace)
+
+    # Keep session ownership aligned with the sidebar's project-only rule.
+    # Before this canonicalisation, opening a project-owned repo through the
+    # standalone "+" succeeded but produced a session the Workspaces filter
+    # could never render. Worktrees inherit ownership from their source repo.
+    if body.mode == "coding" and workspace and project_id is None:
+        async with db.begin():
+            inferred_project_ids = await get_visible_project_ids_for_workspace_path(
+                db, workspace
+            )
+        if len(inferred_project_ids) > 1:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Workspace belongs to multiple projects. Open one of those "
+                    "projects explicitly instead of opening it as standalone."
+                ),
+            )
+        if inferred_project_ids:
+            project_id = inferred_project_ids[0]
 
     # Normalise to a sorted unique list so tag-set equality is a plain array
     # comparison (see get_latest_top_level_session); empty stays NULL on write.

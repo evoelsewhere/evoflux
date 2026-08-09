@@ -84,6 +84,7 @@ import {
   clearLastCodingFocus,
   codingFocusId,
   isProjectFocusId,
+  saveLastCodingFocus,
   saveLastCodingWorkspace,
   workspaceLabel,
 } from "@/utils/workspace";
@@ -610,7 +611,13 @@ export function CodingSidebar({
   }, [isTauri, isTauriMobile, openWebWorkspaceDialog]);
 
   const refreshWorkspaceTree = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: queryKeys.codingOverview() });
+    // Force the merged Projects + Workspaces snapshot to be fetched even if
+    // route navigation briefly made the sidebar query inactive. This prevents
+    // an old empty snapshot from remaining visible until a later mount.
+    await queryClient.refetchQueries({
+      queryKey: queryKeys.codingOverview(),
+      type: "all",
+    });
   }, [queryClient]);
 
   useEffect(() => {
@@ -651,7 +658,6 @@ export function CodingSidebar({
       setPendingWorkspace(null);
       return;
     }
-    saveLastCodingWorkspace(path);
     setPendingWorkspace(path);
     try {
       // Only carry the current model/thinking-level over when there's an
@@ -678,13 +684,37 @@ export function CodingSidebar({
         workspace: session.workspace ?? path,
         model: session.model ?? carryModel,
         thinkingLevel: session.thinking_level ?? carryThinkingLevel,
-        skipInitialRestore: create && session.created,
+        skipInitialRestore: session.created,
       });
-      if (create && session.created) {
+      // A repo already owned by a project is canonicalised server-side to a
+      // project session. Keep the store and last-focus pointer aligned so it
+      // appears under that Project instead of becoming an invisible
+      // standalone session.
+      useTeamStore.setState({ projectId: session.project_id ?? null });
+      saveLastCodingFocus({
+        project_id: session.project_id,
+        workspace: session.workspace ?? path,
+      });
+      if (session.created) {
         prependSession(queryClient, session);
-        prependWorkspaceSession(queryClient, path, session);
+        if (session.project_id) {
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.team.sessions.project(session.project_id),
+          });
+        } else {
+          prependWorkspaceSession(queryClient, path, session);
+        }
       }
       await refreshWorkspaceTree();
+      if (session.project_id) {
+        const owner = projects.find((project) => project.id === session.project_id);
+        useToastStore.getState().push({
+          tone: "info",
+          title: owner ? `Opened in ${owner.name}` : "Opened in project",
+          description:
+            "This repository belongs to a project, so its sessions are shown there instead of under standalone Workspaces.",
+        });
+      }
       const focusId = codingFocusId({
         project_id: session.project_id,
         workspace: session.workspace ?? path,
@@ -891,8 +921,16 @@ export function CodingSidebar({
         thinkingLevel: session.thinking_level ?? carryThinkingLevel,
         skipInitialRestore: session.created,
       });
+      useTeamStore.setState({ projectId: session.project_id ?? null });
+      saveLastCodingFocus({ project_id: session.project_id, workspace: path });
       prependSession(queryClient, session);
-      prependWorkspaceSession(queryClient, path, session);
+      if (session.project_id) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.team.sessions.project(session.project_id),
+        });
+      } else {
+        prependWorkspaceSession(queryClient, path, session);
+      }
       await refreshWorkspaceTree();
       const focusId = codingFocusId({ project_id: session.project_id, workspace: path });
       navigate(
@@ -960,6 +998,22 @@ export function CodingSidebar({
       addWorkspaceMutation.mutate(
         { projectId, body: { workspace_path: workspaceToOpen } },
         {
+          onSuccess: () => {
+            setExpandedProjects((current) => {
+              if (current.has(projectId)) return current;
+              const next = new Set(current);
+              next.add(projectId);
+              return next;
+            });
+            const project = projects.find((item) => item.id === projectId);
+            useToastStore.getState().push({
+              tone: "success",
+              title: "Repository added",
+              description: project
+                ? `It is now visible under ${project.name}.`
+                : "It is now visible under the project.",
+            });
+          },
           onError: (err) => {
             useToastStore.getState().push({
               tone: "error",
@@ -1142,7 +1196,20 @@ export function CodingSidebar({
           </div>
         )}
 
-        {!projectsSectionCollapsed && !overviewQuery.isLoading && projects.length === 0 && (
+        {!projectsSectionCollapsed && overviewQuery.isError && (
+          <div className="mx-2 my-1 rounded-md border border-(--color-error)/30 bg-(--color-error-subtle) px-2 py-2 text-xs text-(--color-error)">
+            <p>Couldn&apos;t load projects and workspaces.</p>
+            <button
+              type="button"
+              onClick={() => void overviewQuery.refetch()}
+              className="mt-1 font-medium underline underline-offset-2"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {!projectsSectionCollapsed && !overviewQuery.isLoading && !overviewQuery.isError && projects.length === 0 && (
           <p className="px-2 py-1.5 text-xs text-(--color-text-subtle)">
             No projects yet.{" "}
             <button
@@ -1337,7 +1404,7 @@ export function CodingSidebar({
         className="px-3"
       />
 
-      {!workspacesSectionCollapsed && standaloneWorkspaces.length === 0 && (
+      {!workspacesSectionCollapsed && !overviewQuery.isLoading && !overviewQuery.isError && standaloneWorkspaces.length === 0 && (
         <p className="px-3 py-3 text-xs text-(--color-text-subtle)">
           No standalone workspaces. Use the + above to open a folder
           outside any project.
