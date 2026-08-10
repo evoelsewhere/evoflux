@@ -38,7 +38,7 @@ def cmd_plugin(args: argparse.Namespace) -> None:
             return
         if action in {"install", "link"}:
             operation = link_plugin if action == "link" else install_plugin
-            _print(operation(args.path, enabled=not args.disabled))
+            _print(operation(args.path, enabled=args.enabled))
             return
         if action in {"enable", "disable"}:
             _print(set_enabled(args.installation_id, action == "enable"))
@@ -108,7 +108,19 @@ def add_plugin_subparser(subparsers: argparse._SubParsersAction) -> None:
             ),
         )
         operation.add_argument("path")
-        operation.add_argument("--disabled", action="store_true")
+        enablement = operation.add_mutually_exclusive_group()
+        enablement.add_argument(
+            "--enabled",
+            action="store_true",
+            help="Enable immediately in non-interactive automation",
+        )
+        enablement.add_argument(
+            "--disabled",
+            action="store_false",
+            dest="enabled",
+            help="Install disabled (default; retained for compatibility)",
+        )
+        operation.set_defaults(enabled=False)
 
     for name in ("show", "enable", "disable"):
         operation = actions.add_parser(name, help=f"{name.title()} one plugin")
