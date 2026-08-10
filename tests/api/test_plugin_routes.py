@@ -118,7 +118,7 @@ async def test_plugin_api_lifecycle(
 
         manifest = json.loads((plugin_root / "plugin.json").read_text(encoding="utf-8"))
         manifest["extensions"] = {
-            "evoflux.credentials": {
+            "org.evoelsewhere.evoflux.credentials": {
                 "fields": [
                     {
                         "key": "endpoint",

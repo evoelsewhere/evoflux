@@ -174,7 +174,7 @@ export function PluginCredentialsPanel({
           <div className="rounded-xl border border-(--color-border) bg-(--bg-card) p-5">
             <h3 className="font-medium text-(--color-text)">No credential schema declared</h3>
             <p className="mt-2 text-sm text-(--color-text-muted)">
-              Add an <code className="rounded bg-(--bg-key) px-1">evoflux.credentials</code> extension to plugin.json, then return here to configure its fields.
+              Add an <code className="rounded bg-(--bg-key) px-1">org.evoelsewhere.evoflux.credentials</code> extension to plugin.json, then return here to configure its fields.
             </p>
             <Button className="mt-4" variant="outline" onClick={onEdit}><Code2 /> Open plugin.json</Button>
           </div>

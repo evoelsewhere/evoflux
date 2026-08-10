@@ -1197,8 +1197,8 @@ class TestBuiltinSkills:
 
         combined = "\n".join((skill, package, runtime, playbook))
         normalized = " ".join(combined.split())
-        assert 'extensions["evoflux.credentials"]' in skill
-        assert 'extensions["evoflux.mcp"]' in skill
+        assert 'extensions["org.evoelsewhere.evoflux.credentials"]' in skill
+        assert 'extensions["org.evoelsewhere.evoflux.mcp"]' in skill
         assert "accepts unpacked directories, not archive files" in normalized
         assert "isolated EvoFlux data, config, and cache roots" in normalized
         assert "evoflux plugin inspect ./dist" not in combined

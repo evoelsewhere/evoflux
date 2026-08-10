@@ -17,6 +17,11 @@ from app.agent.mcp.config import HttpServerConfig, MCPConfig, StdioServerConfig
 from app.agent.mcp.manager import MCPManager
 from app.agent.tools.registry import Tool
 from app.plugin_platform.credentials import credential_environment
+from app.plugin_platform.extensions import (
+    LEGACY_MCP_EXTENSIONS,
+    MCP_EXTENSION,
+    resolve_extension,
+)
 from app.plugin_platform.models import (
     PluginInspection,
     PluginInstallation,
@@ -32,7 +37,6 @@ from app.plugin_platform.validator import inspect_plugin
 
 _SERVER_SLUG_RE = re.compile(r"[^A-Za-z0-9_-]+")
 _PLACEHOLDER_RE = re.compile(r"\$\{(PLUGIN_ROOT|PLUGIN_DATA)\}")
-_MCP_EXTENSION = "evoflux.mcp"
 
 
 def _runtime_server_name(installation_id: str, server_name: str) -> str:
@@ -66,7 +70,11 @@ def _native_server_config(
     config = component.config
     capabilities: list[str] = []
     if inspection.manifest is not None:
-        extension = inspection.manifest.extensions.get(_MCP_EXTENSION, {})
+        extension = resolve_extension(
+            inspection.manifest.extensions,
+            MCP_EXTENSION,
+            LEGACY_MCP_EXTENSIONS,
+        ) or {}
         servers = extension.get("servers", {}) if isinstance(extension, dict) else {}
         server_extension = (
             servers.get(component.name, {}) if isinstance(servers, dict) else {}

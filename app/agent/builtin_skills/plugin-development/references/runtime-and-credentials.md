@@ -65,7 +65,7 @@ Declare configurable values in `plugin.json`:
 ```json
 {
   "extensions": {
-    "evoflux.credentials": {
+    "org.evoelsewhere.evoflux.credentials": {
       "fields": [
         {
           "key": "base_url",
@@ -103,6 +103,9 @@ EvoFlux stores values at `data/<installation-id>/credentials.json` with mode `06
 
 Saving or clearing credentials refreshes the MCP runtime. A required-field warning can coexist with a valid package; readiness depends on the server's actual startup and behavior. Never log credential values, embed them in tool errors, return them through MCP, commit them to the package, or request them in chat.
 
+EvoFlux still reads the pre-canonical `evoflux.credentials` alias for installed
+packages. Use `org.evoelsewhere.evoflux.credentials` for all new package work.
+
 ## Capabilities and permissions
 
 Declare current server capabilities separately from credentials:
@@ -110,7 +113,7 @@ Declare current server capabilities separately from credentials:
 ```json
 {
   "extensions": {
-    "evoflux.mcp": {
+    "org.evoelsewhere.evoflux.mcp": {
       "servers": {
         "release-api": {
           "capabilities": ["webbridge-safe"]
@@ -122,6 +125,9 @@ Declare current server capabilities separately from credentials:
 ```
 
 `webbridge-safe` explicitly keeps a non-browser plugin server available in a WebBridge-tagged conversation. Servers without it stay hidden there so an undeclared MCP browser cannot bypass the selected browser surface. Declare it only after verifying the server is safe and useful in that context.
+
+The pre-canonical `evoflux.mcp` alias remains supported for compatibility. New
+and updated packages should declare `org.evoelsewhere.evoflux.mcp`.
 
 Capability declarations do not bypass permissions. Installation does not globally grant all plugin tools. Loading a plugin Skill makes ready MCP tools from the same installation available for that run, while the normal permission pipeline still governs tool calls.
 
