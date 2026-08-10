@@ -14,47 +14,28 @@ from app.conductor.models import (
     RegistrationResponse,
     canonical_hash,
 )
-
-_V1_RESOURCE_KINDS = frozenset({"agent", "skill", "mcp"})
-_V1_SUBSCRIBE_PATH = "/api/v1/subscribe/resources"
-_V1_REGISTER_PATH = "/api/v1/client/register"
-_V1_HEARTBEAT_PATH = "/api/v1/client/heartbeat"
-
-_SAFE_EVENT_FIELDS = frozenset(
-    {
-        "event",
-        "kind",
-        "resource_kind",
-        "resource_slug",
-        "revision",
-        "state",
-        "category",
-        "duration_ms",
-        "tokens_in",
-        "tokens_out",
-        "tool_calls",
-        "active_agents",
-        "machine_id",
-        "evoflux_version",
-        "platform",
-        "agents_count",
-        "skills_count",
-        "mcp_count",
-        "last_heartbeat_at",
-        "reported_at",
-    }
+from app.conductor.constants.api import (
+    API_BASE_RETRY_DELAY_SECONDS,
+    API_DEFAULT_RETRY_ATTEMPTS,
+    API_DEFAULT_TIMEOUT_SECONDS,
+    API_MAX_RETRY_DELAY_SECONDS,
+    API_NOT_MODIFIED_STATUS,
+    API_RETRY_JITTER_DIVISOR,
+    API_RETRYABLE_STATUS_CODES,
+    API_TEXT_FIELD_MAX_LENGTH,
+    CONDUCTOR_TOKEN_PREFIX,
+    V1_HEARTBEAT_PATH,
+    V1_REGISTER_PATH,
+    V1_RESOURCE_KINDS,
+    V1_SUBSCRIBE_PATH,
+    V1_TELEMETRY_PATH,
 )
-_SECRET_WORDS = (
-    "secret",
-    "password",
-    "authorization",
-    "cookie",
-    "credential",
-    "prompt",
-    "response",
-    "code",
-    "argument",
-    "result",
+from app.conductor.constants.telemetry import (
+    TELEMETRY_EVENT_FIELD_ALLOWLIST,
+    TELEMETRY_NUMERIC_TOKEN_FIELDS,
+    TELEMETRY_SECRET_FIELD_MARKERS,
+    TelemetryBatchField,
+    TelemetryField,
 )
 
 
@@ -65,14 +46,14 @@ def redact_telemetry(value: dict[str, Any]) -> dict[str, Any]:
     for key, item in value.items():
         lowered = key.lower()
         sensitive = (
-            "token" in lowered and key not in {"tokens_in", "tokens_out"}
-        ) or any(word in lowered for word in _SECRET_WORDS)
-        if key not in _SAFE_EVENT_FIELDS or sensitive:
+            "token" in lowered and key not in TELEMETRY_NUMERIC_TOKEN_FIELDS
+        ) or any(word in lowered for word in TELEMETRY_SECRET_FIELD_MARKERS)
+        if key not in TELEMETRY_EVENT_FIELD_ALLOWLIST or sensitive:
             continue
         if item is None or isinstance(item, (bool, int, float)):
             clean[key] = item
         elif isinstance(item, str):
-            clean[key] = item[:256]
+            clean[key] = item[:API_TEXT_FIELD_MAX_LENGTH]
     return clean
 
 
@@ -136,7 +117,7 @@ class CredentialStore:
 class ConductorRequestError(RuntimeError):
     def __init__(self, status_code: int, message: str) -> None:
         self.status_code = status_code
-        super().__init__(message[:256])
+        super().__init__(message[:API_TEXT_FIELD_MAX_LENGTH])
 
 
 class ConductorClient:
@@ -145,8 +126,8 @@ class ConductorClient:
         base_url: str,
         credential_store: CredentialStoreProtocol,
         *,
-        timeout: float = 15.0,
-        retries: int = 3,
+        timeout: float = API_DEFAULT_TIMEOUT_SECONDS,
+        retries: int = API_DEFAULT_RETRY_ATTEMPTS,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -170,11 +151,11 @@ class ConductorClient:
         idempotency_key: str,
     ) -> RegistrationResponse:
         token = enrollment_token.strip()
-        if not token.startswith("evc_"):
+        if not token.startswith(CONDUCTOR_TOKEN_PREFIX):
             raise ValueError("Conductor V1 connection tokens must start with evc_.")
         response = await self._request(
             "POST",
-            _V1_REGISTER_PATH,
+            V1_REGISTER_PATH,
             headers={
                 "Authorization": f"Bearer {token}",
                 "Idempotency-Key": idempotency_key,
@@ -186,7 +167,7 @@ class ConductorClient:
     async def heartbeat(self, installation_id: str) -> HeartbeatResponse:
         response = await self._request(
             "POST",
-            _V1_HEARTBEAT_PATH,
+            V1_HEARTBEAT_PATH,
             headers=self._auth_headers(),
             json={"installation_id": installation_id},
         )
@@ -197,7 +178,7 @@ class ConductorClient:
     ) -> tuple[Manifest | None, str | None]:
         response = await self._request(
             "GET",
-            _V1_SUBSCRIBE_PATH,
+            V1_SUBSCRIBE_PATH,
             headers=self._auth_headers(),
         )
         manifest = _manifest_from_v1_snapshot(response.json())
@@ -214,9 +195,25 @@ class ConductorClient:
         # Temporary V1 local compatibility: inventory sync is not implemented.
         del payload
 
-    async def report_telemetry(self, events: list[dict[str, Any]]) -> None:
-        # V1 accepts resource outcome events, not the generic V2 event shape.
-        del events
+    async def report_telemetry(
+        self, installation_id: str, events: list[dict[str, Any]]
+    ) -> None:
+        clean_events: list[dict[str, Any]] = []
+        for event in events:
+            clean = redact_telemetry(event)
+            clean.pop(TelemetryField.INSTALLATION_ID, None)
+            clean_events.append(clean)
+        if not clean_events:
+            return
+        await self._request(
+            "POST",
+            V1_TELEMETRY_PATH,
+            headers=self._auth_headers(),
+            json={
+                TelemetryBatchField.INSTALLATION_ID: installation_id,
+                TelemetryBatchField.EVENTS: clean_events,
+            },
+        )
 
     def _auth_headers(self) -> dict[str, str]:
         loaded = self.credentials.load()
@@ -242,9 +239,12 @@ class ConductorClient:
                 response = await self._http.request(
                     method, path, headers=request_headers, json=json
                 )
-                if allow_not_modified and response.status_code == 304:
+                if (
+                    allow_not_modified
+                    and response.status_code == API_NOT_MODIFIED_STATUS
+                ):
                     return response
-                if response.status_code not in {408, 425, 429, 500, 502, 503, 504}:
+                if response.status_code not in API_RETRYABLE_STATUS_CODES:
                     if response.is_error:
                         raise ConductorRequestError(
                             response.status_code, _safe_error_message(response)
@@ -257,8 +257,13 @@ class ConductorClient:
             except (httpx.TimeoutException, httpx.NetworkError):
                 if attempt == self.retries:
                     raise
-            delay = min(8.0, 0.25 * (2**attempt))
-            await asyncio.sleep(delay + random.uniform(0, delay / 4))
+            delay = min(
+                API_MAX_RETRY_DELAY_SECONDS,
+                API_BASE_RETRY_DELAY_SECONDS * (2**attempt),
+            )
+            await asyncio.sleep(
+                delay + random.uniform(0, delay / API_RETRY_JITTER_DIVISOR)
+            )
         raise RuntimeError("Conductor request exhausted retries.")
 
 
@@ -285,7 +290,7 @@ def _manifest_from_v1_snapshot(payload: Any) -> Manifest:
         if not isinstance(item, dict):
             raise ValueError("Conductor V1 resource entries must be JSON objects.")
         kind = item.get("kind")
-        if kind not in _V1_RESOURCE_KINDS:
+        if kind not in V1_RESOURCE_KINDS:
             continue
         resource_payload = item.get("payload")
         if not isinstance(resource_payload, dict):
