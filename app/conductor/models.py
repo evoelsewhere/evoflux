@@ -145,17 +145,63 @@ class ReconcileResult(BaseModel):
     error: str | None = None
 
 
-class EnrollmentResponse(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class RegistrationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-    machine_id: str
-    machine_credential: str | None = None
-    access_token: str | None = None
+    installation_key: str
+    display_name: str
+    platform: Literal["macos", "linux", "windows"]
+    evoflux_version: str
+    workspace_association: str | None = None
 
-    def credential(self) -> str:
-        value = self.machine_credential or self.access_token
-        if not value:
-            raise ValueError(
-                "Enrollment response did not include a machine credential."
-            )
-        return value
+
+class RegisteredInstallation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    display_name: str
+    heartbeat_interval_seconds: int = Field(ge=30, le=300)
+
+
+class RegisteredProject(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    display_name: str | None = None
+    logo_url: str | None = None
+
+
+class RegisteredMember(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    display_name: str
+    primary_role: Literal["admin", "contribute", "user"]
+    sub_roles: list[dict[str, Any]] = Field(default_factory=list)
+    tags: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class RegistrationPolicy(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    collection_level: Literal["L0", "L1", "L2"]
+    telemetry: dict[str, bool] = Field(default_factory=dict)
+    privacy_notice_version: str
+
+
+class RegistrationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    installation: RegisteredInstallation
+    project: RegisteredProject
+    member: RegisteredMember
+    policy: RegistrationPolicy
+
+
+class HeartbeatResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    server_time: datetime
+    heartbeat_interval_seconds: int = Field(ge=30, le=300)
+    connection_state: Literal["active"]

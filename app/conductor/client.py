@@ -1,53 +1,41 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import os
 import random
-import tempfile
 import uuid
-from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 
-from app.conductor.models import EnrollmentResponse, Manifest
-
-_SAFE_EVENT_FIELDS = frozenset(
-    {
-        "event",
-        "kind",
-        "resource_kind",
-        "resource_slug",
-        "revision",
-        "state",
-        "category",
-        "duration_ms",
-        "tokens_in",
-        "tokens_out",
-        "tool_calls",
-        "active_agents",
-        "machine_id",
-        "evoflux_version",
-        "platform",
-        "agents_count",
-        "skills_count",
-        "mcp_count",
-        "last_heartbeat_at",
-        "reported_at",
-    }
+from app.conductor.models import (
+    HeartbeatResponse,
+    Manifest,
+    RegistrationRequest,
+    RegistrationResponse,
+    canonical_hash,
 )
-_SECRET_WORDS = (
-    "secret",
-    "password",
-    "authorization",
-    "cookie",
-    "credential",
-    "prompt",
-    "response",
-    "code",
-    "argument",
-    "result",
+from app.conductor.constants.api import (
+    API_BASE_RETRY_DELAY_SECONDS,
+    API_DEFAULT_RETRY_ATTEMPTS,
+    API_DEFAULT_TIMEOUT_SECONDS,
+    API_MAX_RETRY_DELAY_SECONDS,
+    API_NOT_MODIFIED_STATUS,
+    API_RETRY_JITTER_DIVISOR,
+    API_RETRYABLE_STATUS_CODES,
+    API_TEXT_FIELD_MAX_LENGTH,
+    CONDUCTOR_TOKEN_PREFIX,
+    V1_HEARTBEAT_PATH,
+    V1_REGISTER_PATH,
+    V1_RESOURCE_KINDS,
+    V1_SUBSCRIBE_PATH,
+    V1_TELEMETRY_PATH,
+)
+from app.conductor.constants.telemetry import (
+    TELEMETRY_EVENT_FIELD_ALLOWLIST,
+    TELEMETRY_NUMERIC_TOKEN_FIELDS,
+    TELEMETRY_SECRET_FIELD_MARKERS,
+    TelemetryBatchField,
+    TelemetryField,
 )
 
 
@@ -58,64 +46,88 @@ def redact_telemetry(value: dict[str, Any]) -> dict[str, Any]:
     for key, item in value.items():
         lowered = key.lower()
         sensitive = (
-            "token" in lowered and key not in {"tokens_in", "tokens_out"}
-        ) or any(word in lowered for word in _SECRET_WORDS)
-        if key not in _SAFE_EVENT_FIELDS or sensitive:
+            "token" in lowered and key not in TELEMETRY_NUMERIC_TOKEN_FIELDS
+        ) or any(word in lowered for word in TELEMETRY_SECRET_FIELD_MARKERS)
+        if key not in TELEMETRY_EVENT_FIELD_ALLOWLIST or sensitive:
             continue
         if item is None or isinstance(item, (bool, int, float)):
             clean[key] = item
         elif isinstance(item, str):
-            clean[key] = item[:256]
+            clean[key] = item[:API_TEXT_FIELD_MAX_LENGTH]
     return clean
 
 
+class CredentialStoreProtocol(Protocol):
+    def load(self) -> str | None: ...
+
+    def save(self, credential: str) -> None: ...
+
+    def delete(self) -> None: ...
+
+
+class CredentialStoreError(RuntimeError):
+    """The operating system credential vault could not complete an operation."""
+
+
 class CredentialStore:
-    def __init__(self, path: Path) -> None:
-        self.path = path
+    """Store the Conductor token in the operating system credential vault."""
 
-    def load(self) -> tuple[str, str] | None:
-        try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            return None
-        if not isinstance(raw, dict):
-            raise ValueError("Machine credential file must contain a JSON object.")
-        machine_id = raw.get("machine_id")
-        credential = raw.get("credential")
-        if not isinstance(machine_id, str) or not isinstance(credential, str):
-            raise ValueError("Machine credential file is incomplete.")
-        return machine_id, credential
+    _SERVICE = "EvoFlux Conductor"
+    _ACCOUNT = "connection-token"
 
-    def save(self, machine_id: str, credential: str) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, name = tempfile.mkstemp(
-            prefix=f".{self.path.name}.", suffix=".tmp", dir=self.path.parent
-        )
-        temporary = Path(name)
+    def load(self) -> str | None:
         try:
-            os.fchmod(fd, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(
-                    {"version": 1, "machine_id": machine_id, "credential": credential},
-                    handle,
-                )
-                handle.write("\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, self.path)
-            self.path.chmod(0o600)
-        finally:
-            temporary.unlink(missing_ok=True)
+            import keyring
+
+            return keyring.get_password(self._SERVICE, self._ACCOUNT)
+        except Exception as exc:
+            raise CredentialStoreError(
+                "The operating system credential vault is unavailable."
+            ) from exc
+
+    def save(self, credential: str) -> None:
+        try:
+            import keyring
+
+            keyring.set_password(self._SERVICE, self._ACCOUNT, credential)
+        except Exception as exc:
+            raise CredentialStoreError(
+                "The Conductor token could not be saved to the operating system credential vault."
+            ) from exc
+
+    def delete(self) -> None:
+        try:
+            import keyring
+            from keyring.errors import PasswordDeleteError
+        except Exception as exc:
+            raise CredentialStoreError(
+                "The operating system credential vault is unavailable."
+            ) from exc
+
+        try:
+            keyring.delete_password(self._SERVICE, self._ACCOUNT)
+        except PasswordDeleteError:
+            return
+        except Exception as exc:
+            raise CredentialStoreError(
+                "The Conductor token could not be deleted from the operating system credential vault."
+            ) from exc
+
+
+class ConductorRequestError(RuntimeError):
+    def __init__(self, status_code: int, message: str) -> None:
+        self.status_code = status_code
+        super().__init__(message[:API_TEXT_FIELD_MAX_LENGTH])
 
 
 class ConductorClient:
     def __init__(
         self,
         base_url: str,
-        credential_store: CredentialStore,
+        credential_store: CredentialStoreProtocol,
         *,
-        timeout: float = 15.0,
-        retries: int = 3,
+        timeout: float = API_DEFAULT_TIMEOUT_SECONDS,
+        retries: int = API_DEFAULT_RETRY_ATTEMPTS,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -131,73 +143,83 @@ class ConductorClient:
     async def close(self) -> None:
         await self._http.aclose()
 
-    async def enroll(
-        self, enrollment_token: str, inventory: dict[str, Any]
-    ) -> EnrollmentResponse:
+    async def register(
+        self,
+        enrollment_token: str,
+        request: RegistrationRequest,
+        *,
+        idempotency_key: str,
+    ) -> RegistrationResponse:
+        token = enrollment_token.strip()
+        if not token.startswith(CONDUCTOR_TOKEN_PREFIX):
+            raise ValueError("Conductor V1 connection tokens must start with evc_.")
         response = await self._request(
             "POST",
-            "/api/v2/enroll",
-            headers={"Authorization": f"Bearer {enrollment_token}"},
-            json={"inventory": inventory},
-            idempotent=True,
+            V1_REGISTER_PATH,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": idempotency_key,
+            },
+            json=request.model_dump(mode="json"),
         )
-        enrolled = EnrollmentResponse.model_validate(response.json())
-        self.credentials.save(enrolled.machine_id, enrolled.credential())
-        return enrolled
+        return RegistrationResponse.model_validate(response.json())
+
+    async def heartbeat(self, installation_id: str) -> HeartbeatResponse:
+        response = await self._request(
+            "POST",
+            V1_HEARTBEAT_PATH,
+            headers=self._auth_headers(),
+            json={"installation_id": installation_id},
+        )
+        return HeartbeatResponse.model_validate(response.json())
 
     async def fetch_manifest(
         self, etag: str | None = None
     ) -> tuple[Manifest | None, str | None]:
-        headers = self._auth_headers()
-        if etag:
-            headers["If-None-Match"] = etag
         response = await self._request(
-            "GET", "/api/v2/manifest", headers=headers, allow_not_modified=True
+            "GET",
+            V1_SUBSCRIBE_PATH,
+            headers=self._auth_headers(),
         )
-        if response.status_code == 304:
-            return None, etag
-        return Manifest.model_validate(response.json()), response.headers.get("etag")
+        manifest = _manifest_from_v1_snapshot(response.json())
+        next_etag = f'"v1-{manifest.revision}"'
+        if etag == next_etag:
+            return None, next_etag
+        return manifest, next_etag
 
     async def report_observed_state(self, payload: dict[str, Any]) -> None:
-        await self._request(
-            "POST",
-            "/api/v2/observed-state",
-            headers=self._auth_headers(),
-            json=payload,
-            idempotent=True,
-        )
+        # Temporary V1 local compatibility: Conductor has no observed-state API.
+        del payload
 
     async def report_inventory(self, payload: dict[str, Any]) -> None:
-        await self._request(
-            "PUT",
-            "/api/v2/inventory",
-            headers=self._auth_headers(),
-            json=redact_telemetry(payload),
-            idempotent=True,
-        )
+        # Temporary V1 local compatibility: inventory sync is not implemented.
+        del payload
 
-    async def report_telemetry(self, events: list[dict[str, Any]]) -> None:
-        safe = [redact_telemetry(event) for event in events]
-        safe = [event for event in safe if event]
-        if not safe:
+    async def report_telemetry(
+        self, installation_id: str, events: list[dict[str, Any]]
+    ) -> None:
+        clean_events: list[dict[str, Any]] = []
+        for event in events:
+            clean = redact_telemetry(event)
+            clean.pop(TelemetryField.INSTALLATION_ID, None)
+            clean_events.append(clean)
+        if not clean_events:
             return
         await self._request(
             "POST",
-            "/api/v2/telemetry",
+            V1_TELEMETRY_PATH,
             headers=self._auth_headers(),
-            json={"events": safe},
-            idempotent=True,
+            json={
+                TelemetryBatchField.INSTALLATION_ID: installation_id,
+                TelemetryBatchField.EVENTS: clean_events,
+            },
         )
 
     def _auth_headers(self) -> dict[str, str]:
         loaded = self.credentials.load()
         if loaded is None:
-            raise RuntimeError("EvoFlux is not enrolled with Conductor.")
-        machine_id, credential = loaded
-        return {
-            "Authorization": f"Bearer {credential}",
-            "X-EvoFlux-Machine-ID": machine_id,
-        }
+            raise RuntimeError("EvoFlux is not connected to Conductor.")
+        return {"Authorization": f"Bearer {loaded}"}
 
     async def _request(
         self,
@@ -217,16 +239,80 @@ class ConductorClient:
                 response = await self._http.request(
                     method, path, headers=request_headers, json=json
                 )
-                if allow_not_modified and response.status_code == 304:
+                if (
+                    allow_not_modified
+                    and response.status_code == API_NOT_MODIFIED_STATUS
+                ):
                     return response
-                if response.status_code not in {408, 425, 429, 500, 502, 503, 504}:
-                    response.raise_for_status()
+                if response.status_code not in API_RETRYABLE_STATUS_CODES:
+                    if response.is_error:
+                        raise ConductorRequestError(
+                            response.status_code, _safe_error_message(response)
+                        )
                     return response
                 if attempt == self.retries:
-                    response.raise_for_status()
+                    raise ConductorRequestError(
+                        response.status_code, _safe_error_message(response)
+                    )
             except (httpx.TimeoutException, httpx.NetworkError):
                 if attempt == self.retries:
                     raise
-            delay = min(8.0, 0.25 * (2**attempt))
-            await asyncio.sleep(delay + random.uniform(0, delay / 4))
+            delay = min(
+                API_MAX_RETRY_DELAY_SECONDS,
+                API_BASE_RETRY_DELAY_SECONDS * (2**attempt),
+            )
+            await asyncio.sleep(
+                delay + random.uniform(0, delay / API_RETRY_JITTER_DIVISOR)
+            )
         raise RuntimeError("Conductor request exhausted retries.")
+
+
+def _safe_error_message(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        message = payload.get("error") or payload.get("detail")
+        if isinstance(message, str) and message:
+            return message
+    return f"Conductor returned HTTP {response.status_code}."
+
+
+def _manifest_from_v1_snapshot(payload: Any) -> Manifest:
+    """Translate Conductor's V1 ManagedResource list into an EvoFlux manifest."""
+
+    if not isinstance(payload, list):
+        raise ValueError("Conductor V1 resource snapshot must be a JSON array.")
+
+    resources: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("Conductor V1 resource entries must be JSON objects.")
+        kind = item.get("kind")
+        if kind not in V1_RESOURCE_KINDS:
+            continue
+        resource_payload = item.get("payload")
+        if not isinstance(resource_payload, dict):
+            raise ValueError(
+                f"Conductor V1 {kind} resource payload must be a JSON object."
+            )
+        dependencies = resource_payload.get("dependencies", [])
+        resources.append(
+            {
+                "kind": kind,
+                "slug": item.get("slug"),
+                "revision": item.get("version", "1"),
+                "payload": resource_payload,
+                "dependencies": dependencies,
+            }
+        )
+
+    resources.sort(key=lambda item: (str(item["kind"]), str(item["slug"])))
+    return Manifest.model_validate(
+        {
+            "schema_version": 1,
+            "revision": canonical_hash(resources),
+            "resources": resources,
+        }
+    )

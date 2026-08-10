@@ -87,6 +87,7 @@ def _conductor_settings_body() -> ConductorSettingsBody:
         url=cfg.url,
         machine_credential_path=cfg.machine_credential_path,
         sync_interval_seconds=cfg.sync_interval_seconds,
+        heartbeat_interval_seconds=cfg.heartbeat_interval_seconds,
         request_timeout_seconds=cfg.request_timeout_seconds,
         enforcement_mode=cfg.enforcement_mode,
     )
@@ -102,22 +103,47 @@ async def update_conductor_settings(
     body: ConductorSettingsBody,
 ) -> ConductorSettingsBody:
     cfg = load_runtime_settings()
-    cfg.conductor = ConductorSettings.model_validate(body.model_dump())
-    save_runtime_settings(cfg)
     from app.conductor import conductor_service
 
+    previous = cfg.conductor
+    if previous.url and previous.url != body.url.strip().rstrip("/"):
+        await conductor_service.disconnect()
+        cfg = load_runtime_settings()
+        previous = cfg.conductor
+    cfg.conductor = ConductorSettings.model_validate(
+        {**previous.model_dump(mode="python"), **body.model_dump(mode="python")}
+    )
+    save_runtime_settings(cfg)
     await conductor_service.restart()
     return _conductor_settings_body()
 
 
-@router.post("/conductor/enroll")
-async def enroll_conductor(body: ConductorEnrollmentRequest) -> dict:
+@router.post("/conductor/enroll", include_in_schema=False)
+@router.post("/conductor/connect")
+async def connect_conductor(body: ConductorEnrollmentRequest) -> dict:
     from app.conductor import conductor_service
+    from app.conductor.client import ConductorRequestError, CredentialStoreError
 
     try:
-        status = await conductor_service.enroll(body.enrollment_token)
+        status = await conductor_service.connect(body.enrollment_token)
+    except ConductorRequestError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except CredentialStoreError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (ValueError, httpx.HTTPError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return status.model_dump(mode="json")
+
+
+@router.post("/conductor/disconnect")
+async def disconnect_conductor() -> dict:
+    from app.conductor import conductor_service
+    from app.conductor.client import CredentialStoreError
+
+    try:
+        status = await conductor_service.disconnect()
+    except CredentialStoreError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return status.model_dump(mode="json")
 
 
