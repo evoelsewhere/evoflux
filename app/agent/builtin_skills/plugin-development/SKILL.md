@@ -103,7 +103,7 @@ Give tools accurate read/write/destructive/idempotent annotations where the MCP 
 ### 4. Credentials and data
 
 Declare every configurable secret or value under
-`extensions["evoflux.credentials"].fields`. Use unique field keys and
+`extensions["org.evoelsewhere.evoflux.credentials"].fields`. Use unique field keys and
 environment names. Do not reserve `PATH`, `PLUGIN_ROOT`, or `PLUGIN_DATA`.
 
 Credential values are injected only into plugin stdio processes. Do not use
@@ -112,9 +112,13 @@ remote headers remain literal package data and must not contain secrets.
 
 Treat `${PLUGIN_DATA}` as installation-scoped mutable state. Do not write generated state into the installed package. Persist files with restrictive permissions when they contain secrets, and mask secrets in all list/read responses.
 
-Use `extensions["evoflux.mcp"].servers.<name>.capabilities` only for current
+Use `extensions["org.evoelsewhere.evoflux.mcp"].servers.<name>.capabilities` only for current
 declared capabilities such as `webbridge-safe`; never infer trust from package
 installation alone.
+
+Existing packages using `evoflux.credentials` or `evoflux.mcp` remain readable
+as compatibility aliases, but all newly authored or updated packages must use
+the canonical reverse-domain namespaces above.
 
 ## Validate in short loops
 

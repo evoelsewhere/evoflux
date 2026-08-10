@@ -19,6 +19,7 @@ from app.plugin_platform.installer import (
     update_plugin,
 )
 from app.plugin_platform.credentials import credential_definition
+from app.plugin_platform.extensions import CREDENTIALS_EXTENSION, MCP_EXTENSION
 from app.plugin_platform.models import (
     MCP_SCHEMA_ID,
     PLUGIN_SCHEMA_ID,
@@ -137,14 +138,16 @@ def test_skill_discovery_is_immediate_and_component_errors_are_isolated(
     )
 
 
+@pytest.mark.parametrize("namespace", [MCP_EXTENSION, "evoflux.mcp"])
 def test_mcp_entries_fail_independently_and_runtime_expands_only_plugin_tokens(
     isolated_platform: Path,
+    namespace: str,
 ) -> None:
     root = _plugin(isolated_platform / "plugin", skill=None)
     manifest_path = root / "plugin.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["extensions"] = {
-        "evoflux.mcp": {
+        namespace: {
             "servers": {"local": {"capabilities": ["webbridge-safe"]}}
         }
     }
@@ -234,14 +237,19 @@ def test_registry_rejects_unsafe_installation_ids() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "namespace",
+    [CREDENTIALS_EXTENSION, "evoflux.credentials"],
+)
 def test_credential_schema_validates_defaults_and_urls(
     isolated_platform: Path,
+    namespace: str,
 ) -> None:
     root = _plugin(isolated_platform / "credential-plugin", skill=None)
     manifest_path = root / "plugin.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["extensions"] = {
-        "evoflux.credentials": {
+        namespace: {
             "fields": [
                 {
                     "key": "endpoint",
@@ -257,6 +265,40 @@ def test_credential_schema_validates_defaults_and_urls(
 
     with pytest.raises(ValidationError, match="absolute HTTP\\(S\\) URL"):
         credential_definition(inspect_plugin(root))
+
+
+def test_canonical_extensions_take_precedence_over_legacy_aliases(
+    isolated_platform: Path,
+) -> None:
+    root = _plugin(isolated_platform / "canonical-extension-plugin", skill=None)
+    manifest_path = root / "plugin.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["extensions"] = {
+        "evoflux.credentials": {
+            "fields": [
+                {
+                    "key": "legacy",
+                    "label": "Legacy",
+                    "env": "LEGACY_TOKEN",
+                }
+            ]
+        },
+        CREDENTIALS_EXTENSION: {
+            "fields": [
+                {
+                    "key": "canonical",
+                    "label": "Canonical",
+                    "env": "CANONICAL_TOKEN",
+                }
+            ]
+        },
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    definition = credential_definition(inspect_plugin(root))
+
+    assert definition is not None
+    assert [field.key for field in definition.fields] == ["canonical"]
 
 
 def test_workspace_save_preserves_executable_mode_and_enforces_entry_limit(

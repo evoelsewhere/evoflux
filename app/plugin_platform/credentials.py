@@ -12,11 +12,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.plugin_platform.extensions import (
+    CREDENTIALS_EXTENSION,
+    LEGACY_CREDENTIALS_EXTENSIONS,
+    resolve_extension,
+)
 from app.plugin_platform.models import PluginInspection
 from app.plugin_platform.registry import plugin_data_root
 
 
-CREDENTIALS_EXTENSION = "evoflux.credentials"
 MASKED_SECRET = "********"
 MAX_CREDENTIAL_BYTES = 256 * 1024
 _KEY_RE = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
@@ -90,7 +94,11 @@ def credential_definition(
 ) -> PluginCredentialDefinition | None:
     if inspection.manifest is None:
         return None
-    raw = inspection.manifest.extensions.get(CREDENTIALS_EXTENSION)
+    raw = resolve_extension(
+        inspection.manifest.extensions,
+        CREDENTIALS_EXTENSION,
+        LEGACY_CREDENTIALS_EXTENSIONS,
+    )
     if raw is None:
         return None
     definition = PluginCredentialDefinition.model_validate(raw)

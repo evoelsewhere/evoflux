@@ -110,13 +110,13 @@ For stdio servers, EvoFlux creates a persistent installation-scoped data directo
 ## Credential extension
 
 Agent Plugins 1.0 does not define a credential format. EvoFlux adds the optional
-`evoflux.credentials` extension so a portable plugin can declare a generic setup
+`org.evoelsewhere.evoflux.credentials` extension so a portable plugin can declare a generic setup
 form without shipping product-specific UI:
 
 ```json
 {
   "extensions": {
-    "evoflux.credentials": {
+    "org.evoelsewhere.evoflux.credentials": {
       "fields": [
         {
           "key": "endpoint",
@@ -146,6 +146,9 @@ masked in API responses and injected only into that plugin's stdio MCP process
 using the declared environment-variable names. Saving or clearing the form
 refreshes the MCP runtime automatically.
 
+The earlier `evoflux.credentials` namespace remains a read-only compatibility
+alias. Canonical declarations win when both forms are present.
+
 ## MCP capability extension
 
 Plugin MCP servers may declare EvoFlux runtime capabilities without adding
@@ -154,7 +157,7 @@ non-standard fields to the portable `mcp.json` schema:
 ```json
 {
   "extensions": {
-    "evoflux.mcp": {
+    "org.evoelsewhere.evoflux.mcp": {
       "servers": {
         "service": {
           "capabilities": ["webbridge-safe"]
@@ -169,6 +172,9 @@ non-standard fields to the portable `mcp.json` schema:
 inside a WebBridge-tagged conversation. Servers without that capability remain
 hidden there so an undeclared MCP browser cannot bypass the selected browser
 surface.
+
+The earlier `evoflux.mcp` namespace remains a read-only compatibility alias.
+Canonical declarations win when both forms are present.
 
 ## Storage
 
