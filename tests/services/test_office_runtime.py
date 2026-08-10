@@ -23,70 +23,14 @@ def _artifact_tool(root: Path) -> Path:
 
 
 def _executable(path: Path) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("runtime placeholder\n", encoding="utf-8")
     return path
-
-
-def _document_runtime(root: Path) -> dict[str, Path]:
-    paths = {
-        "node": _executable(root / "node" / "bin" / "node"),
-        "artifact_tool": _executable(
-            root / "artifact-tool" / "dist" / "node" / "artifact_tool.mjs"
-        ),
-        "soffice": _executable(root / "libreoffice" / "program" / "soffice"),
-        "pdftoppm": _executable(root / "poppler" / "bin" / "pdftoppm"),
-        "pdfinfo": _executable(root / "poppler" / "bin" / "pdfinfo"),
-        "chromium": _executable(root / "chromium" / "bin" / "chromium"),
-        "fontconfig": _executable(root / "fontconfig" / "fonts.conf"),
-    }
-    fonts = root / "fonts"
-    fonts.mkdir()
-    manifest = {
-        "schema_version": 2,
-        "bundle_version": "runtime-test-1",
-        "payload_sha256": "abc123",
-        "target": {
-            "platform": runtime._host_platform(),
-            "architecture": runtime._host_architecture(),
-        },
-        "components": {
-            "node": {"version": "v24", "executable": "node/bin/node"},
-            "artifact_tool": {
-                "version": "2.8.39",
-                "entrypoint": "artifact-tool/dist/node/artifact_tool.mjs",
-                "distribution_authorized": True,
-            },
-            "libreoffice": {
-                "version": "25.2",
-                "executable": "libreoffice/program/soffice",
-            },
-            "poppler": {
-                "version": "26.05",
-                "pdftoppm": "poppler/bin/pdftoppm",
-                "pdfinfo": "poppler/bin/pdfinfo",
-            },
-            "chromium": {
-                "version": "140.0",
-                "executable": "chromium/bin/chromium",
-            },
-            "fonts": {
-                "version": "1",
-                "root": "fonts",
-                "fontconfig": "fontconfig/fonts.conf",
-            },
-        },
-    }
-    (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    return paths
 
 
 @pytest.fixture(autouse=True)
 def _isolate_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Detach every discovery fallback from the developer's real machine."""
     monkeypatch.delenv(runtime.ARTIFACT_TOOL_ENTRYPOINT_ENV, raising=False)
-    monkeypatch.delenv(runtime.CHROMIUM_BIN_ENV, raising=False)
-    monkeypatch.delenv(runtime.DOCUMENT_RUNTIME_DIR_ENV, raising=False)
     monkeypatch.delenv(runtime.NODE_BIN_ENV, raising=False)
     home = tmp_path / "home"
     home.mkdir()
@@ -201,56 +145,6 @@ def test_resolve_node_binary_uses_codex_runtime_fallback(tmp_path: Path) -> None
     assert runtime.resolve_node_binary(purpose="testing") == str(bundled)
 
 
-def test_bundled_runtime_precedes_host_and_workspace_fallbacks(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    runtime_root = tmp_path / "document-runtime"
-    bundled = _document_runtime(runtime_root)
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _artifact_tool(workspace)
-    monkeypatch.setenv(runtime.DOCUMENT_RUNTIME_DIR_ENV, str(runtime_root))
-
-    assert runtime.resolve_node_binary(purpose="testing") == str(
-        bundled["node"].resolve()
-    )
-    assert (
-        runtime.resolve_artifact_tool(workspace, purpose="testing")
-        == bundled["artifact_tool"].resolve()
-    )
-    assert runtime.resolve_chromium_binary(purpose="testing") == str(
-        bundled["chromium"].resolve()
-    )
-
-
-def test_document_runtime_exports_deterministic_font_environment(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    runtime_root = tmp_path / "document-runtime"
-    bundled = _document_runtime(runtime_root)
-    monkeypatch.setenv(runtime.DOCUMENT_RUNTIME_DIR_ENV, str(runtime_root))
-
-    env = runtime.document_runtime_subprocess_env()
-    diagnostics = runtime.document_runtime_diagnostics()
-
-    assert env["EVOFLUX_DOCUMENT_RUNTIME_DIR"] == str(runtime_root.resolve())
-    assert env["EVOFLUX_CHROMIUM_BIN"] == str(bundled["chromium"].resolve())
-    assert env["FONTCONFIG_FILE"] == str(bundled["fontconfig"].resolve())
-    assert env["SAL_FONTPATH"] == str((runtime_root / "fonts").resolve())
-    assert diagnostics["available"] is True
-    assert diagnostics["bundle_version"] == "runtime-test-1"
-    assert diagnostics["components"]["libreoffice"]["version"] == "25.2"
-
-
-def test_explicit_invalid_document_runtime_fails_closed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setenv(runtime.DOCUMENT_RUNTIME_DIR_ENV, str(tmp_path / "missing"))
-
-    with pytest.raises(RuntimeError, match=runtime.DOCUMENT_RUNTIME_DIR_ENV):
-        runtime.resolve_node_binary(purpose="testing")
-
-
 def test_resolve_node_binary_reports_env_override(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match=runtime.NODE_BIN_ENV):
         runtime.resolve_node_binary(purpose="XLSX authoring")
@@ -281,7 +175,7 @@ async def test_worker_run_returns_last_json_object(
         monkeypatch,
         tmp_path,
         'print("progress noise")\n'
-        "print('[\"not an object\"]')\n"
+        'print(\'["not an object"]\')\n'
         'print(\'{"outputPath": "book.xlsx"}\')\n',
     )
     work_dir = tmp_path / "work"
@@ -321,7 +215,9 @@ async def test_worker_run_surfaces_stderr_on_failure(
 async def test_worker_run_rejects_unparseable_output(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    worker = _worker_runtime(monkeypatch, tmp_path, 'print("plain text only")\n')
+    worker = _worker_runtime(
+        monkeypatch, tmp_path, 'print("plain text only")\n'
+    )
 
     with pytest.raises(RuntimeError, match="XLSX worker returned invalid JSON"):
         await worker.run(

@@ -12,13 +12,6 @@ Layout produced under ``<out>/``::
         fastapi/
         pydantic/
         …
-      document-runtime/      ← pinned document generation/rendering stack
-        manifest.json
-        node/
-        artifact-tool/
-        libreoffice/
-        poppler/
-        fonts/
 
 The Tauri shell runs a tiny bootstrap that adds
 ``sidecar-bundle/site-packages`` with ``site.addsitedir()`` so platform
@@ -58,25 +51,6 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
-
-try:
-    from scripts.build_document_runtime import (
-        DOCUMENT_RUNTIME_SHA256_ENV,
-        DOCUMENT_RUNTIME_SOURCE_ENV,
-        DocumentRuntimeError,
-        normalized_architecture,
-        normalized_platform,
-        stage_document_runtime,
-    )
-except ModuleNotFoundError:  # Direct ``python scripts/build_sidecar.py`` execution.
-    from build_document_runtime import (  # type: ignore[no-redef]
-        DOCUMENT_RUNTIME_SHA256_ENV,
-        DOCUMENT_RUNTIME_SOURCE_ENV,
-        DocumentRuntimeError,
-        normalized_architecture,
-        normalized_platform,
-        stage_document_runtime,
-    )
 
 # Patterns to strip from site-packages to shrink the bundle. Runtime Python
 # modules and package metadata must survive; static typing artifacts and native
@@ -421,159 +395,7 @@ print(f"migration smoke: {previous} -> {SCHEMA_HEAD} ok")
         shutil.rmtree(migration_root, ignore_errors=True)
 
 
-def validate_document_runtime_bundle(
-    python_bin: Path,
-    site_packages: Path,
-    document_runtime: Path,
-) -> None:
-    """Execute every bundled document-runtime layer before packaging.
-
-    The manifest/checksum gate proves byte integrity. This smoke adds runtime
-    compatibility: Node must import artifact-tool, and LibreOffice + Poppler +
-    the private font configuration must render a real Office document.
-    """
-    smoke_root = site_packages.parent / "_document_runtime_smoke"
-    env = {
-        **os.environ,
-        "EVOFLUX_DOCUMENT_RUNTIME_DIR": str(document_runtime),
-        "EVOFLUX_DOCUMENT_RUNTIME_SMOKE_DIR": str(smoke_root),
-    }
-    script = r"""
-import os
-from pathlib import Path
-import site
-import subprocess
-import sys
-import time
-
-site.addsitedir(sys.argv[1])
-
-from docx import Document
-from app.services.office.rendering import render_pages
-from app.services.office.runtime import resolve_document_runtime
-
-runtime = resolve_document_runtime()
-for binary, version_args in (
-    (runtime.node, ["--version"]),
-    (runtime.soffice, ["--version"]),
-    (runtime.pdftoppm, ["-v"]),
-    (runtime.pdfinfo, ["-v"]),
-    (runtime.chromium, ["--version"]),
-):
-    completed = subprocess.run(
-        [str(binary), *version_args],
-        capture_output=True,
-        check=False,
-        text=True,
-        timeout=30,
-    )
-    if completed.returncode != 0:
-        raise SystemExit(
-            f"document runtime executable failed: {binary}\n{completed.stderr}"
-        )
-
-artifact_import = (
-    "import(process.argv[1]).then("
-    "() => process.stdout.write('artifact-tool import ok\\n'),"
-    "(error) => { console.error(error); process.exit(1); },"
-    ");"
-)
-artifact_probe = subprocess.run(
-    [
-        str(runtime.node),
-        "--input-type=module",
-        "--eval",
-        artifact_import,
-        runtime.artifact_tool.resolve().as_uri(),
-    ],
-    capture_output=True,
-    check=False,
-    text=True,
-    timeout=60,
-)
-if artifact_probe.returncode != 0:
-    raise SystemExit(
-        "artifact-tool import failed:\n"
-        f"{artifact_probe.stderr or artifact_probe.stdout}"
-    )
-
-smoke_root = Path(os.environ["EVOFLUX_DOCUMENT_RUNTIME_SMOKE_DIR"])
-smoke_root.mkdir(parents=True, exist_ok=True)
-html_source = smoke_root / "runtime-smoke.html"
-html_source.write_text(
-    "<!doctype html><html><body style='margin:0;width:320px;height:180px;"
-    "background:#11233f;color:white;font:32px sans-serif;display:grid;"
-    "place-items:center'>EvoFlux</body></html>",
-    encoding="utf-8",
-)
-html_preview = smoke_root / "runtime-smoke.png"
-chromium_probe = subprocess.Popen(
-    [
-        str(runtime.chromium),
-        "--headless=new",
-        "--disable-background-networking",
-        "--disable-javascript",
-        "--hide-scrollbars",
-        "--host-resolver-rules=MAP * 0.0.0.0",
-        "--window-size=320,180",
-        f"--user-data-dir={smoke_root / 'chromium-profile'}",
-        f"--screenshot={html_preview}",
-        html_source.resolve().as_uri(),
-    ],
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-    text=True,
-)
-deadline = time.monotonic() + 60
-last_size = -1
-stable_checks = 0
-while time.monotonic() < deadline:
-    if chromium_probe.poll() is not None and not html_preview.is_file():
-        break
-    if html_preview.is_file() and html_preview.stat().st_size > 0:
-        size = html_preview.stat().st_size
-        stable_checks = stable_checks + 1 if size == last_size else 0
-        last_size = size
-        if stable_checks >= 2:
-            chromium_probe.terminate()
-            break
-    time.sleep(0.15)
-try:
-    stdout, stderr = chromium_probe.communicate(timeout=3)
-except subprocess.TimeoutExpired:
-    chromium_probe.kill()
-    stdout, stderr = chromium_probe.communicate(timeout=3)
-if not html_preview.is_file() or html_preview.stat().st_size == 0:
-    raise SystemExit(
-        "Chromium headless render failed:\n"
-        f"{stderr or stdout}"
-    )
-source = smoke_root / "runtime-smoke.docx"
-document = Document()
-document.add_heading("EvoFlux document runtime", level=1)
-document.add_paragraph(
-    "Node · artifact-tool · Chromium · LibreOffice · Poppler · fonts"
-)
-document.save(source)
-pages, issues = render_pages(source, smoke_root / "render", code_prefix="runtime")
-if issues or len(pages) != 1 or not pages[0].is_file():
-    raise SystemExit(f"document runtime render smoke failed: {issues!r}")
-print(f"document runtime execution smoke: {runtime.manifest['bundle_version']} ok")
-"""
-    try:
-        run(
-            [str(python_bin), "-c", script, str(site_packages)],
-            env=env,
-        )
-    finally:
-        shutil.rmtree(smoke_root, ignore_errors=True)
-
-
-def smoke_test(
-    python_bin: Path,
-    site_packages: Path,
-    document_runtime: Path | None = None,
-) -> None:
+def smoke_test(python_bin: Path, site_packages: Path) -> None:
     """Invoke the sidecar briefly to prove the bundle actually works.
 
     Stages:
@@ -615,8 +437,6 @@ def smoke_test(
         "EVOFLUX_WIKI_DIR": str(smoke_root / "wiki"),
         "EVOFLUX_WORKSPACE_DIR": str(smoke_root / "workspace"),
     }
-    if document_runtime is not None:
-        env["EVOFLUX_DOCUMENT_RUNTIME_DIR"] = str(document_runtime)
 
     # Seed a minimal agents directory so the app's lifespan validation
     # (which requires exactly one agent with role: lead) passes.
@@ -674,7 +494,7 @@ def smoke_test(
     if IS_WINDOWS:
         # CREATE_NEW_PROCESS_GROUP lets us terminate the child tree from
         # this process; start_new_session is Unix-only.
-        popen_kwargs["creationflags"] = 0x0000_0200
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         popen_kwargs["start_new_session"] = True
 
@@ -798,36 +618,6 @@ def smoke_test(
                 ) from e
             print(f"smoke test: protected endpoint returned {e.code} (acceptable)")
 
-        # ── Bundled document runtime → manifest must resolve end-to-end ─────
-        if document_runtime is not None:
-            diagnostics_request = urllib.request.Request(
-                f"{base}/api/diagnostics",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-            try:
-                with urllib.request.urlopen(
-                    diagnostics_request, timeout=10
-                ) as response:
-                    diagnostics_payload = json.loads(response.read().decode("utf-8"))
-            except (
-                urllib.error.HTTPError,
-                urllib.error.URLError,
-                json.JSONDecodeError,
-            ) as exc:
-                raise SystemExit(
-                    f"smoke test: document runtime diagnostics failed: {exc}"
-                ) from exc
-            runtime_status = diagnostics_payload["runtime"]["document_runtime"]
-            if runtime_status.get("available") is not True:
-                raise SystemExit(
-                    "smoke test: bundled document runtime is unavailable: "
-                    f"{runtime_status.get('error', 'unknown error')}"
-                )
-            print(
-                "smoke test: document runtime resolved: "
-                f"{runtime_status.get('bundle_version')}"
-            )
-
         # ── Browser-presence WebSocket → must complete a real upgrade ────────
         # Run the client with the bundled interpreter/site-packages too. This
         # catches the exact release regression where Uvicorn could serve HTTP
@@ -934,48 +724,10 @@ def main() -> int:
             "bundles safe packages into one zip to reduce Defender cold-start I/O."
         ),
     )
-    ap.add_argument(
-        "--document-runtime",
-        default=os.environ.get(DOCUMENT_RUNTIME_SOURCE_ENV),
-        help=(
-            "Verified runtime directory/archive. Defaults to "
-            f"${DOCUMENT_RUNTIME_SOURCE_ENV}, then desktop/document-runtime."
-        ),
-    )
-    ap.add_argument(
-        "--document-runtime-sha256",
-        default=os.environ.get(DOCUMENT_RUNTIME_SHA256_ENV),
-        help=(
-            "Required SHA-256 for an archive source; defaults to "
-            f"${DOCUMENT_RUNTIME_SHA256_ENV}."
-        ),
-    )
-    ap.add_argument(
-        "--skip-document-runtime",
-        action="store_true",
-        help="Build a server-only sidecar without document support (never for desktop release).",
-    )
     args = ap.parse_args()
 
     root = Path(args.root).resolve()
     out = Path(args.out).resolve()
-    runtime_source: Path | None = None
-    if not args.skip_document_runtime:
-        runtime_source = (
-            Path(args.document_runtime or root / "desktop" / "document-runtime")
-            .expanduser()
-            .resolve()
-        )
-        if not runtime_source.exists():
-            raise SystemExit(
-                "document runtime source is required for desktop bundles; "
-                f"set --document-runtime or {DOCUMENT_RUNTIME_SOURCE_ENV}. "
-                "Use --skip-document-runtime only for a server-only development bundle."
-            )
-        if runtime_source == out or runtime_source.is_relative_to(out):
-            raise SystemExit(
-                "document runtime source must not be inside the output bundle"
-            )
 
     if out.exists():
         print(f"removing existing {out}")
@@ -1001,26 +753,7 @@ def main() -> int:
     site_packages = out / "site-packages"
     install_packages(python_bin, root, site_packages, extras)
 
-    # ── 3. Stage the immutable document runtime ─────────────────────────
-    document_runtime: Path | None = None
-    if runtime_source is not None:
-        document_runtime = out / "document-runtime"
-        try:
-            manifest = stage_document_runtime(
-                runtime_source,
-                document_runtime,
-                expected_sha256=args.document_runtime_sha256,
-                expected_platform=normalized_platform(),
-                expected_architecture=normalized_architecture(),
-            )
-        except DocumentRuntimeError as exc:
-            raise SystemExit(f"document runtime validation failed: {exc}") from exc
-        print(
-            "document runtime: "
-            f"{manifest['bundle_version']} ({manifest['payload_sha256']})"
-        )
-
-    # ── 4. Strip caches/tests/etc. ──────────────────────────────────────
+    # ── 3. Strip caches/tests/etc. ──────────────────────────────────────
     saved = strip_bundle(site_packages)
     print(f"stripped: {human_bytes(saved)}")
     if IS_WINDOWS and not args.no_zip_purelib:
@@ -1030,21 +763,15 @@ def main() -> int:
             f"packed {packages_zipped} pure-Python packages / {files_zipped} files"
         )
 
-    # ── 5. Smoke test ───────────────────────────────────────────────────
+    # ── 4. Smoke test ───────────────────────────────────────────────────
     if not args.no_smoke:
         validate_migration_bundle(python_bin, site_packages)
-        if document_runtime is not None:
-            validate_document_runtime_bundle(
-                python_bin, site_packages, document_runtime
-            )
-        smoke_test(python_bin, site_packages, document_runtime)
+        smoke_test(python_bin, site_packages)
 
-    # ── 6. Report ────────────────────────────────────────────────────────
+    # ── 5. Report ────────────────────────────────────────────────────────
     print("\n=== bundle summary ===")
     report_size(python_target, "python runtime")
     report_size(site_packages, "site-packages")
-    if document_runtime is not None:
-        report_size(document_runtime, "document runtime")
     report_size(out, "TOTAL")
     return 0
 

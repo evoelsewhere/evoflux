@@ -246,7 +246,6 @@ documents/assets/scripts/
 # not commit the 400 MB output.
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
-desktop/document-runtime/
 desktop/sidecar-bundle/
 
 # ── Mobile build artefacts ────────────────────────────────────────────────
