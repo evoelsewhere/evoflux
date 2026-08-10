@@ -1651,6 +1651,31 @@ export interface PluginMcpComponent {
   diagnostics: PluginDiagnostic[]
 }
 
+export interface PluginTrustCommand {
+  server: string
+  executable: string
+  args: string[]
+}
+
+export interface PluginTrustRemoteHost {
+  server: string
+  transport: string
+  host: string
+  url: string
+}
+
+export interface PluginTrustCapability {
+  name: string
+  source: string
+}
+
+export interface PluginTrustReview {
+  executable_commands: PluginTrustCommand[]
+  remote_hosts: PluginTrustRemoteHost[]
+  environment_fields: string[]
+  capabilities: PluginTrustCapability[]
+}
+
 export interface PluginManifest {
   $schema: string
   name: string
@@ -1671,6 +1696,7 @@ export interface PluginInspection {
   diagnostics: PluginDiagnostic[]
   skills: PluginSkillComponent[]
   mcp_servers: PluginMcpComponent[]
+  trust: PluginTrustReview
   extension_namespaces: string[]
   content_sha256: string | null
 }

@@ -149,7 +149,7 @@ async def install_plugin_path(body: PluginInstallRequest) -> PluginOperationResp
 @router.post("/upload", response_model=PluginOperationResponse, status_code=201)
 async def upload_plugin_archive(
     archive: UploadFile = File(...),
-    enabled: bool = True,
+    enabled: bool = False,
 ) -> PluginOperationResponse:
     if not (archive.filename or "").casefold().endswith((".evoplugin", ".zip")):
         raise HTTPException(

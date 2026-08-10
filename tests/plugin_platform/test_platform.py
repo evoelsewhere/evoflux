@@ -147,9 +147,7 @@ def test_mcp_entries_fail_independently_and_runtime_expands_only_plugin_tokens(
     manifest_path = root / "plugin.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["extensions"] = {
-        namespace: {
-            "servers": {"local": {"capabilities": ["webbridge-safe"]}}
-        }
+        namespace: {"servers": {"local": {"capabilities": ["webbridge-safe"]}}}
     }
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     (root / "run.py").write_text("print('server')\n", encoding="utf-8")
@@ -221,6 +219,74 @@ def test_plugin_placeholder_expansion_is_single_pass() -> None:
     assert _expand("${PLUGIN_DATA}/${PLUGIN_ROOT}", root=root, data_root=data) == (
         f"{data}/{root}"
     )
+
+
+def test_trust_review_discloses_access_without_environment_values(
+    isolated_platform: Path,
+) -> None:
+    root = _plugin(isolated_platform / "trust-review-plugin")
+    manifest_path = root / "plugin.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["extensions"] = {
+        CREDENTIALS_EXTENSION: {
+            "fields": [
+                {
+                    "key": "token",
+                    "label": "Token",
+                    "type": "secret",
+                    "env": "SERVICE_TOKEN",
+                }
+            ]
+        },
+        MCP_EXTENSION: {"servers": {"local": {"capabilities": ["webbridge-safe"]}}},
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    (root / "mcp.json").write_text(
+        json.dumps(
+            {
+                "$schema": MCP_SCHEMA_ID,
+                "mcpServers": {
+                    "local": {
+                        "type": "stdio",
+                        "command": "python",
+                        "args": ["./server.py"],
+                        "env": {"SERVICE_MODE": "private-environment-value"},
+                    },
+                    "remote": {
+                        "type": "streamable-http",
+                        "url": "https://api.example.test:8443/mcp",
+                        "headers": {"Authorization": "private-header-value"},
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_plugin(root)
+    review = inspection.trust
+
+    assert [command.model_dump() for command in review.executable_commands] == [
+        {"server": "local", "executable": "python", "args": ["./server.py"]}
+    ]
+    assert [remote.model_dump() for remote in review.remote_hosts] == [
+        {
+            "server": "remote",
+            "transport": "streamable-http",
+            "host": "api.example.test:8443",
+            "url": "https://api.example.test:8443/mcp",
+        }
+    ]
+    assert review.environment_fields == ["SERVICE_MODE", "SERVICE_TOKEN"]
+    assert {(item.name, item.source) for item in review.capabilities} == {
+        ("agent-skill", "portable-skill"),
+        ("mcp-stdio", "local"),
+        ("mcp-streamable-http", "remote"),
+        ("webbridge-safe", "local"),
+    }
+    serialized = review.model_dump_json()
+    assert "private-environment-value" not in serialized
+    assert "private-header-value" not in serialized
 
 
 def test_registry_rejects_unsafe_installation_ids() -> None:

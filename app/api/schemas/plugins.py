@@ -15,7 +15,7 @@ class PluginInstallRequest(BaseModel):
 
     path: str = Field(min_length=1)
     mode: Literal["install", "link"] = "install"
-    enabled: bool = True
+    enabled: bool = False
 
 
 class PluginUpdateRequest(BaseModel):
