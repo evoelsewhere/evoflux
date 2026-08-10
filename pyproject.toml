@@ -29,6 +29,8 @@ dependencies = [
     # which otherwise produces a sidecar that cannot run Alembic migrations.
     "greenlet>=3.1.1",
     "loguru>=0.7.0",
+    # Native OS credential vault for Conductor connection tokens.
+    "keyring>=25.6.0",
     "alembic>=1.13.1",
     "aiosqlite>=0.20.0",
     "ddgs>=9.12.0",

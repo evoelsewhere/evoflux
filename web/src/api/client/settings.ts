@@ -103,6 +103,7 @@ export type ConductorSettings = {
   url: string
   machine_credential_path: string | null
   sync_interval_seconds: number
+  heartbeat_interval_seconds: number
   request_timeout_seconds: number
   enforcement_mode: 'report' | 'enforce'
 }
@@ -111,6 +112,16 @@ export type ConductorStatus = {
   enabled: boolean
   enrolled: boolean
   state: string
+  installation_id: string | null
+  project_id: string | null
+  project_name: string | null
+  project_display_name: string | null
+  project_logo_url: string | null
+  member_display_name: string | null
+  member_primary_role: string | null
+  collection_level: 'L0' | 'L1' | 'L2' | null
+  heartbeat_interval_seconds: number
+  last_heartbeat_at: string | null
   last_sync_at: string | null
   last_success_at: string | null
   manifest_revision: string | null
@@ -147,13 +158,19 @@ export async function getConductorStatus(): Promise<ConductorStatus> {
   return res.json()
 }
 
-export async function enrollConductor(enrollmentToken: string): Promise<ConductorStatus> {
-  const res = await fetch(`${apiBaseUrl()}/settings/conductor/enroll`, {
+export async function connectConductor(enrollmentToken: string): Promise<ConductorStatus> {
+  const res = await fetch(`${apiBaseUrl()}/settings/conductor/connect`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enrollment_token: enrollmentToken }),
   })
-  if (!res.ok) await parseDetailOrThrow(res, 'POST /settings/conductor/enroll')
+  if (!res.ok) await parseDetailOrThrow(res, 'POST /settings/conductor/connect')
+  return res.json()
+}
+
+export async function disconnectConductor(): Promise<ConductorStatus> {
+  const res = await fetch(`${apiBaseUrl()}/settings/conductor/disconnect`, { method: 'POST' })
+  if (!res.ok) await parseDetailOrThrow(res, 'POST /settings/conductor/disconnect')
   return res.json()
 }
 

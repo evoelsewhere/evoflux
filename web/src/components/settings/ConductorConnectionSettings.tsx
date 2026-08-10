@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 
 import {
-  enrollConductor,
+  connectConductor,
+  disconnectConductor,
   getConductorSettings,
   getConductorStatus,
   syncConductor,
@@ -15,10 +16,17 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 
 export function ConductorConnectionSettings() {
+  const urlId = useId()
+  const enforcementId = useId()
+  const syncIntervalId = useId()
+  const heartbeatIntervalId = useId()
+  const tokenId = useId()
   const [draft, setDraft] = useState<ConductorSettings | null>(null)
   const [status, setStatus] = useState<ConductorStatus | null>(null)
   const [token, setToken] = useState('')
-  const [pending, setPending] = useState(false)
+  const [pendingAction, setPendingAction] = useState<
+    'connect' | 'disconnect' | 'sync' | 'save' | null
+  >(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -36,25 +44,46 @@ export function ConductorConnectionSettings() {
     return () => { cancelled = true }
   }, [])
 
-  const run = async (action: () => Promise<void>) => {
-    setPending(true)
+  const run = async (
+    actionName: 'connect' | 'disconnect' | 'sync' | 'save',
+    action: () => Promise<void>,
+  ) => {
+    setPendingAction(actionName)
     setError(null)
     try {
       await action()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
-      setPending(false)
+      setPendingAction(null)
     }
   }
 
   if (!draft) return null
 
+  const projectLabel = status?.project_display_name || status?.project_name
+  const pending = pendingAction !== null
+  const tokenValid = token.trim().startsWith('evc_')
+  const urlValid = isValidConductorUrl(draft.url)
+  const connectionLabel: Record<string, string> = {
+    connected: 'Connected',
+    in_sync: 'Connected · in sync',
+    applied: 'Connected · changes applied',
+    drifted: 'Connected · drift detected',
+    offline: 'Offline · using last known state',
+    authorization_required: 'Authorization required',
+    forbidden: 'Token scope is not allowed',
+    registration_required: 'Registration required',
+    disconnected: 'Disconnected',
+    disabled: 'Sync disabled',
+    syncing: 'Syncing',
+  }
+
   return (
     <>
       <SettingsGroup
         title="Organization control plane"
-        description="Enroll this machine with Evo Conductor and reconcile organization-managed resources."
+        description="Connect to Evo Conductor V1 and reconcile organization-managed resources."
       >
         <SettingsRow
           label="Enable Conductor sync"
@@ -67,24 +96,39 @@ export function ConductorConnectionSettings() {
             />
           }
         />
-        <SettingsRow
-          label="Conductor URL"
-          description="The authoritative organization control-plane endpoint."
-          stacked
-          control={
-            <Input
-              value={draft.url}
-              onChange={(event) => setDraft({ ...draft, url: event.target.value })}
-              placeholder="https://conductor.example.com"
-              className="font-mono text-sm"
-            />
-          }
-        />
+        {!status?.enrolled && (
+          <SettingsRow
+            label="Conductor URL"
+            description="The authoritative organization control-plane endpoint."
+            htmlFor={urlId}
+            stacked
+            control={
+              <div className="space-y-1.5">
+                <Input
+                  type="url"
+                  id={urlId}
+                  value={draft.url}
+                  onChange={(event) => setDraft({ ...draft, url: event.target.value })}
+                  placeholder="https://conductor.example.com"
+                  className="font-mono text-sm"
+                  aria-invalid={draft.url.length > 0 && !urlValid}
+                />
+                {draft.url.length > 0 && !urlValid && (
+                  <p className="text-xs text-(--color-danger)" role="alert">
+                    Enter an http:// or https:// URL.
+                  </p>
+                )}
+              </div>
+            }
+          />
+        )}
         <SettingsRow
           label="Enforcement"
           description="Report only detects drift. Enforce remediates managed resources at safe turn boundaries."
+          htmlFor={enforcementId}
           control={
             <select
+              id={enforcementId}
               value={draft.enforcement_mode}
               onChange={(event) => setDraft({
                 ...draft,
@@ -100,8 +144,10 @@ export function ConductorConnectionSettings() {
         <SettingsRow
           label="Sync interval"
           description="Seconds between manifest checks (minimum 5)."
+          htmlFor={syncIntervalId}
           control={
             <Input
+              id={syncIntervalId}
               type="number"
               min={5}
               value={draft.sync_interval_seconds}
@@ -114,35 +160,72 @@ export function ConductorConnectionSettings() {
           }
         />
         <SettingsRow
-          label="Enrollment token"
-          description="Used once to mint a machine credential. The token is never returned or stored."
-          stacked
+          label="Heartbeat interval"
+          description="Seconds between installation presence checks (30–300; default 60)."
+          htmlFor={heartbeatIntervalId}
           control={
-            <div className="flex gap-2">
-              <Input
-                type="password"
-                value={token}
-                onChange={(event) => setToken(event.target.value)}
-                placeholder="Paste enrollment token"
-              />
-              <Button
-                variant="outline"
-                disabled={pending || !token.trim() || !draft.url}
-                onClick={() => void run(async () => {
-                  const saved = await updateConductorSettings(draft)
-                  setDraft(saved)
-                  setStatus(await enrollConductor(token))
-                  setToken('')
-                })}
-              >
-                Enroll
-              </Button>
-            </div>
+            <Input
+              id={heartbeatIntervalId}
+              type="number"
+              min={30}
+              max={300}
+              value={draft.heartbeat_interval_seconds}
+              onChange={(event) => setDraft({
+                ...draft,
+                heartbeat_interval_seconds: Number(event.target.value),
+              })}
+              className="w-28"
+            />
           }
         />
+        {!status?.enrolled && (
+          <SettingsRow
+            label="V1 connection token"
+            description="A scoped evc_ token. After validation it is stored only in your operating system credential vault."
+            htmlFor={tokenId}
+            stacked
+            control={
+              <div className="space-y-1.5">
+                <div className="flex gap-2">
+                  <Input
+                    type="password"
+                    id={tokenId}
+                    value={token}
+                    onChange={(event) => setToken(event.target.value)}
+                    placeholder="Paste evc_ connection token"
+                    aria-invalid={token.length > 0 && !tokenValid}
+                  />
+                  <Button
+                    variant="outline"
+                    disabled={pending || !tokenValid || !urlValid}
+                    onClick={() => void run('connect', async () => {
+                      const saved = await updateConductorSettings(draft)
+                      setDraft(saved)
+                      setStatus(await connectConductor(token))
+                      setToken('')
+                    })}
+                  >
+                    {pendingAction === 'connect' ? 'Connecting…' : 'Connect'}
+                  </Button>
+                </div>
+                {token.length > 0 && !tokenValid && (
+                  <p className="text-xs text-(--color-danger)" role="alert">
+                    Connection tokens must start with evc_.
+                  </p>
+                )}
+              </div>
+            }
+          />
+        )}
         <div className="flex items-center justify-between px-4 py-3">
-          <div className="text-xs text-(--color-text-muted)">
-            {status?.enrolled ? `State: ${status.state}` : 'This machine is not enrolled.'}
+          <div className="text-xs text-(--color-text-muted)" role="status" aria-live="polite">
+            {pendingAction === 'disconnect'
+              ? 'Disconnecting…'
+              : pendingAction === 'sync'
+                ? 'Syncing…'
+                : status?.enrolled
+              ? connectionLabel[status.state] || `Connected · ${status.state}`
+              : connectionLabel[status?.state || 'disconnected'] || 'Conductor is not connected.'}
             {status?.manifest_revision ? ` · Manifest ${status.manifest_revision}` : ''}
           </div>
           <div className="flex gap-2">
@@ -150,20 +233,64 @@ export function ConductorConnectionSettings() {
               variant="outline"
               size="sm"
               disabled={pending || !status?.enrolled}
-              onClick={() => void run(async () => setStatus(await syncConductor()))}
+              onClick={() => void run('sync', async () => setStatus(await syncConductor()))}
             >
               Sync now
             </Button>
+            {status?.enrolled && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pending}
+                onClick={() => void run(
+                  'disconnect',
+                  async () => setStatus(await disconnectConductor()),
+                )}
+              >
+                Disconnect
+              </Button>
+            )}
             <Button
               size="sm"
               disabled={pending}
-              onClick={() => void run(async () => setDraft(await updateConductorSettings(draft)))}
+              onClick={() => void run(
+                'save',
+                async () => setDraft(await updateConductorSettings(draft)),
+              )}
             >
-              Save
+              {pendingAction === 'save' ? 'Saving…' : 'Save'}
             </Button>
           </div>
         </div>
       </SettingsGroup>
+      {status?.enrolled && projectLabel && (
+        <SettingsCallout tone="success">
+          <div className="flex items-center gap-3">
+            {status.project_logo_url ? (
+              <img
+                src={status.project_logo_url}
+                alt={`${projectLabel} logo`}
+                className="size-9 rounded-md border border-(--color-border) object-cover"
+              />
+            ) : (
+              <div
+                className="flex size-9 items-center justify-center rounded-md border border-(--color-border) font-semibold"
+                aria-hidden="true"
+              >
+                {projectLabel.slice(0, 1).toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0">
+              <div className="font-medium">{projectLabel}</div>
+              <div className="text-xs opacity-80">
+                {status.member_display_name || 'Project member'}
+                {status.member_primary_role ? ` · ${status.member_primary_role}` : ''}
+                {status.collection_level ? ` · Privacy ${status.collection_level}` : ''}
+              </div>
+            </div>
+          </div>
+        </SettingsCallout>
+      )}
       {status?.maintenance_required && (
         <SettingsCallout tone="warning">
           A managed team or MCP change is waiting for a safe maintenance boundary.
@@ -174,4 +301,21 @@ export function ConductorConnectionSettings() {
       )}
     </>
   )
+}
+
+function isValidConductorUrl(value: string) {
+  try {
+    const parsed = new URL(value.trim())
+    return (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+      && Boolean(parsed.hostname)
+      && !parsed.username
+      && !parsed.password
+      && parsed.pathname === '/'
+      && !parsed.search
+      && !parsed.hash
+    )
+  } catch {
+    return false
+  }
 }
