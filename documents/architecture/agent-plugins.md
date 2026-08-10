@@ -68,6 +68,8 @@ Open **Plugins** beneath Scheduler in either Work or Coding mode. Plugin Center 
 - open a plugin in the built-in workspace editor to browse, create, edit, save,
   and delete package files;
 - configure installation-scoped credentials declared by the plugin;
+- review executable commands, remote hosts, environment-field names, and
+  capabilities before enabling a newly imported plugin;
 - enable, disable, pack, update a managed installation in place, and uninstall
   an installation.
 
@@ -88,6 +90,13 @@ evoflux plugin uninstall <installation-id>
 ```
 
 The lifecycle API is mounted at `/api/plugins`; its OpenAPI schema is the source of truth for request and response fields.
+
+Imports and developer links default to disabled. Static inspection builds the
+trust review without starting a server and never includes environment or header
+values. Plugin Center requires an explicit **Trust and enable** action. The CLI
+also installs disabled by default; use `plugin show` to inspect the `trust`
+record before `plugin enable`. `--enabled` exists for deliberate non-interactive
+automation.
 
 ## Runtime and precedence
 
