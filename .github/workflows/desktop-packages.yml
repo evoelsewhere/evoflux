@@ -51,16 +51,16 @@ jobs:
         run: |
           case "$SELECTED_PLATFORM" in
             all)
-              matrix='{"include":[{"name":"DMG · Intel","os":"macos-15-intel","artifact":"evoflux-macos-intel","architecture":"x86_64","runtime_platform":"darwin","runtime_url_secret":"EVOFLUX_DOCUMENT_RUNTIME_MACOS_X64_URL","runtime_sha_secret":"EVOFLUX_DOCUMENT_RUNTIME_MACOS_X64_SHA256","dmg_architecture":"x64"},{"name":"DMG · Apple Silicon","os":"macos-15","artifact":"evoflux-macos-apple-silicon","architecture":"arm64","runtime_platform":"darwin","runtime_url_secret":"EVOFLUX_DOCUMENT_RUNTIME_MACOS_ARM64_URL","runtime_sha_secret":"EVOFLUX_DOCUMENT_RUNTIME_MACOS_ARM64_SHA256","dmg_architecture":"aarch64"},{"name":"NSIS · Windows x64","os":"windows-2022","artifact":"evoflux-windows-x64","architecture":"x86_64","runtime_platform":"windows","runtime_url_secret":"EVOFLUX_DOCUMENT_RUNTIME_WINDOWS_X64_URL","runtime_sha_secret":"EVOFLUX_DOCUMENT_RUNTIME_WINDOWS_X64_SHA256"}]}'
+              matrix='{"include":[{"name":"DMG · Intel","os":"macos-15-intel","artifact":"evoflux-macos-intel","architecture":"x86_64","dmg_architecture":"x64"},{"name":"DMG · Apple Silicon","os":"macos-15","artifact":"evoflux-macos-apple-silicon","architecture":"arm64","dmg_architecture":"aarch64"},{"name":"NSIS · Windows x64","os":"windows-2022","artifact":"evoflux-windows-x64","architecture":"x86_64"}]}'
               ;;
             macos-intel)
-              matrix='{"include":[{"name":"DMG · Intel","os":"macos-15-intel","artifact":"evoflux-macos-intel","architecture":"x86_64","runtime_platform":"darwin","runtime_url_secret":"EVOFLUX_DOCUMENT_RUNTIME_MACOS_X64_URL","runtime_sha_secret":"EVOFLUX_DOCUMENT_RUNTIME_MACOS_X64_SHA256","dmg_architecture":"x64"}]}'
+              matrix='{"include":[{"name":"DMG · Intel","os":"macos-15-intel","artifact":"evoflux-macos-intel","architecture":"x86_64","dmg_architecture":"x64"}]}'
               ;;
             macos-apple-silicon)
-              matrix='{"include":[{"name":"DMG · Apple Silicon","os":"macos-15","artifact":"evoflux-macos-apple-silicon","architecture":"arm64","runtime_platform":"darwin","runtime_url_secret":"EVOFLUX_DOCUMENT_RUNTIME_MACOS_ARM64_URL","runtime_sha_secret":"EVOFLUX_DOCUMENT_RUNTIME_MACOS_ARM64_SHA256","dmg_architecture":"aarch64"}]}'
+              matrix='{"include":[{"name":"DMG · Apple Silicon","os":"macos-15","artifact":"evoflux-macos-apple-silicon","architecture":"arm64","dmg_architecture":"aarch64"}]}'
               ;;
             windows-x64)
-              matrix='{"include":[{"name":"NSIS · Windows x64","os":"windows-2022","artifact":"evoflux-windows-x64","architecture":"x86_64","runtime_platform":"windows","runtime_url_secret":"EVOFLUX_DOCUMENT_RUNTIME_WINDOWS_X64_URL","runtime_sha_secret":"EVOFLUX_DOCUMENT_RUNTIME_WINDOWS_X64_SHA256"}]}'
+              matrix='{"include":[{"name":"NSIS · Windows x64","os":"windows-2022","artifact":"evoflux-windows-x64","architecture":"x86_64"}]}'
               ;;
             *)
               echo "Unsupported platform: $SELECTED_PLATFORM" >&2
@@ -196,34 +196,13 @@ jobs:
         shell: bash
         run: cargo install tauri-cli --version "^2" --locked
 
-      - name: Stage verified document runtime
-        shell: bash
-        env:
-          DOCUMENT_RUNTIME_URL: ${{ secrets[matrix.runtime_url_secret] }}
-          DOCUMENT_RUNTIME_SHA256: ${{ secrets[matrix.runtime_sha_secret] }}
-        run: |
-          set -euo pipefail
-          if [[ -z "$DOCUMENT_RUNTIME_URL" || -z "$DOCUMENT_RUNTIME_SHA256" ]]; then
-            echo "Document runtime URL/checksum secrets are required for ${{ matrix.name }}." >&2
-            exit 1
-          fi
-          archive="$RUNNER_TEMP/evoflux-document-runtime.bundle"
-          curl --fail --location --retry 3 --output "$archive" "$DOCUMENT_RUNTIME_URL"
-          python scripts/build_document_runtime.py stage \
-            --source "$archive" \
-            --sha256 "$DOCUMENT_RUNTIME_SHA256" \
-            --out desktop/document-runtime \
-            --expected-platform "${{ matrix.runtime_platform }}" \
-            --expected-architecture "${{ matrix.architecture }}"
-
       - name: Build native Python sidecar
         shell: bash
         run: |
           python scripts/build_sidecar.py \
             --root . \
             --out "$SIDECAR_DIR" \
-            --python-version "$PYTHON_VERSION" \
-            --document-runtime desktop/document-runtime
+            --python-version "$PYTHON_VERSION"
 
       - name: Import Windows signing certificate
         if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled == 'true'

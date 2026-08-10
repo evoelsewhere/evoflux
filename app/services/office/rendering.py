@@ -15,10 +15,7 @@ import tempfile
 from typing import Any, Final
 
 from app.services.office.runtime import (
-    DOCUMENT_RUNTIME_DIR_ENV,
     codex_runtime_dependencies,
-    document_runtime_subprocess_env,
-    resolve_document_runtime,
     resolve_executable,
 )
 
@@ -30,22 +27,9 @@ _CONVERSION_TIMEOUT_SECONDS: Final = 180
 
 
 def find_render_binary(env_name: str, names: tuple[str, ...]) -> str:
-    preferred: tuple[Path, ...] = ()
-    try:
-        runtime = resolve_document_runtime()
-    except RuntimeError:
-        # An explicitly configured runtime is authoritative: a malformed
-        # bundle must not silently fall back to a host installation.
-        if os.environ.get(DOCUMENT_RUNTIME_DIR_ENV):
-            raise
-    else:
-        preferred = (
-            (runtime.soffice,) if env_name == SOFFICE_BIN_ENV else (runtime.pdftoppm,)
-        )
     return resolve_executable(
         env_name,
         names,
-        preferred_candidates=preferred,
         fallback_dirs=(codex_runtime_dependencies() / "bin" / "override",),
         requirement=(
             f"Required rendering binary is unavailable: {', '.join(names)}. "
@@ -92,7 +76,6 @@ def render_pages(
         profile = temp_dir / "profile"
         profile.mkdir()
         env = os.environ.copy()
-        env.update(document_runtime_subprocess_env())
         env["HOME"] = str(profile)
         env["TMPDIR"] = str(temp_dir)
         conversion = subprocess.run(
@@ -131,7 +114,6 @@ def render_pages(
             [pdftoppm, "-png", "-r", str(dpi), str(pdf), str(prefix)],
             capture_output=True,
             text=True,
-            env=env,
             timeout=_CONVERSION_TIMEOUT_SECONDS,
             check=False,
         )
