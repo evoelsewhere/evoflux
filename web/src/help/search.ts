@@ -11,6 +11,14 @@ function haystack(article: HelpArticle): string {
   const blockText = article.blocks
     .map((block) => {
       if (block.type === 'p') return block.text
+      if (block.type === 'heading') return block.text
+      if (block.type === 'code') {
+        return `${block.caption ?? ''} ${block.language ?? ''} ${block.code}`
+      }
+      if (block.type === 'table') {
+        return [...block.columns, ...block.rows.flat()].join(' ')
+      }
+      if (block.type === 'callout') return `${block.title} ${block.text}`
       if (block.type === 'tips') return block.items.join(' ')
       if (block.type === 'shortcuts') {
         return block.rows.map((row) => `${row.keys} ${row.action}`).join(' ')

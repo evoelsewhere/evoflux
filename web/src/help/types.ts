@@ -12,12 +12,22 @@ export type HelpCategoryId =
   | 'memory'
   | 'scheduler'
   | 'browser'
+  | 'plugins'
   | 'settings'
   | 'shortcuts'
   | 'troubleshooting'
 
 export type HelpBlock =
   | { type: 'p'; text: string }
+  | { type: 'heading'; text: string }
+  | { type: 'code'; code: string; language?: string; caption?: string }
+  | { type: 'table'; columns: string[]; rows: string[][] }
+  | {
+      type: 'callout'
+      tone?: 'info' | 'warning'
+      title: string
+      text: string
+    }
   | { type: 'tips'; items: string[] }
   | { type: 'shortcuts'; rows: { keys: string; action: string }[] }
   | { type: 'slash'; commands: { cmd: string; desc: string }[] }
