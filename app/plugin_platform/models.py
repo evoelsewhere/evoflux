@@ -120,7 +120,7 @@ class PluginInspection(BaseModel):
 class PluginInstallation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    id: str
+    id: str = Field(pattern=r"^[0-9a-f]{32}$")
     name: str
     version: str | None = None
     description: str | None = None

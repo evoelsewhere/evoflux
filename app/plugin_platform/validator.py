@@ -102,6 +102,20 @@ def _package_digest(root: Path) -> str:
         dirs.sort()
         files.sort()
         base_path = Path(base)
+        for name in dirs:
+            path = base_path / name
+            mode = path.lstat().st_mode
+            if not stat.S_ISLNK(mode):
+                continue
+            count += 1
+            if count > MAX_PACKAGE_FILES:
+                raise ValueError(f"package exceeds the {MAX_PACKAGE_FILES}-file limit")
+            relative = path.relative_to(root).as_posix()
+            digest.update(relative.encode("utf-8"))
+            digest.update(b"\0link\0")
+            digest.update(
+                os.readlink(path).encode("utf-8", errors="surrogateescape")
+            )
         for name in files:
             path = base_path / name
             count += 1

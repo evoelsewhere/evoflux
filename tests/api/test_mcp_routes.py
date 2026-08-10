@@ -222,6 +222,43 @@ class TestMCPAppToolCall:
                 "excalidraw", "custom_chart_tool", {"chartId": "chart1"}
             )
 
+    def test_bound_artifact_tool_calls_plugin_server(self) -> None:
+        session_id = str(uuid4())
+        server = "plugin_12345678_canvas_12345678"
+        app = _make_app_with_mcp_app(_mcp_app_row(session_id, "tc1", server=server))
+        plugin_result = SimpleNamespace(
+            model_dump=lambda **_kwargs: {
+                "content": [{"type": "text", "text": "saved"}],
+            }
+        )
+        with (
+            patch("app.api.routes.mcp.mcp_manager") as mock_manager,
+            patch(
+                "app.plugin_platform.runtime.plugin_mcp_runtime.call_app_tool",
+                new=AsyncMock(return_value=plugin_result),
+            ) as plugin_call,
+        ):
+            mock_manager.call_app_tool = AsyncMock(side_effect=KeyError(server))
+            client = TestClient(app)
+
+            response = client.post(
+                "/api/mcp/app-tools/call",
+                json={
+                    "session_id": session_id,
+                    "tool_call_id": "tc1",
+                    "server": server,
+                    "tool": "save_checkpoint",
+                    "arguments": {"checkpointId": "cp1"},
+                },
+            )
+
+        assert response.status_code == 200
+        plugin_call.assert_awaited_once_with(
+            server,
+            "save_checkpoint",
+            {"checkpointId": "cp1"},
+        )
+
     def test_rejects_tools_not_advertised_by_server(self) -> None:
         session_id = str(uuid4())
         app = _make_app_with_mcp_app(_mcp_app_row(session_id, "tc1"))

@@ -69,6 +69,14 @@ def _workspace_path(root: Path, path: str, *, allow_root: bool = False) -> Path:
 def list_workspace(root: str | Path) -> list[PluginWorkspaceEntry]:
     plugin_root = _root_path(root)
     entries: list[PluginWorkspaceEntry] = []
+
+    def append(entry: PluginWorkspaceEntry) -> None:
+        entries.append(entry)
+        if len(entries) > MAX_EDITOR_ENTRIES:
+            raise ValueError(
+                f"Plugin workspace exceeds the {MAX_EDITOR_ENTRIES}-entry editor limit."
+            )
+
     for base, directories, files in os.walk(plugin_root, followlinks=False):
         base_path = Path(base)
         directories[:] = sorted(
@@ -78,7 +86,7 @@ def list_workspace(root: str | Path) -> list[PluginWorkspaceEntry]:
         )
         for name in directories:
             path = base_path / name
-            entries.append(
+            append(
                 PluginWorkspaceEntry(
                     path=path.relative_to(plugin_root).as_posix(),
                     name=name,
@@ -90,17 +98,13 @@ def list_workspace(root: str | Path) -> list[PluginWorkspaceEntry]:
             mode = path.lstat().st_mode
             if not stat.S_ISREG(mode):
                 continue
-            entries.append(
+            append(
                 PluginWorkspaceEntry(
                     path=path.relative_to(plugin_root).as_posix(),
                     name=name,
                     kind="file",
                     size=path.stat().st_size,
                 )
-            )
-        if len(entries) > MAX_EDITOR_ENTRIES:
-            raise ValueError(
-                f"Plugin workspace exceeds the {MAX_EDITOR_ENTRIES}-entry editor limit."
             )
     return sorted(entries, key=lambda item: (item.path.casefold(), item.kind))
 
@@ -135,9 +139,13 @@ def write_workspace_file(root: str | Path, path: str, content: str) -> None:
         prefix=f".{target.name}.", dir=target.parent
     )
     temporary = Path(temporary_name)
+    mode = 0o755 if target.exists() and target.stat().st_mode & 0o111 else 0o644
     try:
         with os.fdopen(descriptor, "wb") as output:
             output.write(encoded)
+            output.flush()
+            os.fsync(output.fileno())
+        temporary.chmod(mode)
         os.replace(temporary, target)
     finally:
         temporary.unlink(missing_ok=True)

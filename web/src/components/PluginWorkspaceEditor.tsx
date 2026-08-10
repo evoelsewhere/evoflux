@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import Editor, { useMonaco } from '@monaco-editor/react'
 import {
@@ -79,6 +79,24 @@ export function PluginWorkspaceEditor({
   const entries = tree.data ?? []
   const dirty = content !== savedContent
 
+  const confirmDiscard = useCallback(() => (
+    !dirty || window.confirm(`Discard unsaved changes to ${selectedPath}?`)
+  ), [dirty, selectedPath])
+
+  const selectFile = useCallback((path: string) => {
+    if (path === selectedPath || !confirmDiscard()) return
+    setSelectedPath(path)
+  }, [confirmDiscard, selectedPath])
+
+  useEffect(() => {
+    if (!dirty) return
+    const preventUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+    }
+    window.addEventListener('beforeunload', preventUnload)
+    return () => window.removeEventListener('beforeunload', preventUnload)
+  }, [dirty])
+
   useEffect(() => {
     let cancelled = false
     setFileLoading(true)
@@ -142,6 +160,7 @@ export function PluginWorkspaceEditor({
   const createEntry = async () => {
     const path = newPath.trim().replace(/^\/+|\/+$/g, '')
     if (!newKind || !path) return
+    if (newKind === 'file' && !confirmDiscard()) return
     await run('create-entry', async () => {
       const result = await createPluginWorkspaceEntry(root, path, newKind)
       onInspection(result.inspection)
@@ -188,7 +207,7 @@ export function PluginWorkspaceEditor({
           <div className="min-w-0">
             <button
               type="button"
-              onClick={onBack}
+              onClick={() => confirmDiscard() && onBack()}
               className="mb-1 inline-flex items-center gap-1 text-xs text-(--color-text-muted) hover:text-(--color-text)"
             >
               <ArrowLeft size={13} /> Plugin Center
@@ -198,14 +217,14 @@ export function PluginWorkspaceEditor({
           </div>
           <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
             {!linked && (
-              <Button size="sm" onClick={() => void run('link', onLink)} disabled={busy !== null}>
+              <Button size="sm" onClick={() => void run('link', onLink)} disabled={busy !== null || dirty}>
                 <PackagePlus /> Link
               </Button>
             )}
-            <Button size="sm" variant="outline" onClick={() => void validate()} disabled={busy !== null}>
+            <Button size="sm" variant="outline" onClick={() => void validate()} disabled={busy !== null || dirty}>
               <CheckCircle2 /> Validate
             </Button>
-            <Button size="sm" variant="outline" onClick={() => void pack()} disabled={busy !== null}>
+            <Button size="sm" variant="outline" onClick={() => void pack()} disabled={busy !== null || dirty}>
               <FileArchive /> Pack
             </Button>
           </div>
@@ -257,7 +276,7 @@ export function PluginWorkspaceEditor({
                 key={entry.path}
                 type="button"
                 disabled={entry.kind === 'directory'}
-                onClick={() => entry.kind === 'file' && setSelectedPath(entry.path)}
+                onClick={() => entry.kind === 'file' && selectFile(entry.path)}
                 className={cn(
                   'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left font-mono text-xs',
                   selectedPath === entry.path

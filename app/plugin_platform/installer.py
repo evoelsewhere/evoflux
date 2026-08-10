@@ -73,7 +73,9 @@ def _safe_archive_name(name: str) -> PurePosixPath:
     if "\\" in name or name.startswith("/") or not name:
         raise PluginInstallError(f"Unsafe archive path: {name!r}")
     path = PurePosixPath(name)
-    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+    if path.is_absolute() or any(
+        part in {"", ".", ".."} or ":" in part for part in path.parts
+    ):
         raise PluginInstallError(f"Unsafe archive path: {name!r}")
     return path
 
@@ -86,54 +88,64 @@ def _extract_archive(archive: Path, destination: Path) -> Path:
     seen: set[str] = set()
     folded: set[str] = set()
     total = 0
-    with zipfile.ZipFile(archive) as bundle:
-        infos = bundle.infolist()
-        if len(infos) > MAX_PACKAGE_FILES:
-            raise PluginInstallError(
-                f"Archive exceeds the {MAX_PACKAGE_FILES}-entry limit."
-            )
-        for info in infos:
-            path = _safe_archive_name(info.filename.rstrip("/"))
-            normalized = path.as_posix()
-            folded_name = normalized.casefold()
-            if normalized in seen or folded_name in folded:
-                raise PluginInstallError(f"Duplicate archive path: {normalized}")
-            seen.add(normalized)
-            folded.add(folded_name)
-            mode = info.external_attr >> 16
-            if stat.S_ISLNK(mode):
+    try:
+        with zipfile.ZipFile(archive) as bundle:
+            infos = bundle.infolist()
+            if len(infos) > MAX_PACKAGE_FILES:
                 raise PluginInstallError(
-                    f"Archive symlinks are not allowed: {normalized}"
+                    f"Archive exceeds the {MAX_PACKAGE_FILES}-entry limit."
                 )
-            total += info.file_size
-            if total > MAX_PACKAGE_BYTES:
-                raise PluginInstallError(
-                    f"Archive exceeds the {MAX_PACKAGE_BYTES}-byte expanded limit."
-                )
-            compressed = max(info.compress_size, 1)
-            if (
-                info.file_size > 1024 * 1024
-                and info.file_size / compressed > MAX_ARCHIVE_RATIO
-            ):
-                raise PluginInstallError(
-                    f"Suspicious compression ratio for archive entry: {normalized}"
-                )
-            target = destination.joinpath(*path.parts)
-            try:
-                target.absolute().relative_to(destination.absolute())
-            except ValueError as exc:
-                raise PluginInstallError(
-                    f"Archive path escapes staging: {normalized}"
-                ) from exc
-            if info.is_dir():
-                target.mkdir(parents=True, exist_ok=True)
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with bundle.open(info) as source, target.open("wb") as output:
-                shutil.copyfileobj(source, output, length=1024 * 1024)
-            # Preserve only the portable executable signal. Never trust archive
-            # ownership, setuid, or group/world write bits.
-            target.chmod(0o755 if mode & 0o111 else 0o644)
+            for info in infos:
+                path = _safe_archive_name(info.filename.rstrip("/"))
+                normalized = path.as_posix()
+                folded_name = normalized.casefold()
+                if normalized in seen or folded_name in folded:
+                    raise PluginInstallError(f"Duplicate archive path: {normalized}")
+                seen.add(normalized)
+                folded.add(folded_name)
+                mode = info.external_attr >> 16
+                if stat.S_ISLNK(mode):
+                    raise PluginInstallError(
+                        f"Archive symlinks are not allowed: {normalized}"
+                    )
+                total += info.file_size
+                if total > MAX_PACKAGE_BYTES:
+                    raise PluginInstallError(
+                        f"Archive exceeds the {MAX_PACKAGE_BYTES}-byte expanded limit."
+                    )
+                compressed = max(info.compress_size, 1)
+                if (
+                    info.file_size > 1024 * 1024
+                    and info.file_size / compressed > MAX_ARCHIVE_RATIO
+                ):
+                    raise PluginInstallError(
+                        f"Suspicious compression ratio for archive entry: {normalized}"
+                    )
+                target = destination.joinpath(*path.parts)
+                try:
+                    target.absolute().relative_to(destination.absolute())
+                except ValueError as exc:
+                    raise PluginInstallError(
+                        f"Archive path escapes staging: {normalized}"
+                    ) from exc
+                if info.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with bundle.open(info) as source, target.open("wb") as output:
+                    shutil.copyfileobj(source, output, length=1024 * 1024)
+                # Preserve only the portable executable signal. Never trust archive
+                # ownership, setuid, or group/world write bits.
+                target.chmod(0o755 if mode & 0o111 else 0o644)
+    except PluginInstallError:
+        raise
+    except (
+        zipfile.BadZipFile,
+        zipfile.LargeZipFile,
+        RuntimeError,
+        NotImplementedError,
+    ) as exc:
+        raise PluginInstallError(f"Invalid plugin archive: {exc}") from exc
     if not (destination / "plugin.json").is_file():
         raise PluginInstallError("Archive root must contain plugin.json directly.")
     return destination

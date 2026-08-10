@@ -6,10 +6,11 @@ import json
 import os
 import re
 import tempfile
+import urllib.parse
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.plugin_platform.models import PluginInspection
 from app.plugin_platform.registry import plugin_data_root
@@ -48,6 +49,11 @@ class PluginCredentialField(BaseModel):
         if _ENV_RE.fullmatch(value) is None or value in _RESERVED_ENV:
             raise ValueError("credential env name is invalid or reserved")
         return value
+
+    @model_validator(mode="after")
+    def valid_default(self) -> PluginCredentialField:
+        _validate_field_value(self, self.default)
+        return self
 
 
 class PluginCredentialDefinition(BaseModel):
@@ -120,6 +126,39 @@ def _has_value(value: str | bool | None) -> bool:
     return isinstance(value, bool) or isinstance(value, str) and bool(value)
 
 
+def _validate_field_value(
+    field: PluginCredentialField,
+    value: str | bool | None,
+) -> None:
+    if value is None or value == "":
+        return
+    if field.type == "boolean":
+        if not isinstance(value, bool):
+            raise ValueError(f"Credential {field.key!r} must be a boolean.")
+        return
+    if not isinstance(value, str):
+        raise ValueError(f"Credential {field.key!r} must be text.")
+    if field.type != "url":
+        return
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        hostname = parsed.hostname
+        parsed.port
+    except ValueError as exc:
+        raise ValueError(f"Credential {field.key!r} must be a valid URL.") from exc
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        raise ValueError(
+            f"Credential {field.key!r} must be an absolute HTTP(S) URL "
+            "without user information or a fragment."
+        )
+
+
 def credential_state(
     installation_id: str,
     inspection: PluginInspection,
@@ -131,6 +170,7 @@ def credential_state(
     fields: list[PluginCredentialFieldState] = []
     for field in definition.fields:
         value = values.get(field.key, field.default)
+        _validate_field_value(field, value)
         configured = _has_value(value)
         fields.append(
             PluginCredentialFieldState(
@@ -174,11 +214,7 @@ def save_credentials(
         if value is None or value == "":
             values.pop(key, None)
             continue
-        if field.type == "boolean":
-            if not isinstance(value, bool):
-                raise ValueError(f"Credential {key!r} must be a boolean.")
-        elif not isinstance(value, str):
-            raise ValueError(f"Credential {key!r} must be text.")
+        _validate_field_value(field, value)
         values[key] = value
 
     allowed = set(by_key)
@@ -222,6 +258,7 @@ def credential_environment(
     result: dict[str, str] = {}
     for field in definition.fields:
         value = values.get(field.key, field.default)
+        _validate_field_value(field, value)
         if not _has_value(value):
             continue
         result[field.env] = (
