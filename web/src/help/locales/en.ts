@@ -57,6 +57,11 @@ export const HELP_CATEGORIES_EN: HelpCategory[] = [
     description: 'Built-in browser and real Chrome/Edge',
   },
   {
+    id: 'plugins',
+    label: 'Plugins',
+    description: 'Portable Agent Skills and MCP packages',
+  },
+  {
     id: 'settings',
     label: 'Settings & safety',
     description: 'Providers, agents, MCP, sandbox',
@@ -1818,6 +1823,361 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'connection-settings',
       'troubleshooting-connection'
 ],
+  },
+  {
+    id: 'agent-plugins',
+    category: 'plugins',
+    title: 'Agent Plugins: install, trust, configure, and develop',
+    summary:
+      'Use Plugin Center to validate, import, inspect, configure, enable, edit, pack, update, and remove portable Agent Plugins. Understand the package boundary, trust review, credentials, Skill discovery, MCP runtime, and the checks to run when a plugin is not ready.',
+    keywords: [
+      'plugin',
+      'plugins',
+      'agent plugins',
+      'plugin center',
+      'evoplugin',
+      'plugin.json',
+      'mcp.json',
+      'skill.md',
+      'portable skills',
+      'stdio',
+      'streamable http',
+      'credentials',
+      'trust review',
+      'enable',
+      'link folder',
+      'pack archive',
+      'org.evoelsewhere.evoflux',
+      'extension namespace'
+],
+    setup:
+      'Open Plugins from either the Work or Coding sidebar. Use Add plugin → Import package for `.evoplugin`/ZIP, Link development folder for an unpacked directory, Validate folder for a read-only check, or Create plugin for a scaffold plus built-in editor.',
+    tricks: [
+      'A portable plugin contributes data and code through `plugin.json`, immediate-child `skills/*/SKILL.md`, and optional root `mcp.json`; it cannot inject custom EvoFlux UI.',
+      'Import and Link install disabled by default. Read the trust review before selecting Trust and enable.',
+      'Trust review lists executable commands and arguments, remote hosts, environment field names, and capabilities — never secret values.',
+      'Choose Keep disabled when anything is unexpected; you can still edit files and configure credentials.',
+      'Credentials are installation-scoped, stored outside the package, and injected only into that plugin’s stdio MCP processes.',
+      'Use the canonical namespaces `org.evoelsewhere.evoflux.credentials` and `org.evoelsewhere.evoflux.mcp` for new packages.',
+      'The legacy aliases `evoflux.credentials` and `evoflux.mcp` remain readable; canonical declarations win when both exist.',
+      'Plugin MCP servers appear in Settings → MCP servers with a plugin badge; they are not copied into global MCP configuration.',
+      'Plugin Skills become discoverable only while the installation is enabled and the Skill validates.',
+      'Link is for live local development; Import copies a managed package. Pack produces a deterministic `.evoplugin` ZIP wrapper.',
+      'Disabling stops/reconciles MCP runners and removes contributed Skills without deleting installation data.',
+      'Uninstall preserves plugin data by default; remove data only when you intentionally want credentials and mutable state gone.'
+],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Agent Plugins 1.0 is the portable package contract. EvoFlux supports Agent Skills plus MCP stdio and Streamable HTTP. A plugin is an unpacked directory with a root `plugin.json`; `.evoplugin` is only a deterministic ZIP distribution wrapper. Legacy SSE entries are diagnosed but not started. Managed Agent Plugins are separate from trusted in-process legacy Python hooks.',
+      },
+      {
+        type: 'tips',
+        items: [
+          'Required — `plugin.json` with the Agent Plugins 1.0 `$schema`, lowercase portable name, and optional version/description.',
+          'Skills — direct children only: `skills/<skill-name>/SKILL.md`; nested Skill folders are resources, not extra discoverable Skills.',
+          'MCP — optional root `mcp.json`; each server fails independently so one bad entry does not hide healthy siblings.',
+          'Mutable data — use `${PLUGIN_DATA}`; bundled read-only files resolve from `${PLUGIN_ROOT}`.',
+          'Host extensions — place EvoFlux-only declarations under the canonical reverse-domain namespaces in `plugin.json`.'
+],
+      },
+      {
+        type: 'p',
+        text: 'Safe install sequence: (1) Add plugin, (2) import an archive or link a directory, (3) read package/component diagnostics, (4) inspect the enable trust review, (5) keep disabled if command, host, environment field, or capability is unfamiliar, (6) configure Credentials if declared, (7) toggle on and confirm Trust and enable, (8) verify Skills and MCP status, (9) run a harmless first tool under ask permission mode.',
+      },
+      {
+        type: 'p',
+        text: 'Trust review is static: EvoFlux reads declarations without starting plugin code. Executable disclosure includes the exact program and argument array for stdio servers. Remote disclosure includes host, URL, and transport. Environment disclosure contains names only from `mcp.json` and the credential schema. Capabilities include contributed Agent Skills, MCP transports, and declared EvoFlux server capabilities. Installation is not a global grant; normal permission and sandbox checks still apply to every tool call.',
+      },
+      {
+        type: 'p',
+        text: 'Credentials: open a plugin card → Actions → Credentials. Supported fields are text, secret, URL, and boolean. Required fields must be configured before the form is complete. Secrets are masked on read and stored outside the package with restrictive file permissions. They overlay declared stdio environment entries, after which EvoFlux forces trusted `PLUGIN_ROOT` and `PLUGIN_DATA`. Streamable HTTP does not receive these saved values; never place live secrets in portable headers.',
+      },
+      {
+        type: 'p',
+        text: 'Runtime behavior: an enabled valid Skill joins the normal metadata catalog and loads only when activated. Loading a plugin Skill makes ready MCP tools from the same installation available for that run, subject to permission rules. Settings → Skills shows discovery/validation; Settings → MCP servers shows plugin-badged runtime state and tool names. Runtime names contain installation hashes, so author instructions should refer to stable server/tool suffixes rather than copying a generated prefix.',
+      },
+      {
+        type: 'p',
+        text: 'Development: Add plugin → Create plugin scaffolds portable files and opens the built-in editor. Use the file tree to open `plugin.json`, Skill instructions, scripts, and `mcp.json`; create or delete package entries, save, Validate, then Pack. Link the directory for live development. After changing declarations or implementation code, validate again and re-enable only after reviewing changed access. A package cannot ship a custom settings page or arbitrary frontend; Plugin Center owns lifecycle, credentials, diagnostics, and runtime UI.',
+      },
+      {
+        type: 'tips',
+        items: [
+          'Plugin does not install — open inspection diagnostics; fix fatal `plugin.json`, unsafe path, archive collision, symlink, size, or digest errors.',
+          'Skill is missing — enable the installation; confirm `skills/<name>/SKILL.md` is one level below `skills/`, has valid frontmatter, and is not shadowed by a higher-precedence project/user Skill.',
+          'MCP is missing from Settings — confirm the plugin is enabled, `mcp.json` validates, and the transport is stdio or Streamable HTTP rather than SSE.',
+          'MCP is error — expand the runtime row; check executable path, arguments, working directory, startup logs, required credentials, and whether stdout is reserved for stdio protocol messages.',
+          'Credentials page says unsupported — add `org.evoelsewhere.evoflux.credentials.fields` to `plugin.json`, then validate and return.',
+          'Remote server is not ready — verify URL/host reachability and literal headers; stored plugin credentials are intentionally not injected into Streamable HTTP.',
+          'Tools are not selected in chat — activate the matching plugin Skill or explicitly select the plugin MCP server for the agent; installation alone does not grant all tools.',
+          'Changes look stale — Validate or save again, refresh Plugin Center, then disable/enable to reconcile the runtime.'
+],
+      },
+      {
+        type: 'p',
+        text: 'CLI equivalent: `evoflux plugin inspect`, `create`, `link`, `install`, `show`, `enable`, `disable`, `pack`, `update`, and `uninstall`. CLI install/link also default to disabled. Run `show <installation-id>` and inspect `inspection.trust` before `enable`; use `--enabled` only when non-interactive automation has an independent trust gate.',
+      }
+],
+    related: [
+      'agents-settings',
+      'permissions-modes',
+      'workbench-tools',
+      'troubleshooting-connection'
+    ],
+    openAction: { type: 'workbench', tool: 'plugins' },
+  },
+  {
+    id: 'agent-plugins-authoring',
+    category: 'plugins',
+    title: 'Authoring reference: manifests, Skills, MCP, and extensions',
+    summary:
+      'Build a standards-compatible plugin directory with concrete file layouts and JSON examples. Learn which declarations are portable, which belong to EvoFlux extensions, and how to validate and package the result.',
+    keywords: ['plugin authoring', 'manifest', 'plugin.json example', 'mcp.json example', 'skill frontmatter', 'credentials schema', 'capabilities', 'package layout'],
+    setup: 'Start with Add plugin → Create plugin, or make the directory yourself and run `evoflux plugin inspect ./my-plugin` before linking or packing it.',
+    blocks: [
+      { type: 'heading', text: 'Package layout and ownership' },
+      {
+        type: 'code',
+        language: 'text',
+        caption: 'Portable directory',
+        code: 'my-plugin/\n├── plugin.json\n├── skills/\n│   └── release-audit/\n│       ├── SKILL.md\n│       ├── references/\n│       └── scripts/\n├── mcp.json\n├── server.py\n├── README.md\n└── LICENSE',
+      },
+      {
+        type: 'table',
+        columns: ['Path', 'Required', 'Meaning'],
+        rows: [
+          ['plugin.json', 'Yes', 'Portable package identity and host extensions.'],
+          ['skills/<name>/SKILL.md', 'No', 'Immediate-child Agent Skill; references/scripts stay inside its directory.'],
+          ['mcp.json', 'No', 'Portable stdio, Streamable HTTP, or legacy SSE declarations.'],
+          ['Implementation files', 'As needed', 'Bundled server code invoked by an MCP declaration.'],
+          ['README / LICENSE', 'Recommended', 'Human setup, provenance, constraints, and licensing.'],
+        ],
+      },
+      { type: 'heading', text: 'Minimal plugin.json' },
+      {
+        type: 'code',
+        language: 'json',
+        caption: 'Portable manifest',
+        code: '{\n  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",\n  "name": "release-audit",\n  "version": "0.1.0",\n  "description": "Audit a release with guided instructions and read-only tools.",\n  "author": { "name": "Example Team" },\n  "repository": "https://example.com/plugins/release-audit",\n  "license": "MIT",\n  "keywords": ["release", "audit"],\n  "extensions": {}\n}',
+      },
+      {
+        type: 'callout',
+        title: 'Manifest rules',
+        text: 'Names are 1–64 lowercase ASCII letters, digits, dots, or hyphens; they start/end alphanumeric and contain neither double hyphens nor consecutive dots. Unknown root fields warn and are ignored. Put client-specific data under extensions.',
+      },
+      { type: 'heading', text: 'Agent Skill contract' },
+      {
+        type: 'code',
+        language: 'markdown',
+        caption: 'skills/release-audit/SKILL.md',
+        code: '---\nname: release-audit\ndescription: Inspect release evidence, checks, and risk before publishing.\n---\n\n# Release audit\n\n1. Gather bounded evidence.\n2. Use the plugin MCP tools only when live data is required.\n3. Separate facts, inference, and missing evidence.\n4. Never publish or mutate a release without explicit authorization.',
+      },
+      {
+        type: 'p',
+        text: 'Skill name must match the portable Agent Skills naming contract. Write a precise description because it drives discovery. Keep the core workflow in SKILL.md and load large references only when needed. Refer to MCP tools by stable suffix because EvoFlux prefixes runtime names per installation.',
+      },
+      { type: 'heading', text: 'MCP stdio and Streamable HTTP' },
+      {
+        type: 'code',
+        language: 'json',
+        caption: 'mcp.json',
+        code: '{\n  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",\n  "mcpServers": {\n    "local": {\n      "type": "stdio",\n      "command": "python",\n      "args": ["${PLUGIN_ROOT}/server.py"],\n      "env": { "CACHE_DIR": "${PLUGIN_DATA}/cache" },\n      "cwd": "${PLUGIN_ROOT}"\n    },\n    "remote": {\n      "type": "streamable-http",\n      "url": "https://api.example.com/mcp",\n      "headers": { "X-Client": "evoflux-plugin" }\n    }\n  }\n}',
+      },
+      {
+        type: 'table',
+        columns: ['Transport', 'Use when', 'Important constraints'],
+        rows: [
+          ['stdio', 'Server code ships with the plugin.', 'No shell command string; keep protocol stdout clean; credentials may be injected.'],
+          ['streamable-http', 'A maintained remote endpoint provides MCP.', 'Redirects are disabled; package headers are literal; stored credentials are not injected.'],
+          ['sse', 'Legacy declaration compatibility only.', 'Validated and diagnosed, but EvoFlux does not start it.'],
+        ],
+      },
+      { type: 'heading', text: 'Credentials and capability extensions' },
+      {
+        type: 'code',
+        language: 'json',
+        caption: 'plugin.json extensions excerpt',
+        code: '{\n  "extensions": {\n    "org.evoelsewhere.evoflux.credentials": {\n      "fields": [\n        {\n          "key": "endpoint",\n          "label": "Service URL",\n          "type": "url",\n          "env": "SERVICE_URL",\n          "required": true\n        },\n        {\n          "key": "token",\n          "label": "API token",\n          "type": "secret",\n          "env": "SERVICE_TOKEN",\n          "required": true\n        }\n      ]\n    },\n    "org.evoelsewhere.evoflux.mcp": {\n      "servers": {\n        "local": { "capabilities": ["webbridge-safe"] }\n      }\n    }\n  }\n}',
+      },
+      {
+        type: 'callout',
+        tone: 'warning',
+        title: 'Do not package live secrets',
+        text: 'Credential declarations contain field metadata, never values. Do not commit tokens, insert them into Streamable HTTP headers, print them to logs/stdout, or ask users to paste them into chat.',
+      },
+      { type: 'heading', text: 'Validate, link, pack, and update' },
+      {
+        type: 'code',
+        language: 'shell',
+        caption: 'Authoring loop',
+        code: 'evoflux plugin inspect ./my-plugin\nevoflux plugin link ./my-plugin\nevoflux plugin show <installation-id>\nevoflux plugin enable <installation-id>\nevoflux plugin pack ./my-plugin\nevoflux plugin update <installation-id> ./my-plugin.evoplugin',
+      },
+      {
+        type: 'p',
+        text: 'Inspect after every contract change. Test component validation, startup, a harmless tool call, failure isolation, secret masking, result bounds, and disable/enable reconciliation. Pack only a valid directory; the archive remains a distribution format, not a new plugin contract.',
+      },
+    ],
+    related: ['agent-plugins', 'agent-plugins-runtime-security', 'agent-plugins-troubleshooting'],
+    openAction: { type: 'workbench', tool: 'plugins' },
+  },
+  {
+    id: 'agent-plugins-runtime-security',
+    category: 'plugins',
+    title: 'Runtime and security: trust, credentials, permissions, and data',
+    summary:
+      'Understand exactly what happens from static inspection to enablement, how data and credentials cross the runtime boundary, and which protections still apply after a plugin is trusted.',
+    keywords: ['plugin security', 'trust model', 'environment', 'plugin data', 'permission', 'sandbox', 'runtime manager', 'precedence', 'secret masking'],
+    setup: 'Import or link the package, keep it disabled, and compare its trust review with the source files before enabling it.',
+    blocks: [
+      { type: 'heading', text: 'Lifecycle state machine' },
+      {
+        type: 'table',
+        columns: ['Stage', 'Code runs?', 'What EvoFlux does'],
+        rows: [
+          ['Validate', 'No', 'Parse schemas, paths, URLs, components, extensions, and package digest.'],
+          ['Install / Link', 'No by default', 'Register a disabled managed copy or developer directory.'],
+          ['Trust review', 'No', 'Disclose commands, remote hosts, environment names, Skills/transports, and capabilities.'],
+          ['Enable', 'Yes', 'Publish valid Skills and reconcile valid MCP runners.'],
+          ['Disable', 'Stops code', 'Remove contributed Skills and stop/reconcile MCP runners; preserve data.'],
+          ['Uninstall', 'No', 'Remove registration/package; preserve data unless explicitly deleted.'],
+        ],
+      },
+      { type: 'heading', text: 'What trust review means' },
+      {
+        type: 'table',
+        columns: ['Disclosure', 'Source', 'Question to ask'],
+        rows: [
+          ['Executable + args', 'stdio entries in mcp.json', 'Is this the expected interpreter/binary and bundled entrypoint?'],
+          ['Remote host + URL', 'Streamable HTTP/SSE entries', 'Do I trust this operator, destination, port, and path?'],
+          ['Environment names', 'stdio env plus credential schema', 'Why does the process need each variable?'],
+          ['Capabilities', 'Skills, MCP transports, EvoFlux extension', 'Does the declared scope match the plugin purpose?'],
+        ],
+      },
+      {
+        type: 'callout',
+        tone: 'warning',
+        title: 'Trust is not permission bypass',
+        text: 'Trust allows declared plugin components to participate in the runtime. Individual MCP tool calls still pass through agent selection, permission mode, and sandbox policy. A Skill activation is not authorization for destructive work.',
+      },
+      { type: 'heading', text: 'Process and data boundaries' },
+      {
+        type: 'code',
+        language: 'text',
+        caption: 'Host-mediated flow',
+        code: 'plugin package (read-only files)\n        │ validate + trust review\n        ▼\ninstallation registry ── enabled? ──► Skill catalog\n        │                              MCP manager\n        └── private data/<id>/ ──────► PLUGIN_DATA + credentials env',
+      },
+      {
+        type: 'p',
+        text: 'Each installation has a stable private data directory outside the package. Updates preserve installation ID and PLUGIN_DATA. Credentials are stored there with restrictive permissions and injected only through declared environment names into stdio. Reserved PLUGIN_ROOT and PLUGIN_DATA are forced by the host after overrides. Package paths, symlinks, archive entries, URLs, headers, cwd, and placeholder expansion are validated before runtime adaptation.',
+      },
+      { type: 'heading', text: 'Skill and tool visibility' },
+      {
+        type: 'table',
+        columns: ['Concern', 'Rule'],
+        rows: [
+          ['Skill precedence', 'Project/user/admin roots override enabled plugins; enabled plugins override EvoFlux built-ins.'],
+          ['MCP configuration', 'Plugin declarations stay in a separate in-memory manager and never modify global mcp.json.'],
+          ['Agent availability', 'Explicit MCP selection or activation of a same-installation Skill makes ready tools available for that run.'],
+          ['WebBridge', 'Only explicitly declared safe capabilities may keep a non-browser plugin server visible in a WebBridge run.'],
+          ['Failure isolation', 'Bad Skill/server entries are isolated; fatal manifest/package errors reject the package.'],
+        ],
+      },
+      { type: 'heading', text: 'Review checklist before enable' },
+      {
+        type: 'tips',
+        items: [
+          'Verify publisher/source, package digest, license, and expected version.',
+          'Read SKILL.md for hidden mutation instructions, secret requests, or overly broad claims.',
+          'Inspect executable, arguments, bundled scripts, dependencies, cwd, and write destinations.',
+          'Verify remote ownership and that headers contain no live credential.',
+          'Confirm every environment field and capability is necessary.',
+          'Configure least-privilege service credentials and test with a harmless read-only call.',
+          'Keep permission mode on ask until behavior and result bounds are understood.',
+        ],
+      },
+    ],
+    related: ['agent-plugins', 'agent-plugins-authoring', 'permissions-modes', 'sandbox-settings'],
+    openAction: { type: 'workbench', tool: 'plugins' },
+  },
+  {
+    id: 'agent-plugins-troubleshooting',
+    category: 'plugins',
+    title: 'Agent Plugins troubleshooting and diagnostics',
+    summary:
+      'Diagnose installation, Skill discovery, credential setup, MCP startup, missing tools, stale development links, and packaging failures in a deterministic order.',
+    keywords: ['plugin error', 'mcp not ready', 'skill missing', 'credentials unsupported', 'plugin logs', 'validation diagnostic', 'stale plugin', 'archive error'],
+    setup: 'Keep the plugin disabled while inspecting package errors. Use Plugin Center diagnostics and `evoflux plugin inspect/show` before changing global MCP or reinstalling EvoFlux.',
+    blocks: [
+      { type: 'heading', text: 'Symptom → likely cause → next check' },
+      {
+        type: 'table',
+        columns: ['Symptom', 'Likely cause', 'Next check'],
+        rows: [
+          ['Import rejected', 'Fatal manifest, unsafe archive/path, symlink, duplicate name, size/ratio limit', 'Read package diagnostics; inspect unpacked directory.'],
+          ['Plugin valid but Skill absent', 'Disabled install, invalid/deep Skill, name collision', 'Enable; verify immediate-child SKILL.md and precedence.'],
+          ['MCP absent from Settings', 'Disabled install, invalid mcp.json, only SSE entries', 'Inspect server diagnostics and supported transport.'],
+          ['MCP starting forever', 'Process does not initialize or corrupts stdout', 'Run entrypoint manually; move logs to stderr; verify dependencies.'],
+          ['MCP error', 'Bad command/args/cwd, missing credential, network/TLS failure', 'Expand runtime error and compare trust/config.'],
+          ['Credentials unsupported', 'No canonical/legacy credential extension', 'Add fields extension, save, validate, refresh.'],
+          ['Credentials incomplete', 'Required field missing or invalid URL/type', 'Fill required fields; leave configured secret blank only to preserve it.'],
+          ['Tools not offered to agent', 'Server not ready or not selected/activated', 'Select MCP for agent or activate same-plugin Skill.'],
+          ['Linked code looks stale', 'Unsaved file or runtime not reconciled', 'Save, Validate, refresh, disable/enable.'],
+          ['Update fails', 'Invalid replacement or identity/package safety failure', 'Inspect new directory/archive before update; keep old installation.'],
+        ],
+      },
+      { type: 'heading', text: 'Ordered diagnostic loop' },
+      {
+        type: 'code',
+        language: 'shell',
+        caption: 'CLI evidence',
+        code: 'evoflux plugin inspect ./plugin-dir\nevoflux plugin list\nevoflux plugin show <installation-id>\nevoflux plugin disable <installation-id>\n# fix files or credentials, then:\nevoflux plugin enable <installation-id>',
+      },
+      {
+        type: 'tips',
+        items: [
+          '1) Fix package-level errors first; component debugging is unreliable when plugin.json is invalid.',
+          '2) Confirm the installation is the expected source_type, root, version, digest, and enabled state.',
+          '3) Check Skill and MCP component diagnostics independently.',
+          '4) Compare trust review with actual files and intended dependencies.',
+          '5) Configure required credentials without exposing values in chat/logs.',
+          '6) Inspect Settings → MCP servers runtime error and registered tool names.',
+          '7) Test the server entrypoint with the same cwd and non-secret placeholder values.',
+          '8) Re-enable, then make one bounded read-only tool call under ask mode.',
+        ],
+      },
+      { type: 'heading', text: 'Common stdio protocol mistakes' },
+      {
+        type: 'table',
+        columns: ['Mistake', 'Effect', 'Fix'],
+        rows: [
+          ['Logs printed to stdout', 'JSON-RPC stream is corrupted', 'Send operational logs to stderr.'],
+          ['Shell expression used as command', 'No shell expansion; executable not found', 'Use command plus separate args array.'],
+          ['Relative file assumes caller cwd', 'Works manually, fails in host', 'Use PLUGIN_ROOT or declare contained cwd.'],
+          ['Writes into managed package', 'Update loses state or permission fails', 'Write mutable state under PLUGIN_DATA.'],
+          ['Unbounded results/startup', 'Slow or oversized tool responses', 'Add timeouts, pagination, limits, and sanitized errors.'],
+        ],
+      },
+      {
+        type: 'callout',
+        title: 'Do not “fix” plugin MCP in global Settings',
+        text: 'Plugin-owned MCP is intentionally managed separately. Edit the plugin mcp.json or credentials, then validate/reconcile it. Adding a duplicate global server creates a second identity and hides the real package problem.',
+      },
+      { type: 'heading', text: 'Evidence to include in a bug report' },
+      {
+        type: 'tips',
+        items: [
+          'EvoFlux version/OS and whether the app is packaged or dev.',
+          'Plugin name/version/source type and content digest — never credential values.',
+          'Package, Skill, and MCP diagnostic codes/messages.',
+          'Runtime server state, sanitized error, transport, and stable tool suffixes.',
+          'Minimal plugin tree plus redacted plugin.json/mcp.json.',
+          'Exact operation: import/link/update/enable and whether disable/enable changes it.',
+        ],
+      },
+    ],
+    related: ['agent-plugins', 'agent-plugins-authoring', 'agent-plugins-runtime-security', 'troubleshooting-connection'],
+    openAction: { type: 'workbench', tool: 'plugins' },
   },
   {
     id: 'agents-settings',

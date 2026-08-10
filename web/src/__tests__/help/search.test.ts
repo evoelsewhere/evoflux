@@ -70,6 +70,43 @@ describe('searchHelpArticles', () => {
     expect(hits.some((hit) => hit.article.id === 'sessions-folders')).toBe(true)
   })
 
+  it('finds the detailed Agent Plugins guide in every locale', () => {
+    expect(
+      searchHelpArticles(getHelpArticles('en'), 'trust review credentials').some(
+        (hit) => hit.article.id === 'agent-plugins',
+      ),
+    ).toBe(true)
+    expect(
+      searchHelpArticles(getHelpArticles('vi'), 'plugin credentials trust').some(
+        (hit) => hit.article.id === 'agent-plugins',
+      ),
+    ).toBe(true)
+    expect(
+      searchHelpArticles(getHelpArticles('ja'), 'plugin 資格情報').some(
+        (hit) => hit.article.id === 'agent-plugins',
+      ),
+    ).toBe(true)
+    expect(
+      getHelpArticles('vi').find((article) => article.id === 'agent-plugins')
+        ?.openAction,
+    ).toEqual({ type: 'workbench', tool: 'plugins' })
+    for (const locale of ['en', 'vi', 'ja'] as const) {
+      expect(
+        getHelpArticles(locale).filter((article) => article.category === 'plugins'),
+      ).toHaveLength(4)
+    }
+    expect(
+      searchHelpArticles(getHelpArticles('vi'), 'Thư mục portable').some(
+        (hit) => hit.article.id === 'agent-plugins-authoring',
+      ),
+    ).toBe(true)
+    expect(
+      searchHelpArticles(getHelpArticles('en'), 'plugin logs').some(
+        (hit) => hit.article.id === 'agent-plugins-troubleshooting',
+      ),
+    ).toBe(true)
+  })
+
   it('filters by category when not searching', () => {
     const coding = filterArticlesByCategory(HELP_ARTICLES, 'coding')
     expect(coding.every((article) => article.category === 'coding')).toBe(true)

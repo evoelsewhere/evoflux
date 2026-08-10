@@ -49,6 +49,71 @@ function BlockView({ block }: { block: HelpBlock }) {
   if (block.type === 'p') {
     return <p className="text-sm leading-relaxed text-(--color-text-2)">{block.text}</p>
   }
+  if (block.type === 'heading') {
+    return (
+      <h3 className="border-b border-(--color-border) pb-1.5 pt-2 text-sm font-semibold text-(--color-text)">
+        {block.text}
+      </h3>
+    )
+  }
+  if (block.type === 'code') {
+    return (
+      <figure className="overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-page)">
+        {(block.caption || block.language) && (
+          <figcaption className="flex items-center justify-between gap-3 border-b border-(--color-border) px-3 py-1.5 text-[11px] text-(--color-text-muted)">
+            <span>{block.caption}</span>
+            {block.language && <span className="font-mono uppercase">{block.language}</span>}
+          </figcaption>
+        )}
+        <pre className="overflow-x-auto p-3 text-xs leading-relaxed text-(--color-text-2)">
+          <code>{block.code}</code>
+        </pre>
+      </figure>
+    )
+  }
+  if (block.type === 'table') {
+    return (
+      <div className="overflow-x-auto rounded-lg border border-(--color-border)">
+        <table className="w-full min-w-lg border-collapse text-left text-xs">
+          <thead className="bg-(--bg-key)">
+            <tr>
+              {block.columns.map((column) => (
+                <th key={column} className="border-b border-(--color-border) px-3 py-2 font-semibold text-(--color-text)">
+                  {column}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {block.rows.map((row, rowIndex) => (
+              <tr key={`${rowIndex}-${row.join('-')}`} className="border-b border-(--color-border) last:border-b-0">
+                {block.columns.map((_, columnIndex) => (
+                  <td key={columnIndex} className="align-top px-3 py-2 leading-relaxed text-(--color-text-2)">
+                    {row[columnIndex] ?? ''}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+  if (block.type === 'callout') {
+    return (
+      <div
+        className={cn(
+          'rounded-lg border px-3 py-2.5',
+          block.tone === 'warning'
+            ? 'border-(--color-warning)/30 bg-(--color-warning-subtle)'
+            : 'border-(--color-accent)/25 bg-(--color-accent-soft)/35',
+        )}
+      >
+        <p className="text-xs font-semibold text-(--color-text)">{block.title}</p>
+        <p className="mt-1 text-sm leading-relaxed text-(--color-text-2)">{block.text}</p>
+      </div>
+    )
+  }
   if (block.type === 'tips') {
     return (
       <ul className="space-y-1.5 rounded-lg border border-(--color-border) bg-(--bg-key)/40 px-3 py-2.5">

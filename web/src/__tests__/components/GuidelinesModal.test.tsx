@@ -66,6 +66,21 @@ describe('GuidelinesModal', () => {
     expect(screen.getByText('Tricks')).toBeInTheDocument()
   })
 
+  it('renders rich plugin documentation blocks', () => {
+    useUIStore.getState().openGuidelines('agent-plugins-authoring')
+    render(<GuidelinesModal />)
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Authoring reference: manifests, Skills, MCP, and extensions',
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Package layout and ownership' })).toBeInTheDocument()
+    expect(screen.getByText('Portable directory')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Path' })).toBeInTheDocument()
+    expect(screen.getByText('Do not package live secrets')).toBeInTheDocument()
+  })
+
   it('sidebar Help action opens guidelines via the store', () => {
     expect(useUIStore.getState().guidelinesOpen).toBe(false)
     useUIStore.getState().openGuidelines()
