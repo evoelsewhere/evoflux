@@ -20,8 +20,14 @@ from app.conductor.client import (
     CredentialStoreError,
     CredentialStoreProtocol,
 )
+from app.conductor.constants.telemetry import (
+    TELEMETRY_BATCH_SIZE,
+    TelemetryCollectionLevel,
+    TelemetryField,
+)
 from app.conductor.models import ReconcileResult, RegistrationRequest
 from app.conductor.reconciler import ResourceReconciler
+from app.conductor.telemetry import TelemetryOutbox, telemetry_outbox
 from app.core.config import settings
 from app.core.runtime_settings import (
     ConductorSettings,
@@ -60,7 +66,11 @@ class ConductorStatus(BaseModel):
 
 
 class ConductorService:
-    def __init__(self, credential_store: CredentialStoreProtocol | None = None) -> None:
+    def __init__(
+        self,
+        credential_store: CredentialStoreProtocol | None = None,
+        telemetry_store: TelemetryOutbox | None = None,
+    ) -> None:
         self.status = ConductorStatus()
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
@@ -68,6 +78,7 @@ class ConductorService:
         self._client: ConductorClient | None = None
         self._credential_store = credential_store
         self._reconciler = ResourceReconciler()
+        self._telemetry_store = telemetry_store or telemetry_outbox
 
     def _config(self) -> ConductorSettings:
         return load_runtime_settings().conductor
@@ -227,6 +238,7 @@ class ConductorService:
     async def disconnect(self) -> ConductorStatus:
         await self.stop()
         self._credentials().delete()
+        self._telemetry_store.clear()
         runtime = self._clear_registration_state()
         self.status = ConductorStatus(
             enabled=runtime.conductor.enabled,
@@ -429,6 +441,44 @@ class ConductorService:
         }
         await self._client.report_observed_state(observed)
         await self._client.report_inventory(self.inventory())
+        await self._flush_telemetry()
+
+    async def _flush_telemetry(self) -> None:
+        if self._client is None:
+            return
+        config = self._config()
+        if not config.installation_id or config.collection_level in {
+            None,
+            TelemetryCollectionLevel.OFF,
+        }:
+            return
+        events = self._telemetry_store.peek(
+            config.installation_id,
+            limit=TELEMETRY_BATCH_SIZE,
+        )
+        if not events:
+            return
+        try:
+            await self._client.report_telemetry(config.installation_id, events)
+        except (
+            ConductorRequestError,
+            CredentialStoreError,
+            httpx.HTTPError,
+            OSError,
+        ) as exc:
+            logger.warning(
+                "conductor_telemetry_flush_deferred error_type={} pending={}",
+                type(exc).__name__,
+                self._telemetry_store.count(),
+            )
+            return
+        self._telemetry_store.acknowledge(
+            {
+                event_id
+                for event in events
+                if isinstance((event_id := event.get(TelemetryField.EVENT_ID)), str)
+            }
+        )
 
     def inventory(self) -> dict[str, Any]:
         return {
