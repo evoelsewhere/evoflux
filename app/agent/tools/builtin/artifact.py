@@ -176,9 +176,10 @@ async def _artifact(
 ) -> str | ToolResult:
     """Create and publish native document artifacts through one durable lifecycle.
 
-    Project content remains format-specific: Word uses OOXML/DOCX semantics,
-    Excel and PowerPoint use @oai/artifact-tool, and PDF uses its own flow/form
-    schema. Call preview before publish. Publish never rebuilds a document.
+    Project content remains format-specific: Word, Excel, and PowerPoint use
+    typed OOXML engines, SVG provides the static PPTX fidelity lane, and PDF
+    uses its own flow/form schema. Call preview before publish. Publish never
+    rebuilds a document.
     """
 
     service = get_artifact_service()

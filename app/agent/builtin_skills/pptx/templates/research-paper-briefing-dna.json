@@ -157,98 +157,98 @@
   "layouts": [
     {
       "id": "cover-split",
-      "css_class": "layout-cover-split",
+      "svg_group_id": "layout-cover-split",
       "dominant_role": "identity",
       "required_roles": ["claim", "signature-visual", "citation"],
       "max_supporting_units": 3
     },
     {
       "id": "claim-evidence",
-      "css_class": "layout-claim-evidence",
+      "svg_group_id": "layout-claim-evidence",
       "dominant_role": "claim",
       "required_roles": ["claim", "evidence", "implication"],
       "max_supporting_units": 2
     },
     {
       "id": "problem-funnel",
-      "css_class": "layout-problem-funnel",
+      "svg_group_id": "layout-problem-funnel",
       "dominant_role": "premise",
       "required_roles": ["limitations", "comparison", "research-question"],
       "max_supporting_units": 4
     },
     {
       "id": "process-cascade",
-      "css_class": "layout-process-cascade",
+      "svg_group_id": "layout-process-cascade",
       "dominant_role": "causality",
       "required_roles": ["stages", "mechanism", "implication"],
       "max_supporting_units": 4
     },
     {
       "id": "contribution-triptych",
-      "css_class": "layout-contribution-triptych",
+      "svg_group_id": "layout-contribution-triptych",
       "dominant_role": "novelty",
       "required_roles": ["architecture", "efficiency", "effectiveness"],
       "max_supporting_units": 3
     },
     {
       "id": "architecture-main-aside",
-      "css_class": "layout-architecture-main-aside",
+      "svg_group_id": "layout-architecture-main-aside",
       "dominant_role": "mechanism",
       "required_roles": ["architecture-figure", "reading-guide"],
       "max_supporting_units": 4
     },
     {
       "id": "mechanism-two-plus-one",
-      "css_class": "layout-mechanism-two-plus-one",
+      "svg_group_id": "layout-mechanism-two-plus-one",
       "dominant_role": "mechanism",
       "required_roles": ["mechanism-a", "mechanism-b", "interpretation"],
       "max_supporting_units": 3
     },
     {
       "id": "equation-focus",
-      "css_class": "layout-equation-focus",
+      "svg_group_id": "layout-equation-focus",
       "dominant_role": "mechanism",
       "required_roles": ["equation", "term-decomposition", "implication"],
       "max_supporting_units": 4
     },
     {
       "id": "evidence-comparison",
-      "css_class": "layout-evidence-comparison",
+      "svg_group_id": "layout-evidence-comparison",
       "dominant_role": "evidence",
       "required_roles": ["comparison", "reading-guide", "takeaway"],
       "max_supporting_units": 4
     },
     {
       "id": "results-scoreboard",
-      "css_class": "layout-results-scoreboard",
+      "svg_group_id": "layout-results-scoreboard",
       "dominant_role": "evidence",
       "required_roles": ["headline-metrics", "experiment-detail", "conditions"],
       "max_supporting_units": 5
     },
     {
       "id": "ablation-matrix",
-      "css_class": "layout-ablation-matrix",
+      "svg_group_id": "layout-ablation-matrix",
       "dominant_role": "trust",
       "required_roles": ["ablation", "interpretation", "caveat"],
       "max_supporting_units": 4
     },
     {
       "id": "interpretability-gallery",
-      "css_class": "layout-interpretability-gallery",
+      "svg_group_id": "layout-interpretability-gallery",
       "dominant_role": "trust",
       "required_roles": ["dominant-figure", "supporting-figures", "claim-captions"],
       "max_supporting_units": 4
     },
     {
       "id": "timeline-impact",
-      "css_class": "layout-timeline-impact",
+      "svg_group_id": "layout-timeline-impact",
       "dominant_role": "implication",
       "required_roles": ["milestones", "impact", "takeaway"],
       "max_supporting_units": 4
     },
     {
       "id": "synthesis-three-lens",
-      "css_class": "layout-synthesis-three-lens",
+      "svg_group_id": "layout-synthesis-three-lens",
       "dominant_role": "synthesis",
       "required_roles": ["contribution", "mechanism", "discussion"],
       "max_supporting_units": 5

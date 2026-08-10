@@ -76,7 +76,7 @@ objects outside the declared editable parts.
 
 ## Verification gate
 
-`preview` renders through LibreOffice and Poppler. Structural QA checks package
-integrity and required Word parts; template QA additionally checks every
-unrelated part hash. Do not publish if any error remains. Placeholder warnings
-require deliberate review rather than automatic deletion.
+`preview` uses the bundled semantic OOXML renderer. Structural QA checks
+package integrity and required Word parts; template QA additionally checks
+every unrelated part hash. Do not publish if any error remains. Placeholder
+warnings require deliberate review rather than automatic deletion.

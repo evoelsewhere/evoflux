@@ -44,9 +44,13 @@ dependencies = [
     "python-docx>=1.2.0",
     "openpyxl>=3.1.5",
     "python-pptx>=1.0.2",
+    # Rust-backed SVG rasterization for deterministic PPTX visual shells.
+    "resvg-py>=0.3.4",
     # First-class PDF inspection, native generation, AcroForm filling, and
     # structural QA for Artifact Fabric.
     "pypdf>=6.1.0",
+    # Bundled PDF renderer used by PDF and document QA.
+    "pypdfium2>=5.7.0",
     # Pixel-level PPTX/PDF visual parity gates.
     "pillow>=12.0.0",
     "reportlab>=4.4.0",

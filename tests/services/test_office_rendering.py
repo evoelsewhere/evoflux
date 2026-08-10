@@ -1,113 +1,51 @@
 from __future__ import annotations
 
 from pathlib import Path
-import subprocess
 
-import pytest
+from docx import Document
 
 from app.services import docx_document_pipeline
 from app.services.office import rendering
 
 
-@pytest.fixture(autouse=True)
-def _isolate_binaries(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PATH", "")
-    monkeypatch.delenv(rendering.SOFFICE_BIN_ENV, raising=False)
-    monkeypatch.delenv(rendering.PDFTOPPM_BIN_ENV, raising=False)
-    monkeypatch.setattr(
-        rendering, "codex_runtime_dependencies", lambda: Path("/nowhere")
-    )
-
-
-def test_renderer_is_unavailable_without_libreoffice() -> None:
-    assert rendering.renderer_available() is False
-
-
-def test_renderer_is_available_once_both_binaries_resolve(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    soffice = tmp_path / "soffice"
-    pdftoppm = tmp_path / "pdftoppm"
-    for binary in (soffice, pdftoppm):
-        binary.write_text("runtime placeholder\n", encoding="utf-8")
-    monkeypatch.setenv(rendering.SOFFICE_BIN_ENV, str(soffice))
-    monkeypatch.setenv(rendering.PDFTOPPM_BIN_ENV, str(pdftoppm))
-
+def test_internal_renderer_is_always_available() -> None:
     assert rendering.renderer_available() is True
 
 
-def test_render_pages_reports_a_conversion_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_render_pages_creates_docx_preview_without_external_binary(
+    tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(rendering, "find_render_binary", lambda *a, **k: "/bin/true")
-
-    def failed_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess:
-        return subprocess.CompletedProcess(command, 1, "", "LibreOffice exploded")
-
-    monkeypatch.setattr(subprocess, "run", failed_run)
+    source = tmp_path / "letter.docx"
+    document = Document()
+    document.add_heading("Portable preview", level=1)
+    document.add_paragraph("No office suite is installed or launched.")
+    document.save(source)
 
     pages, issues = rendering.render_pages(
-        tmp_path / "deck.pptx", tmp_path / "out", code_prefix="pptx"
+        source, tmp_path / "previews", code_prefix="docx"
+    )
+
+    assert issues == []
+    assert [path.name for path in pages] == ["page-001.png"]
+    assert pages[0].stat().st_size > 0
+
+
+def test_render_pages_reports_unsupported_format(tmp_path: Path) -> None:
+    source = tmp_path / "notes.txt"
+    source.write_text("plain text", encoding="utf-8")
+
+    pages, issues = rendering.render_pages(
+        source, tmp_path / "previews", code_prefix="document"
     )
 
     assert pages == []
-    # The code prefix identifies the caller, so DOCX and PPTX stay distinguishable.
-    assert issues == [
-        {
-            "severity": "error",
-            "code": "pptx-render-failed",
-            "message": "LibreOffice exploded",
-        }
-    ]
+    assert issues[0]["code"] == "document-render-failed"
+    assert "unsupported render format" in issues[0]["message"]
 
 
-def test_render_pages_passes_a_portable_profile_uri(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_docx_pipeline_delegates_to_shared_internal_renderer(
+    tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setattr(rendering, "find_render_binary", lambda *a, **k: "binary")
-    source = tmp_path / "deck.pptx"
-    seen_command: list[str] = []
-
-    def failed_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess:
-        seen_command.extend(command)
-        return subprocess.CompletedProcess(command, 1, "", "expected failure")
-
-    monkeypatch.setattr(subprocess, "run", failed_run)
-
-    rendering.render_pages(source, tmp_path / "path with spaces", code_prefix="pptx")
-
-    profile_arg = next(arg for arg in seen_command if arg.startswith("-env:UserInstallation="))
-    assert profile_arg.startswith("-env:UserInstallation=file://")
-    assert "path%20with%20spaces" in profile_arg
-    assert "\\" not in profile_arg
-
-
-def test_render_pages_reports_a_raster_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(rendering, "find_render_binary", lambda *a, **k: "/bin/true")
-    source = tmp_path / "deck.pptx"
-
-    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess:
-        if "--convert-to" in command:
-            outdir = Path(command[command.index("--outdir") + 1])
-            (outdir / f"{source.stem}.pdf").write_bytes(b"%PDF-1.4")
-            return subprocess.CompletedProcess(command, 0, "", "")
-        return subprocess.CompletedProcess(command, 1, "", "pdftoppm exploded")
-
-    monkeypatch.setattr(subprocess, "run", run)
-
-    pages, issues = rendering.render_pages(source, tmp_path / "out", code_prefix="docx")
-
-    assert pages == []
-    assert issues[0]["code"] == "docx-raster-failed"
-
-
-def test_docx_pipeline_delegates_to_the_shared_renderer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The DOCX pipeline keeps its issue codes now that rendering is shared."""
-
     seen: dict[str, object] = {}
 
     def fake_render_pages(
@@ -124,5 +62,8 @@ def test_docx_pipeline_delegates_to_the_shared_renderer(
 
     assert issues == []
     assert pages == [tmp_path / "previews" / "page-001.png"]
-    assert seen["code_prefix"] == "docx"
-    assert seen["dpi"] == 144
+    assert seen == {
+        "source": tmp_path / "letter.docx",
+        "code_prefix": "docx",
+        "dpi": 144,
+    }

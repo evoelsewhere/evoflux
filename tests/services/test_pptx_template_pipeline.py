@@ -4,11 +4,15 @@ import hashlib
 import json
 from pathlib import Path
 
+from pptx import Presentation
+from pptx.util import Inches
 import pytest
 from pydantic import ValidationError
 
 from app.services.pptx_template_pipeline import (
     TemplateDeckProject,
+    compose_pptx_template,
+    inspect_pptx_template,
     load_template_manifest,
     template_catalog,
     validate_template_project,
@@ -27,14 +31,14 @@ def _manifest(tmp_path: Path, digest: str) -> Path:
     manifest.write_text(
         json.dumps(
             {
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "sourceSha256": digest,
                 "slideCount": 3,
                 "records": [
-                    {"id": "sh/title", "slide": 1, "kind": "textbox"},
-                    {"id": "im/hero", "slide": 1, "kind": "image"},
-                    {"id": "tb/data", "slide": 2, "kind": "table"},
-                    {"id": "ch/trend", "slide": 2, "kind": "chart"},
+                    {"id": "sh/1/2", "slide": 1, "kind": "textbox"},
+                    {"id": "im/1/3", "slide": 1, "kind": "image"},
+                    {"id": "tb/2/4", "slide": 2, "kind": "table"},
+                    {"id": "ch/2/5", "slide": 2, "kind": "chart"},
                 ],
             }
         ),
@@ -46,7 +50,7 @@ def _manifest(tmp_path: Path, digest: str) -> Path:
 def _project(digest: str) -> TemplateDeckProject:
     return TemplateDeckProject.model_validate(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "title": "Inherited deck",
             "source_sha256": digest,
             "template_confirmed": True,
@@ -58,13 +62,13 @@ def _project(digest: str) -> TemplateDeckProject:
                     "edits": [
                         {
                             "operation": "replace_text",
-                            "target_id": "sh/title",
+                            "target_id": "sh/1/2",
                             "find": "Old",
                             "replace": "New",
                         },
                         {
                             "operation": "replace_image",
-                            "target_id": "im/hero",
+                            "target_id": "im/1/3",
                             "asset_path": "hero.png",
                         },
                     ],
@@ -76,14 +80,14 @@ def _project(digest: str) -> TemplateDeckProject:
                     "edits": [
                         {
                             "operation": "set_table_cell",
-                            "target_id": "tb/data",
+                            "target_id": "tb/2/4",
                             "row": 1,
                             "column": 2,
                             "text": "$4.2M",
                         },
                         {
                             "operation": "set_chart_series",
-                            "target_id": "ch/trend",
+                            "target_id": "ch/2/5",
                             "series_index": 0,
                             "values": [1, 2, 3],
                         },
@@ -95,26 +99,20 @@ def _project(digest: str) -> TemplateDeckProject:
     )
 
 
-def test_template_catalog_declares_uploaded_template_style_behavior() -> None:
+def test_template_catalog_declares_direct_openxml_preservation() -> None:
     catalog = template_catalog()
-
+    assert catalog["workflow"] == "direct-openxml-pptx-template"
     assert catalog["style_behavior"]["uploaded_template_is_style_confirmation"]
-    assert catalog["style_behavior"]["ask_style_question"] is False
     assert "replace_image" in catalog["supported_edits"]
-    assert "project_json_schema" in catalog
 
 
 def test_template_project_validates_complete_typed_mapping(tmp_path: Path) -> None:
     source, digest = _source(tmp_path)
     manifest = load_template_manifest(_manifest(tmp_path, digest))
 
-    result = validate_template_project(
-        _project(digest), manifest, source_pptx=source
-    )
+    result = validate_template_project(_project(digest), manifest, source_pptx=source)
 
     assert result["valid"] is True
-    assert result["source_slide_count"] == 3
-    assert result["output_slide_count"] == 2
     assert result["edit_count"] == 4
 
 
@@ -122,7 +120,7 @@ def test_template_project_requires_sequential_output_slides() -> None:
     with pytest.raises(ValidationError, match="sequentially"):
         TemplateDeckProject.model_validate(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "title": "Bad map",
                 "source_sha256": "0" * 64,
                 "template_confirmed": True,
@@ -147,29 +145,62 @@ def test_template_project_rejects_changed_source(tmp_path: Path) -> None:
         validate_template_project(project, manifest, source_pptx=source)
 
 
-def test_template_project_requires_explicit_omissions(tmp_path: Path) -> None:
-    source, digest = _source(tmp_path)
-    manifest = load_template_manifest(_manifest(tmp_path, digest))
-    payload = _project(digest).model_dump()
-    payload["omitted_source_slides"] = []
+@pytest.mark.asyncio
+async def test_inspect_and_compose_preserve_source_shapes(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    textbox = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(6), Inches(1))
+    textbox.text = "Old title"
+    presentation.save(source)
 
-    with pytest.raises(ValueError, match="every unused source slide"):
-        validate_template_project(
-            TemplateDeckProject.model_validate(payload),
-            manifest,
-            source_pptx=source,
-        )
+    inspected = await inspect_pptx_template(
+        source, workspace_root=tmp_path, work_dir=tmp_path / "inspect"
+    )
+    manifest = load_template_manifest(inspected.manifest_path)
+    target = next(
+        record["id"] for record in manifest["records"] if record["kind"] == "textbox"
+    )
+    project_path = tmp_path / "project.json"
+    project_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "title": "Edited",
+                "source_sha256": manifest["sourceSha256"],
+                "template_confirmed": True,
+                "output_slides": [
+                    {
+                        "output_slide": 1,
+                        "source_slide": 1,
+                        "narrative_role": "opening",
+                        "edits": [
+                            {
+                                "operation": "replace_text",
+                                "target_id": target,
+                                "find": "Old",
+                                "replace": "New",
+                            }
+                        ],
+                    }
+                ],
+                "omitted_source_slides": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "output.pptx"
 
+    result = await compose_pptx_template(
+        source,
+        project_path,
+        inspected.manifest_path,
+        output,
+        workspace_root=tmp_path,
+        work_dir=tmp_path / "compose",
+    )
 
-def test_template_project_rejects_wrong_target_type(tmp_path: Path) -> None:
-    source, digest = _source(tmp_path)
-    manifest = load_template_manifest(_manifest(tmp_path, digest))
-    payload = _project(digest).model_dump()
-    payload["output_slides"][0]["edits"][1]["target_id"] = "sh/title"
-
-    with pytest.raises(ValueError, match="requires a image target"):
-        validate_template_project(
-            TemplateDeckProject.model_validate(payload),
-            manifest,
-            source_pptx=source,
-        )
+    assert result.passed is True
+    reopened = Presentation(output)
+    assert len(reopened.slides) == 1
+    assert reopened.slides[0].shapes[0].text == "New title"

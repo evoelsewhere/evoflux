@@ -1,4 +1,4 @@
-"""Editable-first XLSX authoring through ``@oai/artifact-tool``.
+"""Editable-first XLSX authoring through OpenXML and ``openpyxl``.
 
 The pipeline supports both net-new workbooks and targeted edits to uploaded
 XLSX templates.  Existing workbooks are imported before modification, values
@@ -8,18 +8,20 @@ and every worksheet is rendered and formula-scanned before publication.
 
 from __future__ import annotations
 
+import asyncio
+from copy import copy
 from dataclasses import dataclass, field
+from datetime import datetime
+import json
+import math
 from pathlib import Path
 import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.services.office.runtime import (
-    DEFAULT_WORKER_TIMEOUT_SECONDS,
-    NodeWorkerRuntime,
-    file_sha256,
-)
+from app.services.office.internal_rendering import render_xlsx_workbook
+from app.services.office.runtime import file_sha256
 
 # Backward-compatible public name retained for callers outside this module.
 xlsx_sha256 = file_sha256
@@ -186,9 +188,7 @@ class AddChart(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     operation: Literal["add_chart"] = "add_chart"
-    chart_type: Literal[
-        "bar", "line", "area", "pie", "doughnut", "scatter", "waterfall", "funnel"
-    ]
+    chart_type: Literal["bar", "line", "area", "pie", "doughnut", "scatter"]
     source_range: str
     start_cell: str
     end_cell: str
@@ -316,9 +316,9 @@ def load_workbook_project(path: Path) -> WorkbookProject:
 
 def workbook_catalog() -> dict[str, Any]:
     return {
-        "workflow": "editable-artifact-tool-xlsx",
+        "workflow": "editable-openxml-xlsx",
         "invariants": [
-            "Use @oai/artifact-tool for every workbook write and export.",
+            "Use typed OpenXML operations for every workbook write and export.",
             "Render and inspect an uploaded workbook before template edits.",
             "Do not overwrite cell formatting when only values or formulas change.",
             "Keep inputs typed and derived values formula-driven.",
@@ -345,46 +345,466 @@ def workbook_catalog() -> dict[str, Any]:
     }
 
 
-_WORKER = NodeWorkerRuntime(
-    worker=Path(__file__).with_name("xlsx_artifact_worker.mjs"),
-    label="XLSX",
-    purpose="XLSX authoring",
-)
+def _hex(value: str | None) -> str | None:
+    return value.lstrip("#") if value else None
 
 
-async def run_xlsx_worker(
+def _iter_cells(sheet: Any, range_address: str) -> list[Any]:
+    value = sheet[range_address]
+    if not isinstance(value, tuple):
+        return [value]
+    cells: list[Any] = []
+    for row in value:
+        cells.extend(row if isinstance(row, tuple) else (row,))
+    return cells
+
+
+def _side(value: Any) -> Any:
+    from openpyxl.styles import Side
+
+    if isinstance(value, str):
+        return Side(style=value)
+    if isinstance(value, dict):
+        return Side(
+            style=value.get("style") or value.get("line_style") or "thin",
+            color=_hex(value.get("color")),
+        )
+    return Side()
+
+
+def _apply_format(sheet: Any, range_address: str, value: RangeFormat) -> None:
+    from openpyxl.styles import Border, Font, PatternFill
+
+    for cell in _iter_cells(sheet, range_address):
+        if value.fill is not None:
+            cell.fill = PatternFill("solid", fgColor=_hex(value.fill))
+        if value.font is not None:
+            fields = {
+                key: item
+                for key, item in value.font.items()
+                if key
+                in {
+                    "name",
+                    "size",
+                    "bold",
+                    "italic",
+                    "underline",
+                    "strike",
+                    "vertAlign",
+                }
+            }
+            if "size" in fields:
+                fields["sz"] = fields.pop("size")
+            if color := value.font.get("color"):
+                fields["color"] = _hex(str(color))
+            cell.font = Font(**fields)
+        if value.borders is not None:
+            cell.border = Border(
+                left=_side(value.borders.get("left")),
+                right=_side(value.borders.get("right")),
+                top=_side(value.borders.get("top")),
+                bottom=_side(value.borders.get("bottom")),
+            )
+        if value.number_format is not None:
+            cell.number_format = value.number_format
+        alignment = copy(cell.alignment)
+        if value.horizontal_alignment is not None:
+            alignment.horizontal = value.horizontal_alignment
+        if value.vertical_alignment is not None:
+            alignment.vertical = value.vertical_alignment
+        if value.wrap_text is not None:
+            alignment.wrap_text = value.wrap_text
+        cell.alignment = alignment
+    from openpyxl.utils.cell import range_boundaries
+
+    min_column, min_row, max_column, max_row = range_boundaries(range_address)
+    if value.column_width is not None:
+        from openpyxl.utils import get_column_letter
+
+        for column in range(min_column, max_column + 1):
+            sheet.column_dimensions[
+                get_column_letter(column)
+            ].width = value.column_width
+    if value.row_height is not None:
+        for row in range(min_row, max_row + 1):
+            sheet.row_dimensions[row].height = value.row_height
+
+
+def _write_matrix(sheet: Any, range_address: str, matrix: list[list[Any]]) -> None:
+    from openpyxl.utils.cell import range_boundaries
+
+    min_column, min_row, max_column, max_row = range_boundaries(range_address)
+    expected_rows = max_row - min_row + 1
+    expected_columns = max_column - min_column + 1
+    if len(matrix) != expected_rows or any(
+        len(row) != expected_columns for row in matrix
+    ):
+        raise ValueError(
+            f"matrix dimensions do not match {range_address}: "
+            f"expected {expected_rows}x{expected_columns}"
+        )
+    for row_offset, row in enumerate(matrix):
+        for column_offset, item in enumerate(row):
+            sheet.cell(min_row + row_offset, min_column + column_offset).value = item
+
+
+def _add_chart(sheet: Any, operation: AddChart) -> None:
+    from openpyxl.chart import (
+        AreaChart,
+        BarChart,
+        DoughnutChart,
+        LineChart,
+        PieChart,
+        Reference,
+        ScatterChart,
+    )
+    from openpyxl.utils.cell import range_boundaries
+
+    chart_types = {
+        "bar": BarChart,
+        "line": LineChart,
+        "area": AreaChart,
+        "pie": PieChart,
+        "doughnut": DoughnutChart,
+        "scatter": ScatterChart,
+    }
+    chart: Any = chart_types[operation.chart_type]()
+    min_column, min_row, max_column, max_row = range_boundaries(operation.source_range)
+    if max_column > min_column:
+        data = Reference(
+            sheet,
+            min_col=min_column + 1,
+            max_col=max_column,
+            min_row=min_row,
+            max_row=max_row,
+        )
+        categories = Reference(
+            sheet,
+            min_col=min_column,
+            min_row=min_row + 1,
+            max_row=max_row,
+        )
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(categories)
+    else:
+        data = Reference(
+            sheet,
+            min_col=min_column,
+            max_col=max_column,
+            min_row=min_row,
+            max_row=max_row,
+        )
+        chart.add_data(data, titles_from_data=False)
+    chart.title = operation.title
+    chart.legend = chart.legend if operation.has_legend else None
+    if operation.y_number_format and getattr(chart, "y_axis", None):
+        chart.y_axis.numFmt = operation.y_number_format
+    start_column, start_row, _, _ = range_boundaries(operation.start_cell)
+    end_column, end_row, _, _ = range_boundaries(operation.end_cell)
+    if end_column < start_column or end_row < start_row:
+        raise ValueError("chart end_cell must be below and right of start_cell")
+    from openpyxl.utils import get_column_letter
+
+    width_pixels = sum(
+        (sheet.column_dimensions[get_column_letter(column)].width or 8.43) * 7
+        for column in range(start_column, end_column + 1)
+    )
+    height_points = sum(
+        sheet.row_dimensions[row].height or 15 for row in range(start_row, end_row + 1)
+    )
+    chart.width = max(2.5, width_pixels / 96 * 2.54)
+    chart.height = max(2.0, height_points / 72 * 2.54)
+    sheet.add_chart(chart, operation.start_cell)
+
+
+def _autofit(sheet: Any, range_address: str, *, rows: bool) -> None:
+    from openpyxl.utils import get_column_letter
+    from openpyxl.utils.cell import range_boundaries
+
+    min_column, min_row, max_column, max_row = range_boundaries(range_address)
+    if rows:
+        for row in range(min_row, max_row + 1):
+            longest = max(
+                (
+                    len(str(sheet.cell(row, column).value or ""))
+                    for column in range(min_column, max_column + 1)
+                ),
+                default=1,
+            )
+            sheet.row_dimensions[row].height = min(
+                120, max(18, 15 * math.ceil(longest / 50))
+            )
+    else:
+        for column in range(min_column, max_column + 1):
+            longest = max(
+                (
+                    len(str(sheet.cell(row, column).value or ""))
+                    for row in range(min_row, max_row + 1)
+                ),
+                default=1,
+            )
+            sheet.column_dimensions[get_column_letter(column)].width = min(
+                80, max(8, longest + 2)
+            )
+
+
+def _apply_operation(sheet: Any, operation: SheetOperation) -> None:
+    from openpyxl.formatting.rule import CellIsRule, ColorScaleRule, FormulaRule
+    from openpyxl.styles import PatternFill
+    from openpyxl.styles.cell_style import StyleArray
+    from openpyxl.worksheet.datavalidation import DataValidation as OpenpyxlValidation
+    from openpyxl.worksheet.table import Table, TableStyleInfo
+
+    if isinstance(operation, WriteRange):
+        matrix: list[list[Any]]
+        if operation.values is not None:
+            matrix = operation.values
+        elif operation.formulas is not None:
+            matrix = operation.formulas
+        else:
+            matrix = [
+                [datetime.fromisoformat(item) if item else None for item in row]
+                for row in operation.dates or []
+            ]
+        _write_matrix(sheet, operation.range, matrix)
+        if operation.format:
+            _apply_format(sheet, operation.range, operation.format)
+        return
+    if isinstance(operation, StyleRange):
+        _apply_format(sheet, operation.range, operation.format)
+        return
+    if isinstance(operation, MergeRange):
+        if operation.operation == "merge":
+            sheet.merge_cells(operation.range)
+        else:
+            sheet.unmerge_cells(operation.range)
+        return
+    if isinstance(operation, ClearRange):
+        for cell in _iter_cells(sheet, operation.range):
+            if operation.apply_to in {"contents", "all"}:
+                cell.value = None
+            if operation.apply_to in {"formats", "all"}:
+                cell._style = StyleArray()  # noqa: SLF001 - OpenXML style reset
+        return
+    if isinstance(operation, FreezePanes):
+        if not operation.rows and not operation.columns:
+            sheet.freeze_panes = None
+        else:
+            from openpyxl.utils import get_column_letter
+
+            sheet.freeze_panes = (
+                f"{get_column_letter(operation.columns + 1)}{operation.rows + 1}"
+            )
+        return
+    if isinstance(operation, DataValidation):
+        escaped = [value.replace('"', '""') for value in operation.values]
+        validation = OpenpyxlValidation(
+            type="list", formula1=f'"{",".join(escaped)}"', allow_blank=True
+        )
+        sheet.add_data_validation(validation)
+        validation.add(operation.range)
+        return
+    if isinstance(operation, ConditionalFormat):
+        config = operation.config
+        if operation.rule_type == "cellIs":
+            rule = CellIsRule(
+                operator=str(config.get("operator", "equal")),
+                formula=[str(item) for item in config.get("formula", [0])],
+                fill=PatternFill("solid", fgColor=_hex(config.get("fill", "#fff2cc"))),
+            )
+        elif operation.rule_type == "colorScale":
+            rule = ColorScaleRule(
+                start_type="min",
+                start_color=_hex(config.get("start_color", "#f8696b")),
+                mid_type="percentile",
+                mid_value=50,
+                mid_color=_hex(config.get("mid_color", "#ffeb84")),
+                end_type="max",
+                end_color=_hex(config.get("end_color", "#63be7b")),
+            )
+        else:
+            formula = str(config.get("formula") or "TRUE")
+            rule = FormulaRule(formula=[formula])
+        sheet.conditional_formatting.add(operation.range, rule)
+        return
+    if isinstance(operation, AddTable):
+        table = Table(displayName=operation.name, ref=operation.range)
+        if operation.style:
+            table.tableStyleInfo = TableStyleInfo(
+                name=operation.style,
+                showFirstColumn=False,
+                showLastColumn=False,
+                showRowStripes=True,
+                showColumnStripes=False,
+            )
+        sheet.add_table(table)
+        return
+    if isinstance(operation, AddChart):
+        _add_chart(sheet, operation)
+        return
+    if isinstance(operation, DeleteDrawings):
+        sheet._charts.clear()  # noqa: SLF001 - no public bulk drawing removal
+        sheet._images.clear()  # noqa: SLF001
+        return
+    if isinstance(operation, AutofitRange):
+        _autofit(
+            sheet,
+            operation.range,
+            rows=operation.operation == "autofit_rows",
+        )
+        return
+    raise ValueError(f"unsupported worksheet operation: {operation.operation}")
+
+
+def _open_project_workbook(project: WorkbookProject, source: Path | None) -> Any:
+    from openpyxl import Workbook, load_workbook
+
+    if source is not None:
+        return load_workbook(source, data_only=False)
+    workbook = Workbook()
+    workbook.active.title = project.sheets[0].name
+    return workbook
+
+
+def _apply_project(workbook: Any, project: WorkbookProject) -> None:
+    for index, plan in enumerate(project.sheets):
+        if plan.name in workbook.sheetnames:
+            sheet = workbook[plan.name]
+        elif project.mode == "new" or plan.create_if_missing:
+            if project.mode == "new" and index == 0 and len(workbook.worksheets) == 1:
+                sheet = workbook.active
+                sheet.title = plan.name
+            else:
+                sheet = workbook.create_sheet(plan.name)
+        else:
+            raise ValueError(f"worksheet does not exist in template: {plan.name}")
+        if plan.show_grid_lines is not None:
+            sheet.sheet_view.showGridLines = plan.show_grid_lines
+        for operation in plan.operations:
+            _apply_operation(sheet, operation)
+
+
+def _formula_issues(workbook: Any) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    pattern = re.compile(_FORMULA_ERRORS)
+    formula_count = 0
+    for sheet in workbook.worksheets:
+        for row in sheet.iter_rows():
+            for cell in row:
+                value = cell.value
+                if isinstance(value, str) and value.startswith("="):
+                    formula_count += 1
+                    if pattern.search(value):
+                        issues.append(
+                            {
+                                "severity": "error",
+                                "code": "formula-error",
+                                "message": f"{sheet.title}!{cell.coordinate} contains {value}",
+                                "sheet": sheet.title,
+                                "cell": cell.coordinate,
+                            }
+                        )
+                elif isinstance(value, str) and pattern.fullmatch(value):
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "code": "formula-error",
+                            "message": f"{sheet.title}!{cell.coordinate} contains {value}",
+                            "sheet": sheet.title,
+                            "cell": cell.coordinate,
+                        }
+                    )
+    if formula_count:
+        issues.append(
+            {
+                "severity": "info",
+                "code": "formula-recalculation-deferred",
+                "message": (
+                    f"{formula_count} formulas were structurally validated; "
+                    "Excel will recalculate cached values when opened."
+                ),
+            }
+        )
+    return issues
+
+
+def _write_manifest(workbook: Any, work_dir: Path, source: Path | None) -> Path:
+    work_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = work_dir / "workbook-manifest.json"
+    manifest = {
+        "schemaVersion": 2,
+        "engine": "evoflux-openxml",
+        "sourcePath": str(source) if source else None,
+        "sourceSha256": file_sha256(source) if source else None,
+        "sheetCount": len(workbook.worksheets),
+        "sheets": [
+            {
+                "name": sheet.title,
+                "maxRow": sheet.max_row,
+                "maxColumn": sheet.max_column,
+                "mergedRanges": [str(value) for value in sheet.merged_cells.ranges],
+                "tables": sorted(sheet.tables),
+                "chartCount": len(sheet._charts),  # noqa: SLF001
+            }
+            for sheet in workbook.worksheets
+        ],
+    }
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return manifest_path
+
+
+def _execute_xlsx(
     action: Literal["inspect", "render", "compose"],
-    request: dict[str, Any],
     *,
-    workspace_root: Path,
+    project: WorkbookProject | None,
+    source: Path | None,
+    output: Path | None,
     work_dir: Path,
-    timeout_seconds: int = DEFAULT_WORKER_TIMEOUT_SECONDS,
-) -> dict[str, Any]:
-    return await _WORKER.run(
-        action,
-        request,
-        workspace_root=workspace_root,
-        work_dir=work_dir,
-        timeout_seconds=timeout_seconds,
-    )
-
-
-def _result(
-    action: str, work_dir: Path, value: dict[str, Any], source: Path | None
 ) -> XlsxPipelineResult:
-    excluded = {"outputPath", "manifestPath", "previewPaths", "issues"}
-    return XlsxPipelineResult(
-        action=action,
-        work_dir=work_dir,
-        source_xlsx=source,
-        output=Path(value["outputPath"]) if value.get("outputPath") else None,
-        manifest_path=Path(value["manifestPath"])
-        if value.get("manifestPath")
-        else None,
-        previews=[Path(path) for path in value.get("previewPaths", [])],
-        issues=list(value.get("issues", [])),
-        metadata={key: item for key, item in value.items() if key not in excluded},
-    )
+    if action == "inspect":
+        if source is None:
+            raise ValueError("inspect requires source XLSX")
+        from openpyxl import load_workbook
+
+        workbook = load_workbook(source, data_only=False)
+    else:
+        if project is None:
+            raise ValueError(f"{action} requires a workbook project")
+        workbook = _open_project_workbook(project, source)
+        _apply_project(workbook, project)
+    try:
+        issues = _formula_issues(workbook)
+        previews = render_xlsx_workbook(workbook, work_dir / "previews")
+        manifest_path = _write_manifest(workbook, work_dir, source)
+        candidate: Path | None = None
+        if (
+            action == "compose"
+            and output is not None
+            and not any(issue.get("severity") == "error" for issue in issues)
+        ):
+            output.parent.mkdir(parents=True, exist_ok=True)
+            workbook.calculation.fullCalcOnLoad = True
+            workbook.calculation.forceFullCalc = True
+            workbook.save(output)
+            candidate = output
+        return XlsxPipelineResult(
+            action=action,
+            work_dir=work_dir,
+            source_xlsx=source,
+            output=candidate,
+            manifest_path=manifest_path,
+            previews=previews,
+            issues=issues,
+            metadata={
+                "engine": "evoflux-openxml",
+                "sheet_count": len(workbook.worksheets),
+                "sheet_names": [sheet.title for sheet in workbook.worksheets],
+            },
+        )
+    finally:
+        workbook.close()
 
 
 def validate_workbook_project(
@@ -409,17 +829,15 @@ def validate_workbook_project(
 async def inspect_xlsx(
     source: Path, *, workspace_root: Path, work_dir: Path
 ) -> XlsxPipelineResult:
-    value = await run_xlsx_worker(
+    del workspace_root
+    return await asyncio.to_thread(
+        _execute_xlsx,
         "inspect",
-        {
-            "sourcePath": str(source),
-            "workDir": str(work_dir),
-            "sourceSha256": file_sha256(source),
-        },
-        workspace_root=workspace_root,
+        project=None,
+        source=source,
+        output=None,
         work_dir=work_dir,
     )
-    return _result("inspect", work_dir, value, source)
 
 
 async def render_xlsx_project(
@@ -427,17 +845,15 @@ async def render_xlsx_project(
 ) -> XlsxPipelineResult:
     project = load_workbook_project(project_path)
     validate_workbook_project(project, source)
-    value = await run_xlsx_worker(
+    del workspace_root
+    return await asyncio.to_thread(
+        _execute_xlsx,
         "render",
-        {
-            "projectPath": str(project_path),
-            "sourcePath": str(source) if source else None,
-            "workDir": str(work_dir),
-        },
-        workspace_root=workspace_root,
+        project=project,
+        source=source,
+        output=None,
         work_dir=work_dir,
     )
-    return _result("render", work_dir, value, source)
 
 
 async def compose_xlsx_project(
@@ -450,18 +866,15 @@ async def compose_xlsx_project(
 ) -> XlsxPipelineResult:
     project = load_workbook_project(project_path)
     validate_workbook_project(project, source)
-    value = await run_xlsx_worker(
+    del workspace_root
+    result = await asyncio.to_thread(
+        _execute_xlsx,
         "compose",
-        {
-            "projectPath": str(project_path),
-            "sourcePath": str(source) if source else None,
-            "outputPath": str(output),
-            "workDir": str(work_dir),
-        },
-        workspace_root=workspace_root,
+        project=project,
+        source=source,
+        output=output,
         work_dir=work_dir,
     )
-    result = _result("compose", work_dir, value, source)
     if not result.passed and output.exists():
         output.unlink()
         result.output = None
@@ -475,7 +888,6 @@ __all__ = [
     "inspect_xlsx",
     "load_workbook_project",
     "render_xlsx_project",
-    "run_xlsx_worker",
     "validate_workbook_project",
     "workbook_catalog",
     "xlsx_sha256",

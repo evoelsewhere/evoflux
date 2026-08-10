@@ -35,11 +35,11 @@ class PptxArtifactDriver(ArtifactDriver):
     media_type = (
         "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
-    version = "artifact-tool-pptx-2"
+    version = "evoflux-openxml-pptx-3"
 
     def catalog(self) -> dict[str, Any]:
         return {
-            "workflow": "artifact-tool-fidelity-native-and-template-pptx",
+            "workflow": "evoflux-openxml-svg-native-and-template-pptx",
             "lanes": {
                 "new": native_pptx_catalog(),
                 "template": template_catalog(),
@@ -60,7 +60,7 @@ class PptxArtifactDriver(ArtifactDriver):
         if context.source_path is None:
             project = load_native_pptx_project(project_path)
             value = validate_native_pptx_project(project, project_path)
-            engine = f"@oai/artifact-tool:{project.quality_profile}"
+            engine = f"evoflux-openxml-svg:{project.quality_profile}"
         else:
             manifest_path = _required(context.manifest_path, "manifest_path")
             project = load_template_project(project_path)
@@ -68,7 +68,7 @@ class PptxArtifactDriver(ArtifactDriver):
             value = validate_template_project(
                 project, manifest, source_pptx=context.source_path
             )
-            engine = "@oai/artifact-tool:template"
+            engine = "evoflux-direct-openxml:template"
         return ArtifactDriverResult(
             metadata=value,
             provenance={
@@ -115,7 +115,7 @@ def _native_result(result: Any, *, project_path: Path) -> ArtifactDriverResult:
         metadata=metadata,
         provenance={
             "project_sha256": file_sha256(project_path),
-            "engine": f"@oai/artifact-tool:{metadata.get('quality_profile', 'native')}",
+            "engine": f"evoflux-openxml-svg:{metadata.get('quality_profile', 'native')}",
         },
     )
 
@@ -137,7 +137,7 @@ def _template_result(result: Any, *, source: Path) -> ArtifactDriverResult:
         metadata=metadata,
         provenance={
             "source_sha256": file_sha256(source),
-            "engine": "@oai/artifact-tool:template",
+            "engine": "evoflux-direct-openxml:template",
         },
     )
 

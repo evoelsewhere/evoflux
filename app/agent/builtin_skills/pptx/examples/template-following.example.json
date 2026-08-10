@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "title": "Inherited template deck",
   "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "template_confirmed": true,
@@ -12,7 +12,7 @@
       "edits": [
         {
           "operation": "replace_text",
-          "target_id": "sh/replace-with-inspect-id",
+          "target_id": "sh/1/2",
           "find": "Existing template title",
           "replace": "New presentation title"
         }

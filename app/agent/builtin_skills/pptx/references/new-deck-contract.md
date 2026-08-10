@@ -7,30 +7,29 @@ selection. Treat the live catalog as authoritative.
 
 1. Select `fidelity`, `hybrid`, or `native`; use `fidelity` unless the user asks
    for semantic editability.
-2. Write the schema-version 2 project and required local HTML/assets inside one
+2. Write the schema-version 3 project and required local SVG/assets inside one
    project directory, then call `validate`.
 3. Call `preview`; inspect every slide image, layout finding, and visual-parity
    metric.
 4. Correct the project and create a new preview until QA succeeds.
 5. Call `publish` with the accepted preview job ID and final `.pptx` path.
 
-## Static HTML contract
+## Static SVG contract
 
-For `fidelity`, each slide's `visual_shell.html_path` is the complete visual
-composition. Use an exact `1280px × 720px` viewport unless the project declares
-another size. Set `html, body` to that size with zero margin and hidden
-overflow. Use static HTML/CSS, inline SVG, data URLs, and project-relative local
-images or fonts. Scripts, event handlers, iframes, forms, remote URLs, imports,
-canvas, video, and audio are rejected. The backend uses bundled headless
-Chromium with JavaScript and network access disabled.
+For `fidelity`, each slide's `visual_shell.svg_path` is the complete visual
+composition. Use an exact `1280 × 720` viewBox unless the project declares
+another size. SVG must be static, self-contained, and project-local. Use SVG
+gradients, filters, paths, text, and data URLs; do not reference scripts,
+network URLs, remote fonts, HTML, canvas, video, or audio.
 
-Use `render_scale: 2` for final quality. The shell is embedded as one full-slide
-PNG in PowerPoint. This is a deliberate quality-first representation: do not
-claim that its internal text, charts, or shapes are semantically editable.
+The bundled Rust SVG renderer rasterizes the shell at the declared project
+size. It is embedded as one full-slide image in PowerPoint. This is a deliberate
+quality-first representation: do not claim that its internal text, charts, or
+shapes are semantically editable.
 
-For `hybrid`, `html_path` contains only the non-editable visual shell. Add
-native objects in `elements`, and put the desired complete composition in
-`reference_html_path`. The backend renders the reference independently and
+For `hybrid`, `svg_path` contains only the non-editable visual shell. Add native
+objects in `elements`, and put the desired complete composition in
+`reference_svg_path`. The backend renders the reference independently and
 rejects the PPTX if changed-pixel ratio or mean absolute error exceeds the
 declared thresholds. Do not duplicate visible labels in both the shell and
 native overlay.
@@ -45,11 +44,9 @@ inside consistent safe margins. Use one communication job, one takeaway title,
 and normally no more than three major content groups per slide. Vary narrative
 archetypes instead of repeating a card grid.
 
-Prefer `fidelity` for gradients, complex typography, shadows, layered SVG,
-glass effects, clipping, and compositions that already look correct in HTML.
-Choose export-safe fonts from the bundled font pack; local font files must stay
-inside the project directory. Use meaningful alt text for every visual shell
-and image.
+Prefer `fidelity` for gradients, complex typography, shadows, layered vector
+art, clipping, and compositions that already look correct in SVG. Use
+export-safe typefaces and meaningful alt text for every visual shell and image.
 
 Use **EvoFlux** for any generator/edition branding visible in the design. Never
 emit Codex logos, watermarks, edition labels, or generator credits; an upstream
@@ -61,12 +58,11 @@ repository name may appear only in attribution or when it is the subject.
 - Avoid dashboard grids unless the content is genuinely a dashboard.
 - Keep body text generally 18–24 px or larger and titles 40–64 px.
 - Build diagrams with clear reading order and meaningful edges.
-- Use project assets or inline SVG instead of emoji icons.
+- Use project assets or SVG paths instead of emoji icons.
 - Never accept clipped text, broken images, accidental overlap, off-slide
   content, or failed parity evidence.
 
-Put presenter guidance in `speaker_notes`. The backend renders every slide,
-emits layout evidence, and compares the accepted preview to its HTML reference
-before candidate acceptance. Without an independent PowerPoint/LibreOffice
-round trip, report that limitation instead of treating structural success as
-visual proof.
+Put presenter guidance in `speaker_notes`. The bundled renderer renders every
+slide, emits layout evidence, and compares the accepted preview to its SVG
+reference before candidate acceptance. Round-trip open the final PPTX with an
+independent OOXML reader; report if that verification was skipped.
