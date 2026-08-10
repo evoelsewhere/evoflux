@@ -4,6 +4,7 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -135,14 +136,38 @@ class ConductorSettings(BaseModel):
     enrollment_token: str | None = Field(default=None, exclude=True)
     machine_credential_path: str | None = None
     sync_interval_seconds: float = Field(default=60.0, ge=5.0, le=86400.0)
+    heartbeat_interval_seconds: float = Field(default=60.0, ge=30.0, le=300.0)
     request_timeout_seconds: float = Field(default=15.0, ge=1.0, le=120.0)
     enforcement_mode: Literal["report", "enforce"] = "report"
+    installation_key: str | None = None
+    installation_id: str | None = None
+    project_id: str | None = None
+    project_name: str | None = None
+    project_display_name: str | None = None
+    project_logo_url: str | None = None
+    member_id: str | None = None
+    member_display_name: str | None = None
+    member_primary_role: Literal["admin", "contribute", "user"] | None = None
+    collection_level: Literal["L0", "L1", "L2"] | None = None
 
     @model_validator(mode="after")
     def _validate_connection(self) -> "ConductorSettings":
         value = self.url.strip().rstrip("/")
-        if value and not value.startswith(("http://", "https://")):
-            raise ValueError("Conductor URL must start with http:// or https://.")
+        if value:
+            parsed = urlsplit(value)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.query
+                or parsed.fragment
+                or parsed.path not in {"", "/"}
+            ):
+                raise ValueError(
+                    "Conductor URL must be an http:// or https:// origin without "
+                    "credentials, path, query, or fragment."
+                )
         self.url = value
         return self
 

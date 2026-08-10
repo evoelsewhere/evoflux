@@ -60,6 +60,7 @@ class ConductorSettingsBody(BaseModel):
     url: str = ""
     machine_credential_path: str | None = None
     sync_interval_seconds: float = Field(default=60.0, ge=5.0, le=86400.0)
+    heartbeat_interval_seconds: float = Field(default=60.0, ge=30.0, le=300.0)
     request_timeout_seconds: float = Field(default=15.0, ge=1.0, le=120.0)
     enforcement_mode: Literal["report", "enforce"] = "report"
 
