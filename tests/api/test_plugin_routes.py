@@ -159,6 +159,11 @@ async def test_plugin_api_lifecycle(
         )
         assert credential_state.status_code == 200
         assert credential_state.json()["configured"] is False
+        invalid_url = await client.put(
+            f"/api/plugins/{installation_id}/credentials",
+            json={"values": {"endpoint": "not-a-url"}},
+        )
+        assert invalid_url.status_code == 422
         configured = await client.put(
             f"/api/plugins/{installation_id}/credentials",
             json={
@@ -289,3 +294,24 @@ async def test_plugin_api_updates_managed_package_in_place(
 
     assert refresh_mock.await_count == 4
     assert all(call.kwargs == {"force": True} for call in refresh_mock.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_plugin_upload_rejects_malformed_archive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "EVOFLUX_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+    app = FastAPI()
+    app.include_router(plugin_routes.router, prefix="/api/plugins")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/plugins/upload",
+            files={"archive": ("broken.evoplugin", b"not a zip", "application/zip")},
+        )
+
+    assert response.status_code == 422
+    assert "Invalid plugin archive" in response.json()["detail"]

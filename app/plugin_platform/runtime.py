@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from loguru import logger
+from mcp.types import CallToolResult
 
 from app.agent.mcp.config import HttpServerConfig, MCPConfig, StdioServerConfig
 from app.agent.mcp.manager import MCPManager
@@ -201,6 +202,19 @@ def _linked_tree_signature(root: Path) -> bytes:
         for base, directories, files in os.walk(root, followlinks=False):
             directories[:] = sorted(name for name in directories if name not in ignored)
             base_path = Path(base)
+            for name in directories:
+                path = base_path / name
+                metadata = path.lstat()
+                if not stat.S_ISLNK(metadata.st_mode):
+                    continue
+                relative = path.relative_to(root).as_posix()
+                digest.update(relative.encode("utf-8", errors="surrogateescape"))
+                digest.update(metadata.st_mtime_ns.to_bytes(8, "big", signed=False))
+                digest.update(metadata.st_size.to_bytes(8, "big", signed=False))
+                digest.update(b"l")
+                digest.update(
+                    os.readlink(path).encode("utf-8", errors="surrogateescape")
+                )
             for name in sorted(files):
                 path = base_path / name
                 relative = path.relative_to(root).as_posix()
@@ -226,6 +240,13 @@ class PluginMCPRuntime:
         self._signature: tuple | None = None
         self._descriptors: list[PluginMCPServerDescriptor] = []
         self._refresh_lock = asyncio.Lock()
+        self._last_good: dict[
+            tuple[str, str],
+            tuple[
+                StdioServerConfig | HttpServerConfig,
+                PluginMCPServerDescriptor,
+            ],
+        ] = {}
 
     async def start(self) -> None:
         if self._watch_task is not None and not self._watch_task.done():
@@ -242,10 +263,88 @@ class PluginMCPRuntime:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
         await self._manager.stop()
+        self._last_good.clear()
+
+    def _build_config(
+        self,
+    ) -> tuple[MCPConfig, list[PluginMCPServerDescriptor]]:
+        servers: dict[str, StdioServerConfig | HttpServerConfig] = {}
+        descriptors: list[PluginMCPServerDescriptor] = []
+        installations = list_installations(enabled_only=True)
+        active_ids = {item.id for item in installations}
+
+        def add_cached(installation_id: str, server_name: str) -> None:
+            cached = self._last_good.get((installation_id, server_name))
+            if cached is None:
+                return
+            native, descriptor = cached
+            servers[descriptor.runtime_name] = native
+            descriptors.append(descriptor)
+
+        for installation in installations:
+            inspection = inspect_plugin(
+                installation.root,
+                data_root=plugin_data_root(installation.id),
+            )
+            top_level_mcp_error = any(
+                item.severity == "error" and item.scope == "mcp"
+                for item in inspection.diagnostics
+            )
+            if not inspection.valid or top_level_mcp_error:
+                if installation.source_type == "linked":
+                    for cached_id, server_name in sorted(self._last_good):
+                        if cached_id == installation.id:
+                            add_cached(cached_id, server_name)
+                    logger.warning(
+                        "plugin_mcp_linked_last_good_preserved installation={} plugin={}",
+                        installation.id,
+                        installation.name,
+                    )
+                else:
+                    for key in [
+                        key for key in self._last_good if key[0] == installation.id
+                    ]:
+                        self._last_good.pop(key, None)
+                continue
+
+            component_names = {item.name for item in inspection.mcp_servers}
+            for component in inspection.mcp_servers:
+                key = (installation.id, component.name)
+                native = _native_server_config(installation, inspection, component)
+                if native is not None:
+                    runtime_name = _runtime_server_name(
+                        installation.id,
+                        component.name,
+                    )
+                    descriptor = PluginMCPServerDescriptor(
+                        installation_id=installation.id,
+                        plugin_name=installation.name,
+                        server_name=component.name,
+                        runtime_name=runtime_name,
+                        transport=component.transport,
+                    )
+                    self._last_good[key] = (native, descriptor)
+                    servers[runtime_name] = native
+                    descriptors.append(descriptor)
+                elif installation.source_type == "linked" and not component.valid:
+                    add_cached(*key)
+                else:
+                    self._last_good.pop(key, None)
+
+            for key in [
+                key
+                for key in self._last_good
+                if key[0] == installation.id and key[1] not in component_names
+            ]:
+                self._last_good.pop(key, None)
+
+        for key in [key for key in self._last_good if key[0] not in active_ids]:
+            self._last_good.pop(key, None)
+        return MCPConfig(servers=servers), descriptors
 
     async def refresh(self, *, force: bool = False) -> None:
         async with self._refresh_lock:
-            config, descriptors = build_plugin_mcp_config()
+            config, descriptors = self._build_config()
             await self._manager.apply_config(config, force=force)
             self._descriptors = descriptors
             self._signature = _runtime_signature()
@@ -284,6 +383,16 @@ class PluginMCPRuntime:
                 continue
             tools.extend(self._manager.get_tools_for_server(descriptor.runtime_name) or [])
         return tools
+
+    async def call_app_tool(
+        self,
+        server_name: str,
+        tool_name: str,
+        arguments: dict,
+    ) -> CallToolResult:
+        """Route an approved MCP App callback to a plugin-owned runner."""
+
+        return await self._manager.call_app_tool(server_name, tool_name, arguments)
 
     def list_status(self) -> list[dict[str, object]]:
         by_runtime = {item.runtime_name: item for item in self._descriptors}

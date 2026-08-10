@@ -364,7 +364,20 @@ async def call_mcp_app_tool(
         raise HTTPException(status_code=403, detail="MCP app server mismatch.")
 
     try:
-        result = await mcp_manager.call_app_tool(body.server, body.tool, body.arguments)
+        try:
+            result = await mcp_manager.call_app_tool(
+                body.server,
+                body.tool,
+                body.arguments,
+            )
+        except KeyError:
+            from app.plugin_platform.runtime import plugin_mcp_runtime
+
+            result = await plugin_mcp_runtime.call_app_tool(
+                body.server,
+                body.tool,
+                body.arguments,
+            )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="MCP server not found.") from exc
     except ValueError as exc:

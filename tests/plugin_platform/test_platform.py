@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import zipfile
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import ValidationError
 
 from app.agent.skills.discovery import builtin_skills_dir
 from app.core.config import settings
@@ -16,11 +18,22 @@ from app.plugin_platform.installer import (
     uninstall_plugin,
     update_plugin,
 )
-from app.plugin_platform.models import MCP_SCHEMA_ID, PLUGIN_SCHEMA_ID
+from app.plugin_platform.credentials import credential_definition
+from app.plugin_platform.models import (
+    MCP_SCHEMA_ID,
+    PLUGIN_SCHEMA_ID,
+    PluginInstallation,
+)
 from app.plugin_platform.registry import list_installations, plugin_data_root
-from app.plugin_platform.runtime import _expand, build_plugin_mcp_config
+from app.plugin_platform.runtime import (
+    PluginMCPRuntime,
+    _expand,
+    _linked_tree_signature,
+    build_plugin_mcp_config,
+)
 from app.plugin_platform.skills import discover_skill_records_with_plugins
 from app.plugin_platform.validator import inspect_plugin
+from app.plugin_platform.workspace import list_workspace, write_workspace_file
 
 
 @pytest.fixture
@@ -207,6 +220,125 @@ def test_plugin_placeholder_expansion_is_single_pass() -> None:
     )
 
 
+def test_registry_rejects_unsafe_installation_ids() -> None:
+    with pytest.raises(ValidationError):
+        PluginInstallation(
+            id="../escape",
+            name="unsafe",
+            root="/tmp/plugin",
+            source_type="linked",
+            source_ref="/tmp/plugin",
+            content_sha256="0" * 64,
+            installed_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+        )
+
+
+def test_credential_schema_validates_defaults_and_urls(
+    isolated_platform: Path,
+) -> None:
+    root = _plugin(isolated_platform / "credential-plugin", skill=None)
+    manifest_path = root / "plugin.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["extensions"] = {
+        "evoflux.credentials": {
+            "fields": [
+                {
+                    "key": "endpoint",
+                    "label": "Endpoint",
+                    "type": "url",
+                    "env": "API_ENDPOINT",
+                    "default": "not-a-url",
+                }
+            ]
+        }
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="absolute HTTP\\(S\\) URL"):
+        credential_definition(inspect_plugin(root))
+
+
+def test_workspace_save_preserves_executable_mode_and_enforces_entry_limit(
+    isolated_platform: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _plugin(isolated_platform / "workspace-plugin", skill=None)
+    executable = root / "server.py"
+    executable.write_text("print('old')\n", encoding="utf-8")
+    executable.chmod(0o755)
+
+    write_workspace_file(root, "server.py", "print('new')\n")
+
+    assert executable.read_text(encoding="utf-8") == "print('new')\n"
+    assert executable.stat().st_mode & 0o777 == 0o755
+
+    (root / "extra.txt").write_text("extra\n", encoding="utf-8")
+    monkeypatch.setattr("app.plugin_platform.workspace.MAX_EDITOR_ENTRIES", 2)
+    with pytest.raises(ValueError, match="2-entry editor limit"):
+        list_workspace(root)
+
+
+def test_linked_signature_and_digest_track_directory_symlink_target(
+    isolated_platform: Path,
+) -> None:
+    root = _plugin(isolated_platform / "linked-symlink", skill=None)
+    first = root / "first"
+    second = root / "second"
+    first.mkdir()
+    second.mkdir()
+    link = root / "backend"
+    link.symlink_to(first, target_is_directory=True)
+    initial_signature = _linked_tree_signature(root)
+    initial_digest = inspect_plugin(root).content_sha256
+
+    link.unlink()
+    link.symlink_to(second, target_is_directory=True)
+
+    assert _linked_tree_signature(root) != initial_signature
+    assert inspect_plugin(root).content_sha256 != initial_digest
+
+
+@pytest.mark.asyncio
+async def test_linked_runtime_preserves_last_good_server_during_invalid_edit(
+    isolated_platform: Path,
+) -> None:
+    root = _plugin(isolated_platform / "linked-runtime", skill=None)
+    mcp_path = root / "mcp.json"
+    mcp_path.write_text(
+        json.dumps(
+            {
+                "$schema": MCP_SCHEMA_ID,
+                "mcpServers": {
+                    "service": {
+                        "type": "stdio",
+                        "command": "python",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    installation = link_plugin(root)
+    runtime = PluginMCPRuntime()
+    runtime._manager.apply_config = AsyncMock()  # type: ignore[method-assign]
+
+    await runtime.refresh()
+    first = runtime._manager.apply_config.await_args_list[-1].args[0]
+    assert len(first.servers) == 1
+
+    mcp_path.write_text('{"mcpServers": ', encoding="utf-8")
+    await runtime.refresh(force=True)
+    preserved = runtime._manager.apply_config.await_args_list[-1].args[0]
+    assert set(preserved.servers) == set(first.servers)
+    assert runtime._descriptors[0].installation_id == installation.id
+
+    mcp_path.unlink()
+    await runtime.refresh(force=True)
+    removed = runtime._manager.apply_config.await_args_list[-1].args[0]
+    assert removed.servers == {}
+
+
 def test_install_pack_and_uninstall_managed_package(isolated_platform: Path) -> None:
     source = _plugin(isolated_platform / "source")
     cache = source / "backend" / "__pycache__"
@@ -302,6 +434,32 @@ def test_archive_traversal_is_rejected(isolated_platform: Path) -> None:
 
     assert not (isolated_platform / "escape").exists()
     assert list_installations() == []
+
+
+@pytest.mark.parametrize("unsafe_name", ["../escape", "C:/escape"])
+def test_archive_rejects_cross_platform_unsafe_paths(
+    isolated_platform: Path,
+    unsafe_name: str,
+) -> None:
+    archive = isolated_platform / f"unsafe-{len(unsafe_name)}.evoplugin"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr(
+            "plugin.json", json.dumps({"$schema": PLUGIN_SCHEMA_ID, "name": "unsafe"})
+        )
+        bundle.writestr(unsafe_name, "no")
+
+    with pytest.raises(PluginInstallError, match="Unsafe archive path"):
+        install_plugin(archive)
+
+
+def test_invalid_zip_is_reported_as_plugin_install_error(
+    isolated_platform: Path,
+) -> None:
+    archive = isolated_platform / "broken.evoplugin"
+    archive.write_bytes(b"not a zip archive")
+
+    with pytest.raises(PluginInstallError, match="Invalid plugin archive"):
+        install_plugin(archive)
 
 
 def test_plugin_skills_precede_builtins_but_not_project_skills(
