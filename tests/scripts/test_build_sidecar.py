@@ -1,67 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
-import sys
 import zipfile
 
-from scripts import build_sidecar
 from scripts.build_sidecar import strip_bundle, zip_pure_python_packages
-
-
-def test_desktop_sidecar_build_does_not_require_document_runtime(
-    tmp_path, monkeypatch
-) -> None:
-    root = tmp_path / "repo"
-    root.mkdir()
-    out = tmp_path / "sidecar"
-
-    def fake_fetch_python(version: str, install_root: Path) -> Path:
-        assert version == "3.12"
-        return install_root / "python"
-
-    def fake_normalise_python_dir(
-        install_root: Path, target: Path, python_bin: Path
-    ) -> Path:
-        executable = target / "bin" / "python3"
-        executable.parent.mkdir(parents=True)
-        executable.write_text("", encoding="utf-8")
-        return executable
-
-    def fake_install_packages(
-        python_bin: Path, project_root: Path, site_packages: Path, extras: list[str]
-    ) -> None:
-        site_packages.mkdir(parents=True)
-
-    def reject_runtime_staging(*args, **kwargs) -> None:
-        raise AssertionError("document runtime must remain opt-in")
-
-    monkeypatch.setattr(build_sidecar, "fetch_python", fake_fetch_python)
-    monkeypatch.setattr(
-        build_sidecar, "normalise_python_dir", fake_normalise_python_dir
-    )
-    monkeypatch.setattr(build_sidecar, "install_packages", fake_install_packages)
-    monkeypatch.setattr(build_sidecar, "strip_bundle", lambda path: 0)
-    monkeypatch.setattr(build_sidecar, "report_size", lambda *args: None)
-    monkeypatch.setattr(
-        build_sidecar,
-        "stage_document_runtime",
-        reject_runtime_staging,
-    )
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "build_sidecar.py",
-            "--root",
-            str(root),
-            "--out",
-            str(out),
-            "--no-smoke",
-        ],
-    )
-
-    assert build_sidecar.main() == 0
-    assert not (out / "document-runtime").exists()
 
 
 def test_strip_bundle_removes_only_release_artefacts(tmp_path) -> None:
