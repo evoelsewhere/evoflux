@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -67,6 +67,97 @@ def _reset_local_reachable_cache(monkeypatch: pytest.MonkeyPatch):
     yield
     settings_routes._local_reachable_cache.clear()
     settings_routes._provider_model_cache.clear()
+
+
+def test_connect_conductor_forwards_token_and_returns_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.conductor import conductor_service
+
+    payload = {
+        "enabled": True,
+        "enrolled": True,
+        "state": "connected",
+        "installation_id": "installation-1",
+    }
+    connect = AsyncMock(
+        return_value=SimpleNamespace(model_dump=lambda **_kwargs: payload)
+    )
+    monkeypatch.setattr(conductor_service, "connect", connect)
+
+    response = TestClient(_make_app()).post(
+        "/api/settings/conductor/connect",
+        json={"enrollment_token": "evc_connection-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    connect.assert_awaited_once_with("evc_connection-token")
+
+
+def test_connect_conductor_preserves_upstream_auth_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.conductor import conductor_service
+    from app.conductor.client import ConductorRequestError
+
+    monkeypatch.setattr(
+        conductor_service,
+        "connect",
+        AsyncMock(side_effect=ConductorRequestError(403, "Token scope denied.")),
+    )
+
+    response = TestClient(_make_app()).post(
+        "/api/settings/conductor/connect",
+        json={"enrollment_token": "evc_denied"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Token scope denied."}
+
+
+def test_connect_conductor_reports_credential_vault_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.conductor import conductor_service
+    from app.conductor.client import CredentialStoreError
+
+    monkeypatch.setattr(
+        conductor_service,
+        "connect",
+        AsyncMock(side_effect=CredentialStoreError("Credential vault unavailable.")),
+    )
+
+    response = TestClient(_make_app()).post(
+        "/api/settings/conductor/connect",
+        json={"enrollment_token": "evc_valid"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Credential vault unavailable."}
+
+
+def test_disconnect_conductor_clears_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.conductor import conductor_service
+
+    payload = {
+        "enabled": True,
+        "enrolled": False,
+        "state": "disconnected",
+        "installation_id": None,
+    }
+    disconnect = AsyncMock(
+        return_value=SimpleNamespace(model_dump=lambda **_kwargs: payload)
+    )
+    monkeypatch.setattr(conductor_service, "disconnect", disconnect)
+
+    response = TestClient(_make_app()).post("/api/settings/conductor/disconnect")
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    disconnect.assert_awaited_once_with()
 
 
 def test_get_sandbox_returns_seed_defaults_when_file_missing(
