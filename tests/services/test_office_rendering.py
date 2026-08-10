@@ -19,7 +19,6 @@ def _isolate_binaries(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         rendering, "codex_runtime_dependencies", lambda: Path("/nowhere")
     )
-    monkeypatch.setattr(rendering, "host_binary_dirs", lambda: ())
 
 
 def test_renderer_is_unavailable_without_libreoffice() -> None:
