@@ -45,6 +45,8 @@ from app.agent.hooks.workspace_instructions import WorkspaceInstructionsHook
 from app.agent.hooks.post_edit_diagnostics import PostEditDiagnosticsHook
 from app.agent.verification import CompletionVerificationHook
 from app.agent.hooks.otel import OpenTelemetryHook
+from app.agent.hooks.conductor_telemetry import ConductorTelemetryHook
+from app.conductor.constants.telemetry import CONDUCTOR_TELEMETRY_HOOK_NAME
 from app.agent.hooks.stream_publisher import StreamPublisherHook
 from app.agent.hooks.summarization import build_team_summarization_hook
 from app.agent.hooks.title_generation import build_title_generation_hook
@@ -125,10 +127,10 @@ def _task_scoped_history(
     found = False
     for message in history:
         extra = message.extra or {}
-        if (
-            isinstance(message, HumanMessage)
-            and extra.get("kind") in {"delegation", "rejection"}
-        ):
+        if isinstance(message, HumanMessage) and extra.get("kind") in {
+            "delegation",
+            "rejection",
+        }:
             marker = extra.get("task_id")
             if isinstance(marker, str) and marker:
                 active_segment = marker
@@ -1189,9 +1191,7 @@ class TeamMemberBase(abc.ABC):
                             DelegationTask.id
                             == uuid.UUID(self._active_delegation_task_id)
                         )
-                    active_tasks = (
-                        await db.exec(task_query)
-                    ).all()
+                    active_tasks = (await db.exec(task_query)).all()
                     active_task_specs = [dict(task.spec) for task in active_tasks]
                 except (TypeError, ValueError):
                     active_task_specs = []
@@ -1335,6 +1335,14 @@ class TeamMemberBase(abc.ABC):
         pipeline.add(HookStage.BASE_CONTEXT, "team-inbox", team_inbox_hook)
         pipeline.add(HookStage.BASE_CONTEXT, "stream-publisher", publisher_hook)
         pipeline.add(HookStage.BASE_CONTEXT, "telemetry", otel_hook)
+        pipeline.add(
+            HookStage.BASE_CONTEXT,
+            CONDUCTOR_TELEMETRY_HOOK_NAME,
+            ConductorTelemetryHook(
+                agent_name=self.name,
+                model_id=runtime_model or self.agent.model_id,
+            ),
+        )
         if self.db_factory:
             pipeline.add(
                 HookStage.SESSION_CONTEXT,
