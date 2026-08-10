@@ -1349,7 +1349,7 @@ class TestBuiltinSkills:
                     missing.append(f"{skill_file.parent.name}: {raw}")
         assert missing == []
 
-    def test_research_paper_briefing_dna_has_svg_layout_registry(self):
+    def test_research_paper_briefing_dna_has_html_layout_registry(self):
         template_dir = _builtin_skills_dir() / "pptx" / "templates"
         dna = json.loads(
             (template_dir / "research-paper-briefing-dna.json").read_text(
@@ -1358,16 +1358,16 @@ class TestBuiltinSkills:
         )
         layouts = dna["layouts"]
         layout_ids = [layout["id"] for layout in layouts]
-        svg_group_ids = [layout["svg_group_id"] for layout in layouts]
+        html_layout_classes = [layout["html_layout_class"] for layout in layouts]
 
         assert dna["schema_version"] == 1
         assert len(layouts) >= 14
         assert len(layout_ids) == len(set(layout_ids))
         assert {item["layout_id"] for item in dna["layout_selector"]} == set(layout_ids)
-        assert svg_group_ids == [f"layout-{layout_id}" for layout_id in layout_ids]
-        assert len(svg_group_ids) == len(set(svg_group_ids))
-        assert dna["editability_contract"]["handoff_default_profile"] == "hybrid"
-        assert dna["editability_contract"]["minimum_editable_visible_text_ratio"] >= 0.7
+        assert html_layout_classes == [f"layout-{layout_id}" for layout_id in layout_ids]
+        assert len(html_layout_classes) == len(set(html_layout_classes))
+        assert dna["editability_contract"]["representation"] == "html-tailwind-hybrid"
+        assert "chart" in dna["editability_contract"]["flattened_components"]
 
     def test_pptx_skill_keeps_style_questions_inside_the_same_run(self):
         """Presentation style policy must not force avoidable chat turns."""
@@ -1376,8 +1376,7 @@ class TestBuiltinSkills:
         )
         normalized = " ".join(skill.split())
 
-        assert "Treat the user's visual direction as confirmed" in normalized
-        assert "continue without asking the user to approve" in normalized
+        assert "Treat colors, typography, tone, density" in normalized
         assert "call the `ask_user` tool" in normalized
         assert "deferred `ask_user`" not in normalized
         assert "resume outline, authoring, preview, and publication" in normalized

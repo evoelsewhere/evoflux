@@ -1,0 +1,38 @@
+:root {
+  --paper: #fbfaf7;
+  --navy: #073b82;
+  --blue: #2f6eb5;
+  --red: #d92d20;
+  --ink: #17243a;
+  --muted: #53647a;
+  --line: #a9c3e5;
+  --soft-blue: #f2f7fc;
+}
+
+.research-slide {
+  position: relative;
+  width: 1280px;
+  height: 720px;
+  overflow: hidden;
+  padding: 28px 32px 22px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: Arial, sans-serif;
+}
+
+.research-title {
+  margin: 0;
+  color: var(--navy);
+  font-size: 42px;
+  line-height: 1.05;
+  font-weight: 700;
+}
+
+.research-rule { height: 2px; margin-top: 12px; background: var(--navy); }
+.research-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-top: 18px; }
+.research-figure { min-height: 510px; border: 1px solid var(--line); background: white; }
+.research-rail { padding: 18px; background: var(--soft-blue); }
+.research-rail h2 { margin: 0 0 16px; font-size: 24px; line-height: 1.1; }
+.research-rail p { margin: 0; font-size: 20px; line-height: 1.35; }
+.research-takeaway { position: absolute; left: 32px; right: 32px; bottom: 22px; font-size: 20px; }
+.research-emphasis { color: var(--red); font-weight: 700; }

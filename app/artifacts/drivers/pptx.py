@@ -1,4 +1,4 @@
-"""PPTX driver with high-fidelity new-deck and inherited-template lanes."""
+"""PPTX driver with HTML-hybrid new-deck and inherited-template lanes."""
 
 from __future__ import annotations
 
@@ -13,11 +13,11 @@ from app.artifacts.domain import (
 )
 from app.artifacts.drivers.base import ArtifactDriver
 from app.services.office.runtime import file_sha256
-from app.services.pptx_native_pipeline import (
-    compose_native_pptx_project,
-    load_native_pptx_project,
-    native_pptx_catalog,
-    validate_native_pptx_project,
+from app.services.pptx_html_pipeline import (
+    compose_html_pptx_project,
+    html_pptx_catalog,
+    load_html_pptx_project,
+    validate_html_pptx_project,
 )
 from app.services.pptx_template_pipeline import (
     compose_pptx_template,
@@ -35,13 +35,13 @@ class PptxArtifactDriver(ArtifactDriver):
     media_type = (
         "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
-    version = "evoflux-openxml-pptx-3"
+    version = "evoflux-html-pptx-5"
 
     def catalog(self) -> dict[str, Any]:
         return {
-            "workflow": "evoflux-openxml-svg-native-and-template-pptx",
+            "workflow": "evoflux-html-hybrid-and-template-pptx",
             "lanes": {
-                "new": native_pptx_catalog(),
+                "new": html_pptx_catalog(),
                 "template": template_catalog(),
             },
         }
@@ -58,9 +58,9 @@ class PptxArtifactDriver(ArtifactDriver):
     async def validate(self, context: ArtifactDriverContext) -> ArtifactDriverResult:
         project_path = _required(context.project_path, "project_path")
         if context.source_path is None:
-            project = load_native_pptx_project(project_path)
-            value = validate_native_pptx_project(project, project_path)
-            engine = f"evoflux-openxml-svg:{project.quality_profile}"
+            project = load_html_pptx_project(project_path)
+            value = validate_html_pptx_project(project, project_path)
+            engine = "evoflux-html-tailwind-hybrid"
         else:
             manifest_path = _required(context.manifest_path, "manifest_path")
             project = load_template_project(project_path)
@@ -84,13 +84,14 @@ class PptxArtifactDriver(ArtifactDriver):
         project_path = _required(context.project_path, "project_path")
         candidate = context.work_dir / "candidate.pptx"
         if context.source_path is None:
-            result = await compose_native_pptx_project(
+            result = await compose_html_pptx_project(
                 project_path,
                 candidate,
                 workspace_root=context.workspace_root,
                 work_dir=context.work_dir,
+                session_id=context.session_id,
             )
-            return _native_result(result, project_path=project_path)
+            return _html_result(result, project_path=project_path)
         manifest_path = _required(context.manifest_path, "manifest_path")
         result = await compose_pptx_template(
             context.source_path,
@@ -103,7 +104,7 @@ class PptxArtifactDriver(ArtifactDriver):
         return _template_result(result, source=context.source_path)
 
 
-def _native_result(result: Any, *, project_path: Path) -> ArtifactDriverResult:
+def _html_result(result: Any, *, project_path: Path) -> ArtifactDriverResult:
     manifest = _read_manifest(getattr(result, "manifest_path", None))
     metadata = dict(getattr(result, "metadata", {}))
     metadata["layout_paths"] = [str(path) for path in result.layout_paths]
@@ -115,7 +116,7 @@ def _native_result(result: Any, *, project_path: Path) -> ArtifactDriverResult:
         metadata=metadata,
         provenance={
             "project_sha256": file_sha256(project_path),
-            "engine": f"evoflux-openxml-svg:{metadata.get('quality_profile', 'native')}",
+            "engine": "evoflux-html-tailwind-hybrid",
         },
     )
 

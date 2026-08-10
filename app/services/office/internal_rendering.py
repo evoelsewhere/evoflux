@@ -435,21 +435,10 @@ def render_pptx_pages(
     return outputs
 
 
-def render_svg(source: Path, destination: Path, *, width: int, height: int) -> Path:
-    import resvg_py
-
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_bytes(
-        resvg_py.svg_to_bytes(svg_path=str(source), width=width, height=height)
-    )
-    return destination
-
-
 __all__ = [
     "render_docx_pages",
     "render_pdf_pages",
     "render_pptx_pages",
-    "render_svg",
     "render_xlsx_file",
     "render_xlsx_workbook",
 ]

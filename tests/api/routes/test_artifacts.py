@@ -29,6 +29,25 @@ class FakeArtifactService:
         return {"job_id": str(job_id), "status": "review_ready"}
 
 
+class FakeRenderBroker:
+    def __init__(self) -> None:
+        self.heartbeats: list[str] = []
+        self.completed: list[tuple[str, object, dict]] = []
+
+    async def heartbeat(self, session_id: str) -> None:
+        self.heartbeats.append(session_id)
+
+    async def claim(self, session_id: str):
+        return {"request_id": str(uuid4()), "slide_id": "opening"}
+
+    async def complete(self, session_id: str, request_id, result: dict) -> bool:
+        self.completed.append((session_id, request_id, result))
+        return True
+
+    async def fail(self, session_id: str, request_id, message: str) -> bool:
+        return False
+
+
 @pytest.fixture
 async def client(monkeypatch):
     service = FakeArtifactService()
@@ -59,3 +78,39 @@ async def test_artifact_job_list_route(client: AsyncClient) -> None:
     assert response.status_code == 200
     assert response.json()["jobs"][0]["session_id"] == str(session_id)
     assert response.json()["jobs"][0]["limit"] == 10
+
+
+@pytest.mark.asyncio
+async def test_html_slide_renderer_bridge_routes(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    broker = FakeRenderBroker()
+    monkeypatch.setattr(
+        artifacts_route, "get_html_slide_render_broker", lambda: broker
+    )
+    session_id = uuid4()
+
+    heartbeat = await client.post(f"/api/artifacts/renderers/{session_id}/heartbeat")
+    claimed = await client.get(f"/api/artifacts/renderers/{session_id}/next")
+    request_id = uuid4()
+    completed = await client.post(
+        f"/api/artifacts/renderers/{session_id}/requests/{request_id}/complete",
+        json={
+            "preview_png_base64": "cHJldmlldw==",
+            "shell_png_base64": "c2hlbGw=",
+            "editable_elements": [],
+            "issues": [],
+        },
+    )
+    missing = await client.post(
+        f"/api/artifacts/renderers/{session_id}/requests/{request_id}/fail",
+        json={"message": "failed"},
+    )
+
+    assert heartbeat.status_code == 204
+    assert broker.heartbeats == [str(session_id)]
+    assert claimed.status_code == 200
+    assert claimed.json()["slide_id"] == "opening"
+    assert completed.status_code == 204
+    assert broker.completed[0][0] == str(session_id)
+    assert missing.status_code == 404

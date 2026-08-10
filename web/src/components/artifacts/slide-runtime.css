@@ -1,0 +1,13 @@
+@import "tailwindcss" source(none);
+
+/*
+ * Static Tailwind authoring surface for generated slides. Unknown utilities do
+ * not silently appear at runtime; custom art direction belongs in the slide's
+ * project-local CSS file.
+ */
+@source inline("{block,inline-block,hidden,relative,absolute,fixed,isolate,overflow-hidden,overflow-visible,flex,inline-flex,grid,items-start,items-center,items-end,justify-start,justify-center,justify-between,justify-end,content-center,self-start,self-center,self-end,flex-row,flex-col,flex-wrap,grow,shrink-0,grid-cols-1,grid-cols-2,grid-cols-3,grid-cols-4,col-span-2,col-span-3,row-span-2,w-full,h-full,min-w-0,min-h-0,object-cover,object-contain,text-left,text-center,text-right,uppercase,lowercase,italic,not-italic,font-normal,font-medium,font-semibold,font-bold,leading-none,leading-tight,leading-snug,leading-normal,tracking-tight,tracking-normal,tracking-wide,rounded-none,rounded-sm,rounded,rounded-md,rounded-lg,rounded-xl,rounded-2xl,rounded-3xl,rounded-full,border,border-0,border-t,border-r,border-b,border-l,shadow-none,shadow-sm,shadow,shadow-md,shadow-lg,shadow-xl,opacity-0,opacity-10,opacity-20,opacity-30,opacity-40,opacity-50,opacity-60,opacity-70,opacity-80,opacity-90,opacity-100,mix-blend-multiply,mix-blend-screen,mix-blend-overlay,mix-blend-soft-light,grayscale,blur-sm,blur,blur-md,blur-lg}");
+@source inline("{p,px,py,pt,pr,pb,pl,m,mx,my,mt,mr,mb,ml,gap,gap-x,gap-y}-{0,1,2,3,4,5,6,8,10,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96}");
+@source inline("{top,right,bottom,left,inset}-{0,1,2,3,4,5,6,8,10,12,16,20,24,28,32,36,40,48,56,64,72,80,96}");
+@source inline("{text}-{xs,sm,base,lg,xl,2xl,3xl,4xl,5xl,6xl,7xl,8xl,9xl}");
+@source inline("{text,bg,border}-{transparent,current,black,white}");
+@source inline("{text,bg,border}-{slate,gray,red,amber,emerald,cyan,sky,blue,indigo,violet,purple,pink}-{50,100,200,300,400,500,600,700,800,900,950}");

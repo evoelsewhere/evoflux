@@ -174,12 +174,12 @@ async def _artifact(
         ),
     ] = None,
 ) -> str | ToolResult:
-    """Create and publish native document artifacts through one durable lifecycle.
+    """Create and publish document artifacts through one durable lifecycle.
 
-    Project content remains format-specific: Word, Excel, and PowerPoint use
-    typed OOXML engines, SVG provides the static PPTX fidelity lane, and PDF
-    uses its own flow/form schema. Call preview before publish. Publish never
-    rebuilds a document.
+    Project content remains format-specific. New PowerPoint decks use inert
+    HTML/Tailwind rendered by the connected desktop WebView, then a thin OOXML
+    packer adds explicitly editable text and raster images. Call preview before
+    publish. Publish never rebuilds a document.
     """
 
     service = get_artifact_service()
@@ -253,7 +253,7 @@ artifact = Tool(
     tiers=("work",),
     deferred=True,
     deferred_summary=(
-        "Unified durable DOCX, XLSX, PPTX, and PDF lifecycle: native schemas, "
+        "Unified durable DOCX, XLSX, PPTX, and PDF lifecycle: format schemas, "
         "inspect/validate, immutable QA revisions, exact-byte publish, status, and cancel."
     ),
     search_aliases=(

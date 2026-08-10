@@ -3,7 +3,7 @@
 Status: active and sole document-authoring architecture.
 
 Artifact Fabric gives DOCX, XLSX, PPTX, and PDF one durable lifecycle while
-keeping a native schema and engine for each format. The control plane owns
+keeping a format-specific schema and engine for each format. The control plane owns
 jobs, immutable candidate revisions, QA evidence, review, and exact-byte
 publication. Rendering is in-process and does not depend on applications
 installed on the host.
@@ -21,7 +21,7 @@ The publication invariant is:
 | Storage | Candidate bytes live in a SHA-256 content-addressed store | Atomic copy plus pre/post-copy hash checks |
 | DOCX | Word-native creation and package-preserving template edits | Package integrity, part hashes, semantic page previews |
 | XLSX | Typed OpenXML import/create/export | Formula scan and every-sheet previews |
-| PPTX | SVG fidelity, hybrid editable, native, and inherited-template lanes | SVG parity, layout evidence, every-slide previews |
+| PPTX | HTML/Tailwind hybrid and inherited-template lanes | WebView fidelity, selective editability, every-slide previews |
 | PDF | Native creation and hash-pinned AcroForm filling | Structural parsing and every-page PDFium previews |
 | Desktop | Python sidecar plus wheel dependencies | No separate document-runtime archive or host executables |
 
@@ -35,7 +35,7 @@ flowchart LR
     C --> R["Format engine registry"]
     R --> D["DOCX: python-docx + direct OOXML"]
     R --> X["XLSX: openpyxl OpenXML engine"]
-    R --> P["PPTX: SVG + python-pptx + direct OOXML"]
+    R --> P["PPTX: HTML/Tailwind WebView + thin OOXML packer"]
     R --> F["PDF: ReportLab + pypdf + PDFium"]
     D --> Q["Normalized QA evidence"]
     X --> Q
@@ -51,19 +51,21 @@ do not select published paths or mutate lifecycle records.
 
 ## Portable rendering core
 
-Document preview is part of the Python sidecar:
+Most document preview is part of the Python sidecar:
 
 - DOCX is rendered from paragraphs, tables, styles, and pagination signals in
   its OOXML model.
 - XLSX is rendered from workbook cells, dimensions, fills, fonts, and charts.
-- PPTX is rendered from slide geometry, text, images, tables, and charts.
+- New PPTX decks are rendered by the already-running desktop WebView from inert,
+  local HTML/Tailwind. The sidecar receives immutable PNG evidence and computed
+  bounds for explicitly editable overlays. Existing/template PPTX preview stays
+  in the sidecar.
 - PDF pages are rasterized by `pypdfium2`.
-- Static PPTX visual shells are rasterized by `resvg-py`, whose renderer is
-  implemented in Rust and distributed as ordinary platform wheels.
-
-No document path launches an office suite, browser, JavaScript worker, or host
-PDF command. Release CI builds the same Python sidecar on every target and does
-not download a separate document runtime or require URL/SHA secrets.
+No document path launches an office suite or bundles a browser, Node runtime,
+or host PDF command. The PPTX new-deck lane reuses the Tauri WebView already
+running the desktop UI; without a connected renderer it fails explicitly and
+does not fall back to a lower-fidelity engine. Release CI does not download a
+separate document runtime or require URL/SHA secrets.
 
 ## Lifecycle
 
@@ -119,11 +121,20 @@ asked to recalculate formulas when the workbook opens.
 
 ### PPTX
 
-Schema version 3 supports three new-deck profiles. `fidelity` rasterizes a
-complete project-local SVG into one full-slide visual. `hybrid` layers editable
-native objects over an SVG shell and pixel-compares the result against a full
-reference SVG. `native` creates editable text, shapes, images, tables, charts,
-and notes.
+Schema version 4 uses one new-deck representation. Each slide is an inert
+1280×720 HTML fragment plus optional project-local CSS and declared assets.
+The WebView supplies a curated build-time Tailwind utility runtime, renders the
+complete visual preview, hides supported editable objects, and renders the
+flattened shell. It also returns computed bounds and simple typography for
+explicit `data-pptx-editable` text and raster images. A thin `python-pptx`
+packer writes the shell and native overlays, then opens the package again to
+verify slide count and OpenXML structure.
+
+Scripts, event handlers, forms, frames, canvas, media, network URLs, CSS
+imports, and paths outside the project are rejected. Unsupported editable CSS
+is kept visually correct in the shell with a warning. Blank, low-information,
+wrong-size, broken-asset, and overflow previews fail QA. Embedded PPTX
+thumbnails are never preview evidence.
 
 The template lane clones slide XML and relationships directly, retaining
 masters, layouts, themes, transitions, timing, and untouched objects. It edits
