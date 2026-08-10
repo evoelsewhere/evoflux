@@ -87,6 +87,7 @@ import {
   workspaceFileKind,
 } from '@/lib/workspace-file-kind'
 import type { WorkspaceFileInfo } from '@/api/types'
+import { buildTree, sortTreeNodeChildren, type TreeNode } from '@/utils/workspaceFileTree'
 
 const PdfPreview = lazy(() =>
   import('./workspace-pdf-preview').then((module) => ({ default: module.PdfPreview })),
@@ -136,32 +137,6 @@ function readStoredBoolean(key: string, fallback: boolean): boolean {
 //
 // Builds a nested tree from the flat file listing so directories can be
 // collapsed/expanded like VS Code's explorer.
-
-interface TreeNode {
-  name: string
-  path: string
-  children: Map<string, TreeNode>
-  file?: WorkspaceFileInfo
-}
-
-function buildTree(files: WorkspaceFileInfo[]): TreeNode {
-  const root: TreeNode = { name: '/', path: '', children: new Map() }
-  for (const file of files) {
-    const parts = file.path.split('/')
-    let node = root
-    parts.forEach((part, index) => {
-      const path = parts.slice(0, index + 1).join('/')
-      let child = node.children.get(part)
-      if (!child) {
-        child = { name: part, path, children: new Map() }
-        node.children.set(part, child)
-      }
-      if (index === parts.length - 1) child.file = file
-      node = child
-    })
-  }
-  return root
-}
 
 /** Return the set of paths that should be visible when the given query is
  *  active.  A file matches when its path (case-insensitive) contains the
@@ -229,13 +204,9 @@ function TreeNodeView({
   // Keep folders open when a search filter is active so results are visible.
   const effectiveOpen = visiblePaths ? true : open
 
-  // Sort: folders first, then alphabetical.
-  const children = Array.from(node.children.values()).sort((a, b) => {
-    const aDir = a.children.size > 0 && !a.file
-    const bDir = b.children.size > 0 && !b.file
-    if (aDir !== bDir) return aDir ? -1 : 1
-    return a.name.localeCompare(b.name)
-  })
+  // Match the coding workspace tree ordering: folders first, then files,
+  // with natural alphabetical sorting.
+  const children = sortTreeNodeChildren(node)
 
   // When a filter is active, prune children that are not in visiblePaths.
   const filteredChildren = visiblePaths
@@ -337,7 +308,7 @@ function TreeNodeView({
           onPointerCancel={clearLongPress}
           onPointerLeave={clearLongPress}
           className={cn(
-            'group flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs transition-colors',
+            'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs transition-colors',
             isSelected
               ? 'bg-(--bg-key) text-(--color-accent)'
               : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
@@ -345,7 +316,7 @@ function TreeNodeView({
           style={{ paddingLeft: 8 + depth * 12 }}
           title={node.file.path}
         >
-          <FileTypeIcon name={node.file.name} mime={node.file.mime} />
+          <FileTypeIcon name={node.file.name} mime={node.file.mime} size={16} />
           <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
           <span className="shrink-0 text-xs text-(--color-text-subtle)">
             {formatBytes(node.file.size)}
@@ -486,7 +457,10 @@ function TreeNodeView({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)"
+        className={cn(
+          'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs hover:bg-(--bg-key)',
+          effectiveOpen ? 'text-(--color-text)' : 'text-(--color-text-2)',
+        )}
         style={{ paddingLeft: 8 + depth * 12 }}
       >
         <ChevronRight
@@ -1054,6 +1028,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
     setBrowseError(null)
     try {
       const result = await browseWorkspaces(path)
+      setPickerPath(result.path)
       setBrowseParent(result.parent)
       setBrowseDirs(result.directories)
     } catch (err) {
@@ -1286,7 +1261,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
       forceOverlay={isOverlay}
       fillParent={embedded}
       ariaLabel="Workspace files"
-      className="bg-(--bg-card)"
+      className="bg-(--bg-page)"
     >
       {/* Header */}
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-3 py-2">
@@ -1454,7 +1429,10 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
                 {!browseLoading && browseDirs.map((dir) => (
                   <button
                     key={dir.path}
-                    onClick={() => setPickerPath(dir.path)}
+                    onClick={() => {
+                      setPickerPath(dir.path)
+                      void handleBrowse(dir.path)
+                    }}
                     className={cn(
                       'flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-(--bg-key)',
                       pickerPath === dir.path ? 'text-(--color-accent) font-medium bg-(--bg-key)' : 'text-(--color-text)',
@@ -1516,7 +1494,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
           <nav
             ref={treePaneRef}
             className={cn(
-              'relative order-3 flex flex-col overflow-hidden',
+              'relative order-3 flex flex-col overflow-hidden bg-(--bg-page)',
               isSinglePane ? 'w-full' : 'shrink-0',
             )}
             style={!isSinglePane
@@ -1539,7 +1517,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
             {/* Search bar */}
             {sessionId && files.length > 0 && (
               <div className="shrink-0 border-b border-(--color-border) px-2 py-1.5">
-                <div className="flex items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-page) px-2 py-1">
+                <div className="flex items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-card) px-2 py-1">
                   <Search size={12} className="shrink-0 text-(--color-text-subtle)" />
                   <input
                     ref={searchInputRef}
@@ -1562,7 +1540,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
                 </div>
               </div>
             )}
-            <div className="flex-1 overflow-y-auto px-2 py-3">
+            <div className="min-h-0 flex-1 overflow-auto p-2">
               {!sessionId ? (
                 <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
                   No active session.

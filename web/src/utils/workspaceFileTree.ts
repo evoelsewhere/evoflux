@@ -17,6 +17,34 @@ export interface TreeNode {
 
 export type ChangedFileStatus = 'A' | 'M' | 'D'
 
+const treeNodeNameCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: 'base',
+})
+
+function isDirectoryNode(node: TreeNode): boolean {
+  return node.children.size > 0 && !node.file
+}
+
+function compareTreeNodes(left: TreeNode, right: TreeNode): number {
+  const leftIsDir = isDirectoryNode(left)
+  const rightIsDir = isDirectoryNode(right)
+  if (leftIsDir !== rightIsDir) return leftIsDir ? -1 : 1
+  return treeNodeNameCollator.compare(left.name, right.name)
+}
+
+function sortTreeNode(node: TreeNode): void {
+  const sortedEntries = Array.from(node.children.entries()).sort(([, left], [, right]) => compareTreeNodes(left, right))
+  node.children = new Map(sortedEntries)
+  for (const child of node.children.values()) {
+    sortTreeNode(child)
+  }
+}
+
+export function sortTreeNodeChildren(node: TreeNode): TreeNode[] {
+  return Array.from(node.children.values()).sort(compareTreeNodes)
+}
+
 export interface ChangedFileInfo {
   path: string
   status: ChangedFileStatus
@@ -71,5 +99,6 @@ export function buildTree(files: WorkspaceFileInfo[]): TreeNode {
       node = child
     })
   }
+  sortTreeNode(root)
   return root
 }
