@@ -29,23 +29,30 @@ export async function inspectPlugin(path: string): Promise<PluginInspection> {
 export async function importPlugin(
   path: string,
   mode: 'install' | 'link',
+  enabled = false,
 ): Promise<PluginOperationResponse> {
   const response = await fetch(`${apiBaseUrl()}/plugins/install`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path, mode, enabled: true }),
+    body: JSON.stringify({ path, mode, enabled }),
   })
   if (!response.ok) await parseDetailOrThrow(response, 'POST /plugins/install')
   return response.json()
 }
 
-export async function uploadPlugin(file: File): Promise<PluginOperationResponse> {
+export async function uploadPlugin(
+  file: File,
+  enabled = false,
+): Promise<PluginOperationResponse> {
   const body = new FormData()
   body.append('archive', file)
-  const response = await fetch(`${apiBaseUrl()}/plugins/upload`, {
-    method: 'POST',
-    body,
-  })
+  const response = await fetch(
+    `${apiBaseUrl()}/plugins/upload?enabled=${enabled ? 'true' : 'false'}`,
+    {
+      method: 'POST',
+      body,
+    },
+  )
   if (!response.ok) await parseDetailOrThrow(response, 'POST /plugins/upload')
   return response.json()
 }

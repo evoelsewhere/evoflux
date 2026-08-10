@@ -33,6 +33,7 @@ from app.plugin_platform.models import (
     PortableHttpServer,
     PortableStdioServer,
 )
+from app.plugin_platform.trust import build_trust_review
 
 
 MAX_MANIFEST_BYTES = 512 * 1024
@@ -113,9 +114,7 @@ def _package_digest(root: Path) -> str:
             relative = path.relative_to(root).as_posix()
             digest.update(relative.encode("utf-8"))
             digest.update(b"\0link\0")
-            digest.update(
-                os.readlink(path).encode("utf-8", errors="surrogateescape")
-            )
+            digest.update(os.readlink(path).encode("utf-8", errors="surrogateescape"))
         for name in files:
             path = base_path / name
             count += 1
@@ -723,6 +722,7 @@ def inspect_plugin(
         diagnostics=diagnostics,
         skills=skills,
         mcp_servers=mcp_servers,
+        trust=build_trust_review(manifest, skills, mcp_servers),
         extension_namespaces=sorted(manifest.extensions),
         content_sha256=digest,
     )

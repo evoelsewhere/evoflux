@@ -104,6 +104,39 @@ class PluginMCPComponent(BaseModel):
     diagnostics: list[PluginDiagnostic] = Field(default_factory=list)
 
 
+class PluginTrustCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    server: str
+    executable: str
+    args: list[str] = Field(default_factory=list)
+
+
+class PluginTrustRemoteHost(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    server: str
+    transport: str
+    host: str
+    url: str
+
+
+class PluginTrustCapability(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    source: str
+
+
+class PluginTrustReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    executable_commands: list[PluginTrustCommand] = Field(default_factory=list)
+    remote_hosts: list[PluginTrustRemoteHost] = Field(default_factory=list)
+    environment_fields: list[str] = Field(default_factory=list)
+    capabilities: list[PluginTrustCapability] = Field(default_factory=list)
+
+
 class PluginInspection(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -113,6 +146,7 @@ class PluginInspection(BaseModel):
     diagnostics: list[PluginDiagnostic] = Field(default_factory=list)
     skills: list[PluginSkillComponent] = Field(default_factory=list)
     mcp_servers: list[PluginMCPComponent] = Field(default_factory=list)
+    trust: PluginTrustReview = Field(default_factory=PluginTrustReview)
     extension_namespaces: list[str] = Field(default_factory=list)
     content_sha256: str | None = None
 
@@ -153,6 +187,10 @@ __all__ = [
     "PluginMCPComponent",
     "PluginRegistryDocument",
     "PluginSkillComponent",
+    "PluginTrustCapability",
+    "PluginTrustCommand",
+    "PluginTrustRemoteHost",
+    "PluginTrustReview",
     "PortableHttpServer",
     "PortableMCPServer",
     "PortableStdioServer",

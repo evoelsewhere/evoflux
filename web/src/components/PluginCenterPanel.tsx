@@ -36,6 +36,7 @@ import type {
   PluginListItem,
   PluginListResponse,
   PluginMcpRuntimeStatus,
+  PluginOperationResponse,
 } from '@/api/types'
 import { queryKeys } from '@/queries/keys'
 import { usePlatform } from '@/hooks/use-platform'
@@ -53,6 +54,7 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { PluginWorkspaceEditor } from '@/components/PluginWorkspaceEditor'
 import { PluginCredentialsPanel } from '@/components/PluginCredentialsPanel'
+import { PluginTrustReviewDialog } from '@/components/PluginTrustReviewDialog'
 
 async function choosePath(options: {
   directory?: boolean
@@ -321,6 +323,7 @@ export function PluginCenterPanel() {
   const [showCreate, setShowCreate] = useState(false)
   const [hostPath, setHostPath] = useState('')
   const [updateTarget, setUpdateTarget] = useState<PluginListItem | null>(null)
+  const [trustReview, setTrustReview] = useState<PluginOperationResponse | null>(null)
   const [createParent, setCreateParent] = useState('')
   const [createName, setCreateName] = useState('')
   const [createDescription, setCreateDescription] = useState('')
@@ -365,15 +368,36 @@ export function PluginCenterPanel() {
     try {
       await action()
       await refresh()
+      return true
     } catch (error) {
       pushToast({
         tone: 'error',
         title: 'Plugin operation failed',
         description: error instanceof Error ? error.message : String(error),
       })
+      return false
     } finally {
       setBusy(null)
     }
+  }
+
+  const stageTrustReview = (result: PluginOperationResponse, action: string) => {
+    setInspection(result.inspection)
+    setTrustReview(result)
+    pushToast({
+      tone: 'success',
+      title: `${result.installation.name} ${action}`,
+      description: 'The plugin is installed but disabled until you review its access.',
+    })
+  }
+
+  const confirmTrust = async () => {
+    if (!trustReview) return
+    const enabled = await run(
+      `trust:${trustReview.installation.id}`,
+      () => setPluginEnabled(trustReview.installation.id, true),
+    )
+    if (enabled) setTrustReview(null)
   }
 
   const pickAndImport = async (mode: 'install' | 'link') => {
@@ -385,9 +409,8 @@ export function PluginCenterPanel() {
       const path = hostPath.trim()
       if (!path) return
       await run(`link:${path}`, async () => {
-        const result = await importPlugin(path, 'link')
-        setInspection(result.inspection)
-        pushToast({ tone: 'success', title: `${result.installation.name} linked` })
+        const result = await importPlugin(path, 'link', false)
+        stageTrustReview(result, 'linked')
       })
       return
     }
@@ -397,9 +420,8 @@ export function PluginCenterPanel() {
     })
     if (!path) return
     await run(`${mode}:${path}`, async () => {
-      const result = await importPlugin(path, mode)
-      setInspection(result.inspection)
-      pushToast({ tone: 'success', title: `${result.installation.name} imported` })
+      const result = await importPlugin(path, mode, false)
+      stageTrustReview(result, 'imported')
     })
   }
 
@@ -486,10 +508,10 @@ export function PluginCenterPanel() {
         onBack={() => setActiveView(null)}
         onInspection={setInspection}
         onLink={async () => {
-          const result = await importPlugin(activeView.root, 'link')
-          setInspection(result.inspection)
+          const result = await importPlugin(activeView.root, 'link', false)
+          setActiveView(null)
+          stageTrustReview(result, 'linked')
           await refresh()
-          pushToast({ tone: 'success', title: `${result.installation.name} linked` })
         }}
       />
     )
@@ -553,8 +575,8 @@ export function PluginCenterPanel() {
               event.currentTarget.value = ''
               if (!file) return
               void run(`upload:${file.name}`, async () => {
-                const result = await uploadPlugin(file)
-                setInspection(result.inspection)
+                const result = await uploadPlugin(file, false)
+                stageTrustReview(result, 'imported')
               })
             }}
           />
@@ -693,7 +715,16 @@ export function PluginCenterPanel() {
                   (server) => server.installation_id === item.installation.id,
                 )}
                 busy={busy !== null}
-                onToggle={(enabled) => void run(`toggle:${item.installation.id}`, () => setPluginEnabled(item.installation.id, enabled))}
+                onToggle={(enabled) => {
+                  if (enabled) {
+                    setTrustReview({
+                      installation: item.installation,
+                      inspection: item.inspection,
+                    })
+                    return
+                  }
+                  void run(`toggle:${item.installation.id}`, () => setPluginEnabled(item.installation.id, false))
+                }}
                 onPack={() => void run(`pack:${item.installation.id}`, async () => {
                   const result = await packPlugin(item.installation.root)
                   pushToast({ tone: 'success', title: 'Plugin archive created', description: result.path })
@@ -716,6 +747,13 @@ export function PluginCenterPanel() {
           </div>
         )}
       </div>
+      <PluginTrustReviewDialog
+        pluginName={trustReview?.installation.name ?? null}
+        review={trustReview?.inspection.trust ?? null}
+        busy={busy?.startsWith('trust:') === true}
+        onCancel={() => setTrustReview(null)}
+        onConfirm={() => void confirmTrust()}
+      />
     </section>
   )
 }

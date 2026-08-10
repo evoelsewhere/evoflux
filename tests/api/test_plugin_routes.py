@@ -15,6 +15,47 @@ from app.plugin_platform.runtime import plugin_mcp_runtime
 
 
 @pytest.mark.asyncio
+async def test_plugin_install_defaults_to_disabled_pending_trust_review(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "EVOFLUX_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setattr(plugin_mcp_runtime, "refresh", AsyncMock())
+    monkeypatch.setattr(plugin_routes.team_manager, "invalidate_skill_cache", Mock())
+    app = FastAPI()
+    app.include_router(plugin_routes.router, prefix="/api/plugins")
+    transport = httpx.ASGITransport(app=app)
+    plugin_root = tmp_path / "pending-review"
+    plugin_root.mkdir()
+    (plugin_root / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "pending-review",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/plugins/install",
+            json={"path": str(plugin_root), "mode": "link"},
+        )
+
+    assert response.status_code == 201
+    assert response.json()["installation"]["enabled"] is False
+    assert response.json()["inspection"]["trust"] == {
+        "executable_commands": [],
+        "remote_hosts": [],
+        "environment_fields": [],
+        "capabilities": [],
+    }
+
+
+@pytest.mark.asyncio
 async def test_plugin_api_lifecycle(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
