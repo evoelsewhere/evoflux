@@ -223,7 +223,7 @@ The built-in **Plugin Center** implements the portable [Agent Plugins 1.0](https
   <img src="documents/images/generated/agent-plugins-architecture.png" width="790" alt="Detailed portable Agent Plugin architecture across package, Plugin Center, private state, and runtime boundaries" />
 </p>
 
-Plugin packages remain portable content bundles: they contribute Skills and MCP server declarations, while EvoFlux owns validation, lifecycle, permissions, credentials, installation data, and runtime status. Plugin MCP servers run in an isolated manager instead of being merged into the user's global MCP configuration. See the [portable Agent Plugin architecture](documents/architecture/agent-plugins.md) for the package contract, runtime boundaries, storage model, and failure isolation rules.
+Plugin packages remain portable content bundles: they contribute Skills and MCP server declarations, while EvoFlux owns validation, lifecycle, permissions, credentials, installation data, and runtime status. New imports remain disabled until the user reviews executable commands, remote hosts, environment-field names, and capabilities. Plugin MCP servers run in an isolated manager instead of being merged into the user's global MCP configuration. See the [Agent Plugin setup guide](documents/guides/agent-plugins.md) to use a package and the [portable Agent Plugin architecture](documents/architecture/agent-plugins.md) for the package contract, runtime boundaries, storage model, and failure isolation rules.
 
 ### Permissions and sandboxing
 
