@@ -260,6 +260,15 @@ class TestBuildParser:
         assert args.func is cli.cmd_plugin
         assert args.plugin_action == "list"
 
+    def test_plugin_install_waits_for_explicit_enable(self):
+        default = build_parser().parse_args(["plugin", "install", "plugin.zip"])
+        explicit = build_parser().parse_args(
+            ["plugin", "install", "plugin.zip", "--enabled"]
+        )
+
+        assert default.enabled is False
+        assert explicit.enabled is True
+
     def test_update_subcommand_removed(self):
         with pytest.raises(SystemExit):
             build_parser().parse_args(["update"])
