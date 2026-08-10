@@ -21,6 +21,7 @@ import { openExternalUrl } from '@/lib/open-external'
 import {
   buildTree,
   collectChangedFiles,
+  sortTreeNodeChildren,
   type TreeNode,
 } from '@/utils/workspaceFileTree'
 
@@ -80,12 +81,7 @@ export function TreeNodeView({
 }) {
   const [open, setOpen] = useState(false)
   const isDir = node.children.size > 0 && !node.file
-  const children = Array.from(node.children.values()).sort((a, b) => {
-    const aDir = a.children.size > 0 && !a.file
-    const bDir = b.children.size > 0 && !b.file
-    if (aDir !== bDir) return aDir ? -1 : 1
-    return a.name.localeCompare(b.name)
-  })
+  const children = sortTreeNodeChildren(node)
 
   if (!isDir && node.file) {
     const isSelected = node.file.path === selectedPath
