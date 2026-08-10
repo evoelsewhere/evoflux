@@ -257,14 +257,13 @@ explicitly marked unsupported.
 
 ## PPTX representation
 
-For a handoff deck, prefer `quality_profile: "hybrid"`: keep titles, panel
-headers, body copy, metrics, tables, chart data, numbered observations, and the
-takeaway as native editable objects. Keep source figures, attention maps,
-complex equations, and decorative detail in the visual shell. Target at least
-70% of visible text and all reported numeric values as editable.
+Author the complete slide in HTML/CSS. Mark solid-color titles, panel headers,
+body copy, metrics, numbered observations, and takeaway text editable only when
+they use export-safe fonts and no transform, filter, shadow, mask, or gradient.
+Keep paper figures, complex equations, charts, attention maps, icons, and
+decorative detail in the visual shell. Raster source figures may be editable
+images when replacement is genuinely useful.
 
-Use `fidelity` only for view-only delivery or when the user explicitly ranks
-pixel identity above editing. Use `native` when every object must be editable
-and accept that complex scientific visuals may need a simplified native
-reconstruction. In hybrid mode, keep a complete reference HTML and accept the
-candidate only when the round-trip visual-parity gate passes.
+The immutable WebView render is the visual reference. Accept the candidate
+only when every preview is complete, legible, and free of overflow and the
+generated PPTX passes structural OpenXML round-trip.

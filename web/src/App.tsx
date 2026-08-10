@@ -6,6 +6,7 @@ import { router } from './router'
 import { AppMotionConfig } from '@/components/motion/AppMotionConfig'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import { useLocale } from '@/i18n'
+import { ArtifactSlideRenderBridge } from '@/components/artifacts/ArtifactSlideRenderBridge'
 
 const ANSI_SGR_PATTERN = new RegExp(
   `${String.fromCharCode(27)}\\[[0-9;]*m`,
@@ -20,6 +21,7 @@ function App() {
     <AppMotionConfig>
       {backend.ready ? (
         <Suspense fallback={<AppLoadingScreen />}>
+          <ArtifactSlideRenderBridge />
           <RouterProvider router={router} />
         </Suspense>
       ) : (

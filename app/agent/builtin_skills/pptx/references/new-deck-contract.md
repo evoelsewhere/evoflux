@@ -1,68 +1,96 @@
-# High-fidelity new-deck contract
-
+# HTML/Tailwind new-deck contract
 Read this after `artifact(action="catalog", format="pptx")` and visual-direction
-selection. Treat the live catalog as authoritative.
+selection. The live catalog is authoritative.
 
 ## Tool sequence
 
-1. Select `fidelity`, `hybrid`, or `native`; use `fidelity` unless the user asks
-   for semantic editability.
-2. Write the schema-version 3 project and required local SVG/assets inside one
-   project directory, then call `validate`.
-3. Call `preview`; inspect every slide image, layout finding, and visual-parity
-   metric.
-4. Correct the project and create a new preview until QA succeeds.
-5. Call `publish` with the accepted preview job ID and final `.pptx` path.
+1. Create one project directory containing JSON, HTML, CSS, and local assets.
+2. Call `validate` to enforce schema, path, asset, HTML, CSS, and network safety.
+3. Call `preview` while the EvoFlux desktop WebView is connected.
+4. Inspect every immutable PNG preview and resolve all errors.
+5. Publish the accepted preview job to the final `.pptx` path.
 
-## Static SVG contract
+## Project schema
 
-For `fidelity`, each slide's `visual_shell.svg_path` is the complete visual
-composition. Use an exact `1280 × 720` viewBox unless the project declares
-another size. SVG must be static, self-contained, and project-local. Use SVG
-gradients, filters, paths, text, and data URLs; do not reference scripts,
-network URLs, remote fonts, HTML, canvas, video, or audio.
+Use schema version 4:
 
-The bundled Rust SVG renderer rasterizes the shell at the declared project
-size. It is embedded as one full-slide image in PowerPoint. This is a deliberate
-quality-first representation: do not claim that its internal text, charts, or
-shapes are semantically editable.
+```json
+{
+  "schema_version": 4,
+  "title": "Deck title",
+  "width": 1280,
+  "height": 720,
+  "slides": [
+    {
+      "id": "opening",
+      "html_path": "slide-01.html",
+      "style_paths": ["slide-01.css"],
+      "assets": { "hero": "assets/hero.jpg" },
+      "speaker_notes": "[Sources]\n- https://example.com"
+    }
+  ]
+}
+```
 
-For `hybrid`, `svg_path` contains only the non-editable visual shell. Add native
-objects in `elements`, and put the desired complete composition in
-`reference_svg_path`. The backend renders the reference independently and
-rejects the PPTX if changed-pixel ratio or mean absolute error exceeds the
-declared thresholds. Do not duplicate visible labels in both the shell and
-native overlay.
+Every path stays inside the project directory. HTML/CSS references declared
+assets as `asset://hero`; never use filesystem, HTTP, protocol-relative, or CDN
+URLs. Each HTML file is a fragment with exactly one `data-slide-root` element.
 
-For `native`, omit `visual_shell` and use native `text`, `shape`, `image`,
-`table`, and `chart` elements only.
+## Tailwind and CSS
 
-## Authoring rules
+The renderer supplies a curated build-time Tailwind utility set for layout,
+spacing, typography, borders, radius, shadows, opacity, filters, and blend
+modes. Unknown utilities do not compile at runtime. Put custom art direction
+in project-local static CSS. Inline style is allowed, but scripts, event
+handlers, `@import`, executable URLs, forms, canvas, iframe, video, and audio
+are rejected.
 
-Use one canvas size and visual system for the deck. Keep important content
-inside consistent safe margins. Use one communication job, one takeaway title,
-and normally no more than three major content groups per slide. Vary narrative
-archetypes instead of repeating a card grid.
+Use HTML/CSS for the complete visual composition: editorial typography,
+gradients, clipping, photo crops, texture, charts rendered as static visuals,
+and coherent SVG icon assets. Build one composition with hierarchy and scale;
+do not default to repeated UI cards.
 
-Prefer `fidelity` for gradients, complex typography, shadows, layered vector
-art, clipping, and compositions that already look correct in SVG. Use
-export-safe typefaces and meaningful alt text for every visual shell and image.
+## Selective PowerPoint editability
 
-Use **EvoFlux** for any generator/edition branding visible in the design. Never
-emit Codex logos, watermarks, edition labels, or generator credits; an upstream
-repository name may appear only in attribution or when it is the subject.
+HTML is always the visual source of truth. Mark only objects that PowerPoint
+can reproduce without visible drift.
+
+```html
+<h1 data-pptx-editable="text" data-pptx-name="Title">
+  A direct audience-facing claim
+</h1>
+<img
+  src="asset://hero"
+  data-pptx-editable="image"
+  data-pptx-asset="hero"
+  alt="Product photograph"
+/>
+```
+
+Editable text must use a solid color, one uniform inline style, normal letter
+spacing/case/opacity/blending, no transform/filter/text shadow/clipping, and an
+export-safe font such as Arial or Aptos. Stylized display type, gradient text,
+masks, rotated labels, SVG icons, charts, complex diagrams, and decorative
+detail remain flattened. Raster images may be editable only when they use a
+plain rectangular `object-fit: fill` frame without crop or effects; SVG stays in
+the shell.
+
+When an explicitly editable element uses unsupported CSS, the renderer keeps
+it visually correct in the shell and emits a warning. Never duplicate the same
+visible content in the shell and native overlay.
 
 ## Visual quality
 
-- Use composition, scale, whitespace, and contrast before adding boxes.
-- Avoid dashboard grids unless the content is genuinely a dashboard.
-- Keep body text generally 18–24 px or larger and titles 40–64 px.
-- Build diagrams with clear reading order and meaningful edges.
-- Use project assets or SVG paths instead of emoji icons.
-- Never accept clipped text, broken images, accidental overlap, off-slide
-  content, or failed parity evidence.
+- Design at exactly 1280×720.
+- Use at least 50pt-equivalent deck titles, 35pt slide titles, 24pt subheads,
+  and 16pt body text unless a confirmed template says otherwise.
+- Keep one communication job and one takeaway title per slide.
+- Vary adjacent slide silhouettes.
+- Reject clipped content, broken assets, placeholder copy, unreadable contrast,
+  and editable elements outside the canvas.
+- Put externally sourced claims and assets in a `[Sources]` notes block.
 
-Put presenter guidance in `speaker_notes`. The bundled renderer renders every
-slide, emits layout evidence, and compares the accepted preview to its SVG
-reference before candidate acceptance. Round-trip open the final PPTX with an
-independent OOXML reader; report if that verification was skipped.
+The desktop WebView produces the immutable visual preview and the flattened
+shell. A thin OpenXML packer adds explicitly editable overlays and verifies the
+PPTX can be opened with the expected slide count. There is no native-shape or
+headless browser fallback.

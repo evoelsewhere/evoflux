@@ -1,19 +1,15 @@
 {
-  "schema_version": 3,
-  "mode": "new",
-  "quality_profile": "fidelity",
-  "title": "High-fidelity presentation example",
+  "schema_version": 4,
+  "title": "HTML-first presentation",
   "width": 1280,
   "height": 720,
   "slides": [
     {
-      "id": "opening",
-      "background": "#071426",
-      "visual_shell": {
-        "svg_path": "slide.example.svg",
-        "alt": "Dark blue title slide about evidence-driven change"
-      },
-      "speaker_notes": "Open with the decision, then explain the evidence."
+      "id": "html-first",
+      "html_path": "slide.example.html",
+      "style_paths": ["slide.example.css"],
+      "assets": {},
+      "speaker_notes": ""
     }
   ]
 }
