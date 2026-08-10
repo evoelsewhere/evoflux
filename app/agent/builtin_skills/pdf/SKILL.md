@@ -46,7 +46,7 @@ password handling, and preservation requirements before mutation.
    presence before editing.
 2. Choose one repository-available implementation that preserves the required
    structure. Prefer pypdf/qpdf for page operations, pdfplumber for extraction,
-   ReportLab for new authored pages, and Poppler rendering for verification.
+   ReportLab for new authored pages, and bundled PDFium for verification.
 3. For create/form work, write the JSON project, call `validate`, then call
    `preview` and inspect every returned image. For other lanes, write to a new
    output file. Never overwrite an uploaded source.

@@ -1,19 +1,14 @@
-"""High-fidelity PPTX authoring through Artifact Fabric.
-
-Net-new decks can use a deterministic Chromium-rendered visual shell for exact
-HTML fidelity, optionally layered with native editable PowerPoint objects.
-The renderer is backend-only and never depends on Desktop WebView state.
-"""
+"""Native and SVG-fidelity PPTX authoring without browser or Node runtimes."""
 
 from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from html.parser import HTMLParser
+import json
 from pathlib import Path
 import re
 from typing import Annotated, Any, Literal
-from urllib.parse import unquote, urlsplit
+from xml.etree import ElementTree as ET
 
 from PIL import Image, ImageChops
 from pydantic import (
@@ -25,89 +20,12 @@ from pydantic import (
     model_validator,
 )
 
-from app.services.office.runtime import (
-    NodeWorkerRuntime,
-    file_sha256,
-    resolve_chromium_binary,
-)
-from app.services.office.rendering import render_pages, renderer_available
+from app.services.office.internal_rendering import render_pptx_pages, render_svg
+from app.services.office.runtime import file_sha256
 
 MAX_SLIDES = 80
 MAX_ELEMENTS_PER_SLIDE = 160
-MAX_HTML_BYTES = 8 * 1024 * 1024
-MAX_CSS_BYTES = 2 * 1024 * 1024
-
-_FORBIDDEN_HTML_TAGS = {
-    "audio",
-    "base",
-    "button",
-    "canvas",
-    "embed",
-    "form",
-    "foreignobject",
-    "iframe",
-    "input",
-    "object",
-    "script",
-    "select",
-    "source",
-    "textarea",
-    "video",
-}
-_CSS_URL = re.compile(r"url\(\s*(['\"]?)(.*?)\1\s*\)", re.IGNORECASE)
-_UNSAFE_CSS = re.compile(
-    r"@import\b|expression\s*\(|javascript\s*:|behavior\s*:|-moz-binding\s*:",
-    re.IGNORECASE,
-)
-
-
-class _StaticSlideHtmlParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.references: list[str] = []
-        self.stylesheets: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        normalized_tag = tag.lower()
-        if normalized_tag in _FORBIDDEN_HTML_TAGS:
-            raise ValueError(f"HTML visual shell contains forbidden <{tag}> tag")
-        if normalized_tag == "meta":
-            normalized_attrs = {
-                name.lower(): (value or "").lower() for name, value in attrs
-            }
-            if normalized_attrs != {"charset": "utf-8"}:
-                raise ValueError('HTML visual shell allows only <meta charset="utf-8">')
-        if normalized_tag == "link":
-            names = [name.lower() for name, _ in attrs]
-            if len(names) != len(set(names)):
-                raise ValueError("HTML visual shell link attributes must be unique")
-            if not set(names).issubset({"rel", "href", "type"}):
-                raise ValueError(
-                    "HTML visual shell allows only rel, href, and type on <link>"
-                )
-            normalized_attrs = {
-                name.lower(): (value or "").strip() for name, value in attrs
-            }
-            if normalized_attrs.get("rel", "").lower() != "stylesheet":
-                raise ValueError("HTML visual shell allows only stylesheet links")
-            href = normalized_attrs.get("href", "")
-            if not href:
-                raise ValueError("HTML visual shell stylesheet link requires href")
-            if normalized_attrs.get("type", "text/css").lower() != "text/css":
-                raise ValueError("HTML visual shell stylesheet must use text/css")
-            self.stylesheets.append(href)
-        for name, value in attrs:
-            normalized_name = name.lower()
-            if normalized_name.startswith("on"):
-                raise ValueError(
-                    f"HTML visual shell contains forbidden event attribute {name}"
-                )
-            if normalized_name == "srcset":
-                raise ValueError("HTML visual shell does not allow srcset")
-            if value and normalized_name in {"href", "src", "xlink:href"}:
-                self.references.append(value.strip())
-
-    handle_startendtag = handle_starttag
+_PLACEHOLDER = re.compile(r"\b(?:lorem ipsum|todo|tbd|click to add)\b", re.I)
 
 
 class SlidePosition(BaseModel):
@@ -146,23 +64,12 @@ class ShapeElement(BaseModel):
     fill: str = "#ffffff"
     line_fill: str = "none"
     line_width: float = Field(default=0, ge=0, le=20)
-    border_radius: float | str | None = None
-    shadow: str | None = None
     text: str | None = Field(default=None, max_length=12000)
     font_size: float = Field(default=20, ge=6, le=160)
     text_color: str = "#111827"
     bold: bool = False
     alignment: Literal["left", "center", "right", "justify"] = "left"
     vertical_alignment: Literal["top", "middle", "bottom"] = "middle"
-
-    @model_validator(mode="after")
-    def compatible_border_radius(self) -> "ShapeElement":
-        if self.border_radius is not None and self.geometry not in {
-            "rect",
-            "roundRect",
-        }:
-            raise ValueError("border_radius is supported only for rectangular shapes")
-        return self
 
 
 class ImageElement(BaseModel):
@@ -173,17 +80,6 @@ class ImageElement(BaseModel):
     asset_path: str = Field(min_length=1, max_length=2000)
     alt: str = Field(min_length=1, max_length=1000)
     fit: Literal["cover", "contain"] = "cover"
-    geometry: str = "rect"
-    border_radius: float | str | None = None
-
-    @model_validator(mode="after")
-    def compatible_border_radius(self) -> "ImageElement":
-        if self.border_radius is not None and self.geometry not in {
-            "rect",
-            "roundRect",
-        }:
-            raise ValueError("border_radius is supported only for rectangular images")
-        return self
 
 
 class TableElement(BaseModel):
@@ -228,10 +124,9 @@ class ChartElement(BaseModel):
     show_values: bool = False
 
     @model_validator(mode="after")
-    def matching_series(self) -> "ChartElement":
-        for series in self.series:
-            if len(series.values) != len(self.categories):
-                raise ValueError("every chart series must match categories length")
+    def matching_series(self) -> ChartElement:
+        if any(len(series.values) != len(self.categories) for series in self.series):
+            raise ValueError("every chart series must match categories length")
         return self
 
 
@@ -242,13 +137,12 @@ SlideElement = Annotated[
 
 
 class VisualShell(BaseModel):
-    """One static HTML composition rendered by the bundled Chromium."""
+    """Static SVG composition rendered by the bundled Rust renderer."""
 
     model_config = ConfigDict(extra="forbid")
-    html_path: str = Field(min_length=1, max_length=2000)
+    svg_path: str = Field(min_length=1, max_length=2000)
     alt: str = Field(min_length=1, max_length=1000)
-    reference_html_path: str | None = Field(default=None, max_length=2000)
-    render_scale: Literal[1, 2] = 2
+    reference_svg_path: str | None = Field(default=None, max_length=2000)
     max_changed_pixel_ratio: float = Field(default=0.02, ge=0, le=0.25)
     max_mean_absolute_error: float = Field(default=0.01, ge=0, le=0.25)
 
@@ -266,7 +160,7 @@ class NativeSlide(BaseModel):
 
 class NativePptxProject(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     mode: Literal["new"] = "new"
     quality_profile: Literal["fidelity", "hybrid", "native"] = "fidelity"
     title: str = Field(min_length=1, max_length=500)
@@ -275,34 +169,28 @@ class NativePptxProject(BaseModel):
     slides: list[NativeSlide] = Field(min_length=1, max_length=MAX_SLIDES)
 
     @model_validator(mode="after")
-    def validate_geometry(self) -> "NativePptxProject":
+    def validate_geometry(self) -> NativePptxProject:
         ids = [slide.id for slide in self.slides]
         if len(ids) != len(set(ids)):
             raise ValueError("slide ids must be unique")
         for slide in self.slides:
             if self.quality_profile == "fidelity":
-                if slide.visual_shell is None:
+                if slide.visual_shell is None or slide.elements:
                     raise ValueError(
-                        f"slide {slide.id} requires visual_shell in fidelity mode"
-                    )
-                if slide.elements:
-                    raise ValueError(
-                        f"slide {slide.id} cannot contain native elements in fidelity mode"
+                        f"slide {slide.id} requires only visual_shell in fidelity mode"
                     )
             elif self.quality_profile == "hybrid":
                 if slide.visual_shell is None or not slide.elements:
                     raise ValueError(
-                        f"slide {slide.id} requires visual_shell and native elements "
-                        "in hybrid mode"
+                        f"slide {slide.id} requires visual_shell and native elements in hybrid mode"
                     )
-                if slide.visual_shell.reference_html_path is None:
+                if slide.visual_shell.reference_svg_path is None:
                     raise ValueError(
-                        f"slide {slide.id} requires reference_html_path in hybrid mode"
+                        f"slide {slide.id} requires reference_svg_path in hybrid mode"
                     )
             elif slide.visual_shell is not None or not slide.elements:
                 raise ValueError(
-                    f"slide {slide.id} requires native elements and no visual_shell "
-                    "in native mode"
+                    f"slide {slide.id} requires native elements and no visual_shell in native mode"
                 )
             for element in slide.elements:
                 position = element.position
@@ -344,188 +232,47 @@ def _project_file(project_dir: Path, value: str, *, label: str) -> Path:
     relative = Path(value)
     if relative.is_absolute():
         raise ValueError(f"{label} must be relative to the project directory")
-    project_root = project_dir.resolve()
-    resolved = (project_root / relative).resolve()
-    if not resolved.is_relative_to(project_root):
+    root = project_dir.resolve()
+    resolved = (root / relative).resolve()
+    if not resolved.is_relative_to(root):
         raise ValueError(f"{label} escapes the project directory")
     if not resolved.is_file():
         raise FileNotFoundError(f"{label} does not exist: {resolved}")
     return resolved
 
 
-def _validate_local_reference(
-    project_dir: Path,
-    value: str,
-    *,
-    label: str,
-    base_dir: Path | None = None,
-) -> Path | None:
-    reference = value.strip()
-    if not reference or reference.startswith("#"):
-        return
-    parsed = urlsplit(reference)
-    scheme = parsed.scheme.lower()
-    if scheme == "data":
-        media_type = reference[5:].split(";", 1)[0].lower()
-        if media_type.startswith("image/") or media_type.startswith("font/"):
-            return None
-        if media_type in {"application/font-woff", "application/font-woff2"}:
-            return None
-        raise ValueError(f"{label} uses unsupported data URL media type")
-    if scheme or parsed.netloc or reference.startswith("//"):
-        raise ValueError(f"{label} may reference only local files or data URLs")
-    local_path = unquote(parsed.path)
-    if not local_path:
-        return None
-    relative = Path(local_path)
-    if relative.is_absolute():
-        raise ValueError(f"{label} must be relative to the project directory")
-    project_root = project_dir.resolve()
-    reference_root = (base_dir or project_root).resolve()
-    resolved = (reference_root / relative).resolve()
-    if not resolved.is_relative_to(project_root):
-        raise ValueError(f"{label} escapes the project directory")
-    if not resolved.is_file():
-        raise FileNotFoundError(f"{label} does not exist: {resolved}")
-    return resolved
-
-
-def _validate_static_stylesheet(path: Path, project_dir: Path) -> None:
-    if path.suffix.lower() != ".css":
-        raise ValueError(f"HTML visual shell stylesheet must use .css: {path}")
-    size = path.stat().st_size
-    if size <= 0 or size > MAX_CSS_BYTES:
-        raise ValueError(
-            f"HTML visual shell stylesheet must be between 1 and {MAX_CSS_BYTES} "
-            f"bytes: {path}"
-        )
-    source = path.read_text(encoding="utf-8")
-    if _UNSAFE_CSS.search(source):
-        raise ValueError(f"HTML visual shell stylesheet contains unsafe CSS: {path}")
-    for match in _CSS_URL.finditer(source):
-        _validate_local_reference(
-            project_dir,
-            match.group(2).strip(),
-            label=f"HTML visual shell stylesheet reference in {path.name}",
-            base_dir=path.parent,
-        )
-
-
-def _validate_static_slide_html(path: Path, project_dir: Path) -> None:
-    if path.suffix.lower() not in {".html", ".htm"}:
-        raise ValueError(f"HTML visual shell must use .html or .htm: {path}")
-    size = path.stat().st_size
-    if size <= 0 or size > MAX_HTML_BYTES:
-        raise ValueError(
-            f"HTML visual shell must be between 1 and {MAX_HTML_BYTES} bytes: {path}"
-        )
-    source = path.read_text(encoding="utf-8")
-    if _UNSAFE_CSS.search(source):
-        raise ValueError(f"HTML visual shell contains unsafe CSS or URL syntax: {path}")
-    parser = _StaticSlideHtmlParser()
-    parser.feed(source)
-    parser.close()
-    references = [*parser.references]
-    references.extend(match.group(2).strip() for match in _CSS_URL.finditer(source))
-    for reference in references:
-        _validate_local_reference(
-            project_dir,
-            reference,
-            label=f"HTML visual shell reference in {path.name}",
-            base_dir=path.parent,
-        )
-    for stylesheet in parser.stylesheets:
-        stylesheet_path = _validate_local_reference(
-            project_dir,
-            stylesheet,
-            label=f"HTML visual shell stylesheet in {path.name}",
-            base_dir=path.parent,
-        )
-        if stylesheet_path is not None:
-            _validate_static_stylesheet(stylesheet_path, project_dir)
-
-
-def _visual_parity(
-    reference_path: Path,
-    preview_path: Path,
-    *,
-    max_changed_pixel_ratio: float,
-    max_mean_absolute_error: float,
-) -> dict[str, Any]:
-    with Image.open(reference_path) as source:
-        reference = source.convert("RGB")
-    with Image.open(preview_path) as rendered:
-        preview = rendered.convert("RGB")
-
-    # LibreOffice/Poppler and PowerPoint rasterize glyph edges differently from
-    # Chromium, even when a full-slide image has identical placement. Compare
-    # color/detail at presentation resolution, but measure displaced structure
-    # on a thumbnail so anti-aliasing does not masquerade as layout drift.
-    detail_scale = min(1.0, 960 / reference.width, 540 / reference.height)
-    detail_size = (
-        round(reference.width * detail_scale),
-        round(reference.height * detail_scale),
-    )
-    reference_detail = reference.resize(detail_size, Image.Resampling.LANCZOS)
-    preview_detail = preview.resize(detail_size, Image.Resampling.LANCZOS)
-    detail_difference = ImageChops.difference(reference_detail, preview_detail)
-    detail_pixels = detail_size[0] * detail_size[1]
-    histogram = detail_difference.histogram()
-    absolute_sum = sum((index % 256) * count for index, count in enumerate(histogram))
-    mean_absolute_error = absolute_sum / (detail_pixels * 3 * 255)
-
-    structural_scale = min(1.0, 240 / reference.width, 135 / reference.height)
-    structural_size = (
-        round(reference.width * structural_scale),
-        round(reference.height * structural_scale),
-    )
-    reference_structure = reference.resize(structural_size, Image.Resampling.LANCZOS)
-    preview_structure = preview.resize(structural_size, Image.Resampling.LANCZOS)
-    structural_difference = ImageChops.difference(
-        reference_structure, preview_structure
-    )
-    structural_pixels = structural_size[0] * structural_size[1]
-    changed_mask = structural_difference.getchannel(0).point(
-        lambda value: 255 if value > 16 else 0
-    )
-    for channel in (1, 2):
-        channel_mask = structural_difference.getchannel(channel).point(
-            lambda value: 255 if value > 16 else 0
-        )
-        changed_mask = ImageChops.lighter(changed_mask, channel_mask)
-    changed = structural_pixels - changed_mask.histogram()[0]
-    changed_pixel_ratio = changed / structural_pixels
-    return {
-        "reference_path": str(reference_path),
-        "preview_path": str(preview_path),
-        "comparison_size": list(structural_size),
-        "detail_comparison_size": list(detail_size),
-        "changed_pixel_ratio": changed_pixel_ratio,
-        "mean_absolute_error": mean_absolute_error,
-        "max_changed_pixel_ratio": max_changed_pixel_ratio,
-        "max_mean_absolute_error": max_mean_absolute_error,
-        "passed": (
-            changed_pixel_ratio <= max_changed_pixel_ratio
-            and mean_absolute_error <= max_mean_absolute_error
-        ),
-    }
+def _validate_svg(source: Path) -> None:
+    """Reject active or externally loaded SVG content before rasterization."""
+    try:
+        root = ET.parse(source).getroot()
+    except ET.ParseError as exc:
+        raise ValueError(f"visual shell is not valid SVG: {source.name}") from exc
+    forbidden = {"script", "foreignObject", "iframe", "audio", "video"}
+    href_names = {"href", "{http://www.w3.org/1999/xlink}href"}
+    for element in root.iter():
+        tag = element.tag.rsplit("}", 1)[-1]
+        if tag in forbidden:
+            raise ValueError(f"visual shell contains forbidden <{tag}> content")
+        for name, value in element.attrib.items():
+            if name.lower().startswith("on"):
+                raise ValueError("visual shell contains an event handler")
+            if name in href_names and value and not value.startswith(("#", "data:")):
+                raise ValueError("visual shell references an external resource")
 
 
 def native_pptx_catalog() -> dict[str, Any]:
     return {
-        "workflow": "artifact-tool-high-fidelity-pptx",
+        "workflow": "evoflux-openxml-svg-pptx",
         "invariants": [
-            "Use bundled headless Chromium and @oai/artifact-tool; never Desktop WebView or python-pptx.",
-            "Fidelity mode preserves the authored HTML composition as a full-slide visual shell.",
-            "Hybrid mode layers native editable objects over a visual shell and requires a full reference render.",
-            "Native mode keeps every text, shape, image, table, and chart editable.",
-            "Render every slide and export layout evidence before candidate acceptance.",
-            "Reject unresolved placeholders, out-of-slide geometry, and visual parity drift.",
+            "Render visual shells from local SVG with the bundled Rust renderer.",
+            "Keep native text, shapes, images, tables, and charts editable.",
+            "Render every generated slide with the internal OOXML renderer.",
+            "Reject placeholders, missing assets, out-of-slide geometry, and parity drift.",
         ],
         "quality_profiles": {
-            "fidelity": "Default: exact visual match; slide content is one full-slide image.",
-            "hybrid": "Exact reference gate plus native editable overlays.",
-            "native": "Fully editable primitives; visual fidelity depends on native styling.",
+            "fidelity": "Full-slide SVG composition embedded as a static visual.",
+            "hybrid": "SVG shell plus editable native overlays and reference parity gate.",
+            "native": "Fully editable OpenXML primitives.",
         },
         "supported_elements": ["text", "shape", "image", "table", "chart"],
         "project_json_schema": NativePptxProject.model_json_schema(),
@@ -538,27 +285,34 @@ def validate_native_pptx_project(
     project_dir = project_path.parent.resolve()
     for slide in project.slides:
         if slide.visual_shell is not None:
-            shell_path = _project_file(
+            shell = _project_file(
                 project_dir,
-                slide.visual_shell.html_path,
-                label=f"slide {slide.id} visual_shell.html_path",
+                slide.visual_shell.svg_path,
+                label=f"slide {slide.id} visual_shell.svg_path",
             )
-            _validate_static_slide_html(shell_path, project_dir)
-            if slide.visual_shell.reference_html_path:
-                reference_path = _project_file(
+            if shell.suffix.lower() != ".svg":
+                raise ValueError("visual_shell.svg_path must reference an SVG file")
+            _validate_svg(shell)
+            if slide.visual_shell.reference_svg_path:
+                reference = _project_file(
                     project_dir,
-                    slide.visual_shell.reference_html_path,
-                    label=f"slide {slide.id} visual_shell.reference_html_path",
+                    slide.visual_shell.reference_svg_path,
+                    label=f"slide {slide.id} visual_shell.reference_svg_path",
                 )
-                _validate_static_slide_html(reference_path, project_dir)
+                if reference.suffix.lower() != ".svg":
+                    raise ValueError(
+                        "visual_shell.reference_svg_path must reference an SVG file"
+                    )
+                _validate_svg(reference)
         for element in slide.elements:
-            if not isinstance(element, ImageElement):
-                continue
-            path = Path(element.asset_path)
-            if not path.is_absolute():
-                path = project_path.parent / path
-            if not path.is_file():
-                raise FileNotFoundError(f"presentation image does not exist: {path}")
+            if isinstance(element, ImageElement):
+                path = Path(element.asset_path)
+                if not path.is_absolute():
+                    path = project_dir / path
+                if not path.is_file():
+                    raise FileNotFoundError(
+                        f"presentation image does not exist: {path}"
+                    )
     return {
         "valid": True,
         "mode": "new",
@@ -569,171 +323,417 @@ def validate_native_pptx_project(
     }
 
 
-_WORKER = NodeWorkerRuntime(
-    worker=Path(__file__).with_name("pptx_native_worker.mjs"),
-    label="PPTX",
-    purpose="high-fidelity PPTX authoring",
-    requirement_hint="Net-new decks never fall back to Desktop WebView rendering.",
-)
+def _rgb(value: str) -> Any:
+    from pptx.dml.color import RGBColor
+
+    normalized = value.strip().lstrip("#")
+    if len(normalized) != 6:
+        raise ValueError(f"expected #RRGGBB color, got {value!r}")
+    return RGBColor.from_string(normalized.upper())
 
 
-async def compose_native_pptx_project(
-    project_path: Path,
-    output: Path,
-    *,
-    workspace_root: Path,
-    work_dir: Path,
-) -> NativePptxPipelineResult:
-    project = load_native_pptx_project(project_path)
-    validate_native_pptx_project(project, project_path)
-    work_dir.mkdir(parents=True, exist_ok=True)
-    normalized_project_path = work_dir / "normalized-project.json"
-    normalized_project_path.write_text(
-        project.model_dump_json(indent=2), encoding="utf-8"
+def _coordinates(position: SlidePosition) -> tuple[Any, Any, Any, Any]:
+    from pptx.util import Inches
+
+    return (
+        Inches(position.left / 96),
+        Inches(position.top / 96),
+        Inches(position.width / 96),
+        Inches(position.height / 96),
     )
-    chromium_path = None
-    if project.quality_profile != "native":
-        chromium_path = resolve_chromium_binary(
-            purpose=f"PPTX {project.quality_profile} rendering"
-        )
-    value = await _WORKER.run(
-        "compose",
-        {
-            "protocolVersion": 2,
-            "projectPath": str(normalized_project_path),
-            "sourceProjectPath": str(project_path.resolve()),
-            "projectDir": str(project_path.parent.resolve()),
-            "chromiumPath": chromium_path,
-            "outputPath": str(output),
-            "workDir": str(work_dir),
-        },
-        workspace_root=workspace_root,
-        work_dir=work_dir,
-    )
-    issues = list(value.get("issues", []))
-    parity: list[dict[str, Any]] = []
-    artifact_preview_paths = [Path(path) for path in value.get("previewPaths", [])]
-    preview_paths = artifact_preview_paths
-    roundtrip_paths: list[Path] = []
-    worker_output = Path(value["outputPath"]) if value.get("outputPath") else None
-    if worker_output is not None and not any(
-        issue.get("severity") == "error" for issue in issues
-    ):
-        if renderer_available():
-            roundtrip_paths, roundtrip_issues = await asyncio.to_thread(
-                render_pages,
-                worker_output,
-                work_dir / "roundtrip",
-                code_prefix="pptx-roundtrip",
-                dpi=144,
-            )
-            issues.extend(roundtrip_issues)
-            if not roundtrip_issues and len(roundtrip_paths) != len(project.slides):
-                issues.append(
-                    {
-                        "severity": "error",
-                        "code": "pptx-roundtrip-slide-count",
-                        "message": (
-                            "Exported PPTX round trip returned "
-                            f"{len(roundtrip_paths)} slides; expected {len(project.slides)}."
-                        ),
-                    }
-                )
-            elif not roundtrip_issues:
-                preview_paths = roundtrip_paths
-        else:
-            issues.append(
-                {
-                    "severity": "warning",
-                    "code": "pptx-roundtrip-unavailable",
-                    "message": (
-                        "LibreOffice/Poppler round-trip rendering is unavailable; "
-                        "Artifact Fabric preview evidence was used."
-                    ),
-                }
-            )
-    reference_paths = [
-        Path(path) if path else None for path in value.get("referencePaths", [])
-    ]
-    if len(reference_paths) != len(project.slides) or len(preview_paths) != len(
-        project.slides
-    ):
-        issues.append(
-            {
-                "severity": "error",
-                "code": "visual-parity-evidence-missing",
-                "message": (
-                    "PPTX worker did not return one preview and reference slot "
-                    "per slide."
-                ),
-            }
-        )
+
+
+def _set_fill(fill: Any, color: str) -> None:
+    if color == "none":
+        fill.background()
     else:
-        for index, (slide, reference_path, preview_path) in enumerate(
-            zip(project.slides, reference_paths, preview_paths, strict=True), start=1
-        ):
-            if reference_path is None or slide.visual_shell is None:
-                continue
-            metric = _visual_parity(
-                reference_path,
-                preview_path,
-                max_changed_pixel_ratio=(slide.visual_shell.max_changed_pixel_ratio),
-                max_mean_absolute_error=(slide.visual_shell.max_mean_absolute_error),
+        fill.solid()
+        fill.fore_color.rgb = _rgb(color)
+
+
+def _set_line(line: Any, color: str, width: float) -> None:
+    from pptx.util import Pt
+
+    if color == "none" or width == 0:
+        line.fill.background()
+        return
+    line.color.rgb = _rgb(color)
+    line.width = Pt(width)
+
+
+def _style_text_frame(frame: Any, element: TextElement | ShapeElement) -> None:
+    from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
+    from pptx.util import Pt
+
+    alignments = {
+        "left": PP_ALIGN.LEFT,
+        "center": PP_ALIGN.CENTER,
+        "right": PP_ALIGN.RIGHT,
+        "justify": PP_ALIGN.JUSTIFY,
+    }
+    anchors = {
+        "top": MSO_ANCHOR.TOP,
+        "middle": MSO_ANCHOR.MIDDLE,
+        "bottom": MSO_ANCHOR.BOTTOM,
+    }
+    frame.clear()
+    frame.vertical_anchor = anchors[element.vertical_alignment]
+    if isinstance(element, TextElement):
+        frame.auto_size = {
+            "none": MSO_AUTO_SIZE.NONE,
+            "shrinkText": MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE,
+            "resizeShapeToFitText": MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT,
+        }[element.auto_fit]
+    paragraph = frame.paragraphs[0]
+    paragraph.alignment = alignments[element.alignment]
+    run = paragraph.add_run()
+    run.text = element.text or ""
+    run.font.size = Pt(element.font_size)
+    run.font.bold = element.bold
+    run.font.color.rgb = _rgb(
+        element.color if isinstance(element, TextElement) else element.text_color
+    )
+    if isinstance(element, TextElement):
+        run.font.italic = element.italic
+        if element.typeface:
+            run.font.name = element.typeface
+
+
+def _shape_geometry(value: str) -> Any:
+    from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
+
+    mapping = {
+        "rect": MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+        "roundrect": MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE,
+        "ellipse": MSO_AUTO_SHAPE_TYPE.OVAL,
+        "triangle": MSO_AUTO_SHAPE_TYPE.ISOSCELES_TRIANGLE,
+        "diamond": MSO_AUTO_SHAPE_TYPE.DIAMOND,
+        "hexagon": MSO_AUTO_SHAPE_TYPE.HEXAGON,
+        "chevron": MSO_AUTO_SHAPE_TYPE.CHEVRON,
+    }
+    return mapping.get(value.casefold(), MSO_AUTO_SHAPE_TYPE.RECTANGLE)
+
+
+def _add_element(slide: Any, element: SlideElement, project_dir: Path) -> None:
+    from pptx.chart.data import CategoryChartData
+    from pptx.enum.chart import XL_CHART_TYPE, XL_DATA_LABEL_POSITION
+    from pptx.util import Pt
+
+    left, top, width, height = _coordinates(element.position)
+    if isinstance(element, TextElement):
+        shape = slide.shapes.add_textbox(left, top, width, height)
+        shape.name = element.name or shape.name
+        _set_fill(shape.fill, element.fill)
+        _set_line(shape.line, element.line_fill, element.line_width)
+        _style_text_frame(shape.text_frame, element)
+        return
+    if isinstance(element, ShapeElement):
+        shape = slide.shapes.add_shape(
+            _shape_geometry(element.geometry), left, top, width, height
+        )
+        shape.name = element.name or shape.name
+        _set_fill(shape.fill, element.fill)
+        _set_line(shape.line, element.line_fill, element.line_width)
+        if element.text:
+            _style_text_frame(shape.text_frame, element)
+        return
+    if isinstance(element, ImageElement):
+        path = Path(element.asset_path)
+        if not path.is_absolute():
+            path = project_dir / path
+        with Image.open(path) as image:
+            image_ratio = image.width / image.height
+        frame_ratio = float(width) / float(height)
+        if element.fit == "contain":
+            if image_ratio > frame_ratio:
+                picture_width = width
+                picture_height = int(width / image_ratio)
+                picture_left = left
+                picture_top = top + int((height - picture_height) / 2)
+            else:
+                picture_height = height
+                picture_width = int(height * image_ratio)
+                picture_left = left + int((width - picture_width) / 2)
+                picture_top = top
+            shape = slide.shapes.add_picture(
+                str(path), picture_left, picture_top, picture_width, picture_height
             )
-            metric.update({"slide": index, "slide_id": slide.id})
-            parity.append(metric)
-            if not metric["passed"]:
+        else:
+            shape = slide.shapes.add_picture(str(path), left, top, width, height)
+            if image_ratio > frame_ratio:
+                crop = (1 - frame_ratio / image_ratio) / 2
+                shape.crop_left = crop
+                shape.crop_right = crop
+            elif image_ratio < frame_ratio:
+                crop = (1 - image_ratio / frame_ratio) / 2
+                shape.crop_top = crop
+                shape.crop_bottom = crop
+        shape.name = element.name or shape.name
+        return
+    if isinstance(element, TableElement):
+        shape = slide.shapes.add_table(
+            len(element.values), len(element.values[0]), left, top, width, height
+        )
+        shape.name = element.name or shape.name
+        table = shape.table
+        for row_index, row in enumerate(element.values):
+            for column_index, value in enumerate(row):
+                cell = table.cell(row_index, column_index)
+                cell.text = "" if value is None else str(value)
+                _set_fill(
+                    cell.fill,
+                    element.header_fill
+                    if element.header_row and row_index == 0
+                    else element.body_fill,
+                )
+                paragraph = cell.text_frame.paragraphs[0]
+                paragraph.runs[0].font.size = Pt(element.font_size)
+                paragraph.runs[0].font.color.rgb = _rgb(
+                    element.header_text_color
+                    if element.header_row and row_index == 0
+                    else element.body_text_color
+                )
+                paragraph.runs[0].font.bold = element.header_row and row_index == 0
+        return
+    data = CategoryChartData()
+    data.categories = element.categories
+    for series in element.series:
+        data.add_series(series.name, series.values)
+    chart_types = {
+        "bar": XL_CHART_TYPE.COLUMN_CLUSTERED,
+        "line": XL_CHART_TYPE.LINE_MARKERS,
+        "pie": XL_CHART_TYPE.PIE,
+        "doughnut": XL_CHART_TYPE.DOUGHNUT,
+        "area": XL_CHART_TYPE.AREA,
+    }
+    chart = slide.shapes.add_chart(
+        chart_types[element.chart_type], left, top, width, height, data
+    ).chart
+    chart.has_legend = element.has_legend
+    if element.title:
+        chart.has_title = True
+        chart.chart_title.text_frame.text = element.title
+    if element.show_values:
+        for plot in chart.plots:
+            plot.has_data_labels = True
+            plot.data_labels.show_value = True
+            plot.data_labels.position = XL_DATA_LABEL_POSITION.OUTSIDE_END
+    for source_series, native_series in zip(element.series, chart.series, strict=True):
+        if source_series.fill:
+            native_series.format.fill.solid()
+            native_series.format.fill.fore_color.rgb = _rgb(source_series.fill)
+
+
+def _visual_parity(
+    reference_path: Path,
+    preview_path: Path,
+    *,
+    max_changed_pixel_ratio: float,
+    max_mean_absolute_error: float,
+) -> dict[str, Any]:
+    reference = Image.open(reference_path).convert("RGB")
+    preview = (
+        Image.open(preview_path)
+        .convert("RGB")
+        .resize(reference.size, Image.Resampling.LANCZOS)
+    )
+    detail_size = (min(960, reference.width), min(540, reference.height))
+    structural_size = (min(240, reference.width), min(135, reference.height))
+    structural_reference = reference.resize(structural_size, Image.Resampling.LANCZOS)
+    structural_preview = preview.resize(structural_size, Image.Resampling.LANCZOS)
+    difference = ImageChops.difference(structural_reference, structural_preview)
+    histogram = difference.histogram()
+    changed = sum(count for index, count in enumerate(histogram) if index % 256 != 0)
+    pixel_count = structural_size[0] * structural_size[1] * 3
+    changed_pixel_ratio = changed / max(1, pixel_count)
+    mean_absolute_error = sum(
+        (index % 256) * count for index, count in enumerate(histogram)
+    ) / max(1, pixel_count * 255)
+    return {
+        "reference_path": str(reference_path),
+        "preview_path": str(preview_path),
+        "comparison_size": list(structural_size),
+        "detail_comparison_size": list(detail_size),
+        "changed_pixel_ratio": changed_pixel_ratio,
+        "mean_absolute_error": mean_absolute_error,
+        "max_changed_pixel_ratio": max_changed_pixel_ratio,
+        "max_mean_absolute_error": max_mean_absolute_error,
+        "passed": changed_pixel_ratio <= max_changed_pixel_ratio
+        and mean_absolute_error <= max_mean_absolute_error,
+    }
+
+
+def _compose(
+    project: NativePptxProject, project_path: Path, output: Path, work_dir: Path
+) -> NativePptxPipelineResult:
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    presentation = Presentation()
+    presentation.slide_width = Inches(project.width / 96)
+    presentation.slide_height = Inches(project.height / 96)
+    project_dir = project_path.parent.resolve()
+    reference_paths: list[Path | None] = []
+    layout_paths: list[Path] = []
+    issues: list[dict[str, Any]] = []
+    for index, plan in enumerate(project.slides, start=1):
+        slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+        slide.background.fill.solid()
+        slide.background.fill.fore_color.rgb = _rgb(plan.background)
+        reference_path: Path | None = None
+        if plan.visual_shell:
+            shell_source = _project_file(
+                project_dir,
+                plan.visual_shell.svg_path,
+                label=f"slide {plan.id} visual_shell.svg_path",
+            )
+            shell_png = render_svg(
+                shell_source,
+                work_dir / "shells" / f"slide-{index:03d}.png",
+                width=project.width,
+                height=project.height,
+            )
+            slide.shapes.add_picture(
+                str(shell_png),
+                0,
+                0,
+                presentation.slide_width,
+                presentation.slide_height,
+            )
+            if plan.visual_shell.reference_svg_path:
+                reference_source = _project_file(
+                    project_dir,
+                    plan.visual_shell.reference_svg_path,
+                    label=f"slide {plan.id} visual_shell.reference_svg_path",
+                )
+                reference_path = render_svg(
+                    reference_source,
+                    work_dir / "references" / f"slide-{index:03d}.png",
+                    width=project.width,
+                    height=project.height,
+                )
+            else:
+                reference_path = shell_png
+        for element in plan.elements:
+            text = getattr(element, "text", None)
+            if text and _PLACEHOLDER.search(text):
                 issues.append(
                     {
                         "severity": "error",
-                        "code": "visual-parity-drift",
-                        "message": (
-                            f"Slide {index} differs from its HTML reference: "
-                            f"changed_pixel_ratio={metric['changed_pixel_ratio']:.4f}, "
-                            f"mean_absolute_error={metric['mean_absolute_error']:.4f}."
-                        ),
+                        "code": "unresolved-placeholder",
+                        "message": f"Slide {index} contains placeholder text: {text}",
                         "slide": index,
                     }
                 )
-    result = NativePptxPipelineResult(
+            _add_element(slide, element, project_dir)
+        if plan.speaker_notes:
+            slide.notes_slide.notes_text_frame.text = plan.speaker_notes
+        layout_path = work_dir / "layouts" / f"slide-{index:03d}.layout.json"
+        layout_path.parent.mkdir(parents=True, exist_ok=True)
+        layout_path.write_text(
+            json.dumps(
+                {
+                    "slide": index,
+                    "id": plan.id,
+                    "elements": [item.model_dump() for item in plan.elements],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        layout_paths.append(layout_path)
+        reference_paths.append(reference_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    presentation.save(str(output))
+    previews = render_pptx_pages(output, work_dir / "previews", width=project.width)
+    parity: list[dict[str, Any]] = []
+    for index, (slide, reference, preview) in enumerate(
+        zip(project.slides, reference_paths, previews, strict=True), start=1
+    ):
+        if reference is None or slide.visual_shell is None:
+            continue
+        metric = _visual_parity(
+            reference,
+            preview,
+            max_changed_pixel_ratio=slide.visual_shell.max_changed_pixel_ratio,
+            max_mean_absolute_error=slide.visual_shell.max_mean_absolute_error,
+        )
+        metric.update({"slide": index, "slide_id": slide.id})
+        parity.append(metric)
+        if not metric["passed"]:
+            issues.append(
+                {
+                    "severity": "error",
+                    "code": "visual-parity-drift",
+                    "message": f"Slide {index} differs from its SVG reference",
+                    "slide": index,
+                }
+            )
+    manifest_path = work_dir / "native-pptx-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 3,
+                "engine": "evoflux-openxml-svg",
+                "qualityProfile": project.quality_profile,
+                "slideCount": len(project.slides),
+                "layoutPaths": [str(path) for path in layout_paths],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    if any(issue.get("severity") == "error" for issue in issues):
+        output.unlink(missing_ok=True)
+        candidate = None
+    else:
+        candidate = output
+    return NativePptxPipelineResult(
         action="compose",
         work_dir=work_dir,
-        output=Path(value["outputPath"]) if value.get("outputPath") else None,
-        previews=preview_paths,
-        layout_paths=[Path(path) for path in value.get("layoutPaths", [])],
-        manifest_path=(
-            Path(value["manifestPath"]) if value.get("manifestPath") else None
-        ),
+        output=candidate,
+        previews=previews,
+        layout_paths=layout_paths,
+        manifest_path=manifest_path,
         issues=issues,
         metadata={
-            key: item
-            for key, item in value.items()
-            if key
-            not in {
-                "outputPath",
-                "previewPaths",
-                "layoutPaths",
-                "manifestPath",
-                "issues",
-            }
+            "engine": "evoflux-openxml-svg",
+            "slide_count": len(project.slides),
+            "quality_profile": project.quality_profile,
+            "visual_parity": parity,
+            "editable_object_count": sum(
+                len(slide.elements) for slide in project.slides
+            ),
+            "semantic_editable_object_count": sum(
+                len(slide.elements) for slide in project.slides
+            ),
         },
     )
-    result.metadata["visual_parity"] = parity
-    result.metadata["quality_profile"] = project.quality_profile
-    result.metadata["artifact_preview_paths"] = [
-        str(path) for path in artifact_preview_paths
-    ]
-    result.metadata["roundtrip_preview_paths"] = [str(path) for path in roundtrip_paths]
-    result.metadata["roundtrip_verified"] = bool(roundtrip_paths)
-    if not result.passed and output.exists():
-        output.unlink()
-        result.output = None
-    return result
+
+
+async def compose_native_pptx_project(
+    project_path: Path, output: Path, *, workspace_root: Path, work_dir: Path
+) -> NativePptxPipelineResult:
+    del workspace_root
+    project = load_native_pptx_project(project_path)
+    validate_native_pptx_project(project, project_path)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    return await asyncio.to_thread(_compose, project, project_path, output, work_dir)
 
 
 __all__ = [
+    "ChartElement",
+    "ImageElement",
     "NativePptxPipelineResult",
     "NativePptxProject",
+    "ShapeElement",
+    "TableElement",
+    "TextElement",
+    "VisualShell",
+    "_visual_parity",
     "compose_native_pptx_project",
     "load_native_pptx_project",
     "native_pptx_catalog",

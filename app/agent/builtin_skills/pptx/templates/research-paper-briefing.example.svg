@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#fbfaf7"/>
+  <rect x="0" y="0" width="1280" height="82" fill="#073b82"/>
+  <text x="58" y="52" fill="#ffffff" font-family="Arial, sans-serif" font-size="24" font-weight="700">RESEARCH EVIDENCE</text>
+  <text x="58" y="146" fill="#102a43" font-family="Arial, sans-serif" font-size="38" font-weight="700">Self-attention scales better with sequence length</text>
+  <text x="58" y="184" fill="#52677e" font-family="Arial, sans-serif" font-size="19">Complexity per layer from Attention Is All You Need, Table 1</text>
+  <rect x="58" y="228" width="1164" height="340" rx="8" fill="#ffffff" stroke="#b8c9dd"/>
+  <rect x="58" y="228" width="1164" height="58" rx="8" fill="#e5edf7"/>
+  <g fill="#173b63" font-family="Arial, sans-serif" font-size="19" font-weight="700">
+    <text x="88" y="265">Layer type</text><text x="455" y="265">Complexity</text><text x="790" y="265">Sequential operations</text>
+  </g>
+  <g fill="#263b50" font-family="Arial, sans-serif" font-size="20">
+    <text x="88" y="340">Self-attention</text><text x="455" y="340">O(n² · d)</text><text x="790" y="340">O(1)</text>
+    <text x="88" y="416">Recurrent</text><text x="455" y="416">O(n · d²)</text><text x="790" y="416">O(n)</text>
+    <text x="88" y="492">Convolutional</text><text x="455" y="492">O(k · n · d²)</text><text x="790" y="492">O(1)</text>
+  </g>
+  <path d="M58 606 H1222" stroke="#9db2ca"/>
+  <text x="58" y="650" fill="#52677e" font-family="Arial, sans-serif" font-size="16">Source: Vaswani et al. (2017), arXiv:1706.03762</text>
+</svg>

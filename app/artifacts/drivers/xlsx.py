@@ -1,4 +1,4 @@
-"""Native XLSX driver backed by ``@oai/artifact-tool``."""
+"""Native XLSX driver backed by EvoFlux's OpenXML engine."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ class XlsxArtifactDriver(ArtifactDriver):
     format = "xlsx"
     extension = ".xlsx"
     media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    version = "artifact-tool-xlsx-1"
+    version = "evoflux-openxml-xlsx-2"
 
     def catalog(self) -> dict[str, Any]:
         return {
@@ -81,7 +81,7 @@ def _driver_result(result: Any, *, source: Path | None) -> ArtifactDriverResult:
         metadata=metadata,
         provenance={
             "source_sha256": file_sha256(source) if source else None,
-            "engine": "@oai/artifact-tool",
+            "engine": "evoflux-openxml",
         },
     )
 
@@ -94,7 +94,7 @@ def _provenance(context: ArtifactDriverContext) -> dict[str, Any]:
         "source_sha256": (
             file_sha256(context.source_path) if context.source_path else None
         ),
-        "engine": "@oai/artifact-tool",
+        "engine": "evoflux-openxml",
     }
 
 

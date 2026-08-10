@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import cast
 
+from openpyxl import load_workbook
 import pytest
 
 from app.services import xlsx_artifact_pipeline as pipeline
@@ -39,69 +40,56 @@ def test_workbook_project_requires_template_lineage() -> None:
         pipeline.WorkbookProject.model_validate(raw)
 
 
-def test_workbook_catalog_exposes_editable_operations() -> None:
+def test_workbook_catalog_exposes_openxml_operations() -> None:
     catalog = pipeline.workbook_catalog()
-    assert catalog["workflow"] == "editable-artifact-tool-xlsx"
-    assert "write_range" in catalog["operations"]
-    assert "add_chart" in catalog["operations"]
-    assert "autofit_columns" in catalog["operations"]
-    assert "autofit_rows" in catalog["operations"]
-    assert catalog["project_json_schema"]["properties"]["mode"]
-
-
-def _project_with_operations(operations: list[dict[str, object]]) -> dict[str, object]:
-    raw = _new_project()
-    sheets = cast(list[dict[str, object]], raw["sheets"])
-    sheets[0]["operations"] = operations
-    return raw
-
-
-def test_autofit_operations_are_accepted() -> None:
-    raw = _project_with_operations(
-        [
-            {
-                "operation": "write_range",
-                "range": "A1:B2",
-                "values": [["Label", "Value"], ["Revenue", 10]],
-            },
-            {"operation": "autofit_columns", "range": "A1:B2"},
-            {"operation": "autofit_rows", "range": "A1:B2"},
-        ]
-    )
-
-    project = pipeline.WorkbookProject.model_validate(raw)
-
-    assert [item.operation for item in project.sheets[0].operations] == [
-        "write_range",
-        "autofit_columns",
-        "autofit_rows",
-    ]
+    assert catalog["workflow"] == "editable-openxml-xlsx"
+    assert {"write_range", "add_chart", "autofit_columns"} <= set(catalog["operations"])
 
 
 def test_autofit_requires_a_bounded_range() -> None:
-    raw = _project_with_operations([{"operation": "autofit_columns", "range": "A:B"}])
+    raw = _new_project()
+    sheets = cast(list[dict[str, object]], raw["sheets"])
+    sheets[0]["operations"] = [{"operation": "autofit_columns", "range": "A:B"}]
 
     with pytest.raises(ValueError, match="bounded A1 notation"):
         pipeline.WorkbookProject.model_validate(raw)
 
 
 @pytest.mark.asyncio
-async def test_compose_deletes_failed_output(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+async def test_compose_creates_editable_workbook_and_preview(tmp_path: Path) -> None:
+    raw = _new_project()
+    sheets = cast(list[dict[str, object]], raw["sheets"])
+    operations = cast(list[dict[str, object]], sheets[0]["operations"])
+    operations.extend(
+        [
+            {
+                "operation": "write_range",
+                "range": "C1:C2",
+                "formulas": [["=B1"], ["=B2*2"]],
+            },
+            {
+                "operation": "style_range",
+                "range": "A1:C1",
+                "format": {
+                    "fill": "#0F766E",
+                    "font": {"bold": True, "color": "#FFFFFF"},
+                },
+            },
+            {
+                "operation": "add_chart",
+                "chart_type": "bar",
+                "source_range": "A1:B2",
+                "start_cell": "E2",
+                "end_cell": "K12",
+                "title": "Values",
+                "has_legend": False,
+            },
+        ]
+    )
     project_path = tmp_path / "project.json"
-    project_path.write_text(json.dumps(_new_project()), encoding="utf-8")
+    project_path.write_text(json.dumps(raw), encoding="utf-8")
     output = tmp_path / "output.xlsx"
 
-    async def fake_worker(*args: object, **kwargs: object) -> dict[str, object]:
-        output.write_bytes(b"failed")
-        return {
-            "outputPath": str(output),
-            "previewPaths": [],
-            "issues": [{"severity": "error", "code": "formula-error"}],
-        }
-
-    monkeypatch.setattr(pipeline, "run_xlsx_worker", fake_worker)
     result = await pipeline.compose_xlsx_project(
         project_path,
         None,
@@ -110,9 +98,17 @@ async def test_compose_deletes_failed_output(
         work_dir=tmp_path / "work",
     )
 
-    assert result.passed is False
-    assert result.output is None
-    assert not output.exists()
+    assert result.passed is True
+    assert result.output == output
+    assert len(result.previews) == 1
+    workbook = load_workbook(output, data_only=False)
+    try:
+        sheet = workbook["Inputs"]
+        assert sheet["C2"].value == "=B2*2"
+        assert len(sheet._charts) == 1  # noqa: SLF001
+        assert sheet["A1"].fill.fgColor.rgb.endswith("0F766E")
+    finally:
+        workbook.close()
 
 
 def test_template_validation_detects_changed_source(tmp_path: Path) -> None:

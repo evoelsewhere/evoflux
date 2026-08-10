@@ -1,27 +1,24 @@
-"""Shared building blocks for the Office document pipelines."""
+"""Portable Office authoring and rendering helpers."""
 
-from __future__ import annotations
-
-from app.services.office.runtime import (
-    ARTIFACT_TOOL_ENTRYPOINT_ENV,
-    DEFAULT_WORKER_TIMEOUT_SECONDS,
-    NODE_BIN_ENV,
-    NodeWorkerRuntime,
-    codex_runtime_dependencies,
-    file_sha256,
-    resolve_artifact_tool,
-    resolve_executable,
-    resolve_node_binary,
+from app.services.office.internal_rendering import (
+    render_docx_pages,
+    render_pdf_pages,
+    render_pptx_pages,
+    render_svg,
+    render_xlsx_file,
+    render_xlsx_workbook,
 )
+from app.services.office.rendering import render_pages, renderer_available
+from app.services.office.runtime import file_sha256
 
 __all__ = [
-    "ARTIFACT_TOOL_ENTRYPOINT_ENV",
-    "DEFAULT_WORKER_TIMEOUT_SECONDS",
-    "NODE_BIN_ENV",
-    "NodeWorkerRuntime",
-    "codex_runtime_dependencies",
     "file_sha256",
-    "resolve_artifact_tool",
-    "resolve_executable",
-    "resolve_node_binary",
+    "render_docx_pages",
+    "render_pages",
+    "render_pdf_pages",
+    "render_pptx_pages",
+    "render_svg",
+    "render_xlsx_file",
+    "render_xlsx_workbook",
+    "renderer_available",
 ]

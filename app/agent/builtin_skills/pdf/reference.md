@@ -262,41 +262,30 @@ async function extractAnnotations() {
 }
 ```
 
-## Advanced Command-Line Operations
+## Advanced operations
 
-### poppler-utils Advanced Features
+### PDFium page rendering
 
-#### Extract Text with Bounding Box Coordinates
-```bash
-# Extract text with bounding box coordinates (essential for structured data)
-pdftotext -bbox-layout document.pdf output.xml
+```python
+from pathlib import Path
 
-# The XML output contains precise coordinates for each text element
+import pypdfium2 as pdfium
+
+document = pdfium.PdfDocument("document.pdf")
+output = Path("rendered-pages")
+output.mkdir(exist_ok=True)
+for index in range(len(document)):
+    page = document[index]
+    bitmap = page.render(scale=300 / 72)
+    bitmap.to_pil().save(output / f"page-{index + 1:03d}.png")
+    bitmap.close()
+    page.close()
+document.close()
 ```
 
-#### Advanced Image Conversion
-```bash
-# Convert to PNG images with specific resolution
-pdftoppm -png -r 300 document.pdf output_prefix
-
-# Convert specific page range with high resolution
-pdftoppm -png -r 600 -f 1 -l 3 document.pdf high_res_pages
-
-# Convert to JPEG with quality setting
-pdftoppm -jpeg -jpegopt quality=85 -r 200 document.pdf jpeg_output
-```
-
-#### Extract Embedded Images
-```bash
-# Extract all embedded images with metadata
-pdfimages -j -p document.pdf page_images
-
-# List image info without extracting
-pdfimages -list document.pdf
-
-# Extract images in their original format
-pdfimages -all document.pdf images/img
-```
+Use `pdfplumber` for words with bounding boxes and `pypdf` for page and
+annotation operations. Extract embedded image streams through `pypdf` rather
+than invoking a host command.
 
 ### qpdf Advanced Features
 
@@ -606,7 +595,6 @@ def extract_text_with_ocr(pdf_path):
 - **pdfplumber**: MIT License
 - **pypdfium2**: Apache/BSD License
 - **reportlab**: BSD License
-- **poppler-utils**: GPL-2 License
 - **qpdf**: Apache License
 - **pdf-lib**: MIT License
 - **pdfjs-dist**: Apache License

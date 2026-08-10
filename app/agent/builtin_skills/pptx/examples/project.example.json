@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "mode": "new",
   "quality_profile": "fidelity",
   "title": "High-fidelity presentation example",
@@ -10,9 +10,8 @@
       "id": "opening",
       "background": "#071426",
       "visual_shell": {
-        "html_path": "slide.example.html",
-        "alt": "Dark blue title slide about evidence-driven change",
-        "render_scale": 2
+        "svg_path": "slide.example.svg",
+        "alt": "Dark blue title slide about evidence-driven change"
       },
       "speaker_notes": "Open with the decision, then explain the evidence."
     }

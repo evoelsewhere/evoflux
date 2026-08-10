@@ -6,10 +6,9 @@ description: Create, edit, inspect, render, and verify Excel XLSX workbooks. Tri
 # Editable XLSX authoring
 
 Use the deferred `artifact` tool with `format: "xlsx"` for every XLSX write.
-Do not author final workbooks with `openpyxl`, `xlsxwriter`, pandas, HTML
-tables, screenshots, or manually assembled OpenXML. Supporting analysis may
-use Python or JavaScript, but `@oai/artifact-tool` must create or import and
-export the workbook.
+Artifact Fabric's typed OpenXML engine creates or imports and exports the
+workbook. Do not bypass it with ad-hoc scripts, HTML tables, or screenshots;
+supporting analysis may still use Python.
 
 Do not load examples when this skill activates. Call
 `artifact(action="catalog", format="xlsx")` first and treat the live schema as

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "mode": "new",
   "quality_profile": "native",
   "title": "Artifact Fabric native PPTX smoke test",
@@ -28,7 +28,6 @@
           "fill": "#dbeafe",
           "line_fill": "#93c5fd",
           "line_width": 1,
-          "border_radius": "rounded-xl",
           "text": "Immutable revision\nExact-byte publish",
           "font_size": 23,
           "text_color": "#1e3a8a",
@@ -52,7 +51,7 @@
           "type": "text",
           "name": "footer",
           "position": { "left": 72, "top": 640, "width": 1118, "height": 28 },
-          "text": "Backend worker · no Desktop WebView dependency",
+          "text": "Portable OpenXML engine · no Desktop WebView dependency",
           "font_size": 15,
           "color": "#64748b"
         }

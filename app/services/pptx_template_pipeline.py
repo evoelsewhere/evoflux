@@ -1,40 +1,26 @@
-"""High-fidelity editing of uploaded PowerPoint templates.
-
-This pipeline is intentionally separate from the HTML-first deck builder. It
-imports the user's PPTX, duplicates selected source slides, edits only resolved
-objects, and exports the inherited master/layout structure through
-``@oai/artifact-tool``. There is no HTML or fresh-slide fallback in this path.
-"""
+"""High-preservation PPTX template editing through direct OOXML cloning."""
 
 from __future__ import annotations
 
+import asyncio
+from copy import deepcopy
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.services.office.runtime import (
-    DEFAULT_WORKER_TIMEOUT_SECONDS,
-    NodeWorkerRuntime,
-    file_sha256,
-)
+from app.services.office.internal_rendering import render_pptx_pages
+from app.services.office.runtime import file_sha256
 
-# Backward-compatible public name retained for callers outside this module.
 pptx_sha256 = file_sha256
-
-
 MAX_TEMPLATE_SLIDES = 80
 MAX_EDITS_PER_SLIDE = 160
-_TARGET_PREFIXES = ("sh/", "im/", "tb/", "ch/")
 
 
 class TemplateObjectEdit(BaseModel):
-    """One bounded edit against an object ID from the inspection manifest."""
-
     model_config = ConfigDict(extra="forbid")
-
     operation: Literal[
         "set_text",
         "replace_text",
@@ -42,7 +28,7 @@ class TemplateObjectEdit(BaseModel):
         "set_table_cell",
         "set_chart_series",
     ]
-    target_id: str = Field(min_length=4, max_length=128)
+    target_id: str = Field(pattern=r"^(?:sh|im|tb|ch)/[1-9][0-9]*/[1-9][0-9]*$")
     text: str | None = Field(default=None, max_length=20_000)
     find: str | None = Field(default=None, min_length=1, max_length=4_000)
     replace: str | None = Field(default=None, max_length=20_000)
@@ -53,42 +39,25 @@ class TemplateObjectEdit(BaseModel):
     series_index: int | None = Field(default=None, ge=0, le=100)
     values: list[float] | None = Field(default=None, min_length=1, max_length=2_000)
 
-    @field_validator("target_id")
-    @classmethod
-    def validate_target_id(cls, value: str) -> str:
-        if not value.startswith(_TARGET_PREFIXES):
-            raise ValueError(
-                "target_id must be an inspect anchor beginning sh/, im/, tb/, or ch/"
-            )
-        return value
-
     @model_validator(mode="after")
     def validate_operation_fields(self) -> TemplateObjectEdit:
-        if self.operation == "set_text":
-            if self.text is None:
-                raise ValueError("set_text requires text")
-        elif self.operation == "replace_text":
-            if self.find is None or self.replace is None:
-                raise ValueError("replace_text requires find and replace")
-        elif self.operation == "replace_image":
-            if not self.asset_path:
-                raise ValueError("replace_image requires asset_path")
-        elif self.operation == "set_table_cell":
-            if self.row is None or self.column is None or self.text is None:
-                raise ValueError("set_table_cell requires row, column, and text")
-        elif self.operation == "set_chart_series":
-            if self.series_index is None or self.values is None:
-                raise ValueError(
-                    "set_chart_series requires series_index and non-empty values"
-                )
+        required = {
+            "set_text": self.text is not None,
+            "replace_text": self.find is not None and self.replace is not None,
+            "replace_image": bool(self.asset_path),
+            "set_table_cell": self.row is not None
+            and self.column is not None
+            and self.text is not None,
+            "set_chart_series": self.series_index is not None
+            and self.values is not None,
+        }
+        if not required[self.operation]:
+            raise ValueError(f"{self.operation} is missing required fields")
         return self
 
 
 class TemplateSlidePlan(BaseModel):
-    """Maps one output slide to an inherited source slide."""
-
     model_config = ConfigDict(extra="forbid")
-
     output_slide: int = Field(ge=1, le=MAX_TEMPLATE_SLIDES)
     source_slide: int = Field(ge=1, le=MAX_TEMPLATE_SLIDES)
     narrative_role: str = Field(min_length=1, max_length=240)
@@ -100,11 +69,8 @@ class TemplateSlidePlan(BaseModel):
 
 
 class TemplateDeckProject(BaseModel):
-    """Validated plan for editing an uploaded PPTX without rebuilding it."""
-
     model_config = ConfigDict(extra="forbid")
-
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     title: str = Field(min_length=1, max_length=240)
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     template_confirmed: Literal[True]
@@ -141,23 +107,6 @@ class TemplatePipelineResult:
     def passed(self) -> bool:
         return not any(issue.get("severity") == "error" for issue in self.issues)
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "action": self.action,
-            "source_pptx": str(self.source_pptx),
-            "work_dir": str(self.work_dir),
-            "manifest_path": (
-                str(self.manifest_path) if self.manifest_path is not None else None
-            ),
-            "output": str(self.output) if self.output is not None else None,
-            "slide_count": self.slide_count,
-            "passed": self.passed,
-            "issues": self.issues,
-            "previews": [str(path) for path in self.previews],
-            "layouts": [str(path) for path in self.layout_paths],
-            **self.metadata,
-        }
-
 
 def load_template_project(path: Path) -> TemplateDeckProject:
     return TemplateDeckProject.model_validate_json(path.read_text(encoding="utf-8"))
@@ -165,75 +114,97 @@ def load_template_project(path: Path) -> TemplateDeckProject:
 
 def load_template_manifest(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict) or value.get("schemaVersion") != 1:
-        raise ValueError("template manifest must use schemaVersion 1")
-    if not isinstance(value.get("records"), list):
-        raise ValueError("template manifest is missing inspect records")
+    if not isinstance(value, dict):
+        raise ValueError("template manifest must be an object")
     return value
 
 
-def validate_template_project(
-    project: TemplateDeckProject,
-    manifest: dict[str, Any],
-    *,
-    source_pptx: Path,
-) -> dict[str, Any]:
-    actual_hash = file_sha256(source_pptx)
-    manifest_hash = str(manifest.get("sourceSha256", ""))
-    if project.source_sha256 != actual_hash or manifest_hash != actual_hash:
-        raise ValueError(
-            "source PPTX changed after inspection; inspect it again before editing"
-        )
+def _record_kind(shape: Any) -> tuple[str, str]:
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
 
-    slide_count = int(manifest.get("slideCount", 0))
-    records = {
-        str(record.get("id")): record
-        for record in manifest["records"]
-        if isinstance(record, dict) and record.get("id")
+    if getattr(shape, "has_table", False):
+        return "tb", "table"
+    if getattr(shape, "has_chart", False):
+        return "ch", "chart"
+    if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+        return "im", "image"
+    return "sh", "textbox" if getattr(shape, "has_text_frame", False) else "shape"
+
+
+def _shape_record(shape: Any, slide_number: int) -> dict[str, Any]:
+    prefix, kind = _record_kind(shape)
+    record: dict[str, Any] = {
+        "id": f"{prefix}/{slide_number}/{shape.shape_id}",
+        "slide": slide_number,
+        "shapeId": shape.shape_id,
+        "kind": kind,
+        "name": shape.name,
+        "left": int(shape.left),
+        "top": int(shape.top),
+        "width": int(shape.width),
+        "height": int(shape.height),
     }
-    referenced = {slide.source_slide for slide in project.output_slides}
+    if getattr(shape, "has_text_frame", False):
+        record["text"] = shape.text
+    if getattr(shape, "has_table", False):
+        record.update(
+            {"rows": len(shape.table.rows), "columns": len(shape.table.columns)}
+        )
+    if getattr(shape, "has_chart", False):
+        record["seriesCount"] = len(shape.chart.series)
+    return record
+
+
+def _inspect_records(presentation: Any) -> list[dict[str, Any]]:
+    return [
+        _shape_record(shape, slide_number)
+        for slide_number, slide in enumerate(presentation.slides, start=1)
+        for shape in slide.shapes
+    ]
+
+
+def validate_template_project(
+    project: TemplateDeckProject, manifest: dict[str, Any], *, source_pptx: Path
+) -> dict[str, Any]:
+    actual_digest = file_sha256(source_pptx)
+    expected_digest = str(manifest.get("sourceSha256") or "")
+    if actual_digest != project.source_sha256 or actual_digest != expected_digest:
+        raise ValueError("source PPTX changed after inspection; inspect it again")
+    source_slide_count = int(manifest.get("slideCount", 0))
+    used = {slide.source_slide for slide in project.output_slides}
+    if any(slide < 1 or slide > source_slide_count for slide in used):
+        raise ValueError("source_slide is outside the inspected presentation")
+    expected_omissions = set(range(1, source_slide_count + 1)) - used
+    if set(project.omitted_source_slides) != expected_omissions:
+        raise ValueError(
+            "omitted_source_slides must explicitly list every unused source slide"
+        )
+    records = {str(record.get("id")): record for record in manifest.get("records", [])}
+    operation_kind = {
+        "set_text": {"textbox", "shape"},
+        "replace_text": {"textbox", "shape"},
+        "replace_image": {"image"},
+        "set_table_cell": {"table"},
+        "set_chart_series": {"chart"},
+    }
     for slide in project.output_slides:
-        if slide.source_slide > slide_count:
-            raise ValueError(
-                f"output slide {slide.output_slide} references missing source slide "
-                f"{slide.source_slide}; source has {slide_count} slides"
-            )
         for edit in slide.edits:
             record = records.get(edit.target_id)
             if record is None:
                 raise ValueError(
-                    f"edit target {edit.target_id!r} is not present in the manifest"
+                    f"target_id was not found in inspect manifest: {edit.target_id}"
                 )
             if int(record.get("slide", 0)) != slide.source_slide:
                 raise ValueError(
-                    f"edit target {edit.target_id!r} belongs to source slide "
-                    f"{record.get('slide')}, not {slide.source_slide}"
+                    f"target {edit.target_id} does not belong to source slide {slide.source_slide}"
                 )
-            expected_kind = {
-                "replace_image": "image",
-                "set_table_cell": "table",
-                "set_chart_series": "chart",
-            }.get(edit.operation)
-            if expected_kind and record.get("kind") != expected_kind:
-                raise ValueError(
-                    f"{edit.operation} requires a {expected_kind} target; "
-                    f"{edit.target_id!r} is {record.get('kind')}"
-                )
-            if edit.operation in {"set_text", "replace_text"} and record.get(
-                "kind"
-            ) not in {"textbox", "shape"}:
-                raise ValueError(f"{edit.operation} requires a textbox or shape target")
-
-    omitted = set(project.omitted_source_slides)
-    expected_omitted = set(range(1, slide_count + 1)) - referenced
-    if omitted != expected_omitted:
-        raise ValueError(
-            "omitted_source_slides must explicitly list every unused source slide"
-        )
+            kind = str(record.get("kind"))
+            if kind not in operation_kind[edit.operation]:
+                expected = next(iter(operation_kind[edit.operation]))
+                raise ValueError(f"{edit.operation} requires a {expected} target")
     return {
         "valid": True,
-        "source_sha256": actual_hash,
-        "source_slide_count": slide_count,
+        "source_slide_count": source_slide_count,
         "output_slide_count": len(project.output_slides),
         "edit_count": sum(len(slide.edits) for slide in project.output_slides),
         "preserve_only_slide_count": sum(
@@ -244,111 +215,291 @@ def validate_template_project(
 
 def template_catalog() -> dict[str, Any]:
     return {
-        "workflow": "uploaded-pptx-template-following",
+        "workflow": "direct-openxml-pptx-template",
         "style_behavior": {
             "uploaded_template_is_style_confirmation": True,
             "ask_style_question": False,
-            "ambiguous_upload": (
-                "Ask whether the PPTX is a visual template or only a content source."
-            ),
+            "ambiguous_upload": "Ask whether the PPTX is a visual template or only a content source.",
         },
         "invariants": [
-            "Import the uploaded PPTX; never rebuild it as HTML.",
-            "Duplicate source slides and preserve master, layout, theme, and geometry.",
-            "Edit only inspect IDs declared in the validated slide map.",
-            "Treat edits=[] as preserve-only; do not add overlays or new objects.",
-            "Fail closed when artifact-tool is unavailable or fidelity checks fail.",
+            "Clone source slide XML and relationships without rebuilding its layout.",
+            "Preserve masters, layouts, themes, transitions, timing, and untouched objects.",
+            "Edit only stable shape IDs declared by inspect.",
+            "Render every result with the bundled internal OOXML renderer.",
         ],
-        "actions": {
-            "inspect": "Render every source slide and emit stable object anchors.",
-            "validate": "Check source hash, slide mapping, and type-safe edit targets.",
-            "render": "Build and render an inherited preview deck without publishing it.",
-            "compose": "Build, verify, and publish the editable inherited PPTX.",
-        },
         "supported_edits": {
-            "set_text": "Replace all text in an existing textbox/shape.",
-            "replace_text": "Replace a substring while retaining surrounding runs.",
-            "replace_image": "Swap source while preserving frame/crop/mask metadata.",
-            "set_table_cell": "Update one native table cell by zero-based row/column.",
-            "set_chart_series": "Update values in one native chart series.",
-            "speaker_notes": "Set notes on the duplicated output slide.",
+            "set_text": "Replace text while retaining the first run style.",
+            "replace_text": "Replace a substring while retaining surrounding style.",
+            "replace_image": "Swap image bytes while preserving frame geometry.",
+            "set_table_cell": "Update one native table cell.",
+            "set_chart_series": "Update one native chart series.",
+            "speaker_notes": "Set notes on the cloned output slide.",
         },
         "project_json_schema": TemplateDeckProject.model_json_schema(),
     }
 
 
-_WORKER = NodeWorkerRuntime(
-    worker=Path(__file__).with_name("pptx_template_worker.mjs"),
-    label="PPTX template",
-    purpose="uploaded PPTX template editing",
-    requirement_hint="The template path does not fall back to HTML or python-pptx.",
-)
+def _write_inspect_artifacts(source: Path, work_dir: Path) -> TemplatePipelineResult:
+    from pptx import Presentation
 
-
-async def run_template_worker(
-    action: Literal["inspect", "render", "compose"],
-    request: dict[str, Any],
-    *,
-    workspace_root: Path,
-    work_dir: Path,
-    timeout_seconds: int = DEFAULT_WORKER_TIMEOUT_SECONDS,
-) -> dict[str, Any]:
-    return await _WORKER.run(
-        action,
-        request,
-        workspace_root=workspace_root,
+    presentation = Presentation(str(source))
+    records = _inspect_records(presentation)
+    previews = render_pptx_pages(source, work_dir / "previews")
+    layout_paths: list[Path] = []
+    for slide_number in range(1, len(presentation.slides) + 1):
+        layout_path = (
+            work_dir / "layouts" / f"source-slide-{slide_number:03d}.layout.json"
+        )
+        layout_path.parent.mkdir(parents=True, exist_ok=True)
+        layout_path.write_text(
+            json.dumps(
+                {
+                    "slide": slide_number,
+                    "records": [
+                        record for record in records if record["slide"] == slide_number
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        layout_paths.append(layout_path)
+    manifest_path = work_dir / "template-manifest.json"
+    manifest = {
+        "schemaVersion": 2,
+        "engine": "evoflux-direct-openxml",
+        "sourcePath": str(source.resolve()),
+        "sourceSha256": file_sha256(source),
+        "slideCount": len(presentation.slides),
+        "records": records,
+        "slideArtifacts": [
+            {
+                "slide": index,
+                "previewPath": str(previews[index - 1]),
+                "layoutPath": str(layout_paths[index - 1]),
+            }
+            for index in range(1, len(presentation.slides) + 1)
+        ],
+    }
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return TemplatePipelineResult(
+        action="inspect",
+        source_pptx=source,
         work_dir=work_dir,
-        timeout_seconds=timeout_seconds,
+        manifest_path=manifest_path,
+        previews=previews,
+        layout_paths=layout_paths,
+        slide_count=len(presentation.slides),
+        metadata={"engine": "evoflux-direct-openxml"},
     )
 
 
-def _result_from_worker(
-    action: str,
-    source_pptx: Path,
+def _rewrite_relationship_ids(element: Any, mapping: dict[str, str]) -> None:
+    from pptx.oxml.ns import qn
+
+    attributes = (qn("r:id"), qn("r:embed"), qn("r:link"))
+    for node in element.iter():
+        for attribute in attributes:
+            old = node.get(attribute)
+            if old in mapping:
+                node.set(attribute, mapping[old])
+
+
+def _duplicate_slide(presentation: Any, source_slide: Any) -> Any:
+    from pptx.shapes.shapetree import SlideShapes
+
+    target = presentation.slides.add_slide(source_slide.slide_layout)
+    duplicate = deepcopy(source_slide._element)  # noqa: SLF001 - OOXML-preserving clone
+    mapping: dict[str, str] = {}
+    target_layout_rel = next(
+        rel for rel in target.part.rels.values() if rel.reltype.endswith("/slideLayout")
+    )
+    for relation in source_slide.part.rels.values():
+        if relation.reltype.endswith("/slideLayout"):
+            mapping[relation.rId] = target_layout_rel.rId
+        elif relation.reltype.endswith("/notesSlide"):
+            continue
+        else:
+            mapping[relation.rId] = target.part.rels._add_relationship(  # noqa: SLF001
+                relation.reltype,
+                relation._target,
+                relation.is_external,  # noqa: SLF001
+            )
+    _rewrite_relationship_ids(duplicate, mapping)
+    target.part._element = duplicate  # noqa: SLF001
+    target._element = duplicate  # noqa: SLF001
+    # ``Slide.shapes`` is cached when python-pptx creates the blank target.
+    # Point that proxy at the cloned shape tree as well as replacing the XML.
+    target.__dict__["shapes"] = SlideShapes(duplicate.cSld.spTree, target)
+    return target
+
+
+def _remove_original_slides(presentation: Any, count: int) -> None:
+    slide_ids = presentation.slides._sldIdLst  # noqa: SLF001
+    for slide_id in list(slide_ids)[:count]:
+        presentation.part.drop_rel(slide_id.rId)
+        slide_ids.remove(slide_id)
+
+
+def _shape_by_id(slide: Any, shape_id: int) -> Any:
+    for shape in slide.shapes:
+        if shape.shape_id == shape_id:
+            return shape
+    raise ValueError(f"shape id {shape_id} is missing from cloned slide")
+
+
+def _set_text_preserving_style(shape: Any, value: str) -> None:
+    runs = [run for paragraph in shape.text_frame.paragraphs for run in paragraph.runs]
+    if not runs:
+        shape.text = value
+        return
+    runs[0].text = value
+    for run in runs[1:]:
+        run.text = ""
+
+
+def _replace_image(slide: Any, shape: Any, source: Path) -> None:
+    image_part, relation_id = slide.part.get_or_add_image_part(str(source))
+    del image_part
+    shape._element.blipFill.blip.rEmbed = relation_id  # noqa: SLF001
+
+
+def _replace_chart_series(shape: Any, series_index: int, values: list[float]) -> None:
+    from pptx.chart.data import CategoryChartData
+
+    chart = shape.chart
+    series_values = [list(series.values) for series in chart.series]
+    if series_index >= len(series_values):
+        raise ValueError(f"chart series index {series_index} is out of range")
+    if len(values) != len(series_values[series_index]):
+        raise ValueError("replacement chart series must preserve category count")
+    series_values[series_index] = values
+    try:
+        categories = [str(category) for category in chart.plots[0].categories]
+    except (AttributeError, TypeError):
+        categories = [str(index + 1) for index in range(len(values))]
+    data = CategoryChartData()
+    data.categories = categories
+    for index, series in enumerate(chart.series):
+        data.add_series(str(series.name or f"Series {index + 1}"), series_values[index])
+    chart.replace_data(data)
+
+
+def _apply_edit(slide: Any, edit: TemplateObjectEdit, project_dir: Path) -> None:
+    shape_id = int(edit.target_id.rsplit("/", 1)[1])
+    shape = _shape_by_id(slide, shape_id)
+    if edit.operation == "set_text":
+        _set_text_preserving_style(shape, edit.text or "")
+    elif edit.operation == "replace_text":
+        current = shape.text
+        if edit.find not in current:
+            raise ValueError(f"target {edit.target_id} does not contain {edit.find!r}")
+        _set_text_preserving_style(
+            shape, current.replace(edit.find or "", edit.replace or "")
+        )
+    elif edit.operation == "replace_image":
+        path = Path(edit.asset_path or "")
+        if not path.is_absolute():
+            path = project_dir / path
+        if not path.is_file():
+            raise FileNotFoundError(f"replacement image does not exist: {path}")
+        _replace_image(slide, shape, path)
+    elif edit.operation == "set_table_cell":
+        assert edit.row is not None and edit.column is not None
+        if edit.row >= len(shape.table.rows) or edit.column >= len(shape.table.columns):
+            raise ValueError("table cell index is out of range")
+        shape.table.cell(edit.row, edit.column).text = edit.text or ""
+    else:
+        assert edit.series_index is not None and edit.values is not None
+        _replace_chart_series(shape, edit.series_index, edit.values)
+
+
+def _build_template(
+    source: Path,
+    project: TemplateDeckProject,
+    project_dir: Path,
+    output: Path,
     work_dir: Path,
-    value: dict[str, Any],
+    *,
+    publish: bool,
 ) -> TemplatePipelineResult:
+    from pptx import Presentation
+
+    presentation = Presentation(str(source))
+    originals = list(presentation.slides)
+    output_slides: list[Any] = []
+    for plan in project.output_slides:
+        output_slides.append(
+            _duplicate_slide(presentation, originals[plan.source_slide - 1])
+        )
+    _remove_original_slides(presentation, len(originals))
+    for plan, slide in zip(project.output_slides, output_slides, strict=True):
+        for edit in plan.edits:
+            _apply_edit(slide, edit, project_dir=project_dir)
+        if plan.speaker_notes:
+            slide.notes_slide.notes_text_frame.text = plan.speaker_notes
+    candidate = output if publish else work_dir / "template-preview.pptx"
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    presentation.save(str(candidate))
+    previews = render_pptx_pages(candidate, work_dir / "previews")
+    layout_paths: list[Path] = []
+    records = _inspect_records(Presentation(str(candidate)))
+    for slide_number in range(1, len(project.output_slides) + 1):
+        path = work_dir / "layouts" / f"output-slide-{slide_number:03d}.layout.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "slide": slide_number,
+                    "records": [
+                        record for record in records if record["slide"] == slide_number
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        layout_paths.append(path)
+    manifest_path = work_dir / "template-output-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 2,
+                "engine": "evoflux-direct-openxml",
+                "sourceSha256": project.source_sha256,
+                "slideCount": len(project.output_slides),
+                "records": records,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     return TemplatePipelineResult(
-        action=action,
-        source_pptx=source_pptx,
+        action="compose" if publish else "render",
+        source_pptx=source,
         work_dir=work_dir,
-        manifest_path=(
-            Path(value["manifestPath"]) if value.get("manifestPath") else None
-        ),
-        output=Path(value["outputPath"]) if value.get("outputPath") else None,
-        previews=[Path(path) for path in value.get("previewPaths", [])],
-        layout_paths=[Path(path) for path in value.get("layoutPaths", [])],
-        slide_count=int(value.get("slideCount", 0)),
-        issues=list(value.get("issues", [])),
-        metadata={
-            key: item
-            for key, item in value.items()
-            if key
-            not in {
-                "manifestPath",
-                "outputPath",
-                "previewPaths",
-                "layoutPaths",
-                "slideCount",
-                "issues",
-            }
-        },
+        manifest_path=manifest_path,
+        output=output if publish else None,
+        previews=previews,
+        layout_paths=layout_paths,
+        slide_count=len(project.output_slides),
+        metadata={"engine": "evoflux-direct-openxml", "preserved_master_layouts": True},
     )
 
 
 async def inspect_pptx_template(
-    source_pptx: Path,
-    *,
-    workspace_root: Path,
-    work_dir: Path,
+    source_pptx: Path, *, workspace_root: Path, work_dir: Path
 ) -> TemplatePipelineResult:
-    value = await run_template_worker(
-        "inspect",
-        {"sourcePath": str(source_pptx), "workDir": str(work_dir)},
-        workspace_root=workspace_root,
-        work_dir=work_dir,
-    )
-    return _result_from_worker("inspect", source_pptx, work_dir, value)
+    del workspace_root
+    return await asyncio.to_thread(_write_inspect_artifacts, source_pptx, work_dir)
 
 
 async def render_pptx_template(
@@ -359,21 +510,20 @@ async def render_pptx_template(
     workspace_root: Path,
     work_dir: Path,
 ) -> TemplatePipelineResult:
+    del workspace_root
     project = load_template_project(project_path)
-    manifest = load_template_manifest(manifest_path)
-    validate_template_project(project, manifest, source_pptx=source_pptx)
-    value = await run_template_worker(
-        "render",
-        {
-            "sourcePath": str(source_pptx),
-            "projectPath": str(project_path),
-            "manifestPath": str(manifest_path),
-            "workDir": str(work_dir),
-        },
-        workspace_root=workspace_root,
-        work_dir=work_dir,
+    validate_template_project(
+        project, load_template_manifest(manifest_path), source_pptx=source_pptx
     )
-    return _result_from_worker("render", source_pptx, work_dir, value)
+    return await asyncio.to_thread(
+        _build_template,
+        source_pptx,
+        project,
+        project_path.parent.resolve(),
+        work_dir / "template-preview.pptx",
+        work_dir,
+        publish=False,
+    )
 
 
 async def compose_pptx_template(
@@ -385,26 +535,24 @@ async def compose_pptx_template(
     workspace_root: Path,
     work_dir: Path,
 ) -> TemplatePipelineResult:
+    del workspace_root
     project = load_template_project(project_path)
-    manifest = load_template_manifest(manifest_path)
-    validate_template_project(project, manifest, source_pptx=source_pptx)
-    value = await run_template_worker(
-        "compose",
-        {
-            "sourcePath": str(source_pptx),
-            "projectPath": str(project_path),
-            "manifestPath": str(manifest_path),
-            "outputPath": str(output),
-            "workDir": str(work_dir),
-        },
-        workspace_root=workspace_root,
-        work_dir=work_dir,
+    validate_template_project(
+        project, load_template_manifest(manifest_path), source_pptx=source_pptx
     )
-    result = _result_from_worker("compose", source_pptx, work_dir, value)
-    if not result.passed and output.exists():
-        output.unlink()
-        result.output = None
-    return result
+    try:
+        return await asyncio.to_thread(
+            _build_template,
+            source_pptx,
+            project,
+            project_path.parent.resolve(),
+            output,
+            work_dir,
+            publish=True,
+        )
+    except Exception:
+        output.unlink(missing_ok=True)
+        raise
 
 
 __all__ = [
@@ -418,7 +566,6 @@ __all__ = [
     "load_template_project",
     "pptx_sha256",
     "render_pptx_template",
-    "run_template_worker",
     "template_catalog",
     "validate_template_project",
 ]

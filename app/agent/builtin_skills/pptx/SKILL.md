@@ -18,17 +18,17 @@ schema. Do not load bundled references or examples when this skill activates.
 - **Uploaded PPTX with ambiguous purpose:** ask whether it is the visual
   template or only a content source before authoring.
 
-Never use Desktop WebView capture or `python-pptx`. Static slide HTML is allowed
-only through Artifact Fabric's bundled backend Chromium renderer. Never
+Never use Desktop WebView capture or browser screenshots. Artifact Fabric owns
+the OpenXML writes and uses static project-local SVG for fidelity shells. Never
 overwrite an uploaded source.
 
 ## New-deck quality profiles
 
-- **`fidelity` (default):** author each complete slide as static HTML. This
-  preserves CSS typography, gradients, shadows, SVG, and composition exactly;
+- **`fidelity` (default):** author each complete slide as static SVG. This
+  preserves vector typography, gradients, shadows, and composition exactly;
   the PowerPoint slide contains one full-slide visual object.
-- **`hybrid`:** use a decorative HTML shell plus native editable overlays. Also
-  author a complete reference HTML for each slide; Artifact Fabric pixel-diffs
+- **`hybrid`:** use a decorative SVG shell plus native editable overlays. Also
+  author a complete reference SVG for each slide; Artifact Fabric pixel-diffs
   the composed PPTX against that reference and rejects drift.
 - **`native`:** use only native text, shape, image, table, and chart objects when
   full semantic editability matters more than CSS-level fidelity.
@@ -62,9 +62,8 @@ briefing—read
 [references/research-paper-briefing-style.md](references/research-paper-briefing-style.md)
 and the machine-readable
 [templates/research-paper-briefing-dna.json](templates/research-paper-briefing-dna.json),
-then reuse the tokens and layout primitives in
-[templates/research-paper-briefing.css](templates/research-paper-briefing.css).
-Copy the CSS into the deck project and keep it local; do not fetch a web theme.
+then reuse those tokens and layout primitives in project-local SVG. Do not
+fetch a web theme.
 
 ### 3A. Inherited template
 

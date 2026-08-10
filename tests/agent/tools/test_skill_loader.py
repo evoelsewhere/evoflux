@@ -1349,22 +1349,23 @@ class TestBuiltinSkills:
                     missing.append(f"{skill_file.parent.name}: {raw}")
         assert missing == []
 
-    def test_research_paper_briefing_dna_matches_css_layout_registry(self):
+    def test_research_paper_briefing_dna_has_svg_layout_registry(self):
         template_dir = _builtin_skills_dir() / "pptx" / "templates"
         dna = json.loads(
             (template_dir / "research-paper-briefing-dna.json").read_text(
                 encoding="utf-8"
             )
         )
-        css = (template_dir / "research-paper-briefing.css").read_text(encoding="utf-8")
         layouts = dna["layouts"]
         layout_ids = [layout["id"] for layout in layouts]
+        svg_group_ids = [layout["svg_group_id"] for layout in layouts]
 
         assert dna["schema_version"] == 1
         assert len(layouts) >= 14
         assert len(layout_ids) == len(set(layout_ids))
         assert {item["layout_id"] for item in dna["layout_selector"]} == set(layout_ids)
-        assert all(f".{layout['css_class']}" in css for layout in layouts)
+        assert svg_group_ids == [f"layout-{layout_id}" for layout_id in layout_ids]
+        assert len(svg_group_ids) == len(set(svg_group_ids))
         assert dna["editability_contract"]["handoff_default_profile"] == "hybrid"
         assert dna["editability_contract"]["minimum_editable_visible_text_ratio"] >= 0.7
 
