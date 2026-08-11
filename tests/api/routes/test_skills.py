@@ -12,6 +12,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.routes import skills as skills_routes
 from app.api.routes.skills import router as skills_router
+from app.conductor.models import ManagedResourceProvider
 from app.services import agent_fs, team_manager
 
 
@@ -107,6 +108,18 @@ description: ""
 ---
 Body.
 """
+
+
+def _managed_provider() -> ManagedResourceProvider:
+    return ManagedResourceProvider(
+        project_id="project-1",
+        project_name="Platform Core",
+        resource_id="skill-1",
+        version_id="skill-version-3",
+        version="0.3.0",
+        release_channel="beta",
+        observed_state="update_pending",
+    )
 
 
 # ── _parse_skill unit tests (via POST /api/skills validation) ─────────────────
@@ -228,6 +241,58 @@ async def test_conductor_managed_skill_is_read_only(fs_dirs, client):
     delete = await client.delete("/api/skills/managed")
     assert update.status_code == 403
     assert delete.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_managed_skill_exposes_provider_and_blocks_bundle_mutation(
+    client, fs_dirs, monkeypatch: pytest.MonkeyPatch
+):
+    await client.post("/api/skills", json={"name": "research", "content": VALID_SKILL})
+    provider = _managed_provider()
+    monkeypatch.setattr(
+        skills_routes,
+        "managed_resource_providers",
+        lambda: {("skill", "research"): provider},
+    )
+    monkeypatch.setattr(
+        skills_routes,
+        "managed_resource_provider",
+        lambda kind, slug: provider if (kind, slug) == ("skill", "research") else None,
+    )
+
+    listed = await client.get("/api/skills")
+    row = next(
+        skill for skill in listed.json()["skills"] if skill["name"] == "research"
+    )
+    assert row["editable"] is False
+    assert row["source"] == "conductor"
+    assert row["settings_editable"] is False
+    assert row["provider"]["project_name"] == "Platform Core"
+    assert row["provider"]["observed_state"] == "update_pending"
+
+    detail = await client.get("/api/skills/research")
+    assert detail.json()["editable"] is False
+    assert all(file["editable"] is False for file in detail.json()["files"])
+
+    updated = await client.put(
+        "/api/skills/research",
+        json={"name": "research", "content": VALID_SKILL},
+    )
+    deleted = await client.delete("/api/skills/research")
+    runtime_update = await client.patch(
+        "/api/skills/research",
+        json={
+            "settings_id": row["settings_id"],
+            "modes": ["work"],
+            "allow_implicit_invocation": False,
+            "user_invocable": False,
+        },
+    )
+
+    assert updated.status_code == 403
+    assert deleted.status_code == 403
+    assert runtime_update.status_code == 403
+    assert (fs_dirs[1] / "research" / "SKILL.md").read_text() == VALID_SKILL
 
 
 @pytest.mark.asyncio

@@ -14,8 +14,14 @@ from app.conductor.models import (
     EffectiveResourceVersion,
     ResourceChange,
     ResourceChangePage,
+    ResourceVersionNotice,
+)
+from app.conductor.provenance import (
+    managed_resource_provider,
+    managed_resource_provider_from_record,
 )
 from app.core.config import settings
+from app.core.runtime_settings import load_runtime_settings, save_runtime_settings
 from app.plugin_platform.models import PLUGIN_SCHEMA_ID
 from app.plugin_platform.registry import get_installation
 
@@ -157,6 +163,287 @@ async def test_enforce_applies_agent_by_project_resource_identity(
     assert (
         governed_dirs / "config" / "agents" / "managed-agent.md"
     ).read_text() == content
+    runtime = load_runtime_settings()
+    runtime.conductor.project_id = "project-1"
+    runtime.conductor.project_name = "platform-core"
+    runtime.conductor.project_display_name = "Platform Core"
+    save_runtime_settings(runtime)
+    provider = managed_resource_provider("agent", "managed-agent")
+    assert provider is not None
+    assert provider.project_name == "Platform Core"
+    assert provider.resource_id == "agent-1"
+    assert provider.version == "0.1.0"
+
+
+@pytest.mark.asyncio
+async def test_enforce_mounts_agent_only_in_selected_evoflux_mode(
+    governed_dirs: Path,
+) -> None:
+    content = "---\nname: managed-agent\ndescription: Test\n---\nPrompt\n"
+    payload = {
+        "files": [
+            {"path": "managed-agent.md", "content": content},
+            {
+                "path": ".evoflux.json",
+                "content": json.dumps({"modes": ["coding"]}),
+            },
+        ]
+    }
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    change = _change("agent", hashlib.sha256(raw).hexdigest(), len(raw))
+    version = EffectiveResourceVersion.model_validate(
+        {
+            **change.model_dump(exclude={"tombstone", "trust_required"}),
+            "release_channel": "published",
+            "payload": payload,
+            "artifact_key": None,
+        }
+    )
+
+    result = await GovernedResourceReconciler(
+        ManagedResourceStore(governed_dirs / "state" / "conductor")
+    ).reconcile_page(
+        FakeClient(version),
+        _page(change),
+        expected_project_id="project-1",
+        enforcement_mode="enforce",
+    )
+
+    assert result[0].modes == ["coding"]
+    assert not (governed_dirs / "config" / "agents" / "managed-agent.md").exists()
+    assert (
+        governed_dirs / "config" / "agents" / "coding" / "managed-agent.md"
+    ).read_text() == content
+
+
+@pytest.mark.asyncio
+async def test_same_version_backfills_a_missing_agent_mode_copy(
+    governed_dirs: Path,
+) -> None:
+    content = "---\nname: managed-agent\ndescription: Test\n---\nPrompt\n"
+    payload = {"files": [{"path": "managed-agent.md", "content": content}]}
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    change = _change("agent", hashlib.sha256(raw).hexdigest(), len(raw))
+    version = EffectiveResourceVersion.model_validate(
+        {
+            **change.model_dump(exclude={"tombstone", "trust_required"}),
+            "release_channel": "published",
+            "payload": payload,
+            "artifact_key": None,
+        }
+    )
+    store = ManagedResourceStore(governed_dirs / "state" / "conductor")
+    reconciler = GovernedResourceReconciler(store)
+
+    await reconciler.reconcile_page(
+        FakeClient(version),
+        _page(change),
+        expected_project_id="project-1",
+        enforcement_mode="enforce",
+    )
+    coding_copy = governed_dirs / "config" / "agents" / "coding" / "managed-agent.md"
+    coding_copy.unlink()
+
+    replay_client = FakeClient(version)
+    replayed = await reconciler.reconcile_page(
+        replay_client,
+        _page(change),
+        expected_project_id="project-1",
+        enforcement_mode="enforce",
+    )
+
+    assert replayed[0].observed_state == "applied"
+    assert replay_client.version_requests == 1
+    assert coding_copy.read_text() == content
+
+
+@pytest.mark.asyncio
+async def test_new_agent_version_waits_for_explicit_pull_before_replacing_source(
+    governed_dirs: Path,
+) -> None:
+    first_content = "---\nname: managed-agent\ndescription: First\n---\nFirst prompt\n"
+    first_payload = {"files": [{"path": "managed-agent.md", "content": first_content}]}
+    first_raw = json.dumps(first_payload, separators=(",", ":")).encode()
+    first_change = _change(
+        "agent", hashlib.sha256(first_raw).hexdigest(), len(first_raw)
+    )
+    first_version = EffectiveResourceVersion.model_validate(
+        {
+            **first_change.model_dump(exclude={"tombstone", "trust_required"}),
+            "release_channel": "published",
+            "payload": first_payload,
+            "artifact_key": None,
+        }
+    )
+    store = ManagedResourceStore(governed_dirs / "state" / "conductor")
+    reconciler = GovernedResourceReconciler(store)
+    await reconciler.reconcile_page(
+        FakeClient(first_version),
+        _page(first_change),
+        expected_project_id="project-1",
+        enforcement_mode="enforce",
+    )
+
+    second_content = (
+        "---\nname: managed-agent\ndescription: Second\n---\nSecond prompt\n"
+    )
+    second_payload = {
+        "files": [{"path": "managed-agent.md", "content": second_content}]
+    }
+    second_raw = json.dumps(second_payload, separators=(",", ":")).encode()
+    second_change = first_change.model_copy(
+        update={
+            "version_id": "agent-version-2",
+            "version": "1.0.0",
+            "description": "Managed release analyst",
+            "changelog": "Adds breaking release policy checks.",
+            "version_history": [
+                ResourceVersionNotice(
+                    version_id="agent-version-1",
+                    version="0.1.0",
+                    status="deprecated",
+                    release_channel="published",
+                    changelog="Initial release.",
+                    deprecation_reason="Known policy bypass.",
+                ),
+                ResourceVersionNotice(
+                    version_id="agent-version-2",
+                    version="1.0.0",
+                    status="published",
+                    release_channel="published",
+                    changelog="Adds breaking release policy checks.",
+                ),
+            ],
+            "sha256": hashlib.sha256(second_raw).hexdigest(),
+            "size": len(second_raw),
+        }
+    )
+    second_version = EffectiveResourceVersion.model_validate(
+        {
+            **second_change.model_dump(exclude={"tombstone", "trust_required"}),
+            "release_channel": "published",
+            "payload": second_payload,
+            "artifact_key": None,
+        }
+    )
+
+    pending = await reconciler.reconcile_page(
+        FakeClient(second_version),
+        ResourceChangePage(
+            schema_version=2,
+            project_id="project-1",
+            next_cursor="cursor-2",
+            has_more=False,
+            changes=[second_change],
+        ),
+        expected_project_id="project-1",
+        enforcement_mode="report",
+    )
+    assert pending[0].observed_state == "update_pending"
+    assert pending[0].local_content_sha256 is not None
+    assert pending[0].applied_version == "0.1.0"
+    assert pending[0].version == "1.0.0"
+    provider = managed_resource_provider_from_record(pending[0], "Platform Core")
+    assert provider.update_available is True
+    assert provider.update_required is True
+    assert provider.version_gap == "major"
+    assert provider.current_version_deprecation_reason == "Known policy bypass."
+    target = governed_dirs / "config" / "agents" / "managed-agent.md"
+    assert target.read_text() == first_content
+
+    enforce_replay = await reconciler.reconcile_page(
+        FakeClient(second_version),
+        ResourceChangePage(
+            schema_version=2,
+            project_id="project-1",
+            next_cursor="cursor-3",
+            has_more=False,
+            changes=[second_change],
+        ),
+        expected_project_id="project-1",
+        enforcement_mode="enforce",
+    )
+    assert enforce_replay[0].observed_state == "update_pending"
+    assert target.read_text() == first_content
+
+    applied = await reconciler.pull(FakeClient(second_version), "project-1", "agent-1")
+    assert applied.observed_state == "applied"
+    assert applied.version == "1.0.0"
+    assert applied.applied_version == "1.0.0"
+    assert target.read_text() == second_content
+
+
+@pytest.mark.asyncio
+async def test_enforce_rejects_agent_payload_that_is_not_evoflux_native(
+    governed_dirs: Path,
+) -> None:
+    content = "---\nname: another-agent\ndescription: Wrong identity\n---\nPrompt\n"
+    payload = {"files": [{"path": "managed-agent.md", "content": content}]}
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    change = _change("agent", hashlib.sha256(raw).hexdigest(), len(raw))
+    version = EffectiveResourceVersion.model_validate(
+        {
+            **change.model_dump(exclude={"tombstone", "trust_required"}),
+            "release_channel": "published",
+            "payload": payload,
+            "artifact_key": None,
+        }
+    )
+
+    store = ManagedResourceStore(governed_dirs / "state" / "conductor")
+    result = await GovernedResourceReconciler(store).reconcile_page(
+        FakeClient(version),
+        _page(change),
+        expected_project_id="project-1",
+        enforcement_mode="enforce",
+    )
+
+    assert result[0].observed_state == "error"
+    assert store.load().committed_cursor is None
+    assert not (governed_dirs / "config" / "agents" / "managed-agent.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_enforce_applies_evoflux_native_skill_bundle(
+    governed_dirs: Path,
+) -> None:
+    content = (
+        "---\nname: managed-skill\ndescription: Managed workflow\n---\n"
+        "Use the managed workflow.\n"
+    )
+    payload = {
+        "files": [
+            {"path": "SKILL.md", "content": content},
+            {"path": "references/guide.md", "content": "# Guide\n"},
+        ]
+    }
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    change = _change("skill", hashlib.sha256(raw).hexdigest(), len(raw))
+    version = EffectiveResourceVersion.model_validate(
+        {
+            **change.model_dump(exclude={"tombstone", "trust_required"}),
+            "release_channel": "published",
+            "payload": payload,
+            "artifact_key": None,
+        }
+    )
+
+    result = await GovernedResourceReconciler(
+        ManagedResourceStore(governed_dirs / "state" / "conductor")
+    ).reconcile_page(
+        FakeClient(version),
+        _page(change),
+        expected_project_id="project-1",
+        enforcement_mode="enforce",
+    )
+
+    assert result[0].observed_state == "applied"
+    skill_root = governed_dirs / "config" / "skills" / "managed-skill"
+    assert (skill_root / "SKILL.md").read_text() == content
+    assert (skill_root / "references" / "guide.md").read_text() == "# Guide\n"
+    assert json.loads((skill_root / ".evoflux.json").read_text()) == {
+        "modes": ["work", "coding"]
+    }
 
 
 @pytest.mark.asyncio

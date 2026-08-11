@@ -151,6 +151,29 @@ def test_disconnect_conductor_clears_connection(
     disconnect.assert_awaited_once_with()
 
 
+def test_pull_conductor_resource_is_an_explicit_server_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.conductor import conductor_service
+
+    payload = {
+        "resource_id": "resource-1",
+        "version": "1.2.0",
+        "applied_version": "1.2.0",
+        "observed_state": "applied",
+    }
+    pull = AsyncMock(return_value=payload)
+    monkeypatch.setattr(conductor_service, "pull_governed_resource", pull)
+
+    response = TestClient(_make_app()).post(
+        "/api/settings/conductor/resources/resource-1/pull"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    pull.assert_awaited_once_with("resource-1")
+
+
 def test_get_sandbox_returns_seed_defaults_when_file_missing(
     isolated_config: Path,
 ) -> None:
