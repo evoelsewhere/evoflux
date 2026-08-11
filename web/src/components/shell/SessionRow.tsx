@@ -137,7 +137,7 @@ export function SessionRow({
                 aria-label="Created from browser"
               />
             )}
-            <span className="shrink-0 text-[10px] text-(--color-text-subtle)">
+            <span className="shrink-0 text-[10px] text-(--color-text-subtle) transition-opacity duration-(--motion-fast) group-hover:opacity-0 group-focus-within:opacity-0 pointer-coarse:opacity-0">
               {formatRelativeDate(session.created_at)}
             </span>
           </div>
@@ -196,54 +196,55 @@ export function SessionRow({
 
       {!pendingDelete && (
         <>
-          {onOpenSideChat && (
+          {compact && (
+            <span
+              className="pointer-events-none absolute inset-y-0 right-0 w-20 rounded-r-md bg-linear-to-l from-(--bg-key) via-(--bg-key)/95 to-transparent opacity-0 transition-opacity duration-(--motion-fast) group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100"
+              aria-hidden="true"
+            />
+          )}
+          <div
+            className={cn(
+              'absolute top-1/2 z-(--z-panel) flex origin-right -translate-y-1/2 scale-95 items-center gap-0.5 rounded-md border border-(--color-border)/80 bg-(--bg-card)/95 p-0.5 opacity-0 shadow-sm backdrop-blur-sm transition-[opacity,transform] duration-(--motion-fast) group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100 pointer-coarse:scale-100 pointer-coarse:opacity-100',
+              compact ? 'right-1' : 'right-1.5',
+            )}
+          >
+            {onOpenSideChat && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onOpenSideChat(session)
+                }}
+                className="flex h-5 w-5 items-center justify-center rounded-sm text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:outline-2 focus-visible:outline-(--focus-ring)"
+                aria-label={`Open side chat for ${session.title || 'Untitled'}`}
+                title="Open side chat"
+              >
+                <MessageCirclePlus size={compact ? 11 : 12} />
+              </button>
+            )}
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation()
-                onOpenSideChat(session)
+                onEdit(session)
               }}
-              className={cn(
-                'absolute top-1/2 flex -translate-y-1/2 items-center justify-center rounded-xs p-1 text-(--color-text-subtle) opacity-0 transition-[opacity,background-color,color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text) group-hover:opacity-100 pointer-coarse:opacity-100',
-                compact ? 'right-11' : 'right-[3.25rem]',
-              )}
-              aria-label={`Open side chat for ${session.title || 'Untitled'}`}
-              title="Open side chat"
+              className="flex h-5 w-5 items-center justify-center rounded-sm text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:outline-2 focus-visible:outline-(--focus-ring)"
+              aria-label={`Edit session ${session.title || 'Untitled'}`}
             >
-              <MessageCirclePlus size={compact ? 11 : 12} />
+              <Pencil size={compact ? 11 : 12} />
             </button>
-          )}
-
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onEdit(session)
-            }}
-            className={cn(
-              'absolute top-1/2 flex -translate-y-1/2 items-center justify-center rounded-xs p-1 text-(--color-text-subtle) opacity-0 transition-[opacity,background-color,color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text) group-hover:opacity-100 pointer-coarse:opacity-100',
-              compact ? 'right-6' : 'right-7',
-            )}
-            aria-label={`Edit session ${session.title || 'Untitled'}`}
-          >
-            <Pencil size={compact ? 11 : 12} />
-          </button>
-
-          {/* Delete on hover */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete(session)
-            }}
-            className={cn(
-              'absolute top-1/2 flex -translate-y-1/2 items-center justify-center rounded-xs p-1 text-(--color-text-subtle) opacity-0 transition-[opacity,background-color,color] duration-(--motion-fast) hover:bg-(--color-error-subtle) hover:text-(--color-error) group-hover:opacity-100 pointer-coarse:opacity-100',
-              compact ? 'right-1' : 'right-1.5',
-            )}
-            aria-label={`Delete session ${session.title || 'Untitled'}`}
-          >
-            <Trash2 size={compact ? 11 : 12} />
-          </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete(session)
+              }}
+              className="flex h-5 w-5 items-center justify-center rounded-sm text-(--color-text-subtle) transition-colors hover:bg-(--color-error-subtle) hover:text-(--color-error) focus-visible:outline-2 focus-visible:outline-(--focus-ring)"
+              aria-label={`Delete session ${session.title || 'Untitled'}`}
+            >
+              <Trash2 size={compact ? 11 : 12} />
+            </button>
+          </div>
         </>
       )}
 
