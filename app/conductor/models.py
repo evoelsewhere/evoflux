@@ -8,7 +8,23 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-ResourceKind = Literal["agent", "skill", "mcp"]
+ResourceKind = Literal["agent", "skill", "mcp", "plugin"]
+GovernedResourceKind = Literal["agent", "skill", "plugin"]
+ReleaseChannel = Literal["beta", "published"]
+ObservedResourceState = Literal[
+    "pending",
+    "staged",
+    "trust_pending",
+    "update_pending",
+    "applied",
+    "in_sync",
+    "declined",
+    "incompatible",
+    "ownership_conflict",
+    "project_scope_mismatch",
+    "error",
+    "removed",
+]
 DriftCategory = Literal[
     "missing",
     "modified",
@@ -205,3 +221,99 @@ class HeartbeatResponse(BaseModel):
     server_time: datetime
     heartbeat_interval_seconds: int = Field(ge=30, le=300)
     connection_state: Literal["active"]
+
+
+class ResourceChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str
+    resource_id: str
+    version_id: str | None = None
+    kind: GovernedResourceKind
+    slug: str
+    version: str | None = None
+    release_channel: ReleaseChannel | None = None
+    sha256: str | None = None
+    size: int = Field(default=0, ge=0, le=500 * 1024 * 1024)
+    minimum_evoflux_version: str | None = None
+    trust_required: bool = False
+    tombstone: bool = False
+
+
+class ResourceChangePage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[2]
+    project_id: str
+    next_cursor: str
+    has_more: bool
+    changes: list[ResourceChange] = Field(default_factory=list)
+
+
+class EffectiveResourceVersion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str
+    resource_id: str
+    version_id: str
+    kind: GovernedResourceKind
+    slug: str
+    version: str
+    release_channel: ReleaseChannel
+    payload: dict[str, Any]
+    sha256: str
+    size: int = Field(ge=0, le=500 * 1024 * 1024)
+    artifact_key: str | None = None
+    minimum_evoflux_version: str | None = None
+
+
+class ManagedResourceRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str
+    resource_id: str
+    version_id: str | None = None
+    version: str | None = None
+    release_channel: ReleaseChannel | None = None
+    kind: GovernedResourceKind
+    slug: str
+    content_sha256: str | None = None
+    local_content_sha256: str | None = None
+    plugin_installation_id: str | None = None
+    previous_plugin_installation_id: str | None = None
+    observed_state: ObservedResourceState = "pending"
+    error_category: str | None = None
+    message: str | None = None
+    trust_required: bool = False
+    trust_review: dict[str, Any] | None = None
+    observed_at: datetime
+
+
+class ManagedResourceDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[2] = 2
+    project_id: str | None = None
+    committed_cursor: str | None = None
+    resources: list[ManagedResourceRecord] = Field(default_factory=list)
+
+
+class ResourceInventoryItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    resource_id: str
+    desired_version_id: str | None = None
+    applied_version_id: str | None = None
+    release_channel: ReleaseChannel | None = None
+    content_sha256: str | None = None
+    plugin_installation_id: str | None = None
+    observed_state: ObservedResourceState
+    error_category: str | None = None
+    observed_at: datetime
+
+
+class ResourceInventoryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    installation_id: str
+    items: list[ResourceInventoryItem] = Field(default_factory=list, max_length=500)

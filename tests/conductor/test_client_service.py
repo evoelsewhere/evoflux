@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from pathlib import Path
@@ -231,6 +232,84 @@ async def test_v1_snapshot_is_adapted_to_manifest() -> None:
     assert etag == f'"v1-{manifest.revision}"'
     assert unchanged is None
     assert repeated_etag == etag
+
+
+@pytest.mark.asyncio
+async def test_governed_text_resource_verifies_canonical_payload_digest() -> None:
+    store = MemoryCredentialStore("evc_local_secret")
+    payload = {
+        "files": [
+            {
+                "path": "reviewer.md",
+                "content": "---\nname: reviewer\ndescription: Review\n---\nReview.\n",
+            }
+        ]
+    }
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/resources/resource-1/versions/version-1"
+        return httpx.Response(
+            200,
+            json={
+                "project_id": "project-1",
+                "resource_id": "resource-1",
+                "version_id": "version-1",
+                "kind": "agent",
+                "slug": "reviewer",
+                "version": "0.1.0",
+                "release_channel": "published",
+                "payload": payload,
+                "sha256": hashlib.sha256(canonical).hexdigest(),
+                "size": len(canonical),
+            },
+        )
+
+    client = ConductorClient(
+        "https://conductor.example",
+        store,
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        version = await client.fetch_resource_version("resource-1", "version-1")
+    finally:
+        await client.close()
+    assert version.slug == "reviewer"
+
+
+@pytest.mark.asyncio
+async def test_governed_text_resource_rejects_payload_digest_mismatch() -> None:
+    store = MemoryCredentialStore("evc_local_secret")
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "project_id": "project-1",
+                "resource_id": "resource-1",
+                "version_id": "version-1",
+                "kind": "skill",
+                "slug": "reviewer",
+                "version": "0.1.0",
+                "release_channel": "published",
+                "payload": {"files": []},
+                "sha256": "0" * 64,
+                "size": 12,
+            },
+        )
+
+    client = ConductorClient(
+        "https://conductor.example",
+        store,
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        with pytest.raises(ValueError, match="digest mismatch"):
+            await client.fetch_resource_version("resource-1", "version-1")
+    finally:
+        await client.close()
 
 
 @pytest.mark.asyncio

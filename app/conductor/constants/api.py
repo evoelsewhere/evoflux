@@ -8,6 +8,10 @@ V1_REGISTER_PATH = "/api/v1/client/register"
 V1_HEARTBEAT_PATH = "/api/v1/client/heartbeat"
 V1_TELEMETRY_PATH = "/api/v1/telemetry/batch"
 V1_RESOURCE_USAGE_PATH = "/api/v1/usage/resources"
+V2_CHANGES_PATH = "/api/v1/resources/changes"
+V2_INVENTORY_PATH = "/api/v1/client/inventory"
+
+V2_CHANGE_PAGE_LIMIT = 100
 
 CONDUCTOR_TOKEN_PREFIX = "evc_"
 API_TEXT_FIELD_MAX_LENGTH = 256

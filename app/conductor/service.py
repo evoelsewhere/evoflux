@@ -26,6 +26,7 @@ from app.conductor.constants.telemetry import (
     TelemetryField,
 )
 from app.conductor.models import ReconcileResult, RegistrationRequest
+from app.conductor.governed_reconciler import GovernedResourceReconciler
 from app.conductor.reconciler import ResourceReconciler
 from app.conductor.telemetry import (
     TelemetryOutbox,
@@ -83,6 +84,7 @@ class ConductorService:
         self._client: ConductorClient | None = None
         self._credential_store = credential_store
         self._reconciler = ResourceReconciler()
+        self._governed_reconciler = GovernedResourceReconciler()
         self._telemetry_store = telemetry_store or telemetry_outbox
 
     def _config(self) -> ConductorSettings:
@@ -208,6 +210,9 @@ class ConductorService:
                 ),
                 idempotency_key=str(uuid.uuid4()),
             )
+            previous_project_id = load_runtime_settings().conductor.project_id
+            if previous_project_id and previous_project_id != registration.project.id:
+                self._governed_reconciler.deactivate_project(previous_project_id)
             self._credentials().save(token.strip())
             runtime = load_runtime_settings()
             runtime.conductor.installation_key = installation_key
@@ -242,6 +247,9 @@ class ConductorService:
 
     async def disconnect(self) -> ConductorStatus:
         await self.stop()
+        current_project_id = self._config().project_id
+        if current_project_id:
+            self._governed_reconciler.deactivate_project(current_project_id)
         self._credentials().delete()
         self._telemetry_store.clear()
         clear_usage()
@@ -363,6 +371,13 @@ class ConductorService:
                 return self.status
             self.status.state = "syncing"
             try:
+                if await self._sync_governed(config):
+                    self.status.etag = None
+                    self.status.offline = False
+                    self.status.error = None
+                    self.status.last_success_at = datetime.now(UTC)
+                    await self._flush_telemetry()
+                    return self.status
                 manifest, etag = await self._client.fetch_manifest(self.status.etag)
                 if manifest is None:
                     manifest = self._reconciler.load_last_good_manifest()
@@ -407,6 +422,75 @@ class ConductorService:
                 )
             return self.status
 
+    async def _sync_governed(self, config: ConductorSettings) -> bool:
+        """Prefer schema-v2 changes; return False only for a V1-only server/client."""
+
+        if self._client is None or not hasattr(self._client, "fetch_changes"):
+            return False
+        project_id = config.project_id
+        installation_id = config.installation_id
+        if not project_id or not installation_id:
+            return False
+        document = self._governed_reconciler.store.replace_project(project_id)
+        cursor = document.committed_cursor
+        results = []
+        for _ in range(100):
+            try:
+                page = await self._client.fetch_changes(cursor)
+            except ConductorRequestError as exc:
+                if exc.status_code == 404:
+                    return False
+                raise
+            page_results = await self._governed_reconciler.reconcile_page(
+                self._client,
+                page,
+                expected_project_id=project_id,
+                enforcement_mode=config.enforcement_mode,
+            )
+            results.extend(page_results)
+            if any(item.observed_state == "error" for item in page_results):
+                cursor = self._governed_reconciler.store.load().committed_cursor
+                break
+            cursor = page.next_cursor
+            if not page.has_more:
+                break
+        else:
+            raise RuntimeError("Conductor change feed exceeded 100 pages in one sync.")
+
+        await self._client.report_inventory(
+            {
+                "installation_id": installation_id,
+                "items": self._governed_reconciler.inventory(),
+            }
+        )
+        current = self._governed_reconciler.store.load().resources
+        self.status.manifest_revision = cursor
+        self.status.resources = [item.model_dump(mode="json") for item in current]
+        self.status.maintenance_required = False
+        states = {item.observed_state for item in current}
+        if "error" in states:
+            self.status.state = "error"
+        elif states & {"trust_pending", "update_pending", "ownership_conflict"}:
+            self.status.state = "update_pending"
+        elif results:
+            self.status.state = "applied"
+        else:
+            self.status.state = "in_sync"
+        return True
+
+    def approve_governed_plugin(self, resource_id: str) -> dict[str, Any]:
+        config = self._config()
+        if not config.project_id:
+            raise ValueError("EvoFlux is not connected to a Conductor project.")
+        record = self._governed_reconciler.approve_plugin(
+            config.project_id, resource_id
+        )
+        self.status.resources = [
+            item.model_dump(mode="json")
+            for item in self._governed_reconciler.store.load().resources
+        ]
+        return record.model_dump(mode="json")
+
     async def _run(self) -> None:
         loop = asyncio.get_running_loop()
         next_heartbeat = 0.0
@@ -446,7 +530,11 @@ class ConductorService:
             ),
         }
         await self._client.report_observed_state(observed)
-        await self._client.report_inventory(self.inventory())
+        config = self._config()
+        if config.installation_id:
+            await self._client.report_inventory(
+                {"installation_id": config.installation_id, "items": []}
+            )
         await self._flush_telemetry()
         await self._flush_skill_usage()
 

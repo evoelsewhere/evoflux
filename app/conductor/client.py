@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import random
 import uuid
 from typing import Any, Protocol
@@ -8,10 +10,13 @@ from typing import Any, Protocol
 import httpx
 
 from app.conductor.models import (
+    EffectiveResourceVersion,
     HeartbeatResponse,
     Manifest,
     RegistrationRequest,
     RegistrationResponse,
+    ResourceChangePage,
+    ResourceInventoryRequest,
     canonical_hash,
 )
 from app.conductor.constants.api import (
@@ -30,6 +35,9 @@ from app.conductor.constants.api import (
     V1_RESOURCE_KINDS,
     V1_SUBSCRIBE_PATH,
     V1_TELEMETRY_PATH,
+    V2_CHANGE_PAGE_LIMIT,
+    V2_CHANGES_PATH,
+    V2_INVENTORY_PATH,
 )
 from app.conductor.constants.telemetry import (
     TELEMETRY_EVENT_FIELD_ALLOWLIST,
@@ -193,8 +201,73 @@ class ConductorClient:
         del payload
 
     async def report_inventory(self, payload: dict[str, Any]) -> None:
-        # Temporary V1 local compatibility: inventory sync is not implemented.
-        del payload
+        request = ResourceInventoryRequest.model_validate(payload)
+        try:
+            await self._request(
+                "PUT",
+                V2_INVENTORY_PATH,
+                headers=self._auth_headers(),
+                json=request.model_dump(mode="json"),
+                idempotent=True,
+            )
+        except ConductorRequestError as exc:
+            if exc.status_code != 404:
+                raise
+
+    async def fetch_changes(self, cursor: str | None) -> ResourceChangePage:
+        query: dict[str, str | int] = {"limit": V2_CHANGE_PAGE_LIMIT}
+        if cursor:
+            query["cursor"] = cursor
+        params = str(httpx.QueryParams(query))
+        response = await self._request(
+            "GET",
+            f"{V2_CHANGES_PATH}?{params}",
+            headers=self._auth_headers(),
+        )
+        return ResourceChangePage.model_validate(response.json())
+
+    async def fetch_resource_version(
+        self, resource_id: str, version_id: str
+    ) -> EffectiveResourceVersion:
+        response = await self._request(
+            "GET",
+            f"/api/v1/resources/{resource_id}/versions/{version_id}",
+            headers=self._auth_headers(),
+        )
+        version = EffectiveResourceVersion.model_validate(response.json())
+        if version.kind != "plugin":
+            payload = json.dumps(
+                version.payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+            if len(payload) != version.size:
+                raise ValueError("Conductor managed-resource payload size mismatch.")
+            if hashlib.sha256(payload).hexdigest() != version.sha256:
+                raise ValueError("Conductor managed-resource payload digest mismatch.")
+        return version
+
+    async def download_resource_artifact(
+        self,
+        resource_id: str,
+        version_id: str,
+        *,
+        expected_sha256: str,
+        expected_size: int,
+    ) -> bytes:
+        response = await self._request(
+            "GET",
+            f"/api/v1/resources/{resource_id}/versions/{version_id}/artifact",
+            headers=self._auth_headers(),
+        )
+        payload = response.content
+        if len(payload) != expected_size:
+            raise ValueError("Conductor Plugin artifact size mismatch.")
+        actual = hashlib.sha256(payload).hexdigest()
+        if actual != expected_sha256:
+            raise ValueError("Conductor Plugin artifact digest mismatch.")
+        return payload
 
     async def report_telemetry(
         self, installation_id: str, events: list[dict[str, Any]]
