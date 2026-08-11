@@ -42,6 +42,8 @@ interface WorkbenchBarProps {
   onSelectAgent: (agent: string) => void
   onOpenMobileSidebar: () => void
   isMobile: boolean
+  /** Show the navigation button when desktop navigation is in drawer mode. */
+  sidebarOverlay?: boolean
   isMacOverlay: boolean
   /** Current mode — 'work' or 'coding'. */
   mode: 'work' | 'coding'
@@ -125,7 +127,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
         props.isMacOverlay && 'mac-drag-region pt-3',
       )}
     >
-      {props.isMobile && (
+      {(props.isMobile || props.sidebarOverlay) && (
         <motion.button
           layout
           type="button"

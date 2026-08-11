@@ -1,5 +1,8 @@
 import type { ViewMode } from './types'
-import { MIN_PRIMARY_COLUMN_WIDTH } from '@/lib/workspace-panel-layout'
+import {
+  MIN_PRIMARY_COLUMN_WIDTH,
+  WORKSPACE_PANEL,
+} from '@/lib/workspace-panel-layout'
 
 export const AUTO_SPLIT_ACTIVE_AGENT_THRESHOLD = 2
 
@@ -10,11 +13,14 @@ interface AutomaticSplitDecision {
   isMobile: boolean
 }
 
-interface AutomaticSidebarCollapseDecision {
+interface AdaptiveSidebarOverlayDecision {
   workbenchOpen: boolean
   isMobile: boolean
+  sidebarMode: 'docked' | 'overlay'
   sidebarCollapsed: boolean
   mainWidth: number
+  sidebarWidth: number
+  macOverlay?: boolean
 }
 
 /**
@@ -37,20 +43,30 @@ export function shouldStartAutomaticSplit({
 }
 
 /**
- * Keep the primary conversation usable as the right-hand Workbench opens or
- * grows. This is intentionally one-way: closing or shrinking the Workbench
- * does not override a sidebar state the user may now prefer.
+ * Switch navigation to a non-layout drawer when an expanded docked sidebar
+ * would leave too little room for the primary conversation. Estimating the
+ * expanded docked width in both modes keeps the decision stable: removing the
+ * sidebar from flex layout must not immediately switch it back again.
  */
-export function shouldAutoCollapseSidebar({
+export function shouldUseSidebarOverlay({
   workbenchOpen,
   isMobile,
+  sidebarMode,
   sidebarCollapsed,
   mainWidth,
-}: AutomaticSidebarCollapseDecision): boolean {
+  sidebarWidth,
+  macOverlay = false,
+}: AdaptiveSidebarOverlayDecision): boolean {
+  if (!workbenchOpen || isMobile) return false
+
+  const collapsedWidth = macOverlay
+    ? WORKSPACE_PANEL.macCollapsedRailWidth
+    : WORKSPACE_PANEL.collapsedRailWidth
+  const expandedDockedMainWidth = sidebarMode === 'overlay'
+    ? mainWidth - sidebarWidth - WORKSPACE_PANEL.shellChromeWidth
+    : mainWidth - (sidebarCollapsed ? Math.max(0, sidebarWidth - collapsedWidth) : 0)
+
   return (
-    workbenchOpen
-    && !isMobile
-    && !sidebarCollapsed
-    && mainWidth < MIN_PRIMARY_COLUMN_WIDTH
+    expandedDockedMainWidth < MIN_PRIMARY_COLUMN_WIDTH
   )
 }

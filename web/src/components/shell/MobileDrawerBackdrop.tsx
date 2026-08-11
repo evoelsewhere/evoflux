@@ -12,12 +12,15 @@ interface MobileDrawerBackdropProps {
   onClose: () => void
   closeLabel?: string
   className?: string
+  /** Keep the scrim visible when the responsive drawer is used on desktop. */
+  desktopVisible?: boolean
 }
 
 export function MobileDrawerBackdrop({
   onClose,
   closeLabel = 'Close navigation',
   className,
+  desktopVisible = false,
 }: MobileDrawerBackdropProps) {
   const preset = useMotionPreset()
 
@@ -31,7 +34,8 @@ export function MobileDrawerBackdrop({
       transition={preset.transition}
       aria-label={closeLabel}
       className={cn(
-        'mobile-safe-top fixed inset-x-0 bottom-0 z-(--z-drawer) bg-(--color-overlay) md:hidden',
+        'mobile-safe-top fixed inset-x-0 bottom-0 z-(--z-drawer) bg-(--color-overlay)',
+        !desktopVisible && 'md:hidden',
         className,
       )}
       onClick={onClose}

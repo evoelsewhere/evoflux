@@ -78,7 +78,7 @@ function CopyButton({ workspace, file }: { workspace: string; file: WorkspaceFil
       disabled={busy || tooLarge}
       title={label}
       aria-label={label}
-      className="flex h-9 min-w-9 items-center justify-center gap-1 rounded-xs px-2 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2) disabled:cursor-not-allowed disabled:opacity-40 md:h-auto md:min-w-0 md:py-1"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2) disabled:cursor-not-allowed disabled:opacity-40"
     >
       {copied ? <Check size={12} className="text-(--color-success)" /> : busy ? <Loader2 size={12} className="animate-spin" /> : <Copy size={12} />}
     </button>
@@ -796,46 +796,61 @@ export function CodingFileViewerPanel({
 
   const content = (
     <>
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold text-(--color-text)" title={file.path}>{file.path}</h2>
-          <p className="mt-0.5 text-xs text-(--color-text-subtle)">{formatBytes(file.size)} · {file.mime}</p>
+      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-(--color-border) px-2">
+        <div
+          className="flex min-w-0 flex-1 items-baseline gap-1.5"
+          title={`${file.path} · ${formatBytes(file.size)} · ${file.mime}`}
+        >
+          <h2 className="truncate text-xs font-semibold text-(--color-text)">{file.path}</h2>
+          <span className="shrink-0 text-[10px] text-(--color-text-subtle)">{formatBytes(file.size)}</span>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <div className="mr-1 flex rounded-md border border-(--color-border) p-0.5">
-            <button 
-              type="button" 
-              onClick={() => { setViewMode('file'); setEditing(false) }} 
-              className={cn('h-8 rounded-xs px-2 text-xs md:h-auto md:py-1', effectiveViewMode === 'file' && !editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
+        <div className="flex shrink-0 items-center gap-0.5">
+          <div className="mr-0.5 flex rounded-md border border-(--color-border) p-0.5" role="group" aria-label="File view mode">
+            <button
+              type="button"
+              onClick={() => { setViewMode('file'); setEditing(false) }}
+              title="File"
+              aria-label="View file"
+              aria-pressed={effectiveViewMode === 'file' && !editing}
+              className={cn('flex h-6 w-6 items-center justify-center rounded-xs', effectiveViewMode === 'file' && !editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
             >
-              File
+              <FileText size={12} />
             </button>
-            
+
             {canPreview && (
-              <button 
-                type="button" 
-                onClick={() => { setViewMode('preview'); setEditing(false) }} 
-                className={cn('flex h-8 items-center gap-1 rounded-xs px-2 text-xs md:h-auto md:py-1', effectiveViewMode === 'preview' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
+              <button
+                type="button"
+                onClick={() => { setViewMode('preview'); setEditing(false) }}
+                title="Preview"
+                aria-label="Preview file"
+                aria-pressed={effectiveViewMode === 'preview'}
+                className={cn('flex h-6 w-6 items-center justify-center rounded-xs', effectiveViewMode === 'preview' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
               >
-                <Eye size={11} /> Preview
+                <Eye size={12} />
               </button>
             )}
-            
+
             {kind === 'text' && (
-              <button 
-                type="button" 
-                onClick={() => { setViewMode('file'); setEditing(true) }} 
-                className={cn('flex h-8 items-center gap-1 rounded-xs px-2 text-xs md:h-auto md:py-1', editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
+              <button
+                type="button"
+                onClick={() => { setViewMode('file'); setEditing(true) }}
+                title="Edit"
+                aria-label="Edit file"
+                aria-pressed={editing}
+                className={cn('flex h-6 w-6 items-center justify-center rounded-xs', editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
               >
-                <Pencil size={11} /> Edit
+                <Pencil size={12} />
               </button>
             )}
-            <button 
-              type="button" 
-              onClick={() => { setViewMode('diff'); setEditing(false) }} 
-              className={cn('flex h-8 items-center gap-1 rounded-xs px-2 text-xs md:h-auto md:py-1', effectiveViewMode === 'diff' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
+            <button
+              type="button"
+              onClick={() => { setViewMode('diff'); setEditing(false) }}
+              title="Diff"
+              aria-label="View file diff"
+              aria-pressed={effectiveViewMode === 'diff'}
+              className={cn('flex h-6 w-6 items-center justify-center rounded-xs', effectiveViewMode === 'diff' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
             >
-              <GitCompare size={11} /> Diff
+              <GitCompare size={12} />
             </button>
           </div>
           <button
@@ -843,12 +858,12 @@ export function CodingFileViewerPanel({
             onClick={() => void handleOpenFile()}
             title="Open file"
             aria-label="Open coding file"
-            className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+            className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
           >
-            <ExternalLink size={14} />
+            <ExternalLink size={13} />
           </button>
-          <button type="button" onClick={() => void downloadCodingWorkspaceFile(workspace, file)} title="Download" className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)">
-            <Download size={14} />
+          <button type="button" onClick={() => void downloadCodingWorkspaceFile(workspace, file)} title="Download" aria-label="Download file" className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)">
+            <Download size={13} />
           </button>
           {(kind === 'text' || kind === 'drawio') && <CopyButton workspace={workspace} file={file} />}
           {onToggleFileTree && (
@@ -856,18 +871,18 @@ export function CodingFileViewerPanel({
               type="button"
               onClick={onToggleFileTree}
               className={cn(
-                'rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
+                'flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
                 fileTreeVisible && 'bg-(--bg-key) text-(--color-text)',
               )}
               aria-label={fileTreeVisible ? 'Hide coding file tree' : 'Show coding file tree'}
               title={fileTreeVisible ? 'Hide file tree' : 'Show file tree'}
               aria-pressed={fileTreeVisible}
             >
-              {fileTreeVisible ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+              {fileTreeVisible ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
             </button>
           )}
-          <button type="button" onClick={onClose} className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)" aria-label="Close file viewer" title="Close">
-            <X size={16} />
+          <button type="button" onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)" aria-label="Close file viewer" title="Close">
+            <X size={14} />
           </button>
         </div>
       </header>

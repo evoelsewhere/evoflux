@@ -31,6 +31,8 @@ const CODING_TREE_WIDTH_MIN = 220
 const CODING_TREE_WIDTH_DEFAULT = 300
 const CODING_TREE_WIDTH_MAX = 420
 const CODING_TREE_WIDTH_MAX_RATIO = 0.42
+const TREE_DEPTH_INDENT = 12
+const TREE_DISCLOSURE_SLOT = 18
 
 function readStoredWidth(key: string, fallback: number): number {
   try {
@@ -100,7 +102,7 @@ export function TreeNodeView({
               ? 'text-(--accent-orange-text) hover:bg-(--bg-key)'
               : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
         )}
-        style={{ paddingLeft: 8 + depth * 12 }}
+        style={{ paddingLeft: 8 + depth * TREE_DEPTH_INDENT + TREE_DISCLOSURE_SLOT }}
         title={node.file.path}
       >
         <FileTypeIcon name={node.file.name} mime={node.file.mime} size={16} />
@@ -127,7 +129,7 @@ export function TreeNodeView({
             'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs hover:bg-(--bg-key)',
             hasChangedDescendant ? 'text-(--color-text)' : 'text-(--color-text-2)',
           )}
-          style={{ paddingLeft: 8 + depth * 12 }}
+          style={{ paddingLeft: 8 + depth * TREE_DEPTH_INDENT }}
         >
           <ChevronRight size={12} className={cn('shrink-0 transition-transform', (open || forceOpen) && 'rotate-90')} />
           <FolderTypeIcon open={open || forceOpen} size={16} />
@@ -347,7 +349,8 @@ export function CodingWorkspacePanel({
       resizeLabel="Resize workspace panel"
       className="bg-(--bg-page)"
     >
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-3 py-2">
+        {!embedded && (
+          <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-3 py-2">
           <div className="flex min-w-0 items-center gap-2">
             {view === 'files' && mobile && mobilePane === 'preview' && (
               <button
@@ -418,7 +421,8 @@ export function CodingWorkspacePanel({
               <X size={16} />
             </button>
           </div>
-        </header>
+          </header>
+        )}
         {view === 'graph' ? (
           <div className="flex min-h-0 flex-1 flex-col">
             {isProjectMode ? (
@@ -448,9 +452,22 @@ export function CodingWorkspacePanel({
                     onAddComment={onAddFileComment}
                     onSendToChat={onSendFileToChat}
                     onClose={handleClosePreview}
+                    fileTreeVisible={showTree}
+                    onToggleFileTree={embedded && !mobile && !showTree ? toggleTree : undefined}
                   />
                 ) : (
-                  <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+                  <div className="relative flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+                    {embedded && !mobile && !showTree && (
+                      <button
+                        type="button"
+                        onClick={toggleTree}
+                        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                        aria-label="Show coding file tree"
+                        title="Show file tree"
+                      >
+                        <PanelRightOpen size={14} />
+                      </button>
+                    )}
                     <FileText size={26} className="text-(--color-text-subtle)" />
                     <p className="text-sm text-(--color-text-2)">Select a file</p>
                     <p className="max-w-xs text-xs text-(--color-text-subtle)">
@@ -493,8 +510,8 @@ export function CodingWorkspacePanel({
                     }
                   : undefined}
               >
-                <div className="shrink-0 border-b border-(--color-border) px-2 py-1.5">
-                  <div className="flex items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-card) px-2 py-1">
+                <div className="flex shrink-0 items-center gap-1 border-b border-(--color-border) px-2 py-1.5">
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-card) px-2 py-1">
                     <Search size={12} className="shrink-0 text-(--color-text-subtle)" />
                     <input
                       ref={searchInputRef}
@@ -515,6 +532,29 @@ export function CodingWorkspacePanel({
                       </button>
                     )}
                   </div>
+                  {embedded && (
+                    <button
+                      type="button"
+                      onClick={() => void refreshFiles()}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                      aria-label="Refresh coding files"
+                      title="Refresh files"
+                    >
+                      <RefreshCw size={13} />
+                    </button>
+                  )}
+                  {embedded && !mobile && (
+                    <button
+                      type="button"
+                      onClick={toggleTree}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-(--bg-key) text-(--color-text) transition-colors hover:bg-(--bg-key-hover)"
+                      aria-label="Hide coding file tree"
+                      title="Hide file tree"
+                      aria-pressed={true}
+                    >
+                      <PanelRightClose size={14} />
+                    </button>
+                  )}
                 </div>
                 <div className="min-h-0 flex-1 overflow-auto p-2">
                   {isProjectMode ? (

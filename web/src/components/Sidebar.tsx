@@ -126,10 +126,12 @@ interface SidebarProps {
   onNewChat?: () => void;
   /** Current mode — 'work' or 'coding' */
   mode?: 'work' | 'coding';
-  /** Mobile only: whether the overlay drawer is open */
+  /** Whether the mobile/responsive overlay drawer is open. */
   mobileOpen?: boolean;
-  /** Mobile only: called when the drawer should close (backdrop tap, session select) */
+  /** Called when the drawer should close (backdrop tap, Escape, navigation). */
   onMobileClose?: () => void;
+  /** Render the navigation as a modal drawer at constrained desktop widths. */
+  drawerMode?: boolean;
 }
 
 export function Sidebar({
@@ -139,13 +141,15 @@ export function Sidebar({
   mode = 'work',
   mobileOpen = false,
   onMobileClose,
+  drawerMode = false,
 }: SidebarProps) {
   const isMobile = useIsMobile();
+  const isDrawer = isMobile || drawerMode;
   const { isTauri, os, isMacOverlay } = usePlatform();
   const isTauriMobile = isTauri && (os === "ios" || os === "android");
   const mobileLongPressActions = isMobile && isTauriMobile && mobileOpen;
   const preset = useMotionPreset();
-  useModalFocus(isMobile && mobileOpen, onMobileClose);
+  useModalFocus(isDrawer && mobileOpen, onMobileClose);
   const navigate = useNavigate();
   const toggleScheduler = useUIStore((s) => s.toggleScheduler);
   const togglePlugins = useUIStore((s) => s.toggleWorkbenchTool);
@@ -202,6 +206,7 @@ export function Sidebar({
   // Collapse state is shared by all three mode sidebars and owned by
   // useUIStore (persisted); AppShell owns the toggle button + Ctrl+B.
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
+  const sidebarWidth = useUIStore((s) => s.sidebarWidth);
 
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<SessionResponse | null>(null);
@@ -752,15 +757,18 @@ export function Sidebar({
     </SidebarShell>
   );
 
-  // Mobile: fixed overlay drawer — slides via x transform, always 272px.
+  // Responsive overlay drawer. Mobile stays compact; constrained desktop
+  // preserves the user's resizable sidebar width without consuming layout.
   // When closed it stays mounted for the spring close animation but is
   // inert + hidden from AT so focus cannot land inside an off-screen drawer.
   const mobileDrawer = (
     <motion.aside
       initial={false}
       animate={{
-        x: mobileOpen ? 0 : -280,
-        width: "min(272px, calc(100vw - 2rem))",
+        x: mobileOpen ? 0 : -(drawerMode ? sidebarWidth + 8 : 280),
+        width: drawerMode
+          ? `min(${sidebarWidth}px, calc(100vw - 2rem))`
+          : "min(272px, calc(100vw - 2rem))",
       }}
       transition={preset.spring}
       aria-hidden={!mobileOpen}
@@ -836,15 +844,16 @@ export function Sidebar({
   return (
     <>
       <AnimatePresence>
-        {isMobile && mobileOpen && (
+        {isDrawer && mobileOpen && (
           <MobileDrawerBackdrop
             onClose={() => onMobileClose?.()}
             closeLabel="Close session navigation"
+            desktopVisible={drawerMode}
           />
         )}
       </AnimatePresence>
 
-      {isMobile ? mobileDrawer : desktopShell}
+      {isDrawer ? mobileDrawer : desktopShell}
 
       <SessionContextMenu
         anchor={desktopSessionActions}

@@ -16,8 +16,8 @@
  * Slots:
  *   sidebar       — desktop sidebar instance (the caller mode-selects it);
  *                   null/undefined → no sidebar and no toggle button.
- *   mobileSidebar — mobile overlay drawer, rendered inside the body row
- *                   for z-stacking (it is position:fixed).
+ *   mobileSidebar — mobile/responsive overlay drawer, rendered at shell level
+ *                   so it remains available over a maximized Workbench.
  *   header        — optional strip above the body row (TeamChatView).
  *   trailing      — panels rendered after <main> inside the body row.
  *   overlay       — panels rendered after the body row (modals, palette).
@@ -35,6 +35,10 @@ import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
 interface AppShellProps {
   sidebar?: ReactNode
   mobileSidebar?: ReactNode
+  /** Desktop navigation is temporarily rendered as a non-layout drawer. */
+  sidebarOverlay?: boolean
+  /** Toggle the responsive desktop navigation drawer (also used by Ctrl+B). */
+  onToggleSidebarOverlay?: () => void
   header?: ReactNode
   trailing?: ReactNode
   fullHeightTrailing?: ReactNode
@@ -54,6 +58,8 @@ interface AppShellProps {
 export function AppShell({
   sidebar,
   mobileSidebar,
+  sidebarOverlay = false,
+  onToggleSidebarOverlay,
   header,
   trailing,
   fullHeightTrailing,
@@ -69,12 +75,17 @@ export function AppShell({
 }: AppShellProps) {
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed)
   const toggleSidebarCollapsed = useUIStore((s) => s.toggleSidebarCollapsed)
-  const hasSidebar = sidebar != null
+  const hasDockedSidebar = sidebar != null
+  const toggleSidebar = sidebarOverlay
+    ? onToggleSidebarOverlay
+    : hasDockedSidebar
+      ? toggleSidebarCollapsed
+      : undefined
   const motionPreset = useMotionPreset()
 
   // Ctrl+B — the single shell-level sidebar toggle. See the file header for
   // why registration is gated on this shell having a sidebar.
-  useKeyboardShortcuts({ b: hasSidebar ? toggleSidebarCollapsed : undefined })
+  useKeyboardShortcuts({ b: toggleSidebar })
 
   return (
     // h-dvh handles iOS Safari's dynamic toolbar.
@@ -86,9 +97,10 @@ export function AppShell({
       onTouchCancel={onTouchCancel}
     >
       {sidebar}
+      {mobileSidebar}
 
       {/* Sidebar toggle — same placement + affordance in every mode. */}
-      {hasSidebar && (
+      {hasDockedSidebar && (
         <div className="flex shrink-0 flex-col items-center pt-2">
           <motion.button
             type="button"
@@ -117,7 +129,6 @@ export function AppShell({
         >
           {header}
           <div className="flex min-h-0 flex-1 overflow-hidden">
-            {mobileSidebar}
             <motion.main
               key="app-main-canvas"
               id={mainId}

@@ -6,11 +6,11 @@ import {
   AutomaticSplitTransition,
 } from '@/components/TeamChatView/AutomaticSplitTransition'
 import {
-  shouldAutoCollapseSidebar,
   shouldStartAutomaticSplit,
+  shouldUseSidebarOverlay,
 } from '@/components/TeamChatView/auto-layout'
-import { useAutoCollapseSidebar } from '@/components/TeamChatView/useAutoCollapseSidebar'
-import { MIN_PRIMARY_COLUMN_WIDTH } from '@/lib/workspace-panel-layout'
+import { useAdaptiveSidebarOverlay } from '@/components/TeamChatView/useAdaptiveSidebarOverlay'
+import { MIN_PRIMARY_COLUMN_WIDTH, WORKSPACE_PANEL } from '@/lib/workspace-panel-layout'
 import { useUIStore } from '@/stores/useUIStore'
 
 describe('automatic Split layout', () => {
@@ -57,40 +57,77 @@ describe('automatic Split layout', () => {
   })
 })
 
-describe('automatic sidebar collapse', () => {
-  it('collapses when the open Workbench leaves less than the primary-width contract', () => {
-    expect(shouldAutoCollapseSidebar({
+describe('adaptive sidebar overlay', () => {
+  it('uses a drawer when a docked sidebar would violate the primary-width contract', () => {
+    expect(shouldUseSidebarOverlay({
       workbenchOpen: true,
       isMobile: false,
+      sidebarMode: 'docked',
       sidebarCollapsed: false,
       mainWidth: MIN_PRIMARY_COLUMN_WIDTH - 1,
+      sidebarWidth: 280,
     })).toBe(true)
   })
 
-  it('keeps the sidebar open at the primary-width boundary', () => {
-    expect(shouldAutoCollapseSidebar({
+  it('keeps the sidebar docked at the primary-width boundary', () => {
+    expect(shouldUseSidebarOverlay({
       workbenchOpen: true,
       isMobile: false,
+      sidebarMode: 'docked',
       sidebarCollapsed: false,
       mainWidth: MIN_PRIMARY_COLUMN_WIDTH,
+      sidebarWidth: 280,
     })).toBe(false)
   })
 
-  it('does not override mobile, closed-panel, or already-collapsed layouts', () => {
+  it('estimates the expanded footprint when the docked sidebar is collapsed', () => {
+    const sidebarWidth = 280
+    expect(shouldUseSidebarOverlay({
+      workbenchOpen: true,
+      isMobile: false,
+      sidebarMode: 'docked',
+      sidebarCollapsed: true,
+      mainWidth:
+        MIN_PRIMARY_COLUMN_WIDTH
+        + sidebarWidth
+        - WORKSPACE_PANEL.collapsedRailWidth
+        - 1,
+      sidebarWidth,
+    })).toBe(true)
+  })
+
+  it('stays stable after removing the sidebar from flex layout', () => {
+    const sidebarWidth = 280
+    expect(shouldUseSidebarOverlay({
+      workbenchOpen: true,
+      isMobile: false,
+      sidebarMode: 'overlay',
+      sidebarCollapsed: false,
+      mainWidth:
+        MIN_PRIMARY_COLUMN_WIDTH
+        + sidebarWidth
+        + WORKSPACE_PANEL.shellChromeWidth
+        - 1,
+      sidebarWidth,
+    })).toBe(true)
+  })
+
+  it('does not use a desktop drawer on mobile or while the Workbench is closed', () => {
     const base = {
       workbenchOpen: true,
       isMobile: false,
+      sidebarMode: 'docked' as const,
       sidebarCollapsed: false,
       mainWidth: MIN_PRIMARY_COLUMN_WIDTH - 1,
+      sidebarWidth: 280,
     }
 
-    expect(shouldAutoCollapseSidebar({ ...base, isMobile: true })).toBe(false)
-    expect(shouldAutoCollapseSidebar({ ...base, workbenchOpen: false })).toBe(false)
-    expect(shouldAutoCollapseSidebar({ ...base, sidebarCollapsed: true })).toBe(false)
+    expect(shouldUseSidebarOverlay({ ...base, isMobile: true })).toBe(false)
+    expect(shouldUseSidebarOverlay({ ...base, workbenchOpen: false })).toBe(false)
   })
 })
 
-describe('automatic sidebar collapse observer', () => {
+describe('adaptive sidebar overlay observer', () => {
   let observers: ResizeObserverMock[]
 
   class ResizeObserverMock {
@@ -115,6 +152,8 @@ describe('automatic sidebar collapse observer', () => {
   beforeEach(() => {
     observers = []
     useUIStore.getState().setSidebarCollapsed(false)
+    useUIStore.getState().setSidebarOverlay(false)
+    useUIStore.getState().setSidebarWidth(280)
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
   })
 
@@ -122,13 +161,13 @@ describe('automatic sidebar collapse observer', () => {
     vi.unstubAllGlobals()
   })
 
-  it('uses the untransformed content width and collapses live below the boundary', () => {
+  it('switches live without mutating the persisted collapse preference', () => {
     const mainColumn = document.createElement('main') as unknown as HTMLDivElement
     vi.spyOn(mainColumn, 'getBoundingClientRect').mockReturnValue({
-      width: MIN_PRIMARY_COLUMN_WIDTH - 3,
+      width: MIN_PRIMARY_COLUMN_WIDTH,
     } as DOMRect)
     const mainColumnRef = { current: mainColumn }
-    const { unmount } = renderHook(() => useAutoCollapseSidebar({
+    const { result, unmount } = renderHook(() => useAdaptiveSidebarOverlay({
       mainColumnRef,
       workbenchOpen: true,
       isMobile: false,
@@ -136,18 +175,34 @@ describe('automatic sidebar collapse observer', () => {
     const observer = observers[0]
 
     expect(observer?.observe).toHaveBeenCalledWith(mainColumn)
-    act(() => observer?.emit(MIN_PRIMARY_COLUMN_WIDTH))
-    expect(useUIStore.getState().sidebarCollapsed).toBe(false)
+    expect(result.current).toBe(false)
 
     act(() => observer?.emit(MIN_PRIMARY_COLUMN_WIDTH - 1))
-    expect(useUIStore.getState().sidebarCollapsed).toBe(true)
+    expect(result.current).toBe(true)
+    expect(useUIStore.getState().sidebarCollapsed).toBe(false)
+    expect(useUIStore.getState().sidebarOverlay).toBe(true)
 
-    act(() => observer?.emit(MIN_PRIMARY_COLUMN_WIDTH + 100))
-    expect(useUIStore.getState().sidebarCollapsed).toBe(true)
+    act(() => observer?.emit(
+      MIN_PRIMARY_COLUMN_WIDTH
+      + 280
+      + WORKSPACE_PANEL.shellChromeWidth
+      - 1,
+    ))
+    expect(result.current).toBe(true)
+
+    act(() => observer?.emit(
+      MIN_PRIMARY_COLUMN_WIDTH
+      + 280
+      + WORKSPACE_PANEL.shellChromeWidth,
+    ))
+    expect(result.current).toBe(false)
+    expect(useUIStore.getState().sidebarCollapsed).toBe(false)
+    expect(useUIStore.getState().sidebarOverlay).toBe(false)
 
     const activeObserver = observer
     unmount()
     expect(activeObserver?.disconnect).toHaveBeenCalledOnce()
+    expect(useUIStore.getState().sidebarOverlay).toBe(false)
   })
 
   it('observes only while the desktop Workbench is open', () => {
@@ -155,7 +210,7 @@ describe('automatic sidebar collapse observer', () => {
       current: document.createElement('main') as unknown as HTMLDivElement,
     }
     const { rerender } = renderHook(
-      ({ workbenchOpen, isMobile }) => useAutoCollapseSidebar({
+      ({ workbenchOpen, isMobile }) => useAdaptiveSidebarOverlay({
         mainColumnRef,
         workbenchOpen,
         isMobile,
