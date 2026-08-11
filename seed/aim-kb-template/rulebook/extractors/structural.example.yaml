@@ -1,0 +1,13 @@
+id: sample-structural
+description: Inactive structural-parser example; rename and declare it before use.
+file_extensions: [".legacy"]
+ignore_case: false
+node_rules:
+  - kind: program
+    scope: file
+    match: '^PROGRAM\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)'
+edge_rules:
+  - kind: calls
+    from: program
+    match: '\bCALL\s+(?P<target>[A-Za-z_][A-Za-z0-9_]*)'
+keyword_denylist: []

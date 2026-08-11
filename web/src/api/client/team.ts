@@ -279,11 +279,12 @@ export function teamStream(sessionId: string, callbacks: SSECallbacks, signal?: 
 
 export async function listTeamAgents(
   workspace?: string | null,
-  mode?: 'coding' | null,
+  mode?: 'coding' | 'aim' | null,
 ): Promise<TeamAgentsResponse> {
   const params = new URLSearchParams()
   if (workspace) params.set('workspace', workspace)
-  // Which roster the workspace team uses — without it the backend assumes coding.
+  // Which roster the workspace team uses — without it the backend assumes
+  // coding, which would show the wrong lead/blueprints for aim sessions.
   if (workspace && mode) params.set('mode', mode)
   const query = params.toString()
   const res = await fetch(`${apiBaseUrl()}/team/agents${query ? `?${query}` : ''}`)
@@ -394,7 +395,7 @@ export async function getCodingWorkspaceStatus(workspace: string): Promise<Works
 export async function listTeamSessions(
   before?: string | null,
   limit = 20,
-  filters?: { mode?: 'work' | 'coding'; workspace?: string | null; project_id?: string | null },
+  filters?: { mode?: 'work' | 'coding' | 'aim'; workspace?: string | null; project_id?: string | null },
 ): Promise<SessionPageResponse> {
   const params = new URLSearchParams()
   if (before) params.set('before', before)
@@ -412,7 +413,7 @@ export async function listTeamSessions(
 // Folders tree comes from one request instead of a query per folder.
 
 export async function listSessionFolders(
-  mode: 'work' | 'coding' = 'work',
+  mode: 'work' | 'coding' | 'aim' = 'work',
 ): Promise<SessionFolderListResponse> {
   const params = new URLSearchParams({ mode })
   const res = await fetch(`${apiBaseUrl()}/team/session-folders?${params}`)
@@ -436,7 +437,7 @@ export async function listSessionFolderSessions(
 
 export async function createSessionFolder(body: {
   name: string
-  mode?: 'work' | 'coding'
+  mode?: 'work' | 'coding' | 'aim'
   share_context?: boolean
 }): Promise<SessionFolder> {
   const res = await fetch(`${apiBaseUrl()}/team/session-folders`, {

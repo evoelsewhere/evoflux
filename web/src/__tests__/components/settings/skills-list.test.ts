@@ -10,6 +10,7 @@ describe('skill list detail scope', () => {
     expect(resolveRequestedSkillMode(undefined)).toBeNull()
     expect(resolveRequestedSkillMode('all')).toBeNull()
     expect(resolveRequestedSkillMode('coding')).toBe('coding')
+    expect(resolveRequestedSkillMode('aim')).toBe('aim')
   })
 
   it('keeps invalid rows unscoped so mode discovery cannot replace the selected candidate', () => {
@@ -40,5 +41,24 @@ describe('skill list detail scope', () => {
         workspaceScoped: false,
       }),
     ).toBe('coding')
+  })
+
+  it('uses AIM filters directly and picks an available mode for workspace-scoped subsets', () => {
+    expect(
+      resolveSkillDetailMode({
+        valid: true,
+        modes: ['work', 'aim'],
+        modeFilter: 'aim',
+        workspaceScoped: true,
+      }),
+    ).toBe('aim')
+    expect(
+      resolveSkillDetailMode({
+        valid: true,
+        modes: ['work', 'aim'],
+        modeFilter: 'all-modes',
+        workspaceScoped: true,
+      }),
+    ).toBe('work')
   })
 })

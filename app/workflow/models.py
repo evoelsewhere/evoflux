@@ -31,7 +31,7 @@ DESTRUCTIVE_TOOLS = frozenset(
     {"edit", "write", "patch", "rm", "shell", "python", "process"}
 )
 
-WorkflowScope = Literal["work", "coding"]
+WorkflowScope = Literal["work", "coding", "aim"]
 
 
 class DefinitionError(ValueError):

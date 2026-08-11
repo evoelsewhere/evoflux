@@ -211,7 +211,9 @@ def ensure_builtin_lead_blueprint(agents_dir: Path, *, mode: str) -> str | None:
 
     model = PROVIDER_MODEL_TOKEN
     description = (
-        CODING_EVOFLUX_DESCRIPTION if mode == "coding" else WORK_EVOFLUX_DESCRIPTION
+        CODING_EVOFLUX_DESCRIPTION
+        if mode in {"coding", "aim"}
+        else WORK_EVOFLUX_DESCRIPTION
     )
     target = agents_dir / "evoflux.md"
     _atomic_write_text(
@@ -301,6 +303,18 @@ def _default_tool_registry() -> dict[str, Tool]:
     )
     from app.agent.tools.builtin.visualize import visualize_read_me, show_widget
     from app.agent.tools.builtin.preview import preview_tool
+    from app.agent.tools.builtin.aim import (
+        aim_capture,
+        aim_claim,
+        aim_compare,
+        aim_execute,
+        aim_readiness,
+        aim_rules,
+        aim_suggestions,
+        aim_understanding,
+        aim_units,
+        aim_verify,
+    )
     from app.agent.tools.builtin.terminal import terminal_run
 
     registry: dict[str, Tool] = {
@@ -357,6 +371,16 @@ def _default_tool_registry() -> dict[str, Tool]:
         "static_diagnostics": static_diagnostics,
         "visualize_read_me": visualize_read_me,
         "show_widget": show_widget,
+        "aim_units": aim_units,
+        "aim_capture": aim_capture,
+        "aim_compare": aim_compare,
+        "aim_readiness": aim_readiness,
+        "aim_rules": aim_rules,
+        "aim_suggestions": aim_suggestions,
+        "aim_understanding": aim_understanding,
+        "aim_claim": aim_claim,
+        "aim_execute": aim_execute,
+        "aim_verify": aim_verify,
         "terminal_run": terminal_run,
     }
     # Merge MCP tools from healthy servers. Names follow ``mcp_<server>_<tool>``
@@ -397,9 +421,12 @@ def _build_agent(
         from app.agent.tools.builtin.note import note_tool as _note_tool
 
         _todo_manage = tool_registry.get("todo_manage", todo_manage)
-        _schedule_task = tool_registry.get("schedule_task", _schedule_task_tool)
         _note = tool_registry.get("note", _note_tool)
-        tools += [_todo_manage, _schedule_task, _note]
+        tools += [_todo_manage, _note]
+        # Scheduled tasks intentionally remain scoped to Work and Coding.
+        if mode != "aim":
+            _schedule_task = tool_registry.get("schedule_task", _schedule_task_tool)
+            tools.append(_schedule_task)
 
     seen: set[str] = {t.name for t in tools}
     cfg.tools = list(dict.fromkeys(cfg.tools))

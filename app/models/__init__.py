@@ -1,4 +1,5 @@
 from .artifact import ArtifactJob, ArtifactReview, ArtifactRevision
+from .aim import AimClaim, AimLink, AimRun, AimUnit
 from .chat import (
     ChatSession,
     DreamLog,
@@ -27,6 +28,10 @@ __all__ = [
     "ArtifactJob",
     "ArtifactReview",
     "ArtifactRevision",
+    "AimLink",
+    "AimClaim",
+    "AimRun",
+    "AimUnit",
     "ChatSession",
     "DelegationTask",
     "DreamLog",

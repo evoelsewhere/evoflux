@@ -141,8 +141,8 @@ interface InputBarProps {
   onSessionModelSettingsChange?: SessionPillsRowProps['onSessionModelSettingsChange']
   agentNames?: string[]
   agentWorkspace?: string | null
-  /** Roster mode for the workspace team ('coding'). */
-  agentMode?: 'coding' | null
+  /** Roster mode for the workspace team ('coding' | 'aim'). */
+  agentMode?: 'coding' | 'aim' | null
   /**
    * Composer-anchored task popover. ``todosOpen`` controls visibility and
    * ``onTodosOpenChange`` is fired by the progress pill above the input card.

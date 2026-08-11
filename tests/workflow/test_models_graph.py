@@ -51,9 +51,9 @@ def test_minimal_parses():
     assert definition.entry_nodes() == ["only"]
 
 
-def test_scope_aim_is_rejected():
-    with pytest.raises(DefinitionError, match="scope"):
-        parse_definition(MINIMAL.replace("scope: work", "scope: aim"))
+def test_scope_aim_is_valid():
+    definition = parse_definition(MINIMAL.replace("scope: work", "scope: aim"))
+    assert definition.scope == "aim"
 
 
 def test_scope_normalizes_legacy_forge_to_work():

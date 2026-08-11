@@ -79,7 +79,7 @@ vi.mock('@/components/settings/SettingsLayout', () => ({
 }))
 
 vi.mock('@/components/settings/SkillModeSelector', () => ({
-  SkillModeSelector: () => <div>Both</div>,
+  SkillModeSelector: () => <div>All modes</div>,
 }))
 
 vi.mock('@/components/settings/SkillBundleEditor', () => ({
@@ -117,7 +117,7 @@ vi.mock('@/stores/useToastStore', () => ({
 function createdSkill() {
   return {
     settings_id: 'skill_0123456789abcdef0123456789abcdef',
-    modes: ['work', 'coding'],
+    modes: ['work', 'coding', 'aim'],
     allow_implicit_invocation: true,
     user_invocable: true,
   }
@@ -147,7 +147,7 @@ describe('NewSkillPage runtime settings', () => {
       name: 'new-skill',
       settings: {
         settings_id: 'skill_0123456789abcdef0123456789abcdef',
-        modes: ['work', 'coding'],
+        modes: ['work', 'coding', 'aim'],
         allow_implicit_invocation: false,
         user_invocable: false,
       },

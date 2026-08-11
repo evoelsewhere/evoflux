@@ -173,19 +173,24 @@ async def test_list_existing_coding_explorer_uses_builtin_profile(
 
 
 @pytest.mark.asyncio
-async def test_list_ignores_retired_or_unknown_mode_directories(
+async def test_list_includes_aim_and_ignores_unknown_mode_directories(
     fs_dirs, client: AsyncClient
 ):
     agents_dir, _ = fs_dirs
     _seed_files(agents_dir)
-    retired = agents_dir / "aim"
-    retired.mkdir()
-    (retired / "old.md").write_text(MEMBER_MD.replace("name: worker", "name: old"))
+    aim_dir = agents_dir / "aim"
+    aim_dir.mkdir()
+    (aim_dir / "old.md").write_text(MEMBER_MD.replace("name: worker", "name: old"))
+    unknown = agents_dir / "deploy"
+    unknown.mkdir()
+    (unknown / "hidden.md").write_text(
+        MEMBER_MD.replace("name: worker", "name: hidden")
+    )
 
     res = await client.get("/api/agents")
 
     assert res.status_code == 200
-    assert [row["name"] for row in res.json()["agents"]] == ["lead"]
+    assert [row["name"] for row in res.json()["agents"]] == ["aim/old", "lead"]
 
 
 @pytest.mark.asyncio
@@ -350,8 +355,8 @@ async def test_registry_returns_catalog(
         "pptx_template",
         "pptx_html",
     }.isdisjoint(by_name)
-    assert by_name["lsp_diagnostics"]["tiers"] == ["coding"]
-    assert by_name["worktree_start"]["tiers"] == ["coding"]
+    assert by_name["lsp_diagnostics"]["tiers"] == ["aim", "coding"]
+    assert by_name["worktree_start"]["tiers"] == ["aim", "coding"]
     assert by_name["read"]["tiers"] is None
 
     skills_by_name = {skill["name"]: skill for skill in body["skills"]}
@@ -387,7 +392,7 @@ async def test_registry_discovers_explicit_workspace_skills(
 
     assert response.status_code == 200
     skills = {item["name"]: item for item in response.json()["skills"]}
-    assert skills["project-only"]["modes"] == ["work", "coding"]
+    assert skills["project-only"]["modes"] == ["work", "coding", "aim"]
 
 
 @pytest.mark.asyncio

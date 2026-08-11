@@ -142,9 +142,9 @@ async def list_executions_route(
 ) -> WorkflowExecutionListResponse:
     """Latest-first executions for a comma-separated list of session ids.
 
-    Powers the workflows run table: the FE joins its per-run sessions with
-    real execution status (running/waiting_gate/completed/failed) in one
-    call instead of N polls.
+    Powers the AIM Pipelines run table: the FE joins its per-run sessions
+    with real execution status (running/waiting_gate/completed/failed)
+    in one call instead of N polls.
     """
     from app.models.workflow import WorkflowExecution
 
@@ -369,7 +369,7 @@ async def run_workflow_route(
         raise HTTPException(status_code=404, detail="Session not found.")
 
     # Discovery is workspace-relative: prefer the caller's explicit
-    # workspace, else the session's own (so coding sessions see their
+    # workspace, else the session's own (so coding/aim sessions see their
     # repo-local definitions).
     found = workflows_fs.get_workflow(name, workspace or session.workspace)
     if found is None:
@@ -424,13 +424,23 @@ async def run_workflow_route(
                 status_code=409,
                 detail=f"Execution in status {parent.status!r} cannot be retried.",
             )
-        if not parent_live:
+        from app.models.aim import AimClaim
+
+        stale_claims = (
+            await db.exec(
+                select(AimClaim).where(AimClaim.workflow_execution_id == parent.id)
+            )
+        ).all()
+        for stale_claim in stale_claims:
+            await db.delete(stale_claim)
+        if stale_claims or not parent_live:
             await db.commit()
 
-    # Scope rules: work runs anywhere; coding definitions require a coding
-    # session whose pinned workspace IS the target.
+    # Scope rules (§6.2 + aim extension): work runs anywhere; coding/aim
+    # definitions require a session of that mode, whose pinned workspace IS
+    # the target.
     scope_workspace: str | None = None
-    if definition.scope == "coding":
+    if definition.scope in ("coding", "aim"):
         if session.mode != definition.scope:
             raise HTTPException(
                 status_code=422,
@@ -444,6 +454,30 @@ async def run_workflow_route(
                 status_code=422, detail="The session has no workspace bound."
             )
         scope_workspace = session.workspace
+
+    if definition.scope == "aim" and name == "aim-assess" and session.project_id:
+        from app.models.chat import ChatSession
+        from app.models.workflow import WorkflowExecution
+
+        active_assessment = (
+            await db.exec(
+                select(WorkflowExecution)
+                .join(
+                    ChatSession,
+                    col(WorkflowExecution.session_id) == col(ChatSession.id),
+                )
+                .where(
+                    ChatSession.project_id == session.project_id,
+                    WorkflowExecution.definition_name == name,
+                    col(WorkflowExecution.status).in_(("running", "waiting_gate")),
+                )
+            )
+        ).first()
+        if active_assessment is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="An assessment is already active for this AIM project.",
+            )
 
     if runner.is_driving(body.session_id):
         raise HTTPException(

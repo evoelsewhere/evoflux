@@ -17,7 +17,7 @@ import type { WorkbenchTool } from '@/stores/useUIStore'
 import { isBuiltInBrowserEnabled } from '@/components/BrowserViewer/browserPreferences'
 
 export interface WorkbenchContext {
-  mode: 'work' | 'coding'
+  mode: 'work' | 'coding' | 'aim'
   sessionId: string | null
   workspace: string | null
 }

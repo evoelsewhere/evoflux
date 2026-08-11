@@ -40,13 +40,14 @@ interface WorkbenchBarProps {
   viewMode: ViewMode
   onViewModeChange: (mode: ViewMode) => void
   onSelectAgent: (agent: string) => void
-  onOpenMobileSidebar: () => void
+  /** Opens chat navigation when this mode actually renders a drawer. */
+  onOpenMobileSidebar?: () => void
   isMobile: boolean
   /** Show the navigation button when desktop navigation is in drawer mode. */
   sidebarOverlay?: boolean
   isMacOverlay: boolean
-  /** Current mode — 'work' or 'coding'. */
-  mode: 'work' | 'coding'
+  /** Current app mode; AIM uses the non-Coding header behavior. */
+  mode: 'work' | 'coding' | 'aim'
   /** Absolute workspace root for the "Open in" menu. */
   workspace?: string | null
   /** Opens the workspace picker when no workspace is active. */
@@ -127,7 +128,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
         props.isMacOverlay && 'mac-drag-region pt-3',
       )}
     >
-      {(props.isMobile || props.sidebarOverlay) && (
+      {(props.isMobile || props.sidebarOverlay) && props.onOpenMobileSidebar && (
         <motion.button
           layout
           type="button"

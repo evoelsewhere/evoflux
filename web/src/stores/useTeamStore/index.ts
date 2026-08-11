@@ -65,7 +65,7 @@ function availableModelRegistry() {
 
 function availableTeamAgents(
   workspace?: string | null,
-  mode?: 'coding' | null,
+  mode?: 'coding' | 'aim' | null,
 ) {
   return queryClient.fetchQuery({
     queryKey: queryKeys.teamAgents(workspace, mode),
@@ -123,7 +123,7 @@ function resetSessionState(
   state.nextCursor = null
   state._leadRevertTime = null
   state._workspace =
-    options.mode === 'coding' ? (options.workspace ?? null) : null
+    options.mode === 'coding' || options.mode === 'aim' ? (options.workspace ?? null) : null
   state._loadingOlder = false
   state._resolvedSessionReadyId = null
   state.agentNames = leadName ? [leadName] : []
@@ -830,7 +830,7 @@ export const useTeamStore = create<TeamStore>()(
 
     loadTeamStatus: async (
       workspace?: string | null,
-      mode?: 'coding' | null,
+      mode?: 'coding' | 'aim' | null,
     ) => {
       const requestId = ++latestTeamRosterRequest
       try {
@@ -873,7 +873,7 @@ export const useTeamStore = create<TeamStore>()(
     loadSession: (
       sessionId: string,
       workspace?: string | null,
-      mode?: 'coding' | null,
+      mode?: 'coding' | 'aim' | null,
     ) => {
       const gen = get()._sessionGeneration
       const loadKey = `${gen}\u0000${sessionId}\u0000${workspace ?? ''}\u0000${mode ?? ''}`

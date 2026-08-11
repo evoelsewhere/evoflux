@@ -219,8 +219,8 @@ export interface AgentInfoPopoverProps {
   agentNames?: string[]
   workspace?: string | null
   sessionModel?: string | null
-  /** Roster for the workspace team — coding sessions have their own. */
-  mode?: 'coding' | null
+  /** Roster for the workspace team — 'aim' sessions have their own. */
+  mode?: 'coding' | 'aim' | null
 }
 
 export function AgentInfoPopover({

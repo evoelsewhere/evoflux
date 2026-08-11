@@ -124,8 +124,8 @@ interface SidebarProps {
   currentSessionId?: string;
   onCommandPalette?: () => void;
   onNewChat?: () => void;
-  /** Current mode — 'work' or 'coding' */
-  mode?: 'work' | 'coding';
+  /** Current mode — 'work', 'coding', or 'aim' */
+  mode?: 'work' | 'coding' | 'aim';
   /** Whether the mobile/responsive overlay drawer is open. */
   mobileOpen?: boolean;
   /** Called when the drawer should close (backdrop tap, Escape, navigation). */
@@ -153,7 +153,8 @@ export function Sidebar({
   const navigate = useNavigate();
   const toggleScheduler = useUIStore((s) => s.toggleScheduler);
   const togglePlugins = useUIStore((s) => s.toggleWorkbenchTool);
-  // Server-filtered to work — coding sessions live in their own sidebar.
+  // Server-filtered to work — coding/aim sessions live in their own
+  // sidebars (per-run aim sessions would otherwise flood this list).
   const sessions = useTeamSessionsQuery("work");
   const folders = useSessionFoldersQuery("work");
   const deleteSession = useDeleteTeamSessionMutation();

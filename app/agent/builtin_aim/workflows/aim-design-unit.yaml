@@ -1,0 +1,107 @@
+# AIM pipeline — design one understood unit before target implementation.
+schema_version: 1
+name: aim-design-unit
+description: Map one understood unit into the target architecture and approve the design
+scope: aim
+
+inputs:
+  - name: unit
+    type: string
+    required: true
+    description: "module/UNIT to design"
+
+nodes:
+  - id: readiness
+    kind: tool
+    tool: aim_readiness
+    args: { pipeline: aim-design-unit, unit: "{{inputs.unit}}" }
+
+  - id: readiness_branch
+    kind: switch
+    value: "{{nodes.readiness.output.status}}"
+
+  - id: blocked
+    kind: notify
+    title: "aim-design-unit blocked"
+    message: "{{inputs.unit}} is not ready for design: {{nodes.readiness.output.blockers | json}}"
+
+  - id: acquire
+    kind: tool
+    tool: aim_claim
+    args: { action: acquire, unit: "{{inputs.unit}}" }
+
+  - id: claim_branch
+    kind: switch
+    value: "{{nodes.acquire.output.status}}"
+
+  - id: claim_blocked
+    kind: notify
+    title: "aim-design-unit claim blocked"
+    message: "{{inputs.unit}} is already owned: {{nodes.acquire.output.blockers | json}}"
+
+  - id: plan
+    kind: agent
+    subagents: [aim-target-architect]
+    prompt: |
+      Prepare the target design for {{inputs.unit}}. Read its KB doc and
+      confirmed business rules, consult the rulebook mappings and
+      target-conventions.md, then write both mapping/<module>/<unit>.md and
+      mapping/<module>/<unit>.verify.command in the KB. The command must run
+      deterministically from the target repository, return non-zero on failure,
+      and verify the exact mapped unit without implementing it. Do NOT write
+      target code and do NOT change phase; the approval and deterministic
+      mark_designed node own that transition.
+    timeout_s: 1800
+
+  - id: approve
+    kind: gate
+    title: "Approve target design for {{inputs.unit}}"
+    body: "{{nodes.plan.output.text | truncate:2000}}"
+    choices: [approve, reject]
+
+  - id: mark_designed
+    kind: tool
+    tool: aim_units
+    args:
+      action: set_phase
+      unit: "{{inputs.unit}}"
+      phase: designed
+
+  - id: done
+    kind: notify
+    title: "aim-design-unit"
+    message: "{{inputs.unit}} mapping and verification contract approved — ready for conversion."
+
+  - id: release_success
+    kind: tool
+    tool: aim_claim
+    args: { action: release, unit: "{{inputs.unit}}" }
+
+  - id: release_rejected
+    kind: tool
+    tool: aim_claim
+    args: { action: release, unit: "{{inputs.unit}}" }
+
+  - id: rejected
+    kind: notify
+    title: "aim-design-unit"
+    message: "{{inputs.unit}} design was not approved."
+
+edges:
+  - { from: readiness, to: readiness_branch }
+  - { from: readiness_branch, to: blocked, when: blocked }
+  - { from: readiness_branch, to: acquire, when: ready }
+  - { from: acquire, to: claim_branch }
+  - { from: claim_branch, to: claim_blocked, when: blocked }
+  - { from: claim_branch, to: plan, when: acquired }
+  - { from: plan, to: approve }
+  - { from: approve, to: mark_designed, when: approve }
+  - { from: approve, to: release_rejected, when: reject }
+  - { from: mark_designed, to: release_success }
+  - { from: release_success, to: done }
+  - { from: release_rejected, to: rejected }
+
+outputs:
+  readiness_status: "{{nodes.readiness.output.status}}"
+  blockers: "{{nodes.readiness.output.blockers | json}}"
+  decision: "{{nodes.approve.output.choice}}"

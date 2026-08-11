@@ -1,0 +1,95 @@
+# AIM pipeline — implement one approved target design.
+schema_version: 1
+name: aim-convert-unit
+description: Implement one designed unit in the target repo and verify the build
+scope: aim
+
+inputs:
+  - name: unit
+    type: string
+    required: true
+    description: "module/UNIT to convert"
+
+nodes:
+  - id: readiness
+    kind: tool
+    tool: aim_readiness
+    args: { pipeline: aim-convert-unit, unit: "{{inputs.unit}}" }
+
+  - id: readiness_branch
+    kind: switch
+    value: "{{nodes.readiness.output.status}}"
+
+  - id: blocked
+    kind: notify
+    title: "aim-convert-unit blocked"
+    message: "{{inputs.unit}} is not ready for conversion: {{nodes.readiness.output.blockers | json}}"
+
+  - id: acquire
+    kind: tool
+    tool: aim_claim
+    args: { action: acquire, unit: "{{inputs.unit}}" }
+
+  - id: claim_branch
+    kind: switch
+    value: "{{nodes.acquire.output.status}}"
+
+  - id: claim_blocked
+    kind: notify
+    title: "aim-convert-unit claim blocked"
+    message: "{{inputs.unit}} is already owned: {{nodes.acquire.output.blockers | json}}"
+
+  - id: convert
+    kind: agent
+    subagents: [aim-converter]
+    prompt: |
+      The plan for {{inputs.unit}} is approved. Delegate to `aim-converter`:
+      implement it in the target repo per mapping/<unit>.md and
+      target-conventions (the base source stays read-only), then verify the
+      target builds/tests. Do NOT change the unit's phase — the pipeline marks
+      it converted deterministically after you finish. Record target_paths via
+      aim_units without passing phase, then commit the target-repo changes
+      before returning.
+    timeout_s: 3600
+
+  - id: mark_converted
+    kind: tool
+    tool: aim_units
+    args:
+      action: set_phase
+      unit: "{{inputs.unit}}"
+      phase: converted
+
+  - id: verify
+    kind: tool
+    tool: aim_verify
+    args: { unit: "{{inputs.unit}}" }
+    timeout_s: 1800
+
+  - id: done
+    kind: notify
+    title: "aim-convert-unit"
+    message: "{{inputs.unit}} converted — capture a trusted golden baseline if needed, then run aim-test-compare."
+
+  - id: release
+    kind: tool
+    tool: aim_claim
+    args: { action: release, unit: "{{inputs.unit}}" }
+
+edges:
+  - { from: readiness, to: readiness_branch }
+  - { from: readiness_branch, to: blocked, when: blocked }
+  - { from: readiness_branch, to: acquire, when: ready }
+  - { from: acquire, to: claim_branch }
+  - { from: claim_branch, to: claim_blocked, when: blocked }
+  - { from: claim_branch, to: convert, when: acquired }
+  - { from: convert, to: verify }
+  - { from: verify, to: mark_converted }
+  - { from: mark_converted, to: release }
+  - { from: release, to: done }
+
+outputs:
+  readiness_status: "{{nodes.readiness.output.status}}"
+  blockers: "{{nodes.readiness.output.blockers | json}}"
+  verification_status: "{{nodes.verify.output.status}}"
+  evidence_path: "{{nodes.verify.output.evidence_path}}"

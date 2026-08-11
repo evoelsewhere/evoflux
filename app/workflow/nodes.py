@@ -68,7 +68,7 @@ async def run_tool_node(
         raise WorkflowNodeError("tool args must render to an object.")
 
     tool_name: str = node_like.tool
-    # coding scope pins the sandbox to the target workspace; work scope
+    # coding/aim scope pins the sandbox to the target workspace; work scope
     # leaves the contextvar untouched — the tools' own default-sandbox
     # fallback applies (F12).
     sandbox_token = (

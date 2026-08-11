@@ -234,6 +234,7 @@ const CURATED_TRANSLATIONS: Catalog = {
 }
 
 const KEEP_ENGLISH = new Set([
+  'AIM',
   'Anthropic Sans',
   'Artifacts',
   'Backend',
@@ -261,6 +262,7 @@ const KEEP_ENGLISH = new Set([
   'Trace',
   'WebBridge',
   'X-High',
+  'aim',
   'alertdialog',
   'alert',
   'anthropic-sans',

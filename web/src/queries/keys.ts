@@ -132,6 +132,13 @@ export const queryKeys = {
       nodeLimit === undefined && edgeLimit === undefined
         ? (['projects', 'detail', id, 'code-context-data'] as const)
         : (['projects', 'detail', id, 'code-context-data', nodeLimit, edgeLimit] as const),
+    aimAll: () => ['projects', 'aim'] as const,
+    aimMeta: () => ['projects', 'aim', 'meta'] as const,
+    aimSummary: (id: string) => ['projects', 'detail', id, 'aim-summary'] as const,
+    aimUnits: (id: string, wave?: number) =>
+      ['projects', 'detail', id, 'aim-units', wave ?? null] as const,
+    aimRun: (id: string, runId: string) =>
+      ['projects', 'detail', id, 'aim-run', runId] as const,
   },
   git: {
     reviews: (scope?: string) =>

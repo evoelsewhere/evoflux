@@ -17,7 +17,7 @@ interface UseTeamSseArgs {
   agentWorkspace: string | null
   hasCodingWorkspace: boolean
   isCodingSessionLoading: boolean
-  mode: 'work' | 'coding'
+  mode: 'work' | 'coding' | 'aim'
 }
 
 function isLiveStream(
@@ -60,7 +60,7 @@ export function useTeamSse({
 
   useEffect(() => {
     if (hasCodingWorkspace)
-      void loadTeamStatus(agentWorkspace, 'coding')
+      void loadTeamStatus(agentWorkspace, mode === 'aim' ? 'aim' : 'coding')
     if (isCodingSessionLoading) return
     if (!sessionId) return
     const store = useTeamStore.getState()
@@ -106,7 +106,7 @@ export function useTeamSse({
           await loadSession(
             sessionId,
             agentWorkspace,
-            mode === 'coding' ? 'coding' : null,
+            mode === 'aim' ? 'aim' : mode === 'coding' ? 'coding' : null,
           )
         }
         if (cancelled) return
@@ -152,7 +152,7 @@ export function useTeamSse({
         void loadSession(
           sessionId,
           agentWorkspace,
-          mode === 'coding' ? 'coding' : null,
+          mode === 'aim' ? 'aim' : mode === 'coding' ? 'coding' : null,
         ).then(() => {
           const current = useTeamStore.getState()
           if (current.sessionId !== sessionId || current._workspace !== agentWorkspace) return

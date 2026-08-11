@@ -1,0 +1,3 @@
+# Raw actual outputs from compare runs — bulky, reproducible, not evidence worth keeping in git.
+# Small reports (runs/<unit>/<run-id>/report.{json,md}) ARE tracked; this only excludes the raw actuals.
+.aim-actuals/

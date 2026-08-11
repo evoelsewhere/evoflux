@@ -19,7 +19,7 @@ from app.services.code_index.executor import run_index_work, submit_index_work
 from app.services.code_index.file_matcher import SourceMetadata, walk_source_records
 from app.services.code_index.languages import SEARCH_ONLY_LANGUAGES
 from app.services.code_index.models import IndexStats
-from app.services.code_index.parsers.registry import default_registry
+from app.services.code_index.parsers.registry import registry_for_root
 from app.services.code_index.paths import RepositoryIndexPaths, paths_for_repository
 from app.services.code_index.pipeline import (
     FileState,
@@ -259,7 +259,7 @@ class RepositoryIndex:
         full: bool,
         progress: ProgressCallback | None,
     ) -> IndexStats:
-        registry = default_registry()
+        registry = registry_for_root(self.root)
         project_settings = load_project_settings(self.root)
         override_extensions = {
             f".{item.ext}" for item in project_settings.language_overrides
@@ -267,7 +267,7 @@ class RepositoryIndex:
 
         def processor_for(path: str) -> tuple[str, str | None]:
             override = project_settings.language_for(path)
-            identity = processing_identity(path, override)
+            identity = processing_identity(path, override, registry=registry)
             return f"{identity}:{project_settings.digest}", override
 
         with self.database.readonly() as connection:
@@ -330,7 +330,7 @@ class RepositoryIndex:
                     )
                 )
             try:
-                states[key] = build_file_state(records[key])
+                states[key] = build_file_state(records[key], registry=registry)
             except (OSError, UnicodeDecodeError, ValueError) as exc:
                 errors[key] = str(exc)
             except Exception as exc:  # parser isolation: preserve last good target

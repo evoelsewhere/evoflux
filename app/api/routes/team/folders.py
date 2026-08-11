@@ -83,7 +83,7 @@ async def list_team_session_folders(
 ) -> SessionFolderListResponse:
     """List folders of one mode, each with its newest sessions inline."""
     resolved_mode = normalize_mode(mode)
-    if resolved_mode not in {"work", "coding"}:
+    if resolved_mode not in {"work", "coding", "aim"}:
         raise HTTPException(status_code=422, detail="Invalid mode")
 
     running_ids = set(stream_store.running_session_ids())
@@ -148,7 +148,7 @@ async def create_team_session_folder(
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="Folder name cannot be empty.")
-    if body.mode not in {"work", "coding"}:
+    if body.mode not in {"work", "coding", "aim"}:
         raise HTTPException(status_code=422, detail="Invalid mode")
     folder = await create_folder(
         db, name=name, mode=body.mode, share_context=body.share_context

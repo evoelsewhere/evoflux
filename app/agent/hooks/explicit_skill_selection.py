@@ -10,6 +10,7 @@ from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
 from app.agent.schemas.chat import HumanMessage
+from app.core.skill_scope import normalize_skill_mode
 
 if TYPE_CHECKING:
     from app.agent.state import AgentState, RunContext
@@ -40,7 +41,7 @@ class ExplicitSkillSelectionHook(BaseAgentHook):
 
         from app.agent.tools.builtin.skill import discover_skill_records_runtime
 
-        mode = "coding" if state.metadata.get("team_mode") == "coding" else "work"
+        mode = normalize_skill_mode(state.metadata.get("team_mode"))
         discovered = {
             name: record
             for name, record in discover_skill_records_runtime(mode=mode).items()

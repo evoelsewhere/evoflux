@@ -130,16 +130,34 @@ class TestDefaultDeferredTools:
         from app.agent.loader import _default_tool_registry
 
         registry = _default_tool_registry()
-        assert registry["preview"].tiers == frozenset({"work", "coding"})
-        for mode in ("work", "coding"):
+        assert registry["preview"].tiers == frozenset({"work", "coding", "aim"})
+        for mode in ("work", "coding", "aim"):
             assert "preview" in tier_tools(registry, mode=mode, role="lead")
             assert "preview" not in EVOFLUX_prompt_for_mode(mode)
+
+    def test_worktree_tools_are_available_to_coding_and_aim_leads_only(self):
+        from app.agent.builtin_prompts import tier_tools
+        from app.agent.loader import _default_tool_registry
+
+        registry = _default_tool_registry()
+        expected_tiers = frozenset({"coding", "aim"})
+        for name in ("worktree_start", "worktree_finish"):
+            assert registry[name].tiers == expected_tiers
+            assert registry[name].lead_only
+
+            assert name not in tier_tools(registry, mode="work", role="lead")
+            assert name in tier_tools(registry, mode="coding", role="lead")
+            assert name in tier_tools(registry, mode="aim", role="lead")
+            assert name not in tier_tools(registry, mode="coding", role="member")
+            assert name not in tier_tools(registry, mode="aim", role="member")
 
     def test_includes_long_tail_tools(self):
         from app.agent.loader import _default_tool_registry
 
         registry = _default_tool_registry()
         expected = {
+            "aim_units",
+            "aim_compare",
             "terminal_run",
             "worktree_start",
             "worktree_finish",
@@ -202,13 +220,13 @@ class TestDefaultDeferredTools:
             "update_goal",
             "write",
         }
-        for mode in ("work", "coding"):
+        for mode in ("work", "coding", "aim"):
             granted = set(tier_tools(registry, mode=mode, role="lead"))
             granted.update({"skill", "todo_manage", "schedule_task", "note"})
             eager = {name for name in granted if not registry[name].deferred}
             assert 11 <= len(eager) <= 17
             expected = set(expected_core)
-            if mode == "coding":
+            if mode in {"coding", "aim"}:
                 expected.add("code_context")
             assert eager == expected
 
@@ -217,14 +235,12 @@ class TestDefaultDeferredTools:
         from app.agent.loader import _default_tool_registry
 
         registry = _default_tool_registry()
-        graph_tools = {
-            "code_context",
-            "code_context",
-        }
+        graph_tools = {"code_context"}
 
         work_tools = set(tier_tools(registry, mode="work", role="lead"))
         assert work_tools.isdisjoint(graph_tools)
-        assert graph_tools <= set(tier_tools(registry, mode="coding", role="lead"))
+        for mode in ("coding", "aim"):
+            assert graph_tools <= set(tier_tools(registry, mode=mode, role="lead"))
 
     def test_actual_coding_lead_payload_includes_memory_search(self):
         from app.agent.builtin_prompts import tier_tools

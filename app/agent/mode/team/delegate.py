@@ -108,7 +108,7 @@ class TaskSpec(BaseModel):
         default="auto",
         description=(
             "Lead-selected workspace isolation. Auto uses a worktree for mutable "
-            "coding tasks and shared workspace for read-only coordination."
+            "coding/AIM tasks and shared workspace for read-only coordination."
         ),
     )
     resolved_isolation: Literal["shared", "worktree"] = Field(
@@ -182,9 +182,7 @@ def format_delegation_message(
     if spec.context:
         formatted_lines.append(f"**Context:** {spec.context}")
     if len(spec.peer_recipients) > 1:
-        formatted_lines.append(
-            "**Parallel peers:** " + ", ".join(spec.peer_recipients)
-        )
+        formatted_lines.append("**Parallel peers:** " + ", ".join(spec.peer_recipients))
         formatted_lines.append(
             "**Parallel contract:** Work independently against the full task brief; "
             "do not assume peers cover missing parts unless Context explicitly "
@@ -403,8 +401,7 @@ def make_team_delegate_tool(
         for name in requested:
             target = (
                 team.resolve_delegation_recipient(name)
-                if team is not None
-                and hasattr(team, "resolve_delegation_recipient")
+                if team is not None and hasattr(team, "resolve_delegation_recipient")
                 else _resolve(team, mailbox, name, agent_name)
             )
             if target is None and team is not None and name in team.blueprints:
@@ -413,7 +410,9 @@ def make_team_delegate_tool(
                     try:
                         spawned = await team.spawn(name, confirm=True)
                     except Exception as exc:  # noqa: BLE001 - tool boundary
-                        logger.exception("team_delegate_auto_spawn_failed name={}", name)
+                        logger.exception(
+                            "team_delegate_auto_spawn_failed name={}", name
+                        )
                         errors.append(f"Could not auto-spawn blueprint '{name}': {exc}")
                         continue
                     target = spawned.name
@@ -532,8 +531,7 @@ def make_team_delegate_tool(
         queued = [
             recipient
             for recipient in resolved
-            if recipient not in blocked_recipients
-            and recipient_was_working[recipient]
+            if recipient not in blocked_recipients and recipient_was_working[recipient]
         ]
         states: list[str] = []
         if running:
@@ -545,8 +543,7 @@ def make_team_delegate_tool(
             )
         if blocked_recipients:
             states.append(
-                "Blocked on dependencies: "
-                f"{', '.join(sorted(blocked_recipients))}."
+                f"Blocked on dependencies: {', '.join(sorted(blocked_recipients))}."
             )
         return f"Task delegated to {', '.join(resolved)}. {' '.join(states)}{suffix}"
 

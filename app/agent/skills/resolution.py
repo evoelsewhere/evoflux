@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.agent.schemas.chat import HumanMessage, SystemMessage
 from app.agent.skills.models import SkillRecord
+from app.core.skill_scope import normalize_skill_mode
 
 if TYPE_CHECKING:
     from app.agent.providers.base import LLMProviderBase
@@ -55,7 +56,7 @@ class SkillResolutionDecision:
 def eligible_resolution_records(
     records: Sequence[SkillRecord], *, mode: str
 ) -> tuple[SkillRecord, ...]:
-    resolved_mode = "coding" if mode == "coding" else "work"
+    resolved_mode = normalize_skill_mode(mode)
     return tuple(
         sorted(
             (
@@ -74,7 +75,7 @@ def eligible_resolution_records(
 def _request_payload(*, request: str, mode: str, records: Sequence[SkillRecord]) -> str:
     return json.dumps(
         {
-            "mode": "coding" if mode == "coding" else "work",
+            "mode": normalize_skill_mode(mode),
             "request": request,
             "skills": [
                 {"name": record.name, "description": record.description}

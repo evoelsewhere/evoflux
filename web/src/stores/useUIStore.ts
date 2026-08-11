@@ -4,9 +4,9 @@
  * shared store lets shortcuts and command palette items coordinate modal
  * visibility from one path.
  *
- * Also owns the desktop sidebar collapse state — one field shared by both
- * mode sidebars (work / coding) and toggled from AppShell (button + Ctrl+B).
- * This is the store's only persisted field.
+ * Also owns the desktop sidebar collapse state — one field shared by all
+ * three mode sidebars (work / coding / aim) and toggled from AppShell
+ * (button + Ctrl+B). This is the store's only persisted field.
  *
  * Mirrors the size and shape of ``useToastStore`` — Zustand + immer, no
  * derived selectors.
@@ -166,6 +166,7 @@ function loadSidebarWidth(): number {
     const candidates = [
       STORAGE_KEYS.sidebar.width,
       STORAGE_KEYS.sidebar.codingWidth,
+      STORAGE_KEYS.sidebar.aimWidth,
     ]
     for (const key of candidates) {
       const stored = localStorage.getItem(key)

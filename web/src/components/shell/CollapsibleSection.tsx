@@ -8,7 +8,7 @@
  *
  * Pass `onToggle` to make the label an expand/collapse button with a
  * chevron (coding's Projects/Workspaces headers); omit it for a static
- * label (static section headers).
+ * label (aim's Projects header).
  */
 
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'

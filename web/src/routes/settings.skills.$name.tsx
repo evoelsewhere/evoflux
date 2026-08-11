@@ -49,10 +49,15 @@ import { useActiveSkillDiscoveryScope } from '@/hooks/useActiveSkillDiscoverySco
 import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
 import { resolveRequestedSkillMode } from '@/lib/skill-detail-mode'
 import {
-  availabilityFromModes,
-  modesFromAvailability,
-  type SkillAvailability,
+  normalizeSkillModes,
+  skillModesEqual,
 } from '@/lib/skill-modes'
+import type { SkillMode } from '@/api/types'
+
+const MODE_COLLISION_ERROR_MESSAGE =
+  'Choose Work, Coding, or AIM before editing a mode-specific skill collision.'
+const MODE_COLLISION_DISABLED_MESSAGE =
+  'Choose Work, Coding, or AIM before editing this collided skill'
 
 /**
  * Skill editor — lighter than the agent editor because skills have an
@@ -79,8 +84,8 @@ export function SkillEditorPage() {
   const [files, setFiles] = useState<SkillBundleDraftFile[]>(() =>
     skillBundleFilesFromApi(data?.files ?? []),
   )
-  const [availability, setAvailability] = useState<SkillAvailability>(() =>
-    availabilityFromModes(data?.modes),
+  const [skillModes, setSkillModes] = useState<SkillMode[]>(() =>
+    normalizeSkillModes(data?.modes),
   )
   const [allowImplicitInvocation, setAllowImplicitInvocation] = useState(
     () => data?.allow_implicit_invocation ?? true,
@@ -102,7 +107,7 @@ export function SkillEditorPage() {
     setSeededFor(discoveryKey)
     setDraft(data.content)
     setFiles(skillBundleFilesFromApi(data.files))
-    setAvailability(availabilityFromModes(data.modes))
+    setSkillModes(normalizeSkillModes(data.modes))
     setAllowImplicitInvocation(data.allow_implicit_invocation)
     setUserInvocable(data.user_invocable)
     setDeletedFiles([])
@@ -122,8 +127,7 @@ export function SkillEditorPage() {
     !!data &&
     (JSON.stringify(files) !== JSON.stringify(skillBundleFilesFromApi(data.files)) ||
       deletedFiles.length > 0)
-  const availabilityDirty =
-    !!data && availability !== availabilityFromModes(data.modes)
+  const availabilityDirty = !!data && !skillModesEqual(skillModes, data.modes)
   const runtimeSettingsDirty =
     !!data &&
     (availabilityDirty ||
@@ -147,7 +151,7 @@ export function SkillEditorPage() {
     if (runtimeSettingsDirty && settingsReadOnly) {
       setSaveError(
         settingsAmbiguous
-          ? 'Choose Work or Coding before editing a mode-specific skill collision.'
+          ? MODE_COLLISION_ERROR_MESSAGE
           : 'Runtime settings are read-only for this skill.',
       )
       return
@@ -179,7 +183,7 @@ export function SkillEditorPage() {
           name,
           settings: {
             settings_id: res.settings_id,
-            modes: modesFromAvailability(availability),
+            modes: skillModes,
             allow_implicit_invocation: allowImplicitInvocation,
             user_invocable: userInvocable,
           },
@@ -192,7 +196,7 @@ export function SkillEditorPage() {
       })
       setDraft(res.content)
       setFiles(skillBundleFilesFromApi(res.files))
-      setAvailability(availabilityFromModes(res.modes))
+      setSkillModes(normalizeSkillModes(res.modes))
       setAllowImplicitInvocation(res.allow_implicit_invocation)
       setUserInvocable(res.user_invocable)
       setDeletedFiles([])
@@ -225,7 +229,7 @@ export function SkillEditorPage() {
         name,
         settingsId: data.settings_id,
       })
-      setAvailability(availabilityFromModes(res.modes))
+      setSkillModes(normalizeSkillModes(res.modes))
       setAllowImplicitInvocation(res.allow_implicit_invocation)
       setUserInvocable(res.user_invocable)
       push({
@@ -273,7 +277,7 @@ export function SkillEditorPage() {
     if (!data) return
     setDraft(data.content)
     setFiles(skillBundleFilesFromApi(data.files))
-    setAvailability(availabilityFromModes(data.modes))
+    setSkillModes(normalizeSkillModes(data.modes))
     setAllowImplicitInvocation(data.allow_implicit_invocation)
     setUserInvocable(data.user_invocable)
     setDeletedFiles([])
@@ -297,7 +301,7 @@ export function SkillEditorPage() {
                 ? `Read-only skill bundle from ${data?.source ?? 'external source'}`
                 : runtimeSettingsDirty && settingsReadOnly
                   ? settingsAmbiguous
-                    ? 'Choose Work or Coding before editing this collided skill'
+                    ? MODE_COLLISION_DISABLED_MESSAGE
                     : 'Runtime settings are read-only for this skill'
                   : null
             }
@@ -321,10 +325,9 @@ export function SkillEditorPage() {
                 description="Mode scope controls where this skill is listed, selected, and loadable."
               >
                 <SkillModeSelector
-                  value={availability}
-                  onChange={setAvailability}
+                  value={skillModes}
+                  onChange={setSkillModes}
                   disabled={settingsReadOnly || saving}
-                  layoutId={`skill-availability-${name.replaceAll('/', '-')}`}
                 />
               </SettingsGroup>
               <SettingsGroup

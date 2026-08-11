@@ -13,7 +13,7 @@ import type { OS } from '@/hooks/use-platform'
 interface UseMobileEdgeSwipesArgs {
   os: OS
   isMobile: boolean
-  mode: 'work' | 'coding'
+  mode: 'work' | 'coding' | 'aim'
   mobileSidebarOpen: boolean
   showMobileActions: boolean
   setMobileSidebarOpen: (open: boolean) => void
@@ -36,11 +36,12 @@ export function useMobileEdgeSwipes({
   const mobileActionsSwipeStartRef = useRef<{ x: number; y: number } | null>(null)
 
   const handleMobileSidebarSwipeStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    if ((os !== 'ios' && os !== 'android') || !isMobile || mobileSidebarOpen) return
+    // AIM Discussion is nested in the project shell and has no chat drawer.
+    if (mode === 'aim' || (os !== 'ios' && os !== 'android') || !isMobile || mobileSidebarOpen) return
     const touch = event.touches[0]
     if (!touch || touch.clientX > 24) return
     mobileSidebarSwipeStartRef.current = { x: touch.clientX, y: touch.clientY }
-  }, [isMobile, mobileSidebarOpen, os])
+  }, [isMobile, mobileSidebarOpen, mode, os])
 
   const handleMobileSidebarSwipeMove = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
     const start = mobileSidebarSwipeStartRef.current

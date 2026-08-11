@@ -15,10 +15,12 @@ export const STORAGE_KEYS = {
   locale: 'oa-locale',
   accessKey: 'EvoFlux.accessKey',
   lastRoute: 'oa-last-route',
+  lastAimProject: 'oa-last-aim-project',
   pinnedSessions: 'oa.pinnedSessions',
   modeRoutes: {
     work: 'oa-last-route-work',
     coding: 'oa-last-route-coding',
+    aim: 'oa-last-route-aim',
   },
   /** Read-only migration keys from mode names used by older releases. */
   legacyModeRoutes: {
@@ -29,6 +31,7 @@ export const STORAGE_KEYS = {
     width: 'oa.sidebar.width',
     collapsed: 'oa-sidebar-collapsed',
     codingWidth: 'oa.codingSidebar.width',
+    aimWidth: 'oa.aimSidebar.width',
   },
 
   /** Resizable panel widths (useResizableWidth / SidePanel storageKey props). */
@@ -43,6 +46,10 @@ export const STORAGE_KEYS = {
     workspace: 'workspace-panel-width',
     workspaceTree: 'workspace-tree-width',
     codingWorkspaceTree: 'oa.codingWorkspace.treeWidth',
+    aimDiscussion: 'oa.aimDiscussion.width',
+    aimMonitor: 'oa.aimMonitor.width',
+    aimReport: 'oa.aimReport.width',
+    aimUnitDetail: 'oa.aimUnitDetail.width',
     sideChat: 'oa.sideChatPanel.width',
     workbench: 'oa.workbenchPanel.width',
   },
@@ -66,6 +73,11 @@ export const STORAGE_KEYS = {
     recentCollapsed: 'oa.workSidebar.recentCollapsed',
   },
 
+  /** AIM sidebar UI state. */
+  aim: {
+    expanded: 'oa.aimSidebar.expanded',
+  },
+
   desktopNotifications: {
     enabled: 'oa-desktop-notifications-enabled',
     soundEnabled: 'oa-desktop-notifications-sound-enabled',
@@ -74,5 +86,11 @@ export const STORAGE_KEYS = {
   browser: {
     preferences: 'oa.browser.preferences',
     webBridgeDefaultEnabled: 'oa.browser.webbridge-default-enabled',
+  },
+
+  /** sessionStorage, not localStorage — ephemeral one-shot handoffs. */
+  aimHandoff: {
+    pipelinePrefill: 'oa-aim-pipeline-prefill',
+    kbOpen: 'oa-aim-kb-open',
   },
 } as const

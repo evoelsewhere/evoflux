@@ -1,7 +1,7 @@
 /**
  * AppShell — the unified desktop frame shared by every top-level mode
- * layout (TeamChatView for work/coding). It owns the chrome those layouts
- * used to hand-mirror in each other:
+ * layout (TeamChatView for work/coding/aim-chat, routes/aim.tsx for AIM).
+ * It owns the chrome those layouts used to hand-mirror in each other:
  *   - the outer full-viewport container (mobile-safe, h-dvh, md row layout)
  *   - the sidebar slot + the sidebar-toggle button between sidebar and main
  *   - the <main> content card (rounded, shadowed)
@@ -11,7 +11,10 @@
  * toggle button just fires the store action.
  *
  * Ctrl+B is registered HERE, exactly once per rendered shell, and only when
- * the shell actually renders a sidebar.
+ * the shell actually renders a sidebar. The one nested case is the aim-chat
+ * Discussion panel: TeamChatView with mode="aim" mounts inside the AIM
+ * layout, so it passes sidebar={null} and leaves Ctrl+B (and the toggle
+ * button) to the outer AIM shell — previously both shells' handlers fired.
  *
  * Slots:
  *   sidebar       — desktop sidebar instance (the caller mode-selects it);

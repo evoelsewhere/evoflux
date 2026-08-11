@@ -26,7 +26,7 @@ function StatusIcon({ status }: { status: TurnChangedFile['status'] }) {
 
 interface ChangesReviewPanelProps {
   workspace?: string | null
-  mode?: 'work' | 'coding'
+  mode?: 'work' | 'coding' | 'aim'
   onOpenFile?: (path: string) => void
 }
 

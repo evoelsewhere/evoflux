@@ -9,6 +9,7 @@ from loguru import logger
 from app.agent.hooks.base import BaseAgentHook
 from app.agent.providers.model_metadata import get_model_limits
 from app.agent.skills.catalog import SkillCatalogRender, render_skill_catalog
+from app.core.skill_scope import normalize_skill_mode
 
 if TYPE_CHECKING:
     from app.agent.state import AgentState, ModelRequest, RunContext
@@ -24,7 +25,7 @@ class SkillCatalogHook(BaseAgentHook):
         model_id: str | None,
         preferred_skills: Sequence[str] = (),
     ) -> None:
-        self._mode = "coding" if mode == "coding" else "work"
+        self._mode = normalize_skill_mode(mode)
         self._model_id = model_id
         self._preferred_skills = tuple(preferred_skills)
 
