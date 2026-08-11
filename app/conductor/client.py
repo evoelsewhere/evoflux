@@ -26,6 +26,7 @@ from app.conductor.constants.api import (
     CONDUCTOR_TOKEN_PREFIX,
     V1_HEARTBEAT_PATH,
     V1_REGISTER_PATH,
+    V1_RESOURCE_USAGE_PATH,
     V1_RESOURCE_KINDS,
     V1_SUBSCRIBE_PATH,
     V1_TELEMETRY_PATH,
@@ -213,6 +214,19 @@ class ConductorClient:
                 TelemetryBatchField.INSTALLATION_ID: installation_id,
                 TelemetryBatchField.EVENTS: clean_events,
             },
+        )
+
+    async def report_resource_usage(self, events: list[dict[str, object]]) -> None:
+        """Report content-free managed-resource usage events."""
+
+        if not events:
+            return
+        await self._request(
+            "POST",
+            V1_RESOURCE_USAGE_PATH,
+            headers=self._auth_headers(),
+            json={"events": events},
+            idempotent=True,
         )
 
     def _auth_headers(self) -> dict[str, str]:

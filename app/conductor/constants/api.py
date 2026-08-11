@@ -7,6 +7,7 @@ V1_SUBSCRIBE_PATH = "/api/v1/subscribe/resources"
 V1_REGISTER_PATH = "/api/v1/client/register"
 V1_HEARTBEAT_PATH = "/api/v1/client/heartbeat"
 V1_TELEMETRY_PATH = "/api/v1/telemetry/batch"
+V1_RESOURCE_USAGE_PATH = "/api/v1/usage/resources"
 
 CONDUCTOR_TOKEN_PREFIX = "evc_"
 API_TEXT_FIELD_MAX_LENGTH = 256

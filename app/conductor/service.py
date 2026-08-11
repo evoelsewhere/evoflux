@@ -27,7 +27,12 @@ from app.conductor.constants.telemetry import (
 )
 from app.conductor.models import ReconcileResult, RegistrationRequest
 from app.conductor.reconciler import ResourceReconciler
-from app.conductor.telemetry import TelemetryOutbox, telemetry_outbox
+from app.conductor.telemetry import (
+    TelemetryOutbox,
+    clear_usage,
+    flush_usage,
+    telemetry_outbox,
+)
 from app.core.config import settings
 from app.core.runtime_settings import (
     ConductorSettings,
@@ -239,6 +244,7 @@ class ConductorService:
         await self.stop()
         self._credentials().delete()
         self._telemetry_store.clear()
+        clear_usage()
         runtime = self._clear_registration_state()
         self.status = ConductorStatus(
             enabled=runtime.conductor.enabled,
@@ -442,6 +448,23 @@ class ConductorService:
         await self._client.report_observed_state(observed)
         await self._client.report_inventory(self.inventory())
         await self._flush_telemetry()
+        await self._flush_skill_usage()
+
+    async def _flush_skill_usage(self) -> None:
+        if self._client is None:
+            return
+        try:
+            await flush_usage(self._client)
+        except (
+            ConductorRequestError,
+            CredentialStoreError,
+            httpx.HTTPError,
+            OSError,
+        ) as exc:
+            logger.warning(
+                "conductor_skill_usage_flush_deferred error_type={}",
+                type(exc).__name__,
+            )
 
     async def _flush_telemetry(self) -> None:
         if self._client is None:
