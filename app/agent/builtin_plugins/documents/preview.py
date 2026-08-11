@@ -47,7 +47,9 @@ MAX_DOCUMENT_PREVIEW_HTML_BYTES = 36 * 1024 * 1024
 MAX_PDF_PREVIEW_PAGES = 80
 MAX_PDF_PREVIEW_RASTER_BYTES = 24 * 1024 * 1024
 MAX_PDF_PREVIEW_PIXELS_PER_PAGE = 10_000_000
-_CACHE_SCHEMA_VERSION = "evoflux-document-html-v14"
+MIN_XLSX_PREVIEW_ROWS = 40
+MIN_XLSX_PREVIEW_COLUMNS = 20
+_CACHE_SCHEMA_VERSION = "evoflux-document-html-v16"
 _render_locks = tuple(threading.Lock() for _ in range(32))
 
 
@@ -328,9 +330,9 @@ def _render_docx(source: Path) -> str:
 
 
 def _worksheet_bounds(sheet: Any) -> tuple[int, int]:
-    """Return bounded preview dimensions for a worksheet."""
-    max_row = min(max(sheet.max_row, 1), 500)
-    max_column = min(max(sheet.max_column, 1), 100)
+    """Return bounded dimensions with enough blank cells to fill the viewer."""
+    max_row = min(max(sheet.max_row, MIN_XLSX_PREVIEW_ROWS), 500)
+    max_column = min(max(sheet.max_column, MIN_XLSX_PREVIEW_COLUMNS), 100)
     return max_row, max_column
 
 
@@ -339,15 +341,21 @@ def _display_cell(
     *,
     evaluation: FormulaEvaluation | None = None,
     sheet_name: str | None = None,
+    cached_value: Any = None,
 ) -> str:
     value = cell.value
     if value is None:
         return ""
     if cell.data_type == "f":
+        # Prefer our deterministic evaluator, then the value cached by the
+        # spreadsheet application that last saved the workbook.  If neither
+        # is available, keep the expression visible instead of rendering an
+        # unexplained blank or #N/A cell.
+        fallback = cached_value if cached_value is not None else str(value)
         value = (
-            evaluation.display_value(sheet_name, cell.coordinate, "#N/A")
+            evaluation.display_value(sheet_name, cell.coordinate, fallback)
             if evaluation is not None and sheet_name is not None
-            else "#N/A"
+            else fallback
         )
     return format_computed_value(value, str(getattr(cell, "number_format", "") or ""))
 
@@ -480,11 +488,20 @@ def _xlsx_chart_svg(
     def category_labels() -> str:
         if not categories:
             return ""
+        max_labels = 6
+        if len(categories) <= max_labels:
+            visible_indices = list(range(len(categories)))
+        else:
+            step = math.ceil((len(categories) - 1) / (max_labels - 1))
+            visible_indices = list(range(0, len(categories), step))
+            if visible_indices[-1] != len(categories) - 1:
+                visible_indices.append(len(categories) - 1)
         return "".join(
             f'<text x="{52 + index * 520 / max(len(categories) - 1, 1):.2f}" '
-            'y="278" text-anchor="middle" font-size="13" fill="#6b7280">'
-            f"{html.escape(label)}</text>"
-            for index, label in enumerate(categories)
+            f'y="278" text-anchor="end" font-size="10" fill="#6b7280" '
+            f'transform="rotate(-32 {52 + index * 520 / max(len(categories) - 1, 1):.2f} 278)">'
+            f"{html.escape(str(categories[index])[:14])}</text>"
+            for index in visible_indices
         )
 
     if "PIE" in chart_type or "DOUGHNUT" in chart_type:
@@ -630,9 +647,13 @@ def _render_xlsx(source: Path) -> str:
     from openpyxl.utils import get_column_letter
 
     workbook = load_workbook(source, data_only=False, read_only=False)
+    cached_workbook = load_workbook(source, data_only=True, read_only=False)
     evaluation = evaluate_workbook_formulas(workbook)
     sections: list[str] = []
     for sheet in workbook.worksheets:
+        cached_sheet = cached_workbook[sheet.title]
+        used_max_row = min(max(sheet.max_row, 1), 500)
+        used_max_column = min(max(sheet.max_column, 1), 100)
         max_row, max_column = _worksheet_bounds(sheet)
         merged_starts = {
             (cell_range.min_row, cell_range.min_col): cell_range
@@ -650,19 +671,19 @@ def _render_xlsx(source: Path) -> str:
         ]
         row_heights = [_xlsx_row_height_px(sheet, row) for row in range(1, max_row + 1)]
         columns = ['<col style="width:44px">']
-        column_headers = ['<th class="corner"></th>']
+        column_headers = ['<th class="corner" aria-hidden="true"></th>']
         for column in range(1, max_column + 1):
             width_px = column_widths[column - 1]
             columns.append(f'<col style="width:{width_px:.0f}px">')
             column_headers.append(
-                f'<th style="min-width:{width_px:.0f}px">'
-                f"{get_column_letter(column)}</th>"
+                f'<th class="column-header" data-column="{get_column_letter(column)}" '
+                f'style="min-width:{width_px:.0f}px">{get_column_letter(column)}</th>'
             )
 
         rows = [f"<tr>{''.join(column_headers)}</tr>"]
         for row_index in range(1, max_row + 1):
             row_height = row_heights[row_index - 1]
-            cells = [f'<th class="row-number">{row_index}</th>']
+            cells = [f'<th class="row-number" data-row="{row_index}">{row_index}</th>']
             for column_index in range(1, max_column + 1):
                 if (row_index, column_index) in merged_covered:
                     continue
@@ -700,13 +721,13 @@ def _render_xlsx(source: Path) -> str:
                     if border:
                         styles.append(border)
                 style_attr = f' style="{";".join(styles)}"' if styles else ""
-                value = html.escape(
-                    _display_cell(
-                        cell,
-                        evaluation=evaluation,
-                        sheet_name=sheet.title,
-                    )
+                display_value = _display_cell(
+                    cell,
+                    evaluation=evaluation,
+                    sheet_name=sheet.title,
+                    cached_value=cached_sheet[cell.coordinate].value,
                 )
+                value = html.escape(display_value)
                 formula_class = " formula" if cell.data_type == "f" else ""
                 formula_attr = ""
                 if cell.data_type == "f":
@@ -717,6 +738,7 @@ def _render_xlsx(source: Path) -> str:
                 cells.append(
                     f'<td class="cell{formula_class}" data-cell="{cell.coordinate}" '
                     f'data-qa-label="{html.escape(cell.coordinate, quote=True)}"'
+                    f' data-display-value="{html.escape(display_value, quote=True)}"'
                     f"{formula_attr}{spans}{style_attr}>{value}</td>"
                 )
             rows.append(f'<tr style="height:{row_height:.2f}px">{"".join(cells)}</tr>')
@@ -728,10 +750,14 @@ def _render_xlsx(source: Path) -> str:
         )
         objects: list[str] = []
         stage_width = 44 + sum(column_widths)
+        fit_width = 44 + sum(column_widths[:used_max_column])
         # CSS cells have a 25px minimum height.  Compact workbook profiles may
         # request slightly shorter rows, so use the rendered minimum here or
         # the final rows can extend beyond the stage and be falsely clipped.
         stage_height = 32 + sum(max(height, 25) + 1 for height in row_heights)
+        fit_height = 32 + sum(
+            max(height, 25) + 1 for height in row_heights[:used_max_row]
+        )
         for chart_index, chart in enumerate(sheet._charts, start=1):
             title = f"Chart {chart_index}"
             try:
@@ -743,6 +769,8 @@ def _render_xlsx(source: Path) -> str:
             left, top, width, height = _xlsx_anchor_box(sheet, chart)
             stage_width = max(stage_width, left + width)
             stage_height = max(stage_height, top + height)
+            fit_width = max(fit_width, left + width)
+            fit_height = max(fit_height, top + height)
             objects.append(
                 '<figure class="workbook-chart" '
                 f'data-qa-label="{html.escape(title, quote=True)}" '
@@ -755,6 +783,8 @@ def _render_xlsx(source: Path) -> str:
             left, top, width, height = _xlsx_anchor_box(sheet, image)
             stage_width = max(stage_width, left + width)
             stage_height = max(stage_height, top + height)
+            fit_width = max(fit_width, left + width)
+            fit_height = max(fit_height, top + height)
             objects.append(
                 f'<img class="workbook-image" data-qa-label="Image {image_index}" '
                 f'style="left:{left:.2f}px;top:{top:.2f}px;'
@@ -763,28 +793,35 @@ def _render_xlsx(source: Path) -> str:
             )
         sections.append(
             f'<section class="sheet" data-preview-item '
-            f'data-preview-label="{html.escape(sheet.title, quote=True)}">'
-            f"<h2>{html.escape(sheet.title)}</h2>{notice}"
-            f'<div class="grid-wrap"><div class="grid-stage" '
+            f'data-preview-label="{html.escape(sheet.title, quote=True)}" '
+            f'data-preview-fit-width="{fit_width:.2f}" '
+            f'data-preview-fit-height="{fit_height:.2f}">'
+            f'{notice}<div class="grid-wrap"><div class="grid-stage" '
             f'style="width:{stage_width:.2f}px;height:{stage_height:.2f}px">'
             f"<table><colgroup>{''.join(columns)}</colgroup>"
             f"{''.join(rows)}</table>{''.join(objects)}</div></div></section>"
         )
 
+    workbook.close()
+    cached_workbook.close()
     css = """
-    *{box-sizing:border-box}body{margin:0;padding:24px;background:#f4f5f7;
-    color:#202124;font-family:Arial,sans-serif}.sheet{margin:0 auto 28px;background:#fff;
-    border:1px solid #d9dce1;border-radius:8px;box-shadow:0 2px 8px #0001;overflow:hidden}
-    h2{position:sticky;left:0;margin:0;padding:14px 18px;background:#fff;border-bottom:
-    1px solid #e3e6ea;font-size:15px}.notice{margin:0;padding:8px 18px;background:#fff8dc;
-    font-size:12px}.grid-wrap{overflow:auto;max-height:76vh}.grid-stage{position:relative}
-    table{position:absolute;left:0;top:0;border-collapse:separate;
-    border-spacing:0;font-size:12px}th,td{height:25px;padding:3px 6px;border-right:1px
-    solid #e1e4e8;border-bottom:1px solid #e1e4e8;white-space:pre;vertical-align:middle}
-    th{position:sticky;top:0;z-index:2;background:#f1f3f4;color:#5f6368;text-align:center;
-    font-weight:500}.row-number{left:0;z-index:1;min-width:44px}.corner{left:0;z-index:3}
-    td{overflow:hidden;text-overflow:ellipsis}
-    .formula{color:#174ea6}.cell:empty{background:#fff}
+    *{box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden}
+    body{margin:0;background:#fff;color:#202124;font-family:Arial,sans-serif}
+    .sheet{position:relative;width:100%;height:100%;margin:0;background:#fff;overflow:hidden}
+    .notice{position:absolute;top:34px;left:52px;z-index:6;margin:0;padding:6px 10px;
+    border:1px solid #e6c768;border-radius:3px;background:#fff8dc;font-size:11px;
+    box-shadow:0 2px 6px #0002}.grid-wrap{width:100%;height:100%;overflow:auto}
+    .grid-stage{position:relative;min-width:100%;min-height:100%}
+    table{position:absolute;left:0;top:0;border-collapse:separate;border-spacing:0;
+    font-size:12px;background:#fff}th,td{height:25px;padding:3px 6px;border-right:1px
+    solid #dfe3e8;border-bottom:1px solid #dfe3e8;white-space:pre;vertical-align:middle}
+    th{background:#f3f4f6;color:#62676d;text-align:center;font-weight:400}
+    .column-header{position:sticky;top:0;z-index:3;height:25px;border-bottom-color:#cbd0d6}
+    .row-number{position:sticky;left:0;z-index:2;min-width:44px;border-right-color:#cbd0d6}
+    .corner{position:sticky;top:0;left:0;z-index:4;min-width:44px;background:
+    linear-gradient(135deg,#d7dadd 0 48%,#f3f4f6 49%)}
+    td{overflow:hidden;text-overflow:ellipsis;background:#fff}
+    .formula{color:inherit}.cell:empty{background:#fff}
     .workbook-chart{position:absolute;margin:0;border:1px solid #d9dce1;
     background:#fff;padding:10px;overflow:hidden}.workbook-chart figcaption{
     font-weight:600;margin-bottom:5px}.workbook-chart-svg{display:block;width:100%;

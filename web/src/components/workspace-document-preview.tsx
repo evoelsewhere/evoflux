@@ -7,7 +7,6 @@ import {
 } from 'react'
 import {
   AlertCircle,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   LayoutGrid,
@@ -15,6 +14,7 @@ import {
   Maximize2,
   Minimize2,
   MonitorPlay,
+  MoveHorizontal,
   NotepadText,
   PanelLeft,
   PanelsTopLeft,
@@ -307,9 +307,11 @@ export function WorkspaceDocumentPreview({
   const [result, setResult] = useState<{ key: string; html?: string; error?: string } | null>(null)
   const [retryKey, setRetryKey] = useState(0)
   const [navigatorOpen, setNavigatorOpen] = useState(() => (
-    typeof window === 'undefined' || !window.matchMedia
-      ? true
-      : !window.matchMedia('(max-width: 640px)').matches
+    kind === 'pptx' && (
+      typeof window === 'undefined'
+      || !window.matchMedia
+      || !window.matchMedia('(max-width: 640px)').matches
+    )
   ))
   const [entries, setEntries] = useState<NavigatorEntry[]>([])
   const [activeIndex, setActiveIndex] = useState(0)
@@ -419,13 +421,49 @@ export function WorkspaceDocumentPreview({
     if (!frame || !document?.body || !target) return
 
     document.body.style.setProperty('zoom', '1')
-    const width = Math.max(target.scrollWidth, target.getBoundingClientRect().width)
-    const height = Math.max(target.scrollHeight, target.getBoundingClientRect().height)
+    const fitWidth = Number(target.dataset.previewFitWidth)
+    const fitHeight = Number(target.dataset.previewFitHeight)
+    const width = Number.isFinite(fitWidth) && fitWidth > 0
+      ? fitWidth
+      : Math.max(target.scrollWidth, target.getBoundingClientRect().width)
+    const height = Number.isFinite(fitHeight) && fitHeight > 0
+      ? fitHeight
+      : Math.max(target.scrollHeight, target.getBoundingClientRect().height)
     const widthScale = (frame.clientWidth - 32) / Math.max(width, 1)
     const heightScale = (frame.clientHeight - 32) / Math.max(height, 1)
     const scale = mode === 'page' ? Math.min(widthScale, heightScale) : widthScale
     applyZoom(scale * 100, mode)
   }, [applyZoom])
+
+  const selectSpreadsheetCell = useCallback((target: HTMLElement, focus = false) => {
+    const document = target.ownerDocument
+    selectedCellElementRef.current?.removeAttribute('data-evoflux-selected-cell')
+    if (selectedCellElementRef.current) selectedCellElementRef.current.tabIndex = -1
+    document.querySelectorAll<HTMLElement>('[data-evoflux-selected-header]').forEach((header) => {
+      header.removeAttribute('data-evoflux-selected-header')
+    })
+
+    target.setAttribute('data-evoflux-selected-cell', 'true')
+    target.tabIndex = 0
+    selectedCellElementRef.current = target
+    const coordinate = target.dataset.cell ?? ''
+    const coordinateParts = /^([A-Z]+)([1-9]\d*)$/.exec(coordinate)
+    const surface = target.closest<HTMLElement>('[data-preview-item]')
+    if (coordinateParts && surface) {
+      surface.querySelector<HTMLElement>(`[data-column="${coordinateParts[1]}"]`)
+        ?.setAttribute('data-evoflux-selected-header', 'true')
+      surface.querySelector<HTMLElement>(`[data-row="${coordinateParts[2]}"]`)
+        ?.setAttribute('data-evoflux-selected-header', 'true')
+    }
+    setSelectedCell({
+      name: coordinate,
+      value: target.dataset.formula
+        ?? target.dataset.displayValue
+        ?? target.textContent?.trim()
+        ?? '',
+    })
+    if (focus) target.focus()
+  }, [])
 
   useEffect(() => {
     if (fitMode === 'custom') return
@@ -454,10 +492,16 @@ export function WorkspaceDocumentPreview({
     })
     activeIndexRef.current = normalized
     setActiveIndex(normalized)
+    if (kind === 'xlsx') {
+      const firstCell = itemElementsRef.current[normalized]
+        ?.querySelector<HTMLElement>('[data-cell]')
+      if (firstCell) selectSpreadsheetCell(firstCell)
+      else setSelectedCell(null)
+    }
     if (fitMode !== 'custom') {
       iframeRef.current?.contentWindow?.requestAnimationFrame(() => fitDocument(fitMode))
     }
-  }, [fitDocument, fitMode, kind])
+  }, [fitDocument, fitMode, kind, selectSpreadsheetCell])
 
   useEffect(() => {
     if (!isPresentation || presentationView === 'sorter') return
@@ -606,6 +650,7 @@ export function WorkspaceDocumentPreview({
     style.dataset.evofluxViewer = 'true'
     style.textContent = `
       [data-evoflux-selected-cell] { outline: 2px solid #107c41 !important; outline-offset: -2px; }
+      [data-evoflux-selected-header] { background: #dcefe4 !important; color: #145c35 !important; font-weight: 600 !important; }
       mark[data-evoflux-search] { scroll-margin: 72px; }
       [data-preview-item] { scroll-margin-top: 18px; }
       [data-preview-notes]:not([data-preview-item]) { display: none !important; }
@@ -652,18 +697,6 @@ export function WorkspaceDocumentPreview({
     document.querySelectorAll<HTMLElement>('table').forEach((table) => {
       if (table.querySelector('[data-cell]')) table.setAttribute('role', 'grid')
     })
-    const selectCellElement = (target: HTMLElement, focus = false) => {
-      selectedCellElementRef.current?.removeAttribute('data-evoflux-selected-cell')
-      if (selectedCellElementRef.current) selectedCellElementRef.current.tabIndex = -1
-      target.setAttribute('data-evoflux-selected-cell', 'true')
-      target.tabIndex = 0
-      selectedCellElementRef.current = target
-      setSelectedCell({
-        name: target.dataset.cell ?? '',
-        value: target.dataset.formula ?? target.textContent?.trim() ?? '',
-      })
-      if (focus) target.focus()
-    }
     const cellFromEvent = (event: Event) => {
       const eventTarget = event.target as Element | null
       return eventTarget?.closest<HTMLElement>('[data-cell]') ?? null
@@ -672,11 +705,11 @@ export function WorkspaceDocumentPreview({
       if (kind !== 'xlsx') return
       const target = cellFromEvent(event)
       if (!target) return
-      selectCellElement(target, true)
+      selectSpreadsheetCell(target, true)
     }
     const handleCellFocus = (event: Event) => {
       const target = cellFromEvent(event)
-      if (target) selectCellElement(target)
+      if (target) selectSpreadsheetCell(target)
     }
     const handleCellKeyDown = (event: KeyboardEvent) => {
       const target = cellFromEvent(event)
@@ -692,11 +725,13 @@ export function WorkspaceDocumentPreview({
       const next = Array.from(surface?.querySelectorAll<HTMLElement>('[data-cell]') ?? [])
         .find((cell) => cell.dataset.cell === nextName)
       if (!next) return
-      selectCellElement(next, true)
+      selectSpreadsheetCell(next, true)
     }
     document.addEventListener('click', handleCellClick)
     document.addEventListener('focusin', handleCellFocus)
     document.addEventListener('keydown', handleCellKeyDown)
+    const initialCell = elements[restoredIndex]?.querySelector<HTMLElement>('[data-cell]')
+    if (initialCell) selectSpreadsheetCell(initialCell)
 
     frameCleanupRef.current = () => {
       frameWindow.cancelAnimationFrame(scrollFrame)
@@ -710,7 +745,7 @@ export function WorkspaceDocumentPreview({
 
     if (searchQuery) refreshSearch(searchQuery)
     frameWindow.requestAnimationFrame(() => fitDocument(fitMode === 'custom' ? 'width' : fitMode))
-  }, [fitDocument, fitMode, kind, refreshSearch, searchQuery])
+  }, [fitDocument, fitMode, kind, refreshSearch, searchQuery, selectSpreadsheetCell])
 
   useEffect(() => {
     if (!isPresentation) return
@@ -753,7 +788,11 @@ export function WorkspaceDocumentPreview({
   const itemName = kind === 'xlsx' ? 'Sheet' : kind === 'pptx' ? 'Slide' : 'Page'
   const itemCount = entries.length
   const status = itemCount > 0 ? `${itemName} ${activeIndex + 1} of ${itemCount}` : `${meta.label} document`
-  const navigatorVisible = navigatorOpen && (!isPresentation || presentationView === 'normal')
+  const hasNavigator = kind !== 'xlsx' && itemCount > 1
+  const navigatorVisible = hasNavigator
+    && navigatorOpen
+    && (!isPresentation || presentationView === 'normal')
+  const toolbarButtonClass = 'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:pointer-events-none disabled:opacity-30'
 
   const enterReadingView = () => {
     readingReturnViewRef.current = presentationView === 'sorter' ? 'sorter' : 'normal'
@@ -788,41 +827,32 @@ export function WorkspaceDocumentPreview({
       data-presentation-view={isPresentation ? presentationView : undefined}
       tabIndex={0}
       onKeyDown={handleViewerKeyDown}
-      style={{ borderTop: presentationView === 'reading' ? 'none' : `2px solid ${meta.accent}` }}
+      style={{ borderTop: presentationView === 'reading' ? 'none' : `1px solid ${meta.accent}` }}
     >
-      {presentationView !== 'reading' && <div className={cn(
-        'flex min-h-10 shrink-0 items-center justify-between gap-2 border-b border-(--color-border) bg-(--bg-card) px-2 py-1',
-        isPresentation && 'min-h-12',
-      )}>
+      {presentationView !== 'reading' && kind !== 'xlsx' && <header className="flex h-9 shrink-0 items-center justify-between gap-1 border-b border-(--color-border) bg-(--bg-card) px-1.5">
         <div className="flex min-w-0 items-center gap-1">
-          {isPresentation && (
-            <>
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-[#b7472a] text-sm font-semibold text-white shadow-sm" aria-hidden="true">P</span>
-              <span className="hidden min-w-0 max-w-44 sm:block">
-                <span className="block truncate text-xs font-semibold text-(--color-text)" title={file.name}>{file.name}</span>
-                <span className="block text-[9px] text-(--color-text-subtle)">PowerPoint · Saved</span>
-              </span>
-              <span className="mx-1 hidden h-6 w-px bg-(--color-border) sm:block" aria-hidden="true" />
-            </>
+          {hasNavigator && (
+            <button
+              type="button"
+              onClick={() => setNavigatorOpen((open) => !open)}
+              aria-label={navigatorVisible
+                ? `Hide ${isPresentation ? 'slide thumbnails' : 'navigator'}`
+                : `Show ${isPresentation ? 'slide thumbnails' : 'navigator'}`}
+              aria-pressed={navigatorVisible}
+              disabled={isPresentation && presentationView === 'sorter'}
+              title={navigatorVisible ? 'Hide navigator' : 'Show navigator'}
+              className={cn(toolbarButtonClass, navigatorVisible && 'bg-(--bg-key) text-(--color-text)')}
+            >
+              <PanelLeft size={15} />
+            </button>
           )}
-          <button
-            type="button"
-            onClick={() => setNavigatorOpen((open) => !open)}
-            aria-label={navigatorVisible
-              ? `Hide ${isPresentation ? 'slide thumbnails' : 'navigator'}`
-              : `Show ${isPresentation ? 'slide thumbnails' : 'navigator'}`}
-            aria-pressed={navigatorVisible}
-            disabled={isPresentation && presentationView === 'sorter'}
-            className={cn('rounded p-1.5 text-(--color-text-muted) hover:bg-(--bg-key) disabled:cursor-not-allowed disabled:opacity-35', navigatorVisible && 'bg-(--bg-key) text-(--color-text)')}
-          >
-            <PanelLeft size={15} />
-          </button>
           <button
             type="button"
             onClick={() => searchOpen ? closeSearch() : setSearchOpen(true)}
             aria-label={searchOpen ? 'Close document search' : 'Search document'}
             aria-pressed={searchOpen}
-            className={cn('rounded p-1.5 text-(--color-text-muted) hover:bg-(--bg-key)', searchOpen && 'bg-(--bg-key) text-(--color-text)')}
+            title="Search"
+            className={cn(toolbarButtonClass, searchOpen && 'bg-(--bg-key) text-(--color-text)')}
           >
             <Search size={15} />
           </button>
@@ -842,7 +872,7 @@ export function WorkspaceDocumentPreview({
                 }}
                 placeholder="Find"
                 aria-label="Find in document"
-                className="h-7 w-28 min-w-0 bg-transparent px-2 text-xs text-(--color-text) outline-none sm:w-40"
+                className="h-7 w-24 min-w-0 bg-transparent px-2 text-xs text-(--color-text) outline-none sm:w-36"
               />
               <span className="whitespace-nowrap px-1 text-[10px] tabular-nums text-(--color-text-subtle)">
                 {searchCount ? `${searchIndex + 1}/${searchCount}` : '0/0'}
@@ -851,67 +881,51 @@ export function WorkspaceDocumentPreview({
               <button type="button" onClick={() => selectSearchMatch(searchIndex + 1)} disabled={!searchCount} aria-label="Next search result" className="p-1 text-(--color-text-muted) disabled:opacity-30"><ChevronRight size={13} /></button>
             </div>
           )}
+          {!searchOpen && (
+            <span className="hidden min-w-0 items-center gap-1.5 pl-1 md:flex">
+              <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ backgroundColor: meta.accent }} aria-hidden="true" />
+              <span className="max-w-36 truncate text-[11px] font-medium text-(--color-text-2)" title={file.name}>{file.name}</span>
+            </span>
+          )}
         </div>
 
-        <div className="hidden items-center gap-1 sm:flex">
-          <button type="button" onClick={() => goToItem(activeIndex - 1)} disabled={activeIndex <= 0} aria-label={`Previous ${itemName.toLowerCase()}`} className="rounded p-1 text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-30"><ChevronLeft size={15} /></button>
-          <span className="min-w-24 text-center text-[11px] tabular-nums text-(--color-text-muted)" role="status">{status}</span>
-          <button type="button" onClick={() => goToItem(activeIndex + 1)} disabled={activeIndex >= itemCount - 1} aria-label={`Next ${itemName.toLowerCase()}`} className="rounded p-1 text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-30"><ChevronRight size={15} /></button>
+        <div className="hidden items-center gap-0.5 sm:flex">
+          <button type="button" onClick={() => goToItem(activeIndex - 1)} disabled={activeIndex <= 0} aria-label={`Previous ${itemName.toLowerCase()}`} className={toolbarButtonClass}><ChevronLeft size={15} /></button>
+          <span className="min-w-20 text-center text-[10px] tabular-nums text-(--color-text-muted)" role="status">{status}</span>
+          <button type="button" onClick={() => goToItem(activeIndex + 1)} disabled={activeIndex >= itemCount - 1} aria-label={`Next ${itemName.toLowerCase()}`} className={toolbarButtonClass}><ChevronRight size={15} /></button>
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5">
-          {isPresentation && (
-            <span className="mr-1 hidden rounded-full border border-(--color-border) px-2 py-0.5 text-[9px] font-medium text-(--color-text-muted) lg:inline">Read only</span>
-          )}
-          <button type="button" onClick={() => applyZoom(zoom - 10)} aria-label="Zoom out" className="rounded p-1.5 text-(--color-text-muted) hover:bg-(--bg-key)"><ZoomOut size={14} /></button>
-          <button type="button" onClick={() => applyZoom(zoom + 10)} aria-label="Zoom in" className="rounded p-1.5 text-(--color-text-muted) hover:bg-(--bg-key)"><ZoomIn size={14} /></button>
-          <span className="w-10 text-center text-[10px] tabular-nums text-(--color-text-muted)" aria-label={`Zoom ${zoom} percent`}>{zoom}%</span>
-          <button type="button" onClick={() => fitDocument('width')} aria-label="Fit width" title="Fit width" className={cn('rounded px-1.5 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)', fitMode === 'width' && 'bg-(--bg-key) text-(--color-text)')}>Width</button>
-          <button type="button" onClick={() => fitDocument('page')} aria-label="Fit page" title="Fit page" className={cn('rounded p-1.5 text-(--color-text-muted) hover:bg-(--bg-key)', fitMode === 'page' && 'bg-(--bg-key) text-(--color-text)')}><Maximize2 size={13} /></button>
-          <ChevronDown size={10} className="hidden text-(--color-text-subtle) lg:block" aria-hidden="true" />
-        </div>
-      </div>}
-
-      {isPresentation && presentationView !== 'reading' && (
-        <div
-          className="flex min-h-11 shrink-0 items-stretch gap-1 overflow-x-auto border-b border-(--color-border) bg-(--bg-card) px-2"
-          role="toolbar"
-          aria-label="PowerPoint View controls"
-        >
-          <span className="flex shrink-0 items-center border-b-2 border-[#b7472a] px-2 text-[11px] font-semibold text-[#b7472a]">View</span>
-          <span className="my-2 w-px shrink-0 bg-(--color-border)" aria-hidden="true" />
+          {isPresentation && <div className="flex items-center gap-0.5 sm:pr-1.5" role="toolbar" aria-label="PowerPoint View controls">
           <button
             type="button"
             onClick={() => setPresentationView('normal')}
             aria-label="Normal view"
             aria-pressed={presentationView === 'normal'}
-            className={cn(
-              'flex shrink-0 items-center gap-1.5 rounded-sm px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)',
-              presentationView === 'normal' && 'bg-(--bg-key) font-medium text-(--color-text)',
-            )}
+            title="Normal view"
+            className={cn(toolbarButtonClass, presentationView === 'normal' && 'bg-(--bg-key) text-(--color-text)')}
           >
-            <PanelsTopLeft size={15} aria-hidden="true" /> Normal
+            <PanelsTopLeft size={15} aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={() => setPresentationView('sorter')}
             aria-label="Slide sorter view"
             aria-pressed={presentationView === 'sorter'}
-            className={cn(
-              'flex shrink-0 items-center gap-1.5 rounded-sm px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)',
-              presentationView === 'sorter' && 'bg-(--bg-key) font-medium text-(--color-text)',
-            )}
+            title="Slide sorter"
+            className={cn(toolbarButtonClass, presentationView === 'sorter' && 'bg-(--bg-key) text-(--color-text)')}
           >
-            <LayoutGrid size={15} aria-hidden="true" /> Slide Sorter
+            <LayoutGrid size={15} aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={enterReadingView}
             aria-label="Start Reading View slide show"
             aria-pressed="false"
-            className="flex shrink-0 items-center gap-1.5 rounded-sm px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)"
+            title="Reading view"
+            className={toolbarButtonClass}
           >
-            <MonitorPlay size={15} aria-hidden="true" /> Reading View
+            <MonitorPlay size={15} aria-hidden="true" />
           </button>
           {hasSlideNotes && (
             <button
@@ -922,28 +936,68 @@ export function WorkspaceDocumentPreview({
               }}
               aria-label={notesOpen ? 'Hide speaker notes' : 'Show speaker notes'}
               aria-pressed={notesOpen}
-              className={cn(
-                'flex shrink-0 items-center gap-1.5 rounded-sm px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)',
-                notesOpen && 'bg-(--bg-key) font-medium text-(--color-text)',
-              )}
+              title="Speaker notes"
+              className={cn(toolbarButtonClass, notesOpen && 'bg-(--bg-key) text-(--color-text)')}
             >
-              <NotepadText size={15} aria-hidden="true" /> Notes
+              <NotepadText size={15} aria-hidden="true" />
             </button>
           )}
-          <span className="ml-auto hidden shrink-0 items-center px-2 text-[9px] text-(--color-text-subtle) md:flex">
-            Arrow keys or Page Up/Down to navigate
-          </span>
+          </div>}
+          <div className="hidden items-center gap-0.5 border-l border-(--color-border) pl-1.5 sm:flex">
+            <button type="button" onClick={() => applyZoom(zoom - 10)} aria-label="Zoom out" title="Zoom out" className={toolbarButtonClass}><ZoomOut size={14} /></button>
+            <span className="w-9 text-center text-[10px] tabular-nums text-(--color-text-muted)" aria-label={`Zoom ${zoom} percent`}>{zoom}%</span>
+            <button type="button" onClick={() => applyZoom(zoom + 10)} aria-label="Zoom in" title="Zoom in" className={toolbarButtonClass}><ZoomIn size={14} /></button>
+            <button type="button" onClick={() => fitDocument('width')} aria-label="Fit width" title="Fit width" className={cn(toolbarButtonClass, fitMode === 'width' && 'bg-(--bg-key) text-(--color-text)')}><MoveHorizontal size={14} /></button>
+            <button type="button" onClick={() => fitDocument('page')} aria-label="Fit page" title="Fit page" className={cn(toolbarButtonClass, fitMode === 'page' && 'bg-(--bg-key) text-(--color-text)')}><Maximize2 size={13} /></button>
+          </div>
         </div>
-      )}
+      </header>}
 
       {kind === 'xlsx' && (
-        <div className="flex h-8 shrink-0 items-center border-b border-(--color-border) bg-(--bg-card) text-xs">
-          <div className="flex h-full w-20 shrink-0 items-center border-r border-(--color-border) px-2 font-mono text-(--color-text-2)" aria-label="Selected cell">
+        <div className="flex h-8 shrink-0 items-center border-b border-(--color-border) bg-(--bg-card) text-[11px]">
+          <div className="flex h-full w-16 shrink-0 items-center border-r border-(--color-border) px-2 font-mono font-medium text-(--color-text-2)" aria-label="Selected cell">
             {selectedCell?.name || '—'}
           </div>
-          <div className="flex h-full w-7 shrink-0 items-center justify-center border-r border-(--color-border) font-serif italic text-(--color-text-muted)" aria-hidden="true">fx</div>
-          <div className="min-w-0 flex-1 truncate px-2 font-mono text-(--color-text-2)" aria-label="Formula bar">
-            {selectedCell?.value || 'Select a cell'}
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-2" aria-label="Formula bar">
+            <span className="shrink-0 font-serif italic text-(--color-text-subtle)" aria-hidden="true">fx</span>
+            <span className="truncate font-mono text-(--color-text-2)">{selectedCell?.value || ''}</span>
+          </div>
+          <div className="flex shrink-0 items-center gap-0.5 border-l border-(--color-border) px-0.5">
+            <button
+              type="button"
+              onClick={() => searchOpen ? closeSearch() : setSearchOpen(true)}
+              aria-label={searchOpen ? 'Close document search' : 'Search document'}
+              aria-pressed={searchOpen}
+              title="Search workbook"
+              className={cn(toolbarButtonClass, searchOpen && 'bg-(--bg-key) text-(--color-text)')}
+            >
+              <Search size={14} />
+            </button>
+            {searchOpen && (
+              <div className="flex min-w-0 items-center rounded-xs border border-(--color-border) bg-(--bg-page)">
+                <input
+                  autoFocus
+                  value={searchQuery}
+                  onChange={(event) => {
+                    const query = event.target.value
+                    setSearchQuery(query)
+                    refreshSearch(query)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') selectSearchMatch(searchIndex + (event.shiftKey ? -1 : 1))
+                    if (event.key === 'Escape') closeSearch()
+                  }}
+                  placeholder="Find"
+                  aria-label="Find in document"
+                  className="h-6 w-24 min-w-0 bg-transparent px-2 text-xs text-(--color-text) outline-none sm:w-36"
+                />
+                <span className="whitespace-nowrap px-1 text-[10px] tabular-nums text-(--color-text-subtle)">
+                  {searchCount ? `${searchIndex + 1}/${searchCount}` : '0/0'}
+                </span>
+                <button type="button" onClick={() => selectSearchMatch(searchIndex - 1)} disabled={!searchCount} aria-label="Previous search result" className="p-1 text-(--color-text-muted) disabled:opacity-30"><ChevronLeft size={12} /></button>
+                <button type="button" onClick={() => selectSearchMatch(searchIndex + 1)} disabled={!searchCount} aria-label="Next search result" className="p-1 text-(--color-text-muted) disabled:opacity-30"><ChevronRight size={12} /></button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -951,11 +1005,10 @@ export function WorkspaceDocumentPreview({
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {navigatorVisible && isPresentation && (
           <nav
-            className="z-(--z-drawer) w-48 shrink-0 overflow-y-auto border-r border-(--color-border) bg-(--bg-card) px-2 py-3 max-[640px]:absolute max-[640px]:inset-y-0 max-[640px]:left-0 max-[640px]:w-44 max-[640px]:shadow-xl"
+            className="z-(--z-drawer) w-40 shrink-0 overflow-y-auto border-r border-(--color-border) bg-(--bg-card) p-1.5 max-[640px]:absolute max-[640px]:inset-y-0 max-[640px]:left-0 max-[640px]:shadow-xl"
             aria-label="Slide thumbnails"
           >
-            <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">Slides</p>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {entries.map((entry) => {
                 const selected = activeIndex === entry.index
                 return (
@@ -996,9 +1049,8 @@ export function WorkspaceDocumentPreview({
           </nav>
         )}
         {navigatorVisible && !isPresentation && (
-          <nav className="z-(--z-panel) w-40 shrink-0 overflow-y-auto border-r border-(--color-border) bg-(--bg-card) p-2 max-[640px]:absolute max-[640px]:inset-y-0 max-[640px]:left-0 max-[640px]:shadow-xl" aria-label="Document navigator">
-            <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">{itemName}s</p>
-            <div className="space-y-1.5">
+          <nav className="z-(--z-panel) w-36 shrink-0 overflow-y-auto border-r border-(--color-border) bg-(--bg-card) p-1.5 max-[640px]:absolute max-[640px]:inset-y-0 max-[640px]:left-0 max-[640px]:shadow-xl" aria-label="Document navigator">
+            <div className="space-y-0.5">
               {entries.map((entry) => (
                 <button
                   key={`${entry.label}:${entry.index}`}
@@ -1006,13 +1058,13 @@ export function WorkspaceDocumentPreview({
                   onClick={() => goToItem(entry.index)}
                   aria-current={activeIndex === entry.index ? 'page' : undefined}
                   className={cn(
-                    'flex w-full items-center gap-2 rounded-xs border px-2 py-2 text-left text-[11px] transition-colors',
+                    'flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] transition-colors',
                     activeIndex === entry.index
-                      ? 'border-(--color-accent) bg-(--color-accent)/8 text-(--color-text)'
-                      : 'border-(--color-border) bg-(--bg-page) text-(--color-text-muted) hover:border-(--color-border-strong)',
+                      ? 'bg-(--bg-key) font-medium text-(--color-text)'
+                      : 'text-(--color-text-muted) hover:bg-(--bg-key)',
                   )}
                 >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xs bg-white text-[10px] font-semibold shadow-sm" style={{ color: meta.accent }}>{entry.index + 1}</span>
+                  <span className="w-4 shrink-0 text-right text-[10px] tabular-nums" style={{ color: activeIndex === entry.index ? meta.accent : undefined }}>{entry.index + 1}</span>
                   <span className="truncate" title={entry.label}>{entry.label}</span>
                 </button>
               ))}
@@ -1145,6 +1197,35 @@ export function WorkspaceDocumentPreview({
               </section>
             )}
           </div>
+          {kind === 'xlsx' && itemCount > 0 && (
+            <footer className="flex h-8 shrink-0 items-center border-t border-(--color-border) bg-(--bg-card)">
+              <nav className="flex min-w-0 flex-1 self-stretch items-end gap-0.5 overflow-x-auto px-1.5" aria-label="Workbook sheets">
+                {entries.map((entry) => (
+                  <button
+                    key={`sheet:${entry.label}:${entry.index}`}
+                    type="button"
+                    onClick={() => goToItem(entry.index)}
+                    aria-label={`Open sheet ${entry.index + 1}: ${entry.label}`}
+                    aria-current={activeIndex === entry.index ? 'page' : undefined}
+                    className={cn(
+                      'relative flex h-8 max-w-40 shrink-0 items-center px-3 text-[10px] text-(--color-text-muted) transition-colors hover:bg-(--bg-key)',
+                      activeIndex === entry.index && 'bg-(--bg-key) font-medium text-(--color-text) after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-[#107c41]',
+                    )}
+                    title={entry.label}
+                  >
+                    <span className="truncate">{entry.label}</span>
+                  </button>
+                ))}
+              </nav>
+              <div className="flex shrink-0 items-center gap-0.5 border-l border-(--color-border) px-1">
+                <button type="button" onClick={() => applyZoom(zoom - 10)} aria-label="Zoom out" title="Zoom out" className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-muted) hover:bg-(--bg-key)"><ZoomOut size={13} /></button>
+                <span className="w-9 text-center text-[10px] tabular-nums text-(--color-text-muted)" aria-label={`Zoom ${zoom} percent`}>{zoom}%</span>
+                <button type="button" onClick={() => applyZoom(zoom + 10)} aria-label="Zoom in" title="Zoom in" className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-muted) hover:bg-(--bg-key)"><ZoomIn size={13} /></button>
+                <button type="button" onClick={() => fitDocument('width')} aria-label="Fit width" title="Fit width" className={cn('flex h-6 w-6 items-center justify-center rounded text-(--color-text-muted) hover:bg-(--bg-key)', fitMode === 'width' && 'bg-(--bg-key) text-(--color-text)')}><MoveHorizontal size={13} /></button>
+                <button type="button" onClick={() => fitDocument('page')} aria-label="Fit page" title="Fit page" className={cn('hidden h-6 w-6 items-center justify-center rounded text-(--color-text-muted) hover:bg-(--bg-key) sm:flex', fitMode === 'page' && 'bg-(--bg-key) text-(--color-text)')}><Maximize2 size={12} /></button>
+              </div>
+            </footer>
+          )}
           {isPresentation && presentationView === 'normal' && notesOpen && hasSlideNotes && (
             <section
               className="h-28 shrink-0 overflow-y-auto border-t border-(--color-border-strong) bg-(--bg-card) px-4 py-2 sm:h-32"
@@ -1162,15 +1243,6 @@ export function WorkspaceDocumentPreview({
           )}
         </div>
       </div>
-
-      {presentationView !== 'reading' && <div className="flex h-6 shrink-0 items-center justify-between border-t border-(--color-border) bg-(--bg-card) px-2 text-[10px] text-(--color-text-subtle)">
-        <span className="truncate">{file.name}</span>
-        <span className="shrink-0 tabular-nums sm:hidden" role="status">{status}</span>
-        <span className="hidden shrink-0 items-center gap-2 sm:flex">
-          {isPresentation && <span className="tabular-nums" role="status">{status}</span>}
-          <span>{isPresentation ? `${presentationView === 'normal' ? 'Normal' : 'Slide Sorter'} · ` : ''}Read only · {meta.label}</span>
-        </span>
-      </div>}
     </section>
   )
 }

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import re
 from types import SimpleNamespace
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from docx import Document
 from lxml import html as lxml_html
 from openpyxl import Workbook
-from openpyxl.chart import BarChart, Reference
+from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.drawing.image import Image as WorkbookImage
 from PIL import Image
 from pptx import Presentation
@@ -37,6 +38,22 @@ def _xlsx(path):
     sheet["B1"] = 120
     sheet["B2"] = "=B1*2"
     workbook.save(path)
+
+
+def _set_formula_cache(path, formula: str, value: str) -> None:
+    replacement = path.with_suffix(".cached.xlsx")
+    expected = f"<f>{formula}</f><v></v>".encode()
+    updated = f"<f>{formula}</f><v>{value}</v>".encode()
+    replaced = False
+    with ZipFile(path) as source, ZipFile(replacement, "w", ZIP_DEFLATED) as target:
+        for member in source.infolist():
+            payload = source.read(member.filename)
+            if member.filename.startswith("xl/worksheets/") and expected in payload:
+                payload = payload.replace(expected, updated, 1)
+                replaced = True
+            target.writestr(member, payload)
+    assert replaced, "formula cache target was not found in workbook XML"
+    replacement.replace(path)
 
 
 def _pptx(path):
@@ -577,6 +594,37 @@ def test_render_xlsx_preview(monkeypatch, tmp_path):
     assert ">240</td>" in rendered
     assert "==B1*2" not in rendered
     assert 'data-cell="A1"' in rendered
+    assert 'class="column-header" data-column="A"' in rendered
+    assert 'class="column-header" data-column="T"' in rendered
+    assert 'class="row-number" data-row="1"' in rendered
+    assert 'class="row-number" data-row="40"' in rendered
+    assert "<h2>Summary</h2>" not in rendered
+    assert "html,body{width:100%;height:100%;overflow:hidden}" in rendered
+
+
+def test_render_xlsx_preview_uses_cached_formula_results_and_visible_fallbacks(
+    monkeypatch, tmp_path
+):
+    source = tmp_path / "formula-cache.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet["A1"] = 1
+    sheet["A2"] = 2
+    sheet["C1"] = 42
+    sheet["C2"] = 84
+    sheet["D1"] = "=XLOOKUP(1,A1:A2,C1:C2)"
+    sheet["D2"] = "=UNIQUE(A1:A2)"
+    workbook.save(source)
+    _set_formula_cache(source, "XLOOKUP(1,A1:A2,C1:C2)", "42")
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
+    rendered = preview.render_document_preview(source).read_text()
+
+    assert 'data-formula="=XLOOKUP(1,A1:A2,C1:C2)"' in rendered
+    assert 'data-display-value="42"' in rendered
+    assert ">42</td>" in rendered
+    assert 'data-formula="=UNIQUE(A1:A2)"' in rendered
+    assert 'data-display-value="=UNIQUE(A1:A2)"' in rendered
 
 
 def test_render_xlsx_preview_includes_charts_and_images(monkeypatch, tmp_path):
@@ -595,6 +643,13 @@ def test_render_xlsx_preview_includes_charts_and_images(monkeypatch, tmp_path):
         Reference(sheet, min_col=2, min_row=1, max_row=3), titles_from_data=True
     )
     sheet.add_chart(chart, "D2")
+    line_chart = LineChart()
+    line_chart.title = "Revenue line"
+    line_chart.add_data(
+        Reference(sheet, min_col=2, min_row=1, max_row=3), titles_from_data=True
+    )
+    line_chart.set_categories(Reference(sheet, min_col=1, min_row=2, max_row=3))
+    sheet.add_chart(line_chart, "D20")
     sheet.add_image(WorkbookImage(image_path), "D18")
     workbook.save(source)
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
@@ -603,6 +658,7 @@ def test_render_xlsx_preview_includes_charts_and_images(monkeypatch, tmp_path):
 
     assert 'class="workbook-chart-svg"' in rendered
     assert "<rect " in rendered
+    assert 'transform="rotate(-32 ' in rendered
     assert 'class="workbook-image"' in rendered
     assert "data:image/png;base64," in rendered
 
