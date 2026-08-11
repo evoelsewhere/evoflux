@@ -90,6 +90,7 @@ import { useMobileEdgeSwipes } from './useMobileEdgeSwipes'
 import { VIEW_MODES, type ViewMode } from './types'
 import { shouldStartAutomaticSplit } from './auto-layout'
 import { AutomaticSplitTransition } from './AutomaticSplitTransition'
+import { useAutoCollapseSidebar } from './useAutoCollapseSidebar'
 import { codingFocusId, saveLastCodingWorkspace, workspaceLabel } from '@/utils/workspace'
 import { setTraySession } from '@/lib/tray'
 import { queryKeys } from '@/queries/keys'
@@ -494,6 +495,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   // entry points (workspace CTAs, command palette, mobile hamburger).
   const toggleSidebarCollapsed = useUIStore((s) => s.toggleSidebarCollapsed)
   const setSidebarCollapsed = useUIStore((s) => s.setSidebarCollapsed)
+
+  // The Workbench writes its width directly to the DOM while dragging, so
+  // observe the resulting conversation width instead of waiting for pointer-up.
+  useAutoCollapseSidebar({ mainColumnRef, workbenchOpen, isMobile })
 
   // Finalized blocks update on turn boundaries and feed composer history.
   // The hot `currentBlocks` array is intentionally subscribed inside
