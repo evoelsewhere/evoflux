@@ -1,10 +1,12 @@
+export const MIN_PRIMARY_COLUMN_WIDTH = 521
+
 export const WORKSPACE_PANEL = {
   minWidth: 480,
   maxWidth: 960,
   maxDefaultWidth: 720,
   // One extra CSS pixel absorbs fractional shell borders at desktop scale,
   // keeping the rendered primary column at or above the 520px contract.
-  minPrimaryWidth: 521,
+  minPrimaryWidth: MIN_PRIMARY_COLUMN_WIDTH,
   collapsedRailWidth: 56,
   macCollapsedRailWidth: 70,
   shellChromeWidth: 40,
