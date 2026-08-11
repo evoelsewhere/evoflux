@@ -5,7 +5,7 @@ const TEXT_EXTENSIONS = new Set([
   'json', 'jsonl', 'ndjson', 'yaml', 'yml', 'toml', 'ini', 'env', 'gitignore',
   'csv', 'tsv', 'log',
   'py', 'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs',
-  'html', 'css', 'scss', 'sass',
+  'html', 'htm', 'css', 'scss', 'sass',
   'sh', 'bash', 'zsh', 'fish',
   'rs', 'go', 'java', 'kt', 'c', 'cpp', 'h', 'hpp', 'rb', 'php', 'swift',
   'sql', 'xml', 'svg',
