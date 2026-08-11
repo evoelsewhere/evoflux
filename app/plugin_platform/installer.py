@@ -163,6 +163,12 @@ def _source_root(source: Path, staging: Path) -> Path:
 
 def link_plugin(source: str | Path, *, enabled: bool = True) -> PluginInstallation:
     root = Path(source).expanduser().resolve()
+    from app.plugin_platform.builtins import path_is_builtin_plugin
+
+    if path_is_builtin_plugin(root):
+        raise PluginInstallError(
+            "Bundled Agent Plugins cannot be linked or reinstalled."
+        )
     installation_id = uuid4().hex
     inspection = _require_valid(root, data_root=plugin_data_root(installation_id))
     assert inspection.manifest is not None and inspection.content_sha256 is not None
@@ -190,6 +196,10 @@ def install_plugin(
     source_ref: str | None = None,
 ) -> PluginInstallation:
     source_path = Path(source).expanduser().absolute()
+    from app.plugin_platform.builtins import path_is_builtin_plugin
+
+    if source_path.is_dir() and path_is_builtin_plugin(source_path):
+        raise PluginInstallError("Bundled Agent Plugins cannot be reinstalled.")
     installation_id = uuid4().hex
     cache_root = staging_root()
     cache_root.mkdir(parents=True, exist_ok=True)
@@ -409,7 +419,13 @@ def create_plugin(
     skill_name: str | None = None,
     mcp_name: str | None = None,
 ) -> Path:
+    from app.plugin_platform.builtins import path_is_builtin_plugin
+
     root = Path(destination).expanduser().absolute()
+    if path_is_builtin_plugin(root):
+        raise PluginInstallError(
+            "Plugin packages cannot be created inside the bundled Agent Plugin tree."
+        )
     if root.exists():
         raise PluginInstallError(f"Destination already exists: {root}")
     manifest: dict[str, object] = {
@@ -501,7 +517,11 @@ def create_plugin(
 
 
 def pack_plugin(source: str | Path, output: str | Path | None = None) -> Path:
+    from app.plugin_platform.builtins import path_is_builtin_plugin
+
     root = Path(source).expanduser().resolve()
+    if path_is_builtin_plugin(root):
+        raise PluginInstallError("Bundled Agent Plugins cannot be packed separately.")
     inspection = _require_valid(root, data_root=root / ".plugin-data-validation")
     if package_has_symlinks(root):
         raise PluginInstallError("Packed .evoplugin archives cannot contain symlinks.")
@@ -512,6 +532,10 @@ def pack_plugin(source: str | Path, output: str | Path | None = None) -> Path:
         else root.parent
         / f"{inspection.manifest.name}-{inspection.manifest.version or 'unversioned'}.evoplugin"
     )
+    if path_is_builtin_plugin(target):
+        raise PluginInstallError(
+            "Plugin archives cannot be written inside the bundled Agent Plugin tree."
+        )
     if target.exists():
         raise PluginInstallError(f"Output already exists: {target}")
     try:

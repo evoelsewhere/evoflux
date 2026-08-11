@@ -1707,7 +1707,7 @@ export interface PluginInstallation {
   version: string | null
   description: string | null
   root: string
-  source_type: 'installed' | 'linked'
+  source_type: 'builtin' | 'installed' | 'linked'
   source_ref: string
   content_sha256: string
   enabled: boolean
@@ -1732,6 +1732,13 @@ export interface PluginListItem {
   installation: PluginInstallation
   inspection: PluginInspection
   credentials: PluginCredentialState
+  capabilities: {
+    can_enable: boolean
+    can_edit: boolean
+    can_pack: boolean
+    can_update: boolean
+    can_uninstall: boolean
+  }
 }
 
 export interface PluginListResponse {

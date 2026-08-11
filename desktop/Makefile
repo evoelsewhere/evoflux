@@ -1,8 +1,8 @@
 # Build the desktop app and its Python sidecar.
 #
 # Targets:
-#   make sidecar        Build a slim Python sidecar bundle for the current OS/arch.
-#   make sidecar-full   Same, but with [audio,azure-doc-intel] extras.
+#   make sidecar        Build the standard sidecar with [documents].
+#   make sidecar-full   Same, but with [documents,azure-doc-intel].
 #   make icons          Regenerate .icns / .ico from icons/icon.png.
 #   make dev            Tauri shell + Vite dev server, using the bundled
 #                       sidecar connection model. Run Vite in another terminal
@@ -28,7 +28,7 @@
 ROOT       := $(abspath ..)
 BUNDLE     := sidecar-bundle
 PYVER      := 3.12
-EXTRAS     ?=                       # set to e.g. "audio,azure-doc-intel,full"
+EXTRAS     ?= documents             # set to e.g. "documents,azure-doc-intel" or "full"
 sidecar:
 	@python3 ../scripts/build_sidecar.py \
 		--root "$(ROOT)" \
@@ -43,7 +43,7 @@ open-prod:
 	@open "src-tauri/target/release/bundle/macos/evoflux.app"
 
 sidecar-full:
-	@$(MAKE) sidecar EXTRAS="audio,azure-doc-intel"
+	@$(MAKE) sidecar EXTRAS="documents,azure-doc-intel"
 
 icons:
 	cd src-tauri && cargo tauri icon icons/icon.png

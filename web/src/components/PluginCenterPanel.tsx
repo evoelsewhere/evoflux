@@ -121,6 +121,16 @@ function PluginCard({
       ? 'credentials incomplete'
       : 'credentials missing'
   const detailsId = `plugin-details-${installation.id}`
+  const sourceLabel = installation.source_type === 'builtin'
+    ? 'bundled'
+    : installation.source_type === 'linked'
+      ? 'dev link'
+      : 'installed'
+  const hasActions = item.credentials.supported
+    || item.capabilities.can_edit
+    || item.capabilities.can_pack
+    || item.capabilities.can_update
+    || item.capabilities.can_uninstall
   return (
     <article className="@container/plugin-card overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card) shadow-sm transition-colors hover:border-(--color-accent)/50">
       <button
@@ -141,7 +151,7 @@ function PluginCard({
               </span>
             )}
             <span className="rounded-full border border-(--color-border) px-2 py-0.5 text-xs text-(--color-text-muted)">
-              {installation.source_type === 'linked' ? 'dev link' : 'installed'}
+              {sourceLabel}
             </span>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-(--color-text-muted) @lg/plugin-card:mt-0">
@@ -264,12 +274,14 @@ function PluginCard({
                 </span>
                 <Switch
                   checked={installation.enabled}
-                  disabled={busy}
-                  aria-label={`${installation.enabled ? 'Disable' : 'Enable'} ${installation.name}`}
+                  disabled={busy || !item.capabilities.can_enable}
+                  aria-label={item.capabilities.can_enable
+                    ? `${installation.enabled ? 'Disable' : 'Enable'} ${installation.name}`
+                    : `${installation.name} is bundled and always enabled`}
                   onCheckedChange={onToggle}
                 />
               </div>
-              <DropdownMenu>
+              {hasActions && <DropdownMenu>
                 <DropdownMenuTrigger
                   disabled={busy}
                   aria-label={`Actions for ${installation.name}`}
@@ -278,26 +290,26 @@ function PluginCard({
                   <MoreHorizontal /> Actions <ChevronDown className="transition-transform group-data-[popup-open]:rotate-180" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-44">
-                  <DropdownMenuItem onClick={onCredentials}>
+                  {item.credentials.supported && <DropdownMenuItem onClick={onCredentials}>
                     <KeyRound /> Credentials
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={onOpen}>
+                  </DropdownMenuItem>}
+                  {item.capabilities.can_edit && <DropdownMenuItem onClick={onOpen}>
                     <Code2 /> Edit plugin
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={onPack}>
+                  </DropdownMenuItem>}
+                  {item.capabilities.can_pack && <DropdownMenuItem onClick={onPack}>
                     <FileArchive /> Pack archive
-                  </DropdownMenuItem>
-                  {installation.source_type === 'installed' && (
+                  </DropdownMenuItem>}
+                  {item.capabilities.can_update && (
                     <DropdownMenuItem onClick={onUpdate}>
                       <RefreshCw /> Update package
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                  {item.capabilities.can_uninstall && <DropdownMenuSeparator />}
+                  {item.capabilities.can_uninstall && <DropdownMenuItem variant="destructive" onClick={onDelete}>
                     <Trash2 /> Uninstall
-                  </DropdownMenuItem>
+                  </DropdownMenuItem>}
                 </DropdownMenuContent>
-              </DropdownMenu>
+              </DropdownMenu>}
             </div>
           </div>
         </div>

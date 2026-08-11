@@ -21,8 +21,8 @@ README.md        Architecture and packaging notes
 ## Essential commands
 
 ```bash
-make -C desktop sidecar       # build slim sidecar bundle
-make -C desktop sidecar-full  # include audio + Azure Document Intelligence extras
+make -C desktop sidecar       # include the bundled Documents engines
+make -C desktop sidecar-full  # include Documents + Azure Document Intelligence
 make -C desktop icons         # regenerate icons from src-tauri/icons/icon.png
 make -C desktop dev           # Tauri shell against root make dev
 make -C desktop dev-bundled   # Tauri shell with bundled sidecar

@@ -734,8 +734,8 @@ async def test_list_skills(fs_dirs, client: AsyncClient):
     res = await client.get("/api/skills")
     assert res.status_code == 200
     body = res.json()
-    assert body["skills"][0]["name"] == "research"
-    assert body["skills"][0]["description"] == "Researches things."
+    research = next(skill for skill in body["skills"] if skill["name"] == "research")
+    assert research["description"] == "Researches things."
 
 
 @pytest.mark.asyncio

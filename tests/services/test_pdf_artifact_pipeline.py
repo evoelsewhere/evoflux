@@ -7,13 +7,13 @@ from pypdf import PdfReader
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from app.services.office.runtime import file_sha256
-from app.services.pdf_artifact_pipeline import (
+from app.agent.builtin_plugins.documents.engines.pdf import (
     compose_pdf_project,
     inspect_pdf,
     load_pdf_project,
     validate_pdf_project,
 )
+from app.agent.builtin_plugins.documents.rendering.runtime import file_sha256
 
 
 def test_new_pdf_is_structurally_checked_and_every_page_is_rendered(

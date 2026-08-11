@@ -28,7 +28,7 @@ from app.plugin_platform.models import (
     PluginMCPComponent,
 )
 from app.plugin_platform.registry import (
-    list_installations,
+    list_effective_installations,
     plugin_data_root,
     registry_signature,
 )
@@ -70,11 +70,14 @@ def _native_server_config(
     config = component.config
     capabilities: list[str] = []
     if inspection.manifest is not None:
-        extension = resolve_extension(
-            inspection.manifest.extensions,
-            MCP_EXTENSION,
-            LEGACY_MCP_EXTENSIONS,
-        ) or {}
+        extension = (
+            resolve_extension(
+                inspection.manifest.extensions,
+                MCP_EXTENSION,
+                LEGACY_MCP_EXTENSIONS,
+            )
+            or {}
+        )
         servers = extension.get("servers", {}) if isinstance(extension, dict) else {}
         server_extension = (
             servers.get(component.name, {}) if isinstance(servers, dict) else {}
@@ -147,7 +150,7 @@ class PluginMCPServerDescriptor:
 def build_plugin_mcp_config() -> tuple[MCPConfig, list[PluginMCPServerDescriptor]]:
     servers: dict[str, StdioServerConfig | HttpServerConfig] = {}
     descriptors: list[PluginMCPServerDescriptor] = []
-    for installation in list_installations(enabled_only=True):
+    for installation in list_effective_installations(enabled_only=True):
         inspection = inspect_plugin(
             installation.root,
             data_root=plugin_data_root(installation.id),
@@ -174,7 +177,7 @@ def build_plugin_mcp_config() -> tuple[MCPConfig, list[PluginMCPServerDescriptor
 
 def _runtime_signature() -> tuple:
     values: list[object] = [*registry_signature()]
-    for installation in list_installations(enabled_only=True):
+    for installation in list_effective_installations(enabled_only=True):
         values.extend((installation.id, installation.root))
         for filename in ("plugin.json", "mcp.json"):
             try:
@@ -232,7 +235,9 @@ def _linked_tree_signature(root: Path) -> bytes:
                 digest.update(metadata.st_size.to_bytes(8, "big", signed=False))
                 digest.update(b"x" if metadata.st_mode & stat.S_IXUSR else b"-")
                 if stat.S_ISLNK(metadata.st_mode):
-                    digest.update(os.readlink(path).encode("utf-8", errors="surrogateescape"))
+                    digest.update(
+                        os.readlink(path).encode("utf-8", errors="surrogateescape")
+                    )
     except OSError as exc:
         digest.update(f"error:{exc.errno}".encode())
     return digest.digest()
@@ -278,7 +283,7 @@ class PluginMCPRuntime:
     ) -> tuple[MCPConfig, list[PluginMCPServerDescriptor]]:
         servers: dict[str, StdioServerConfig | HttpServerConfig] = {}
         descriptors: list[PluginMCPServerDescriptor] = []
-        installations = list_installations(enabled_only=True)
+        installations = list_effective_installations(enabled_only=True)
         active_ids = {item.id for item in installations}
 
         def add_cached(installation_id: str, server_name: str) -> None:
@@ -389,7 +394,9 @@ class PluginMCPRuntime:
         for descriptor in self._descriptors:
             if descriptor.installation_id != installation_id:
                 continue
-            tools.extend(self._manager.get_tools_for_server(descriptor.runtime_name) or [])
+            tools.extend(
+                self._manager.get_tools_for_server(descriptor.runtime_name) or []
+            )
         return tools
 
     async def call_app_tool(

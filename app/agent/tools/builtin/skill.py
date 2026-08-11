@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import textwrap
+import time
 from difflib import get_close_matches
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -37,6 +38,7 @@ from app.agent.skills.catalog import render_skill_catalog
 from app.agent.skills.discovery import (
     _walk_skill_paths,
     builtin_skills_dir,
+    discover_skill_records,
     discover_skill_records_cached,
     parse_frontmatter,
     select_skill_records_for_mode,
@@ -96,12 +98,17 @@ def discover_skill_records_runtime(
     *,
     mode: str | None = None,
 ) -> dict[str, SkillRecord]:
-    roots = [skills_dir] if skills_dir is not None else _iter_skill_roots()
-    from app.plugin_platform.skills import discover_skill_records_with_plugins
+    if skills_dir is not None:
+        # An explicit directory is an isolated discovery request used by
+        # package tooling and compatibility callers; global plugin Skills must
+        # not leak into that result.
+        records = discover_skill_records([skills_dir])
+    else:
+        from app.plugin_platform.skills import discover_skill_records_with_plugins
 
-    records = discover_skill_records_with_plugins(
-        root for root in roots if root.is_dir()
-    )
+        records = discover_skill_records_with_plugins(
+            root for root in _iter_skill_roots() if root.is_dir()
+        )
     return select_skill_records_for_mode(records, mode) if mode is not None else records
 
 
@@ -314,6 +321,7 @@ async def load_skill(
             f"Skill '{skill_name}' is already loaded; reuse its visible instructions."
         )
 
+    started_at = time.perf_counter()
     try:
         rendered = (
             await activate_skill_with_runtime(_state, record)
@@ -321,7 +329,31 @@ async def load_skill(
             else await activate_skill(record)
         )
     except (OSError, UnicodeError, ValueError, SkillDependencyError) as exc:
+        try:
+            from app.conductor.telemetry import record_skill_usage
+
+            record_skill_usage(
+                skill_name,
+                source="manual",
+                mode=_mode,
+                outcome="failure",
+                duration_ms=int((time.perf_counter() - started_at) * 1000),
+                failure_category=type(exc).__name__,
+            )
+        except Exception:  # noqa: BLE001 - telemetry cannot block activation
+            pass
         return f"Could not load skill '{skill_name}': {exc}"
+    try:
+        from app.conductor.telemetry import record_skill_usage
+
+        record_skill_usage(
+            skill_name,
+            source="manual",
+            mode=_mode,
+            duration_ms=int((time.perf_counter() - started_at) * 1000),
+        )
+    except Exception:  # noqa: BLE001 - telemetry cannot block activation
+        pass
     logger.info("skill_loaded name={} file={}", skill_name, record.skill_file)
     if _state is not None:
         loaded[skill_name] = rendered

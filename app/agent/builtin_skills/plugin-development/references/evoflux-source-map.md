@@ -14,6 +14,9 @@ Use this map when changing the platform itself or when package behavior must be 
 - `app/plugin_platform/validator.py` — package inventory, manifest, Skill, MCP, extension, path, URL, and failure-isolation validation.
 - `app/plugin_platform/installer.py` — safe extraction, deterministic packing, managed install/link/update/uninstall, and scaffold.
 - `app/plugin_platform/registry.py` — installation identity, atomic registry persistence, enable state, and duplicate source rules.
+- `app/plugin_platform/builtins.py` — discovery and stable virtual identities for immutable release-bundled packages.
+- `app/plugin_platform/native.py` — private native-provider loading restricted to matching bundled package namespaces.
+- `app/plugin_platform/previews.py` — format-neutral document-preview provider selection.
 - `app/plugin_platform/runtime.py` — plugin-scoped MCP adaptation, reconciliation, watchers, placeholders, credentials, and last-known-good behavior.
 - `app/plugin_platform/credentials.py` — schema projection, `0600` persistence, masking, required status, and environment injection.
 - `app/plugin_platform/skills.py` — plugin Skill discovery and precedence integration.
@@ -40,11 +43,17 @@ Confirm the active surface before documenting commands.
 - `tests/api/test_plugin_routes.py` — HTTP lifecycle, workspace, credentials, and runtime refresh.
 - `tests/agent/tools/test_skill_loader.py` — built-in/plugin Skill discovery, mode scope, metadata-only catalog, precedence, and tool grants.
 
-Build domain-specific packages outside this repository. Use temporary local
-fixtures in these suites to prove the public package and runtime contracts
-without shipping a reference plugin in the EvoFlux source tree.
+Build portable third-party packages outside this repository. Use temporary
+local fixtures in these suites to prove the public package and runtime
+contracts without shipping a reference third-party plugin in the EvoFlux
+source tree. Release-owned packages live under
+`app/agent/builtin_plugins/<package>/` and must keep native entrypoints inside
+that matching Python namespace.
 
-When adding a built-in workflow, keep mode scope in `app/agent/builtin_skills/catalog.py`; do not add EvoFlux mode metadata to portable `SKILL.md` frontmatter.
+When adding a core built-in workflow, keep mode scope in
+`app/agent/builtin_skills/catalog.py`. A release-bundled plugin instead keeps
+host-only mode scope in each Skill's `.evoflux.json`; neither form adds
+EvoFlux-only fields to portable `SKILL.md` frontmatter.
 
 ## State and generated identity
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -179,7 +180,9 @@ async def test_create_rejects_runtime_invalid_required_metadata(
 async def test_list_skills_empty(client):
     resp = await client.get("/api/skills")
     assert resp.status_code == 200
-    assert resp.json() == {"skills": []}
+    skills = resp.json()["skills"]
+    assert {item["name"] for item in skills} == {"docx", "xlsx", "pptx", "pdf"}
+    assert all(item["source"].startswith("plugin:") for item in skills)
 
 
 @pytest.mark.asyncio
@@ -188,12 +191,43 @@ async def test_list_skills_returns_created_skill(client):
     resp = await client.get("/api/skills")
     assert resp.status_code == 200
     skills = resp.json()["skills"]
-    assert len(skills) == 1
-    assert skills[0]["name"] == "research"
-    assert skills[0]["valid"] is True
-    assert skills[0]["built_in"] is False
-    assert skills[0]["editable"] is True
-    assert skills[0]["source"] == "global-EvoFlux"
+    research = next(item for item in skills if item["name"] == "research")
+    assert research["valid"] is True
+    assert research["built_in"] is False
+    assert research["editable"] is True
+    assert research["source"] == "global-EvoFlux"
+
+
+@pytest.mark.asyncio
+async def test_conductor_managed_skill_is_read_only(fs_dirs, client):
+    _, skills_dir = fs_dirs
+    skill_dir = skills_dir / "managed"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(VALID_SKILL.replace("research", "managed"))
+    (skill_dir / ".evoflux.json").write_text(
+        json.dumps(
+            {
+                "managed_by": "conductor",
+                "resource_id": "11111111-1111-1111-1111-111111111111",
+                "resource_version": "1.0.0",
+            }
+        )
+    )
+
+    listed = await client.get("/api/skills")
+    row = next(item for item in listed.json()["skills"] if item["name"] == "managed")
+    assert row["editable"] is False
+
+    update = await client.put(
+        "/api/skills/managed",
+        json={
+            "name": "managed",
+            "content": VALID_SKILL.replace("research", "managed"),
+        },
+    )
+    delete = await client.delete("/api/skills/managed")
+    assert update.status_code == 403
+    assert delete.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -215,7 +249,10 @@ async def test_create_and_update_skill_mode_scope(client, fs_dirs):
     assert all(file["path"] != ".evoflux.json" for file in created.json()["files"])
 
     listed = await client.get("/api/skills")
-    assert listed.json()["skills"][0]["modes"] == ["coding"]
+    research = next(
+        item for item in listed.json()["skills"] if item["name"] == "research"
+    )
+    assert research["modes"] == ["coding"]
 
     updated = await client.put(
         "/api/skills/research",
@@ -391,15 +428,14 @@ async def test_list_skills_includes_opencode_skill(
 
     assert resp.status_code == 200
     skills = resp.json()["skills"]
-    assert len(skills) == 1
-    assert skills[0]["name"] == "research"
-    assert skills[0]["description"] == "A research skill."
-    assert skills[0]["valid"] is True
-    assert skills[0]["error"] is None
-    assert skills[0]["built_in"] is False
-    assert skills[0]["editable"] is True
-    assert skills[0]["source"] == "global-opencode"
-    assert skills[0]["modes"] == ["work", "coding"]
+    research = next(item for item in skills if item["name"] == "research")
+    assert research["description"] == "A research skill."
+    assert research["valid"] is True
+    assert research["error"] is None
+    assert research["built_in"] is False
+    assert research["editable"] is True
+    assert research["source"] == "global-opencode"
+    assert research["modes"] == ["work", "coding"]
 
 
 @pytest.mark.asyncio
@@ -427,14 +463,13 @@ async def test_list_skills_labels_project_EVOFLUX_source(
 
     assert resp.status_code == 200
     skills = resp.json()["skills"]
-    assert len(skills) == 1
-    assert skills[0]["name"] == "oad/commit"
-    assert skills[0]["description"] == "Commit workflow."
-    assert skills[0]["valid"] is True
-    assert skills[0]["editable"] is True
-    assert skills[0]["source"] == "project-EvoFlux"
-    assert skills[0]["modes"] == ["work", "coding"]
-    assert {item["code"] for item in skills[0]["diagnostics"]} >= {
+    commit = next(item for item in skills if item["name"] == "oad/commit")
+    assert commit["description"] == "Commit workflow."
+    assert commit["valid"] is True
+    assert commit["editable"] is True
+    assert commit["source"] == "project-EvoFlux"
+    assert commit["modes"] == ["work", "coding"]
+    assert {item["code"] for item in commit["diagnostics"]} >= {
         "legacy-name",
         "nested-legacy-skill",
     }
@@ -462,7 +497,10 @@ async def test_list_skills_labels_project_opencode_source(
     resp = await client.get("/api/skills")
 
     assert resp.status_code == 200
-    assert resp.json()["skills"][0]["source"] == "project-opencode"
+    research = next(
+        item for item in resp.json()["skills"] if item["name"] == "research"
+    )
+    assert research["source"] == "project-opencode"
 
 
 @pytest.mark.asyncio

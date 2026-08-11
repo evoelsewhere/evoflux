@@ -9,7 +9,7 @@ import { downloadCodingWorkspaceFile } from '@/lib/coding-workspace-download'
 import { openExternalUrl } from '@/lib/open-external'
 import { cn } from '@/lib/utils'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
-import { workspaceFileKind } from '@/lib/workspace-file-kind'
+import { isWorkspaceDocumentKind, workspaceFileKind, type WorkspaceFileKind } from '@/lib/workspace-file-kind'
 import { formatBytes } from '@/utils/format'
 import { MarkdownBlock } from '@/utils/markdown'
 import { useMonacoTheme, languageForExt } from '@/hooks/useMonacoTheme'
@@ -17,11 +17,8 @@ import { queryKeys } from '@/queries'
 import { SidePanel } from './shell/SidePanel'
 import type { CodingLspDiagnostic, WorkspaceFileInfo } from '@/api/types'
 
-const PdfPreview = lazy(() =>
-  import('./workspace-pdf-preview').then((module) => ({ default: module.PdfPreview })),
-)
-const XlsxPreview = lazy(() =>
-  import('./workspace-xlsx-preview').then((module) => ({ default: module.XlsxPreview })),
+const DocumentPreview = lazy(() =>
+  import('./workspace-document-preview').then((module) => ({ default: module.WorkspaceDocumentPreview })),
 )
 
 const DRAWIO_EXTENSIONS = new Set(['drawio', 'dio'])
@@ -34,16 +31,13 @@ function extOf(name: string): string {
   return i >= 0 ? name.slice(i + 1).toLowerCase() : ''
 }
 
-type FileKind = 'image' | 'text' | 'drawio' | 'pdf' | 'xlsx' | 'binary'
+type FileKind = WorkspaceFileKind | 'drawio'
 
 function kindOf(file: WorkspaceFileInfo): FileKind {
   const ext = extOf(file.name)
   if (DRAWIO_EXTENSIONS.has(ext)) return 'drawio'
   const sharedKind = workspaceFileKind(file)
-  if (sharedKind === 'image' || sharedKind === 'text' || sharedKind === 'pdf' || sharedKind === 'xlsx') {
-    return sharedKind
-  }
-  return 'binary'
+  return sharedKind
 }
 
 function RichFilePreviewLoading({ label }: { label: string }) {
@@ -780,7 +774,9 @@ export function CodingFileViewerPanel({
   const ext = file ? extOf(file.name) : ''
   const isHtml = ext === 'html' || ext === 'htm'
   const isMarkdown = ext === 'md' || ext === 'markdown'
-  const canPreview = isHtml || isMarkdown
+  const isDocument = isWorkspaceDocumentKind(kind === 'drawio' ? 'binary' : kind)
+  const canRichPreview = isHtml || isMarkdown
+  const canPreview = canRichPreview || isDocument
   const effectiveViewMode = viewMode === 'preview' && !canPreview ? 'file' : viewMode
 
   const handleOpenFile = async () => {
@@ -884,26 +880,18 @@ export function CodingFileViewerPanel({
                   : !scopedDiff.data.diff ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-text-subtle)">No diff for this file</div>
                     : <DiffPreview diff={scopedDiff.data.diff} />}
           </div>
-        ) : effectiveViewMode === 'preview' && canPreview ? (
+        ) : effectiveViewMode === 'preview' && canRichPreview ? (
           <RichPreview workspace={workspace} file={file} isHtml={isHtml} />
         ) : kind === 'image' ? (
           <ImagePreview workspace={workspace} file={file} />
         ) : kind === 'drawio' ? (
           <DrawioPreview key={file.path} workspace={workspace} file={file} />
-        ) : kind === 'pdf' ? (
-          <Suspense fallback={<RichFilePreviewLoading label="PDF" />}>
-            <PdfPreview
+        ) : isDocument ? (
+          <Suspense fallback={<RichFilePreviewLoading label="document" />}>
+            <DocumentPreview
               key={`${file.path}:${file.mtime}`}
               file={file}
-              sourceUrl={codingWorkspaceFileUrl(workspace, file.path)}
-            />
-          </Suspense>
-        ) : kind === 'xlsx' ? (
-          <Suspense fallback={<RichFilePreviewLoading label="workbook" />}>
-            <XlsxPreview
-              key={`${file.path}:${file.mtime}`}
-              file={file}
-              sourceUrl={codingWorkspaceFileUrl(workspace, file.path)}
+              workspace={workspace}
             />
           </Suspense>
         ) : kind === 'text' ? (

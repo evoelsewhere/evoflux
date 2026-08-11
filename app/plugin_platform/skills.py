@@ -5,10 +5,18 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from app.agent.skills.discovery import _build_record, discover_skill_records
+from app.agent.skills.discovery import (
+    _build_record,
+    _finalize_runtime_settings,
+    discover_skill_records,
+)
 from app.agent.skills.models import SkillRecord
-from app.core.skill_settings import skill_settings_id
-from app.plugin_platform.registry import list_installations, plugin_data_root
+from app.core.skill_settings import (
+    read_skill_runtime_settings_snapshot,
+    skill_settings_id,
+)
+from app.plugin_platform.extensions import BUILTIN_EXTENSION
+from app.plugin_platform.registry import list_effective_installations, plugin_data_root
 from app.plugin_platform.validator import inspect_plugin
 
 
@@ -16,11 +24,26 @@ def discover_plugin_skill_records() -> dict[str, SkillRecord]:
     """Discover valid skills from enabled plugins, immediate children only."""
 
     selected: dict[str, SkillRecord] = {}
-    for installation in list_installations(enabled_only=True):
+    runtime_settings, settings_diagnostics = read_skill_runtime_settings_snapshot()
+    for installation in list_effective_installations(enabled_only=True):
         root = Path(installation.root).resolve()
         inspection = inspect_plugin(root, data_root=plugin_data_root(installation.id))
         if not inspection.valid:
             continue
+        native_extension = (
+            inspection.manifest.extensions.get(BUILTIN_EXTENSION)
+            if inspection.manifest is not None
+            else None
+        )
+        legacy_settings = (
+            native_extension.get("legacy_skill_settings", [])
+            if installation.source_type == "builtin"
+            and isinstance(native_extension, dict)
+            else []
+        )
+        legacy_settings_names = {
+            item for item in legacy_settings if isinstance(item, str)
+        }
         valid_paths = {item.path for item in inspection.skills if item.valid}
         skills_root = root / "skills"
         for relative in sorted(valid_paths):
@@ -30,11 +53,18 @@ def discover_plugin_skill_records() -> dict[str, SkillRecord]:
             record.source = f"plugin:{installation.id}"
             record.editable = False
             record.settings_id = skill_settings_id(
-                source=record.source,
+                # Document Skills shipped as core built-ins before becoming a
+                # bundled plugin. Retaining their old opaque settings identity
+                # preserves user visibility/invocation overrides on upgrade.
+                source="builtin" if stem in legacy_settings_names else record.source,
                 root=skills_root,
                 stem=stem,
             )
-            record.settings_editable = False
+            _finalize_runtime_settings(
+                record,
+                runtime_settings=runtime_settings,
+                settings_diagnostics=settings_diagnostics,
+            )
             previous = selected.get(record.name)
             if previous is None:
                 selected[record.name] = record

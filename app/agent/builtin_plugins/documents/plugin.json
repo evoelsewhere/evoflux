@@ -1,0 +1,30 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "evoflux.documents",
+  "version": "1.0.0",
+  "description": "Built-in DOCX, XLSX, PPTX, and PDF artifact and preview engines.",
+  "author": {
+    "name": "EvoFlux contributors"
+  },
+  "license": "Apache-2.0",
+  "keywords": ["documents", "docx", "xlsx", "pptx", "pdf"],
+  "extensions": {
+    "org.evoelsewhere.evoflux.builtin": {
+      "artifact_provider": "app.agent.builtin_plugins.documents.runtime:artifact_drivers",
+      "preview_provider": "app.agent.builtin_plugins.documents.runtime:preview_provider",
+      "api_router_provider": "app.agent.builtin_plugins.documents.runtime:api_router",
+      "python_extra": "documents",
+      "legacy_skill_settings": ["docx", "xlsx", "pptx", "pdf"],
+      "runtime_dependencies": [
+        "python-docx",
+        "openpyxl",
+        "python-pptx",
+        "pdfplumber",
+        "pypdf",
+        "pypdfium2",
+        "Pillow",
+        "reportlab"
+      ]
+    }
+  }
+}

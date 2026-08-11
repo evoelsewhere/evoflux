@@ -55,10 +55,21 @@ class PluginOperationResponse(BaseModel):
     inspection: PluginInspection
 
 
+class PluginLifecycleCapabilities(BaseModel):
+    can_enable: bool = True
+    can_edit: bool = True
+    can_pack: bool = True
+    can_update: bool = True
+    can_uninstall: bool = True
+
+
 class PluginListItem(BaseModel):
     installation: PluginInstallation
     inspection: PluginInspection
     credentials: PluginCredentialState
+    capabilities: PluginLifecycleCapabilities = Field(
+        default_factory=PluginLifecycleCapabilities
+    )
 
 
 class PluginMcpRuntimeStatus(BaseModel):
@@ -129,6 +140,7 @@ __all__ = [
     "PluginEnabledRequest",
     "PluginInstallRequest",
     "PluginListItem",
+    "PluginLifecycleCapabilities",
     "PluginListResponse",
     "PluginMcpRuntimeStatus",
     "PluginOperationResponse",

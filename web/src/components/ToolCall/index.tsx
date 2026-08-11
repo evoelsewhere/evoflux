@@ -16,7 +16,7 @@
  * this module owns only the chrome (collapse, copy, motion).
  */
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ChevronRight,
@@ -42,9 +42,49 @@ import { DelegationTaskCards } from '@/components/DelegationTaskCards'
 import { ImageAttachment } from '@/components/ImageAttachment'
 import { FileCard } from '@/components/FileCard'
 import { ActivityStatus } from '@/components/motion/ActivityStatus'
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { resolveApiUrl } from '@/api/client'
-import type { MessageAttachment } from '@/api/types'
+import type { MessageAttachment, WorkspaceFileInfo } from '@/api/types'
+import {
+  isWorkspaceDocumentKind,
+  workspaceFileKind,
+} from '@/lib/workspace-file-kind'
 import type { ToolCallState } from './types'
+
+const DocumentPreview = lazy(() =>
+  import('../workspace-document-preview').then((module) => ({
+    default: module.WorkspaceDocumentPreview,
+  })),
+)
+
+interface AttachmentDocumentPreview {
+  file: WorkspaceFileInfo
+  sourceUrl: string
+}
+
+function attachmentDocumentPreview(
+  attachment: MessageAttachment,
+): AttachmentDocumentPreview | null {
+  if (!attachment.preview_url) return null
+  const name = attachment.original_name || attachment.filename
+  if (!name) return null
+  const file: WorkspaceFileInfo = {
+    path: attachment.workspace_path || name,
+    name,
+    mime: attachment.media_type || 'application/octet-stream',
+    size: 0,
+    mtime: 0,
+  }
+  if (!isWorkspaceDocumentKind(workspaceFileKind(file))) return null
+  return {
+    file,
+    sourceUrl: resolveApiUrl(attachment.preview_url) || attachment.preview_url,
+  }
+}
 
 interface ToolCallProps {
   name: string
@@ -64,35 +104,70 @@ export function ToolAttachments({
   attachments?: MessageAttachment[]
   limit?: number
 }) {
+  const [documentPreview, setDocumentPreview] =
+    useState<AttachmentDocumentPreview | null>(null)
   if (!attachments || attachments.length === 0) return null
   const visible = limit ? attachments.slice(0, limit) : attachments
   const remaining = attachments.length - visible.length
 
   return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-2">
-      {visible.map((attachment, index) =>
-        attachment.category === 'image' ? (
-          <ImageAttachment
-            key={`${attachment.url ?? attachment.filename ?? index}`}
-            src={resolveApiUrl(attachment.url) || ''}
-            alt={attachment.original_name || `Tool image ${index + 1}`}
-            compact
-          />
-        ) : (
-          <FileCard
-            key={`${attachment.url ?? attachment.filename ?? index}`}
-            name={attachment.original_name || attachment.filename || `Tool file ${index + 1}`}
-            mediaType={attachment.media_type}
-            url={resolveApiUrl(attachment.preview_url || attachment.url)}
-            clickable={Boolean(attachment.preview_url || attachment.url)}
-            downloadUrl={resolveApiUrl(attachment.download_url)}
-          />
-        ),
-      )}
-      {remaining > 0 && (
-        <span className="text-xs text-(--color-text-muted)">+{remaining} more</span>
-      )}
-    </div>
+    <>
+      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+        {visible.map((attachment, index) => {
+          if (attachment.category === 'image') {
+            return (
+              <ImageAttachment
+                key={`${attachment.url ?? attachment.filename ?? index}`}
+                src={resolveApiUrl(attachment.url) || ''}
+                alt={attachment.original_name || `Tool image ${index + 1}`}
+                compact
+              />
+            )
+          }
+          const inAppPreview = attachmentDocumentPreview(attachment)
+          return (
+            <FileCard
+              key={`${attachment.url ?? attachment.filename ?? index}`}
+              name={attachment.original_name || attachment.filename || `Tool file ${index + 1}`}
+              mediaType={attachment.media_type}
+              url={resolveApiUrl(attachment.preview_url || attachment.url)}
+              clickable={Boolean(attachment.preview_url || attachment.url)}
+              onOpen={inAppPreview ? () => setDocumentPreview(inAppPreview) : undefined}
+              downloadUrl={resolveApiUrl(attachment.download_url)}
+            />
+          )
+        })}
+        {remaining > 0 && (
+          <span className="text-xs text-(--color-text-muted)">+{remaining} more</span>
+        )}
+      </div>
+      <Dialog
+        open={documentPreview !== null}
+        onOpenChange={(open) => {
+          if (!open) setDocumentPreview(null)
+        }}
+      >
+        <DialogContent className="h-[min(92dvh,960px)] max-w-[min(96vw,1500px)] gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1500px)]">
+          <DialogTitle className="sr-only">
+            {documentPreview ? `Preview ${documentPreview.file.name}` : 'Document preview'}
+          </DialogTitle>
+          {documentPreview && (
+            <Suspense
+              fallback={(
+                <div className="flex h-full items-center justify-center text-sm text-(--color-text-muted)">
+                  Loading document viewer…
+                </div>
+              )}
+            >
+              <DocumentPreview
+                file={documentPreview.file}
+                sourceUrl={documentPreview.sourceUrl}
+              />
+            </Suspense>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 

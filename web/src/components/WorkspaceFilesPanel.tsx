@@ -8,9 +8,8 @@
  * full-screen only below the ``md`` breakpoint (mobile). Inside, preview is
  * the primary surface and the resizable file tree is a collapsible right rail.
  * Images render inline via the ``/media/`` proxy (with lightbox on click).
- * Text/code files render as-is in a plain monospace view. PDF and XLSX files
- * render in lazy-loaded WebView-native engines; DOCX and PPTX use the isolated
- * OpenXML preview endpoint.
+ * Text/code files render as-is in a plain monospace view. PDF, DOCX, PPTX and
+ * XLSX share the host-owned document reader backed by inert preview HTML.
  * Everything else can be opened in the system's default desktop app.
  *
  * Data flow:
@@ -73,7 +72,6 @@ import { useUIStore } from '@/stores/useUIStore'
 import { getWorkspacePanelLayout } from '@/lib/workspace-panel-layout'
 import { ImageLightbox } from './ImageLightbox'
 import { FileTypeIcon, FolderTypeIcon } from './FileTypeIcon'
-import { DocxPreview, PptxPreview } from './workspace-office-preview'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -83,17 +81,15 @@ import {
 import { openExternalUrl } from '@/lib/open-external'
 import {
   isWorkspaceCodeExtension,
+  isWorkspaceDocumentKind,
   workspaceFileExtension,
   workspaceFileKind,
 } from '@/lib/workspace-file-kind'
 import type { WorkspaceFileInfo } from '@/api/types'
 import { buildTree, sortTreeNodeChildren, type TreeNode } from '@/utils/workspaceFileTree'
 
-const PdfPreview = lazy(() =>
-  import('./workspace-pdf-preview').then((module) => ({ default: module.PdfPreview })),
-)
-const XlsxPreview = lazy(() =>
-  import('./workspace-xlsx-preview').then((module) => ({ default: module.XlsxPreview })),
+const DocumentPreview = lazy(() =>
+  import('./workspace-document-preview').then((module) => ({ default: module.WorkspaceDocumentPreview })),
 )
 
 // ── File-type helpers ─────────────────────────────────────────────────────────
@@ -798,17 +794,9 @@ function PreviewArea({
           <ImagePreview sessionId={sessionId} file={file} />
         ) : kind === 'text' ? (
           <TextPreview sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />
-        ) : kind === 'docx' ? (
-          <DocxPreview sessionId={sessionId} file={file} />
-        ) : kind === 'xlsx' ? (
-          <Suspense fallback={<RichPreviewLoading label="workbook" />}>
-            <XlsxPreview key={`${file.path}:${file.mtime}`} sessionId={sessionId} file={file} />
-          </Suspense>
-        ) : kind === 'pptx' ? (
-          <PptxPreview sessionId={sessionId} file={file} />
-        ) : kind === 'pdf' ? (
-          <Suspense fallback={<RichPreviewLoading label="PDF" />}>
-            <PdfPreview key={`${file.path}:${file.mtime}`} sessionId={sessionId} file={file} />
+        ) : isWorkspaceDocumentKind(kind) ? (
+          <Suspense fallback={<RichPreviewLoading label="document" />}>
+            <DocumentPreview key={`${file.path}:${file.mtime}`} sessionId={sessionId} file={file} />
           </Suspense>
         ) : (
           <BinaryPreview file={file} />

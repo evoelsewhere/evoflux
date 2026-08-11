@@ -7,6 +7,7 @@ skills are edited/deleted in place; bundled skills remain read-only.
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import stat
@@ -115,6 +116,14 @@ def _editable_skill_root(
     from app.agent.tools.builtin import skill as skill_module
 
     absolute = path.absolute()
+    try:
+        runtime_metadata = json.loads(
+            (absolute.parent / ".evoflux.json").read_text(encoding="utf-8")
+        )
+        if runtime_metadata.get("managed_by") == "conductor":
+            return None
+    except (FileNotFoundError, OSError, ValueError, TypeError):
+        pass
     for root in roots or skill_module._iter_skill_roots():
         if root.absolute() in {
             _builtin_skills_root().absolute(),

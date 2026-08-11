@@ -3,13 +3,27 @@ from __future__ import annotations
 from pathlib import Path
 
 from docx import Document
+from PIL import ImageFont
 
-from app.services import docx_document_pipeline
-from app.services.office import rendering
+from app.agent.builtin_plugins.documents import rendering
+from app.agent.builtin_plugins.documents.engines import (
+    docx as docx_document_pipeline,
+)
+from app.agent.builtin_plugins.documents.rendering import internal
 
 
 def test_internal_renderer_is_always_available() -> None:
     assert rendering.renderer_available() is True
+
+
+def test_internal_renderer_uses_bundled_fonts_at_requested_size() -> None:
+    assert internal._FONT_ROOT.is_dir()
+    regular = internal._font(18)
+    bold = internal._font(22, bold=True)
+    assert isinstance(regular, ImageFont.FreeTypeFont)
+    assert isinstance(bold, ImageFont.FreeTypeFont)
+    assert regular.size == 18
+    assert bold.size == 22
 
 
 def test_render_pages_creates_docx_preview_without_external_binary(
@@ -19,7 +33,7 @@ def test_render_pages_creates_docx_preview_without_external_binary(
     document = Document()
     document.add_heading("Portable preview", level=1)
     document.add_paragraph("No office suite is installed or launched.")
-    document.save(source)
+    document.save(str(source))
 
     pages, issues = rendering.render_pages(
         source, tmp_path / "previews", code_prefix="docx"

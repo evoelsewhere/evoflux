@@ -328,6 +328,12 @@ def create_app() -> FastAPI:
     app.include_router(wiki_router, prefix="/api/wiki", tags=["wiki"])
     app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
     app.include_router(artifacts_router, prefix="/api/artifacts", tags=["artifacts"])
+    from app.plugin_platform.native import iter_builtin_native_providers
+
+    for _plugin_name, provider in iter_builtin_native_providers("api_router_provider"):
+        app.include_router(
+            provider(), prefix="/api/artifacts", tags=["artifact-plugins"]
+        )
     app.include_router(skills_router, prefix="/api/skills", tags=["skills"])
     app.include_router(commands_router, prefix="/api/commands", tags=["commands"])
     app.include_router(workflows_router, prefix="/api/workflows", tags=["workflows"])

@@ -9,7 +9,7 @@ from pptx.util import Inches
 import pytest
 from pydantic import ValidationError
 
-from app.services.pptx_template_pipeline import (
+from app.agent.builtin_plugins.documents.engines.pptx_template import (
     TemplateDeckProject,
     compose_pptx_template,
     inspect_pptx_template,

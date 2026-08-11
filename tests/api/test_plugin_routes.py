@@ -56,6 +56,144 @@ async def test_plugin_install_defaults_to_disabled_pending_trust_review(
 
 
 @pytest.mark.asyncio
+async def test_plugin_api_lists_builtin_capabilities_and_rejects_mutations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "EVOFLUX_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config"))
+    refresh_mock = AsyncMock()
+    invalidate_mock = Mock()
+    monkeypatch.setattr(plugin_mcp_runtime, "refresh", refresh_mock)
+    monkeypatch.setattr(
+        plugin_routes.team_manager,
+        "invalidate_skill_cache",
+        invalidate_mock,
+    )
+    app = FastAPI()
+    app.include_router(plugin_routes.router, prefix="/api/plugins")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        listed = await client.get("/api/plugins")
+        assert listed.status_code == 200
+        plugins = listed.json()["plugins"]
+        assert len(plugins) == 1
+        builtin = plugins[0]
+        installation = builtin["installation"]
+        assert installation["id"] == "7d76b6df28f0617022e8223d2dda5315"
+        assert installation["name"] == "evoflux.documents"
+        assert installation["source_type"] == "builtin"
+        assert builtin["inspection"]["valid"] is True
+        assert builtin["capabilities"] == {
+            "can_enable": False,
+            "can_edit": False,
+            "can_pack": False,
+            "can_update": False,
+            "can_uninstall": False,
+        }
+
+        root = installation["root"]
+        manifest_before = Path(root, "plugin.json").read_bytes()
+        tree = await client.get("/api/plugins/workspace/tree", params={"root": root})
+        assert tree.status_code == 200
+        assert "plugin.json" in {entry["path"] for entry in tree.json()}
+        manifest = await client.get(
+            "/api/plugins/workspace/file",
+            params={"root": root, "path": "plugin.json"},
+        )
+        assert manifest.status_code == 200
+
+        reinstall = await client.post(
+            "/api/plugins/install",
+            json={"path": root, "mode": "link", "enabled": True},
+        )
+        assert reinstall.status_code == 422
+        update = await client.post(
+            f"/api/plugins/{installation['id']}/update",
+            json={"path": root},
+        )
+        assert update.status_code == 422
+        disable = await client.patch(
+            f"/api/plugins/{installation['id']}/enabled",
+            json={"enabled": False},
+        )
+        assert disable.status_code == 422
+        uninstall = await client.delete(f"/api/plugins/{installation['id']}")
+        assert uninstall.status_code == 422
+        packed = await client.post("/api/plugins/pack", json={"path": root})
+        assert packed.status_code == 409
+
+        write = await client.put(
+            "/api/plugins/workspace/file",
+            json={"root": root, "path": "plugin.json", "content": "{}\n"},
+        )
+        assert write.status_code == 409
+        create = await client.post(
+            "/api/plugins/workspace/entry",
+            json={"root": root, "path": "forbidden.txt", "kind": "file"},
+        )
+        assert create.status_code == 409
+        remove = await client.request(
+            "DELETE",
+            "/api/plugins/workspace/entry",
+            json={"root": root, "path": "plugin.json"},
+        )
+        assert remove.status_code == 409
+
+    assert Path(root, "plugin.json").read_bytes() == manifest_before
+    assert not Path(root, "forbidden.txt").exists()
+    refresh_mock.assert_not_awaited()
+    invalidate_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_plugin_api_rejects_builtin_create_and_pack_targets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.plugin_platform import builtins as builtin_module
+
+    monkeypatch.setattr(settings, "EVOFLUX_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+    bundled_root = tmp_path / "release" / "builtin_plugins"
+    bundled_root.mkdir(parents=True)
+    monkeypatch.setattr(builtin_module, "builtin_plugins_root", lambda: bundled_root)
+    source = tmp_path / "pack-source"
+    source.mkdir()
+    (source / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "pack-source",
+            }
+        ),
+        encoding="utf-8",
+    )
+    create_target = bundled_root / "generated"
+    pack_target = bundled_root / "generated.evoplugin"
+    app = FastAPI()
+    app.include_router(plugin_routes.router, prefix="/api/plugins")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        created = await client.post(
+            "/api/plugins/create",
+            json={"destination": str(create_target), "name": "generated"},
+        )
+        packed = await client.post(
+            "/api/plugins/pack",
+            json={"path": str(source), "output": str(pack_target)},
+        )
+
+    assert created.status_code == 409
+    assert packed.status_code == 409
+    assert not create_target.exists()
+    assert not pack_target.exists()
+
+
+@pytest.mark.asyncio
 async def test_plugin_api_lifecycle(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -235,7 +373,24 @@ async def test_plugin_api_lifecycle(
 
         listed = await client.get("/api/plugins")
         assert listed.status_code == 200
-        assert listed.json()["plugins"][0]["installation"]["name"] == "api-plugin"
+        listed_by_name = {
+            item["installation"]["name"]: item for item in listed.json()["plugins"]
+        }
+        assert set(listed_by_name) == {"api-plugin", "evoflux.documents"}
+        assert listed_by_name["api-plugin"]["capabilities"] == {
+            "can_enable": True,
+            "can_edit": True,
+            "can_pack": True,
+            "can_update": False,
+            "can_uninstall": True,
+        }
+        assert listed_by_name["evoflux.documents"]["capabilities"] == {
+            "can_enable": False,
+            "can_edit": False,
+            "can_pack": False,
+            "can_update": False,
+            "can_uninstall": False,
+        }
 
         disabled = await client.patch(
             f"/api/plugins/{installation_id}/enabled",
@@ -246,7 +401,10 @@ async def test_plugin_api_lifecycle(
 
         removed = await client.delete(f"/api/plugins/{installation_id}")
         assert removed.status_code == 200
-        assert (await client.get("/api/plugins")).json()["plugins"] == []
+        remaining = (await client.get("/api/plugins")).json()["plugins"]
+        assert [item["installation"]["name"] for item in remaining] == [
+            "evoflux.documents"
+        ]
 
     assert refresh_mock.await_count == 9
     assert invalidate_mock.call_count == 9
