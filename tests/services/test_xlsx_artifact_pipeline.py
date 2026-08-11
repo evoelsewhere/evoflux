@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import cast
 
 from openpyxl import load_workbook
+from PIL import Image
 import pytest
 
 from app.agent.builtin_plugins.documents.engines import xlsx as pipeline
@@ -101,6 +102,20 @@ async def test_compose_creates_editable_workbook_and_preview(tmp_path: Path) -> 
     assert result.passed is True
     assert result.output == output
     assert len(result.previews) == 1
+    assert result.metadata["formula_count"] == 2
+    assert result.metadata["evaluated_formula_count"] == 2
+    assert result.metadata["chart_count"] == 1
+    assert result.metadata["rendered_chart_count"] == 1
+    assert result.metadata["qa_source"] == "reopened-openxml"
+    manifest = json.loads((tmp_path / "work" / "workbook-manifest.json").read_text())
+    assert manifest["formulaCount"] == manifest["evaluatedFormulaCount"] == 2
+    assert manifest["chartCount"] == manifest["renderedChartCount"] == 1
+    with Image.open(result.previews[0]).convert("RGB") as preview:
+        assert preview.getbbox() is not None
+        assert any(
+            red < 80 and green < 150 and blue > 150
+            for red, green, blue in preview.getdata()
+        )
     workbook = load_workbook(output, data_only=False)
     try:
         sheet = workbook["Inputs"]
@@ -109,6 +124,39 @@ async def test_compose_creates_editable_workbook_and_preview(tmp_path: Path) -> 
         assert sheet["A1"].fill.fgColor.rgb.endswith("0F766E")
     finally:
         workbook.close()
+
+
+@pytest.mark.asyncio
+async def test_compose_rejects_formula_the_preview_engine_cannot_evaluate(
+    tmp_path: Path,
+) -> None:
+    raw = _new_project()
+    sheets = cast(list[dict[str, object]], raw["sheets"])
+    operations = cast(list[dict[str, object]], sheets[0]["operations"])
+    operations.append(
+        {
+            "operation": "write_range",
+            "range": "C2:C2",
+            "formulas": [['=XLOOKUP("Revenue",A1:A2,B1:B2)']],
+        }
+    )
+    project_path = tmp_path / "unsupported.json"
+    project_path.write_text(json.dumps(raw), encoding="utf-8")
+    output = tmp_path / "unsupported.xlsx"
+
+    result = await pipeline.compose_xlsx_project(
+        project_path,
+        None,
+        output,
+        workspace_root=tmp_path,
+        work_dir=tmp_path / "unsupported-work",
+    )
+
+    assert result.passed is False
+    assert result.output is None
+    assert output.exists() is False
+    assert any(issue["code"] == "formula-evaluation-failed" for issue in result.issues)
+    assert any(issue["code"] == "formula-preview-incomplete" for issue in result.issues)
 
 
 def test_template_validation_detects_changed_source(tmp_path: Path) -> None:

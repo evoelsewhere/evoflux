@@ -21,12 +21,10 @@ from typing import Any
 
 from loguru import logger
 
-from app.core.config import settings
-from app.plugin_platform.previews import (
-    DOCUMENT_PREVIEW_CSP,
-    DocumentPreviewError,
-    DocumentPreviewProvider,
-    DocumentPreviewUnsupportedError,
+from app.agent.builtin_plugins.documents.rendering.xlsx_formula import (
+    FormulaEvaluation,
+    evaluate_workbook_formulas,
+    format_computed_value,
 )
 from app.agent.builtin_plugins.documents.preview_security import (
     cached_preview_is_valid,
@@ -35,6 +33,13 @@ from app.agent.builtin_plugins.documents.preview_security import (
     preflight_ooxml_package,
     prepare_preview_cache_directory,
 )
+from app.core.config import settings
+from app.plugin_platform.previews import (
+    DOCUMENT_PREVIEW_CSP,
+    DocumentPreviewError,
+    DocumentPreviewProvider,
+    DocumentPreviewUnsupportedError,
+)
 
 SUPPORTED_DOCUMENT_PREVIEW_EXTENSIONS = frozenset({".docx", ".xlsx", ".pptx", ".pdf"})
 MAX_DOCUMENT_PREVIEW_BYTES = 100 * 1024 * 1024
@@ -42,7 +47,7 @@ MAX_DOCUMENT_PREVIEW_HTML_BYTES = 36 * 1024 * 1024
 MAX_PDF_PREVIEW_PAGES = 80
 MAX_PDF_PREVIEW_RASTER_BYTES = 24 * 1024 * 1024
 MAX_PDF_PREVIEW_PIXELS_PER_PAGE = 10_000_000
-_CACHE_SCHEMA_VERSION = "evoflux-document-html-v13"
+_CACHE_SCHEMA_VERSION = "evoflux-document-html-v14"
 _render_locks = tuple(threading.Lock() for _ in range(32))
 
 
@@ -329,33 +334,22 @@ def _worksheet_bounds(sheet: Any) -> tuple[int, int]:
     return max_row, max_column
 
 
-def _display_cell(cell: Any) -> str:
+def _display_cell(
+    cell: Any,
+    *,
+    evaluation: FormulaEvaluation | None = None,
+    sheet_name: str | None = None,
+) -> str:
     value = cell.value
     if value is None:
         return ""
     if cell.data_type == "f":
-        formula = str(value)
-        return formula if formula.startswith("=") else f"={formula}"
-    if getattr(cell, "is_date", False) and hasattr(value, "strftime"):
-        return value.strftime("%Y-%m-%d")
-    number_format = str(getattr(cell, "number_format", "") or "")
-    if isinstance(value, (int, float)):
-        if "%" in number_format:
-            decimals = 0
-            if "." in number_format:
-                decimals = len(number_format.split(".", 1)[1].split("%", 1)[0])
-            return f"{value * 100:.{decimals}f}%"
-        currency = next(
-            (symbol for symbol in ("$", "€", "£", "¥") if symbol in number_format),
-            None,
+        value = (
+            evaluation.display_value(sheet_name, cell.coordinate, "#N/A")
+            if evaluation is not None and sheet_name is not None
+            else "#N/A"
         )
-        if currency:
-            decimals = 2 if ".00" in number_format else 0
-            return f"{currency}{value:,.{decimals}f}"
-        if "," in number_format:
-            decimals = 2 if ".00" in number_format else 0
-            return f"{value:,.{decimals}f}"
-    return str(value)
+    return format_computed_value(value, str(getattr(cell, "number_format", "") or ""))
 
 
 def _border_css(side: Any, name: str) -> str | None:
@@ -367,7 +361,11 @@ def _border_css(side: Any, name: str) -> str | None:
     return f"border-{name}:{width} {line} {color}"
 
 
-def _xlsx_series_values(workbook: Any, series: Any) -> list[float]:
+def _xlsx_series_values(
+    workbook: Any,
+    series: Any,
+    evaluation: FormulaEvaluation | None = None,
+) -> list[float]:
     """Resolve a chart series from its cached values or workbook cell range."""
     from openpyxl.utils.cell import range_boundaries
 
@@ -403,13 +401,22 @@ def _xlsx_series_values(workbook: Any, series: Any) -> list[float]:
     ):
         for cell in row:
             try:
-                values.append(float(cell.value or 0))
+                value = (
+                    evaluation.display_value(sheet_name, cell.coordinate, 0)
+                    if evaluation is not None
+                    else cell.value
+                )
+                values.append(float(value or 0))
             except (TypeError, ValueError):
                 values.append(0.0)
     return values
 
 
-def _xlsx_category_values(workbook: Any, series: Any) -> list[str]:
+def _xlsx_category_values(
+    workbook: Any,
+    series: Any,
+    evaluation: FormulaEvaluation | None = None,
+) -> list[str]:
     """Resolve chart category labels from a worksheet reference."""
     from openpyxl.utils.cell import range_boundaries
 
@@ -428,25 +435,34 @@ def _xlsx_category_values(workbook: Any, series: Any) -> list[str]:
         return []
     min_column, min_row, max_column, max_row = range_boundaries(cell_range)
     sheet = workbook[sheet_name]
-    return [
-        str(cell.value or "")
-        for row in sheet.iter_rows(
-            min_row=min_row,
-            max_row=max_row,
-            min_col=min_column,
-            max_col=max_column,
-        )
-        for cell in row
-    ]
+    values: list[str] = []
+    for row in sheet.iter_rows(
+        min_row=min_row,
+        max_row=max_row,
+        min_col=min_column,
+        max_col=max_column,
+    ):
+        for cell in row:
+            value = (
+                evaluation.display_value(sheet_name, cell.coordinate, "")
+                if evaluation is not None
+                else cell.value
+            )
+            values.append(str(value or ""))
+    return values
 
 
-def _xlsx_chart_svg(workbook: Any, chart: Any) -> str:
+def _xlsx_chart_svg(
+    workbook: Any,
+    chart: Any,
+    evaluation: FormulaEvaluation | None = None,
+) -> str:
     """Render common workbook charts as a deterministic SVG preview."""
     palette = ("#2563eb", "#0f766e", "#f59e0b", "#dc2626", "#7c3aed")
     series_values = [
         values
         for series in chart.ser
-        if (values := _xlsx_series_values(workbook, series))
+        if (values := _xlsx_series_values(workbook, series, evaluation))
     ]
     if not series_values:
         return '<div class="chart-empty">Chart data unavailable</div>'
@@ -457,7 +473,9 @@ def _xlsx_chart_svg(workbook: Any, chart: Any) -> str:
     maximum = maximum or 1
     count = max(len(values) for values in series_values)
     chart_type = type(chart).__name__.upper()
-    categories = _xlsx_category_values(workbook, chart.ser[0]) if chart.ser else []
+    categories = (
+        _xlsx_category_values(workbook, chart.ser[0], evaluation) if chart.ser else []
+    )
 
     def category_labels() -> str:
         if not categories:
@@ -612,6 +630,7 @@ def _render_xlsx(source: Path) -> str:
     from openpyxl.utils import get_column_letter
 
     workbook = load_workbook(source, data_only=False, read_only=False)
+    evaluation = evaluate_workbook_formulas(workbook)
     sections: list[str] = []
     for sheet in workbook.worksheets:
         max_row, max_column = _worksheet_bounds(sheet)
@@ -681,12 +700,24 @@ def _render_xlsx(source: Path) -> str:
                     if border:
                         styles.append(border)
                 style_attr = f' style="{";".join(styles)}"' if styles else ""
-                value = html.escape(_display_cell(cell))
+                value = html.escape(
+                    _display_cell(
+                        cell,
+                        evaluation=evaluation,
+                        sheet_name=sheet.title,
+                    )
+                )
                 formula_class = " formula" if cell.data_type == "f" else ""
+                formula_attr = ""
+                if cell.data_type == "f":
+                    formula = str(cell.value or "")
+                    if not formula.startswith("="):
+                        formula = f"={formula}"
+                    formula_attr = f' data-formula="{html.escape(formula, quote=True)}"'
                 cells.append(
                     f'<td class="cell{formula_class}" data-cell="{cell.coordinate}" '
                     f'data-qa-label="{html.escape(cell.coordinate, quote=True)}"'
-                    f"{spans}{style_attr}>{value}</td>"
+                    f"{formula_attr}{spans}{style_attr}>{value}</td>"
                 )
             rows.append(f'<tr style="height:{row_height:.2f}px">{"".join(cells)}</tr>')
         truncated = sheet.max_row > max_row or sheet.max_column > max_column
@@ -718,7 +749,7 @@ def _render_xlsx(source: Path) -> str:
                 f'style="left:{left:.2f}px;top:{top:.2f}px;'
                 f'width:{width:.2f}px;height:{height:.2f}px">'
                 f"<figcaption>{html.escape(title)}</figcaption>"
-                f"{_xlsx_chart_svg(workbook, chart)}</figure>"
+                f"{_xlsx_chart_svg(workbook, chart, evaluation)}</figure>"
             )
         for image_index, image in enumerate(sheet._images, start=1):
             left, top, width, height = _xlsx_anchor_box(sheet, image)
@@ -2620,11 +2651,13 @@ def _chart_scale(
             axis = chart.value_axis
         except (AttributeError, TypeError, ValueError):
             axis = None
-    try:
-        explicit_lower = axis.minimum_scale
-        explicit_upper = axis.maximum_scale
-    except (AttributeError, TypeError, ValueError):
-        explicit_lower = explicit_upper = None
+    explicit_lower = explicit_upper = None
+    if axis is not None:
+        try:
+            explicit_lower = axis.minimum_scale
+            explicit_upper = axis.maximum_scale
+        except (AttributeError, TypeError, ValueError):
+            pass
 
     lower = float(explicit_lower) if explicit_lower is not None else data_lower
     upper = float(explicit_upper) if explicit_upper is not None else data_upper
@@ -2858,9 +2891,7 @@ def _chart_series_name(series: Any, index: int) -> str:
     # the equally valid literal form emitted by some OOXML producers:
     # <c:tx><c:v>Series name</c:v></c:tx>.
     try:
-        value_nodes = series._ser.xpath(
-            "./*[local-name()='tx']//*[local-name()='v']"
-        )
+        value_nodes = series._ser.xpath("./*[local-name()='tx']//*[local-name()='v']")
     except (AttributeError, TypeError, ValueError):
         return fallback
     for value_node in value_nodes:

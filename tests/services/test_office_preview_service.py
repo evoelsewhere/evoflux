@@ -573,7 +573,8 @@ def test_render_xlsx_preview(monkeypatch, tmp_path):
 
     assert "Summary" in rendered
     assert "Revenue" in rendered
-    assert "=B1*2" in rendered
+    assert 'data-formula="=B1*2"' in rendered
+    assert ">240</td>" in rendered
     assert "==B1*2" not in rendered
     assert 'data-cell="A1"' in rendered
 
