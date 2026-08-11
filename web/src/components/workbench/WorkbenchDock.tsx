@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Maximize2, Minimize2, Plus, X } from 'lucide-react'
+import { Maximize2, Menu, Minimize2, Plus, X } from 'lucide-react'
 import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { staggerDelay, useMotionPreset } from '@/lib/motion'
@@ -27,6 +27,8 @@ import {
 interface WorkbenchDockProps extends WorkbenchContext {
   children: ReactNode
   className?: string
+  /** Opens responsive navigation while the Workbench occupies the canvas. */
+  onOpenSidebar?: () => void
 }
 
 /**
@@ -40,6 +42,7 @@ export function WorkbenchDock({
   mode,
   sessionId,
   workspace,
+  onOpenSidebar,
 }: WorkbenchDockProps) {
   const open = useUIStore((state) => state.workbenchOpen)
   const tabs = useUIStore((state) => state.workbenchTabs)
@@ -109,6 +112,20 @@ export function WorkbenchDock({
       <motion.header
         className="flex h-11 shrink-0 items-center gap-1 px-2"
       >
+        {maximized && onOpenSidebar && (
+          <motion.button
+            type="button"
+            onClick={onOpenSidebar}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.92 }}
+            transition={motionPreset.spring}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+            aria-label="Open navigation"
+            title="Open navigation"
+          >
+            <Menu size={15} />
+          </motion.button>
+        )}
         <motion.div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
           <AnimatePresence initial={false}>
           {tabs.map((tab) => {

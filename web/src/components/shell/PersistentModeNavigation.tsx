@@ -24,11 +24,12 @@ export function PersistentModeNavigation() {
   const { isMacOverlay } = usePlatform()
   const motionPreset = useMotionPreset()
   const collapsed = useUIStore((state) => state.sidebarCollapsed)
+  const sidebarOverlay = useUIStore((state) => state.sidebarOverlay)
   const sidebarWidth = useUIStore((state) => state.sidebarWidth)
   const settingsOpen = useUIStore((state) => state.settingsOpen)
   const active: AppMode | null = appModeForPath(location.pathname)
 
-  if (!active || settingsOpen) return null
+  if (!active || settingsOpen || sidebarOverlay) return null
 
   const shellWidth = collapsed ? (isMacOverlay ? 70 : 56) : sidebarWidth
   const transitionDuration = DURATIONS.base * motionPreset.scale

@@ -1,10 +1,10 @@
 /**
  * MultiRepoFileTree — file browser for CodingProject sessions.
  *
- * Mirrors DiffReviewPanel's per-repo grouping: one collapsible section per
- * project repo, each with its own file tree. Exists because the Files tab
- * previously fell back to the session's single primary workspace even in
- * project mode, silently showing only one of the project's repos.
+ * Presents every project repository as a top-level folder in one continuous
+ * tree. Exists because the Files tab previously fell back to the session's
+ * single primary workspace even in project mode, silently showing only one of
+ * the project's repos.
  */
 
 import { useState } from 'react'
@@ -80,7 +80,7 @@ export function MultiRepoFileTree({
   }
 
   return (
-    <div className={cn('flex flex-col gap-2', className)}>
+    <div className={cn('flex flex-col', className)}>
       {project.workspaces.map((w, i) => {
         const files = filesQueries[i]
         const diff = diffQueries[i]
@@ -99,11 +99,11 @@ export function MultiRepoFileTree({
         const name = w.display_name || w.name || repoLabel(w.path)
 
         return (
-          <div key={w.workspace_id} className="overflow-hidden rounded-md border border-(--color-border)">
+          <div key={w.workspace_id}>
             <button
               type="button"
               onClick={() => toggleCollapsed(w.path)}
-              className="flex w-full items-center gap-2 border-b border-(--color-border) bg-(--bg-subtle) px-3 py-1.5 text-left"
+              className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs text-(--color-text) hover:bg-(--bg-key)"
               aria-expanded={!isCollapsed}
             >
               {isCollapsed ? (
@@ -131,26 +131,29 @@ export function MultiRepoFileTree({
               )}
             </button>
             {!isCollapsed && (
-              <div className="p-2">
+              <div>
                 {files.isLoading ? (
-                  <p className="px-2 py-2 text-xs text-(--color-text-subtle)">Loading files…</p>
+                  <p className="py-2 pl-8 pr-2 text-xs text-(--color-text-subtle)">Loading files…</p>
                 ) : files.isError ? (
-                  <p className="px-2 py-2 text-xs text-(--color-error)">Failed to load files</p>
+                  <p className="py-2 pl-8 pr-2 text-xs text-(--color-error)">Failed to load files</p>
                 ) : visibleFiles.length === 0 ? (
-                  <p className="px-2 py-2 text-xs text-(--color-text-subtle)">
+                  <p className="py-2 pl-8 pr-2 text-xs text-(--color-text-subtle)">
                     {normalizedQuery ? 'No matching files' : 'No files'}
                   </p>
                 ) : (
-                  <TreeNodeView
-                    node={tree}
-                    depth={0}
-                    selectedPath={selectedFilePath}
-                    selectedSourceWorkspace={selectedSourceWorkspace}
-                    onFileSelect={onFileSelect}
-                    onFileOpen={onFileOpen}
-                    changedPaths={changedPaths}
-                    forceOpen={Boolean(normalizedQuery)}
-                  />
+                  Array.from(tree.children.values()).map((node) => (
+                    <TreeNodeView
+                      key={node.path}
+                      node={node}
+                      depth={1}
+                      selectedPath={selectedFilePath}
+                      selectedSourceWorkspace={selectedSourceWorkspace}
+                      onFileSelect={onFileSelect}
+                      onFileOpen={onFileOpen}
+                      changedPaths={changedPaths}
+                      forceOpen={Boolean(normalizedQuery)}
+                    />
+                  ))
                 )}
               </div>
             )}

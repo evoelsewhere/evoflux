@@ -218,6 +218,8 @@ interface UIStore {
   pullRequestsScope: PullRequestsScope
   gitWorkspaceView: GitWorkspaceView
   sidebarCollapsed: boolean
+  /** Transient responsive mode; unlike collapse/width this is not persisted. */
+  sidebarOverlay: boolean
   sidebarResizing: boolean
   sidebarWidth: number
   settingsOpen: boolean
@@ -262,6 +264,7 @@ interface UIStore {
   closeTerminal: () => void
   toggleSidebarCollapsed: () => void
   setSidebarCollapsed: (collapsed: boolean) => void
+  setSidebarOverlay: (overlay: boolean) => void
   setSidebarResizing: (resizing: boolean) => void
   setSidebarWidth: (width: number) => void
   resetSidebarWidth: () => void
@@ -397,6 +400,7 @@ export const useUIStore = create<UIStore>()(
     closeBrowser: () => set((state) => { closeTool(state, 'browser') }),
     closeTerminal: () => set((state) => { closeTool(state, 'terminal') }),
     sidebarCollapsed: loadSidebarCollapsed(),
+    sidebarOverlay: false,
     sidebarResizing: false,
     sidebarWidth: loadSidebarWidth(),
     toggleSidebarCollapsed: () => set((state) => {
@@ -406,6 +410,9 @@ export const useUIStore = create<UIStore>()(
     setSidebarCollapsed: (collapsed) => set((state) => {
       state.sidebarCollapsed = collapsed
       persistSidebarCollapsed(collapsed)
+    }),
+    setSidebarOverlay: (overlay) => set((state) => {
+      state.sidebarOverlay = overlay
     }),
     setSidebarResizing: (resizing) => set((state) => {
       state.sidebarResizing = resizing

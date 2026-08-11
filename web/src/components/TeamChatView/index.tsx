@@ -90,8 +90,13 @@ import { useMobileEdgeSwipes } from './useMobileEdgeSwipes'
 import { VIEW_MODES, type ViewMode } from './types'
 import { shouldStartAutomaticSplit } from './auto-layout'
 import { AutomaticSplitTransition } from './AutomaticSplitTransition'
-import { useAutoCollapseSidebar } from './useAutoCollapseSidebar'
+import { useAdaptiveSidebarOverlay } from './useAdaptiveSidebarOverlay'
 import { codingFocusId, saveLastCodingWorkspace, workspaceLabel } from '@/utils/workspace'
+import {
+  shouldClearFilesEditor,
+  shouldShowStandaloneEditor,
+  type CodingFileViewerHost,
+} from '@/utils/codingFileViewer'
 import { setTraySession } from '@/lib/tray'
 import { queryKeys } from '@/queries/keys'
 import {
@@ -300,6 +305,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const inputRef = useRef<InputBarHandle>(null)
   const mainColumnRef = useRef<HTMLDivElement>(null)
   const [codingFileViewer, setCodingFileViewer] = useState<WorkspaceFileInfo | null>(null)
+  const [codingFileViewerHost, setCodingFileViewerHost] = useState<CodingFileViewerHost>(null)
   const [codingFileViewerMode, setCodingFileViewerMode] = useState<'file' | 'diff' | 'preview'>('file')
   const [openWorkspaceDialogKey, setOpenWorkspaceDialogKey] = useState(0)
   const [codingWorkspacePickerPortal, setCodingWorkspacePickerPortal] = useState<HTMLDivElement | null>(null)
@@ -373,6 +379,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   }, [isMobile])
   useEffect(() => {
     setCodingFileViewer(null)
+    setCodingFileViewerHost(null)
   }, [workspace])
 
   const sendMessage    = useTeamStore((s) => s.sendMessage)
@@ -440,6 +447,14 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const previousWorkbenchSessionRef = useRef(sessionIdState)
 
   useEffect(() => {
+    const hasFilesTab = workbenchTabs.some((tab) => tab.tool === 'files')
+    if (!shouldClearFilesEditor(codingFileViewerHost, workbenchOpen, hasFilesTab)) return
+    setCodingFileViewer(null)
+    setCodingFileViewerHost(null)
+    setCodingFileViewerMode('file')
+  }, [codingFileViewerHost, workbenchOpen, workbenchTabs])
+
+  useEffect(() => {
     if (previousWorkbenchSessionRef.current !== sessionIdState) {
       closeWorkbenchTool('terminal')
       closeWorkbenchTool('browser')
@@ -498,7 +513,17 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
 
   // The Workbench writes its width directly to the DOM while dragging, so
   // observe the resulting conversation width instead of waiting for pointer-up.
-  useAutoCollapseSidebar({ mainColumnRef, workbenchOpen, isMobile })
+  // Responsive drawer mode is transient and leaves the persisted sidebar
+  // collapse preference untouched.
+  const sidebarOverlay = useAdaptiveSidebarOverlay({
+    mainColumnRef,
+    workbenchOpen,
+    isMobile,
+    macOverlay: isMacOverlay,
+  })
+  useEffect(() => {
+    setMobileSidebarOpen(false)
+  }, [sidebarOverlay])
 
   // Finalized blocks update on turn boundaries and feed composer history.
   // The hot `currentBlocks` array is intentionally subscribed inside
@@ -897,13 +922,16 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   }, [sessionIdState])
 
   const handleCodingSidebarToggle = useCallback(() => {
-    if (isMobile) {
-      setCodingFileViewer(null)
+    if (isMobile || sidebarOverlay) {
+      if (isMobile) {
+        setCodingFileViewer(null)
+        setCodingFileViewerHost(null)
+      }
       setMobileSidebarOpen((value) => !value)
       return
     }
     toggleSidebarCollapsed()
-  }, [isMobile, toggleSidebarCollapsed])
+  }, [isMobile, sidebarOverlay, toggleSidebarCollapsed])
 
   const handleOpenWorkspaceDialog = useCallback(() => {
     setSidebarCollapsed(false)
@@ -1083,6 +1111,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
 
   const handleCodingFileSelect = useCallback((file: WorkspaceFileInfo | null) => {
     setCodingFileViewer(file)
+    setCodingFileViewerHost(file ? 'files' : null)
     setCodingFileViewerMode('file')
   }, [])
 
@@ -1221,6 +1250,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const closeCodingPanels = useCallback(() => {
     closeWorkbenchTool('files')
     setCodingFileViewer(null)
+    setCodingFileViewerHost(null)
   }, [closeWorkbenchTool])
 
   const { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel } = useMobileEdgeSwipes({
@@ -1275,7 +1305,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
 
   // One sidebar instance per mode — the inactive mode's sidebar (and its
   // queries) stays unmounted instead of being CSS-hidden.
-  const desktopSidebar = !isMobile
+  const desktopSidebar = !isMobile && !sidebarOverlay
     ? mode === 'coding'
       ? (
         <CodingSidebar
@@ -1299,9 +1329,9 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         />
       )
     : null
-  // On mobile the sidebar is a position:fixed overlay drawer; AppShell
-  // renders it inside the body row for z-stacking, as before.
-  const mobileSidebar = isMobile
+  // Mobile and constrained desktop layouts share the same fixed left drawer.
+  // AppShell renders it inside the body row for predictable z-stacking.
+  const mobileSidebar = isMobile || sidebarOverlay
     ? mode === 'coding'
       ? (
         <CodingSidebar
@@ -1312,6 +1342,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           onCommandPalette={() => setShowPalette(true)}
           mobileOpen={mobileSidebarOpen}
           onMobileClose={() => setMobileSidebarOpen(false)}
+          drawerMode={sidebarOverlay}
         />
       )
       : (
@@ -1322,6 +1353,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           mode={mode}
           mobileOpen={mobileSidebarOpen}
           onMobileClose={() => setMobileSidebarOpen(false)}
+          drawerMode={sidebarOverlay}
         />
       )
     : null
@@ -1333,6 +1365,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         mode={mode}
         sessionId={sessionIdState}
         workspace={workspace}
+        onOpenSidebar={sidebarOverlay ? () => setMobileSidebarOpen(true) : undefined}
       >
       <Suspense fallback={<PanelLoadingFallback />}>
         {mode === 'coding' && workspace && (
@@ -1352,6 +1385,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                       mtime: 0,
                       mime: 'text/plain',
                     })
+                    setCodingFileViewerHost('standalone')
                     setCodingFileViewerMode('diff')
                   }}
                 />
@@ -1520,6 +1554,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
               mtime: 0,
               mime: 'text/plain',
             })
+            setCodingFileViewerHost('standalone')
             setCodingFileViewerMode('diff')
           }
         }}
@@ -1539,7 +1574,11 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         && !isMobile
         && !workbenchMaximized
         && codingFileViewer !== null
-        && !(workbenchOpen && activeWorkbenchTool === 'files')
+        && shouldShowStandaloneEditor(
+          codingFileViewerHost,
+          workbenchOpen,
+          activeWorkbenchTool,
+        )
         && (
         <Suspense fallback={<PanelLoadingFallback />}>
           <CodingFileViewerPanel
@@ -1554,6 +1593,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             onAddCodeToChat={handleAddCodeToChat}
             onClose={() => {
               setCodingFileViewer(null)
+              setCodingFileViewerHost(null)
               setCodingFileViewerMode('file')
             }}
           />
@@ -1668,6 +1708,8 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     <AppShell
       sidebar={desktopSidebar}
       mobileSidebar={mobileSidebar}
+      sidebarOverlay={sidebarOverlay}
+      onToggleSidebarOverlay={() => setMobileSidebarOpen((open) => !open)}
       trailing={trailingPanels}
       fullHeightTrailing={fullHeightTrailing}
       overlay={overlayPanels}
@@ -1683,6 +1725,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           dragHandlers={dragHandlers}
           isMacOverlay={isMacOverlay}
           isMobile={isMobile}
+          sidebarOverlay={sidebarOverlay}
           identity={codingIdentityLabel ?? activeAgent ?? sessionTitle ?? 'EvoFlux'}
           activeAgent={activeAgent}
           agentNames={agentNames}

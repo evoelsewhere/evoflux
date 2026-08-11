@@ -113,6 +113,8 @@ const TREE_WIDTH_MAX_RATIO = 0.42
 const PREVIEW_MIN_WIDTH = 520
 const TREE_DIVIDER_WIDTH = 8
 const SPLIT_MIN_WIDTH = PREVIEW_MIN_WIDTH + TREE_WIDTH_DEFAULT + TREE_DIVIDER_WIDTH
+const TREE_DEPTH_INDENT = 12
+const TREE_DISCLOSURE_SLOT = 18
 
 function readStoredWidth(key: string, fallback: number, min: number): number {
   try {
@@ -256,7 +258,7 @@ function TreeNodeView({
         {isRenaming ? (
           <div
             className="flex items-center gap-1.5 rounded px-2 py-1"
-            style={{ paddingLeft: 8 + depth * 12 }}
+            style={{ paddingLeft: 8 + depth * TREE_DEPTH_INDENT + TREE_DISCLOSURE_SLOT }}
           >
             <FileTypeIcon name={node.file!.name} mime={node.file!.mime} />
             <input
@@ -312,7 +314,7 @@ function TreeNodeView({
               ? 'bg-(--bg-key) text-(--color-accent)'
               : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
           )}
-          style={{ paddingLeft: 8 + depth * 12 }}
+          style={{ paddingLeft: 8 + depth * TREE_DEPTH_INDENT + TREE_DISCLOSURE_SLOT }}
           title={node.file.path}
         >
           <FileTypeIcon name={node.file.name} mime={node.file.mime} size={16} />
@@ -460,7 +462,7 @@ function TreeNodeView({
           'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs hover:bg-(--bg-key)',
           effectiveOpen ? 'text-(--color-text)' : 'text-(--color-text-2)',
         )}
-        style={{ paddingLeft: 8 + depth * 12 }}
+        style={{ paddingLeft: 8 + depth * TREE_DEPTH_INDENT }}
       >
         <ChevronRight
           size={12}
@@ -727,7 +729,7 @@ export function CopyContentsButton({
       disabled={busy || tooLarge}
       title={title}
       aria-label={title}
-      className="flex items-center gap-1 rounded px-2 py-1 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2) disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-(--color-text-muted)"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2) disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-(--color-text-muted)"
     >
       {copied ? (
         <Check size={12} className="text-(--color-success)" />
@@ -748,6 +750,9 @@ function PreviewArea({
   onOpen,
   onReveal,
   isDesktop,
+  fileTreeVisible = false,
+  onToggleFileTree,
+  onBackToTree,
 }: {
   sessionId: string
   file: WorkspaceFileInfo
@@ -756,6 +761,9 @@ function PreviewArea({
   onOpen: (file: WorkspaceFileInfo) => void
   onReveal: (file: WorkspaceFileInfo) => void
   isDesktop: boolean
+  fileTreeVisible?: boolean
+  onToggleFileTree?: () => void
+  onBackToTree?: () => void
 }) {
   const kind = workspaceFileKind(file)
   const extension = workspaceFileExtension(file.name)
@@ -763,70 +771,96 @@ function PreviewArea({
   const [htmlView, setHtmlView] = useState<'preview' | 'source'>('preview')
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <FileTypeIcon name={file.name} mime={file.mime} size={16} />
-            <div className="truncate font-mono text-xs text-(--color-text)">{file.path}</div>
-          </div>
-          <div className="mt-0.5 text-xs text-(--color-text-subtle)">
-            {formatBytes(file.size)} · {file.mime}
-          </div>
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-(--color-border) px-2">
+        {onBackToTree && (
+          <button
+            type="button"
+            onClick={onBackToTree}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+            aria-label="Back to file list"
+            title="Back to file list"
+          >
+            <ArrowLeft size={14} />
+          </button>
+        )}
+        <div
+          className="flex min-w-0 flex-1 items-baseline gap-1.5"
+          title={`${file.path} · ${formatBytes(file.size)} · ${file.mime}`}
+        >
+          <div className="truncate text-xs font-semibold text-(--color-text)">{file.path}</div>
+          <span className="shrink-0 text-[10px] text-(--color-text-subtle)">{formatBytes(file.size)}</span>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5">
           {isHtml && (
-            <div className="mr-1 flex rounded-md border border-(--color-border) p-0.5" aria-label="HTML view">
+            <div className="mr-0.5 flex rounded-md border border-(--color-border) p-0.5" role="group" aria-label="HTML view">
               <button
                 type="button"
                 onClick={() => setHtmlView('preview')}
+                title="Preview"
+                aria-label="Preview HTML"
                 className={cn(
-                  'flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors',
+                  'flex h-6 w-6 items-center justify-center rounded-xs transition-colors',
                   htmlView === 'preview'
                     ? 'bg-(--bg-key) text-(--color-text)'
                     : 'text-(--color-text-muted) hover:text-(--color-text-2)',
                 )}
                 aria-pressed={htmlView === 'preview'}
               >
-                <Eye size={11} />
-                Preview
+                <Eye size={12} />
               </button>
               <button
                 type="button"
                 onClick={() => setHtmlView('source')}
+                title="Source"
+                aria-label="View HTML source"
                 className={cn(
-                  'flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors',
+                  'flex h-6 w-6 items-center justify-center rounded-xs transition-colors',
                   htmlView === 'source'
                     ? 'bg-(--bg-key) text-(--color-text)'
                     : 'text-(--color-text-muted) hover:text-(--color-text-2)',
                 )}
                 aria-pressed={htmlView === 'source'}
               >
-                <Code2 size={11} />
-                Source
+                <Code2 size={12} />
               </button>
             </div>
           )}
           <button
             type="button"
             onClick={() => onOpen(file)}
-            className="flex items-center gap-1.5 rounded-md bg-(--bg-key) px-2.5 py-1 text-xs font-medium text-(--color-text) transition-colors hover:bg-(--bg-key-hover)"
+            className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
             title="Open in default app"
+            aria-label="Open in default app"
           >
-            <ExternalLink size={12} />
-            Open
+            <ExternalLink size={13} />
           </button>
           {isDesktop && workspaceRoot && (
             <button
               type="button"
               onClick={() => onReveal(file)}
-              className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+              className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
               title="Show file in folder"
               aria-label="Show file in folder"
             >
-              <LocateFixed size={12} />
+              <LocateFixed size={13} />
             </button>
           )}
           {kind === 'text' && <CopyContentsButton sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />}
+          {onToggleFileTree && (
+            <button
+              type="button"
+              onClick={onToggleFileTree}
+              className={cn(
+                'flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
+                fileTreeVisible && 'bg-(--bg-key) text-(--color-text)',
+              )}
+              title={fileTreeVisible ? 'Hide file tree' : 'Show file tree'}
+              aria-label={fileTreeVisible ? 'Hide file tree' : 'Show file tree'}
+              aria-pressed={fileTreeVisible}
+            >
+              {fileTreeVisible ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+            </button>
+          )}
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
@@ -1298,8 +1332,9 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
       ariaLabel="Workspace files"
       className="bg-(--bg-page)"
     >
-      {/* Header */}
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-3 py-2">
+      {/* Standalone/mobile panel header; embedded workbench already owns this chrome. */}
+      {!embedded && (
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-3 py-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {/* Mobile back button — only shown in preview pane */}
           {isSinglePane && mobilePane === 'preview' && (
@@ -1396,10 +1431,11 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
             <X size={16} />
           </button>
         </div>
-      </header>
+        </header>
+      )}
 
       {/* Workspace path bar + inline picker */}
-      {sessionId && (
+      {sessionId && (!embedded || isPickerOpen || uploadError) && (
         <div className="shrink-0 border-b border-(--color-border)">
           <div className="flex items-center gap-2 px-3 py-2">
             <button
@@ -1550,9 +1586,9 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
               </div>
             )}
             {/* Search bar */}
-            {sessionId && files.length > 0 && (
-              <div className="shrink-0 border-b border-(--color-border) px-2 py-1.5">
-                <div className="flex items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-card) px-2 py-1">
+            {sessionId && (files.length > 0 || embedded) && (
+              <div className="flex shrink-0 items-center gap-1 border-b border-(--color-border) px-2 py-1.5">
+                <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-card) px-2 py-1">
                   <Search size={12} className="shrink-0 text-(--color-text-subtle)" />
                   <input
                     ref={searchInputRef}
@@ -1573,6 +1609,73 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
                     </button>
                   )}
                 </div>
+                {embedded && isTauri && workspaceRoot && (
+                  <button
+                    type="button"
+                    onClick={() => void handleOpenWorkspace()}
+                    title="Open workspace folder"
+                    aria-label="Open workspace folder"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                  >
+                    <FolderOpen size={13} />
+                  </button>
+                )}
+                {embedded && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      disabled={!sessionId}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
+                      title="Workspace actions"
+                      aria-label="Workspace actions"
+                    >
+                      {isUploading ? <Loader2 size={13} className="animate-spin" /> : <MoreHorizontal size={13} />}
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-44">
+                      <DropdownMenuItem
+                        disabled={isUploading}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <Upload size={14} />
+                        Import files
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={isUploading}
+                        onClick={() => folderInputRef.current?.click()}
+                      >
+                        <FolderUp size={14} />
+                        Import folder
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => void openPicker()}>
+                        <Edit2 size={14} />
+                        Change workspace
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                {embedded && (
+                  <button
+                    type="button"
+                    onClick={() => refetch()}
+                    disabled={!sessionId || isFetching}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
+                    title="Refresh"
+                    aria-label="Refresh"
+                  >
+                    <RefreshCw size={13} className={isFetching ? 'animate-spin' : ''} />
+                  </button>
+                )}
+                {embedded && !isSinglePane && (
+                  <button
+                    type="button"
+                    onClick={toggleDesktopTree}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-(--bg-key) text-(--color-text) transition-colors hover:bg-(--bg-key-hover)"
+                    title="Hide file tree"
+                    aria-label="Hide file tree"
+                    aria-pressed={true}
+                  >
+                    <PanelRightClose size={14} />
+                  </button>
+                )}
               </div>
             )}
             <div className="min-h-0 flex-1 overflow-auto p-2">
@@ -1650,20 +1753,37 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
                 onOpen={(file) => void handleOpenFile(file)}
                 onReveal={(file) => void handleRevealFile(file)}
                 isDesktop={isTauri}
+                fileTreeVisible={showTree}
+                onToggleFileTree={embedded && !isSinglePane && !showTree ? toggleDesktopTree : undefined}
+                onBackToTree={embedded && isSinglePane ? handleBackToTree : undefined}
               />
             ) : (
-              <EmptyState
-                message="Select a file"
-                hint={isTauri
-                  ? 'Single-click to preview. Double-click to open with the default app.'
-                  : 'Single-click to preview. Double-click opens the debug media URL.'}
-              />
+              <div className="relative h-full">
+                {embedded && !isSinglePane && !showTree && (
+                  <button
+                    type="button"
+                    onClick={toggleDesktopTree}
+                    className="absolute right-2 top-2 z-(--z-panel) flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                    title="Show file tree"
+                    aria-label="Show file tree"
+                  >
+                    <PanelRightOpen size={14} />
+                  </button>
+                )}
+                <EmptyState
+                  message="Select a file"
+                  hint={isTauri
+                    ? 'Single-click to preview. Double-click to open with the default app.'
+                    : 'Single-click to preview. Double-click opens the debug media URL.'}
+                />
+              </div>
             )}
           </div>
         )}
       </div>
 
-      {/* Footer */}
+      {/* Standalone footer; the embedded tree already communicates its state. */}
+      {!embedded && (
       <div className="shrink-0 border-t border-(--color-border) px-4 py-2 text-xs text-(--color-text-muted) pb-safe">
         {files.length > 0 && (
           <span>
@@ -1680,6 +1800,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
             ? 'Select a file to preview'
             : 'Double-click a file to open it'}
       </div>
+      )}
 
       {/* Hidden file input for upload button */}
       <input
