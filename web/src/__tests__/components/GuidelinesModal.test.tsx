@@ -9,6 +9,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('@/hooks/use-platform', () => ({
+  getPlatform: () => ({ isTauri: false, os: 'unknown', isMacOverlay: false }),
   usePlatform: () => ({ isTauri: false, os: 'unknown', isMacOverlay: false }),
 }))
 

@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   disconnect: vi.fn(),
   sync: vi.fn(),
   approve: vi.fn(),
+  pull: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => ({
@@ -21,6 +22,7 @@ vi.mock('@/api/client', () => ({
   disconnectConductor: mocks.disconnect,
   syncConductor: mocks.sync,
   approveConductorResource: mocks.approve,
+  pullConductorResource: mocks.pull,
 }))
 
 const settings = {
@@ -80,6 +82,7 @@ describe('ConductorConnectionSettings', () => {
     mocks.disconnect.mockResolvedValue(disconnectedStatus)
     mocks.sync.mockResolvedValue(connectedStatus)
     mocks.approve.mockResolvedValue(undefined)
+    mocks.pull.mockResolvedValue(undefined)
   })
 
   it('validates the URL and evc_ token before connecting', async () => {
