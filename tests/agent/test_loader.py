@@ -239,9 +239,9 @@ def test_tier_tools_lead_only_and_tier_filters():
         assert name not in lead_normal
         assert name in lead_coding
 
-    # wiki_search belongs to the work tier only
-    assert "wiki_search" in lead_normal
-    assert "wiki_search" not in lead_coding
+    # Unified Memory recall is available in both modes.
+    assert "memory_search" in lead_normal
+    assert "memory_search" in lead_coding
 
     # Visual deliverables belong to Work, not Coding.
     for name in ("visualize_read_me", "show_widget"):
@@ -377,9 +377,9 @@ def test_build_agent_resolves_persisted_plugin_mcp_runtime(monkeypatch):
     monkeypatch.setattr(
         plugin_mcp_runtime,
         "get_tools_for_server",
-        lambda name: [jira_search]
-        if name == "plugin_installation_jira_deadbeef"
-        else None,
+        lambda name: (
+            [jira_search] if name == "plugin_installation_jira_deadbeef" else None
+        ),
     )
     monkeypatch.setattr(
         plugin_mcp_runtime,
@@ -883,7 +883,7 @@ def test_EVOFLUX_file_can_add_tools_and_skills(tmp_path):
                 "name": "EvoFlux",
                 "role": "lead",
                 "model": "zai:glm-5-turbo",
-                "tools": ["wiki_search"],
+                "tools": ["memory_search"],
                 "skills": ["custom-skill"],
             },
         ],
@@ -891,7 +891,7 @@ def test_EVOFLUX_file_can_add_tools_and_skills(tmp_path):
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory)
     assert team is not None
-    assert "wiki_search" in team.lead.agent._tools
+    assert "memory_search" in team.lead.agent._tools
     assert "shell" in team.lead.agent._tools
     assert team.lead.agent.skills == ["custom-skill"]
 
@@ -907,7 +907,7 @@ def test_EVOFLUX_builtin_and_user_capabilities_are_deduped(tmp_path):
                 "name": "EvoFlux",
                 "role": "lead",
                 "model": "zai:glm-5-turbo",
-                "tools": ["shell", "wiki_search"],
+                "tools": ["shell", "memory_search"],
                 "skills": ["self-healing", "custom-skill"],
             },
         ],
@@ -916,7 +916,7 @@ def test_EVOFLUX_builtin_and_user_capabilities_are_deduped(tmp_path):
     team = load_team_from_dir(d, provider_factory=factory)
     assert team is not None
     assert list(team.lead.agent._tools).count("shell") == 1
-    assert list(team.lead.agent._tools).count("wiki_search") == 1
+    assert list(team.lead.agent._tools).count("memory_search") == 1
     assert team.lead.agent.skills.count("self-healing") == 1
     assert team.lead.agent.skills.count("custom-skill") == 1
 
@@ -952,7 +952,7 @@ def test_builtin_member_profile_uses_code_defaults_with_extra(tmp_path):
             "name": "executor",
             "role": "member",
             "model": "zai:glm-5-turbo",
-            "tools": ["wiki_search"],
+            "tools": ["memory_search"],
         },
         "Prefer Markdown deliverables.",
     )
@@ -964,7 +964,7 @@ def test_builtin_member_profile_uses_code_defaults_with_extra(tmp_path):
     assert "## User extra prompt" in agent.system_prompt
     assert "Prefer Markdown deliverables." in agent.system_prompt
     assert "shell" in agent._tools
-    assert "wiki_search" in agent._tools
+    assert "memory_search" in agent._tools
 
 
 def test_builtin_member_profiles_are_curated_to_default_agents():

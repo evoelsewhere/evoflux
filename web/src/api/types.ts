@@ -785,17 +785,15 @@ export interface WikiTree {
   system: WikiFileInfo[]
   /** notes/ — raw note entries written by tools/agents. */
   notes: WikiFileInfo[]
-  /** imports/ — raw imported Memory v2 documents. */
+  /** imports/ — raw imported evidence. */
   imports: WikiFileInfo[]
-  /** wiki/ — Memory v2 curated and source-compiled pages. */
-  wiki: WikiFileInfo[]
-  /** topics/ — legacy concept pages (abstract ideas, techniques). */
+  /** topics/ — curated concepts, techniques, and project knowledge. */
   topics: WikiFileInfo[]
-  /** entities/ — legacy concrete things (people, tools, orgs, products). */
+  /** entities/ — curated people, tools, organisations, and products. */
   entities: WikiFileInfo[]
-  /** sources/ — legacy one-page summaries per ingested source. */
+  /** sources/ — curated summaries and provenance per ingested source. */
   sources: WikiFileInfo[]
-  /** comparisons/ — legacy X-vs-Y pages. */
+  /** comparisons/ — curated comparisons, trade-offs, and decisions. */
   comparisons: WikiFileInfo[]
 }
 

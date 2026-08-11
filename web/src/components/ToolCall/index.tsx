@@ -273,7 +273,7 @@ function toolActivityLabel(
     case 'webbridge': return target || 'Using browser'
     case 'web_search': return target ? `Searching ${target}` : 'Searching web'
     case 'web_fetch': return target ? `Reading ${target}` : 'Reading page'
-    case 'wiki_search': return target ? `Searching memory for ${target}` : 'Searching memory'
+    case 'memory_search': return target ? `Searching memory for ${target}` : 'Searching memory'
     case 'grep':
     case 'code_context': return target || 'Querying code context'
     case 'glob': return target || 'Scanning files'

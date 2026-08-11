@@ -47,7 +47,6 @@ class WikiTreeResponse(BaseModel):
     entities: list[WikiFileInfoResponse] = Field(default_factory=list)
     sources: list[WikiFileInfoResponse] = Field(default_factory=list)
     comparisons: list[WikiFileInfoResponse] = Field(default_factory=list)
-    wiki: list[WikiFileInfoResponse] = Field(default_factory=list)
     imports: list[WikiFileInfoResponse] = Field(default_factory=list)
 
 
@@ -98,7 +97,6 @@ async def get_wiki_tree(
         system=[_info(i) for i in tree.system],
         notes=[_info(i) for i in tree.notes],
         imports=[_info(i) for i in tree.imports],
-        wiki=[_info(i) for i in tree.wiki],
         topics=[_info(i) for i in tree.topics],
         entities=[_info(i) for i in tree.entities],
         sources=[_info(i) for i in tree.sources],

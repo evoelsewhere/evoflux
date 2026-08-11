@@ -45,7 +45,6 @@ _EXPORT_MODULES = {
     "image_search": "web",
     "web_fetch": "web",
     "web_search": "web",
-    "wiki_search": "wiki_search",
 }
 
 _SUBMODULES = {
@@ -111,6 +110,5 @@ __all__ = [
     "image_search",
     "web_fetch",
     "web_search",
-    "wiki_search",
     "write_file",
 ]

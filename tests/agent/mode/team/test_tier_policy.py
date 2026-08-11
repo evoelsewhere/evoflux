@@ -193,6 +193,7 @@ class TestDefaultDeferredTools:
             "get_goal",
             "load_tool",
             "ls",
+            "memory_search",
             "patch",
             "read",
             "shell",
@@ -205,7 +206,7 @@ class TestDefaultDeferredTools:
             granted = set(tier_tools(registry, mode=mode, role="lead"))
             granted.update({"skill", "todo_manage", "schedule_task", "note"})
             eager = {name for name in granted if not registry[name].deferred}
-            assert 10 <= len(eager) <= 16
+            assert 11 <= len(eager) <= 17
             expected = set(expected_core)
             if mode == "coding":
                 expected.add("code_context")
@@ -225,7 +226,7 @@ class TestDefaultDeferredTools:
         assert work_tools.isdisjoint(graph_tools)
         assert graph_tools <= set(tier_tools(registry, mode="coding", role="lead"))
 
-    def test_actual_coding_lead_payload_has_seventeen_eager_tools(self):
+    def test_actual_coding_lead_payload_includes_memory_search(self):
         from app.agent.builtin_prompts import tier_tools
         from app.agent.loader import _default_tool_registry
         from tests.agent.mode.team.conftest import MockTeamProvider
@@ -256,6 +257,7 @@ class TestDefaultDeferredTools:
             "get_goal",
             "load_tool",
             "ls",
+            "memory_search",
             "patch",
             "read",
             "shell",

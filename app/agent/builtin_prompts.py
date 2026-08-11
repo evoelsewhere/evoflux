@@ -155,7 +155,7 @@ Your mode is **rigorous analysis**. You receive a problem — design decision, a
 
 ### Phase 2 — Evidence gathering
 - **Read before reasoning.** Inspect every relevant source file, config, schema, and test. Never recommend based on a file you haven't read.
-- **Search memory and wiki first.** The team may have solved this before.
+- **Search Memory first.** The team may have solved this before.
 - **Measure, do not estimate.** Run actual benchmarks, count rows, profile call chains, and compute complexity on real input sizes. Present numbers, not adjectives.
 - **Fetch external evidence.** Check official docs, changelogs, CVE databases, and benchmark suites — not blog summaries.
 - **Question the evidence.** Note when a source is outdated, vendor-biased, or based on different constraints than yours.

@@ -1,4 +1,10 @@
-"""Memory v2 service — editable markdown memory plus deterministic search."""
+"""Unified search and recall over EvoFlux's durable Memory store.
+
+Dream writes curated knowledge to ``topics/``, ``entities/``, ``sources/``,
+and ``comparisons/``.  ``USER.md`` contains the durable user profile, while
+``notes/`` and ``imports/`` remain raw evidence.  This module is the single
+retrieval path used by both automatic prompt injection and ``memory_search``.
+"""
 
 from __future__ import annotations
 
@@ -7,57 +13,31 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from loguru import logger
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.chat import ChatSession, SessionMessage
 from app.services.wiki import (
-    INDEX_FILE,
-    LOG_FILE,
+    COMPARISONS_DIR,
+    ENTITIES_DIR,
+    IMPORTS_DIR,
     NOTES_DIR,
-    WikiFileContent,
-    WikiFileInfo,
-    WikiPathError,
+    SOURCES_DIR,
+    TOPICS_DIR,
+    USER_FILE,
     parse_frontmatter,
     wiki_root,
 )
 
-SCHEMA_FILE = "SCHEMA.md"
-IMPORTS_DIR = "imports"
-WIKI_DIR = "wiki"
-MEMORY_ROOT_FILES: tuple[str, ...] = (SCHEMA_FILE, INDEX_FILE, LOG_FILE)
-MEMORY_SUBDIRS: tuple[str, ...] = (NOTES_DIR, IMPORTS_DIR, WIKI_DIR)
 EXTRACTED_FACTS_MARKER = "evoflux-memory-facts:v1"
-_SEARCH_ROOT_FILES: tuple[str, ...] = (INDEX_FILE, SCHEMA_FILE, LOG_FILE)
-_SEARCH_DIRS: tuple[str, ...] = (WIKI_DIR, NOTES_DIR, IMPORTS_DIR)
-_TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
-
-DEFAULT_SCHEMA = """# Memory Schema\n\nDream maintains `wiki/*.md` from canonical raw sources.\n\nRules:\n- Keep `notes/` and `imports/` as raw sources; do not rewrite them.\n- Prefer updating existing `wiki/*.md` pages over creating duplicates.\n- Cite stable source refs such as `session:<uuid>`, `message:<uuid>`, `note:<file>#<entry>`, `import:<slug>`, and `wiki:<slug>`.\n- Do not store secrets, credentials, private keys, or temporary noise.\n- Respect explicit “do not remember this” requests.\n"""
-DEFAULT_SCHEMA = f"""# Memory Schema
-
-Dream maintains `wiki/*.md` from canonical raw sources.
-
-Rules:
-- Keep `notes/` and `imports/` as raw sources; do not rewrite them.
-- Do not copy unclassified raw source content into compiled wiki pages.
-- Promote facts only from notes marked `{EXTRACTED_FACTS_MARKER}` by the memory extractor.
-- Cite stable source refs such as `session:<uuid>`, `message:<uuid>`, `note:<file>#<entry>`, `import:<slug>`, and `wiki:<slug>`.
-- Do not store secrets, credentials, private keys, or temporary noise.
-- Respect explicit “do not remember this” requests.
-"""
-DEFAULT_INDEX = """# Memory Index\n\n- `SCHEMA.md` — maintainer rules and conventions.\n- `LOG.md` — chronological Dream activity.\n- `notes/` — raw user/agent notes.\n- `imports/` — raw imported documents.\n- `wiki/` — compiled memory pages.\n"""
-DEFAULT_LOG = (
-    """# Memory Log\n\nChronological append-only record of Dream memory activity.\n"""
+CURATED_MEMORY_DIRS: tuple[str, ...] = (
+    TOPICS_DIR,
+    ENTITIES_DIR,
+    SOURCES_DIR,
+    COMPARISONS_DIR,
 )
-
-
-@dataclass(frozen=True)
-class MemoryTree:
-    system: list[WikiFileInfo] = field(default_factory=list)
-    notes: list[WikiFileInfo] = field(default_factory=list)
-    imports: list[WikiFileInfo] = field(default_factory=list)
-    wiki: list[WikiFileInfo] = field(default_factory=list)
+RAW_MEMORY_DIRS: tuple[str, ...] = (NOTES_DIR, IMPORTS_DIR)
+_TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
 
 
 @dataclass(frozen=True)
@@ -70,17 +50,8 @@ class MemorySearchResult:
     diagnostics: dict[str, object] = field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class MemoryFact:
-    source_ref: str
-    path: str
-    section: str
-    text: str
-    citations: tuple[str, ...]
-    metadata: dict[str, object] = field(default_factory=dict)
-
-
 _SEARCH_STOPWORDS = {
+    # English query scaffolding.
     "a",
     "an",
     "and",
@@ -104,170 +75,40 @@ _SEARCH_STOPWORDS = {
     "which",
     "with",
     "you",
-}
-_CITATION_RE = re.compile(r"\[([^\]]+:[^\]]+)\]")
-_FACT_SECTIONS = {
-    "## Facts": "active",
-    "## Active facts": "active",
-    "## Current facts": "active",
-    "## Conflicts / stale candidates": "stale",
+    # Vietnamese query scaffolding.  Keep content-bearing words such as
+    # "muốn", "nhớ", and "quyết định" searchable.
+    "các",
+    "cho",
+    "của",
+    "đã",
+    "được",
+    "hãy",
+    "không",
+    "là",
+    "một",
+    "nào",
+    "những",
+    "thế",
+    "thì",
+    "tôi",
+    "trong",
+    "và",
+    "về",
+    "với",
 }
 
 
 def memory_root() -> Path:
-    """Return the memory root, currently backed by EVOFLUX_WIKI_DIR."""
+    """Return the canonical EvoFlux Memory root."""
     return wiki_root()
 
 
-def seed_memory() -> None:
-    """Create the memory v2 directory layout and default root files."""
-    root = memory_root()
-    for subdir in MEMORY_SUBDIRS:
-        (root / subdir).mkdir(parents=True, exist_ok=True)
-
-    defaults = {
-        SCHEMA_FILE: DEFAULT_SCHEMA,
-        INDEX_FILE: DEFAULT_INDEX,
-        LOG_FILE: DEFAULT_LOG,
-    }
-    created: list[str] = []
-    for filename, content in defaults.items():
-        path = root / filename
-        if not path.exists():
-            path.write_text(content, encoding="utf-8")
-            created.append(filename)
-    if created:
-        logger.info("memory_seeded root={} created={}", root, created)
-
-
-def validate_memory_path(rel_path: str) -> Path:
-    """Validate a memory v2 path and return its resolved absolute path."""
-    if not rel_path:
-        raise WikiPathError("Memory path must not be empty.")
-    if rel_path.startswith(("/", "~")):
-        raise WikiPathError(f"Memory path must be relative: {rel_path}")
-    if "\\" in rel_path:
-        raise WikiPathError(f"Memory path must use forward slashes: {rel_path}")
-
-    raw_parts = rel_path.split("/")
-    if any(part in ("", ".", "..") for part in raw_parts):
-        raise WikiPathError(
-            f"Memory path may not contain empty, '..', or '.': {rel_path}"
-        )
-    p = Path(rel_path)
-    if p.suffix != ".md":
-        raise WikiPathError(f"Memory files must be Markdown (.md): {rel_path}")
-
-    if len(p.parts) == 1:
-        if rel_path not in MEMORY_ROOT_FILES:
-            allowed = ", ".join(MEMORY_ROOT_FILES)
-            raise WikiPathError(f"Only {allowed} are valid at memory root: {rel_path}")
-    elif len(p.parts) == 2:
-        if p.parts[0] not in MEMORY_SUBDIRS:
-            allowed = ", ".join(MEMORY_SUBDIRS)
-            raise WikiPathError(
-                f"Memory subdir must be one of [{allowed}]: {p.parts[0]}"
-            )
-    else:
-        raise WikiPathError(f"Memory path too deep (max 2 components): {rel_path}")
-
-    root = memory_root()
-    resolved = (root / p).resolve()
-    try:
-        resolved.relative_to(root)
-    except ValueError as exc:
-        raise WikiPathError(f"Memory path escapes root: {rel_path}") from exc
-    return resolved
-
-
-def _file_info(rel_path: str, path: Path) -> WikiFileInfo:
-    try:
-        raw = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        logger.warning("memory_read_failed path={} error={}", rel_path, exc)
-        raw = ""
-    parsed = parse_frontmatter(raw)
-    return WikiFileInfo(
-        path=rel_path,
-        description=parsed.description,
-        updated=parsed.updated,
-        tags=parsed.tags,
-        confidence=parsed.confidence,
-        sources=parsed.sources,
-    )
-
-
-def _list_dir(subdir: str) -> list[WikiFileInfo]:
-    root = memory_root() / subdir
-    if not root.is_dir():
-        return []
-    return [
-        _file_info(f"{subdir}/{entry.name}", entry)
-        for entry in sorted(root.iterdir())
-        if entry.is_file() and entry.suffix == ".md"
-    ]
-
-
-def list_memory_tree() -> MemoryTree:
-    """Return the memory v2 tree grouped by system/raw/wiki buckets."""
-    root = memory_root()
-    system = [
-        _file_info(filename, root / filename)
-        for filename in MEMORY_ROOT_FILES
-        if (root / filename).is_file()
-    ]
-    return MemoryTree(
-        system=system,
-        notes=_list_dir(NOTES_DIR),
-        imports=_list_dir(IMPORTS_DIR),
-        wiki=_list_dir(WIKI_DIR),
-    )
-
-
-def read_memory_file(rel_path: str) -> WikiFileContent:
-    resolved = validate_memory_path(rel_path)
-    if not resolved.is_file():
-        raise FileNotFoundError(f"Memory file not found: {rel_path}")
-    raw = resolved.read_text(encoding="utf-8")
-    parsed = parse_frontmatter(raw)
-    return WikiFileContent(
-        path=rel_path,
-        content=raw,
-        description=parsed.description,
-        updated=parsed.updated,
-        tags=parsed.tags,
-        confidence=parsed.confidence,
-        sources=parsed.sources,
-    )
-
-
-def write_memory_file(rel_path: str, content: str) -> WikiFileContent:
-    resolved = validate_memory_path(rel_path)
-    parsed = parse_frontmatter(content)
-    resolved.parent.mkdir(parents=True, exist_ok=True)
-    resolved.write_text(content, encoding="utf-8")
-    logger.info(
-        "memory_file_written path={} bytes={}",
-        rel_path,
-        len(content.encode("utf-8")),
-    )
-    return WikiFileContent(
-        path=rel_path,
-        content=content,
-        description=parsed.description,
-        updated=parsed.updated,
-        tags=parsed.tags,
-        confidence=parsed.confidence,
-        sources=parsed.sources,
-    )
-
-
 def _tokens(text: str) -> list[str]:
-    return _TOKEN_RE.findall(text.lower())
+    return _TOKEN_RE.findall(text.casefold())
 
 
 def _normalize_token(token: str) -> str:
-    """Apply inflection cleanup without mapping words into domain concepts."""
+    """Apply conservative English inflection cleanup without concept mapping."""
     normalized = token.casefold()
     if len(normalized) > 4 and normalized.endswith("ies"):
         return normalized[:-3] + "y"
@@ -298,172 +139,9 @@ def _normalized_tokens(text: str) -> list[str]:
     return [_normalize_token(token) for token in _tokens(text)]
 
 
-def _frontmatter_metadata(text: str) -> dict[str, object]:
-    if not text.lstrip().startswith("---"):
-        return {}
-    match = re.match(r"^\s*---\r?\n(.*?)\r?\n---", text, re.DOTALL)
-    if not match:
-        return {}
-    try:
-        import yaml
-
-        data = yaml.safe_load(match.group(1)) or {}
-    except Exception:
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    topics: set[str] = set()
-    raw_topics = data.get("topics")
-    if isinstance(raw_topics, list):
-        topics = {
-            _normalize_token(str(topic).strip())
-            for topic in raw_topics
-            if str(topic).strip()
-        }
-    return {
-        "memory_kind": str(data.get("memory_kind", "")).strip().lower(),
-        "scope": str(data.get("scope", "")).strip().lower(),
-        "topics": topics,
-    }
-
-
-def _strip_frontmatter(text: str) -> str:
-    if not text.lstrip().startswith("---"):
-        return text
-    match = re.match(r"^\s*---\r?\n.*?\r?\n---\r?\n?", text, re.DOTALL)
-    return text[match.end() :] if match else text
-
-
-def _clean_fact_text(line: str) -> str:
-    text = line.strip().removeprefix("- ").strip()
-    text = re.sub(r"\bconfidence=\w+\b", " ", text, flags=re.IGNORECASE)
-    text = re.sub(r"\bfact_id=[a-z0-9-]+\b", " ", text, flags=re.IGNORECASE)
-    return " ".join(text.split())
-
-
-def extract_memory_facts(rel_path: str, text: str) -> list[MemoryFact]:
-    """Extract cited fact bullets from a compiled wiki page.
-
-    The contract is intentionally plain markdown: cited list items under a
-    `## Facts`-style section are active facts; cited list items under
-    `## Conflicts / stale candidates` are stale candidates. Other sections are
-    provenance/debug content and are not automatic-injection facts.
-    """
-    metadata = _frontmatter_metadata(text)
-    current_section: str | None = None
-    facts: list[MemoryFact] = []
-    for raw_line in _strip_frontmatter(text).splitlines():
-        stripped = raw_line.strip()
-        if stripped.startswith("## "):
-            current_section = _FACT_SECTIONS.get(stripped)
-            continue
-        if current_section is None or not stripped.startswith("- "):
-            continue
-        citations = tuple(sorted(set(_CITATION_RE.findall(stripped))))
-        if not citations:
-            continue
-        facts.append(
-            MemoryFact(
-                source_ref=f"{_source_ref_for_file(rel_path)}#fact-{len(facts) + 1}",
-                path=rel_path,
-                section=current_section,
-                text=_clean_fact_text(stripped),
-                citations=citations,
-                metadata=metadata,
-            )
-        )
-    return facts
-
-
-def _diagnose_file_result(
-    query: str,
-    query_tokens: set[str],
-    rel_path: str,
-    text: str,
-    base_score: float,
-) -> dict[str, object]:
-    text_tokens = set(_normalized_tokens(f"{rel_path}\n{text}"))
+def _scoring_tokens(query: str) -> set[str]:
     meaningful = _meaningful_query_tokens(query)
-    meaningful_text_tokens = _meaningful_query_tokens(f"{rel_path}\n{text}")
-    metadata = _frontmatter_metadata(text)
-    topics = metadata.get("topics")
-    topic_set = topics if isinstance(topics, set) else set()
-    matched_tokens = sorted(query_tokens & text_tokens)
-    meaningful_matched = sorted(meaningful & meaningful_text_tokens)
-    meaningful_missing = sorted(meaningful - meaningful_text_tokens)
-    topic_overlap = sorted(meaningful & topic_set)
-    query_count = len(meaningful)
-    return {
-        "base_score": base_score,
-        "matched_tokens": matched_tokens,
-        "missing_meaningful_tokens": meaningful_missing,
-        "matched_meaningful_tokens": meaningful_matched,
-        "memory_kind": metadata.get("memory_kind", ""),
-        "scope": metadata.get("scope", ""),
-        "topics": sorted(topic_set),
-        "topic_overlap": topic_overlap,
-        "query_token_count": query_count,
-        "evidence_token_count": len(meaningful_matched),
-        "query_coverage": (
-            len(meaningful_matched) / query_count if query_count else 0.0
-        ),
-    }
-
-
-def _diagnose_fact_result(
-    query: str,
-    query_tokens: set[str],
-    fact: MemoryFact,
-    base_score: float,
-) -> dict[str, object]:
-    text_tokens = set(_normalized_tokens(f"{fact.path}\n{fact.text}"))
-    meaningful = _meaningful_query_tokens(query)
-    meaningful_text_tokens = _meaningful_query_tokens(f"{fact.path}\n{fact.text}")
-    topics = fact.metadata.get("topics")
-    topic_set = topics if isinstance(topics, set) else set()
-    topic_overlap = sorted(meaningful & topic_set)
-    meaningful_matched = sorted(meaningful & meaningful_text_tokens)
-    query_count = len(meaningful)
-    return {
-        "base_score": base_score,
-        "matched_tokens": sorted(query_tokens & text_tokens),
-        "missing_meaningful_tokens": sorted(meaningful - meaningful_text_tokens),
-        "matched_meaningful_tokens": meaningful_matched,
-        "memory_kind": fact.metadata.get("memory_kind", ""),
-        "scope": fact.metadata.get("scope", ""),
-        "topics": sorted(topic_set),
-        "topic_overlap": topic_overlap,
-        "query_token_count": query_count,
-        "evidence_token_count": len(meaningful_matched),
-        "query_coverage": (
-            len(meaningful_matched) / query_count if query_count else 0.0
-        ),
-        "fact_section": fact.section,
-        "citations": list(fact.citations),
-    }
-
-
-def _reranked_file_score(score: float, diagnostics: dict[str, object]) -> float:
-    topic_overlap = diagnostics.get("topic_overlap")
-    coverage = diagnostics.get("query_coverage")
-    topic_bonus = 0.1 * len(topic_overlap) if isinstance(topic_overlap, list) else 0.0
-    coverage_bonus = 0.5 * coverage if isinstance(coverage, float) else 0.0
-    multiplier = 1.0 + topic_bonus + coverage_bonus
-    diagnostics["rerank_multiplier"] = multiplier
-    return score * multiplier
-
-
-def _has_sufficient_evidence(diagnostics: dict[str, object]) -> bool:
-    """Require lexical coverage without classifying semantic query intent."""
-    query_count = diagnostics.get("query_token_count")
-    evidence_count = diagnostics.get("evidence_token_count")
-    coverage = diagnostics.get("query_coverage")
-    if not isinstance(query_count, int) or not isinstance(evidence_count, int):
-        return False
-    if not isinstance(coverage, float) or query_count <= 0:
-        return False
-    required_count = 1 if query_count == 1 else 2
-    return evidence_count >= required_count and coverage >= 0.5
+    return meaningful or {_normalize_token(token) for token in _tokens(query)}
 
 
 def _score(query_tokens: set[str], text: str) -> float:
@@ -480,38 +158,141 @@ def _score(query_tokens: set[str], text: str) -> float:
     return (overlap * coverage) / math.log(len(tokens) + 10)
 
 
-def _scoring_tokens(query: str) -> set[str]:
-    """Return normalized non-stopword tokens used for memory scoring."""
+def _metadata(text: str) -> dict[str, object]:
+    parsed = parse_frontmatter(text)
+    return {
+        "description": parsed.description,
+        "tags": set(parsed.tags),
+        "confidence": parsed.confidence,
+        "sources": list(parsed.sources),
+        "body": parsed.body,
+    }
+
+
+def _diagnose_result(
+    query: str,
+    query_tokens: set[str],
+    rel_path: str,
+    text: str,
+    base_score: float,
+    *,
+    memory_scope: str,
+) -> dict[str, object]:
+    metadata = _metadata(text)
     meaningful = _meaningful_query_tokens(query)
-    return meaningful or set(_tokens(query))
+    searchable_text = f"{rel_path}\n{text}"
+    meaningful_text = _meaningful_query_tokens(searchable_text)
+    matched = sorted(meaningful & meaningful_text)
+    query_count = len(meaningful)
+    raw_tags = metadata["tags"]
+    tags: set[str] = (
+        {str(tag) for tag in raw_tags} if isinstance(raw_tags, set) else set()
+    )
+    normalized_tags = {_normalize_token(tag) for tag in tags}
+    path_tokens = set(_normalized_tokens(rel_path))
+    description_tokens = set(_normalized_tokens(str(metadata["description"])))
+    return {
+        "base_score": base_score,
+        "memory_scope": memory_scope,
+        "matched_tokens": sorted(
+            query_tokens & set(_normalized_tokens(searchable_text))
+        ),
+        "matched_meaningful_tokens": matched,
+        "missing_meaningful_tokens": sorted(meaningful - meaningful_text),
+        "query_token_count": query_count,
+        "evidence_token_count": len(matched),
+        "query_coverage": len(matched) / query_count if query_count else 0.0,
+        "path_overlap": sorted(meaningful & path_tokens),
+        "description_overlap": sorted(meaningful & description_tokens),
+        "tag_overlap": sorted(meaningful & normalized_tags),
+        "confidence": metadata["confidence"],
+        "sources": metadata["sources"],
+    }
+
+
+def _reranked_score(score: float, diagnostics: dict[str, object]) -> float:
+    path_overlap = diagnostics.get("path_overlap")
+    description_overlap = diagnostics.get("description_overlap")
+    tag_overlap = diagnostics.get("tag_overlap")
+    coverage = diagnostics.get("query_coverage")
+    multiplier = 1.0
+    if isinstance(path_overlap, list):
+        multiplier += 0.12 * len(path_overlap)
+    if isinstance(description_overlap, list):
+        multiplier += 0.15 * len(description_overlap)
+    if isinstance(tag_overlap, list):
+        multiplier += 0.2 * len(tag_overlap)
+    if isinstance(coverage, float):
+        multiplier += 0.5 * coverage
+    diagnostics["rerank_multiplier"] = multiplier
+    return score * multiplier
+
+
+def _has_sufficient_evidence(diagnostics: dict[str, object]) -> bool:
+    """Abstain when a page matches the subject but not the requested detail."""
+    query_count = diagnostics.get("query_token_count")
+    evidence_count = diagnostics.get("evidence_token_count")
+    coverage = diagnostics.get("query_coverage")
+    if not isinstance(query_count, int) or not isinstance(evidence_count, int):
+        return False
+    if not isinstance(coverage, float) or query_count <= 0:
+        return False
+    required_count = 1 if query_count <= 2 else 2
+    return evidence_count >= required_count and coverage >= 0.5
 
 
 def _excerpt(text: str, query_tokens: set[str], limit: int = 500) -> str:
-    clean = re.sub(r"\s+", " ", text).strip()
+    parsed = parse_frontmatter(text)
+    clean = re.sub(r"\s+", " ", parsed.body or text).strip()
     if len(clean) <= limit:
         return clean
-    lower = clean.lower()
-    positions = [lower.find(token) for token in query_tokens if lower.find(token) >= 0]
+    normalized = clean.casefold()
+    positions = [
+        normalized.find(token) for token in query_tokens if normalized.find(token) >= 0
+    ]
     start = max(min(positions) - 120, 0) if positions else 0
     end = min(start + limit, len(clean))
-    prefix = "…" if start > 0 else ""
-    suffix = "…" if end < len(clean) else ""
-    return f"{prefix}{clean[start:end]}{suffix}"
+    return f"{'…' if start else ''}{clean[start:end]}{'…' if end < len(clean) else ''}"
 
 
 def _source_ref_for_file(rel_path: str) -> str:
+    if rel_path == USER_FILE:
+        return "memory:user"
     path = Path(rel_path)
-    if rel_path == INDEX_FILE:
-        return "wiki:index"
-    if rel_path == SCHEMA_FILE:
-        return "wiki:schema"
-    if rel_path == LOG_FILE:
-        return "wiki:log"
-    if path.parts[0] == WIKI_DIR:
-        return f"wiki:{path.stem}"
-    if path.parts[0] == IMPORTS_DIR:
-        return f"import:{path.stem}"
-    return f"note:{path.name}"
+    namespace = {
+        TOPICS_DIR: "topic",
+        ENTITIES_DIR: "entity",
+        SOURCES_DIR: "source",
+        COMPARISONS_DIR: "comparison",
+        IMPORTS_DIR: "import",
+        NOTES_DIR: "note",
+    }.get(path.parts[0], "memory")
+    identifier = path.stem if namespace != "note" else path.name
+    return f"{namespace}:{identifier}"
+
+
+def _candidate_files(scope: str) -> list[tuple[str, Path, str]]:
+    if scope not in {"all", "curated"}:
+        raise ValueError(f"Unknown memory search scope: {scope}")
+    root = memory_root()
+    candidates: list[tuple[str, Path, str]] = []
+    user_path = root / USER_FILE
+    if user_path.is_file():
+        candidates.append((USER_FILE, user_path, "curated"))
+    directories = CURATED_MEMORY_DIRS
+    if scope == "all":
+        directories = (*directories, *RAW_MEMORY_DIRS)
+    for subdir in directories:
+        directory = root / subdir
+        if not directory.is_dir():
+            continue
+        item_scope = "raw" if subdir in RAW_MEMORY_DIRS else "curated"
+        candidates.extend(
+            (f"{subdir}/{entry.name}", entry, item_scope)
+            for entry in sorted(directory.iterdir())
+            if entry.is_file() and entry.suffix == ".md"
+        )
+    return candidates
 
 
 def search_memory_files(
@@ -522,33 +303,11 @@ def search_memory_files(
     rerank: bool = True,
     abstain_weak: bool = True,
 ) -> list[MemorySearchResult]:
-    """Search memory markdown files deterministically by token overlap."""
+    """Search canonical Memory pages and, optionally, raw evidence files."""
     limit = max(1, limit)
     query_tokens = _scoring_tokens(query)
-    root = memory_root()
-    candidates: list[tuple[str, Path]] = []
-
-    if scope not in {"all", "compiled"}:
-        raise ValueError(f"Unknown memory file search scope: {scope}")
-    if scope == "all":
-        candidates.extend((name, root / name) for name in _SEARCH_ROOT_FILES)
-        search_dirs = _SEARCH_DIRS
-    else:
-        search_dirs = (WIKI_DIR,)
-
-    for subdir in search_dirs:
-        dir_path = root / subdir
-        if dir_path.is_dir():
-            candidates.extend(
-                (f"{subdir}/{entry.name}", entry)
-                for entry in sorted(dir_path.iterdir())
-                if entry.is_file() and entry.suffix == ".md"
-            )
-
     results: list[MemorySearchResult] = []
-    for rel_path, path in candidates:
-        if not path.is_file():
-            continue
+    for rel_path, path, item_scope in _candidate_files(scope):
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
@@ -556,82 +315,56 @@ def search_memory_files(
         score = _score(query_tokens, f"{rel_path}\n{text}")
         if score <= 0:
             continue
-        diagnostics = _diagnose_file_result(query, query_tokens, rel_path, text, score)
+        diagnostics = _diagnose_result(
+            query,
+            query_tokens,
+            rel_path,
+            text,
+            score,
+            memory_scope=item_scope,
+        )
         if abstain_weak and not _has_sufficient_evidence(diagnostics):
             continue
-        final_score = _reranked_file_score(score, diagnostics) if rerank else score
+        final_score = _reranked_score(score, diagnostics) if rerank else score
+        parsed = parse_frontmatter(text)
         results.append(
             MemorySearchResult(
                 source_ref=_source_ref_for_file(rel_path),
                 path=rel_path,
-                title=rel_path,
+                title=parsed.description or rel_path,
                 excerpt=_excerpt(text, query_tokens),
                 score=final_score,
                 diagnostics=diagnostics,
             )
         )
-    return sorted(results, key=lambda r: (-r.score, r.source_ref))[:limit]
+    return sorted(results, key=lambda result: (-result.score, result.source_ref))[
+        :limit
+    ]
 
 
-def search_memory_facts(
+def search_curated_memory(
     query: str,
     *,
     limit: int = 8,
-    include_stale: bool = False,
     rerank: bool = True,
     abstain_weak: bool = True,
 ) -> list[MemorySearchResult]:
-    """Search cited fact bullets from compiled `wiki/*.md` pages."""
-    limit = max(1, limit)
-    query_tokens = _scoring_tokens(query)
-    wiki_dir = memory_root() / WIKI_DIR
-    if not wiki_dir.is_dir():
-        return []
-
-    results: list[MemorySearchResult] = []
-    for path in sorted(wiki_dir.iterdir()):
-        if not path.is_file() or path.suffix != ".md":
-            continue
-        rel_path = f"{WIKI_DIR}/{path.name}"
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        for fact in extract_memory_facts(rel_path, text):
-            if fact.section != "active" and not include_stale:
-                continue
-            score = _score(query_tokens, f"{fact.path}\n{fact.text}")
-            if score <= 0:
-                continue
-            diagnostics = _diagnose_fact_result(query, query_tokens, fact, score)
-            if abstain_weak and not _has_sufficient_evidence(diagnostics):
-                continue
-            final_score = _reranked_file_score(score, diagnostics) if rerank else score
-            if fact.section != "active":
-                final_score *= 0.25
-                multiplier = diagnostics.get("rerank_multiplier")
-                diagnostics["rerank_multiplier"] = (
-                    multiplier * 0.25 if isinstance(multiplier, float) else 0.25
-                )
-            results.append(
-                MemorySearchResult(
-                    source_ref=fact.source_ref,
-                    path=fact.path,
-                    title=f"{fact.path} {fact.section} fact",
-                    excerpt=fact.text,
-                    score=final_score,
-                    diagnostics=diagnostics,
-                )
-            )
-    return sorted(results, key=lambda r: (-r.score, r.source_ref))[:limit]
+    """Search only durable knowledge that is safe for automatic recall."""
+    return search_memory_files(
+        query,
+        limit=limit,
+        scope="curated",
+        rerank=rerank,
+        abstain_weak=abstain_weak,
+    )
 
 
 async def search_memory_messages(
     db: AsyncSession, query: str, *, limit: int = 5
 ) -> list[MemorySearchResult]:
-    """Search visible DB session messages deterministically by token overlap."""
+    """Search visible persisted chat messages as a raw-evidence fallback."""
     limit = max(1, limit)
-    query_tokens = set(_tokens(query))
+    query_tokens = _scoring_tokens(query)
     if not query_tokens:
         return []
     stmt = (
@@ -647,8 +380,7 @@ async def search_memory_messages(
     for message, session in rows:
         content = message.content or ""
         title = session.title or session.agent_name or str(session.id)
-        text = f"{title}\n{message.role}\n{content}"
-        score = _score(query_tokens, text)
+        score = _score(query_tokens, f"{title}\n{message.role}\n{content}")
         if score <= 0:
             continue
         results.append(
@@ -658,9 +390,12 @@ async def search_memory_messages(
                 title=f"{title} ({message.role})",
                 excerpt=_excerpt(content, query_tokens),
                 score=score,
+                diagnostics={"memory_scope": "raw"},
             )
         )
-    return sorted(results, key=lambda r: (-r.score, r.source_ref))[:limit]
+    return sorted(results, key=lambda result: (-result.score, result.source_ref))[
+        :limit
+    ]
 
 
 async def memory_search(
@@ -671,11 +406,30 @@ async def memory_search(
     rerank: bool = True,
     abstain_weak: bool = True,
 ) -> list[MemorySearchResult]:
-    """Search wiki, raw files, and optionally DB messages."""
+    """Search durable Memory, raw evidence files, and visible chat history."""
     limit = max(1, limit)
     results = search_memory_files(
-        query, limit=limit, rerank=rerank, abstain_weak=abstain_weak
+        query,
+        limit=limit,
+        scope="all",
+        rerank=rerank,
+        abstain_weak=abstain_weak,
     )
     if db is not None:
         results.extend(await search_memory_messages(db, query, limit=limit))
-    return sorted(results, key=lambda r: (-r.score, r.source_ref))[:limit]
+    return sorted(results, key=lambda result: (-result.score, result.source_ref))[
+        :limit
+    ]
+
+
+__all__ = [
+    "CURATED_MEMORY_DIRS",
+    "EXTRACTED_FACTS_MARKER",
+    "MemorySearchResult",
+    "RAW_MEMORY_DIRS",
+    "memory_root",
+    "memory_search",
+    "search_curated_memory",
+    "search_memory_files",
+    "search_memory_messages",
+]

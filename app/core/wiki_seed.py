@@ -1,7 +1,7 @@
 """First-boot seeder for the wiki directory.
 
-Creates ``{EVOFLUX_WIKI_DIR}/topics/``, ``{EVOFLUX_WIKI_DIR}/notes/``, and
-``{EVOFLUX_WIKI_DIR}/USER.md`` with a default template if missing.
+Creates the canonical curated and raw Memory directories under
+``{EVOFLUX_WIKI_DIR}``, plus ``USER.md`` with a default template if missing.
 
 Idempotent — existing files are never overwritten.
 Called from the FastAPI lifespan handler at startup.
@@ -11,10 +11,13 @@ from __future__ import annotations
 
 from loguru import logger
 
-from app.services.memory import IMPORTS_DIR, WIKI_DIR, seed_memory
 from app.services.wiki import (
+    COMPARISONS_DIR,
     DEFAULT_USER_FILE,
+    ENTITIES_DIR,
+    IMPORTS_DIR,
     NOTES_DIR,
+    SOURCES_DIR,
     TOPICS_DIR,
     USER_FILE,
     wiki_root,
@@ -24,9 +27,15 @@ from app.services.wiki import (
 def seed_wiki() -> None:
     """Create the wiki directory structure and default files if missing."""
     wiki = wiki_root()
-    for sub in (TOPICS_DIR, NOTES_DIR, IMPORTS_DIR, WIKI_DIR):
+    for sub in (
+        TOPICS_DIR,
+        ENTITIES_DIR,
+        SOURCES_DIR,
+        COMPARISONS_DIR,
+        NOTES_DIR,
+        IMPORTS_DIR,
+    ):
         (wiki / sub).mkdir(parents=True, exist_ok=True)
-    seed_memory()
 
     user_file = wiki / USER_FILE
     if not user_file.exists():

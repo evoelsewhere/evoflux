@@ -259,7 +259,7 @@ Pydantic models in `app/workflow/models.py` (definition) + `app/api/schemas/work
 
 ### 4.5 Full node palette — phase assignment
 
-All three tiers are **committed scope** (user direction), not a wishlist. Grounded in the builtin-tool inventory (`app/agent/tools/builtin/` — `web`, `browser_use_tool`, `memory_search`, `wiki_search`, `pr`, `worktree`, `date`, `lsp`, `preview`, `code_graph`, `todo`, plus the four anchors) and in patterns proven by n8n/Dify/ComfyUI-class builders.
+All three tiers are **committed scope** (user direction), not a wishlist. Grounded in the builtin-tool inventory (`app/agent/tools/builtin/` — `web`, `browser_use_tool`, `memory_search`, `pr`, `worktree`, `date`, `lsp`, `preview`, `code_graph`, `todo`, plus the four anchors) and in patterns proven by n8n/Dify/ComfyUI-class builders.
 
 | Tier | Node | `kind` | Phase | Cost / feasibility anchor |
 |---|---|---|---|---|

@@ -156,7 +156,6 @@ _SAFE_TOOLS: frozenset[str] = frozenset(
         "web_fetch",
         "image_search",
         "memory_search",
-        "wiki_search",
         "list_code_reviews",
         "get_code_review",
         "get_code_review_checks",

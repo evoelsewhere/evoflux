@@ -243,7 +243,7 @@ role: lead
 model: zai:glm-5-turbo
 tools:
   - shell
-  - wiki_search
+  - memory_search
 skills:
   - self-healing
   - custom-skill
@@ -259,7 +259,7 @@ Extra prompt.
     assert row["tools"].count("skill") == 1
     assert row["tools"].count("todo_manage") == 1
     assert row["tools"].count("shell") == 1
-    assert row["tools"].count("wiki_search") == 1
+    assert row["tools"].count("memory_search") == 1
     assert row["skills"].count("self-healing") == 1
     assert row["skills"].count("custom-skill") == 1
 
@@ -342,7 +342,7 @@ async def test_registry_returns_catalog(
     by_name = {t["name"]: t for t in body["tools"]}
     assert by_name["ask_user"]["lead_only"] is True
     assert by_name["read"]["lead_only"] is False
-    assert by_name["wiki_search"]["tiers"] == ["work"]
+    assert by_name["memory_search"]["tiers"] is None
     assert by_name["artifact"]["tiers"] == ["work"]
     assert {
         "docx_document",
