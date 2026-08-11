@@ -6,7 +6,7 @@ import asyncio
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 from uuid import UUID
 
 from loguru import logger
@@ -38,23 +38,17 @@ class ArtifactService:
         self._active_tasks: dict[UUID, asyncio.Task[Any]] = {}
 
     def catalog(self, artifact_format: ArtifactFormat | None = None) -> dict[str, Any]:
-        catalog = self.registry.catalog()
         if artifact_format is None:
-            return catalog
+            return self.registry.catalog()
         driver = self.registry.get(artifact_format)
+        catalog = self.registry.catalog()
         return {
             "schema_version": catalog["schema_version"],
             "workflow": catalog["workflow"],
             "actions": catalog["actions"],
             "invariants": catalog["invariants"],
             "format": artifact_format,
-            "driver": {
-                **driver.catalog(),
-                "extension": driver.extension,
-                "media_type": driver.media_type,
-                "driver_version": driver.version,
-                "protocol_version": driver.protocol_version,
-            },
+            "driver": catalog["formats"][driver.format],
         }
 
     async def execute(
@@ -70,7 +64,7 @@ class ArtifactService:
         session_id: str | None = None,
     ) -> dict[str, Any]:
         driver = self.registry.get(artifact_format)
-        lane = _lane(artifact_format, source_path)
+        lane = driver.lane(source_path)
         job = ArtifactJob(
             session_id=_session_uuid(session_id),
             artifact_format=artifact_format,
@@ -180,7 +174,7 @@ class ArtifactService:
         comment: str | None = None,
     ) -> dict[str, Any]:
         job, revision = await self._job_and_revision(job_id, revision_id)
-        driver = self.registry.get(cast(ArtifactFormat, job.artifact_format))
+        driver = self.registry.get(job.artifact_format)
         if destination.suffix.lower() != driver.extension:
             raise ValueError(
                 f"published {job.artifact_format} destination must end in {driver.extension}"
@@ -424,12 +418,6 @@ def _job_dict(job: ArtifactJob, revision: ArtifactRevision | None) -> dict[str, 
     else:
         value["revision"] = None
     return value
-
-
-def _lane(artifact_format: ArtifactFormat, source_path: Path | None) -> str:
-    if artifact_format == "pdf":
-        return "form" if source_path else "new"
-    return "template" if source_path else "new"
 
 
 def _session_uuid(value: str | None) -> UUID | None:

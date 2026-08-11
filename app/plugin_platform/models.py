@@ -159,7 +159,7 @@ class PluginInstallation(BaseModel):
     version: str | None = None
     description: str | None = None
     root: str
-    source_type: Literal["installed", "linked"]
+    source_type: Literal["builtin", "installed", "linked"]
     source_ref: str
     content_sha256: str
     enabled: bool = True

@@ -7,8 +7,8 @@ from typing import cast
 from openpyxl import load_workbook
 import pytest
 
-from app.services import xlsx_artifact_pipeline as pipeline
-from app.services.office.runtime import file_sha256
+from app.agent.builtin_plugins.documents.engines import xlsx as pipeline
+from app.agent.builtin_plugins.documents.rendering.runtime import file_sha256
 
 
 def _new_project() -> dict[str, object]:

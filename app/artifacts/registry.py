@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.artifacts.domain import ArtifactFormat
 from app.artifacts.drivers.base import ArtifactDriver
 
 
 class ArtifactDriverRegistry:
     def __init__(self) -> None:
-        self._drivers: dict[ArtifactFormat, ArtifactDriver] = {}
+        self._drivers: dict[str, ArtifactDriver] = {}
 
     def register(self, driver: ArtifactDriver) -> None:
         if driver.format in self._drivers:
@@ -21,7 +23,7 @@ class ArtifactDriverRegistry:
         except KeyError as exc:
             raise ValueError(f"unsupported artifact format: {artifact_format}") from exc
 
-    def catalog(self) -> dict[str, object]:
+    def catalog(self) -> dict[str, Any]:
         return {
             "schema_version": 1,
             "workflow": "immutable-native-document-revisions",
@@ -41,29 +43,45 @@ class ArtifactDriverRegistry:
                 "Jobs and revisions are durable and independent from the UI connection.",
             ],
             "formats": {
-                name: {
-                    **driver.catalog(),
-                    "extension": driver.extension,
-                    "media_type": driver.media_type,
-                    "driver_version": driver.version,
-                    "protocol_version": driver.protocol_version,
-                }
+                name: self._describe_driver(driver)
                 for name, driver in self._drivers.items()
             },
         }
 
+    @staticmethod
+    def _describe_driver(driver: ArtifactDriver) -> dict[str, Any]:
+        metadata: dict[str, Any]
+        try:
+            metadata = {**driver.catalog(), "available": True}
+        except ModuleNotFoundError as exc:
+            if driver.required_extra is None:
+                raise
+            metadata = {
+                "available": False,
+                "required_extra": driver.required_extra,
+                "unavailable_dependency": exc.name or "unknown",
+            }
+        return {
+            **metadata,
+            "extension": driver.extension,
+            "media_type": driver.media_type,
+            "driver_version": driver.version,
+            "protocol_version": driver.protocol_version,
+        }
+
 
 def build_default_registry() -> ArtifactDriverRegistry:
-    from app.artifacts.drivers.docx import DocxArtifactDriver
-    from app.artifacts.drivers.pdf import PdfArtifactDriver
-    from app.artifacts.drivers.pptx import PptxArtifactDriver
-    from app.artifacts.drivers.xlsx import XlsxArtifactDriver
+    from app.plugin_platform.native import iter_builtin_native_providers
 
     registry = ArtifactDriverRegistry()
-    registry.register(DocxArtifactDriver())
-    registry.register(XlsxArtifactDriver())
-    registry.register(PptxArtifactDriver())
-    registry.register(PdfArtifactDriver())
+    for plugin_name, provider in iter_builtin_native_providers("artifact_provider"):
+        drivers = provider()
+        if not isinstance(drivers, (list, tuple)):
+            raise TypeError(
+                f"artifact provider from {plugin_name} must return a sequence"
+            )
+        for driver in drivers:
+            registry.register(driver)
     return registry
 
 

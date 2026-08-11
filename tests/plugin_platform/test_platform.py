@@ -10,8 +10,11 @@ from pydantic import ValidationError
 
 from app.agent.skills.discovery import builtin_skills_dir
 from app.core.config import settings
+from app.core.skill_settings import skill_settings_id, write_skill_runtime_settings
+from app.plugin_platform.builtins import list_builtin_installations
 from app.plugin_platform.installer import (
     PluginInstallError,
+    create_plugin,
     install_plugin,
     link_plugin,
     pack_plugin,
@@ -25,14 +28,24 @@ from app.plugin_platform.models import (
     PLUGIN_SCHEMA_ID,
     PluginInstallation,
 )
-from app.plugin_platform.registry import list_installations, plugin_data_root
+from app.plugin_platform.registry import (
+    add_installation,
+    list_effective_installations,
+    list_installations,
+    plugin_data_root,
+    registry_path,
+    set_enabled,
+)
 from app.plugin_platform.runtime import (
     PluginMCPRuntime,
     _expand,
     _linked_tree_signature,
     build_plugin_mcp_config,
 )
-from app.plugin_platform.skills import discover_skill_records_with_plugins
+from app.plugin_platform.skills import (
+    discover_plugin_skill_records,
+    discover_skill_records_with_plugins,
+)
 from app.plugin_platform.validator import inspect_plugin
 from app.plugin_platform.workspace import list_workspace, write_workspace_file
 
@@ -301,6 +314,194 @@ def test_registry_rejects_unsafe_installation_ids() -> None:
             installed_at="2026-01-01T00:00:00+00:00",
             updated_at="2026-01-01T00:00:00+00:00",
         )
+
+
+def test_builtin_discovery_is_stable_and_effective_list_keeps_registry_managed_only(
+    isolated_platform: Path,
+) -> None:
+    list_builtin_installations.cache_clear()
+    first = list_builtin_installations()
+    list_builtin_installations.cache_clear()
+    second = list_builtin_installations()
+
+    assert [item.id for item in first] == ["7d76b6df28f0617022e8223d2dda5315"]
+    assert [item.model_dump(mode="json") for item in second] == [
+        item.model_dump(mode="json") for item in first
+    ]
+    builtin = first[0]
+    assert builtin.name == "evoflux.documents"
+    assert builtin.source_type == "builtin"
+    assert builtin.source_ref == "evoflux://builtin/documents"
+    assert builtin.enabled is True
+    assert Path(builtin.root).is_dir()
+    assert len(builtin.content_sha256) == 64
+
+    # Bundled records are virtual package metadata. They must not leak into the
+    # user-owned registry document or make an empty registry appear non-empty.
+    assert list_installations() == []
+    assert list_effective_installations() == [builtin]
+
+    managed_root = _plugin(isolated_platform / "managed-plugin")
+    managed = link_plugin(managed_root)
+
+    assert list_installations() == [managed]
+    assert {item.id for item in list_effective_installations()} == {
+        builtin.id,
+        managed.id,
+    }
+    assert {item.id for item in list_effective_installations(enabled_only=True)} == {
+        builtin.id,
+        managed.id,
+    }
+
+
+def test_builtin_plugin_lifecycle_is_read_only(isolated_platform: Path) -> None:
+    list_builtin_installations.cache_clear()
+    builtin = list_builtin_installations()[0]
+    replacement = _plugin(
+        isolated_platform / "replacement",
+        name=builtin.name,
+        skill=None,
+    )
+
+    with pytest.raises(PluginInstallError, match="cannot be linked or reinstalled"):
+        link_plugin(builtin.root)
+    with pytest.raises(PluginInstallError, match="cannot be reinstalled"):
+        install_plugin(builtin.root)
+    with pytest.raises(PluginInstallError, match="cannot be packed separately"):
+        pack_plugin(builtin.root, isolated_platform / "builtin.evoplugin")
+    with pytest.raises(PluginInstallError):
+        update_plugin(builtin.id, replacement)
+    with pytest.raises(ValueError, match="always enabled"):
+        set_enabled(builtin.id, False)
+    with pytest.raises(ValueError, match="cannot be uninstalled"):
+        uninstall_plugin(builtin.id)
+
+    assert list_installations() == []
+    assert list_effective_installations() == [builtin]
+
+
+def test_builtin_tree_rejects_create_and_pack_targets(
+    isolated_platform: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.plugin_platform import builtins as builtin_module
+
+    bundled_root = isolated_platform / "release" / "builtin_plugins"
+    bundled_root.mkdir(parents=True)
+    monkeypatch.setattr(builtin_module, "builtin_plugins_root", lambda: bundled_root)
+    create_target = bundled_root / "generated"
+    pack_target = bundled_root / "generated.evoplugin"
+    source = _plugin(isolated_platform / "pack-source")
+
+    with pytest.raises(PluginInstallError, match="cannot be created"):
+        create_plugin(create_target, name="generated")
+    with pytest.raises(PluginInstallError, match="cannot be written"):
+        pack_plugin(source, pack_target)
+
+    assert not create_target.exists()
+    assert not pack_target.exists()
+
+
+def test_registry_rejects_and_filters_persisted_builtin_records(
+    isolated_platform: Path,
+) -> None:
+    list_builtin_installations.cache_clear()
+    builtin = list_builtin_installations()[0]
+
+    with pytest.raises(ValueError, match="cannot be persisted"):
+        add_installation(builtin)
+
+    managed = link_plugin(_plugin(isolated_platform / "managed"))
+    path = registry_path()
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["installations"].append(builtin.model_dump(mode="json"))
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    assert list_installations() == [managed]
+    assert {item.id for item in list_effective_installations()} == {
+        builtin.id,
+        managed.id,
+    }
+
+    updated = set_enabled(managed.id, False)
+    persisted = json.loads(path.read_text(encoding="utf-8"))
+    assert updated.enabled is False
+    assert [item["id"] for item in persisted["installations"]] == [managed.id]
+    assert persisted["installations"][0]["source_type"] == "linked"
+
+
+def test_managed_plugin_skill_precedes_bundled_plugin_skill(
+    isolated_platform: Path,
+) -> None:
+    plugin = _plugin(
+        isolated_platform / "documents-override",
+        name="documents-override",
+        skill="docx",
+    )
+    managed = link_plugin(plugin)
+
+    selected = discover_plugin_skill_records()["docx"]
+
+    assert selected.source == f"plugin:{managed.id}"
+    assert selected.alternates
+    assert selected.alternates[0].source.startswith("plugin:")
+    assert selected.alternates[0].source != selected.source
+
+
+def test_plugin_skill_applies_persisted_runtime_settings(
+    isolated_platform: Path,
+) -> None:
+    plugin = _plugin(isolated_platform / "settings-plugin")
+    managed = link_plugin(plugin)
+    inherited = discover_plugin_skill_records()["portable-skill"]
+
+    assert inherited.source == f"plugin:{managed.id}"
+    assert inherited.settings_editable is True
+    assert inherited.settings_overridden is False
+
+    write_skill_runtime_settings(
+        inherited.settings_id,
+        name=inherited.name,
+        source=inherited.source,
+        modes=["coding"],
+        allow_implicit_invocation=False,
+        user_invocable=False,
+    )
+    overridden = discover_plugin_skill_records()["portable-skill"]
+
+    assert overridden.modes == ("coding",)
+    assert overridden.allow_implicit_invocation is False
+    assert overridden.user_invocable is False
+    assert overridden.settings_overridden is True
+
+
+def test_documents_plugin_preserves_legacy_builtin_skill_settings_identity(
+    isolated_platform: Path,
+) -> None:
+    list_builtin_installations.cache_clear()
+    record = discover_plugin_skill_records()["docx"]
+    legacy_id = skill_settings_id(
+        source="builtin",
+        root=builtin_skills_dir(),
+        stem="docx",
+    )
+
+    assert record.source.startswith("plugin:")
+    assert record.settings_id == legacy_id
+
+    write_skill_runtime_settings(
+        legacy_id,
+        name=record.name,
+        source="builtin",
+        modes=["coding"],
+        allow_implicit_invocation=False,
+        user_invocable=False,
+    )
+    migrated = discover_plugin_skill_records()["docx"]
+
+    assert migrated.settings_overridden is True
+    assert migrated.modes == ("coding",)
 
 
 @pytest.mark.parametrize(

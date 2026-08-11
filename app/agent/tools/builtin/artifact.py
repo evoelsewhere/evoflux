@@ -1,11 +1,11 @@
-"""Unified Artifact Fabric tool for DOCX, XLSX, PPTX, and PDF."""
+"""Format-neutral Artifact Fabric tool backed by bundled plugin drivers."""
 
 from __future__ import annotations
 
 import base64
 import json
 from pathlib import Path
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal
 from urllib.parse import quote
 from uuid import UUID
 
@@ -14,7 +14,6 @@ from pydantic import Field
 from app.agent.sandbox import get_sandbox
 from app.agent.schemas.chat import ImageDataBlock, TextBlock, ToolResult
 from app.agent.tools.registry import Tool
-from app.artifacts.domain import ArtifactFormat
 from app.artifacts.service import get_artifact_service
 
 
@@ -87,18 +86,14 @@ def _result_parts(value: dict[str, Any]) -> list[Any]:
     return parts
 
 
-def _attachment(
-    output: Path, *, artifact_format: str, media_type: str
-) -> list[dict[str, str]]:
+def _attachment(output: Path, *, media_type: str) -> list[dict[str, str]]:
     sandbox = get_sandbox()
     if not sandbox.session_id:
         return []
     relative = output.relative_to(sandbox.workspace_root).as_posix()
     encoded = quote(relative, safe="/")
     media_url = f"/api/team/{sandbox.session_id}/media/{encoded}"
-    preview_url = media_url
-    if artifact_format in {"docx", "pptx"}:
-        preview_url = f"/api/team/{sandbox.session_id}/office-preview/{encoded}"
+    preview_url = f"/api/team/{sandbox.session_id}/document-preview/{encoded}"
     return [
         {
             "filename": output.name,
@@ -127,9 +122,12 @@ async def _artifact(
         ),
     ],
     format: Annotated[
-        ArtifactFormat | None,
+        str | None,
         Field(
-            description="Document format. Required for inspect, validate, and preview."
+            description=(
+                "Plugin-provided document format. Required for inspect, validate, "
+                "and preview; use action='catalog' to discover current values."
+            )
         ),
     ] = None,
     project_path: Annotated[
@@ -140,9 +138,7 @@ async def _artifact(
     ] = None,
     source_path: Annotated[
         str | None,
-        Field(
-            description="Read-only uploaded DOCX, XLSX, PPTX, or PDF template/source."
-        ),
+        Field(description="Read-only source/template in the selected plugin format."),
     ] = None,
     manifest_path: Annotated[
         str | None,
@@ -176,10 +172,9 @@ async def _artifact(
 ) -> str | ToolResult:
     """Create and publish document artifacts through one durable lifecycle.
 
-    Project content remains format-specific. New PowerPoint decks use inert
-    HTML/Tailwind rendered by the connected desktop WebView, then a thin OOXML
-    packer adds explicitly editable text and raster images. Call preview before
-    publish. Publish never rebuilds a document.
+    Project content remains format-specific and is delegated to the active
+    bundled plugin driver. Call preview before publish. Publish never rebuilds
+    a document.
     """
 
     service = get_artifact_service()
@@ -196,7 +191,7 @@ async def _artifact(
     if action == "publish":
         parsed_job = _uuid(job_id, "job_id")
         before = await service.status(parsed_job)
-        artifact_format = cast(ArtifactFormat, str(before["format"]))
+        artifact_format = str(before["format"])
         driver = service.registry.get(artifact_format)
         destination = _output(output, suffix=driver.extension)
         value = await service.publish(
@@ -208,7 +203,6 @@ async def _artifact(
             parts=_result_parts(value),
             attachments=_attachment(
                 destination,
-                artifact_format=artifact_format,
                 media_type=driver.media_type,
             ),
         )
@@ -253,8 +247,8 @@ artifact = Tool(
     tiers=("work",),
     deferred=True,
     deferred_summary=(
-        "Unified durable DOCX, XLSX, PPTX, and PDF lifecycle: format schemas, "
-        "inspect/validate, immutable QA revisions, exact-byte publish, status, and cancel."
+        "Plugin-backed durable document lifecycle: format schemas, inspect/validate, "
+        "immutable QA revisions, exact-byte publish, status, and cancel."
     ),
     search_aliases=(
         "document",

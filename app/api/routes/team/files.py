@@ -49,11 +49,11 @@ from app.core.db import async_session_factory
 from app.core.paths import session_workspace_dir, uploads_dir, workspace_dir
 from app.models.chat import ChatSession
 from app.services import team_manager
-from app.services.office_preview_service import (
-    OFFICE_PREVIEW_CSP,
-    OfficePreviewError,
-    OfficePreviewUnsupportedError,
-    render_office_preview,
+from app.plugin_platform.previews import (
+    DOCUMENT_PREVIEW_CSP,
+    DocumentPreviewError,
+    DocumentPreviewUnsupportedError,
+    render_document_preview,
 )
 from app.services.workspace_file_watcher import workspace_file_watcher
 from app.agent.lsp_manager import (
@@ -199,12 +199,31 @@ async def get_workspace_media(
     )
 
 
-@router.get("/{session_id}/office-preview/{file_path:path}")
-async def get_workspace_office_preview(
+def _document_preview_response(path: Path) -> FileResponse:
+    return FileResponse(
+        path=str(path),
+        media_type="text/html",
+        content_disposition_type="inline",
+        headers={
+            "Cache-Control": "private, no-cache",
+            "Content-Security-Policy": DOCUMENT_PREVIEW_CSP,
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get(
+    "/{session_id}/office-preview/{file_path:path}",
+    include_in_schema=False,
+    deprecated=True,
+)
+@router.get("/{session_id}/document-preview/{file_path:path}")
+async def get_workspace_document_preview(
     session_id: str,
     file_path: str,
 ) -> FileResponse:
-    """Render an OpenXML workspace document as sandbox-friendly HTML."""
+    """Render a workspace document with the bundled read-only engine."""
     try:
         uuid.UUID(session_id)
     except ValueError:
@@ -212,23 +231,12 @@ async def get_workspace_office_preview(
 
     resolved = _safe_resolve(await _session_workspace(session_id), file_path)
     try:
-        preview = await asyncio.to_thread(render_office_preview, resolved)
-    except OfficePreviewUnsupportedError as exc:
+        preview = await asyncio.to_thread(render_document_preview, resolved)
+    except DocumentPreviewUnsupportedError as exc:
         raise HTTPException(status_code=415, detail=str(exc))
-    except OfficePreviewError as exc:
+    except DocumentPreviewError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-
-    return FileResponse(
-        path=str(preview),
-        media_type="text/html",
-        content_disposition_type="inline",
-        headers={
-            "Cache-Control": "private, no-cache",
-            "Content-Security-Policy": OFFICE_PREVIEW_CSP,
-            "Referrer-Policy": "no-referrer",
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
+    return _document_preview_response(preview)
 
 
 # ── Workspace file listing ────────────────────────────────────────────────────
@@ -578,9 +586,32 @@ async def read_coding_workspace_file(
     )
 
 
-@router.post(
-    "/workspace/lsp/diagnostics", response_model=CodingDiagnosticsResponse
-)
+@router.get("/workspace/files/preview")
+async def preview_coding_workspace_document(workspace: str, path: str) -> FileResponse:
+    """Render a coding-workspace document through the same bundled engine."""
+
+    try:
+        resolved_workspace = team_manager.validate_workspace(workspace)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    root = Path(resolved_workspace).resolve(strict=False)
+    target = (root / path).resolve(strict=False)
+    try:
+        target.relative_to(root)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Path escapes workspace root.")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="File not found.")
+    try:
+        preview = await asyncio.to_thread(render_document_preview, target)
+    except DocumentPreviewUnsupportedError as exc:
+        raise HTTPException(status_code=415, detail=str(exc)) from exc
+    except DocumentPreviewError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _document_preview_response(preview)
+
+
+@router.post("/workspace/lsp/diagnostics", response_model=CodingDiagnosticsResponse)
 async def get_coding_workspace_diagnostics(
     workspace: str, body: CodingDiagnosticsRequest
 ) -> CodingDiagnosticsResponse:
@@ -604,7 +635,9 @@ async def get_coding_workspace_diagnostics(
     try:
         target.relative_to(root)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Path escapes workspace root.") from exc
+        raise HTTPException(
+            status_code=400, detail="Path escapes workspace root."
+        ) from exc
     if not target.is_file():
         raise HTTPException(status_code=404, detail="File not found.")
 

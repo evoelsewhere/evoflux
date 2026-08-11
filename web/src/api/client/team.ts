@@ -637,10 +637,10 @@ export function workspaceMediaUrl(sessionId: string, path: string, options?: { d
   return withTokenParam(`${url}${separator}download=1`)
 }
 
-/** Build the URL for the backend-rendered, sandboxed Office preview. */
-export function workspaceOfficePreviewUrl(sessionId: string, path: string): string {
+/** Build the URL for the backend-rendered document preview. */
+export function workspaceDocumentPreviewUrl(sessionId: string, path: string): string {
   const encoded = path.split('/').map(encodeURIComponent).join('/')
-  return withTokenParam(apiUrl(`/team/${encodeURIComponent(sessionId)}/office-preview/${encoded}`))
+  return withTokenParam(apiUrl(`/team/${encodeURIComponent(sessionId)}/document-preview/${encoded}`))
 }
 
 /** Build the URL for serving a raw file from a *coding* workspace (not a
@@ -653,6 +653,12 @@ export function codingWorkspaceFileUrl(workspace: string, path: string, options?
   const params = new URLSearchParams({ workspace, path })
   if (options?.download) params.set('download', '1')
   return withTokenParam(apiUrl(`/team/workspace/files/read?${params}`))
+}
+
+/** Build the URL for the backend-rendered document preview in Coding mode. */
+export function codingWorkspaceDocumentPreviewUrl(workspace: string, path: string): string {
+  const params = new URLSearchParams({ workspace, path })
+  return withTokenParam(apiUrl(`/team/workspace/files/preview?${params}`))
 }
 
 /** Write file content to the coding workspace via PUT. */

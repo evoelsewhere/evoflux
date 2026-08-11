@@ -5,7 +5,9 @@ from uuid import UUID
 
 import pytest
 
-from app.services.html_slide_render_service import HtmlSlideRenderBroker
+from app.agent.builtin_plugins.documents.engines.html_slide_broker import (
+    HtmlSlideRenderBroker,
+)
 
 
 @pytest.mark.asyncio

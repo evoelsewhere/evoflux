@@ -1,87 +1,27 @@
-"""Artifact Fabric status, revision, and local WebView-render bridge routes."""
+"""Format-neutral Artifact Fabric status and revision routes."""
 
 from __future__ import annotations
 
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Path, Query, Response, status
+from fastapi import APIRouter, HTTPException, Path, Query
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
 
 from app.artifacts.domain import ArtifactFormat
 from app.artifacts.service import get_artifact_service
-from app.services.html_slide_render_service import get_html_slide_render_broker
 
 router = APIRouter()
-
-
-class HtmlSlideRenderResult(BaseModel):
-    preview_png_base64: str = Field(min_length=1, max_length=56_000_000)
-    shell_png_base64: str = Field(min_length=1, max_length=56_000_000)
-    editable_elements: list[dict] = Field(default_factory=list, max_length=1000)
-    issues: list[dict] = Field(default_factory=list, max_length=1000)
-
-
-class HtmlSlideRenderFailure(BaseModel):
-    message: str = Field(min_length=1, max_length=2000)
-
-
-@router.post("/renderers/{session_id}/heartbeat", status_code=status.HTTP_204_NO_CONTENT)
-async def heartbeat_html_slide_renderer(session_id: UUID) -> Response:
-    await get_html_slide_render_broker().heartbeat(str(session_id))
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.get("/renderers/{session_id}/next", response_model=None)
-async def claim_html_slide_render(session_id: UUID, response: Response) -> Response | dict:
-    response.headers["Cache-Control"] = "no-store"
-    value = await get_html_slide_render_broker().claim(str(session_id))
-    if value is None:
-        response.status_code = status.HTTP_204_NO_CONTENT
-        return response
-    return value
-
-
-@router.post(
-    "/renderers/{session_id}/requests/{request_id}/complete",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-async def complete_html_slide_render(
-    session_id: UUID,
-    request_id: UUID,
-    body: HtmlSlideRenderResult,
-) -> Response:
-    accepted = await get_html_slide_render_broker().complete(
-        str(session_id), request_id, body.model_dump()
-    )
-    if not accepted:
-        raise HTTPException(status_code=404, detail="Slide render request not found.")
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.post(
-    "/renderers/{session_id}/requests/{request_id}/fail",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-async def fail_html_slide_render(
-    session_id: UUID,
-    request_id: UUID,
-    body: HtmlSlideRenderFailure,
-) -> Response:
-    accepted = await get_html_slide_render_broker().fail(
-        str(session_id), request_id, body.message
-    )
-    if not accepted:
-        raise HTTPException(status_code=404, detail="Slide render request not found.")
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/catalog")
 async def artifact_catalog(
     format: ArtifactFormat | None = Query(default=None),
 ) -> dict:
-    return get_artifact_service().catalog(format)
+    try:
+        return get_artifact_service().catalog(format)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/jobs")

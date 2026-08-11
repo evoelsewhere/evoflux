@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, TypeAlias, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
-ArtifactFormat = Literal["docx", "xlsx", "pptx", "pdf"]
+ArtifactFormat: TypeAlias = str
 ArtifactSeverity = Literal["error", "warning", "info"]
 
 

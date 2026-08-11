@@ -437,7 +437,7 @@ async def test_tool_result_creates_tool_message_with_parts():
                     "filename": "generated.pptx",
                     "category": "document",
                     "url": "/api/team/s6/media/generated.pptx",
-                    "preview_url": "/api/team/s6/office-preview/generated.pptx",
+                    "preview_url": "/api/team/s6/document-preview/generated.pptx",
                     "download_url": "/api/team/s6/media/generated.pptx?download=1",
                 }
             ],

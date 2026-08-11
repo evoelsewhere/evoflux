@@ -16,6 +16,7 @@ from app.plugin_platform.installer import (
 from app.plugin_platform.registry import (
     get_installation,
     list_installations,
+    list_effective_installations,
     set_enabled,
 )
 from app.plugin_platform.validator import inspect_plugin
@@ -28,6 +29,7 @@ __all__ = [
     "install_plugin",
     "link_plugin",
     "list_installations",
+    "list_effective_installations",
     "pack_plugin",
     "set_enabled",
     "uninstall_plugin",

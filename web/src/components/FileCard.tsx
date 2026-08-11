@@ -14,6 +14,8 @@ interface FileCardProps {
   onDownload?: () => void
   /** Optional direct download URL for generated workspace artifacts. */
   downloadUrl?: string
+  /** Host-owned preview action; preferred over opening a raw URL externally. */
+  onOpen?: () => void
 }
 
 function getFileIcon(mediaType?: string) {
@@ -41,12 +43,15 @@ export function FileCard({
   clickable,
   onDownload,
   downloadUrl,
+  onOpen,
 }: FileCardProps) {
   // Truncate long filenames to ~20 chars
   const displayName = name.length > 20 ? `${name.substring(0, 17)}…` : name
 
   const handleClick = () => {
-    if (clickable && url) {
+    if (clickable && onOpen) {
+      onOpen()
+    } else if (clickable && url) {
       // window.open silently no-ops in Tauri webviews; openExternalUrl uses
       // the system opener there and falls back to window.open in browsers.
       void openExternalUrl(url)

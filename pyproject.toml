@@ -37,23 +37,9 @@ dependencies = [
     # Backport of uuid.uuid7(), which only lands in the stdlib `uuid` module
     # in Python 3.14. Shimmed onto `uuid` in app/__init__.py for 3.12/3.13.
     "uuid7>=0.1.0",
-    # Document conversion ships with only the formats used by the slim sidecar:
-    # PDF and DOCX via extras, plus HTML through markitdown core. Heavier
-    # features stay behind optional extras to keep the desktop bundle small.
-    "markitdown[pdf,docx]>=0.1.5",
-    # Native OpenXML parsing for the read-only Office preview surface, bundled
-    # with the Python sidecar consistently on every supported OS.
-    "python-docx>=1.2.0",
-    "openpyxl>=3.1.5",
-    "python-pptx>=1.0.2",
-    # First-class PDF inspection, native generation, AcroForm filling, and
-    # structural QA for Artifact Fabric.
-    "pypdf>=6.1.0",
-    # Bundled PDF renderer used by PDF and document QA.
-    "pypdfium2>=5.7.0",
-    # Pixel-level PPTX/PDF visual parity gates.
-    "pillow>=12.0.0",
-    "reportlab>=4.4.0",
+    # Core text/HTML conversion only. Binary document engines live in the
+    # bundled ``evoflux.documents`` plugin and its optional dependency set.
+    "markitdown>=0.1.5",
     "markdown-it-py>=4.0.0",
     "pyyaml>=6.0.3",
     "fastapi>=0.135.2",
@@ -102,6 +88,16 @@ dev = [
     "ruff>=0.15.8",
     "tiktoken>=0.12.0",
     "ty>=0.0.33,<0.1",
+    # Exercise the bundled Documents plugin in source checkouts without making
+    # its format engines part of the slim server dependency surface.
+    "python-docx>=1.2.0",
+    "openpyxl>=3.1.5",
+    "python-pptx>=1.0.2",
+    "pdfplumber>=0.11.0",
+    "pypdf>=6.1.0",
+    "pypdfium2>=5.7.0",
+    "pillow>=12.0.0",
+    "reportlab>=4.4.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -115,13 +111,28 @@ packages = ["app"]
 "seed" = "app/_seed"
 
 [project.optional-dependencies]
+# Runtime dependencies owned by the read-only bundled Documents plugin. Desktop
+# packages install this extra; slim/API-only installs can omit the plugin engine
+# without importing any Office/PDF library at process startup.
+documents = [
+    "markitdown[pdf,docx]>=0.1.5",
+    "python-docx>=1.2.0",
+    "openpyxl>=3.1.5",
+    "python-pptx>=1.0.2",
+    "pdfplumber>=0.11.0",
+    "pypdf>=6.1.0",
+    "pypdfium2>=5.7.0",
+    "pillow>=12.0.0",
+    "reportlab>=4.4.0",
+]
+
 # Azure Document Intelligence routing in markitdown — server-side OCR fallback.
 # Brings in the azure-ai-* SDK family. Adds ~30 MB.
 azure-doc-intel = ["markitdown[az-doc-intel]>=0.1.5"]
 
 # Convenience: everything-but-the-kitchen-sink. Used by
 # ``uv tool install evoflux[full]`` for users who don't care about size.
-full = ["evoflux[azure-doc-intel]"]
+full = ["evoflux[azure-doc-intel,documents]"]
 
 [tool.uv]
 package = true

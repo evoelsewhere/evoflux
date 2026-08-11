@@ -1,0 +1,17 @@
+{
+  "schema_version": 6,
+  "title": "HTML-first presentation",
+  "dna_path": "slide-dna.json",
+  "qa_ledger_path": "qa-ledger.json",
+  "width": 1280,
+  "height": 720,
+  "slides": [
+    {
+      "id": "html-first",
+      "html_path": "slide.example.html",
+      "style_paths": ["slide.example.css"],
+      "assets": {},
+      "speaker_notes": ""
+    }
+  ]
+}

@@ -1,0 +1,386 @@
+{
+  "schema_version": 1,
+  "id": "powerpoint-office-like-baseline",
+  "format": "pptx",
+  "purpose": "Format DNA for Office-like PowerPoint authoring, hybrid representation, and render verification",
+  "coordinate_contract": {
+    "default_aspect_ratio": "16:9",
+    "css_canvas_px": [1280, 720],
+    "powerpoint_canvas_in": [13.333333, 7.5],
+    "css_px_per_in": 96,
+    "emu_per_in": 914400,
+    "css_font_px_to_pt": 0.75,
+    "safe_area_px": {
+      "left": 32,
+      "right": 32,
+      "top": 24,
+      "bottom": 24
+    },
+    "inherited_deck_rule": "preserve-source-canvas"
+  },
+  "required_deck_fields": [
+    "communication_job",
+    "visual_signature",
+    "canvas",
+    "layout_family",
+    "representation_policy",
+    "fidelity_target",
+    "known_gaps"
+  ],
+  "required_slide_fields": [
+    "id",
+    "narrative_role",
+    "takeaway",
+    "archetype",
+    "dominant_object",
+    "reading_order",
+    "density",
+    "editable_intent",
+    "flattened_intent",
+    "source_ids",
+    "risk_flags"
+  ],
+  "visual_system_contract": {
+    "required_token_groups": [
+      "semantic-colors",
+      "type-roles",
+      "spacing",
+      "grid",
+      "borders",
+      "radii",
+      "effects",
+      "imagery",
+      "charts",
+      "tables",
+      "icons",
+      "source-notes"
+    ],
+    "semantic_color_roles": [
+      "canvas",
+      "primary-ink",
+      "muted-ink",
+      "structure",
+      "emphasis",
+      "positive",
+      "warning",
+      "negative",
+      "data-primary",
+      "data-comparator",
+      "gridline",
+      "focus"
+    ],
+    "default_grid": {
+      "columns": 12,
+      "baseline_px": 8,
+      "gutter_px": [12, 24],
+      "outer_margin_px": [32, 64]
+    },
+    "layer_order": [
+      "canvas",
+      "background-art",
+      "content-shell",
+      "native-editable-overlays",
+      "focus-and-accessibility-metadata"
+    ],
+    "image_rules": [
+      "declare-focal-point",
+      "preserve-aspect-ratio",
+      "verify-final-crop-resolution",
+      "never-stretch-to-fit",
+      "record-source"
+    ],
+    "chart_rules": [
+      "one-comparison-question",
+      "show-units-and-denominator",
+      "direct-label-when-possible",
+      "reconcile-values-to-source",
+      "limit-saturated-series"
+    ],
+    "table_rules": [
+      "one-reading-question",
+      "preserve-units-and-total",
+      "highlight-only-decisive-cells",
+      "keep-row-labels-legible",
+      "reconcile-cells-to-source"
+    ],
+    "deck_rhythm": {
+      "forbid_accidental_adjacent_duplicate_silhouette": true,
+      "minimum_silhouettes_over_five_slides": 3,
+      "dense_slide_run_max": 2
+    }
+  },
+  "capability_statuses": {
+    "native-editable": "Created as a semantically editable PowerPoint object and visually verified after reopen",
+    "hybrid-editable": "Native overlay on an immutable visual shell with verified geometry",
+    "flattened-fidelity": "Visually represented in the shell without native PowerPoint semantics",
+    "preserve-native": "Existing native object is retained without reconstruction",
+    "unsupported": "The lane cannot safely create or retain the requested behavior",
+    "unverified": "The artifact may contain the feature but the active render surface cannot prove it"
+  },
+  "authoring_lanes": {
+    "html-hybrid-new": {
+      "visual_source": "desktop-webview-html",
+      "native_creation": ["uniform-solid-text", "plain-rectangular-raster-image", "speaker-notes"],
+      "flatten_by_default": [
+        "rich-text",
+        "semantic-bullets",
+        "chart",
+        "table",
+        "equation",
+        "smartart",
+        "svg-icon",
+        "diagram",
+        "mask",
+        "gradient-text",
+        "decorative-effects"
+      ],
+      "never_claim": ["native-chart", "native-table", "native-smartart", "native-animation", "full-accessibility"]
+    },
+    "inherited-template": {
+      "visual_source": "source-pptx",
+      "preserve": [
+        "slide-size",
+        "master-layout-theme-lineage",
+        "object-ids",
+        "relationships",
+        "geometry",
+        "crop",
+        "rotation",
+        "transitions",
+        "animations",
+        "unsupported-native-objects"
+      ],
+      "edit_only_through_catalog": true,
+      "html_reconstruction_forbidden": true
+    }
+  },
+  "office_feature_matrix": [
+    {
+      "feature": "slide-size-and-geometry",
+      "html-hybrid-new": "native-editable",
+      "inherited-template": "preserve-native",
+      "verification": ["source-preview", "reopened-plugin-preview", "openxml"]
+    },
+    {
+      "feature": "uniform-text",
+      "html-hybrid-new": "hybrid-editable",
+      "inherited-template": "preserve-native",
+      "verification": ["overlay-manifest", "reopened-plugin-preview"]
+    },
+    {
+      "feature": "rich-text-and-semantic-bullets",
+      "html-hybrid-new": "flattened-fidelity",
+      "inherited-template": "preserve-native",
+      "verification": ["source-preview", "reopened-plugin-preview"]
+    },
+    {
+      "feature": "plain-raster-image",
+      "html-hybrid-new": "hybrid-editable",
+      "inherited-template": "preserve-native",
+      "verification": ["overlay-manifest", "reopened-plugin-preview"]
+    },
+    {
+      "feature": "svg-icons-masks-and-image-effects",
+      "html-hybrid-new": "flattened-fidelity",
+      "inherited-template": "preserve-native",
+      "verification": ["source-preview", "reopened-plugin-preview"]
+    },
+    {
+      "feature": "charts",
+      "html-hybrid-new": "flattened-fidelity",
+      "inherited-template": "preserve-native",
+      "verification": ["data-reconciliation", "reopened-plugin-preview"]
+    },
+    {
+      "feature": "tables",
+      "html-hybrid-new": "flattened-fidelity",
+      "inherited-template": "preserve-native",
+      "verification": ["data-reconciliation", "reopened-plugin-preview"]
+    },
+    {
+      "feature": "equations-and-smartart",
+      "html-hybrid-new": "flattened-fidelity",
+      "inherited-template": "preserve-native",
+      "verification": ["source-preview", "reopened-plugin-preview"]
+    },
+    {
+      "feature": "masters-layouts-and-themes",
+      "html-hybrid-new": "unsupported",
+      "inherited-template": "preserve-native",
+      "verification": ["openxml", "powerpoint-reference"]
+    },
+    {
+      "feature": "transitions-and-animations",
+      "html-hybrid-new": "unsupported",
+      "inherited-template": "preserve-native",
+      "verification": ["openxml", "powerpoint-reference"]
+    },
+    {
+      "feature": "hyperlinks-media-and-ole",
+      "html-hybrid-new": "unsupported",
+      "inherited-template": "preserve-native",
+      "verification": ["openxml", "powerpoint-reference"]
+    },
+    {
+      "feature": "speaker-notes-and-sources",
+      "html-hybrid-new": "native-editable",
+      "inherited-template": "native-editable",
+      "verification": ["openxml"]
+    },
+    {
+      "feature": "accessibility-semantics",
+      "html-hybrid-new": "unverified",
+      "inherited-template": "preserve-native",
+      "verification": ["openxml", "powerpoint-reference"]
+    }
+  ],
+  "render_surfaces": [
+    {
+      "id": "source-preview",
+      "required": true,
+      "artifact": "1280x720-png",
+      "proves": ["composition", "webview-assets", "html-overflow"]
+    },
+    {
+      "id": "flattened-shell",
+      "required": true,
+      "artifact": "2560x1440-png",
+      "proves": ["shell-coverage", "editable-removal", "raster-detail"]
+    },
+    {
+      "id": "reopened-plugin-preview",
+      "required": true,
+      "artifact": "same-size-slide-raster",
+      "proves": ["pptx-reopen", "shell-overlay-composition", "plugin-render-parity"]
+    },
+    {
+      "id": "powerpoint-reference",
+      "required": false,
+      "artifact": "same-size-slide-raster-or-manual-record",
+      "proves": ["microsoft-powerpoint-compatibility", "unsupported-office-behavior"]
+    }
+  ],
+  "slide_archetypes": [
+    {
+      "id": "cover",
+      "jobs": ["identity", "promise"],
+      "required_regions": ["title", "context", "signature-visual"]
+    },
+    {
+      "id": "section-divider",
+      "jobs": ["orientation", "pace-change"],
+      "required_regions": ["section-claim", "progress-cue"]
+    },
+    {
+      "id": "claim-evidence",
+      "jobs": ["argument", "proof"],
+      "required_regions": ["takeaway-title", "dominant-evidence", "implication"]
+    },
+    {
+      "id": "image-led-story",
+      "jobs": ["emotion", "context"],
+      "required_regions": ["hero-image", "claim", "source"]
+    },
+    {
+      "id": "data-story",
+      "jobs": ["comparison", "trend", "distribution"],
+      "required_regions": ["takeaway-title", "chart-or-table", "annotation", "units"]
+    },
+    {
+      "id": "comparison",
+      "jobs": ["choice", "tradeoff"],
+      "required_regions": ["comparison-question", "contrasting-evidence", "decision"]
+    },
+    {
+      "id": "process",
+      "jobs": ["sequence", "causality"],
+      "required_regions": ["stages", "direction", "outcome"]
+    },
+    {
+      "id": "architecture",
+      "jobs": ["structure", "mechanism"],
+      "required_regions": ["system-view", "reading-guide", "boundary"]
+    },
+    {
+      "id": "timeline",
+      "jobs": ["change-over-time", "roadmap"],
+      "required_regions": ["baseline", "milestones", "current-state"]
+    },
+    {
+      "id": "quote-or-testimony",
+      "jobs": ["voice", "validation"],
+      "required_regions": ["quotation", "attribution", "implication"]
+    },
+    {
+      "id": "summary",
+      "jobs": ["synthesis", "decision"],
+      "required_regions": ["central-conclusion", "supporting-reasons", "next-step"]
+    },
+    {
+      "id": "appendix-reference",
+      "jobs": ["detail", "auditability"],
+      "required_regions": ["question", "evidence", "method-or-source"]
+    }
+  ],
+  "typography_contract": {
+    "minimum_pt": {
+      "deck_title": 50,
+      "slide_title": 35,
+      "subhead": 24,
+      "body": 16,
+      "source": 9
+    },
+    "required_roles": ["display", "title", "body", "data", "source"],
+    "fit_order": ["shorten-copy", "change-layout", "split-slide", "reduce-size-within-minimum"],
+    "hard_failures": ["missing-glyph", "clipped-descender", "unplanned-title-wrap", "hierarchy-changing-fallback"]
+  },
+  "density_contract": {
+    "max_dominant_visuals": 1,
+    "max_supporting_units": 3,
+    "max_visible_words_standard": 90,
+    "max_visible_words_dense": 130,
+    "dense_slide_run_max": 2,
+    "minimum_silhouettes_over_five_slides": 3
+  },
+  "fidelity_scorecard": {
+    "target_score": 90,
+    "dimensions": [
+      {"id": "canvas-and-geometry", "weight": 20},
+      {"id": "typography-and-text-flow", "weight": 20},
+      {"id": "images-color-and-effects", "weight": 15},
+      {"id": "data-and-content-correctness", "weight": 15},
+      {"id": "native-semantics-and-template-lineage", "weight": 10},
+      {"id": "reopened-render-parity", "weight": 20}
+    ],
+    "raster_targets": {
+      "metric": "normalized-rgb-rmse-similarity-v1",
+      "per_slide_similarity_min": 0.9,
+      "deck_median_similarity_min": 0.95,
+      "manual_review_below_threshold": true
+    },
+    "hard_failures": [
+      "blank-slide",
+      "wrong-aspect-ratio",
+      "content-overflow",
+      "title-wrap",
+      "missing-asset",
+      "missing-glyph",
+      "visual-duplication",
+      "corrupt-openxml",
+      "wrong-template-map",
+      "unrendered-reopened-slide"
+    ],
+    "structural_round_trip_has_visual_points": false
+  },
+  "issue_taxonomy": [
+    {"code": "dna-incomplete", "severity": "error", "surface": "authoring"},
+    {"code": "canvas-mismatch", "severity": "error", "surface": "all"},
+    {"code": "font-metric-drift", "severity": "error", "surface": "reopened-plugin-preview"},
+    {"code": "shell-overlay-seam", "severity": "error", "surface": "reopened-plugin-preview"},
+    {"code": "duplicate-shell-content", "severity": "error", "surface": "flattened-shell"},
+    {"code": "native-semantics-lost", "severity": "warning", "surface": "openxml"},
+    {"code": "office-feature-unverified", "severity": "warning", "surface": "powerpoint-reference"},
+    {"code": "render-parity-below-target", "severity": "error", "surface": "reopened-plugin-preview"},
+    {"code": "fidelity-score-below-target", "severity": "error", "surface": "all"}
+  ]
+}

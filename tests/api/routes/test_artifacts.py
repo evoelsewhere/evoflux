@@ -6,11 +6,14 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from app.agent.builtin_plugins.documents import routes as document_routes
 from app.api.routes import artifacts as artifacts_route
 
 
 class FakeArtifactService:
     def catalog(self, artifact_format=None):
+        if artifact_format == "unknown":
+            raise ValueError("unsupported artifact format: unknown")
         return {"format": artifact_format, "schema_version": 1}
 
     async def list_jobs(self, *, session_id=None, status=None, limit=100):
@@ -54,6 +57,7 @@ async def client(monkeypatch):
     monkeypatch.setattr(artifacts_route, "get_artifact_service", lambda: service)
     app = FastAPI()
     app.include_router(artifacts_route.router, prefix="/api/artifacts")
+    app.include_router(document_routes.router, prefix="/api/artifacts")
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as value:
         yield value
@@ -65,6 +69,14 @@ async def test_artifact_catalog_route(client: AsyncClient) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"format": "pdf", "schema_version": 1}
+
+
+@pytest.mark.asyncio
+async def test_artifact_catalog_rejects_unknown_format(client: AsyncClient) -> None:
+    response = await client.get("/api/artifacts/catalog", params={"format": "unknown"})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "unsupported artifact format: unknown"
 
 
 @pytest.mark.asyncio
@@ -85,9 +97,7 @@ async def test_html_slide_renderer_bridge_routes(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     broker = FakeRenderBroker()
-    monkeypatch.setattr(
-        artifacts_route, "get_html_slide_render_broker", lambda: broker
-    )
+    monkeypatch.setattr(document_routes, "get_html_slide_render_broker", lambda: broker)
     session_id = uuid4()
 
     heartbeat = await client.post(f"/api/artifacts/renderers/{session_id}/heartbeat")

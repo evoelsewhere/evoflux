@@ -8,16 +8,19 @@ from typing import Any, ClassVar
 from app.artifacts.domain import (
     ArtifactDriverContext,
     ArtifactDriverResult,
-    ArtifactFormat,
 )
 
 
 class ArtifactDriver(ABC):
-    format: ClassVar[ArtifactFormat]
+    format: ClassVar[str]
     extension: ClassVar[str]
     media_type: ClassVar[str]
     version: ClassVar[str] = "1"
     protocol_version: ClassVar[int] = 1
+    required_extra: ClassVar[str | None] = None
+
+    def lane(self, source_path: Any | None) -> str:
+        return "template" if source_path is not None else "new"
 
     @abstractmethod
     def catalog(self) -> dict[str, Any]:

@@ -15,6 +15,7 @@ from app.api.schemas.plugins import (
     PluginEnabledRequest,
     PluginInstallRequest,
     PluginListItem,
+    PluginLifecycleCapabilities,
     PluginListResponse,
     PluginMcpRuntimeStatus,
     PluginOperationResponse,
@@ -34,7 +35,7 @@ from app.plugin_platform import (
     inspect_plugin,
     install_plugin,
     link_plugin,
-    list_installations,
+    list_effective_installations,
     pack_plugin,
     set_enabled,
     uninstall_plugin,
@@ -61,6 +62,30 @@ from app.services import team_manager
 
 
 router = APIRouter()
+
+
+def _capabilities_for(installation: PluginInstallation) -> PluginLifecycleCapabilities:
+    if installation.source_type == "builtin":
+        return PluginLifecycleCapabilities(
+            can_enable=False,
+            can_edit=False,
+            can_pack=False,
+            can_update=False,
+            can_uninstall=False,
+        )
+    return PluginLifecycleCapabilities(
+        can_update=installation.source_type == "installed"
+    )
+
+
+def _require_mutable_path(path: str) -> None:
+    from app.plugin_platform.builtins import path_is_builtin_plugin
+
+    if path_is_builtin_plugin(path):
+        raise HTTPException(
+            status_code=409,
+            detail="Bundled Agent Plugins are read-only and update with EvoFlux.",
+        )
 
 
 def _inspection_for(installation: PluginInstallation) -> PluginInspection:
@@ -103,7 +128,7 @@ def _http_error(exc: Exception) -> HTTPException:
 async def list_plugins() -> PluginListResponse:
     from app.plugin_platform.runtime import plugin_mcp_runtime
 
-    installations = await asyncio.to_thread(list_installations)
+    installations = await asyncio.to_thread(list_effective_installations)
     items = await asyncio.gather(
         *(asyncio.to_thread(_inspection_for, item) for item in installations)
     )
@@ -113,6 +138,7 @@ async def list_plugins() -> PluginListResponse:
                 installation=installation,
                 inspection=inspection,
                 credentials=_credential_state_for(installation, inspection),
+                capabilities=_capabilities_for(installation),
             )
             for installation, inspection in zip(installations, items, strict=True)
         ],
@@ -254,6 +280,7 @@ async def update_plugin_archive(
 
 @router.post("/create", response_model=PluginPathResponse, status_code=201)
 async def create_plugin_package(body: PluginCreateRequest) -> PluginPathResponse:
+    _require_mutable_path(body.destination)
     try:
         path = await asyncio.to_thread(
             create_plugin,
@@ -273,6 +300,9 @@ async def create_plugin_package(body: PluginCreateRequest) -> PluginPathResponse
 
 @router.post("/pack", response_model=PluginPathResponse)
 async def pack_plugin_package(body: PluginPackRequest) -> PluginPathResponse:
+    _require_mutable_path(body.path)
+    if body.output is not None:
+        _require_mutable_path(body.output)
     try:
         path = await asyncio.to_thread(pack_plugin, body.path, body.output)
         return PluginPathResponse(path=str(path))
@@ -306,6 +336,7 @@ async def get_plugin_workspace_file(
 async def put_plugin_workspace_file(
     body: PluginWorkspaceFileRequest,
 ) -> PluginWorkspaceMutationResponse:
+    _require_mutable_path(body.root)
     try:
         await asyncio.to_thread(
             write_workspace_file,
@@ -329,6 +360,7 @@ async def put_plugin_workspace_file(
 async def post_plugin_workspace_entry(
     body: PluginWorkspaceEntryRequest,
 ) -> PluginWorkspaceMutationResponse:
+    _require_mutable_path(body.root)
     try:
         await asyncio.to_thread(
             create_workspace_entry,
@@ -351,6 +383,7 @@ async def post_plugin_workspace_entry(
 async def remove_plugin_workspace_entry(
     body: PluginWorkspaceDeleteRequest,
 ) -> PluginWorkspaceMutationResponse:
+    _require_mutable_path(body.root)
     try:
         await asyncio.to_thread(delete_workspace_entry, body.root, body.path)
         await _after_mutation()

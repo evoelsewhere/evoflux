@@ -47,7 +47,26 @@ def _read_document(*, strict: bool = False) -> PluginRegistryDocument:
         if path.stat().st_size > _MAX_REGISTRY_BYTES:
             raise ValueError("plugin registry exceeds its size limit")
         raw = json.loads(path.read_text(encoding="utf-8"))
-        return PluginRegistryDocument.model_validate(raw)
+        document = PluginRegistryDocument.model_validate(raw)
+        persisted_builtins = [
+            item for item in document.installations if item.source_type == "builtin"
+        ]
+        if persisted_builtins:
+            logger.error(
+                "plugin_registry_builtin_records_ignored path={} ids={}",
+                path,
+                [item.id for item in persisted_builtins],
+            )
+            document = document.model_copy(
+                update={
+                    "installations": [
+                        item
+                        for item in document.installations
+                        if item.source_type != "builtin"
+                    ]
+                }
+            )
+        return document
     except Exception as exc:
         if strict:
             raise ValueError(f"Could not read plugin registry {path}: {exc}") from exc
@@ -56,6 +75,10 @@ def _read_document(*, strict: bool = False) -> PluginRegistryDocument:
 
 
 def _write_document(document: PluginRegistryDocument) -> None:
+    if any(item.source_type == "builtin" for item in document.installations):
+        raise ValueError(
+            "Bundled Agent Plugins are virtual and cannot be persisted in the registry."
+        )
     path = registry_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = (
@@ -91,14 +114,38 @@ def list_installations(*, enabled_only: bool = False) -> list[PluginInstallation
     return sorted(items, key=lambda item: (item.name, item.id))
 
 
+def list_effective_installations(
+    *, enabled_only: bool = False
+) -> list[PluginInstallation]:
+    """Return user installations plus immutable plugins bundled with EvoFlux."""
+
+    from app.plugin_platform.builtins import list_builtin_installations
+
+    items = [*list_installations(), *list_builtin_installations()]
+    if enabled_only:
+        items = [item for item in items if item.enabled]
+    # User-managed packages intentionally precede release-bundled packages.
+    # Skill discovery preserves this order when two installations contribute
+    # the same Skill name, giving users an explicit override seam while keeping
+    # the bundled package as the fallback.
+    return sorted(
+        items,
+        key=lambda item: (item.source_type == "builtin", item.name, item.id),
+    )
+
+
 def get_installation(installation_id: str) -> PluginInstallation | None:
     return next(
-        (item for item in list_installations() if item.id == installation_id),
+        (item for item in list_effective_installations() if item.id == installation_id),
         None,
     )
 
 
 def add_installation(installation: PluginInstallation) -> PluginInstallation:
+    if installation.source_type == "builtin":
+        raise ValueError(
+            "Bundled Agent Plugins are virtual and cannot be persisted in the registry."
+        )
     with _LOCK:
         document = _read_document(strict=True)
         if any(item.id == installation.id for item in document.installations):
@@ -118,6 +165,10 @@ def add_installation(installation: PluginInstallation) -> PluginInstallation:
 
 def set_enabled(installation_id: str, enabled: bool) -> PluginInstallation:
     from datetime import UTC, datetime
+    from app.plugin_platform.builtins import is_builtin_installation
+
+    if is_builtin_installation(installation_id):
+        raise ValueError("Bundled Agent Plugins are always enabled.")
 
     with _LOCK:
         document = _read_document(strict=True)
@@ -139,6 +190,8 @@ def set_enabled(installation_id: str, enabled: bool) -> PluginInstallation:
 def replace_installation(installation: PluginInstallation) -> PluginInstallation:
     """Atomically replace registry metadata for one existing installation."""
 
+    if installation.source_type == "builtin":
+        raise ValueError("Bundled Agent Plugins cannot be replaced.")
     with _LOCK:
         document = _read_document(strict=True)
         for index, item in enumerate(document.installations):
@@ -151,6 +204,10 @@ def replace_installation(installation: PluginInstallation) -> PluginInstallation
 
 
 def remove_installation(installation_id: str) -> PluginInstallation:
+    from app.plugin_platform.builtins import is_builtin_installation
+
+    if is_builtin_installation(installation_id):
+        raise ValueError("Bundled Agent Plugins cannot be uninstalled.")
     with _LOCK:
         document = _read_document(strict=True)
         for index, item in enumerate(document.installations):
@@ -181,6 +238,7 @@ __all__ = [
     "get_installation",
     "installed_root",
     "list_installations",
+    "list_effective_installations",
     "plugin_data_root",
     "plugin_platform_root",
     "registry_path",

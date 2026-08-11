@@ -12,7 +12,7 @@ from app.plugin_platform import (
     inspect_plugin,
     install_plugin,
     link_plugin,
-    list_installations,
+    list_effective_installations,
     pack_plugin,
     set_enabled,
     uninstall_plugin,
@@ -31,7 +31,12 @@ def cmd_plugin(args: argparse.Namespace) -> None:
     try:
         action = args.plugin_action
         if action == "list":
-            _print([item.model_dump(mode="json") for item in list_installations()])
+            _print(
+                [
+                    item.model_dump(mode="json")
+                    for item in list_effective_installations()
+                ]
+            )
             return
         if action == "inspect":
             _print(inspect_plugin(args.path))

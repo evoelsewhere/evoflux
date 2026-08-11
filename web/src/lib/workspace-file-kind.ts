@@ -17,6 +17,11 @@ const PLAIN_TEXT_EXTENSIONS = new Set([
 ])
 
 export type WorkspaceFileKind = 'image' | 'text' | 'docx' | 'xlsx' | 'pptx' | 'pdf' | 'binary'
+export type WorkspaceDocumentKind = Extract<WorkspaceFileKind, 'docx' | 'xlsx' | 'pptx' | 'pdf'>
+
+export function isWorkspaceDocumentKind(kind: WorkspaceFileKind): kind is WorkspaceDocumentKind {
+  return kind === 'docx' || kind === 'xlsx' || kind === 'pptx' || kind === 'pdf'
+}
 
 export function workspaceFileExtension(name: string): string {
   const index = name.lastIndexOf('.')

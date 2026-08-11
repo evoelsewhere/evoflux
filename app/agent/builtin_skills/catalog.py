@@ -20,13 +20,10 @@ BUNDLED_SKILL_MODES: dict[str, tuple[SkillMode, ...]] = {
     "coding-review": ("coding",),
     "coding-security": ("coding",),
     "coding-testing": ("coding",),
-    "docx": ("work",),
     "frontend-design": ALL_SKILL_MODES,
     "mcp-installer": ALL_SKILL_MODES,
-    "pdf": ("work",),
     "plugin-development": ALL_SKILL_MODES,
     "plugin-installer": ALL_SKILL_MODES,
-    "pptx": ("work",),
     "review-pull-requests": ("coding",),
     "self-healing": ALL_SKILL_MODES,
     "skill-installer": ALL_SKILL_MODES,
@@ -36,7 +33,6 @@ BUNDLED_SKILL_MODES: dict[str, tuple[SkillMode, ...]] = {
     "work-planning": ("work",),
     "work-research": ("work",),
     "work-writing": ("work",),
-    "xlsx": ("work",),
 }
 
 
