@@ -67,7 +67,7 @@ router = APIRouter()
 
 
 def _capabilities_for(installation: PluginInstallation) -> PluginLifecycleCapabilities:
-    if installation.source_type == "builtin":
+    if installation.source_type == "builtin" or installation.managed_by == "conductor":
         return PluginLifecycleCapabilities(
             can_enable=False,
             can_edit=False,

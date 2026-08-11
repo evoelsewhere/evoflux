@@ -811,6 +811,50 @@ export interface WikiFile {
 
 // ── Agent management ────────────────────────────────────────────────────────
 
+export interface ManagedResourceProvider {
+  project_id: string
+  project_name: string
+  resource_id: string
+  modes?: SkillMode[]
+  version_id: string | null
+  version: string | null
+  applied_version_id: string | null
+  applied_version: string | null
+  description?: string | null
+  changelog?: string | null
+  version_history?: ManagedResourceVersionNotice[]
+  update_available?: boolean
+  update_required?: boolean
+  version_gap?: ManagedResourceVersionGap | null
+  current_version_deprecation_reason?: string | null
+  release_channel: 'beta' | 'published' | null
+  observed_state:
+    | 'pending'
+    | 'staged'
+    | 'trust_pending'
+    | 'update_pending'
+    | 'applied'
+    | 'in_sync'
+    | 'declined'
+    | 'incompatible'
+    | 'ownership_conflict'
+    | 'project_scope_mismatch'
+    | 'error'
+    | 'removed'
+}
+
+export type ManagedResourceVersionGap = 'major' | 'minor' | 'patch' | 'prerelease' | 'unknown'
+
+export interface ManagedResourceVersionNotice {
+  version_id: string
+  version: string
+  status: 'beta' | 'published' | 'deprecated'
+  release_channel: 'beta' | 'published'
+  changelog: string | null
+  published_at: string | null
+  deprecation_reason: string | null
+}
+
 /** Lightweight row for the agents list. Invalid files have `valid=false`. */
 export interface AgentSummary {
   name: string
@@ -822,6 +866,14 @@ export interface AgentSummary {
   skills: string[]
   valid: boolean
   error: string | null
+  editable: boolean
+  provider: ManagedResourceProvider | null
+  runtime_model_editable: boolean
+  bundle_model: string | null
+  model_override: string | null
+  extra_tools: string[]
+  extra_skills: string[]
+  extra_mcp: string[]
 }
 
 /** Parsed frontmatter config — matches backend AgentConfig. */
@@ -832,6 +884,7 @@ export interface AgentConfig {
   system_prompt?: string
   tools?: string[]
   skills?: string[]
+  mcp?: string[]
   model?: string | null
   fallback_model?: string | null
   thinking_level?: string | null
@@ -845,6 +898,14 @@ export interface AgentDetail {
   content: string
   config: AgentConfig | null
   error: string | null
+  editable: boolean
+  provider: ManagedResourceProvider | null
+  runtime_model_editable: boolean
+  bundle_model: string | null
+  model_override: string | null
+  extra_tools: string[]
+  extra_skills: string[]
+  extra_mcp: string[]
 }
 
 export interface AgentDeleteResponse {
@@ -904,6 +965,7 @@ export interface SkillSummary {
   source: string
   modes: SkillMode[]
   dependencies: Record<string, unknown>[]
+  provider: ManagedResourceProvider | null
 }
 
 export interface SkillBundleFile {
@@ -946,6 +1008,7 @@ export interface SkillDetail {
   dependencies: Record<string, unknown>[]
   bundle_truncated: boolean
   files: SkillBundleFile[]
+  provider: ManagedResourceProvider | null
 }
 
 export interface SkillDeleteResponse {
@@ -1710,6 +1773,10 @@ export interface PluginInstallation {
   source_ref: string
   content_sha256: string
   enabled: boolean
+  managed_by?: 'conductor' | null
+  managed_project_id?: string | null
+  managed_resource_id?: string | null
+  managed_version_id?: string | null
   installed_at: string
   updated_at: string
 }
@@ -1738,6 +1805,7 @@ export interface PluginListItem {
     can_update: boolean
     can_uninstall: boolean
   }
+  provider?: ManagedResourceProvider | null
 }
 
 export interface PluginListResponse {

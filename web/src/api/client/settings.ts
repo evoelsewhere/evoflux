@@ -6,6 +6,7 @@ import { apiBaseUrl } from '../base-url'
 import { readSSE } from '../sse'
 import type { SSECallbacks } from '../sse'
 import { parseDetailOrThrow } from './_shared'
+import type { ManagedResourceProvider } from '../types'
 
 export type SandboxSettings = {
   denied_patterns: string[]
@@ -105,6 +106,43 @@ export type ConductorSettings = {
   enforcement_mode: 'report' | 'enforce'
 }
 
+export type ConductorManagedResource = ManagedResourceProvider & {
+  kind: 'agent' | 'skill' | 'plugin'
+  slug: string
+  state?: string
+  message?: string | null
+  trust_required?: boolean
+  trust_review?: {
+    executable_commands?: Array<{ server: string; executable: string; args: string[] }>
+    remote_hosts?: Array<{ server: string; transport: string; host: string; url: string }>
+    environment_fields?: string[]
+    capabilities?: Array<{ name: string; source: string }>
+  } | null
+}
+
+export type LegacyConductorResource = {
+  project_id?: string
+  resource_id?: string
+  version_id?: string | null
+  version?: string | null
+  applied_version_id?: string | null
+  applied_version?: string | null
+  release_channel?: 'beta' | 'published' | null
+  kind: 'agent' | 'skill' | 'mcp' | 'plugin'
+  slug: string
+  state: string
+  observed_state?: string
+  drift?: string[]
+  message?: string | null
+  trust_required?: boolean
+  trust_review?: {
+    executable_commands?: Array<{ server: string; executable: string; args: string[] }>
+    remote_hosts?: Array<{ server: string; transport: string; host: string; url: string }>
+    environment_fields?: string[]
+    capabilities?: Array<{ name: string; source: string }>
+  } | null
+}
+
 export type ConductorStatus = {
   enabled: boolean
   enrolled: boolean
@@ -125,26 +163,7 @@ export type ConductorStatus = {
   offline: boolean
   maintenance_required: boolean
   error: string | null
-  resources: Array<{
-    project_id?: string
-    resource_id?: string
-    version_id?: string | null
-    version?: string | null
-    release_channel?: 'beta' | 'published' | null
-    kind: 'agent' | 'skill' | 'mcp' | 'plugin'
-    slug: string
-    state: string
-    observed_state?: string
-    drift?: string[]
-    message?: string | null
-    trust_required?: boolean
-    trust_review?: {
-      executable_commands?: Array<{ server: string; executable: string; args: string[] }>
-      remote_hosts?: Array<{ server: string; transport: string; host: string; url: string }>
-      environment_fields?: string[]
-      capabilities?: Array<{ name: string; source: string }>
-    } | null
-  }>
+  resources: Array<ConductorManagedResource | LegacyConductorResource>
 }
 
 export async function getConductorSettings(): Promise<ConductorSettings> {
@@ -197,6 +216,17 @@ export async function approveConductorResource(resourceId: string): Promise<void
     { method: 'POST' },
   )
   if (!res.ok) await parseDetailOrThrow(res, 'POST /settings/conductor/resources/:id/approve')
+}
+
+export async function pullConductorResource(
+  resourceId: string,
+): Promise<ConductorManagedResource> {
+  const res = await fetch(
+    `${apiBaseUrl()}/settings/conductor/resources/${encodeURIComponent(resourceId)}/pull`,
+    { method: 'POST' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'POST /settings/conductor/resources/:id/pull')
+  return res.json()
 }
 
 export type MultimodalSectionSettings = {

@@ -39,6 +39,8 @@ export {
   useUpdateAgentMutation,
   useDeleteAgentMutation,
   useBulkUpdateAgentModelMutation,
+  useUpdateAgentRuntimeModelMutation,
+  useUpdateAgentRuntimeSettingsMutation,
 } from './useAgentFilesQuery'
 export {
   useSkillFilesQuery,

@@ -8,10 +8,12 @@ import {
   getConductorStatus,
   syncConductor,
   updateConductorSettings,
+  type ConductorManagedResource,
   type ConductorSettings,
   type ConductorStatus,
 } from '@/api/client'
 import { SettingsCallout, SettingsGroup, SettingsRow } from '@/components/settings/SettingsLayout'
+import { ManagedResourceUpdateBanner } from '@/components/settings/ManagedResourceUpdateBanner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -313,8 +315,11 @@ export function ConductorConnectionSettings() {
           ) : (
           <div className="divide-y divide-(--color-border)">
             {status.resources.map((resource) => {
+              const managed = isManagedResource(resource)
               const resourceId = resource.resource_id
-              const state = resource.observed_state || resource.state
+              const state = resource.observed_state
+                || resource.state
+                || CONDUCTOR_RESOURCE_STATE.PENDING
               const trustPending = state === CONDUCTOR_RESOURCE_STATE.TRUST_PENDING
                 && resource.kind === CONDUCTOR_RESOURCE_KIND.PLUGIN
               return (
@@ -334,9 +339,14 @@ export function ConductorConnectionSettings() {
                           {resource.release_channel}
                         </span>
                       )}
-                      {resource.version && (
+                      {resource.applied_version && (
                         <span className="font-mono text-xs text-(--color-text-muted)">
-                          v{resource.version}
+                          installed v{resource.applied_version}
+                        </span>
+                      )}
+                      {resource.version && resource.version !== resource.applied_version && (
+                        <span className="font-mono text-xs text-(--color-warning)">
+                          → available v{resource.version}
                         </span>
                       )}
                     </div>
@@ -347,6 +357,14 @@ export function ConductorConnectionSettings() {
                       <div className="mt-1 font-mono text-[10px] text-(--color-text-subtle)">
                         project {resource.project_id.slice(0, 8)} · resource {resourceId?.slice(0, 8)}
                       </div>
+                    )}
+                    {managed && (
+                      <ManagedResourceUpdateBanner
+                        provider={resource}
+                        resourceName={resource.slug}
+                        className="mt-3"
+                        onPulled={async () => setStatus(await getConductorStatus())}
+                      />
                     )}
                     {trustPending && resource.trust_review && (
                       <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-(--color-text-muted)">
@@ -436,4 +454,14 @@ function isValidConductorUrl(value: string) {
   } catch {
     return false
   }
+}
+
+function isManagedResource(
+  resource: ConductorStatus['resources'][number],
+): resource is ConductorManagedResource {
+  return Boolean(
+    resource.resource_id
+      && 'project_name' in resource
+      && resource.project_name,
+  )
 }

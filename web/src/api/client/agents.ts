@@ -100,6 +100,47 @@ export async function bulkUpdateAgentModel(
   return res.json()
 }
 
+export async function updateAgentRuntimeModel(
+  name: string,
+  model: string | null,
+): Promise<AgentDetail> {
+  const res = await fetch(
+    `${apiBaseUrl()}/agents/runtime-model/${encodeURIComponent(name)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    },
+  )
+  if (!res.ok) {
+    await parseDetailOrThrow(res, `PATCH /agents/runtime-model/${name}`)
+  }
+  return res.json()
+}
+
+export async function updateAgentRuntimeSettings(
+  name: string,
+  body: {
+    model: string | null
+    extra_tools: string[]
+    extra_skills: string[]
+    extra_mcp: string[]
+  },
+): Promise<AgentDetail> {
+  const res = await fetch(
+    `${apiBaseUrl()}/agents/runtime-settings/${encodeURIComponent(name)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  )
+  if (!res.ok) {
+    await parseDetailOrThrow(res, `PATCH /agents/runtime-settings/${name}`)
+  }
+  return res.json()
+}
+
 // ── /skills ──────────────────────────────────────────────────────────────────
 
 export async function listSkillFiles(scope?: SkillDiscoveryScope): Promise<SkillListResponse> {
