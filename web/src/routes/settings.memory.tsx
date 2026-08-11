@@ -58,8 +58,7 @@ export function MemorySettingsPage() {
   const tree = treeQ.data
 
   const curatedCount = tree
-    ? tree.wiki.length
-      + tree.topics.length
+    ? tree.topics.length
       + tree.entities.length
       + tree.sources.length
       + tree.comparisons.length

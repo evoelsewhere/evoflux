@@ -10,16 +10,13 @@ come from ``{EVOFLUX_CONFIG_DIR}/settings.yaml``.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
-import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import yaml
 from loguru import logger
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.exc import IntegrityError
@@ -31,7 +28,6 @@ from app.models.chat import (
     ChatSession,
     DreamLog,
     DreamNotesLog,
-    MemoryProcessedSource,
     SessionMessage,
 )
 from app.core.runtime_settings import load_runtime_settings, runtime_settings_path
@@ -46,12 +42,6 @@ from app.services.wiki import (
     append_log,
     wiki_root,
 )
-from app.services.memory import (
-    EXTRACTED_FACTS_MARKER,
-    WIKI_DIR,
-    seed_memory,
-    write_memory_file,
-)
 
 if TYPE_CHECKING:
     import contextvars
@@ -64,7 +54,7 @@ if TYPE_CHECKING:
 # Tools always injected into the dream agent.
 # ``edit`` and ``rm`` are required by the system prompt — without them, the
 # "surgical update" and (rare) "delete on user request" rules cannot be honoured.
-_REQUIRED_TOOLS: list[str] = ["read", "write", "edit", "rm", "ls", "wiki_search"]
+_REQUIRED_TOOLS: list[str] = ["read", "write", "edit", "rm", "ls", "memory_search"]
 
 # Hard caps to keep dream resilient. These exist to bound failure modes — they
 # are not knobs users typically need to tune.
@@ -111,7 +101,7 @@ Rules:
 - Never write to, edit, or delete anything under notes/.
 - Never edit LOG.md.
 - Slugs are lowercase-kebab-case.
-- Write precise, query-friendly descriptions because they drive wiki_search.
+- Write precise, query-friendly descriptions because they drive memory_search.
 """
 
 # Cap on bytes of ``INDEX.md`` injected into each per-item prompt as
@@ -299,382 +289,6 @@ async def get_unprocessed_notes(db: AsyncSession) -> list[str]:
     )
     processed = set((await db.exec(stmt)).all())
     return [n for n in all_notes if n not in processed]
-
-
-async def hash_session_source(db: AsyncSession, session_id: uuid.UUID) -> str:
-    """Hash visible, non-excluded messages for a DB session source."""
-    stmt = (
-        select(SessionMessage)
-        .where(col(SessionMessage.session_id) == session_id)
-        .where(~col(SessionMessage.exclude_from_context))
-        .where(col(SessionMessage.role) != "system")
-        .order_by(col(SessionMessage.created_at).asc(), col(SessionMessage.id).asc())
-    )
-    rows = (await db.exec(stmt)).all()
-    payload = [
-        {
-            "id": str(msg.id),
-            "role": msg.role,
-            "content": msg.content or "",
-            "reasoning_content": msg.reasoning_content or "",
-            "tool_calls": msg.tool_calls,
-            "tool_call_id": msg.tool_call_id,
-            "name": msg.name,
-            "created_at": msg.created_at.isoformat(),
-        }
-        for msg in rows
-    ]
-    return _hash_text(json.dumps(payload, sort_keys=True, separators=(",", ":")))
-
-
-_NOTE_ENTRY_HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$")
-_NOTE_ENTRY_TIMESTAMP_RE = re.compile(r"\b\d{1,2}:\d{2}\b|\b\d{4}-\d{2}-\d{2}T\S+")
-
-
-def _hash_text(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def parse_note_entries(filename: str, content: str) -> list[dict[str, str]]:
-    """Split a note file into timestamp-heading entries with stable hashes."""
-    entries: list[dict[str, str]] = []
-    current_heading: str | None = None
-    current_lines: list[str] = []
-
-    def _flush() -> None:
-        nonlocal current_heading, current_lines
-        if current_heading is None:
-            return
-        body = "\n".join(current_lines).strip()
-        entry_text = f"{current_heading}\n\n{body}".strip()
-        digest = _hash_text(entry_text)
-        slug = re.sub(r"[^a-z0-9]+", "-", current_heading.lower()).strip("-")
-        entries.append(
-            {
-                "source_id": f"{filename}#{slug}",
-                "filename": filename,
-                "heading": current_heading,
-                "content": body,
-                "content_hash": digest,
-            }
-        )
-        current_heading = None
-        current_lines = []
-
-    for line in content.splitlines():
-        match = _NOTE_ENTRY_HEADING_RE.match(line)
-        if match and _NOTE_ENTRY_TIMESTAMP_RE.search(match.group(1)):
-            _flush()
-            current_heading = match.group(1).strip()
-            current_lines = []
-            continue
-        if current_heading is not None:
-            current_lines.append(line)
-    _flush()
-    return entries
-
-
-def hash_import_source(path: Path) -> str:
-    """Hash an import file's raw content."""
-    return _hash_text(path.read_text(encoding="utf-8"))
-
-
-async def get_pending_memory_sources(
-    db: AsyncSession,
-    *,
-    dream_agent_name: str = DREAM_AGENT_NAME,
-) -> list[dict[str, str]]:
-    """Return session, note-entry, and import sources pending Dream v2."""
-    candidates: list[dict[str, str]] = []
-
-    session_stmt = select(ChatSession).where(
-        col(ChatSession.agent_name) != dream_agent_name,
-    )
-    for session in (await db.exec(session_stmt)).all():
-        candidates.append(
-            {
-                "source_type": "session",
-                "source_id": str(session.id),
-                "content_hash": await hash_session_source(db, session.id),
-            }
-        )
-
-    root = wiki_root()
-    notes_dir = root / NOTES_DIR
-    if notes_dir.is_dir():
-        for path in sorted(notes_dir.glob("*.md")):
-            try:
-                entries = parse_note_entries(
-                    path.name, path.read_text(encoding="utf-8")
-                )
-            except OSError:
-                continue
-            for entry in entries:
-                candidates.append(
-                    {
-                        "source_type": "note_entry",
-                        "source_id": entry["source_id"],
-                        "content_hash": entry["content_hash"],
-                    }
-                )
-
-    imports_dir = root / "imports"
-    if imports_dir.is_dir():
-        for path in sorted(imports_dir.glob("*.md")):
-            try:
-                content_hash = hash_import_source(path)
-            except OSError:
-                continue
-            candidates.append(
-                {
-                    "source_type": "import",
-                    "source_id": path.stem,
-                    "content_hash": content_hash,
-                }
-            )
-
-    if not candidates:
-        return []
-
-    stmt = select(MemoryProcessedSource).where(
-        col(MemoryProcessedSource.source_type).in_(
-            {c["source_type"] for c in candidates}
-        )
-    )
-    rows = (await db.exec(stmt)).all()
-    processed = {(row.source_type, row.source_id): row for row in rows}
-    return [
-        c
-        for c in candidates
-        if (row := processed.get((c["source_type"], c["source_id"]))) is None
-        or row.content_hash != c["content_hash"]
-        or row.status == "failed"
-    ]
-
-
-def _memory_page_slug(source_type: str, source_id: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", f"{source_type}-{source_id}".lower()).strip("-")
-    return slug[:120] or "source"
-
-
-def _memory_metadata(source: dict[str, str], source_text: str) -> dict[str, object]:
-    source_type = source["source_type"]
-    extracted = _is_extracted_facts_source(source, source_text)
-    return {
-        "memory_kind": (
-            "extracted_facts"
-            if extracted
-            else {
-                "session": "conversation",
-                "note_entry": "note",
-                "import": "import",
-            }.get(source_type, "source")
-        ),
-        "scope": source_type,
-        "topics": [],
-    }
-
-
-async def _memory_source_text(db: AsyncSession, source: dict[str, str]) -> str:
-    source_type = source["source_type"]
-    source_id = source["source_id"]
-    root = wiki_root()
-
-    if source_type == "session":
-        session = await db.get(ChatSession, uuid.UUID(source_id))
-        if session is None:
-            raise FileNotFoundError(f"Session source not found: {source_id}")
-        return await _fetch_session_transcript(db, session)
-
-    if source_type == "note_entry":
-        filename, _, _entry = source_id.partition("#")
-        note_path = root / NOTES_DIR / filename
-        entries = parse_note_entries(filename, note_path.read_text(encoding="utf-8"))
-        for entry in entries:
-            if entry["source_id"] == source_id:
-                return f"# {entry['heading']}\n\n{entry['content']}".strip()
-        raise FileNotFoundError(f"Note entry source not found: {source_id}")
-
-    if source_type == "import":
-        import_path = root / "imports" / f"{source_id}.md"
-        return import_path.read_text(encoding="utf-8")
-
-    raise ValueError(f"Unsupported memory source type: {source_type}")
-
-
-def _memory_source_ref(source: dict[str, str]) -> str:
-    prefix = "note" if source["source_type"] == "note_entry" else source["source_type"]
-    return f"{prefix}:{source['source_id']}"
-
-
-def _is_extracted_facts_source(source: dict[str, str], source_text: str) -> bool:
-    if source["source_type"] != "note_entry":
-        return False
-    marker_prefix = f"<!-- {EXTRACTED_FACTS_MARKER} source=session:"
-    return any(
-        line.strip().startswith(marker_prefix) and line.strip().endswith(" -->")
-        for line in source_text.splitlines()
-    )
-
-
-def _extracted_fact_lines(source: dict[str, str], source_text: str) -> list[str]:
-    """Return facts only when an upstream extractor explicitly marked the note."""
-    if not _is_extracted_facts_source(source, source_text):
-        return []
-    source_ref = _memory_source_ref(source)
-    facts: list[str] = []
-    for raw_line in source_text.splitlines():
-        stripped = raw_line.strip()
-        if not stripped.startswith("- "):
-            continue
-        statement = stripped.removeprefix("- ").strip()
-        if statement:
-            facts.append(f"- {statement} [{source_ref}]")
-    return list(dict.fromkeys(facts))
-
-
-def _memory_page_content(source: dict[str, str], source_text: str) -> str:
-    source_ref = _memory_source_ref(source)
-    title = source_ref.replace("#", " #")
-    facts = _extracted_fact_lines(source, source_text)
-    body = (
-        "\n".join(facts)
-        if facts
-        else "Raw source retained at its cited location; no facts were extracted."
-    )
-    if len(body) > DEFAULT_MAX_PROMPT_CHARS:
-        body = body[:DEFAULT_MAX_PROMPT_CHARS] + "\n\n[... source truncated ...]"
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    metadata = _memory_metadata(source, source_text)
-    metadata_yaml = yaml.safe_dump(metadata, sort_keys=False).strip()
-    return (
-        "---\n"
-        f"description: Dream v2 compiled memory for {source_ref}\n"
-        f"updated: {today}\n"
-        "tags: [memory-v2, dream]\n"
-        f"{metadata_yaml}\n"
-        f"confidence: {'medium' if facts else 'low'}\n"
-        "sources:\n"
-        f"  - {source_ref}\n"
-        "---\n\n"
-        f"# {title}\n\n"
-        "Compiled by Dream from the cited raw source.\n\n"
-        "## Source\n\n"
-        f"- source_type: `{source['source_type']}`\n"
-        f"- source_id: `{source['source_id']}`\n"
-        f"- content_hash: `{source['content_hash']}`\n\n"
-        f"## {'Facts' if facts else 'Content'}\n\n"
-        f"{body}\n"
-    )
-
-
-def _refresh_memory_index() -> None:
-    root = wiki_root()
-    wiki_dir = root / WIKI_DIR
-    pages = sorted(p.name for p in wiki_dir.glob("*.md") if p.is_file())
-    lines = [
-        "# Memory Index",
-        "",
-        "Dream-maintained flat index of curated and source-compiled `wiki/*.md` memory pages.",
-        "",
-    ]
-    if pages:
-        lines.extend(f"- `wiki/{name}`" for name in pages)
-    else:
-        lines.append("- (no compiled pages yet)")
-    (root / INDEX_FILE).write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-async def _upsert_memory_processed_source(
-    db: AsyncSession,
-    source: dict[str, str],
-    *,
-    status: str,
-    pages_changed: list[str] | None = None,
-    error: str | None = None,
-) -> None:
-    stmt = select(MemoryProcessedSource).where(
-        col(MemoryProcessedSource.source_type) == source["source_type"],
-        col(MemoryProcessedSource.source_id) == source["source_id"],
-    )
-    row = (await db.exec(stmt)).first()
-    if row is None:
-        row = MemoryProcessedSource(
-            source_type=source["source_type"],
-            source_id=source["source_id"],
-            content_hash=source["content_hash"],
-            processed_at=datetime.now(timezone.utc),
-            status=status,
-        )
-        db.add(row)
-    row.content_hash = source["content_hash"]
-    row.processed_at = datetime.now(timezone.utc)
-    row.status = status
-    row.pages_changed = json.dumps(pages_changed or []) if pages_changed else None
-    row.error = error
-    await db.commit()
-
-
-async def process_memory_sources(
-    db: AsyncSession,
-    *,
-    limit: int | None = None,
-) -> dict[str, int]:
-    """Run deterministic Dream v2 maintenance for pending memory sources.
-
-    This explicit v2 loop keeps one source-compiled provenance page per raw
-    source. Notes produced by ``MemoryExtractionHook`` carry an explicit facts
-    protocol marker and become cited ``## Facts`` pages; other sources remain
-    searchable provenance without semantic promotion.
-    """
-    seed_memory()
-    pending = await get_pending_memory_sources(db)
-    if limit is not None:
-        pending = pending[: max(0, limit)]
-
-    processed = 0
-    failed = 0
-    for source in pending:
-        page = f"{WIKI_DIR}/{_memory_page_slug(source['source_type'], source['source_id'])}.md"
-        try:
-            source_text = await _memory_source_text(db, source)
-            write_memory_file(page, _memory_page_content(source, source_text))
-            pages_changed = [page]
-            _refresh_memory_index()
-            await _upsert_memory_processed_source(
-                db, source, status="processed", pages_changed=pages_changed
-            )
-            processed += 1
-            logger.info(
-                "dream_memory_source_processed type={} id={} page={} facts={}",
-                source["source_type"],
-                source["source_id"],
-                page,
-                len(_extracted_fact_lines(source, source_text)),
-            )
-        except Exception as exc:
-            await db.rollback()
-            await _upsert_memory_processed_source(
-                db, source, status="failed", error=str(exc)
-            )
-            failed += 1
-            logger.warning(
-                "dream_memory_source_failed type={} id={} error={}",
-                source["source_type"],
-                source["source_id"],
-                exc,
-            )
-
-    remaining = max(0, len(await get_pending_memory_sources(db)) - failed)
-    if processed or failed:
-        await asyncio.to_thread(
-            append_log,
-            f"dream memory-v2 | processed={processed} failed={failed} remaining={remaining}",
-        )
-    return {"processed": processed, "failed": failed, "remaining": remaining}
-
-
-run_memory_maintenance = process_memory_sources
 
 
 async def mark_session_processed(

@@ -1,4 +1,4 @@
-"""Optional Memory v2 vector backend interface.
+"""Optional vector backend interface for unified EvoFlux Memory.
 
 The default EvoFlux memory path remains deterministic markdown + lexical
 retrieval. This module defines the narrow seam for future semantic backends

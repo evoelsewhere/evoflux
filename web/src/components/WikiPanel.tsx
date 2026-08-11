@@ -1,18 +1,18 @@
 /**
  * WikiPanel — file tree + markdown editor for the agent wiki.
  *
- * The wiki lives under ``{EVOFLUX_WIKI_DIR}`` and follows the Karpathy
- * Memory v2 layout:
+ * The wiki lives under ``{EVOFLUX_WIKI_DIR}`` and follows one canonical
+ * Memory layout:
  *
- *   SCHEMA.md    — Dream maintainer rules
+ *   USER.md      — durable user profile
  *   INDEX.md     — dream-maintained table of contents (editable)
  *   LOG.md       — append-only Dream activity log
- *   wiki/        — curated and source-compiled Memory v2 pages
- *   imports/     — raw imported Memory v2 documents
+ *   topics/      — concepts and durable project knowledge
+ *   entities/    — people, tools, organisations, and products
+ *   sources/     — source summaries and provenance
+ *   comparisons/ — durable comparisons and decisions
+ *   imports/     — raw imported documents
  *   notes/       — raw note entries (read-only in the UI; deletable)
- *
- * Legacy wiki folders (topics/entities/sources/comparisons) are still shown
- * when present for compatibility.
  *
  * `WikiTree.system` is the logical bucket for root files (USER, INDEX, LOG,
  * LINT) — there is no `system/` directory on disk.
@@ -70,7 +70,6 @@ const WIKI_LONG_PRESS_MOVE_TOLERANCE = 10
 
 type SectionKey =
   | 'system'
-  | 'wiki'
   | 'imports'
   | 'notes'
   | 'topics'
@@ -107,10 +106,28 @@ export function WikiPanel({ open, onClose, embedded = false }: WikiPanelProps) {
   const rootFiles = tree?.system ?? []
   const rawSections: Section[] = [
     {
-      key: 'wiki',
-      label: 'Knowledge',
-      hint: 'Curated pages agents can recall',
-      files: tree?.wiki ?? [],
+      key: 'topics',
+      label: 'Topics',
+      hint: 'Curated concepts and project knowledge',
+      files: tree?.topics ?? [],
+    },
+    {
+      key: 'entities',
+      label: 'Entities',
+      hint: 'People, tools, organisations and products',
+      files: tree?.entities ?? [],
+    },
+    {
+      key: 'comparisons',
+      label: 'Comparisons',
+      hint: 'Curated trade-offs and decisions',
+      files: tree?.comparisons ?? [],
+    },
+    {
+      key: 'sources',
+      label: 'Sources',
+      hint: 'Source summaries and provenance',
+      files: tree?.sources ?? [],
     },
     {
       key: 'imports',
@@ -124,36 +141,11 @@ export function WikiPanel({ open, onClose, embedded = false }: WikiPanelProps) {
       hint: 'Notes waiting for Dream synthesis',
       files: tree?.notes ?? [],
     },
-    {
-      key: 'topics',
-      label: 'Legacy topics',
-      hint: 'Legacy concept pages',
-      files: tree?.topics ?? [],
-    },
-    {
-      key: 'entities',
-      label: 'Legacy entities',
-      hint: 'Legacy people, tools, organisations, products',
-      files: tree?.entities ?? [],
-    },
-    {
-      key: 'sources',
-      label: 'Legacy sources',
-      hint: 'Legacy source summaries',
-      files: tree?.sources ?? [],
-    },
-    {
-      key: 'comparisons',
-      label: 'Legacy comparisons',
-      hint: 'Legacy X-vs-Y pages',
-      files: tree?.comparisons ?? [],
-    },
   ]
   const sections = rawSections.filter(
-    (s) => s.key === 'wiki' || s.key === 'notes' || s.files.length > 0,
+    (s) => s.key === 'topics' || s.key === 'notes' || s.files.length > 0,
   )
-  const curatedCount = (tree?.wiki.length ?? 0)
-    + (tree?.topics.length ?? 0)
+  const curatedCount = (tree?.topics.length ?? 0)
     + (tree?.entities.length ?? 0)
     + (tree?.sources.length ?? 0)
     + (tree?.comparisons.length ?? 0)
@@ -561,10 +553,10 @@ function WikiEditor({
   // (instead of incorrectly falling back to the original file length).
   const [charCount, setCharCount] = useState<number | null>(null)
 
-  // Raw Memory v2 inputs are read-only in the editor; curated/source pages remain editable.
+  // Raw inputs are read-only in the editor; curated pages remain editable.
   const isReadOnly = path.startsWith('notes/') || path.startsWith('imports/')
   // Root files cannot be deleted — backend enforces this too.
-  const isDeletable = path !== 'USER.md' && path !== 'INDEX.md' && path !== 'SCHEMA.md'
+  const isDeletable = path !== 'USER.md' && path !== 'INDEX.md'
 
   const getDraft = (): string => textareaRef.current?.value ?? file?.content ?? ''
 

@@ -11,7 +11,6 @@ from app.services.wiki import (
     DEFAULT_USER_FILE,
     IMPORTS_DIR,
     INDEX_FILE,
-    MEMORY_WIKI_DIR,
     NOTES_DIR,
     TOPICS_DIR,
     USER_FILE,
@@ -280,10 +279,12 @@ def test_validate_unknown_subdir_rejected(_wiki_dir: Path):
         validate_wiki_path("random-dir/page.md")
 
 
-def test_validate_memory_v2_dirs(_wiki_dir: Path):
-    """Memory v2 ``wiki/`` and ``imports/`` files are valid UI-editable paths."""
-    assert validate_wiki_path(f"{MEMORY_WIKI_DIR}/user.md").name == "user.md"
+def test_validate_imports_dir(_wiki_dir: Path):
+    """Raw imported evidence remains a valid Memory path."""
     assert validate_wiki_path(f"{IMPORTS_DIR}/article.md").name == "article.md"
+
+    with pytest.raises(WikiPathError):
+        validate_wiki_path("wiki/user.md")
 
 
 def test_parse_frontmatter_confidence_and_sources():
@@ -315,10 +316,9 @@ def test_parse_frontmatter_invalid_confidence_dropped():
 
 
 def test_list_tree_includes_all_knowledge_dirs(_wiki_dir: Path):
-    """``list_tree`` surfaces Memory v2 and legacy knowledge dirs."""
+    """``list_tree`` surfaces the canonical Memory knowledge dirs."""
     from app.services.wiki import list_tree, write_file
 
-    write_file("wiki/user.md", "---\ndescription: User memory.\n---\nbody\n")
     write_file("imports/article.md", "---\ndescription: Article.\n---\nbody\n")
     write_file("topics/python.md", "---\ndescription: Python.\n---\nbody\n")
     write_file("entities/fastapi.md", "---\ndescription: FastAPI.\n---\nbody\n")
@@ -326,7 +326,6 @@ def test_list_tree_includes_all_knowledge_dirs(_wiki_dir: Path):
     write_file("comparisons/x-vs-y.md", "---\ndescription: X vs Y.\n---\n")
 
     tree = list_tree()
-    assert [i.path for i in tree.wiki] == ["wiki/user.md"]
     assert [i.path for i in tree.imports] == ["imports/article.md"]
     assert [i.path for i in tree.topics] == ["topics/python.md"]
     assert [i.path for i in tree.entities] == ["entities/fastapi.md"]

@@ -39,7 +39,7 @@ async def test_disabled_memory_vector_backend_is_noop(config_dir: Path) -> None:
     await backend.upsert(
         [
             MemoryVectorChunk(
-                id="1", source_ref="wiki:user", path="wiki/user.md", text="hello"
+                id="1", source_ref="memory:user", path="USER.md", text="hello"
             )
         ]
     )

@@ -298,8 +298,8 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
     }
   }
 
-  // ── wiki_search: query in header, hide redundant args ──────────
-  if (name === 'wiki_search') {
+  // ── memory_search: query in header, hide redundant args ────────
+  if (name === 'memory_search') {
     const query = str(parsed, 'query')
     const truncated = query ? trunc(query) : null
     return {

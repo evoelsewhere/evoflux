@@ -7,7 +7,8 @@ tasks, Git server connections, the Work mode rename, retired session-section
 cleanup, durable goals, durable workflow gates, the AIM table drop, scheduler
 routing, and application-database graph removal through revision 00000046).
 Artifact Fabric jobs, revisions, and reviews land in revision 00000047;
-revision 00000048 repairs project-owned Coding sessions hidden by the sidebar.
+revision 00000048 repairs project-owned Coding sessions hidden by the sidebar;
+revision 00000049 removes the retired parallel Memory processing table.
 Complements ``tests/core/test_db_extra.py``, which only covers
 ``run_migrations`` error paths with mocks.
 """
@@ -67,6 +68,7 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             "artifact_reviews",
         } <= set(inspector.get_table_names())
         assert "session_chapters" not in inspector.get_table_names()
+        assert "memory_processed_sources" not in inspector.get_table_names()
         assert "session_goals" in inspector.get_table_names()
         assert {
             "code_nodes",

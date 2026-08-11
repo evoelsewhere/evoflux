@@ -1,4 +1,4 @@
-"""Tests for MemoryContextHook."""
+"""Tests for automatic curated Memory recall."""
 
 from __future__ import annotations
 
@@ -14,7 +14,8 @@ from app.agent.schemas.chat import (
     ToolCall,
 )
 from app.agent.state import AgentState, ModelRequest, RunContext
-from app.services.memory import seed_memory
+from app.core.wiki_seed import seed_wiki
+from app.services.wiki import write_file
 
 
 @pytest.fixture(autouse=True)
@@ -23,7 +24,7 @@ def _memory_dir(tmp_path: Path, monkeypatch):
 
     target = tmp_path / "memory"
     monkeypatch.setattr(settings, "EVOFLUX_WIKI_DIR", str(target))
-    seed_memory()
+    seed_wiki()
     yield target
 
 
@@ -39,24 +40,24 @@ def _request(prompt: str = "Base.", user: str = "hi") -> ModelRequest:
     return ModelRequest(messages=(HumanMessage(content=user),), system_prompt=prompt)
 
 
-def _memory_page(body: str, *, topics: list[str] | None = None) -> str:
-    topics = topics or ["preferences", "response-style"]
+def _memory_page(body: str, *, tags: list[str] | None = None) -> str:
+    tags = tags or ["preferences", "response-style"]
     return (
         "---\n"
-        "description: Test memory\n"
-        "memory_kind: profile\n"
-        "scope: user\n"
-        f"topics: {topics}\n"
+        "description: Durable test memory\n"
+        f"tags: {tags}\n"
+        "confidence: high\n"
+        "sources: [session-test]\n"
         "---\n\n"
-        f"# Memory\n\n## Facts\n\n{body}"
+        f"# Memory\n\n{body}"
     )
 
 
 async def _invoke(hook: MemoryContextHook, req: ModelRequest) -> str:
     received: list[str] = []
 
-    async def handler(r: ModelRequest) -> AssistantMessage:
-        received.append(r.system_prompt)
+    async def handler(request: ModelRequest) -> AssistantMessage:
+        received.append(request.system_prompt)
         return AssistantMessage(content="ok")
 
     await hook.wrap_model_call(_ctx(), _state(), req, handler)
@@ -74,8 +75,8 @@ async def test_no_memory_match_passes_through_unchanged():
 async def test_unrelated_query_does_not_inject_incidental_user_memory(
     _memory_dir: Path,
 ):
-    (_memory_dir / "wiki" / "user.md").write_text(
-        _memory_page("- Hoang prefers direct fact-based answers. [session:test]"),
+    (_memory_dir / "USER.md").write_text(
+        "identity:\n  name: Hoang\npreferences:\n  response: direct fact based\n",
         encoding="utf-8",
     )
 
@@ -87,11 +88,11 @@ async def test_unrelated_query_does_not_inject_incidental_user_memory(
 
 
 @pytest.mark.asyncio
-async def test_domain_specific_preference_query_does_not_inject_generic_preference(
+async def test_domain_specific_question_does_not_inject_generic_preference(
     _memory_dir: Path,
 ):
-    (_memory_dir / "wiki" / "user.md").write_text(
-        _memory_page("- Hoang prefers direct fact-based answers. [session:test]"),
+    (_memory_dir / "USER.md").write_text(
+        "identity:\n  name: Hoang\npreferences:\n  response: direct fact based\n",
         encoding="utf-8",
     )
 
@@ -104,10 +105,10 @@ async def test_domain_specific_preference_query_does_not_inject_generic_preferen
 
 
 @pytest.mark.asyncio
-async def test_relevant_memory_is_injected(_memory_dir: Path):
-    (_memory_dir / "wiki" / "user.md").write_text(
-        _memory_page("- Hoang prefers direct fact-based answers. [session:test]"),
-        encoding="utf-8",
+async def test_relevant_topic_is_injected():
+    write_file(
+        "topics/response-style.md",
+        _memory_page("Hoang prefers direct fact-based answers."),
     )
 
     result = await _invoke(
@@ -115,18 +116,19 @@ async def test_relevant_memory_is_injected(_memory_dir: Path):
     )
 
     assert "## Relevant memory" in result
-    assert "source=wiki:user" in result
+    assert "source=topic:response-style" in result
+    assert "sources=['session-test']" in result
     assert "direct fact-based" in result
 
 
 @pytest.mark.asyncio
-async def test_metadata_topics_allow_matching_domain_memory(_memory_dir: Path):
-    (_memory_dir / "wiki" / "evoflux.md").write_text(
+async def test_metadata_tags_boost_domain_memory():
+    write_file(
+        "topics/evoflux-memory.md",
         _memory_page(
-            "- EvoFlux Memory v2 should keep retrieval benchmarkable. [session:test]",
-            topics=["evoflux", "memory", "retrieval"],
+            "EvoFlux Memory should keep retrieval benchmarkable.",
+            tags=["evoflux", "memory", "retrieval"],
         ),
-        encoding="utf-8",
     )
 
     result = await _invoke(
@@ -134,76 +136,20 @@ async def test_metadata_topics_allow_matching_domain_memory(_memory_dir: Path):
         _request(user="How should EvoFlux memory retrieval work?"),
     )
 
-    assert "## Relevant memory" in result
-    assert "source=wiki:evoflux" in result
+    assert "source=topic:evoflux-memory" in result
+    assert "benchmarkable" in result
 
 
 @pytest.mark.asyncio
-async def test_product_topic_alone_does_not_inject_for_unanswered_detail(
-    _memory_dir: Path,
-):
-    (_memory_dir / "wiki" / "project-evoflux.md").write_text(
-        _memory_page(
-            "- EvoFlux is Hoang's main project. [session:test]",
-            topics=["evoflux", "project"],
-        ),
-        encoding="utf-8",
+async def test_raw_notes_are_not_automatically_injected():
+    write_file(
+        "notes/2026-08-11.md",
+        "Hoang wants EvoFlux memory to reveal temporary scratchpad content.",
     )
 
     result = await _invoke(
         MemoryContextHook(),
-        _request(user="Which cloud region does Hoang prefer for EvoFlux deployments?"),
-    )
-
-    assert result == "Base."
-
-
-@pytest.mark.asyncio
-async def test_injection_keeps_supported_memory_goal(_memory_dir: Path):
-    (_memory_dir / "wiki" / "session-local.md").write_text(
-        _memory_page(
-            "- Hoang wants EvoFlux memory to support implicit personalization. [session:test]",
-            topics=["memory", "personalization"],
-        ),
-        encoding="utf-8",
-    )
-
-    result = await _invoke(
-        MemoryContextHook(),
-        _request(user="What does Hoang want memory to do?"),
-    )
-
-    assert "## Relevant memory" in result
-    assert "implicit personalization" in result
-
-
-@pytest.mark.asyncio
-async def test_injection_uses_active_fact_not_stale_candidate(_memory_dir: Path):
-    (_memory_dir / "wiki" / "user.md").write_text(
-        _memory_page(
-            "- Hoang prefers direct fact-based answers. [session:new]\n\n"
-            "## Conflicts / stale candidates\n\n"
-            "- Hoang prefers terse answers. [session:old]"
-        ),
-        encoding="utf-8",
-    )
-
-    result = await _invoke(
-        MemoryContextHook(), _request(user="How should you answer Hoang?")
-    )
-
-    assert "direct fact-based" in result
-    assert "terse answers" not in result
-
-
-@pytest.mark.asyncio
-async def test_injection_requires_cited_fact_bullet(_memory_dir: Path):
-    (_memory_dir / "wiki" / "user.md").write_text(
-        _memory_page("Hoang prefers direct fact-based answers."), encoding="utf-8"
-    )
-
-    result = await _invoke(
-        MemoryContextHook(), _request(user="How should you answer Hoang?")
+        _request(user="What temporary scratchpad content should memory reveal?"),
     )
 
     assert result == "Base."
@@ -214,7 +160,10 @@ async def test_memory_search_failure_does_not_block_model_call(monkeypatch):
     def _raise(*args, **kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("app.agent.hooks.memory_context.search_memory_facts", _raise)
+    monkeypatch.setattr(
+        "app.agent.hooks.memory_context.search_curated_memory",
+        _raise,
+    )
 
     result = await _invoke(MemoryContextHook(), _request(user="remember me"))
 
@@ -222,12 +171,12 @@ async def test_memory_search_failure_does_not_block_model_call(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_memory_context_skips_followup_tool_call_iterations(_memory_dir: Path):
-    (_memory_dir / "wiki" / "user.md").write_text(
-        _memory_page("- Hoang prefers direct fact-based answers. [session:test]"),
-        encoding="utf-8",
+async def test_memory_context_skips_followup_tool_call_iterations():
+    write_file(
+        "topics/response-style.md",
+        _memory_page("Hoang prefers direct fact-based answers."),
     )
-    req = ModelRequest(
+    request = ModelRequest(
         messages=(
             HumanMessage(content="How should you answer Hoang?"),
             AssistantMessage(
@@ -243,6 +192,6 @@ async def test_memory_context_skips_followup_tool_call_iterations(_memory_dir: P
         system_prompt="Base.",
     )
 
-    result = await _invoke(MemoryContextHook(), req)
+    result = await _invoke(MemoryContextHook(), request)
 
     assert result == "Base."

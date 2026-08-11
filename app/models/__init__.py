@@ -4,7 +4,6 @@ from .chat import (
     DreamLog,
     DreamNotesLog,
     GitServerConnection,
-    MemoryProcessedSource,
     SessionMessage,
 )
 from .goal import SessionGoal
@@ -33,7 +32,6 @@ __all__ = [
     "DreamLog",
     "DreamNotesLog",
     "GitServerConnection",
-    "MemoryProcessedSource",
     "SessionMessage",
     "ScheduledTask",
     "SessionGoal",

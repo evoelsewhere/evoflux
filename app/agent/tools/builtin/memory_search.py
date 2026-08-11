@@ -1,4 +1,4 @@
-"""memory_search tool — deterministic search over memory v2 sources."""
+"""memory_search tool — unified deterministic EvoFlux Memory search."""
 
 from __future__ import annotations
 
@@ -22,10 +22,11 @@ async def _memory_search(
         ),
     ] = 8,
 ) -> str:
-    """Search memory across compiled wiki pages, raw files, and chat messages.
+    """Search curated knowledge, raw evidence, and visible chat messages.
 
     Use this before relying on memory. Results include stable source refs such
-    as `wiki:<slug>`, `note:<file>`, `import:<slug>`, and `message:<uuid>`.
+    as `topic:<slug>`, `entity:<slug>`, `source:<slug>`,
+    `comparison:<slug>`, `memory:user`, and `message:<uuid>`.
     """
     limit = max(1, min(top_k, 20))
     async for db in get_session():
@@ -52,13 +53,13 @@ memory_search = Tool(
     _memory_search,
     name="memory_search",
     description=(
-        "Search EvoFlux memory v2 across compiled wiki pages, notes, imports, "
-        "and visible chat messages. Returns cited excerpts with stable source refs."
+        "Search EvoFlux Memory across USER.md, topics, entities, sources, "
+        "comparisons, notes, imports, and visible chat messages. Returns "
+        "ranked excerpts with stable source refs."
     ),
     concurrency_safe=True,
     read_only=True,
-    deferred=True,
-    deferred_summary="Search EvoFlux memory, notes, wiki pages, and prior visible chats.",
+    deferred=False,
     search_aliases=(
         "remember",
         "recall",
