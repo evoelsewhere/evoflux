@@ -28,7 +28,7 @@ interface ChatTrailingPanelsProps {
   showActivity: boolean
   onCloseActivity: () => void
   workspace?: string | null
-  mode?: 'work' | 'coding'
+  mode?: 'work' | 'coding' | 'aim'
   onOpenChangedFile?: (path: string) => void
 }
 

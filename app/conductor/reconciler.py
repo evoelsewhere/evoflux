@@ -145,9 +145,9 @@ class ResourceReconciler:
             if path in files:
                 raise ValueError(f"Duplicate skill file path: {path!r}.")
             files[path] = content
-        modes = payload.get("modes", ["work", "coding"])
+        modes = payload.get("modes", ["work", "coding", "aim"])
         if not isinstance(modes, list) or any(
-            mode not in {"work", "coding"} for mode in modes
+            mode not in {"work", "coding", "aim"} for mode in modes
         ):
             raise ValueError(f"Invalid skill modes for {resource.slug}.")
         return {
@@ -473,7 +473,7 @@ class ResourceReconciler:
                     {
                         "skill_md": (root / "SKILL.md").read_text(encoding="utf-8"),
                         "files": files,
-                        "modes": runtime.get("modes", ["work", "coding"]),
+                        "modes": runtime.get("modes", ["work", "coding", "aim"]),
                         "allow_implicit_invocation": runtime.get(
                             "allow_implicit_invocation", True
                         ),

@@ -28,7 +28,7 @@ export async function getDiagnostics(): Promise<DiagnosticsResponse> {
 
 export async function teamStatus(
   workspace?: string | null,
-  mode?: 'coding' | null,
+  mode?: 'coding' | 'aim' | null,
 ): Promise<TeamStatusResponse | null> {
   const params = new URLSearchParams()
   if (workspace) params.set('workspace', workspace)

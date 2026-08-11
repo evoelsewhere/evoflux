@@ -19,6 +19,7 @@ into their own `{EVOFLUX_CONFIG_DIR}/`.
 seed/
 ├── agents/                # default global/coding agent descriptors
 ├── skills/                # optional user-editable skills; currently empty
+├── aim-kb-template/       # scaffold + operating/rulebook guidelines for AIM KB repos
 └── mcp.json               # empty MCP server config
 ```
 

@@ -11,7 +11,7 @@ import type { SessionFolderListResponse, SessionResponse } from '@/api/types'
 import { queryKeys } from './keys'
 import { patchSessionInPageData } from './session-cache'
 
-type FolderMode = 'work' | 'coding'
+type FolderMode = 'work' | 'coding' | 'aim'
 
 /** Folders for one mode, each carrying its newest sessions inline. */
 export function useSessionFoldersQuery(mode: FolderMode = 'work', enabled = true) {

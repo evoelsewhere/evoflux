@@ -1,5 +1,7 @@
 """End-to-end proof that the mutating filesystem tools (write/edit/patch/rm)
-reject a path under SandboxConfig.read_only_paths, while reads keep working.
+reject a path under SandboxConfig.read_only_paths, while reads keep
+working — the AIM-2 acceptance criterion "every write tool is blocked on
+base source" (documents/research/aim-framework.md §4.1).
 """
 
 from __future__ import annotations

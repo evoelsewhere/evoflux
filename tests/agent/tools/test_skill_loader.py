@@ -254,7 +254,7 @@ class TestDiscoverSkills:
         result = discover_skills(skills_dir=tmp_path)["specialist"]
 
         assert result["valid"] is True
-        assert result["modes"] == ["work", "coding"]
+        assert result["modes"] == ["work", "coding", "aim"]
         diagnostic = next(
             item
             for item in result["diagnostics"]
@@ -270,7 +270,7 @@ class TestDiscoverSkills:
             "x" * (16 * 1024 + 1),
         ],
     )
-    def test_invalid_scope_variants_always_fail_open_to_both_modes(
+    def test_invalid_scope_variants_always_fail_open_to_all_modes(
         self, tmp_path, payload
     ):
         skill_dir = tmp_path / "specialist"
@@ -283,7 +283,7 @@ class TestDiscoverSkills:
         result = discover_skills(skills_dir=tmp_path)["specialist"]
 
         assert result["valid"] is True
-        assert result["modes"] == ["work", "coding"]
+        assert result["modes"] == ["work", "coding", "aim"]
         assert any(
             item["code"] == "invalid-skill-scope" for item in result["diagnostics"]
         )
@@ -1124,6 +1124,12 @@ class TestBuiltinSkills:
 
     def test_builtin_catalog_is_curated_and_mode_scoped(self):
         assert set(discover_skills()) == {
+            "aim-business-rule-extraction",
+            "aim-diff-triage",
+            "aim-equivalence-testing",
+            "aim-kb-conventions",
+            "aim-legacy-comprehension",
+            "aim-ui-conventions",
             "algorithmic-art",
             "canvas-design",
             "coding-debugging",
@@ -1163,6 +1169,7 @@ class TestBuiltinSkills:
         discovered = discover_skills()
         work = set(skills_for_mode(discovered, "work"))
         coding = set(skills_for_mode(discovered, "coding"))
+        aim = set(skills_for_mode(discovered, "aim"))
 
         assert {"work-research", "work-decision", "docx", "xlsx"} <= work
         assert "plugin-development" in work
@@ -1178,12 +1185,29 @@ class TestBuiltinSkills:
             "coding-testing",
         } <= coding
         assert "plugin-development" in coding
+        assert {
+            "aim-business-rule-extraction",
+            "aim-diff-triage",
+            "aim-equivalence-testing",
+            "aim-kb-conventions",
+            "aim-legacy-comprehension",
+            "aim-ui-conventions",
+            "coding-investigation",
+            "coding-migration",
+            "coding-testing",
+            "work-decision",
+            "work-planning",
+            "work-writing",
+        } <= aim
+        assert "plugin-development" in aim
         assert "coding-investigation" not in work
         assert "work-research" not in coding
+        assert "work-research" not in aim
+        assert "coding-performance" not in aim
 
     @pytest.mark.asyncio
-    async def test_plugin_development_is_loadable_in_both_modes(self):
-        for mode in ("work", "coding"):
+    async def test_plugin_development_is_loadable_in_all_modes(self):
+        for mode in ("work", "coding", "aim"):
             result = await load_skill("plugin-development", _mode=mode)
 
             assert "# EvoFlux Plugin Development" in result
@@ -1276,7 +1300,7 @@ class TestBuiltinSkills:
             assert isinstance(meta["description"], str) and meta["description"].strip()
             assert body.strip(), skill_file
 
-    def test_native_code_context_contract_is_embedded_in_coding_workflows(self):
+    def test_native_code_context_contract_is_embedded_in_indexed_workflows(self):
         expected_owners = [
             "coding-debugging",
             "coding-implementation",
@@ -1295,7 +1319,7 @@ class TestBuiltinSkills:
             if "code_context" in skill_file.read_text(encoding="utf-8")
         ]
 
-        assert owners == expected_owners
+        assert owners == ["aim-legacy-comprehension", *expected_owners]
         for root in roots:
             normalized = " ".join(
                 (root / "SKILL.md").read_text(encoding="utf-8").split()
@@ -1316,6 +1340,13 @@ class TestBuiltinSkills:
         assert "## Choose the action from the evidence you have" in contract
         assert "`code_context` is the single indexed-code tool" in contract
         assert "Cross-repository edges are resolved dynamically" in contract
+
+        aim_contract = (
+            _builtin_skills_dir() / "aim-legacy-comprehension" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert "`code_context`" in aim_contract
+        assert "action=search" in aim_contract
+        assert "exact symbol" in aim_contract
 
     def test_coding_investigation_locks_graph_first_trajectory(self):
         root = _builtin_skills_dir() / "coding-investigation"

@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID, uuid7  # ty: ignore[unresolved-import] - backported in app.__init__
 
@@ -43,6 +43,8 @@ _GATE_TIMEOUT_S = 24 * 3600
 #: before finalising anyway. The walk only has to persist its interrupted node
 #: and gate rows; boot-time reconciliation is the backstop if it ever overruns.
 _STOP_UNWIND_S = 5.0
+_CLAIM_HEARTBEAT_S = 60
+_CLAIM_HEARTBEAT_LEASE = timedelta(hours=4)
 
 #: Node kinds the M3 runner can execute inline. M4 extends this set.
 HEADLESS_KINDS = frozenset({"tool", "switch", "transform", "notify"})
@@ -138,6 +140,7 @@ class ExecutionState:
     #: is only owed when > 0 (headless-only runs never opened a turn).
     injected_turns: int = 0
     listener_task: asyncio.Task | None = None
+    claim_heartbeat_task: asyncio.Task | None = None
 
     def template_scope(self, extra: dict | None = None) -> dict:
         import os
@@ -200,6 +203,9 @@ class WorkflowRunner:
         self.active[session_id] = state
         await self._persist_execution_start(state, definition_hash)
         await self._emit_progress(state, node_id=None)
+        state.claim_heartbeat_task = asyncio.create_task(
+            self._claim_heartbeat_loop(state)
+        )
         state.drive_task = asyncio.create_task(self._drive_safely(state))
         return state
 
@@ -522,7 +528,7 @@ class WorkflowRunner:
             # to the waiting state.
             await asyncio.sleep(0)
             state.status = "waiting_gate"
-            # Mirror the pause into the DB row: REST readers (the workflows
+            # Mirror the pause into the DB row: REST readers (the AIM Pipelines
             # table polls GET /workflows/executions) only see the persisted
             # status, and a gate can stay open for hours.
             await self._persist_execution_status(state)
@@ -724,14 +730,14 @@ class WorkflowRunner:
 
     async def _ensure_team(self, state: ExecutionState):
         """Find (or boot) the live team for this session — work sessions
-        via the session team map, coding via the workspace-keyed map
+        via the session team map, coding/aim via the workspace-keyed map
         with the same wiring the chat route uses."""
         from app.services import team_manager
 
         scope = state.definition.scope
         team = team_manager.find_team_for_session(state.session_id)
         if team is not None:
-            # A coding definition must run on a team with that roster —
+            # A coding/aim definition must run on a team with that roster —
             # a stray default-mode team bound to this session id (e.g. by an
             # old, pre-fix /commands call) would silently swap the lead.
             if scope == "work" or getattr(team, "mode", scope) == scope:
@@ -745,20 +751,26 @@ class WorkflowRunner:
                 scope,
             )
         # Boot by the SESSION's mode, not the definition scope: a work-scope
-        # workflow in a coding session must still run on that session's
+        # workflow in a coding/aim session must still run on that session's
         # own team (M3: "work runs anywhere" means anywhere, with the
-        # session's lead). For coding scopes the run endpoint already
+        # session's lead). For coding/aim scopes the run endpoint already
         # guaranteed session.mode == scope and a bound workspace.
         session_mode, session_workspace = await self._session_mode_workspace(state)
         try:
-            if session_mode == "coding" and session_workspace:
+            if session_mode in ("coding", "aim") and session_workspace:
+                extra_paths: list[str] = []
+                read_only: list[str] = []
+                if session_mode == "aim":
+                    extra_paths, read_only = await self._aim_session_paths(state)
                 return await team_manager.get_or_start_coding_team(
                     session_workspace,
                     state.session_id,
+                    extra_workspace_paths=extra_paths or None,
                     mode=session_mode,
+                    read_only_paths=read_only or None,
                 )
             if scope != "work":
-                # coding definition but the session lost its
+                # coding/aim definition but the session lost its
                 # mode/workspace — refuse rather than run on the wrong team.
                 return None
             team = await team_manager.get_or_start_team_for_session(state.session_id)
@@ -792,6 +804,36 @@ class WorkflowRunner:
             # launch-time folder.
             return mode, session.workspace
         return mode, session.workspace or state.scope_workspace
+
+    async def _aim_session_paths(
+        self, state: ExecutionState
+    ) -> tuple[list[str], list[str]]:
+        """extra_workspace_paths + read_only_paths for an aim session — the
+        same resolution the chat dispatch does (source read-only, source+kb
+        ride along)."""
+        from app.core import db as db_module
+        from app.models.chat import ChatSession
+        from app.services.coding_project_service import get_project
+        from app.services.aim.project import (
+            resolve_kb_workspace_path,
+            resolve_source_workspace_paths,
+        )
+
+        try:
+            async with db_module.async_session_factory() as db:
+                session = await db.get(ChatSession, UUID(state.session_id))
+                if session is None or session.project_id is None:
+                    return [], []
+                project = await get_project(db, session.project_id)
+                if project is None:
+                    return [], []
+                sources = await resolve_source_workspace_paths(db, project)
+                kb = await resolve_kb_workspace_path(db, project)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("workflow_aim_paths_failed error={}", exc)
+            return [], []
+        extra = [p for p in [*sources, kb] if p]
+        return extra, list(sources)
 
     async def _last_message_created_at(self, session_id: str) -> str | None:
         from sqlmodel import col, select
@@ -882,6 +924,8 @@ class WorkflowRunner:
                     exc,
                 )
         state.status = "completed"
+        await self._stop_claim_heartbeat(state)
+        await self._release_execution_claims(state.execution_id)
         await self._persist_execution_end(state, outputs=outputs)
         await self._emit_progress(state, node_id=None)
         self.active.pop(state.session_id, None)
@@ -894,6 +938,8 @@ class WorkflowRunner:
             state.graph.mark_failed(node_id)
         state.status = "failed"
         state.error = error
+        await self._stop_claim_heartbeat(state)
+        await self._release_execution_claims(state.execution_id)
         partial_outputs = (
             {"partial_nodes": state.node_outputs} if state.node_outputs else None
         )
@@ -906,6 +952,8 @@ class WorkflowRunner:
         if self.active.get(state.session_id) is not state:
             return  # already finalised
         state.status = status
+        await self._stop_claim_heartbeat(state)
+        await self._release_execution_claims(state.execution_id)
         await self._persist_execution_end(state)
         await self._emit_progress(state, node_id=state.current_node_id)
         self.active.pop(state.session_id, None)
@@ -913,6 +961,78 @@ class WorkflowRunner:
         if team is not None:
             team.set_inline_busy(False)
         await self._emit_done_if_owned(state)
+
+    async def _release_execution_claims(self, execution_id: UUID) -> None:
+        from sqlmodel import select
+
+        from app.core import db as db_module
+        from app.models.aim import AimClaim
+
+        try:
+            async with db_module.async_session_factory() as db:
+                claims = (
+                    await db.exec(
+                        select(AimClaim).where(
+                            AimClaim.workflow_execution_id == execution_id
+                        )
+                    )
+                ).all()
+                for claim in claims:
+                    await db.delete(claim)
+                if claims:
+                    await db.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "workflow_claim_cleanup_failed execution={} error={}",
+                execution_id,
+                exc,
+            )
+
+    async def _claim_heartbeat_loop(self, state: ExecutionState) -> None:
+        while self.active.get(state.session_id) is state:
+            try:
+                await self._renew_execution_claims(state.execution_id)
+            except Exception as exc:  # noqa: BLE001 — retry on next heartbeat
+                logger.warning(
+                    "workflow_claim_heartbeat_failed execution={} error={}",
+                    state.execution_id,
+                    exc,
+                )
+            await asyncio.sleep(_CLAIM_HEARTBEAT_S)
+
+    async def _renew_execution_claims(self, execution_id: UUID) -> int:
+        from sqlmodel import select
+
+        from app.core import db as db_module
+        from app.models.aim import AimClaim
+
+        async with db_module.async_session_factory() as db:
+            claims = (
+                await db.exec(
+                    select(AimClaim).where(
+                        AimClaim.workflow_execution_id == execution_id
+                    )
+                )
+            ).all()
+            if not claims:
+                return 0
+            expires_at = _utcnow() + _CLAIM_HEARTBEAT_LEASE
+            for claim in claims:
+                claim.lease_expires_at = expires_at
+                db.add(claim)
+            await db.commit()
+            return len(claims)
+
+    async def _stop_claim_heartbeat(self, state: ExecutionState) -> None:
+        task = state.claim_heartbeat_task
+        state.claim_heartbeat_task = None
+        if task is None or task is asyncio.current_task():
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
     # -- side channels ------------------------------------------------------------
     @staticmethod
@@ -1155,6 +1275,7 @@ async def reconcile_orphaned_executions() -> int:
     from sqlmodel import col, select
 
     from app.core import db as db_module
+    from app.models.aim import AimClaim
     from app.models.workflow import (
         WorkflowExecution,
         WorkflowGateRequest,
@@ -1201,6 +1322,13 @@ async def reconcile_orphaned_executions() -> int:
                     gate_row.status = "interrupted"
                     gate_row.resolved_at = _utcnow()
                     db.add(gate_row)
+                claim_rows = (
+                    await db.exec(
+                        select(AimClaim).where(AimClaim.workflow_execution_id == row.id)
+                    )
+                ).all()
+                for claim_row in claim_rows:
+                    await db.delete(claim_row)
                 reconciled += 1
             if reconciled:
                 await db.commit()

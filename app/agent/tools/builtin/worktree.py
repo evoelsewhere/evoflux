@@ -508,7 +508,7 @@ async def _worktree_finish(
 worktree_start = Tool(
     _worktree_start,
     name="worktree_start",
-    tiers=("coding",),
+    tiers=("coding", "aim"),
     lead_only=True,
     deferred=True,
     deferred_summary="Create an isolated git worktree for parallel or experimental work.",
@@ -521,7 +521,7 @@ worktree_start = Tool(
 worktree_finish = Tool(
     _worktree_finish,
     name="worktree_finish",
-    tiers=("coding",),
+    tiers=("coding", "aim"),
     lead_only=True,
     deferred=True,
     deferred_summary="Review or snapshot a worktree before safe cleanup.",

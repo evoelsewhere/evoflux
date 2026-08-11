@@ -255,11 +255,14 @@ class TestPostTeamCommands:
         }
 
     @pytest.mark.asyncio
-    async def test_commands_never_bind_work_team_to_coding_session(
+    async def test_commands_never_bind_work_team_to_aim_session(
         self, app_with_lead_only_team, monkeypatch, tmp_path
     ):
-        """Regression: /commands must resolve by the session's persisted
-        mode and never bind a work team under a coding session id."""
+        """Regression: the old pre-resolve boot registered a default-mode
+        team under the aim session id; ``find_team_for_session`` (the
+        workflow runner's lookup) then preferred it, so aim pipelines ran
+        with the work lead. /commands must resolve by the session's
+        persisted mode and never touch the work session-team map."""
         sid = uuid.uuid7()
         workspace = str(tmp_path)
         async with _db.async_session_factory() as db:
@@ -268,26 +271,24 @@ class TestPostTeamCommands:
                     ChatSession(
                         id=sid,
                         agent_name="lead",
-                        mode="coding",
+                        mode="aim",
                         workspace=workspace,
                     )
                 )
                 db.add(SessionMessage(session_id=sid, role="user", content="hello"))
 
-        coding_team = AgentTeam(
+        aim_team = AgentTeam(
             lead=TeamLead(
                 Agent(
-                    name="coding-lead",
-                    llm_provider=MockProvider(),
-                    system_prompt="Lead",
+                    name="aim-lead", llm_provider=MockProvider(), system_prompt="Lead"
                 ),
                 db_factory=_db.async_session_factory,
             ),
             members={},
-            mode="coding",
+            mode="aim",
             workspace=workspace,
         )
-        await coding_team.start()
+        await aim_team.start()
         called: dict[str, object] = {}
 
         async def fake_get_or_start_coding_team(
@@ -295,15 +296,15 @@ class TestPostTeamCommands:
         ):
             called["workspace"] = requested_workspace
             called["mode"] = kwargs.get("mode")
-            return coding_team
+            return aim_team
 
         async def forbidden_work_boot(session_id: str):
-            raise AssertionError("must not bind a work team to a coding session")
+            raise AssertionError("must not bind a work team to an aim session")
 
-        async def coding_compact(session_id: str) -> str:
+        async def aim_compact(session_id: str) -> str:
             return session_id
 
-        monkeypatch.setattr(coding_team, "handle_compact", coding_compact)
+        monkeypatch.setattr(aim_team, "handle_compact", aim_compact)
         monkeypatch.setattr(
             "app.api.routes.team.chat.team_manager.get_or_start_coding_team",
             fake_get_or_start_coding_team,
@@ -319,10 +320,10 @@ class TestPostTeamCommands:
                 json={"command": "compact", "session_id": str(sid)},
             )
         finally:
-            await coding_team.stop()
+            await aim_team.stop()
 
         assert resp.status_code == 202
-        assert called == {"workspace": workspace, "mode": "coding"}
+        assert called == {"workspace": workspace, "mode": "aim"}
 
     @pytest.mark.asyncio
     async def test_undo_hides_latest_user_turn(self, app_with_lead_only_team):

@@ -186,7 +186,7 @@ def _parse_settings(
             or not isinstance(invocable, bool)
         ):
             diagnostics[settings_id] = (
-                "The user runtime override is invalid; expected unique work/coding "
+                "The user runtime override is invalid; expected unique work/coding/aim "
                 "modes and boolean invocation switches. Bundle defaults remain active."
             )
             continue
@@ -282,7 +282,9 @@ def write_skill_runtime_settings(
         or len(raw_modes) != len(set(raw_modes))
         or len(normalized_modes) != len(raw_modes)
     ):
-        raise SkillSettingsError("Skill modes must contain work and/or coding once.")
+        raise SkillSettingsError(
+            "Skill modes must contain work, coding, and/or aim once."
+        )
 
     path = skill_settings_path()
     with _settings_write_lock(path):

@@ -141,7 +141,13 @@ export function AgentForm({
     }
   }
 
-  const agentMode = skillMode ?? (agentPath?.startsWith('coding/') ? 'coding' : 'work')
+  const agentMode = skillMode ?? (
+    agentPath?.startsWith('coding/')
+      ? 'coding'
+      : agentPath?.startsWith('aim/')
+        ? 'aim'
+        : 'work'
+  )
   const activeSkillScope = useActiveSkillDiscoveryScope(agentMode)
   const registry = useRegistryQuery(
     workspaceRoots?.length
@@ -171,7 +177,7 @@ export function AgentForm({
 
   const skillOptions: MultiSelectOption[] =
     registry.data?.skills
-      .filter((s) => (s.modes ?? ['work', 'coding']).includes(agentMode))
+      .filter((s) => (s.modes ?? ['work', 'coding', 'aim']).includes(agentMode))
       .map((s) => ({
         value: s.name,
         label: s.display_name || s.name,

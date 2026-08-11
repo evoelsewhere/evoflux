@@ -1,7 +1,8 @@
 /**
  * SidePanel — the shared desktop chrome of the app's right-hand side panels
- * (plan review, activity, coding workspace / file viewer, workspace files):
- * the trailing-row mirror of ``SidebarShell``.
+ * (plan review, activity, coding workspace / file viewer, workspace files,
+ * AIM discussion / monitor / report / unit detail): the trailing-row mirror
+ * of ``SidebarShell``.
  *
  * Extracted from panels that each hand-rolled the same mechanics. The shell
  * owns:
@@ -43,7 +44,7 @@ interface SidePanelProps {
   /**
    * Dual-mode layout: fixed full-screen overlay below the md breakpoint,
    * in-flow row sibling at md and up. Panels mounted only as desktop row
-   * siblings (activity) leave this off.
+   * siblings (activity, AIM) leave this off.
    */
   mobileOverlay?: boolean
   /** Force a viewport overlay even above the normal mobile breakpoint. */
@@ -69,7 +70,7 @@ interface SidePanelProps {
   mobile?: boolean
   /**
    * Width open/close + drag animation. Pass false for panels that never
-   * animated before — width changes then apply instantly.
+   * animated before (AIM) — width changes then apply instantly.
    */
   animated?: boolean
   /**

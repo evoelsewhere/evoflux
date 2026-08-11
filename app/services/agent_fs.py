@@ -160,9 +160,9 @@ def validate_skill_name(name: str) -> None:
 
 
 def _validate_agent_name(name: str) -> Path:
-    # The application has exactly two namespaces: flat Work agents and one
-    # ``coding/`` level. Reject retired/arbitrary product-mode directories so
-    # they cannot silently fall back to Work behavior.
+    # The application has three namespaces: flat Work agents plus one
+    # ``coding/`` or ``aim/`` level. Reject arbitrary product-mode directories
+    # so they cannot silently fall back to Work behavior.
     if "\\" in name:
         raise AgentFsPathError(
             f"Invalid name '{name}'. Use '/' for nested agents, not '\\'."
@@ -170,10 +170,10 @@ def _validate_agent_name(name: str) -> Path:
     parts = PurePosixPath(name).parts
     if not parts:
         raise AgentFsPathError("Agent name cannot be empty.")
-    if len(parts) > 2 or (len(parts) == 2 and parts[0] != "coding"):
+    if len(parts) > 2 or (len(parts) == 2 and parts[0] not in {"coding", "aim"}):
         raise AgentFsPathError(
             f"Invalid agent path '{name}'. Use '<name>' for Work or "
-            "'coding/<name>' for Coding."
+            "'<mode>/<name>' for Coding or AIM (mode: 'coding' or 'aim')."
         )
     return Path(*(_validate_name(part) for part in parts))
 
@@ -347,7 +347,8 @@ def list_agents() -> list[str]:
         return []
     work = [p.stem for p in root.glob("*.md")]
     coding = [f"coding/{p.stem}" for p in (root / "coding").glob("*.md")]
-    return sorted([*work, *coding])
+    aim = [f"aim/{p.stem}" for p in (root / "aim").glob("*.md")]
+    return sorted([*work, *coding, *aim])
 
 
 def read_agent(name: str) -> AgentFileRecord:

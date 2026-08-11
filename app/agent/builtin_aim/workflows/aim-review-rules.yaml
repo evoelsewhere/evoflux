@@ -1,0 +1,115 @@
+schema_version: 1
+name: aim-review-rules
+description: Human-review candidate business rules before target design
+scope: aim
+
+inputs:
+  - name: unit
+    type: string
+    required: true
+    description: "understood module/unit whose rules need review"
+
+nodes:
+  - id: readiness
+    kind: tool
+    tool: aim_readiness
+    args: { pipeline: aim-review-rules, unit: "{{inputs.unit}}" }
+
+  - id: readiness_branch
+    kind: switch
+    value: "{{nodes.readiness.output.status}}"
+
+  - id: blocked
+    kind: notify
+    title: "aim-review-rules blocked"
+    message: "{{inputs.unit}} is not ready for rule review: {{nodes.readiness.output.blockers | json}}"
+
+  - id: acquire
+    kind: tool
+    tool: aim_claim
+    args: { action: acquire, unit: "{{inputs.unit}}" }
+
+  - id: claim_branch
+    kind: switch
+    value: "{{nodes.acquire.output.status}}"
+
+  - id: claim_blocked
+    kind: notify
+    title: "aim-review-rules claim blocked"
+    message: "{{inputs.unit}} is already owned: {{nodes.acquire.output.blockers | json}}"
+
+  - id: inspect
+    kind: agent
+    subagents: [aim-archaeologist]
+    prompt: |
+      Review every business-rules/*.md entry whose frontmatter unit is
+      {{inputs.unit}} against the unit document and cited source. Report rule IDs,
+      exact behavior, source evidence, ambiguities, duplicates, and whether this
+      technical unit legitimately has no business rules. Do not change status;
+      the human gate and deterministic tool own confirmation.
+    timeout_s: 1800
+
+  - id: list_rules
+    kind: tool
+    tool: aim_rules
+    args: { action: list, unit: "{{inputs.unit}}" }
+
+  - id: approve
+    kind: gate
+    title: "Confirm business rules for {{inputs.unit}}?"
+    body: "{{nodes.inspect.output.text | truncate:2400}}"
+    choices: [confirm, no_rules, hold]
+
+  - id: confirm
+    kind: tool
+    tool: aim_rules
+    args: { action: confirm, unit: "{{inputs.unit}}" }
+
+  - id: no_rules
+    kind: tool
+    tool: aim_rules
+    args: { action: no_rules, unit: "{{inputs.unit}}" }
+
+  - id: release_success
+    kind: tool
+    tool: aim_claim
+    args: { action: release, unit: "{{inputs.unit}}" }
+
+  - id: release_hold
+    kind: tool
+    tool: aim_claim
+    args: { action: release, unit: "{{inputs.unit}}" }
+
+  - id: done
+    kind: notify
+    title: "aim-review-rules"
+    message: "Business-rule review for {{inputs.unit}} is recorded."
+
+  - id: held
+    kind: notify
+    title: "aim-review-rules"
+    message: "Business rules for {{inputs.unit}} remain unconfirmed."
+
+edges:
+  - { from: readiness, to: readiness_branch }
+  - { from: readiness_branch, to: blocked, when: blocked }
+  - { from: readiness_branch, to: acquire, when: ready }
+  - { from: acquire, to: claim_branch }
+  - { from: claim_branch, to: claim_blocked, when: blocked }
+  - { from: claim_branch, to: inspect, when: acquired }
+  - { from: inspect, to: list_rules }
+  - { from: list_rules, to: approve }
+  - { from: approve, to: confirm, when: confirm }
+  - { from: approve, to: no_rules, when: no_rules }
+  - { from: approve, to: release_hold, when: hold }
+  - { from: confirm, to: release_success }
+  - { from: no_rules, to: release_success }
+  - { from: release_success, to: done }
+  - { from: release_hold, to: held }
+
+outputs:
+  readiness_status: "{{nodes.readiness.output.status}}"
+  blockers: "{{nodes.readiness.output.blockers | json}}"
+  rule_count: "{{nodes.list_rules.output.count}}"
+  decision: "{{nodes.approve.output.choice}}"
+  review_path: "{{nodes.confirm.output.review_path}}"

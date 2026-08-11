@@ -129,5 +129,5 @@ class ToolContextProjectionHook(BaseAgentHook):
 
 def build_tool_context_projection_hook(mode: str) -> ToolContextProjectionHook:
     return ToolContextProjectionHook(
-        keep_recent_batches=3 if mode == "coding" else 4,
+        keep_recent_batches=3 if mode in {"coding", "aim"} else 4,
     )

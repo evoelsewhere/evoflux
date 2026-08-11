@@ -10,16 +10,22 @@ from __future__ import annotations
 from app.core.skill_scope import ALL_SKILL_MODES, SkillMode
 
 BUNDLED_SKILL_MODES: dict[str, tuple[SkillMode, ...]] = {
+    "aim-business-rule-extraction": ("aim",),
+    "aim-diff-triage": ("aim",),
+    "aim-equivalence-testing": ("aim",),
+    "aim-kb-conventions": ("aim",),
+    "aim-legacy-comprehension": ("aim",),
+    "aim-ui-conventions": ("aim",),
     "algorithmic-art": ("work",),
     "canvas-design": ("work",),
-    "coding-debugging": ("coding",),
-    "coding-implementation": ("coding",),
-    "coding-investigation": ("coding",),
-    "coding-migration": ("coding",),
+    "coding-debugging": ("coding", "aim"),
+    "coding-implementation": ("coding", "aim"),
+    "coding-investigation": ("coding", "aim"),
+    "coding-migration": ("coding", "aim"),
     "coding-performance": ("coding",),
-    "coding-review": ("coding",),
+    "coding-review": ("coding", "aim"),
     "coding-security": ("coding",),
-    "coding-testing": ("coding",),
+    "coding-testing": ("coding", "aim"),
     "frontend-design": ALL_SKILL_MODES,
     "mcp-installer": ALL_SKILL_MODES,
     "plugin-development": ALL_SKILL_MODES,
@@ -28,11 +34,11 @@ BUNDLED_SKILL_MODES: dict[str, tuple[SkillMode, ...]] = {
     "self-healing": ALL_SKILL_MODES,
     "skill-installer": ALL_SKILL_MODES,
     "theme-factory": ("work",),
-    "work-decision": ("work",),
+    "work-decision": ("work", "aim"),
     "work-data-analysis": ("work",),
-    "work-planning": ("work",),
+    "work-planning": ("work", "aim"),
     "work-research": ("work",),
-    "work-writing": ("work",),
+    "work-writing": ("work", "aim"),
 }
 
 

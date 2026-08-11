@@ -96,10 +96,10 @@ class ChatForm(BaseModel):
         if self.message is not None and len(self.message.strip()) == 0:
             raise ValueError("message must not be blank.")
         self.mode = normalize_mode(self.mode)
-        if self.mode not in {"work", "coding"}:
-            raise ValueError("mode must be 'work' or 'coding'.")
-        if self.mode == "coding" and not self.workspace:
-            raise ValueError("workspace is required when mode='coding'.")
+        if self.mode not in {"work", "coding", "aim"}:
+            raise ValueError("mode must be 'work', 'coding', or 'aim'.")
+        if self.mode in ("coding", "aim") and not self.workspace:
+            raise ValueError(f"workspace is required when mode='{self.mode}'.")
         if (
             self.model is not None
             and self.model.strip()

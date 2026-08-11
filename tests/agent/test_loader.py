@@ -200,13 +200,18 @@ def test_default_tool_registry_keys():
 
 
 def test_tier_tools_cover_default_registry():
-    """Every non-MCP, non-loader-managed registry tool belongs to some tier."""
+    """Every non-MCP, non-loader-managed registry tool belongs to some tier.
+
+    "aim" is included alongside work/coding: aim_units/aim_compare are
+    deliberately gated to that tier only (documents/research/aim-framework.md
+    §3.3) and aren't meant to be reachable from work/coding sessions.
+    """
     from app.agent.builtin_prompts import _LOADER_MANAGED_TOOLS, tier_tools
 
     registry = _default_tool_registry()
 
     lead_union: set[str] = set()
-    for mode in ("work", "coding"):
+    for mode in ("work", "coding", "aim"):
         lead_union |= set(tier_tools(registry, mode=mode, role="lead"))
 
     expected = {

@@ -208,7 +208,7 @@ function PanelLoadingFallback() {
 
 interface TeamChatViewProps {
   sessionId?: string
-  mode?: 'work' | 'coding'
+  mode?: 'work' | 'coding' | 'aim'
   workspace?: string | null
   codingSessionLoading?: boolean
 }
@@ -291,7 +291,9 @@ function ActiveAgentTranscript({
 }
 
 export function TeamChatView({ sessionId, mode = 'work', workspace = null, codingSessionLoading = false }: TeamChatViewProps) {
-  const workOrCodingMode: 'work' | 'coding' = mode === 'coding' ? 'coding' : 'work'
+  // Scheduled tasks currently target a Work or Coding Lead. AIM Discussion
+  // is session-keyed, so scheduling from it intentionally targets Work.
+  const scheduledTaskMode: 'work' | 'coding' = mode === 'coding' ? 'coding' : 'work'
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
@@ -517,7 +519,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   // collapse preference untouched.
   const sidebarOverlay = useAdaptiveSidebarOverlay({
     mainColumnRef,
-    workbenchOpen,
+    // AIM Discussion is nested inside the project shell and deliberately has
+    // no chat sidebar. Enabling adaptive overlay here would hide the outer
+    // persistent mode switcher and render a navigation button with no drawer.
+    workbenchOpen: workbenchOpen && mode !== 'aim',
     isMobile,
     macOverlay: isMacOverlay,
   })
@@ -624,7 +629,9 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     }
   }, [activeSessionId, persistedWebBridgeEnabled, sessionTags, webBridgePolicyEnabled])
   // Lead capabilities — used to drive composer affordances (slash menu).
-  const agentWorkspace = mode === 'coding' ? workspace : null
+  // aim sessions are workspace-bound like coding (primary workspace = the
+  // target repo) — the backend requires a workspace on every aim message.
+  const agentWorkspace = mode === 'coding' || mode === 'aim' ? workspace : null
   const workWorkspaceQuery = useQuery({
     queryKey: queryKeys.team.workspaceRoot(validWorkSessionId ?? ''),
     queryFn: () => getSessionWorkspaceRoot(validWorkSessionId as string),
@@ -642,7 +649,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const { data: teamAgentsData, isLoading: teamAgentsLoading } = useTeamAgentsQuery(
     agentWorkspace,
     hasCodingWorkspace,
-    'coding',
+    mode === 'aim' ? 'aim' : 'coding',
   )
   const leadAgent = teamAgentsData?.agents?.find((a) => a.is_lead)
   const leadCapabilities: AgentCapabilitiesType | undefined = leadAgent?.capabilities
@@ -683,7 +690,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   // lazily — the query is keyed on workspace/session so coding and normal
   // modes don't share cache entries.
   const { refs: fileRefs } = useFileRefsQuery({
-    mode: workOrCodingMode,
+    mode,
     sessionId: sessionIdState,
     workspace,
     enabled: fileRefsEnabled && (mode === 'coding' ? Boolean(workspace) : Boolean(sessionIdState)),
@@ -737,6 +744,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const isEmptyIdleSession = useCallback(() => useTeamStore.getState().isEmptyIdleSession(), [])
 
   const handleNewSession = useCallback(() => {
+    // aim sessions are per-run, created by the Pipelines Run button —
+    // there is no "new chat" concept in the Discussion panel, and this
+    // flow doesn't thread project_id through resolveTeamSession.
+    if (mode === 'aim') return
     if (isEmptyIdleSession()) return
     abortRef.current?.abort()
     abortRef.current = null
@@ -1209,7 +1220,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     setViewMode,
     handleWorkspaceFiles,
     handleCodingSidebarToggle,
-    mode: workOrCodingMode,
+    mode,
     handleNewSession,
     handleDreamRun,
     agentNames,
@@ -1304,8 +1315,9 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   // ── Render ─────────────────────────────────────────────────────────────────
 
   // One sidebar instance per mode — the inactive mode's sidebar (and its
-  // queries) stays unmounted instead of being CSS-hidden.
-  const desktopSidebar = !isMobile && !sidebarOverlay
+  // queries) stays unmounted instead of being CSS-hidden. aim-chat has no
+  // in-chat sidebar at all (AimSidebar lives in the AIM layout).
+  const desktopSidebar = !isMobile && !sidebarOverlay && mode !== 'aim'
     ? mode === 'coding'
       ? (
         <CodingSidebar
@@ -1331,7 +1343,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     : null
   // Mobile and constrained desktop layouts share the same fixed left drawer.
   // AppShell renders it inside the body row for predictable z-stacking.
-  const mobileSidebar = isMobile || sidebarOverlay
+  const mobileSidebar = (isMobile || sidebarOverlay) && mode !== 'aim'
     ? mode === 'coding'
       ? (
         <CodingSidebar
@@ -1493,7 +1505,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             open={workbenchTabs.some((tab) => tab.tool === 'scheduler')}
             embedded
             onClose={() => closeWorkbenchTool('scheduler')}
-            contextMode={workOrCodingMode}
+            contextMode={scheduledTaskMode}
             contextWorkspace={mode === 'coding' ? workspace : null}
           />
         </WorkbenchSurface>
@@ -1732,7 +1744,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           onSelectAgent={setActiveAgent}
           viewMode={displayedViewMode}
           onViewModeChange={setViewMode}
-          onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
+          onOpenMobileSidebar={mode === 'aim' ? undefined : () => setMobileSidebarOpen(true)}
           mode={mode}
           workspace={workbenchWorkspace}
           onChooseWorkspace={mode === 'coding' ? handleOpenWorkspaceDialog : undefined}
@@ -1986,7 +1998,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             onSessionModelSettingsChange={setSessionModelSettings}
             agentNames={agentNames}
             agentWorkspace={agentWorkspace}
-            agentMode="coding"
+            agentMode={mode === 'aim' ? 'aim' : 'coding'}
             todos={todos}
             todosOpen={todosOpen}
             onTodosOpenChange={setTodosOpen}

@@ -11,6 +11,7 @@ from app.agent.skills.activation import (
     SkillDependencyError,
     apply_skill_runtime_contract,
 )
+from app.core.skill_scope import normalize_skill_mode
 
 if TYPE_CHECKING:
     from app.agent.state import AgentState, RunContext
@@ -20,7 +21,7 @@ class SkillRuntimeContractHook(BaseAgentHook):
     """Restore tools required by loaded skills without restricting tool use."""
 
     def __init__(self, *, mode: str) -> None:
-        self._mode = "coding" if mode == "coding" else "work"
+        self._mode = normalize_skill_mode(mode)
 
     async def before_agent(self, ctx: RunContext, state: AgentState) -> None:
         from app.agent.tools.builtin.skill import (

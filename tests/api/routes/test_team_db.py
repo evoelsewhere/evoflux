@@ -336,6 +336,39 @@ class TestResolveTeamSession:
         assert [item["id"] for item in project_sessions.json()["data"]] == [data["id"]]
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("project_kind", "session_mode"),
+        (("aim", "coding"), ("coding", "aim")),
+    )
+    async def test_resolve_rejects_project_from_another_mode(
+        self, app_with_team, tmp_path, project_kind, session_mode
+    ):
+        import app.core.db as _db
+        from app.services.coding_project_service import create_project
+
+        repo = tmp_path / f"{project_kind}-repo"
+        repo.mkdir()
+        async with _db.async_session_factory() as db:
+            project = await create_project(
+                db, name=f"{project_kind} project", workspace_paths=[str(repo)]
+            )
+            project.kind = project_kind
+            db.add(project)
+            await db.commit()
+            project_id = project.id
+
+        client = TestClient(app_with_team)
+        response = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": session_mode, "project_id": str(project_id)},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"] == (
+            f"A {session_mode} session cannot use a {project_kind} project."
+        )
+
+    @pytest.mark.asyncio
     async def test_resolve_workspace_shared_by_projects_requires_explicit_project(
         self, app_with_team, tmp_path
     ):

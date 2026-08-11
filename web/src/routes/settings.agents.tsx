@@ -50,7 +50,7 @@ import { useToastStore } from '@/stores/useToastStore'
 
 type Tab = 'all' | AgentTeam
 
-const TEAM_ORDER: AgentTeam[] = ['work', 'coding']
+const TEAM_ORDER: AgentTeam[] = ['work', 'coding', 'aim']
 
 export function AgentsListPage() {
   const { data, isLoading, isFetching, isError, error, refetch } = useAgentFilesQuery()
@@ -190,6 +190,7 @@ export function AgentsListPage() {
                     { value: 'all', label: `All ${agents.length}` },
                     { value: 'work', label: `Work ${teams.work.length}` },
                     { value: 'coding', label: `Coding ${teams.coding.length}` },
+                    { value: 'aim', label: `AIM ${teams.aim.length}` },
                   ]}
                   value={tab}
                   onChange={setTab}
