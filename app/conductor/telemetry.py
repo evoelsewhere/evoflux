@@ -1,13 +1,16 @@
-"""Privacy-safe, bounded telemetry outbox for Conductor delivery."""
+"""Durable, privacy-bounded telemetry queues for Conductor delivery."""
 
 from __future__ import annotations
 
 import json
 import logging
 import os
+import tempfile
 import threading
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from app.conductor.client import redact_telemetry
 from app.conductor.constants.telemetry import (
@@ -20,11 +23,16 @@ from app.conductor.constants.telemetry import (
 )
 from app.core.config import settings
 
+if TYPE_CHECKING:
+    from app.conductor.client import ConductorClient
+
+_LOCK = threading.Lock()
+_MAX_QUEUE_EVENTS = 10_000
 logger = logging.getLogger(__name__)
 
 
 class TelemetryOutbox:
-    """Persist a bounded queue so agent turns never wait for the network."""
+    """Persist the legacy bounded event queue used by agent telemetry hooks."""
 
     def __init__(
         self,
@@ -127,3 +135,122 @@ def _valid_event(event: dict[str, Any]) -> bool:
 
 
 telemetry_outbox = TelemetryOutbox()
+
+
+def _queue_path() -> Path:
+    return Path(settings.EVOFLUX_STATE_DIR) / "conductor" / "usage-queue.jsonl"
+
+
+def clear_usage() -> None:
+    """Discard queued managed-skill events when a connection is removed."""
+
+    with _LOCK:
+        _queue_path().unlink(missing_ok=True)
+
+
+def _managed_metadata(skill_name: str) -> dict[str, object] | None:
+    root = Path(settings.SKILLS_DIR).resolve()
+    metadata = (root / skill_name / ".evoflux.json").resolve()
+    if not metadata.is_relative_to(root):
+        return None
+    try:
+        payload = json.loads(metadata.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, ValueError, TypeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("managed_by") != "conductor":
+        return None
+    return payload
+
+
+def record_skill_usage(
+    skill_name: str,
+    *,
+    source: Literal["manual", "implicit", "configured"],
+    mode: Literal["work", "coding"],
+    outcome: Literal["success", "failure", "cancelled"] = "success",
+    duration_ms: int = 0,
+    failure_category: str | None = None,
+    session_id: str | None = None,
+) -> None:
+    """Append one content-free event when the skill is Conductor-managed."""
+
+    metadata = _managed_metadata(skill_name)
+    if metadata is None:
+        return
+    resource_id = metadata.get("resource_id")
+    resource_version = metadata.get("resource_version")
+    if not isinstance(resource_id, str) or not isinstance(resource_version, str):
+        return
+    event = {
+        "event_id": str(uuid.uuid4()),
+        "resource_id": resource_id,
+        "resource_version": resource_version,
+        "session_id": session_id[:120] if session_id else None,
+        "invocation_source": source,
+        "runtime_mode": mode,
+        "failure_category": failure_category[:80] if failure_category else None,
+        "outcome": outcome,
+        "duration_ms": max(0, duration_ms),
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "occurred_at": datetime.now(UTC).isoformat(),
+    }
+    path = _queue_path()
+    with _LOCK:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        existing = []
+        try:
+            existing = path.read_text(encoding="utf-8").splitlines()
+        except FileNotFoundError:
+            pass
+        if len(existing) >= _MAX_QUEUE_EVENTS:
+            existing = existing[-(_MAX_QUEUE_EVENTS - 1) :]
+            _atomic_lines(path, existing)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, separators=(",", ":"), ensure_ascii=False))
+            handle.write("\n")
+
+
+async def flush_usage(client: ConductorClient) -> int:
+    path = _queue_path()
+    with _LOCK:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except FileNotFoundError:
+            return 0
+        batch_lines = lines[:100]
+    events: list[dict[str, object]] = []
+    for line in batch_lines:
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            events.append(value)
+    if not events:
+        with _LOCK:
+            _atomic_lines(path, lines[len(batch_lines) :])
+        return 0
+    await client.report_resource_usage(events)
+    with _LOCK:
+        try:
+            current = path.read_text(encoding="utf-8").splitlines()
+        except FileNotFoundError:
+            return len(events)
+        _atomic_lines(path, current[len(batch_lines) :])
+    return len(events)
+
+
+def _atomic_lines(path: Path, lines: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            if lines:
+                handle.write("\n".join(lines) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
