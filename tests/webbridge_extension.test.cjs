@@ -2607,6 +2607,9 @@ test("agent control mirrors CDP pointer events and releases the visual overlay",
   assert.match(agentControlOverlaySource, /EvoFlux control/);
   assert.match(agentControlOverlaySource, /class="cursor-aura"/);
   assert.match(agentControlOverlaySource, /id="evoflux-cursor-fill"/);
+  assert.match(agentControlOverlaySource, /width: 17px; height: 18px/);
+  assert.match(agentControlOverlaySource, /stroke-linejoin: round; stroke-linecap: round/);
+  assert.match(agentControlOverlaySource, /M3 2\.7 14\.1 10\.4 7\.6 12\.2Z/);
   assert.match(agentControlOverlaySource, /drop-shadow\(0 0 3px rgba\(72, 202, 224, \.42\)\)/);
   assert.match(agentControlOverlaySource, /stop-color="#020405"/);
   assert.match(agentControlOverlaySource, /stroke: rgba\(255, 255, 255, \.96\)/);
@@ -2615,6 +2618,8 @@ test("agent control mirrors CDP pointer events and releases the visual overlay",
   assert.match(agentControlOverlaySource, /@keyframes evoflux-frame-wave/);
   assert.doesNotMatch(agentControlOverlaySource, /evoflux-edge-flow|class="edge /);
   assert.doesNotMatch(agentControlOverlaySource, /class="cursor-glow"/);
+  assert.doesNotMatch(agentControlOverlaySource, /class="cursor-highlight"/);
+  assert.doesNotMatch(agentControlOverlaySource, /21\.6 16l-8\.2 1\.2/);
   assert.match(agentControlOverlaySource, /function setSuspended/);
   assert.match(agentControlOverlaySource, /host\.style\.visibility = suspended \? "hidden" : "visible"/);
   assert.match(agentControlOverlaySource, /transition: transform 28ms linear/);

@@ -354,6 +354,10 @@ export function useDirectBrowserTabs({
     if (action === 'start') {
       const tab = await ensureActive()
       if (!tab) throw new Error('Could not create a desktop browser tab')
+      await invokeFor('app_browser_webview_agent_action', tab.label, {
+        action: 'instrument',
+        params: {},
+      })
       return `Desktop browser ready: ${tab.url}`
     }
     if (action === 'stop') {
@@ -424,6 +428,10 @@ export function useDirectBrowserTabs({
     if (action === 'back' || action === 'forward' || action === 'reload') {
       await invokeFor('app_browser_webview_command', tab.label, { action })
       await waitForPageReady(tab.label)
+      await invokeFor('app_browser_webview_agent_action', tab.label, {
+        action: 'instrument',
+        params: {},
+      })
       return `${action} completed`
     }
     if (action === 'wait') {
