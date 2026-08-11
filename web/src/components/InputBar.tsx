@@ -1474,7 +1474,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             className={cn(
-              'relative block border bg-(--color-surface) transition-[background-color,border-color] duration-(--motion-base)',
+              'composer-input-card relative block border bg-(--color-surface) transition-[background-color,border-color] duration-(--motion-base)',
               minimized
                 ? cn(
                     'w-fit border-(--color-border) p-2 hover:bg-(--bg-key)',
@@ -1562,59 +1562,61 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                 {/* Bottom action bar — action buttons left · config selectors right · send. */}
                 <div
                   className={cn(
-                    'flex flex-wrap items-center gap-1.5',
+                    'composer-toolbar flex min-w-0 flex-nowrap items-center gap-1.5',
                     isMobile
                       ? 'px-3 pb-3 pt-1'
                       : 'min-h-9 px-2.5 pb-2 pt-0',
                   )}
                 >
-                  {/* Left: content & navigation actions */}
-                  {!shellMode && attachmentsEnabled && attachEl}
-                  {/* Wiki moved to topbar */}
-                  {onActivity && (
-                    <button
-                      type="button"
-                      onClick={(e) => { stopClick(e); onActivity() }}
-                      aria-label="Team activity log"
-                      title="Team activity log"
-                      className={cn(actionBtnClass, activityActive && 'bg-(--bg-key) text-(--color-text)')}
-                    >
-                      <Activity size={14} aria-hidden="true" />
-                    </button>
-                  )}
-                  {workspaceSelector}
-
-                  <div className="flex-1" />
+                  <div className="composer-toolbar-primary flex min-w-0 items-center gap-1.5">
+                    {/* Left: content & navigation actions */}
+                    {!shellMode && attachmentsEnabled && attachEl}
+                    {/* Wiki moved to topbar */}
+                    {onActivity && (
+                      <button
+                        type="button"
+                        onClick={(e) => { stopClick(e); onActivity() }}
+                        aria-label="Team activity log"
+                        title="Team activity log"
+                        className={cn(actionBtnClass, activityActive && 'bg-(--bg-key) text-(--color-text)')}
+                      >
+                        <Activity size={14} aria-hidden="true" />
+                      </button>
+                    )}
+                    {workspaceSelector}
+                  </div>
 
                   {/* Right: session config selectors */}
-                  {onSessionModelSettingsChange && (
-                    <SessionPillsRow
-                      sessionModel={sessionModel}
-                      defaultModel={defaultModel}
-                      sessionThinkingLevel={sessionThinkingLevel}
-                      sessionFastMode={sessionFastMode}
-                      onSessionModelSettingsChange={onSessionModelSettingsChange}
-                      agentNames={agentNames}
-                      workspace={agentWorkspace}
-                      mode={agentMode}
-                    />
-                  )}
-                  {permissionMode && onPermissionModeChange && (
-                    <ModeSelector
-                      mode={permissionMode}
-                      onModeChange={onPermissionModeChange}
-                    />
-                  )}
-                  {showCharCount && (
-                    <span
-                      className={`shrink-0 font-mono text-xs ${
-                        charCount > 2000 ? 'text-(--color-error)' : 'text-(--color-text-muted)'
-                      }`}
-                    >
-                      {charCount}
-                    </span>
-                  )}
-                  {sendOrStopEl}
+                  <div className="composer-toolbar-secondary ml-auto flex shrink-0 items-center gap-1.5">
+                    {onSessionModelSettingsChange && (
+                      <SessionPillsRow
+                        sessionModel={sessionModel}
+                        defaultModel={defaultModel}
+                        sessionThinkingLevel={sessionThinkingLevel}
+                        sessionFastMode={sessionFastMode}
+                        onSessionModelSettingsChange={onSessionModelSettingsChange}
+                        agentNames={agentNames}
+                        workspace={agentWorkspace}
+                        mode={agentMode}
+                      />
+                    )}
+                    {permissionMode && onPermissionModeChange && (
+                      <ModeSelector
+                        mode={permissionMode}
+                        onModeChange={onPermissionModeChange}
+                      />
+                    )}
+                    {showCharCount && (
+                      <span
+                        className={`shrink-0 font-mono text-xs ${
+                          charCount > 2000 ? 'text-(--color-error)' : 'text-(--color-text-muted)'
+                        }`}
+                      >
+                        {charCount}
+                      </span>
+                    )}
+                    {sendOrStopEl}
+                  </div>
                 </div>
               </>
             )}

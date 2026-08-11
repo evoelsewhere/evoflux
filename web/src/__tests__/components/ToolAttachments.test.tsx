@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ToolAttachments } from '@/components/ToolCall'
@@ -40,5 +40,38 @@ describe('ToolAttachments', () => {
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     await waitFor(() => expect(fetch).toHaveBeenCalled())
     expect(await screen.findByLabelText('PowerPoint document viewer')).toBeInTheDocument()
+  })
+
+  it('navigates through every generated image, including hidden overflow items', () => {
+    render(
+      <ToolAttachments
+        limit={2}
+        attachments={Array.from({ length: 4 }, (_, index) => ({
+          filename: `image-${index + 1}.png`,
+          original_name: `Image ${index + 1}`,
+          media_type: 'image/png',
+          category: 'image',
+          url: `/api/team/session/media/image-${index + 1}.png`,
+        }))}
+      />,
+    )
+
+    expect(screen.getByText('+2 more')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Image 1 preview' }))
+
+    const lightbox = screen.getByRole('dialog', { name: 'Image lightbox' })
+    expect(lightbox).toBeInTheDocument()
+    expect(within(lightbox).getByRole('img', { name: 'Image 1' })).toBeInTheDocument()
+    expect(screen.getByText('1 / 4')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous image' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next image' }))
+    expect(within(lightbox).getByRole('img', { name: 'Image 2' })).toBeInTheDocument()
+
+    fireEvent.keyDown(document, { key: 'ArrowRight' })
+    fireEvent.keyDown(document, { key: 'ArrowRight' })
+    expect(within(lightbox).getByRole('img', { name: 'Image 4' })).toBeInTheDocument()
+    expect(screen.getByText('4 / 4')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next image' })).toBeDisabled()
   })
 })

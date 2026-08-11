@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
-import { ImageLightbox } from './ImageLightbox'
+import { ImageLightbox, type LightboxImage } from './ImageLightbox'
 
 interface ImageAttachmentProps {
   src: string
@@ -14,9 +14,21 @@ interface ImageAttachmentProps {
    * preview on click is unchanged. Defaults to false (200×200).
    */
   compact?: boolean
+  /** Optional sibling images to navigate in the lightbox. */
+  gallery?: readonly LightboxImage[]
+  /** Position of this thumbnail inside ``gallery``. */
+  galleryIndex?: number
 }
 
-export function ImageAttachment({ src, alt = 'Image', onRemove, removable, compact = false }: ImageAttachmentProps) {
+export function ImageAttachment({
+  src,
+  alt = 'Image',
+  onRemove,
+  removable,
+  compact = false,
+  gallery,
+  galleryIndex = 0,
+}: ImageAttachmentProps) {
   const [imageError, setImageError] = useState(false)
   const [lightboxOpen, setLightboxOpen] = useState(false)
 
@@ -68,12 +80,16 @@ export function ImageAttachment({ src, alt = 'Image', onRemove, removable, compa
         )}
       </div>
 
-      <ImageLightbox
-        src={src}
-        alt={alt}
-        isOpen={lightboxOpen}
-        onClose={() => setLightboxOpen(false)}
-      />
+      {lightboxOpen && (
+        <ImageLightbox
+          src={src}
+          alt={alt}
+          isOpen
+          onClose={() => setLightboxOpen(false)}
+          images={gallery}
+          initialIndex={galleryIndex}
+        />
+      )}
     </>
   )
 }

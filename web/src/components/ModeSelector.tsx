@@ -81,7 +81,7 @@ export function ModeSelector({ mode, onModeChange, disabled }: ModeSelectorProps
   }, [open, onModeChange])
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative shrink-0">
       {/* Trigger badge — only shows when non-default OR always as compact icon */}
       <button
         type="button"
@@ -91,14 +91,14 @@ export function ModeSelector({ mode, onModeChange, disabled }: ModeSelectorProps
         aria-expanded={open}
         title="Agent permission mode"
         className={cn(
-          'flex h-7 max-w-40 items-center gap-1.5 rounded-[7px] px-2 text-xs font-medium text-(--color-text-muted) outline-none transition-[background-color,color,transform]',
+          'composer-mode-trigger flex h-7 max-w-40 items-center gap-1.5 rounded-[7px] px-2 text-xs font-medium text-(--color-text-muted) outline-none transition-[background-color,color,transform]',
           'hover:bg-(--bg-key) hover:text-(--color-text) active:translate-y-px focus-visible:ring-2 focus-visible:ring-(--color-accent)/30',
           open && 'bg-(--bg-key) text-(--color-text)',
           disabled && 'cursor-default opacity-50',
         )}
       >
         <Shield size={12} aria-hidden="true" className="shrink-0" />
-        <span className="hidden truncate sm:inline">{current.label}</span>
+        <span className="composer-mode-label truncate">{current.label}</span>
         <ChevronDown
           size={10}
           aria-hidden="true"

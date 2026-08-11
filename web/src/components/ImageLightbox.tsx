@@ -9,7 +9,12 @@
 
 import { useEffect, useRef, useState, type ReactNode, type TouchEvent, type Touch as ReactTouch } from 'react'
 import { createPortal } from 'react-dom'
-import { Download, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, X } from 'lucide-react'
+
+export interface LightboxImage {
+  src: string
+  alt: string
+}
 
 interface ImageLightboxProps {
   src: string
@@ -17,6 +22,8 @@ interface ImageLightboxProps {
   isOpen: boolean
   onClose: () => void
   allowDownload?: boolean
+  images?: readonly LightboxImage[]
+  initialIndex?: number
 }
 
 /**
@@ -90,32 +97,64 @@ export function ImageLightbox({
   isOpen,
   onClose,
   allowDownload = true,
+  images,
+  initialIndex = 0,
 }: ImageLightboxProps) {
+  const gallery = images?.length ? images : [{ src, alt }]
+  const gallerySize = gallery.length
+  const boundedInitialIndex = Math.min(Math.max(initialIndex, 0), gallerySize - 1)
+  const [activeIndex, setActiveIndex] = useState(boundedInitialIndex)
   const [scale, setScale] = useState(1)
   const [translateY, setTranslateY] = useState(0)
   const touchStartYRef = useRef(0)
   const pinchStartDistanceRef = useRef<number | null>(null)
   const lastTapRef = useRef(0)
 
-  // Escape key handler + body-scroll lock while open.
+  const activeImage = gallery[activeIndex] ?? gallery[boundedInitialIndex] ?? { src, alt }
+
+  // Keyboard navigation + body-scroll lock while open.
   useEffect(() => {
     if (!isOpen) return
 
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActiveIndex(boundedInitialIndex)
+        setScale(1)
+        setTranslateY(0)
+        onClose()
+        return
+      }
+      if (e.key === 'ArrowLeft') {
+        setActiveIndex((current) => Math.max(0, current - 1))
+        setScale(1)
+        setTranslateY(0)
+      }
+      if (e.key === 'ArrowRight') {
+        setActiveIndex((current) => Math.min(gallerySize - 1, current + 1))
+        setScale(1)
+        setTranslateY(0)
+      }
     }
 
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    document.addEventListener('keydown', handleEscape)
+    document.addEventListener('keydown', handleKeyDown)
 
     return () => {
-      document.removeEventListener('keydown', handleEscape)
+      document.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = previousOverflow
     }
-  }, [isOpen, onClose])
+  }, [boundedInitialIndex, gallerySize, isOpen, onClose])
+
+  const navigateTo = (index: number) => {
+    setActiveIndex(Math.min(Math.max(index, 0), gallerySize - 1))
+    setScale(1)
+    setTranslateY(0)
+    pinchStartDistanceRef.current = null
+  }
 
   const closeLightbox = () => {
+    setActiveIndex(boundedInitialIndex)
     setScale(1)
     setTranslateY(0)
     pinchStartDistanceRef.current = null
@@ -166,11 +205,11 @@ export function ImageLightbox({
   }
 
   const handleDownload = async () => {
-    const filename = filenameFromSrc(src, alt)
+    const filename = filenameFromSrc(activeImage.src, activeImage.alt)
     try {
       // Fetch as blob so the browser honors the `download` attribute even
       // for cross-origin or same-origin URLs that lack Content-Disposition.
-      const response = await fetch(src)
+      const response = await fetch(activeImage.src)
       const blob = await response.blob()
       const objectUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -183,7 +222,7 @@ export function ImageLightbox({
     } catch {
       // Fallback: direct link (may navigate instead of download for cross-origin).
       const a = document.createElement('a')
-      a.href = src
+      a.href = activeImage.src
       a.download = filename
       a.target = '_blank'
       a.rel = 'noopener noreferrer'
@@ -224,6 +263,40 @@ export function ImageLightbox({
         />
       </div>
 
+      {gallerySize > 1 && (
+        <>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              navigateTo(activeIndex - 1)
+            }}
+            disabled={activeIndex === 0}
+            className="absolute left-[max(0.75rem,env(safe-area-inset-left,0px))] top-1/2 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-(--bg-card)/90 text-(--color-text) shadow-lg backdrop-blur-sm transition-[background-color,opacity,transform] hover:bg-(--bg-key) active:scale-95 disabled:cursor-default disabled:opacity-25"
+            aria-label="Previous image"
+            title="Previous image (Left arrow)"
+          >
+            <ChevronLeft size={24} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              navigateTo(activeIndex + 1)
+            }}
+            disabled={activeIndex === gallerySize - 1}
+            className="absolute right-[max(0.75rem,env(safe-area-inset-right,0px))] top-1/2 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-(--bg-card)/90 text-(--color-text) shadow-lg backdrop-blur-sm transition-[background-color,opacity,transform] hover:bg-(--bg-key) active:scale-95 disabled:cursor-default disabled:opacity-25"
+            aria-label="Next image"
+            title="Next image (Right arrow)"
+          >
+            <ChevronRight size={24} aria-hidden="true" />
+          </button>
+          <span className="absolute bottom-[max(1rem,env(safe-area-inset-bottom,0px))] left-1/2 -translate-x-1/2 rounded-full bg-(--bg-card)/90 px-3 py-1 text-xs tabular-nums text-(--color-text-muted) shadow-sm backdrop-blur-sm">
+            {activeIndex + 1} / {gallerySize}
+          </span>
+        </>
+      )}
+
       {/* Image container — stops backdrop-click propagation so a click on
           the image itself doesn't close the overlay. */}
       <div
@@ -235,15 +308,16 @@ export function ImageLightbox({
         onDoubleClick={handleDoubleClick}
       >
         <img
-          src={src}
-          alt={alt}
+          key={activeImage.src}
+          src={activeImage.src}
+          alt={activeImage.alt}
           className="max-h-[75vh] max-w-[75vw] rounded-lg object-contain shadow-2xl transition-transform duration-(--motion-fast)"
           style={{ transform: `translateY(${translateY}px) scale(${scale})` }}
           onClick={handleImageClick}
         />
-        {alt && (
+        {activeImage.alt && (
           <p className="mt-4 text-center text-sm text-(--color-text-muted)">
-            {alt}
+            {activeImage.alt}
           </p>
         )}
       </div>

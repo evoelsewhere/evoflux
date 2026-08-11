@@ -152,7 +152,7 @@ function AdvancedComposerControl({
             aria-label={`Model settings: ${effectiveModel ? shortModelName(effectiveModel) : 'model'}, ${currentOption.label}`}
             className={cn(
               CONTROL_CLASS,
-              'max-w-28 shrink-0 justify-center gap-1.5 sm:max-w-[14rem]',
+              'composer-model-trigger max-w-[14rem] shrink-0 justify-center gap-1.5',
               open && 'bg-(--bg-key) text-(--color-text)',
             )}
           />
@@ -161,11 +161,11 @@ function AdvancedComposerControl({
         {effectiveModel ? (
           <ProviderBrandIcon providerId={effectiveModel} size="xs" />
         ) : null}
-        <span className="min-w-0 truncate font-medium text-(--color-text-2)">
+        <span className="composer-model-name min-w-0 truncate font-medium text-(--color-text-2)">
           {effectiveModel ? shortModelName(effectiveModel) : 'Model'}
         </span>
         <span
-          className="hidden shrink-0 rounded px-1 py-px font-medium sm:inline"
+          className="composer-optional-badge shrink-0 rounded px-1 py-px font-medium"
           style={{
             color: thinkingTone,
             backgroundColor: `color-mix(in srgb, ${thinkingTone} 16%, transparent)`,
