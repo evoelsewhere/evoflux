@@ -8,6 +8,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.conductor.constants.resource import (
+    DEFAULT_RESOURCE_TARGET_MODES,
+    ResourceTargetMode,
+    ResourceVersionGap,
+    ResourceVersionStatus,
+)
+
 ResourceKind = Literal["agent", "skill", "mcp", "plugin"]
 GovernedResourceKind = Literal["agent", "skill", "plugin"]
 ReleaseChannel = Literal["beta", "published"]
@@ -223,6 +230,18 @@ class HeartbeatResponse(BaseModel):
     connection_state: Literal["active"]
 
 
+class ResourceVersionNotice(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version_id: str
+    version: str
+    status: ResourceVersionStatus
+    release_channel: ReleaseChannel
+    changelog: str | None = None
+    published_at: datetime | None = None
+    deprecation_reason: str | None = None
+
+
 class ResourceChange(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -232,6 +251,9 @@ class ResourceChange(BaseModel):
     kind: GovernedResourceKind
     slug: str
     version: str | None = None
+    description: str | None = None
+    changelog: str | None = None
+    version_history: list[ResourceVersionNotice] = Field(default_factory=list)
     release_channel: ReleaseChannel | None = None
     sha256: str | None = None
     size: int = Field(default=0, ge=0, le=500 * 1024 * 1024)
@@ -259,6 +281,9 @@ class EffectiveResourceVersion(BaseModel):
     kind: GovernedResourceKind
     slug: str
     version: str
+    description: str | None = None
+    changelog: str | None = None
+    version_history: list[ResourceVersionNotice] = Field(default_factory=list)
     release_channel: ReleaseChannel
     payload: dict[str, Any]
     sha256: str
@@ -274,10 +299,20 @@ class ManagedResourceRecord(BaseModel):
     resource_id: str
     version_id: str | None = None
     version: str | None = None
+    applied_version_id: str | None = None
+    applied_version: str | None = None
+    description: str | None = None
+    changelog: str | None = None
+    version_history: list[ResourceVersionNotice] = Field(default_factory=list)
     release_channel: ReleaseChannel | None = None
     kind: GovernedResourceKind
     slug: str
+    modes: list[ResourceTargetMode] = Field(
+        default_factory=lambda: list(DEFAULT_RESOURCE_TARGET_MODES)
+    )
     content_sha256: str | None = None
+    content_size: int = Field(default=0, ge=0, le=500 * 1024 * 1024)
+    minimum_evoflux_version: str | None = None
     local_content_sha256: str | None = None
     plugin_installation_id: str | None = None
     previous_plugin_installation_id: str | None = None
@@ -287,6 +322,32 @@ class ManagedResourceRecord(BaseModel):
     trust_required: bool = False
     trust_review: dict[str, Any] | None = None
     observed_at: datetime
+
+
+class ManagedResourceProvider(BaseModel):
+    """User-facing provenance for a locally materialized managed resource."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str
+    project_name: str
+    resource_id: str
+    modes: list[ResourceTargetMode] = Field(
+        default_factory=lambda: list(DEFAULT_RESOURCE_TARGET_MODES)
+    )
+    version_id: str | None = None
+    version: str | None = None
+    applied_version_id: str | None = None
+    applied_version: str | None = None
+    description: str | None = None
+    changelog: str | None = None
+    version_history: list[ResourceVersionNotice] = Field(default_factory=list)
+    update_available: bool = False
+    update_required: bool = False
+    version_gap: ResourceVersionGap | None = None
+    current_version_deprecation_reason: str | None = None
+    release_channel: ReleaseChannel | None = None
+    observed_state: ObservedResourceState
 
 
 class ManagedResourceDocument(BaseModel):

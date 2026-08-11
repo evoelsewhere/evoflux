@@ -25,7 +25,12 @@ from app.conductor.constants.telemetry import (
     TelemetryCollectionLevel,
     TelemetryField,
 )
-from app.conductor.models import ReconcileResult, RegistrationRequest
+from app.conductor.models import (
+    ManagedResourceRecord,
+    ReconcileResult,
+    RegistrationRequest,
+)
+from app.conductor.provenance import managed_resource_provider_from_record
 from app.conductor.governed_reconciler import GovernedResourceReconciler
 from app.conductor.reconciler import ResourceReconciler
 from app.conductor.telemetry import (
@@ -433,6 +438,13 @@ class ConductorService:
             return False
         document = self._governed_reconciler.store.replace_project(project_id)
         cursor = document.committed_cursor
+        if cursor is not None and self._governed_reconciler.needs_change_replay(
+            project_id
+        ):
+            logger.info("conductor_change_replay_required project_id={}", project_id)
+            self._governed_reconciler.store.clear_cursor(project_id)
+            cursor = None
+        recovered_rejected_cursor = False
         results = []
         for _ in range(100):
             try:
@@ -440,6 +452,18 @@ class ConductorService:
             except ConductorRequestError as exc:
                 if exc.status_code == 404:
                     return False
+                if (
+                    cursor is not None
+                    and exc.status_code == httpx.codes.BAD_REQUEST
+                    and not recovered_rejected_cursor
+                ):
+                    logger.warning(
+                        "conductor_change_cursor_rejected project_id={}", project_id
+                    )
+                    self._governed_reconciler.store.clear_cursor(project_id)
+                    cursor = None
+                    recovered_rejected_cursor = True
+                    continue
                 raise
             page_results = await self._governed_reconciler.reconcile_page(
                 self._client,
@@ -465,7 +489,7 @@ class ConductorService:
         )
         current = self._governed_reconciler.store.load().resources
         self.status.manifest_revision = cursor
-        self.status.resources = [item.model_dump(mode="json") for item in current]
+        self._refresh_governed_status(current)
         self.status.maintenance_required = False
         states = {item.observed_state for item in current}
         if "error" in states:
@@ -485,11 +509,66 @@ class ConductorService:
         record = self._governed_reconciler.approve_plugin(
             config.project_id, resource_id
         )
+        self._refresh_governed_status()
+        return self._governed_resource_payload(record)
+
+    async def pull_governed_resource(self, resource_id: str) -> dict[str, Any]:
+        async with self._sync_lock:
+            config = self._config()
+            if (
+                not config.enabled
+                or not config.project_id
+                or not config.installation_id
+            ):
+                raise ValueError("EvoFlux is not connected to a Conductor project.")
+            if self._client is None or self._client.base_url != config.url:
+                if self._client:
+                    await self._client.close()
+                self._client = self._new_client(config)
+            record = await self._governed_reconciler.pull(
+                self._client,
+                config.project_id,
+                resource_id,
+            )
+            await self._client.report_inventory(
+                {
+                    "installation_id": config.installation_id,
+                    "items": self._governed_reconciler.inventory(),
+                }
+            )
+            self._refresh_governed_status()
+            self.status.last_sync_at = datetime.now(UTC)
+            self.status.last_success_at = self.status.last_sync_at
+            self.status.state = (
+                "update_pending"
+                if record.observed_state in {"trust_pending", "update_pending"}
+                else record.observed_state
+            )
+            return self._governed_resource_payload(record)
+
+    def _governed_resource_payload(
+        self, record: ManagedResourceRecord
+    ) -> dict[str, Any]:
+        project_name = (
+            self.status.project_display_name
+            or self.status.project_name
+            or record.project_id
+        )
+        provider = managed_resource_provider_from_record(record, project_name)
+        return {
+            **record.model_dump(mode="json"),
+            **provider.model_dump(mode="json"),
+        }
+
+    def _refresh_governed_status(
+        self, resources: list[ManagedResourceRecord] | None = None
+    ) -> None:
+        current = resources
+        if current is None:
+            current = self._governed_reconciler.store.load().resources
         self.status.resources = [
-            item.model_dump(mode="json")
-            for item in self._governed_reconciler.store.load().resources
+            self._governed_resource_payload(item) for item in current
         ]
-        return record.model_dump(mode="json")
 
     async def _run(self) -> None:
         loop = asyncio.get_running_loop()

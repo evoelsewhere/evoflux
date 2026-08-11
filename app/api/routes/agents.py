@@ -14,8 +14,22 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
-from pydantic import ValidationError
-
+from app.conductor.provenance import (
+    managed_resource_provider,
+    managed_resource_providers,
+)
+from app.conductor.agent_runtime import (
+    agent_model_override,
+    apply_managed_agent_runtime_model,
+)
+from app.conductor.models import ManagedResourceProvider
+from app.core.agent_settings import (
+    AgentSettingsError,
+    delete_agent_runtime_model,
+    read_agent_runtime_settings,
+    write_agent_runtime_model,
+    write_agent_runtime_settings,
+)
 from app.core.runtime_settings import provider_visible_models
 from app.api.schemas.agents import (
     AgentBulkModelRequest,
@@ -24,6 +38,8 @@ from app.api.schemas.agents import (
     AgentDeleteResponse,
     AgentDetail,
     AgentListResponse,
+    AgentRuntimeModelRequest,
+    AgentRuntimeSettingsRequest,
     AgentSummary,
     AgentWriteRequest,
     ModelCatalogEntry,
@@ -63,7 +79,12 @@ async def discover_provider_models(
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 
-def _parse_summary(name: str, content: str) -> AgentSummary:
+def _parse_summary(
+    name: str,
+    content: str,
+    *,
+    provider: ManagedResourceProvider | None = None,
+) -> AgentSummary:
     """Never raises; invalid agents are flagged via ``valid=False``."""
     try:
         cfg = _parse_content(name, content)
@@ -80,7 +101,9 @@ def _parse_summary(name: str, content: str) -> AgentSummary:
             error=str(exc),
         )
     mode = _mode_for_agent_path(name)
-    effective = _effective_config(cfg, mode=mode)
+    effective = _effective_config(cfg, mode=mode, provider=provider)
+    model_override = agent_model_override(provider) if provider is not None else None
+    additions = _runtime_additions(provider)
     return AgentSummary(
         name=name,
         role=effective.role,
@@ -91,24 +114,52 @@ def _parse_summary(name: str, content: str) -> AgentSummary:
         skills=effective.skills,
         valid=True,
         error=None,
+        runtime_model_editable=provider is not None,
+        bundle_model=cfg.model if provider is not None else None,
+        model_override=model_override,
+        extra_tools=additions["extra_tools"],
+        extra_skills=additions["extra_skills"],
+        extra_mcp=additions["extra_mcp"],
     )
 
 
-def _mode_for_agent_path(name: str) -> str:
+def _runtime_additions(
+    provider: ManagedResourceProvider | None,
+) -> dict[str, list[str]]:
+    if provider is None:
+        return {"extra_tools": [], "extra_skills": [], "extra_mcp": []}
+    local = read_agent_runtime_settings(
+        project_id=provider.project_id,
+        resource_id=provider.resource_id,
+    )
+    return {
+        "extra_tools": list(local.extra_tools),
+        "extra_skills": list(local.extra_skills),
+        "extra_mcp": list(local.extra_mcp),
+    }
+
+
+def _mode_for_agent_path(name: str) -> Literal["work", "coding"]:
     first = Path(name).parts[:1]
     if first == ("coding",):
         return "coding"
     return "work"
 
 
-def _effective_config(cfg: AgentConfig, *, mode: str) -> AgentConfig:
+def _effective_config(
+    cfg: AgentConfig,
+    *,
+    mode: str,
+    provider: ManagedResourceProvider | None = None,
+) -> AgentConfig:
     """Compile the same effective config used by the runtime."""
 
     from app.agent.effective_config import compile_agent_config
     from app.agent.loader import _default_tool_registry
 
     registry = _default_tool_registry()
-    data = compile_agent_config(cfg, mode=mode, tool_registry=registry)
+    runtime_config = apply_managed_agent_runtime_model(cfg, provider=provider)
+    data = compile_agent_config(runtime_config, mode=mode, tool_registry=registry)
     if data.role != "lead":
         data.tools = [
             name
@@ -120,31 +171,12 @@ def _effective_config(cfg: AgentConfig, *, mode: str) -> AgentConfig:
 
 def _parse_content(name: str, content: str) -> AgentConfig:
     """Parse raw .md text into an ``AgentConfig`` (no disk I/O)."""
-    from app.agent.config import AgentConfig, _FRONTMATTER_RE
+    from app.agent.config import parse_agent_definition
 
-    m = _FRONTMATTER_RE.match(content)
-    if not m:
-        raise ValueError(
-            "Missing YAML frontmatter. Expected '---\\n<yaml>\\n---\\n<system prompt>'."
-        )
-    import yaml
-
-    try:
-        raw_meta = yaml.safe_load(m.group(1)) or {}
-    except yaml.YAMLError as exc:
-        raise ValueError(f"Invalid YAML frontmatter: {exc}") from exc
-    if not isinstance(raw_meta, dict):
-        raise ValueError("Frontmatter must be a YAML mapping.")
-    body = m.group(2).strip()
-    raw_meta.setdefault("name", _frontmatter_name_for_path(name))
-    raw_meta["system_prompt"] = body or "You are a helpful assistant."
-    try:
-        return AgentConfig.model_validate(raw_meta)
-    except ValidationError as exc:
-        errors = "; ".join(
-            f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()
-        )
-        raise ValueError(errors) from exc
+    return parse_agent_definition(
+        content,
+        default_name=_frontmatter_name_for_path(name),
+    )
 
 
 def _require_frontmatter_name(name: str, content: str) -> None:
@@ -214,7 +246,9 @@ async def _validate_or_restore(
 @router.get("")
 async def list_agents() -> AgentListResponse:
     rows: list[AgentSummary] = []
+    providers = managed_resource_providers()
     for name in agent_fs.list_agents():
+        provider = providers.get(("agent", name))
         try:
             record = agent_fs.read_agent(name)
         except Exception as exc:
@@ -224,10 +258,20 @@ async def list_agents() -> AgentListResponse:
                     role="member",
                     valid=False,
                     error=str(exc),
+                    editable=provider is None,
+                    provider=provider,
                 )
             )
             continue
-        rows.append(_parse_summary(name, record.content))
+        rows.append(
+            _parse_summary(name, record.content, provider=provider).model_copy(
+                update={
+                    "editable": provider is None,
+                    "provider": provider,
+                    "runtime_model_editable": provider is not None,
+                }
+            )
+        )
     return AgentListResponse(agents=rows)
 
 
@@ -449,6 +493,19 @@ async def bulk_update_model(body: AgentBulkModelRequest) -> AgentBulkModelRespon
 
     results: list[AgentBulkModelResult] = []
     for name in body.names:
+        provider = managed_resource_provider("agent", name)
+        if provider is not None:
+            results.append(
+                AgentBulkModelResult(
+                    name=name,
+                    ok=False,
+                    error=(
+                        f"Agent '{name}' is managed by Conductor project "
+                        f"'{provider.project_name}'."
+                    ),
+                )
+            )
+            continue
         try:
             previous = agent_fs.read_agent(name)
         except (AgentFsNotFoundError, AgentFsPathError) as exc:
@@ -503,9 +560,103 @@ async def bulk_update_model(body: AgentBulkModelRequest) -> AgentBulkModelRespon
     return AgentBulkModelResponse(results=results)
 
 
-@router.get("/{name}")
-@router.get("/{name:path}")
-async def get_agent(name: str) -> AgentDetail:
+@router.patch("/runtime-model/{name:path}")
+async def update_agent_runtime_model(
+    name: str, body: AgentRuntimeModelRequest
+) -> AgentDetail:
+    """Set or reset one installation's model for a managed Agent."""
+
+    try:
+        agent_fs.read_agent(name)
+    except AgentFsPathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except AgentFsNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    provider = managed_resource_provider("agent", name)
+    if provider is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Agent '{name}' is not managed by Conductor.",
+        )
+    if body.model is not None and not await is_registered_model_id(body.model):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Model '{body.model}' is not configured or selectable.",
+        )
+    try:
+        if body.model is None:
+            delete_agent_runtime_model(
+                project_id=provider.project_id,
+                resource_id=provider.resource_id,
+            )
+        else:
+            write_agent_runtime_model(
+                project_id=provider.project_id,
+                resource_id=provider.resource_id,
+                name=name,
+                model=body.model,
+            )
+    except AgentSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _read_agent_detail(name, provider=provider)
+
+
+@router.patch("/runtime-settings/{name:path}")
+async def update_agent_runtime_settings(
+    name: str, body: AgentRuntimeSettingsRequest
+) -> AgentDetail:
+    """Persist the installation-owned additive layer for a managed Agent."""
+
+    try:
+        agent_fs.read_agent(name)
+    except AgentFsPathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except AgentFsNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    provider = managed_resource_provider("agent", name)
+    if provider is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Agent '{name}' is not managed by Conductor.",
+        )
+    if body.model is not None and not await is_registered_model_id(body.model):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Model '{body.model}' is not configured or selectable.",
+        )
+    registry = await get_registry(workspace=None, mode=_mode_for_agent_path(name))
+    known_tools = {item.name for item in registry.tools}
+    known_skills = {item.name for item in registry.skills}
+    unknown_tools = sorted(set(body.extra_tools) - known_tools)
+    unknown_skills = sorted(set(body.extra_skills) - known_skills)
+    if unknown_tools or unknown_skills:
+        detail = []
+        if unknown_tools:
+            detail.append(f"unknown tools: {', '.join(unknown_tools)}")
+        if unknown_skills:
+            detail.append(f"unknown skills: {', '.join(unknown_skills)}")
+        raise HTTPException(status_code=422, detail="; ".join(detail))
+    try:
+        write_agent_runtime_settings(
+            project_id=provider.project_id,
+            resource_id=provider.resource_id,
+            name=name,
+            model=body.model,
+            extra_tools=body.extra_tools,
+            extra_skills=body.extra_skills,
+            extra_mcp=body.extra_mcp,
+        )
+    except AgentSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _read_agent_detail(name, provider=provider)
+
+
+def _read_agent_detail(
+    name: str, *, provider: ManagedResourceProvider | None = None
+) -> AgentDetail:
+    """Read one Agent and expose its effective runtime model metadata."""
+
     try:
         record = agent_fs.read_agent(name)
     except AgentFsPathError as exc:
@@ -513,23 +664,45 @@ async def get_agent(name: str) -> AgentDetail:
     except AgentFsNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    owner = (
+        provider if provider is not None else managed_resource_provider("agent", name)
+    )
     config: dict[str, Any] | None = None
+    bundle_model: str | None = None
     error: str | None = None
     try:
         cfg = _parse_content(name, record.content)
-        config = _effective_config(cfg, mode=_mode_for_agent_path(name)).model_dump(
-            exclude_none=True
-        )
+        bundle_model = cfg.model if owner is not None else None
+        config = _effective_config(
+            cfg,
+            mode=_mode_for_agent_path(name),
+            provider=owner,
+        ).model_dump(exclude_none=True)
     except ValueError as exc:
         error = str(exc)
 
+    additions = _runtime_additions(owner)
     return AgentDetail(
         name=record.name,
         path=record.path,
         content=record.content,
         config=config,
         error=error,
+        editable=owner is None,
+        provider=owner,
+        runtime_model_editable=owner is not None,
+        bundle_model=bundle_model,
+        model_override=agent_model_override(owner) if owner is not None else None,
+        extra_tools=additions["extra_tools"],
+        extra_skills=additions["extra_skills"],
+        extra_mcp=additions["extra_mcp"],
     )
+
+
+@router.get("/{name}")
+@router.get("/{name:path}")
+async def get_agent(name: str) -> AgentDetail:
+    return _read_agent_detail(name)
 
 
 @router.post("", status_code=201)
@@ -574,6 +747,16 @@ async def update_agent(name: str, body: AgentWriteRequest) -> AgentDetail:
             detail=f"URL name '{name}' does not match body name '{body.name}'.",
         )
 
+    provider = managed_resource_provider("agent", name)
+    if provider is not None:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Agent '{name}' is managed by Conductor project "
+                f"'{provider.project_name}' and cannot be edited locally."
+            ),
+        )
+
     try:
         previous = agent_fs.read_agent(name)
     except AgentFsNotFoundError as exc:
@@ -606,6 +789,15 @@ async def update_agent(name: str, body: AgentWriteRequest) -> AgentDetail:
 @router.delete("/{name:path}")
 async def delete_agent(name: str) -> AgentDeleteResponse:
     """422 if removal would leave the team without a lead."""
+    provider = managed_resource_provider("agent", name)
+    if provider is not None:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Agent '{name}' is managed by Conductor project "
+                f"'{provider.project_name}' and cannot be deleted locally."
+            ),
+        )
     try:
         previous = agent_fs.read_agent(name)
     except AgentFsNotFoundError as exc:

@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.plugin_platform.models import PluginInspection, PluginInstallation
 from app.plugin_platform.credentials import PluginCredentialState
+from app.conductor.models import ManagedResourceProvider
 
 
 class PluginInstallRequest(BaseModel):
@@ -70,6 +71,7 @@ class PluginListItem(BaseModel):
     capabilities: PluginLifecycleCapabilities = Field(
         default_factory=PluginLifecycleCapabilities
     )
+    provider: ManagedResourceProvider | None = None
 
 
 class PluginMcpRuntimeStatus(BaseModel):

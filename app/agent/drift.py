@@ -34,12 +34,16 @@ def _stamp_path(path: Path) -> int | None:
 def stamp_agent_files(
     agent_md_path: Path,
     mcp_config_path: Path,
+    agent_settings_path: Path | None = None,
 ) -> ConfigStamp:
     """Snapshot mtimes for the files an agent depends on."""
-    return {
+    stamp = {
         str(agent_md_path): _stamp_path(agent_md_path),
         str(mcp_config_path): _stamp_path(mcp_config_path),
     }
+    if agent_settings_path is not None:
+        stamp[str(agent_settings_path)] = _stamp_path(agent_settings_path)
+    return stamp
 
 
 def detect_drift(stamp: ConfigStamp) -> list[str]:
