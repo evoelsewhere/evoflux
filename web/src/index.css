@@ -1132,6 +1132,74 @@ a svg.lucide,
   }
 }
 
+/* The chat column can be resized independently from the app window. Keep the
+ * composer on one compact row by progressively removing redundant labels based
+ * on the card's own width, not viewport breakpoints. All hidden controls retain
+ * their accessible name through aria-label/title. */
+.composer-input-card {
+  container-name: composer-input;
+  container-type: inline-size;
+}
+
+@container composer-input (max-width: 600px) {
+  .composer-toolbar,
+  .composer-toolbar-primary,
+  .composer-toolbar-secondary {
+    gap: 0.25rem;
+  }
+
+  .composer-optional-badge {
+    display: none;
+  }
+
+  .composer-workspace-trigger {
+    max-width: 10rem;
+    padding-inline: 0.375rem;
+  }
+
+  .composer-model-trigger {
+    max-width: 9rem;
+    padding-inline: 0.375rem;
+  }
+}
+
+@container composer-input (max-width: 460px) {
+  .composer-mode-label {
+    display: none;
+  }
+
+  .composer-mode-trigger {
+    gap: 0.25rem;
+    padding-inline: 0.375rem;
+  }
+}
+
+@container composer-input (max-width: 400px) {
+  .composer-workspace-trigger {
+    width: 1.75rem;
+    flex: 0 0 1.75rem;
+    justify-content: center;
+    gap: 0;
+    padding-inline: 0;
+  }
+
+  .composer-workspace-name,
+  .composer-workspace-chevron {
+    display: none;
+  }
+}
+
+@container composer-input (max-width: 320px) {
+  .composer-model-trigger {
+    width: 2.5rem;
+    padding-inline: 0.375rem;
+  }
+
+  .composer-model-name {
+    display: none;
+  }
+}
+
 /* Runtime typography tokens. Appearance selects a preset through data-font;
  * Tailwind utilities stay connected to these variables instead of compiling
  * Inter into every .font-sans/.font-heading rule. */

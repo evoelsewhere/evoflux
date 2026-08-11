@@ -109,6 +109,18 @@ export function ToolAttachments({
   if (!attachments || attachments.length === 0) return null
   const visible = limit ? attachments.slice(0, limit) : attachments
   const remaining = attachments.length - visible.length
+  const imageGallery = attachments.flatMap((attachment, attachmentIndex) => {
+    if (attachment.category !== 'image') return []
+    return [{
+      attachmentIndex,
+      src: resolveApiUrl(attachment.url) || '',
+      alt: attachment.original_name || `Tool image ${attachmentIndex + 1}`,
+    }]
+  })
+  const imageGalleryItems = imageGallery.map(({ src, alt }) => ({ src, alt }))
+  const imageIndexByAttachment = new Map(
+    imageGallery.map(({ attachmentIndex }, imageIndex) => [attachmentIndex, imageIndex]),
+  )
 
   return (
     <>
@@ -121,6 +133,8 @@ export function ToolAttachments({
                 src={resolveApiUrl(attachment.url) || ''}
                 alt={attachment.original_name || `Tool image ${index + 1}`}
                 compact
+                gallery={imageGalleryItems}
+                galleryIndex={imageIndexByAttachment.get(index) ?? 0}
               />
             )
           }

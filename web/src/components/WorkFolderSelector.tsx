@@ -153,7 +153,7 @@ export function WorkFolderSelector({
           aria-label={`Work folder: ${displayName}`}
           title={workspaceRoot ?? 'Default session folder'}
           className={cn(
-            'flex h-7 min-w-0 max-w-52 shrink items-center gap-1.5 rounded-[7px] px-2 text-xs outline-none',
+            'composer-workspace-trigger flex h-7 min-w-0 max-w-52 shrink items-center gap-1.5 rounded-[7px] px-2 text-xs outline-none',
             'text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
             'focus-visible:ring-2 focus-visible:ring-(--color-accent)/30 disabled:cursor-not-allowed disabled:opacity-55',
           )}
@@ -163,13 +163,13 @@ export function WorkFolderSelector({
           ) : (
             <Folder className="size-3.5 text-(--color-text-subtle)" aria-hidden="true" />
           )}
-          <span className="min-w-0 truncate">{displayName}</span>
+          <span className="composer-workspace-name min-w-0 truncate">{displayName}</span>
           {isDefault && (
-            <span className="shrink-0 rounded bg-(--bg-key) px-1 py-0.5 text-[10px] leading-none text-(--color-text-subtle)">
+            <span className="composer-optional-badge shrink-0 rounded bg-(--bg-key) px-1 py-0.5 text-[10px] leading-none text-(--color-text-subtle)">
               Default
             </span>
           )}
-          <ChevronDown className="size-3 shrink-0 text-(--color-text-subtle)" aria-hidden="true" />
+          <ChevronDown className="composer-workspace-chevron size-3 shrink-0 text-(--color-text-subtle)" aria-hidden="true" />
         </DropdownMenuTrigger>
 
         <DropdownMenuContent side="top" align="start" className="w-72 p-1.5">
