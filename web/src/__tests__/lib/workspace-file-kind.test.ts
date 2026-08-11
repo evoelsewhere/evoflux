@@ -20,6 +20,7 @@ describe('workspaceFileKind', () => {
   it('keeps existing image, text, and binary routing intact', () => {
     expect(workspaceFileKind(file('diagram.svg', 'text/xml'))).toBe('image')
     expect(workspaceFileKind(file('notes.md'))).toBe('text')
+    expect(workspaceFileKind(file('legacy.htm'))).toBe('text')
     expect(workspaceFileKind(file('archive.zip'))).toBe('binary')
   })
 })

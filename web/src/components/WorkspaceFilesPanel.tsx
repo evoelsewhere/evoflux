@@ -47,6 +47,8 @@ import {
   LocateFixed,
   PanelRightClose,
   PanelRightOpen,
+  Eye,
+  Code2,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
@@ -87,6 +89,7 @@ import {
 } from '@/lib/workspace-file-kind'
 import type { WorkspaceFileInfo } from '@/api/types'
 import { buildTree, sortTreeNodeChildren, type TreeNode } from '@/utils/workspaceFileTree'
+import { WorkspaceHtmlPreview } from './workspace-html-preview'
 
 const DocumentPreview = lazy(() =>
   import('./workspace-document-preview').then((module) => ({ default: module.WorkspaceDocumentPreview })),
@@ -740,6 +743,7 @@ export function CopyContentsButton({
 function PreviewArea({
   sessionId,
   file,
+  files,
   workspaceRoot,
   onOpen,
   onReveal,
@@ -747,12 +751,16 @@ function PreviewArea({
 }: {
   sessionId: string
   file: WorkspaceFileInfo
+  files: WorkspaceFileInfo[]
   workspaceRoot: string | null
   onOpen: (file: WorkspaceFileInfo) => void
   onReveal: (file: WorkspaceFileInfo) => void
   isDesktop: boolean
 }) {
   const kind = workspaceFileKind(file)
+  const extension = workspaceFileExtension(file.name)
+  const isHtml = extension === 'html' || extension === 'htm'
+  const [htmlView, setHtmlView] = useState<'preview' | 'source'>('preview')
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-2">
@@ -766,6 +774,38 @@ function PreviewArea({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {isHtml && (
+            <div className="mr-1 flex rounded-md border border-(--color-border) p-0.5" aria-label="HTML view">
+              <button
+                type="button"
+                onClick={() => setHtmlView('preview')}
+                className={cn(
+                  'flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors',
+                  htmlView === 'preview'
+                    ? 'bg-(--bg-key) text-(--color-text)'
+                    : 'text-(--color-text-muted) hover:text-(--color-text-2)',
+                )}
+                aria-pressed={htmlView === 'preview'}
+              >
+                <Eye size={11} />
+                Preview
+              </button>
+              <button
+                type="button"
+                onClick={() => setHtmlView('source')}
+                className={cn(
+                  'flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors',
+                  htmlView === 'source'
+                    ? 'bg-(--bg-key) text-(--color-text)'
+                    : 'text-(--color-text-muted) hover:text-(--color-text-2)',
+                )}
+                aria-pressed={htmlView === 'source'}
+              >
+                <Code2 size={11} />
+                Source
+              </button>
+            </div>
+          )}
           <button
             type="button"
             onClick={() => onOpen(file)}
@@ -790,7 +830,14 @@ function PreviewArea({
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        {kind === 'image' ? (
+        {isHtml && htmlView === 'preview' ? (
+          <WorkspaceHtmlPreview
+            key={`${file.path}:${file.mtime}`}
+            sessionId={sessionId}
+            file={file}
+            files={files}
+          />
+        ) : kind === 'image' ? (
           <ImagePreview sessionId={sessionId} file={file} />
         ) : kind === 'text' ? (
           <TextPreview sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />
@@ -1598,6 +1645,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
                 key={selected.path}
                 sessionId={sessionId}
                 file={selected}
+                files={files}
                 workspaceRoot={workspaceRoot}
                 onOpen={(file) => void handleOpenFile(file)}
                 onReveal={(file) => void handleRevealFile(file)}
