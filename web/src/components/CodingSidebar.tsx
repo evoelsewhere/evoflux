@@ -47,7 +47,10 @@ import {
   FolderPlus,
   GitBranch,
   CircleHelp,
+  Layers3,
   Loader2,
+  MessageSquareText,
+  MoreHorizontal,
   Plus,
   Search,
   Trash2,
@@ -269,16 +272,25 @@ function SessionListPanel({
   const sessionEnterIndex = useListEnterIndex(projectSessions.map((s) => s.id));
 
   return (
-    <div className="space-y-0.5 pb-2 pl-4 pr-2">
+    <div className="space-y-0.5 pb-1">
+      <div className="flex h-6 items-center gap-1.5 px-2 text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">
+        <MessageSquareText size={10} aria-hidden="true" />
+        <span>Chats</span>
+        {!sessions.isLoading && projectSessions.length > 0 && (
+          <span className="ml-auto rounded-full bg-(--bg-key) px-1.5 py-px text-[9px] font-medium normal-case tracking-normal text-(--color-text-muted)">
+            {projectSessions.length}{sessions.hasNextPage ? "+" : ""}
+          </span>
+        )}
+      </div>
       {projectSessions.length === 0 && !sessions.isLoading && (
-        <p className="px-2 py-1 text-xs text-(--color-text-subtle)">
+        <p className="px-2 py-1.5 text-[11px] text-(--color-text-subtle)">
           No sessions yet.
         </p>
       )}
       {sessions.isLoading && (
-        <div className="flex items-center gap-1.5 px-2 py-1">
+        <div className="flex items-center gap-1.5 px-2 py-1.5">
           <Loader2 size={10} className="animate-spin text-(--color-text-muted)" />
-          <span className="text-xs text-(--color-text-muted)">Loading…</span>
+          <span className="text-[11px] text-(--color-text-muted)">Loading…</span>
         </div>
       )}
       {projectSessions.map((session) => (
@@ -305,7 +317,7 @@ function SessionListPanel({
           type="button"
           onClick={() => void sessions.fetchNextPage()}
           disabled={sessions.isFetchingNextPage}
-          className="mt-1 flex w-full items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs text-(--color-accent) transition-colors hover:bg-(--bg-key) disabled:opacity-60"
+          className="mt-1 flex w-full items-center justify-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-60"
         >
           {sessions.isFetchingNextPage && (
             <Loader2 size={11} className="animate-spin" aria-hidden="true" />
@@ -1187,13 +1199,16 @@ export function CodingSidebar({
   const navigatorContent = (
     <>
       {/* PROJECTS */}
-      <div className="px-2 pt-2 pb-1">
+      <div className="px-2 pb-1 pt-2">
         <CollapsibleSection
           label="Projects"
           collapsed={projectsSectionCollapsed}
           onToggle={() => setProjectsSectionCollapsed((v) => !v)}
+          count={projects.length || undefined}
           onAdd={() => setShowProjectModal(true)}
           addLabel="New multi-repo project"
+          size="large"
+          className="px-1 pb-1"
         />
 
         {!projectsSectionCollapsed && overviewQuery.isLoading && (
@@ -1231,7 +1246,7 @@ export function CodingSidebar({
         )}
 
         {!projectsSectionCollapsed && (
-        <div className="space-y-0.5">
+        <div className="space-y-1">
           {projects.map((project) => {
             const isActive = currentProjectId === project.id;
             const isExpanded = expandedProjects.has(project.id);
@@ -1242,30 +1257,50 @@ export function CodingSidebar({
             );
             const projectHasRunning = projectRunningSessions.length > 0;
             return (
-              <div key={project.id}>
-                <div className="group flex h-8 items-center pr-2">
+              <div
+                key={project.id}
+                className={cn(
+                  "overflow-hidden rounded-lg border transition-colors",
+                  isActive
+                    ? "border-(--color-border-strong) bg-(--bg-key)/70"
+                    : isExpanded
+                      ? "border-(--color-border) bg-(--bg-page)/45"
+                      : "border-transparent hover:border-(--color-border)/70 hover:bg-(--bg-key)/35",
+                )}
+              >
+                <div className="group flex min-h-9 items-center px-1">
                   <button
                     type="button"
                     onClick={() => toggleProjectExpanded(project.id)}
-                    className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-xs px-1 py-1 text-left text-xs transition-colors hover:bg-(--bg-key) ${isActive ? "text-(--color-accent)" : "text-(--color-text-2)"}`}
+                    className={cn(
+                      "flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-xs transition-colors hover:bg-(--bg-key)/70",
+                      isActive ? "text-(--color-text)" : "text-(--color-text-2)",
+                    )}
                     aria-expanded={isExpanded}
                     aria-label={`${isExpanded ? "Collapse" : "Expand"} project ${project.name}`}
                   >
                     {isExpanded ? (
-                      <ChevronDown size={10} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+                      <ChevronDown size={11} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
                     ) : (
-                      <ChevronRight size={10} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+                      <ChevronRight size={11} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
                     )}
-                    <FolderPlus
-                      size={12}
-                      className={`shrink-0 ${isActive ? "text-(--color-accent)" : "text-(--color-text-subtle)"}`}
+                    <Layers3
+                      size={13}
+                      className={cn(
+                        "shrink-0",
+                        isActive ? "text-(--color-accent)" : "text-(--color-text-muted)",
+                      )}
                       aria-hidden="true"
                     />
-                    <span className={`min-w-0 flex-1 truncate font-medium ${isActive ? "text-(--color-accent)" : ""}`}>
+                    <span className="min-w-0 flex-1 truncate font-semibold">
                       {project.name}
                     </span>
-                    <span className="shrink-0 rounded-full bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted)">
-                      {project.workspaces?.length ?? 0}
+                    <span
+                      className="flex shrink-0 items-center gap-1 rounded-full bg-(--bg-key) px-1.5 py-0.5 text-[9px] font-medium text-(--color-text-muted)"
+                      aria-label={`${project.workspaces?.length ?? 0} repositories`}
+                    >
+                      <GitBranch size={9} aria-hidden="true" />
+                      <span>{project.workspaces?.length ?? 0}</span>
                     </span>
                     {projectHasRunning && !isExpanded && (
                       <span
@@ -1282,11 +1317,11 @@ export function CodingSidebar({
                         type="button"
                         onClick={() => void openProjectSession(project)}
                         disabled={!canCreateSession}
-                        className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border border-(--color-border) text-(--color-text-muted) transition-[opacity,background-color,color,border-color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text-2) disabled:cursor-not-allowed disabled:opacity-40 ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-[opacity,background-color,color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40 ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                         aria-label={canCreateSession ? `New session in ${project.name}` : `${project.name} has no repositories yet`}
                         title={canCreateSession ? `New session in ${project.name}` : "Add a repository to this project first"}
                       >
-                        <Plus size={11} aria-hidden="true" />
+                        <Plus size={12} aria-hidden="true" />
                       </button>
                       <button
                         type="button"
@@ -1295,34 +1330,35 @@ export function CodingSidebar({
                           setDeleteProjectTarget(project);
                         }}
                         disabled={deleteProjectMutation.isPending}
-                        className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs text-(--color-text-subtle) transition-[opacity,background-color,color,border-color] duration-(--motion-fast) hover:bg-(--color-error-subtle) hover:text-(--color-error) disabled:cursor-not-allowed disabled:opacity-40 ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-(--color-text-subtle) transition-[opacity,background-color,color] duration-(--motion-fast) hover:bg-(--color-error-subtle) hover:text-(--color-error) disabled:cursor-not-allowed disabled:opacity-40 ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                         aria-label={`Delete project ${project.name}`}
                         title={`Delete project ${project.name}`}
                       >
-                        <Trash2 size={11} aria-hidden="true" />
+                        <Trash2 size={12} aria-hidden="true" />
                       </button>
                     </>
                   )}
                 </div>
                 {isExpanded && (
-                  <div className="pb-1 pl-4 pr-2">
-                    <div className="flex items-center justify-between px-2 py-1">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">
-                        Repos
+                  <div className="mx-2 mb-2 border-l border-(--color-border) pl-2">
+                    <div className="flex h-6 items-center justify-between px-2">
+                      <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">
+                        <GitBranch size={10} aria-hidden="true" />
+                        Repositories
                       </span>
                       <button
                         type="button"
                         onClick={() => openAddRepoDialog(project.id)}
-                        className="flex h-4 w-4 items-center justify-center rounded text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)"
+                        className="flex h-5 w-5 items-center justify-center rounded-md text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)"
                         title={`Add repository to ${project.name}`}
                         aria-label={`Add repository to ${project.name}`}
                       >
-                        <Plus size={10} aria-hidden="true" />
+                        <Plus size={11} aria-hidden="true" />
                       </button>
                     </div>
                     {(project.workspaces ?? []).length === 0 && (
-                      <p className="px-2 py-1 text-xs text-(--color-text-subtle)">
-                        No repos yet.
+                      <p className="px-2 py-1.5 text-[11px] text-(--color-text-subtle)">
+                        No repositories yet.
                       </p>
                     )}
                     {(project.workspaces ?? []).map((w) => (
@@ -1350,7 +1386,7 @@ export function CodingSidebar({
                             y: pos.y,
                           });
                         }}
-                        className="flex w-full min-w-0 items-center gap-1.5 truncate rounded-xs px-2 py-1 text-left text-xs text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                        className="flex w-full min-w-0 items-center gap-2 truncate rounded-md px-2 py-1.5 text-left text-[11px] text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
                         aria-label={`Actions for repository ${w.display_name || w.name || workspaceLabel(w.path)}`}
                         title={w.path}
                       >
@@ -1358,35 +1394,35 @@ export function CodingSidebar({
                         <span className="min-w-0 flex-1 truncate">
                           {w.display_name || w.name || workspaceLabel(w.path)}
                         </span>
+                        <MoreHorizontal size={11} className="shrink-0 text-(--color-text-subtle)" aria-hidden="true" />
                       </button>
                     ))}
+                    <div className="my-1 border-t border-(--color-border)/60" aria-hidden="true" />
+                    <ProjectSessionList
+                      projectId={project.id}
+                      currentSessionId={currentSessionId}
+                      mobileLongPressActions={mobileLongPressActions}
+                      onSessionSelect={(session) =>
+                        handleSessionSelect(session, session.workspace ?? "")
+                      }
+                      onSessionSideChat={(session) =>
+                        handleSessionSideChat(session, session.workspace ?? "")
+                      }
+                      onSessionDelete={handleSessionDelete}
+                      pendingDeleteId={pendingDeleteSession?.id ?? null}
+                      onCancelDelete={() => setPendingDeleteSession(null)}
+                      onConfirmDelete={confirmSessionDelete}
+                      onSessionEdit={handleSessionEdit}
+                      onSessionLongPress={setMobileSessionActions}
+                      onSessionContextActions={(session, event) => {
+                        setDesktopSessionActions({
+                          session,
+                          x: event.clientX,
+                          y: event.clientY,
+                        });
+                      }}
+                    />
                   </div>
-                )}
-                {isExpanded && (
-                  <ProjectSessionList
-                    projectId={project.id}
-                    currentSessionId={currentSessionId}
-                    mobileLongPressActions={mobileLongPressActions}
-                    onSessionSelect={(session) =>
-                      handleSessionSelect(session, session.workspace ?? "")
-                    }
-                    onSessionSideChat={(session) =>
-                      handleSessionSideChat(session, session.workspace ?? "")
-                    }
-                    onSessionDelete={handleSessionDelete}
-                    pendingDeleteId={pendingDeleteSession?.id ?? null}
-                    onCancelDelete={() => setPendingDeleteSession(null)}
-                    onConfirmDelete={confirmSessionDelete}
-                    onSessionEdit={handleSessionEdit}
-                    onSessionLongPress={setMobileSessionActions}
-                    onSessionContextActions={(session, event) => {
-                      setDesktopSessionActions({
-                        session,
-                        x: event.clientX,
-                        y: event.clientY,
-                      });
-                    }}
-                  />
                 )}
               </div>
             );
@@ -1395,24 +1431,24 @@ export function CodingSidebar({
         )}
       </div>
 
-      {/* Divider between Projects and Workspaces */}
-      <div className="mx-2 my-1.5 border-t border-(--color-border)/50" />
-
       {/* WORKSPACES section header — standalone repos only. A repo that
           belongs to a project lives in that project's own "Repos" list
           above, not here (a project's repo has no standalone session). */}
-      <CollapsibleSection
-        label="Workspaces"
-        collapsed={workspacesSectionCollapsed}
-        onToggle={() => setWorkspacesSectionCollapsed((v) => !v)}
-        onAdd={() => void openWorkspaceDialog()}
-        addLabel="Open a standalone folder (not part of a project)"
-        AddIcon={FolderPlus}
-        className="px-3"
-      />
+      <div className="border-t border-(--color-border)/60 px-2 pb-2 pt-2">
+        <CollapsibleSection
+          label="Workspaces"
+          collapsed={workspacesSectionCollapsed}
+          onToggle={() => setWorkspacesSectionCollapsed((v) => !v)}
+          count={standaloneWorkspaces.length || undefined}
+          onAdd={() => void openWorkspaceDialog()}
+          addLabel="Open a standalone folder (not part of a project)"
+          AddIcon={FolderPlus}
+          size="large"
+          className="px-1 pb-1"
+        />
 
       {!workspacesSectionCollapsed && !overviewQuery.isLoading && !overviewQuery.isError && standaloneWorkspaces.length === 0 && (
-        <p className="px-3 py-3 text-xs text-(--color-text-subtle)">
+        <p className="px-2 py-3 text-xs text-(--color-text-subtle)">
           No standalone workspaces. Use the + above to open a folder
           outside any project.
         </p>
@@ -1427,23 +1463,33 @@ export function CodingSidebar({
         const isWorkspaceExpanded = expandedWorkspaces.has(path);
 
         return (
-          <div key={path} className="relative">
-            <div className="group flex h-8 items-center pl-2 pr-2">
+          <div
+            key={path}
+            className={cn(
+              "relative mb-1 overflow-hidden rounded-lg border transition-colors",
+              sourceIsActive
+                ? "border-(--color-border-strong) bg-(--bg-key)/70"
+                : isWorkspaceExpanded
+                  ? "border-(--color-border) bg-(--bg-page)/45"
+                  : "border-transparent hover:border-(--color-border)/70 hover:bg-(--bg-key)/35",
+            )}
+          >
+            <div className="group flex min-h-9 items-center px-1">
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleWorkspaceExpanded(path);
                 }}
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-xs text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
                 aria-expanded={isWorkspaceExpanded}
                 aria-label={`${isWorkspaceExpanded ? "Collapse" : "Expand"} session history for ${workspaceLabel(path)}`}
                 title={isWorkspaceExpanded ? "Hide session history" : "Show session history"}
               >
                 {isWorkspaceExpanded ? (
-                  <ChevronDown size={10} aria-hidden="true" />
+                  <ChevronDown size={11} aria-hidden="true" />
                 ) : (
-                  <ChevronRight size={10} aria-hidden="true" />
+                  <ChevronRight size={11} aria-hidden="true" />
                 )}
               </button>
               <LongPressButton
@@ -1464,17 +1510,17 @@ export function CodingSidebar({
                     y: pos.y,
                   });
                 }}
-                className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded-xs px-2 py-1 text-left text-xs transition-colors hover:bg-(--bg-key)"
+                className="flex min-w-0 flex-1 items-center gap-2 truncate rounded-md px-1.5 py-1.5 text-left text-xs transition-colors hover:bg-(--bg-key)/70"
                 aria-label={`Open workspace ${workspaceLabel(path)}`}
                 title={path}
               >
                 <Folder
-                  size={12}
+                  size={13}
                   className={`shrink-0 ${sourceIsActive ? "text-(--color-accent)" : "text-(--color-text-subtle)"}`}
                   aria-hidden="true"
                 />
                 <span
-                  className={`min-w-0 flex-1 truncate font-medium ${sourceIsActive ? "text-(--color-text)" : "text-(--color-text-2) group-hover:text-(--color-text)"}`}
+                  className={`min-w-0 flex-1 truncate font-semibold ${sourceIsActive ? "text-(--color-text)" : "text-(--color-text-2) group-hover:text-(--color-text)"}`}
                 >
                   {workspaceLabel(path)}
                 </span>
@@ -1500,62 +1546,68 @@ export function CodingSidebar({
                   e.stopPropagation();
                   void selectWorkspace(path, { create: true });
                 }}
-                className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border border-(--color-border) text-(--color-text-muted) transition-[opacity,background-color,color,border-color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text-2) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-[opacity,background-color,color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                 aria-label={`New session in ${workspaceLabel(path)}`}
                 title={`New session in ${workspaceLabel(path)}`}
               >
-                <Plus size={11} aria-hidden="true" />
+                <Plus size={12} aria-hidden="true" />
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  void openWorktreeDialog(path);
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (isMobile) {
+                    setMobileWorkspaceActions({ path, kind: "main" });
+                    return;
+                  }
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const pos = clampMenuPosition(rect.right, rect.bottom + 4);
+                  setDesktopWorkspaceActions({
+                    path,
+                    kind: "main",
+                    x: pos.x,
+                    y: pos.y,
+                  });
                 }}
-                className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border border-(--color-border) text-(--color-text-muted) transition-[opacity,background-color,color,border-color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text-2) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-                aria-label={`Create worktree from ${workspaceLabel(path)}`}
-                title="Create worktree"
+                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-(--color-text-subtle) transition-[opacity,background-color,color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                aria-label={`More actions for ${workspaceLabel(path)}`}
+                title="More actions"
               >
-                <GitBranch size={11} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setRemoveWorkspaceTarget(path)}
-                className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs text-(--color-text-subtle) transition-[opacity,background-color,color,border-color] duration-(--motion-fast) hover:bg-(--color-error-subtle) hover:text-(--color-error) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-                aria-label={`Hide repository ${workspaceLabel(path)} from sidebar`}
-                title="Hide repository from sidebar"
-              >
-                <Trash2 size={11} aria-hidden="true" />
+                <MoreHorizontal size={13} aria-hidden="true" />
               </button>
             </div>
             {isWorkspaceExpanded && (
-              <WorkspaceSessionList
-                workspace={path}
-                currentSessionId={currentSessionId}
-                mobileLongPressActions={mobileLongPressActions}
-                onSessionSelect={(session) =>
-                  handleSessionSelect(session, session.workspace ?? path)
-                }
-                onSessionSideChat={(session) =>
-                  handleSessionSideChat(session, session.workspace ?? path)
-                }
-                onSessionDelete={handleSessionDelete}
-                pendingDeleteId={pendingDeleteSession?.id ?? null}
-                onCancelDelete={() => setPendingDeleteSession(null)}
-                onConfirmDelete={confirmSessionDelete}
-                onSessionEdit={handleSessionEdit}
-                onSessionLongPress={setMobileSessionActions}
-                onSessionContextActions={(session, event) => {
-                  setDesktopSessionActions({
-                    session,
-                    x: event.clientX,
-                    y: event.clientY,
-                  });
-                }}
-              />
+              <div className="mx-2 mb-2 border-l border-(--color-border) pl-2">
+                <WorkspaceSessionList
+                  workspace={path}
+                  currentSessionId={currentSessionId}
+                  mobileLongPressActions={mobileLongPressActions}
+                  onSessionSelect={(session) =>
+                    handleSessionSelect(session, session.workspace ?? path)
+                  }
+                  onSessionSideChat={(session) =>
+                    handleSessionSideChat(session, session.workspace ?? path)
+                  }
+                  onSessionDelete={handleSessionDelete}
+                  pendingDeleteId={pendingDeleteSession?.id ?? null}
+                  onCancelDelete={() => setPendingDeleteSession(null)}
+                  onConfirmDelete={confirmSessionDelete}
+                  onSessionEdit={handleSessionEdit}
+                  onSessionLongPress={setMobileSessionActions}
+                  onSessionContextActions={(session, event) => {
+                    setDesktopSessionActions({
+                      session,
+                      x: event.clientX,
+                      y: event.clientY,
+                    });
+                  }}
+                />
+              </div>
             )}
           </div>
         );
       })}
+      </div>
     </>
   );
 
