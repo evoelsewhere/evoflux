@@ -14,6 +14,8 @@ import {
   deleteAgent,
   getRegistry,
   bulkUpdateAgentModel,
+  updateAgentRuntimeModel,
+  updateAgentRuntimeSettings,
 } from '@/api/client'
 import type { SkillDiscoveryScope } from '@/api/client'
 import { queryKeys } from './keys'
@@ -95,5 +97,46 @@ export function useBulkUpdateAgentModelMutation() {
     mutationFn: ({ names, model }: { names: string[]; model: string }) =>
       bulkUpdateAgentModel(names, model),
     onSuccess: () => invalidateTeam(client),
+  })
+}
+
+export function useUpdateAgentRuntimeModelMutation() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name, model }: { name: string; model: string | null }) =>
+      updateAgentRuntimeModel(name, model),
+    onSuccess: (_data, { name }) => {
+      invalidateTeam(client)
+      client.invalidateQueries({ queryKey: queryKeys.agentFiles.detail(name) })
+    },
+  })
+}
+
+export function useUpdateAgentRuntimeSettingsMutation() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      name,
+      model,
+      extraTools,
+      extraSkills,
+      extraMcp,
+    }: {
+      name: string
+      model: string | null
+      extraTools: string[]
+      extraSkills: string[]
+      extraMcp: string[]
+    }) =>
+      updateAgentRuntimeSettings(name, {
+        model,
+        extra_tools: extraTools,
+        extra_skills: extraSkills,
+        extra_mcp: extraMcp,
+      }),
+    onSuccess: (_data, { name }) => {
+      invalidateTeam(client)
+      client.invalidateQueries({ queryKey: queryKeys.agentFiles.detail(name) })
+    },
   })
 }

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
 
+import type { ManagedResourceProvider } from '@/api/types'
 import {
   useDeleteSkillMutation,
   useSkillFileQuery,
@@ -11,6 +12,8 @@ import {
 import { useToastStore } from '@/stores/useToastStore'
 import { ApiValidationError } from '@/api/client'
 import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
+import { ManagedResourceProviderBadge } from '@/components/settings/ManagedResourceProviderBadge'
+import { ManagedResourceUpdateBanner } from '@/components/settings/ManagedResourceUpdateBanner'
 import {
   SettingsCallout,
   SettingsGroup,
@@ -48,6 +51,7 @@ import {
 import { useActiveSkillDiscoveryScope } from '@/hooks/useActiveSkillDiscoveryScope'
 import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
 import { resolveRequestedSkillMode } from '@/lib/skill-detail-mode'
+import { CONDUCTOR_RESOURCE_STATE_LABEL } from '@/lib/conductor-constants'
 import {
   availabilityFromModes,
   modesFromAvailability,
@@ -284,7 +288,14 @@ export function SkillEditorPage() {
       <SettingsPage
         icon={Sparkles}
         title={name}
-        lede={data?.path ? <span className="font-mono text-xs">{data.path}</span> : undefined}
+        lede={data?.path ? (
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-xs">{data.path}</span>
+            {data.provider && (
+              <ManagedResourceProviderBadge provider={data.provider} showState />
+            )}
+          </span>
+        ) : undefined}
         actions={
           <EditorHeaderActions
             dirty={dirty}
@@ -316,6 +327,13 @@ export function SkillEditorPage() {
         >
           {data && (
             <div className="space-y-7">
+              {data.provider && (
+                <ManagedResourceUpdateBanner
+                  provider={data.provider}
+                  resourceName={name}
+                  onPulled={async () => { await refetch() }}
+                />
+              )}
               <SettingsGroup
                 title="Availability"
                 description="Mode scope controls where this skill is listed, selected, and loadable."
@@ -376,6 +394,19 @@ export function SkillEditorPage() {
                   <SkillFact label="Resources" value={String(data.resource_count)} />
                   <SkillFact label="Dependencies" value={String(data.dependencies?.length ?? 0)} />
                   <SkillFact label="Source" value={data.source} />
+                  {data.provider && (
+                    <>
+                      <SkillFact label="Provider" value={data.provider.project_name} />
+                      <SkillFact
+                        label="Version"
+                        value={managedVersionLabel(data.provider)}
+                      />
+                      <SkillFact
+                        label="Sync"
+                        value={CONDUCTOR_RESOURCE_STATE_LABEL[data.provider.observed_state]}
+                      />
+                    </>
+                  )}
                 </div>
                 {data.diagnostics.length > 0 && (
                   <div className="p-4 sm:p-5">
@@ -500,4 +531,13 @@ function SkillFact({ label, value }: { label: string; value: string }) {
       <p className="mt-1 font-medium text-(--color-text)">{value}</p>
     </div>
   )
+}
+
+function managedVersionLabel(provider: ManagedResourceProvider): string {
+  const applied = provider.applied_version
+  const desired = provider.version
+  if (applied && desired && applied !== desired) return `v${applied} → v${desired}`
+  if (applied) return `v${applied}`
+  if (desired) return `Pending v${desired}`
+  return 'Pending'
 }

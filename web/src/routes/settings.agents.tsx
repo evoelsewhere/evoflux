@@ -25,6 +25,7 @@ import {
   type AgentTeam,
 } from '@/lib/agent-visuals'
 import { ModelCombobox } from '@/components/settings/AgentForm'
+import { ManagedResourceProviderBadge } from '@/components/settings/ManagedResourceProviderBadge'
 import { SettingsPage } from '@/components/settings/SettingsLayout'
 import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import { Button } from '@/components/ui/button'
@@ -96,10 +97,12 @@ export function AgentsListPage() {
     agents: visibleAgents.filter((agent) => agentTeamFromName(agent.name) === team),
   })).filter((group) => group.agents.length > 0)
 
-  const selectedAgents = agents.filter((agent) => checked.has(agent.name))
+  const selectedAgents = agents.filter((agent) => agent.editable && checked.has(agent.name))
+  const selectableVisibleAgents = visibleAgents.filter((agent) => agent.editable)
   const allVisibleChecked =
-    visibleAgents.length > 0 && visibleAgents.every((agent) => checked.has(agent.name))
-  const someVisibleChecked = visibleAgents.some((agent) => checked.has(agent.name))
+    selectableVisibleAgents.length > 0 &&
+    selectableVisibleAgents.every((agent) => checked.has(agent.name))
+  const someVisibleChecked = selectableVisibleAgents.some((agent) => checked.has(agent.name))
 
   const toggleChecked = (name: string) => {
     setChecked((previous) => {
@@ -114,16 +117,17 @@ export function AgentsListPage() {
     setChecked((previous) => {
       const next = new Set(previous)
       if (allVisibleChecked) {
-        for (const agent of visibleAgents) next.delete(agent.name)
+        for (const agent of selectableVisibleAgents) next.delete(agent.name)
       } else {
-        for (const agent of visibleAgents) next.add(agent.name)
+        for (const agent of selectableVisibleAgents) next.add(agent.name)
       }
       return next
     })
   }
 
   const toggleTeam = (team: AgentTeam) => {
-    const teamAgents = teams[team]
+    const teamAgents = teams[team].filter((agent) => agent.editable)
+    if (teamAgents.length === 0) return
     const teamChecked = teamAgents.every((agent) => checked.has(agent.name))
     setChecked((previous) => {
       const next = new Set(previous)
@@ -231,12 +235,13 @@ export function AgentsListPage() {
                     checked={allVisibleChecked}
                     indeterminate={!allVisibleChecked && someVisibleChecked}
                     onCheckedChange={toggleVisible}
+                    disabled={selectableVisibleAgents.length === 0}
                     aria-label="Select visible agents"
                   />
                   <span>
                     {someVisibleChecked
                       ? `${selectedAgents.length} selected`
-                      : `Select ${visibleAgents.length} visible agent${visibleAgents.length === 1 ? '' : 's'}`}
+                      : `Select ${selectableVisibleAgents.length} editable agent${selectableVisibleAgents.length === 1 ? '' : 's'}`}
                   </span>
                 </label>
                 <span className="font-mono text-[11px] tabular-nums">
@@ -406,8 +411,10 @@ function AgentTeamGroup({
   onOpen: (name: string) => void
 }) {
   const visual = AGENT_TEAM_VISUALS[team]
-  const allChecked = agents.every((agent) => checked.has(agent.name))
-  const someChecked = agents.some((agent) => checked.has(agent.name))
+  const editableAgents = agents.filter((agent) => agent.editable)
+  const allChecked =
+    editableAgents.length > 0 && editableAgents.every((agent) => checked.has(agent.name))
+  const someChecked = editableAgents.some((agent) => checked.has(agent.name))
   return (
     <section aria-labelledby={`agent-team-${team}`}>
       <div className="flex items-center gap-3 bg-(--bg-key)/25 px-3 py-2.5 sm:px-4">
@@ -415,6 +422,7 @@ function AgentTeamGroup({
           checked={allChecked}
           indeterminate={!allChecked && someChecked}
           onCheckedChange={onToggleTeam}
+          disabled={editableAgents.length === 0}
           aria-label={`Select ${visual.label} agents`}
         />
         <AgentTeamBadge team={team} />
@@ -429,7 +437,7 @@ function AgentTeamGroup({
           <AgentRow
             key={agent.name}
             agent={agent}
-            selected={checked.has(agent.name)}
+            selected={agent.editable && checked.has(agent.name)}
             onToggle={() => onToggleAgent(agent.name)}
             onOpen={() => onOpen(agent.name)}
           />
@@ -452,9 +460,13 @@ function AgentRow({
 }) {
   return (
     <li className={cn('group flex min-w-0 items-stretch transition-colors hover:bg-(--bg-key)/35', selected && 'bg-(--color-accent-soft)/45')}>
-      <label className="flex min-h-16 shrink-0 cursor-pointer items-center pl-3 sm:pl-4">
-        <Checkbox checked={selected} onCheckedChange={onToggle} aria-label={`Select ${agent.name}`} />
-      </label>
+      {agent.editable ? (
+        <label className="flex min-h-16 shrink-0 cursor-pointer items-center pl-3 sm:pl-4">
+          <Checkbox checked={selected} onCheckedChange={onToggle} aria-label={`Select ${agent.name}`} />
+        </label>
+      ) : (
+        <span className="w-7 shrink-0 sm:w-8" aria-hidden="true" />
+      )}
       <button
         type="button"
         onClick={onOpen}
@@ -465,6 +477,7 @@ function AgentRow({
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-sm font-semibold text-(--color-text)">{agentDisplayName(agent.name)}</span>
             <AgentRoleBadge role={agent.role} />
+            {agent.provider && <ManagedResourceProviderBadge provider={agent.provider} />}
             {!agent.valid && (
               <span className="inline-flex items-center gap-1 text-[10px] text-(--color-error)" title={agent.error ?? 'Invalid configuration'}>
                 <AlertCircle size={11} aria-hidden="true" /> Invalid

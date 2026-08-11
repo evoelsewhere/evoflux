@@ -51,7 +51,7 @@ export interface ListViewRow {
   /** Main label of the row. */
   title: string
   /** Optional secondary inline tag (e.g. role badge). */
-  badge?: string
+  badge?: ReactNode
   /** Short description rendered below the title. */
   description?: string
   /** File path or other monospace meta line shown under the description. */
@@ -277,9 +277,11 @@ function ListRow({
             {row.title}
           </span>
           {row.badge && (
-            <span className="rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] text-(--color-text-muted) ring-1 ring-(--color-border)">
-              {row.badge}
-            </span>
+            typeof row.badge === 'string' ? (
+              <span className="rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] text-(--color-text-muted) ring-1 ring-(--color-border)">
+                {row.badge}
+              </span>
+            ) : row.badge
           )}
           {row.invalidReason && (
             <Tooltip>

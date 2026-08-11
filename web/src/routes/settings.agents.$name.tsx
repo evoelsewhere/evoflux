@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { FileCode2, ShieldCheck, Sparkles, Trash2, Users } from 'lucide-react'
 
+import type { ManagedResourceProvider } from '@/api/types'
 import {
   useAgentFileQuery,
   useAgentFilesQuery,
@@ -23,6 +24,9 @@ import {
   isBuiltInAgentName,
 } from '@/lib/agent-visuals'
 import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
+import { ManagedResourceProviderBadge } from '@/components/settings/ManagedResourceProviderBadge'
+import { ManagedAgentRuntimeModel } from '@/components/settings/ManagedAgentRuntimeModel'
+import { ManagedResourceUpdateBanner } from '@/components/settings/ManagedResourceUpdateBanner'
 import { SettingsPage } from '@/components/settings/SettingsLayout'
 import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import { contentEquals } from '@/components/settings/frontmatter'
@@ -91,9 +95,14 @@ export function AgentEditorPage() {
   const currentSummary = agentsData?.agents.find((agent) => agent.name === name)
   const currentRole = currentSummary?.role ?? data?.config?.role
   const isBuiltIn = currentRole ? isBuiltInAgentName(name, currentRole) : false
+  const readOnly = data ? !data.editable : false
 
   const handleSave = async () => {
     setSaveError(null)
+    if (readOnly) {
+      setSaveError('This Agent is managed by Conductor and cannot be edited locally.')
+      return
+    }
     if (invalid) {
       setSaveError(firstDraftError ?? 'Form has validation errors.')
       return
@@ -143,6 +152,11 @@ export function AgentEditorPage() {
             validationHint={firstDraftError}
             mode={mode}
             onModeChange={setMode}
+            saveDisabledReason={
+              readOnly
+                ? `Managed by ${data?.provider?.project_name ?? 'Conductor'}`
+                : null
+            }
             onSave={handleSave}
           />
         }
@@ -158,6 +172,13 @@ export function AgentEditorPage() {
         >
           {data && (
             <div className="space-y-5">
+              {data.provider && (
+                <ManagedResourceUpdateBanner
+                  provider={data.provider}
+                  resourceName={agentDisplayName(name)}
+                  onPulled={async () => { await refetch() }}
+                />
+              )}
               <AgentDetailOverview
                 name={name}
                 path={data.path}
@@ -169,16 +190,31 @@ export function AgentEditorPage() {
                 mcp={currentSummary?.mcp.length ?? 0}
                 valid={currentSummary?.valid ?? !data.error}
                 builtIn={isBuiltIn}
+                provider={data.provider}
               />
+              {data.runtime_model_editable && data.provider && (
+                <ManagedAgentRuntimeModel
+                  key={`${name}:${data.model_override ?? 'inherited'}`}
+                  name={name}
+                  provider={data.provider}
+                  effectiveModel={data.config?.model}
+                  bundleModel={data.bundle_model}
+                  modelOverride={data.model_override}
+                  extraTools={data.extra_tools}
+                  extraSkills={data.extra_skills}
+                  extraMcp={data.extra_mcp}
+                />
+              )}
               <AgentForm
                 key={`${name}:${formEpoch}`}
                 initial={formSeed}
                 agentPath={name}
                 onChange={setDraft}
-                disabled={updateMut.isPending}
+                disabled={updateMut.isPending || readOnly}
                 isNew={false}
                 mode={mode}
                 onModeChange={setMode}
+                hideRuntimeSection={data.runtime_model_editable}
               />
             </div>
           )}
@@ -212,7 +248,7 @@ export function AgentEditorPage() {
               </>
             )}
           </div>
-          {data && !isBuiltIn && (
+          {data && data.editable && !isBuiltIn && (
             <Button
               variant="destructive"
               size="xs"
@@ -265,6 +301,7 @@ function AgentDetailOverview({
   mcp,
   valid,
   builtIn,
+  provider,
 }: {
   name: string
   path: string
@@ -276,6 +313,7 @@ function AgentDetailOverview({
   mcp: number
   valid: boolean
   builtIn: boolean
+  provider: ManagedResourceProvider | null
 }) {
   const team = agentTeamFromName(name)
   return (
@@ -291,6 +329,9 @@ function AgentDetailOverview({
               <span className="inline-flex items-center gap-1 text-[11px] text-(--color-text-muted)">
                 <ShieldCheck size={12} aria-hidden="true" /> Built-in
               </span>
+            )}
+            {provider && (
+              <ManagedResourceProviderBadge provider={provider} showState />
             )}
           </div>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-(--color-text-2)">
