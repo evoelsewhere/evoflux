@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   connect: vi.fn(),
   disconnect: vi.fn(),
   sync: vi.fn(),
+  approve: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => ({
@@ -19,6 +20,7 @@ vi.mock('@/api/client', () => ({
   connectConductor: mocks.connect,
   disconnectConductor: mocks.disconnect,
   syncConductor: mocks.sync,
+  approveConductorResource: mocks.approve,
 }))
 
 const settings = {
@@ -77,6 +79,7 @@ describe('ConductorConnectionSettings', () => {
     mocks.connect.mockResolvedValue(connectedStatus)
     mocks.disconnect.mockResolvedValue(disconnectedStatus)
     mocks.sync.mockResolvedValue(connectedStatus)
+    mocks.approve.mockResolvedValue(undefined)
   })
 
   it('validates the URL and evc_ token before connecting', async () => {
@@ -125,5 +128,56 @@ describe('ConductorConnectionSettings', () => {
     await waitFor(() => expect(mocks.disconnect).toHaveBeenCalledTimes(1))
     expect(await screen.findByLabelText('V1 connection token')).toBeVisible()
     expect(screen.getByText('Disconnected')).toBeVisible()
+  })
+
+  it('renders an explicit empty state for an enrolled member', async () => {
+    mocks.getStatus.mockResolvedValue(connectedStatus)
+    render(<ConductorConnectionSettings />)
+
+    expect(await screen.findByText(
+      'No governed Agents, Skills or Plugins are currently assigned to this member.',
+    )).toBeVisible()
+  })
+
+  it('discloses Plugin trust inputs before explicit local approval', async () => {
+    const trustPendingStatus = {
+      ...connectedStatus,
+      resources: [{
+        project_id: 'project-1',
+        resource_id: 'resource-1',
+        version_id: 'version-1',
+        version: '1.2.0',
+        release_channel: 'published',
+        kind: 'plugin',
+        slug: 'release-auditor',
+        state: 'trust_pending',
+        observed_state: 'trust_pending',
+        message: 'Review the Plugin trust boundary before enabling it.',
+        trust_required: true,
+        trust_review: {
+          executable_commands: [{ server: 'audit', executable: 'python', args: ['server.py'] }],
+          remote_hosts: [{
+            server: 'audit-api',
+            transport: 'streamable-http',
+            host: 'audit.example.test',
+            url: 'https://audit.example.test/mcp',
+          }],
+          environment_fields: ['AUDIT_TOKEN'],
+          capabilities: [{ name: 'skills/release-auditor', source: 'plugin' }],
+        },
+      }],
+    }
+    mocks.getStatus.mockResolvedValue(trustPendingStatus)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<ConductorConnectionSettings />)
+
+    expect(await screen.findByText('release-auditor')).toBeVisible()
+    expect(screen.getByText('1 commands')).toBeVisible()
+    expect(screen.getByText('1 remote hosts')).toBeVisible()
+    expect(screen.getByText('1 environment fields')).toBeVisible()
+    expect(screen.getByText('1 capabilities')).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve local trust' }))
+    await waitFor(() => expect(mocks.approve).toHaveBeenCalledWith('resource-1'))
   })
 })
