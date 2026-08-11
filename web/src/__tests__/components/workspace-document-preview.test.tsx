@@ -14,12 +14,16 @@ vi.mock('@/api/client', () => ({
 import { WorkspaceDocumentPreview } from '@/components/workspace-document-preview'
 
 const workbookHtml = `<!doctype html><html><head></head><body>
-  <section data-preview-item data-preview-label="Forecast">
+  <section data-preview-item data-preview-label="Forecast" data-preview-fit-width="800" data-preview-fit-height="400">
+    <span class="column-header" data-column="A">A</span>
+    <span class="column-header" data-column="B">B</span>
+    <span class="row-number" data-row="1">1</span>
+    <span class="row-number" data-row="2">2</span>
     <div class="cell" data-cell="A1">Revenue</div>
     <div class="cell" data-cell="B1">Plan</div>
-    <div class="cell formula" data-cell="B2" data-formula="=SUM(B3:B4)">42</div>
+    <div class="cell formula" data-cell="B2" data-formula="=SUM(B3:B4)" data-display-value="42">42</div>
   </section>
-  <section data-preview-item data-preview-label="Assumptions">
+  <section data-preview-item data-preview-label="Assumptions" data-preview-fit-width="800" data-preview-fit-height="400">
     <div class="cell" data-cell="A1">Growth</div>
   </section>
 </body></html>`
@@ -35,6 +39,11 @@ const slideDeckHtml = `<!doctype html><html><head><style>
   <article class="slide-wrap" data-preview-item data-preview-label="Roadmap">
     <section class="slide" style="aspect-ratio:16 / 9"><h1>Roadmap</h1><aside data-preview-notes>Emphasize the Q4 launch milestone.</aside></section>
   </article>
+</body></html>`
+
+const documentHtml = `<!doctype html><html><head></head><body>
+  <article data-preview-item data-preview-label="Page 1"><h1>Summary</h1></article>
+  <article data-preview-item data-preview-label="Page 2"><h2>Details</h2></article>
 </body></html>`
 
 function hydrateFrame(html = workbookHtml): HTMLIFrameElement {
@@ -86,11 +95,14 @@ describe('WorkspaceDocumentPreview', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/work/session-1/models/forecast.xlsx', expect.any(Object)))
     hydrateFrame()
 
-    expect(await screen.findByRole('navigation', { name: 'Document navigator' })).toBeInTheDocument()
+    expect(await screen.findByRole('navigation', { name: 'Workbook sheets' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Search document' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Fit width' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Fit page' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Next sheet' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Zoom 100 percent')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open sheet 2: Assumptions' })).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Document navigator' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Read only')).not.toBeInTheDocument()
     expect(screen.getByText('Forecast')).toBeInTheDocument()
     expect(screen.getByText('Assumptions')).toBeInTheDocument()
   })
@@ -117,7 +129,26 @@ describe('WorkspaceDocumentPreview', () => {
 
     expect(screen.getByLabelText('Selected cell')).toHaveTextContent('B2')
     expect(screen.getByLabelText('Formula bar')).toHaveTextContent('=SUM(B3:B4)')
+    expect(frame.contentDocument?.querySelector('[data-column="B"]')).toHaveAttribute('data-evoflux-selected-header', 'true')
+    expect(frame.contentDocument?.querySelector('[data-row="2"]')).toHaveAttribute('data-evoflux-selected-header', 'true')
     expect(codingPreviewUrl).toHaveBeenCalledWith('/repo', 'forecast.xlsx')
+  })
+
+  it('keeps DOCX content full-width until the page navigator is requested', async () => {
+    render(
+      <WorkspaceDocumentPreview
+        sessionId="session-1"
+        file={{ path: 'report.docx', name: 'report.docx', mime: '', size: 10, mtime: 2 }}
+      />,
+    )
+
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(documentHtml)
+
+    expect(screen.queryByRole('navigation', { name: 'Document navigator' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show navigator' }))
+    expect(screen.getByRole('navigation', { name: 'Document navigator' })).toBeInTheDocument()
+    expect(screen.queryByText('Read only')).not.toBeInTheDocument()
   })
 
   it('searches rendered content and navigates between preview items', async () => {
@@ -135,8 +166,8 @@ describe('WorkspaceDocumentPreview', () => {
 
     expect(frame.contentDocument?.querySelectorAll('mark[data-evoflux-search]')).toHaveLength(1)
     expect(screen.getByText('1/1')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Next sheet' }))
-    await waitFor(() => expect(screen.getAllByText('Sheet 2 of 2').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getByRole('button', { name: 'Open sheet 2: Assumptions' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Open sheet 2: Assumptions' })).toHaveAttribute('aria-current', 'page'))
     expect(frame.contentDocument?.querySelectorAll('[data-preview-item]')[0]).toHaveAttribute('hidden')
     expect(frame.contentDocument?.querySelectorAll('[data-preview-item]')[1]).not.toHaveAttribute('hidden')
   })
@@ -147,7 +178,7 @@ describe('WorkspaceDocumentPreview', () => {
       file: { path: 'forecast.xlsx', name: 'forecast.xlsx', mime: '', size: 10, mtime: 2 },
       html: workbookHtml,
       query: 'Growth',
-      status: 'Sheet 2 of 2',
+      activeControl: 'Open sheet 2: Assumptions',
     },
     {
       name: 'slide',
@@ -157,9 +188,9 @@ describe('WorkspaceDocumentPreview', () => {
         <article data-preview-item data-preview-label="Slide 2"><h1>Roadmap</h1></article>
       </body></html>`,
       query: 'Roadmap',
-      status: 'Slide 2 of 2',
+      activeControl: 'Go to slide 2: Slide 2',
     },
-  ])('reveals the hidden $name containing a search result', async ({ file, html, query, status }) => {
+  ])('reveals the hidden $name containing a search result', async ({ file, html, query, activeControl }) => {
     render(<WorkspaceDocumentPreview sessionId="session-1" file={file} />)
 
     await waitFor(() => expect(fetch).toHaveBeenCalled())
@@ -168,7 +199,7 @@ describe('WorkspaceDocumentPreview', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Find in document' }), { target: { value: query } })
 
     const items = frame.contentDocument?.querySelectorAll('[data-preview-item]')
-    await waitFor(() => expect(screen.getAllByText(status).length).toBeGreaterThan(0))
+    await waitFor(() => expect(screen.getByRole('button', { name: activeControl })).toHaveAttribute('aria-current', 'page'))
     expect(items?.[0]).toHaveAttribute('hidden')
     expect(items?.[1]).not.toHaveAttribute('hidden')
     expect(items?.[1].querySelector('mark[data-evoflux-search]')).toHaveTextContent(query)
@@ -195,7 +226,7 @@ describe('WorkspaceDocumentPreview', () => {
     expect(document.querySelectorAll('[data-preview-item]')[1]).toHaveAttribute('hidden')
 
     fireEvent.keyDown(frame.contentWindow, { key: 'ArrowRight' })
-    await waitFor(() => expect(screen.getAllByText('Sheet 2 of 2').length).toBeGreaterThan(0))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Open sheet 2: Assumptions' })).toHaveAttribute('aria-current', 'page'))
     expect(document.querySelectorAll('[data-preview-item]')[1]).not.toHaveAttribute('hidden')
   })
 
