@@ -30,6 +30,7 @@ import { PanelLeft } from 'lucide-react'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useMotionPreset } from '@/lib/motion'
 import { useUIStore } from '@/stores/useUIStore'
+import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
 
 interface AppShellProps {
   sidebar?: ReactNode
@@ -97,7 +98,7 @@ export function AppShell({
             transition={motionPreset.spring}
             aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             aria-expanded={!sidebarCollapsed}
-            title="Toggle sidebar (Ctrl+B)"
+            title={`Toggle sidebar (${formatShortcutLabel('Ctrl+B')})`}
             className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
           >
             <PanelLeft size={15} aria-hidden="true" />

@@ -14,6 +14,7 @@
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { LucideIcon } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 interface CollapsibleSectionProps {
   label: string
@@ -29,6 +30,8 @@ interface CollapsibleSectionProps {
   addLabel?: string
   /** Icon of the "+" action (e.g. FolderPlus for workspaces). */
   AddIcon?: LucideIcon
+  /** Optional custom action rendered at the right edge of the header. */
+  rightSlot?: ReactNode
   /** Larger label and controls for top-level navigation groups. */
   size?: 'default' | 'large'
   className?: string
@@ -42,6 +45,7 @@ export function CollapsibleSection({
   onAdd,
   addLabel,
   AddIcon = Plus,
+  rightSlot,
   size = 'default',
   className,
 }: CollapsibleSectionProps) {
@@ -110,7 +114,7 @@ export function CollapsibleSection({
           {pill}
         </span>
       )}
-      {onAdd && (
+      {rightSlot ?? (onAdd && (
         <button
           type="button"
           onClick={onAdd}
@@ -123,7 +127,7 @@ export function CollapsibleSection({
         >
           <AddIcon size={large ? 15 : 12} aria-hidden="true" />
         </button>
-      )}
+      ))}
     </div>
   )
 }

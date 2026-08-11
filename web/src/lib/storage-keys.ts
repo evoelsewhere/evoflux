@@ -63,6 +63,7 @@ export const STORAGE_KEYS = {
   /** Work sidebar UI state. */
   work: {
     foldersExpanded: 'oa.workSidebar.foldersExpanded',
+    recentCollapsed: 'oa.workSidebar.recentCollapsed',
   },
 
   desktopNotifications: {

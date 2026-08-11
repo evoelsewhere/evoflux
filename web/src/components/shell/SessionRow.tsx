@@ -106,12 +106,12 @@ export function SessionRow({
           compact
             ? `w-full rounded-md px-2 py-1 text-left text-xs transition-colors ${
                 isActive
-                  ? 'bg-(--bg-key) text-(--color-text)'
+                  ? 'bg-(--bg-key) text-(--color-accent)'
                   : 'text-(--color-text-2) hover:bg-(--bg-key)/50 hover:text-(--color-text)'
               }`
             : `flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
                 isActive
-                  ? 'bg-(--bg-key) text-(--color-text)'
+                  ? 'bg-(--bg-key) text-(--color-accent)'
                   : 'text-(--color-text-2) hover:bg-(--bg-key)/50 hover:text-(--color-text)'
               }`
         }
@@ -152,7 +152,7 @@ export function SessionRow({
                   exit={{ opacity: 0, y: 6 * preset.distance }}
                   className={`min-w-0 truncate text-xs transition-colors ${
                     isActive
-                      ? 'font-medium text-(--color-text)'
+                      ? 'font-semibold text-(--color-accent)'
                       : 'text-(--color-text-2) group-hover:font-medium group-hover:text-(--color-text)'
                   }`}
                 >

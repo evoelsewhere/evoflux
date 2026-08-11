@@ -33,17 +33,7 @@ import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { reducedMotionTransition, useMotionPreset } from '@/lib/motion'
 import { useUIStore } from '@/stores/useUIStore'
 import { cn } from '@/lib/utils'
-
-function dispatchCtrlKey(key: string): void {
-  window.dispatchEvent(
-    new KeyboardEvent('keydown', {
-      key,
-      ctrlKey: true,
-      metaKey: false,
-      bubbles: true,
-    }),
-  )
-}
+import { dispatchPrimaryShortcut, formatShortcutLabel } from '@/lib/keyboard-shortcuts'
 
 function BlockView({ block }: { block: HelpBlock }) {
   if (block.type === 'p') {
@@ -135,8 +125,8 @@ function BlockView({ block }: { block: HelpBlock }) {
             className="flex items-center justify-between gap-3 border-b border-(--color-border) px-3 py-2 last:border-b-0"
           >
             <span className="text-sm text-(--color-text-2)">{row.action}</span>
-            <kbd className="shrink-0 rounded-md border border-(--color-border) bg-(--bg-page) px-1.5 py-0.5 font-mono text-[11px] text-(--color-text-muted)">
-              {row.keys}
+            <kbd className="shrink-0 rounded-md border border-(--color-border) bg-(--bg-page) px-1.5 py-1 font-sans text-[11px] font-medium leading-none tracking-normal text-(--color-text-muted)">
+              {formatShortcutLabel(row.keys)}
             </kbd>
           </div>
         ))}
@@ -300,7 +290,7 @@ export function GuidelinesModal() {
       return
     }
     if (action.type === 'palette') {
-      window.setTimeout(() => dispatchCtrlKey('p'), 0)
+      window.setTimeout(() => dispatchPrimaryShortcut('p'), 0)
       return
     }
     void navigate({ to: action.to })
@@ -544,11 +534,11 @@ export function GuidelinesModal() {
                   type="button"
                   onClick={() => {
                     closeGuidelines()
-                    window.setTimeout(() => dispatchCtrlKey('p'), 0)
+                    window.setTimeout(() => dispatchPrimaryShortcut('p'), 0)
                   }}
                   className="ml-auto text-xs font-medium text-(--color-accent) hover:underline"
                 >
-                  {t('Open command palette')} (Ctrl+P)
+                  {t('Open command palette')} ({formatShortcutLabel('Ctrl+P')})
                 </button>
               </div>
             </div>

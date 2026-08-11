@@ -1,12 +1,8 @@
 /**
- * useKeyboardShortcuts — registers window-level Ctrl+<key> shortcuts.
+ * useKeyboardShortcuts — registers window-level primary-modifier shortcuts.
  *
- * Cross-platform note: we use ``Ctrl`` everywhere (Mac included). The
- * Mac convention is ``⌘`` but the desktop shell positions itself as a
- * tool with a power-user feel where Ctrl is the consistent modifier
- * regardless of OS. ``e.metaKey`` (⌘ on Mac, Win-key on Windows) is
- * explicitly excluded so the OS-level shortcuts (⌘W, ⌘Q, etc.) keep
- * working.
+ * macOS uses Command; Windows and Linux use Ctrl. The inactive modifier is
+ * excluded so OS-level shortcuts keep their native behavior.
  *
  * Shortcuts map: key (lowercase) → handler function.
  *
@@ -18,15 +14,14 @@
  */
 
 import { useEffect, useLayoutEffect, useRef } from 'react'
+import { isPrimaryShortcut } from '@/lib/keyboard-shortcuts'
 
 type ShortcutMap = Partial<Record<string, () => void>>
 
-// On Windows/Linux, Ctrl is also the OS text-editing modifier (paste, copy,
+// The primary modifier is also the OS text-editing modifier (paste, copy,
 // cut, select-all, undo, redo). If one of these keys is pressed while an
 // editable element has focus, let it through untouched instead of firing an
-// app shortcut — otherwise e.g. Ctrl+V while typing fires the app's 'v'
-// shortcut instead of pasting (Mac is unaffected since paste there is
-// Cmd+V, and metaKey is already excluded below).
+// app shortcut — otherwise paste can fire the app's 'v' shortcut.
 const EDITABLE_RESERVED_KEYS = new Set(['v', 'c', 'x', 'a', 'z', 'y'])
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -45,7 +40,7 @@ export function useKeyboardShortcuts(shortcuts: ShortcutMap): void {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (!e.ctrlKey || e.metaKey) return
+      if (!isPrimaryShortcut(e)) return
       const key = e.key.toLowerCase()
       if (EDITABLE_RESERVED_KEYS.has(key) && isEditableTarget(e.target)) return
       const fn = ref.current[key]

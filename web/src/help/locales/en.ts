@@ -69,7 +69,7 @@ export const HELP_CATEGORIES_EN: HelpCategory[] = [
   {
     id: 'shortcuts',
     label: 'Keyboard shortcuts',
-    description: 'Ctrl shortcuts on every OS',
+    description: 'Command on macOS, Ctrl on Windows/Linux',
   },
   {
     id: 'troubleshooting',
@@ -1009,7 +1009,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'workbench',
     title: 'Workbench tools',
     summary:
-      'Open Terminal, Browser, Files, Graph, Side chat, Memory, Scheduler, Changes, and Review beside chat — with Ctrl shortcuts on every OS. Ignore stale ⌘ labels on a few tools; the live bindings are Ctrl.',
+      'Open Terminal, Browser, Files, Graph, Side chat, Memory, Scheduler, Changes, and Review beside chat — with platform-native shortcuts: Command on macOS, Ctrl on Windows/Linux.',
     keywords: [
       'workbench',
       'panel',
@@ -1034,7 +1034,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     tricks: [
       'Open tools from the workbench bar, dock, or keyboard shortcuts listed below.',
       'Coding Overview appears only when a workspace is selected.',
-      'Runtime shortcuts use Ctrl on every OS even when a tool label still shows ⌘P or ⌥⌘S.',
+      'Runtime shortcuts and labels adapt to the OS: Command on macOS, Ctrl on Windows/Linux.',
       'Live mappings: Files = Ctrl+F (label may show ⌘P); Side chat = Ctrl+; (label may show ⌥⌘S).',
       'Graph and Review have no dedicated global shortcuts — use the workbench bar or command palette.',
       'Terminal and Browser support multiple tab instances; other tools are single-instance toggles.',
@@ -1060,6 +1060,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           { keys: 'Ctrl+;', action: 'Side chat (label may show ⌥⌘S)' },
           { keys: 'Ctrl+M', action: 'Memory (wiki)' },
           { keys: 'Ctrl+S', action: 'Scheduler' },
+          { keys: 'Ctrl+K', action: 'Plugins' },
           { keys: 'Ctrl+G', action: 'Git Changes (Coding)' }
 ],
       },
@@ -1125,13 +1126,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'ちなみに'
 ],
     setup:
-      'Open with /btw, Ctrl+;, the workbench Side chat tool, or the session-row icon. Optionally select transcript text → Send to side chat to carry a quote. Live shortcut is Ctrl+; even if a label still shows ⌥⌘S.',
+      'Open with /btw, the platform shortcut (Command+; on macOS, Ctrl+; on Windows/Linux), the workbench Side chat tool, or the session-row icon. Optionally select transcript text → Send to side chat to carry a quote.',
     tricks: [
       'Open with /btw, Ctrl+;, the workbench Side chat tool, or the session-row icon.',
       'Quote selection → Send to side chat for a tight follow-up without retyping the passage.',
       'Side chat does not merge its history back into the parent session — paste conclusions manually if the Lead must see them.',
       'Use side chat to clarify while Goal or a long specialist run continues on the main transcript.',
-      'Workbench label may show ⌥⌘S — the live shortcut is Ctrl+; on every OS.',
+      'Side chat uses Command+; on macOS and Ctrl+; on Windows/Linux.',
       'Keep side chat short and factual; dump long implementation work back on the Lead thread.',
       'Close the panel when done so you do not accidentally type the next main instruction into /btw.',
       'Side chat sees parent context read-only — it should not be your primary editor for repo-wide refactors.',
@@ -2527,7 +2528,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'shortcuts',
     title: 'Keyboard shortcuts',
     summary:
-      'EvoFlux uses Ctrl+key on every OS, including macOS, so Cmd stays free for the system — learn the full table and the label quirks. Guidelines (Help) is separate from the Ctrl+P command palette.',
+      'EvoFlux uses the native primary modifier — Command on macOS, Ctrl on Windows/Linux. Guidelines (Help) remains separate from the command palette.',
     keywords: [
       'shortcut',
       'keyboard',
@@ -2545,10 +2546,9 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'キーボード'
 ],
     tricks: [
-      'Ctrl+P opens the command palette (Search in the sidebar). Help opens this Guidelines modal — not the palette.',
-      'Some workbench labels still show ⌘P / ⌥⌘S — the live shortcuts are Ctrl+F and Ctrl+;.',
-      'While typing in an input, Ctrl+C/V/X/A/Z/Y stay as edit keys on Windows/Linux; Ctrl+V view-cycle is suppressed during paste.',
-      'Ctrl is intentional on macOS so Cmd+C / Cmd+V / Cmd+Q remain system/edit defaults.',
+      'The primary modifier + P opens the command palette (Search in the sidebar). Help opens this Guidelines modal — not the palette.',
+      'Shortcut badges update automatically: ⌘ on macOS, Ctrl on Windows/Linux.',
+      'While typing in an input, copy/paste/select/undo keys keep their native edit behavior; the view-cycle shortcut is suppressed during paste.',
       'Ctrl+B is owned once by AppShell for all mode sidebars.',
       'Ctrl+R refreshes Work sessions only (not a full app reload).',
       'Prefer Ctrl+P search by action name when you forget a binding.',
@@ -2558,11 +2558,11 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Global navigation and workbench shortcuts are Ctrl-based on Windows, Linux, and macOS. Workbench tool chrome may still display legacy ⌘ glyphs for Files and Side chat; trust the Ctrl bindings below. Documentation and muscle memory stay identical across OSes.',
+        text: 'Global navigation and workbench shortcuts use Command on macOS and Ctrl on Windows/Linux. The badges and the live bindings resolve from the same platform rule.',
       },
       {
         type: 'p',
-        text: 'Using Ctrl everywhere avoids fighting macOS system and edit shortcuts, and keeps training materials honest. If a label still shows ⌘P for Files, ignore the glyph — the live shortcut is Ctrl+F.',
+        text: 'Native edit shortcuts keep priority while focus is inside an input. Outside editable controls, the table below uses the platform primary modifier.',
       },
       {
         type: 'shortcuts',
@@ -2574,6 +2574,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           { keys: 'Ctrl+F', action: 'Files / Changed & Files (label may show ⌘P)' },
           { keys: 'Ctrl+M', action: 'Memory wiki' },
           { keys: 'Ctrl+S', action: 'Scheduler' },
+          { keys: 'Ctrl+K', action: 'Plugins' },
           { keys: 'Ctrl+T', action: 'Built-in browser' },
           { keys: 'Ctrl+G', action: 'Git Changes (Coding)' },
           { keys: 'Ctrl+`', action: 'Terminal' },

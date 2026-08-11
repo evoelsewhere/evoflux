@@ -28,8 +28,8 @@ const ACCENT_OPTIONS: ReadonlyArray<{ value: AccentColor; label: string }> = [
 ]
 
 const FONT_OPTIONS: ReadonlyArray<{ value: FontFamily; label: string; description: string; family: string }> = [
-  { value: 'inter', label: 'Inter', description: 'Clear and balanced for product UI', family: "'Inter Variable', sans-serif" },
   { value: 'system', label: 'System UI', description: 'Native to your operating system', family: "-apple-system, 'Segoe UI', system-ui, sans-serif" },
+  { value: 'inter', label: 'Inter', description: 'Clear and balanced for product UI', family: "'Inter Variable', sans-serif" },
   { value: 'geist', label: 'Geist', description: 'Compact with strong visual rhythm', family: "'Geist Variable', sans-serif" },
   { value: 'anthropic-sans', label: 'Anthropic Sans', description: 'Warm and comfortable for reading', family: "'Anthropic Sans', 'Source Sans 3 Variable', sans-serif" },
   { value: 'mono', label: 'JetBrains Mono', description: 'Monospaced across the interface', family: "'JetBrains Mono Variable', monospace" },
@@ -136,7 +136,7 @@ export function AppearanceSettingsPage() {
                       className="flex size-5 items-center justify-center rounded-full ring-1 ring-inset ring-black/15"
                       style={{
                         background:
-                          opt.value === 'default' ? 'var(--color-text-muted)' : `var(--accent-${opt.value})`,
+                          opt.value === 'default' ? 'var(--color-accent)' : `var(--accent-${opt.value})`,
                       }}
                       aria-hidden="true"
                     >

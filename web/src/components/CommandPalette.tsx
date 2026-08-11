@@ -16,6 +16,7 @@ import { reducedMotionTransition, useMotionPreset } from '@/lib/motion'
 import { usePlatform } from '@/hooks/use-platform'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useI18n } from '@/i18n'
+import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
 
 export interface Command {
   id: string
@@ -281,8 +282,8 @@ function CommandRow({ cmd, idx, isActive, mouseY, onRun, onActivate }: CommandRo
           )}
         </div>
         {cmd.shortcut && (
-          <kbd className="shrink-0 rounded-xs border border-(--color-border) bg-(--bg-page) px-1.5 py-0.5 font-mono text-xs text-(--color-text-muted)">
-            {cmd.shortcut}
+          <kbd className="shrink-0 rounded-xs border border-(--color-border) bg-(--bg-page) px-1.5 py-1 font-sans text-[11px] font-medium leading-none tracking-normal text-(--color-text-muted)">
+            {formatShortcutLabel(cmd.shortcut)}
           </kbd>
         )}
         {isActive && (

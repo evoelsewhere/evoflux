@@ -289,7 +289,7 @@ const AskUserQuestionForm = forwardRef<
                       'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
                       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
                       answers[step] === option
-                        ? 'border-(--color-primary) bg-(--color-primary) text-white'
+                        ? 'border-(--color-primary) bg-(--color-primary) text-(--color-text-on-accent)'
                         : 'border-(--color-border) bg-(--bg-card) text-(--color-text) hover:bg-(--bg-key)',
                       replying && 'pointer-events-none opacity-50',
                     )}
@@ -358,7 +358,7 @@ const AskUserQuestionForm = forwardRef<
               onClick={() => void handleSend()}
               className={cn(
                 'flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
-                'bg-(--color-primary) text-white hover:opacity-90',
+                'bg-(--color-primary) text-(--color-text-on-accent) hover:opacity-90',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
                 (replying || !allAnswered) && 'pointer-events-none opacity-50',
               )}
@@ -373,7 +373,7 @@ const AskUserQuestionForm = forwardRef<
               onClick={() => goToStep(step + 1)}
               className={cn(
                 'flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
-                'bg-(--color-primary) text-white hover:opacity-90',
+                'bg-(--color-primary) text-(--color-text-on-accent) hover:opacity-90',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
                 !currentAnswered && 'pointer-events-none opacity-50',
               )}

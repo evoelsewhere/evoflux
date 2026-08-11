@@ -16,7 +16,7 @@
     var FONTS = ['inter', 'system', 'mono', 'geist', 'anthropic-sans'];
     var font = parsed.fontFamily === 'source-sans'
       ? 'anthropic-sans'
-      : (FONTS.indexOf(parsed.fontFamily) !== -1 ? parsed.fontFamily : 'inter');
+      : (FONTS.indexOf(parsed.fontFamily) !== -1 ? parsed.fontFamily : 'system');
     root.setAttribute('data-font', font);
 
     var SCALES = [0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.2];

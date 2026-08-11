@@ -7,6 +7,7 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { staggerDelay, useMotionPreset } from '@/lib/motion'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { cn } from '@/lib/utils'
+import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
 import {
   loadBrowserPreferences,
   subscribeBrowserPreferences,
@@ -281,8 +282,8 @@ function WorkbenchLauncher(context: WorkbenchContext) {
                 </span>
               </span>
               {meta.shortcut && (
-                <kbd className="shrink-0 rounded-full bg-(--bg-key) px-1.5 py-0.5 font-mono text-[9px] text-(--color-text-muted)">
-                  {meta.shortcut}
+                <kbd className="shrink-0 rounded-md border border-(--color-border) bg-(--bg-key) px-1.5 py-1 font-sans text-[11px] font-medium leading-none tracking-normal text-(--color-text-muted)">
+                  {formatShortcutLabel(meta.shortcut)}
                 </kbd>
               )}
             </motion.button>

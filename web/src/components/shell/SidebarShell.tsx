@@ -39,6 +39,7 @@ import { SIDEBAR_WIDTH, useUIStore } from '@/stores/useUIStore'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { HealthDot } from '@/components/HealthDot'
 import { cn } from '@/lib/utils'
+import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
 
 interface SidebarShellProps {
   /** Collapsed icon-rail state — owned by the caller. */
@@ -255,17 +256,18 @@ export function SidebarSearchTrigger({
 }: {
   onClick?: () => void
 }) {
+  const shortcut = formatShortcutLabel('^P')
   return (
     <button
       type="button"
       onClick={onClick}
       className="focus-ring-control group flex h-9 w-full items-center gap-2 rounded-xl border border-transparent bg-(--bg-key)/40 px-2.5 text-left text-xs text-(--color-text-muted) shadow-[inset_0_0_0_1px_var(--color-border)] transition-[background-color,color,box-shadow] duration-(--motion-fast) hover:bg-(--bg-key)/70 hover:text-(--color-text-2) hover:shadow-[inset_0_0_0_1px_var(--color-border-strong)]"
       aria-label="Open command palette"
-      title="Open command palette (Ctrl+P)"
+      title={`Open command palette (${shortcut})`}
     >
       <Search size={13} className="text-(--color-text-subtle) transition-colors group-hover:text-(--color-text-muted)" aria-hidden="true" />
       <span className="flex-1">Search…</span>
-      <kbd className="rounded-md bg-(--bg-card)/75 px-1.5 py-0.5 font-mono text-[10px] leading-none text-(--color-text-subtle) shadow-[inset_0_0_0_1px_var(--color-border)]">^P</kbd>
+      <kbd className="rounded-md bg-(--bg-card)/75 px-1.5 py-1 font-sans text-[11px] font-medium leading-none tracking-normal text-(--color-text-muted) shadow-[inset_0_0_0_1px_var(--color-border)]">{shortcut}</kbd>
     </button>
   )
 }

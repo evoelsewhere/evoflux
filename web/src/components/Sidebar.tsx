@@ -53,6 +53,7 @@ import {
 import { EditSessionTitleDialog } from "@/components/shell/EditSessionTitleDialog";
 import { MobileDrawerBackdrop } from "@/components/shell/MobileDrawerBackdrop";
 import { SessionFolders } from "@/components/shell/SessionFolders";
+import { CollapsibleSection } from "@/components/shell/CollapsibleSection";
 import { MoveToFolderDialog } from "@/components/shell/MoveToFolderDialog";
 import {
   isSessionDrag,
@@ -66,6 +67,8 @@ import { useToastStore } from "@/stores/useToastStore";
 import { useTeamStore } from "@/stores/useTeamStore";
 import type { SessionFolder, SessionResponse } from "@/api/types";
 import { cn } from "@/lib/utils";
+import { STORAGE_KEYS } from "@/lib/storage-keys";
+import { formatShortcutLabel, isPrimaryShortcut } from "@/lib/keyboard-shortcuts";
 
 interface DateGroup {
   label: string;
@@ -77,8 +80,8 @@ function SessionListSkeleton({ count = 6 }: { count?: number }) {
     <div className="space-y-1 px-1 py-2" aria-label="Loading sessions">
       {Array.from({ length: count }, (_, index) => (
         <div key={index} className="rounded-md px-2.5 py-2">
-          <Skeleton className="h-3 w-[min(11rem,70%)] bg-(--bg-key)" />
-          <Skeleton className="mt-2 h-2.5 w-20 bg-(--bg-key)" />
+          <Skeleton className="h-3 w-[min(11rem,70%)]" />
+          <Skeleton className="mt-2 h-2.5 w-20" />
         </div>
       ))}
     </div>
@@ -107,6 +110,14 @@ function groupByDate(sessions: SessionResponse[]): DateGroup[] {
     groups.push({ label: "Yesterday", sessions: yesterday });
   if (older.length) groups.push({ label: "Older", sessions: older });
   return groups;
+}
+
+function loadRecentCollapsed(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_KEYS.work.recentCollapsed) === "true";
+  } catch {
+    return false;
+  }
 }
 
 interface SidebarProps {
@@ -201,6 +212,7 @@ export function Sidebar({
   const [editTitle, setEditTitle] = useState("");
   const [moveTarget, setMoveTarget] = useState<SessionResponse | null>(null);
   const [unfileDropActive, setUnfileDropActive] = useState(false);
+  const [recentCollapsed, setRecentCollapsed] = useState(loadRecentCollapsed);
   const [pullDistance, setPullDistance] = useState(0);
   const pullStartYRef = useRef<number | null>(null);
 
@@ -211,6 +223,17 @@ export function Sidebar({
     [refetchFolders, refetchSessions],
   );
   const canPullRefresh = isMobile && mobileOpen;
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        STORAGE_KEYS.work.recentCollapsed,
+        String(recentCollapsed),
+      );
+    } catch {
+      // Ignore storage failures; the section still works for this session.
+    }
+  }, [recentCollapsed]);
 
   const handleSessionListTouchStart = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
@@ -247,7 +270,7 @@ export function Sidebar({
   // per the topbar-redesign wireframe and their open-state is in useUIStore.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (!e.ctrlKey || e.metaKey) return;
+      if (!isPrimaryShortcut(e)) return;
       if (e.key === "r") {
         e.preventDefault();
         void refreshSidebar();
@@ -279,7 +302,7 @@ export function Sidebar({
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, recentCollapsed]);
 
   const handleDelete = (session: SessionResponse) => {
     setPendingDeleteId(session.id);
@@ -469,45 +492,49 @@ export function Sidebar({
     </>
   );
 
-  const sessionList = (
+  const sessionSections = (
     <>
-      <div className="mx-1.5 h-px bg-(--color-border)" aria-hidden="true" />
-      <SessionFolders
-        folders={folderList}
-        isLoading={folders.isLoading}
-        isError={folders.isError}
-        isMobile={isMobile}
-        renderSession={renderSessionRow}
-        onNewChatInFolder={(folder) => void handleNewChatInFolder(folder)}
-        onDropSession={moveSessionToFolder}
-        onLoadMore={(folder) => {
-          if (!folder.next_cursor) return;
-          loadMoreFolderSessions.mutate(
-            { folderId: folder.id, before: folder.next_cursor },
-            {
-              onError: (err) =>
-                pushToast({
-                  tone: "error",
-                  title: "Could not load older chats",
-                  description:
-                    err instanceof Error ? err.message : "Please try again.",
-                }),
-            },
-          );
-        }}
-        loadingFolderId={
-          loadMoreFolderSessions.isPending
-            ? loadMoreFolderSessions.variables?.folderId
-            : null
-        }
-        onRetry={() => void folders.refetch()}
-      />
+      {/* Folders and Recent are separate scroll regions. Scrolling a long
+          Recent list must not move the folder controls out of view. */}
+      <div className="max-h-[45%] shrink-0 overflow-y-auto px-1.5">
+        <div className="mx-1.5 h-px bg-(--color-border)" aria-hidden="true" />
+        <SessionFolders
+          folders={folderList}
+          isLoading={folders.isLoading}
+          isError={folders.isError}
+          isMobile={isMobile}
+          renderSession={renderSessionRow}
+          onNewChatInFolder={(folder) => void handleNewChatInFolder(folder)}
+          onDropSession={moveSessionToFolder}
+          onLoadMore={(folder) => {
+            if (!folder.next_cursor) return;
+            loadMoreFolderSessions.mutate(
+              { folderId: folder.id, before: folder.next_cursor },
+              {
+                onError: (err) =>
+                  pushToast({
+                    tone: "error",
+                    title: "Could not load older chats",
+                    description:
+                      err instanceof Error ? err.message : "Please try again.",
+                  }),
+              },
+            );
+          }}
+          loadingFolderId={
+            loadMoreFolderSessions.isPending
+              ? loadMoreFolderSessions.variables?.folderId
+              : null
+          }
+          onRetry={() => void folders.refetch()}
+        />
+      </div>
 
       {/* Dropping a row here takes it out of its folder — the mirror of
           dropping it on a folder header. */}
       <div
         className={cn(
-          "rounded-md transition-colors",
+          "flex min-h-0 flex-1 flex-col rounded-md px-1.5 transition-colors",
           unfileDropActive && "bg-(--bg-key)/40 ring-1 ring-(--color-accent)",
         )}
         onDragEnter={(event) => {
@@ -532,30 +559,58 @@ export function Sidebar({
           if (sessionId) moveSessionToFolder(sessionId, null);
         }}
       >
-        <div className="mx-1.5 mt-2 h-px bg-(--color-border)" aria-hidden="true" />
-        <div className="flex items-center justify-between px-2.5 pb-2 pt-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">
-            Recent
-          </span>
-          <button
-            type="button"
-            onClick={() => void refreshSidebar()}
-            className="rounded-md p-1.5 text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-muted)"
-            aria-label="Refresh folders and recent chats"
-            title="Refresh sidebar (Ctrl+R)"
+        <div className="mx-1.5 h-px shrink-0 bg-(--color-border)" aria-hidden="true" />
+        <CollapsibleSection
+          label="Recent"
+          collapsed={recentCollapsed}
+          onToggle={() => setRecentCollapsed((value) => !value)}
+          size="large"
+          className="shrink-0 px-2 pb-1 pt-1"
+          rightSlot={(
+            <button
+              type="button"
+              onClick={() => void refreshSidebar()}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+              aria-label="Refresh folders and recent chats"
+              title={`Refresh sidebar (${formatShortcutLabel("Ctrl+R")})`}
+            >
+              <RefreshCw
+                size={15}
+                className={sessions.isFetching || folders.isFetching ? "animate-spin" : ""}
+                aria-hidden="true"
+              />
+            </button>
+          )}
+        />
+        {!recentCollapsed && (
+          <div
+            ref={sessionListRef}
+            className="relative min-h-0 flex-1 overflow-y-auto pb-1.5"
+            onTouchStart={handleSessionListTouchStart}
+            onTouchMove={handleSessionListTouchMove}
+            onTouchEnd={handleSessionListTouchEnd}
+            onTouchCancel={handleSessionListTouchEnd}
           >
-            <RefreshCw
-              size={15}
-              className={sessions.isFetching || folders.isFetching ? "animate-spin" : ""}
-            />
-          </button>
-        </div>
-        {unfileDropActive && (
-          <p className="px-3 py-2 text-center text-xs text-(--color-text-muted)">
-            Drop to remove from folder
-          </p>
+            {canPullRefresh && (
+              <div
+                className="pointer-events-none sticky top-0 z-(--z-panel) flex justify-center overflow-hidden transition-[height] duration-(--motion-fast)"
+                style={{ height: pullDistance }}
+                aria-hidden
+              >
+                <div className="mt-2 inline-flex h-8 items-center gap-2 rounded-full border border-(--color-border) bg-(--bg-card) px-3 text-xs text-(--color-text-muted) shadow-sm">
+                  <RefreshCw size={12} className={pullDistance >= 54 || sessions.isFetching ? 'animate-spin' : ''} />
+                  {pullDistance >= 54 ? 'Release to refresh' : 'Pull to refresh'}
+                </div>
+              </div>
+            )}
+            {unfileDropActive && (
+              <p className="px-3 py-2 text-center text-xs text-(--color-text-muted)">
+                Drop to remove from folder
+              </p>
+            )}
+            {ungroupedList}
+          </div>
         )}
-        {ungroupedList}
       </div>
     </>
   );
@@ -597,6 +652,7 @@ export function Sidebar({
           <SidebarItem
             Icon={Blocks}
             label="Plugins"
+            kbd="^K"
             collapsed
             onClick={() => togglePlugins("plugins")}
           />
@@ -669,6 +725,7 @@ export function Sidebar({
             <SidebarItem
               Icon={Blocks}
               label="Plugins"
+              kbd="^K"
               onClick={() => togglePlugins("plugins")}
             />
           </nav>
@@ -683,16 +740,7 @@ export function Sidebar({
             exit={{ opacity: 0 }}
             className="flex min-h-0 flex-1 flex-col overflow-hidden"
           >
-            <div
-              ref={sessionListRef}
-              className="relative flex-1 overflow-y-auto px-1.5 pb-1.5"
-              onTouchStart={handleSessionListTouchStart}
-              onTouchMove={handleSessionListTouchMove}
-              onTouchEnd={handleSessionListTouchEnd}
-              onTouchCancel={handleSessionListTouchEnd}
-            >
-              {sessionList}
-            </div>
+            {sessionSections}
           </motion.div>
         </AnimatePresence>
 
@@ -759,6 +807,7 @@ export function Sidebar({
         <SidebarItem
           Icon={Blocks}
           label="Plugins"
+          kbd="^K"
           onClick={() => { togglePlugins("plugins"); onMobileClose?.(); }}
         />
       </nav>
@@ -772,28 +821,7 @@ export function Sidebar({
           exit={{ opacity: 0 }}
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
-          <div
-            ref={sessionListRef}
-            className="relative flex-1 overflow-y-auto px-1.5 pb-1.5"
-            onTouchStart={handleSessionListTouchStart}
-            onTouchMove={handleSessionListTouchMove}
-            onTouchEnd={handleSessionListTouchEnd}
-            onTouchCancel={handleSessionListTouchEnd}
-          >
-            {canPullRefresh && (
-              <div
-                className="pointer-events-none sticky top-0 z-(--z-panel) flex justify-center overflow-hidden transition-[height] duration-(--motion-fast)"
-                style={{ height: pullDistance }}
-                aria-hidden
-              >
-                <div className="mt-2 inline-flex h-8 items-center gap-2 rounded-full border border-(--color-border) bg-(--bg-card) px-3 text-xs text-(--color-text-muted) shadow-sm">
-                  <RefreshCw size={12} className={pullDistance >= 54 || sessions.isFetching ? 'animate-spin' : ''} />
-                  {pullDistance >= 54 ? 'Release to refresh' : 'Pull to refresh'}
-                </div>
-              </div>
-            )}
-            {sessionList}
-          </div>
+          {sessionSections}
         </motion.div>
       </AnimatePresence>
 

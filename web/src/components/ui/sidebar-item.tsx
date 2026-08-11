@@ -15,16 +15,12 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { ComponentType, MouseEventHandler, ReactNode } from 'react'
+import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
 
 /**
  * Convert the shorthand ``"^N"`` (caret = primary modifier) into a
  * ``"Ctrl+N"`` label. Anything else is rendered as-is.
  */
-function renderKbd(kbd: string): string {
-  if (kbd.startsWith('^')) return `Ctrl+${kbd.slice(1)}`
-  return kbd
-}
-
 export interface SidebarItemProps {
   /** Lucide icon component (or any component accepting `size` prop). */
   Icon: ComponentType<{ size?: number; className?: string }>
@@ -57,14 +53,14 @@ export function SidebarItem({
     <button
       type="button"
       onClick={onClick}
-      title={title ?? (kbd ? `${label} (${renderKbd(kbd)})` : label)}
+      title={title ?? (kbd ? `${label} (${formatShortcutLabel(kbd)})` : label)}
       aria-label={collapsed ? label : undefined}
       aria-current={active ? 'page' : undefined}
       className={cn(
         'interactive-weight relative flex w-full items-center gap-2.5 rounded-lg text-sm transition-colors',
         collapsed ? 'h-10 w-10 justify-center px-0 py-0' : 'px-3 py-2',
         active
-          ? 'arc-active-indicator bg-(--bg-key) text-(--color-text) font-medium'
+          ? 'arc-active-indicator bg-(--bg-key) text-(--color-accent) font-semibold'
           : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
         className,
       )}
@@ -88,8 +84,8 @@ export function SidebarItem({
         (rightSlot !== undefined ? (
           rightSlot
         ) : kbd ? (
-          <kbd className="shrink-0 rounded border border-(--color-border) bg-(--bg-page) px-1 py-0.5 font-mono text-xs text-(--color-text-subtle)">
-            {renderKbd(kbd)}
+          <kbd className="shrink-0 rounded border border-(--color-border) bg-(--bg-page) px-1.5 py-1 font-sans text-[11px] font-medium leading-none tracking-normal text-(--color-text-muted)">
+            {formatShortcutLabel(kbd)}
           </kbd>
         ) : null)}
     </button>

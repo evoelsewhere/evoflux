@@ -154,7 +154,7 @@ function SelectionCommentPopover({
           disabled={!comment.trim()}
           onClick={() => comment.trim() && onSubmit(comment.trim())}
           className={cn(
-            'flex items-center gap-1 rounded-lg bg-(--color-primary) px-2 py-1 text-xs font-medium text-white hover:opacity-90',
+            'flex items-center gap-1 rounded-lg bg-(--color-primary) px-2 py-1 text-xs font-medium text-(--color-text-on-accent) hover:opacity-90',
             !comment.trim() && 'pointer-events-none opacity-50',
           )}
         >
@@ -434,7 +434,7 @@ export function PlanActionBar({ onRevise }: { onRevise: () => void }) {
                   onClick={() => handleReply('approved')}
                   className={cn(
                     'flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
-                    'bg-(--color-primary) text-white hover:opacity-90',
+                    'bg-(--color-primary) text-(--color-text-on-accent) hover:opacity-90',
                     replying && 'pointer-events-none opacity-50',
                   )}
                 >

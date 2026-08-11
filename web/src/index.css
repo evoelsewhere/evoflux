@@ -134,6 +134,11 @@
     --radius-3xl: 16px;
     --radius-4xl: 20px;
 
+    /* Compact, but readable: the app uses text-xs for most navigation and
+       metadata, so 13px is the minimum product-UI size. */
+    --text-xs: 0.8125rem;
+    --text-xs--line-height: 1.125rem;
+
     --spacing-app-header: 2.75rem;
     --spacing-mac-traffic-inset: 70px;
 }
@@ -152,43 +157,48 @@
 }
 
 /* ─────────────────────────────────────────────────────────────
- * Dark mode — neutral charcoal surfaces with a muted indigo accent.
+ * Dark mode — warm charcoal surfaces with a quiet warm-gray default accent.
  * ───────────────────────────────────────────────────────────── */
 :root.dark {
     color-scheme: dark;
 
     /* Surfaces — distinct enough to scan, close enough to feel like one app. */
-    --bg-page:           #191918;
-    --bg-sidebar:        #1E1E1D;
-    --bg-card:           #242423;
-    --bg-input:          #20201F;
-    --bg-key:            #2C2C2A;
-    --bg-hover:          #333331;
-    --bg-muted:          #2B2B29;
-    --bg-send:           #E8E6E1;
-    --terminal-bg:       #151514;
-    --color-surface:     #242423;
-    --color-surface-2:   #2C2C2A;
-    --color-bg-elevated: #292928;
+    --bg-page:           #232220;
+    --bg-sidebar:        #1F1E1C;
+    --bg-card:           #2D2C2A;
+    --bg-input:          #282725;
+    --bg-key:            #383534;
+    --bg-hover:          #403D3A;
+    --bg-muted:          #312F2D;
+    --bg-send:           #E9E5DE;
+    --terminal-bg:       #1A1918;
+    --color-surface:     #2D2C2A;
+    --color-surface-2:   #383534;
+    --color-bg-elevated: #34312F;
 
     /* Fine borders — quiet at rest, clear on interactive surfaces. */
-    --border-soft:         #30302E;
-    --border-card:         #393936;
-    --color-border-subtle: #30302E;
-    --color-border:        #3C3C39;
-    --color-border-strong: #565650;
+    --border-soft:         #363330;
+    --border-card:         #45413D;
+    --color-border-subtle: #363330;
+    --color-border:        #494540;
+    --color-border-strong: #69635C;
 
     /* Text — four deliberate levels instead of near-white everywhere. */
     --color-text:           #F3F2EF;
-    --color-text-2:         #DDDCD8;
-    --color-text-muted:     #AAA8A2;
-    --color-text-subtle:    #85827F;
-    --color-text-on-accent: #191918;
+    --color-text-2:         #D9D5CF;
+    --color-text-muted:     #B4AEA7;
+    --color-text-subtle:    #A39D96;
+    --color-text-on-accent: #211A16;
 
     /* Accent */
-    --color-accent:      #9AA0BF;
-    --color-accent-soft: color-mix(in srgb, var(--color-accent) 13%, transparent);
+    --color-accent:      #A39D96;
+    --color-accent-soft: color-mix(in srgb, var(--color-accent) 14%, transparent);
     --color-overlay: rgba(0, 0, 0, 0.62);
+
+    /* Loading feedback stays neutral and never follows the user accent. */
+    --skeleton-base:      #2F2E2C;
+    --skeleton-highlight: #3A3835;
+    --skeleton-sweep:     #4A4743;
 
     /* Composer effort scale */
     --thinking-neutral:        #8B8D91;
@@ -199,7 +209,7 @@
     --thinking-thumb-contrast: #FFFFFF;
 
     /* Arc gradients */
-    --color-gradient-primary: linear-gradient(135deg, #667eea 0%, #8B5CF6 100%);
+    --color-gradient-primary: linear-gradient(135deg, #706B66 0%, #A39D96 100%);
     --color-gradient-cyan:    linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
     --color-gradient-rose:    linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
     --color-gradient-amber:   linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
@@ -209,13 +219,13 @@
     --accent-blue-soft:   #1E293B;
     --accent-blue-text:   #93C5FD;
 
-    --accent-green:       #4ADE80;
-    --accent-green-soft:  #14532D;
-    --accent-green-text:  #86EFAC;
+    --accent-green:       #55A27C;
+    --accent-green-soft:  #203B30;
+    --accent-green-text:  #8BC6A8;
 
-    --accent-orange:      #FB923C;
-    --accent-orange-soft: #431407;
-    --accent-orange-text: #FDBA74;
+    --accent-orange:      #DD8246;
+    --accent-orange-soft: #4A2E1F;
+    --accent-orange-text: #F0A46F;
 
     --accent-pink:        #F472B6;
     --accent-pink-soft:   #500724;
@@ -227,32 +237,32 @@
 
     /* Markers */
     --color-marker-blue:   #60A5FA;
-    --color-marker-mint:   #4ADE80;
-    --color-marker-orange: #FB923C;
+    --color-marker-mint:   #55A27C;
+    --color-marker-orange: #DD8246;
     --color-marker-pink:   #F472B6;
     --color-marker-yellow: #FBBF24;
     --color-violet:        #A78BFA;
-    --color-tint-mint:     rgba(74, 222, 128, 0.12);
-    --color-tint-orange:   rgba(251, 146, 60, 0.12);
+    --color-tint-mint:     rgba(85, 162, 124, 0.12);
+    --color-tint-orange:   rgba(221, 130, 70, 0.12);
     --color-tint-violet:   rgba(167, 139, 250, 0.12);
 
     /* Semantic */
     --color-success:        var(--accent-green);
     --color-success-subtle: var(--accent-green-soft);
-    --color-warning:        var(--accent-orange);
-    --color-warning-subtle: var(--accent-orange-soft);
+    --color-warning:        #D0A04B;
+    --color-warning-subtle: #493A22;
     --color-error:          #F87171;
     --color-error-subtle:   rgba(248, 113, 113, 0.10);
     --color-info:           var(--accent-blue);
     --color-info-subtle:    var(--accent-blue-soft);
-    --color-diff-add-bg:    rgba(74, 222, 128, 0.08);
-    --color-diff-add-text:  #86EFAC;
+    --color-diff-add-bg:    rgba(85, 162, 124, 0.10);
+    --color-diff-add-text:  #8BC6A8;
     --color-diff-del-bg:    rgba(248, 113, 113, 0.08);
     --color-diff-del-text:  #FCA5A5;
 
     /* Syntax — VSCode 2026 Dark inspired: each token category gets a distinct hue */
-    /* Comment: warm-gray — de-emphasised but readable: 4.8:1 on page, 4.2:1 on card */
-    --color-syn-comment:  #7B828A;
+    /* Comment: warm gray — de-emphasised but AA-readable on page and card. */
+    --color-syn-comment:  #A39D96;
     /* Keyword/control-flow: coral-red — 7.4:1 AAA */
     --color-syn-keyword:  #FF7B72;
     /* Function call-site: lavender — 9.6:1 AAA, distinct from keyword red */
@@ -271,7 +281,7 @@
     --color-syn-operator: #8B949E;
 
     /* Focus + depth */
-    --focus-ring:   #9AA0BF;
+    --focus-ring:   #A39D96;
     --shadow-depth: 0 2px 4px rgba(0, 0, 0, 0.40), 0 4px 16px rgba(0, 0, 0, 0.30);
     --shadow-popover: 0 16px 48px rgba(0, 0, 0, 0.55), 0 6px 24px rgba(0, 0, 0, 0.38);
 
@@ -317,52 +327,57 @@
     --sidebar-accent-foreground:  var(--color-text);
     --sidebar-border:             var(--border-soft);
     --sidebar-ring:               var(--focus-ring);
-    --chart-1:                    var(--color-marker-blue);
+    --chart-1:                    var(--color-accent);
     --chart-2:                    var(--color-marker-mint);
-    --chart-3:                    var(--color-marker-orange);
+    --chart-3:                    var(--color-marker-blue);
     --chart-4:                    var(--color-violet);
     --chart-5:                    var(--color-marker-pink);
 }
 
 /* ─────────────────────────────────────────────────────────────
- * Light mode — soft neutral canvas with crisp white work surfaces.
+ * Light mode — neutral off-white canvas with crisp white work surfaces.
  * ───────────────────────────────────────────────────────────── */
 :root,
 :root.light {
     color-scheme: light;
 
     /* Surfaces */
-    --bg-page:           #F7F8FB;
-    --bg-sidebar:        #F1F3F7;
+    --bg-page:           #FAFAFA;
+    --bg-sidebar:        #F5F5F5;
     --bg-card:           #FFFFFF;
     --bg-input:          #FFFFFF;
-    --bg-key:            #ECEFF5;
-    --bg-hover:          #E5E9F1;
-    --bg-muted:          #EEF1F6;
-    --bg-send:           #1D2433;
-    --terminal-bg:       #F4F6FA;
+    --bg-key:            #EFEFEF;
+    --bg-hover:          #E8E8E8;
+    --bg-muted:          #F4F4F4;
+    --bg-send:           #1D1D1B;
+    --terminal-bg:       #F9F9F9;
     --color-surface:     #FFFFFF;
-    --color-surface-2:   #EEF1F6;
+    --color-surface-2:   #F4F4F4;
     --color-bg-elevated: #FFFFFF;
 
     /* Borders */
-    --border-soft:         #E6E9EF;
-    --border-card:         #DCE1E9;
-    --color-border-subtle: #E6E9EF;
-    --color-border:        #D8DDE6;
-    --color-border-strong: #BCC4D0;
+    --border-soft:         #E5E5E5;
+    --border-card:         #DEDEDE;
+    --color-border-subtle: #E5E5E5;
+    --color-border:        #D8D8D8;
+    --color-border-strong: #ABABAB;
 
     /* Text — neutral ink with a readable but visible hierarchy. */
-    --color-text:           #171A21;
-    --color-text-2:         #343A46;
-    --color-text-muted:     #5C6675;
-    --color-text-subtle:    #697381;
+    --color-text:           #1D1D1D;
+    --color-text-2:         #353535;
+    --color-text-muted:     #5F5F5F;
+    --color-text-subtle:    #6A6A6A;
     --color-text-on-accent: #FFFFFF;
 
     /* Accent */
-    --color-accent:      #4C66D6;
-    --color-accent-soft: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    --color-accent:      #575757;
+    --color-accent-soft: color-mix(in srgb, var(--color-accent) 8%, transparent);
     --color-overlay: rgba(0, 0, 0, 0.40);
+
+    /* Loading feedback stays neutral and never follows the user accent. */
+    --skeleton-base:      #EDEDED;
+    --skeleton-highlight: #FAFAFA;
+    --skeleton-sweep:     #D7D7D7;
 
     /* Composer effort scale */
     --thinking-neutral:        #6B7280;
@@ -373,7 +388,7 @@
     --thinking-thumb-contrast: #FFFFFF;
 
     /* Arc gradients */
-    --color-gradient-primary: linear-gradient(135deg, #667eea 0%, #8B5CF6 100%);
+    --color-gradient-primary: linear-gradient(135deg, #3F3F3F 0%, #6B6B6B 100%);
     --color-gradient-cyan:    linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
     --color-gradient-rose:    linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
     --color-gradient-amber:   linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
@@ -383,13 +398,13 @@
     --accent-blue-soft:   #DBEAFE;
     --accent-blue-text:   #1E40AF;
 
-    --accent-green:       #15803D;
-    --accent-green-soft:  #DCFCE7;
-    --accent-green-text:  #166534;
+    --accent-green:       #34785B;
+    --accent-green-soft:  #E1EEE7;
+    --accent-green-text:  #285E47;
 
-    --accent-orange:      #C2410C;
-    --accent-orange-soft: #FFEDD5;
-    --accent-orange-text: #9A3412;
+    --accent-orange:      #B65F2B;
+    --accent-orange-soft: #F8E7DC;
+    --accent-orange-text: #8B461F;
 
     --accent-pink:        #BE185D;
     --accent-pink-soft:   #FCE7F3;
@@ -401,26 +416,26 @@
 
     /* Markers — AA-contrast on light bg */
     --color-marker-blue:   #2563EB;
-    --color-marker-mint:   #15803D;
-    --color-marker-orange: #C2410C;
+    --color-marker-mint:   #34785B;
+    --color-marker-orange: #B65F2B;
     --color-marker-pink:   #BE185D;
     --color-marker-yellow: #713F12;
     --color-violet:        #7C3AED;
-    --color-tint-mint:     rgba(22, 163, 74, 0.08);
-    --color-tint-orange:   rgba(234, 88, 12, 0.08);
+    --color-tint-mint:     rgba(52, 120, 91, 0.09);
+    --color-tint-orange:   rgba(182, 95, 43, 0.09);
     --color-tint-violet:   rgba(124, 58, 237, 0.08);
 
     /* Semantic — AA-contrast on light bg */
     --color-success:        var(--accent-green);
     --color-success-subtle: var(--accent-green-soft);
-    --color-warning:        var(--accent-orange);
-    --color-warning-subtle: var(--accent-orange-soft);
+    --color-warning:        #8A641F;
+    --color-warning-subtle: #F4ECD9;
     --color-error:          #DC2626;
     --color-error-subtle:   rgba(220, 38, 38, 0.06);
     --color-info:           var(--accent-blue);
     --color-info-subtle:    var(--accent-blue-soft);
-    --color-diff-add-bg:    rgba(22, 163, 74, 0.10);
-    --color-diff-add-text:  #166534;
+    --color-diff-add-bg:    rgba(52, 120, 91, 0.10);
+    --color-diff-add-text:  #285E47;
     --color-diff-del-bg:    rgba(220, 38, 38, 0.10);
     --color-diff-del-text:  #991B1B;
 
@@ -444,10 +459,10 @@
     /* Operator: neutral gray — intentionally de-emphasised */
     --color-syn-operator: #737373;
 
-    /* Focus + depth — VSCode 2026 Light blue for interactive states */
-    --focus-ring:   #4C66D6;
-    --shadow-depth: 0 1px 3px rgba(10, 10, 30, 0.07), 0 4px 12px rgba(10, 10, 30, 0.10);
-    --shadow-popover: 0 8px 32px rgba(10, 10, 30, 0.20), 0 4px 16px rgba(10, 10, 30, 0.12);
+    /* Focus + depth — neutral ink focus with soft, warm shadows. */
+    --focus-ring:   #575757;
+    --shadow-depth: 0 1px 3px rgba(0, 0, 0, 0.07), 0 4px 12px rgba(0, 0, 0, 0.09);
+    --shadow-popover: 0 8px 32px rgba(0, 0, 0, 0.16), 0 4px 16px rgba(0, 0, 0, 0.10);
 
     /* shadcn base tokens — light mode */
     --background:                 var(--bg-page);
@@ -457,7 +472,7 @@
     --popover:                    var(--bg-card);
     --popover-foreground:         var(--color-text);
     --primary:                    var(--color-accent);
-    --primary-foreground:         #FFFFFF;
+    --primary-foreground:         var(--color-text-on-accent);
     --secondary:                  var(--bg-key);
     --secondary-foreground:       var(--color-text);
     --muted:                      var(--bg-key);
@@ -477,11 +492,29 @@
     --sidebar-accent-foreground:  var(--color-text);
     --sidebar-border:             var(--border-soft);
     --sidebar-ring:               var(--focus-ring);
-    --chart-1:                    var(--color-marker-blue);
+    --chart-1:                    var(--color-accent);
     --chart-2:                    var(--color-marker-mint);
-    --chart-3:                    var(--color-marker-orange);
+    --chart-3:                    var(--color-marker-blue);
     --chart-4:                    var(--color-violet);
     --chart-5:                    var(--color-marker-pink);
+}
+
+/* Compatibility aliases used by older and feature-specific surfaces. Keep
+ * these semantic so every panel follows the active light/dark palette. */
+:root {
+    --bg-app:                     var(--bg-page);
+    --bg-base:                    var(--bg-page);
+    --bg-primary:                 var(--bg-page);
+    --bg-2:                       var(--bg-key);
+    --bg-subtle:                  var(--bg-muted);
+    --bg-key-hover:               var(--bg-hover);
+    --border-subtle:              var(--color-border-subtle);
+    --color-background-secondary: var(--bg-muted);
+    --color-accent-fg:            var(--color-text-on-accent);
+    --color-accent-subtle:        var(--color-accent-soft);
+    --color-danger:               var(--color-error);
+    --color-text-faint:           var(--color-text-subtle);
+
 }
 
 @layer base {
@@ -498,12 +531,13 @@
   }
   body {
     @apply bg-background text-foreground;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
     text-rendering: optimizeLegibility;
+    font-kerning: normal;
     font-feature-settings: "cv01", "cv11", "ss01", "ss03", "ss07";
     font-optical-sizing: auto;
-    letter-spacing: -0.006em;
+    letter-spacing: 0;
     line-height: 1.5;
   }
   html {
@@ -553,8 +587,24 @@ html[data-mobile-shell] [contenteditable="true"] {
 }
 
 html[data-mobile-shell] .text-\[9px\],
-html[data-mobile-shell] .text-\[10px\] {
+html[data-mobile-shell] .text-\[10px\],
+html[data-mobile-shell] .text-\[11px\] {
   font-size: 12px;
+}
+
+/* Pixel-sized metadata was tuned for a denser prototype and becomes hard to
+ * read on ordinary laptop displays. Preserve hierarchy without dropping below
+ * 11px; primary navigation now comes from the 13px text-xs token above. */
+@layer utilities {
+  .text-\[9px\] {
+    font-size: 0.6875rem;
+    line-height: 0.875rem;
+  }
+  .text-\[10px\],
+  .text-\[11px\] {
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
 }
 
 .mobile-safe-shell {
@@ -809,12 +859,14 @@ a svg.lucide,
 }
 .skeleton-shimmer {
   background: linear-gradient(
-    90deg,
-    var(--bg-card) 25%,
-    var(--bg-key) 50%,
-    var(--bg-card) 75%
+    100deg,
+    var(--skeleton-base) 18%,
+    var(--skeleton-highlight) 42%,
+    var(--skeleton-sweep) 50%,
+    var(--skeleton-highlight) 58%,
+    var(--skeleton-base) 82%
   );
-  background-size: 200% 100%;
+  background-size: 240% 100%;
   animation: shimmer 2s var(--ease-in-out) infinite;
 }
 
@@ -850,7 +902,7 @@ a svg.lucide,
   background: linear-gradient(
     90deg,
     transparent,
-    color-mix(in srgb, var(--color-accent) 22%, transparent),
+    color-mix(in srgb, var(--skeleton-sweep) 72%, transparent),
     transparent
   );
   animation: oa-panel-loader-scan 1.6s var(--ease-in-out) infinite;
@@ -1084,8 +1136,8 @@ a svg.lucide,
  * Tailwind utilities stay connected to these variables instead of compiling
  * Inter into every .font-sans/.font-heading rule. */
 :root {
-    --app-font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    --app-font-heading: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --app-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', Roboto, system-ui, sans-serif;
+    --app-font-heading: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI', Roboto, system-ui, sans-serif;
     --app-font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
 
     /* Appearance → UI animations. Tailwind resolves every `transition-*`
@@ -1097,8 +1149,8 @@ a svg.lucide,
 }
 
 :root[data-font='system'] {
-    --app-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
-    --app-font-heading: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+    --app-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', Roboto, system-ui, sans-serif;
+    --app-font-heading: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI', Roboto, system-ui, sans-serif;
 }
 
 :root[data-font='mono'] {
@@ -1295,7 +1347,9 @@ a svg.lucide,
  * ───────────────────────────────────────────────────────────── */
 .oa-prose {
   color: var(--color-text);
-  line-height: 1.8;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.75;
   overflow-wrap: anywhere;
   letter-spacing: -0.003em;
 }

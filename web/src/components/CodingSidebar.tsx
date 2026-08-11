@@ -131,6 +131,7 @@ import {
 } from "@/queries/useProjectsQuery";
 import { ProjectSetupModal } from "@/components/ProjectSetupModal";
 import { cn } from "@/lib/utils";
+import { formatShortcutLabel } from "@/lib/keyboard-shortcuts";
 
 
 function worktreeNameSlug(value: string): string {
@@ -1136,7 +1137,7 @@ export function CodingSidebar({
           <button
             type="button"
             onClick={onCommandPalette}
-            title="Search (Ctrl+P)"
+            title={`Search (${formatShortcutLabel("Ctrl+P")})`}
             aria-label="Search"
             className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
           >
@@ -1162,6 +1163,7 @@ export function CodingSidebar({
         <SidebarItem
           Icon={Blocks}
           label="Plugins"
+          kbd="^K"
           collapsed
           onClick={() => togglePlugins("plugins")}
         />
@@ -1259,7 +1261,7 @@ export function CodingSidebar({
                       className={`shrink-0 ${isActive ? "text-(--color-accent)" : "text-(--color-text-subtle)"}`}
                       aria-hidden="true"
                     />
-                    <span className={`min-w-0 flex-1 truncate font-medium ${isActive ? "text-(--color-text)" : ""}`}>
+                    <span className={`min-w-0 flex-1 truncate font-medium ${isActive ? "text-(--color-accent)" : ""}`}>
                       {project.name}
                     </span>
                     <span className="shrink-0 rounded-full bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted)">
@@ -1587,6 +1589,7 @@ export function CodingSidebar({
         <SidebarItem
           Icon={Blocks}
           label="Plugins"
+          kbd="^K"
           onClick={() => togglePlugins("plugins")}
         />
         <SidebarItem
@@ -1660,6 +1663,7 @@ export function CodingSidebar({
         <SidebarItem
           Icon={Blocks}
           label="Plugins"
+          kbd="^K"
           onClick={() => {
             togglePlugins("plugins");
             onMobileClose?.();
