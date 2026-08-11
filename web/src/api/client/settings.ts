@@ -126,10 +126,24 @@ export type ConductorStatus = {
   maintenance_required: boolean
   error: string | null
   resources: Array<{
-    kind: 'agent' | 'skill' | 'mcp'
+    project_id?: string
+    resource_id?: string
+    version_id?: string | null
+    version?: string | null
+    release_channel?: 'beta' | 'published' | null
+    kind: 'agent' | 'skill' | 'mcp' | 'plugin'
     slug: string
     state: string
-    drift: string[]
+    observed_state?: string
+    drift?: string[]
+    message?: string | null
+    trust_required?: boolean
+    trust_review?: {
+      executable_commands?: Array<{ server: string; executable: string; args: string[] }>
+      remote_hosts?: Array<{ server: string; transport: string; host: string; url: string }>
+      environment_fields?: string[]
+      capabilities?: Array<{ name: string; source: string }>
+    } | null
   }>
 }
 
@@ -175,6 +189,14 @@ export async function syncConductor(): Promise<ConductorStatus> {
   const res = await fetch(`${apiBaseUrl()}/settings/conductor/sync`, { method: 'POST' })
   if (!res.ok) await parseDetailOrThrow(res, 'POST /settings/conductor/sync')
   return res.json()
+}
+
+export async function approveConductorResource(resourceId: string): Promise<void> {
+  const res = await fetch(
+    `${apiBaseUrl()}/settings/conductor/resources/${encodeURIComponent(resourceId)}/approve`,
+    { method: 'POST' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'POST /settings/conductor/resources/:id/approve')
 }
 
 export type MultimodalSectionSettings = {
