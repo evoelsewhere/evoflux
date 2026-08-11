@@ -1,4 +1,5 @@
 import { collectEditableElements, type RenderIssue, type RenderRequest } from './slide-editable'
+import { rasterizeSlideElement } from './safe-slide-canvas'
 import slideRuntimeCss from './slide-runtime.css?inline'
 
 const sleep = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds))
@@ -8,54 +9,6 @@ function pngPayload(dataUrl: string): string {
   const index = dataUrl.indexOf(marker)
   if (index < 0) throw new Error('WebView renderer did not produce a base64 PNG.')
   return dataUrl.slice(index + marker.length)
-}
-
-/**
- * Capture the self-contained slide with browser primitives only.
- *
- * Slide HTML is already constrained to inline CSS, data-URI images and
- * data-URI fonts. Embedding a cloned root in an SVG foreignObject therefore
- * preserves the same render tree without shipping a second DOM-cloning SDK.
- */
-async function elementToPng(
-  element: HTMLElement,
-  options: { width: number; height: number; pixelRatio: number; css: string },
-): Promise<string> {
-  const xhtmlNamespace = 'http://www.w3.org/1999/xhtml'
-  const captureDocument = document.implementation.createDocument(xhtmlNamespace, 'html')
-  const head = captureDocument.createElementNS(xhtmlNamespace, 'head')
-  const body = captureDocument.createElementNS(xhtmlNamespace, 'body')
-  const style = captureDocument.createElementNS(xhtmlNamespace, 'style')
-  style.textContent = options.css
-  head.append(style)
-  body.append(captureDocument.importNode(element, true))
-  captureDocument.documentElement.append(head, body)
-
-  const serialized = new XMLSerializer().serializeToString(captureDocument.documentElement)
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${options.width}" height="${options.height}" viewBox="0 0 ${options.width} ${options.height}"><foreignObject x="0" y="0" width="100%" height="100%">${serialized}</foreignObject></svg>`
-  const objectUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }))
-
-  try {
-    const image = new Image()
-    image.decoding = 'async'
-    image.src = objectUrl
-    await new Promise<void>((resolve, reject) => {
-      image.addEventListener('load', () => resolve(), { once: true })
-      image.addEventListener('error', () => reject(new Error('Slide SVG capture failed to load.')), { once: true })
-    })
-    await image.decode().catch(() => undefined)
-
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.round(options.width * options.pixelRatio)
-    canvas.height = Math.round(options.height * options.pixelRatio)
-    const context = canvas.getContext('2d')
-    if (!context) throw new Error('Slide canvas context is unavailable.')
-    context.scale(options.pixelRatio, options.pixelRatio)
-    context.drawImage(image, 0, 0, options.width, options.height)
-    return canvas.toDataURL('image/png')
-  } finally {
-    URL.revokeObjectURL(objectUrl)
-  }
 }
 
 async function waitForAssets(document: Document): Promise<RenderIssue[]> {
@@ -124,6 +77,13 @@ export async function renderHtmlSlide(request: RenderRequest) {
     if (roots.length !== 1) throw new Error('Slide HTML must contain exactly one data-slide-root element.')
     const root = roots[0]
     const issues = await waitForAssets(frameDocument)
+    if (/::(?:before|after)\b/i.test(request.css)) {
+      issues.push({
+        severity: 'error',
+        code: 'unsupported-canvas-pseudo-element',
+        message: 'Generated ::before/::after content must be expressed as real slide markup.',
+      })
+    }
     if (root.scrollWidth > request.width + 1 || root.scrollHeight > request.height + 1) {
       issues.push({ severity: 'error', code: 'slide-content-overflow', message: `Slide content exceeds the ${request.width}×${request.height} canvas.` })
     }
@@ -132,9 +92,9 @@ export async function renderHtmlSlide(request: RenderRequest) {
     const captureOptions = {
       width: request.width,
       height: request.height,
-      css: `${slideRuntimeCss}\n${request.css}\n${shellRules}\nhtml,body{margin:0;width:${request.width}px;height:${request.height}px;overflow:hidden;background:transparent}*{box-sizing:border-box}[data-slide-root]{width:${request.width}px;height:${request.height}px;overflow:hidden}`,
     }
-    const preview = await elementToPng(root, { ...captureOptions, pixelRatio: 1 })
+    const preview = await rasterizeSlideElement(root, { ...captureOptions, pixelRatio: 1 })
+    issues.push(...preview.issues)
     editable.hidden.forEach((element) => {
       element.setAttribute(
         element.getAttribute('data-pptx-editable') === 'image'
@@ -143,10 +103,11 @@ export async function renderHtmlSlide(request: RenderRequest) {
         '',
       )
     })
-    const shell = await elementToPng(root, { ...captureOptions, pixelRatio: 2 })
+    const shell = await rasterizeSlideElement(root, { ...captureOptions, pixelRatio: 2 })
+    issues.push(...shell.issues)
     return {
-      preview_png_base64: pngPayload(preview),
-      shell_png_base64: pngPayload(shell),
+      preview_png_base64: pngPayload(preview.dataUrl),
+      shell_png_base64: pngPayload(shell.dataUrl),
       editable_elements: editable.elements,
       issues,
     }

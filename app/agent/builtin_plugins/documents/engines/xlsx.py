@@ -14,14 +14,22 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import json
 import math
+import os
 from pathlib import Path
 import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.agent.builtin_plugins.documents.rendering.internal import render_xlsx_workbook
+from app.agent.builtin_plugins.documents.rendering.internal import (
+    XlsxRenderEvidence,
+    render_xlsx_workbook_with_evidence,
+)
 from app.agent.builtin_plugins.documents.rendering.runtime import file_sha256
+from app.agent.builtin_plugins.documents.rendering.xlsx_formula import (
+    FormulaEvaluation,
+    evaluate_workbook_formulas,
+)
 
 # Backward-compatible public name retained for callers outside this module.
 xlsx_sha256 = file_sha256
@@ -684,16 +692,17 @@ def _apply_project(workbook: Any, project: WorkbookProject) -> None:
             _apply_operation(sheet, operation)
 
 
-def _formula_issues(workbook: Any) -> list[dict[str, Any]]:
-    issues: list[dict[str, Any]] = []
+def _formula_issues(
+    workbook: Any, evaluation: FormulaEvaluation | None = None
+) -> list[dict[str, Any]]:
+    evaluation = evaluation or evaluate_workbook_formulas(workbook)
+    issues: list[dict[str, Any]] = [dict(issue) for issue in evaluation.issues]
     pattern = re.compile(_FORMULA_ERRORS)
-    formula_count = 0
     for sheet in workbook.worksheets:
         for row in sheet.iter_rows():
             for cell in row:
                 value = cell.value
                 if isinstance(value, str) and value.startswith("="):
-                    formula_count += 1
                     if pattern.search(value):
                         issues.append(
                             {
@@ -714,29 +723,40 @@ def _formula_issues(workbook: Any) -> list[dict[str, Any]]:
                             "cell": cell.coordinate,
                         }
                     )
-    if formula_count:
+    if evaluation.formula_count and not evaluation.issues:
         issues.append(
             {
                 "severity": "info",
-                "code": "formula-recalculation-deferred",
+                "code": "formula-preview-evaluated",
                 "message": (
-                    f"{formula_count} formulas were structurally validated; "
-                    "Excel will recalculate cached values when opened."
+                    f"All {evaluation.formula_count} formulas were evaluated by "
+                    "the built-in preview engine. Excel may recalculate on open."
                 ),
             }
         )
     return issues
 
 
-def _write_manifest(workbook: Any, work_dir: Path, source: Path | None) -> Path:
+def _write_manifest(
+    workbook: Any,
+    work_dir: Path,
+    source: Path | None,
+    *,
+    evaluation: FormulaEvaluation,
+    render_evidence: XlsxRenderEvidence,
+) -> Path:
     work_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = work_dir / "workbook-manifest.json"
     manifest = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "engine": "evoflux-openxml",
         "sourcePath": str(source) if source else None,
         "sourceSha256": file_sha256(source) if source else None,
         "sheetCount": len(workbook.worksheets),
+        "formulaCount": evaluation.formula_count,
+        "evaluatedFormulaCount": evaluation.evaluated_count,
+        "chartCount": render_evidence.chart_count,
+        "renderedChartCount": render_evidence.rendered_chart_count,
         "sheets": [
             {
                 "name": sheet.title,
@@ -774,21 +794,87 @@ def _execute_xlsx(
             raise ValueError(f"{action} requires a workbook project")
         workbook = _open_project_workbook(project, source)
         _apply_project(workbook, project)
+    reopened: Any | None = None
+    staged_output: Path | None = None
     try:
-        issues = _formula_issues(workbook)
-        previews = render_xlsx_workbook(workbook, work_dir / "previews")
-        manifest_path = _write_manifest(workbook, work_dir, source)
-        candidate: Path | None = None
-        if (
-            action == "compose"
-            and output is not None
-            and not any(issue.get("severity") == "error" for issue in issues)
-        ):
-            output.parent.mkdir(parents=True, exist_ok=True)
+        qa_workbook = workbook
+        if action == "compose" and output is not None:
             workbook.calculation.fullCalcOnLoad = True
             workbook.calculation.forceFullCalc = True
-            workbook.save(output)
-            candidate = output
+            work_dir.mkdir(parents=True, exist_ok=True)
+            staged_output = work_dir / "reopened-candidate.xlsx"
+            staged_output.unlink(missing_ok=True)
+            workbook.save(staged_output)
+            from openpyxl import load_workbook
+
+            reopened = load_workbook(staged_output, data_only=False)
+            qa_workbook = reopened
+
+        evaluation = evaluate_workbook_formulas(qa_workbook)
+        issues = _formula_issues(qa_workbook, evaluation)
+        render_evidence = render_xlsx_workbook_with_evidence(
+            qa_workbook,
+            work_dir / "previews",
+            evaluation=evaluation,
+        )
+        previews = render_evidence.paths
+        if evaluation.evaluated_count != evaluation.formula_count:
+            issues.append(
+                {
+                    "severity": "error",
+                    "code": "formula-preview-incomplete",
+                    "message": (
+                        f"Built-in preview evaluated {evaluation.evaluated_count} of "
+                        f"{evaluation.formula_count} formulas."
+                    ),
+                }
+            )
+        if render_evidence.rendered_chart_count != render_evidence.chart_count:
+            issues.append(
+                {
+                    "severity": "error",
+                    "code": "chart-preview-incomplete",
+                    "message": (
+                        f"Built-in preview rendered {render_evidence.rendered_chart_count} "
+                        f"of {render_evidence.chart_count} charts."
+                    ),
+                }
+            )
+        if len(previews) != len(qa_workbook.worksheets):
+            issues.append(
+                {
+                    "severity": "error",
+                    "code": "worksheet-preview-incomplete",
+                    "message": (
+                        f"Built-in preview rendered {len(previews)} of "
+                        f"{len(qa_workbook.worksheets)} worksheets."
+                    ),
+                }
+            )
+        manifest_path = _write_manifest(
+            qa_workbook,
+            work_dir,
+            source,
+            evaluation=evaluation,
+            render_evidence=render_evidence,
+        )
+        qa_source = "reopened-openxml" if reopened is not None else "source-openxml"
+        candidate: Path | None = None
+        if action == "compose" and output is not None:
+            if not any(issue.get("severity") == "error" for issue in issues):
+                output.parent.mkdir(parents=True, exist_ok=True)
+                if staged_output is None:
+                    raise RuntimeError("compose staging path is unavailable")
+                # Windows cannot atomically replace an open ZIP package.  QA has
+                # already consumed the reopened workbook, so release its handle
+                # before promoting the staged candidate.
+                if reopened is not None:
+                    reopened.close()
+                    reopened = None
+                os.replace(staged_output, output)
+                candidate = output
+            elif staged_output is not None:
+                staged_output.unlink(missing_ok=True)
         return XlsxPipelineResult(
             action=action,
             work_dir=work_dir,
@@ -801,9 +887,18 @@ def _execute_xlsx(
                 "engine": "evoflux-openxml",
                 "sheet_count": len(workbook.worksheets),
                 "sheet_names": [sheet.title for sheet in workbook.worksheets],
+                "formula_count": evaluation.formula_count,
+                "evaluated_formula_count": evaluation.evaluated_count,
+                "chart_count": render_evidence.chart_count,
+                "rendered_chart_count": render_evidence.rendered_chart_count,
+                "qa_source": qa_source,
             },
         )
     finally:
+        if reopened is not None:
+            reopened.close()
+        if staged_output is not None:
+            staged_output.unlink(missing_ok=True)
         workbook.close()
 
 

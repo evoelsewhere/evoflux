@@ -7,6 +7,7 @@ other machine-wide application, so desktop and server builds behave the same.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from io import BytesIO
 import math
 from pathlib import Path
@@ -14,6 +15,12 @@ from typing import Any
 
 from PIL import Image, ImageColor, ImageDraw, ImageFont
 import pypdfium2 as pdfium
+
+from app.agent.builtin_plugins.documents.rendering.xlsx_formula import (
+    FormulaEvaluation,
+    evaluate_workbook_formulas,
+    format_computed_value,
+)
 
 
 _FONT_ROOT = (
@@ -268,38 +275,238 @@ def _xlsx_cell_color(cell: Any) -> str:
     return "#ffffff"
 
 
-def render_xlsx_workbook(workbook: Any, render_dir: Path) -> list[Path]:
-    """Render every worksheet into a bounded PNG grid."""
+@dataclass(frozen=True)
+class XlsxRenderEvidence:
+    paths: list[Path]
+    chart_count: int
+    rendered_chart_count: int
+
+
+def _xlsx_column_width(sheet: Any, column: int) -> int:
     from openpyxl.utils import get_column_letter
 
+    return max(
+        42,
+        min(
+            280,
+            int(
+                (sheet.column_dimensions[get_column_letter(column)].width or 8.43) * 7
+                + 12
+            ),
+        ),
+    )
+
+
+def _xlsx_row_height(sheet: Any, row: int) -> int:
+    return max(24, min(120, int((sheet.row_dimensions[row].height or 18) * 1.34)))
+
+
+def _xlsx_anchor_box(
+    sheet: Any,
+    drawing: Any,
+    column_widths: list[int],
+    row_heights: list[int],
+) -> tuple[int, int, int, int]:
+    marker = drawing.anchor._from
+    left = 1 + sum(column_widths[: int(marker.col)])
+    top = 1 + sum(row_heights[: int(marker.row)])
+    left += int(float(marker.colOff or 0) / 914400 * 96)
+    top += int(float(marker.rowOff or 0) / 914400 * 96)
+    extent = getattr(drawing.anchor, "ext", None)
+    if extent is not None:
+        width = int(float(extent.cx) / 914400 * 96)
+        height = int(float(extent.cy) / 914400 * 96)
+    else:
+        width = int(float(getattr(drawing, "width", 320) or 320))
+        height = int(float(getattr(drawing, "height", 180) or 180))
+    return left, top, left + max(width, 1), top + max(height, 1)
+
+
+def _xlsx_source_formula(series: Any, branch: str) -> str:
+    source = getattr(series, branch, None)
+    if source is None:
+        return ""
+    reference = getattr(source, "numRef", None) or getattr(source, "strRef", None)
+    return str(getattr(reference, "f", "") or "")
+
+
+def _xlsx_series_values(
+    chart: Any, evaluation: FormulaEvaluation, current_sheet: str
+) -> list[list[float]]:
+    rows: list[list[float]] = []
+    for series in chart.ser:
+        source = getattr(series, "val", None) or getattr(series, "yVal", None)
+        literal = getattr(source, "numLit", None) if source is not None else None
+        raw: list[Any]
+        if literal is not None:
+            raw = [point.v for point in getattr(literal, "pt", ())]
+        else:
+            formula = _xlsx_source_formula(
+                series, "val" if getattr(series, "val", None) is not None else "yVal"
+            )
+            if not formula:
+                continue
+            try:
+                raw = evaluation.reference_values(formula, current_sheet)
+            except ValueError:
+                continue
+        values: list[float] = []
+        for value in raw:
+            try:
+                values.append(float(value))
+            except (TypeError, ValueError):
+                values.append(0.0)
+        if values:
+            rows.append(values)
+    return rows
+
+
+def _render_xlsx_chart(
+    draw: ImageDraw.ImageDraw,
+    box: tuple[int, int, int, int],
+    chart: Any,
+    evaluation: FormulaEvaluation,
+    sheet_name: str,
+) -> bool:
+    left, top, right, bottom = box
+    if right - left < 60 or bottom - top < 50:
+        return False
+    values = _xlsx_series_values(chart, evaluation, sheet_name)
+    if not values:
+        return False
+    draw.rounded_rectangle(box, radius=6, fill="#ffffff", outline="#c7ced8", width=1)
+    plot = (left + 38, top + 32, right - 16, bottom - 28)
+    plot_left, plot_top, plot_right, plot_bottom = plot
+    if plot_right <= plot_left or plot_bottom <= plot_top:
+        return False
+    palette = ("#2563eb", "#0f766e", "#f59e0b", "#dc2626", "#7c3aed")
+    flat = [value for row in values for value in row]
+    maximum = max(max((abs(value) for value in flat), default=0.0), 1.0)
+    chart_type = type(chart).__name__.upper()
+    draw.line((plot_left, plot_bottom, plot_right, plot_bottom), fill="#94a3b8")
+    draw.line((plot_left, plot_top, plot_left, plot_bottom), fill="#94a3b8")
+    if "PIE" in chart_type or "DOUGHNUT" in chart_type:
+        first = [abs(value) for value in values[0]]
+        total = sum(first) or 1
+        diameter = max(20, min(plot_right - plot_left, plot_bottom - plot_top))
+        pie_box = (
+            plot_left + (plot_right - plot_left - diameter) // 2,
+            plot_top + (plot_bottom - plot_top - diameter) // 2,
+            plot_left + (plot_right - plot_left + diameter) // 2,
+            plot_top + (plot_bottom - plot_top + diameter) // 2,
+        )
+        angle = -90.0
+        for index, value in enumerate(first):
+            next_angle = angle + 360 * value / total
+            draw.pieslice(
+                pie_box,
+                start=angle,
+                end=next_angle,
+                fill=palette[index % len(palette)],
+            )
+            angle = next_angle
+        if "DOUGHNUT" in chart_type:
+            inset = diameter // 3
+            draw.ellipse(
+                (
+                    pie_box[0] + inset,
+                    pie_box[1] + inset,
+                    pie_box[2] - inset,
+                    pie_box[3] - inset,
+                ),
+                fill="#ffffff",
+            )
+        return True
+    if "LINE" in chart_type or "AREA" in chart_type or "SCATTER" in chart_type:
+        for series_index, row in enumerate(values):
+            points = [
+                (
+                    int(
+                        plot_left
+                        + index * (plot_right - plot_left) / max(len(row) - 1, 1)
+                    ),
+                    int(plot_bottom - value / maximum * (plot_bottom - plot_top)),
+                )
+                for index, value in enumerate(row)
+            ]
+            if "AREA" in chart_type and points:
+                draw.polygon(
+                    [
+                        (points[0][0], plot_bottom),
+                        *points,
+                        (points[-1][0], plot_bottom),
+                    ],
+                    fill=palette[series_index % len(palette)] + "55",
+                )
+            if len(points) > 1:
+                draw.line(points, fill=palette[series_index % len(palette)], width=3)
+            for x, y in points:
+                draw.ellipse(
+                    (x - 3, y - 3, x + 3, y + 3),
+                    fill=palette[series_index % len(palette)],
+                )
+        return True
+    count = max(len(row) for row in values)
+    group_width = max(1.0, (plot_right - plot_left) / max(count, 1))
+    bar_width = max(2.0, group_width * 0.72 / max(len(values), 1))
+    for series_index, row in enumerate(values):
+        for index, value in enumerate(row):
+            height = abs(value) / maximum * (plot_bottom - plot_top)
+            x = plot_left + index * group_width + series_index * bar_width
+            y = plot_bottom - height if value >= 0 else plot_bottom
+            draw.rectangle(
+                (int(x), int(y), int(x + bar_width - 1), int(y + height)),
+                fill=palette[series_index % len(palette)],
+            )
+    return True
+
+
+def render_xlsx_workbook_with_evidence(
+    workbook: Any,
+    render_dir: Path,
+    *,
+    evaluation: FormulaEvaluation | None = None,
+) -> XlsxRenderEvidence:
+    """Render worksheets with evaluated formulas and native chart drawings."""
+
+    evaluation = evaluation or evaluate_workbook_formulas(workbook)
     render_dir.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
+    chart_count = 0
+    rendered_chart_count = 0
     for sheet_index, sheet in enumerate(workbook.worksheets, start=1):
         max_row = max(1, min(sheet.max_row, 250))
         max_column = max(1, min(sheet.max_column, 60))
+        chart_markers = [
+            chart.anchor._from
+            for chart in sheet._charts  # noqa: SLF001
+        ]
+        layout_column_count = max(
+            [max_column, *(int(marker.col) + 1 for marker in chart_markers)]
+        )
+        layout_row_count = max(
+            [max_row, *(int(marker.row) + 1 for marker in chart_markers)]
+        )
         column_widths = [
-            max(
-                42,
-                min(
-                    280,
-                    int(
-                        (
-                            sheet.column_dimensions[get_column_letter(column)].width
-                            or 8.43
-                        )
-                        * 7
-                        + 12
-                    ),
-                ),
-            )
-            for column in range(1, max_column + 1)
+            _xlsx_column_width(sheet, column)
+            for column in range(1, layout_column_count + 1)
         ]
         row_heights = [
-            max(24, min(120, int((sheet.row_dimensions[row].height or 18) * 1.34)))
-            for row in range(1, max_row + 1)
+            _xlsx_row_height(sheet, row) for row in range(1, layout_row_count + 1)
         ]
-        width = min(5000, sum(column_widths) + 2)
-        height = min(7000, sum(row_heights) + 2)
+        chart_boxes = [
+            _xlsx_anchor_box(sheet, chart, column_widths, row_heights)
+            for chart in sheet._charts  # noqa: SLF001
+        ]
+        chart_count += len(chart_boxes)
+        width = min(
+            5000,
+            max([sum(column_widths) + 2, *(box[2] + 2 for box in chart_boxes)]),
+        )
+        height = min(
+            7000,
+            max([sum(row_heights) + 2, *(box[3] + 2 for box in chart_boxes)]),
+        )
         image = Image.new("RGB", (width, height), "white")
         draw = ImageDraw.Draw(image)
         y = 1
@@ -318,7 +525,10 @@ def render_xlsx_workbook(workbook: Any, render_dir: Path) -> list[Path]:
                     fill=_xlsx_cell_color(cell),
                     outline="#c7ced8",
                 )
-                value = "" if cell.value is None else str(cell.value)
+                computed = evaluation.display_value(
+                    sheet.title, cell.coordinate, cell.value
+                )
+                value = format_computed_value(computed, str(cell.number_format or ""))
                 font = getattr(cell, "font", None)
                 alignment = getattr(cell, "alignment", None)
                 _draw_text_box(
@@ -336,10 +546,25 @@ def render_xlsx_workbook(workbook: Any, render_dir: Path) -> list[Path]:
             y += row_height
             if y >= height:
                 break
+        for chart, box in zip(sheet._charts, chart_boxes, strict=True):  # noqa: SLF001
+            if box[2] > width or box[3] > height:
+                continue
+            if _render_xlsx_chart(draw, box, chart, evaluation, sheet.title):
+                rendered_chart_count += 1
         destination = render_dir / f"sheet-{sheet_index:03d}.png"
         image.save(destination)
         outputs.append(destination)
-    return outputs
+    return XlsxRenderEvidence(
+        paths=outputs,
+        chart_count=chart_count,
+        rendered_chart_count=rendered_chart_count,
+    )
+
+
+def render_xlsx_workbook(workbook: Any, render_dir: Path) -> list[Path]:
+    """Backward-compatible path-only wrapper around the evidence renderer."""
+
+    return render_xlsx_workbook_with_evidence(workbook, render_dir).paths
 
 
 def render_xlsx_file(source: Path, render_dir: Path) -> list[Path]:
