@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ValidationError, model_validator
 
 PROVIDER_MODEL_TOKEN = "__PROVIDER_MODEL__"
 _FRONTMATTER_RE = re.compile(r"^\s*---\r?\n(.*?)\r?\n---\r?\n?(.*)", re.DOTALL)
@@ -54,22 +54,47 @@ def member_model_is_configured(model: str | None) -> bool:
     return bool(model and model.strip() and model.strip() != PROVIDER_MODEL_TOKEN)
 
 
-def parse_agent_md(path: Path) -> AgentConfig:
-    """Parse one agent Markdown file without importing runtime agent machinery."""
-    text = path.read_text(encoding="utf-8")
+def parse_agent_definition(
+    text: str,
+    *,
+    default_name: str,
+    source_label: str = "Agent definition",
+) -> AgentConfig:
+    """Parse Agent Markdown text using the same schema as runtime loading."""
+
     match = _FRONTMATTER_RE.match(text)
     if not match:
         raise ValueError(
-            f"Agent file '{path}' is missing YAML frontmatter. "
+            f"{source_label} is missing YAML frontmatter. "
             "Expected '---\\n<yaml>\\n---\\n<system prompt>'."
         )
-    raw_meta = yaml.safe_load(match.group(1)) or {}
+    try:
+        raw_meta = yaml.safe_load(match.group(1)) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Invalid YAML frontmatter: {exc}") from exc
     if not isinstance(raw_meta, dict):
-        raise ValueError(f"Agent file '{path}' frontmatter must be a YAML mapping.")
+        raise ValueError(f"{source_label} frontmatter must be a YAML mapping.")
     body = match.group(2).strip()
-    raw_meta.setdefault("name", path.stem)
+    raw_meta.setdefault("name", default_name)
     raw_meta["system_prompt"] = body or "You are a helpful assistant."
-    return AgentConfig.model_validate(raw_meta)
+    try:
+        return AgentConfig.model_validate(raw_meta)
+    except ValidationError as exc:
+        errors = "; ".join(
+            f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+            for error in exc.errors()
+        )
+        raise ValueError(errors) from exc
+
+
+def parse_agent_md(path: Path) -> AgentConfig:
+    """Parse one agent Markdown file without importing runtime agent machinery."""
+
+    return parse_agent_definition(
+        path.read_text(encoding="utf-8"),
+        default_name=path.stem,
+        source_label=f"Agent file '{path}'",
+    )
 
 
 def validate_agent_config_dir(agents_dir: Path) -> str | None:

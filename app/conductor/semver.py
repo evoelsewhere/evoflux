@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass
 from functools import total_ordering
 
+from app.conductor.constants.resource import ResourceVersionGap
+
 _SEMVER_RE = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
     r"(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)"
@@ -59,4 +61,25 @@ class SemanticVersion:
         return len(self.prerelease) < len(other.prerelease)
 
 
-__all__ = ["SemanticVersion"]
+def version_gap(
+    current: str | None, available: str | None
+) -> ResourceVersionGap | None:
+    if not current or not available or current == available:
+        return None
+    try:
+        installed = SemanticVersion.parse(current)
+        desired = SemanticVersion.parse(available)
+    except ValueError:
+        return ResourceVersionGap.UNKNOWN
+    if desired.major != installed.major:
+        return ResourceVersionGap.MAJOR
+    if desired.minor != installed.minor:
+        return ResourceVersionGap.MINOR
+    if desired.patch != installed.patch:
+        return ResourceVersionGap.PATCH
+    if desired.prerelease != installed.prerelease:
+        return ResourceVersionGap.PRERELEASE
+    return ResourceVersionGap.UNKNOWN
+
+
+__all__ = ["SemanticVersion", "version_gap"]

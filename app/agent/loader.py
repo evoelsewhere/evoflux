@@ -76,6 +76,8 @@ from app.agent.providers.factory import ProviderFactory, build_provider
 from app.agent.tools.registry import Tool
 from app.core.db import DbFactory, resolve_db_factory
 from app.core.app_mode import parse_app_mode
+from app.conductor.agent_runtime import apply_managed_agent_runtime_model
+from app.core.agent_settings import agent_settings_path
 
 # Re-exports for callers that historically imported these symbols from
 # ``app.agent.loader``.
@@ -555,6 +557,7 @@ def _build_agent(
         agent.config_stamp = stamp_agent_files(
             agent_md_path=source_path,
             mcp_config_path=_mcp_config_path(),
+            agent_settings_path=agent_settings_path(),
         )
 
     return agent
@@ -601,7 +604,9 @@ def load_team_from_dir(
     parse_errors: list[str] = []
     for md_path in md_files:
         try:
-            cfg = parse_agent_md(md_path)
+            cfg = apply_managed_agent_runtime_model(
+                parse_agent_md(md_path), source_path=md_path
+            )
             agent_configs.append((cfg, md_path))
             logger.debug(
                 "agent_discovered file={} name={} role={} model={}",
@@ -724,7 +729,9 @@ def rebuild_agent_from_disk(
     Called by :class:`TeamMemberBase` when drift is detected.  Caller
     swaps the new agent in place; ``ValueError`` on parse/registry failure.
     """
-    cfg = parse_agent_md(source_path)
+    cfg = apply_managed_agent_runtime_model(
+        parse_agent_md(source_path), source_path=source_path
+    )
 
     tool_registry = _default_tool_registry()
     if extra_tools:

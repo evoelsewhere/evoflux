@@ -8,7 +8,6 @@ skills are edited/deleted in place; bundled skills remain read-only.
 from __future__ import annotations
 
 import json
-import re
 import shutil
 import stat
 import tempfile
@@ -18,6 +17,16 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.conductor.constants.resource import ManagedResourceSource
+from app.conductor.models import ManagedResourceProvider
+from app.conductor.provenance import (
+    managed_resource_provider,
+    managed_resource_providers,
+)
+from app.agent.skills.validation import (
+    parse_skill_definition,
+    portable_skill_name_error,
+)
 from app.core.config import settings
 from app.core.skill_scope import (
     ALL_SKILL_MODES,
@@ -49,7 +58,6 @@ from app.services.agent_fs import (
 )
 
 router = APIRouter()
-_PORTABLE_SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -101,6 +109,18 @@ def _skill_source(path: Path) -> str:
     if _is_relative_to(resolved, config_dir):
         return "global-EvoFlux"
     return "unknown"
+
+
+def _managed_skill_provider(name: str, path: Path) -> ManagedResourceProvider | None:
+    """Return provenance only when discovery selected the managed global bundle."""
+
+    managed_path = agent_fs.skills_dir() / name / "SKILL.md"
+    try:
+        if path.resolve() != managed_path.resolve():
+            return None
+    except OSError:
+        return None
+    return managed_resource_provider("skill", name)
 
 
 def _editable_skill_root(
@@ -381,60 +401,14 @@ def _validate_skill_route_name(name: str) -> None:
 def _validate_new_skill_name(name: str) -> None:
     """Require new packages to use the portable Agent Skills identity form."""
 
-    if len(name) > 64 or _PORTABLE_SKILL_NAME_RE.fullmatch(name) is None:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "New skill names must be 1-64 lowercase letters, digits, and "
-                "single hyphens (for example 'release-audit')."
-            ),
-        )
+    error = portable_skill_name_error(name)
+    if error is not None:
+        raise HTTPException(status_code=422, detail=error)
 
 
 def _parse_skill(name: str, content: str) -> tuple[str, str | None]:
     """Return ``(description, error)`` from a SKILL.md body."""
-    from app.agent.skills.discovery import (
-        MAX_DESCRIPTION_CHARS,
-        MAX_SKILL_FILE_BYTES,
-    )
-    from app.agent.tools.builtin.skill import _parse_frontmatter
-
-    try:
-        encoded_size = len(content.encode("utf-8"))
-    except UnicodeEncodeError as exc:
-        return "", f"SKILL.md is not valid UTF-8 text: {exc}"
-    if encoded_size > MAX_SKILL_FILE_BYTES:
-        return "", (f"SKILL.md exceeds the {MAX_SKILL_FILE_BYTES}-byte runtime limit.")
-
-    try:
-        meta, instructions = _parse_frontmatter(content)
-    except Exception as exc:
-        return "", f"Invalid frontmatter: {exc}"
-
-    if not isinstance(meta, dict):
-        return "", "Frontmatter must be a YAML mapping."
-
-    frontmatter_name = meta.get("name")
-    if not isinstance(frontmatter_name, str) or not frontmatter_name.strip():
-        return "", "Frontmatter field 'name' is required and must be a string."
-    desc = meta.get("description")
-    if not isinstance(desc, str):
-        return "", "Frontmatter field 'description' is required and must be a string."
-    desc = desc.strip()
-    if not desc:
-        return "", "Frontmatter field 'description' must not be empty."
-    if len(desc) > MAX_DESCRIPTION_CHARS:
-        return "", (
-            f"Frontmatter field 'description' exceeds {MAX_DESCRIPTION_CHARS} characters."
-        )
-    if frontmatter_name != name:
-        return desc, (
-            f"Frontmatter name '{frontmatter_name}' does not match directory "
-            f"name '{name}'."
-        )
-    if not instructions.strip():
-        return desc, "SKILL.md instructions must not be empty."
-    return desc, None
+    return parse_skill_definition(name, content)
 
 
 def _bundle_files(path: Path, *, editable: bool) -> list[SkillBundleFile]:
@@ -451,7 +425,7 @@ def _bundle_files(path: Path, *, editable: bool) -> list[SkillBundleFile]:
     ]
 
 
-def _runtime_metadata(info: dict) -> dict:
+def _runtime_metadata(info: dict, *, settings_editable: bool | None = None) -> dict:
     """Project canonical registry metadata into API response fields."""
 
     return {
@@ -461,7 +435,11 @@ def _runtime_metadata(info: dict) -> dict:
         "allow_implicit_invocation": bool(info.get("allow_implicit_invocation", True)),
         "user_invocable": bool(info.get("user_invocable", True)),
         "settings_id": str(info.get("settings_id") or ""),
-        "settings_editable": bool(info.get("settings_editable", True)),
+        "settings_editable": (
+            bool(info.get("settings_editable", True))
+            if settings_editable is None
+            else settings_editable
+        ),
         "settings_overridden": bool(info.get("settings_overridden", False)),
         "resource_count": int(info.get("resource_count", 0) or 0),
         "dependencies": list(info.get("dependencies") or []),
@@ -517,9 +495,16 @@ def _skill_detail_from_info(
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     description, parse_error = _parse_skill(name, content)
     registry_error = info.get("error")
-    source = str(info.get("source") or _skill_source(path))
-    editable = bool(info.get("editable", False)) and _is_editable_skill(
-        path, roots=roots
+    provider = _managed_skill_provider(name, path)
+    source = (
+        ManagedResourceSource.CONDUCTOR.value
+        if provider is not None
+        else str(info.get("source") or _skill_source(path))
+    )
+    editable = (
+        provider is None
+        and bool(info.get("editable", False))
+        and _is_editable_skill(path, roots=roots)
     )
     files = _bundle_files(path, editable=editable)
     return SkillDetail(
@@ -535,7 +520,11 @@ def _skill_detail_from_info(
         modes=list(info.get("modes", ("work", "coding"))),
         files=files,
         bundle_truncated=int(info.get("resource_count", 0) or 0) > len(files),
-        **_runtime_metadata(info),
+        provider=provider,
+        **_runtime_metadata(
+            info,
+            settings_editable=False if provider is not None else None,
+        ),
     )
 
 
@@ -562,6 +551,17 @@ def _assert_runtime_settings_target(
     mode: Literal["work", "coding"] | None,
 ) -> None:
     """Reject stale/synthetic settings targets before writing user state."""
+
+    path = Path(str(info.get("dir", ""))) / "SKILL.md"
+    provider = _managed_skill_provider(name, path)
+    if provider is not None:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Skill '{name}' mode and invocation policy are managed by "
+                f"Conductor project '{provider.project_name}'."
+            ),
+        )
 
     if not bool(info.get("valid", True)):
         raise HTTPException(
@@ -723,12 +723,24 @@ async def list_skills(
 ) -> SkillListResponse:
     workspaces = _workspace_paths(workspace)
     roots = _discovery_roots(workspaces)
+    providers = managed_resource_providers()
     rows: list[SkillSummary] = []
     for name, info in _discover_runtime_skills(workspaces, mode=mode).items():
         path = Path(str(info.get("dir", ""))) / "SKILL.md"
-        source = str(info.get("source") or _skill_source(path))
-        editable = bool(info.get("editable", False)) and _is_editable_skill(
-            path, roots=roots
+        provider = (
+            providers.get(("skill", name))
+            if path.resolve() == (agent_fs.skills_dir() / name / "SKILL.md").resolve()
+            else None
+        )
+        source = (
+            ManagedResourceSource.CONDUCTOR.value
+            if provider is not None
+            else str(info.get("source") or _skill_source(path))
+        )
+        editable = (
+            provider is None
+            and bool(info.get("editable", False))
+            and _is_editable_skill(path, roots=roots)
         )
         registry_error = info.get("error")
         rows.append(
@@ -741,7 +753,11 @@ async def list_skills(
                 editable=editable,
                 source=source,
                 modes=list(info.get("modes", ("work", "coding"))),
-                **_runtime_metadata(info),
+                provider=provider,
+                **_runtime_metadata(
+                    info,
+                    settings_editable=False if provider is not None else None,
+                ),
             )
         )
     rows.sort(key=lambda row: row.name)
@@ -834,6 +850,15 @@ async def update_skill(
     if info is None:
         raise HTTPException(status_code=404, detail=f"Skill '{name}' not found.")
     existing_path = Path(str(info.get("dir", ""))) / "SKILL.md"
+    provider = _managed_skill_provider(name, existing_path)
+    if provider is not None:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Skill '{name}' is managed by Conductor project "
+                f"'{provider.project_name}' and its bundle cannot be edited locally."
+            ),
+        )
     if not bool(info.get("editable", False)) or not _is_editable_skill(
         existing_path, roots=roots
     ):
@@ -1013,6 +1038,15 @@ async def delete_skill(
     if info is None:
         raise HTTPException(status_code=404, detail=f"Skill '{name}' not found.")
     path = Path(str(info.get("dir", ""))) / "SKILL.md"
+    provider = _managed_skill_provider(name, path)
+    if provider is not None:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Skill '{name}' is managed by Conductor project "
+                f"'{provider.project_name}' and cannot be deleted locally."
+            ),
+        )
     editable_root = _editable_skill_root(path, roots=roots)
     if not bool(info.get("editable", False)) or editable_root is None:
         raise HTTPException(

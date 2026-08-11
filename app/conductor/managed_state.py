@@ -76,6 +76,18 @@ class ManagedResourceStore:
             self._write(document)
             return document
 
+    def clear_cursor(self, project_id: str) -> ManagedResourceDocument:
+        """Discard a rejected server cursor while preserving managed resources."""
+
+        with self._lock:
+            document = self.load()
+            if document.project_id not in {None, project_id}:
+                raise ValueError("Cursor belongs to another Conductor project.")
+            document.project_id = project_id
+            document.committed_cursor = None
+            self._write(document)
+            return document
+
     def _write(self, document: ManagedResourceDocument) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         payload = document.model_dump_json(indent=2) + "\n"

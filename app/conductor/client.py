@@ -42,9 +42,13 @@ from app.conductor.constants.api import (
 from app.conductor.constants.telemetry import (
     TELEMETRY_EVENT_FIELD_ALLOWLIST,
     TELEMETRY_NUMERIC_TOKEN_FIELDS,
+    TELEMETRY_MAX_RESOURCE_ATTRIBUTIONS,
+    TELEMETRY_RESOURCE_FIELD_ALLOWLIST,
     TELEMETRY_SECRET_FIELD_MARKERS,
+    TELEMETRY_SENSITIVE_MARKER_EXCEPTIONS,
     TelemetryBatchField,
     TelemetryField,
+    TelemetryResourceField,
 )
 
 
@@ -56,13 +60,43 @@ def redact_telemetry(value: dict[str, Any]) -> dict[str, Any]:
         lowered = key.lower()
         sensitive = (
             "token" in lowered and key not in TELEMETRY_NUMERIC_TOKEN_FIELDS
-        ) or any(word in lowered for word in TELEMETRY_SECRET_FIELD_MARKERS)
+        ) or (
+            key not in TELEMETRY_SENSITIVE_MARKER_EXCEPTIONS
+            and any(word in lowered for word in TELEMETRY_SECRET_FIELD_MARKERS)
+        )
         if key not in TELEMETRY_EVENT_FIELD_ALLOWLIST or sensitive:
+            continue
+        if key == TelemetryField.RESOURCES:
+            clean[key] = _redact_resource_refs(item)
             continue
         if item is None or isinstance(item, (bool, int, float)):
             clean[key] = item
         elif isinstance(item, str):
             clean[key] = item[:API_TEXT_FIELD_MAX_LENGTH]
+    return clean
+
+
+def _redact_resource_refs(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    clean: list[dict[str, str]] = []
+    for item in value[:TELEMETRY_MAX_RESOURCE_ATTRIBUTIONS]:
+        if not isinstance(item, dict):
+            continue
+        reference = {
+            str(key): raw[:API_TEXT_FIELD_MAX_LENGTH]
+            for key, raw in item.items()
+            if str(key) in TELEMETRY_RESOURCE_FIELD_ALLOWLIST
+            and isinstance(raw, str)
+            and raw
+        }
+        required = {
+            TelemetryResourceField.RESOURCE_ID,
+            TelemetryResourceField.VERSION_ID,
+            TelemetryResourceField.RELATION,
+        }
+        if all(field in reference for field in required):
+            clean.append(reference)
     return clean
 
 

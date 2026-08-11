@@ -672,6 +672,7 @@ def refresh_blueprints(team: "AgentTeam") -> None:
       directory is still processed.
     """
     from app.agent.loader import member_model_is_configured, parse_agent_md
+    from app.conductor.agent_runtime import apply_managed_agent_runtime_model
     from app.agent.mode.team.team import MemberBlueprint
 
     agents_dir_by_mode = {
@@ -685,7 +686,9 @@ def refresh_blueprints(team: "AgentTeam") -> None:
     seen: set[str] = set()
     for md_path in md_files:
         try:
-            cfg = parse_agent_md(md_path)
+            cfg = apply_managed_agent_runtime_model(
+                parse_agent_md(md_path), source_path=md_path
+            )
         except Exception as exc:
             logger.warning(
                 "blueprint_refresh_parse_failed path={} error={}", md_path.name, exc
