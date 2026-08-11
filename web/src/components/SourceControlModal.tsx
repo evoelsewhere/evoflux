@@ -475,7 +475,7 @@ function ToolbarButton({ icon, label, onClick, badge, compact = false, disabled 
     <button type="button" onClick={onClick} disabled={disabled} title={label} aria-label={label} className="relative flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[10px] font-medium text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text) disabled:pointer-events-none disabled:opacity-40">
       {icon}
       {!compact && label}
-      {badge && <span className="absolute -right-1 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-(--color-accent) px-0.5 text-[8px] font-bold text-white">{badge}</span>}
+      {badge && <span className="absolute -right-1 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-(--color-accent) px-0.5 text-[8px] font-bold text-(--color-text-on-accent)">{badge}</span>}
     </button>
   )
 }
@@ -525,7 +525,7 @@ function GitInitPanel({ workspace }: { workspace: string }) {
               onSuccess: () => useToastStore.getState().push({ tone: 'success', title: 'Git repository initialized' }),
               onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Initialization failed', description: error instanceof Error ? error.message : undefined }),
             })}
-            className="flex h-8 items-center gap-1.5 rounded-md bg-(--color-accent) px-3 text-[11px] font-semibold text-white disabled:opacity-40"
+            className="flex h-8 items-center gap-1.5 rounded-md bg-(--color-accent) px-3 text-[11px] font-semibold text-(--color-text-on-accent) disabled:opacity-40"
           >
             {initMutation.isPending && <Loader2 size={11} className="animate-spin" />}
             Initialize
@@ -582,7 +582,7 @@ function CommitArea({ workspace, stagedCount }: { workspace: string; stagedCount
             type="button"
             onClick={handleCommit}
             disabled={commitMutation.isPending || (!message.trim() && !amend) || stagedCount === 0}
-            className="flex h-7 items-center gap-1.5 rounded-md bg-(--color-accent) px-3 text-[11px] font-semibold text-white transition-colors hover:bg-(--color-accent)/90 disabled:opacity-40"
+            className="flex h-7 items-center gap-1.5 rounded-md bg-(--color-accent) px-3 text-[11px] font-semibold text-(--color-text-on-accent) transition-colors hover:bg-(--color-accent)/90 disabled:opacity-40"
           >
             {commitMutation.isPending ? <Loader2 size={11} className="animate-spin" /> : <GitCommit size={11} />}
             Commit
@@ -687,7 +687,7 @@ function FileRow({ file, selected, onSelect, onToggleStage, onDiscard }: {
       onClick={onSelect}
       onOpenMenu={onSelect}
     >
-      <button type="button" onClick={(e) => { e.stopPropagation(); onToggleStage() }} className={cn('flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors', file.staged ? 'border-(--color-accent) bg-(--color-accent) text-white' : 'border-(--color-border) bg-(--bg-base) hover:border-(--color-accent)')} aria-label={file.staged ? 'Unstage' : 'Stage'}>
+      <button type="button" onClick={(e) => { e.stopPropagation(); onToggleStage() }} className={cn('flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors', file.staged ? 'border-(--color-accent) bg-(--color-accent) text-(--color-text-on-accent)' : 'border-(--color-border) bg-(--bg-base) hover:border-(--color-accent)')} aria-label={file.staged ? 'Unstage' : 'Stage'}>
         {file.staged && <Check size={10} />}
       </button>
       <span className="min-w-0 flex-1">
@@ -908,7 +908,7 @@ function BranchesPanel({ workspace }: { workspace: string }) {
               className="flex-1 rounded border border-(--color-border) bg-(--bg-key) px-2 py-1 text-[11px] text-(--color-text) outline-none focus:border-(--color-accent)"
               autoFocus
             />
-            <button type="button" onClick={() => { if (newBranch.trim()) createBranchMutation.mutate(newBranch.trim(), { onSuccess: () => { setNewBranch(''); setShowCreate(false) } }) }} disabled={busy || !newBranch.trim()} className="rounded bg-(--color-accent) px-2 py-0.5 text-[10px] font-medium text-white disabled:opacity-50">Create</button>
+            <button type="button" onClick={() => { if (newBranch.trim()) createBranchMutation.mutate(newBranch.trim(), { onSuccess: () => { setNewBranch(''); setShowCreate(false) } }) }} disabled={busy || !newBranch.trim()} className="rounded bg-(--color-accent) px-2 py-0.5 text-[10px] font-medium text-(--color-text-on-accent) disabled:opacity-50">Create</button>
           </div>
         )}
 
@@ -1442,7 +1442,7 @@ function StashPanel({ workspace }: { workspace: string }) {
               className="flex-1 rounded border border-(--color-border) bg-(--bg-key) px-2 py-1 text-[11px] text-(--color-text) outline-none focus:border-(--color-accent)"
               autoFocus
             />
-            <button type="button" onClick={() => createMutation.mutate({ message: message.trim() || undefined }, { onSuccess: () => { setMessage(''); setShowCreate(false) } })} disabled={createMutation.isPending} className="rounded bg-(--color-accent) px-2 py-0.5 text-[10px] font-medium text-white disabled:opacity-50">Stash</button>
+            <button type="button" onClick={() => createMutation.mutate({ message: message.trim() || undefined }, { onSuccess: () => { setMessage(''); setShowCreate(false) } })} disabled={createMutation.isPending} className="rounded bg-(--color-accent) px-2 py-0.5 text-[10px] font-medium text-(--color-text-on-accent) disabled:opacity-50">Stash</button>
           </div>
         )}
 
@@ -1610,7 +1610,7 @@ function RemotesPanel({
               forceWithLease,
             }))}
             className={cn(
-              'flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-semibold text-white disabled:opacity-40',
+              'flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-semibold text-(--color-text-on-accent) disabled:opacity-40',
               forceWithLease ? 'bg-(--color-warning)' : 'bg-(--color-accent)',
             )}
           >
@@ -1644,7 +1644,7 @@ function RemotesPanel({
                     onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to save Git identity', description: error instanceof Error ? error.message : undefined }),
                   },
                 )}
-                className="h-7 rounded-md bg-(--color-accent) px-3 text-[10px] font-semibold text-white disabled:opacity-40"
+                className="h-7 rounded-md bg-(--color-accent) px-3 text-[10px] font-semibold text-(--color-text-on-accent) disabled:opacity-40"
               >
                 Save identity
               </button>
@@ -1686,7 +1686,7 @@ function RemotesPanel({
           />
           <div className="flex gap-1">
             <button type="button" onClick={resetForm} className="h-8 rounded-md px-2 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)">Cancel</button>
-            <button type="button" onClick={submitRemote} disabled={busy || !name.trim() || !url.trim()} className="h-8 rounded-md bg-(--color-accent) px-3 text-[10px] font-semibold text-white disabled:opacity-40">{editingName ? 'Save' : 'Add'}</button>
+            <button type="button" onClick={submitRemote} disabled={busy || !name.trim() || !url.trim()} className="h-8 rounded-md bg-(--color-accent) px-3 text-[10px] font-semibold text-(--color-text-on-accent) disabled:opacity-40">{editingName ? 'Save' : 'Add'}</button>
           </div>
         </div>
       )}
@@ -1824,7 +1824,7 @@ function TagsPanel({ workspace }: { workspace: string }) {
           <input value={message} onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') createTag() }} placeholder="Annotation (optional)" className="col-span-2 h-8 rounded-md border border-(--color-border) bg-(--bg-base) px-2 text-[11px] text-(--color-text) outline-none focus:border-(--color-accent)" />
           <div className="col-span-2 flex justify-end gap-1">
             <button type="button" onClick={() => setShowCreate(false)} className="h-7 rounded-md px-2 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)">Cancel</button>
-            <button type="button" onClick={createTag} disabled={!name.trim() || createMutation.isPending} className="h-7 rounded-md bg-(--color-accent) px-3 text-[10px] font-semibold text-white disabled:opacity-40">Create tag</button>
+            <button type="button" onClick={createTag} disabled={!name.trim() || createMutation.isPending} className="h-7 rounded-md bg-(--color-accent) px-3 text-[10px] font-semibold text-(--color-text-on-accent) disabled:opacity-40">Create tag</button>
           </div>
         </div>
       )}

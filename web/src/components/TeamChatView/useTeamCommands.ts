@@ -19,24 +19,12 @@ import type { useNavigate } from '@tanstack/react-router'
 import type { Command } from '../CommandPalette'
 import type { ViewMode } from './types'
 import { useUIStore } from '@/stores/useUIStore'
+import { dispatchPrimaryShortcut } from '@/lib/keyboard-shortcuts'
 
 /**
- * Dispatch a synthetic Ctrl+key event so the window-level shortcut
- * handlers fire when a palette item is activated. We use Ctrl (not
- * Cmd) on every platform — see hooks/useKeyboardShortcuts.ts for the
- * rationale.
+ * Palette actions dispatch through the same platform-native modifier used by
+ * the window-level shortcut handler.
  */
-function dispatchCtrlKey(key: string): void {
-  window.dispatchEvent(
-    new KeyboardEvent('keydown', {
-      key,
-      ctrlKey: true,
-      metaKey: false,
-      bubbles: true,
-    }),
-  )
-}
-
 interface UseTeamCommandsArgs {
   // View / layout
   viewMode: ViewMode
@@ -106,8 +94,9 @@ export function useTeamCommands({
     mode === 'coding'
       ? { id: 'collapse-sidebar', group: 'View', label: 'Toggle Coding Sidebar', description: 'Collapse or expand workspaces and sessions', shortcut: 'Ctrl+B', action: handleCodingSidebarToggle }
       : { id: 'collapse-sidebar', group: 'View', label: 'Toggle Sidebar', description: '', shortcut: 'Ctrl+B', action: () => useUIStore.getState().toggleSidebarCollapsed() },
-    { id: 'wiki',             group: 'View',       label: 'Memory',            description: 'Browse curated knowledge and pending notes', shortcut: 'Ctrl+M', action: () => dispatchCtrlKey('m') },
-    { id: 'scheduled-tasks',  group: 'View',       label: 'Scheduled Tasks',   description: 'Manage cron and scheduled agent tasks', shortcut: 'Ctrl+S', action: () => dispatchCtrlKey('s') },
+    { id: 'wiki',             group: 'View',       label: 'Memory',            description: 'Browse curated knowledge and pending notes', shortcut: 'Ctrl+M', action: () => dispatchPrimaryShortcut('m') },
+    { id: 'scheduled-tasks',  group: 'View',       label: 'Scheduled Tasks',   description: 'Manage cron and scheduled agent tasks', shortcut: 'Ctrl+S', action: () => dispatchPrimaryShortcut('s') },
+    { id: 'plugins',          group: 'View',       label: 'Plugins',           description: 'Manage portable Agent Skills and MCP packages', shortcut: 'Ctrl+K', action: () => dispatchPrimaryShortcut('k') },
     ...switchableAgentNames.map((name) => ({
       id: `switch-${name}`, group: 'Agents',
       label: `View ${name}`,

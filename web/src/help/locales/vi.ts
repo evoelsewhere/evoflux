@@ -69,7 +69,7 @@ export const HELP_CATEGORIES_VI: HelpCategory[] = [
   {
     id: 'shortcuts',
     label: 'Phím tắt',
-    description: 'Ctrl trên mọi hệ điều hành',
+    description: 'Command trên macOS, Ctrl trên Windows/Linux',
   },
   {
     id: 'troubleshooting',
@@ -980,7 +980,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'workbench',
     title: 'Workbench tools',
     summary:
-      'Mở Terminal, Browser, Files, Graph, Side chat, Memory, Scheduler, Changes và Review bên cạnh chat — với shortcut Ctrl trên mọi OS. Bỏ qua vài nhãn ⌘ cũ; binding sống là Ctrl.',
+      'Mở Terminal, Browser, Files, Graph, Side chat, Memory, Scheduler, Changes và Review bên cạnh chat — shortcut tự theo OS: Command trên macOS, Ctrl trên Windows/Linux.',
     keywords: [
       'workbench',
       'panel',
@@ -1003,7 +1003,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     tricks: [
       'Mở tool từ workbench bar, dock, hoặc shortcut bên dưới.',
       'Coding Overview chỉ hiện khi đã chọn workspace.',
-      'Shortcut runtime dùng Ctrl trên mọi OS kể cả khi label tool còn hiện ⌘P hoặc ⌥⌘S.',
+      'Shortcut runtime và label tự theo OS: Command trên macOS, Ctrl trên Windows/Linux.',
       'Mapping sống: Files = Ctrl+F (label có thể hiện ⌘P); Side chat = Ctrl+; (label có thể hiện ⌥⌘S).',
       'Graph và Review không có global shortcut riêng — dùng workbench bar hoặc command palette.',
       'Terminal và Browser hỗ trợ nhiều tab; tool khác là toggle single-instance.',
@@ -1029,6 +1029,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           { keys: 'Ctrl+;', action: 'Side chat (label có thể hiện ⌥⌘S)' },
           { keys: 'Ctrl+M', action: 'Memory (wiki)' },
           { keys: 'Ctrl+S', action: 'Scheduler' },
+          { keys: 'Ctrl+K', action: 'Plugins' },
           { keys: 'Ctrl+G', action: 'Git Changes (Coding)' }
 ],
       },
@@ -1098,7 +1099,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Quote selection → Send to side chat cho follow-up gọn mà không gõ lại đoạn.',
       'Side chat không merge history về parent — paste kết luận tay nếu Lead cần thấy.',
       'Dùng side chat làm rõ trong khi Goal hoặc specialist run dài tiếp trên transcript chính.',
-      'Label workbench có thể hiện ⌥⌘S — shortcut sống là Ctrl+; trên mọi OS.',
+      'Side chat dùng Command+; trên macOS và Ctrl+; trên Windows/Linux.',
       'Giữ side chat ngắn và thực tế; việc implement dài đẩy về thread Lead.',
       'Đóng panel khi xong để khỏi gõ instruction chính vào /btw.',
       'Side chat thấy parent context read-only — không phải editor chính cho refactor cả repo.',
@@ -2470,7 +2471,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'shortcuts',
     title: 'Phím tắt',
     summary:
-      'EvoFlux dùng Ctrl+key trên mọi OS, kể cả macOS, để Cmd dành cho hệ thống — học bảng đầy đủ và quirk nhãn. Guidelines (Help) tách khỏi command palette Ctrl+P.',
+      'EvoFlux dùng modifier chính theo hệ điều hành — Command trên macOS, Ctrl trên Windows/Linux. Guidelines (Help) vẫn tách khỏi command palette.',
     keywords: [
       'shortcut',
       'keyboard',
@@ -2486,10 +2487,9 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'bàn phím'
 ],
     tricks: [
-      'Ctrl+P mở command palette (Search trên sidebar). Help mở modal Guidelines này — không phải palette.',
-      'Một số nhãn workbench vẫn hiện ⌘P / ⌥⌘S — shortcut sống là Ctrl+F và Ctrl+;.',
-      'Khi gõ trong input, Ctrl+C/V/X/A/Z/Y vẫn là phím edit trên Windows/Linux; Ctrl+V xoay view bị suppress lúc paste.',
-      'Ctrl có chủ đích trên macOS để Cmd+C / Cmd+V / Cmd+Q giữ mặc định hệ thống/edit.',
+      'Modifier chính + P mở command palette (Search trên sidebar). Help mở modal Guidelines này — không phải palette.',
+      'Badge shortcut tự đổi: ⌘ trên macOS, Ctrl trên Windows/Linux.',
+      'Khi gõ trong input, các phím copy/paste/select/undo vẫn giữ hành vi edit native; shortcut xoay view bị chặn lúc paste.',
       'Ctrl+B do AppShell sở hữu một lần cho mọi mode sidebar.',
       'Ctrl+R chỉ refresh session Work (không reload cả app).',
       'Quên binding thì Ctrl+P search theo tên action.',
@@ -2499,11 +2499,11 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Shortcut điều hướng toàn cục và workbench dùng Ctrl trên Windows, Linux và macOS. Phần giao diện workbench tool có thể vẫn hiện glyph ⌘ cũ cho Files và Side chat; tin binding Ctrl bên dưới. Docs và quen tay giống nhau trên mọi OS.',
+        text: 'Shortcut điều hướng toàn cục và workbench dùng Command trên macOS, Ctrl trên Windows/Linux. Badge và binding sống dùng chung một quy tắc platform.',
       },
       {
         type: 'p',
-        text: 'Dùng Ctrl mọi nơi tránh đánh nhau với shortcut hệ thống/edit macOS, và giữ tài liệu training trung thực. Nếu nhãn còn hiện ⌘P cho Files, bỏ qua glyph — shortcut sống là Ctrl+F.',
+        text: 'Các shortcut edit native được ưu tiên khi focus nằm trong input. Ngoài vùng nhập liệu, bảng dưới dùng modifier chính của hệ điều hành.',
       },
       {
         type: 'shortcuts',
@@ -2515,6 +2515,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           { keys: 'Ctrl+F', action: 'Files / Changed & Files (label có thể hiện ⌘P)' },
           { keys: 'Ctrl+M', action: 'Memory wiki' },
           { keys: 'Ctrl+S', action: 'Scheduler' },
+          { keys: 'Ctrl+K', action: 'Plugins' },
           { keys: 'Ctrl+T', action: 'Built-in browser' },
           { keys: 'Ctrl+G', action: 'Git Changes (Coding)' },
           { keys: 'Ctrl+`', action: 'Terminal' },

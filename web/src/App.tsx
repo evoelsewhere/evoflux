@@ -82,7 +82,7 @@ function AppLoadingScreen({ startup, onRetry, onRevealLog }: AppLoadingScreenPro
                 <button
                   type="button"
                   onClick={() => void onRetry()}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-(--color-accent) px-3 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-(--color-accent) px-3 text-xs font-medium text-(--color-text-on-accent) transition-opacity hover:opacity-90"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   Try again

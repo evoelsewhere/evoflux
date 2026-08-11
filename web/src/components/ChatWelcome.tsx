@@ -229,13 +229,13 @@ export function RecentUsageCard({ className }: { className?: string }) {
           <div className="space-y-1.5">
             <div className="grid grid-cols-2 gap-1 @[24rem]/usage:grid-cols-4">
               {Array.from({ length: 8 }).map((_, index) => (
-                <div key={index} className="h-8 animate-pulse rounded-md bg-(--bg-key) p-1.5">
+                <div key={index} className="skeleton-shimmer h-8 rounded-md p-1.5">
                   <div className="h-2 w-12 rounded bg-(--color-border)" />
                   <div className="mt-1.5 h-3 w-8 rounded bg-(--color-border)" />
                 </div>
               ))}
             </div>
-            <div className="h-[74px] animate-pulse rounded-md bg-(--bg-key)" />
+            <div className="skeleton-shimmer h-[74px] rounded-md" />
           </div>
         ) : summary.isError || !summary.data ? (
           <div className="flex h-28 items-center justify-center rounded-md bg-(--bg-key)">

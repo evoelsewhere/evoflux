@@ -69,7 +69,7 @@ export const HELP_CATEGORIES_JA: HelpCategory[] = [
   {
     id: 'shortcuts',
     label: 'キーボードショートカット',
-    description: 'すべての OS で Ctrl ショートカット',
+    description: 'macOS は Command、Windows/Linux は Ctrl',
   },
   {
     id: 'troubleshooting',
@@ -988,7 +988,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'workbench',
     title: 'Workbench ツール',
     summary:
-      'Terminal、Browser、Files、Graph、Side chat、Memory、Scheduler、Changes、Review をチャット横で開き — すべての OS で Ctrl ショートカット。一部ツールの古い ⌘ ラベルは無視; 実バインディングは Ctrl です。',
+      'Terminal、Browser、Files、Graph、Side chat、Memory、Scheduler、Changes、Review をチャット横で開きます。ショートカットは OS に合わせ、macOS は Command、Windows/Linux は Ctrl を使います。',
     keywords: [
       'workbench',
       'panel',
@@ -1013,7 +1013,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     tricks: [
       'workbench バー、ドック、または下記ショートカットからツールを開きます。',
       'Coding Overview はワークスペース選択時のみ表示。',
-      'ランタイムショートカットは、ツールラベルがなお ⌘P や ⌥⌘S でも、すべての OS で Ctrl。',
+      'ランタイムショートカットとラベルは OS に合わせ、macOS は Command、Windows/Linux は Ctrl。',
       '実マッピング: Files = Ctrl+F（ラベルは ⌘P の場合あり）; Side chat = Ctrl+;（ラベルは ⌥⌘S の場合あり）。',
       'Graph と Review に専用グローバルショートカットはありません — workbench バーまたはコマンドパレット。',
       'Terminal と Browser は複数タブインスタンス対応; 他ツールは単一インスタンスのトグル。',
@@ -1039,6 +1039,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           { keys: 'Ctrl+;', action: 'Side chat（ラベルは ⌥⌘S の場合あり）' },
           { keys: 'Ctrl+M', action: 'Memory（wiki）' },
           { keys: 'Ctrl+S', action: 'Scheduler' },
+          { keys: 'Ctrl+K', action: 'Plugins' },
           { keys: 'Ctrl+G', action: 'Git Changes（Coding）' }
 ],
       },
@@ -1110,7 +1111,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '引用選択 → Send to side chat で、段落を打ち直さずにタイトなフォローアップ。',
       'Side chat の履歴は親セッションへマージされません — Lead が見る必要がある結論は手動で貼る。',
       'Goal や長い specialist 実行がメインで続く間に、side chat で確認する。',
-      'Workbench ラベルは ⌥⌘S の場合あり — 実ショートカットはすべての OS で Ctrl+;。',
+      'Side chat のショートカットは macOS で ⌘+;、Windows/Linux で Ctrl+;。',
       'Side chat は短く事実ベースに; 長い実装作業は Lead スレッドへ戻す。',
       '終わったらパネルを閉じ、次のメイン指示を誤って /btw に打たない。',
       'Side chat は親コンテキストを読み取り専用で見る — レポ全体リファクタの主エディタにしない。',
@@ -2494,7 +2495,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'shortcuts',
     title: 'キーボードショートカット',
     summary:
-      'EvoFlux は macOS を含むすべての OS で Ctrl+key を使い、Cmd をシステムに空けます — 全表とラベルの癖を学びます。Guidelines（Help）は Ctrl+P コマンドパレットとは別です。',
+      'EvoFlux は OS 標準の主要修飾キーを使います — macOS は Command、Windows/Linux は Ctrl。Guidelines（Help）はコマンドパレットとは別です。',
     keywords: [
       'shortcut',
       'keyboard',
@@ -2512,10 +2513,9 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'パレット'
 ],
     tricks: [
-      'Ctrl+P はコマンドパレット（サイドバーの Search）。Help はこの Guidelines モーダルを開く — パレットではない。',
-      '一部 workbench ラベルはなお ⌘P / ⌥⌘S — 実ショートカットは Ctrl+F と Ctrl+;。',
-      '入力中、Windows/Linux では Ctrl+C/V/X/A/Z/Y は編集キーのまま; ペースト中は Ctrl+V 表示循環が抑止。',
-      'macOS で Ctrl なのは意図的で、Cmd+C / Cmd+V / Cmd+Q をシステム/編集既定に残します。',
+      '主要修飾キー + P はコマンドパレット（サイドバーの Search）。Help はこの Guidelines モーダルを開く — パレットではない。',
+      'ショートカット表示は自動更新: macOS は ⌘、Windows/Linux は Ctrl。',
+      '入力中は copy/paste/select/undo のネイティブ編集操作を優先し、ペースト時は表示循環ショートカットを抑止。',
       'Ctrl+B はすべてのモードサイドバー向けに AppShell が一度所有。',
       'Ctrl+R は Work セッションのみ更新（アプリ全体のリロードではない）。',
       'バインディングを忘れたらアクション名で Ctrl+P 検索を優先。',
@@ -2525,11 +2525,11 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'グローバルナビと workbench ショートカットは Windows、Linux、macOS で Ctrl ベースです。Workbench ツールクロムは Files と Side chat にレガシー ⌘ グリフをなお表示することがあります; 下記の Ctrl バインディングを信頼してください。ドキュメントと筋記憶は OS 横断で同一です。',
+        text: 'グローバルナビと workbench ショートカットは macOS で Command、Windows/Linux で Ctrl を使います。表示バッジと実際のバインディングは同じ platform ルールから解決されます。',
       },
       {
         type: 'p',
-        text: 'どこでも Ctrl を使うことで macOS のシステム/編集ショートカットとぶつからず、教材も正直なままです。Files ラベルがなお ⌘P でもグリフは無視 — 実ショートカットは Ctrl+F。',
+        text: '入力欄にフォーカスがある間はネイティブ編集ショートカットが優先されます。それ以外では下表が OS の主要修飾キーを使います。',
       },
       {
         type: 'shortcuts',
@@ -2541,6 +2541,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           { keys: 'Ctrl+F', action: 'Files / Changed & Files（ラベルは ⌘P の場合あり）' },
           { keys: 'Ctrl+M', action: 'Memory wiki' },
           { keys: 'Ctrl+S', action: 'Scheduler' },
+          { keys: 'Ctrl+K', action: 'Plugins' },
           { keys: 'Ctrl+T', action: '内蔵ブラウザ' },
           { keys: 'Ctrl+G', action: 'Git Changes（Coding）' },
           { keys: 'Ctrl+`', action: 'Terminal' },

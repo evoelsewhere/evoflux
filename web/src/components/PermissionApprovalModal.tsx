@@ -135,7 +135,7 @@ function PermissionApprovalForm({
               onClick={() => handleReply('always')}
               className={cn(
                 'flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
-                'bg-(--color-primary) text-white hover:opacity-90',
+                'bg-(--color-primary) text-(--color-text-on-accent) hover:opacity-90',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
                 replying && 'pointer-events-none opacity-50',
               )}

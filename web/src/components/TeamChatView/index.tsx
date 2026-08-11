@@ -176,23 +176,23 @@ function PanelLoadingFallback() {
         <span className="oa-panel-loader-scan absolute inset-y-0 w-16" aria-hidden="true" />
         <div className="relative flex h-full gap-2.5" aria-hidden="true">
           <div className="flex w-10 shrink-0 flex-col gap-1.5 rounded-lg border border-(--color-border-subtle) bg-(--bg-page)/65 p-2">
-            <span className="oa-panel-loader-block h-2.5 w-2.5 rounded-sm bg-(--color-accent)/45" />
-            <span className="oa-panel-loader-block h-1 w-full rounded-full bg-(--bg-key)" />
-            <span className="oa-panel-loader-block h-1 w-4/5 rounded-full bg-(--bg-key)" />
-            <span className="oa-panel-loader-block mt-auto h-1 w-3/5 rounded-full bg-(--bg-key)" />
+            <span className="oa-panel-loader-block h-2.5 w-2.5 rounded-sm bg-(--skeleton-sweep)" />
+            <span className="oa-panel-loader-block h-1 w-full rounded-full bg-(--skeleton-base)" />
+            <span className="oa-panel-loader-block h-1 w-4/5 rounded-full bg-(--skeleton-base)" />
+            <span className="oa-panel-loader-block mt-auto h-1 w-3/5 rounded-full bg-(--skeleton-base)" />
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-2">
             <div className="flex items-center gap-1.5">
-              <span className="oa-panel-loader-block h-2 w-2 rounded-full bg-(--color-accent)" />
-              <span className="oa-panel-loader-block h-1.5 w-14 rounded-full bg-(--bg-key)" />
+              <span className="oa-panel-loader-block h-2 w-2 rounded-full bg-(--skeleton-sweep)" />
+              <span className="oa-panel-loader-block h-1.5 w-14 rounded-full bg-(--skeleton-base)" />
             </div>
-            <span className="oa-panel-loader-block h-5 w-full rounded-md bg-(--bg-key)" />
-            <span className="oa-panel-loader-block h-2 w-5/6 rounded-full bg-(--bg-key)" />
-            <span className="oa-panel-loader-block h-2 w-2/3 rounded-full bg-(--bg-key)" />
+            <span className="oa-panel-loader-block h-5 w-full rounded-md bg-(--skeleton-base)" />
+            <span className="oa-panel-loader-block h-2 w-5/6 rounded-full bg-(--skeleton-base)" />
+            <span className="oa-panel-loader-block h-2 w-2/3 rounded-full bg-(--skeleton-base)" />
             <div className="mt-auto flex justify-end gap-1">
-              <span className="oa-panel-loader-dot h-1.5 w-1.5 rounded-full bg-(--color-accent)" />
-              <span className="oa-panel-loader-dot h-1.5 w-1.5 rounded-full bg-(--color-accent)" />
-              <span className="oa-panel-loader-dot h-1.5 w-1.5 rounded-full bg-(--color-accent)" />
+              <span className="oa-panel-loader-dot h-1.5 w-1.5 rounded-full bg-(--skeleton-sweep)" />
+              <span className="oa-panel-loader-dot h-1.5 w-1.5 rounded-full bg-(--skeleton-sweep)" />
+              <span className="oa-panel-loader-dot h-1.5 w-1.5 rounded-full bg-(--skeleton-sweep)" />
             </div>
           </div>
         </div>
@@ -1197,9 +1197,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     f: handleWorkspaceFiles,
     p: isMobile ? undefined : () => setShowPalette((v) => !v),
     // Ctrl+B (sidebar collapse) is registered once by AppShell.
-    // Ctrl+M / Ctrl+S — open the wiki / scheduler drawers (state in useUIStore).
+    // Ctrl+M / Ctrl+S / Ctrl+K — open Memory, Scheduler, or Plugins.
     m: toggleWiki,
     s: toggleScheduler,
+    k: () => toggleWorkbenchTool('plugins'),
     t: toggleBrowser,
     g: mode === 'coding' && workspace ? openGitChanges : undefined,
     // Ctrl+` — toggle the AI Terminal (conventional terminal shortcut).
@@ -1249,21 +1250,21 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       <div className="flex-1 overflow-hidden">
         <div className="mx-auto max-w-4xl space-y-8 px-3 py-4">
           <div className="flex justify-end">
-            <div className="h-9 w-44 animate-pulse rounded-2xl bg-(--bg-key)" />
+            <div className="skeleton-shimmer h-9 w-44 rounded-2xl" />
           </div>
           <div className="space-y-2.5">
-            <div className="h-3.5 w-3/4 animate-pulse rounded-lg bg-(--bg-key)" />
-            <div className="h-3.5 w-full animate-pulse rounded-lg bg-(--bg-key)" />
-            <div className="h-3.5 w-2/3 animate-pulse rounded-lg bg-(--bg-key)" />
-            <div className="mt-1 h-3.5 w-5/6 animate-pulse rounded-lg bg-(--bg-key)" />
+            <div className="skeleton-shimmer h-3.5 w-3/4 rounded-lg" />
+            <div className="skeleton-shimmer h-3.5 w-full rounded-lg" />
+            <div className="skeleton-shimmer h-3.5 w-2/3 rounded-lg" />
+            <div className="skeleton-shimmer mt-1 h-3.5 w-5/6 rounded-lg" />
           </div>
           <div className="flex justify-end">
-            <div className="h-9 w-32 animate-pulse rounded-2xl bg-(--bg-key)" />
+            <div className="skeleton-shimmer h-9 w-32 rounded-2xl" />
           </div>
           <div className="space-y-2.5">
-            <div className="h-3.5 w-1/2 animate-pulse rounded-lg bg-(--bg-key)" />
-            <div className="h-3.5 w-5/6 animate-pulse rounded-lg bg-(--bg-key)" />
-            <div className="h-3.5 w-3/4 animate-pulse rounded-lg bg-(--bg-key)" />
+            <div className="skeleton-shimmer h-3.5 w-1/2 rounded-lg" />
+            <div className="skeleton-shimmer h-3.5 w-5/6 rounded-lg" />
+            <div className="skeleton-shimmer h-3.5 w-3/4 rounded-lg" />
           </div>
         </div>
       </div>

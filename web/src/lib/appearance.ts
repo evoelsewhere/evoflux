@@ -56,7 +56,7 @@ const BASE_FONT_SIZE_PX = 16
 
 export const DEFAULT_APPEARANCE: AppearanceSettings = {
   accent: 'default',
-  fontFamily: 'inter',
+  fontFamily: 'system',
   fontScale: 1,
   motionIntensity: 'standard',
 }

@@ -7,17 +7,7 @@
  */
 import { useEffect } from 'react'
 import { useUIStore } from '@/stores/useUIStore'
-
-function dispatchCtrlKey(key: string): void {
-  window.dispatchEvent(
-    new KeyboardEvent('keydown', {
-      key,
-      ctrlKey: true,
-      metaKey: false,
-      bubbles: true,
-    }),
-  )
-}
+import { dispatchPrimaryShortcut } from '@/lib/keyboard-shortcuts'
 
 function execCommand(command: string): void {
   // Focus the active element first so execCommand targets the right editable
@@ -69,7 +59,7 @@ async function pasteFromClipboard(): Promise<void> {
 function runDesktopCommand(command: unknown): void {
   switch (command) {
     case 'command_palette':
-      dispatchCtrlKey('p')
+      dispatchPrimaryShortcut('p')
       break
     case 'wiki':
       useUIStore.getState().toggleWiki()

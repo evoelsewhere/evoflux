@@ -87,7 +87,7 @@ export function SessionScheduleIndicator({
       >
         <CalendarClock size={14} />
         {/* Badge */}
-        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-(--color-accent) px-1 text-[9px] font-bold leading-none text-white">
+        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-(--color-accent) px-1 text-[9px] font-bold leading-none text-(--color-text-on-accent)">
           {sessionTasks.length}
         </span>
       </PopoverTrigger>

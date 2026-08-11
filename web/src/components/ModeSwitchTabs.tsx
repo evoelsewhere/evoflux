@@ -152,7 +152,7 @@ export function ModeSwitchTabs({
             className={cn(
               'group relative z-(--z-panel) flex h-8 min-w-0 items-center justify-center gap-1 rounded-lg px-1 text-xs font-medium outline-none transition-[color,transform] duration-(--motion-fast) active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35 @[12.5rem]/modeswitch:gap-1.5 @[12.5rem]/modeswitch:px-2',
               mode === active
-                ? 'text-(--color-text)'
+                ? 'text-(--color-accent)'
                 : 'text-(--color-text-subtle) hover:text-(--color-text)',
             )}
           >
