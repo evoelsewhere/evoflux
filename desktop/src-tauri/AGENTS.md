@@ -26,7 +26,7 @@ build.rs                     Tauri build integration
 
 ```bash
 cargo check
-cargo tauri dev -c tauri.dev.conf.json
+EVOFLUX_DESKTOP_DEV_BACKEND_URL=http://127.0.0.1:8000 cargo tauri dev -c tauri.dev.conf.json
 cargo tauri build
 ```
 

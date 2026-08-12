@@ -1,16 +1,18 @@
 # Makefile for evoflux
 
-.PHONY: all run dev kill-dev-ports test coverage migrate revision build-web build dist clean help
+.PHONY: all run dev dev-web dev-desktop kill-dev-ports test coverage migrate revision build-web build dist clean help
 
 # Default target
 all: test
+
+DEV_API_PORT ?= 8000
 
 run: ## Start the API server only (no reload, no frontend; :8000)
 	uv run uvicorn app.server:app --no-access-log
 
 kill-dev-ports: ## Stop processes listening on dev ports (:8000, :5173)
 	@command -v lsof >/dev/null 2>&1 || { echo "error: 'lsof' not found"; exit 1; }
-	@for port in 8000 5173; do \
+	@for port in $(DEV_API_PORT) 5173; do \
 		pids=$$(lsof -tiTCP:$$port -sTCP:LISTEN); \
 		if [ -n "$$pids" ]; then \
 			echo "stopping processes on port $$port: $$pids"; \
@@ -28,12 +30,15 @@ kill-dev-ports: ## Stop processes listening on dev ports (:8000, :5173)
 		fi; \
 	done
 
-dev: kill-dev-ports ## Start backend (:8000 + reload) and frontend (Vite :5173) together
-	@command -v bun >/dev/null 2>&1 || { echo "error: 'bun' not found — install from https://bun.sh"; exit 1; }
-	@trap 'kill 0' INT TERM EXIT; \
-	(uv run uvicorn app.server:app --reload --reload-dir app --no-access-log 2>&1 | sed 's/^/[api] /') & \
-	(cd web && bun dev 2>&1 | sed 's/^/[web] /') & \
-	wait
+dev: dev-web ## Start web development mode (alias for dev-web)
+
+dev-web: ## Start backend (:8000 + reload) and web UI (Vite :5173)
+	@command -v uv >/dev/null 2>&1 || { echo "error: 'uv' not found — install from https://docs.astral.sh/uv/"; exit 1; }
+	@uv run python scripts/run_dev.py --api-port $(DEV_API_PORT)
+
+dev-desktop: ## Start backend, web UI, and Tauri desktop app
+	@command -v uv >/dev/null 2>&1 || { echo "error: 'uv' not found — install from https://docs.astral.sh/uv/"; exit 1; }
+	@uv run python scripts/run_dev.py --api-port $(DEV_API_PORT) --desktop
 
 test: ## Run tests
 	uv run pytest -q

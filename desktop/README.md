@@ -56,16 +56,22 @@ The Tauri shell:
 rustup default stable
 cargo install tauri-cli --version "^2.0" --locked
 
-# Build the web UI first
-cd web && bun install && bun run build && cd ..
+# Install source dependencies
+uv sync
+cd web && bun install && cd ..
 
-# Build a slim Python sidecar bundle (uses uv + python-build-standalone)
-make -C desktop sidecar
+# Source API + Vite + Tauri in one terminal
+make dev-desktop
 
-# Run the desktop shell in dev mode (prefer ``make dev`` from this
-# directory so the dev override picks up — see ``Makefile``).
-cd desktop && make dev
+# Or use two terminals:
+make dev-web
+make -C desktop dev
 ```
+
+Normal desktop development forces the Tauri shell to use the source API at
+`http://127.0.0.1:8000`; it does not launch a cached sidecar. To exercise the
+packaged sidecar handshake and isolated development data instead, run
+`cd web && bun dev` in one terminal and `make -C desktop dev-bundled` in another.
 
 ## Packaging
 

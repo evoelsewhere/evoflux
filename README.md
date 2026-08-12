@@ -87,7 +87,7 @@ On first launch:
 
 ### Run the desktop app from source
 
-Requirements: Python 3.12+, [uv](https://docs.astral.sh/uv/), [Bun](https://bun.sh/), Rust, and the Tauri prerequisites for your operating system.
+Requirements: Python 3.12+, [uv](https://docs.astral.sh/uv/), [Bun](https://bun.sh/), Rust, [Tauri CLI](https://v2.tauri.app/start/prerequisites/), and the Tauri prerequisites for your operating system.
 
 ```sh
 git clone https://github.com/evoelsewhere/evoflux.git
@@ -96,14 +96,14 @@ cd evoflux
 uv sync
 cd web && bun install && cd ..
 
-# Terminal 1 — local API sidecar + React development server
-make dev
+# Choose browser development — local API + React development server
+make dev-web
 
-# Terminal 2 — Tauri desktop shell
-make -C desktop dev
+# Or choose desktop development — local API + React + Tauri desktop shell
+make dev-desktop
 ```
 
-`localhost:5173` is the internal frontend development server used by Tauri during development. EvoFlux is shipped and positioned as a **desktop product**, not a standalone web app.
+`make dev` remains an alias for `make dev-web`. `localhost:5173` is the internal frontend development server used by Tauri during development. EvoFlux is shipped and positioned as a **desktop product**, not a standalone web app.
 
 ---
 
