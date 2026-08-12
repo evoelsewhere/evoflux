@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Code2,
   FileArchive,
+  FileText,
   FolderInput,
   FolderPlus,
   KeyRound,
@@ -86,6 +87,16 @@ function conciseToolNames(server: PluginMcpRuntimeStatus): string {
     .join(', ')
 }
 
+function pluginDisplayName(item: PluginListItem): string {
+  if (
+    item.installation.source_type === 'builtin'
+    && item.installation.name === 'evoflux.documents'
+  ) {
+    return 'Documents'
+  }
+  return item.installation.name
+}
+
 function PluginCard({
   item,
   servers,
@@ -108,8 +119,13 @@ function PluginCard({
   onUpdate: () => void
 }) {
   const { installation, inspection } = item
+  const displayName = pluginDisplayName(item)
+  const description = installation.description || 'Portable Agent Plugin'
+  const isDocumentsPlugin = installation.source_type === 'builtin'
+    && installation.name === 'evoflux.documents'
   const [expanded, setExpanded] = useState(false)
   const errors = diagnosticsCount(inspection)
+  const isValid = inspection.valid
   const skillCount = inspection.skills.filter((skill) => skill.valid).length
   const mcpCount = inspection.mcp_servers.filter((server) => server.valid).length
   const configuredCredentialCount = item.credentials.fields.filter(
@@ -132,68 +148,100 @@ function PluginCard({
     || item.capabilities.can_update
     || item.capabilities.can_uninstall
   return (
-    <article className="@container/plugin-card overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card) shadow-sm transition-colors hover:border-(--color-accent)/50">
+    <article
+      className={cn(
+        '@container/plugin-card overflow-hidden rounded-2xl border bg-(--bg-card) shadow-sm transition-[border-color,box-shadow] hover:shadow-md',
+        isValid
+          ? 'border-(--color-success)/60 hover:border-(--color-success)'
+          : 'border-(--color-error)/60 hover:border-(--color-error)',
+      )}
+    >
       <button
         type="button"
-        className="flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left hover:bg-(--bg-key)/50"
+        className="group flex w-full min-w-0 items-start gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-(--bg-key)/40 @sm/plugin-card:items-center"
         aria-expanded={expanded}
         aria-controls={detailsId}
         onClick={() => setExpanded((current) => !current)}
       >
-        <div className="min-w-0 flex-1 @lg/plugin-card:flex @lg/plugin-card:items-center @lg/plugin-card:gap-4">
-          <div className="flex min-w-0 flex-wrap items-center gap-2 @lg/plugin-card:min-w-52">
-            <h3 className="truncate font-semibold text-(--color-text)">
-              {installation.name}
+        <span
+          className={cn(
+            'flex size-11 shrink-0 items-center justify-center rounded-xl border shadow-sm',
+            isDocumentsPlugin
+              ? 'border-(--color-accent)/15 bg-(--color-accent)/10 text-(--color-accent)'
+              : 'border-(--color-border) bg-(--bg-key) text-(--color-text-muted)',
+          )}
+          aria-hidden="true"
+        >
+          {isDocumentsPlugin ? <FileText size={21} /> : <Box size={21} />}
+        </span>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h3 className="truncate text-[15px] font-semibold text-(--color-text)">
+              {displayName}
             </h3>
             {installation.version && (
-              <span className="rounded-full bg-(--bg-key) px-2 py-0.5 text-xs text-(--color-text-muted)">
+              <span className="rounded-full bg-(--bg-key) px-2 py-0.5 text-[11px] font-medium text-(--color-text-muted)">
                 v{installation.version}
               </span>
             )}
-            <span className="rounded-full border border-(--color-border) px-2 py-0.5 text-xs text-(--color-text-muted)">
+            <span className="rounded-full border border-(--color-border) px-2 py-0.5 text-[11px] font-medium text-(--color-text-muted)">
               {sourceLabel}
             </span>
           </div>
-          <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-(--color-text-muted) @lg/plugin-card:mt-0">
-            <span
-              className={cn(
-                'inline-flex items-center gap-1 rounded-md px-2 py-1',
-                errors ? 'bg-(--color-error-subtle) text-(--color-error)' : 'bg-(--color-success-subtle) text-(--color-success)',
-              )}
-            >
-              {errors ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
-              {errors ? `${errors} component errors` : 'valid'}
-            </span>
-            {item.credentials.supported && (
+
+          <p className="mt-1 max-w-3xl text-sm leading-5 text-(--color-text-muted)">
+            {description}
+          </p>
+
+          <span className="sr-only">
+            {isValid
+              ? 'Plugin is valid.'
+              : `Plugin is not valid${errors ? `: ${errors} component errors` : ''}.`}
+          </span>
+
+          {item.credentials.supported && (
+            <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-(--color-text-muted)">
               <span className={cn(
-                'inline-flex items-center gap-1 rounded-md px-2 py-1',
+                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium',
                 item.credentials.configured
                   ? 'bg-(--color-success-subtle) text-(--color-success)'
                   : 'bg-(--color-warning-subtle) text-(--color-warning)',
               )}>
                 <KeyRound size={12} /> {credentialLabel}
               </span>
-            )}
-          </div>
+            </div>
+          )}
         </div>
-        <span
-          className={cn(
-            'hidden rounded-full px-2 py-0.5 text-xs @sm/plugin-card:inline-flex',
-            installation.enabled
-              ? 'bg-(--color-success-subtle) text-(--color-success)'
-              : 'bg-(--bg-key) text-(--color-text-muted)',
-          )}
-        >
-          {installation.enabled ? 'Enabled' : 'Disabled'}
-        </span>
-        <ChevronDown
-          size={17}
-          className={cn(
-            'shrink-0 text-(--color-text-muted) transition-transform',
-            expanded && 'rotate-180',
-          )}
-          aria-hidden="true"
-        />
+
+        <div className="flex shrink-0 items-center gap-2 self-center">
+          <span
+            className={cn(
+              'hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium @sm/plugin-card:inline-flex',
+              installation.enabled
+                ? 'border-(--color-success)/15 bg-(--color-success-subtle) text-(--color-success)'
+                : 'border-(--color-border) bg-(--bg-key) text-(--color-text-muted)',
+            )}
+          >
+            <span
+              className={cn(
+                'size-1.5 rounded-full',
+                installation.enabled ? 'bg-(--color-success)' : 'bg-(--color-text-subtle)',
+              )}
+            />
+            {installation.enabled ? 'Enabled' : 'Disabled'}
+          </span>
+          <span className="flex size-8 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors group-hover:bg-(--bg-key) group-hover:text-(--color-text)">
+            <ChevronDown
+              size={17}
+              className={cn(
+                'transition-transform',
+                expanded && 'rotate-180',
+              )}
+              aria-hidden="true"
+            />
+          </span>
+        </div>
       </button>
 
       <div
@@ -209,13 +257,13 @@ function PluginCard({
         >
           <div
             id={detailsId}
-            className="grid gap-4 p-4 @lg/plugin-card:grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_auto]"
+            className="grid gap-4 p-4 @2xl/plugin-card:grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_auto]"
           >
             <div className="min-w-0">
-              <p className="text-sm text-(--color-text-muted)">
-                {installation.description || 'Portable Agent Plugin'}
+              <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-(--color-text-subtle)">
+                Components
               </p>
-              <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-(--color-text-muted)">
+              <div className="flex flex-wrap gap-1.5 text-xs text-(--color-text-muted)">
                 <span className="inline-flex items-center gap-1 rounded-md bg-(--bg-key) px-2 py-1">
                   <Blocks size={12} /> {skillCount} skills
                 </span>
@@ -228,7 +276,7 @@ function PluginCard({
               </p>
             </div>
 
-            <div className="min-w-0 border-t border-(--color-border) pt-3 @lg/plugin-card:border-t-0 @lg/plugin-card:border-l @lg/plugin-card:pt-0 @lg/plugin-card:pl-4">
+            <div className="min-w-0 border-t border-(--color-border) pt-3 @2xl/plugin-card:border-t-0 @2xl/plugin-card:border-l @2xl/plugin-card:pt-0 @2xl/plugin-card:pl-4">
               <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-(--color-text-subtle)">
                 MCP runtime
               </p>
@@ -267,7 +315,7 @@ function PluginCard({
               )}
             </div>
 
-            <div className="flex content-start items-center justify-between gap-3 border-t border-(--color-border) pt-3 @lg/plugin-card:w-36 @lg/plugin-card:flex-col @lg/plugin-card:items-end @lg/plugin-card:justify-start @lg/plugin-card:border-t-0 @lg/plugin-card:pt-0">
+            <div className="flex content-start items-center justify-between gap-3 border-t border-(--color-border) pt-3 @2xl/plugin-card:w-36 @2xl/plugin-card:flex-col @2xl/plugin-card:items-end @2xl/plugin-card:justify-start @2xl/plugin-card:border-t-0 @2xl/plugin-card:pt-0">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-(--color-text-muted)">
                   {installation.enabled ? 'Enabled' : 'Disabled'}
@@ -276,15 +324,15 @@ function PluginCard({
                   checked={installation.enabled}
                   disabled={busy || !item.capabilities.can_enable}
                   aria-label={item.capabilities.can_enable
-                    ? `${installation.enabled ? 'Disable' : 'Enable'} ${installation.name}`
-                    : `${installation.name} is bundled and always enabled`}
+                    ? `${installation.enabled ? 'Disable' : 'Enable'} ${displayName}`
+                    : `${displayName} is bundled and always enabled`}
                   onCheckedChange={onToggle}
                 />
               </div>
               {hasActions && <DropdownMenu>
                 <DropdownMenuTrigger
                   disabled={busy}
-                  aria-label={`Actions for ${installation.name}`}
+                  aria-label={`Actions for ${displayName}`}
                   className={buttonVariants({ variant: 'outline', size: 'sm' })}
                 >
                   <MoreHorizontal /> Actions <ChevronDown className="transition-transform group-data-[popup-open]:rotate-180" />
