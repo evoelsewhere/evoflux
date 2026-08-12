@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "evoflux.documents",
   "version": "1.0.0",
-  "description": "Built-in DOCX, XLSX, PPTX, and PDF artifact and preview engines.",
+  "description": "Create, inspect, preview, and validate DOCX, XLSX, PPTX, and PDF documents.",
   "author": {
     "name": "EvoFlux contributors"
   },
