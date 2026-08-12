@@ -74,6 +74,12 @@ on a page, teach a repeatable task, or diagnose a page. Its live state is
 published through the paired relay and shown with the same wording in EvoFlux
 Desktop.
 
+Appearance follows a versioned snapshot published by EvoFlux Desktop: resolved
+light/dark theme, accent, font, type scale, and motion intensity. Side Chat
+caches the last trusted snapshot to avoid a theme flash and keep the same look
+while Desktop reconnects. The bundled Latin/Vietnamese variable-font subsets
+use the SIL Open Font License; notices ship in `fonts/LICENSE-*.txt`.
+
 Side Chat settings also show who controls the active tab. **Release browser
 control** gives that tab to the user and keeps agent commands paused until the
 user explicitly resumes them; disconnecting the extension releases all tabs.
@@ -133,9 +139,11 @@ active tab automatically without grouping a lone tab. It can:
   group without stealing the primary binding.
 - Load cursor-paginated lead/member transcript history and stream live assistant
   output using fetch-SSE. It renders safe Markdown, authenticated images/files,
-  provider fallback/error state, agent attribution, and sanitized tool activity
-  while withholding raw tool arguments/output. **Open in EvoFlux** opens the
-  full renderer for unsupported rich blocks/widgets.
+  provider fallback/error state, agent attribution, protected reasoning/tool
+  progress, and sandboxed static widgets in the canonical typed-block order.
+  Syntax highlighting and bounded offline MathML rendering match the Desktop
+  Markdown surface without loading CDN code. Permission and plan gates surface
+  immediately with an **Open in EvoFlux** action for protected review.
   Absolute remote Markdown images are not loaded automatically; Side Chat shows
   an explicit load control with a no-referrer request instead.
 - Attach readable page text, selection, files, or a user-dragged screen region.
@@ -165,22 +173,33 @@ stored.
 
 Side Chat and the full EvoFlux chat are two views of that same canonical
 `ChatSession`: messages, titles, model selection, attachments, AskUser handoffs,
-interrupts, and live agent activity stay synchronized. Browser evidence remains
+interrupts, Continue/undo/redo, queued follow-ups, permission/plan gate state,
+and live agent activity stay synchronized. The composer discovers the same slash
+commands, skills, approved workflows, snippets, and workspace references as
+Desktop; `!` dispatches through the canonical shell path. Browser evidence remains
 fenced in the persisted prompt consumed by the agent, while both chat surfaces
-render the original user-authored text. Historical tool activity exposes only
-the tool name, completion state, and duration; arguments and output remain
-private. The model control mirrors Desktop Chat with the configured model
+render the original user-authored text. Raw reasoning, tool arguments/output,
+permission patterns, and plan bodies stay inside EvoFlux Desktop by design.
+WebBridge receives typed chronology and bounded progress metadata instead;
+static widget markup is isolated in a unique-origin iframe whose CSP blocks
+scripts, forms, navigation, and network requests. None of these payloads are
+added to WebBridge audit logs. The model control mirrors Desktop Chat with the
+configured model
 catalog, provider identity, thinking-effort choices, and Codex Standard/Fast
 response speed. Model and thinking settings persist on the shared session and
 are polled back into Side Chat when changed in EvoFlux; Fast remains a per-turn
 choice, matching Desktop Chat's request contract. Side Chat stream ownership is
-session-scoped, uses bounded exponential
-backoff with jitter, and rejects stale history/question responses after a tab or
-session switch. While a turn is running, Side Chat renders the same response
-shape as Desktop Chat directly in the transcript: a sanitized Thought character
-count, tool name/state/duration steps, and progressively streamed Markdown.
-Raw reasoning, tool arguments, and tool output remain excluded from the paired
-browser surface.
+session-scoped, uses bounded exponential backoff with jitter, and rejects stale
+history/question responses after a tab or session switch. Queued-turn boundaries
+are preserved. Reconnect replay journals the producer's original event order and
+uses one atomic snapshot/live cutoff, while Markdown reveal keeps completed
+segments stable, schedules the changing tail on paint frames, and never splits
+Unicode sequences.
+
+Chat-turn rendering and actions now share the Desktop event semantics. The
+Desktop session library (folders, pinning, search, and multi-session navigation)
+remains Desktop-only because Side Chat intentionally binds one canonical session
+to the browser tab rather than presenting a second session manager.
 
 ## P3: Recorded tasks and page watches
 

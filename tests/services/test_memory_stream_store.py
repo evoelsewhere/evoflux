@@ -627,6 +627,58 @@ class TestCommitAgentContent:
             assert ev["event"] not in {"tool_call", "tool_start", "tool_end"}
 
     @pytest.mark.asyncio
+    async def test_commit_prunes_agent_frames_from_ordered_replay_journal(self):
+        await store.init_turn("sid-1")
+        alice_events = [
+            StreamEnvelope.from_parts(
+                "message", {"agent": "alice", "text": "persisted"}
+            ),
+            StreamEnvelope.from_parts(
+                "thinking", {"agent": "alice", "text": "private thought"}
+            ),
+            StreamEnvelope.from_parts(
+                "tool_call",
+                {"agent": "alice", "tool_call_id": "t1", "name": "search"},
+            ),
+            StreamEnvelope.from_parts(
+                "tool_output_delta",
+                {"agent": "alice", "tool_call_id": "t1", "text": "chunk"},
+            ),
+            StreamEnvelope.from_parts(
+                "widget_delta",
+                {
+                    "agent": "alice",
+                    "tool_call_id": "t1",
+                    "html": "<p>widget</p>",
+                },
+            ),
+        ]
+        for envelope in alice_events:
+            await store.push_event("sid-1", envelope)
+        await store.push_event(
+            "sid-1",
+            StreamEnvelope.from_parts(
+                "message", {"agent": "bob", "text": "still live"}
+            ),
+        )
+
+        await store.commit_agent_content("sid-1", "alice")
+
+        async def _mark_done():
+            await asyncio.sleep(0.02)
+            await store.mark_done("sid-1")
+
+        done_task = asyncio.create_task(_mark_done())
+        replayed = [event async for event in store.attach("sid-1")]
+        await done_task
+
+        assert [event["event"] for event in replayed] == ["message"]
+        assert json.loads(replayed[0]["data"]) == {
+            "agent": "bob",
+            "text": "still live",
+        }
+
+    @pytest.mark.asyncio
     async def test_commit_tool_calls_without_agent_field_preserved(self):
         """Tool calls with no 'agent' field are NOT dropped."""
         await store.init_turn("sid-1")
@@ -903,6 +955,183 @@ class TestAttach:
         assert any(e.get("event") == "message" for e in events)
 
     @pytest.mark.asyncio
+    async def test_attach_replays_original_interleaved_event_order(self):
+        """Reconnect preserves producer order across every rendered block kind."""
+        await store.init_turn("sid-1")
+        envelopes = [
+            StreamEnvelope.from_parts(
+                "agent_status", {"agent": "bot", "status": "working"}
+            ),
+            StreamEnvelope.from_parts(
+                "message", {"agent": "bot", "text": "before tool"}
+            ),
+            StreamEnvelope.from_parts(
+                "thinking", {"agent": "bot", "text": "considering"}
+            ),
+            StreamEnvelope.from_parts(
+                "tool_call",
+                {"agent": "bot", "tool_call_id": "tool-1", "name": "search"},
+            ),
+            StreamEnvelope.from_parts(
+                "tool_start",
+                {
+                    "agent": "bot",
+                    "tool_call_id": "tool-1",
+                    "name": "search",
+                    "arguments": '{"q":"EvoFlux"}',
+                },
+            ),
+            StreamEnvelope.from_parts(
+                "tool_output_delta",
+                {
+                    "agent": "bot",
+                    "tool_call_id": "tool-1",
+                    "text": "result chunk",
+                },
+            ),
+            StreamEnvelope.from_parts(
+                "widget_delta",
+                {
+                    "agent": "bot",
+                    "tool_call_id": "tool-1",
+                    "html": "<p>partial</p>",
+                    "is_final": False,
+                },
+            ),
+            StreamEnvelope.from_parts(
+                "tool_end",
+                {
+                    "agent": "bot",
+                    "tool_call_id": "tool-1",
+                    "name": "search",
+                    "result": "done",
+                },
+            ),
+            StreamEnvelope.from_parts(
+                "message", {"agent": "bot", "text": "after tool"}
+            ),
+            StreamEnvelope.from_parts(
+                "permission_asked",
+                {
+                    "request_id": "permission-1",
+                    "session_id": "sid-1",
+                    "tool": "shell",
+                    "patterns": ["git status"],
+                },
+            ),
+        ]
+        for envelope in envelopes:
+            await store.push_event("sid-1", envelope)
+
+        stream = store.attach("sid-1")
+        try:
+            replayed = [
+                await asyncio.wait_for(stream.__anext__(), timeout=0.2)
+                for _ in envelopes
+            ]
+        finally:
+            await stream.aclose()
+
+        assert [event["event"] for event in replayed] == [
+            envelope.event for envelope in envelopes
+        ]
+        message_chunks = [
+            json.loads(event["data"])["text"]
+            for event in replayed
+            if event["event"] == "message"
+        ]
+        assert message_chunks == ["before tool", "after tool"]
+        assert json.loads(replayed[6]["data"])["html"] == "<p>partial</p>"
+
+    @pytest.mark.asyncio
+    async def test_attach_cutoff_does_not_duplicate_delta_arriving_during_replay(
+        self,
+    ):
+        """A post-cutoff delta is live-only, neither replayed nor queued twice."""
+        await store.init_turn("sid-1")
+        await store.push_event(
+            "sid-1",
+            StreamEnvelope.from_parts(
+                "agent_status", {"agent": "bot", "status": "working"}
+            ),
+        )
+        await store.push_event(
+            "sid-1",
+            StreamEnvelope.from_parts("message", {"agent": "bot", "text": "before"}),
+        )
+
+        stream = store.attach("sid-1")
+        try:
+            # The first replay yield pauses attach after its subscriber queue
+            # is registered. Previously a delta pushed here mutated the replay
+            # accumulator and also entered that queue.
+            status = await stream.__anext__()
+            assert status["event"] == "agent_status"
+
+            await store.push_event(
+                "sid-1",
+                StreamEnvelope.from_parts("message", {"agent": "bot", "text": "after"}),
+            )
+
+            replayed = await stream.__anext__()
+            live = await stream.__anext__()
+        finally:
+            await stream.aclose()
+
+        assert [replayed["event"], live["event"]] == ["message", "message"]
+        assert [
+            json.loads(replayed["data"])["text"],
+            json.loads(live["data"])["text"],
+        ] == ["before", "after"]
+
+    @pytest.mark.asyncio
+    async def test_gate_resolved_after_cutoff_replays_request_then_live_reply(self):
+        await store.init_turn("sid-1")
+        await store.push_event(
+            "sid-1",
+            StreamEnvelope.from_parts(
+                "agent_status", {"agent": "bot", "status": "working"}
+            ),
+        )
+        await store.push_event(
+            "sid-1",
+            StreamEnvelope.from_parts(
+                "permission_asked",
+                {
+                    "request_id": "permission-1",
+                    "session_id": "sid-1",
+                    "tool": "shell",
+                    "patterns": ["git status"],
+                },
+            ),
+        )
+
+        stream = store.attach("sid-1")
+        try:
+            status = await stream.__anext__()
+            assert status["event"] == "agent_status"
+            await store.push_event(
+                "sid-1",
+                StreamEnvelope.from_parts(
+                    "permission_replied",
+                    {
+                        "request_id": "permission-1",
+                        "session_id": "sid-1",
+                        "reply": "once",
+                    },
+                ),
+            )
+            requested = await stream.__anext__()
+            resolved = await stream.__anext__()
+        finally:
+            await stream.aclose()
+
+        assert [requested["event"], resolved["event"]] == [
+            "permission_asked",
+            "permission_replied",
+        ]
+
+    @pytest.mark.asyncio
     async def test_attach_cleans_up_subscriber_on_exit(self):
         """Subscriber queue is removed from state when attach exits."""
         await store.init_turn("sid-1")
@@ -1105,9 +1334,7 @@ class TestSummarizationPushAndReplay:
     async def test_attach_replays_in_flight_compaction(self):
         """Reconnect mid-compaction replays only the active status."""
         await store.init_turn("sid-1")
-        _turns["sid-1"].summarization = {
-            "lead": {"done": False, "error": False}
-        }
+        _turns["sid-1"].summarization = {"lead": {"done": False, "error": False}}
 
         async def _mark_done():
             await asyncio.sleep(0.05)
@@ -1126,9 +1353,7 @@ class TestSummarizationPushAndReplay:
     async def test_attach_replays_completed_compaction(self):
         """Reconnect after compaction finished replays content-free status."""
         await store.init_turn("sid-1")
-        _turns["sid-1"].summarization = {
-            "lead": {"done": True, "error": False}
-        }
+        _turns["sid-1"].summarization = {"lead": {"done": True, "error": False}}
 
         async def _mark_done():
             await asyncio.sleep(0.05)
@@ -1150,9 +1375,7 @@ class TestSummarizationPushAndReplay:
     @pytest.mark.asyncio
     async def test_attach_replays_failed_compaction_with_error_flag(self):
         await store.init_turn("sid-1")
-        _turns["sid-1"].summarization = {
-            "lead": {"done": True, "error": True}
-        }
+        _turns["sid-1"].summarization = {"lead": {"done": True, "error": True}}
 
         async def _mark_done():
             await asyncio.sleep(0.05)
