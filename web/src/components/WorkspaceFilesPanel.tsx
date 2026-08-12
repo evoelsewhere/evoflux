@@ -54,6 +54,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { workspaceMediaUrl, updateSessionWorkspace, uploadWorkspaceFiles, moveWorkspaceFile, deleteWorkspaceFile, browseWorkspaces } from '@/api/client'
 import {
+  decodeBase64Utf8,
   isTauriAvailable,
   tauriOpenWorkspaceFile,
   tauriOpenWorkspaceRoot,
@@ -543,7 +544,7 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
         // Native Rust path — no HTTP round-trip.
         if (isTauriAvailable() && workspaceRoot) {
           const b64 = await tauriReadWorkspaceFile(workspaceRoot, file.path)
-          text = atob(b64)
+          text = decodeBase64Utf8(b64)
         } else {
           // HTTP API fallback.
           const res = await fetch(workspaceMediaUrl(sessionId, file.path))
@@ -700,7 +701,7 @@ export function CopyContentsButton({
       // Native Rust path — no HTTP round-trip.
       if (isTauriAvailable() && workspaceRoot) {
         const b64 = await tauriReadWorkspaceFile(workspaceRoot, file.path)
-        text = atob(b64)
+        text = decodeBase64Utf8(b64)
       } else {
         const res = await fetch(workspaceMediaUrl(sessionId, file.path))
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
