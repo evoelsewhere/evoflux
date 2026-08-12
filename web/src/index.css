@@ -1221,6 +1221,11 @@ a svg.lucide,
     --app-font-heading: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI', Roboto, system-ui, sans-serif;
 }
 
+:root[data-font='inter'] {
+    --app-font-sans: 'Inter Variable', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --app-font-heading: 'Inter Variable', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
 :root[data-font='mono'] {
     --app-font-sans: var(--app-font-mono);
     --app-font-heading: var(--app-font-mono);

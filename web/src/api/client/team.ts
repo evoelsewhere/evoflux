@@ -720,6 +720,27 @@ export async function getBrowserSession(sessionId: string): Promise<BrowserSessi
 
 // ── WebBridge ───────────────────────────────────────────────────────────────
 
+export interface WebBridgeAppearanceUpdate {
+  schema_version: 1
+  theme_preference: 'system' | 'light' | 'dark'
+  resolved_theme: 'light' | 'dark'
+  accent: 'default' | 'blue' | 'green' | 'orange' | 'pink' | 'purple' | 'red'
+  font_family: 'inter' | 'system' | 'mono' | 'geist' | 'anthropic-sans'
+  font_scale: number
+  motion_intensity: 'reduced' | 'subtle' | 'standard' | 'expressive' | 'cinematic'
+}
+
+export async function updateWebBridgeAppearance(
+  appearance: WebBridgeAppearanceUpdate,
+): Promise<void> {
+  const res = await fetch(`${apiBaseUrl()}/team/webbridge/appearance`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(appearance),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'updateWebBridgeAppearance')
+}
+
 export async function getWebBridgeStatus(): Promise<WebBridgeStatusResponse> {
   const res = await fetch(`${apiBaseUrl()}/team/webbridge/status`)
   if (!res.ok) await parseDetailOrThrow(res, 'getWebBridgeStatus')

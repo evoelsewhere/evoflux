@@ -4,6 +4,7 @@ Design
 ------
 - _state: dict[session_id, TurnState]  — accumulated turn blob (reconnect replay)
 - _subscribers: dict[session_id, list[asyncio.Queue]]  — live fan-out to SSE clients
+- each TurnState journals replayable wire frames in producer order
 - _cleanup tasks expire state after STREAM_TTL seconds
 
 Single-process only — no cross-worker fan-out.
@@ -12,6 +13,8 @@ Single-process only — no cross-worker fan-out.
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
+from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Literal, cast
 
 from loguru import logger
@@ -35,6 +38,83 @@ STREAM_TTL = 3600  # 1 hour
 # Sentinel placed on subscriber queues when the turn finishes
 _SENTINEL = object()
 
+_NON_REPLAYABLE_EVENT_TYPES = frozenset(
+    {
+        # Persisted chat/team events are restored from the DB before SSE
+        # attaches. Replaying them would create duplicate activity blocks.
+        "inbox",
+        "delegation",
+        "handoff",
+        # Internal model context must never reach the transcript.
+        "summarization_content",
+        # Reconnect must not repeat an operating-system side effect.
+        "desktop_notification",
+    }
+)
+_GATE_REPLY_TO_REQUEST = {
+    "permission_replied": "permission_asked",
+    "plan_approval_replied": "plan_approval_requested",
+    "question_replied": "question_asked",
+}
+_GATE_REQUEST_EVENT_TYPES = frozenset(_GATE_REPLY_TO_REQUEST.values())
+_AGENT_CONTENT_EVENT_TYPES = frozenset(
+    {
+        "message",
+        "thinking",
+        "tool_call",
+        "tool_start",
+        "tool_output_delta",
+        "tool_end",
+        "widget_delta",
+        "provider_status",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _ReplayEvent:
+    """One immutable wire frame plus metadata used for journal pruning."""
+
+    event: str
+    data: str
+    agent: str = ""
+
+    @classmethod
+    def from_envelope(
+        cls,
+        envelope: StreamEnvelope,
+        *,
+        wire: dict[str, str] | None = None,
+    ) -> _ReplayEvent:
+        encoded = wire if wire is not None else envelope.to_wire()
+        return cls(
+            event=encoded["event"],
+            data=encoded["data"],
+            agent=envelope.agent,
+        )
+
+    def to_wire(self) -> dict[str, str]:
+        return {"event": self.event, "data": self.data}
+
+
+@dataclass(slots=True)
+class _ReplaySnapshot:
+    """Detached ordered journal plus legacy state at one subscriber cutoff."""
+
+    events: tuple[_ReplayEvent, ...] = ()
+    content: dict[str, str] = field(default_factory=dict)
+    thinking: dict[str, str] = field(default_factory=dict)
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    agent_statuses: dict[str, str] = field(default_factory=dict)
+    agent_errors: dict[str, dict[str, Any]] = field(default_factory=dict)
+    summarization: dict[str, dict[str, Any]] = field(default_factory=dict)
+    goal_status: dict[str, Any] | None = None
+    agent_not_configured: dict[str, Any] | None = None
+    browser_session: dict[str, Any] | None = None
+    plan_approval: dict[str, Any] | None = None
+    question_asked: dict[str, Any] | None = None
+    permission_asked: dict[str, Any] | None = None
+
 
 class _TurnState:
     """Accumulated state for one in-flight turn."""
@@ -55,23 +135,22 @@ class _TurnState:
         "plan_approval",
         "question_asked",
         "permission_asked",
+        "replay_events",
         "subscribers",
+        "_lock",
         "_cleanup_handle",
     )
 
     def __init__(self) -> None:
         self.is_streaming: bool = True
-        # Me per-agent accumulators — keyed by agent name so reconnect replay
-        # can re-emit with correct attribution. A single-blob was ambiguous in
-        # team turns where multiple agents stream text and the replayed event
-        # went to agent="" (no UI panel renders that bucket).
+        # Me per-agent accumulators support persistence commits, content
+        # queries, and the legacy replay fallback. A single blob was ambiguous
+        # in team turns where multiple agents stream text.
         self.content: dict[str, str] = {}
         self.thinking: dict[str, str] = {}
         self.tool_calls: list[dict[str, Any]] = []
-        # Me last-known lifecycle state per agent. Without this, a reconnect
-        # mid-turn would never see `agent_status=working` and the composer's
-        # isTeamWorking flag would stay false even while tokens were still
-        # streaming in. Overwritten per event so only the latest sticks.
+        # Me last-known lifecycle state per agent for state queries and legacy
+        # replay. The ordered journal retains every status transition.
         self.agent_statuses: dict[str, str] = {}
         self.agent_errors: dict[str, dict[str, Any]] = {}
         # Me in-flight summarisation state per agent. Only lifecycle state is
@@ -87,9 +166,8 @@ class _TurnState:
         self.goal_status: dict[str, Any] | None = None
         self.error: str | None = None
         self.agent_not_configured: dict[str, Any] | None = None
-        # Latest browser session state for reconnect replay.  Updated on
-        # every ``browser_session`` SSE event; replayed in ``attach()`` so
-        # a mid-turn reconnect shows the correct "See Browser" button state.
+        # Latest browser session state for the next-turn baseline. The ordered
+        # journal separately retains each within-turn browser transition.
         self.browser_session: dict[str, Any] | None = None
         # Pending plan-approval request for reconnect replay.  The agent
         # stays blocked on its future while the user reviews, so a page
@@ -102,8 +180,15 @@ class _TurnState:
         # Cleared by ``question_replied`` / ``permission_replied``.
         self.question_asked: dict[str, Any] | None = None
         self.permission_asked: dict[str, Any] | None = None
+        # Original replayable wire frames in producer order. Accumulators
+        # above remain useful for commit/state queries; this journal owns SSE
+        # chronology on reconnect.
+        self.replay_events: list[_ReplayEvent] = []
         # Me keep list of queues — one per SSE client
         self.subscribers: list[asyncio.Queue] = []
+        # Serialises an attach cutoff with event accumulation + fan-out. The
+        # critical sections deliberately contain no blocking I/O.
+        self._lock = asyncio.Lock()
         self._cleanup_handle: asyncio.TimerHandle | None = None
 
     def reset_for_next_turn(self) -> None:
@@ -120,8 +205,45 @@ class _TurnState:
         self.plan_approval = None
         self.question_asked = None
         self.permission_asked = None
+        self.replay_events = []
+        # Goal/browser state intentionally survives hidden turn boundaries.
+        # Seed it as a baseline for future reconnects before new-turn events.
+        if self.goal_status is not None:
+            self.replay_events.append(
+                _ReplayEvent.from_envelope(
+                    StreamEnvelope.from_parts("goal_status", self.goal_status)
+                )
+            )
+        if self.browser_session is not None:
+            self.replay_events.append(
+                _ReplayEvent.from_envelope(
+                    StreamEnvelope.from_parts("browser_session", self.browser_session)
+                )
+            )
         # Preserve browser_session across turns — the browser may still be
         # active and the next turn needs to know about it.
+
+
+def _take_replay_snapshot(state: _TurnState) -> _ReplaySnapshot:
+    """Copy every accumulator read by ``attach`` while its cutoff is locked."""
+    if state.replay_events:
+        # Journal frames are frozen strings, so copying the tuple is enough;
+        # avoid duplicating potentially large content/tool accumulators.
+        return _ReplaySnapshot(events=tuple(state.replay_events))
+    return _ReplaySnapshot(
+        content=deepcopy(state.content),
+        thinking=deepcopy(state.thinking),
+        tool_calls=deepcopy(state.tool_calls),
+        agent_statuses=deepcopy(state.agent_statuses),
+        agent_errors=deepcopy(state.agent_errors),
+        summarization=deepcopy(state.summarization),
+        goal_status=deepcopy(state.goal_status),
+        agent_not_configured=deepcopy(state.agent_not_configured),
+        browser_session=deepcopy(state.browser_session),
+        plan_approval=deepcopy(state.plan_approval),
+        question_asked=deepcopy(state.question_asked),
+        permission_asked=deepcopy(state.permission_asked),
+    )
 
 
 # Me store all active turns here
@@ -167,6 +289,11 @@ async def init_turn(session_id: str, *, keep_subscribers: bool = False) -> None:
         # active when a new turn starts.
         if old is not None and old.browser_session is not None:
             state.browser_session = old.browser_session
+            state.replay_events.append(
+                _ReplayEvent.from_envelope(
+                    StreamEnvelope.from_parts("browser_session", state.browser_session)
+                )
+            )
         _turns[session_id] = state
         _schedule_cleanup(session_id, state)
     except Exception as exc:
@@ -186,10 +313,79 @@ async def push_event(session_id: str, envelope: StreamEnvelope) -> None:
     :meth:`StreamEnvelope.from_parts` (for ad-hoc lifecycle events).
     """
     try:
-        state = _turns.get(session_id)
-        if state is None:
-            return
+        while True:
+            state = _turns.get(session_id)
+            if state is None:
+                return
+            async with state._lock:
+                # ``init_turn`` may replace a state while this writer waits
+                # for an attach snapshot. Retry against the current turn so
+                # the event is not written to a detached state.
+                if _turns.get(session_id) is not state:
+                    continue
+                _push_event_locked(session_id, state, envelope)
+                return
+    except Exception as exc:
+        logger.warning(
+            "memory_store_push_failed session_id={} error={}",
+            session_id,
+            exc,
+        )
 
+
+def _record_replay_event_locked(
+    state: _TurnState,
+    envelope: StreamEnvelope,
+    wire: dict[str, str],
+) -> None:
+    """Append one replay frame, pruning state that must not survive reconnect."""
+    event_type = envelope.event
+    if event_type in _NON_REPLAYABLE_EVENT_TYPES or event_type == "done":
+        return
+
+    request_event = _GATE_REPLY_TO_REQUEST.get(event_type)
+    if request_event is not None:
+        state.replay_events = [
+            entry for entry in state.replay_events if entry.event != request_event
+        ]
+        # A reconnect after resolution needs neither side of the gate. An
+        # attach whose cutoff came first already has the request snapshot and
+        # receives this reply from its live queue.
+        return
+
+    if event_type in _GATE_REQUEST_EVENT_TYPES:
+        # Each gate kind has one pending slot. A replacement supersedes the
+        # older request exactly like the accumulator fields below.
+        state.replay_events = [
+            entry for entry in state.replay_events if entry.event != event_type
+        ]
+
+    replay_envelope = envelope
+    if event_type == "summarization_start":
+        replay_envelope = StreamEnvelope.from_event(
+            SummarizationStartEvent(agent=envelope.agent)
+        )
+        wire = replay_envelope.to_wire()
+    elif event_type == "summarization_end":
+        entry = state.summarization.get(envelope.agent, {})
+        replay_envelope = StreamEnvelope.from_event(
+            SummarizationEndEvent(
+                agent=envelope.agent,
+                metadata={"error": True} if entry.get("error") else {},
+            )
+        )
+        wire = replay_envelope.to_wire()
+
+    state.replay_events.append(_ReplayEvent.from_envelope(replay_envelope, wire=wire))
+
+
+def _push_event_locked(
+    session_id: str,
+    state: _TurnState,
+    envelope: StreamEnvelope,
+) -> None:
+    """Apply and fan out one event while ``state._lock`` is held."""
+    try:
         event_type = envelope.event
         data = envelope.data
 
@@ -286,9 +482,8 @@ async def push_event(session_id: str, envelope: StreamEnvelope) -> None:
                     entry["error"] = True
 
         elif event_type == "browser_session":
-            # Store the latest browser session state for reconnect replay.
-            # Only the most recent snapshot matters — intermediate states
-            # (navigated, clicked, etc.) are not worth replaying.
+            # Store the latest state for cross-turn seeding. The replay journal
+            # below still retains every within-turn browser transition.
             state.browser_session = data
 
         elif event_type == "plan_approval_requested":
@@ -330,6 +525,7 @@ async def push_event(session_id: str, envelope: StreamEnvelope) -> None:
         # push a sentinel so `attach()` exits → the SSE coroutine yields →
         # the client's `onDone` fires → it reloads state from the DB.
         wire = envelope.to_wire()
+        _record_replay_event_locked(state, envelope, wire)
         dead: list[asyncio.Queue] = []
         for q in state.subscribers:
             try:
@@ -376,17 +572,29 @@ async def commit_agent_content(session_id: str, agent: str) -> None:
     the DB — once durable, a mid-turn reconnect must not replay it (the
     frontend loads the message from DB, replay would produce duplicates).
     """
-    state = _turns.get(session_id)
-    if state is None:
-        return
-    state.content.pop(agent, None)
-    state.thinking.pop(agent, None)
-    # Me drop tool_calls owned by this agent.  AssistantMessage rows embed
-    # their tool_calls as part of the assistant payload, so once that row is
-    # in the DB the corresponding replay entries must go too — otherwise
-    # parseTeamBlocks (DB → blocks) and the SSE replay (→ currentBlocks)
-    # each produce a tool card and the frontend renders both.
-    state.tool_calls = [tc for tc in state.tool_calls if tc.get("agent") != agent]
+    while True:
+        state = _turns.get(session_id)
+        if state is None:
+            return
+        async with state._lock:
+            if _turns.get(session_id) is not state:
+                continue
+            state.content.pop(agent, None)
+            state.thinking.pop(agent, None)
+            # Me drop tool_calls owned by this agent.  AssistantMessage rows
+            # embed their tool_calls as part of the assistant payload, so once
+            # durable they and their ordered deltas must leave replay too.
+            state.tool_calls = [
+                tc for tc in state.tool_calls if tc.get("agent") != agent
+            ]
+            state.replay_events = [
+                entry
+                for entry in state.replay_events
+                if not (
+                    entry.agent == agent and entry.event in _AGENT_CONTENT_EVENT_TYPES
+                )
+            ]
+            return
 
 
 async def mark_done(session_id: str) -> None:
@@ -446,6 +654,135 @@ def accumulated_content(session_id: str) -> dict[str, str]:
     return dict(state.content) if state is not None else {}
 
 
+def _legacy_replay_events(snapshot: _ReplaySnapshot) -> list[dict[str, str]]:
+    """Rebuild replay for pre-journal state retained during rolling upgrades."""
+    events: list[dict[str, str]] = []
+    for agent, status in snapshot.agent_statuses.items():
+        if not agent or status not in ("idle", "working", "offline", "error"):
+            continue
+        events.append(
+            StreamEnvelope.from_event(
+                AgentStatusEvent(
+                    agent=agent,
+                    status=cast(
+                        Literal["idle", "working", "offline", "error"],
+                        status,
+                    ),
+                    metadata=snapshot.agent_errors.get(agent, {}),
+                )
+            ).to_wire()
+        )
+
+    if snapshot.agent_not_configured is not None:
+        events.append(
+            StreamEnvelope.from_event(
+                AgentNotConfiguredEvent.model_validate(snapshot.agent_not_configured)
+            ).to_wire()
+        )
+
+    if snapshot.goal_status is not None:
+        events.append(
+            StreamEnvelope.from_parts(
+                event="goal_status", data=snapshot.goal_status
+            ).to_wire()
+        )
+
+    for agent, entry in snapshot.summarization.items():
+        if not agent:
+            continue
+        events.append(
+            StreamEnvelope.from_event(SummarizationStartEvent(agent=agent)).to_wire()
+        )
+        if entry.get("done"):
+            events.append(
+                StreamEnvelope.from_event(
+                    SummarizationEndEvent(
+                        agent=agent,
+                        metadata={"error": True} if entry.get("error") else {},
+                    )
+                ).to_wire()
+            )
+
+    if snapshot.browser_session is not None:
+        events.append(
+            StreamEnvelope.from_parts(
+                event="browser_session", data=snapshot.browser_session
+            ).to_wire()
+        )
+
+    if snapshot.plan_approval is not None:
+        events.append(
+            StreamEnvelope.from_parts(
+                event="plan_approval_requested", data=snapshot.plan_approval
+            ).to_wire()
+        )
+
+    if snapshot.permission_asked is not None:
+        events.append(
+            StreamEnvelope.from_parts(
+                event="permission_asked", data=snapshot.permission_asked
+            ).to_wire()
+        )
+
+    if snapshot.question_asked is not None:
+        events.append(
+            StreamEnvelope.from_parts(
+                event="question_asked", data=snapshot.question_asked
+            ).to_wire()
+        )
+
+    for agent, text in snapshot.thinking.items():
+        if text:
+            events.append(
+                StreamEnvelope.from_event(
+                    ThinkingEvent(agent=agent, text=text)
+                ).to_wire()
+            )
+
+    for tool_call in snapshot.tool_calls:
+        events.append(
+            StreamEnvelope.from_event(
+                ToolCallEvent(
+                    agent=tool_call.get("agent", ""),
+                    tool_call_id=tool_call.get("tool_call_id"),
+                    name=tool_call["name"],
+                )
+            ).to_wire()
+        )
+        if tool_call.get("started"):
+            events.append(
+                StreamEnvelope.from_event(
+                    ToolStartEvent(
+                        agent=tool_call.get("agent", ""),
+                        tool_call_id=tool_call.get("tool_call_id"),
+                        name=tool_call["name"],
+                        arguments=tool_call.get("arguments"),
+                    )
+                ).to_wire()
+            )
+        if tool_call.get("done"):
+            events.append(
+                StreamEnvelope.from_event(
+                    ToolEndEvent(
+                        agent=tool_call.get("agent", ""),
+                        tool_call_id=tool_call.get("tool_call_id"),
+                        name=tool_call["name"],
+                        result=tool_call.get("result"),
+                        metadata=tool_call.get("metadata") or {},
+                    )
+                ).to_wire()
+            )
+
+    for agent, text in snapshot.content.items():
+        if text:
+            events.append(
+                StreamEnvelope.from_event(
+                    MessageEvent(agent=agent, text=text)
+                ).to_wire()
+            )
+    return events
+
+
 async def attach(session_id: str) -> AsyncGenerator[dict[str, str], None]:
     """Yield events in SSE wire shape for the current in-flight turn.
 
@@ -455,152 +792,42 @@ async def attach(session_id: str) -> AsyncGenerator[dict[str, str], None]:
     boundary so the on-the-wire shape is guaranteed consistent.
 
     Reconnect protocol:
-    1. Read state — if not streaming, return (DB is authoritative).
-    2. Register a subscriber queue BEFORE replaying state (no gap window).
-    3. Replay accumulated state as synthetic events.
+    1. Lock the current streaming state (DB is authoritative once done).
+    2. Register a subscriber queue and capture a detached replay snapshot in
+       the same critical section. This instant is the replay/live cutoff.
+    3. Replay journal frames in original producer order. Only pre-journal
+       in-memory state falls back to the legacy synthetic reconstruction.
     4. Yield live events from queue until sentinel arrives.
     """
     try:
-        state = _turns.get(session_id)
-        if state is None:
-            return
-
-        if not state.is_streaming:
-            return
-
-        # Me register queue BEFORE replaying — no gap window.
         # maxsize=2048 gives ~4× headroom over the previous 512 for long
         # tool-heavy turns on healthy-but-slightly-lagging clients. A full
         # queue still triggers the drop-and-sentinel recovery in push_event()
         # so a genuinely stuck subscriber can't leak memory unboundedly.
         q: asyncio.Queue = asyncio.Queue(maxsize=2048)
-        state.subscribers.append(q)
+        while True:
+            state = _turns.get(session_id)
+            if state is None:
+                return
+            async with state._lock:
+                # The turn can be replaced while lock acquisition is pending.
+                # Retry so the queue always belongs to the current state.
+                if _turns.get(session_id) is not state:
+                    continue
+                if not state.is_streaming:
+                    return
+                state.subscribers.append(q)
+                snapshot = _take_replay_snapshot(state)
+                break
 
         try:
-            # Me replay lifecycle state FIRST so the frontend composer flips
-            # to the working indicator before any content events arrive.
-            # Without this, a reconnect mid-turn would leave isTeamWorking
-            # false (and the stop button hidden) until the next `done`
-            # event — even as tokens continued streaming in.
-            for agent, status in state.agent_statuses.items():
-                if not agent or status not in ("idle", "working", "offline", "error"):
-                    continue
-                yield StreamEnvelope.from_event(
-                    AgentStatusEvent(
-                        agent=agent,
-                        status=cast(
-                            Literal["idle", "working", "offline", "error"],
-                            status,
-                        ),
-                        metadata=state.agent_errors.get(agent, {}),
-                    )
-                ).to_wire()
-
-            if state.agent_not_configured is not None:
-                yield StreamEnvelope.from_event(
-                    AgentNotConfiguredEvent.model_validate(state.agent_not_configured)
-                ).to_wire()
-
-            if state.goal_status is not None:
-                yield StreamEnvelope.from_parts(
-                    event="goal_status", data=state.goal_status
-                ).to_wire()
-
-            # Me replay only compaction lifecycle state. Summary content is
-            # intentionally absent from both live and reconnect transcripts.
-            for agent, entry in state.summarization.items():
-                if not agent:
-                    continue
-                yield StreamEnvelope.from_event(
-                    SummarizationStartEvent(agent=agent)
-                ).to_wire()
-                if entry.get("done"):
-                    yield StreamEnvelope.from_event(
-                        SummarizationEndEvent(
-                            agent=agent,
-                            metadata={"error": True} if entry.get("error") else {},
-                        )
-                    ).to_wire()
-
-            # Me replay browser session state so a mid-turn reconnect shows
-            # the correct "See Browser" button state.
-            if state.browser_session is not None:
-                yield StreamEnvelope.from_parts(
-                    event="browser_session", data=state.browser_session
-                ).to_wire()
-
-            # Me replay a pending plan-approval request — the agent is
-            # still blocked on it, so a page refresh must reopen the
-            # plan-review UI (cleared when plan_approval_replied lands).
-            if state.plan_approval is not None:
-                yield StreamEnvelope.from_parts(
-                    event="plan_approval_requested", data=state.plan_approval
-                ).to_wire()
-
-            # Me replay pending ask-user / permission gates the same way —
-            # Forge/Coding do not poll REST on SSE attach.
-            if state.permission_asked is not None:
-                yield StreamEnvelope.from_parts(
-                    event="permission_asked", data=state.permission_asked
-                ).to_wire()
-
-            if state.question_asked is not None:
-                yield StreamEnvelope.from_parts(
-                    event="question_asked", data=state.question_asked
-                ).to_wire()
-
-            # Me replay accumulated thinking per-agent so the frontend can
-            # route each chunk to the correct agent panel. A single empty-
-            # agent event would land in agentStreams[""] which no UI renders.
-            for agent, text in state.thinking.items():
-                if not text:
-                    continue
-                yield StreamEnvelope.from_event(
-                    ThinkingEvent(agent=agent, text=text)
-                ).to_wire()
-
-            # Me replay tool events
-            for tc in state.tool_calls:
-                yield StreamEnvelope.from_event(
-                    ToolCallEvent(
-                        agent=tc.get("agent", ""),
-                        tool_call_id=tc.get("tool_call_id"),
-                        name=tc["name"],
-                    )
-                ).to_wire()
-                if tc.get("started"):
-                    yield StreamEnvelope.from_event(
-                        ToolStartEvent(
-                            agent=tc.get("agent", ""),
-                            tool_call_id=tc.get("tool_call_id"),
-                            name=tc["name"],
-                            arguments=tc.get("arguments"),
-                        )
-                    ).to_wire()
-                if tc.get("done"):
-                    yield StreamEnvelope.from_event(
-                        ToolEndEvent(
-                            agent=tc.get("agent", ""),
-                            tool_call_id=tc.get("tool_call_id"),
-                            name=tc["name"],
-                            result=tc.get("result"),
-                            metadata=tc.get("metadata") or {},
-                        )
-                    ).to_wire()
-
-            # Me inbox events are NOT replayed — they are DB-persisted by
-            # _persist_inbox before emission, so the frontend's loadSession
-            # already populates the user bubbles.  A live subscriber
-            # connected mid-turn still receives them via the fan-out in
-            # push_event.
-
-            # Me replay accumulated content per-agent (see thinking note above).
-            for agent, text in state.content.items():
-                if not text:
-                    continue
-                yield StreamEnvelope.from_event(
-                    MessageEvent(agent=agent, text=text)
-                ).to_wire()
+            replay_events = (
+                [entry.to_wire() for entry in snapshot.events]
+                if snapshot.events
+                else _legacy_replay_events(snapshot)
+            )
+            for replay_event in replay_events:
+                yield replay_event
 
             # Me drain live events until sentinel.  Items on the queue are
             # already in wire shape (populated by push_event via to_wire()).
@@ -611,10 +838,11 @@ async def attach(session_id: str) -> AsyncGenerator[dict[str, str], None]:
                 yield item
 
         finally:
-            try:
-                state.subscribers.remove(q)
-            except ValueError:
-                pass
+            async with state._lock:
+                try:
+                    state.subscribers.remove(q)
+                except ValueError:
+                    pass
 
     except Exception as exc:
         logger.warning(

@@ -22,6 +22,7 @@ app's desktop/access-key authentication contract.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
 import hashlib
 import io
 import ipaddress
@@ -59,6 +60,10 @@ from sqlmodel import col, select
 from sse_starlette.sse import EventSourceResponse
 
 from app.api.deps import DbSession
+from app.api.schemas.commands import CommandRenderRequest, CommandRenderResponse
+from app.api.schemas.snippets import SnippetRenderResponse
+from app.api.schemas.team import PermissionReplyRequest, PlanReplyRequest
+from app.api.schemas.workflows import WorkflowRunRequest, WorkflowRunResponse
 from app.webbridge_tags import (
     WEBBRIDGE_BROWSER_ORIGIN_TAG,
     WEBBRIDGE_SESSION_TAG,
@@ -81,10 +86,15 @@ from app.services.webbridge_artifact_service import (
     delete_artifact_bytes,
     resolve_attachment_path,
 )
+from app.services.webbridge_appearance import (
+    WebBridgeAppearanceSnapshot,
+    webbridge_appearance_store,
+)
 from app.services.agent_service import (
     AttachmentError,
     NoTeamConfigured,
     RawAttachment,
+    dispatch_user_shell_command,
     interrupt_team,
 )
 from app.services.interactive_message_service import (
@@ -95,10 +105,13 @@ from app.services.interactive_message_service import (
     submit_persisted_interactive_message,
 )
 from app.services.chat_service import (
+    cancel_queued_user_message,
     get_team_history,
     get_visible_session_rows,
     list_sessions_with_tag,
 )
+from app.services.commands import discover_commands, get_builtin_command, render_command
+from app.services.snippets import discover_snippets
 from app.services.webbridge_pairing_service import (
     DEFAULT_PAIRING_SCOPES,
     PairingGrant,
@@ -403,6 +416,85 @@ class BrowserModelOption(BaseModel):
     thinking_levels: list[str] = Field(default_factory=list)
 
 
+class BrowserPanelAppearance(BaseModel):
+    """Device-local desktop appearance projected to a paired Side Panel."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    theme_preference: Literal["system", "light", "dark"]
+    resolved_theme: Literal["light", "dark"]
+    accent: Literal["default", "blue", "green", "orange", "pink", "purple", "red"]
+    font_family: Literal["inter", "system", "mono", "geist", "anthropic-sans"]
+    font_scale: float = Field(ge=0.9, le=1.2)
+    motion_intensity: Literal[
+        "reduced", "subtle", "standard", "expressive", "cinematic"
+    ]
+    synced: bool = False
+    revision: int = Field(default=0, ge=0)
+
+
+class BrowserPanelAppearanceUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    theme_preference: Literal["system", "light", "dark"]
+    resolved_theme: Literal["light", "dark"]
+    accent: Literal["default", "blue", "green", "orange", "pink", "purple", "red"]
+    font_family: Literal["inter", "system", "mono", "geist", "anthropic-sans"]
+    font_scale: float = Field(ge=0.9, le=1.2)
+    motion_intensity: Literal[
+        "reduced", "subtle", "standard", "expressive", "cinematic"
+    ]
+
+
+def _appearance_response(
+    snapshot: WebBridgeAppearanceSnapshot,
+) -> BrowserPanelAppearance:
+    return BrowserPanelAppearance(**asdict(snapshot))
+
+
+def _require_desktop_appearance_request(request: Request) -> None:
+    """Authenticate the desktop publisher even though GET uses pairing auth."""
+    expected = expected_desktop_token()
+    if expected:
+        if desktop_token_matches(_bearer_token(request), expected):
+            return
+        raise HTTPException(status_code=401, detail="Desktop authentication required.")
+    if _trusted_local_origin(request.headers.get("origin")):
+        return
+    raise HTTPException(status_code=403, detail="Appearance sync is local-only.")
+
+
+@router.put("/appearance", response_model=BrowserPanelAppearance)
+async def update_browser_panel_appearance(
+    body: BrowserPanelAppearanceUpdate,
+    request: Request,
+) -> BrowserPanelAppearance:
+    """Publish the desktop WebView's current local appearance snapshot."""
+    _require_desktop_appearance_request(request)
+    return _appearance_response(
+        webbridge_appearance_store.update(
+            theme_preference=body.theme_preference,
+            resolved_theme=body.resolved_theme,
+            accent=body.accent,
+            font_family=body.font_family,
+            font_scale=body.font_scale,
+            motion_intensity=body.motion_intensity,
+        )
+    )
+
+
+@router.get("/appearance", response_model=BrowserPanelAppearance)
+async def get_browser_panel_appearance(
+    request: Request,
+    db: DbSession,
+) -> BrowserPanelAppearance:
+    """Return only appearance data to an authenticated browser pairing."""
+    await _paired_request(request, db, required_scope="sessions:list")
+    return _appearance_response(webbridge_appearance_store.get())
+
+
 class BrowserSessionModelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -440,6 +532,8 @@ class BrowserPanelMessage(BaseModel):
     is_summary: bool = False
     model: str | None = None
     response_duration_ms: int | None = None
+    blocks: list[dict[str, Any]] | None = None
+    shell: bool = False
 
 
 class BrowserPanelAttachment(BaseModel):
@@ -458,6 +552,81 @@ class BrowserPanelHistoryResponse(BaseModel):
     messages: list[BrowserPanelMessage] = Field(default_factory=list)
     has_more: bool = False
     next_cursor: str | None = None
+    revert: dict[str, Any] | None = None
+
+
+class BrowserPanelCommandRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    command: Literal["continue", "compact", "undo", "redo"]
+
+
+class BrowserQueuedMessageEditRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(min_length=1, max_length=100_000)
+
+    @field_validator("content")
+    @classmethod
+    def _strip_content(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("content must not be blank")
+        return value
+
+
+class BrowserQueuedMessage(BaseModel):
+    id: str
+    content: str
+    created_at: str
+    model: str | None = None
+    thinking_level: str | None = None
+    fast_mode: bool = False
+
+
+class BrowserQueuedMessagesResponse(BaseModel):
+    messages: list[BrowserQueuedMessage] = Field(default_factory=list)
+
+
+class BrowserComposerCommand(BaseModel):
+    id: str
+    label: str
+    description: str
+    category: Literal["builtin", "command", "skill", "workflow"]
+    insert_text: str | None = None
+    keep_input_open: bool = False
+    source: str | None = None
+    inputs: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class BrowserComposerSnippet(BaseModel):
+    id: str
+    label: str
+    description: str
+    source: str
+
+
+class BrowserComposerReference(BaseModel):
+    path: str
+    name: str
+    type: Literal["file", "directory"]
+
+
+class BrowserComposerCatalog(BaseModel):
+    session_id: str
+    mode: str
+    workspace: str | None = None
+    supports_shell: bool = True
+    commands: list[BrowserComposerCommand] = Field(default_factory=list)
+    snippets: list[BrowserComposerSnippet] = Field(default_factory=list)
+    references: list[BrowserComposerReference] = Field(default_factory=list)
+    references_truncated: bool = False
+
+
+class BrowserWorkflowRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    inputs: dict[str, Any] = Field(default_factory=dict)
 
 
 class BrowserPanelElement(BaseModel):
@@ -489,6 +658,7 @@ class BrowserPanelMessageRequest(BaseModel):
     origin: str = Field(max_length=2048)
     user_gesture: bool = False
     fast_mode: bool = False
+    shell: bool = False
     element: BrowserPanelElement | None = None
     contexts: list[BrowserPanelContext] = Field(default_factory=list, max_length=2)
 
@@ -791,6 +961,480 @@ async def update_browser_session_model(
     )
 
 
+_BROWSER_COMPOSER_BUILTINS: tuple[dict[str, Any], ...] = (
+    {"id": "stop", "label": "Stop", "description": "Stop all working agents"},
+    {
+        "id": "continue",
+        "label": "Continue",
+        "description": "Continue the last assistant response",
+    },
+    {
+        "id": "compact",
+        "label": "Compact",
+        "description": "Summarize and compact this session",
+    },
+    {
+        "id": "shell",
+        "label": "Shell",
+        "description": "Run a shell command",
+        "insert_text": "! ",
+        "keep_input_open": True,
+    },
+    {"id": "undo", "label": "Undo", "description": "Undo the previous message"},
+    {
+        "id": "redo",
+        "label": "Redo",
+        "description": "Restore all undone messages back to the live tip",
+    },
+    {"id": "new", "label": "New Chat", "description": "Start a fresh conversation"},
+    {
+        "id": "init",
+        "label": "Init",
+        "description": "Create or update AGENTS.md for this project",
+    },
+    {
+        "id": "btw",
+        "label": "btw",
+        "description": "Open side chat with read-only access to this session",
+    },
+    {
+        "id": "goal",
+        "label": "goal <objective>",
+        "description": "Start a durable autonomous goal",
+        "insert_text": "goal",
+        "keep_input_open": True,
+    },
+    {
+        "id": "goal:budget",
+        "label": "goal:budget <tokens>",
+        "description": "Set a token budget, or use none",
+        "insert_text": "goal:budget",
+        "keep_input_open": True,
+    },
+    {
+        "id": "goal:pause",
+        "label": "goal:pause",
+        "description": "Pause the active goal",
+    },
+    {
+        "id": "goal:resume",
+        "label": "goal:resume",
+        "description": "Resume the paused goal",
+    },
+    {
+        "id": "goal:stop",
+        "label": "goal:stop",
+        "description": "Remove the session goal",
+    },
+    {
+        "id": "skill",
+        "label": "skill:",
+        "description": "Choose a skill to use for this message",
+        "insert_text": "skill:",
+        "keep_input_open": True,
+    },
+)
+
+
+def _browser_queued_message(row: SessionMessage) -> BrowserQueuedMessage:
+    extra = row.extra if isinstance(row.extra, dict) else {}
+    panel = extra.get("webbridge_side_panel")
+    content = (
+        panel.get("user_content")
+        if isinstance(panel, dict) and isinstance(panel.get("user_content"), str)
+        else row.content
+    )
+    model = extra.get("model")
+    thinking_level = extra.get("thinking_level")
+    return BrowserQueuedMessage(
+        id=str(row.id),
+        content=str(content or ""),
+        created_at=row.created_at.isoformat(),
+        model=model if isinstance(model, str) else None,
+        thinking_level=thinking_level if isinstance(thinking_level, str) else None,
+        fast_mode=extra.get("service_tier") == "fast",
+    )
+
+
+async def _browser_queued_rows(
+    db: DbSession, session_id: uuid.UUID
+) -> list[SessionMessage]:
+    result = await db.exec(
+        select(SessionMessage)
+        .where(col(SessionMessage.session_id) == session_id)
+        .where(col(SessionMessage.role) == "user")
+        .where(col(SessionMessage.exclude_from_context))
+        .where(col(SessionMessage.extra)["queue_status"].as_string() == "queued")
+        .order_by(
+            col(SessionMessage.created_at).asc(),
+            col(SessionMessage.id).asc(),
+        )
+    )
+    return list(result.all())
+
+
+@router.post("/sessions/{session_id}/commands", status_code=202)
+async def run_browser_panel_command(
+    session_id: uuid.UUID,
+    body: BrowserPanelCommandRequest,
+    request: Request,
+    db: DbSession,
+) -> dict[str, Any]:
+    """Run the same command handler used by the Desktop composer."""
+    pairing = await _paired_request(
+        request, db, required_scope="session:messages:write"
+    )
+    await _require_pairing_webbridge_session(db, session_id, pairing.id)
+    await db.commit()
+
+    from app.api.routes.team import chat as chat_routes
+
+    return await chat_routes.team_command(
+        chat_routes.CommandRequest(command=body.command, session_id=str(session_id)),
+        db,
+    )
+
+
+@router.get(
+    "/sessions/{session_id}/queued-messages",
+    response_model=BrowserQueuedMessagesResponse,
+)
+async def list_browser_panel_queued_messages(
+    session_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+) -> BrowserQueuedMessagesResponse:
+    pairing = await _paired_request(request, db, required_scope="session-stream:read")
+    await _require_pairing_webbridge_session(db, session_id, pairing.id)
+    return BrowserQueuedMessagesResponse(
+        messages=[
+            _browser_queued_message(row)
+            for row in await _browser_queued_rows(db, session_id)
+        ]
+    )
+
+
+@router.patch(
+    "/sessions/{session_id}/queued-messages/{message_id}",
+    response_model=BrowserQueuedMessage,
+)
+async def edit_browser_panel_queued_message(
+    session_id: uuid.UUID,
+    message_id: uuid.UUID,
+    body: BrowserQueuedMessageEditRequest,
+    request: Request,
+    db: DbSession,
+) -> BrowserQueuedMessage:
+    pairing = await _paired_request(
+        request, db, required_scope="session:messages:write"
+    )
+    await _require_pairing_webbridge_session(db, session_id, pairing.id)
+    row = await db.get(SessionMessage, message_id)
+    if (
+        row is None
+        or row.session_id != session_id
+        or row.role != "user"
+        or not row.exclude_from_context
+        or not isinstance(row.extra, dict)
+        or row.extra.get("queue_status") != "queued"
+    ):
+        raise HTTPException(status_code=404, detail="Queued message not found.")
+
+    extra = dict(row.extra)
+    panel = extra.get("webbridge_side_panel")
+    if isinstance(panel, dict) and isinstance(panel.get("user_content"), str):
+        panel = dict(panel)
+        previous = panel["user_content"]
+        if row.content == previous:
+            row.content = body.content
+        elif previous and row.content.endswith(previous):
+            row.content = f"{row.content[: -len(previous)]}{body.content}"
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail="Queued browser context could not be edited safely.",
+            )
+        panel["user_content"] = body.content
+        extra["webbridge_side_panel"] = panel
+    else:
+        row.content = body.content
+    row.extra = extra
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return _browser_queued_message(row)
+
+
+@router.delete("/sessions/{session_id}/queued-messages/{message_id}", status_code=204)
+async def cancel_browser_panel_queued_message(
+    session_id: uuid.UUID,
+    message_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+) -> None:
+    pairing = await _paired_request(
+        request, db, required_scope="session:messages:write"
+    )
+    await _require_pairing_webbridge_session(db, session_id, pairing.id)
+    if not await cancel_queued_user_message(db, session_id, message_id):
+        raise HTTPException(status_code=404, detail="Queued message not found.")
+    await db.commit()
+
+
+@router.post("/sessions/{session_id}/permissions/{request_id}/reply", status_code=200)
+async def reply_browser_panel_permission(
+    session_id: uuid.UUID,
+    request_id: str,
+    body: PermissionReplyRequest,
+    request: Request,
+    db: DbSession,
+) -> dict[str, Any]:
+    pairing = await _paired_request(request, db, required_scope="handoff:reply")
+    await _require_pairing_webbridge_session(db, session_id, pairing.id)
+
+    from app.api.routes.team.permissions import reply_permission
+
+    return await reply_permission(str(session_id), request_id, body)
+
+
+@router.post("/sessions/{session_id}/plan/reply", status_code=200)
+async def reply_browser_panel_plan(
+    session_id: uuid.UUID,
+    body: PlanReplyRequest,
+    request: Request,
+    db: DbSession,
+) -> dict[str, Any]:
+    pairing = await _paired_request(request, db, required_scope="handoff:reply")
+    await _require_pairing_webbridge_session(db, session_id, pairing.id)
+
+    from app.api.routes.team.permissions import reply_plan_approval
+
+    return await reply_plan_approval(str(session_id), body)
+
+
+def _browser_composer_workspace(session: ChatSession) -> Path | None:
+    if not session.workspace:
+        return None
+    workspace = Path(session.workspace).expanduser().resolve()
+    if not workspace.is_dir():
+        raise HTTPException(
+            status_code=422,
+            detail=f"Workspace does not exist or is not a directory: {workspace}",
+        )
+    return workspace
+
+
+def _browser_composer_refs(files: list[Any]) -> list[BrowserComposerReference]:
+    refs = [
+        BrowserComposerReference(path=item.path, name=item.name, type="file")
+        for item in files
+    ]
+    directories: set[str] = set()
+    for item in files:
+        parts = str(item.path).split("/")
+        directories.update("/".join(parts[:index]) for index in range(1, len(parts)))
+    refs.extend(
+        BrowserComposerReference(
+            path=path,
+            name=path.rsplit("/", 1)[-1],
+            type="directory",
+        )
+        for path in sorted(directories)
+    )
+    return refs
+
+
+@router.get(
+    "/sessions/{session_id}/composer-catalog",
+    response_model=BrowserComposerCatalog,
+)
+async def get_browser_panel_composer_catalog(
+    session_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+) -> BrowserComposerCatalog:
+    """Return the paired session's Desktop-equivalent composer discovery data."""
+    pairing = await _paired_request(request, db, required_scope="session-stream:read")
+    session = await _require_pairing_webbridge_session(db, session_id, pairing.id)
+    workspace = _browser_composer_workspace(session)
+
+    commands = [
+        BrowserComposerCommand(category="builtin", **item)
+        for item in _BROWSER_COMPOSER_BUILTINS
+    ]
+    discovered_commands = await asyncio.to_thread(discover_commands, workspace)
+    commands.extend(
+        BrowserComposerCommand(
+            id=item.name,
+            label=item.name.replace("/", ":"),
+            description=item.description or f"Custom command ({item.source})",
+            category="command",
+            insert_text=item.name.replace("/", ":"),
+            keep_input_open=True,
+            source=item.source,
+        )
+        for item in discovered_commands.values()
+    )
+
+    from app.api.routes import skills as skill_routes
+    from app.api.routes import workflows as workflow_routes
+
+    skill_response = await skill_routes.list_skills(
+        workspace=[str(workspace)] if workspace else None,
+        mode=cast(Any, session.mode),
+    )
+    for skill in skill_response.skills:
+        if (
+            not skill.valid
+            or skill.user_invocable is False
+            or session.mode not in skill.modes
+        ):
+            continue
+        skill_name = skill.name.replace("/", ":")
+        directive = f"skill:{skill_name}"
+        starter = (skill.default_prompt or "").replace(f"${skill.name}", "").strip()
+        commands.append(
+            BrowserComposerCommand(
+                id=directive,
+                label=skill.display_name or skill_name,
+                description=(
+                    skill.short_description
+                    or skill.description
+                    or f"Load the {skill_name} skill"
+                ),
+                category="skill",
+                insert_text=f"{directive} {starter}" if starter else directive,
+                keep_input_open=True,
+                source=skill.source,
+            )
+        )
+
+    workflow_response = await workflow_routes.list_workflows(
+        db,
+        workspace=(
+            str(workspace) if workspace and session.mode in {"coding", "aim"} else None
+        ),
+    )
+    commands.extend(
+        BrowserComposerCommand(
+            id=f"workflow-{workflow.name}",
+            label=f"workflow {workflow.name}",
+            description=workflow.description or f"Run the {workflow.name} workflow",
+            category="workflow",
+            insert_text=f"workflow {workflow.name}",
+            keep_input_open=True,
+            inputs=[item.model_dump(mode="json") for item in workflow.inputs],
+            source="approved",
+        )
+        for workflow in workflow_response.workflows
+        if workflow.approved
+        and workflow.valid
+        and workflow.scope in {"work", session.mode}
+    )
+
+    snippets: list[BrowserComposerSnippet] = []
+    if session.mode == "coding" and workspace is not None:
+        discovered_snippets = await asyncio.to_thread(discover_snippets, workspace)
+        snippets = [
+            BrowserComposerSnippet(
+                id=item.name,
+                label=item.name.replace("/", ":"),
+                description=item.description or f"Snippet ({item.source})",
+                source=item.source,
+            )
+            for item in discovered_snippets.values()
+        ]
+
+    from app.api.routes.team import files as file_routes
+
+    if session.mode == "coding" and workspace is not None:
+        file_listing = await file_routes.list_coding_workspace_files(str(workspace))
+    else:
+        file_listing = await file_routes.list_workspace_files(str(session_id))
+    return BrowserComposerCatalog(
+        session_id=str(session_id),
+        mode=session.mode,
+        workspace=str(workspace) if workspace else None,
+        commands=commands,
+        snippets=snippets,
+        references=_browser_composer_refs(file_listing.files),
+        references_truncated=file_listing.truncated,
+    )
+
+
+@router.post(
+    "/sessions/{session_id}/composer/commands/{name:path}/render",
+    response_model=CommandRenderResponse,
+)
+async def render_browser_panel_command(
+    session_id: uuid.UUID,
+    name: str,
+    body: CommandRenderRequest,
+    request: Request,
+    db: DbSession,
+) -> CommandRenderResponse:
+    pairing = await _paired_request(request, db, required_scope="session-stream:read")
+    session = await _require_pairing_webbridge_session(db, session_id, pairing.id)
+    workspace = _browser_composer_workspace(session)
+    commands = await asyncio.to_thread(discover_commands, workspace)
+    command = commands.get(name) or get_builtin_command(name)
+    if command is None:
+        raise HTTPException(status_code=404, detail=f"Command '{name}' not found.")
+    return CommandRenderResponse(
+        name=command.name,
+        content=render_command(command, body.arguments),
+    )
+
+
+@router.post(
+    "/sessions/{session_id}/composer/snippets/{name:path}/render",
+    response_model=SnippetRenderResponse,
+)
+async def render_browser_panel_snippet(
+    session_id: uuid.UUID,
+    name: str,
+    request: Request,
+    db: DbSession,
+) -> SnippetRenderResponse:
+    pairing = await _paired_request(request, db, required_scope="session-stream:read")
+    session = await _require_pairing_webbridge_session(db, session_id, pairing.id)
+    workspace = _browser_composer_workspace(session)
+    if session.mode != "coding" or workspace is None:
+        raise HTTPException(status_code=404, detail=f"Snippet '{name}' not found.")
+    snippets = await asyncio.to_thread(discover_snippets, workspace)
+    snippet = snippets.get(name)
+    if snippet is None:
+        raise HTTPException(status_code=404, detail=f"Snippet '{name}' not found.")
+    return SnippetRenderResponse(name=snippet.name, content=snippet.body)
+
+
+@router.post(
+    "/sessions/{session_id}/composer/workflows/{name}/run",
+    response_model=WorkflowRunResponse,
+)
+async def run_browser_panel_workflow(
+    session_id: uuid.UUID,
+    name: str,
+    body: BrowserWorkflowRunRequest,
+    request: Request,
+    db: DbSession,
+) -> WorkflowRunResponse:
+    """Run an approved catalog workflow against the pairing-owned session."""
+    pairing = await _paired_request(
+        request, db, required_scope="session:messages:write"
+    )
+    session = await _require_pairing_webbridge_session(db, session_id, pairing.id)
+
+    from app.api.routes import workflows as workflow_routes
+
+    return await workflow_routes.run_workflow_route(
+        name,
+        WorkflowRunRequest(session_id=str(session_id), inputs=body.inputs),
+        db,
+        workspace=session.workspace,
+    )
+
+
 def _browser_panel_attachment(
     row: Any,
     index: int,
@@ -933,6 +1577,115 @@ async def _annotate_browser_artifacts(
         await db.commit()
 
 
+def _browser_panel_reasoning(row: Any, extra: dict[str, Any]) -> str | None:
+    for value in (
+        getattr(row, "reasoning_content", None),
+        extra.get("reasoning_content"),
+        extra.get("reasoning"),
+        extra.get("thinking"),
+    ):
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _browser_panel_blocks(
+    row: Any,
+    *,
+    agent: str | None,
+    display_content: Any,
+    extra: dict[str, Any],
+    tool_results: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if row.role != "assistant":
+        return []
+    blocks: list[dict[str, Any]] = []
+    reasoning = _browser_panel_reasoning(row, extra)
+    if reasoning:
+        blocks.append(
+            {
+                "id": f"{row.id}:thinking",
+                "type": "thinking",
+                "agent": agent,
+                "chars": len(reasoning),
+            }
+        )
+    if display_content:
+        text_block: dict[str, Any] = {
+            "id": f"{row.id}:text",
+            "type": "text",
+            "agent": agent,
+            "content": str(display_content),
+        }
+        if isinstance(extra.get("model"), str):
+            text_block["model"] = extra["model"]
+        if isinstance(extra.get("duration_ms"), int | float):
+            text_block["response_duration_ms"] = max(0, round(extra["duration_ms"]))
+        blocks.append(text_block)
+
+    for index, tool_call in enumerate(row.tool_calls or []):
+        if not isinstance(tool_call, dict):
+            continue
+        function = tool_call.get("function")
+        if not isinstance(function, dict):
+            continue
+        name = function.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        name = name.strip()
+        tool_call_id = str(tool_call.get("id") or "")
+        tool_result = tool_results.get(tool_call_id)
+        result_extra = (
+            tool_result.extra
+            if tool_result is not None and isinstance(tool_result.extra, dict)
+            else {}
+        )
+        raw_duration = result_extra.get("duration_ms")
+        duration_ms = (
+            max(0, round(raw_duration))
+            if isinstance(raw_duration, int | float)
+            else None
+        )
+        block: dict[str, Any] = {
+            "id": f"{row.id}:tool:{tool_call_id or index}",
+            "type": "tool",
+            "agent": agent,
+            "name": name,
+            "tool_call_id": tool_call_id,
+            "done": tool_result is not None,
+        }
+        if duration_ms is not None:
+            block["duration_ms"] = duration_ms
+
+        parsed_arguments: dict[str, Any] | None = None
+        raw_arguments = function.get("arguments")
+        if isinstance(raw_arguments, dict):
+            parsed_arguments = raw_arguments
+        elif isinstance(raw_arguments, str):
+            try:
+                decoded = json.loads(raw_arguments)
+                parsed_arguments = decoded if isinstance(decoded, dict) else None
+            except (TypeError, json.JSONDecodeError):
+                pass
+        widget_html = (
+            parsed_arguments.get("widget_code")
+            if name == "show_widget" and parsed_arguments is not None
+            else None
+        )
+        if isinstance(widget_html, str):
+            block.update(
+                {
+                    "type": "widget",
+                    "html": widget_html,
+                    "is_final": True,
+                }
+            )
+            if isinstance(parsed_arguments.get("title"), str):
+                block["title"] = parsed_arguments["title"]
+        blocks.append(block)
+    return blocks
+
+
 def _browser_panel_messages(
     rows: list[Any],
     *,
@@ -955,6 +1708,7 @@ def _browser_panel_messages(
             and isinstance(side_panel.get("user_content"), str)
             else row.content
         )
+        agent = (member_names or {}).get(row.session_id) or row.name
         activities: list[BrowserPanelActivity] = []
         for tool_call in row.tool_calls or []:
             if not isinstance(tool_call, dict):
@@ -983,7 +1737,14 @@ def _browser_panel_messages(
                     ),
                 )
             )
-        raw_attachments = (row.extra or {}).get("attachments")
+        blocks = _browser_panel_blocks(
+            row,
+            agent=agent,
+            display_content=display_content,
+            extra=extra,
+            tool_results=tool_results,
+        )
+        raw_attachments = extra.get("attachments")
         attachments = [
             projected
             for index, value in enumerate(
@@ -1000,7 +1761,7 @@ def _browser_panel_messages(
             )
             is not None
         ]
-        if not display_content and not attachments and not activities:
+        if not display_content and not attachments and not activities and not blocks:
             continue
         raw_duration = extra.get("duration_ms")
         raw_model = extra.get("model")
@@ -1009,7 +1770,7 @@ def _browser_panel_messages(
                 id=str(row.id),
                 role=row.role,
                 content=str(display_content or ""),
-                agent=(member_names or {}).get(row.session_id) or row.name,
+                agent=agent,
                 created_at=row.created_at.isoformat(),
                 attachments=attachments,
                 activities=activities,
@@ -1019,6 +1780,13 @@ def _browser_panel_messages(
                     max(0, round(raw_duration))
                     if isinstance(raw_duration, int | float)
                     else None
+                ),
+                blocks=blocks or None,
+                shell=(
+                    row.role == "user"
+                    and (
+                        extra.get("kind") == "user_shell" or extra.get("shell") is True
+                    )
                 ),
             )
         )
@@ -1063,72 +1831,322 @@ def _resolve_session_media(root: Path, relative_path: str) -> Path:
     return resolved
 
 
+_BROWSER_PANEL_STREAM_EVENT_TYPES = frozenset(
+    {
+        "session",
+        "title_update",
+        "thinking",
+        "message",
+        "tool_call",
+        "tool_start",
+        "tool_output_delta",
+        "widget_delta",
+        "tool_end",
+        "rate_limit",
+        "provider_status",
+        "usage",
+        "inbox",
+        "handoff",
+        "delegation",
+        "queued_turn_start",
+        "workflow_progress",
+        "goal_status",
+        "desktop_notification",
+        "agent_status",
+        "done",
+        "error",
+        "summarization_start",
+        "summarization_content",
+        "summarization_end",
+        "agent_not_configured",
+        "browser_session",
+        "permission_asked",
+        "permission_replied",
+        "plan_approval_requested",
+        "plan_approval_replied",
+        "turn_changes",
+        "question_asked",
+        "question_replied",
+    }
+)
+
+
 def _browser_panel_stream_event(event: dict[str, Any]) -> dict[str, str] | None:
-    """Keep Side Chat live while withholding raw tool arguments and output."""
+    """Project the canonical stream through the WebBridge trust boundary.
+
+    Event names and ordering stay canonical, but fields are explicitly
+    whitelisted. Raw reasoning, tool payloads, approval bodies and arbitrary
+    metadata remain available only to the authenticated Desktop client.
+    """
     event_type = str(event.get("event") or "")
+    if event_type not in _BROWSER_PANEL_STREAM_EVENT_TYPES:
+        return None
     raw_data = event.get("data")
     try:
         data = json.loads(raw_data) if isinstance(raw_data, str) else raw_data
     except (TypeError, json.JSONDecodeError):
         return None
-    if event_type == "thinking":
-        if not isinstance(data, dict):
-            return None
-        text = data.get("text")
-        return {
-            "event": "thinking",
-            "data": json.dumps(
-                {
-                    "type": "thinking",
-                    "agent": str(data.get("agent") or "EvoFlux"),
-                    "chars": len(text) if isinstance(text, str) else 0,
-                },
-                separators=(",", ":"),
-            ),
-        }
-    if event_type in {
-        "agent_status",
-        "done",
-        "error",
-        "message",
-        "provider_status",
-        "question_asked",
-        "session",
-        "title_update",
-    }:
-        return event
-    activity_states = {
-        "tool_call": "queued",
-        "tool_start": "running",
-        "tool_end": "done",
-    }
-    state = activity_states.get(event_type)
-    if state is None:
-        return None
     if not isinstance(data, dict):
         return None
-    metadata = data.get("metadata")
-    raw_duration = data.get("duration_ms")
-    if not isinstance(raw_duration, int | float) and isinstance(metadata, dict):
-        raw_duration = metadata.get("duration_ms")
-    return {
-        "event": "activity",
-        "data": json.dumps(
-            {
-                "type": "activity",
-                "id": str(data.get("tool_call_id") or ""),
-                "agent": str(data.get("agent") or "EvoFlux"),
-                "name": str(data.get("name") or "tool"),
-                "state": state,
-                **(
-                    {"duration_ms": max(0, round(raw_duration))}
-                    if isinstance(raw_duration, int | float)
-                    else {}
-                ),
-            },
-            separators=(",", ":"),
-        ),
-    }
+
+    projected: dict[str, Any] = {"type": event_type}
+
+    def copy_strings(*keys: str) -> None:
+        for key in keys:
+            value = data.get(key)
+            if isinstance(value, str):
+                projected[key] = value
+
+    def copy_numbers(*keys: str) -> None:
+        for key in keys:
+            value = data.get(key)
+            if isinstance(value, int | float) and not isinstance(value, bool):
+                projected[key] = value
+
+    def copy_bools(*keys: str) -> None:
+        for key in keys:
+            value = data.get(key)
+            if isinstance(value, bool):
+                projected[key] = value
+
+    if event_type == "session":
+        copy_strings("session_id")
+    elif event_type == "title_update":
+        copy_strings("title")
+    elif event_type == "thinking":
+        copy_strings("agent")
+        text = data.get("text")
+        raw_chars = data.get("chars")
+        projected["chars"] = (
+            len(text)
+            if isinstance(text, str)
+            else max(0, raw_chars)
+            if isinstance(raw_chars, int) and not isinstance(raw_chars, bool)
+            else 0
+        )
+    elif event_type == "message":
+        copy_strings("agent", "text")
+    elif event_type in {"tool_call", "tool_start", "tool_end"}:
+        identifier = data.get("id") or data.get("tool_call_id")
+        if isinstance(identifier, str):
+            projected["id"] = identifier
+        copy_strings("agent", "name")
+        projected["state"] = {
+            "tool_call": "queued",
+            "tool_start": "running",
+            "tool_end": "done",
+        }[event_type]
+        raw_duration = data.get("duration_ms")
+        metadata = data.get("metadata")
+        if not isinstance(raw_duration, int | float) and isinstance(metadata, dict):
+            raw_duration = metadata.get("duration_ms")
+        if isinstance(raw_duration, int | float) and not isinstance(raw_duration, bool):
+            try:
+                projected["duration_ms"] = max(0, round(raw_duration))
+            except (OverflowError, ValueError):
+                pass
+    elif event_type == "tool_output_delta":
+        identifier = data.get("id") or data.get("tool_call_id")
+        if isinstance(identifier, str):
+            projected["id"] = identifier
+        copy_strings("agent", "name")
+        stream = data.get("stream")
+        if stream in {"stdout", "stderr", "combined"}:
+            projected["stream"] = stream
+        text = data.get("text")
+        raw_chars = data.get("chars")
+        projected["chars"] = (
+            len(text)
+            if isinstance(text, str)
+            else max(0, raw_chars)
+            if isinstance(raw_chars, int) and not isinstance(raw_chars, bool)
+            else 0
+        )
+        projected["redacted"] = True
+    elif event_type == "widget_delta":
+        identifier = data.get("id") or data.get("tool_call_id")
+        if isinstance(identifier, str):
+            projected["id"] = identifier
+        copy_strings("agent", "html", "title")
+        copy_bools("is_final")
+        metadata = data.get("metadata")
+        if "title" not in projected and isinstance(metadata, dict):
+            title = metadata.get("title")
+            if isinstance(title, str):
+                projected["title"] = title
+    elif event_type == "rate_limit":
+        copy_numbers("retry_after", "attempt", "max_attempts")
+    elif event_type == "provider_status":
+        copy_strings(
+            "agent",
+            "status",
+            "model",
+            "primary",
+            "fallback",
+            "error_type",
+        )
+        copy_numbers(
+            "attempt",
+            "max_attempts",
+            "delay_seconds",
+            "status_code",
+            "retry_after",
+        )
+    elif event_type == "usage":
+        copy_numbers(
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+            "cached_tokens",
+            "thoughts_tokens",
+            "tool_use_tokens",
+        )
+    elif event_type == "inbox":
+        copy_strings("agent", "from_agent", "status")
+    elif event_type == "handoff":
+        copy_strings("agent", "from_agent")
+        to_agents = data.get("to_agents")
+        if isinstance(to_agents, list):
+            projected["to_agents"] = [
+                value for value in to_agents if isinstance(value, str)
+            ]
+    elif event_type == "delegation":
+        copy_strings("agent", "from", "status")
+        for key in ("to", "task_ids"):
+            value = data.get(key)
+            if isinstance(value, list):
+                projected[key] = [item for item in value if isinstance(item, str)]
+    elif event_type == "queued_turn_start":
+        copy_strings("agent")
+        message_ids = data.get("message_ids")
+        if isinstance(message_ids, list):
+            projected["message_ids"] = [
+                value for value in message_ids if isinstance(value, str)
+            ]
+        messages = data.get("messages")
+        if isinstance(messages, list):
+            projected["messages"] = [
+                {"id": item["id"], "content": item["content"]}
+                for item in messages
+                if isinstance(item, dict)
+                and isinstance(item.get("id"), str)
+                and isinstance(item.get("content"), str)
+            ]
+    elif event_type == "workflow_progress":
+        copy_strings("session_id", "execution_id", "status", "node_id")
+        copy_numbers("node_index", "total_nodes")
+    elif event_type == "goal_status":
+        copy_strings("session_id")
+        goal = data.get("goal")
+        if isinstance(goal, dict):
+            safe_goal: dict[str, Any] = {}
+            if isinstance(goal.get("status"), str):
+                safe_goal["status"] = goal["status"]
+            for key in (
+                "token_budget",
+                "tokens_used",
+                "time_used_seconds",
+                "blocker_streak",
+                "version",
+            ):
+                value = goal.get(key)
+                if isinstance(value, int | float) and not isinstance(value, bool):
+                    safe_goal[key] = value
+            projected["goal"] = safe_goal
+        elif goal is None:
+            projected["goal"] = None
+    elif event_type == "desktop_notification":
+        copy_strings("kind", "session_id")
+    elif event_type == "agent_status":
+        copy_strings("agent", "status")
+    elif event_type == "done":
+        copy_bools("can_continue")
+    elif event_type == "error":
+        projected["message"] = "An error occurred. Open EvoFlux Desktop for details."
+        code = data.get("code")
+        if (
+            isinstance(code, str)
+            and 1 <= len(code) <= 80
+            and all(
+                char.isascii() and (char.isalnum() or char in "_.:-") for char in code
+            )
+        ):
+            projected["code"] = code
+    elif event_type in {"summarization_start", "summarization_end"}:
+        copy_strings("agent")
+        if event_type == "summarization_end":
+            metadata = data.get("metadata")
+            if isinstance(metadata, dict) and isinstance(metadata.get("error"), bool):
+                projected["error"] = metadata["error"]
+    elif event_type == "summarization_content":
+        copy_strings("agent")
+        text = data.get("text")
+        projected["chars"] = len(text) if isinstance(text, str) else 0
+    elif event_type == "agent_not_configured":
+        copy_strings("agent", "request_id", "session_id")
+    elif event_type == "browser_session":
+        copy_strings("agent", "action")
+        copy_bools("active")
+    elif event_type == "permission_asked":
+        copy_strings("request_id", "session_id", "tool")
+    elif event_type == "permission_replied":
+        copy_strings("request_id", "session_id")
+    elif event_type == "plan_approval_requested":
+        copy_strings("request_id", "session_id")
+    elif event_type == "plan_approval_replied":
+        copy_strings("request_id", "session_id")
+    elif event_type == "turn_changes":
+        copy_strings("session_id")
+        copy_numbers("additions", "deletions")
+        files = data.get("files")
+        if isinstance(files, list):
+            projected["file_count"] = len(files)
+    elif event_type == "question_asked":
+        copy_strings("request_id", "session_id")
+        questions = data.get("questions")
+        if isinstance(questions, list):
+            safe_questions: list[dict[str, Any]] = []
+            for question in questions:
+                if not isinstance(question, dict) or not isinstance(
+                    question.get("question"), str
+                ):
+                    continue
+                safe_question: dict[str, Any] = {"question": question["question"]}
+                options = question.get("options")
+                if isinstance(options, list):
+                    safe_question["options"] = [
+                        option for option in options if isinstance(option, str)
+                    ]
+                if isinstance(question.get("kind"), str):
+                    safe_question["kind"] = question["kind"]
+                browser_handoff = question.get("browser_handoff")
+                if isinstance(browser_handoff, dict):
+                    safe_question["browser_handoff"] = {
+                        key: value
+                        for key in ("kind", "title", "action", "consequence", "target")
+                        if isinstance((value := browser_handoff.get(key)), str)
+                    }
+                agent_spawn = question.get("agent_spawn")
+                if isinstance(agent_spawn, dict):
+                    safe_question["agent_spawn"] = {
+                        key: value
+                        for key in (
+                            "blueprint",
+                            "default_model",
+                            "default_thinking_level",
+                        )
+                        if isinstance((value := agent_spawn.get(key)), str)
+                    }
+                safe_questions.append(safe_question)
+            projected["questions"] = safe_questions
+    elif event_type == "question_replied":
+        copy_strings("request_id", "session_id", "status")
+
+    try:
+        encoded = json.dumps(projected, separators=(",", ":"))
+    except (TypeError, ValueError):
+        return None
+    return {"event": event_type, "data": encoded}
 
 
 async def _require_panel_binding(
@@ -1191,7 +2209,7 @@ async def get_browser_panel_history(
 ) -> BrowserPanelHistoryResponse:
     """Read a pairing-owned transcript without exposing generic team history."""
     pairing = await _paired_request(request, db, required_scope="session-stream:read")
-    await _require_pairing_webbridge_session(db, session_id, pairing.id)
+    session = await _require_pairing_webbridge_session(db, session_id, pairing.id)
     try:
         history = await get_team_history(db, session_id, before=before)
     except ValueError as exc:
@@ -1220,6 +2238,7 @@ async def get_browser_panel_history(
         messages=messages,
         has_more=history.has_more,
         next_cursor=history.next_cursor,
+        revert=dict(session.revert) if isinstance(session.revert, dict) else None,
     )
 
 
@@ -1386,6 +2405,132 @@ async def send_browser_panel_message(
     )
 
 
+async def _dispatch_browser_panel_shell(
+    *,
+    session_id: uuid.UUID,
+    body: BrowserPanelMessageRequest,
+    db: DbSession,
+    pairing_id: uuid.UUID,
+    idempotency_key: str,
+    source_scope: str,
+    request_hash_extra: str,
+    audit_action: str,
+) -> BrowserPanelMessageAck:
+    if (
+        body.contexts
+        or body.element is not None
+        or getattr(body, "diagnostics", [])
+        or request_hash_extra
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "shell_context_unsupported",
+                "message": "Shell commands cannot include browser context or files.",
+            },
+        )
+    command = body.content.removeprefix("!").strip()
+    if not command:
+        raise HTTPException(status_code=422, detail="Shell command is required.")
+
+    interaction_id = (
+        "panel-shell:" + hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()
+    )
+    request_payload = body.model_dump(mode="json")
+    try:
+        interaction, created = await create_or_get_interaction(
+            db,
+            pairing_id=pairing_id,
+            interaction_id=interaction_id,
+            request_payload=request_payload,
+            kind="composer.shell",
+            delivery="submit",
+            status="pending",
+            target_session_id=session_id,
+            origin=source_scope,
+            tab_id=body.tab_id,
+            page_instance_id=None,
+            payload_metadata={"shell": True},
+            prompt=command,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "idempotency_conflict", "message": str(exc)},
+        ) from exc
+    if created:
+        await db.commit()
+    elif interaction.status == "accepted":
+        return BrowserPanelMessageAck(
+            status="accepted", session_id=str(session_id), message_id=None
+        )
+    elif interaction.status == "rejected":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": interaction.error_code or "dispatch_unavailable",
+                "message": interaction.error
+                or "Shell command could not be dispatched.",
+            },
+        )
+
+    if not await claim_interaction_dispatch(db, interaction):
+        return BrowserPanelMessageAck(
+            status="pending", session_id=str(session_id), message_id=None
+        )
+
+    try:
+        session, team = await resolve_team_for_session(
+            db, str(session_id), require_existing=True
+        )
+        assert session is not None
+        await dispatch_user_shell_command(
+            team,
+            command=command,
+            session_id=str(session_id),
+            mode=session.mode,
+            workspace=session.workspace,
+            model=session.model,
+            model_provided=session.model is not None,
+            thinking_level=session.thinking_level,
+            thinking_level_provided=session.thinking_level is not None,
+            service_tier=(
+                "fast"
+                if body.fast_mode and (session.model or "").startswith("codex:")
+                else None
+            ),
+        )
+    except (NoTeamConfigured, ValueError) as exc:
+        interaction.status = "rejected"
+        interaction.error_code = "dispatch_unavailable"
+        interaction.error = str(exc)
+        interaction.processed_at = datetime.now(timezone.utc)
+        interaction.dispatch_lease_until = None
+        db.add(interaction)
+        await db.commit()
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "dispatch_unavailable", "message": str(exc)},
+        ) from exc
+
+    interaction.status = "accepted"
+    interaction.processed_at = datetime.now(timezone.utc)
+    interaction.dispatch_lease_until = None
+    db.add(interaction)
+    await db.commit()
+    webbridge_manager.record_interaction_audit(
+        session_id=str(session_id),
+        extension_id=str(pairing_id),
+        action=f"{audit_action}.shell",
+        url=source_scope,
+        success=True,
+        error=None,
+    )
+    return BrowserPanelMessageAck(
+        status="accepted", session_id=str(session_id), message_id=None
+    )
+
+
 async def _dispatch_browser_panel_message(
     *,
     session_id: uuid.UUID,
@@ -1463,6 +2608,25 @@ async def _dispatch_browser_panel_message(
             + request_hash_extra
         ).encode("utf-8")
     ).hexdigest()
+    if body.shell:
+        if attachments:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "shell_context_unsupported",
+                    "message": "Shell commands cannot include browser context or files.",
+                },
+            )
+        return await _dispatch_browser_panel_shell(
+            session_id=session_id,
+            body=body,
+            db=db,
+            pairing_id=pairing.id,
+            idempotency_key=idempotency_key,
+            source_scope=source_scope,
+            request_hash_extra=request_hash_extra,
+            audit_action=audit_action,
+        )
     existing_message = await find_interactive_message_by_source(
         db, session_id=session_id, source_key=source_key
     )

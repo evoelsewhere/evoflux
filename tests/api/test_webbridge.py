@@ -67,6 +67,7 @@ from app.services.interactive_message_service import (
     InteractiveMessageResult,
     submit_persisted_interactive_message,
 )
+from app.services.webbridge_appearance import WebBridgeAppearanceStore
 
 _PREFIX = "/api/team/webbridge"
 
@@ -108,75 +109,541 @@ def test_webbridge_tool_routes_spawned_members_through_lead_session():
     assert _get_sid(state) == "lead-session"
 
 
-def test_side_chat_stream_sanitizes_tool_activity():
+@pytest.mark.parametrize(
+    ("event_type", "payload", "expected"),
+    [
+        (
+            "thinking",
+            {
+                "agent": "lead",
+                "text": "must-not-leak reasoning",
+                "metadata": {"model": "must-not-leak"},
+            },
+            {"type": "thinking", "agent": "lead", "chars": 23},
+        ),
+        (
+            "tool_call",
+            {
+                "agent": "lead",
+                "tool_call_id": "call-1",
+                "name": "webbridge",
+                "arguments": "must-not-leak",
+                "metadata": {"private": "must-not-leak"},
+            },
+            {
+                "type": "tool_call",
+                "id": "call-1",
+                "agent": "lead",
+                "name": "webbridge",
+                "state": "queued",
+            },
+        ),
+        (
+            "tool_start",
+            {
+                "agent": "lead",
+                "tool_call_id": "call-1",
+                "name": "webbridge",
+                "arguments": '{"token":"must-not-leak"}',
+                "metadata": {"duration_ms": 1250, "private": "must-not-leak"},
+            },
+            {
+                "type": "tool_start",
+                "id": "call-1",
+                "agent": "lead",
+                "name": "webbridge",
+                "state": "running",
+                "duration_ms": 1250,
+            },
+        ),
+        (
+            "tool_output_delta",
+            {
+                "tool_call_id": "call-1",
+                "agent": "lead",
+                "name": "shell",
+                "stream": "stderr",
+                "text": "must-not-leak",
+                "sequence": 2,
+                "metadata": {"private": "must-not-leak"},
+            },
+            {
+                "type": "tool_output_delta",
+                "id": "call-1",
+                "agent": "lead",
+                "name": "shell",
+                "stream": "stderr",
+                "chars": 13,
+                "redacted": True,
+            },
+        ),
+        (
+            "tool_end",
+            {
+                "agent": "lead",
+                "tool_call_id": "call-1",
+                "name": "webbridge",
+                "result": {"secret": "must-not-leak"},
+                "metadata": {"duration_ms": 420, "private": "must-not-leak"},
+            },
+            {
+                "type": "tool_end",
+                "id": "call-1",
+                "agent": "lead",
+                "name": "webbridge",
+                "state": "done",
+                "duration_ms": 420,
+            },
+        ),
+        (
+            "widget_delta",
+            {
+                "agent": "lead",
+                "tool_call_id": "call-1",
+                "html": "<section>trusted tool widget</section>",
+                "is_final": True,
+                "title": "Status",
+                "metadata": {"private": "must-not-leak"},
+            },
+            {
+                "type": "widget_delta",
+                "id": "call-1",
+                "agent": "lead",
+                "html": "<section>trusted tool widget</section>",
+                "is_final": True,
+                "title": "Status",
+            },
+        ),
+        (
+            "rate_limit",
+            {
+                "retry_after": 15,
+                "attempt": 1,
+                "max_attempts": 3,
+                "metadata": {"private": "must-not-leak"},
+            },
+            {
+                "type": "rate_limit",
+                "retry_after": 15,
+                "attempt": 1,
+                "max_attempts": 3,
+            },
+        ),
+        (
+            "summarization_start",
+            {"agent": "lead", "metadata": {"reason": "must-not-leak"}},
+            {"type": "summarization_start", "agent": "lead"},
+        ),
+        (
+            "summarization_content",
+            {"agent": "lead", "text": "must-not-leak"},
+            {"type": "summarization_content", "agent": "lead", "chars": 13},
+        ),
+        (
+            "summarization_end",
+            {
+                "agent": "lead",
+                "summary": "must-not-leak",
+                "metadata": {"error": False, "private": "must-not-leak"},
+            },
+            {"type": "summarization_end", "agent": "lead", "error": False},
+        ),
+    ],
+)
+def test_side_chat_stream_sanitizes_typed_block_payloads(
+    event_type: str,
+    payload: dict[str, object],
+    expected: dict[str, object],
+):
+    event = _browser_panel_stream_event(
+        {"event": event_type, "data": json.dumps(payload)}
+    )
+
+    assert event is not None
+    assert event["event"] == event_type
+    assert json.loads(event["data"]) == expected
+    assert "must-not-leak" not in event["data"]
+
+
+def test_side_chat_stream_keeps_safe_queued_turn_chronology():
     event = _browser_panel_stream_event(
         {
-            "event": "tool_start",
+            "event": "queued_turn_start",
             "data": json.dumps(
                 {
+                    "type": "queued_turn_start",
                     "agent": "lead",
-                    "tool_call_id": "call-1",
-                    "name": "webbridge",
-                    "arguments": '{"url":"https://secret.example"}',
-                    "result": "private output",
-                    "metadata": {"duration_ms": 1250},
+                    "message_ids": ["message-1", 2],
+                    "messages": [
+                        {
+                            "id": "message-1",
+                            "content": "Continue with the queued request",
+                            "metadata": {"reasoning": "must-not-leak"},
+                        },
+                        {"id": 2, "content": "invalid id"},
+                    ],
+                    "metadata": {"tool_output": "must-not-leak"},
                 }
             ),
         }
     )
 
     assert event is not None
-    assert event["event"] == "activity"
-    data = json.loads(event["data"])
-    assert data == {
-        "type": "activity",
-        "id": "call-1",
+    assert event["event"] == "queued_turn_start"
+    assert json.loads(event["data"]) == {
+        "type": "queued_turn_start",
         "agent": "lead",
-        "name": "webbridge",
-        "state": "running",
-        "duration_ms": 1250,
+        "message_ids": ["message-1"],
+        "messages": [
+            {
+                "id": "message-1",
+                "content": "Continue with the queued request",
+            },
+        ],
     }
-    assert "secret.example" not in event["data"]
-    assert "private output" not in event["data"]
-    provider = _browser_panel_stream_event(
+    assert "must-not-leak" not in event["data"]
+
+
+def test_side_chat_stream_strips_question_reply_answers():
+    event = _browser_panel_stream_event(
         {
-            "event": "provider_status",
+            "event": "question_replied",
             "data": json.dumps(
                 {
-                    "type": "provider_status",
-                    "status": "fallback",
-                    "primary": "model-a",
-                    "fallback": "model-b",
+                    "type": "question_replied",
+                    "request_id": "question-1",
+                    "session_id": "session-1",
+                    "status": "answered",
+                    "answers": ["private answer"],
+                    "metadata": {"reasoning": "must-not-leak"},
                 }
             ),
         }
     )
-    assert provider is not None
-    assert provider["event"] == "provider_status"
 
-    thinking = _browser_panel_stream_event(
+    assert event is not None
+    assert event["event"] == "question_replied"
+    assert json.loads(event["data"]) == {
+        "type": "question_replied",
+        "request_id": "question-1",
+        "session_id": "session-1",
+        "status": "answered",
+    }
+    assert "private answer" not in event["data"]
+    assert "must-not-leak" not in event["data"]
+
+
+@pytest.mark.parametrize(
+    ("source_event", "source_data", "expected"),
+    [
+        (
+            "permission_asked",
+            {
+                "request_id": "permission-1",
+                "session_id": "session-1",
+                "tool": "shell",
+                "patterns": ["cat /private/file"],
+                "metadata": {"arguments": {"command": "must-not-leak"}},
+            },
+            {
+                "type": "permission_asked",
+                "request_id": "permission-1",
+                "session_id": "session-1",
+                "tool": "shell",
+            },
+        ),
+        (
+            "permission_replied",
+            {
+                "request_id": "permission-1",
+                "session_id": "session-1",
+                "reply": "always",
+                "metadata": {"arguments": "must-not-leak"},
+            },
+            {
+                "type": "permission_replied",
+                "request_id": "permission-1",
+                "session_id": "session-1",
+            },
+        ),
+        (
+            "plan_approval_requested",
+            {
+                "request_id": "plan-1",
+                "session_id": "session-1",
+                "plan": "Private plan body",
+                "steps": [
+                    {
+                        "tool": "shell",
+                        "args": {"command": "must-not-leak"},
+                        "summary": "Internal summary",
+                    }
+                ],
+            },
+            {
+                "type": "plan_approval_requested",
+                "request_id": "plan-1",
+                "session_id": "session-1",
+            },
+        ),
+        (
+            "plan_approval_replied",
+            {
+                "request_id": "plan-1",
+                "session_id": "session-1",
+                "decision": "revise",
+                "metadata": {"feedback": "must-not-leak"},
+            },
+            {
+                "type": "plan_approval_replied",
+                "request_id": "plan-1",
+                "session_id": "session-1",
+            },
+        ),
+        (
+            "agent_not_configured",
+            {
+                "agent": "lead",
+                "message": "Private provider configuration detail",
+                "action": {"type": "open_settings", "tab": "providers"},
+            },
+            {"type": "agent_not_configured", "agent": "lead"},
+        ),
+    ],
+)
+def test_side_chat_stream_keeps_only_safe_desktop_gate_identifiers(
+    source_event: str,
+    source_data: dict[str, object],
+    expected: dict[str, object],
+):
+    event = _browser_panel_stream_event(
+        {"event": source_event, "data": json.dumps(source_data)}
+    )
+
+    assert event is not None
+    assert event["event"] == source_event
+    assert json.loads(event["data"]) == expected
+    assert "must-not-leak" not in event["data"]
+    assert "Private" not in event["data"]
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        {"event": "unknown_event", "data": "{}"},
+        {"event": "message", "data": "not-json"},
+        {"event": "message", "data": "[]"},
+    ],
+)
+def test_side_chat_stream_drops_unknown_or_malformed_envelopes(event: dict):
+    assert _browser_panel_stream_event(event) is None
+
+
+def test_side_chat_stream_uses_envelope_event_as_authoritative_type():
+    event = _browser_panel_stream_event(
         {
-            "event": "thinking",
+            "event": "message",
             "data": json.dumps(
                 {
+                    "type": "thinking",
                     "agent": "lead",
-                    "text": "private chain of thought",
-                    "metadata": {"model": "openai:gpt-test"},
+                    "text": "hello",
+                    "metadata": {"reasoning": "must-not-leak"},
                 }
             ),
         }
     )
-    assert thinking is not None
-    assert thinking["event"] == "thinking"
-    assert json.loads(thinking["data"]) == {
-        "type": "thinking",
+
+    assert event is not None
+    assert json.loads(event["data"]) == {
+        "type": "message",
         "agent": "lead",
-        "chars": 24,
+        "text": "hello",
     }
-    assert "private chain of thought" not in thinking["data"]
+    assert "must-not-leak" not in event["data"]
 
 
-def test_side_chat_history_matches_canonical_chat_without_leaking_tool_payloads():
+@pytest.mark.parametrize(
+    ("event_type", "payload", "expected"),
+    [
+        (
+            "inbox",
+            {
+                "agent": "lead",
+                "from_agent": "researcher",
+                "content": "must-not-leak",
+                "_handoff_artifact": {"secret": "must-not-leak"},
+            },
+            {"type": "inbox", "agent": "lead", "from_agent": "researcher"},
+        ),
+        (
+            "workflow_progress",
+            {
+                "session_id": "session-1",
+                "execution_id": "execution-1",
+                "definition_name": "must-not-leak",
+                "status": "running",
+                "node_id": "step-1",
+                "node_index": 1,
+                "total_nodes": 3,
+                "error": "must-not-leak",
+            },
+            {
+                "type": "workflow_progress",
+                "session_id": "session-1",
+                "execution_id": "execution-1",
+                "status": "running",
+                "node_id": "step-1",
+                "node_index": 1,
+                "total_nodes": 3,
+            },
+        ),
+        (
+            "goal_status",
+            {
+                "session_id": "session-1",
+                "goal": {
+                    "objective": "must-not-leak",
+                    "status": "active",
+                    "token_budget": 1_000,
+                    "tokens_used": 125,
+                    "time_used_seconds": 3.5,
+                    "blocker_streak": 0,
+                    "version": 2,
+                    "status_details": {"secret": "must-not-leak"},
+                },
+                "metadata": {"source": "must-not-leak"},
+            },
+            {
+                "type": "goal_status",
+                "session_id": "session-1",
+                "goal": {
+                    "status": "active",
+                    "token_budget": 1_000,
+                    "tokens_used": 125,
+                    "time_used_seconds": 3.5,
+                    "blocker_streak": 0,
+                    "version": 2,
+                },
+            },
+        ),
+        (
+            "browser_session",
+            {
+                "agent": "lead",
+                "active": True,
+                "action": "navigated",
+                "current_url": "https://must-not-leak.example",
+                "tabs": [{"title": "must-not-leak"}],
+                "metadata": {"cdp": "must-not-leak"},
+            },
+            {
+                "type": "browser_session",
+                "agent": "lead",
+                "active": True,
+                "action": "navigated",
+            },
+        ),
+        (
+            "turn_changes",
+            {
+                "session_id": "session-1",
+                "additions": 12,
+                "deletions": 4,
+                "files": [{"path": "must-not-leak"}],
+                "metadata": {"diff": "must-not-leak"},
+            },
+            {
+                "type": "turn_changes",
+                "session_id": "session-1",
+                "additions": 12,
+                "deletions": 4,
+                "file_count": 1,
+            },
+        ),
+        (
+            "error",
+            {
+                "message": "tool failed with must-not-leak arguments",
+                "code": "provider_error",
+                "metadata": {"result": "must-not-leak"},
+            },
+            {
+                "type": "error",
+                "message": "An error occurred. Open EvoFlux Desktop for details.",
+                "code": "provider_error",
+            },
+        ),
+    ],
+)
+def test_side_chat_stream_whitelists_other_timeline_events(
+    event_type: str,
+    payload: dict[str, object],
+    expected: dict[str, object],
+):
+    event = _browser_panel_stream_event(
+        {"event": event_type, "data": json.dumps(payload)}
+    )
+
+    assert event is not None
+    assert json.loads(event["data"]) == expected
+    assert "must-not-leak" not in event["data"]
+
+
+def test_side_chat_stream_sanitizes_question_prompt_shape():
+    event = _browser_panel_stream_event(
+        {
+            "event": "question_asked",
+            "data": json.dumps(
+                {
+                    "request_id": "question-1",
+                    "session_id": "session-1",
+                    "questions": [
+                        {
+                            "question": "Choose a safe option",
+                            "options": ["A", "B", {"secret": "must-not-leak"}],
+                            "kind": "text",
+                            "browser_handoff": {
+                                "kind": "choose_option",
+                                "title": "Choose",
+                                "action": "Pick one",
+                                "consequence": "The task resumes",
+                                "target": "Current tab",
+                                "arguments": "must-not-leak",
+                            },
+                            "metadata": {"reasoning": "must-not-leak"},
+                        }
+                    ],
+                    "metadata": {"reasoning": "must-not-leak"},
+                }
+            ),
+        }
+    )
+
+    assert event is not None
+    assert json.loads(event["data"]) == {
+        "type": "question_asked",
+        "request_id": "question-1",
+        "session_id": "session-1",
+        "questions": [
+            {
+                "question": "Choose a safe option",
+                "options": ["A", "B"],
+                "kind": "text",
+                "browser_handoff": {
+                    "kind": "choose_option",
+                    "title": "Choose",
+                    "action": "Pick one",
+                    "consequence": "The task resumes",
+                    "target": "Current tab",
+                },
+            }
+        ],
+    }
+    assert "must-not-leak" not in event["data"]
+
+
+def test_side_chat_history_sanitizes_typed_blocks_and_keeps_message_fields():
     session_id = uuid4()
     created_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
     user = SimpleNamespace(
@@ -201,6 +668,7 @@ def test_side_chat_history_matches_canonical_chat_without_leaking_tool_payloads(
         session_id=session_id,
         role="assistant",
         content="I checked the page.",
+        reasoning_content="I should inspect the selected page.",
         name="lead",
         created_at=created_at,
         extra={"model": "openai:gpt-test", "duration_ms": 1250},
@@ -240,9 +708,184 @@ def test_side_chat_history_matches_canonical_chat_without_leaking_tool_payloads(
         "state": "done",
         "duration_ms": 420,
     }
+    assert projected[1].blocks == [
+        {
+            "id": f"{assistant.id}:thinking",
+            "type": "thinking",
+            "agent": "lead",
+            "chars": len("I should inspect the selected page."),
+        },
+        {
+            "id": f"{assistant.id}:text",
+            "type": "text",
+            "agent": "lead",
+            "content": "I checked the page.",
+            "model": "openai:gpt-test",
+            "response_duration_ms": 1250,
+        },
+        {
+            "id": f"{assistant.id}:tool:call-1",
+            "type": "tool",
+            "agent": "lead",
+            "name": "webbridge",
+            "tool_call_id": "call-1",
+            "done": True,
+            "duration_ms": 420,
+        },
+    ]
     serialized = json.dumps([message.model_dump() for message in projected])
     assert "must-not-leak" not in serialized
     assert "private tool output" not in serialized
+    assert "I should inspect the selected page." not in serialized
+
+
+def test_side_chat_history_marks_user_shell_messages():
+    shell = SimpleNamespace(
+        id=uuid4(),
+        session_id=uuid4(),
+        role="user",
+        content="!pwd",
+        name=None,
+        created_at=datetime(2026, 8, 1, tzinfo=timezone.utc),
+        extra={"kind": "user_shell", "command": "pwd"},
+        tool_calls=None,
+        tool_call_id=None,
+        is_summary=False,
+    )
+
+    projected = _browser_panel_messages([shell])
+
+    assert len(projected) == 1
+    assert projected[0].content == "!pwd"
+    assert projected[0].shell is True
+    assert projected[0].blocks is None
+
+
+def test_side_chat_history_reconstructs_persisted_widget_block():
+    session_id = uuid4()
+    assistant = SimpleNamespace(
+        id=uuid4(),
+        session_id=session_id,
+        role="assistant",
+        content=None,
+        reasoning_content=None,
+        name="lead",
+        created_at=datetime(2026, 8, 1, tzinfo=timezone.utc),
+        extra=None,
+        tool_calls=[
+            {
+                "id": "widget-call",
+                "function": {
+                    "name": "show_widget",
+                    "arguments": json.dumps(
+                        {
+                            "title": "Status",
+                            "widget_code": "<p>Ready</p>",
+                            "token": "must-not-leak",
+                        }
+                    ),
+                },
+            }
+        ],
+        tool_call_id=None,
+        is_summary=False,
+    )
+    result = SimpleNamespace(
+        id=uuid4(),
+        session_id=session_id,
+        role="tool",
+        content="Widget displayed",
+        name="show_widget",
+        created_at=datetime(2026, 8, 1, tzinfo=timezone.utc),
+        extra={"duration_ms": 12},
+        tool_calls=None,
+        tool_call_id="widget-call",
+        is_summary=False,
+    )
+
+    projected = _browser_panel_messages([assistant, result])
+
+    assert projected[0].blocks is not None
+    assert projected[0].blocks[0] == {
+        "id": f"{assistant.id}:tool:widget-call",
+        "type": "widget",
+        "agent": "lead",
+        "name": "show_widget",
+        "tool_call_id": "widget-call",
+        "done": True,
+        "duration_ms": 12,
+        "html": "<p>Ready</p>",
+        "title": "Status",
+        "is_final": True,
+    }
+    serialized = json.dumps(projected[0].blocks)
+    assert "must-not-leak" not in serialized
+    assert "Widget displayed" not in serialized
+
+
+def test_side_chat_history_preserves_text_tool_text_row_order():
+    session_id = uuid4()
+    created_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    first_assistant = SimpleNamespace(
+        id=uuid4(),
+        session_id=session_id,
+        role="assistant",
+        content="Before the tool.",
+        reasoning_content=None,
+        name="lead",
+        created_at=created_at,
+        extra=None,
+        tool_calls=[
+            {
+                "id": "call-1",
+                "function": {
+                    "name": "shell",
+                    "arguments": '{"command":"must-not-leak"}',
+                },
+            }
+        ],
+        tool_call_id=None,
+        is_summary=False,
+    )
+    tool_result = SimpleNamespace(
+        id=uuid4(),
+        session_id=session_id,
+        role="tool",
+        content="must-not-leak output",
+        name="shell",
+        created_at=created_at,
+        extra={"duration_ms": 8, "private": "must-not-leak"},
+        tool_calls=None,
+        tool_call_id="call-1",
+        is_summary=False,
+    )
+    second_assistant = SimpleNamespace(
+        id=uuid4(),
+        session_id=session_id,
+        role="assistant",
+        content="After the tool.",
+        reasoning_content=None,
+        name="lead",
+        created_at=created_at,
+        extra=None,
+        tool_calls=None,
+        tool_call_id=None,
+        is_summary=False,
+    )
+
+    projected = _browser_panel_messages(
+        [first_assistant, tool_result, second_assistant]
+    )
+
+    assert [
+        block["type"] for message in projected for block in message.blocks or []
+    ] == [
+        "text",
+        "tool",
+        "text",
+    ]
+    serialized = json.dumps([message.model_dump() for message in projected])
+    assert "must-not-leak" not in serialized
 
 
 async def test_side_chat_accepts_only_verified_tabs_in_primary_group(manager):
@@ -336,6 +979,15 @@ def client(manager: WebBridgeManager) -> TestClient:
     return TestClient(app)
 
 
+@pytest.fixture
+def appearance_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> WebBridgeAppearanceStore:
+    store = WebBridgeAppearanceStore()
+    monkeypatch.setattr(webbridge_routes, "webbridge_appearance_store", store)
+    return store
+
+
 def _register(ws, extension_id: str = "ext-1") -> dict:
     ws.send_text(
         json.dumps(
@@ -418,6 +1070,109 @@ async def _persist_delivered_interactive_message(
 
 
 # ── REST status + registration ────────────────────────────────────────────────
+
+
+def test_desktop_put_updates_webbridge_appearance_snapshot(
+    client: TestClient,
+    appearance_store: WebBridgeAppearanceStore,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        webbridge_routes, "expected_desktop_token", lambda: "desktop-test-token"
+    )
+    payload = {
+        "schema_version": 1,
+        "theme_preference": "dark",
+        "resolved_theme": "dark",
+        "accent": "purple",
+        "font_family": "anthropic-sans",
+        "font_scale": 1.2,
+        "motion_intensity": "cinematic",
+    }
+
+    response = client.put(
+        f"{_PREFIX}/appearance",
+        headers={"Authorization": "Bearer desktop-test-token"},
+        json=payload,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        **payload,
+        "synced": True,
+        "revision": 1,
+    }
+    assert appearance_store.get().revision == 1
+
+
+def test_paired_extension_get_reads_desktop_appearance_snapshot(
+    client: TestClient,
+    appearance_store: WebBridgeAppearanceStore,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        webbridge_routes, "expected_desktop_token", lambda: "desktop-test-token"
+    )
+    payload = {
+        "schema_version": 1,
+        "theme_preference": "system",
+        "resolved_theme": "dark",
+        "accent": "green",
+        "font_family": "geist",
+        "font_scale": 1.1,
+        "motion_intensity": "subtle",
+    }
+    published = client.put(
+        f"{_PREFIX}/appearance",
+        headers={"Authorization": "Bearer desktop-test-token"},
+        json=payload,
+    )
+    assert published.status_code == 200
+    pairing = _pair_extension(client, "Appearance Chrome")
+
+    response = client.get(
+        f"{_PREFIX}/appearance",
+        headers={"Authorization": f"Bearer {pairing['credential']}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == published.json()
+    assert response.json() == {
+        **payload,
+        "synced": True,
+        "revision": 1,
+    }
+    assert appearance_store.get().revision == 1
+
+
+def test_paired_extension_cannot_publish_webbridge_appearance(
+    client: TestClient,
+    appearance_store: WebBridgeAppearanceStore,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        webbridge_routes, "expected_desktop_token", lambda: "desktop-test-token"
+    )
+    pairing = _pair_extension(client, "Read-only Appearance Chrome")
+
+    response = client.put(
+        f"{_PREFIX}/appearance",
+        headers={"Authorization": f"Bearer {pairing['credential']}"},
+        json={
+            "schema_version": 1,
+            "theme_preference": "light",
+            "resolved_theme": "light",
+            "accent": "red",
+            "font_family": "mono",
+            "font_scale": 0.9,
+            "motion_intensity": "reduced",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Desktop authentication required."
+    assert appearance_store.get().synced is False
+    assert appearance_store.get().revision == 0
 
 
 def test_register_then_status_shows_connected(client: TestClient):
@@ -2191,6 +2946,441 @@ async def test_side_panel_transcript_composer_and_handoff_are_pairing_scoped(
     assert stopped.status_code == 200
     assert stopped.json()["status"] == "interrupted"
     interrupt.assert_awaited_once_with(fake_team, str(session.id))
+
+
+async def test_side_panel_desktop_commands_and_approval_replies_are_pairing_scoped(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.api.routes.team import chat as chat_routes
+    from app.api.routes.team import permissions as permission_routes
+    from app.core import db as db_module
+    from app.models.chat import ChatSession
+
+    revert_state = {"message_id": str(uuid4())}
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(
+            title="Panel actions", tags=["webbridge"], revert=revert_state
+        )
+        db.add(session)
+        await db.commit()
+
+    owner = _pair_extension(client, "Action owner")
+    other = _pair_extension(client, "Action outsider")
+    _assign_pairing_session(client, owner, session.id)
+    owner_headers = {"Authorization": f"Bearer {owner['credential']}"}
+    other_headers = {"Authorization": f"Bearer {other['credential']}"}
+
+    history = client.get(
+        f"{_PREFIX}/sessions/{session.id}/history", headers=owner_headers
+    )
+    assert history.status_code == 200
+    assert history.json()["revert"] == revert_state
+
+    command = AsyncMock(
+        return_value={
+            "status": "accepted",
+            "session_id": str(session.id),
+            "command": "continue",
+        }
+    )
+    permission_reply = AsyncMock(
+        return_value={
+            "status": "ok",
+            "request_id": "permission-1",
+            "reply": "once",
+        }
+    )
+    plan_reply = AsyncMock(
+        return_value={
+            "status": "ok",
+            "request_id": "plan-1",
+            "decision": "revise",
+        }
+    )
+    monkeypatch.setattr(chat_routes, "team_command", command)
+    monkeypatch.setattr(permission_routes, "reply_permission", permission_reply)
+    monkeypatch.setattr(permission_routes, "reply_plan_approval", plan_reply)
+
+    continued = client.post(
+        f"{_PREFIX}/sessions/{session.id}/commands",
+        headers=owner_headers,
+        json={"command": "continue"},
+    )
+    assert continued.status_code == 202
+    command_request = command.await_args.args[0]
+    assert command_request.command == "continue"
+    assert command_request.session_id == str(session.id)
+
+    permission = client.post(
+        f"{_PREFIX}/sessions/{session.id}/permissions/permission-1/reply",
+        headers=owner_headers,
+        json={"reply": "once", "message": None},
+    )
+    assert permission.status_code == 200
+    assert permission_reply.await_args.args[:2] == (
+        str(session.id),
+        "permission-1",
+    )
+    assert permission_reply.await_args.args[2].reply == "once"
+
+    plan = client.post(
+        f"{_PREFIX}/sessions/{session.id}/plan/reply",
+        headers=owner_headers,
+        json={
+            "request_id": "plan-1",
+            "decision": "revise",
+            "feedback": "Add a verification step",
+        },
+    )
+    assert plan.status_code == 200
+    assert plan_reply.await_args.args[0] == str(session.id)
+    assert plan_reply.await_args.args[1].feedback == "Add a verification step"
+
+    denied = client.post(
+        f"{_PREFIX}/sessions/{session.id}/commands",
+        headers=other_headers,
+        json={"command": "undo"},
+    )
+    assert denied.status_code == 403
+    command.assert_awaited_once()
+
+
+async def test_side_panel_queue_can_be_listed_edited_and_cancelled(
+    client: TestClient,
+):
+    from app.core import db as db_module
+    from app.models.chat import ChatSession, SessionMessage
+
+    contextual_content = (
+        "[Untrusted browser selection]\nSelected text: Original context"
+        "\n\nUser request:\nOriginal request"
+    )
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(title="Panel queue", tags=["webbridge"])
+        db.add(session)
+        await db.flush()
+        contextual = SessionMessage(
+            session_id=session.id,
+            role="user",
+            content=contextual_content,
+            exclude_from_context=True,
+            extra={
+                "queue_status": "queued",
+                "queued_at": "2026-08-12T00:00:00+00:00",
+                "model": "openai:gpt-test",
+                "thinking_level": "high",
+                "service_tier": "fast",
+                "webbridge_side_panel": {"user_content": "Original request"},
+            },
+        )
+        plain = SessionMessage(
+            session_id=session.id,
+            role="user",
+            content="Second request",
+            exclude_from_context=True,
+            extra={"queue_status": "queued"},
+        )
+        db.add(contextual)
+        db.add(plain)
+        await db.commit()
+
+    owner = _pair_extension(client, "Queue owner")
+    _assign_pairing_session(client, owner, session.id)
+    headers = {"Authorization": f"Bearer {owner['credential']}"}
+    endpoint = f"{_PREFIX}/sessions/{session.id}/queued-messages"
+
+    listed = client.get(endpoint, headers=headers)
+    assert listed.status_code == 200
+    by_id = {item["id"]: item for item in listed.json()["messages"]}
+    assert by_id[str(contextual.id)] == {
+        "id": str(contextual.id),
+        "content": "Original request",
+        "created_at": contextual.created_at.isoformat(),
+        "model": "openai:gpt-test",
+        "thinking_level": "high",
+        "fast_mode": True,
+    }
+
+    edited = client.patch(
+        f"{endpoint}/{contextual.id}",
+        headers=headers,
+        json={"content": "Updated request"},
+    )
+    assert edited.status_code == 200
+    assert edited.json()["content"] == "Updated request"
+    async with db_module.async_session_factory() as db:
+        persisted = await db.get(SessionMessage, contextual.id)
+        assert persisted is not None
+        assert persisted.content == contextual_content.replace(
+            "Original request", "Updated request"
+        )
+        assert persisted.extra["webbridge_side_panel"]["user_content"] == (
+            "Updated request"
+        )
+
+    cancelled = client.delete(f"{endpoint}/{plain.id}", headers=headers)
+    assert cancelled.status_code == 204
+    relisted = client.get(endpoint, headers=headers)
+    assert [item["id"] for item in relisted.json()["messages"]] == [str(contextual.id)]
+
+
+async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    from app.api.schemas.skills import SkillListResponse, SkillSummary
+    from app.api.schemas.workflows import (
+        WorkflowInputOut,
+        WorkflowListItem,
+        WorkflowListResponse,
+        WorkflowRunResponse,
+    )
+    from app.core import db as db_module
+    from app.models.chat import ChatSession
+
+    workspace = tmp_path / "composer-workspace"
+    command_path = workspace / ".evoflux" / "commands" / "review.md"
+    snippet_path = workspace / ".evoflux" / "snippets" / "git" / "check.md"
+    source_path = workspace / "src" / "app.py"
+    command_path.parent.mkdir(parents=True)
+    snippet_path.parent.mkdir(parents=True)
+    source_path.parent.mkdir(parents=True)
+    command_path.write_text(
+        "---\ndescription: Review one target\n---\nReview $ARGUMENTS now.",
+        encoding="utf-8",
+    )
+    snippet_path.write_text(
+        "---\ndescription: Check git state\n---\nRun git status.",
+        encoding="utf-8",
+    )
+    source_path.write_text("print('hello')\n", encoding="utf-8")
+
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(
+            title="Composer catalog",
+            mode="coding",
+            workspace=str(workspace),
+            tags=["webbridge"],
+        )
+        db.add(session)
+        await db.commit()
+
+    skills = SkillListResponse(
+        skills=[
+            SkillSummary(
+                name="repo-audit",
+                display_name="Repo Audit",
+                short_description="Audit this repository",
+                default_prompt="$repo-audit focus on risks",
+                source="project-EvoFlux",
+                modes=["coding"],
+            )
+        ]
+    )
+    workflows = WorkflowListResponse(
+        workflows=[
+            WorkflowListItem(
+                name="release-check",
+                description="Verify a release",
+                scope="coding",
+                inputs=[WorkflowInputOut(name="version", type="string", required=True)],
+                hash="a" * 64,
+                root=str(workspace),
+                source_path=str(workspace / "release-check.yaml"),
+                approved=True,
+                valid=True,
+                errors=[],
+                node_count=1,
+            )
+        ]
+    )
+    list_skills = AsyncMock(return_value=skills)
+    list_workflows = AsyncMock(return_value=workflows)
+    monkeypatch.setattr("app.api.routes.skills.list_skills", list_skills)
+    monkeypatch.setattr("app.api.routes.workflows.list_workflows", list_workflows)
+
+    owner = _pair_extension(client, "Composer owner")
+    other = _pair_extension(client, "Composer outsider")
+    _assign_pairing_session(client, owner, session.id)
+    headers = {"Authorization": f"Bearer {owner['credential']}"}
+    endpoint = f"{_PREFIX}/sessions/{session.id}/composer-catalog"
+
+    response = client.get(endpoint, headers=headers)
+    assert response.status_code == 200
+    catalog = response.json()
+    commands = {(item["category"], item["id"]): item for item in catalog["commands"]}
+    assert catalog["supports_shell"] is True
+    assert ("builtin", "continue") in commands
+    assert commands[("builtin", "shell")]["insert_text"] == "! "
+    assert commands[("command", "review")]["source"] == "project-EvoFlux"
+    assert commands[("skill", "skill:repo-audit")]["insert_text"] == (
+        "skill:repo-audit focus on risks"
+    )
+    assert commands[("workflow", "workflow-release-check")]["inputs"] == [
+        {
+            "name": "version",
+            "type": "string",
+            "required": True,
+            "default": None,
+            "options": None,
+            "description": "",
+        }
+    ]
+    assert catalog["snippets"] == [
+        {
+            "id": "git/check",
+            "label": "git:check",
+            "description": "Check git state",
+            "source": "project-EvoFlux",
+        }
+    ]
+    references = {(item["type"], item["path"]) for item in catalog["references"]}
+    assert ("file", "src/app.py") in references
+    assert ("directory", "src") in references
+    list_skills.assert_awaited_once_with(workspace=[str(workspace)], mode="coding")
+
+    rendered_command = client.post(
+        f"{_PREFIX}/sessions/{session.id}/composer/commands/review/render",
+        headers=headers,
+        json={"arguments": "src/app.py"},
+    )
+    assert rendered_command.status_code == 200
+    assert rendered_command.json() == {
+        "name": "review",
+        "content": "Review src/app.py now.",
+    }
+    rendered_snippet = client.post(
+        f"{_PREFIX}/sessions/{session.id}/composer/snippets/git/check/render",
+        headers=headers,
+    )
+    assert rendered_snippet.status_code == 200
+    assert rendered_snippet.json() == {
+        "name": "git/check",
+        "content": "Run git status.",
+    }
+
+    execution_id = uuid4()
+    run_workflow = AsyncMock(
+        return_value=WorkflowRunResponse(
+            execution_id=execution_id,
+            session_id=str(session.id),
+        )
+    )
+    monkeypatch.setattr("app.api.routes.workflows.run_workflow_route", run_workflow)
+    workflow_run = client.post(
+        (f"{_PREFIX}/sessions/{session.id}/composer/workflows/release-check/run"),
+        headers=headers,
+        json={"inputs": {"version": "1.2.3"}},
+    )
+    assert workflow_run.status_code == 200
+    assert workflow_run.json() == {
+        "execution_id": str(execution_id),
+        "session_id": str(session.id),
+    }
+    assert run_workflow.await_args.args[0] == "release-check"
+    assert run_workflow.await_args.args[1].session_id == str(session.id)
+    assert run_workflow.await_args.args[1].inputs == {"version": "1.2.3"}
+    assert run_workflow.await_args.kwargs["workspace"] == str(workspace)
+
+    denied = client.get(
+        endpoint,
+        headers={"Authorization": f"Bearer {other['credential']}"},
+    )
+    assert denied.status_code == 403
+
+
+async def test_side_panel_shell_dispatch_preserves_flag_and_is_idempotent(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.core import db as db_module
+    from app.models.chat import ChatSession
+
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(
+            title="Panel shell",
+            mode="coding",
+            workspace="/tmp",
+            model="codex:gpt-test",
+            thinking_level="high",
+            tags=["webbridge"],
+        )
+        db.add(session)
+        await db.commit()
+
+    owner = _pair_extension(client, "Shell owner")
+    _assign_pairing_session(client, owner, session.id)
+    headers = {"Authorization": f"Bearer {owner['credential']}"}
+    bound = client.put(
+        f"{_PREFIX}/bindings/42",
+        headers=headers,
+        json={"session_id": str(session.id), "origin": "https://example.com"},
+    )
+    assert bound.status_code == 200
+
+    fake_team = SimpleNamespace()
+
+    async def resolve(db, session_id: str, *, require_existing: bool):
+        assert require_existing is True
+        persisted = await db.get(ChatSession, UUID(session_id))
+        assert persisted is not None
+        return persisted, fake_team
+
+    dispatch_shell = AsyncMock(return_value=str(session.id))
+    monkeypatch.setattr(webbridge_routes, "resolve_team_for_session", resolve)
+    monkeypatch.setattr(webbridge_routes, "dispatch_user_shell_command", dispatch_shell)
+    payload = {
+        "content": "! pwd",
+        "tab_id": 42,
+        "origin": "https://example.com",
+        "user_gesture": True,
+        "fast_mode": True,
+        "shell": True,
+    }
+    request_headers = {**headers, "Idempotency-Key": "panel-shell-1"}
+
+    response = client.post(
+        f"{_PREFIX}/sessions/{session.id}/messages",
+        headers=request_headers,
+        json=payload,
+    )
+    assert response.status_code == 202
+    assert response.json() == {
+        "status": "accepted",
+        "session_id": str(session.id),
+        "message_id": None,
+    }
+    dispatch_shell.assert_awaited_once_with(
+        fake_team,
+        command="pwd",
+        session_id=str(session.id),
+        mode="coding",
+        workspace="/tmp",
+        model="codex:gpt-test",
+        model_provided=True,
+        thinking_level="high",
+        thinking_level_provided=True,
+        service_tier="fast",
+    )
+
+    replay = client.post(
+        f"{_PREFIX}/sessions/{session.id}/messages",
+        headers=request_headers,
+        json=payload,
+    )
+    assert replay.status_code == 202
+    assert replay.json() == response.json()
+    dispatch_shell.assert_awaited_once()
+
+    conflict = client.post(
+        f"{_PREFIX}/sessions/{session.id}/messages",
+        headers=request_headers,
+        json={**payload, "content": "! ls"},
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["code"] == "idempotency_conflict"
 
 
 async def test_side_panel_markdown_media_requires_visible_reference(

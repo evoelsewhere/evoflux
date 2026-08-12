@@ -83,6 +83,7 @@ _CUSTOM_AUTH_EXACT: frozenset[str] = frozenset(
         "/api/team/webbridge/bindings",
         "/api/team/webbridge/sessions",
         "/api/team/webbridge/models",
+        "/api/team/webbridge/appearance",
         "/api/team/webbridge/teach-drafts",
     }
 )

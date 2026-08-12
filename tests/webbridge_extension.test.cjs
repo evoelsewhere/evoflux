@@ -44,8 +44,16 @@ const sidePanelSource = fs.readFileSync(
   path.join(__dirname, "..", "extensions", "webbridge", "sidepanel.js"),
   "utf8"
 );
+const themeInitSource = fs.readFileSync(
+  path.join(__dirname, "..", "extensions", "webbridge", "theme-init.js"),
+  "utf8"
+);
 const sidePanelHtml = fs.readFileSync(
   path.join(__dirname, "..", "extensions", "webbridge", "sidepanel.html"),
+  "utf8"
+);
+const desktopThemeCss = fs.readFileSync(
+  path.join(__dirname, "..", "web", "src", "index.css"),
   "utf8"
 );
 const extensionManifest = JSON.parse(fs.readFileSync(
@@ -1082,14 +1090,534 @@ test("P2 Side Chat supports persisted light and dark themes", () => {
   assert.match(sidePanelSource, /dataset\.theme = themePreference/);
   assert.match(sidePanelSource, /delete document\.documentElement\.dataset\.theme/);
   assert.match(sidePanelSource, /THEME_STORAGE_KEY]: themePreference/);
+  for (const font of [
+    "inter-latin-wght-normal.woff2",
+    "inter-vietnamese-wght-normal.woff2",
+    "geist-latin-wght-normal.woff2",
+    "geist-vietnamese-wght-normal.woff2",
+    "source-sans-3-latin-wght-normal.woff2",
+    "source-sans-3-vietnamese-wght-normal.woff2",
+    "jetbrains-mono-latin-wght-normal.woff2",
+    "jetbrains-mono-vietnamese-wght-normal.woff2",
+  ]) {
+    assert.ok(
+      fs.existsSync(path.join(__dirname, "..", "extensions", "webbridge", "fonts", font)),
+      `${font} must ship with the extension`,
+    );
+    assert.match(sidePanelHtml, new RegExp(`fonts/${font.replaceAll(".", "\\.")}`));
+  }
+  for (const notice of [
+    "LICENSE-Inter.txt",
+    "LICENSE-Geist.txt",
+    "LICENSE-Source-Sans-3.txt",
+    "LICENSE-JetBrains-Mono.txt",
+  ]) {
+    assert.ok(fs.existsSync(path.join(__dirname, "..", "extensions", "webbridge", "fonts", notice)));
+  }
 });
 
-test("P2 Side Chat renders progressive activity and throttles Markdown", () => {
+test("P2 Side Chat color tokens stay aligned with Desktop light and dark palettes", () => {
+  const sharedValues = [
+    ["--bg", "--bg-page", "#232220"],
+    ["--surface", "--bg-card", "#2D2C2A"],
+    ["--surface-raised", "--bg-key", "#383534"],
+    ["--input-bg", "--bg-input", "#282725"],
+    ["--border", "--color-border", "#494540"],
+    ["--text", "--color-text", "#F3F2EF"],
+    ["--accent", "--color-accent", "#A39D96"],
+    ["--bg", "--bg-page", "#FAFAFA"],
+    ["--surface", "--bg-card", "#FFFFFF"],
+    ["--surface-raised", "--bg-key", "#EFEFEF"],
+    ["--border", "--color-border", "#D8D8D8"],
+    ["--text", "--color-text", "#1D1D1D"],
+    ["--accent", "--color-accent", "#575757"],
+    ["--thinking-high", "--thinking-high", "#FB923C"],
+    ["--thinking-max", "--thinking-max", "#F472B6"],
+    ["--thinking-high", "--thinking-high", "#C2410C"],
+    ["--thinking-max", "--thinking-max", "#BE185D"],
+  ];
+  for (const [panelToken, desktopToken, color] of sharedValues) {
+    assert.match(sidePanelHtml, new RegExp(`${panelToken}:\\s*${color}`, "i"));
+    assert.match(desktopThemeCss, new RegExp(`${desktopToken}:\\s*${color}`, "i"));
+  }
+});
+
+test("P2 Side Chat applies only validated appearance before first paint", () => {
+  const styleValues = new Map();
+  const root = {
+    dataset: {},
+    style: { setProperty(name, value) { styleValues.set(name, value); } },
+  };
+  const appearance = {
+    schema_version: 1,
+    theme: "dark",
+    accent: "green",
+    font: "inter",
+    font_scale: 1.1,
+    motion: "subtle",
+    motion_scale: 0.7,
+  };
+  vm.runInNewContext(themeInitSource, {
+    document: { documentElement: root },
+    localStorage: { getItem() { return JSON.stringify(appearance); } },
+  });
+
+  assert.deepEqual(root.dataset, {
+    theme: "dark",
+    accent: "green",
+    font: "inter",
+    motion: "subtle",
+  });
+  assert.equal(styleValues.get("--ui-font-size"), "14.3px");
+  assert.equal(styleValues.get("--motion-scale"), "0.7");
+
+  const rejected = { dataset: {}, style: { setProperty() { throw new Error("must not apply"); } } };
+  vm.runInNewContext(themeInitSource, {
+    document: { documentElement: rejected },
+    localStorage: { getItem() { return JSON.stringify({ ...appearance, accent: "url(secret)" }); } },
+  });
+  assert.deepEqual(rejected.dataset, {});
+});
+
+test("P2 Side Chat applies cached Desktop appearance and refreshes newer revisions", async () => {
+  const enumStart = sidePanelSource.indexOf("const APPEARANCE_ENUMS");
+  const enumEnd = sidePanelSource.indexOf("\nconst STREAM_FRAME_MS", enumStart);
+  const functionsStart = sidePanelSource.indexOf("function renderThemeControl()");
+  const functionsEnd = sidePanelSource.indexOf("\nfunction canonicalRelayBase", functionsStart);
+  assert.ok(enumStart >= 0 && enumEnd > enumStart);
+  assert.ok(functionsStart >= 0 && functionsEnd > functionsStart);
+
+  const styleValues = new Map();
+  const root = {
+    dataset: {},
+    style: {
+      setProperty(name, value) { styleValues.set(name, value); },
+      removeProperty(name) { styleValues.delete(name); },
+    },
+  };
+  const themeButtons = ["system", "light", "dark"].map((theme) => ({
+    dataset: { themeValue: theme },
+    classList: { toggle() {} },
+    setAttribute(name, value) { this[name] = value; },
+    disabled: false,
+  }));
+  const appearanceSyncDot = {
+    classList: {
+      add() {},
+      remove() {},
+      toggle() {},
+    },
+  };
+  const textNode = () => ({ textContent: "" });
+  const cached = {
+    schema_version: 1,
+    theme_preference: "system",
+    resolved_theme: "dark",
+    accent: "purple",
+    font_family: "geist",
+    font_scale: 1.1,
+    motion_intensity: "cinematic",
+    synced: true,
+    revision: 7,
+  };
+  let remote = cached;
+  const fetchPaths = [];
+  const writes = [];
+  const stored = {
+    webbridgeSideChatTheme: "light",
+    webbridgeDesktopAppearanceV1: cached,
+  };
+  const context = vm.createContext({
+    document: { documentElement: root },
+    themeControl: { querySelectorAll() { return themeButtons; } },
+    appearanceSyncDot,
+    appearanceSyncStatus: textNode(),
+    appearanceSyncDetail: textNode(),
+    appearanceThemeLabel: textNode(),
+    appearanceStyleLabel: textNode(),
+    appearanceSwatch: { style: {} },
+    chrome: {
+      storage: {
+        local: {
+          async get() { return { ...stored }; },
+          async set(value) {
+            writes.push(value);
+            Object.assign(stored, value);
+          },
+        },
+      },
+    },
+    async panelFetch(pathname) {
+      fetchPaths.push(pathname);
+      return { async json() { return remote; } };
+    },
+  });
+  vm.runInContext(`
+    const THEME_STORAGE_KEY = "webbridgeSideChatTheme";
+    const APPEARANCE_CACHE_KEY = "webbridgeDesktopAppearanceV1";
+    const APPEARANCE_PATH = "/api/team/webbridge/appearance";
+    let themePreference = "system";
+    let desktopAppearanceSynced = false;
+    let desktopAppearanceRevision = -1;
+    let appearanceSyncTask = null;
+    let panelConnectionStatus = "connected";
+    function renderAppearanceTransportState() {}
+    ${sidePanelSource.slice(enumStart, enumEnd)}
+    ${sidePanelSource.slice(functionsStart, functionsEnd)}
+    globalThis.runInitializeTheme = initializeTheme;
+    globalThis.runSyncDesktopAppearance = syncDesktopAppearance;
+    globalThis.runApplyDesktopAppearance = applyDesktopAppearance;
+  `, context, { filename: "sidepanel-appearance.js" });
+
+  await context.runInitializeTheme();
+
+  assert.equal(root.dataset.theme, "dark");
+  assert.equal(root.dataset.accent, "purple");
+  assert.equal(root.dataset.font, "geist");
+  assert.equal(root.dataset.motion, "cinematic");
+  assert.equal(styleValues.get("--ui-font-size"), "14.3px");
+  assert.equal(styleValues.get("--motion-scale"), "1.55");
+  assert.ok(themeButtons.every((button) => button.disabled));
+  assert.equal(writes.length, 0, "loading the trusted cache must not rewrite it");
+
+  await context.runSyncDesktopAppearance();
+  assert.deepEqual(fetchPaths, ["/api/team/webbridge/appearance"]);
+  assert.equal(writes.length, 0, "an unchanged appearance revision must not churn the cache");
+
+  remote = {
+    ...cached,
+    theme_preference: "light",
+    resolved_theme: "light",
+    accent: "green",
+    font_family: "mono",
+    font_scale: 0.9,
+    motion_intensity: "reduced",
+    revision: 8,
+  };
+  await context.runSyncDesktopAppearance();
+
+  assert.equal(root.dataset.theme, "light");
+  assert.equal(root.dataset.accent, "green");
+  assert.equal(root.dataset.font, "mono");
+  assert.equal(root.dataset.motion, "reduced");
+  assert.ok(Math.abs(Number.parseFloat(styleValues.get("--ui-font-size")) - 11.7) < 1e-9);
+  assert.equal(styleValues.get("--motion-scale"), "0");
+  assert.equal(writes.length, 1);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(writes[0].webbridgeDesktopAppearanceV1)),
+    remote,
+  );
+  assert.equal(
+    await context.runApplyDesktopAppearance({ ...remote, font_scale: 1.4 }),
+    false,
+    "out-of-schema cached values must not reach DOM tokens",
+  );
+  assert.match(sidePanelHtml, /:root\[data-accent="purple"\]/);
+  assert.match(sidePanelHtml, /:root\[data-font="geist"\]/);
+});
+
+test("P2 Side Chat reveals streamed Markdown on animation frames without splitting Unicode", () => {
+  const start = sidePanelSource.indexOf("function nextStreamingRevealLength");
+  const end = sidePanelSource.indexOf("\nfunction handleStreamEvent", start);
+  assert.ok(start >= 0 && end > start);
+
+  const renders = [];
+  const frames = new Map();
+  let nextFrameId = 0;
+  const root = { dataset: {} };
+  const context = vm.createContext({
+    document: { documentElement: root },
+    matchMedia() { return { matches: false }; },
+    requestAnimationFrame(callback) {
+      const id = ++nextFrameId;
+      frames.set(id, callback);
+      return id;
+    },
+    cancelAnimationFrame(id) { frames.delete(id); },
+    WebBridgeMarkdown: {
+      render(_target, content) { renders.push(content); },
+    },
+    async hydrateMarkdownMedia() {},
+    scrollTranscriptToEnd() {},
+  });
+  vm.runInContext(`
+    const STREAM_FRAME_MS = 24;
+    let markdownRenderFrame = null;
+    let lastMarkdownPaint = 0;
+    let liveMessage = null;
+    ${sidePanelSource.slice(start, end)}
+    globalThis.runSchedule = scheduleLiveMarkdownRender;
+    globalThis.revealBoundary = streamingRevealBoundary;
+    globalThis.setLiveMessage = (value) => { liveMessage = value; };
+  `, context, { filename: "sidepanel-streaming-reveal.js" });
+
+  assert.equal(context.revealBoundary("a😀b", 2), 3, "a frame must include both UTF-16 surrogates");
+  assert.equal(context.revealBoundary("ae\u0301z", 2), 3, "a frame must include a combining mark");
+  assert.equal(context.revealBoundary("x❤\uFE0Fy", 2), 3, "a frame must include a variation selector");
+
+  const target = `${"a".repeat(40)}😀e\u0301${"z".repeat(80)}`;
+  context.setLiveMessage({ content: {}, rawContent: target, displayedContent: "" });
+  context.runSchedule();
+  assert.equal(renders.length, 0, "streaming paint should wait for requestAnimationFrame");
+  assert.equal(frames.size, 1);
+
+  let timestamp = 30;
+  let guard = 0;
+  while (frames.size && guard++ < 20) {
+    const [id, callback] = frames.entries().next().value;
+    frames.delete(id);
+    callback(timestamp);
+    timestamp += 25;
+  }
+  assert.ok(renders.length > 1, "a long chunk should reveal progressively");
+  assert.equal(renders.at(-1), target);
+  assert.ok(renders.slice(0, -1).every((content) => content.length < target.length));
+  assert.ok(renders.every((content) => target.startsWith(content)));
+
+  root.dataset.motion = "reduced";
+  context.setLiveMessage({ content: {}, rawContent: "paint immediately", displayedContent: "" });
+  context.runSchedule();
+  assert.equal(renders.at(-1), "paint immediately");
+  assert.equal(frames.size, 0, "reduced motion should not enqueue reveal frames");
+});
+
+test("P2 queued turns finalize the live turn and dedupe optimistic user messages", () => {
+  const start = sidePanelSource.indexOf("function handleStreamEvent");
+  const end = sidePanelSource.indexOf("\nasync function isSessionStillRunning", start);
+  assert.ok(start >= 0 && end > start);
+
+  const removedClasses = [];
+  const appended = [];
+  const existingIds = new Set(["queued-optimistic"]);
+  let flushes = 0;
+  let hiddenGates = 0;
+  let activityRenders = 0;
+  const liveThinkingChars = new Map([["Lead", 42]]);
+  const toolActivities = new Map([["tool", { state: "working" }]]);
+  const agentStates = new Map([["Lead", "working"]]);
+  const context = vm.createContext({
+    initialLiveMessage: {
+      rawContent: "previous answer",
+      item: { classList: { remove(...names) { removedClasses.push(...names); } } },
+    },
+    liveThinkingChars,
+    toolActivities,
+    agentStates,
+    transcript: {
+      querySelectorAll() {
+        return [...existingIds].map((messageId) => ({ dataset: { messageId } }));
+      },
+    },
+    appendMessage(message) {
+      appended.push(message);
+      existingIds.add(String(message.id));
+    },
+    flushLiveMarkdownRender() { flushes += 1; },
+    hideDesktopGate() { hiddenGates += 1; },
+    renderActivity() { activityRenders += 1; },
+    showDesktopGate() {},
+  });
+  vm.runInContext(`
+    let liveMessage = initialLiveMessage;
+    ${sidePanelSource.slice(start, end)}
+    globalThis.runHandleStreamEvent = handleStreamEvent;
+    globalThis.currentLiveMessage = () => liveMessage;
+  `, context, { filename: "sidepanel-queued-turn.js" });
+
+  const event = {
+    agent: "Lead",
+    messages: [
+      { id: "queued-optimistic", content: "Already rendered on send" },
+      { id: "queued-from-desktop", content: "Queued from Desktop" },
+    ],
+  };
+  context.runHandleStreamEvent("queued_turn_start", event);
+  context.runHandleStreamEvent("queued_turn_start", event);
+
+  assert.equal(flushes, 2);
+  assert.deepEqual(removedClasses, ["live", "live-turn"]);
+  assert.equal(context.currentLiveMessage(), null);
+  assert.equal(liveThinkingChars.size, 0);
+  assert.equal(toolActivities.size, 0);
+  assert.deepEqual(appended.map((message) => message.id), ["queued-from-desktop"]);
+  assert.equal(agentStates.get("Lead"), "working");
+  assert.equal(hiddenGates, 2);
+  assert.equal(activityRenders, 2);
+});
+
+test("P2 Desktop action events show a request-scoped gate and its CTA opens Desktop", () => {
+  const gateStart = sidePanelSource.indexOf("function showDesktopGate");
+  const gateEnd = sidePanelSource.indexOf("\nfunction setComposerStatus", gateStart);
+  const handlerStart = sidePanelSource.indexOf("function handleStreamEvent");
+  const handlerEnd = sidePanelSource.indexOf("\nasync function isSessionStillRunning", handlerStart);
+  const ctaStart = sidePanelSource.indexOf('desktopGateBtn.addEventListener("click"');
+  const ctaEnd = sidePanelSource.indexOf("\n", ctaStart);
+  assert.ok(gateStart >= 0 && gateEnd > gateStart);
+  assert.ok(handlerStart >= 0 && handlerEnd > handlerStart);
+  assert.ok(ctaStart >= 0 && ctaEnd > ctaStart);
+
+  const classes = new Set();
+  const desktopGate = {
+    dataset: {},
+    classList: {
+      add(name) { classes.add(name); },
+      remove(name) { classes.delete(name); },
+    },
+  };
+  const desktopGateTitle = { textContent: "" };
+  const desktopGateDetail = { textContent: "" };
+  const routed = [];
+  const context = vm.createContext({
+    desktopGate,
+    desktopGateTitle,
+    desktopGateDetail,
+    showDesktopGate(data) { routed.push(["required", data]); },
+    hideDesktopGate(data) { routed.push(["resolved", data]); },
+  });
+
+  // Execute the real gate helpers in a context where their DOM state is observable.
+  const gateContext = vm.createContext({ desktopGate, desktopGateTitle, desktopGateDetail });
+  vm.runInContext(`
+    ${sidePanelSource.slice(gateStart, gateEnd)}
+    globalThis.runShowDesktopGate = showDesktopGate;
+    globalThis.runHideDesktopGate = hideDesktopGate;
+    globalThis.runDesktopGatePayloadText = desktopGatePayloadText;
+  `, gateContext, { filename: "sidepanel-desktop-gate-state.js" });
+  gateContext.runShowDesktopGate({ kind: "permission", request_id: "permission-1" });
+  assert.equal(classes.has("visible"), true);
+  assert.equal(desktopGate.dataset.requestId, "permission-1");
+  assert.equal(desktopGateTitle.textContent, "Permission required");
+  assert.match(desktopGateDetail.textContent, /EvoFlux Desktop/);
+  gateContext.runHideDesktopGate({ request_id: "another-request" });
+  assert.equal(classes.has("visible"), true, "a stale resolution must not hide a newer gate");
+  gateContext.runHideDesktopGate({ request_id: "permission-1" });
+  assert.equal(classes.has("visible"), false);
+  assert.equal(
+    gateContext.runDesktopGatePayloadText("plan", {
+      plan: "private plan body",
+      steps: [{ args: { token: "must-not-leak" } }],
+    }),
+    "",
+  );
+  assert.equal(
+    gateContext.runDesktopGatePayloadText("permission", {
+      tool: "shell",
+      patterns: ["cat /private/file"],
+      arguments: { token: "must-not-leak" },
+    }),
+    "Tool: shell",
+  );
+
+  vm.runInContext(`
+    let liveMessage = null;
+    const liveThinkingChars = new Map();
+    const toolActivities = new Map();
+    const agentStates = new Map();
+    ${sidePanelSource.slice(handlerStart, handlerEnd)}
+    globalThis.runHandleStreamEvent = handleStreamEvent;
+  `, context, { filename: "sidepanel-desktop-gate-events.js" });
+  context.runHandleStreamEvent("desktop_action_required", { kind: "plan", request_id: "plan-1" });
+  context.runHandleStreamEvent("desktop_action_resolved", { kind: "plan", request_id: "plan-1" });
+  assert.deepEqual(routed.map(([type]) => type), ["required", "resolved"]);
+
+  let clickHandler;
+  let opens = 0;
+  const ctaContext = vm.createContext({
+    desktopGateBtn: {
+      addEventListener(type, handler) {
+        assert.equal(type, "click");
+        clickHandler = handler;
+      },
+    },
+    openInEvoFlux() { opens += 1; },
+  });
+  vm.runInContext(sidePanelSource.slice(ctaStart, ctaEnd), ctaContext, {
+    filename: "sidepanel-desktop-gate-cta.js",
+  });
+  clickHandler();
+  assert.equal(opens, 1);
+  assert.match(sidePanelHtml, /id="desktopGate"[^>]+role="alert"/);
+  assert.match(sidePanelHtml, /id="desktopGateBtn"[^>]*>Open<\/button>/);
+});
+
+test("P2 composer accepts pasted and dropped files without swallowing text-only events", () => {
+  const start = sidePanelSource.indexOf('composerRoot.addEventListener("dragover"');
+  const end = sidePanelSource.indexOf("\nclearElementBtn.addEventListener", start);
+  assert.ok(start >= 0 && end > start);
+
+  const rootListeners = new Map();
+  const composerListeners = new Map();
+  const rootClasses = new Set();
+  const selectedFiles = [];
+  const composerRoot = {
+    addEventListener(type, handler) { rootListeners.set(type, handler); },
+    classList: {
+      add(name) { rootClasses.add(name); },
+      remove(name) { rootClasses.delete(name); },
+    },
+    contains(value) { return value === this.child; },
+  };
+  const composer = {
+    addEventListener(type, handler) { composerListeners.set(type, handler); },
+  };
+  const context = vm.createContext({
+    composerRoot,
+    composer,
+    selectPanelFiles(files) { selectedFiles.push([...files]); },
+  });
+  vm.runInContext(sidePanelSource.slice(start, end), context, {
+    filename: "sidepanel-composer-files.js",
+  });
+
+  let prevented = 0;
+  rootListeners.get("dragover")({
+    dataTransfer: { types: ["text/plain"] },
+    preventDefault() { prevented += 1; },
+  });
+  assert.equal(prevented, 0);
+  assert.equal(rootClasses.has("drag-active"), false);
+
+  rootListeners.get("dragover")({
+    dataTransfer: { types: ["Files"] },
+    preventDefault() { prevented += 1; },
+  });
+  assert.equal(prevented, 1);
+  assert.equal(rootClasses.has("drag-active"), true);
+
+  const dropped = [{ name: "drop.png" }];
+  rootListeners.get("drop")({
+    dataTransfer: { files: dropped },
+    preventDefault() { prevented += 1; },
+  });
+  assert.equal(prevented, 2);
+  assert.equal(rootClasses.has("drag-active"), false);
+  assert.deepEqual(selectedFiles[0], dropped);
+
+  const pasted = [{ name: "paste.jpg" }];
+  let pastePrevented = 0;
+  composerListeners.get("paste")({
+    clipboardData: { files: pasted },
+    preventDefault() { pastePrevented += 1; },
+  });
+  assert.equal(pastePrevented, 1);
+  assert.deepEqual(selectedFiles[1], pasted);
+
+  composerListeners.get("paste")({
+    clipboardData: { files: [] },
+    preventDefault() { pastePrevented += 1; },
+  });
+  assert.equal(pastePrevented, 1, "normal text paste must retain browser behavior");
+  assert.equal(selectedFiles.length, 2);
+  assert.match(sidePanelHtml, /\.composer\.drag-active \.composer-shell/);
+});
+
+test("P2 Side Chat renders progressive activity and frame-schedules Markdown", () => {
   assert.match(sidePanelHtml, /id="activity"/);
   assert.match(sidePanelSource, /type === "agent_status"/);
   assert.match(sidePanelSource, /type === "activity"/);
   assert.match(sidePanelSource, /LOADING_VERBS/);
-  assert.match(sidePanelSource, /}, 80\)/);
+  assert.match(sidePanelSource, /requestAnimationFrame\(\(timestamp\) =>/);
+  assert.match(sidePanelSource, /STREAM_FRAME_MS/);
   assert.match(sidePanelSource, /transcriptPinned/);
   assert.match(sidePanelHtml, /id="loadOlderBtn"/);
   assert.match(sidePanelSource, /next_cursor/);
@@ -1099,7 +1627,8 @@ test("P2 Side Chat renders progressive activity and throttles Markdown", () => {
   assert.match(sidePanelSource, /function renderLiveTurnDetails/);
   assert.match(sidePanelSource, /Thought · \$\{thinkingChars\.toLocaleString\(\)\} chars/);
   assert.match(sidePanelSource, /if \(type === "thinking"\)/);
-  assert.match(sidePanelSource, /toolActivities\.set\(key, data\)/);
+  assert.match(sidePanelSource, /toolActivities\.set\(key, \{/);
+  assert.doesNotMatch(sidePanelSource, /toolActivities\.set\(key, data\)/);
   assert.match(sidePanelSource, /return "Browsed web"/);
   assert.match(sidePanelSource, /streamTask && streamingSessionId === selectedSessionId/);
   assert.match(sidePanelSource, /Math\.min\(5000, 250 \* 2 \*\*/);
