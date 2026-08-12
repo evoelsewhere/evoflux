@@ -57,6 +57,13 @@ enum BackendMode {
     External,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum StartupBackend {
+    DevelopmentExternal(String),
+    SavedExternal(String),
+    Bundled,
+}
+
 impl BackendMode {
     fn as_str(self) -> &'static str {
         match self {
@@ -183,6 +190,8 @@ const SIDECAR_FIRST_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(90);
 const SIDECAR_RETRY_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(45);
 const SIDECAR_START_ATTEMPTS: u32 = 3;
 const SIDECAR_RETRY_BASE_DELAY: Duration = Duration::from_millis(750);
+const DEV_BACKEND_URL_ENV: &str = "EVOFLUX_DESKTOP_DEV_BACKEND_URL";
+const DEV_BACKEND_HEALTH_ATTEMPTS: u32 = 60;
 
 /// Label shown in the tray when no chat/coding session is active.
 const TRAY_SESSION_IDLE: &str = "No active session";
@@ -412,7 +421,7 @@ async fn app_backend_status_for_window(
         mode: mode.as_str().to_string(),
         sidecar_running,
         external: mode == BackendMode::External,
-        supports_bundled: true,
+        supports_bundled: !development_backend_is_forced(),
         servers,
         startup,
     })
@@ -425,6 +434,7 @@ async fn app_save_backend_server(
     base_url: String,
     name: Option<String>,
 ) -> Result<AppBackendStatus, String> {
+    reject_forced_development_backend_mutation()?;
     let normalized = normalize_external_base_url(&base_url).map_err(|e| format!("{e:#}"))?;
     save_app_backend_config(
         &app,
@@ -446,6 +456,7 @@ async fn app_use_external_backend(
     name: Option<String>,
     persist: Option<bool>,
 ) -> Result<AppBackendStatus, String> {
+    reject_forced_development_backend_mutation()?;
     let normalized = normalize_external_base_url(&base_url).map_err(|e| format!("{e:#}"))?;
     wait_for_health(&normalized, 8, Duration::from_millis(250))
         .await
@@ -498,6 +509,7 @@ async fn app_remove_backend_server(
     window: tauri::WebviewWindow,
     base_url: String,
 ) -> Result<AppBackendStatus, String> {
+    reject_forced_development_backend_mutation()?;
     let normalized = normalize_external_base_url(&base_url).map_err(|e| format!("{e:#}"))?;
     remove_app_backend_server(&app, &normalized).map_err(|e| format!("{e:#}"))?;
     let state: tauri::State<'_, AppState> = app.state();
@@ -518,6 +530,7 @@ async fn app_use_bundled_backend(
     app: AppHandle,
     window: tauri::WebviewWindow,
 ) -> Result<(), String> {
+    reject_forced_development_backend_mutation()?;
     let state: tauri::State<'_, AppState> = app.state();
 
     let base = state
@@ -2153,7 +2166,7 @@ fn force_reload_app(app: &AppHandle) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         update_tray_status(&handle, "Status: Reloading…");
-        let result = restart_sidecar_and_reload_window(&handle).await;
+        let result = restart_backend_and_reload_window(&handle).await;
         if let Err(e) = result {
             log::error!("failed to force reload backend: {e:#}");
             update_tray_status(&handle, "Status: Error");
@@ -2188,7 +2201,45 @@ fn app_retry_backend(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-async fn restart_sidecar_and_reload_window(app: &AppHandle) -> Result<()> {
+async fn restart_backend_and_reload_window(app: &AppHandle) -> Result<()> {
+    if let Some(base_url) = development_backend_url()? {
+        shutdown_sidecar_now(app).await;
+        activate_external_backend(
+            app,
+            base_url.clone(),
+            DEV_BACKEND_HEALTH_ATTEMPTS,
+            "Waiting for the source development backend…",
+            "Development backend ready",
+        )
+        .await
+        .with_context(|| format!("reconnect development backend at {base_url}"))?;
+
+        let windows: Vec<tauri::WebviewWindow> = app
+            .webview_windows()
+            .into_values()
+            .filter(|window| {
+                window.label() == MAIN_WINDOW || window.label().starts_with(SECONDARY_WINDOW_PREFIX)
+            })
+            .collect();
+        let state: tauri::State<'_, AppState> = app.state();
+        let reload_script = format!(
+            "{}window.location.reload();",
+            frontend_init_script(None, &base_url)
+        );
+        for window in windows {
+            window
+                .eval(&reload_script)
+                .context("reload development app window")?;
+            state
+                .window_backend_base_urls
+                .lock()
+                .await
+                .insert(window.label().to_string(), base_url.clone());
+        }
+        show_target_window(app);
+        return Ok(());
+    }
+
     let state: tauri::State<'_, AppState> = app.state();
     let existing_token = state.desktop_token.lock().await.clone();
 
@@ -2717,6 +2768,48 @@ async fn wait_for_health(base: &str, attempts: u32, delay: Duration) -> Result<(
     ))
 }
 
+async fn activate_external_backend(
+    app: &AppHandle,
+    base_url: String,
+    health_attempts: u32,
+    checking_message: &str,
+    ready_message: &str,
+) -> Result<()> {
+    set_backend_startup(app, "external", checking_message, 0, None, false).await;
+    wait_for_health(&base_url, health_attempts, Duration::from_millis(250)).await?;
+
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        window
+            .eval(frontend_init_script(None, &base_url))
+            .context("inject external backend config")?;
+    }
+
+    let state: tauri::State<'_, AppState> = app.state();
+    state.backend_base_url.lock().await.take();
+    state.desktop_token.lock().await.take();
+    let mut external_windows = state.window_backend_base_urls.lock().await;
+    external_windows.clear();
+    external_windows.insert(MAIN_WINDOW.to_string(), base_url.clone());
+    drop(external_windows);
+    *state.backend_mode.lock().await = BackendMode::External;
+
+    sync_webbridge_native_connection(app, &base_url, None).await;
+    update_tray_status(app, "Status: Running");
+    set_backend_startup(app, "ready", ready_message, 0, None, false).await;
+    app.emit(
+        "backend-ready",
+        BackendReady {
+            port: 0,
+            version: "external".to_string(),
+            base_url,
+            token: None,
+            sidecar_running: false,
+        },
+    )
+    .ok();
+    Ok(())
+}
+
 async fn publish_webbridge_native_connection(
     app: &AppHandle,
     base_url: &str,
@@ -3045,6 +3138,49 @@ fn normalize_external_base_url(base_url: &str) -> Result<String> {
     }
 }
 
+fn development_backend_is_forced() -> bool {
+    cfg!(debug_assertions) && std::env::var_os(DEV_BACKEND_URL_ENV).is_some()
+}
+
+fn reject_forced_development_backend_mutation() -> Result<(), String> {
+    if development_backend_is_forced() {
+        Err(
+            "Backend switching is disabled while the desktop development backend is forced."
+                .to_string(),
+        )
+    } else {
+        Ok(())
+    }
+}
+
+fn development_backend_url() -> Result<Option<String>> {
+    if !cfg!(debug_assertions) {
+        return Ok(None);
+    }
+    match std::env::var(DEV_BACKEND_URL_ENV) {
+        Ok(value) => normalize_external_base_url(&value)
+            .with_context(|| format!("invalid {DEV_BACKEND_URL_ENV}"))
+            .map(Some),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            Err(anyhow!("{DEV_BACKEND_URL_ENV} must be valid Unicode"))
+        }
+    }
+}
+
+fn select_startup_backend(
+    development_url: Option<String>,
+    saved_url: Option<String>,
+) -> StartupBackend {
+    if let Some(url) = development_url {
+        StartupBackend::DevelopmentExternal(url)
+    } else if let Some(url) = saved_url {
+        StartupBackend::SavedExternal(url)
+    } else {
+        StartupBackend::Bundled
+    }
+}
+
 fn normalize_server_name(name: Option<String>) -> Option<String> {
     name.map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -3200,12 +3336,14 @@ fn frontend_webview_url() -> Result<WebviewUrl> {
 }
 
 fn frontend_init_script(token: Option<&str>, base_url: &str) -> String {
-    let token_define = token.map(|t| {
-        format!(
-            "Object.defineProperty(window, '__OAD_TOKEN__', {{ value: {token_json}, writable: true, configurable: true }});",
-            token_json = serde_json::to_string(t).unwrap_or_else(|_| "\"\"".into())
-        )
-    }).unwrap_or_default();
+    let token_define = token
+        .map(|t| {
+            format!(
+                "Object.defineProperty(window, '__OAD_TOKEN__', {{ value: {token_json}, writable: true, configurable: true }});",
+                token_json = serde_json::to_string(t).unwrap_or_else(|_| "\"\"".into())
+            )
+        })
+        .unwrap_or_else(|| "delete window.__OAD_TOKEN__;".to_string());
     format!(
         "Object.defineProperty(window, '__OAD_API_BASE_URL__', {{ value: {base_json}, writable: true, configurable: true }});{token_define}",
         base_json = serde_json::to_string(base_url).unwrap_or_else(|_| "\"\"".into())
@@ -3261,22 +3399,44 @@ async fn build_app_window(
 
 async fn create_app_window(app: &AppHandle, label: Option<&str>) -> Result<tauri::WebviewWindow> {
     let state: tauri::State<'_, AppState> = app.state();
-    let base = state
-        .backend_base_url
-        .lock()
-        .await
-        .clone()
-        .ok_or_else(|| anyhow!("backend is not ready"))?;
-    let token = state.desktop_token.lock().await.clone();
+    let new_label = label
+        .map(str::to_string)
+        .unwrap_or_else(|| next_window_label(app));
+    let active_label = state.active_window_label.lock().await.clone();
+    let (active_external_base, main_external_base) = {
+        let external_windows = state.window_backend_base_urls.lock().await;
+        (
+            external_windows.get(&active_label).cloned(),
+            external_windows.get(MAIN_WINDOW).cloned(),
+        )
+    };
+    let bundled_base = state.backend_base_url.lock().await.clone();
+    let external_base = if active_external_base.is_some() {
+        active_external_base
+    } else if active_label == MAIN_WINDOW || bundled_base.is_none() {
+        main_external_base
+    } else {
+        None
+    };
+    let (base, token, external) = if let Some(base) = external_base {
+        (base, None, true)
+    } else {
+        (
+            bundled_base.ok_or_else(|| anyhow!("backend is not ready"))?,
+            state.desktop_token.lock().await.clone(),
+            false,
+        )
+    };
     let init_script = frontend_init_script(token.as_deref(), &base);
-    build_app_window(
-        app,
-        label
-            .map(str::to_string)
-            .unwrap_or_else(|| next_window_label(app)),
-        init_script,
-    )
-    .await
+    let window = build_app_window(app, new_label.clone(), init_script).await?;
+    if external {
+        state
+            .window_backend_base_urls
+            .lock()
+            .await
+            .insert(new_label, base);
+    }
+    Ok(window)
 }
 
 async fn start_backend_and_window(app: AppHandle) -> Result<()> {
@@ -3290,57 +3450,71 @@ async fn start_backend_and_window(app: AppHandle) -> Result<()> {
         .await?;
     }
 
-    if let Some(active_base_url) = load_app_backend_config(&app)
+    let development_url = match development_backend_url() {
+        Ok(url) => url,
+        Err(error) => {
+            let failure = BackendStartFailure {
+                message: format!("Development backend configuration is invalid: {error:#}"),
+                fatal: true,
+                attempt: 0,
+            };
+            publish_backend_error(&app, &failure).await;
+            return Ok(());
+        }
+    };
+    let saved_url = load_app_backend_config(&app)
         .ok()
-        .and_then(|config| config.active_base_url)
-    {
-        set_backend_startup(
-            &app,
-            "external",
-            "Checking the configured backend…",
-            0,
-            None,
-            false,
-        )
-        .await;
-        match normalize_external_base_url(&active_base_url) {
-            Ok(base) => match wait_for_health(&base, 8, Duration::from_millis(250)).await {
-                Ok(()) => {
-                    sync_webbridge_native_connection(&app, &base, None).await;
-                    state
-                        .window_backend_base_urls
-                        .lock()
-                        .await
-                        .insert(MAIN_WINDOW.to_string(), base.clone());
-                    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-                        window
-                            .eval(frontend_init_script(None, &base))
-                            .context("inject external backend config")?;
-                    }
-                    update_tray_status(&app, "Status: Running");
-                    set_backend_startup(&app, "ready", "Configured backend ready", 0, None, false)
-                        .await;
-                    app.emit(
-                        "backend-ready",
-                        BackendReady {
-                            port: 0,
-                            version: "external".to_string(),
-                            base_url: base,
-                            token: None,
-                            sidecar_running: false,
-                        },
+        .and_then(|config| config.active_base_url);
+    match select_startup_backend(development_url, saved_url) {
+        StartupBackend::DevelopmentExternal(base_url) => {
+            log::info!("desktop: using forced development backend at {base_url}");
+            if let Err(error) = activate_external_backend(
+                &app,
+                base_url.clone(),
+                DEV_BACKEND_HEALTH_ATTEMPTS,
+                "Waiting for the source development backend…",
+                "Development backend ready",
+            )
+            .await
+            {
+                let failure = BackendStartFailure {
+                    message: format!(
+                        "Development backend at {base_url} is not reachable: {error:#}"
+                    ),
+                    fatal: false,
+                    attempt: 0,
+                };
+                publish_backend_error(&app, &failure).await;
+                return Ok(());
+            }
+            return Ok(());
+        }
+        StartupBackend::SavedExternal(active_base_url) => {
+            match normalize_external_base_url(&active_base_url) {
+                Ok(base_url) => {
+                    match activate_external_backend(
+                        &app,
+                        base_url,
+                        8,
+                        "Checking the configured backend…",
+                        "Configured backend ready",
                     )
-                    .ok();
-                    return Ok(());
+                    .await
+                    {
+                        Ok(()) => return Ok(()),
+                        Err(error) => log::warn!(
+                            "desktop: saved external backend is not reachable at startup: {error:#}"
+                        ),
+                    }
                 }
-                Err(e) => {
-                    log::warn!("desktop: saved external backend is not reachable at startup: {e:#}")
+                Err(error) => {
+                    log::warn!(
+                        "desktop: saved external backend URL is invalid at startup: {error:#}"
+                    )
                 }
-            },
-            Err(e) => {
-                log::warn!("desktop: saved external backend URL is invalid at startup: {e:#}")
             }
         }
+        StartupBackend::Bundled => {}
     }
 
     let ready = match start_bundled_backend_with_retry(&app, None).await {
@@ -3751,6 +3925,34 @@ mod tests {
             script.matches("writable: true, configurable: true").count(),
             2
         );
+    }
+
+    #[test]
+    fn external_backend_init_clears_a_previous_desktop_token() {
+        let script = frontend_init_script(None, "http://127.0.0.1:8000");
+
+        assert!(script.contains("delete window.__OAD_TOKEN__"));
+        assert!(script.contains("http://127.0.0.1:8000"));
+    }
+
+    #[test]
+    fn development_backend_overrides_saved_backend() {
+        assert_eq!(
+            select_startup_backend(
+                Some("http://127.0.0.1:8000".to_string()),
+                Some("http://192.168.1.10:4082".to_string()),
+            ),
+            StartupBackend::DevelopmentExternal("http://127.0.0.1:8000".to_string())
+        );
+    }
+
+    #[test]
+    fn startup_backend_falls_back_from_saved_to_bundled() {
+        assert_eq!(
+            select_startup_backend(None, Some("http://192.168.1.10:4082".to_string())),
+            StartupBackend::SavedExternal("http://192.168.1.10:4082".to_string())
+        );
+        assert_eq!(select_startup_backend(None, None), StartupBackend::Bundled);
     }
 
     #[test]

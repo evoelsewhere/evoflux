@@ -24,13 +24,13 @@ README.md        Architecture and packaging notes
 make -C desktop sidecar       # include the bundled Documents engines
 make -C desktop sidecar-full  # include Documents + Azure Document Intelligence
 make -C desktop icons         # regenerate icons from src-tauri/icons/icon.png
-make -C desktop dev           # Tauri shell against root make dev
+make -C desktop dev           # Tauri shell against root make dev-web
 make -C desktop dev-bundled   # Tauri shell with bundled sidecar
 make -C desktop build         # release desktop build
 make -C desktop clean
 ```
 
-For normal desktop development, run `make dev` at the repo root first, then `make -C desktop dev` in another terminal.
+For normal desktop development, run `make dev-web` at the repo root first, then `make -C desktop dev` in another terminal, or use root `make dev-desktop` for both.
 
 ## Code style
 
