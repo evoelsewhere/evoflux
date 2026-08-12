@@ -21,7 +21,7 @@ import { parseGoalCommand } from '@/lib/parseGoalCommand'
 import { mapWorkflowArgs, parseWorkflowCommand } from '@/lib/parseWorkflowCommand'
 import type { RunInputsRequest } from '../RunInputsDialog'
 import type { InputBarHandle, SlashCommand, SnippetCommand } from '../InputBar'
-import type { MessageAttachment, SkillMode } from '@/api/types'
+import type { MessageAttachment } from '@/api/types'
 
 async function attachmentToFile(att: MessageAttachment): Promise<File | null> {
   const url = resolveApiUrl(att.url)
@@ -37,7 +37,7 @@ async function attachmentToFile(att: MessageAttachment): Promise<File | null> {
 }
 
 interface UseSlashCommandRegistryArgs {
-  mode: 'work' | 'coding' | 'aim'
+  mode: 'work' | 'coding'
   workspace: string | null
   agentWorkspace: string | null
   /** Every repository root for a project session; single-repo sessions pass one root. */
@@ -65,7 +65,6 @@ export function useSlashCommandRegistry({
 }: UseSlashCommandRegistryArgs) {
   const pushToast = useToastStore((s) => s.push)
   const [runInputsRequest, setRunInputsRequest] = useState<RunInputsRequest | null>(null)
-  const skillMode: SkillMode = mode
 
   // Shell shortcut: start a message with `!` to run the rest as a shell command.
   // Slash commands for the input bar (type / to trigger).
@@ -79,7 +78,7 @@ export function useSlashCommandRegistry({
       : agentWorkspace
         ? [agentWorkspace]
         : [],
-    mode: skillMode,
+    mode,
   })
   const snippetsQ = useSnippetsQuery(mode === 'coding' ? agentWorkspace : null)
   const userCommandNames = useMemo(
@@ -87,10 +86,10 @@ export function useSlashCommandRegistry({
     [commandsQ.data],
   )
   const workflowsQ = useWorkflowsQuery(
-    mode === 'coding' || mode === 'aim' ? workspace : null,
+    mode === 'coding' ? workspace : null,
   )
   // Approved + valid definitions matching the session scope (plan §9.1):
-  // work sessions list work-scope only; coding/aim sessions additionally
+  // work sessions list work-scope only; coding sessions additionally
   // list their own scope. Unapproved/invalid → omitted (gating by omission).
   const runnableWorkflows = useMemo(
     () =>
@@ -133,7 +132,7 @@ export function useSlashCommandRegistry({
         (skill) =>
           skill.valid &&
           skill.user_invocable !== false &&
-          (skill.modes ?? ['work', 'coding', 'aim']).includes(skillMode),
+          (skill.modes ?? ['work', 'coding']).includes(mode),
       )
       .map((skill) => {
         const skillName = skill.name.replace('/', ':')

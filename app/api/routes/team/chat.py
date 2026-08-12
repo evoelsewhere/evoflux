@@ -207,35 +207,22 @@ def _validate_workspace_or_422(workspace: str) -> str:
 async def _project_paths_for_session(
     db: DbSession, existing: ChatSession, workspace: str
 ) -> tuple[list[str], list[str]]:
-    """(extra_workspace_paths, read_only_paths) for a project-bound session.
-
-    AIM projects additionally mark their base-source repos read-only —
-    see ``SandboxConfig.read_only_paths``.
-    """
+    """(extra_workspace_paths, read_only_paths) for a project-bound session."""
     extra_ws_paths: list[str] = []
     read_only_paths: list[str] = []
     if existing.project_id is not None:
-        from app.services.coding_project_service import (
-            get_project,
-            get_project_workspace_paths,
-        )
+        from app.services.coding_project_service import get_project_workspace_paths
 
         async with db.begin():
-            project = await get_project(db, existing.project_id)
             all_paths = await get_project_workspace_paths(db, existing.project_id)
         extra_ws_paths = [p for p in all_paths if p != workspace]
-        if project is not None and project.kind == "aim":
-            from app.services.aim.project import resolve_source_workspace_paths
-
-            async with db.begin():
-                read_only_paths = await resolve_source_workspace_paths(db, project)
     return extra_ws_paths, read_only_paths
 
 
 async def _team_for_session_mode(db: DbSession, session_id: str):
     """Resolve the live team that matches *session_id*'s persisted mode.
 
-    Never binds a default-mode (work) team to a coding/aim session id:
+    Never binds a default-mode (work) team to a coding session id:
     ``_session_teams`` wins in ``find_team_for_session`` (the workflow
     runner's lookup), so one stray work boot would make every later
     pipeline in that session run with the work lead.
@@ -345,7 +332,7 @@ async def team_chat(
 
     # A persisted session owns its mode and workspace. Request fields select
     # the context only when creating a new session; they can never migrate an
-    # existing Work session into Coding/AIM (or vice versa) as a side effect.
+    # existing Work session into Coding (or vice versa) as a side effect.
     if existing is not None:
         try:
             persisted_mode = normalize_mode(existing.mode)
@@ -354,11 +341,11 @@ async def team_chat(
                 status_code=409,
                 detail=f"Session has unsupported persisted mode: {existing.mode}",
             ) from exc
-        if persisted_mode in {"coding", "aim"}:
+        if persisted_mode == "coding":
             if not existing.workspace:
                 raise HTTPException(
                     status_code=409,
-                    detail=f"{persisted_mode.upper()} session has no persisted workspace.",
+                    detail="Coding session has no persisted workspace.",
                 )
             persisted_workspace = _validate_workspace_or_422(existing.workspace)
             if mode == persisted_mode and workspace is not None:
@@ -367,7 +354,7 @@ async def team_chat(
                     raise HTTPException(
                         status_code=409,
                         detail=(
-                            f"Session belongs to a different {persisted_mode} workspace: "
+                            "Session belongs to a different coding workspace: "
                             f"{persisted_workspace}"
                         ),
                     )
@@ -376,7 +363,7 @@ async def team_chat(
             workspace = existing.workspace
         mode = persisted_mode
 
-    if mode in {"coding", "aim"}:
+    if mode == "coding":
         if session_id is None:
             session_id = str(uuid7())
         assert workspace is not None
@@ -675,7 +662,7 @@ async def team_command(
     from app.agent.mode.team.team import ContinuePreconditionError
 
     # Resolve by the session's persisted mode — booting the default
-    # (work) team here for a coding/aim session would poison the
+    # (work) team here for a coding session would poison the
     # session→team lookup for the rest of the process (see
     # _team_for_session_mode).
     team_obj = await _team_for_session_mode(db, body.session_id)
@@ -765,7 +752,7 @@ async def list_team_agents(
     workspace: str | None = Query(None, description="Coding workspace directory."),
     mode: str = Query(
         "coding",
-        description="Which roster the workspace team uses: 'coding' or 'aim'. "
+        description="Which roster the workspace team uses: 'coding'. "
         "Ignored without a workspace (the default work team has one roster).",
     ),
 ) -> dict:
@@ -795,13 +782,9 @@ async def list_team_agents(
     """
     if workspace:
         mode = normalize_mode(mode)
-        if mode not in ("coding", "aim"):
-            raise HTTPException(
-                status_code=422, detail="mode must be 'coding' or 'aim'."
-            )
+        if mode != "coding":
+            raise HTTPException(status_code=422, detail="mode must be 'coding'.")
         try:
-            # Keyed per mode so an aim project's target repo doesn't get
-            # (or reuse) a coding-roster team under the same probe key.
             team_obj = await team_manager.get_or_start_coding_team(
                 workspace, f"__agents_{mode}__", mode=mode
             )
@@ -914,12 +897,10 @@ async def list_team_sessions(
     """
     if mode is not None:
         mode = normalize_mode(mode)
-        if mode not in {"work", "coding", "aim"}:
+        if mode not in {"work", "coding"}:
             raise HTTPException(status_code=422, detail="Invalid mode")
-    if workspace is not None and mode not in {"coding", "aim"}:
-        raise HTTPException(
-            status_code=422, detail="workspace requires mode=coding or mode=aim"
-        )
+    if workspace is not None and mode != "coding":
+        raise HTTPException(status_code=422, detail="workspace requires mode=coding")
 
     try:
         sessions, next_cursor, has_more = await list_sessions_page(
@@ -955,10 +936,8 @@ async def resolve_team_session(
 ) -> TeamSessionResolveResponse:
     """Return the newest matching top-level session, creating one if absent."""
     body.mode = normalize_mode(body.mode)
-    if body.mode not in {"work", "coding", "aim"}:
-        raise HTTPException(
-            status_code=422, detail="mode must be 'work', 'coding', or 'aim'."
-        )
+    if body.mode not in {"work", "coding"}:
+        raise HTTPException(status_code=422, detail="mode must be 'work' or 'coding'.")
     model = body.model.strip() if body.model else None
     thinking_level = body.thinking_level.strip() if body.thinking_level else None
     if model and not await is_registered_model_id(model):
@@ -979,44 +958,18 @@ async def resolve_team_session(
         # Project-mode: derive the primary workspace from the project. A
         # project session spans all repos; it is matched/reused by
         # project_id, never by this derived path (see
-        # get_latest_top_level_session). For an AIM project the primary
-        # workspace is specifically the *target* repo (roles.target in
-        # settings["aim"]) — not just "whichever repo was added first" —
-        # since that's where aim-converter writes code; source/kb repos
-        # ride along as extra_workspace_paths (source enforced read-only,
-        # see member.py's sandbox construction).
-        from app.services.coding_project_service import (
-            get_project,
-            get_project_workspace_paths,
-        )
+        # get_latest_top_level_session).
+        from app.services.coding_project_service import get_project_workspace_paths
 
         async with db.begin():
-            project = await get_project(db, project_id)
-            if project is None:
-                raise HTTPException(status_code=404, detail="Project not found.")
-            if project.kind != body.mode:
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        f"A {body.mode} session cannot use a {project.kind} project."
-                    ),
-                )
             paths = await get_project_workspace_paths(db, project_id)
         if not paths:
             raise HTTPException(
                 status_code=422,
                 detail="Project has no workspaces configured.",
             )
-        primary_path = paths[0]
-        if project.kind == "aim":
-            from app.services.aim.project import resolve_target_workspace_path
-
-            async with db.begin():
-                target_path = await resolve_target_workspace_path(db, project)
-            if target_path:
-                primary_path = target_path
         # Fail fast with a clear 422 if the primary repo path is stale/missing.
-        workspace = _validate_workspace_or_422(primary_path)
+        workspace = _validate_workspace_or_422(paths[0])
     elif body.worktree_from or body.worktree_name or body.worktree_branch:
         if not body.worktree_from or not body.worktree_name:
             raise HTTPException(
@@ -1064,7 +1017,7 @@ async def resolve_team_session(
     # Before this canonicalisation, opening a project-owned repo through the
     # standalone "+" succeeded but produced a session the Workspaces filter
     # could never render. Worktrees inherit ownership from their source repo.
-    if body.mode in {"coding", "aim"} and workspace and project_id is None:
+    if body.mode == "coding" and workspace and project_id is None:
         async with db.begin():
             inferred_project_ids = await get_visible_project_ids_for_workspace_path(
                 db, workspace
@@ -1328,7 +1281,7 @@ async def set_session_permission_mode(
     # Peek only — the persisted mode is picked up at the next team boot, so
     # starting a team here just to set an attribute wastes a full cold boot.
     team_obj = team_manager.current_team_for_session(sid)
-    if team_obj is None and session_mode in ("coding", "aim") and session_workspace:
+    if team_obj is None and session_mode == "coding" and session_workspace:
         team_obj = team_manager.current_coding_team_for_session(session_workspace, sid)
     if team_obj is not None:
         team_obj.permission_mode = body.mode

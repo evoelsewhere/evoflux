@@ -280,8 +280,8 @@ edges:
 
     await _wait(lambda: state.status == "waiting_gate")
 
-    # The pause is mirrored to the DB row — REST readers (AIM Pipelines
-    # table) never see the in-memory state, only workflow_executions.
+    # The pause is mirrored to the DB row — REST readers never see the
+    # in-memory state, only workflow_executions.
     async def _db_status() -> str:
         async with db_module.async_session_factory() as db:
             execution = await db.get(WorkflowExecution, state.execution_id)

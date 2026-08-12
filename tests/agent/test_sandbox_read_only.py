@@ -1,5 +1,4 @@
-"""Tests for SandboxConfig.read_only_paths — the AIM base-source
-write-deny mechanism (documents/research/aim-framework.md §3.3).
+"""Tests for SandboxConfig.read_only_paths — write-deny for readable roots.
 
 Read-only paths are NOT denied roots: agents can still read/search them
 via ls/grep/glob/read and via shell. Only mutating fs tools (write/edit/

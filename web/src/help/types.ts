@@ -9,7 +9,6 @@ export type HelpCategoryId =
   | 'sessions'
   | 'workbench'
   | 'coding'
-  | 'aim'
   | 'memory'
   | 'scheduler'
   | 'browser'

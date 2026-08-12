@@ -834,7 +834,7 @@ async def test_parse_failure_preserves_last_good_component(
 
     source.write_text("def changed():\n    return 2\n", encoding="utf-8")
 
-    def fail_parse(_record: object, **_kwargs: object) -> object:
+    def fail_parse(_record: object) -> object:
         raise ValueError("synthetic parser failure")
 
     monkeypatch.setattr(
@@ -871,7 +871,7 @@ async def test_deleting_a_never_indexed_failed_file_clears_its_error(
     source.write_text("def broken():\n    return 1\n", encoding="utf-8")
     index = await RepositoryIndex.create(repository)
 
-    def fail_parse(_record: object, **_kwargs: object) -> object:
+    def fail_parse(_record: object) -> object:
         raise ValueError("synthetic parser failure")
 
     monkeypatch.setattr("app.services.code_index.project.build_file_state", fail_parse)

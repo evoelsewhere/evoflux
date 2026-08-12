@@ -13,7 +13,7 @@ from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from app.services.code_index.parsers.registry import default_registry, registry_for_root
+from app.services.code_index.parsers.registry import default_registry
 from app.services.code_index.executor import run_index_work
 from app.services.code_index.models import (
     CodeContextResult,
@@ -326,7 +326,7 @@ async def structural_grep(
         except Exception as exc:
             return [], [f"{label}: index unavailable ({exc})"]
         patterns: dict[str, StructuralPattern | None] = {}
-        registry = registry_for_root(index.root)
+        registry = default_registry()
         for file_path, language, source in rows:
             language = str(language)
             if wanted_languages and language.casefold() not in wanted_languages:

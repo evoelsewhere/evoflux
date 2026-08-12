@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Literal, TypeAlias, cast
+from typing import Literal, TypeAlias
 
-SkillMode: TypeAlias = Literal["work", "coding", "aim"]
-ALL_SKILL_MODES: tuple[SkillMode, ...] = ("work", "coding", "aim")
+SkillMode: TypeAlias = Literal["work", "coding"]
+ALL_SKILL_MODES: tuple[SkillMode, ...] = ("work", "coding")
 SKILL_SCOPE_FILENAME = ".evoflux.json"
 MAX_SKILL_SCOPE_BYTES = 16 * 1024
 
@@ -16,14 +16,6 @@ def default_skill_modes() -> list[SkillMode]:
     """Return a fresh Pydantic-safe default list for API models."""
 
     return list(ALL_SKILL_MODES)
-
-
-def normalize_skill_mode(value: object) -> SkillMode:
-    """Normalize one runtime mode while preserving the historical Work fallback."""
-
-    if isinstance(value, str) and value in ALL_SKILL_MODES:
-        return cast(SkillMode, value)
-    return "work"
 
 
 def normalize_skill_modes(value: object) -> tuple[SkillMode, ...]:
@@ -100,7 +92,7 @@ def read_skill_modes_with_diagnostic(
         return (
             ALL_SKILL_MODES,
             f"{SKILL_SCOPE_FILENAME}.modes contains unsupported values; "
-            "expected only 'work', 'coding', and/or 'aim'.",
+            "expected only 'work' and/or 'coding'.",
         )
     return normalize_skill_modes(raw_modes), None
 

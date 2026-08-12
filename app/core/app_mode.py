@@ -14,7 +14,6 @@ from enum import StrEnum
 class AppMode(StrEnum):
     WORK = "work"
     CODING = "coding"
-    AIM = "aim"
 
 
 _LEGACY_MODES = {"normal": AppMode.WORK, "forge": AppMode.WORK}
@@ -35,7 +34,7 @@ def parse_app_mode(value: str | AppMode) -> AppMode:
     try:
         return AppMode(normalized)
     except ValueError as exc:
-        raise ValueError("mode must be 'work', 'coding', or 'aim'") from exc
+        raise ValueError("mode must be 'work' or 'coding'") from exc
 
 
 def normalize_app_mode(value: str | AppMode) -> str:

@@ -7,8 +7,6 @@ here. Nothing else in the pipeline needs to change.
 
 from __future__ import annotations
 
-import threading
-from collections.abc import Callable
 from pathlib import Path
 
 from app.services.code_index.parsers.base import LanguageParser
@@ -69,33 +67,6 @@ _BUILTIN_PARSER_TYPES: tuple[type[LanguageParser], ...] = (
     LiquidParser,
 )
 
-ExtraParserProvider = Callable[[Path], list[LanguageParser]]
-_EXTRA_PARSER_PROVIDERS: list[ExtraParserProvider] = []
-_EXTRA_PARSER_PROVIDERS_LOCK = threading.RLock()
-
-
-def register_extra_parser_provider(provider: ExtraParserProvider) -> None:
-    """Register a repository-scoped parser source.
-
-    Product modes can extend the repository-local index without making the
-    core index depend on their database models. Registration is idempotent so
-    startup and hot-reload paths may safely activate the same provider.
-    """
-
-    with _EXTRA_PARSER_PROVIDERS_LOCK:
-        if provider not in _EXTRA_PARSER_PROVIDERS:
-            _EXTRA_PARSER_PROVIDERS.append(provider)
-
-
-def extra_parsers_for_root(root: Path) -> list[LanguageParser]:
-    canonical = root.expanduser().resolve()
-    with _EXTRA_PARSER_PROVIDERS_LOCK:
-        providers = tuple(_EXTRA_PARSER_PROVIDERS)
-    parsers: list[LanguageParser] = []
-    for provider in providers:
-        parsers.extend(provider(canonical))
-    return parsers
-
 
 class ParserRegistry:
     """Resolves the right parser for a given file path."""
@@ -129,9 +100,9 @@ def build_registry(
 
     ``extra_parsers`` are appended after the builtins, so on an extension
     collision the extra parser wins — a workspace-scoped structural parser
-    (an AIM rulebook's ``extractors/*.yaml``, see parsers/structural.py) can
-    take over an extension a builtin would otherwise claim. They are never
-    filtered by ``languages``: the caller opted in explicitly.
+    (``extractors/*.yaml``, see parsers/structural.py) can take over an
+    extension a builtin would otherwise claim. They are never filtered by
+    ``languages``: the caller opted in explicitly.
     """
     parsers: list[LanguageParser] = []
     for parser_type in _BUILTIN_PARSER_TYPES:
@@ -145,9 +116,3 @@ def build_registry(
 def default_registry() -> ParserRegistry:
     """Registry with every built-in language enabled."""
     return build_registry()
-
-
-def registry_for_root(root: Path) -> ParserRegistry:
-    """Registry for one repository, including mode-owned parser packs."""
-
-    return build_registry(extra_parsers=extra_parsers_for_root(root))

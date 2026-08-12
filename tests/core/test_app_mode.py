@@ -11,13 +11,11 @@ def test_legacy_work_names_normalize_at_boundary(legacy):
     assert normalize_app_mode(legacy) == "work"
 
 
-@pytest.mark.parametrize(
-    "mode", ["work", "coding", "aim", AppMode.WORK, AppMode.CODING, AppMode.AIM]
-)
+@pytest.mark.parametrize("mode", ["work", "coding", AppMode.WORK, AppMode.CODING])
 def test_canonical_modes_round_trip(mode):
-    assert normalize_app_mode(mode) in {"work", "coding", "aim"}
+    assert normalize_app_mode(mode) in {"work", "coding"}
 
 
 def test_unknown_mode_is_rejected():
-    with pytest.raises(ValueError, match="work.*coding.*aim"):
-        parse_app_mode("deploy")
+    with pytest.raises(ValueError, match="work.*coding"):
+        parse_app_mode("aim")

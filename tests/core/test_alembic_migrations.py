@@ -1,12 +1,14 @@
 """Alembic smoke test — the full migration chain upgrades a fresh SQLite DB.
 
 Runs ``alembic upgrade head`` against a temp database using the real
-``app/alembic.ini`` and asserts the latest schema state lands. The linear
-history retains the AIM removal at revision 00000043, followed by scheduler
-routing, repository-local code-index storage, Artifact Fabric, project-session
-ownership repair, and retired Memory-state cleanup through revision 00000049.
-Revision 00000050 restores AIM's rebuildable index tables without rewriting
-already-published migration history.
+``app/alembic.ini`` and asserts the latest schema state lands (currently:
+WebBridge pairing, interaction, tab-binding, Teach Mode state, delegation
+tasks, Git server connections, the Work mode rename, retired session-section
+cleanup, durable goals, durable workflow gates, the AIM table drop, scheduler
+routing, and application-database graph removal through revision 00000046).
+Artifact Fabric jobs, revisions, and reviews land in revision 00000047;
+revision 00000048 repairs project-owned Coding sessions hidden by the sidebar;
+revision 00000049 removes the retired parallel Memory processing table.
 Complements ``tests/core/test_db_extra.py``, which only covers
 ``run_migrations`` error paths with mocks.
 """
@@ -64,10 +66,6 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             "artifact_jobs",
             "artifact_revisions",
             "artifact_reviews",
-            "aim_units",
-            "aim_runs",
-            "aim_links",
-            "aim_claims",
         } <= set(inspector.get_table_names())
         assert "session_chapters" not in inspector.get_table_names()
         assert "memory_processed_sources" not in inspector.get_table_names()
@@ -137,11 +135,10 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             "steps",
             "response_draft",
         } <= teach_replay_columns
-        aim_unit_columns = {
-            column["name"] for column in inspector.get_columns("aim_units")
-        }
-        assert {"revision", "last_transition_id"} <= aim_unit_columns
-        assert "aim_claims" in inspector.get_table_names()
+        assert "aim_units" not in inspector.get_table_names()
+        assert "aim_runs" not in inspector.get_table_names()
+        assert "aim_links" not in inspector.get_table_names()
+        assert "aim_claims" not in inspector.get_table_names()
         assert "workflow_gate_requests" in inspector.get_table_names()
         assert {
             "artifact_format",

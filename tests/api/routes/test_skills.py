@@ -264,18 +264,6 @@ async def test_create_and_update_skill_mode_scope(client, fs_dirs):
     )
     assert updated.status_code == 200
     assert updated.json()["modes"] == ["work", "coding"]
-    assert sidecar.is_file()
-
-    updated_all = await client.put(
-        "/api/skills/research",
-        json={
-            "name": "research",
-            "content": VALID_SKILL,
-            "modes": ["aim", "coding", "work"],
-        },
-    )
-    assert updated_all.status_code == 200
-    assert updated_all.json()["modes"] == ["work", "coding", "aim"]
     assert not sidecar.exists()
 
 
@@ -336,7 +324,7 @@ async def test_builtin_runtime_settings_override_and_reset_without_bundle_write(
         params={"mode": "work", "settings_id": detail["settings_id"]},
     )
     assert reset.status_code == 200
-    assert reset.json()["modes"] == ["work", "coding", "aim"]
+    assert reset.json()["modes"] == ["work", "coding"]
     assert reset.json()["allow_implicit_invocation"] is False
     assert reset.json()["user_invocable"] is True
     assert reset.json()["settings_overridden"] is False
@@ -447,7 +435,7 @@ async def test_list_skills_includes_opencode_skill(
     assert research["built_in"] is False
     assert research["editable"] is True
     assert research["source"] == "global-opencode"
-    assert research["modes"] == ["work", "coding", "aim"]
+    assert research["modes"] == ["work", "coding"]
 
 
 @pytest.mark.asyncio
@@ -480,7 +468,7 @@ async def test_list_skills_labels_project_EVOFLUX_source(
     assert commit["valid"] is True
     assert commit["editable"] is True
     assert commit["source"] == "project-EvoFlux"
-    assert commit["modes"] == ["work", "coding", "aim"]
+    assert commit["modes"] == ["work", "coding"]
     assert {item["code"] for item in commit["diagnostics"]} >= {
         "legacy-name",
         "nested-legacy-skill",

@@ -9,7 +9,7 @@ export const HELP_CATEGORIES_JA: HelpCategory[] = [
   {
     id: 'modes',
     label: 'モード',
-    description: 'Work、Coding、AIM',
+    description: 'Work と Coding',
   },
   {
     id: 'chat',
@@ -40,11 +40,6 @@ export const HELP_CATEGORIES_JA: HelpCategory[] = [
     id: 'coding',
     label: 'Coding',
     description: 'Repos、プロジェクト、git、Graph、PR',
-  },
-  {
-    id: 'aim',
-    label: 'AIM',
-    description: 'モダナイゼーション工場',
   },
   {
     id: 'memory',
@@ -80,7 +75,7 @@ export const HELP_CATEGORIES_JA: HelpCategory[] = [
     id: 'troubleshooting',
     label: 'トラブルシューティング',
     description: '接続、ヘルス、Diagnostics',
-  },
+  }
 ]
 
 export const HELP_ARTICLES_JA: HelpArticle[] = [
@@ -89,7 +84,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'getting-started',
     title: 'EvoFlux をはじめよう',
     summary:
-      'デスクトップアプリをインストールするかソースから起動し、BYOM（自分のモデル）プロバイダを接続して sidecar の健全性を確認してから、最初の Work チャット、Coding リポジトリ、または AIM プロジェクトへ進みます。コールド起動からストリーミング検証までのオンボーディング経路です。',
+      'デスクトップアプリをインストールするかソースから起動し、BYOM（自分のモデル）プロバイダを接続して sidecar の健全性を確認してから、最初の Work チャット、Coding リポジトリ、または Coding ワークスペースへ進みます。コールド起動からストリーミング検証までのオンボーディング経路です。',
     keywords: [
       'start',
       'install',
@@ -109,8 +104,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'インストール',
       'プロバイダ',
       '接続',
-      '初回',
-    ],
+      '初回'
+],
     setup:
       'パッケージ版デスクトップは FastAPI sidecar を自動起動します。ソースから: Terminal 1 で `make dev`（API + Vite）、Terminal 2 で `make -C desktop dev`（Tauri シェル）。フロント依存: `cd web && bun install`。最初のチャット前に、プロバイダ資格情報またはローカルデーモン（Ollama など）を用意してください。',
     tricks: [
@@ -120,11 +115,10 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'コールドスタートでは sidecar とチームレジストリが準備できるまで Welcome が表示されます — チャット再試行や「空のチーム」バグ探しの前に待ちましょう。',
       'プロバイダ接続後、大きなリポジトリを開く前に短い Work メッセージ（「ping — ok と返して」）でエンドツーエンドのストリーミングを検証します。',
       'Coding ではリポジトリをクリックするとワークスペースにフォーカスします。セッション作成は + / New chat です。フォーカスだけではトランスクリプトは始まりません。',
-      'AIM では Source / Document / Target レイアウトが使えるようになったら New または Join project を使います。Discussion チャットは Overview と Pipelines の二次面です。',
       'Guidelines はサイドバーの Help ボタン（このモーダル）からいつでも開けます。コマンドパレットは Ctrl+P のまま — アクション用で、ドキュメント用ではありません。',
       'HealthDot が緑でもチャットが失敗する場合は、再インストール前に Settings → Diagnostics を開いてください — サブシステム検査の方が全面ワイプより効くことが多いです。',
-      'BYOM 資格情報はチャットトランスクリプトに入れず、Settings → Providers だけで設定します。',
-    ],
+      'BYOM 資格情報はチャットトランスクリプトに入れず、Settings → Providers だけで設定します。'
+],
     blocks: [
       {
         type: 'p',
@@ -132,7 +126,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'ローカル所有が製品の賭けです。3 つのモード（Work、Coding、AIM）は 1 つのチームハーネス — Lead/specialist、composer、権限、workbench — を共有するので、クロムを一度学べば、仕事に合わせて面を切り替えられます。調査や捨てフォルダは Work、永続リポジトリは Coding、パイプラインと承認が必要な移行は AIM です。',
+        text: 'ローカル所有が製品の賭けです。2 つのモード（Work と Coding）は 1 つのチームハーネス — Lead/specialist、composer、権限、workbench — を共有するので、クロムを一度学べば、仕事に合わせて面を切り替えられます。調査や捨てフォルダは Work、永続リポジトリは Coding です。',
       },
       {
         type: 'p',
@@ -144,10 +138,10 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '1) HealthDot が緑であることを確認（そうでなければ Connection を開き）、Welcome が消えるまで待つ。',
           '2) Settings → Providers → モデルを少なくとも 1 つ接続し、configured と表示されることを確認。',
           '3) Work のまま短い最初のチャットを送るか、Coding に切り替えて git リポジトリを開く。',
-          '4) 任意: AIM → New / Join project で Source / Document / Target のセットアップウィザードを実行。',
+          '4) 任意: Coding → リポジトリまたはプロジェクトを開きセッションを開始。',
           '5) セッションができたら workbench ツール（Terminal、Files、Memory、Browser）を探索。',
-          '6) 任意の硬化: auto や bypass を有効にする前に Settings → Sandbox の deny glob を見直す。',
-        ],
+          '6) 任意の硬化: auto や bypass を有効にする前に Settings → Sandbox の deny glob を見直す。'
+],
       },
       {
         type: 'p',
@@ -158,43 +152,38 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         text: '初日によくある失敗: Welcome 表示中にチャット送信; 「モデルがない」を接続障害だと決めつけて Providers を開かない; Coding のリポジトリクリックがチャット作成だと仮定; `/scheduler` をブックマーク（ホームへリダイレクト — Ctrl+S を使う）; Guidelines と Ctrl+P パレットを同じ面だと扱う。',
       },
       {
-        type: 'p',
-        text: 'Work に留まるかモードを飛ばすか: ブラウザ作業、ドキュメント、git ライフサイクルなしのフォルダ整理された調査は Work。Changes、Graph、Review、worktree、AGENTS.md が必要になったらすぐ Coding。統治された Source / Target / KB レイアウトがある（または作る）ときだけ AIM — 日常コーディングには使わない。',
-      },
-      {
         type: 'tips',
         items: [
           '横断: 最初のチャットが通ったら Memory（Ctrl+M）を開き、永続メモの着地点を把握する。',
           '横断: 実リポジトリをエージェントに編集させる前に権限シールド（キー 1–5）をざっと確認。',
           '横断: ヘルスは緑なのにツールパネルが空なら Ctrl+P → Diagnostics を検索。',
-          'ソースのみ: API をすでに配信している `make dev` なしで Tauri シェルを起動しない。',
-        ],
+          'ソースのみ: API をすでに配信している `make dev` なしで Tauri シェルを起動しない。'
+],
       },
       {
         type: 'p',
-        text: '次に読むもの: Work / Coding / AIM の使い分けはモード概要; BYOM 設定は Providers; HealthDot が赤のままなら Connection; 順序付き修正チェックリストはトラブルシューティング。',
-      },
-    ],
+        text: '次に読むもの: Work / Coding の使い分けはモード概要; BYOM 設定は Providers; HealthDot が赤のままなら Connection; 順序付き修正チェックリストはトラブルシューティング。',
+      }
+],
     related: [
       'modes-overview',
       'providers-settings',
       'connection-settings',
       'troubleshooting-connection',
-      'keyboard-shortcuts',
-    ],
+      'keyboard-shortcuts'
+],
     openAction: { type: 'settings', path: 'providers' },
   },
   {
     id: 'modes-overview',
     category: 'modes',
-    title: 'Work、Coding、AIM モード',
+    title: 'Work と Coding モード',
     summary:
-      '3 つの製品モードはハーネスを共有しつつ、ワークスペース、specialist、既定ツールが異なります。モードスイッチャーはモードごとの最終ルートを記憶するので、Coding や AIM に戻ると離れた場所に着地します。',
+      '2 つの製品モードはハーネスを共有しつつ、ワークスペース、specialist、既定ツールが異なります。モードスイッチャーはモードごとの最終ルートを記憶するので、Coding に戻ると離れた場所に着地します。',
     keywords: [
       'mode',
       'work',
       'coding',
-      'aim',
       'switch',
       'cowork',
       'route',
@@ -203,23 +192,22 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ワーク',
       'コーディング',
       '切り替え',
-      'ルート',
-    ],
+      'ルート'
+],
     tricks: [
       'モードスイッチャーはモードごとの最終ルートを記憶します — Coding に戻ると離れた同じワークスペースパスに着地します。',
       '折りたたんだサイドバーでもモードレールは出るので、ツリー全体を広げずに切り替えられます。',
       'Settings 中はモードスイッチャーが隠れます。再び切り替えるには Settings を離れます。',
-      'Work は調査・ドキュメント・ブラウザ作業・捨てスクリプト向け; Coding は永続リポジトリ; AIM は統治された移行向け。',
+      'Work は調査・ドキュメント・ブラウザ作業・捨てスクリプト向け; Coding は永続リポジトリ向け。',
       '権限モード、スラッシュ、大半の workbench ツールはモード横断; Overview / Graph / Changes / Review は Coding スコープです。',
-      'AIM の Discussion チャットは二次 — Overview、KB、Traceability、Pipelines が主面です。',
       'Work で git モノレポを開き Changes/Review を期待しないでください — Coding に切り替えてソースコントロールを付けます。',
       '並列調査スレッドには Work フォルダ + share_context; リポジトリを紐づけたままにするなら Coding プロジェクト。',
-      'モード記憶はウィンドウ単位ではなくモード単位 — 空白の Coding ホームを期待したなら、古いワークスペースルートが復元されていないか確認。',
-    ],
+      'モード記憶はウィンドウ単位ではなくモード単位 — 空白の Coding ホームを期待したなら、古いワークスペースルートが復元されていないか確認。'
+],
     blocks: [
       {
         type: 'p',
-        text: 'EvoFlux はサイドバーに 3 つのトップレベルモードを出します: Work（cowork サンドボックス）、Coding（リポジトリとプロジェクト）、AIM（モダナイゼーション工場）。各モードに独自のサイドバーツリーとセッション一覧がありますが、Lead/specialist チーム、composer、権限モデルは共通なので、ショートカットと Guidelines はどこでも通じます。',
+        text: 'EvoFlux はサイドバーに 2 つのトップレベルモードを出します: Work（cowork サンドボックス）と Coding（リポジトリとプロジェクト）。各モードに独自のサイドバーツリーとセッション一覧がありますが、Lead/specialist チーム、composer、権限モデルは共通なので、ショートカットと Guidelines はどこでも通じます。',
       },
       {
         type: 'p',
@@ -227,46 +215,36 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Work セッションはプライベート session folder、または選んだ別のローカルフォルダを使います。永続マルチレポプロジェクトは不要です。Coding は git リポジトリまたはマルチレポプロジェクトを開き、エージェントは Graph、git、worktree、PR Review 付きで実ツリーを編集します。AIM は Source / Document / Target / KB レイアウトで New または Join; パイプラインとカットオーバー準備がワークフローを駆動します。',
+        text: 'Work セッションはプライベート session folder、または選んだ別のローカルフォルダを使います。永続マルチレポプロジェクトは不要です。Coding は git リポジトリまたはマルチレポプロジェクトを開き、エージェントは Graph、git、worktree、PR Review 付きで実ツリーを編集します。',
       },
       {
         type: 'tips',
         items: [
           'Work — 調査、ドキュメント、ブラウザ作業、クイックスクリプト、フォルダ整理されたチャット。',
           'Coding — 単一レポ、マルチレポプロジェクト、worktree、Graph、Changes、Review。',
-          'AIM — assess → understand → convert → test-compare → cutover-check パイプライン。',
           'モード記憶 — 戻ったとき最終ルートが復元される。',
-          'Settings — settings ルートを離れるまでモードスイッチャーは非表示。',
-        ],
-      },
-      {
-        type: 'p',
-        text: '使うべきとき / 使わないとき: 成果がメモ、ブラウザ証拠、捨てフォルダなら Work。コミット、PR、worktree、AGENTS.md が必要なら Coding。複数リポジトリをルールブックと比較可能な判定で統治するなら AIM — 単一レポの機能ブランチには使わない。',
-      },
-      {
-        type: 'p',
-        text: 'よくある失敗: AIM Discussion をメイン IDE のように扱う; フォーカスされたワークスペースなしで Coding Overview を期待; Coding セッションを Work フォルダに入れる（フォルダ整理は Work の機能）; Work の権限 bypass がモード切替後もそのままだと仮定し、新セッションのシールドを確認しない。',
+          'Settings — settings ルートを離れるまでモードスイッチャーは非表示。'
+],
       },
       {
         type: 'tips',
         items: [
           '横断: Ctrl+B はすべてのモードで同じようにモードサイドバーをトグル。',
           '横断: Scheduler タスクは work または coding モードを明示 — タスク側で正しいモードを設定。',
-          '横断: Skills と workflows は Settings でモードスコープ可能; Coding 専用 workflow は Work では隠れます。',
-        ],
+          '横断: Skills と workflows は Settings でモードスコープ可能; Coding 専用 workflow は Work では隠れます。'
+],
       },
       {
         type: 'p',
-        text: 'モード切替の手順: (1) モードレールで Work / Coding / AIM をクリック、(2) サイドバーツリーが落ち着くのを待つ、(3) セッションを選ぶか作成、(4) プロンプト前に、そのモードで必要な workbench ツールが使えることを確認。',
-      },
-    ],
+        text: 'モード切替の手順: (1) モードレールで Work / Coding をクリック、(2) サイドバーツリーが落ち着くのを待つ、(3) セッションを選ぶか作成、(4) プロンプト前に、そのモードで必要な workbench ツールが使えることを確認。',
+      }
+],
     related: [
       'coding-workspaces',
-      'aim-overview',
       'getting-started',
       'sessions-folders',
-      'workbench-tools',
-    ],
+      'workbench-tools'
+],
   },
   {
     id: 'chat-team',
@@ -289,10 +267,10 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'リード',
       'スプリット',
       'チーム',
-      '専門',
-    ],
+      '専門'
+],
     setup:
-      '任意のセッションを開きます。チームメンバー、モデル、ツールは Settings → Agents（work / coding / aim スコープ）で設定。composer 上のセッション pill は、現在のチャットだけモデル・thinking レベル・fast mode を上書きします。',
+      '任意のセッションを開きます。チームメンバー、モデル、ツールは Settings → Agents（work / coding スコープ）で設定。composer 上のセッション pill は、現在のチャットだけモデル・thinking レベル・fast mode を上書きします。',
     tricks: [
       'Ctrl+V はデスクトップで Agent ↔ Split を循環（フォーカス中フィールドがペーストを使う間は無効）。',
       'コマンドパレットの Next / Previous Agent は worker が活きているとき便利 — identity ドロップダウンを探すより速い。',
@@ -302,8 +280,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'モデル、スキル、ツール、権限は Settings → Agents でエージェントごとに設定。',
       'composer のセッション pill は現在チャットだけのモデル / thinking / fast mode。',
       '単純タスクは Lead に留め、並列が明らかに壁時計時間を短くするときだけ fan-out。',
-      'Lead 専用ツール（ask_user、plan mode ヘルパー、一部 worktree ヘルパー）は specialist に付与されません — worker にプラン承認を期待しないでください。',
-    ],
+      'Lead 専用ツール（ask_user、plan mode ヘルパー、一部 worktree ヘルパー）は specialist に付与されません — worker にプラン承認を期待しないでください。'
+],
     blocks: [
       {
         type: 'p',
@@ -327,9 +305,9 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Agent — 1 つのトランスクリプト（Lead または選択した specialist）に深く集中。',
           'Split — Lead と worker を並列ペインで監視。',
           'Monitor — 多数エージェントが活きているときの概要。',
-          'チームは Settings → Agents で work / coding / aim にスコープ。',
-          'Mailbox — 構造化された specialist 結果; Lead があなた向けに合成。',
-        ],
+          'チームは Settings → Agents で work / coding にスコープ。',
+          'Mailbox — 構造化された specialist 結果; Lead があなた向けに合成。'
+],
       },
       {
         type: 'p',
@@ -342,20 +320,20 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'fan-out するとき — 複数ファイル調査、並列テスト/修正、AIM specialist レーン。',
+          'fan-out するとき — 複数ファイル調査、並列テスト/修正、specialist レーン。',
           'Lead のみに留めるとき — 短い Q&A、単一ファイル編集、権限に敏感な初回パス。',
           '横断: Split と Plan review を組み合わせ、worker がアイドル中にプランを読む。',
-          '横断: チーム実行を止めずにメタ質問するなら /btw side chat。',
-        ],
-      },
-    ],
+          '横断: チーム実行を止めずにメタ質問するなら /btw side chat。'
+],
+      }
+],
     related: [
       'permissions-modes',
       'composer-power',
       'agents-settings',
       'keyboard-shortcuts',
-      'side-chat',
-    ],
+      'side-chat'
+],
   },
   {
     id: 'permissions-modes',
@@ -380,8 +358,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '権限',
       'プラン',
       '承認',
-      'シールド',
-    ],
+      'シールド'
+],
     setup:
       'composer 上のシールド / 権限コントロールを開きます。メニューが開いている間はキー 1–5 が効きます。ファイルシステムが広いマシンで auto や bypass を有効にする前に Settings → Sandbox を見直してください。',
     tricks: [
@@ -393,8 +371,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'エージェントが続行前に構造化回答を必要とするとき ask-user 質問モーダルが出ます — 答えて実行を解放します。',
       'Goal モードはセッションの権限や sandbox スコープを広げません — `/goal` 前にシールドを意図的に設定。',
       'Bypass はすべての権限チェックをスキップ — 最速ですが、厳しめの denylist がある信頼できるローカル sandbox だけで。',
-      'Always は一致ルールに対して粘着 — エージェントが何を走らせたいか学んでいる間は Once を優先。',
-    ],
+      'Always は一致ルールに対して粘着 — エージェントが何を走らせたいか学んでいる間は Once を優先。'
+],
     blocks: [
       {
         type: 'p',
@@ -416,12 +394,12 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '3 Plan — 実行前にプランして承認。',
           '4 Auto — 操作を自動承認。',
           '5 Bypass — 権限チェックを完全スキップ。',
-          'Sandbox — bypass 下でも deny glob はブロック。',
-        ],
+          'Sandbox — bypass 下でも deny glob はブロック。'
+],
       },
       {
         type: 'p',
-        text: 'どのモードをいつ使うか: 未知のレポや本番隣接ツリーは ask; ツリーを信頼した日常 Coding は accept-edits; 先に読みたい多段リファクタや AIM 隣接変更は plan; 信頼 sandbox と予定メンテは auto; bypass は捨て環境や厳しめ denylist 上での短い意図的バーストだけ。',
+        text: 'どのモードをいつ使うか: 未知のレポや本番隣接ツリーは ask; ツリーを信頼した日常 Coding は accept-edits; 先に読みたい多段リファクタや 大きな変更は plan; 信頼 sandbox と予定メンテは auto; bypass は捨て環境や厳しめ denylist 上での短い意図的バーストだけ。',
       },
       {
         type: 'p',
@@ -433,14 +411,14 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '手順 — シールド → Plan (3) → タスク送信 → Plan review → Accept / Revise / Reject。',
           '手順 — ツールプロンプトでは、パターンが明らかに安全になるまで Once を優先。',
           '横断: plan と quote-into-composer で外科的な revise。',
-          '横断: マルチレポプロジェクトで auto にする前に Sandbox を締める。',
-        ],
+          '横断: マルチレポプロジェクトで auto にする前に Sandbox を締める。'
+],
       },
       {
         type: 'p',
         text: 'MCP ツールはネイティブツールと同じ権限ルールを継承します。MCP 呼び出しの Once/Always 承認は同じバー; sandbox とアウトバウンドポリシーも適用。ツールが「突然拒否」されたら、MCP を再設定する前にシールドと Settings → Sandbox を確認。',
-      },
-    ],
+      }
+],
     related: ['slash-goal', 'sandbox-settings', 'plan-review', 'chat-team', 'agents-settings'],
   },
   {
@@ -461,8 +439,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'プランレビュー',
       '承認',
       '改訂',
-      '拒否',
-    ],
+      '拒否'
+],
     setup:
       '権限モードを Plan（シールドメニューのキー 3）にし、多段作業が必要なタスクを送ります。Plan review パネルを見える状態に保ち — 保留中プランを Accept / Revise / Reject するまで権限モードを切り替えないでください。',
     tricks: [
@@ -474,8 +452,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '大きな目標では Goal 前に plan モードを使い、最初の自律区間が承認済みアウトラインから始まるようにします。',
       'プランが曖昧なら Accept して祈るより、具体的な Definition of Done で Revise。',
       'Split 表示が便利: Plan review を開きつつ specialist 状態をちら見。',
-      '引用 revise チップは気が変わったら送信前にクリア — トランスクリプト選択と同じ引用パイプラインです。',
-    ],
+      '引用 revise チップは気が変わったら送信前にクリア — トランスクリプト選択と同じ引用パイプラインです。'
+],
     blocks: [
       {
         type: 'p',
@@ -496,8 +474,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Revise — composer にフォーカス; 任意の引用選択。',
           'Reject — このプランターンを中止; 新しい指示を送る。',
           'Quote — プラン文を選択 → 下書き上の revise チップ。',
-          'Shield 3 — ツール開始後ではなく、タスク前に plan モードへ。',
-        ],
+          'Shield 3 — ツール開始後ではなく、タスク前に plan モードへ。'
+],
       },
       {
         type: 'p',
@@ -513,14 +491,14 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '良い revise プロンプトはファイル、テスト、スコープ外を明示。',
           '悪い revise は曖昧（「もっと良く」） — まず弱い箇条を引用。',
           '横断: 無関係なメタ質問は side chat へ送り、プランスレッドを清潔に。',
-          '横断: Coding 作業で Accept 後、Changes（Ctrl+G）を開き diff がプランと一致するか確認。',
-        ],
+          '横断: Coding 作業で Accept 後、Changes（Ctrl+G）を開き diff がプランと一致するか確認。'
+],
       },
       {
         type: 'p',
         text: 'Plan review を sandbox ポリシーの代わりにしないでください。美しいプランでも触ってほしくないパスを提案し得ます — Settings → Sandbox の deny glob を保ち、シークレット、vendor ディレクトリ、無関係なレポへスコープを広げるプランは Reject。',
-      },
-    ],
+      }
+],
     related: ['permissions-modes', 'composer-power', 'attachments', 'slash-goal', 'coding-git'],
   },
   {
@@ -548,8 +526,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '入力',
       '添付',
       'スニペット',
-      'メンション',
-    ],
+      'メンション'
+],
     setup:
       'composer にフォーカス（Ctrl+I）。セッションで添付が有効である必要があります。Work では WorkFolderSelector が composer 近くにあり session folder を付け替えます。Coding では # スニペットにワークスペースまたはグローバル定義が必要です。',
     tricks: [
@@ -562,8 +540,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '添付が有効なら画像/ファイルのペーストや composer へのドラッグ&ドロップ。',
       'トランスクリプト文を選択して Add to chat、詳細、または Send to side chat。',
       'ファイル全体を貼るより @ メンションを優先 — ランク付きパスがコンテキストを精密かつ安く保ちます。',
-      '.evoflux/commands/ 下のカスタムコマンドは通常 textarea に挿入され、$ARGUMENTS を付け足せます。',
-    ],
+      '.evoflux/commands/ 下のカスタムコマンドは通常 textarea に挿入され、$ARGUMENTS を付け足せます。'
+],
     blocks: [
       {
         type: 'p',
@@ -587,8 +565,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'DnD / ペースト — 有効時の添付',
           '引用選択 — Add to chat または Send to side chat',
           'WorkFolderSelector — Work session folder の付け替え',
-          'RunInputsDialog — 起動前のワークフローパラメータ',
-        ],
+          'RunInputsDialog — 起動前のワークフローパラメータ'
+],
       },
       {
         type: 'p',
@@ -604,21 +582,21 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '! を使うとき — チャットターンに紐づく短いワンライナー。',
           'Terminal（Ctrl+`）を使うとき — 対話的または長時間プロセス。',
           '@ を使うとき — 既知パス; まだ探索中なら Files ツールで閲覧。',
-          '横断: 引用 → Send to side chat で Goal を止めずに /btw。',
-        ],
+          '横断: 引用 → Send to side chat で Goal を止めずに /btw。'
+],
       },
       {
         type: 'p',
-        text: 'ワークフローは承認済みでセッションスコープ（work / coding / aim）に有効でなければ隠れます。Skills は Settings → Skills で検証後にのみ /skill: 下に出ます。コマンドが欠ける場合は、スラッシュバグと決める前にスコープと検証を確認。',
-      },
-    ],
+        text: 'ワークフローは承認済みでセッションスコープ（work / coding）に有効でなければ隠れます。Skills は Settings → Skills で検証後にのみ /skill: 下に出ます。コマンドが欠ける場合は、スラッシュバグと決める前にスコープと検証を確認。',
+      }
+],
     related: [
       'slash-commands',
       'attachments',
       'side-chat',
       'coding-workspaces',
-      'agents-settings',
-    ],
+      'agents-settings'
+],
   },
   {
     id: 'attachments',
@@ -640,8 +618,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ペースト',
       '引用',
       'クリップボード',
-      'チップ',
-    ],
+      'チップ'
+],
     setup:
       'セッション/composer で添付が有効である必要があります。ポリシーでアップロードが無効な環境もあります。ドラッグ&ドロップに頼る前に composer のドロップターゲットがハイライトされることを確認。引用はトランスクリプト選択、Plan review、Send to side chat から使えます。',
     tricks: [
@@ -653,8 +631,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '前のアシスタント長文を再貼りするより、短い引用 + 短い依頼を優先。',
       '画像は UI やエラーダイアログのバグに有効; スタックトレースはテキスト貼付または .log 添付の方がトークンを正確にコピーできます。',
       '話題を変える前に古い引用チップをクリア — 残った引用は次ターンを静かにバイアスします。',
-      'ペーストが「何もしない」ように見えるときは、フォーカスが composer にあり、セッションで添付が有効か確認。',
-    ],
+      'ペーストが「何もしない」ように見えるときは、フォーカスが composer にあり、セッションで添付が有効か確認。'
+],
     blocks: [
       {
         type: 'p',
@@ -677,8 +655,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Send to side chat — /btw 並列依頼へ引用',
           'Plan quote — プラン markdown を選択 → revise チップ',
           '/undo — 前のユーザーテキスト + 添付を復元',
-          'チップクリア — 話題が変わったら送信前に引用を削除',
-        ],
+          'チップクリア — 話題が変わったら送信前に引用を削除'
+],
       },
       {
         type: 'p',
@@ -694,21 +672,21 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '添付しないとき — 巨大ビルド成果物、node_modules zip、フル DB ダンプ。',
           '引用するとき — 1 段落への異議、1 プラン箇条の改訂、「これを説明して」。',
           '横断: /undo 後、再送前に復元添付を確認。',
-          '横断: WorkFolderSelector はフォルダを添付せず、セッションルートを付け替えます。',
-        ],
+          '横断: WorkFolderSelector はフォルダを添付せず、セッションルートを付け替えます。'
+],
       },
       {
         type: 'p',
         text: 'ポリシー注記: 組織がアップロードを無効にしても、引用と @ メンションは使えます。添付ゲートと戦うよりそれらを優先。Settings → Sandbox のアウトバウンド PII リダクションは、コンテンツがプロバイダへ向かうときなお適用され得ます。',
-      },
-    ],
+      }
+],
     related: [
       'composer-power',
       'plan-review',
       'side-chat',
       'slash-commands',
-      'sandbox-settings',
-    ],
+      'sandbox-settings'
+],
   },
   {
     id: 'slash-commands',
@@ -731,22 +709,19 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'スラッシュ',
       'コマンド',
       'スキル',
-      'ワークフロー',
-    ],
-    setup:
-      'composer にフォーカスして / を打ちます。プロジェクトまたはグローバルのカスタムコマンドは `.evoflux/commands/`（互換 OpenCode パスも可）。AIM の seed/commands/ 下のシードプロンプトは `.evoflux/commands/` にコピーするまで不活性です。',
+      'ワークフロー'
+],
     tricks: [
       '組み込みは選択で即実行; カスタムは通常 textarea に挿入され $ARGUMENTS を付け足せます。',
       '最長プレフィックス一致; ネストしたコマンド/スキル名では : と / は互換。',
       'カスタムコマンドはプロジェクトまたはグローバルの .evoflux/commands/（および互換 OpenCode パス）に置きます。',
-      'AIM の seed/commands/ 下のシードは .evoflux/commands/ にコピーするまで不活性。',
       'Skills は Settings → Skills で検証後にのみ /skill: 下に出ます。',
-      'ワークフローはセッションスコープ（work / coding / aim）で承認・有効でなければ隠れます。',
+      'ワークフローはセッションスコープ（work / coding）で承認・有効でなければ隠れます。',
       'コンテキスト予算バーが上がったら早めに /compact — 失敗待ちはターンを無駄にします。',
-      '/init は AGENTS.md 向けの Coding 志向; AIM ルールブックの足場には期待しないでください。',
+      '/init は AGENTS.md 向けの Coding 志向; AGENTS.md 向けです。',
       '/stop は runaway specialist fan-out のパニックボタン; 次の明確な指示と組み合わせ。',
-      '長い実行中のメタ質問でメイントランスクリプトを汚すより /btw を優先。',
-    ],
+      '長い実行中のメタ質問でメイントランスクリプトを汚すより /btw を優先。'
+],
     blocks: [
       {
         type: 'p',
@@ -775,8 +750,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           { cmd: '/goal:resume', desc: '一時停止中の Goal を再開' },
           { cmd: '/goal:stop', desc: 'セッションの Goal を削除' },
           { cmd: '/skill:…', desc: '次のメッセージにスキルを付与（ネスト: /skill:parent:child）' },
-          { cmd: '/workflow <name>', desc: '承認済みワークフローを実行（RunInputsDialog が開く場合あり）' },
-        ],
+          { cmd: '/workflow <name>', desc: '承認済みワークフローを実行（RunInputsDialog が開く場合あり）' }
+],
       },
       {
         type: 'p',
@@ -789,13 +764,12 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'カスタム — 通常は挿入; $ARGUMENTS を付け足す',
           'Skill — Settings → Skills 検証後の /skill:',
           'Workflow — スコープ + 承認が必要、さもなくば非表示',
-          'AIM シード — seed/commands/ → .evoflux/commands/ にコピー',
-          '最長プレフィックス — : または / での parent:child ネスト',
-        ],
+          '最長プレフィックス — : または / での parent:child ネスト'
+],
       },
       {
         type: 'p',
-        text: 'カスタムコマンドの手順: (1) `.evoflux/commands/` に Markdown/YAML コマンドを追加、(2) スラッシュメニューを再読込または開き直し、(3) コマンドを選んで挿入、(4) 引数を埋める、(5) 送信。AIM シードは必要なプロンプトだけコピー — 未使用シードがメニューに出ないのは意図的です。',
+        text: 'カスタムコマンドの手順: (1) `.evoflux/commands/` に Markdown/YAML コマンドを追加、(2) スラッシュメニューを再読込または開き直し、(3) コマンドを選んで挿入、(4) 引数を埋める、(5) 送信。必要なカスタムコマンドだけ追加 — 未使用プロンプトがメニューに出ないのは意図的です。',
       },
       {
         type: 'p',
@@ -807,17 +781,16 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '/new するとき — 汚染されたコンテキストバーでの話題変更。',
           '/compact するとき — 同じ話題、予算上昇、連続性を保つ。',
           '/stop するとき — runaway ツールや誤った fan-out; その後依頼を言い直す。',
-          '横断: 新しいレポを開いたあと /init + Coding Overview。',
-        ],
-      },
-    ],
+          '横断: 新しいレポを開いたあと /init + Coding Overview。'
+],
+      }
+],
     related: [
       'slash-goal',
       'side-chat',
       'composer-power',
-      'aim-overview',
-      'coding-workspaces',
-    ],
+      'coding-workspaces'
+],
   },
   {
     id: 'slash-goal',
@@ -842,8 +815,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '予算',
       '一時停止',
       '再開',
-      'ブロッカー',
-    ],
+      'ブロッカー'
+],
     setup:
       '任意のモードで `/goal <objective>` から開始。任意: 実行前または実行中に `/goal:budget <tokens>`。権限モードと Settings → Sandbox を先に意図的に設定 — Goal はそれらを広げません。',
     tricks: [
@@ -855,8 +828,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Goal は権限モードや sandbox スコープを広げません — 開始前に意図的に設定。',
       '無人の一晩実行には明確な目標とトークン予算を優先。',
       '大きな Goal ではまず plan モードで起草し Accept してから `/goal` — 自律が承認済みアウトラインから始まります。',
-      'Goal 実行中のメタ質問は /btw — 目標トランスクリプトを脱線させない。',
-    ],
+      'Goal 実行中のメタ質問は /btw — 目標トランスクリプトを脱線させない。'
+],
     blocks: [
       {
         type: 'p',
@@ -878,8 +851,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           { cmd: '/goal:budget <tokens|none>', desc: 'トークン予算を設定またはクリア' },
           { cmd: '/goal:pause', desc: '実行を一時停止' },
           { cmd: '/goal:resume', desc: '一時停止または予算ホールド後に再開' },
-          { cmd: '/goal:stop', desc: 'セッションの Goal をクリア' },
-        ],
+          { cmd: '/goal:stop', desc: 'セッションの Goal をクリア' }
+],
       },
       {
         type: 'tips',
@@ -888,8 +861,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '一晩実行の前にトークン予算を設定。',
           'blocker streak を監視 — 同じブロッカー ×3 で進捗停止。',
           'Goal が ask → bypass に切り替えてくれると期待しない。',
-          '同じツリーで大きな手動編集の前に /goal:pause。',
-        ],
+          '同じツリーで大きな手動編集の前に /goal:pause。'
+],
       },
       {
         type: 'p',
@@ -905,17 +878,17 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '手順 — シールド + sandbox → 任意の plan Accept → /goal:budget → /goal <objective>。',
           '手順 — 詰まったら → ブロッカーを読む → /goal:pause → 環境を直す → /goal:resume。',
           '横断: Scheduler は cron プロンプト; Goal はセッション内自律。',
-          '横断: Dream cron は Settings → Memory 下で別物。',
-        ],
-      },
-    ],
+          '横断: Dream cron は Settings → Memory 下で別物。'
+],
+      }
+],
     related: [
       'permissions-modes',
       'slash-commands',
       'chat-team',
       'plan-review',
-      'scheduler-tasks',
-    ],
+      'scheduler-tasks'
+],
   },
   {
     id: 'sessions-folders',
@@ -939,10 +912,10 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ピン',
       'セッション',
       '共有',
-      '整理',
-    ],
+      '整理'
+],
     setup:
-      'Work モードのサイドバー → Folders セクション。Coding/AIM は独自のセッションツリー; フォルダファイリングは Work の整理機能です。外部変更後は Ctrl+R で Work セッション一覧を更新。',
+      'Work モードのサイドバー → Folders セクション。Coding は独自のセッションツリー; フォルダファイリングは Work の整理機能です。外部変更後は Ctrl+R で Work セッション一覧を更新。',
     tricks: [
       'セッション行をフォルダヘッダへドラッグ（デスクトップ）、またはタッチでは Move to folder…。',
       'フォルダのリンクアイコンで share_context をトグル — 兄弟は互いの有界ダイジェストを受け取ります。',
@@ -953,12 +926,12 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ファイリングは folder_id を設定するだけ — 履歴、モデル、ワークスペース設定はセッションに残ります。',
       '兄弟へダイジェストしてはいけない機微なクライアントフォルダでは share_context をオフ。',
       'フォルダ名は日付ではなく成果で（「RFP 調査」「incident 4821」）— 日付は未ファイリングチャットをすでにグループ化します。',
-      '兄弟に属さなくなったスレッドは Move to folder… → none でアンファイル。',
-    ],
+      '兄弟に属さなくなったスレッドは Move to folder… → none でアンファイル。'
+],
     blocks: [
       {
         type: 'p',
-        text: 'Work セッションはピンし、名前付きフォルダへファイリングできます。フォルダは任意で share_context を有効にし、兄弟チャットが有界ダイジェストを交換します。未ファイリングはなお Pinned / Today / Yesterday / Older でグループ化。Coding と AIM は独自ツリー — そこに Work フォルダを探さないでください。',
+        text: 'Work セッションはピンし、名前付きフォルダへファイリングできます。フォルダは任意で share_context を有効にし、兄弟チャットが有界ダイジェストを交換します。未ファイリングはなお Pinned / Today / Yesterday / Older でグループ化。と Coding は独自ツリー — そこに Work フォルダを探さないでください。',
       },
       {
         type: 'p',
@@ -977,8 +950,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'フォルダ削除 — アンファイルのみ; チャットは残る。',
           'Ctrl+R — Work セッション一覧を更新。',
           'Move to folder… — タッチ向けファイリング / アンファイリング。',
-          'Today / Yesterday / Older — 未ファイリングの自動グループ。',
-        ],
+          'Today / Yesterday / Older — 未ファイリングの自動グループ。'
+],
       },
       {
         type: 'p',
@@ -998,17 +971,17 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '横断: WorkFolderSelector はツール用オンディスクフォルダ; サイドバーフォルダはチャット整理。',
           '横断: 長い案件では意思決定チャットにピン + Goal。',
           '横断: Folder + から始めた場合、フォルダ内の /new はファイリングを維持。',
-          '移動したセッションが期待どおり出ないときは Ctrl+R で更新。',
-        ],
-      },
-    ],
+          '移動したセッションが期待どおり出ないときは Ctrl+R で更新。'
+],
+      }
+],
     related: [
       'composer-power',
       'modes-overview',
       'getting-started',
       'slash-goal',
-      'side-chat',
-    ],
+      'side-chat'
+],
   },
   {
     id: 'workbench-tools',
@@ -1033,8 +1006,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ワークベンチ',
       'パネル',
       'ターミナル',
-      'ファイル',
-    ],
+      'ファイル'
+],
     setup:
       'まずセッションを開きます。Coding Overview、Graph、Changes、Review には Coding ワークスペースが必要。内蔵 Browser は Settings → Browser で有効にしてから Ctrl+T が役立ちます。',
     tricks: [
@@ -1046,8 +1019,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Terminal と Browser は複数タブインスタンス対応; 他ツールは単一インスタンスのトグル。',
       'Changes（Ctrl+G）と Review は Coding のみ; Graph には Coding ワークスペースが必要。',
       '同じツールをもう一度トグルで閉じる — workbench は常設カードの山ではありません。',
-      'Coding ワークスペースあり・ツール未選択で workbench を開くと、既定で Overview が開きます。',
-    ],
+      'Coding ワークスペースあり・ツール未選択で workbench を開くと、既定で Overview が開きます。'
+],
     blocks: [
       {
         type: 'p',
@@ -1067,8 +1040,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           { keys: 'Ctrl+M', action: 'Memory（wiki）' },
           { keys: 'Ctrl+S', action: 'Scheduler' },
           { keys: 'Ctrl+K', action: 'Plugins' },
-          { keys: 'Ctrl+G', action: 'Git Changes（Coding）' },
-        ],
+          { keys: 'Ctrl+G', action: 'Git Changes（Coding）' }
+],
       },
       {
         type: 'tips',
@@ -1082,8 +1055,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Memory — wiki + 保留メモ。',
           'Scheduler — cron / ワンショットタスク（パネルのみ; /scheduler はホームへリダイレクト）。',
           'Changes — stage、commit、ブランチ操作（Coding）。',
-          'Review — 接続ホストの PR/MR 一覧（Coding）。',
-        ],
+          'Review — 接続ホストの PR/MR 一覧（Coding）。'
+],
       },
       {
         type: 'p',
@@ -1099,18 +1072,18 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Terminal vs ! — 対話/長時間 vs 短いチャット紐づきコマンド。',
           'Files vs @ — 閲覧/探索 vs 既知パスを依頼にピン留め。',
           '横断: plan モード Accept 後に Changes で diff を検証。',
-          '横断: 調査セッション後に Memory を開き Dream の材料を残す。',
-        ],
-      },
-    ],
+          '横断: 調査セッション後に Memory を開き Dream の材料を残す。'
+],
+      }
+],
     related: [
       'side-chat',
       'memory-dream',
       'scheduler-tasks',
       'coding-git',
       'keyboard-shortcuts',
-      'browser-webbridge',
-    ],
+      'browser-webbridge'
+],
   },
   {
     id: 'side-chat',
@@ -1129,8 +1102,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'サイドチャット',
       'ちなみに',
       '並列',
-      '読み取り専用',
-    ],
+      '読み取り専用'
+],
     setup:
       '/btw、Ctrl+;、workbench の Side chat ツール、またはセッション行アイコンで開きます。任意でトランスクリプト文を選択 → Send to side chat で引用を運ぶ。ラベルがなお ⌥⌘S でも実ショートカットは Ctrl+;。',
     tricks: [
@@ -1142,8 +1115,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Side chat は短く事実ベースに; 長い実装作業は Lead スレッドへ戻す。',
       '終わったらパネルを閉じ、次のメイン指示を誤って /btw に打たない。',
       'Side chat は親コンテキストを読み取り専用で見る — レポ全体リファクタの主エディタにしない。',
-      '独自ツール付きの永続並列スレッドが必要なら、/btw を過負荷にするより兄弟 Work セッション（任意で share_context）を優先。',
-    ],
+      '独自ツール付きの永続並列スレッドが必要なら、/btw を過負荷にするより兄弟 Work セッション（任意で share_context）を優先。'
+],
     blocks: [
       {
         type: 'p',
@@ -1165,8 +1138,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Send to side chat — 選択を /btw へ引用',
           '読み取り専用の親コンテキスト — 履歴の戻しマージなし',
           'セッション行アイコン — スラッシュメニューなしで開く',
-          '⌥⌘S ラベル — 無視; 実バインディングは Ctrl+;',
-        ],
+          '⌥⌘S ラベル — 無視; 実バインディングは Ctrl+;'
+],
       },
       {
         type: 'p',
@@ -1186,17 +1159,17 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '横断: Plan review 引用と組み合わせ、「この箇条を説明」を Reject せずに。',
           '横断: 重い並列調査は Work 兄弟チャット + share_context。',
           '横断: /stop はなおメインチーム向け — side chat は第二の Lead ではない。',
-          'side chat に必要なツールがないなら、おそらく /btw の用途を超えている。',
-        ],
-      },
-    ],
+          'side chat に必要なツールがないなら、おそらく /btw の用途を超えている。'
+],
+      }
+],
     related: [
       'composer-power',
       'workbench-tools',
       'slash-commands',
       'slash-goal',
-      'plan-review',
-    ],
+      'plan-review'
+],
     openAction: { type: 'workbench', tool: 'side-chat' },
   },
   {
@@ -1218,8 +1191,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ワークスペース',
       'プロジェクト',
       'ワークツリー',
-      'リポジトリ',
-    ],
+      'リポジトリ'
+],
     setup:
       'Coding（`/coding`）に切り替え、リポジトリを追加するかプロジェクトを作成。worktree 配置は Settings → Sandbox（repository vs user_data）。慣例を AGENTS.md に置くタイミングでセッション内 /init。',
     tricks: [
@@ -1232,8 +1205,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Coding セッションで /init を実行し、エージェント慣例用 AGENTS.md を作成または更新。',
       'ワークスペース選択時に workbench から Coding Overview を開き状態を一覧。',
       '汚れた変更が別の場所でも必要なら worktree 作成前に commit または stash — 新しいツリーには現れません。',
-      'サービスがレポ横断で API を共有するならプロジェクト; 変更セットがローカルなら単一レポを優先。',
-    ],
+      'サービスがレポ横断で API を共有するならプロジェクト; 変更セットがローカルなら単一レポを優先。'
+],
     blocks: [
       {
         type: 'p',
@@ -1255,8 +1228,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Worktrees — クリーンツリー; 未コミットソースはコピーされない。',
           '/init — Coding 慣例用 AGENTS.md。',
           'Sandbox — worktree 配置ポリシー。',
-          'Overview — ワークスペースフォーカス後の状態。',
-        ],
+          'Overview — ワークスペースフォーカス後の状態。'
+],
       },
       {
         type: 'p',
@@ -1276,17 +1249,17 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'プロジェクトするとき — クロスレポ型、共有契約、マルチサービス変更。',
           'プロジェクトしないとき — めったに触らない vendored 付きの 1 アプリレポ。',
           '横断: graph のクロスレポ解決には project_id が必要。',
-          '横断: Review/Changes はフォーカスされたワークスペースに付く。',
-        ],
-      },
-    ],
+          '横断: Review/Changes はフォーカスされたワークスペースに付く。'
+],
+      }
+],
     related: [
       'coding-git',
       'coding-graph',
       'slash-commands',
       'sandbox-settings',
-      'modes-overview',
-    ],
+      'modes-overview'
+],
     openAction: { type: 'route', to: '/coding' },
   },
   {
@@ -1316,8 +1289,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ギット',
       'プルリクエスト',
       'コミット',
-      'ブランチ',
-    ],
+      'ブランチ'
+],
     setup:
       'git ワークスペース付き Coding モード。リモート PR/MR 操作は Settings → Git & reviews でホスト接続。積極的操作の前にタイムアウト、max diff size、force-with-lease を確認。',
     tricks: [
@@ -1329,8 +1302,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'stash / branch / rebase は快適さに応じて Changes またはエージェントツールから。',
       '小さなコミットと明確なメッセージを優先 — エージェントはきれいな履歴に対してより良いフォローアップを書きます。',
       'Create PR を頼む前にホスト接続 — さもなくばローカルコミットは成功しリモート段階で遅く失敗。',
-      'diff が巨大なら max diff size は一時的にだけ上げる — 過大レビューはリスクを隠します。',
-    ],
+      'diff が巨大なら max diff size は一時的にだけ上げる — 過大レビューはリスクを隠します。'
+],
     blocks: [
       {
         type: 'p',
@@ -1352,8 +1325,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'GitHub / GitLab / Bitbucket / Gitea / Azure DevOps — ホスト連携',
           'force-with-lease — ゲート済み; 気軽な既定ではない',
           'max diff size — 必要なときだけ上げる',
-          'stash / branch / rebase — UI またはエージェントツール',
-        ],
+          'stash / branch / rebase — UI またはエージェントツール'
+],
       },
       {
         type: 'p',
@@ -1372,17 +1345,17 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           '横断: Plan Accept → Changes で、プランが期待どおりの diff になったか確認。',
           '横断: worktree は実験コミットを主チェックアウトから遠ざける。',
-          '横断: 本番リモートへの初 push 前は権限 ask モード。',
-        ],
-      },
-    ],
+          '横断: 本番リモートへの初 push 前は権限 ask モード。'
+],
+      }
+],
     related: [
       'coding-workspaces',
       'workbench-tools',
       'settings-safety',
       'permissions-modes',
-      'plan-review',
-    ],
+      'plan-review'
+],
     openAction: { type: 'workbench', tool: 'source-control' },
   },
   {
@@ -1401,8 +1374,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'コードグラフ',
       'シンボル',
       'インデックス',
-      '構造',
-    ],
+      '構造'
+],
     setup:
       'Coding ワークスペースまたはプロジェクト — 最初のクエリが変更済みソースを増分更新します。Graph で現在の動的スナップショットを確認できます。',
     tricks: [
@@ -1414,8 +1387,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '編集後は refresh=true、同一バージョン直後の追跡クエリだけ refresh=false を使います。',
       '「パッケージ全体を読んで」ではなく構造質問（「誰が X を呼ぶ？」）。',
       'マルチレポプロジェクトはクロスレポエッジ; スタンドアロンレポも 1 ツリー内で恩恵。',
-      'Coding モードは skill 本文を注入せず、生のリクエスト文をキーワードで graph query にルーティングしません。',
-    ],
+      'Coding モードは skill 本文を注入せず、生のリクエスト文をキーワードで graph query にルーティングしません。'
+],
     blocks: [
       {
         type: 'p',
@@ -1431,8 +1404,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'code_context search — 識別子、リテラル、コメント、概念',
           'code_context grep — 例示による構造マッチ',
           'code_context definition/callers/callees — 正確なシンボルナビゲーション',
-          'code_context references/impact/neighborhood — 境界付き関係探索',
-        ],
+          'code_context references/impact/neighborhood — 境界付き関係探索'
+],
       },
       {
         type: 'p',
@@ -1455,111 +1428,12 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           '横断: graph ヒットと Changes を組み合わせ、編集セットが呼び出し近傍と一致するか見る。',
           '横断: AGENTS.md で graph 優先ナビを指示できる。',
-          '横断: specialist は Settings → Agents ごとにツールを継承 — worker がコード検索できることを確認。',
-        ],
-      },
-    ],
+          '横断: specialist は Settings → Agents ごとにツールを継承 — worker がコード検索できることを確認。'
+],
+      }
+],
     related: ['coding-workspaces', 'agents-settings', 'composer-power', 'coding-git'],
     openAction: { type: 'workbench', tool: 'graph' },
-  },
-  {
-    id: 'aim-overview',
-    category: 'aim',
-    title: 'AIM モダナイゼーション工場',
-    summary:
-      'Source、Target、Knowledge Base リポジトリ横断の統治パイプラインと、Overview、KB、Traceability、Pipelines、ルールブックパック、有効化のためコピーが必要なシードコマンド。Discussion チャットはミッションコントロール面の二次です。',
-    keywords: [
-      'aim',
-      'migration',
-      'modernization',
-      'pipeline',
-      'kb',
-      'cutover',
-      'rulebook',
-      'aim-assess',
-      'aim-understand',
-      'aim-convert-unit',
-      'aim-convert-wave',
-      'aim-test-compare',
-      'aim-cutover-check',
-      'cobol-java21',
-      'vb6-dotnet',
-      'java8-java21',
-      'seed/commands',
-      '移行',
-      'モダナイゼーション',
-      'パイプライン',
-      'ルールブック',
-    ],
-    setup:
-      'AIM モード → New または Join project; Source / Document / Target レイアウトを検出しルールブックパックを選ぶ。使うシードスラッシュプロンプトは先に `.evoflux/commands/` へコピー — seed/commands/ のコピーは有効化まで不活性。',
-    tricks: [
-      'Overview はミッションコントロール: ユニット、ヘルス、承認、カットオーバーフィールド。',
-      'Pipelines: aim-assess、aim-understand、aim-convert-unit/wave、aim-test-compare、aim-cutover-check。',
-      '組み込みルールブックパックには cobol-java21、vb6-dotnet、java8-java21 があり; KB で上書き可能。',
-      'seed/commands/ 下の AIM シードスラッシュは .evoflux/commands/ にコピーするまで不活性。',
-      'パネル: Overview、Knowledge Base、Traceability、Pipelines — Discussion チャットは二次。',
-      '比較判定は決定的: ルールブック正規化後の pass / fail / acceptable-diff。',
-      'Specialist には Lead 下の Archaeologist、Architect、Converter、Appraiser、Test、Triage。',
-      'convert ウェーブ前に assess → understand; インベントリを飛ばすと追跡不能ユニットが生まれます。',
-      'acceptable-diff は cutover-check で無視するソフト合格ではなく、ルール付き例外として扱う。',
-      '自由形式のフォローアップが必要なときだけパイプライン結果から Discussion を開く — 既定で Discussion に住まない。',
-    ],
-    blocks: [
-      {
-        type: 'p',
-        text: 'AIM は 3 リポジトリにまたがる統治モダナイゼーション工場です: Base source（レガシー、通常読み取り専用）、Target source（足場先）、Knowledge Base レポ（インベントリ、理解、ルール、マッピング、証拠）。Discussion チャットはありますが、Overview、KB、Traceability、Pipelines が主面です。',
-      },
-      {
-        type: 'p',
-        text: 'アドホック移行チャットは承認、トレーサビリティ、比較可能なテスト判定を失います。AIM パイプラインはユニットを assess → understand → convert → test-compare → cutover-check へ進め、ルールブック対応比較でカットオーバー判断が雰囲気ではなく証拠に基づくようにします。',
-      },
-      {
-        type: 'p',
-        text: 'AIM（`/aim`）へ切り替え。プロジェクトを New または Join; Source / Document / Target 検出を確認しルールブックパックを選ぶ。ミッションコントロールは Overview、知識成果物は KB、ユニット系譜は Traceability、名前付きワークフロー起動は Pipelines。composer でそれらのスラッシュが欲しければ seed/commands/ から `.evoflux/commands/` へコピー。自由形式フォローアップが必要ならパイプライン結果から Discussion を開く。',
-      },
-      {
-        type: 'tips',
-        items: [
-          'aim-assess — エステートを棚卸しウェーブを計画',
-          'aim-understand — KB ドキュメントと候補ビジネスルール',
-          'aim-convert-unit / aim-convert-wave — ターゲットへ実装',
-          'aim-test-compare — golden-master vs ターゲット挙動',
-          'aim-cutover-check — 準備状況とフェーズ前進',
-          'Rulebooks — cobol-java21、vb6-dotnet、java8-java21（+ KB 上書き）',
-          'Verdicts — 正規化後の pass / fail / acceptable-diff',
-        ],
-      },
-      {
-        type: 'p',
-        text: '最初の AIM プロジェクト手順: (1) New または Join、(2) Source / Document / Target パスを確認、(3) ルールブックパックを選ぶ、(4) aim-assess 実行、(5) 優先ユニットで aim-understand、(6) 薄い縦スライスを convert、(7) aim-test-compare、(8) それからウェーブと cutover-check を計画。composer で頼る前にシードスラッシュをコピー。',
-      },
-      {
-        type: 'p',
-        text: 'AIM vs Coding: モダナイゼーションに統治されたマルチレポ証拠、ルールブック、比較可能な判定が必要なら AIM。現代レポ内の通常機能作業は Coding。単一サービスのバグ修正を AIM パイプラインに無理に通さない。',
-      },
-      {
-        type: 'p',
-        text: 'よくある失敗: Overview ではなく Discussion に住む; assess/understand 前に convert; seed/commands/ をライブスラッシュとして扱う; カットオーバー週まで Traceability を無視; ルールブックが許す理由を記録せず acceptable-diff を受理; Work 風フォルダで AIM ユニットを整理できると期待。',
-      },
-      {
-        type: 'tips',
-        items: [
-          'Specialists — Lead 下の Archaeologist、Architect、Converter、Appraiser、Test、Triage。',
-          'KB 上書き — プロジェクト知識が組み込みルールブックパックを精錬できる。',
-          '横断: 他のカスタムスラッシュ同様 `.evoflux/commands/` でシードを有効化。',
-          '横断: 共有ターゲットモジュールに触る convert ウェーブ前は権限 plan モード。',
-        ],
-      },
-    ],
-    related: [
-      'modes-overview',
-      'getting-started',
-      'slash-commands',
-      'permissions-modes',
-      'coding-workspaces',
-    ],
-    openAction: { type: 'route', to: '/aim' },
   },
   {
     id: 'memory-dream',
@@ -1583,8 +1457,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'メモリ',
       'ドリーム',
       'ノート',
-      'ウィキ',
-    ],
+      'ウィキ'
+],
     setup:
       'Ctrl+M または workbench ツールで Memory を開く。Dream は Settings → Memory（cron と関連オプション）で設定。スケジュールを触らなければ既定 Dream cron は `0 2 * * *`。',
     tricks: [
@@ -1596,8 +1470,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '任意エージェントプロンプトが必要なときだけ Dream を Scheduler と組み合わせ; Dream には独自スケジュールがあります。',
       '一晩の Dream 後は LOG.md をざっと見て、チャットでページを引用する前に何が変わったか確認。',
       '来週モデルが覚えてくれると祈るより、日中に短い pending notes を書くことを優先。',
-      'Dream 信頼度が低いページは下書き仮説として扱い、ソースシステムで検証。',
-    ],
+      'Dream 信頼度が低いページは下書き仮説として扱い、ソースシステムで検証。'
+],
     blocks: [
       {
         type: 'p',
@@ -1621,8 +1495,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'INDEX.md — エントリマップ',
           'LOG.md — 追記専用の合成ログ',
           'Ctrl+M — Memory workbench を開く',
-          'Run Dream — 手動合成トリガ',
-        ],
+          'Run Dream — 手動合成トリガ'
+],
       },
       {
         type: 'p',
@@ -1640,17 +1514,17 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         type: 'tips',
         items: [
           '横断: 任意プロンプトは Scheduler; wiki 合成だけが Dream。',
-          '横断: 大きな AIM understand ウェーブ後、両方使うなら Run Dream で KB 隣接事実を wiki 形へ。',
-          '横断: Dream コンテンツが後でチャット経由でプロバイダへ流れるときも sandbox/アウトバウンドポリシーは重要。',
-        ],
-      },
-    ],
+          '横断: 大きな調査やコーディングの後、Run Dream で新しい事実を wiki 形へ。',
+          '横断: Dream コンテンツが後でチャット経由でプロバイダへ流れるときも sandbox/アウトバウンドポリシーは重要。'
+],
+      }
+],
     related: [
       'scheduler-tasks',
       'workbench-tools',
       'settings-safety',
-      'sessions-folders',
-    ],
+      'sessions-folders'
+],
     openAction: { type: 'workbench', tool: 'wiki' },
   },
   {
@@ -1673,8 +1547,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'スケジュール',
       'クロン',
       'リマインダー',
-      'タスク',
-    ],
+      'タスク'
+],
     setup:
       'Ctrl+S（workbench ツール）で Scheduler を開く。`/scheduler` ルートはホームへリダイレクト — 常にパネルを使う。タスクで work または coding モードを選び、正しい Lead に届くようにする。',
     tricks: [
@@ -1686,8 +1560,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '一晩 cron を信頼する前に、プロンプト編集後に手動 Trigger で検証。',
       'スケジュールプロンプトは冪等に — 再実行が乱れた副作用を複製しないように。',
       'バックエンドがローカルのみでウィンドウを逃すなら、長いノート PC スリープ前にタスクを Pause。',
-      'タスク名は成果で（「平日レポ雑務」）— パネルがスキャンしやすくなる。',
-    ],
+      'タスク名は成果で（「平日レポ雑務」）— パネルがスキャンしやすくなる。'
+],
     blocks: [
       {
         type: 'p',
@@ -1710,8 +1584,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Pause / resume / trigger — パネル内ライフサイクル制御',
           'Mode — work または coding の Lead ターゲット',
           '/scheduler — ホームへリダイレクト; ブックマークしない',
-          'Dream cron — Settings → Memory 下で別物',
-        ],
+          'Dream cron — Settings → Memory 下で別物'
+],
       },
       {
         type: 'p',
@@ -1731,16 +1605,16 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '横断: スケジュールプロンプトが当たるセッションの権限モードを慎重に。',
           '横断: ローカル sidecar で cron が発火するとき HealthDot が緑である必要。',
           '横断: wiki 統合は Dream; 「毎週月曜に Lead へ聞く」は Scheduler。',
-          '冪等プロンプト — トリガが二度走っても安全。',
-        ],
-      },
-    ],
+          '冪等プロンプト — トリガが二度走っても安全。'
+],
+      }
+],
     related: [
       'memory-dream',
       'workbench-tools',
       'slash-goal',
-      'troubleshooting-connection',
-    ],
+      'troubleshooting-connection'
+],
     openAction: { type: 'workbench', tool: 'scheduler' },
   },
   {
@@ -1763,8 +1637,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ブラウザ',
       '拡張機能',
       'ティーチ',
-      'ペアリング',
-    ],
+      'ペアリング'
+],
     setup:
       '内蔵: Settings → Browser で有効化し Ctrl+T。WebBridge: Chrome/Edge 拡張をインストールし、Settings → Browser でマスターポリシーを有効化、デスクトップのステータスコントロールからペアし、使うチャットごとに WebBridge を有効化。',
     tricks: [
@@ -1776,8 +1650,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'WebBridge は EvoFlux の Web 版ではなく、デスクトップアプリの CDP コンパニオンです。',
       'サンドボックスされたエージェント閲覧は内蔵 Browser; 実 SSO Cookie や企業拡張が必要なら WebBridge。',
       'マシンを貸すときやアクセスローテ時はペアリングを取り消し — 未処理チケットも取り消しと共に死にます。',
-      '監視結果をエージェントループへ共有する前に teach リプレイを確認。',
-    ],
+      '監視結果をエージェントループへ共有する前に teach リプレイを確認。'
+],
     blocks: [
       {
         type: 'p',
@@ -1800,8 +1674,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Teach — 意味のある操作、生キーストロークなし',
           'Revoke pairing — 中継 + 未処理チケットを殺す',
           'Settings → Browser — 両経路のマスターポリシー',
-          'Untrusted input — 実ブラウザからの選択/ページコンテキスト',
-        ],
+          'Untrusted input — 実ブラウザからの選択/ページコンテキスト'
+],
       },
       {
         type: 'p',
@@ -1820,16 +1694,16 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           '横断: プロバイダへ出るものにはなお sandbox/アウトバウンドポリシーが適用。',
           '横断: WebBridge がオフラインなら再インストール前にトラブルシューティングを確認。',
-          '横断: side chat はメインブラウザ実行を止めずにページ引用を明確化できる。',
-        ],
-      },
-    ],
+          '横断: side chat はメインブラウザ実行を止めずにページ引用を明確化できる。'
+],
+      }
+],
     related: [
       'workbench-tools',
       'settings-safety',
       'troubleshooting-connection',
-      'sandbox-settings',
-    ],
+      'sandbox-settings'
+],
     openAction: { type: 'settings', path: 'browser' },
   },
   {
@@ -1856,8 +1730,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'プロバイダ',
       'モデル',
       'APIキー',
-      '認証',
-    ],
+      '認証'
+],
     openAction: { type: 'settings', path: 'providers' },
     setup:
       'Settings → Providers。API キー、OAuth アクセス、または稼働中のローカルデーモン URL を用意。空のモデル一覧をネットワーク障害としてデバッグする前に HealthDot が緑であることを確認。',
@@ -1870,8 +1744,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'コンテキスト予算バーはレジストリの選択モデル context_length を使う。',
       'コストが重要なら Lead トリアージは速いモデル、Coding specialist は強いモデル。',
       'キーローテ後は Goal 開始前に小さな Work ping で再テスト。',
-      'OAuth プロバイダも成功した接続状態が必要 — 途中の OAuth はモデルなしのまま。',
-    ],
+      'OAuth プロバイダも成功した接続状態が必要 — 途中の OAuth はモデルなしのまま。'
+],
     blocks: [
       {
         type: 'p',
@@ -1893,8 +1767,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Composer pills — セッションごとのモデル / thinking / fast mode',
           'context_length — コンテキスト予算バーを駆動',
           'Ollama — 既定ポート以外なら base URL を設定',
-          '空のモデル一覧 — まず Providers を設定',
-        ],
+          '空のモデル一覧 — まず Providers を設定'
+],
       },
       {
         type: 'p',
@@ -1909,16 +1783,16 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           '横断: 資格情報が正しそうでもストリームが失敗したら Diagnostics。',
           '横断: 強いモデルは context_length を上げる — /compact 習慣に注意。',
-          '横断: 完璧なモデルでも MCP とツールにはなお権限モードが必要。',
-        ],
-      },
-    ],
+          '横断: 完璧なモデルでも MCP とツールにはなお権限モードが必要。'
+],
+      }
+],
     related: [
       'agents-settings',
       'getting-started',
       'connection-settings',
-      'troubleshooting-connection',
-    ],
+      'troubleshooting-connection'
+],
   },
   {
     id: 'agent-plugins',
@@ -1949,7 +1823,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '拡張名前空間'
 ],
     setup:
-      'Work、Coding、または AIM のワークベンチから Plugins を開きます。`.evoplugin`/ZIP は Add plugin → Import package、展開済みディレクトリは Link development folder、読み取り専用検査は Validate folder、scaffold と内蔵 editor は Create plugin を使います。',
+      'Work または Coding のサイドバーから Plugins を開きます。`.evoplugin`/ZIP は Add plugin → Import package、展開済みディレクトリは Link development folder、読み取り専用検査は Validate folder、scaffold と内蔵 editor は Create plugin を使います。',
     tricks: [
       'ポータブル plugin は `plugin.json`、直下の `skills/*/SKILL.md`、任意の root `mcp.json` からデータとコードを提供し、EvoFlux UI を任意に注入できません。',
       'Import と Link は既定で disabled のままインストールされます。Trust and enable の前に trust review を読みます。',
@@ -2282,7 +2156,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'settings',
     title: 'Agents、Skills、MCP',
     summary:
-      'Settings 下で Markdown エージェント、スキルパック、MCP サーバーを設定 — ツールはネイティブと同じ権限ルールを継承します。チームは work / coding / aim にスコープされ、各モードに正しい specialist が出ます。',
+      'Settings 下で Markdown エージェント、スキルパック、MCP サーバーを設定 — ツールはネイティブと同じ権限ルールを継承します。チームは work / coding にスコープされ、各モードに正しい specialist が出ます。',
     keywords: [
       'agents',
       'skills',
@@ -2295,21 +2169,21 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'スキル',
       'エージェント',
       'MCP',
-      'ツール',
-    ],
+      'ツール'
+],
     setup:
       'チームメンバーは Settings → Agents; パック検証は Settings → Skills; サーバー追加は Settings → MCP。チャットからは /skill: またはコマンドパレットの New Agent / New Skill ショートカット。',
     tricks: [
       'エージェントは YAML frontmatter 付き .md — diff 可能でバージョン管理しやすい。',
-      'Settings → Skills では Work、Coding、AIM、または任意の組み合わせでスキルを作成・編集・表示・絞り込みでき、有効なスキルは一致するセッションの /skill: にだけ表示されます。',
+      'Settings → Skills では Work、Coding、Both ごとにスキルを作成・編集・表示・絞り込みでき、有効なスキルは一致するセッションの /skill: にだけ表示されます。',
       'MCP ステータスドット: ready / starting / auth / error / stopped。',
       'MCP ツールはネイティブと同じ権限ルールを継承。',
-      'チームは work / coding / aim にスコープ。',
+      'チームは work / coding にスコープ。',
       'コマンドパレットで Edit <agent>… や新規エージェント/スキル作成へジャンプ。',
       'tools_opt_out で code-owned ツール既定を無効化し、割り当て済み skill は skills リストから直接削除。',
       'Lead 専用ツール（ask_user、plan mode ヘルパー、一部 worktree ヘルパー）は specialist に付与されません。',
-      'MCP サーバーが auth に留まるなら、composer スラッシュメニューを責める前に認証フローを完了。',
-    ],
+      'MCP サーバーが auth に留まるなら、composer スラッシュメニューを責める前に認証フローを完了。'
+],
     blocks: [
       {
         type: 'p',
@@ -2331,9 +2205,9 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'MCP — stdio / HTTP / SSE',
           'Status dots — ready / starting / auth / error / stopped',
           'tools_opt_out — code-owned ツール既定を無効化',
-          'Mode scope — work / coding / aim チーム',
-          'Lead-only tools — specialist には付かない',
-        ],
+          'Mode scope — work / coding チーム',
+          'Lead-only tools — specialist には付かない'
+],
       },
       {
         type: 'p',
@@ -2348,16 +2222,16 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           '横断: 有効化された Coding スキルが workflow を案内し、ネイティブ code_context がすべての retrieval action を検証・実行します。',
           '横断: workflows と skills はどちらも / に出るにはスコープ有効性が必要。',
-          '横断: 権限 Always ルールは MCP ツールにも適用 — まず Once を優先。',
-        ],
-      },
-    ],
+          '横断: 権限 Always ルールは MCP ツールにも適用 — まず Once を優先。'
+],
+      }
+],
     related: [
       'composer-power',
       'permissions-modes',
       'coding-graph',
-      'slash-commands',
-    ],
+      'slash-commands'
+],
     openAction: { type: 'settings', path: 'agents' },
   },
   {
@@ -2378,8 +2252,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'サンドボックス',
       '拒否',
       '隔離',
-      '保護',
-    ],
+      '保護'
+],
     openAction: { type: 'settings', path: 'sandbox' },
     setup:
       'Settings → Sandbox。積極的な auto/bypass 権限モードの前に deny パターンを見直す。ページ上のヘルプポップオーバーが ** と * の glob 構文を説明します。',
@@ -2392,8 +2266,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '日常コーディング速度には accept-edits または auto と厳しめ denylist を組み合わせ。',
       'モデルを信頼していても資格情報キャッシュや無関係ディスクを deny。',
       'glob 編集後はサンプルツール呼び出しで再テスト — 静かな誤 glob は「ツールが壊れた」ように感じます。',
-      'ファイルシステム denylist を Settings → Browser ドメインポリシーと WebBridge 向けに組み合わせ。',
-    ],
+      'ファイルシステム denylist を Settings → Browser ドメインポリシーと WebBridge 向けに組み合わせ。'
+],
     blocks: [
       {
         type: 'p',
@@ -2415,8 +2289,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Outbound PII — プロバイダ前に redact/block',
           'Symlinks — ブロックルートへの進入を拒否',
           'Shell tokenization — コマンドへの拒否パス検査',
-          'Goal — sandbox スコープを広げない',
-        ],
+          'Goal — sandbox スコープを広げない'
+],
       },
       {
         type: 'p',
@@ -2431,16 +2305,16 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           '横断: プランが拒否パスを狙うときは sandbox と戦わず plan Reject。',
           '横断: 「ツール拒否」トラブルシューティングにはシールド + denylist が含まれる。',
-          '横断: Coding worktree は Sandbox 配置ポリシーに従う。',
-        ],
-      },
-    ],
+          '横断: Coding worktree は Sandbox 配置ポリシーに従う。'
+],
+      }
+],
     related: [
       'permissions-modes',
       'settings-safety',
       'coding-workspaces',
-      'slash-goal',
-    ],
+      'slash-goal'
+],
   },
   {
     id: 'connection-settings',
@@ -2461,8 +2335,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '接続',
       'サイドカー',
       'バックエンド',
-      'アクセスキー',
-    ],
+      'アクセスキー'
+],
     openAction: { type: 'settings', path: 'connection' },
     setup:
       'Settings → Connection（または HealthDot をクリック）。パッケージ版はバンドル sidecar が既定。ソースからは `make -C desktop dev` 前に `make dev` が上がっていることを確認。',
@@ -2475,8 +2349,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'いつでも HealthDot をクリックして Connection へのショートカット。',
       '固まったバンドル sidecar は、無関係な設定を触る前にパッケージ版アプリを再起動。',
       '外部モード設定時にアクセスキーをチャットトランスクリプトへ貼らない。',
-      'external → bundled へ切り替えたら、Providers が壊れたと仮定する前に HealthDot が緑に戻ることを確認。',
-    ],
+      'external → bundled へ切り替えたら、Providers が壊れたと仮定する前に HealthDot が緑に戻ることを確認。'
+],
     blocks: [
       {
         type: 'p',
@@ -2498,8 +2372,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'HealthDot — Connection へのショートカット',
           'Welcome — sidecar/チーム準備を待つ',
           'From source — `make dev` のあと `make -C desktop dev`',
-          'Diagnostics — URL は良いがサブシステムが失敗するとき',
-        ],
+          'Diagnostics — URL は良いがサブシステムが失敗するとき'
+],
       },
       {
         type: 'p',
@@ -2518,16 +2392,16 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           '横断: はじめにのコールドスタート順は Connection 回復と一致。',
           '横断: ローカル sidecar 上の Scheduler cron はマシンが起きて健全である必要。',
-          '横断: トラブルシューティングチェックリストは HealthDot → Connection から始まる。',
-        ],
-      },
-    ],
+          '横断: トラブルシューティングチェックリストは HealthDot → Connection から始まる。'
+],
+      }
+],
     related: [
       'troubleshooting-connection',
       'getting-started',
       'settings-safety',
-      'providers-settings',
-    ],
+      'providers-settings'
+],
   },
   {
     id: 'settings-safety',
@@ -2549,8 +2423,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '設定',
       'マップ',
       '外観',
-      '診断',
-    ],
+      '診断'
+],
     openAction: { type: 'settings', path: '' },
     tricks: [
       'デスクトップはサイドバーレールに設定カテゴリを表示; モバイルは About ハブをナビ一覧として使う。',
@@ -2561,8 +2435,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Diagnostics はライブサブシステム検査 — HealthDot の二値信号を補完。',
       'Intelligence vs System vs Application のグループが、リスクのあるトグルをテーマ選択と混ぜない。',
       'Notifications にはテスト ping — フォーカス外アラートを信頼する前に使う。',
-      'どの設定ページがトグルを持つか忘れたらコマンドパレットを開く。',
-    ],
+      'どの設定ページがトグルを持つか忘れたらコマンドパレットを開く。'
+],
     blocks: [
       {
         type: 'p',
@@ -2588,8 +2462,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Appearance — テーマ、アクセント、フォント、モーション、ロケール（en / vi / ja）',
           'Telemetry — トレースと要約（/telemetry も）',
           'Diagnostics — ライブサブシステムヘルス検査',
-          'About — アプリ情報 + Guidelines リンク',
-        ],
+          'About — アプリ情報 + Guidelines リンク'
+],
       },
       {
         type: 'p',
@@ -2604,17 +2478,17 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           '横断: 主要な Guidelines 記事は利用可能なとき openAction で正しいページへディープリンク。',
           '横断: ロケール変更は UI クロムのみ — チャット本文は書いたまま。',
-          '横断: 空の telemetry はしばしば extras 無効を意味し、チャット障害ではない。',
-        ],
-      },
-    ],
+          '横断: 空の telemetry はしばしば extras 無効を意味し、チャット障害ではない。'
+],
+      }
+],
     related: [
       'providers-settings',
       'agents-settings',
       'sandbox-settings',
       'connection-settings',
-      'troubleshooting-connection',
-    ],
+      'troubleshooting-connection'
+],
   },
   {
     id: 'keyboard-shortcuts',
@@ -2636,8 +2510,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ショートカット',
       'キーボード',
       'ホットキー',
-      'パレット',
-    ],
+      'パレット'
+],
     tricks: [
       '主要修飾キー + P はコマンドパレット（サイドバーの Search）。Help はこの Guidelines モーダルを開く — パレットではない。',
       'ショートカット表示は自動更新: macOS は ⌘、Windows/Linux は Ctrl。',
@@ -2646,8 +2520,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Ctrl+R は Work セッションのみ更新（アプリ全体のリロードではない）。',
       'バインディングを忘れたらアクション名で Ctrl+P 検索を優先。',
       'キー 1–5 はシールドメニューが開いているときだけ権限モードを切り替え。',
-      'Ctrl+I はチャット入力にフォーカス — workbench パネルを渡り歩いたあとに便利。',
-    ],
+      'Ctrl+I はチャット入力にフォーカス — workbench パネルを渡り歩いたあとに便利。'
+],
     blocks: [
       {
         type: 'p',
@@ -2674,8 +2548,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           { keys: 'Ctrl+I', action: 'チャット入力にフォーカス' },
           { keys: 'Ctrl+;', action: 'Side chat（ラベルは ⌥⌘S の場合あり）' },
           { keys: 'Ctrl+R', action: 'Work セッションを更新' },
-          { keys: '1–5', action: 'シールドメニューが開いているときの権限モード' },
-        ],
+          { keys: '1–5', action: 'シールドメニューが開いているときの権限モード' }
+],
       },
       {
         type: 'p',
@@ -2689,8 +2563,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '⌘P / ⌥⌘S ラベル — 古い; Ctrl+F / Ctrl+; を使う',
           'Ctrl+V — ペースト中は表示循環が抑止',
           'Ctrl+R — Work セッション更新のみ',
-          '1–5 — シールドメニューが開いているときだけ',
-        ],
+          '1–5 — シールドメニューが開いているときだけ'
+],
       },
       {
         type: 'p',
@@ -2701,16 +2575,16 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           '横断: 権限シールド + 1–5 はモードクリックより速い。',
           '横断: Goal 中に /stop なしで Ctrl+; side chat。',
-          '横断: plan Accept 後に Ctrl+G で diff 検証。',
-        ],
-      },
-    ],
+          '横断: plan Accept 後に Ctrl+G で diff 検証。'
+],
+      }
+],
     related: [
       'workbench-tools',
       'getting-started',
       'permissions-modes',
-      'side-chat',
-    ],
+      'side-chat'
+],
     openAction: { type: 'palette' },
   },
   {
@@ -2732,8 +2606,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '診断',
       'トラブル',
       'エラー',
-      'ヘルス',
-    ],
+      'ヘルス'
+],
     setup:
       'サイドバーフッタの HealthDot から始める。Settings → Connection と Settings → Diagnostics を近くに。ソースからは 2 ターミナル準備: `make dev` と `make -C desktop dev`。',
     tricks: [
@@ -2746,8 +2620,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'WebBridge オフライン → 拡張インストール、ペアリング有効、Browser 設定有効、per-chat トグルオン。',
       '空の telemetry → observability/DuckDB extras が無効の可能性 — 必ずしもチャット障害ではない。',
       'Goal が詰まった → blocker streak、予算一時停止、または /goal:stop を確認。',
-      '/scheduler が 404 っぽい → Ctrl+S パネルを使う; ルートはホームへリダイレクト。',
-    ],
+      '/scheduler が 404 っぽい → Ctrl+S パネルを使う; ルートはホームへリダイレクト。'
+],
     blocks: [
       {
         type: 'p',
@@ -2773,8 +2647,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '空の telemetry → observability extras 無効（しばしば非ブロッキング）',
           'Goal 詰まり → blocker streak、予算一時停止、または /goal:stop を確認',
           '/scheduler が 404 っぽい → Ctrl+S パネル; ルートはホームへリダイレクト',
-          '古い graph → 巨大な外部編集後に Graph ツールから再インデックス',
-        ],
+          '古い graph → 巨大な外部編集後に Graph ツールから再インデックス'
+],
       },
       {
         type: 'p',
@@ -2782,7 +2656,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'よくある失敗: 欠けたプロバイダキーのために再インストール; HealthDot が赤のうちに MCP をデバッグ; 緑ヘルスを Ollama 稼働の証明と扱う; 許容可能な AIM diff をアプリエラーとして扱う; Ctrl+R でフルリロードを期待する強制更新（Work セッション更新のみ）。',
+        text: 'よくある失敗: 欠けたプロバイダキーのために再インストール; HealthDot が赤のうちに MCP をデバッグ; 緑ヘルスを Ollama 稼働の証明と扱う; Ctrl+R でフルリロードを期待する強制更新（Work セッション更新のみ）。',
       },
       {
         type: 'tips',
@@ -2790,17 +2664,17 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '横断: はじめにのコールドスタート順はこのチェックリストと一致。',
           '横断: Accept 待ちの plan review はハングではない — パネルを解決。',
           '横断: side chat フォーカスの誤りは「Lead が無視した」ように見える。',
-          '迷ったら — Diagnostics + 小さな Work ping が推測リセットに勝つ。',
-        ],
-      },
-    ],
+          '迷ったら — Diagnostics + 小さな Work ping が推測リセットに勝つ。'
+],
+      }
+],
     related: [
       'getting-started',
       'connection-settings',
       'settings-safety',
       'providers-settings',
-      'browser-webbridge',
-    ],
+      'browser-webbridge'
+],
     openAction: { type: 'settings', path: 'diagnostics' },
-  },
+  }
 ]

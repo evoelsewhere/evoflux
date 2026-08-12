@@ -7,7 +7,7 @@
 
   **Lead-and-specialists. Orchestrated. Parallel. Verified.**
 
-  Work for cowork, Coding for software engineering, and AIM for legacy modernization —
+  Work for cowork and Coding for software engineering —
   powered by one local-first agent harness and any model you choose.
 
   [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-2563EB.svg)](LICENSE)
@@ -17,12 +17,11 @@
   [![Tauri v2](https://img.shields.io/badge/Tauri-v2-FFC131?logo=tauri&logoColor=white)](desktop/)
   [![BYOM](https://img.shields.io/badge/Models-12%20providers-7C3AED)](#bring-your-own-model)
 
-  [Three modes](#three-specialized-modes) ·
+  [Two modes](#two-specialized-modes) ·
   [Quick start](#quick-start) ·
   [Working model](#agent-working-model) ·
   [Architecture](#architecture) ·
   [Capabilities](#core-capabilities) ·
-  [AIM](#aim-modernization-factory) ·
   [WebBridge](#webbridge)
 </div>
 
@@ -37,17 +36,17 @@
 
 ---
 
-## Three specialized modes
+## Two specialized modes
 
-One desktop app. One harness. Three different kinds of work.
+One desktop app. One harness. Two different kinds of work.
 
-| | **Work** | **Coding** | **AIM** |
-|---|---|---|---|
-| Product role | Cowork | Software engineering workspace | AI modernization factory |
-| Workspace | Temporary sandbox | Persistent repo or multi-repo project | Legacy base + target + KB repos |
-| Best for | Research, documents, data, browser work, quick scripts | Build, test, refactor, review, git operations | Assess, understand, design, convert, compare, cut over |
-| Default specialists | Executor, Explorer, Consultant, Debate | Coder, Explorer, Architect, Debate | Archaeology, Architecture, Conversion, Testing, Appraisal, Triage |
-| Verification | Artifact and tool-result review | Tests, diffs, code context, git | Human gates + deterministic equivalence |
+| | **Work** | **Coding** |
+|---|---|---|
+| Product role | Cowork | Software engineering workspace |
+| Workspace | Temporary sandbox | Persistent repo or multi-repo project |
+| Best for | Research, documents, data, browser work, quick scripts | Build, test, refactor, review, git operations |
+| Default specialists | Executor, Explorer, Consultant, Debate | Coder, Explorer, Architect, Debate |
+| Verification | Artifact and tool-result review | Tests, diffs, code context, git |
 
 ### Work · cowork without a repository
 
@@ -57,25 +56,18 @@ Work is the fast execution sandbox. Start with a request instead of a project: r
 
 Coding opens your real repository — or several repositories as one project — and keeps that workspace available across sessions. Agents can search indexed source, navigate structural relationships, inspect the file tree, edit and test code, review diffs, and use the complete git surface.
 
-### AIM · controlled modernization
-
-AIM turns legacy migration into a governed production line. A flow-first interface manages the application inventory, knowledge base, traceability, pipelines, human approvals, test comparison, and cutover readiness.
-
 <table>
   <tr>
-    <td width="33%" align="center"><strong>Work</strong></td>
-    <td width="33%" align="center"><strong>Coding</strong></td>
-    <td width="33%" align="center"><strong>AIM</strong></td>
+    <td width="50%" align="center"><strong>Work</strong></td>
+    <td width="50%" align="center"><strong>Coding</strong></td>
   </tr>
   <tr>
     <td><a href="documents/images/showcase/work-mode.jpg"><img src="documents/images/showcase/work-mode.jpg" width="360" alt="Work coordinating an artifact task" /></a></td>
     <td><a href="documents/images/showcase/coding-mode.jpg"><img src="documents/images/showcase/coding-mode.jpg" width="360" alt="Coding working across a multi-repository project" /></a></td>
-    <td><a href="documents/images/showcase/aim-mode.jpg"><img src="documents/images/showcase/aim-mode.jpg" width="360" alt="AIM migration overview and dependency-aware work queue" /></a></td>
   </tr>
   <tr>
     <td><sub>Agent collaboration, files, previews, and verification</sub></td>
     <td><sub>Repository context, tool history, implementation, verification</sub></td>
-    <td><sub>Migration health, gates, workflow, waves, and unit queue</sub></td>
   </tr>
 </table>
 
@@ -90,7 +82,7 @@ Download the [latest release](https://github.com/evoelsewhere/evoflux/releases/l
 On first launch:
 
 1. Connect an LLM provider.
-2. Start a Work session, open a repository for Coding, or configure an AIM project.
+2. Start a Work session or open a repository for Coding.
 3. Choose the model, reasoning level, skills, tools, and permissions for each agent.
 
 ### Run the desktop app from source
@@ -223,7 +215,7 @@ Twelve provider integrations ship behind one streaming abstraction, including An
 
 ### Skills and MCP
 
-Twenty-nine built-in skills cover mode-scoped Work, Coding, and AIM workflows, specialized artifacts/design, EvoFlux configuration/installers, portable plugin development, and provider-neutral PR lifecycle operations. Work and Coding each expose one implicit router; broad specialists are explicit-only so they do not compete on every request. Custom skills can be created, edited, diagnosed, and scoped to Work, Coding, AIM, or any combination in Settings. A bounded 2%/8K metadata catalog is always available for model-driven selection, while `SKILL.md` bodies and bundle resources load only after exact activation. EvoFlux is also an MCP client for stdio, HTTP, and SSE servers; connected tools inherit the same permission rules as native tools.
+Twenty-nine built-in skills cover mode-scoped Work and Coding workflows, specialized artifacts/design, EvoFlux configuration/installers, portable plugin development, and provider-neutral PR lifecycle operations. Work and Coding each expose one implicit router; broad specialists are explicit-only so they do not compete on every request. Custom skills can be created, edited, diagnosed, and filtered as Work, Coding, or Both in Settings. A bounded 2%/8K metadata catalog is always available for model-driven selection, while `SKILL.md` bodies and bundle resources load only after exact activation. EvoFlux is also an MCP client for stdio, HTTP, and SSE servers; connected tools inherit the same permission rules as native tools.
 
 The built-in **Plugin Center** implements the portable [Agent Plugins 1.0](https://agent-plugins.org/) core. It can scaffold, validate, import, developer-link, pack, update, enable, disable, and uninstall local plugins containing immediate-child Agent Skills and isolated stdio or Streamable HTTP MCP servers. `.evoplugin` is a deterministic ZIP distribution wrapper; the unpacked package remains standards-compatible through root `plugin.json` and optional `mcp.json`.
 
@@ -240,34 +232,6 @@ Wildcard `(tool, pattern) → allow | deny | ask` rules use last-match-wins eval
 ### Git and session UX
 
 Coding mode exposes diff review, commits, branches, merge, rebase, cherry-pick, stash, and worktrees to agents and the source-control UI. Long sessions support prompt navigation, revert/undo boundaries, context compaction, four-pane Split view, and a unified Monitor view.
-
----
-
-## AIM modernization factory
-
-AIM operates across three repositories:
-
-- **Base source:** the legacy estate, mounted read-only.
-- **Target source:** a pre-scaffolded destination architecture.
-- **Knowledge-base repo:** the system of record for inventory, understanding, business rules, mappings, evidence, and collaboration.
-
-Seven specialist roles — Lead, Archaeologist, Target Architect, Converter, Appraiser, Test Engineer, and Triage Analyst — move each migration unit through controlled pipelines.
-
-<p align="center">
-  <img src="documents/images/generated/aim-modernization-factory.jpg" width="790" alt="AIM governed modernization factory with deterministic comparison verdicts" />
-</p>
-
-| Pipeline | Purpose |
-|---|---|
-| `aim-assess` | Inventory the estate and plan migration waves |
-| `aim-understand` | Produce KB documentation and candidate business rules |
-| `aim-convert-unit` / `aim-convert-wave` | Implement one unit or a batch into the target |
-| `aim-test-compare` | Compare golden-master and target behavior |
-| `aim-cutover-check` | Verify readiness and advance the unit phase |
-
-`aim_compare` canonicalizes output using a stack-specific rulebook — encoding, ordering, date and number formats, and other differences that can hide defects — then records `pass`, `fail`, or `acceptable-diff` with a complete report.
-
-Each project owns its rulebook inside the KB repository. New projects start from the safe bundled template, then declare their own structural extractors, runners, canonicalizers, mappings, and conventions under version control.
 
 ---
 
@@ -315,7 +279,7 @@ EvoFlux also includes direct control of its persistent in-app browser, PDF/DOCX/
   | Real-browser bridge | **WebBridge, two-way** | No | No | No | No | No |
   | Pricing | Free; pay model costs | Subscription or API | Subscription | Subscription + usage | ChatGPT or API | Free self-hosted / paid cloud |
 
-  EvoFlux leans into local ownership, model choice, inspectable memory, general cowork, structural code intelligence, and deterministic modernization. Commercial products lead in vendor-specific coding models, cloud infrastructure for long unattended runs, and editor-native maturity.
+  EvoFlux leans into local ownership, model choice, inspectable memory, general cowork, and structural code intelligence. Commercial products lead in vendor-specific coding models, cloud infrastructure for long unattended runs, and editor-native maturity.
 
   <sub>Competitor information reflects publicly reported product capabilities and pricing around mid-2026 and may change.</sub>
 </details>
@@ -340,7 +304,7 @@ EvoFlux also includes direct control of its persistent in-app browser, PDF/DOCX/
 app/        Local FastAPI sidecar — agents, code context, memory, scheduler, MCP
 web/        React interface embedded by the Tauri desktop app
 desktop/    Tauri v2 shell and Python sidecar packaging
-seed/       Work, Coding, and AIM blueprints, skills, rulebooks, and config
+seed/       Work and Coding blueprints, skills, and config
 tests/      Backend and frontend tests
 documents/  Design notes, analyses, and README media
 ```

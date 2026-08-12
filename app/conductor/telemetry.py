@@ -22,7 +22,6 @@ from app.conductor.constants.telemetry import (
     TelemetryField,
 )
 from app.core.config import settings
-from app.core.skill_scope import SkillMode
 
 if TYPE_CHECKING:
     from app.conductor.client import ConductorClient
@@ -167,7 +166,7 @@ def record_skill_usage(
     skill_name: str,
     *,
     source: Literal["manual", "implicit", "configured"],
-    mode: SkillMode,
+    mode: Literal["work", "coding"],
     outcome: Literal["success", "failure", "cancelled"] = "success",
     duration_ms: int = 0,
     failure_category: str | None = None,

@@ -180,7 +180,7 @@ def test_terminal_run_tool_is_lead_only_all_modes():
 
     registry = _default_tool_registry()
     assert "terminal_run" in registry
-    for mode in ("work", "coding", "aim"):
+    for mode in ("work", "coding"):
         assert "terminal_run" in tier_tools(registry, mode=mode, role="lead")
         assert "terminal_run" not in tier_tools(registry, mode=mode, role="member")
 
@@ -508,7 +508,9 @@ async def test_run_command_does_not_treat_input_echo_as_completion():
         manager._handle_data(session, b"delayed\r\nprompt> ")
 
     feeder = asyncio.create_task(feed())
-    output = await manager.run_command("s1", "echo delayed", timeout_s=2, idle_s=0.05)
+    output = await manager.run_command(
+        "s1", "echo delayed", timeout_s=2, idle_s=0.05
+    )
     await feeder
 
     assert "delayed\nprompt>" in output

@@ -85,7 +85,7 @@ class SkillWriteRequest(BaseModel):
     modes: list[SkillMode] = Field(
         default_factory=default_skill_modes,
         min_length=1,
-        max_length=3,
+        max_length=2,
         description="Application modes where the skill is available.",
     )
     files: list[SkillBundleFileWrite] = Field(
@@ -116,7 +116,7 @@ class SkillUpdateRequest(BaseModel):
     modes: list[SkillMode] | None = Field(
         default=None,
         min_length=1,
-        max_length=3,
+        max_length=2,
         description=(
             "Optional source mode scope. Omit for normal bundle edits so user "
             "runtime overrides are never baked into the bundle sidecar."
@@ -146,7 +146,7 @@ class SkillRuntimeSettingsRequest(BaseModel):
         max_length=38,
         pattern=r"^skill_[0-9a-f]{32}$",
     )
-    modes: list[SkillMode] = Field(min_length=1, max_length=3)
+    modes: list[SkillMode] = Field(min_length=1, max_length=2)
     allow_implicit_invocation: bool
     user_invocable: bool
 

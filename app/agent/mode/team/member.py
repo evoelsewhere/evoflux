@@ -1406,7 +1406,7 @@ class TeamMemberBase(abc.ABC):
                         db_factory=self.db_factory,
                     ),
                 )
-        if self._team.mode in ("coding", "aim"):
+        if self._team.mode == "coding":
             pipeline.add(
                 HookStage.WORKSPACE,
                 "workspace-context",
@@ -1566,7 +1566,7 @@ class TeamMemberBase(abc.ABC):
             run_metadata["team_workspace"] = task_workspace.workspace
         config = RunConfig(session_id=self.session_id, metadata=run_metadata)
 
-        # Coding/AIM modes use the exact project workspace for every team member.
+        # Coding mode uses the exact project workspace for every team member.
         session_sandbox = SandboxConfig(
             workspace=task_workspace.workspace,
             session_id=lead_session_id,

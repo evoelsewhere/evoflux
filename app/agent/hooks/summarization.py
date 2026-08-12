@@ -169,10 +169,10 @@ Rules:
 def prompt_for_mode(mode: str | None) -> str:
     """Return the bundled summariser prompt for a given session mode.
 
-    Coding and AIM modes use :data:`CODING_SUMMARY_PROMPT`. Anything else
+    ``mode == "coding"`` → :data:`CODING_SUMMARY_PROMPT`. Anything else
     (including ``None``) → :data:`CHAT_SUMMARY_PROMPT`.
     """
-    return CODING_SUMMARY_PROMPT if mode in {"coding", "aim"} else CHAT_SUMMARY_PROMPT
+    return CODING_SUMMARY_PROMPT if mode == "coding" else CHAT_SUMMARY_PROMPT
 
 
 # TEAM mode: structured Markdown template that preserves cross-member
@@ -240,12 +240,12 @@ Rules:
 def keep_last_for_mode(mode: str | None) -> int:
     """Return the ``keep_last_assistants`` window for a given session mode.
 
-    Coding and AIM modes use :data:`CODING_KEEP_LAST_ASSISTANTS` (0 — summarise
+    ``mode == "coding"`` → :data:`CODING_KEEP_LAST_ASSISTANTS` (0 — summarise
     everything). Anything else → :data:`DEFAULT_KEEP_LAST_ASSISTANTS`.
     """
     return (
         CODING_KEEP_LAST_ASSISTANTS
-        if mode in {"coding", "aim"}
+        if mode == "coding"
         else DEFAULT_KEEP_LAST_ASSISTANTS
     )
 
@@ -438,7 +438,7 @@ def build_summarization_hook(
     the agent's own LLM provider). Both the summariser PROMPT and the
     ``keep_last_assistants`` window are mode-aware:
 
-    * Coding/AIM → :data:`CODING_SUMMARY_PROMPT` +
+    * ``mode == "coding"`` → :data:`CODING_SUMMARY_PROMPT` +
       :data:`CODING_KEEP_LAST_ASSISTANTS` (0 — summarise everything).
     * Anything else → :data:`CHAT_SUMMARY_PROMPT` +
       :data:`DEFAULT_KEEP_LAST_ASSISTANTS`.

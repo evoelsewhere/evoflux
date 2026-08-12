@@ -377,7 +377,7 @@ def _format_lsp_locations(locations: list[dict[str, Any]], kind: str) -> str:
 static_diagnostics = Tool(
     _lsp_diagnostics,
     name="static_diagnostics",
-    tiers=("coding", "aim"),
+    tiers=("coding",),
     description=(
         "Run static analysis (ruff for Python, tsc for TypeScript) on a file "
         "or directory and return errors and warnings with file:line locations."
@@ -408,7 +408,7 @@ static_diagnostics = Tool(
 lsp_diagnostics = Tool(
     _real_lsp_diagnostics,
     name="lsp_diagnostics",
-    tiers=("coding", "aim"),
+    tiers=("coding",),
     description=(
         "Return live publishDiagnostics results from a persistent language server. "
         "Requires a supported local language-server binary."
@@ -434,7 +434,7 @@ lsp_diagnostics = Tool(
 lsp_definition = Tool(
     _real_lsp_definition,
     name="lsp_definition",
-    tiers=("coding", "aim"),
+    tiers=("coding",),
     description=(
         "Go to definition at an exact source file, line, and column through "
         "the Language Server Protocol."
@@ -450,7 +450,7 @@ lsp_definition = Tool(
 lsp_references = Tool(
     _real_lsp_references,
     name="lsp_references",
-    tiers=("coding", "aim"),
+    tiers=("coding",),
     description=(
         "Find references at an exact source position through the Language "
         "Server Protocol."

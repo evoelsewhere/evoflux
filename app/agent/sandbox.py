@@ -15,8 +15,8 @@ workspace allowlist, deny patterns, read-only roots, or write leases.
 - ``EVOFLUX_CACHE_DIR``   — regeneratable cache including OAuth tokens
 
 User uploads live in app-managed per-session storage. Every session sandbox
-automatically mounts that directory as a read-only root, so Work, Coding, and
-AIM agents can inspect arbitrary attachments without modifying the upload or
+automatically mounts that directory as a read-only root, so Work and Coding
+agents can inspect arbitrary attachments without modifying the upload or
 polluting a repository.
 
 All relative paths resolve under ``workspace_root``. Absolute paths must land
@@ -106,10 +106,9 @@ class SandboxConfig:
         # see the full repo set without a model-facing "workspace_paths"
         # argument on every one of them.
         extra_workspace_paths: list[str] | None = None,
-        # Paths (typically AIM base-source repos) that remain
-        # readable — they are NOT in denied_roots, so read/search/grep tools
-        # still work — but are rejected by write-path tools (write/edit/
-        # patch/rm). See validate_path's is_write param.
+        # Paths that remain readable — they are NOT in denied_roots, so
+        # read/search/grep tools still work — but are rejected by write-path
+        # tools (write/edit/patch/rm). See validate_path's is_write param.
         read_only_paths: list[str] | None = None,
         # Optional member-task write lease. When non-empty, every direct
         # filesystem mutation must stay under one of these workspace-relative
@@ -289,10 +288,9 @@ class SandboxConfig:
         Args:
             is_write: pass ``True`` from write-path tools (write/edit/patch/
                 rm) so a path under ``read_only_paths`` is rejected even
-                though it's readable — the AIM base-source read-only rule
-                (documents/research/aim-framework.md §3.3): agents may read
-                the base source but must never modify it, while ordinary
-                read/search tools stay unaffected.
+                though it's readable — agents may read those roots but must
+                never modify them, while ordinary read/search tools stay
+                unaffected.
 
         Raises:
             PermissionError: if the resolved path falls under a denied

@@ -601,7 +601,7 @@ async def test_run_endpoint_contract(setup_db, tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_list_executions_by_session_ids(setup_db, tmp_path, monkeypatch):
     """GET /executions?session_ids= returns newest-first rows for exactly the
-    requested sessions (the AIM Pipelines table's status join)."""
+    requested sessions."""
     from uuid import uuid4
 
     from fastapi import FastAPI
@@ -619,7 +619,7 @@ async def test_list_executions_by_session_ids(setup_db, tmp_path, monkeypatch):
 
     session_a, session_b, session_other = uuid4(), uuid4(), uuid4()
     running_execution = WorkflowExecution(
-        definition_name="aim-convert-unit",
+        definition_name="convert-unit",
         definition_hash="0" * 64,
         session_id=session_b,
         status="running",
@@ -627,7 +627,7 @@ async def test_list_executions_by_session_ids(setup_db, tmp_path, monkeypatch):
     async with db_module.async_session_factory() as db:
         db.add(
             WorkflowExecution(
-                definition_name="aim-assess",
+                definition_name="assess",
                 definition_hash="0" * 64,
                 session_id=session_a,
                 status="completed",
@@ -700,104 +700,35 @@ async def test_run_scope_mismatch_rejected(setup_db, tmp_path, monkeypatch):
         await db.commit()
         await db.refresh(work_session)
 
-    aim_flow = """
+    coding_flow = """
 schema_version: 1
-name: aim-only
-scope: aim
+name: coding-only
+scope: coding
 nodes:
   - { id: n, kind: notify, message: hi }
 """
     async with AsyncClient(transport=transport, base_url="http://t") as client:
-        saved = await client.put("/api/workflows/aim-only", json={"raw_yaml": aim_flow})
+        saved = await client.put(
+            "/api/workflows/coding-only", json={"raw_yaml": coding_flow}
+        )
         await client.post(
-            "/api/workflows/aim-only/approve", json={"hash": saved.json()["hash"]}
+            "/api/workflows/coding-only/approve", json={"hash": saved.json()["hash"]}
         )
         resp = await client.post(
-            "/api/workflows/aim-only/run",
+            "/api/workflows/coding-only/run",
             json={"session_id": str(work_session.id), "inputs": {}},
         )
         assert resp.status_code == 422
-        assert "aim session" in resp.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_concurrent_assessment_in_same_project_rejected(
-    setup_db, tmp_path, monkeypatch
-):
-    from fastapi import FastAPI
-    from httpx import ASGITransport, AsyncClient
-
-    from app.api.routes.workflows import router as workflows_router
-    from app.core import db as db_module
-    from app.core.config import settings as app_settings
-    from app.models.chat import ChatSession, CodingProject
-    from app.models.workflow import WorkflowExecution
-
-    monkeypatch.setattr(app_settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config"))
-    app = FastAPI()
-    app.include_router(workflows_router, prefix="/api/workflows")
-    transport = ASGITransport(app=app)
-    workspace = tmp_path / "target"
-    workspace.mkdir()
-
-    async with db_module.async_session_factory() as db:
-        project = CodingProject(name="assessment-lock", kind="aim")
-        db.add(project)
-        await db.flush()
-        first = ChatSession(mode="aim", project_id=project.id, workspace=str(workspace))
-        second = ChatSession(
-            mode="aim", project_id=project.id, workspace=str(workspace)
-        )
-        db.add(first)
-        db.add(second)
-        await db.flush()
-        db.add(
-            WorkflowExecution(
-                definition_name="aim-assess",
-                definition_hash="existing",
-                session_id=first.id,
-                status="running",
-            )
-        )
-        await db.commit()
-        second_id = second.id
-
-    async with AsyncClient(transport=transport, base_url="http://t") as client:
-        saved = await client.put(
-            "/api/workflows/aim-assess",
-            json={
-                "raw_yaml": (
-                    "schema_version: 1\n"
-                    "name: aim-assess\n"
-                    "scope: aim\n"
-                    "nodes:\n"
-                    "  - {id: done, kind: notify, message: done}\n"
-                )
-            },
-        )
-        await client.post(
-            "/api/workflows/aim-assess/approve",
-            json={"hash": saved.json()["hash"]},
-        )
-        response = await client.post(
-            "/api/workflows/aim-assess/run",
-            json={"session_id": str(second_id), "inputs": {}},
-        )
-
-    assert response.status_code == 409
-    assert "already active" in response.json()["detail"]
+        assert "coding session" in resp.json()["detail"]
 
 
 @pytest.mark.asyncio
 async def test_reconcile_orphaned_executions_fails_live_rows(setup_db):
     """A restart leaves running/waiting_gate rows the in-memory runner can no
     longer drive; reconciliation must fail them so nothing shows live forever."""
-    from datetime import datetime, timedelta, timezone
     from uuid import uuid4, uuid7
 
     from app.core import db as db_module
-    from app.models.aim import AimClaim, AimUnit
-    from app.models.chat import CodingProject
     from app.models.workflow import (
         WorkflowExecution,
         WorkflowGateRequest,
@@ -809,17 +740,6 @@ async def test_reconcile_orphaned_executions_fails_live_rows(setup_db):
     gate_id = uuid7()
     done_id = uuid7()
     async with db_module.async_session_factory() as db:
-        project = CodingProject(name="reconcile-aim", kind="aim")
-        db.add(project)
-        await db.flush()
-        unit = AimUnit(
-            project_id=project.id,
-            module="m",
-            name="A",
-            kind="program",
-        )
-        db.add(unit)
-        await db.flush()
         db.add(
             WorkflowExecution(
                 id=running_id,
@@ -860,16 +780,7 @@ async def test_reconcile_orphaned_executions_fails_live_rows(setup_db):
                 options=["certify", "hold"],
             )
         )
-        claim = AimClaim(
-            project_id=project.id,
-            unit_id=unit.id,
-            workflow_execution_id=gate_id,
-            workflow_name="w",
-            lease_expires_at=datetime.now(timezone.utc) + timedelta(hours=2),
-        )
-        db.add(claim)
         await db.commit()
-        claim_id = claim.id
 
     count = await reconcile_orphaned_executions()
     assert count == 2
@@ -895,7 +806,6 @@ async def test_reconcile_orphaned_executions_fails_live_rows(setup_db):
         ).one()
         assert gate.status == "interrupted"
         assert gate.resolved_at is not None
-        assert await db.get(AimClaim, claim_id) is None
 
 
 @pytest.mark.asyncio
@@ -932,87 +842,3 @@ async def test_reconcile_on_unmigrated_schema_logs_and_continues(monkeypatch):
     # The swallowed failure must stay visible in the logs — it is the only
     # signal that live-looking runs were left unreconciled.
     assert any("workflow_reconcile_failed" in message for message in warnings)
-
-
-@pytest.mark.asyncio
-async def test_terminal_cleanup_releases_execution_claims(setup_db):
-    from datetime import datetime, timedelta, timezone
-    from uuid import uuid7
-
-    from app.core import db as db_module
-    from app.models.aim import AimClaim, AimUnit
-    from app.models.chat import CodingProject
-    from app.workflow.runner import WorkflowRunner
-
-    execution_id = uuid7()
-    async with db_module.async_session_factory() as db:
-        project = CodingProject(name="cleanup-aim", kind="aim")
-        db.add(project)
-        await db.flush()
-        unit = AimUnit(
-            project_id=project.id,
-            module="m",
-            name="A",
-            kind="program",
-        )
-        db.add(unit)
-        await db.flush()
-        claim = AimClaim(
-            project_id=project.id,
-            unit_id=unit.id,
-            workflow_execution_id=execution_id,
-            workflow_name="aim-convert-unit",
-            lease_expires_at=datetime.now(timezone.utc) + timedelta(hours=2),
-        )
-        db.add(claim)
-        await db.commit()
-        claim_id = claim.id
-
-    await WorkflowRunner()._release_execution_claims(execution_id)
-
-    async with db_module.async_session_factory() as db:
-        assert await db.get(AimClaim, claim_id) is None
-
-
-@pytest.mark.asyncio
-async def test_claim_heartbeat_extends_execution_lease(setup_db):
-    from datetime import datetime, timedelta, timezone
-    from uuid import uuid7
-
-    from app.core import db as db_module
-    from app.models.aim import AimClaim, AimUnit
-    from app.models.chat import CodingProject
-    from app.workflow.runner import WorkflowRunner
-
-    execution_id = uuid7()
-    async with db_module.async_session_factory() as db:
-        project = CodingProject(name="heartbeat-aim", kind="aim")
-        db.add(project)
-        await db.flush()
-        unit = AimUnit(
-            project_id=project.id,
-            module="m",
-            name="A",
-            kind="program",
-        )
-        db.add(unit)
-        await db.flush()
-        old_expiry = datetime.now(timezone.utc) + timedelta(minutes=5)
-        claim = AimClaim(
-            project_id=project.id,
-            unit_id=unit.id,
-            workflow_execution_id=execution_id,
-            workflow_name="aim-understand",
-            lease_expires_at=old_expiry,
-        )
-        db.add(claim)
-        await db.commit()
-        claim_id = claim.id
-
-    renewed = await WorkflowRunner()._renew_execution_claims(execution_id)
-
-    assert renewed == 1
-    async with db_module.async_session_factory() as db:
-        claim = await db.get(AimClaim, claim_id)
-        assert claim is not None
-        assert claim.lease_expires_at > old_expiry + timedelta(hours=3)

@@ -14,7 +14,6 @@ from app.agent.skills.activation import (
     inject_skill_activation,
 )
 from app.agent.skills.resolution import resolve_skill
-from app.core.skill_scope import normalize_skill_mode
 
 if TYPE_CHECKING:
     from app.agent.state import AgentState, RunContext
@@ -24,7 +23,7 @@ class SkillResolutionHook(BaseAgentHook):
     """Run the generic implicit-resolution stage once per user turn."""
 
     def __init__(self, *, mode: str) -> None:
-        self._mode = normalize_skill_mode(mode)
+        self._mode = "coding" if mode == "coding" else "work"
 
     async def before_agent(self, ctx: RunContext, state: AgentState) -> None:
         if state.metadata.get("explicit_skill_selected"):

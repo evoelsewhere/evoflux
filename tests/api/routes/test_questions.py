@@ -98,7 +98,7 @@ async def test_reply_unknown_session_404(client):
 
 @pytest.mark.asyncio
 async def test_pending_and_reply_via_lead_stream_for_member(client):
-    """AIM / lead-session clients must see member-owned ask_user batches."""
+    """Lead-session clients must see member-owned ask_user batches."""
     member = AskUserService(session_id="member-sess", stream_session_id="lead-sess")
     token = set_ask_user_service(member)
     try:

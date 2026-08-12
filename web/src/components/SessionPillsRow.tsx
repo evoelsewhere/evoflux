@@ -1,4 +1,4 @@
-/** Compact session model controls shared by the Work, Coding, and AIM composers. */
+/** Compact session model controls shared by the Work and Coding composers. */
 
 import { useState } from 'react'
 import { ChevronDown, Zap } from 'lucide-react'
@@ -274,7 +274,7 @@ export interface SessionPillsRowProps {
   ) => void
   agentNames?: string[]
   workspace?: string | null
-  mode?: 'coding' | 'aim' | null
+  mode?: 'coding' | null
 }
 
 export function SessionPillsRow({

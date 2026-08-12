@@ -803,9 +803,7 @@ def select_skill_records_for_mode(
     usable user/bundled skill with the same name.
     """
 
-    from app.core.skill_scope import normalize_skill_mode
-
-    resolved = normalize_skill_mode(mode)
+    resolved = "coding" if mode == "coding" else "work"
     selected: dict[str, SkillRecord] = {}
     for name, winner in records.items():
         candidates = [winner, *winner.alternates]

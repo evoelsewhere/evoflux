@@ -47,7 +47,6 @@ from app.agent.skills.discovery import (
 )
 from app.agent.skills.models import SkillRecord
 from app.agent.tools.registry import InjectedArg, tool
-from app.core.skill_scope import ALL_SKILL_MODES, SkillMode, normalize_skill_mode
 
 
 def _default_skills_dir() -> Path:
@@ -123,11 +122,11 @@ def discover_skills(skills_dir: Path | None = None) -> dict[str, dict]:
 
 
 def skills_for_mode(skills: dict[str, dict], mode: str) -> dict[str, dict]:
-    resolved = normalize_skill_mode(mode)
+    resolved = "coding" if mode == "coding" else "work"
     return {
         name: info
         for name, info in skills.items()
-        if resolved in info.get("modes", ALL_SKILL_MODES)
+        if resolved in info.get("modes", ("work", "coding"))
     }
 
 
@@ -143,7 +142,7 @@ def format_available_skills(
 ) -> str:
     """Render the bounded runtime catalog; never include skill bodies."""
 
-    resolved_mode = normalize_skill_mode(mode)
+    resolved_mode = "coding" if mode == "coding" else "work"
     records = [
         record
         for record in discover_skill_records_runtime(mode=resolved_mode).values()
@@ -277,7 +276,7 @@ async def load_skill(
         ),
     ] = None,
     _state: Annotated[Any, InjectedArg()] = None,
-    _mode: Annotated[SkillMode, InjectedArg()] = "work",
+    _mode: Annotated[Literal["work", "coding"], InjectedArg()] = "work",
 ) -> str:
     """Progressively disclose an exact skill or a referenced bundle resource."""
 
