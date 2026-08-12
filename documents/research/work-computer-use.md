@@ -5,7 +5,7 @@
 | **Trạng thái** | PROPOSED (v1 — research + architecture + roadmap) |
 | **Ngày** | 2026-07-19 |
 | **Phạm vi** | Mở rộng năng lực điều khiển máy tính (computer use) cho agent ở mode Work; macOS-first |
-| **Tài liệu liên quan** | [`aim-framework.md`](aim-framework.md) (cùng pattern research→architecture), [`aim-mode-shell-ux-spec.md`](../plans/aim-mode-shell-ux-spec.md) |
+| **Tài liệu liên quan** | Work / Coding mode shell and computer-use research in this directory |
 
 ---
 

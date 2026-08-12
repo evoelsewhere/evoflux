@@ -24,7 +24,7 @@
  * The desktop chrome (resizable width, collapse-to-rail, search trigger,
  * footer, section headers, session rows, session action surfaces) comes
  * from the shared `@/components/shell/` primitives — same as the work
- * and aim sidebars. Coding keeps its stacked-cards layout (mode switch,
+ * sidebar. Coding keeps its stacked-cards layout (mode switch,
  * search, navigator, footer as separate floating cards) and all of its
  * workspace/worktree dialogs in-file.
  */
@@ -1142,8 +1142,8 @@ export function CodingSidebar({
     setPendingDeleteSession(null);
   };
 
-  // Collapsed icon rail — desktop only; the same two-card stack as the aim
-  // sidebar's rail (mode switch + primary actions above, footer trio below).
+  // Collapsed icon rail — desktop only; mode switch + primary actions above,
+  // footer trio below.
   const rail = (
     <>
       <SidebarCard

@@ -123,7 +123,7 @@ export async function createSkill(
   name: string,
   content: string,
   files: SkillBundleFileWrite[] = [],
-  modes: SkillMode[] = ['work', 'coding', 'aim'],
+  modes: SkillMode[] = ['work', 'coding'],
 ): Promise<SkillDetail> {
   const res = await fetch(`${apiBaseUrl()}/skills`, {
     method: 'POST',

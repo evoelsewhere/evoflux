@@ -1,1 +1,0 @@
-# Compare run reports land here as runs/<unit>/<run-id>/{report.json,report.md,meta.yaml} — small, git-tracked. Raw actuals go to the gitignored .aim-actuals/ instead.

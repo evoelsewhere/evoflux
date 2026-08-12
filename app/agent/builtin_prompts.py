@@ -17,7 +17,7 @@ CODING_EVOFLUX_DESCRIPTION = "Lead coding agent. Plans the work, coordinates the
 # Agents no longer enumerate tools one by one — an agent gets every tool of
 # its mode's tier, so a newly registered tool is available everywhere without
 # per-agent wiring. ``lead_only`` tools (user interaction / session structure)
-# are filtered out for members. Tier names equal team modes: work, coding, AIM.
+# are filtered out for members. Tier names equal team modes: "work", "coding".
 
 # Wired explicitly by the loader / team runtime (implicit adds and per-role
 # variants) — never granted via tier membership.
@@ -530,16 +530,12 @@ State what changed, which checks ran with which result, and what remains risky o
 
 def EVOFLUX_description_for_mode(mode: str) -> str:
     """Return the built-in lead description for a team mode."""
-    return (
-        CODING_EVOFLUX_DESCRIPTION
-        if mode in {"coding", "aim"}
-        else WORK_EVOFLUX_DESCRIPTION
-    )
+    return CODING_EVOFLUX_DESCRIPTION if mode == "coding" else WORK_EVOFLUX_DESCRIPTION
 
 
 def EVOFLUX_prompt_for_mode(mode: str) -> str:
     """Return the built-in lead prompt for a team mode."""
-    return CODING_EVOFLUX_PROMPT if mode in {"coding", "aim"} else WORK_EVOFLUX_PROMPT
+    return CODING_EVOFLUX_PROMPT if mode == "coding" else WORK_EVOFLUX_PROMPT
 
 
 def _normalise_extra_prompt(extra_prompt: str) -> str:

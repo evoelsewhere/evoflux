@@ -16,8 +16,7 @@ import {
 import { validateNewSkillDraft } from '@/components/settings/schema'
 import { useSettingsNavigate } from '@/contexts/SettingsContext'
 import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
-import { ALL_SKILL_MODES, skillModesEqual } from '@/lib/skill-modes'
-import type { SkillMode } from '@/api/types'
+import { modesFromAvailability, type SkillAvailability } from '@/lib/skill-modes'
 
 const TEMPLATE = `---
 name: new-skill
@@ -103,7 +102,7 @@ export function NewSkillPage() {
   const [content, setContent] = useState(TEMPLATE)
   const [files, setFiles] = useState<SkillBundleDraftFile[]>(scaffoldFiles)
   const [name, setName] = useState('new-skill')
-  const [skillModes, setSkillModes] = useState<SkillMode[]>(() => [...ALL_SKILL_MODES])
+  const [availability, setAvailability] = useState<SkillAvailability>('both')
   const [allowImplicitInvocation, setAllowImplicitInvocation] = useState(true)
   const [userInvocable, setUserInvocable] = useState(true)
   const createMut = useCreateSkillMutation()
@@ -142,7 +141,7 @@ export function NewSkillPage() {
   const dirty =
     content !== TEMPLATE ||
     files.length > 0 ||
-    !skillModesEqual(skillModes, ALL_SKILL_MODES) ||
+    availability !== 'both' ||
     !allowImplicitInvocation ||
     !userInvocable
   const saving = createMut.isPending || updateSettingsMut.isPending
@@ -161,7 +160,7 @@ export function NewSkillPage() {
         name,
         content,
         files: bundle.files,
-        modes: skillModes,
+        modes: modesFromAvailability(availability),
       })
       created = true
       if (
@@ -172,7 +171,7 @@ export function NewSkillPage() {
           name,
           settings: {
             settings_id: result.settings_id,
-            modes: skillModes,
+            modes: modesFromAvailability(availability),
             allow_implicit_invocation: allowImplicitInvocation,
             user_invocable: userInvocable,
           },
@@ -218,12 +217,13 @@ export function NewSkillPage() {
     >
       <SettingsGroup
         title="Availability"
-        description="Choose every application mode where this workflow is relevant."
+        description="Choose the application mode where this workflow is relevant. Both keeps it available across EvoFlux."
       >
         <SkillModeSelector
-          value={skillModes}
-          onChange={setSkillModes}
+          value={availability}
+          onChange={setAvailability}
           disabled={saving}
+          layoutId="new-skill-availability"
         />
       </SettingsGroup>
 

@@ -10,14 +10,13 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 from pydantic import ValidationError
 
 from app.core.runtime_settings import provider_visible_models
-from app.core.skill_scope import ALL_SKILL_MODES, SkillMode
 from app.api.schemas.agents import (
     AgentBulkModelRequest,
     AgentBulkModelResponse,
@@ -99,8 +98,6 @@ def _mode_for_agent_path(name: str) -> str:
     first = Path(name).parts[:1]
     if first == ("coding",):
         return "coding"
-    if first == ("aim",):
-        return "aim"
     return "work"
 
 
@@ -242,7 +239,7 @@ async def get_registry(
             description="Repeat for every repository in the active workspace/project."
         ),
     ] = None,
-    mode: Annotated[SkillMode | None, Query()] = None,
+    mode: Annotated[Literal["work", "coding"] | None, Query()] = None,
 ) -> RegistryResponse:
     """Dropdown catalog: tools, skills, providers, known models."""
     from app.agent.hooks.summarization import prompt_token_threshold_for_model
@@ -286,7 +283,7 @@ async def get_registry(
                 ),
                 user_invocable=bool(v.get("user_invocable", True)),
                 dependencies=list(v.get("dependencies") or []),
-                modes=list(v.get("modes", ALL_SKILL_MODES)),
+                modes=list(v.get("modes", ("work", "coding"))),
             )
             for k, v in skill_map.items()
         ),

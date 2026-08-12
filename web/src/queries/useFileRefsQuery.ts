@@ -3,7 +3,7 @@
  *
  * Hits one of two existing endpoints depending on mode:
  *   - coding:  GET /api/team/workspace/files/list?workspace=...
- *   - work/AIM: GET /api/team/{session_id}/files
+ *   - normal:  GET /api/team/{session_id}/files
  *
  * Both return a flat list of files (max 500, gitignore-aware). Folder entries
  * are derived client-side from the path prefixes so the user can also reference
@@ -25,7 +25,7 @@ import { queryKeys } from './keys'
 interface FileListing { files: WorkspaceFileInfo[] }
 
 interface UseFileRefsQueryArgs {
-  mode: 'work' | 'coding' | 'aim'
+  mode: 'work' | 'coding'
   sessionId?: string | null
   workspace?: string | null
   /** Only fetch when the input bar wants the list (focus / @ keystroke). */

@@ -13,7 +13,7 @@ import shutil
 import stat
 import tempfile
 from pathlib import Path
-from typing import Sequence
+from typing import Literal, Sequence
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
@@ -22,7 +22,6 @@ from app.core.config import settings
 from app.core.skill_scope import (
     ALL_SKILL_MODES,
     SKILL_SCOPE_FILENAME,
-    SkillMode,
     normalize_skill_modes,
     serialize_skill_modes,
 )
@@ -275,26 +274,28 @@ def _project_records_without_mode(records: dict) -> dict[str, dict]:
 
     from app.agent.skills.discovery import select_skill_records_for_mode
 
-    selected_by_mode = {
-        mode: select_skill_records_for_mode(records, mode) for mode in ALL_SKILL_MODES
-    }
+    work = select_skill_records_for_mode(records, "work")
+    coding = select_skill_records_for_mode(records, "coding")
     projected: dict[str, dict] = {}
     for name, winner in records.items():
-        mode_records = [
-            (mode, selected_by_mode[mode].get(name)) for mode in ALL_SKILL_MODES
-        ]
+        work_record = work.get(name)
+        coding_record = coding.get(name)
         # Management always represents the actual precedence winner. Effective
-        # Work/Coding/AIM availability is still projected below, but a broken
+        # Work/Coding availability is still projected below, but a broken
         # higher-precedence bundle must remain visible and repairable instead
         # of being disguised as a lower valid fallback.
         representative = winner
         info = representative.as_legacy_dict()
-        effective_modes = [mode for mode, record in mode_records if record is not None]
+        effective_modes = [
+            mode
+            for mode, record in (("work", work_record), ("coding", coding_record))
+            if record is not None
+        ]
         if effective_modes:
             info["modes"] = effective_modes
         variants = {
             str(record.skill_file)
-            for _mode, record in mode_records
+            for record in (work_record, coding_record)
             if record is not None
         }
         if len(variants) > 1:
@@ -304,7 +305,7 @@ def _project_records_without_mode(records: dict) -> dict[str, dict]:
                     "code": "mode-specific-collision",
                     "message": (
                         "Different precedence candidates implement this skill in "
-                        "different application modes; request the catalog with an explicit mode "
+                        "Work and Coding; request the catalog with an explicit mode "
                         "to inspect the effective bundle."
                     ),
                     "severity": "warning",
@@ -319,7 +320,7 @@ def _project_records_without_mode(records: dict) -> dict[str, dict]:
 def _discover_runtime_skills(
     workspaces: Sequence[Path] | None = None,
     *,
-    mode: SkillMode | None = None,
+    mode: Literal["work", "coding"] | None = None,
 ) -> dict[str, dict]:
     """Discover skills using explicit workspace roots when provided.
 
@@ -342,7 +343,7 @@ def _discover_management_skill(
     workspaces: Sequence[Path],
     name: str,
     *,
-    mode: SkillMode | None,
+    mode: Literal["work", "coding"] | None,
 ) -> dict | None:
     """Resolve one Settings target without weakening agent runtime selection.
 
@@ -531,7 +532,7 @@ def _skill_detail_from_info(
         built_in=source == "builtin",
         editable=editable,
         source=source,
-        modes=list(info.get("modes", ALL_SKILL_MODES)),
+        modes=list(info.get("modes", ("work", "coding"))),
         files=files,
         bundle_truncated=int(info.get("resource_count", 0) or 0) > len(files),
         **_runtime_metadata(info),
@@ -558,7 +559,7 @@ def _assert_runtime_settings_target(
     info: dict,
     *,
     settings_id: str,
-    mode: SkillMode | None,
+    mode: Literal["work", "coding"] | None,
 ) -> None:
     """Reject stale/synthetic settings targets before writing user state."""
 
@@ -593,7 +594,7 @@ def _assert_runtime_settings_target(
         raise HTTPException(
             status_code=409,
             detail=(
-                f"Skill '{name}' has different mode-specific implementations. "
+                f"Skill '{name}' has different Work and Coding implementations. "
                 "Choose an explicit mode before editing runtime settings."
             ),
         )
@@ -718,7 +719,7 @@ async def list_skills(
         None,
         description="Repeat for every repository in the active workspace/project.",
     ),
-    mode: SkillMode | None = Query(None),
+    mode: Literal["work", "coding"] | None = Query(None),
 ) -> SkillListResponse:
     workspaces = _workspace_paths(workspace)
     roots = _discovery_roots(workspaces)
@@ -739,7 +740,7 @@ async def list_skills(
                 built_in=source == "builtin",
                 editable=editable,
                 source=source,
-                modes=list(info.get("modes", ALL_SKILL_MODES)),
+                modes=list(info.get("modes", ("work", "coding"))),
                 **_runtime_metadata(info),
             )
         )
@@ -754,7 +755,7 @@ async def get_skill(
         None,
         description="Repeat for every repository in the active workspace/project.",
     ),
-    mode: SkillMode | None = Query(None),
+    mode: Literal["work", "coding"] | None = Query(None),
 ) -> SkillDetail:
     _validate_skill_route_name(name)
     workspaces = _workspace_paths(workspace)
@@ -819,7 +820,7 @@ async def update_skill(
         None,
         description="Repeat for every repository in the active workspace/project.",
     ),
-    mode: SkillMode | None = Query(None),
+    mode: Literal["work", "coding"] | None = Query(None),
 ) -> SkillDetail:
     _validate_skill_route_name(name)
     if body.name != name:
@@ -872,7 +873,7 @@ async def update_skill(
         editable=True,
         source=source,
         built_in=source == "builtin",
-        modes=list(updated_info.get("modes", ALL_SKILL_MODES)),
+        modes=list(updated_info.get("modes", ("work", "coding"))),
         files=files,
         bundle_truncated=int(updated_info.get("resource_count", 0) or 0) > len(files),
         **_runtime_metadata(updated_info),
@@ -887,7 +888,7 @@ async def update_skill_runtime_settings(
         None,
         description="Repeat for every repository in the active workspace/project.",
     ),
-    mode: SkillMode | None = Query(None),
+    mode: Literal["work", "coding"] | None = Query(None),
 ) -> SkillDetail:
     """Override runtime visibility without modifying the selected bundle."""
 
@@ -939,7 +940,7 @@ def _reset_skill_runtime_settings(
     *,
     workspaces: Sequence[Path],
     roots: Sequence[Path],
-    mode: SkillMode | None,
+    mode: Literal["work", "coding"] | None,
 ) -> SkillDetail:
     """Reset and return one exact variant without mode-projection ambiguity."""
 
@@ -995,7 +996,7 @@ async def delete_skill(
         None,
         description="Repeat for every repository in the active workspace/project.",
     ),
-    mode: SkillMode | None = Query(None),
+    mode: Literal["work", "coding"] | None = Query(None),
 ) -> SkillDeleteResponse | SkillDetail:
     _validate_skill_route_name(name)
     workspaces = _workspace_paths(workspace)

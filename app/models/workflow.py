@@ -101,7 +101,7 @@ class WorkflowGateRequest(SQLModel, table=True):
     """Durable evidence for one workflow gate or input request.
 
     The live future that unblocks a workflow remains process-local, but the
-    question and its terminal disposition must survive long enough for AIM's
+    question and its terminal disposition must survive long enough for the
     approval inbox and audit trail to explain what happened.
     """
 

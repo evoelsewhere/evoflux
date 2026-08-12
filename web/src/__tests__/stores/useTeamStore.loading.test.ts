@@ -48,22 +48,24 @@ describe('useTeamStore request coalescing', () => {
   })
 
   it('does not let a slower roster from the previous mode overwrite the latest mode', async () => {
-    const resolvers = new Map<string, (value: unknown) => void>()
+    const resolvers = new Map<string | null | undefined, (value: unknown) => void>()
     apiMocks.listTeamAgents.mockImplementation(
-      (_workspace: string, mode: string) =>
+      (_workspace: string | null | undefined, mode: string | null | undefined) =>
         new Promise((resolve) => {
           resolvers.set(mode, resolve)
         }),
     )
 
     const coding = useTeamStore.getState().loadTeamStatus('/repo', 'coding')
-    const aim = useTeamStore.getState().loadTeamStatus('/repo', 'aim')
+    const work = useTeamStore.getState().loadTeamStatus(null, null)
 
-    resolvers.get('aim')?.({
-      agents: [{ name: 'aim-lead', is_lead: true, model: 'aim-model' }],
+    // Resolve the later (work) request first, then the slower coding request.
+    // The stale coding roster must not overwrite the latest lead.
+    resolvers.get(null)?.({
+      agents: [{ name: 'work-lead', is_lead: true, model: 'work-model' }],
       blueprints: [],
     })
-    await aim
+    await work
 
     resolvers.get('coding')?.({
       agents: [{ name: 'coding-lead', is_lead: true, model: 'coding-model' }],
@@ -71,7 +73,7 @@ describe('useTeamStore request coalescing', () => {
     })
     await coding
 
-    expect(useTeamStore.getState().leadName).toBe('aim-lead')
+    expect(useTeamStore.getState().leadName).toBe('work-lead')
     expect(apiMocks.listTeamAgents).toHaveBeenCalledTimes(2)
   })
 })

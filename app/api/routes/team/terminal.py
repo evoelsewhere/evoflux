@@ -2,7 +2,7 @@
 
 ``WS /team/{session_id}/terminal`` bridges a browser xterm.js client to a
 persistent PTY shell (:mod:`app.services.terminal_service`). The shell is
-spawned in the session's mode-aware working directory (the coding/aim
+spawned in the session's mode-aware working directory (the coding
 workspace, or the work session dir) so the terminal always lands where the
 agent is working. A session may hold several terminals (tabs), selected by the
 ``tid`` query param; ``GET /team/{session_id}/terminals`` lists the live ones
@@ -54,9 +54,9 @@ async def close_terminal(session_id: str, terminal_id: str) -> None:
 async def _resolve_cwd_and_env(session_id: str) -> tuple[str, dict[str, str]]:
     """The mode-aware cwd + context env for a session's shell.
 
-    coding/aim → the bound workspace (aim's is the target repo); work → the
-    per-session workspace dir. Falls back to the session dir if the row can't
-    be read (e.g. a terminal opened before the first message persisted it).
+    coding → the bound workspace; work → the per-session workspace dir.
+    Falls back to the session dir if the row can't be read (e.g. a terminal
+    opened before the first message persisted it).
     """
     mode = "work"
     workspace: str | None = None

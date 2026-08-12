@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 from dataclasses import dataclass
 
-from app.services.code_index.parsers.registry import ParserRegistry, default_registry
+from app.services.code_index.parsers.registry import default_registry
 from app.services.code_index.chunking import split_source
 from app.services.code_index.file_matcher import SourceRecord
 from app.services.code_index.languages import fallback_language
@@ -86,34 +86,19 @@ def stable_id(*parts: object) -> str:
     return digest.hexdigest()
 
 
-def processing_identity(
-    file_path: str,
-    language_override: str | None = None,
-    *,
-    registry: ParserRegistry | None = None,
-) -> str:
+def processing_identity(file_path: str, language_override: str | None = None) -> str:
     """Identify parser + local implementation so parser edits invalidate targets."""
     extension = Path(file_path).suffix.casefold()
-    if registry is not None:
-        return _processing_identity_for_registry(extension, language_override, registry)
     return _processing_identity(extension, language_override)
 
 
 @lru_cache(maxsize=64)
 def _processing_identity(extension: str, language_override: str | None) -> str:
     """Cache implementation digests by parser identity, not by every file path."""
-    return _processing_identity_for_registry(extension, language_override, _REGISTRY)
-
-
-def _processing_identity_for_registry(
-    extension: str,
-    language_override: str | None,
-    registry: ParserRegistry,
-) -> str:
     parser = (
-        registry.for_language(language_override)
+        _REGISTRY.for_language(language_override)
         if language_override
-        else registry.for_path(f"source{extension}")
+        else _REGISTRY.for_path(f"source{extension}")
     )
     digest = hashlib.sha256()
     digest.update(b"evoflux-code-context-pipeline\0")
@@ -126,9 +111,6 @@ def _processing_identity_for_registry(
             f"{type(parser).__module__}:{type(parser).__qualname__}:"
             f"{parser.name}:{getattr(parser, 'grammar', '')}".encode()
         )
-        config = getattr(parser, "config", None)
-        if config is not None:
-            digest.update(config.model_dump_json().encode("utf-8"))
     package = Path(__file__).parent
     implementation = [
         package / "chunking.py",
@@ -150,15 +132,12 @@ def _processing_identity_for_registry(
     return digest.hexdigest()
 
 
-def build_file_state(
-    record: SourceRecord, *, registry: ParserRegistry | None = None
-) -> FileState:
+def build_file_state(record: SourceRecord) -> FileState:
     """Parse one keyed component and declare all rows it owns."""
-    active_registry = registry or _REGISTRY
     parser = (
-        active_registry.for_language(record.language_override)
+        _REGISTRY.for_language(record.language_override)
         if record.language_override
-        else active_registry.for_path(record.key)
+        else _REGISTRY.for_path(record.key)
     )
     text = record.content.decode("utf-8")
     if parser is None:

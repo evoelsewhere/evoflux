@@ -312,9 +312,8 @@ class AgentTeam:
         # a server restart still enforces tag-based tool scoping — see
         # member.py's excluded_tools computation for the "webbridge" tag.
         session_tags: frozenset[str] | None = None,
-        # AIM mode only: paths (base-source repos) the team's filesystem
-        # tools must never write to, even though they sit alongside the
-        # writable target/KB repos in extra_workspace_paths. Threaded into
+        # Paths the team's filesystem tools must never write to, even
+        # though they may sit in extra_workspace_paths. Threaded into
         # SandboxConfig.read_only_paths (app/agent/sandbox.py) the same way
         # extra_workspace_paths already is.
         read_only_paths: list[str] | None = None,
@@ -1472,7 +1471,7 @@ class AgentTeam:
             )
 
         workspace_name = (
-            Path(workspace).name if mode in ("coding", "aim") and workspace else None
+            Path(workspace).name if mode == "coding" and workspace else None
         )
         notification_title = (
             f"Session completed - {workspace_name}"
@@ -2620,7 +2619,9 @@ class AgentTeam:
         cfg = parse_agent_md(bp.source_path)
         default_model = cfg.model
         if not default_model:
-            raise ValueError(f"Member blueprint '{blueprint}' has no model configured.")
+            raise ValueError(
+                f"Member blueprint '{blueprint}' has no model configured."
+            )
         default_thinking = cfg.thinking_level
         service = get_active_ask_user_service()
         if service is None:
@@ -2649,9 +2650,7 @@ class AgentTeam:
         try:
             selection = json.loads(raw)
         except (TypeError, json.JSONDecodeError) as exc:
-            raise ValueError(
-                "Invalid agent spawn selection returned by the UI."
-            ) from exc
+            raise ValueError("Invalid agent spawn selection returned by the UI.") from exc
         if not isinstance(selection, dict):
             raise ValueError("Invalid agent spawn selection returned by the UI.")
         model = selection.get("model")
@@ -3039,12 +3038,12 @@ class AgentTeam:
 
     def status(self) -> dict:
         """Return current state of all live agents + blueprint roster."""
-
         def member_status(member: TeamMemberBase) -> dict:
             return {
                 "name": member.name,
                 "state": member.state,
-                "model": member.runtime_model_id or member.agent.llm_provider.model,
+                "model": member.runtime_model_id
+                or member.agent.llm_provider.model,
                 "thinking_level": member.runtime_thinking_level,
                 "active_task_id": member._active_delegation_task_id,
                 "queue_depth": self.mailbox.inbox_size(member.name),

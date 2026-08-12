@@ -38,7 +38,7 @@ You are "new_agent" — a helpful team member.
 export function NewAgentPage() {
   const search = useSettingsSearch()
   const initialMode: AgentMode =
-    search.mode === 'coding' ? 'coding' : search.mode === 'aim' ? 'aim' : 'work'
+    search.mode === 'coding' ? 'coding' : 'work'
   const [draft, setDraft] = useState(TEMPLATE)
   const [name, setName] = useState('new_agent')
   const [agentMode, setAgentMode] = useState<AgentMode>(initialMode)
@@ -70,8 +70,7 @@ export function NewAgentPage() {
       return
     }
     try {
-      const agentName =
-        agentMode === 'coding' ? `coding/${name}` : agentMode === 'aim' ? `aim/${name}` : name
+      const agentName = agentMode === 'coding' ? `coding/${name}` : name
       await createMut.mutateAsync({ name: agentName, content: draft })
       push({
         tone: 'success',
@@ -113,8 +112,8 @@ export function NewAgentPage() {
             The team controls the file location and inherited capability tier.
           </p>
         </header>
-        <div className="grid gap-2 p-3 sm:grid-cols-3 sm:p-4">
-          {(['work', 'coding', 'aim'] as const).map((team) => {
+        <div className="grid gap-2 p-3 sm:grid-cols-2 sm:p-4">
+          {(['work', 'coding'] as const).map((team) => {
             const visual = AGENT_TEAM_VISUALS[team]
             const active = team === agentMode
             return (

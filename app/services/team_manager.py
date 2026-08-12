@@ -48,15 +48,12 @@ introduced to avoid.
 from __future__ import annotations
 
 import asyncio
-import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import yaml
 from loguru import logger
-from yaml.nodes import MappingNode, ScalarNode, SequenceNode
 
 from app.core.config import settings
 from app.core.app_mode import AppMode, parse_app_mode
@@ -114,94 +111,6 @@ _DEFAULT_TEAM_IDLE_SECONDS = 60 * 60
 _CODING_TEAM_IDLE_SECONDS = 30 * 60
 _lock = asyncio.Lock()
 
-_AIM_AGENT_FRONTMATTER_RE = re.compile(
-    r"\A---\r?\n(?P<frontmatter>.*?)(?P<closing>\r?\n---(?:\r?\n|\Z))",
-    re.DOTALL,
-)
-_LEGACY_AIM_SKILL_MIGRATIONS: dict[str, str | None] = {
-    "decision-analysis": "work-decision",
-    "planning-and-task-breakdown": "work-planning",
-    "documentation-and-adrs": "work-writing",
-    "incremental-implementation": "coding-implementation",
-    "test-driven-development": "coding-testing",
-    "debugging-and-error-recovery": "coding-debugging",
-    "spec-driven-development": "coding-implementation",
-    "api-and-interface-design": "coding-migration",
-    "context-engineering": "coding-investigation",
-    # Git behavior is owned by the core AIM prompt and tools; granting a
-    # replacement skill here would silently broaden an existing roster.
-    "git-workflow-and-versioning": None,
-    # AIM triage already has aim-diff-triage. coding-review has a narrower
-    # local-diff contract, so it is not a safe semantic replacement.
-    "red-team-and-critique": None,
-}
-
-
-def _migrate_legacy_aim_skills(content: str) -> str:
-    """Replace only retired AIM skill names in an agent's frontmatter.
-
-    Source marks from PyYAML let us rewrite the ``skills`` sequence without
-    re-serializing unrelated frontmatter or touching the Markdown body.
-    """
-    match = _AIM_AGENT_FRONTMATTER_RE.match(content)
-    if match is None:
-        return content
-
-    frontmatter = match.group("frontmatter")
-    try:
-        root = yaml.compose(frontmatter, Loader=yaml.SafeLoader)
-    except yaml.YAMLError:
-        return content
-    if not isinstance(root, MappingNode):
-        return content
-
-    skill_nodes = [
-        value
-        for key, value in root.value
-        if isinstance(key, ScalarNode) and key.value == "skills"
-    ]
-    if len(skill_nodes) != 1 or not isinstance(skill_nodes[0], SequenceNode):
-        return content
-
-    skills_node = skill_nodes[0]
-    if any(
-        not isinstance(item, ScalarNode) or item.tag != "tag:yaml.org,2002:str"
-        for item in skills_node.value
-    ):
-        return content
-    skills = [item.value for item in skills_node.value]
-    if not any(skill in _LEGACY_AIM_SKILL_MIGRATIONS for skill in skills):
-        return content
-
-    migrated: list[str] = []
-    seen: set[str] = set()
-    for skill in skills:
-        replacement = _LEGACY_AIM_SKILL_MIGRATIONS.get(skill, skill)
-        if replacement is None or replacement in seen:
-            continue
-        seen.add(replacement)
-        migrated.append(replacement)
-
-    newline = "\r\n" if "\r\n" in content else "\n"
-    original_sequence = frontmatter[
-        skills_node.start_mark.index : skills_node.end_mark.index
-    ]
-    replacement_sequence = yaml.safe_dump(
-        migrated,
-        allow_unicode=True,
-        default_flow_style=skills_node.flow_style,
-        width=4096,
-    ).rstrip("\n")
-    if not skills_node.flow_style:
-        indent = " " * skills_node.start_mark.column
-        replacement_sequence = replacement_sequence.replace("\n", newline + indent)
-    if original_sequence.endswith(("\r\n", "\n")):
-        replacement_sequence += newline
-
-    start = match.start("frontmatter") + skills_node.start_mark.index
-    end = match.start("frontmatter") + skills_node.end_mark.index
-    return f"{content[:start]}{replacement_sequence}{content[end:]}"
-
 
 def _resolve_agents_dir() -> Path:
     path = Path(settings.AGENTS_DIR)
@@ -210,86 +119,6 @@ def _resolve_agents_dir() -> Path:
 
 def _resolve_coding_agents_dir() -> Path:
     return _resolve_agents_dir() / "coding"
-
-
-def _resolve_aim_agents_dir() -> Path:
-    return _resolve_agents_dir() / "aim"
-
-
-def _ensure_aim_agents_installed(agents_dir: Path) -> None:
-    """Self-heal: backfill ``agents_dir`` from ``seed/agents/aim/`` if it
-    has no lead file yet.
-
-    Unlike work/coding, AIM blueprints have no Python-templated builtin
-    counterpart (``BUILTIN_AGENT_BLUEPRINTS`` has no "aim" key) — they ship
-    as complete .md files under ``seed/agents/aim/``, already covered by
-    ``install_seed``'s generic ``agents/`` tree copy (app/cli/seed.py). A
-    fresh install picks them up automatically; this only matters for an
-    *existing* config dir that predates AIM-2 and never got the new
-    ``agents/aim/`` subtree. Safe to call repeatedly — install_seed only
-    fills gaps, never overwrites.
-    """
-    if not any(agents_dir.glob("*.md")):
-        from app.agent.loader import _lead_model_for_dir
-        from app.cli.seed import PROVIDER_MODEL_TOKEN, SeedDownloadError, install_seed
-
-        # By the time this backfill runs (lazily, on first aim team load) the
-        # user has typically already configured a provider — unlike a genuine
-        # first-run install, where deferring to the placeholder is correct.
-        provider_model = (
-            _lead_model_for_dir(_resolve_agents_dir()) or PROVIDER_MODEL_TOKEN
-        )
-        try:
-            install_seed(
-                Path(settings.EVOFLUX_CONFIG_DIR), provider_model=provider_model
-            )
-        except SeedDownloadError as exc:
-            logger.warning("aim_agents_seed_backfill_failed error={}", exc)
-
-    for path in sorted(agents_dir.glob("*.md")):
-        content = path.read_text(encoding="utf-8")
-        migrated = _migrate_legacy_aim_skills(content)
-        if migrated != content:
-            path.write_text(migrated, encoding="utf-8")
-
-    marker = "<!-- aim-runtime-contract:v2 -->"
-    contracts = {
-        "aim-lead.md": (
-            "Phase transitions are workflow-owned deterministic tool nodes. "
-            "Agents create artifacts and metadata but never advance lifecycle state."
-        ),
-        "aim-archaeologist.md": (
-            "Phase transitions are workflow-owned. Never set phase=understood; "
-            "return artifact paths for the workflow validator."
-        ),
-        "aim-target-architect.md": (
-            "Phase transitions are workflow-owned. Design runs in "
-            "aim-design-unit; never set phase=designed."
-        ),
-        "aim-converter.md": (
-            "Phase transitions are workflow-owned. Record target_paths without "
-            "changing phase; deterministic workflow nodes set converted."
-        ),
-        "aim-test-engineer.md": (
-            "Only deterministic aim_compare output may reach certification. "
-            "Runner prose never certifies equivalence."
-        ),
-        "aim-triage-analyst.md": (
-            "Triage receives deterministic fail/error outcomes. Accepted "
-            "differences still require cited human review."
-        ),
-    }
-    for filename, contract in contracts.items():
-        path = agents_dir / filename
-        if not path.is_file():
-            continue
-        content = path.read_text(encoding="utf-8")
-        if marker in content:
-            continue
-        path.write_text(
-            f"{content.rstrip()}\n\n{marker}\n\n## Runtime contract\n\n{contract}\n",
-            encoding="utf-8",
-        )
 
 
 def _resolve_workspace(workspace: str) -> Path:
@@ -452,7 +281,7 @@ def current_team_for_session(session_id: str) -> "AgentTeam | None":
 
 def find_team_for_session(session_id: str) -> "AgentTeam | None":
     """Any live team currently bound to *session_id*, regardless of mode —
-    work teams key by session id, coding/aim teams by (workspace, session).
+    work teams key by session id, coding teams by (workspace, session).
     Used by the workflow runner, which only has a session id."""
     team = _session_teams.get(session_id)
     if team is not None:
@@ -464,7 +293,7 @@ def find_team_for_session(session_id: str) -> "AgentTeam | None":
 
 
 def has_active_team_turn() -> bool:
-    """Return whether any live Work, Coding, or AIM team is in a turn boundary."""
+    """Return whether any live Work or Coding team is inside a turn boundary."""
 
     teams = [
         team
@@ -640,19 +469,14 @@ async def get_or_start_coding_team(
     mode: str = "coding",
     read_only_paths: list[str] | None = None,
 ) -> "AgentTeam":
-    """Build (or return the cached) project-scoped team for *workspace*.
+    """Build (or return the cached) project-scoped coding team for *workspace*.
 
-    Despite the name, this also serves AIM sessions (``mode="aim"``) — an
-    AIM session is workspace/project-scoped exactly like a coding one (its
-    primary workspace is the target repo; source/KB repos ride along in
-    ``extra_workspace_paths``), so the cache, idle-eviction, and
-    extra-workspace-paths plumbing are shared rather than duplicated into a
-    parallel ``_aim_teams`` dict. ``read_only_paths`` (AIM-only) marks
-    base-source repos as write-denied — see ``SandboxConfig.read_only_paths``.
+    ``read_only_paths`` marks repos as write-denied — see
+    ``SandboxConfig.read_only_paths``.
     """
     resolved_mode = parse_app_mode(mode)
-    if resolved_mode not in {AppMode.CODING, AppMode.AIM}:
-        raise ValueError("Project team manager accepts mode='coding' or mode='aim'.")
+    if resolved_mode is not AppMode.CODING:
+        raise ValueError("Coding team manager only accepts mode='coding'.")
     mode = resolved_mode.value
     resolved_workspace = validate_workspace(workspace)
     key = (resolved_workspace, session_id)
@@ -669,11 +493,7 @@ async def get_or_start_coding_team(
                 existing.read_only_paths = read_only_paths
             team = existing
         else:
-            if mode == "aim":
-                agents_dir = _resolve_aim_agents_dir()
-                _ensure_aim_agents_installed(agents_dir)
-            else:
-                agents_dir = _resolve_coding_agents_dir()
+            agents_dir = _resolve_coding_agents_dir()
             team = await asyncio.to_thread(
                 load_team_from_dir,
                 agents_dir,
@@ -856,7 +676,6 @@ def refresh_blueprints(team: "AgentTeam") -> None:
 
     agents_dir_by_mode = {
         "coding": _resolve_coding_agents_dir,
-        "aim": _resolve_aim_agents_dir,
     }
     agents_dir = agents_dir_by_mode.get(team.mode, _resolve_agents_dir)()
     if not agents_dir.exists():

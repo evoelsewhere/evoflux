@@ -304,7 +304,7 @@ class Agent(Generic[TContext]):
         its name to ``state.metadata["activated_deferred_tools"]``; the loop
         recomputes ``tool_defs`` each iteration so an activation takes effect
         starting the very next model call. Cuts baseline per-call token cost
-        for heavy/narrow tools (browser automation, AIM, LSP, ...) that most
+        for heavy/narrow tools (browser automation, LSP, ...) that most
         turns never touch.
 
         ``checkpointer`` is an optional :class:`~app.agent.checkpointer.Checkpointer`
@@ -467,7 +467,9 @@ class Agent(Generic[TContext]):
 
             from app.plugin_platform.runtime import plugin_mcp_runtime
 
-            state.metadata.setdefault("plugin_mcp_grants", set()).add(installation_id)
+            state.metadata.setdefault("plugin_mcp_grants", set()).add(
+                installation_id
+            )
             tools = plugin_mcp_runtime.get_tools_for_installation(installation_id)
             added = _merge_dynamic_deferred_tools(tools)
             if added:

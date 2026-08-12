@@ -32,7 +32,7 @@ interface FloatingInputBarProps {
   onSessionModelSettingsChange?: (model: string | null, thinkingLevel: string | null, fastMode: boolean) => void
   agentNames?: string[]
   agentWorkspace?: string | null
-  agentMode?: 'coding' | 'aim' | null
+  agentMode?: 'coding' | null
   todos?: TodoItem[]
   todosOpen?: boolean
   onTodosOpenChange?: (open: boolean) => void

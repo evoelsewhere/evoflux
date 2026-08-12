@@ -72,7 +72,7 @@ export function useCreateSkillMutation() {
       name,
       content,
       files = [],
-      modes = ['work', 'coding', 'aim'],
+      modes = ['work', 'coding'],
     }: {
       name: string
       content: string

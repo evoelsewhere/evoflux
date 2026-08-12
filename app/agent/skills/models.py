@@ -39,7 +39,7 @@ class SkillRecord:
     skill_file: Path
     root: Path
     source: str
-    modes: tuple[str, ...] = ("work", "coding", "aim")
+    modes: tuple[str, ...] = ("work", "coding")
     display_name: str | None = None
     short_description: str | None = None
     default_prompt: str | None = None

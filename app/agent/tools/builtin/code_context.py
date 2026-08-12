@@ -287,7 +287,7 @@ code_context = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
-    tiers=("coding", "aim"),
+    tiers=("coding",),
     observation_kind="retrieval",
     deferred=False,
     capabilities=("code_context", "code_source_search", "code_context_navigation"),

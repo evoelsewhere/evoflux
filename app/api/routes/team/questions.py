@@ -57,7 +57,7 @@ async def reply_question(
     """Reply to a pending ``ask_user`` question batch, unblocking the agent.
 
     *session_id* may be either the owning agent session or the lead stream
-    session (AIM gate banner posts the lead id). The service publishes the
+    session (gate banner posts the lead id). The service publishes the
     ``question_replied`` SSE event that closes the question UI on every
     connected client.
     """

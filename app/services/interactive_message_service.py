@@ -67,20 +67,11 @@ async def _project_paths_for_session(
     if session.project_id is None:
         return extra_workspace_paths, read_only_paths
 
-    from app.services.coding_project_service import (
-        get_project,
-        get_project_workspace_paths,
-    )
+    from app.services.coding_project_service import get_project_workspace_paths
 
     async with db.begin():
-        project = await get_project(db, session.project_id)
         all_paths = await get_project_workspace_paths(db, session.project_id)
     extra_workspace_paths = [path for path in all_paths if path != workspace]
-    if project is not None and project.kind == "aim":
-        from app.services.aim.project import resolve_source_workspace_paths
-
-        async with db.begin():
-            read_only_paths = await resolve_source_workspace_paths(db, project)
     return extra_workspace_paths, read_only_paths
 
 
@@ -101,7 +92,7 @@ async def resolve_team_for_session(
     if session is None and require_existing:
         raise ValueError("Session not found.")
 
-    if session is not None and session.mode in ("coding", "aim") and session.workspace:
+    if session is not None and session.mode == "coding" and session.workspace:
         workspace = team_manager.validate_workspace(session.workspace)
         extra_paths, read_only_paths = await _project_paths_for_session(
             db, session, workspace
@@ -118,7 +109,7 @@ async def resolve_team_for_session(
     team = agent_service.require_team(team)
 
     if session is not None:
-        if session.mode not in ("coding", "aim"):
+        if session.mode != "coding":
             team.workspace = session.workspace
         team.session_tags = frozenset(session.tags or ())
         team.permission_mode = session.permission_mode

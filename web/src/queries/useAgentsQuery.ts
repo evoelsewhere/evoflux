@@ -3,11 +3,11 @@ import { listTeamAgents } from '@/api/client'
 import { queryKeys } from './keys'
 
 /** Team mode — GET /team/agents. `mode` picks the roster for a
- * workspace-bound team ('coding' | 'aim'); omit for the work team. */
+ * workspace-bound team ('coding'); omit for the work team. */
 export function useTeamAgentsQuery(
   workspace?: string | null,
   enabled = true,
-  mode?: 'coding' | 'aim' | null,
+  mode?: 'coding' | null,
 ) {
   return useQuery({
     queryKey: queryKeys.teamAgents(workspace, mode),

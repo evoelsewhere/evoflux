@@ -7,32 +7,26 @@ import { useMemo, useState } from 'react'
 import { SettingsListView, type ListViewRow } from '@/components/settings/SettingsListView'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { resolveSkillDetailMode } from '@/lib/skill-detail-mode'
-import {
-  hasAllSkillModes,
-  skillAvailabilityLabel,
-  type SkillModeFilter,
-} from '@/lib/skill-modes'
+import { skillAvailabilityLabel, type SkillAvailability } from '@/lib/skill-modes'
 import { useSkillFilesQuery } from '@/queries'
 import { useSettingsParams } from '@/contexts/SettingsContext'
 import { useActiveSkillDiscoveryScope } from '@/hooks/useActiveSkillDiscoveryScope'
 
-const MODE_COLLISION_FILTER_TEXT =
-  'Filter by Work, Coding, or AIM to inspect runtime policy'
+type SkillFilter = 'all' | SkillAvailability
 
 export function SkillsListPage() {
   const skillScope = useActiveSkillDiscoveryScope()
   const { data, isLoading, isFetching, isError, error, refetch } =
     useSkillFilesQuery(skillScope)
   const { name: selected } = useSettingsParams() as { name?: string }
-  const [modeFilter, setModeFilter] = useState<SkillModeFilter>('all')
+  const [modeFilter, setModeFilter] = useState<SkillFilter>('all')
   const allSkills = useMemo(() => data?.skills ?? [], [data?.skills])
   const counts = useMemo(
     () => ({
       all: allSkills.length,
       work: allSkills.filter((skill) => skill.modes.includes('work')).length,
       coding: allSkills.filter((skill) => skill.modes.includes('coding')).length,
-      aim: allSkills.filter((skill) => skill.modes.includes('aim')).length,
-      allModes: allSkills.filter((skill) => hasAllSkillModes(skill.modes)).length,
+      both: allSkills.filter((skill) => skill.modes.length === 2).length,
     }),
     [allSkills],
   )
@@ -40,7 +34,7 @@ export function SkillsListPage() {
   const rows = useMemo<ListViewRow[]>(() => {
     const skills = allSkills.filter((skill) => {
       if (modeFilter === 'all') return true
-      if (modeFilter === 'all-modes') return hasAllSkillModes(skill.modes)
+      if (modeFilter === 'both') return skill.modes.length === 2
       return skill.modes.includes(modeFilter)
     })
     const flat = skills.filter((s) => !s.name.includes('/'))
@@ -83,7 +77,7 @@ export function SkillsListPage() {
           s.description || 'No description',
           skillAvailabilityLabel(s.modes),
           `${s.resource_count} resource${s.resource_count === 1 ? '' : 's'}`,
-          modeCollision ? MODE_COLLISION_FILTER_TEXT : null,
+          modeCollision ? 'Filter by Work or Coding to inspect runtime policy' : null,
           !modeCollision && !s.user_invocable ? 'Manual invocation disabled' : null,
           s.built_in ? 'Built-in' : null,
           !s.editable ? 'Bundle read-only' : null,
@@ -132,8 +126,7 @@ export function SkillsListPage() {
             { value: 'all', label: `All ${counts.all}` },
             { value: 'work', label: `Work ${counts.work}` },
             { value: 'coding', label: `Coding ${counts.coding}` },
-            { value: 'aim', label: `AIM ${counts.aim}` },
-            { value: 'all-modes', label: `All modes ${counts.allModes}` },
+            { value: 'both', label: `Both ${counts.both}` },
           ]}
           value={modeFilter}
           onChange={setModeFilter}

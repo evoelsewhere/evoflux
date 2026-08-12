@@ -12,7 +12,6 @@ from app.agent.skills.activation import (
     activate_skill_with_runtime,
     inject_skill_activation,
 )
-from app.core.skill_scope import normalize_skill_mode
 
 if TYPE_CHECKING:
     from app.agent.state import AgentState, RunContext
@@ -33,7 +32,7 @@ class ConfiguredSkillsHook(BaseAgentHook):
 
     def __init__(self, names: Sequence[str], *, mode: str) -> None:
         self._names = tuple(dict.fromkeys(names))
-        self._mode = normalize_skill_mode(mode)
+        self._mode = "coding" if mode == "coding" else "work"
 
     async def before_agent(self, ctx: RunContext, state: AgentState) -> None:
         if not self._names:
