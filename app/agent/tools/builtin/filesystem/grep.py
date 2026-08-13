@@ -20,7 +20,6 @@ from typing import Annotated
 from loguru import logger
 from pydantic import Field
 
-from app.agent.process_sandbox import sandboxed_process_argv
 from app.agent.sandbox import get_sandbox
 from app.agent.tools.builtin.filesystem._ignore import (
     _SKIPPED_DIR_NAMES,
@@ -96,15 +95,9 @@ async def _rg_scan(
     cmd.extend(["--regexp", pattern, "."])
 
     try:
-        exec_bin, exec_argv = sandboxed_process_argv(
-            cmd[0],
-            cmd[1:],
-            sandbox=sandbox,
-            cwd=root,
-        )
         proc = await asyncio.create_subprocess_exec(
-            exec_bin,
-            *exec_argv,
+            cmd[0],
+            *cmd[1:],
             cwd=str(root),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,

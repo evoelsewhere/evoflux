@@ -60,7 +60,7 @@ _posix_only = pytest.mark.skipif(_IS_WINDOWS, reason="POSIX-only command")
 
 @pytest.fixture
 def sandbox(tmp_path):
-    sb = SandboxConfig(workspace=str(tmp_path), native_process_isolation="required")
+    sb = SandboxConfig(workspace=str(tmp_path))
     token = set_sandbox(sb)
     yield sb
     from app.agent.sandbox import _sandbox_ctx
@@ -76,7 +76,6 @@ def sandbox_workspace(tmp_path):
         workspace=str(workspace),
         session_id="session-1",
         max_execution_seconds=120,
-        native_process_isolation="required",
     )
     token = set_sandbox(config)
     yield workspace
@@ -533,7 +532,6 @@ class TestSandboxCommandScan:
             memory=str(tmp_path / "mem"),
             denied_roots=[forbidden],
             denied_patterns=[],
-            native_process_isolation="required",
         )
         token = set_sandbox(sandbox)
         try:
@@ -552,7 +550,6 @@ class TestSandboxCommandScan:
             memory=str(tmp_path / "mem"),
             denied_roots=[],
             denied_patterns=["**/.env"],
-            native_process_isolation="required",
         )
         token = set_sandbox(sandbox)
         try:
@@ -593,7 +590,6 @@ class TestSandboxCommandScan:
             workspace=str(tmp_path / "ws"),
             denied_roots=[Path(settings.EVOFLUX_STATE_DIR).resolve()],
             denied_patterns=[],
-            native_process_isolation="required",
         )
         token = set_sandbox(sandbox)
         try:
@@ -615,7 +611,6 @@ class TestSandboxCommandScan:
             workspace=str(tmp_path / "ws"),
             denied_roots=[Path(settings.EVOFLUX_STATE_DIR).resolve()],
             denied_patterns=[],
-            native_process_isolation="required",
         )
         token = set_sandbox(sandbox)
         try:
@@ -634,7 +629,6 @@ class TestSandboxCommandScan:
             memory=str(tmp_path / "mem"),
             denied_roots=[tmp_path / "secrets"],
             denied_patterns=[],
-            native_process_isolation="required",
         )
         (tmp_path / "secrets").mkdir()
         token = set_sandbox(sandbox)

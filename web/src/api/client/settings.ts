@@ -10,18 +10,15 @@ import { parseDetailOrThrow } from './_shared'
 export type SandboxSettings = {
   denied_patterns: string[]
   worktree_location: 'repository' | 'user_data'
-  native_process_isolation: 'required' | 'best_effort'
-  allow_network: boolean
   inherit_shell_environment: boolean
   load_shell_profile: boolean
   outbound_data_policy: 'block' | 'redact' | 'off'
   outbound_pii_policy: 'off' | 'standard' | 'strict'
   max_execution_seconds: number
   max_output_bytes: number
-  native_backend: string | null
 }
 
-export type SandboxSettingsUpdate = Omit<SandboxSettings, 'native_backend'>
+export type SandboxSettingsUpdate = SandboxSettings
 
 export type VersionControlSettings = {
   network_timeout_seconds: number

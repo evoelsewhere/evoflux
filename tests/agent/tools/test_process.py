@@ -37,7 +37,6 @@ def process_sandbox(tmp_path):
         SandboxConfig(
             workspace=str(tmp_path),
             session_id="process-test",
-            native_process_isolation="best_effort",
             denied_roots=[],
             denied_patterns=[],
             load_shell_profile=False,
@@ -196,7 +195,6 @@ async def test_process_registry_is_isolated_by_session(process_sandbox):
         SandboxConfig(
             workspace=str(process_sandbox),
             session_id="another-session",
-            native_process_isolation="best_effort",
             denied_roots=[],
             denied_patterns=[],
         )

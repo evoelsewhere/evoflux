@@ -20,7 +20,6 @@ def _make_sandbox(tmp_path: Path, *, read_only: list[Path]) -> SandboxConfig:
         denied_roots=[],
         denied_patterns=[],
         read_only_paths=[str(p) for p in read_only],
-        native_process_isolation="required",
     )
 
 
@@ -69,7 +68,6 @@ def test_no_read_only_paths_configured_rejects_external_writes(tmp_path):
         workspace=str(tmp_path / "ws"),
         denied_roots=[],
         denied_patterns=[],
-        native_process_isolation="required",
     )
 
     with pytest.raises(PermissionError, match="outside the allowed sandbox roots"):
@@ -91,7 +89,6 @@ def test_session_uploads_are_automatically_mounted_read_only(tmp_path, monkeypat
         session_id="session-1",
         denied_roots=[],
         denied_patterns=[],
-        native_process_isolation="required",
     )
 
     assert sandbox.validate_path(str(attachment)) == attachment.resolve()
@@ -105,7 +102,6 @@ def test_write_claim_restricts_member_to_declared_subtree(tmp_path):
         denied_roots=[],
         denied_patterns=[],
         write_allowed_paths=["app/agent"],
-        native_process_isolation="required",
     )
 
     assert (

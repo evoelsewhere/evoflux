@@ -12,7 +12,6 @@ from typing import Any
 
 from loguru import logger
 
-from app.agent.process_sandbox import sandboxed_process_argv
 from app.agent.sandbox import get_sandbox
 from app.agent.tools.builtin.shell import _scrubbed_env
 
@@ -135,15 +134,9 @@ class LanguageServerClient:
             if self._process is not None and self._process.returncode is None:
                 return
             sandbox = get_sandbox()
-            exec_bin, exec_argv = sandboxed_process_argv(
-                self.command[0],
-                list(self.command[1:]),
-                sandbox=sandbox,
-                cwd=self.workspace,
-            )
             self._process = await asyncio.create_subprocess_exec(
-                exec_bin,
-                *exec_argv,
+                self.command[0],
+                *self.command[1:],
                 cwd=str(self.workspace),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,

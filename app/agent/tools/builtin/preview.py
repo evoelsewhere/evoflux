@@ -47,7 +47,6 @@ from typing import Annotated, Any, Literal
 from loguru import logger
 from pydantic import Field
 
-from app.agent.process_sandbox import sandboxed_process_argv
 from app.agent.tools.builtin.process import TrackedProcess, command_process_scope
 from app.agent.tools.registry import InjectedArg, Tool
 
@@ -429,12 +428,6 @@ async def _start_locked(
     from app.agent.tools.builtin.shell import _scrubbed_env
 
     sandbox = get_sandbox()
-    if not sandbox.allow_network:
-        return (
-            "Preview requires Network access because the development server must "
-            "bind a local port. Enable it in Settings → Sandbox, then retry."
-        )
-
     existing = _servers.get(key)
     if existing is not None:
         same_config = existing.config_fingerprint == cfg.fingerprint
@@ -534,15 +527,9 @@ async def _start_locked(
         _extra["start_new_session"] = True
 
     try:
-        exec_bin, exec_argv = sandboxed_process_argv(
-            argv[0],
-            argv[1:],
-            sandbox=sandbox,
-            cwd=cwd,
-        )
         proc = await asyncio.create_subprocess_exec(
-            exec_bin,
-            *exec_argv,
+            argv[0],
+            *argv[1:],
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,

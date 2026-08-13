@@ -51,10 +51,8 @@ def workspace(tmp_path, monkeypatch):
     token = set_sandbox(
         SandboxConfig(
             workspace=str(tmp_path),
-            allow_network=True,
             denied_roots=[],
             denied_patterns=[],
-            native_process_isolation="required",
         )
     )
     try:
@@ -440,38 +438,6 @@ async def test_missing_executable_reports_cleanly(workspace):
     )
     out = await pv.preview_tool.arun(action="start", name="ghost")
     assert "Executable not found" in out
-
-
-@pytest.mark.asyncio
-async def test_start_requires_network_access(workspace: Path):
-    port = _free_port()
-    _write_config(workspace, [_server_config("web", port)])
-    token = set_sandbox(SandboxConfig(workspace=str(workspace), denied_roots=[]))
-    try:
-        out = await pv.preview_tool.arun(action="start", name="web")
-    finally:
-        _sandbox_ctx.reset(token)
-
-    assert "requires Network access" in out
-
-
-@pytest.mark.asyncio
-async def test_network_denial_does_not_reuse_external_port(workspace: Path):
-    port = _free_port()
-    _write_config(workspace, [_server_config("web", port)])
-    external = await asyncio.start_server(
-        lambda _reader, writer: writer.close(), "127.0.0.1", port
-    )
-    token = set_sandbox(SandboxConfig(workspace=str(workspace), denied_roots=[]))
-    try:
-        out = await pv.preview_tool.arun(action="start", name="web")
-    finally:
-        _sandbox_ctx.reset(token)
-        external.close()
-        await external.wait_closed()
-
-    assert "requires Network access" in out
-    assert pv._servers == {}
 
 
 @pytest.mark.asyncio

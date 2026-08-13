@@ -42,10 +42,6 @@ export function SandboxSettingsPage() {
     patterns: string[]
     sourceWorktreeLocation: 'repository' | 'user_data'
     worktreeLocation: 'repository' | 'user_data'
-    sourceNativeIsolation: 'required' | 'best_effort'
-    nativeIsolation: 'required' | 'best_effort'
-    sourceAllowNetwork: boolean
-    allowNetwork: boolean
     sourceInheritEnvironment: boolean
     inheritEnvironment: boolean
     sourceLoadShellProfile: boolean
@@ -63,10 +59,6 @@ export function SandboxSettingsPage() {
     patterns: [],
     sourceWorktreeLocation: 'repository',
     worktreeLocation: 'repository',
-    sourceNativeIsolation: 'required',
-    nativeIsolation: 'required',
-    sourceAllowNetwork: false,
-    allowNetwork: false,
     sourceInheritEnvironment: false,
     inheritEnvironment: false,
     sourceLoadShellProfile: false,
@@ -87,8 +79,6 @@ export function SandboxSettingsPage() {
     && (
       serverPatterns !== draft.source
       || data.worktree_location !== draft.sourceWorktreeLocation
-      || data.native_process_isolation !== draft.sourceNativeIsolation
-      || data.allow_network !== draft.sourceAllowNetwork
       || data.inherit_shell_environment !== draft.sourceInheritEnvironment
       || data.load_shell_profile !== draft.sourceLoadShellProfile
       || data.outbound_data_policy !== draft.sourceOutboundDataPolicy
@@ -102,10 +92,6 @@ export function SandboxSettingsPage() {
       patterns: serverPatterns,
       sourceWorktreeLocation: data.worktree_location,
       worktreeLocation: data.worktree_location,
-      sourceNativeIsolation: data.native_process_isolation,
-      nativeIsolation: data.native_process_isolation,
-      sourceAllowNetwork: data.allow_network,
-      allowNetwork: data.allow_network,
       sourceInheritEnvironment: data.inherit_shell_environment,
       inheritEnvironment: data.inherit_shell_environment,
       sourceLoadShellProfile: data.load_shell_profile,
@@ -133,8 +119,6 @@ export function SandboxSettingsPage() {
     if (a.some((p, i) => p !== patterns[i])) return true
     return (
       draft.sourceWorktreeLocation !== draft.worktreeLocation
-      || draft.sourceNativeIsolation !== draft.nativeIsolation
-      || draft.sourceAllowNetwork !== draft.allowNetwork
       || draft.sourceInheritEnvironment !== draft.inheritEnvironment
       || draft.sourceLoadShellProfile !== draft.loadShellProfile
       || draft.sourceOutboundDataPolicy !== draft.outboundDataPolicy
@@ -143,21 +127,17 @@ export function SandboxSettingsPage() {
       || draft.sourceMaxOutputBytes !== draft.maxOutputBytes
     )
   }, [
-    draft.allowNetwork,
     draft.inheritEnvironment,
     draft.loadShellProfile,
     draft.maxExecutionSeconds,
     draft.maxOutputBytes,
-    draft.nativeIsolation,
     draft.outboundDataPolicy,
     draft.outboundPiiPolicy,
     draft.source,
-    draft.sourceAllowNetwork,
     draft.sourceInheritEnvironment,
     draft.sourceLoadShellProfile,
     draft.sourceMaxExecutionSeconds,
     draft.sourceMaxOutputBytes,
-    draft.sourceNativeIsolation,
     draft.sourceOutboundDataPolicy,
     draft.sourceOutboundPiiPolicy,
     draft.sourceWorktreeLocation,
@@ -188,8 +168,6 @@ export function SandboxSettingsPage() {
       const saved = await updateMut.mutateAsync({
         denied_patterns: cleaned,
         worktree_location: draft.worktreeLocation,
-        native_process_isolation: draft.nativeIsolation,
-        allow_network: draft.allowNetwork,
         inherit_shell_environment: draft.inheritEnvironment,
         load_shell_profile: draft.loadShellProfile,
         outbound_data_policy: draft.outboundDataPolicy,
@@ -202,10 +180,6 @@ export function SandboxSettingsPage() {
         patterns: saved.denied_patterns,
         sourceWorktreeLocation: saved.worktree_location,
         worktreeLocation: saved.worktree_location,
-        sourceNativeIsolation: saved.native_process_isolation,
-        nativeIsolation: saved.native_process_isolation,
-        sourceAllowNetwork: saved.allow_network,
-        allowNetwork: saved.allow_network,
         sourceInheritEnvironment: saved.inherit_shell_environment,
         inheritEnvironment: saved.inherit_shell_environment,
         sourceLoadShellProfile: saved.load_shell_profile,
@@ -239,9 +213,10 @@ export function SandboxSettingsPage() {
       title="Sandbox"
       lede={
         <>
-          Agents can access only the active workspace, explicitly attached repositories,
-          read-only roots, and session artifacts. Sensitive glob patterns are enforced
-          inside those roots too. Use{' '}
+          Built-in filesystem tools are limited to the active workspace, explicitly
+          attached repositories, read-only roots, and session artifacts. Sensitive glob
+          patterns apply inside those roots too. Shell commands run directly on the host
+          after a best-effort denied-path check. Use{' '}
           <code className="rounded bg-(--bg-key) px-1 py-0.5 font-mono text-xs">**</code> for any depth
           and <code className="rounded bg-(--bg-key) px-1 py-0.5 font-mono text-xs">*</code> for one
           segment. <SandboxHelpPopover />
@@ -371,43 +346,8 @@ export function SandboxSettingsPage() {
       {data && (
         <SettingsGroup
           title="Process security"
-          description="Controls applied to every shell command, including commands executed inside delegated worktrees."
+          description="Runtime limits and environment controls applied to shell commands, including commands executed inside delegated worktrees."
         >
-          <SettingsRow
-            label="Native process isolation"
-            description={
-              data.native_backend
-                ? `Detected backend: ${data.native_backend}. Required enforces native containment; Compatibility keeps application-level checks while skipping native isolation.`
-                : 'No native backend detected. Required blocks shell execution; Compatibility keeps application-level checks while skipping native isolation.'
-            }
-            control={
-              <SegmentedControl
-                options={[
-                  { value: 'required', label: 'Required' },
-                  { value: 'best_effort', label: 'Compatibility' },
-                ]}
-                value={draft.nativeIsolation}
-                onChange={(nativeIsolation) =>
-                  setDraft((current) => ({ ...current, nativeIsolation }))
-                }
-                layoutId="sandbox-native-isolation"
-                ariaLabel="Native process isolation"
-              />
-            }
-          />
-          <SettingsRow
-            label="Network access"
-            description="Allow model-controlled shell processes to open network connections. Keep disabled unless builds or package installation require it."
-            control={
-              <Switch
-                checked={draft.allowNetwork}
-                onCheckedChange={(allowNetwork) =>
-                  setDraft((current) => ({ ...current, allowNetwork }))
-                }
-                aria-label="Allow sandbox network access"
-              />
-            }
-          />
           <SettingsRow
             label="Inherit host environment"
             description="Expose host environment variables to shell commands. Disabled passes only PATH, locale, terminal and temporary-directory values."
@@ -482,18 +422,21 @@ export function SandboxSettingsPage() {
               </div>
             }
           />
-          {(draft.nativeIsolation === 'best_effort'
-            || draft.allowNetwork
-            || draft.inheritEnvironment
+          {(draft.inheritEnvironment
             || draft.loadShellProfile) && (
             <div className="px-4 py-4 sm:px-5">
               <SettingsCallout tone="warning" icon={AlertTriangle}>
-                {draft.nativeIsolation === 'best_effort'
-                  ? 'Compatibility skips native process isolation, but application-level path, command, timeout, output, and outbound-data protections remain active. Use Required for the strongest containment.'
-                  : 'This configuration exposes additional host capabilities to agent-run commands. Enable only what the active project requires.'}
+                This configuration exposes additional host capabilities to agent-run
+                commands. Enable only what the active project requires.
               </SettingsCallout>
             </div>
           )}
+          <div className="px-4 py-4 sm:px-5">
+            <SettingsCallout tone="warning" icon={AlertTriangle}>
+              Commands run directly on the host and may access files or the network through
+              child processes. Denied-path checks are guardrails, not OS-level containment.
+            </SettingsCallout>
+          </div>
         </SettingsGroup>
       )}
 

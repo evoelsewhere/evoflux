@@ -46,14 +46,12 @@ async def _terminal_run(
     the user doesn't need to watch, prefer ``shell``.
     """
     # The shared PTY is a pre-existing host process. It inherits the user's
-    # interactive environment and cannot be retrofitted with the workspace
-    # allowlist, deny patterns, or network policy. Keeping this tool available
-    # in best-effort mode was therefore a sandbox escape for both Work and
-    # Coding sessions. The user can still run commands in the visible terminal
-    # themselves; agent execution must use the contained ``shell`` tool.
+    # interactive environment and cannot honor the per-command environment
+    # controls. The user can still run commands in the visible terminal
+    # themselves; agent execution uses the direct ``shell`` tool instead.
     return (
         "Cannot use the shared terminal from an agent run: it is a host process "
-        "outside the per-command sandbox. Use the sandboxed shell tool instead."
+        "outside the per-command environment controls. Use the shell tool instead."
     )
 
 

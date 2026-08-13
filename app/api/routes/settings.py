@@ -16,7 +16,6 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 
 from app.agent.sandbox_config import SandboxFileConfig, load_config, save_config
-from app.agent.process_sandbox import native_process_sandbox_backend
 from app.core.config import settings
 from app.core.runtime_settings import (
     CodeReviewSettings,
@@ -209,15 +208,12 @@ async def get_sandbox_settings() -> SandboxSettingsBody:
     return SandboxSettingsBody(
         denied_patterns=list(cfg.denied_patterns),
         worktree_location=cfg.worktree_location,
-        native_process_isolation=cfg.native_process_isolation,
-        allow_network=cfg.allow_network,
         inherit_shell_environment=cfg.inherit_shell_environment,
         load_shell_profile=cfg.load_shell_profile,
         outbound_data_policy=cfg.outbound_data_policy,
         outbound_pii_policy=cfg.outbound_pii_policy,
         max_execution_seconds=cfg.max_execution_seconds,
         max_output_bytes=cfg.max_output_bytes,
-        native_backend=native_process_sandbox_backend(),
     )
 
 
@@ -229,8 +225,6 @@ async def update_sandbox_settings(body: SandboxSettingsBody) -> SandboxSettingsB
         SandboxFileConfig(
             denied_patterns=cleaned,
             worktree_location=body.worktree_location,
-            native_process_isolation=body.native_process_isolation,
-            allow_network=body.allow_network,
             inherit_shell_environment=body.inherit_shell_environment,
             load_shell_profile=body.load_shell_profile,
             outbound_data_policy=body.outbound_data_policy,
@@ -242,15 +236,12 @@ async def update_sandbox_settings(body: SandboxSettingsBody) -> SandboxSettingsB
     return SandboxSettingsBody(
         denied_patterns=cleaned,
         worktree_location=body.worktree_location,
-        native_process_isolation=body.native_process_isolation,
-        allow_network=body.allow_network,
         inherit_shell_environment=body.inherit_shell_environment,
         load_shell_profile=body.load_shell_profile,
         outbound_data_policy=body.outbound_data_policy,
         outbound_pii_policy=body.outbound_pii_policy,
         max_execution_seconds=body.max_execution_seconds,
         max_output_bytes=body.max_output_bytes,
-        native_backend=native_process_sandbox_backend(),
     )
 
 
