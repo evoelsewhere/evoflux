@@ -35,6 +35,7 @@ beforeEach(() => {
   })
   useTeamStore.setState({
     leadName: 'lead',
+    isTeamWorking: false,
     agentStreams: {
       lead,
       'explorer#1': createDefaultAgentStream(),
@@ -85,5 +86,43 @@ describe('ToolCallGroup delegation lifecycle', () => {
     expect(screen.getByText('The current branch is main.')).toBeInTheDocument()
     expect(screen.getByLabelText('Elapsed 5s')).toBeInTheDocument()
     expect(screen.getByText('done')).toBeInTheDocument()
+  })
+
+  it('shows an unfinished offline task as paused instead of waiting forever', () => {
+    const lead = createDefaultAgentStream()
+    const member = createDefaultAgentStream()
+    member.status = 'offline'
+    useTeamStore.setState({
+      leadName: 'lead',
+      isTeamWorking: false,
+      agentStreams: { lead, 'explorer#1': member },
+      activityLog: [],
+    })
+
+    const group: ToolBlockGroup = {
+      kind: 'group',
+      id: 'tool-group-delegate',
+      toolName: 'team_delegate',
+      blocks: [{
+        id: 'delegate',
+        type: 'tool',
+        content: '',
+        toolName: 'team_delegate',
+        toolArgs: JSON.stringify({
+          to: ['explorer'],
+          title: 'Identify the current Git branch.',
+        }),
+        toolDone: true,
+        toolResult: `Task delegated to explorer#1. Task IDs: ${TASK_ID}.`,
+        startedAt: 1_000,
+      }],
+    }
+
+    render(<ToolCallGroupCard group={group} />)
+
+    expect(screen.getByText('paused')).toBeInTheDocument()
+    expect(screen.getByText('Session stopped before final handoff · resume to continue')).toBeInTheDocument()
+    expect(screen.queryByText(/Waiting for \d+ agents?/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Elapsed/)).not.toBeInTheDocument()
   })
 })

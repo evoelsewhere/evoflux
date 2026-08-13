@@ -6,6 +6,7 @@ type DelegationToolState = 'start' | 'running' | 'success' | 'failed'
 export type DelegationDisplayStatus =
   | 'queued'
   | 'running'
+  | 'paused'
   | 'review'
   | 'done'
   | 'error'
@@ -144,18 +145,24 @@ export function delegationDisplayStatus({
   toolState,
   stream,
   handoff,
+  sessionWorking,
 }: {
   toolState: DelegationToolState
   stream: AgentStream | undefined
   handoff: Record<string, unknown> | null
+  sessionWorking: boolean
 }): DelegationDisplayStatus {
   if (toolState === 'failed') return 'error'
   if (handoff?.status === 'final') {
     return handoff.workspace_result ? 'review' : 'done'
   }
-  if (handoff?.status === 'partial') return 'running'
   if (stream?.status === 'error') return 'error'
   if (stream?.status === 'working') return 'running'
+  // Open ledger tasks survive a runtime restart so they can be recovered on
+  // the next turn. They are not actively queued while the session is stopped,
+  // though, and must not keep timers or aggregate waiting indicators alive.
+  if (!sessionWorking) return 'paused'
+  if (handoff?.status === 'partial') return 'running'
   return 'queued'
 }
 
@@ -174,6 +181,7 @@ export function delegationActivityLabel(
   if (status === 'done') {
     return typeof handoff?.summary === 'string' ? compactText(handoff.summary) : 'Final handoff received'
   }
+  if (status === 'paused') return 'Session stopped before final handoff · resume to continue'
   if (status === 'queued') {
     return stream?.status === 'offline' ? 'Waiting for subagent to come online…' : 'Waiting for subagent to start…'
   }

@@ -92,6 +92,7 @@ export function SubagentTaskCard({
           status === 'running' && reducedMotion !== true && 'animate-pulse',
           status === 'done' && 'bg-(--color-success)',
           status === 'review' && 'bg-(--color-warning)',
+          status === 'paused' && 'bg-(--color-warning)',
           status === 'queued' && 'bg-(--color-text-subtle)',
           status === 'error' && 'bg-(--color-error)',
           status === 'idle' && 'bg-(--color-text-subtle)',
@@ -109,6 +110,7 @@ export function SubagentTaskCard({
               status === 'running' && 'text-(--color-accent)',
               status === 'done' && 'text-(--color-success)',
               status === 'review' && 'text-(--color-warning)',
+              status === 'paused' && 'text-(--color-warning)',
               status === 'error' && 'text-(--color-error)',
               (status === 'queued' || status === 'idle') && 'text-(--color-text-subtle)',
             )}
@@ -130,6 +132,7 @@ export function SubagentTaskCard({
             status === 'running' && 'bg-(--color-accent)/10 text-(--color-accent)',
             status === 'done' && 'bg-(--color-success)/10 text-(--color-success)',
             status === 'review' && 'bg-(--color-warning)/10 text-(--color-warning)',
+            status === 'paused' && 'bg-(--color-warning)/10 text-(--color-warning)',
             status === 'error' && 'bg-(--color-error-subtle) text-(--color-error)',
             (status === 'queued' || status === 'idle') && 'bg-(--bg-key) text-(--color-text-subtle)',
           )}
@@ -152,6 +155,7 @@ export function SubagentTaskCard({
     'w-full overflow-hidden rounded-md border border-(--color-border-subtle) bg-(--bg-page) text-left transition-colors',
     status === 'running' && 'border-(--color-accent)/25',
     status === 'review' && 'border-(--color-warning)/30',
+    status === 'paused' && 'border-(--color-warning)/30',
     status === 'done' && 'border-(--color-success)/25',
     status === 'error' && 'border-(--color-error)/35 bg-(--color-error-subtle)',
     className,
