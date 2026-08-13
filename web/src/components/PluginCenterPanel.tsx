@@ -387,11 +387,6 @@ export function PluginCenterPanel() {
   const [createParent, setCreateParent] = useState('')
   const [createName, setCreateName] = useState('')
   const [createDescription, setCreateDescription] = useState('')
-  const [createVersion, setCreateVersion] = useState('0.1.0')
-  const [createAuthor, setCreateAuthor] = useState('')
-  const [createLicense, setCreateLicense] = useState('MIT')
-  const [createSkill, setCreateSkill] = useState('')
-  const [createMcp, setCreateMcp] = useState('')
 
   const query = useQuery({
     queryKey: queryKeys.plugins.list(),
@@ -513,25 +508,22 @@ export function PluginCenterPanel() {
   }
 
   const createPackage = async () => {
-    if (!createParent || !createName) return
-    const destination = `${createParent.replace(/[\\/]+$/, '')}/${createName}`
+    const parent = createParent.trim()
+    const name = createName.trim()
+    if (!parent || !name) return
+    const destination = `${parent.replace(/[\\/]+$/, '')}/${name}`
     await run('create', async () => {
       const result = await createPlugin({
         destination,
-        name: createName,
-        description: createDescription || `EvoFlux plugin ${createName}`,
-        version: createVersion || undefined,
-        author: createAuthor || undefined,
-        license: createLicense || undefined,
-        skill_name: createSkill || undefined,
-        mcp_name: createMcp || undefined,
+        name,
+        description: createDescription.trim() || `EvoFlux plugin ${name}`,
       })
       const resultInspection = await inspectPlugin(result.path)
       setInspection(resultInspection)
       setActiveView({
         kind: 'editor',
         root: result.path,
-        name: resultInspection.manifest?.name || createName,
+        name: resultInspection.manifest?.name || name,
       })
       setShowCreate(false)
       pushToast({ tone: 'success', title: 'Plugin scaffold created', description: result.path })
@@ -578,7 +570,7 @@ export function PluginCenterPanel() {
   }
 
   return (
-    <section className="flex h-full min-h-0 flex-col bg-(--bg-page)">
+    <section className="@container/plugin-center flex h-full min-h-0 flex-col bg-(--bg-page)">
       <header className="border-b border-(--color-border) px-5 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -689,8 +681,8 @@ export function PluginCenterPanel() {
               <h3 className="text-sm font-medium text-(--color-text)">Create development plugin</h3>
               <p className="text-xs text-(--color-text-subtle)">Scaffold the package, then continue in the built-in code editor.</p>
             </div>
-            <div className="grid gap-2 md:grid-cols-2">
-              <div className="flex gap-2">
+            <div className="grid gap-2 @lg/plugin-center:grid-cols-2">
+              <div className="flex min-w-0 gap-2">
                 <Input value={createParent} onChange={(event) => setCreateParent(event.target.value)} placeholder="Parent folder" aria-label="Plugin parent folder" />
                 {desktop && (
                   <Button
@@ -704,16 +696,11 @@ export function PluginCenterPanel() {
                 )}
               </div>
               <Input value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="plugin-name" aria-label="Plugin name" />
-              <Input value={createDescription} onChange={(event) => setCreateDescription(event.target.value)} placeholder="Description" aria-label="Plugin description" />
-              <Input value={createVersion} onChange={(event) => setCreateVersion(event.target.value)} placeholder="Version (0.1.0)" aria-label="Plugin version" />
-              <Input value={createAuthor} onChange={(event) => setCreateAuthor(event.target.value)} placeholder="Author" aria-label="Plugin author" />
-              <Input value={createLicense} onChange={(event) => setCreateLicense(event.target.value)} placeholder="License (MIT)" aria-label="Plugin license" />
-              <Input value={createSkill} onChange={(event) => setCreateSkill(event.target.value)} placeholder="Optional Skill name" aria-label="Starter Skill name" />
-              <Input value={createMcp} onChange={(event) => setCreateMcp(event.target.value)} placeholder="Optional MCP server name" aria-label="Starter MCP server name" />
+              <Input className="@lg/plugin-center:col-span-2" value={createDescription} onChange={(event) => setCreateDescription(event.target.value)} placeholder="Description" aria-label="Plugin description" />
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <Button variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
-              <Button disabled={!createParent || !createName || busy !== null} onClick={() => void createPackage()}>
+              <Button disabled={!createParent.trim() || !createName.trim() || busy !== null} onClick={() => void createPackage()}>
                 Create &amp; edit
               </Button>
             </div>
