@@ -185,7 +185,14 @@ async def authenticate_pairing(
     credential: str,
     *,
     required_scope: str | None = None,
+    persist_updates: bool = True,
 ) -> WebBridgePairing | None:
+    """Authenticate a pairing without dirtying read-only sessions.
+
+    ``GET`` requests use EvoFlux's dedicated SQLite query-only lane. Their
+    callers pass ``persist_updates=False`` so authorization remains read-only;
+    write-shaped requests still persist scope migrations and ``last_seen_at``.
+    """
     if not credential:
         return None
     pairing = (
@@ -202,14 +209,19 @@ async def authenticate_pairing(
     # their exact historical scope sets so existing extensions can use the
     # new draft-only Teach Mode capability without being re-paired. Approval
     # and replay intentionally remain app-authenticated endpoints.
-    if frozenset(pairing.scopes) in {
+    historical_scopes = frozenset(pairing.scopes)
+    upgraded_scopes = historical_scopes in {
         _P0_PAIRING_SCOPES,
         _P1_PAIRING_SCOPES,
         _P3_PAIRING_SCOPES,
-    }:
-        pairing.scopes = sorted(DEFAULT_PAIRING_SCOPES)
-    if required_scope is not None and required_scope not in pairing.scopes:
+    }
+    effective_scopes = DEFAULT_PAIRING_SCOPES if upgraded_scopes else historical_scopes
+    if required_scope is not None and required_scope not in effective_scopes:
         return None
+    if not persist_updates:
+        return pairing
+    if upgraded_scopes:
+        pairing.scopes = sorted(DEFAULT_PAIRING_SCOPES)
     pairing.last_seen_at = datetime.now(timezone.utc)
     db.add(pairing)
     return pairing
