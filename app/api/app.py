@@ -12,7 +12,6 @@ from loguru import logger
 
 from app.agent.mcp import mcp_manager
 from app.api.routes.agents import router as agents_router
-from app.api.routes.artifacts import router as artifacts_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.code_context import router as code_context_router
 from app.api.routes.commands import router as commands_router
@@ -334,13 +333,6 @@ def create_app() -> FastAPI:
     app.include_router(quote_router, prefix="/api/quote", tags=["quote"])
     app.include_router(wiki_router, prefix="/api/wiki", tags=["wiki"])
     app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
-    app.include_router(artifacts_router, prefix="/api/artifacts", tags=["artifacts"])
-    from app.plugin_platform.native import iter_builtin_native_providers
-
-    for _plugin_name, provider in iter_builtin_native_providers("api_router_provider"):
-        app.include_router(
-            provider(), prefix="/api/artifacts", tags=["artifact-plugins"]
-        )
     app.include_router(skills_router, prefix="/api/skills", tags=["skills"])
     app.include_router(commands_router, prefix="/api/commands", tags=["commands"])
     app.include_router(workflows_router, prefix="/api/workflows", tags=["workflows"])

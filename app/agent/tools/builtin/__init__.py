@@ -4,7 +4,6 @@ from importlib import import_module
 from typing import Any
 
 _EXPORT_MODULES = {
-    "artifact": "artifact",
     "browser_use": "browser_use_tool",
     "webbridge": "webbridge_tool",
     "create_pull_request": "pr",
@@ -70,7 +69,6 @@ def __getattr__(name: str) -> Any:  # noqa: ANN401 - public lazy re-export
 
 
 __all__ = [
-    "artifact",
     "browser_use",
     "create_pull_request",
     "add_code_review_comment",

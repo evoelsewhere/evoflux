@@ -5,23 +5,17 @@ description: Create, edit, inspect, render, and verify Word DOCX documents. Trig
 
 # Word-native DOCX authoring
 
-Use the deferred `artifact` tool with `format: "docx"`. It has two paths:
-design-preset creation for new documents and package-preserving OOXML patches
-for uploaded templates. Never turn a document into screenshots, HTML pages,
-flattened PDF content, or a fresh generic document when the user asked to edit
-their template. Never overwrite the source.
-
-Do not load example projects when this skill activates. Call
-`artifact(action="catalog", format="docx")` first and use the live schema as
-authoritative.
+Work directly with DOCX files using Python and `python-docx`. Keep authoring or
+template-edit logic in a task-local script, never turn a document into
+screenshots or flattened content, and never overwrite the source.
 
 ## Choose the path
 
 - **New document:** choose exactly one design preset and one first-page header
   pattern based on the communication job.
-- **Uploaded DOCX used as the template:** call `inspect`; review every page
-  preview and the full manifest, then use `mode: "template"` with its exact
-  SHA-256 and stable locators.
+- **Uploaded DOCX used as the template:** inspect its styles, sections, package
+  parts, relationships, headers, footers, tables, and content controls before
+  applying targeted edits.
 - **Uploaded DOCX used only as content:** extract its content and create a new
   document without claiming to preserve its design.
 
@@ -31,15 +25,10 @@ The source DOCX is always immutable.
 
 1. Identify the document job, audience, and content structure.
 2. Choose a preset/header pattern, or inspect the uploaded template.
-3. Write the format-native JSON project and call `validate`.
-4. Call `preview` and visually inspect every returned page image.
-5. Fix clipping, broken tables, pagination, font substitution, placeholders,
-   and every error-severity issue; create a new preview revision.
-6. Call `artifact(action="publish", job_id=..., output="...docx")` only for the
-   revision that passed review.
-7. Return one editable DOCX artifact card.
-
-`publish` reuses the verified immutable bytes and never rebuilds the document.
+3. Write and run a task-local Python authoring script.
+4. Reopen the exact saved DOCX and render every page for visual inspection.
+5. Fix clipping, broken tables, pagination, font substitution, and placeholders.
+6. Return the verified editable DOCX workspace path.
 
 ## New documents
 
@@ -57,9 +46,8 @@ text to force content into a page.
 
 ## Uploaded templates
 
-`inspect` renders every page and inventories body, headers, footers, notes,
-comments, content-control tags, paragraph IDs/indexes, styles, table geometry,
-fields, and the SHA-256 of every package part.
+Inspect body, headers, footers, notes, comments, content-control tags,
+paragraphs, styles, table geometry, fields, relationships, and package parts.
 
 Template projects may use only:
 
@@ -76,7 +64,7 @@ objects outside the declared editable parts.
 
 ## Verification gate
 
-`preview` uses the bundled semantic OOXML renderer. Structural QA checks
-package integrity and required Word parts; template QA additionally checks
-every unrelated part hash. Do not publish if any error remains. Placeholder
-warnings require deliberate review rather than automatic deletion.
+Use an independent OOXML reopen plus the bundled semantic renderer when
+available. Check package integrity, required Word parts, and every unrelated
+template part. Placeholder warnings require deliberate review rather than
+automatic deletion.

@@ -140,16 +140,15 @@ For stdio servers, EvoFlux creates a persistent installation-scoped data directo
 `org.evoelsewhere.evoflux.builtin` is a private release contract, not a
 portable Agent Plugins capability. It lets a package below
 `app/agent/builtin_plugins/` declare host-defined provider entrypoints such as
-artifact drivers, document previews, or a narrowly scoped API router. The
+document previews or another narrowly scoped host integration. The
 loader requires every Python module to stay inside the matching bundled package
 namespace and never interprets this extension on an installed or linked
 package.
 
-The first package using this contract is `evoflux.documents`, which owns the
-DOCX, XLSX, PPTX, and PDF authoring and preview engines. The generic Artifact
-Fabric lifecycle and the shared read-only viewer remain host-owned. See
-`documents/architecture/artifact-fabric.md` for the provider and rendering
-contracts.
+The first package using this contract is `evoflux.documents`, which contributes
+DOCX, XLSX, PPTX, and PDF skills plus a document preview provider. Authoring is
+skill-guided and writes files directly; the shared read-only viewer remains
+host-owned.
 
 ## Credential extension
 

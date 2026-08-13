@@ -287,7 +287,6 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.tools.builtin.load_tool import load_tool
     from app.agent.tools.builtin.memory_search import memory_search
     from app.agent.tools.builtin.note import note_tool
-    from app.agent.tools.builtin.artifact import artifact
     from app.agent.tools.builtin.code_context import code_context
     from app.agent.tools.builtin.plan import enter_plan_mode, exit_plan_mode
     from app.agent.tools.builtin.ask_user import ask_user
@@ -304,7 +303,6 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.tools.builtin.terminal import terminal_run
 
     registry: dict[str, Tool] = {
-        "artifact": artifact,
         "web_search": web_search,
         "web_fetch": web_fetch,
         "image_search": image_search,

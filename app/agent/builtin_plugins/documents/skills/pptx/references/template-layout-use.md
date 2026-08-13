@@ -41,9 +41,9 @@ existing populated composition should be cloned and edited by verified shape
 ID.
 
 Do not cover inherited headers, footers, logos, numbering, or background art
-with an unnecessary full-slide raster. The current template lane does not
-inject an arbitrary HTML shell into a native layout; do not claim that workflow
-unless the live artifact catalog exposes a typed operation for it.
+with an unnecessary full-slide raster. Do not inject an arbitrary HTML shell
+into a native layout or claim support for an edit that `python-pptx` cannot
+preserve safely.
 
 ## Edit semantics
 

@@ -343,7 +343,7 @@ async def test_registry_returns_catalog(
     assert by_name["ask_user"]["lead_only"] is True
     assert by_name["read"]["lead_only"] is False
     assert by_name["memory_search"]["tiers"] is None
-    assert by_name["artifact"]["tiers"] == ["work"]
+    assert "artifact" not in by_name
     assert {
         "docx_document",
         "xlsx_artifact",

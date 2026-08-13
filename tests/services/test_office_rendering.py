@@ -15,9 +15,6 @@ from pptx.shapes.placeholder import PicturePlaceholder
 from pptx.util import Inches, Pt
 
 from app.agent.builtin_plugins.documents import rendering
-from app.agent.builtin_plugins.documents.engines import (
-    docx as docx_document_pipeline,
-)
 from app.agent.builtin_plugins.documents.rendering import internal
 
 
@@ -75,32 +72,6 @@ def test_render_pages_reports_unsupported_format(tmp_path: Path) -> None:
     assert pages == []
     assert issues[0]["code"] == "document-render-failed"
     assert "unsupported render format" in issues[0]["message"]
-
-
-def test_docx_pipeline_delegates_to_shared_internal_renderer(
-    tmp_path: Path, monkeypatch
-) -> None:
-    seen: dict[str, object] = {}
-
-    def fake_render_pages(
-        source: Path, render_dir: Path, *, code_prefix: str, dpi: int = 144
-    ) -> tuple[list[Path], list[dict[str, object]]]:
-        seen.update({"source": source, "code_prefix": code_prefix, "dpi": dpi})
-        return [render_dir / "page-001.png"], []
-
-    monkeypatch.setattr(docx_document_pipeline, "render_pages", fake_render_pages)
-
-    pages, issues = docx_document_pipeline.render_docx_pages(
-        tmp_path / "letter.docx", tmp_path / "previews"
-    )
-
-    assert issues == []
-    assert pages == [tmp_path / "previews" / "page-001.png"]
-    assert seen == {
-        "source": tmp_path / "letter.docx",
-        "code_prefix": "docx",
-        "dpi": 144,
-    }
 
 
 def _solid_rectangle(slide, *, x, y, width, height, color):

@@ -10,7 +10,6 @@ from sqlmodel import col, select
 from app.agent.artifacts import session_artifact_dir
 from app.core.config import settings
 from app.core.paths import workspace_dir
-from app.models.artifact import ArtifactJob, ArtifactRevision
 from app.models.chat import (
     ChatSession,
     CodingProject,
@@ -47,8 +46,6 @@ async def test_purge_workspace_removes_session_graph_and_generated_data(
     lead_id = uuid.uuid7()
     child_id = uuid.uuid7()
     side_id = uuid.uuid7()
-    job_id = uuid.uuid7()
-    revision_id = uuid.uuid7()
     execution_id = uuid.uuid7()
 
     async with db_module.async_session_factory() as db:
@@ -75,31 +72,6 @@ async def test_purge_workspace_removes_session_graph_and_generated_data(
                 DreamLog(
                     session_id=lead_id,
                     processed_at=datetime.now(timezone.utc),
-                )
-            )
-            db.add(
-                ArtifactJob(
-                    id=job_id,
-                    session_id=lead_id,
-                    artifact_format="pdf",
-                    action="preview",
-                    status="completed",
-                    workspace_root=str(repository),
-                )
-            )
-            db.add(
-                ArtifactRevision(
-                    id=revision_id,
-                    job_id=job_id,
-                    revision_number=1,
-                    artifact_format="pdf",
-                    media_type="application/pdf",
-                    candidate_name="candidate.pdf",
-                    content_sha256="a" * 64,
-                    byte_size=1,
-                    blob_key=f"sha256/aa/{'a' * 64}",
-                    driver_version="test",
-                    protocol_version=1,
                 )
             )
             db.add(
@@ -142,8 +114,6 @@ async def test_purge_workspace_removes_session_graph_and_generated_data(
         assert (await db.exec(select(ChatSession))).all() == []
         assert (await db.exec(select(SessionMessage))).all() == []
         assert (await db.exec(select(DreamLog))).all() == []
-        assert (await db.exec(select(ArtifactJob))).all() == []
-        assert (await db.exec(select(ArtifactRevision))).all() == []
         assert (await db.exec(select(WorkflowExecution))).all() == []
         assert (await db.exec(select(WorkflowNodeRun))).all() == []
         assert (await db.exec(select(CodingWorkspace))).all() == []
