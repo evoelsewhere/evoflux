@@ -9,49 +9,77 @@ type BridgeQueryClient = Pick<
   'invalidateQueries' | 'getQueryData' | 'setQueryData'
 >
 
+let pendingEvents: CacheInvalidation[] = []
+let pendingClient: BridgeQueryClient | null = null
+let flushTimer: ReturnType<typeof setTimeout> | null = null
+
+/** Coalesce adjacent SSE domain events into one cache refresh wave. */
+export function scheduleCacheInvalidations(
+  queryClient: BridgeQueryClient,
+  events: readonly CacheInvalidation[],
+): void {
+  pendingClient = queryClient
+  pendingEvents.push(...events)
+  if (flushTimer !== null) return
+  flushTimer = globalThis.setTimeout(() => {
+    const client = pendingClient
+    const batch = pendingEvents
+    pendingClient = null
+    pendingEvents = []
+    flushTimer = null
+    if (client && batch.length > 0) applyCacheInvalidations(client, batch)
+  }, 50)
+}
+
 export function applyCacheInvalidations(
   queryClient: BridgeQueryClient,
   events: readonly CacheInvalidation[],
 ): void {
+  const invalidated = new Set<string>()
+  const pathUpdates = new Map<string, Set<string>>()
+  const invalidate = (queryKey: readonly unknown[]) => {
+    const signature = JSON.stringify(queryKey)
+    if (invalidated.has(signature)) return
+    invalidated.add(signature)
+    queryClient.invalidateQueries({ queryKey })
+  }
   for (const event of events) {
     switch (event.kind) {
       case 'wiki':
-        queryClient.invalidateQueries({ queryKey: queryKeys.wiki.all() })
+        invalidate(queryKeys.wiki.all())
         break
       case 'workspace_files':
-        queryClient.invalidateQueries({ queryKey: queryKeys.team.files(event.sessionId) })
+        invalidate(queryKeys.team.files(event.sessionId))
         break
       case 'coding_workspace':
-        queryClient.invalidateQueries({ queryKey: queryKeys.coding.files(event.workspace) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.coding.diff(event.workspace) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.coding.status(event.workspace) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.codeGraph.all(event.workspace) })
+        invalidate(queryKeys.coding.files(event.workspace))
+        invalidate(queryKeys.coding.diff(event.workspace))
+        invalidate(queryKeys.coding.status(event.workspace))
+        invalidate(queryKeys.codeGraph.all(event.workspace))
         break
       case 'coding_workspace_paths':
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.coding.files(event.workspace),
-        })
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.coding.status(event.workspace),
-        })
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.codeGraph.all(event.workspace),
-        })
-        void patchCodingDiffForPaths(queryClient, event.workspace, event.paths)
+        invalidate(queryKeys.coding.files(event.workspace))
+        invalidate(queryKeys.coding.status(event.workspace))
+        invalidate(queryKeys.codeGraph.all(event.workspace))
+        if (!pathUpdates.has(event.workspace)) pathUpdates.set(event.workspace, new Set())
+        for (const path of event.paths) pathUpdates.get(event.workspace)?.add(path)
         break
       case 'scheduler':
-        queryClient.invalidateQueries({ queryKey: queryKeys.scheduler.list() })
+        invalidate(queryKeys.scheduler.list())
         break
       case 'todos':
-        queryClient.invalidateQueries({ queryKey: queryKeys.todos(event.sessionId) })
+        invalidate(queryKeys.todos(event.sessionId))
         break
       case 'team_agents':
-        queryClient.invalidateQueries({ queryKey: queryKeys.teamAgents() })
+        invalidate(queryKeys.teamAgents())
         break
       case 'team_sessions':
-        queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
+        invalidate(queryKeys.team.sessions.all())
         break
     }
+  }
+  for (const [workspace, paths] of pathUpdates) {
+    void patchCodingDiffForPaths(queryClient, workspace, [...paths])
   }
 }
 

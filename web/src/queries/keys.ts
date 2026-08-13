@@ -20,6 +20,7 @@ export const queryKeys = {
       list: (offset: number, limit: number) =>
         ['team', 'sessions', 'list', offset, limit] as const,
       detail: (id: string) => ['team', 'sessions', id] as const,
+      metadata: (id: string) => ['team', 'sessions', id, 'metadata'] as const,
     },
     // Sidebar folders — one entry per mode, holding the folders *and* their
     // sessions (see GET /team/session-folders), so filing a session

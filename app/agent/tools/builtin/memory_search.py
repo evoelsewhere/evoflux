@@ -7,7 +7,7 @@ from typing import Annotated
 from pydantic import Field
 
 from app.agent.tools.registry import Tool
-from app.core.db import get_session
+from app.core.db import get_write_session
 from app.services.memory import memory_search as search_memory
 
 
@@ -29,7 +29,7 @@ async def _memory_search(
     `comparison:<slug>`, `memory:user`, and `message:<uuid>`.
     """
     limit = max(1, min(top_k, 20))
-    async for db in get_session():
+    async for db in get_write_session():
         results = await search_memory(query, db=db, limit=limit)
         break
     else:

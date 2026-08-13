@@ -339,8 +339,13 @@ class GitServerConnection(SQLModel, table=True):
 class SessionMessage(SQLModel, table=True):
     __tablename__: str = "session_messages"  # type: ignore[reportIncompatibleVariableOverride]
     __table_args__ = (
-        # Me cover ORDER BY created_at queries (get_messages, get_messages_for_llm)
-        sa.Index("ix_session_messages_session_created", "session_id", "created_at"),
+        # Cover stable cursor ordering without a temporary tie-break sort.
+        sa.Index(
+            "ix_session_messages_session_created_id",
+            "session_id",
+            "created_at",
+            "id",
+        ),
         # Me cover is_summary lookup (get_messages_for_llm summary query)
         sa.Index("ix_session_messages_session_summary", "session_id", "is_summary"),
     )
@@ -350,7 +355,6 @@ class SessionMessage(SQLModel, table=True):
         sa_column=Column(
             sa.Uuid(),
             ForeignKey("chat_sessions.id", ondelete="CASCADE"),
-            index=True,
             nullable=False,
         ),
     )

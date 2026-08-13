@@ -7,9 +7,10 @@ grows them in place so the router mount stays singular.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from collections.abc import AsyncGenerator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -46,10 +47,10 @@ from app.workflow.policy import compute_manifest, content_hash, destructive_lint
 router = APIRouter()
 
 
-async def _db() -> AsyncSession:
+async def _db(request: Request) -> AsyncGenerator[AsyncSession, None]:
     from app.core import db as db_module
 
-    async with db_module.async_session_factory() as session:
+    async for session in db_module.get_session(request):
         yield session
 
 

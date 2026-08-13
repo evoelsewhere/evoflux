@@ -59,7 +59,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 from sse_starlette.sse import EventSourceResponse
 
-from app.api.deps import DbSession
+from app.api.deps import DbSession, WriteDbSession
 from app.api.schemas.commands import CommandRenderRequest, CommandRenderResponse
 from app.api.schemas.snippets import SnippetRenderResponse
 from app.api.schemas.team import PermissionReplyRequest, PlanReplyRequest
@@ -3150,7 +3150,7 @@ async def interrupt_browser_panel_session(
 async def stream_browser_panel_session(
     session_id: uuid.UUID,
     request: Request,
-    db: DbSession,
+    db: WriteDbSession,
 ) -> EventSourceResponse:
     """Pairing-scoped fetch-SSE transcript stream for the Chrome Side Panel."""
     pairing = await _paired_request(request, db, required_scope="session-stream:read")

@@ -13,7 +13,7 @@ from pydantic import BaseModel, field_validator
 from sqlmodel import select
 from sse_starlette.sse import EventSourceResponse
 
-from app.api.deps import ChatFormDep, DbSession
+from app.api.deps import ChatFormDep, DbSession, WriteDbSession
 from app.api.routes.team._helpers import (
     _message_response,
     _read_upload_as_attachment,
@@ -1189,6 +1189,17 @@ async def get_team_session_detail(
     )
 
 
+@router.get("/sessions/{session_id}/metadata", response_model=SessionResponse)
+async def get_team_session_metadata(session_id: UUID, db: DbSession) -> SessionResponse:
+    """Return session metadata without hydrating its message history."""
+    session = await db.get(ChatSession, session_id)
+    if session is None or session.parent_session_id is not None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return SessionResponse.model_validate(session).model_copy(
+        update={"running": str(session.id) in stream_store.running_session_ids()}
+    )
+
+
 @router.get("/{session_id}/goal", response_model=GoalResponse | None)
 async def get_session_goal(session_id: UUID, db: DbSession) -> GoalResponse | None:
     """Return the durable goal attached to a session, if one exists."""
@@ -1557,7 +1568,7 @@ async def side_chat_stream(
     session_id: UUID,
     side_chat_id: UUID,
     request: Request,
-    db: DbSession,
+    db: WriteDbSession,
 ):
     """SSE stream for side chat agent events.
 

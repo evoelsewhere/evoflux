@@ -2,11 +2,11 @@ import { useRef, useEffect, useLayoutEffect, useState } from 'react'
 import { Outlet, useParams, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { TeamChatView } from '@/components/TeamChatView'
-import { getTeamSession, resolveTeamSession } from '@/api/client'
+import { getTeamSessionMetadata, resolveTeamSession } from '@/api/client'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
 import { useUIStore } from '@/stores/useUIStore'
-import { applyCacheInvalidations, patchSessionTitle } from '@/stores/cache-invalidation-bridge'
+import { patchSessionTitle, scheduleCacheInvalidations } from '@/stores/cache-invalidation-bridge'
 import { queryKeys } from '@/queries'
 import { clearLastCodingFocus, codingFocusId, isProjectFocusId, isWorkspaceUnavailableError, saveLastCodingFocus, saveLastCodingWorkspace, workspaceFromSession } from '@/utils/workspace'
 
@@ -32,8 +32,8 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
       .find((session) => session.id === sessionId)
     : undefined
   const sessionQuery = useQuery({
-    queryKey: queryKeys.team.sessions.detail(sessionId ?? ''),
-    queryFn: () => getTeamSession(sessionId as string),
+    queryKey: queryKeys.team.sessions.metadata(sessionId ?? ''),
+    queryFn: ({ signal }) => getTeamSessionMetadata(sessionId as string, signal),
     enabled: mode === 'coding' && Boolean(sessionId) && !cachedSession?.workspace,
     staleTime: 30_000,
   })
@@ -63,6 +63,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
   useEffect(() => {
     if (mode !== 'coding' || sessionId || !focusId) return
     let cancelled = false
+    const controller = new AbortController()
     ;(async () => {
       const current = useTeamStore.getState()
       try {
@@ -90,7 +91,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
       } catch (err) {
         if (cancelled) return
         try {
-          const legacySession = await getTeamSession(focusId)
+          const legacySession = await getTeamSessionMetadata(focusId, controller.signal)
           if (cancelled || sessionIdRef.current) return
           const realFocusId = codingFocusId({
             project_id: legacySession.project_id,
@@ -125,6 +126,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
     })()
     return () => {
       cancelled = true
+      controller.abort()
     }
   }, [mode, navigate, queryClient, sessionId, focusId])
 
@@ -226,7 +228,6 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
     return useTeamStore.subscribe((state, prev) => {
       if (state.sessionId && state.sessionId !== prev.sessionId && !sessionIdRef.current) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
-        void queryClient.refetchQueries({ queryKey: queryKeys.team.sessions.infinite(), type: 'active' })
         if (modeRef.current === 'coding') {
           const workspace = workspaceRef.current
           if (workspace) saveLastCodingFocus({ project_id: state.projectId, workspace })
@@ -249,7 +250,6 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
       // in-place — no re-fetch. See ``patchSessionTitle``.
       if (state.sessionTitle && state.sessionTitle !== prev.sessionTitle && state.sessionId) {
         patchSessionTitle(queryClient, state.sessionId, state.sessionTitle)
-        void queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.infinite() })
       }
 
       // Cache-invalidation bridge: the SSE reducer enqueues domain
@@ -259,7 +259,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
       // stays free of TanStack imports.  Drain the queue and hand
       // the events to the bridge helper, which owns the mapping.
       if (state.cacheInvalidations !== prev.cacheInvalidations && state.cacheInvalidations.length > 0) {
-        applyCacheInvalidations(queryClient, useTeamStore.getState()._drainCacheInvalidations())
+        scheduleCacheInvalidations(queryClient, useTeamStore.getState()._drainCacheInvalidations())
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps

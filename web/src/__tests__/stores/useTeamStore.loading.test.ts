@@ -76,6 +76,45 @@ describe('useTeamStore request coalescing', () => {
     expect(useTeamStore.getState().leadName).toBe('work-lead')
     expect(apiMocks.listTeamAgents).toHaveBeenCalledTimes(2)
   })
+
+  it('aborts a stale history request when the active session changes', async () => {
+    let firstSignal: AbortSignal | undefined
+    apiMocks.teamHistory
+      .mockImplementationOnce((_id, _before, signal: AbortSignal) => {
+        firstSignal = signal
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => reject(new DOMException('aborted', 'AbortError')),
+            { once: true },
+          )
+        })
+      })
+      .mockResolvedValueOnce({
+        lead: {
+          id: 'session-2',
+          agent_name: 'lead',
+          permission_mode: 'ask',
+          messages: [],
+          running: false,
+        },
+        members: [],
+        goal: null,
+        has_more: false,
+        next_cursor: null,
+      })
+
+    useTeamStore.getState().beginResolvedSession('session-1', { mode: 'work' })
+    const stale = useTeamStore.getState().loadSession('session-1', null, null)
+    useTeamStore.getState().beginResolvedSession('session-2', { mode: 'work' })
+    const current = useTeamStore.getState().loadSession('session-2', null, null)
+
+    await Promise.all([stale, current])
+
+    expect(firstSignal?.aborted).toBe(true)
+    expect(useTeamStore.getState().sessionId).toBe('session-2')
+    expect(useTeamStore.getState().sessionPermissionMode).toBe('ask')
+  })
 })
 
 describe('useTeamStore goal state', () => {

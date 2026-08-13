@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncGenerator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
@@ -10,8 +11,16 @@ from loguru import logger
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
+from starlette.requests import Request
 
 from app.core.config import settings
+from app.core.metrics import (
+    DB_POOL_CHECKED_OUT,
+    DB_QUERY_DURATION,
+    DB_TRANSACTION_DURATION,
+    SQLITE_WRITE_GUARD_WAIT,
+    SQLITE_WRITE_GUARD_WAITERS,
+)
 
 if TYPE_CHECKING:
     from alembic.config import Config
@@ -34,14 +43,14 @@ if _is_sqlite:
     if _db_path and _db_path != ":memory:":
         Path(_db_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
 
-_pool_kwargs: dict = (
-    # Me SQLite with WAL: concurrent reads are safe; writes serialise at the DB level.
-    # pool_size covers single-agent sessions; max_overflow handles burst from team members
-    # (each member acquires a connection at startup + during turns).
-    {"pool_size": 5, "max_overflow": 10}
+# SQLite is a single-writer database. Giving every concurrent writer its own
+# pooled connection lets all of them occupy the pool while SQLite queues them
+# on its file lock, starving otherwise-safe WAL readers. Keep the application
+# writer lane at one connection and give HTTP reads an independent pool.
+_write_pool_kwargs: dict = (
+    {"pool_size": 1, "max_overflow": 0, "pool_timeout": 30}
     if _is_sqlite
-    # Me size pool for concurrent async requests on Postgres/MySQL; defaults too small (5+10)
-    else {"pool_size": 20, "max_overflow": 10}
+    else {"pool_size": 20, "max_overflow": 10, "pool_timeout": 10}
 )
 
 engine = create_async_engine(
@@ -49,25 +58,121 @@ engine = create_async_engine(
     echo=False,
     pool_pre_ping=True,
     pool_recycle=3600,
-    **_pool_kwargs,
+    **_write_pool_kwargs,
+)
+
+read_engine = (
+    create_async_engine(
+        _db_url,
+        echo=False,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+        pool_size=5,
+        max_overflow=5,
+        pool_timeout=5,
+    )
+    if _is_sqlite
+    else engine
 )
 
 # Me enable WAL mode for SQLite — 5-10x write throughput, concurrent reads during writes
 if _is_sqlite:
 
-    @event.listens_for(engine.sync_engine, "connect")
     def _set_sqlite_pragmas(dbapi_conn, connection_record):
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
-        # WAL still serialises writers. Without this, a second application-DB
-        # transaction can fail immediately instead of waiting for the lock.
-        cursor.execute("PRAGMA busy_timeout=30000")
+        # Fresh databases opt into bounded, explicit page reclamation. Existing
+        # databases adopt it after the one-time maintenance VACUUM.
+        cursor.execute("PRAGMA auto_vacuum=INCREMENTAL")
+        # In-process writers queue in the one-connection writer lane. This
+        # shorter timeout only covers a second process touching the same file
+        # and prevents a local UI request from appearing frozen for 30 seconds.
+        cursor.execute("PRAGMA busy_timeout=5000")
         cursor.close()
+
+    def _set_sqlite_read_pragmas(dbapi_conn, connection_record):
+        _set_sqlite_pragmas(dbapi_conn, connection_record)
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA query_only=ON")
+        cursor.close()
+
+    event.listen(engine.sync_engine, "connect", _set_sqlite_pragmas)
+    event.listen(read_engine.sync_engine, "connect", _set_sqlite_read_pragmas)
+
+
+def _sql_operation(statement: str) -> str:
+    head = statement.lstrip().split(None, 1)
+    return head[0].upper() if head else "UNKNOWN"
+
+
+def _instrument_engine(target_engine, lane: str) -> None:
+    @event.listens_for(target_engine.sync_engine, "checkout")
+    def _checkout(dbapi_conn, connection_record, connection_proxy):
+        DB_POOL_CHECKED_OUT.labels(lane=lane).inc()
+
+    @event.listens_for(target_engine.sync_engine, "checkin")
+    def _checkin(dbapi_conn, connection_record):
+        DB_POOL_CHECKED_OUT.labels(lane=lane).dec()
+
+    @event.listens_for(target_engine.sync_engine, "before_cursor_execute")
+    def _before_cursor_execute(
+        conn, cursor, statement, parameters, context, executemany
+    ):
+        context._evoflux_query_started = time.perf_counter()
+
+    @event.listens_for(target_engine.sync_engine, "after_cursor_execute")
+    def _after_cursor_execute(
+        conn, cursor, statement, parameters, context, executemany
+    ):
+        started = getattr(context, "_evoflux_query_started", None)
+        if started is None:
+            return
+        elapsed = time.perf_counter() - started
+        operation = _sql_operation(statement)
+        DB_QUERY_DURATION.labels(lane=lane, operation=operation).observe(elapsed)
+        if elapsed >= 0.25:
+            logger.warning(
+                "slow_db_query lane={} operation={} duration_ms={}",
+                lane,
+                operation,
+                round(elapsed * 1000),
+            )
+
+    @event.listens_for(target_engine.sync_engine, "begin")
+    def _begin(conn):
+        conn.info["evoflux_transaction_started"] = time.perf_counter()
+
+    def _finish_transaction(conn, outcome: str) -> None:
+        started = conn.info.pop("evoflux_transaction_started", None)
+        if started is None:
+            return
+        DB_TRANSACTION_DURATION.labels(lane=lane, outcome=outcome).observe(
+            time.perf_counter() - started
+        )
+
+    @event.listens_for(target_engine.sync_engine, "commit")
+    def _commit(conn):
+        _finish_transaction(conn, "commit")
+
+    @event.listens_for(target_engine.sync_engine, "rollback")
+    def _rollback(conn):
+        _finish_transaction(conn, "rollback")
+
+
+_instrument_engine(engine, "write")
+if read_engine is not engine:
+    _instrument_engine(read_engine, "read")
 
 
 async_session_factory = async_sessionmaker(
     engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+read_session_factory = async_sessionmaker(
+    read_engine,
     class_=AsyncSession,
     expire_on_commit=False,
 )
@@ -110,8 +215,18 @@ async def sqlite_write_guard() -> AsyncGenerator[None, None]:
     if not _is_sqlite:
         yield
         return
-    async with _get_sqlite_write_lock():
+    lock = _get_sqlite_write_lock()
+    started = time.perf_counter()
+    SQLITE_WRITE_GUARD_WAITERS.inc()
+    try:
+        await lock.acquire()
+    finally:
+        SQLITE_WRITE_GUARD_WAITERS.dec()
+    SQLITE_WRITE_GUARD_WAIT.observe(time.perf_counter() - started)
+    try:
         yield
+    finally:
+        lock.release()
 
 
 # Type alias for a session factory callable.
@@ -239,7 +354,30 @@ def _sqlite_migration_lock(db_path: Path) -> Iterator[None]:
             fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
 
 
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_session(
+    request: Request,
+) -> AsyncGenerator[AsyncSession, None]:
+    """Yield the read or write lane according to the HTTP method."""
+    is_read_request = request.method in {
+        "GET",
+        "HEAD",
+        "OPTIONS",
+    }
+    factory = read_session_factory if is_read_request else async_session_factory
+    async with factory() as session:
+        try:
+            yield session
+            if is_read_request:
+                await session.rollback()
+            else:
+                await session.commit()
+        except BaseException:
+            await session.rollback()
+            raise
+
+
+async def get_write_session() -> AsyncGenerator[AsyncSession, None]:
+    """Force the writer lane for GET-shaped transports such as durable SSE."""
     async with async_session_factory() as session:
         try:
             yield session
@@ -247,3 +385,39 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         except BaseException:
             await session.rollback()
             raise
+
+
+async def get_read_session() -> AsyncGenerator[AsyncSession, None]:
+    """Yield a request-scoped read session on SQLite's dedicated read lane.
+
+    Read transactions are always rolled back at teardown. This closes the
+    snapshot without turning every GET into a commit boundary and guarantees
+    that accidental ORM mutations in a read route are not persisted.
+    """
+    async with read_session_factory() as session:
+        try:
+            yield session
+        finally:
+            await session.rollback()
+
+
+async def optimize_sqlite() -> None:
+    """Refresh SQLite planner statistics opportunistically at startup."""
+    if not _is_sqlite:
+        return
+    async with engine.begin() as connection:
+        await connection.exec_driver_sql("PRAGMA optimize")
+        auto_vacuum = (
+            await connection.exec_driver_sql("PRAGMA auto_vacuum")
+        ).scalar_one()
+        if int(auto_vacuum) == 2:
+            # Reclaim at most 8 MiB (with the default 4 KiB page size) per
+            # startup so maintenance never turns into an unbounded pause.
+            await connection.exec_driver_sql("PRAGMA incremental_vacuum(2048)")
+
+
+async def dispose_engines() -> None:
+    """Dispose both lanes without double-disposing a shared server engine."""
+    if read_engine is not engine:
+        await read_engine.dispose()
+    await engine.dispose()

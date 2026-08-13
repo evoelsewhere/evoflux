@@ -32,6 +32,7 @@ from prometheus_client import (
     CONTENT_TYPE_LATEST,
     CollectorRegistry,
     Counter,
+    Gauge,
     Histogram,
     generate_latest,
 )
@@ -73,6 +74,59 @@ HTTP_REQUEST_DURATION = Histogram(
         10.0,
         30.0,
     ),
+    registry=REGISTRY,
+)
+
+# ─── Database metrics ───────────────────────────────────────────────
+
+DB_POOL_CHECKED_OUT = Gauge(
+    "EVOFLUX_db_pool_checked_out",
+    "Connections currently checked out, split by the read/write lane.",
+    labelnames=("lane",),
+    registry=REGISTRY,
+)
+
+DB_QUERY_DURATION = Histogram(
+    "EVOFLUX_db_query_duration_seconds",
+    "Database cursor execution duration, excluding pool checkout wait.",
+    labelnames=("lane", "operation"),
+    buckets=(0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5),
+    registry=REGISTRY,
+)
+
+DB_TRANSACTION_DURATION = Histogram(
+    "EVOFLUX_db_transaction_duration_seconds",
+    "Database transaction duration from begin through commit or rollback.",
+    labelnames=("lane", "outcome"),
+    buckets=(
+        0.001,
+        0.0025,
+        0.005,
+        0.01,
+        0.025,
+        0.05,
+        0.1,
+        0.25,
+        0.5,
+        1,
+        2.5,
+        5,
+        10,
+        30,
+    ),
+    registry=REGISTRY,
+)
+
+SQLITE_WRITE_GUARD_WAIT = Histogram(
+    "EVOFLUX_sqlite_write_guard_wait_seconds",
+    "Time spent waiting for the in-process SQLite write guard.",
+    buckets=(0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10),
+    registry=REGISTRY,
+)
+
+SQLITE_WRITE_GUARD_WAITERS = Gauge(
+    "EVOFLUX_sqlite_write_guard_waiters",
+    "Coroutines currently queued on the in-process SQLite write guard.",
     registry=REGISTRY,
 )
 
