@@ -6,7 +6,7 @@ import argparse
 import asyncio
 
 from app.cli.ui import _bold, _cyan, _dim, _green, _yellow
-from app.core.db import get_session
+from app.core.db import get_write_session
 from app.services.artifact_cleanup import cleanup_generated_artifacts
 
 
@@ -20,7 +20,7 @@ def _format_bytes(size: int) -> str:
 
 
 async def _run_cleanup(args: argparse.Namespace) -> None:
-    async for db in get_session():
+    async for db in get_write_session():
         result = await cleanup_generated_artifacts(
             db,
             older_than_days=args.older_than_days,

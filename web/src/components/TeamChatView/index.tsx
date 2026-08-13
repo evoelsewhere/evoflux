@@ -50,7 +50,7 @@ import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useRegistryQuery, useTriggerDreamMutation, useWebBridgeSettingsQuery } from '@/queries'
-import { getSessionWorkspaceRoot, getTeamSession, getWebBridgeStatus, replyPlanApproval, resolveTeamSession, setSessionPermissionMode } from '@/api/client'
+import { getSessionWorkspaceRoot, getWebBridgeStatus, replyPlanApproval, resolveTeamSession, setSessionPermissionMode } from '@/api/client'
 import { apiBaseUrl } from '@/api/base-url'
 import { useShallow } from 'zustand/react/shallow'
 import { useTeamStore } from '@/stores/useTeamStore'
@@ -411,6 +411,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       : null
   const sessionTitle   = useTeamStore((s) => s.sessionTitle)
   const sessionTags    = useTeamStore((s) => s.sessionTags)
+  const sessionPermissionMode = useTeamStore((s) => s.sessionPermissionMode)
   const sessionModel   = useTeamStore((s) => s.sessionModel)
   const sessionThinkingLevel = useTeamStore((s) => s.sessionThinkingLevel)
   const sessionFastMode = useTeamStore((s) => s.sessionFastMode)
@@ -905,6 +906,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
 
   const handlePermissionModeChange = useCallback(async (newMode: import('@/api/types').PermissionMode) => {
     setPermissionMode(newMode)
+    useTeamStore.setState({ sessionPermissionMode: newMode })
     if (sessionIdState) {
       try {
         await setSessionPermissionMode(sessionIdState, newMode)
@@ -1122,24 +1124,11 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     return () => window.removeEventListener('queue:restore-draft', handler)
   }, [])
 
-  // Restore permission mode from the session's persisted value whenever the
-  // active session changes (e.g. on load or navigation).
+  // History already carries session metadata. Reuse it instead of issuing a
+  // second GET that hydrates the same 100-message history page.
   useEffect(() => {
-    if (!sessionIdState) return
-    let cancelled = false
-    queryClient.fetchQuery({
-      queryKey: queryKeys.team.sessions.detail(sessionIdState),
-      queryFn: () => getTeamSession(sessionIdState),
-      staleTime: 30_000,
-    })
-      .then((session) => {
-        if (!cancelled && session.permission_mode) {
-          setPermissionMode(session.permission_mode as import('@/api/types').PermissionMode)
-        }
-      })
-      .catch(() => {/* non-fatal */})
-    return () => { cancelled = true }
-  }, [queryClient, sessionIdState])
+    setPermissionMode(sessionPermissionMode)
+  }, [sessionIdState, sessionPermissionMode])
 
   // Push the active session/workspace label to the desktop tray. The
   // command is a no-op outside Tauri so this is safe to fire from the

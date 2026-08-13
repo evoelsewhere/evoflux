@@ -198,6 +198,9 @@ async def lifespan(app: FastAPI):
             logger.info("auto_migrate_skipped reason=already_at_head")
         else:
             await asyncio.to_thread(run_migrations)
+        from app.core.db import optimize_sqlite
+
+        await optimize_sqlite()
         _log_startup_timing("migrations", phase_started, process_started)
 
     # ── Seed wiki directory on first boot ──────────────────────────────
@@ -280,6 +283,10 @@ async def lifespan(app: FastAPI):
     await stop_all_processes()
     await stop_all_servers()
     await close_language_servers()
+
+    from app.core.db import dispose_engines
+
+    await dispose_engines()
 
     await stream_store.close()
     await stop_otel_retention()

@@ -6,7 +6,7 @@ import { apiBaseUrl, apiUrl } from '../base-url'
 import { withTokenParam } from '../auth'
 import { readSSE } from '../sse'
 import type { SSECallbacks } from '../sse'
-import { parseDetailOrThrow } from './_shared'
+import { fetchWithTimeout, parseDetailOrThrow } from './_shared'
 import type {
   MessageResponse,
   SessionDetailResponse,
@@ -396,6 +396,7 @@ export async function listTeamSessions(
   before?: string | null,
   limit = 20,
   filters?: { mode?: 'work' | 'coding'; workspace?: string | null; project_id?: string | null },
+  signal?: AbortSignal,
 ): Promise<SessionPageResponse> {
   const params = new URLSearchParams()
   if (before) params.set('before', before)
@@ -403,7 +404,7 @@ export async function listTeamSessions(
   if (filters?.mode) params.set('mode', filters.mode)
   if (filters?.workspace) params.set('workspace', filters.workspace)
   if (filters?.project_id) params.set('project_id', filters.project_id)
-  const res = await fetch(`${apiBaseUrl()}/team/sessions?${params}`)
+  const res = await fetchWithTimeout(`${apiBaseUrl()}/team/sessions?${params}`, { signal })
   if (!res.ok) await parseDetailOrThrow(res, 'listTeamSessions')
   return res.json()
 }
@@ -496,9 +497,15 @@ export async function setCodingWorkspaceVisibility(workspace: string, hidden: bo
   return res.json()
 }
 
-export async function getTeamSession(id: string): Promise<SessionDetailResponse> {
-  const res = await fetch(`${apiBaseUrl()}/team/sessions/${id}`)
+export async function getTeamSession(id: string, signal?: AbortSignal): Promise<SessionDetailResponse> {
+  const res = await fetchWithTimeout(`${apiBaseUrl()}/team/sessions/${id}`, { signal })
   if (!res.ok) await parseDetailOrThrow(res, 'getTeamSession')
+  return res.json()
+}
+
+export async function getTeamSessionMetadata(id: string, signal?: AbortSignal): Promise<SessionResponse> {
+  const res = await fetchWithTimeout(`${apiBaseUrl()}/team/sessions/${id}/metadata`, { signal })
+  if (!res.ok) await parseDetailOrThrow(res, 'getTeamSessionMetadata')
   return res.json()
 }
 
@@ -563,11 +570,15 @@ export async function deleteTeamSession(id: string): Promise<void> {
   if (!res.ok) await parseDetailOrThrow(res, 'deleteTeamSession')
 }
 
-export async function teamHistory(sessionId: string, before?: string): Promise<TeamHistoryResponse> {
+export async function teamHistory(
+  sessionId: string,
+  before?: string,
+  signal?: AbortSignal,
+): Promise<TeamHistoryResponse> {
   const url = before
     ? `${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/history?before=${encodeURIComponent(before)}`
     : `${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/history`
-  const res = await fetch(url)
+  const res = await fetchWithTimeout(url, { signal })
   if (!res.ok) await parseDetailOrThrow(res, 'teamHistory')
   return res.json()
 }

@@ -144,6 +144,30 @@ class TestListTeamSessionsWithData:
         assert len(found) == 1
 
     @pytest.mark.asyncio
+    async def test_session_metadata_does_not_include_history(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(
+                    db,
+                    lead_id,
+                    title="Metadata only",
+                    permission_mode="ask",
+                )
+                await _add_message(db, lead_id, content="large history payload")
+
+        response = TestClient(app_with_team).get(
+            f"/api/team/sessions/{lead_id}/metadata"
+        )
+
+        assert response.status_code == 200
+        assert response.json()["title"] == "Metadata only"
+        assert response.json()["permission_mode"] == "ask"
+        assert "messages" not in response.json()
+
+    @pytest.mark.asyncio
     async def test_list_sessions_marks_running_sessions(self, app_with_team):
         import app.core.db as _db
         from app.services import memory_stream_store
@@ -935,6 +959,7 @@ class TestDuplicateTeamSession:
         resp = client.post(f"/api/team/sessions/{uuid.uuid7()}/duplicate")
 
         assert resp.status_code == 404
+
 
 class TestDeleteTeamSessionWithData:
     @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending, PermissionRequestPending, AskUserQuestionPending, TurnChangesPending, GoalResponse } from '@/api/types'
+import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending, PermissionRequestPending, AskUserQuestionPending, TurnChangesPending, GoalResponse, PermissionMode } from '@/api/types'
 
 export interface PendingMessage {
   id: string
@@ -92,6 +92,7 @@ export interface TeamStoreState {
   projectId: string | null
   sessionTitle: string | null
   sessionTags: string[]
+  sessionPermissionMode: PermissionMode
   sessionModel: string | null
   sessionThinkingLevel: string | null
   sessionFastMode: boolean

@@ -177,6 +177,34 @@ async def health_diagnostics(session: AsyncSession = Depends(get_session)) -> di
     try:
         await session.exec(text("SELECT 1"))  # ty: ignore[no-matching-overload]
         checks.append(_check("db", "Database", "ok", "Connected and responding"))
+        if session.get_bind().dialect.name == "sqlite":
+            page_count = int(
+                (await session.exec(text("PRAGMA page_count"))).one()[0]  # ty: ignore[no-matching-overload]
+            )
+            free_pages = int(
+                (await session.exec(text("PRAGMA freelist_count"))).one()[0]  # ty: ignore[no-matching-overload]
+            )
+            page_size = int(
+                (await session.exec(text("PRAGMA page_size"))).one()[0]  # ty: ignore[no-matching-overload]
+            )
+            free_ratio = free_pages / page_count if page_count else 0
+            reclaimable_mib = free_pages * page_size / (1024 * 1024)
+            checks.append(
+                _check(
+                    "db_storage",
+                    "Database storage",
+                    "warn" if free_ratio >= 0.3 else "ok",
+                    (
+                        f"{free_ratio:.0%} free pages; "
+                        f"{reclaimable_mib:.1f} MiB reclaimable"
+                    ),
+                    hint=(
+                        "Stop EvoFlux, back up the database, then run SQLite VACUUM."
+                        if free_ratio >= 0.3
+                        else None
+                    ),
+                )
+            )
     except SQLAlchemyError as exc:
         logger.warning("diagnostics_db_failed error={}", exc)
         checks.append(

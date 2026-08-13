@@ -127,16 +127,24 @@ async def setup_db():
 
     # Redirect the shared app engine / session factory to the test DB.
     _orig_engine = _db_module.engine
+    _orig_read_engine = _db_module.read_engine
     _orig_factory = _db_module.async_session_factory
+    _orig_read_factory = _db_module.read_session_factory
     _db_module.engine = engine
+    _db_module.read_engine = engine
     _db_module.async_session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    _db_module.read_session_factory = async_sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
 
     yield
 
     _db_module.engine = _orig_engine
+    _db_module.read_engine = _orig_read_engine
     _db_module.async_session_factory = _orig_factory
+    _db_module.read_session_factory = _orig_read_factory
     await engine.dispose()
     _test_engine = None
     _test_db_tmpdir.cleanup()

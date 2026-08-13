@@ -11,7 +11,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.schemas import ChatForm
 from app.core.config import Settings, settings
-from app.core.db import async_session_factory, get_session
+from app.core.db import (
+    async_session_factory,
+    get_read_session,
+    get_session,
+    get_write_session,
+)
 
 if TYPE_CHECKING:
     from app.agent.mode.team.team import AgentTeam
@@ -31,6 +36,8 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 # ── DB session ────────────────────────────────────────────────────────────────
 
 
+ReadDbSession = Annotated[AsyncSession, Depends(get_read_session)]
+WriteDbSession = Annotated[AsyncSession, Depends(get_write_session)]
 DbSession = Annotated[AsyncSession, Depends(get_session)]
 
 

@@ -75,7 +75,13 @@ function availableTeamAgents(
 }
 
 const sessionLoadPromises = new Map<string, Promise<void>>()
+const sessionLoadControllers = new Map<string, AbortController>()
 let latestTeamRosterRequest = 0
+
+function abortSessionLoads() {
+  for (const controller of sessionLoadControllers.values()) controller.abort()
+  sessionLoadControllers.clear()
+}
 
 function hasVisibleBlocks(stream: AgentStream | undefined): boolean {
   if (!stream) return false
@@ -98,6 +104,7 @@ function resetSessionState(
   state.projectId = null
   state.sessionTitle = null
   state.sessionTags = []
+  state.sessionPermissionMode = 'auto'
   state.sessionModel = options.model ?? null
   state.sessionThinkingLevel = options.thinkingLevel ?? null
   state.sessionFastMode = options.fastMode ?? false
@@ -212,6 +219,7 @@ export const useTeamStore = create<TeamStore>()(
     projectId: null,
     sessionTitle: null,
     sessionTags: [],
+    sessionPermissionMode: 'auto',
     sessionModel: null,
     sessionThinkingLevel: null,
     sessionFastMode: false,
@@ -244,6 +252,7 @@ export const useTeamStore = create<TeamStore>()(
 
     newSession: () => {
       get()._abortController?.abort()
+      abortSessionLoads()
       set((state) => {
         resetSessionState(state, { sessionId: null })
       })
@@ -251,6 +260,7 @@ export const useTeamStore = create<TeamStore>()(
 
     beginResolvedSession: (sessionId, options) => {
       get()._abortController?.abort()
+      abortSessionLoads()
       set((state) => {
         resetSessionState(state, {
           sessionId,
@@ -880,6 +890,12 @@ export const useTeamStore = create<TeamStore>()(
       const existingLoad = sessionLoadPromises.get(loadKey)
       if (existingLoad) return existingLoad
 
+      for (const [key, controller] of sessionLoadControllers) {
+        if (key !== loadKey) controller.abort()
+      }
+      const loadController = new AbortController()
+      sessionLoadControllers.set(loadKey, loadController)
+
       const loadPromise = (async () => {
         set((draft) => {
           draft.isTeamWorking = false
@@ -893,7 +909,7 @@ export const useTeamStore = create<TeamStore>()(
                 roster.agents.map((agent) => agent.name),
               )
             : Promise.resolve(existingLiveNames)
-          const historyPromise = teamHistory(sessionId)
+          const historyPromise = teamHistory(sessionId, undefined, loadController.signal)
           const registryPromise = availableModelRegistry()
           const [liveNames, history, registry] = await Promise.all([
             liveNamesPromise,
@@ -914,6 +930,7 @@ export const useTeamStore = create<TeamStore>()(
             draft.sessionId = sessionId
             draft.projectId = history.lead.project_id ?? null
             draft.sessionTags = history.lead.tags ?? []
+            draft.sessionPermissionMode = (history.lead.permission_mode ?? 'auto') as import('@/api/types').PermissionMode
             draft.sessionModel = sessionModel
             draft.sessionThinkingLevel = modelWasReplaced
               ? null
@@ -1031,6 +1048,7 @@ export const useTeamStore = create<TeamStore>()(
             })
           }
         } catch (err) {
+          if (loadController.signal.aborted) return
           if (get()._sessionGeneration !== gen) return
           set((draft) => {
             draft.error = err instanceof Error ? err.message : 'Failed to load session'
@@ -1044,6 +1062,9 @@ export const useTeamStore = create<TeamStore>()(
       const clearLoad = () => {
         if (sessionLoadPromises.get(loadKey) === loadPromise) {
           sessionLoadPromises.delete(loadKey)
+        }
+        if (sessionLoadControllers.get(loadKey) === loadController) {
+          sessionLoadControllers.delete(loadKey)
         }
       }
       void loadPromise.then(clearLoad, clearLoad)
