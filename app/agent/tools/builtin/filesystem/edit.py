@@ -11,7 +11,6 @@ import json
 import re
 from typing import Annotated
 
-from loguru import logger
 from pydantic import Field
 
 from app.agent.sandbox import get_sandbox
@@ -400,7 +399,6 @@ async def _edit_file(
 
     encoded = new_content.encode("utf-8")
     atomic_write_bytes(resolved, encoded)
-    logger.info("file_edited path={} bytes={}", resolved, len(encoded))
     notify_fs_change(resolved)
     meta = json.dumps(
         {

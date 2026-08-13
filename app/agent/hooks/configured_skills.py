@@ -90,7 +90,7 @@ class ConfiguredSkillsHook(BaseAgentHook):
             )
             insert_at += 2
             used_bytes += content_bytes
-            logger.info(
+            logger.debug(
                 "configured_skill_loaded agent={} skill={}", ctx.agent_name, name
             )
 

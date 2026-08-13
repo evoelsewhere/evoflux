@@ -263,7 +263,6 @@ async def _patch_file(
 
     for path in changed:
         notify_fs_change(path)
-    logger.info("patch_applied files={}", len(changed))
     summary = "\n".join(sandbox.display_path(path) for path in changed)
     diff_meta = json.dumps(
         {

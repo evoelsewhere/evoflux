@@ -129,11 +129,6 @@ class TitleGenerationHook(BaseAgentHook):
             return
 
         self._pending = (UUID(ctx.session_id), user_text)
-        logger.info(
-            "title_generation_hook_queued session_id={} model={}",
-            ctx.session_id,
-            getattr(self._provider, "model", None),
-        )
 
     def _spawn_pending(self) -> None:
         pending = self._pending
@@ -157,7 +152,7 @@ class TitleGenerationHook(BaseAgentHook):
         self._task = task
         _background_title_tasks.add(task)
         task.add_done_callback(_background_title_tasks.discard)
-        logger.info(
+        logger.debug(
             "title_generation_hook_spawned session_id={} model={}",
             session_id,
             getattr(self._provider, "model", None),

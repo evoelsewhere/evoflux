@@ -479,7 +479,7 @@ class Agent(Generic[TContext]):
             tools = plugin_mcp_runtime.get_tools_for_installation(installation_id)
             added = _merge_dynamic_deferred_tools(tools)
             if added:
-                logger.info(
+                logger.debug(
                     "plugin_skill_mcp_tools_granted agent={} installation={} tools={}",
                     self.name,
                     installation_id,
@@ -536,7 +536,7 @@ class Agent(Generic[TContext]):
 
             if changed:
                 state.tool_names = sorted(run_tools)
-                logger.info(
+                logger.debug(
                     "dynamic_mcp_tools_refreshed agent={} servers={} tools={}",
                     self.name,
                     configured_servers,

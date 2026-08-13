@@ -124,7 +124,6 @@ async def _read_file(
     # ── Image files ───────────────────────────────────────────────────────
     if category == "image":
         size = resolved.stat().st_size
-        logger.info("read_image path={} size={} vision={}", rel, size, vision)
         if not vision:
             return (
                 f"[Image: {rel}] ({size:,} bytes)\n"
@@ -136,7 +135,6 @@ async def _read_file(
 
     # ── Document files → markitdown conversion ────────────────────────────
     if category == "document":
-        logger.info("read_document path={} size={}", rel, resolved.stat().st_size)
         return handle_document(resolved, rel, vision=vision)
 
     # ── Text files → existing behaviour ───────────────────────────────────

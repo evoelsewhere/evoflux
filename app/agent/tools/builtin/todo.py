@@ -575,7 +575,7 @@ async def _apply_actions(
     if _state is not None:
         _state.metadata["_todos"] = store
 
-    logger.info(
+    logger.debug(
         "todo_manage actions=[{}]", ", ".join(log_parts) if log_parts else "read"
     )
     return _format_items(store["items"])

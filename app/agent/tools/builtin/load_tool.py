@@ -138,7 +138,6 @@ async def load_tool(
             return "Requested tools are already available: " + ", ".join(
                 requested_names
             )
-        logger.info("deferred_tools_activated names={}", newly_activated)
         return "These tools are now available on your next turn: " + ", ".join(
             newly_activated
         )

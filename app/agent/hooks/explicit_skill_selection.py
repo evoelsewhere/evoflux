@@ -62,7 +62,7 @@ class ExplicitSkillSelectionHook(BaseAgentHook):
         if skill_name in self._loaded_skills(state):
             return
         if await self._inject(state, skill_name, discovered, insert_at=user_index + 1):
-            logger.info(
+            logger.debug(
                 "skill_explicit_selected agent={} skill={}",
                 ctx.agent_name,
                 skill_name,

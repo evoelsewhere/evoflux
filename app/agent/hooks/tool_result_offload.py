@@ -163,7 +163,7 @@ class ToolResultOffloadHook(BaseAgentHook):
         elif chars > self._preview_chars:
             compact += f"\n… ({omitted:,} more chars — use read to load full output)"
 
-        logger.info(
+        logger.debug(
             "tool_result_offloaded agent={} tool={} tool_call_id={} chars={} path={}",
             ctx.agent_name,
             tool_call.function.name,
