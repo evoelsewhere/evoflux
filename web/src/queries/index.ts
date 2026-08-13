@@ -5,6 +5,7 @@ export { useTeamStatusQuery } from './useTeamStatusQuery'
 export {
   useTeamSessionsQuery,
   useDeleteTeamSessionMutation,
+  useDuplicateTeamSessionMutation,
   useUpdateTeamSessionTitleMutation,
 } from './useSessionsQuery'
 export {

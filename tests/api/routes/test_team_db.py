@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlmodel import col, select
 
 from app.agent.agent_loop import Agent
 from app.agent.providers.base import LLMProviderBase
@@ -855,6 +856,85 @@ class TestUpdateTeamSession:
 
         assert resp.status_code == 404
 
+
+class TestDuplicateTeamSession:
+    @pytest.mark.asyncio
+    async def test_duplicate_copies_chat_and_member_history(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        member_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(
+                    db,
+                    lead_id,
+                    title="Investigate parser",
+                    permission_mode="ask",
+                    model="mock:model",
+                    thinking_level="high",
+                    tags=["review"],
+                )
+                await _create_member_session(
+                    db, member_id, lead_id, agent_name="worker"
+                )
+                await _add_message(
+                    db,
+                    lead_id,
+                    content="Find the bug",
+                    extra={"nested": ["value"]},
+                )
+                await _add_message(
+                    db,
+                    member_id,
+                    role="assistant",
+                    content="Found it",
+                )
+
+        client = TestClient(app_with_team)
+        resp = client.post(f"/api/team/sessions/{lead_id}/duplicate")
+
+        assert resp.status_code == 201
+        data = resp.json()
+        copy_id = uuid.UUID(data["id"])
+        assert copy_id != lead_id
+        assert data["title"] == "Investigate parser (copy)"
+        assert data["permission_mode"] == "ask"
+        assert data["model"] == "mock:model"
+        assert data["thinking_level"] == "high"
+        assert data["tags"] == ["review"]
+        assert data["running"] is False
+
+        async with _db.async_session_factory() as db:
+            child = (
+                await db.exec(
+                    select(ChatSession).where(
+                        col(ChatSession.parent_session_id) == copy_id
+                    )
+                )
+            ).one()
+            assert child.agent_name == "worker"
+            copied_messages = list(
+                (
+                    await db.exec(
+                        select(SessionMessage)
+                        .where(col(SessionMessage.session_id).in_([copy_id, child.id]))
+                        .order_by(col(SessionMessage.created_at).asc())
+                    )
+                ).all()
+            )
+            assert [(message.role, message.content) for message in copied_messages] == [
+                ("user", "Find the bug"),
+                ("assistant", "Found it"),
+            ]
+            assert copied_messages[0].extra == {"nested": ["value"]}
+
+    def test_duplicate_missing_session_returns_404(self, app_with_team):
+        client = TestClient(app_with_team)
+
+        resp = client.post(f"/api/team/sessions/{uuid.uuid7()}/duplicate")
+
+        assert resp.status_code == 404
 
 class TestDeleteTeamSessionWithData:
     @pytest.mark.asyncio

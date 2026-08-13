@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { listTeamSessions, deleteTeamSession, updateTeamSessionTitle } from '@/api/client'
+import { listTeamSessions, deleteTeamSession, duplicateTeamSession, updateTeamSessionTitle } from '@/api/client'
 import type { SessionPageResponse, SessionResponse } from '@/api/types'
 import { queryKeys } from './keys'
 import { patchSessionInPageData } from './session-cache'
@@ -69,6 +69,17 @@ export function useDeleteTeamSessionMutation() {
       queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
       // A deleted session may have been filed in a sidebar folder, whose
       // sessions live in their own cache entry.
+      queryClient.invalidateQueries({ queryKey: queryKeys.team.sessionFoldersAll() })
+    },
+  })
+}
+
+export function useDuplicateTeamSessionMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: duplicateTeamSession,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
       queryClient.invalidateQueries({ queryKey: queryKeys.team.sessionFoldersAll() })
     },
   })

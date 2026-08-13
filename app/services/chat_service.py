@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -1138,6 +1139,101 @@ async def update_session_title(
         await db.flush()
         await db.refresh(session)
         return session
+
+
+def _duplicate_title(title: str | None) -> str:
+    """Return a sidebar-safe title for a duplicated conversation."""
+    base = (title or "Untitled").strip() or "Untitled"
+    suffix = " (copy)"
+    return f"{base[: 255 - len(suffix)]}{suffix}"
+
+
+async def duplicate_session(db: AsyncSession, session_id: UUID) -> ChatSession | None:
+    """Clone a top-level session and its complete current conversation.
+
+    Runtime-only state (revert boundary, scheduler ownership, running agents,
+    goals, and queued work) is intentionally not copied. Child agent sessions
+    are remapped to the new lead so the rendered team transcript remains
+    intact, while every message receives a fresh database identity.
+    """
+    async with db.begin():
+        source = await db.get(ChatSession, session_id)
+        if (
+            source is None
+            or source.parent_session_id is not None
+            or source.session_type == "side_chat"
+        ):
+            return None
+
+        duplicate = ChatSession(
+            title=_duplicate_title(source.title),
+            agent_name=source.agent_name,
+            mode=source.mode,
+            permission_mode=source.permission_mode,
+            workspace=source.workspace,
+            project_id=source.project_id,
+            folder_id=source.folder_id,
+            model=source.model,
+            thinking_level=source.thinking_level,
+            tags=copy.deepcopy(source.tags),
+            session_type="main",
+        )
+        db.add(duplicate)
+        await db.flush()
+
+        children = list(
+            (
+                await db.exec(
+                    select(ChatSession)
+                    .where(col(ChatSession.parent_session_id) == source.id)
+                    .order_by(col(ChatSession.created_at).asc())
+                )
+            ).all()
+        )
+        session_map = {source.id: duplicate.id}
+        for child in children:
+            child_copy = ChatSession(
+                parent_session_id=duplicate.id,
+                agent_name=child.agent_name,
+                title=child.title,
+                mode=child.mode,
+                permission_mode=child.permission_mode,
+                workspace=child.workspace,
+                project_id=child.project_id,
+                model=child.model,
+                thinking_level=child.thinking_level,
+                tags=copy.deepcopy(child.tags),
+                session_type="team_member",
+            )
+            db.add(child_copy)
+            await db.flush()
+            session_map[child.id] = child_copy.id
+
+        for old_session_id, new_session_id in session_map.items():
+            boundary = await _revert_boundary(db, old_session_id)
+            messages = (
+                await db.exec(_history_messages_stmt(old_session_id, boundary))
+            ).all()
+            for message in messages:
+                db.add(
+                    SessionMessage(
+                        session_id=new_session_id,
+                        role=message.role,
+                        content=message.content,
+                        reasoning_content=message.reasoning_content,
+                        tool_calls=copy.deepcopy(message.tool_calls),
+                        tool_call_id=message.tool_call_id,
+                        name=message.name,
+                        extra=copy.deepcopy(message.extra),
+                        is_summary=message.is_summary,
+                        exclude_from_context=message.exclude_from_context,
+                        created_at=message.created_at,
+                    )
+                )
+
+        await db.flush()
+        await db.refresh(duplicate)
+        return duplicate
 
 
 async def delete_session(db: AsyncSession, session_id: UUID) -> bool:
