@@ -6,9 +6,9 @@ WebBridge pairing, interaction, tab-binding, Teach Mode state, delegation
 tasks, Git server connections, the Work mode rename, retired session-section
 cleanup, durable goals, durable workflow gates, the AIM table drop, scheduler
 routing, and application-database graph removal through revision 00000046).
-Artifact Fabric jobs, revisions, and reviews land in revision 00000047;
-revision 00000048 repairs project-owned Coding sessions hidden by the sidebar;
-revision 00000049 removes the retired parallel Memory processing table.
+Revision 00000048 repairs project-owned Coding sessions hidden by the sidebar;
+revision 00000049 removes the retired parallel Memory processing table, and
+revision 00000051 removes the retired Artifact Fabric tables.
 Complements ``tests/core/test_db_extra.py``, which only covers
 ``run_migrations`` error paths with mocks.
 """
@@ -63,10 +63,12 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             "webbridge_teach_drafts",
             "webbridge_teach_replays",
             "git_server_connections",
+        } <= set(inspector.get_table_names())
+        assert {
             "artifact_jobs",
             "artifact_revisions",
             "artifact_reviews",
-        } <= set(inspector.get_table_names())
+        }.isdisjoint(inspector.get_table_names())
         assert "session_chapters" not in inspector.get_table_names()
         assert "memory_processed_sources" not in inspector.get_table_names()
         assert "session_goals" in inspector.get_table_names()
@@ -140,22 +142,6 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
         assert "aim_links" not in inspector.get_table_names()
         assert "aim_claims" not in inspector.get_table_names()
         assert "workflow_gate_requests" in inspector.get_table_names()
-        assert {
-            "artifact_format",
-            "lane",
-            "action",
-            "status",
-            "latest_revision_id",
-        } <= {column["name"] for column in inspector.get_columns("artifact_jobs")}
-        assert {
-            "content_sha256",
-            "blob_key",
-            "qa",
-            "manifest_data",
-            "provenance",
-            "driver_version",
-            "protocol_version",
-        } <= {column["name"] for column in inspector.get_columns("artifact_revisions")}
         workflow_execution_columns = {
             column["name"] for column in inspector.get_columns("workflow_executions")
         }
