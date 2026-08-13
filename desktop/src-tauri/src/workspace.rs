@@ -399,9 +399,33 @@ pub fn reveal_workspace_path_with_handle(
         return Err("Path escapes workspace root".into());
     }
 
-    app.opener()
-        .reveal_item_in_dir(&target_resolved)
-        .map_err(|e| format!("Failed to reveal workspace path: {e}"))
+    match app.opener().reveal_item_in_dir(&target) {
+        Ok(()) => Ok(()),
+        Err(opener_error) => {
+            #[cfg(target_os = "windows")]
+            {
+                // SHOpenFolderAndSelectItems can reject valid Unicode paths or
+                // Rust's extended-length canonical form on some Windows
+                // installations. Explorer's /select switch is the native
+                // fallback and accepts the original, already-validated path.
+                std::process::Command::new("explorer.exe")
+                    .arg("/select,")
+                    .arg(&target)
+                    .spawn()
+                    .map(|_| ())
+                    .map_err(|fallback_error| {
+                        format!(
+                            "Failed to reveal workspace path: {opener_error}; "
+                            "Explorer fallback failed: {fallback_error}"
+                        )
+                    })
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                Err(format!("Failed to reveal workspace path: {opener_error}"))
+            }
+        }
+    }
 }
 
 /// Read a single workspace file and return its content as a base64 string.

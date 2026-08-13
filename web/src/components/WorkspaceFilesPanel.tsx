@@ -69,6 +69,7 @@ import { usePlatform } from '@/hooks/use-platform'
 import { languageForExt, useMonacoTheme } from '@/hooks/useMonacoTheme'
 import { mediumHapticFeedback } from '@/lib/haptics'
 import { formatBytes } from '@/utils/format'
+import { errorMessage } from '@/utils/errors'
 import { MarkdownBlock } from '@/utils/markdown'
 import { SidePanel } from './shell/SidePanel'
 import { useUIStore } from '@/stores/useUIStore'
@@ -1256,7 +1257,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
     try {
       await tauriRevealWorkspacePath(workspaceRoot, file.path)
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Failed to show file in folder')
+      setUploadError(errorMessage(err) || 'Failed to show file in folder')
     }
   }, [isTauri, workspaceRoot])
 
@@ -1266,7 +1267,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
     try {
       await tauriRevealWorkspacePath(workspaceRoot)
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Failed to show workspace in folder')
+      setUploadError(errorMessage(err) || 'Failed to show workspace in folder')
     }
   }, [isTauri, workspaceRoot])
 
