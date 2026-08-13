@@ -549,6 +549,15 @@ export async function updateTeamSessionTitle(id: string, title: string): Promise
   return res.json()
 }
 
+export async function duplicateTeamSession(id: string): Promise<SessionResponse> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/sessions/${encodeURIComponent(id)}/duplicate`,
+    { method: 'POST' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'duplicateTeamSession')
+  return res.json()
+}
+
 export async function deleteTeamSession(id: string): Promise<void> {
   const res = await fetch(`${apiBaseUrl()}/team/sessions/${id}`, { method: 'DELETE' })
   if (!res.ok) await parseDetailOrThrow(res, 'deleteTeamSession')

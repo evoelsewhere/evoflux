@@ -69,6 +69,7 @@ from app.services.chat_service import (
     cancel_queued_user_message,
     cleanup_reverted_tail,
     delete_session,
+    duplicate_session,
     get_team_history,
     get_latest_top_level_session,
     list_sessions_page,
@@ -1243,6 +1244,24 @@ async def update_team_session(
     return SessionResponse.model_validate(session).model_copy(
         update={"running": str(session.id) in stream_store.running_session_ids()}
     )
+
+
+@router.post(
+    "/sessions/{session_id}/duplicate",
+    response_model=SessionResponse,
+    status_code=201,
+)
+async def duplicate_team_session(session_id: UUID, db: DbSession) -> SessionResponse:
+    """Create an independent copy of a completed chat conversation."""
+    if str(session_id) in stream_store.running_session_ids():
+        raise HTTPException(
+            status_code=409,
+            detail="Wait for the session to finish before duplicating it.",
+        )
+    session = await duplicate_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return SessionResponse.model_validate(session)
 
 
 _VALID_PERMISSION_MODES = frozenset({"ask", "accept-edits", "plan", "auto", "bypass"})

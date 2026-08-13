@@ -23,6 +23,7 @@ import { isToday, isYesterday } from "date-fns";
 import {
   useTeamSessionsQuery,
   useDeleteTeamSessionMutation,
+  useDuplicateTeamSessionMutation,
   useUpdateTeamSessionTitleMutation,
   useSessionFoldersQuery,
   useCreateSessionFolderMutation,
@@ -157,6 +158,7 @@ export function Sidebar({
   const sessions = useTeamSessionsQuery("work");
   const folders = useSessionFoldersQuery("work");
   const deleteSession = useDeleteTeamSessionMutation();
+  const duplicateSession = useDuplicateTeamSessionMutation();
   const updateSessionTitle = useUpdateTeamSessionTitleMutation();
   const setSessionFolder = useSetSessionFolderMutation("work");
   const createFolder = useCreateSessionFolderMutation("work");
@@ -316,6 +318,25 @@ export function Sidebar({
   const handleEdit = (session: SessionResponse) => {
     setEditTarget(session);
     setEditTitle(session.title || "");
+  };
+
+  const handleDuplicate = (session: SessionResponse) => {
+    duplicateSession.mutate(session.id, {
+      onSuccess: (copy) => {
+        pushToast({
+          tone: "success",
+          title: "Session duplicated",
+          description: `Opened ${copy.title || "the copied session"}.`,
+        });
+        handleSelect(copy.id);
+      },
+      onError: (err) =>
+        pushToast({
+          tone: "error",
+          title: "Could not duplicate session",
+          description: err instanceof Error ? err.message : "Please try again.",
+        }),
+    });
   };
 
   const confirmDelete = () => {
@@ -859,6 +880,7 @@ export function Sidebar({
         anchor={desktopSessionActions}
         onClose={() => setDesktopSessionActions(null)}
         onEdit={handleEdit}
+        onDuplicate={handleDuplicate}
         onDelete={handleDelete}
         pinned={
           desktopSessionActions
@@ -875,6 +897,7 @@ export function Sidebar({
         session={mobileSessionActions}
         onClose={() => setMobileSessionActions(null)}
         onEdit={handleEdit}
+        onDuplicate={handleDuplicate}
         onDelete={(session) => setPendingDeleteId(session.id)}
         pinned={
           mobileSessionActions ? pinnedIdSet.has(mobileSessionActions.id) : false

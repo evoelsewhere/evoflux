@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useMemo, useRef } from 'react'
-import { FolderInput, Pencil, Pin, Trash2 } from 'lucide-react'
+import { Copy, FolderInput, Pencil, Pin, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -36,6 +36,8 @@ export interface SessionMenuAnchor {
 interface SessionMenuActions {
   onEdit: (session: SessionResponse) => void
   onDelete: (session: SessionResponse) => void
+  /** The "Duplicate" item renders only when this is provided. */
+  onDuplicate?: (session: SessionResponse) => void
   /** Pin state of the target session — controls the Pin/Unpin label. */
   pinned?: boolean
   /** The Pin/Unpin item renders only when this is provided. */
@@ -73,6 +75,7 @@ export function SessionContextMenu({
   onClose,
   onEdit,
   onDelete,
+  onDuplicate,
   pinned,
   onTogglePin,
   onMoveToFolder,
@@ -80,9 +83,11 @@ export function SessionContextMenu({
   const menuRef = useRef<HTMLDivElement>(null)
   const position = useMemo(() => {
     if (!anchor) return null
-    const height = MENU_HEIGHT + (onMoveToFolder ? MENU_ITEM_HEIGHT : 0)
+    const height = MENU_HEIGHT
+      + (onDuplicate ? MENU_ITEM_HEIGHT : 0)
+      + (onMoveToFolder ? MENU_ITEM_HEIGHT : 0)
     return clampMenuPosition(anchor.x, anchor.y, height)
-  }, [anchor, onMoveToFolder])
+  }, [anchor, onDuplicate, onMoveToFolder])
 
   useEffect(() => {
     if (!anchor) return
@@ -148,6 +153,20 @@ export function SessionContextMenu({
           <Pencil size={14} aria-hidden="true" />
           Edit title
         </button>
+        {onDuplicate && (
+          <button
+            type="button"
+            role="menuitem"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
+            onClick={() => {
+              onClose()
+              onDuplicate(session)
+            }}
+          >
+            <Copy size={14} aria-hidden="true" />
+            Duplicate
+          </button>
+        )}
         {onMoveToFolder && (
           <button
             type="button"
@@ -190,6 +209,7 @@ export function SessionActionsDialog({
   onClose,
   onEdit,
   onDelete,
+  onDuplicate,
   pinned,
   onTogglePin,
   onMoveToFolder,
@@ -233,6 +253,20 @@ export function SessionActionsDialog({
             <Pencil size={14} aria-hidden="true" />
             Edit title
           </Button>
+          {onDuplicate && (
+            <Button
+              type="button"
+              variant="outline"
+              className="justify-start"
+              onClick={() => {
+                onClose()
+                if (session) onDuplicate(session)
+              }}
+            >
+              <Copy size={14} aria-hidden="true" />
+              Duplicate
+            </Button>
+          )}
           {onMoveToFolder && (
             <Button
               type="button"

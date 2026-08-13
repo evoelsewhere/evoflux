@@ -61,6 +61,7 @@ import { queryKeys } from "@/queries";
 import {
   useCodingWorkspaceSessionsQuery,
   useDeleteTeamSessionMutation,
+  useDuplicateTeamSessionMutation,
   useProjectSessionsQuery,
   useTeamSessionsQuery,
   useUpdateTeamSessionTitleMutation,
@@ -381,6 +382,7 @@ export function CodingSidebar({
   const queryClient = useQueryClient();
   const sessions = useTeamSessionsQuery("coding");
   const deleteSession = useDeleteTeamSessionMutation();
+  const duplicateSession = useDuplicateTeamSessionMutation();
   const updateSessionTitle = useUpdateTeamSessionTitleMutation();
   // One merged query for both Projects and standalone Workspaces — see
   // useCodingOverviewQuery's doc comment for why this replaced two
@@ -1099,6 +1101,25 @@ export function CodingSidebar({
   const handleSessionEdit = (session: SessionResponse) => {
     setEditTarget(session);
     setEditTitle(session.title || "");
+  };
+
+  const handleSessionDuplicate = (session: SessionResponse) => {
+    duplicateSession.mutate(session.id, {
+      onSuccess: (copy) => {
+        useToastStore.getState().push({
+          tone: "success",
+          title: "Session duplicated",
+          description: `Opened ${copy.title || "the copied session"}.`,
+        });
+        handleSessionSelect(copy, copy.workspace ?? "");
+      },
+      onError: (err) =>
+        useToastStore.getState().push({
+          tone: "error",
+          title: "Could not duplicate session",
+          description: err instanceof Error ? err.message : "Please try again.",
+        }),
+    });
   };
 
   const confirmSessionDelete = () => {
@@ -2378,6 +2399,7 @@ export function CodingSidebar({
         anchor={desktopSessionActions}
         onClose={() => setDesktopSessionActions(null)}
         onEdit={handleSessionEdit}
+        onDuplicate={handleSessionDuplicate}
         onDelete={handleSessionDelete}
         pinned={
           desktopSessionActions
@@ -2393,6 +2415,7 @@ export function CodingSidebar({
         session={mobileSessionActions}
         onClose={() => setMobileSessionActions(null)}
         onEdit={handleSessionEdit}
+        onDuplicate={handleSessionDuplicate}
         onDelete={handleSessionDelete}
         pinned={
           mobileSessionActions ? pinnedIdSet.has(mobileSessionActions.id) : false
