@@ -27,6 +27,18 @@ export function pinnedAfterViewportUpdate(wasPinned: boolean, isAtBottom: boolea
   return wasPinned || isAtBottom
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  return target instanceof Element
+    && target.closest('input, textarea, [contenteditable="true"]') !== null
+}
+
+function isUpwardScrollKey(event: KeyboardEvent): boolean {
+  return event.key === 'ArrowUp'
+    || event.key === 'PageUp'
+    || event.key === 'Home'
+    || (event.key === ' ' && event.shiftKey)
+}
+
 /** One frame of the pinned transcript's exponential bottom-follow. */
 export function nextPinnedScrollTop(
   current: number,
@@ -163,7 +175,6 @@ export function usePinnedTranscript({
     const element = scrollRef.current
     if (!element) return
 
-    let lastScrollTop = element.scrollTop
     let lastTouchY: number | null = null
     let scrollFrame: number | null = null
 
@@ -172,6 +183,7 @@ export function usePinnedTranscript({
       const atBottom = isAtBottom()
       pinnedRef.current = pinnedAfterViewportUpdate(pinnedRef.current, atBottom)
       setScrollButtonVisible(!pinnedRef.current)
+      if (pinnedRef.current && !atBottom) followRenderedHeight()
       onScrollFrameRef.current?.(element)
     }
 
@@ -180,9 +192,6 @@ export function usePinnedTranscript({
     }
 
     const onScroll = () => {
-      const nextScrollTop = element.scrollTop
-      if (nextScrollTop < lastScrollTop - USER_SCROLL_DETACH_DELTA) detach()
-      lastScrollTop = nextScrollTop
       scheduleViewportUpdate()
     }
 
@@ -195,8 +204,23 @@ export function usePinnedTranscript({
       if (isolateScroll) event.stopPropagation()
       const y = event.touches[0]?.clientY
       if (y == null) return
-      if (lastTouchY !== null && y > lastTouchY + USER_SCROLL_DETACH_DELTA) detach()
+      if (lastTouchY !== null && y > lastTouchY + USER_SCROLL_DETACH_DELTA) {
+        detach()
+      }
       lastTouchY = y
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isEditableTarget(event.target) && isUpwardScrollKey(event)) {
+        detach()
+      }
+    }
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target !== element) return
+      const rect = element.getBoundingClientRect()
+      const scrollbarWidth = Math.max(12, element.offsetWidth - element.clientWidth)
+      if (event.clientX >= rect.right - scrollbarWidth) detach()
     }
 
     const clearTouch = () => {
@@ -208,6 +232,8 @@ export function usePinnedTranscript({
     element.addEventListener('touchmove', onTouchMove, { passive: true })
     element.addEventListener('touchend', clearTouch, { passive: true })
     element.addEventListener('touchcancel', clearTouch, { passive: true })
+    element.addEventListener('keydown', onKeyDown)
+    element.addEventListener('pointerdown', onPointerDown, { passive: true })
     return () => {
       if (scrollFrame !== null) cancelAnimationFrame(scrollFrame)
       element.removeEventListener('scroll', onScroll)
@@ -215,8 +241,10 @@ export function usePinnedTranscript({
       element.removeEventListener('touchmove', onTouchMove)
       element.removeEventListener('touchend', clearTouch)
       element.removeEventListener('touchcancel', clearTouch)
+      element.removeEventListener('keydown', onKeyDown)
+      element.removeEventListener('pointerdown', onPointerDown)
     }
-  }, [detach, isAtBottom, isolateScroll, setScrollButtonVisible])
+  }, [detach, followRenderedHeight, isAtBottom, isolateScroll, setScrollButtonVisible])
 
   useEffect(() => {
     const content = contentRef.current

@@ -1,5 +1,5 @@
-import { act, renderHook } from '@testing-library/react'
-import { StrictMode, createElement, type PropsWithChildren } from 'react'
+import { act, fireEvent, render, renderHook } from '@testing-library/react'
+import { StrictMode, createElement, useEffect, type PropsWithChildren } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -41,6 +41,52 @@ describe('nextPinnedScrollTop', () => {
 })
 
 describe('usePinnedTranscript follow boundaries', () => {
+  it('ignores layout-driven scroll events but detaches on upward wheel intent', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback)
+      return frames.length
+    })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    const captured: { current: ReturnType<typeof usePinnedTranscript> | null } = { current: null }
+    const captureHook = (value: ReturnType<typeof usePinnedTranscript>) => {
+      captured.current = value
+    }
+
+    function Harness({ onHook }: { onHook: typeof captureHook }) {
+      const value = usePinnedTranscript({
+        isEmpty: false,
+        contentKey: 1,
+        resetKey: null,
+      })
+      useEffect(() => onHook(value), [onHook, value])
+      return createElement(
+        'div',
+        { ref: value.scrollRef },
+        createElement('div', { ref: value.contentRef }),
+      )
+    }
+
+    const { container } = render(createElement(Harness, { onHook: captureHook }))
+    const scroller = container.firstElementChild as HTMLDivElement
+    Object.defineProperties(scroller, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 1_000 },
+      scrollTop: { configurable: true, value: 320, writable: true },
+    })
+
+    fireEvent.scroll(scroller)
+    act(() => {
+      let timestamp = 0
+      while (frames.length > 0) frames.shift()?.(timestamp += 16)
+    })
+    expect(scroller.scrollTop).toBe(600)
+    expect(captured.current?.showScrollButton).toBe(false)
+
+    fireEvent.wheel(scroller, { deltaY: -20 })
+    expect(captured.current?.showScrollButton).toBe(true)
+  })
+
   it('reattaches and scrolls when a new prompt is submitted', () => {
     const frames: FrameRequestCallback[] = []
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
