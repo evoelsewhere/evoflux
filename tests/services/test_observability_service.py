@@ -119,7 +119,7 @@ def test_summarize_aggregates_turns_llm_tools(
         _span(
             name="agent_run lead", end_time_ns=ts_ns, duration_ms=800.0, status="ERROR"
         ),
-        # 3 LLM calls
+        # 4 LLM calls (three chat calls plus title generation)
         _span(
             name="chat gpt-4o",
             end_time_ns=ts_ns,
@@ -192,18 +192,23 @@ def test_summarize_aggregates_turns_llm_tools(
     result = summarize(days=7)
 
     assert result.total_turns == 2
-    assert result.total_llm_calls == 3
+    assert result.total_llm_calls == 4
     assert result.total_tool_calls == 2
     assert result.total_input_tokens == 2000
     assert result.total_output_tokens == 400
     assert result.total_cached_tokens == 380
     assert result.total_estimated_cost_usd == 0.0071
-    # 1 agent_run + 1 tool in ERROR status
-    assert result.total_errors == 2
+    # Keep failed turns distinct from lower-level error spans.
+    assert result.failed_turns == 1
+    assert result.error_spans == 2
 
     # Latency percentiles
     assert result.turn_p50_ms > 0
     assert result.llm_p50_ms > 0
+    assert result.tool_p95_ms > 0
+    assert result.bucket_size == "day"
+    assert len(result.time_series) >= 7
+    assert sum(point["turns"] for point in result.time_series) == 2
 
     # Daily bucket
     assert len(result.daily_turns) == 1
@@ -220,6 +225,7 @@ def test_summarize_aggregates_turns_llm_tools(
     assert models["gpt-4o"]["cache_percent"] == 20.0
     assert models["gpt-4o"]["estimated_cost_usd"] == 0.006
     assert models["gemini-flash"]["calls"] == 1
+    assert models["gpt-4o-mini"]["calls"] == 1
 
     cache_steps = {
         (row["step"], row["provider_model"]): row for row in result.cache_by_step
@@ -305,6 +311,8 @@ def test_to_dict_round_trips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "totals",
         "latency_ms",
         "daily_turns",
+        "time_series",
+        "bucket_size",
         "by_model",
         "cache_by_step",
         "by_tool",
@@ -319,6 +327,9 @@ def test_to_dict_round_trips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "cache_percent",
         "estimated_cost_usd",
         "errors",
+        "failed_turns",
+        "error_spans",
+        "error_rate",
     }
 
 
@@ -336,6 +347,7 @@ def _write_trace(
     run_id: str = "run-1",
     with_tool: bool = False,
     error: bool = False,
+    tool_error: bool = False,
 ) -> None:
     """Write an ``agent_run`` + ``chat`` (+ optional ``execute_tool``) trio."""
     key = datetime.fromtimestamp(end_time_ns / 1e9, tz=timezone.utc).strftime(
@@ -388,6 +400,7 @@ def _write_trace(
                 name="execute_tool read",
                 end_time_ns=end_time_ns - 2_000_000,
                 duration_ms=50.0,
+                status="ERROR" if tool_error else "OK",
                 attributes={
                     "gen_ai.operation.name": "execute_tool",
                     "gen_ai.tool.name": "read",
@@ -469,6 +482,54 @@ def test_list_traces_pagination(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert [r.run_id for r in first] == ["run-0", "run-1"]
     assert [r.run_id for r in second] == ["run-2", "run-3"]
     assert count_traces(days=7) == 5
+
+
+def test_list_traces_marks_trace_failed_when_child_span_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    spans_dir = _point_EVOFLUX_at(tmp_path, monkeypatch)
+    now_ns = int(datetime.now(timezone.utc).timestamp() * 1e9)
+    _write_trace(
+        spans_dir,
+        trace_id="0x" + "7" * 32,
+        end_time_ns=now_ns,
+        with_tool=True,
+        tool_error=True,
+    )
+
+    rows = list_traces(days=7)
+
+    assert len(rows) == 1
+    assert rows[0].error is True
+
+
+def test_list_traces_does_not_duplicate_usage_across_team_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    spans_dir = _point_EVOFLUX_at(tmp_path, monkeypatch)
+    now_ns = int(datetime.now(timezone.utc).timestamp() * 1e9)
+    shared_trace = "0x" + "8" * 32
+    _write_trace(
+        spans_dir,
+        trace_id=shared_trace,
+        end_time_ns=now_ns,
+        run_id="run-lead",
+        session_id="session-lead",
+    )
+    _write_trace(
+        spans_dir,
+        trace_id=shared_trace,
+        end_time_ns=now_ns - 1_000_000,
+        run_id="run-member",
+        session_id="session-member",
+    )
+
+    rows = list_traces(days=7)
+
+    assert len(rows) == 2
+    assert {row.run_id for row in rows} == {"run-lead", "run-member"}
+    assert all(row.input_tokens == 900 for row in rows)
+    assert all(row.llm_calls == 1 for row in rows)
 
 
 def test_list_traces_clamps_inputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

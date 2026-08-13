@@ -10,9 +10,8 @@ import asyncio
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.services.observability_service import (
-    count_traces,
     get_trace,
-    list_traces,
+    list_traces_page,
     summarize,
 )
 
@@ -37,14 +36,15 @@ async def traces(
     Each item identifies a trace (``trace_id``) plus summary metrics; the UI
     uses ``trace_id`` to fetch the full span tree via ``GET /traces/{id}``.
     """
-    items = await asyncio.to_thread(list_traces, days=days, limit=limit, offset=offset)
-    total = await asyncio.to_thread(count_traces, days=days)
+    page = await asyncio.to_thread(
+        list_traces_page, days=days, limit=limit, offset=offset
+    )
     return {
-        "traces": [t.to_dict() for t in items],
+        "traces": [t.to_dict() for t in page.items],
         "limit": limit,
         "offset": offset,
-        "total": total,
-        "has_next": offset + limit < total,
+        "total": page.total,
+        "has_next": offset + limit < page.total,
     }
 
 

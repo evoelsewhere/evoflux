@@ -35,8 +35,11 @@ export function PageHeader({
         </div>
       }
       right={
-        right ? (
-          <div className="flex shrink-0 items-center gap-1 pr-2 sm:gap-2 sm:pr-3">{right}</div>
+        right || left ? (
+          <div className="flex shrink-0 items-center gap-1 pr-2 sm:gap-2 sm:pr-3">
+            {left && <div className="sm:hidden">{left}</div>}
+            {right}
+          </div>
         ) : undefined
       }
     />

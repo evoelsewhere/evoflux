@@ -1,9 +1,7 @@
 /**
  * /telemetry — standalone top-level page with sidebar navigation.
  *
- * Two modes driven by local state:
- *   - No trace selected: aggregates (totals, latency, breakdowns) + traces list.
- *   - Trace selected: waterfall view with optional span attribute side panel.
+ * Monitoring views are split into overview, model, tool, and trace workflows.
  *
  * All data comes from OTEL span JSONL files, aggregated through DuckDB on the
  * backend.  When the `[otel]` extra isn't installed the backend returns a
@@ -21,6 +19,8 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { formatShortId } from '@/utils/telemetryFormat'
 import { ErrorState, LoadingState, PageHeader } from './chrome'
 import { SummaryView } from './summary/SummaryView'
+import { ModelsView } from './models/ModelsView'
+import { ToolsView } from './tools/ToolsView'
 import { TracesSection } from './traces/TracesSection'
 import { SpanDetailPanel } from './waterfall/SpanDetailPanel'
 import { Waterfall } from './waterfall/Waterfall'
@@ -59,6 +59,7 @@ export function TelemetryPage() {
           />
         ) : (
           <SummaryRoute
+            tab={tab}
             days={days}
             onChangeDays={setDays}
             onSelectTrace={setSelectedTraceId}
@@ -72,17 +73,20 @@ export function TelemetryPage() {
 // ── Summary route ────────────────────────────────────────────────────────────
 
 function SummaryRoute({
+  tab,
   days,
   onChangeDays,
   onSelectTrace,
 }: {
+  tab: Exclude<TelemetryTab, 'traces'>
   days: WindowDays
   onChangeDays: (d: WindowDays) => void
   onSelectTrace: (traceId: string) => void
 }) {
   const summary = useObservabilitySummaryQuery(days)
-  const traces = useInfiniteTracesQuery(days, TRACE_PAGE_SIZE)
-  const isFetching = summary.isFetching || traces.isFetching
+  const showRecentTraces = tab === 'summary'
+  const traces = useInfiniteTracesQuery(days, TRACE_PAGE_SIZE, showRecentTraces)
+  const isFetching = summary.isFetching || (showRecentTraces && traces.isFetching)
   const traceRows = useMemo(
     () => traces.data?.pages.flatMap((page) => page.traces) ?? [],
     [traces.data],
@@ -102,6 +106,7 @@ function SummaryRoute({
     <>
       <PageHeader
         isFetching={isFetching}
+        subtitle={tab === 'summary' ? 'Health, latency & usage' : tab === 'models' ? 'Model cost & performance' : 'Tool reliability & latency'}
         right={
           <>
             <div className="flex items-center gap-1 rounded-lg border border-(--color-border) bg-(--bg-card) p-0.5">
@@ -123,7 +128,7 @@ function SummaryRoute({
         }
       />
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 pb-24 sm:p-5 md:pb-5">
         {summary.isLoading ? (
           <LoadingState label="Loading span aggregates…" />
         ) : summary.isError ? (
@@ -133,16 +138,18 @@ function SummaryRoute({
           />
         ) : summary.data ? (
           <div className="flex flex-col gap-6">
-            <SummaryView data={summary.data} />
-            <TracesSection
-              query={traces}
-              traces={traceRows}
-              limit={TRACE_PAGE_SIZE}
-              total={traceTotal}
-              hasNext={traces.hasNextPage}
-              onLoadMore={loadMoreTraces}
-              onSelectTrace={onSelectTrace}
-            />
+            {tab === 'summary' ? <SummaryView data={summary.data} /> : tab === 'models' ? <ModelsView data={summary.data} /> : <ToolsView data={summary.data} />}
+            {showRecentTraces && (
+              <TracesSection
+                query={traces}
+                traces={traceRows}
+                limit={TRACE_PAGE_SIZE}
+                total={traceTotal}
+                hasNext={traces.hasNextPage}
+                onLoadMore={loadMoreTraces}
+                onSelectTrace={onSelectTrace}
+              />
+            )}
           </div>
         ) : null}
       </div>
@@ -186,7 +193,7 @@ function TraceDetailRoute({
       {/* On mobile: span detail overlays the waterfall full-width (absolute).
           On desktop: span detail is a fixed-width flex sibling on the right. */}
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
-        <div className="min-w-0 flex-1 overflow-y-auto p-5">
+        <div className="min-w-0 flex-1 overflow-y-auto p-5 pb-24 md:pb-5">
           {isLoading ? (
             <LoadingState label="Loading trace…" />
           ) : isError ? (
@@ -279,7 +286,7 @@ function TracesOnlyRoute({
           </div>
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 pb-24 sm:p-5 md:pb-5">
         {traces.isLoading ? (
           <LoadingState label="Loading traces…" />
         ) : traces.isError ? (

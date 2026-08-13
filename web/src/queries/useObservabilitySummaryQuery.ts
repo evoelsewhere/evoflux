@@ -6,7 +6,7 @@ export function useObservabilitySummaryQuery(days: number) {
   return useQuery({
     queryKey: queryKeys.observability.summary(days),
     queryFn: () => getObservabilitySummary(days),
-    // Span aggregates evolve slowly; refresh on manual navigation only.
-    staleTime: 60_000,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
   })
 }
