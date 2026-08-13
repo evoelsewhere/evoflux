@@ -254,13 +254,14 @@ async def test_accept_edits_mode_allows_edit_tools_but_blocks_shell():
 
 @pytest.mark.asyncio
 async def test_ask_mode_allows_safe_read_only_tools():
-    """Read-only, coordination, and lazy-loader tools never block in ask mode."""
+    """Read-only, app-state, coordination, and loader tools do not block."""
     service = PermissionService(session_id="s1", mode="ask")
     await service.ask("read", ["/etc/hosts"])
     await service.ask("grep", ["pattern"])
     await service.ask("team_handoff", ["team_handoff"])
     await service.ask("skill", ["skill"])
     await service.ask("load_tool", ["load_tool"])
+    await service.ask("schedule_task", ["schedule_task"])
     assert service.list_pending() == []
 
 

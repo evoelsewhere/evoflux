@@ -774,6 +774,7 @@ def test_schedule_task_tool_definition(clean_db):
     definition = schedule_task.definition
     assert definition["type"] == "function"
     assert definition["function"]["name"] == "schedule_task"
+    assert schedule_task.deferred is False
     params = definition["function"]["parameters"]["properties"]
     assert "action" in params
     # mode + workspace are derived from runtime context, not exposed to the LLM.
