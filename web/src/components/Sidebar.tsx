@@ -55,9 +55,16 @@ import { SessionFolders } from "@/components/shell/SessionFolders";
 import { CollapsibleSection } from "@/components/shell/CollapsibleSection";
 import { MoveToFolderDialog } from "@/components/shell/MoveToFolderDialog";
 import {
+  clearSessionDropTarget,
+  clearSessionDragPayload,
   isSessionDrag,
+  markSessionDropHandled,
+  readSessionDropTarget,
+  readSessionDropTargetFromElement,
   readSessionDragPayload,
+  setSessionDropTarget,
   setSessionDragPayload,
+  wasSessionDropHandled,
 } from "@/components/shell/session-drag";
 import { resolveTeamSession } from "@/api/client";
 import { prependSession } from "@/stores/cache-invalidation-bridge";
@@ -455,7 +462,21 @@ export function Sidebar({
       // through the actions sheet's "Move to folder…" instead.
       draggable={!isMobile}
       onDragStart={(s, event) => setSessionDragPayload(event, s.id)}
-      onDragEnd={() => setUnfileDropActive(false)}
+      onDragEnd={(s, event) => {
+        let fallbackTarget = readSessionDropTarget();
+        // WKWebView can finish a native drag without dispatching React's
+        // `drop`. Resolve the element under the release point so a preceding
+        // `dragleave` cannot erase an otherwise valid destination.
+        if (event.clientX !== 0 || event.clientY !== 0) {
+          const element = document.elementFromPoint(event.clientX, event.clientY);
+          fallbackTarget = readSessionDropTargetFromElement(element);
+        }
+        if (!wasSessionDropHandled() && fallbackTarget !== undefined) {
+          moveSessionToFolder(s.id, fallbackTarget);
+        }
+        clearSessionDragPayload();
+        setUnfileDropActive(false);
+      }}
       onContextActions={(session, event) => {
         setDesktopSessionActions({
           session,
@@ -557,6 +578,7 @@ export function Sidebar({
       {/* Dropping a row here takes it out of its folder — the mirror of
           dropping it on a folder header. */}
       <div
+        data-session-unfile-drop-zone
         className={cn(
           "flex min-h-0 flex-1 flex-col rounded-md px-1.5 transition-colors",
           unfileDropActive && "bg-(--bg-key)/40 ring-1 ring-(--color-accent)",
@@ -564,20 +586,24 @@ export function Sidebar({
         onDragEnter={(event) => {
           if (!isSessionDrag(event)) return;
           event.preventDefault();
+          setSessionDropTarget(null);
           setUnfileDropActive(true);
         }}
         onDragOver={(event) => {
           if (!isSessionDrag(event)) return;
           event.preventDefault();
           event.dataTransfer.dropEffect = "move";
+          setSessionDropTarget(null);
         }}
         onDragLeave={(event) => {
           if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+          clearSessionDropTarget(null);
           setUnfileDropActive(false);
         }}
         onDrop={(event) => {
           if (!isSessionDrag(event)) return;
           event.preventDefault();
+          markSessionDropHandled();
           setUnfileDropActive(false);
           const sessionId = readSessionDragPayload(event);
           if (sessionId) moveSessionToFolder(sessionId, null);

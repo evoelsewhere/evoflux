@@ -66,8 +66,11 @@ export function ActivityTimeline({
   // once and then preserves the reader's choice through every later delta and
   // through the transition to commentary/completion.
   useEffect(() => {
-    if (isActive && !wasActiveRef.current) setOpen(true)
+    const shouldOpen = isActive && !wasActiveRef.current
     wasActiveRef.current = isActive
+    if (!shouldOpen) return
+    const frame = requestAnimationFrame(() => setOpen(true))
+    return () => cancelAnimationFrame(frame)
   }, [isActive])
 
   const toggleOpen = () => {

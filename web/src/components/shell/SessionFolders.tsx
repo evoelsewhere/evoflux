@@ -2,7 +2,7 @@
  * SessionFolders — the FOLDERS tree at the top of the work sidebar.
  *
  * A folder is a user-made grouping of chat sessions. Rows are filed by
- * dragging them onto a folder header (or via "Move to folder…" for touch,
+ * dragging them onto a folder block (or via "Move to folder…" for touch,
  * see MoveToFolderDialog), and each folder can start a new chat that is
  * created inside it.
  *
@@ -49,7 +49,13 @@ import {
 } from '@/queries'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { cn } from '@/lib/utils'
-import { isSessionDrag, readSessionDragPayload } from '@/components/shell/session-drag'
+import {
+  clearSessionDropTarget,
+  isSessionDrag,
+  markSessionDropHandled,
+  readSessionDragPayload,
+  setSessionDropTarget,
+} from '@/components/shell/session-drag'
 import type { SessionFolder, SessionResponse } from '@/api/types'
 
 interface FolderMenuAnchor {
@@ -102,7 +108,7 @@ interface SessionFoldersProps {
   renderSession: (session: SessionResponse) => ReactNode
   /** Start a new chat filed inside this folder. */
   onNewChatInFolder: (folder: SessionFolder) => void
-  /** Called after a row is dropped on a folder header. */
+  /** Called after a row is dropped anywhere on a folder block. */
   onDropSession: (sessionId: string, folderId: string) => void
   /** Load the next page of older chats in a large folder. */
   onLoadMore: (folder: SessionFolder) => void
@@ -289,43 +295,55 @@ export function SessionFolders({
             const isExpanded = expandedSet.has(folder.id)
             const isDropTarget = dragOverId === folder.id
             return (
-              <div key={folder.id}>
+              <div
+                key={folder.id}
+                data-session-folder-drop-zone={folder.id}
+                className={cn(
+                  'rounded-lg py-1 transition-colors',
+                  isDropTarget && 'bg-(--bg-key)/60 ring-1 ring-(--color-accent)',
+                )}
+                onDragEnter={(event) => {
+                  if (!isSessionDrag(event)) return
+                  event.preventDefault()
+                  setSessionDropTarget(folder.id)
+                  setDragOverId(folder.id)
+                }}
+                onDragOver={(event) => {
+                  if (!isSessionDrag(event)) return
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                  setSessionDropTarget(folder.id)
+                }}
+                onDragLeave={(event) => {
+                  // Keep the target active while moving between the header and
+                  // any session rows inside an expanded folder.
+                  if (event.currentTarget.contains(event.relatedTarget as Node)) return
+                  clearSessionDropTarget(folder.id)
+                  setDragOverId((prev) => (prev === folder.id ? null : prev))
+                }}
+                onDrop={(event) => {
+                  if (!isSessionDrag(event)) return
+                  event.preventDefault()
+                  markSessionDropHandled()
+                  setDragOverId(null)
+                  const sessionId = readSessionDragPayload(event)
+                  if (!sessionId) return
+                  setExpanded((prev) =>
+                    prev.includes(folder.id) ? prev : [...prev, folder.id],
+                  )
+                  onDropSession(sessionId, folder.id)
+                }}
+              >
                 <div
                   className={cn(
-                    'group/folder relative flex min-h-10 items-center rounded-lg pr-1 transition-colors',
+                    'group/folder relative flex min-h-11 items-center rounded-lg pr-1 transition-colors',
                     isDropTarget
-                      ? 'bg-(--bg-key) ring-1 ring-(--color-accent)'
+                      ? 'bg-(--bg-key)'
                       : 'hover:bg-(--bg-key)/50',
                   )}
                   onContextMenu={(event) => {
                     event.preventDefault()
                     setMenuAnchor({ folder, x: event.clientX, y: event.clientY })
-                  }}
-                  onDragEnter={(event) => {
-                    if (!isSessionDrag(event)) return
-                    event.preventDefault()
-                    setDragOverId(folder.id)
-                  }}
-                  onDragOver={(event) => {
-                    if (!isSessionDrag(event)) return
-                    event.preventDefault()
-                    event.dataTransfer.dropEffect = 'move'
-                  }}
-                  onDragLeave={(event) => {
-                    // Ignore moves between the row's own children.
-                    if (event.currentTarget.contains(event.relatedTarget as Node)) return
-                    setDragOverId((prev) => (prev === folder.id ? null : prev))
-                  }}
-                  onDrop={(event) => {
-                    if (!isSessionDrag(event)) return
-                    event.preventDefault()
-                    setDragOverId(null)
-                    const sessionId = readSessionDragPayload(event)
-                    if (!sessionId) return
-                    setExpanded((prev) =>
-                      prev.includes(folder.id) ? prev : [...prev, folder.id],
-                    )
-                    onDropSession(sessionId, folder.id)
                   }}
                 >
                   <button
@@ -371,7 +389,7 @@ export function SessionFolders({
                 </div>
 
                 {isExpanded && (
-                  <div className="pl-5">
+                  <div className="pb-1 pl-5">
                     {folder.sessions.length === 0 ? (
                       <p className="px-2.5 py-2 text-sm text-(--color-text-subtle)">
                         Drag chats here

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ActivityTimeline } from '@/components/ActivityTimeline'
+import { AssistantTurnContent } from '@/components/AssistantTurnContent'
 import { segmentAssistantTurn } from '@/utils/activity-timeline'
 import type { ContentBlock } from '@/api/types'
 
@@ -53,6 +54,37 @@ describe('segmentAssistantTurn', () => {
       { kind: 'activity', ids: ['thought-2', 'tool-2'] },
       { kind: 'content', ids: ['answer'] },
     ])
+  })
+
+  it('keeps durable delegation cards outside the bounded activity log', () => {
+    const read = block('tool-read', 'tool')
+    const delegation = {
+      ...block('tool-delegate', 'tool'),
+      toolName: 'team_delegate',
+    }
+
+    const segments = segmentAssistantTurn([read, delegation])
+    expect(segments.map((segment) => ({
+      kind: segment.kind,
+      ids: segment.blocks.map((item) => item.id),
+    }))).toEqual([
+      { kind: 'activity', ids: ['tool-read'] },
+      { kind: 'content', ids: ['tool-delegate'] },
+    ])
+
+    const { container } = render(
+      <AssistantTurnContent
+        blocks={[read, delegation]}
+        turnIsStreaming={false}
+        renderBlock={({ block: item }) => (
+          <div data-testid={item.id}>{item.toolName}</div>
+        )}
+      />,
+    )
+
+    const boundedLog = container.querySelector('.activity-timeline-scroll')
+    expect(boundedLog).toContainElement(screen.getByTestId('tool-read'))
+    expect(boundedLog).not.toContainElement(screen.getByTestId('tool-delegate'))
   })
 })
 

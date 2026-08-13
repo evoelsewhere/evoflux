@@ -26,7 +26,7 @@ import { AssistantTurnFooter } from './AssistantTurnFooter'
 import { AssistantTurnContent } from './AssistantTurnContent'
 import { PendingMessageQueue } from './PendingMessageQueue'
 import { appendLiveTurnItems, getVisibleTurnWindow, partitionTurns } from '@/utils/turns'
-import { isDirectUserBlock, latestDirectUserBlockId } from '@/utils/blocks'
+import { latestDirectUserBlockId } from '@/utils/blocks'
 import { buildUserMessageNavigationItems } from '@/utils/user-message-navigation'
 import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
 import { usePinnedTranscript } from '@/hooks/usePinnedTranscript'
@@ -37,6 +37,7 @@ import { TextSelectionAction } from './TextSelectionAction'
 import { TurnChangesCard } from './TurnChangesCard'
 import { UserMessageNavigationRail } from './UserMessageNavigationRail'
 import { StreamingTurnHeader } from './StreamingTurnHeader'
+import { shouldShowPendingActivity } from '@/utils/transcript-layout'
 import type { ContentBlock, TurnChangesPending } from '@/api/types'
 
 const LOAD_OLDER_THRESHOLD = 300
@@ -227,6 +228,12 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     () => latestDirectUserBlockId(currentBlocks),
     [currentBlocks],
   )
+  const showPendingActivity = shouldShowPendingActivity({
+    currentBlocks,
+    isContinuing,
+    isError: Boolean(isError),
+    isWorking,
+  })
 
   const handleViewportScroll = useCallback((element: HTMLDivElement) => {
     if (element.scrollTop > LOAD_OLDER_THRESHOLD * 2) {
@@ -371,7 +378,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                      </div>
                    )
                  }
-                 // Me only the trailing turn (no user block after) can be "live"
+                  // Only the trailing turn (no user block after) can be "live".
                   const isTrailingTurn = globalTurnIndex === turnItems.length - 1
                   const turnIsStreaming = isWorking && isTrailingTurn
                  return (
@@ -379,7 +386,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                      key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}
                      blocks={item.blocks}
                      turnIsStreaming={turnIsStreaming}
-                     hasRunway={isTrailingTurn}
+                     hasRunway={isTrailingTurn && !showPendingActivity}
                      canContinue={isTrailingTurn && !isWorking ? onContinue : undefined}
                      sessionId={sessionId}
                      latestMCPAppBlockIds={latestMCPAppBlockIds}
@@ -395,21 +402,11 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                  )
                 })}
 
-            {/* Show a stable activity state when:
-             *   1. pending — user just sent, agent hasn't woken yet (no agent_status event yet), OR
-             *   2. working with no agent content yet (user bubbles don't count).
-             * Covers the POST → first SSE event gap so the user always gets immediate feedback.
-             *
-             * Note: `[].every()` returns true, so the working branch must
-             * also require a non-empty currentBlocks list — otherwise the
-             * indicator sticks around after `done` flushes the buffer if a
-             * stale `working` status briefly survives.
+            {/* Keep one stable activity state across the POST → first SSE gap.
+             * Only a direct user message may reserve this pending runway;
+             * internal system/wait messages are deliberately excluded.
              */}
-            {((!isWorking && !isError && currentBlocks.some(isDirectUserBlock)) ||
-              (isWorking && (
-                (isContinuing && currentBlocks.length === 0) ||
-                (currentBlocks.length > 0 && currentBlocks.every((b) => b.type === 'user'))
-              ))) && (
+            {showPendingActivity && (
               <div className="oa-active-turn-runway">
                 <ActivityStatus className="py-1 pl-0.5 text-xs" />
               </div>

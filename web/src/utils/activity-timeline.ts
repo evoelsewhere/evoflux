@@ -5,7 +5,11 @@ export type AssistantTurnSegment =
   | { kind: 'content'; blocks: ContentBlock[] }
 
 export function isActivityBlock(block: ContentBlock): boolean {
-  return block.type === 'thinking' || block.type === 'tool'
+  // Delegation cards are durable, live task surfaces. Keeping them inside the
+  // bounded activity log clips larger teams and freezes their scroll position
+  // when the lead sleeps while members continue working.
+  return block.type === 'thinking'
+    || (block.type === 'tool' && block.toolName !== 'team_delegate')
 }
 
 /**
@@ -14,9 +18,11 @@ export function isActivityBlock(block: ContentBlock): boolean {
  * content; only adjacent thinking/tool events form an activity group.
  *
  * This mirrors the semantic stream: commentary and output are content, while
- * reasoning and tool lifecycle events are activity. A content event is a hard
- * group boundary, so later tools start a new group instead of swallowing the
- * preceding commentary into a growing work log.
+ * reasoning and ordinary tool lifecycle events are activity. Durable team
+ * delegation cards are content so they remain fully visible outside the
+ * bounded work log. A content event is a hard group boundary, so later tools
+ * start a new group instead of swallowing the preceding commentary into a
+ * growing work log.
  */
 export function segmentAssistantTurn(blocks: ContentBlock[]): AssistantTurnSegment[] {
   const segments: AssistantTurnSegment[] = []

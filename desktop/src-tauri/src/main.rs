@@ -235,24 +235,17 @@ fn configure_window_chrome(
     }
 }
 
-/// Let the frontend own drag-and-drop on Windows.
+/// Let the frontend own drag-and-drop on every desktop platform.
 ///
-/// WebView2 does not deliver HTML5 drag events while Wry's native file-drop
-/// handler is installed. The Work sidebar relies on those events to move chat
-/// sessions between folders, and the composer uses them for file attachments.
-/// Other platforms already deliver the browser events with the default
-/// handler, so keep their existing native integration intact.
+/// Wry's native handler consumes the platform drop operation after forwarding
+/// it as a Tauri event. EvoFlux does not use that event: the Work sidebar and
+/// composer both rely on HTML5 drag events instead. Leaving the native handler
+/// enabled therefore lets a row start dragging while preventing the frontend
+/// from receiving its drop, notably in WKWebView on macOS.
 fn configure_frontend_drag_drop(
     builder: WebviewWindowBuilder<'_, tauri::Wry, AppHandle>,
 ) -> WebviewWindowBuilder<'_, tauri::Wry, AppHandle> {
-    #[cfg(target_os = "windows")]
-    {
-        builder.disable_drag_drop_handler()
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        builder
-    }
+    builder.disable_drag_drop_handler()
 }
 
 /// Reapply the macOS controls after Tauri/Wry installs and sizes its content
