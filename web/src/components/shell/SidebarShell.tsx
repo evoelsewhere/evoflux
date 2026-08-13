@@ -1,7 +1,7 @@
 /**
  * SidebarShell — the shared desktop chrome of the mode sidebars
  * (work / coding): a floating-card panel with resizable width,
- * collapse-to-icon-rail animation, and the macOS traffic-light inset.
+ * collapse-to-zero animation, and the macOS traffic-light inset.
  *
  * Shared by Sidebar.tsx / CodingSidebar.tsx — both mode sidebars compose
  * this shell instead of duplicating the mechanics.
@@ -9,8 +9,8 @@
  *   - one canonical width in `useUIStore` (persisted drag + dbl-click reset)
  *   - the resize-handle separator and direct, non-tweened pointer updates
  *   - the collapse/expand animation (follows the user's motion intensity)
- *   - the collapsed rail width: 56px, or 70px on macOS overlay so the
- *     traffic lights land inside the rail
+ *   - a true zero-width collapsed state; AppShell keeps the restore control
+ *     available outside the sidebar
  *
  * It deliberately does NOT own the mobile drawer (work/coding keep their
  * own overlay markup) or the `pt-10` traffic-light content inset — that
@@ -42,10 +42,8 @@ import { cn } from '@/lib/utils'
 import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
 
 interface SidebarShellProps {
-  /** Collapsed icon-rail state — owned by the caller. */
+  /** Fully hidden state — owned by the caller. */
   collapsed?: boolean
-  /** Content rendered in place of `children` while collapsed. */
-  rail?: ReactNode
   /** aria-label of the resize handle (each sidebar names itself). */
   resizeLabel?: string
   children: ReactNode
@@ -53,11 +51,10 @@ interface SidebarShellProps {
 
 export function SidebarShell({
   collapsed = false,
-  rail,
   resizeLabel = 'Resize sidebar',
   children,
 }: SidebarShellProps) {
-  const { isMacOverlay, isTauri, os } = usePlatform()
+  const { isTauri, os } = usePlatform()
   const isDesktopShell = isTauri && os !== 'ios' && os !== 'android'
   const motionPreset = useMotionPreset()
   const sidebarWidth = useUIStore((state) => state.sidebarWidth)
@@ -142,7 +139,7 @@ export function SidebarShell({
       }
       setSidebarResizing(false)
       if (useUIStore.getState().sidebarCollapsed) {
-        applyLiveWidth(isMacOverlay ? 70 : 56)
+        applyLiveWidth(0)
       }
       window.requestAnimationFrame(() => {
         shell.style.transition = shellTransition
@@ -157,17 +154,15 @@ export function SidebarShell({
     window.addEventListener('pointerup', handleUp, { once: true })
     window.addEventListener('pointercancel', handleUp, { once: true })
     resizeCleanupRef.current = () => finish(false)
-  }, [collapsed, isMacOverlay, setSidebarResizing, setSidebarWidth])
+  }, [collapsed, setSidebarResizing, setSidebarWidth])
 
-  // On macOS Tauri the rail widens to 70px (matching
-  // --spacing-mac-traffic-inset) so the traffic-light buttons land fully
-  // inside it instead of spilling into the main content.
-  const width = collapsed ? (isMacOverlay ? 70 : 56) : sidebarWidth
+  const width = collapsed ? 0 : sidebarWidth
   const transitionDuration = DURATIONS.base * motionPreset.scale
 
   return (
     <aside
       data-sidebar-shell
+      aria-hidden={collapsed || undefined}
       data-desktop-sidebar-glass={isDesktopShell ? 'true' : undefined}
       className="relative flex h-full shrink-0 flex-col overflow-hidden"
       style={{
@@ -191,7 +186,7 @@ export function SidebarShell({
         />
       )}
       <div className="flex h-full flex-col gap-0.5 overflow-hidden p-0.5">
-        {collapsed ? rail : children}
+        {!collapsed && children}
       </div>
     </aside>
   )
@@ -222,8 +217,7 @@ export function SidebarCard({
   )
 }
 
-/** In-card section separator (the work pattern: a hairline inset by mx-3,
- *  mx-2 in the icon rail) — preferred over `border-t` on the section. */
+/** In-card section separator (the work pattern: a hairline inset by mx-3). */
 export function SidebarShellDivider({ className }: { className?: string }) {
   return (
     <div className={cn('shrink-0 h-px bg-(--color-border)', className ?? 'mx-3')} />
@@ -236,15 +230,6 @@ export function SidebarShellDivider({ className }: { className?: string }) {
  */
 export function SidebarModeSlot({ className }: { className?: string }) {
   return <div aria-hidden="true" className={cn('h-10 shrink-0', className)} />
-}
-
-/** Collapsed-rail counterpart of SidebarModeSlot (3 × 32px + two gaps). */
-export function SidebarModeRailSlot({ className }: { className?: string }) {
-  return (
-    <div aria-hidden="true" className={cn('shrink-0', className)}>
-      <div className="h-[6.25rem]" />
-    </div>
-  )
 }
 
 /**

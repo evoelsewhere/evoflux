@@ -90,7 +90,6 @@ describe('adaptive sidebar overlay', () => {
       mainWidth:
         MIN_PRIMARY_COLUMN_WIDTH
         + sidebarWidth
-        - WORKSPACE_PANEL.collapsedRailWidth
         - 1,
       sidebarWidth,
     })).toBe(true)

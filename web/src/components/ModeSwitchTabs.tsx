@@ -1,7 +1,7 @@
 /**
  * ModeSwitchTabs — the canonical Work | Coding control. Desktop uses
  * one root-owned instance that survives route changes; transient mobile
- * drawers reuse the same control. ModeSwitchRail is its collapsed variant.
+ * drawers reuse the same control.
  */
 
 import { useNavigate, useRouter } from '@tanstack/react-router'
@@ -22,25 +22,23 @@ const TABS: Array<{ mode: AppMode; label: string; Icon: LucideIcon; to: string }
 function ModeIcon({
   Icon,
   active,
-  compact = false,
 }: {
   Icon: LucideIcon
   active: boolean
-  compact?: boolean
 }) {
   return (
     <span
       aria-hidden="true"
       className={cn(
         'grid shrink-0 place-items-center transition-[color,filter] duration-(--motion-fast)',
-        compact ? 'size-[18px]' : 'size-5',
+        'size-5',
         active
           ? 'text-(--color-accent) [filter:drop-shadow(0_0_3px_color-mix(in_srgb,var(--color-accent)_58%,transparent))]'
           : 'text-(--color-text-subtle) group-hover:text-(--color-text)',
       )}
     >
       <Icon
-        size={compact ? 14 : 15}
+        size={15}
         strokeWidth={1.75}
         absoluteStrokeWidth
       />
@@ -161,89 +159,6 @@ export function ModeSwitchTabs({
           </button>
         ))}
       </div>
-    </div>
-  )
-}
-
-/** Icon-only variant for the collapsed (icon rail) sidebar. */
-export function ModeSwitchRail({
-  active,
-  className,
-}: {
-  active: AppMode
-  className?: string
-}) {
-  const { preset, preloadMode, switchMode } = useAnimatedModeNavigation()
-  const activeIndex = TABS.findIndex((tab) => tab.mode === active)
-
-  const onRailKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const current = Math.max(0, activeIndex)
-    let next = current
-    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-      next = (current + 1) % TABS.length
-    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-      next = (current - 1 + TABS.length) % TABS.length
-    } else if (event.key === 'Home') {
-      next = 0
-    } else if (event.key === 'End') {
-      next = TABS.length - 1
-    } else {
-      return
-    }
-    event.preventDefault()
-    const tab = TABS[next]
-    if (!tab) return
-    if (tab.mode !== active) switchMode(tab.mode, tab.to)
-    const buttons = event.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]')
-    buttons[next]?.focus()
-  }
-
-  return (
-    <div
-      className={cn('flex flex-col items-center gap-0.5', className)}
-      role="tablist"
-      aria-label="Application mode"
-      aria-orientation="vertical"
-      onKeyDown={onRailKeyDown}
-    >
-      {TABS.map(({ mode, label, Icon, to }) => (
-        <button
-          key={mode}
-          type="button"
-          tabIndex={mode === active ? 0 : -1}
-          onPointerEnter={() => {
-            if (mode !== active) preloadMode(mode, to)
-          }}
-          onFocus={() => {
-            if (mode !== active) preloadMode(mode, to)
-          }}
-          onClick={() => {
-            if (mode !== active) switchMode(mode, to)
-          }}
-          title={label}
-          aria-current={mode === active ? 'page' : undefined}
-          aria-selected={mode === active}
-          role="tab"
-          className={cn(
-            'group relative flex h-8 w-8 items-center justify-center rounded-lg outline-none transition-[color,transform] duration-(--motion-fast) active:translate-y-px focus-visible:ring-2 focus-visible:ring-(--color-accent)/35',
-            mode === active
-              ? 'text-(--color-accent)'
-              : 'text-(--color-text-subtle) hover:text-(--color-text-2)',
-          )}
-        >
-          {mode === active && (
-            <motion.span
-              layoutId="mode-switch-rail-indicator"
-              transition={preset.spring}
-              className="absolute inset-0 rounded-lg bg-(--bg-key)"
-              aria-hidden="true"
-            />
-          )}
-          <span className="relative z-(--z-panel)">
-            <ModeIcon Icon={Icon} active={mode === active} compact />
-          </span>
-        </button>
-      ))}
     </div>
   )
 }

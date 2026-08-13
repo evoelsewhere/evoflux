@@ -16,7 +16,6 @@ import {
   CalendarClock,
   Plus,
   RefreshCw,
-  Search,
 } from "lucide-react";
 import { ModeSwitchTabs } from "@/components/ModeSwitchTabs";
 import { isToday, isYesterday } from "date-fns";
@@ -43,7 +42,6 @@ import {
   SidebarSearchTrigger,
   SidebarFooter,
   SidebarModeSlot,
-  SidebarModeRailSlot,
 } from "@/components/shell/SidebarShell";
 import { SessionRow } from "@/components/shell/SessionRow";
 import {
@@ -641,88 +639,10 @@ export function Sidebar({
     </>
   );
 
-  // Collapsed desktop rail: mode switch + nav icons + first-8-sessions dots.
-  const rail = (
-    <SidebarCard className="h-full">
-      <div className="shrink-0 flex flex-col items-center px-1 py-2">
-        <SidebarModeRailSlot
-          className={`pb-1 ${isMacOverlay ? 'pt-10' : ''}`}
-        />
-        <nav
-          aria-label="Primary"
-          className="space-y-0.5 flex flex-col items-center gap-0.5"
-        >
-          {onCommandPalette && (
-            <SidebarItem
-              Icon={Search}
-              label="Commands"
-              kbd="^P"
-              collapsed
-              onClick={onCommandPalette}
-            />
-          )}
-          <SidebarItem
-            Icon={Plus}
-            label="New Chat"
-            kbd="^N"
-            collapsed
-            onClick={handleNewChat}
-          />
-          <SidebarItem
-            Icon={CalendarClock}
-            label="Scheduler"
-            kbd="^S"
-            collapsed
-            onClick={toggleScheduler}
-          />
-          <SidebarItem
-            Icon={Blocks}
-            label="Plugins"
-            kbd="^K"
-            collapsed
-            onClick={() => togglePlugins("plugins")}
-          />
-        </nav>
-      </div>
-
-      <SidebarShellDivider className="mx-2" />
-
-      <div className="flex flex-1 flex-col items-center gap-1 overflow-y-auto py-2">
-        {sessions.isSuccess &&
-          normalSessions.slice(0, 8).map((session) => {
-            const isActive = session.id === currentSessionId;
-            const title = session.title || "Untitled";
-            return (
-              <button
-                key={session.id}
-                type="button"
-                onClick={() => handleSelect(session.id)}
-                title={title}
-                aria-label={title}
-                aria-current={isActive ? "page" : undefined}
-                className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
-                  isActive
-                    ? "bg-(--bg-key) text-(--color-accent)"
-                    : "text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text-2)"
-                }`}
-              >
-                <div className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
-              </button>
-            );
-          })}
-      </div>
-
-      <SidebarShellDivider className="mx-2" />
-
-      <SidebarFooter collapsed onCommandPalette={onCommandPalette} />
-    </SidebarCard>
-  );
-
   // Desktop: one floating card with internal dividers (work style).
   const desktopShell = (
     <SidebarShell
       collapsed={collapsed}
-      rail={rail}
     >
       <SidebarCard className="h-full">
         {/* ─── Top section: search + nav ─── */}

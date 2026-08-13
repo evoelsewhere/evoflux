@@ -203,7 +203,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
 ],
     tricks: [
       'The mode switcher remembers the last route per mode — return to Coding and you land on the same workspace path you left.',
-      'Collapsed sidebar still exposes the mode rail so you can switch without expanding the full tree.',
+      'Collapsed sidebar disappears completely; use Ctrl+B or the floating sidebar button to restore it.',
       'Settings hides the mode switcher while you configure the app; leave Settings to switch modes again.',
       'Work is best for research, docs, browser tasks, and throwaway scripts; Coding for persistent repos.',
       'Permission modes, slash commands, and most workbench tools work across modes; Overview / Graph / Changes / Review are Coding-scoped.',
@@ -247,7 +247,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Step-by-step mode switch: (1) click Work or Coding on the mode rail, (2) wait for the sidebar tree to settle, (3) pick or create a session, (4) confirm the workbench tools you need are available for that mode before prompting the agent.',
+        text: 'Step-by-step mode switch: (1) expand the sidebar if needed, (2) click Work or Coding in the mode switcher, (3) pick or create a session, (4) confirm the workbench tools you need are available for that mode before prompting the agent.',
       }
 ],
     related: [

@@ -64,6 +64,7 @@ interface WorkbenchBarProps {
 }
 
 export function WorkbenchBar(props: WorkbenchBarProps) {
+  const sidebarCollapsed = useUIStore((state) => state.sidebarCollapsed)
   const workbenchOpen = useUIStore((state) => state.workbenchOpen)
   const activeWorkbenchTool = useUIStore((state) => state.activeWorkbenchTool)
   const toggleWorkbench = useUIStore((state) => state.toggleWorkbench)
@@ -123,6 +124,12 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
       className={cn(
         'workbench-topbar flex h-12 shrink-0 items-center gap-2 overflow-hidden bg-(--bg-page) px-3',
         props.isMacOverlay && 'mac-drag-region pt-3',
+        sidebarCollapsed
+          && !props.isMobile
+          && !props.sidebarOverlay
+          && (props.isMacOverlay
+            ? 'pl-[calc(var(--spacing-mac-traffic-inset)+2.5rem)]'
+            : 'pl-12'),
       )}
     >
       {(props.isMobile || props.sidebarOverlay) && (
