@@ -98,6 +98,7 @@ class AskUserService:
                             {
                                 "question": q.question,
                                 "options": q.options,
+                                "strict": q.strict,
                                 "kind": q.kind,
                                 **(
                                     {"agent_spawn": q.agent_spawn.model_dump()}

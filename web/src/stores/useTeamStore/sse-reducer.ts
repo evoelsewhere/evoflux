@@ -824,6 +824,7 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
             options: Array.isArray(q.options)
               ? q.options.filter((opt): opt is string => typeof opt === 'string')
               : [],
+            strict: q.strict === true,
             kind: q.kind === 'agent_spawn' ? 'agent_spawn' as const : 'text' as const,
             agentSpawn: q.kind === 'agent_spawn' && q.agent_spawn && typeof q.agent_spawn === 'object'
               ? {

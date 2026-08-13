@@ -9,7 +9,12 @@ import asyncio
 import pytest
 
 from app.agent.ask_user import AskUserService
-from app.agent.tools.builtin.ask_user import QuestionSpec
+from app.agent.tools.builtin.ask_user import (
+    AskUserQuestionSpec,
+    QuestionSpec,
+    _ask_user,
+    ask_user,
+)
 
 
 @pytest.mark.asyncio
@@ -52,6 +57,34 @@ async def test_validate_answers_allows_free_text_when_not_strict():
 
     svc.reply(request_id, ["something else"])
     await task
+
+
+@pytest.mark.asyncio
+async def test_model_facing_ask_user_options_are_always_soft(monkeypatch):
+    captured: list[QuestionSpec] = []
+
+    class _Service:
+        session_id = "sess-tool"
+
+        async def ask(self, questions: list[QuestionSpec]) -> list[str]:
+            captured.extend(questions)
+            return ["a different answer"]
+
+    monkeypatch.setattr(
+        "app.agent.ask_user.get_ask_user_service",
+        lambda: _Service(),
+    )
+
+    result = await _ask_user(
+        [AskUserQuestionSpec(question="Choose?", options=["one", "two"])]
+    )
+
+    assert captured[0].strict is False
+    assert result == "Q: Choose?\nA: a different answer"
+    question_items = ask_user.definition["function"]["parameters"]["properties"][
+        "questions"
+    ]["items"]["properties"]
+    assert "strict" not in question_items
 
 
 def test_browser_handoff_metadata_is_typed_and_secret_free():

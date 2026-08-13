@@ -248,10 +248,11 @@ class QuestionAskedEvent(BaseModel):
     a reply to ``/api/team/{session_id}/questions/{request_id}/reply`` with
     one answer per question, in order.
 
-    Each item in ``questions`` has ``question`` and ``options`` (empty for
-    a free-text question; when non-empty the frontend should offer those as
-    quick-pick buttons plus a free-text fallback, since the reply is always
-    taken verbatim as a string).
+    Each item in ``questions`` has ``question``, ``options``, and ``strict``.
+    Ordinary agent questions use non-strict options as quick picks alongside
+    a free-text fallback. Internal workflow gates are strict because their
+    declared choices route graph edges, so the frontend must only offer those
+    choices.
     """
 
     type: Literal["question_asked"] = "question_asked"

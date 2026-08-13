@@ -158,6 +158,7 @@ async def test_pending_preserves_agent_spawn_metadata(client, registered_service
         assert item == {
             "question": "Choose runtime",
             "options": [],
+            "strict": False,
             "kind": "agent_spawn",
             "agent_spawn": {
                 "blueprint": "executor",
