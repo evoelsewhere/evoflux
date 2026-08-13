@@ -235,6 +235,26 @@ fn configure_window_chrome(
     }
 }
 
+/// Let the frontend own drag-and-drop on Windows.
+///
+/// WebView2 does not deliver HTML5 drag events while Wry's native file-drop
+/// handler is installed. The Work sidebar relies on those events to move chat
+/// sessions between folders, and the composer uses them for file attachments.
+/// Other platforms already deliver the browser events with the default
+/// handler, so keep their existing native integration intact.
+fn configure_frontend_drag_drop(
+    builder: WebviewWindowBuilder<'_, tauri::Wry, AppHandle>,
+) -> WebviewWindowBuilder<'_, tauri::Wry, AppHandle> {
+    #[cfg(target_os = "windows")]
+    {
+        builder.disable_drag_drop_handler()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        builder
+    }
+}
+
 /// Reapply the macOS controls after Tauri/Wry installs and sizes its content
 /// view. The builder inset is applied too early and AppKit resets it during
 /// the post-build size pass, so relying on the builder alone has no visible
@@ -3440,6 +3460,7 @@ async fn build_app_window(
         .initialization_script(&init_script)
         .visible(false);
     let builder = configure_window_chrome(builder);
+    let builder = configure_frontend_drag_drop(builder);
     let win = builder.build().context("build webview window")?;
     if let Some(size) = saved_size {
         win.set_size(PhysicalSize::new(size.width, size.height))
