@@ -57,7 +57,19 @@ export function getVisibleTurnWindow(
   turnItems: TurnItem[],
   renderedTurnCount: number,
 ): VisibleTurnWindow {
-  const hiddenTurnCount = Math.max(0, turnItems.length - renderedTurnCount)
+  let hiddenTurnCount = Math.max(0, turnItems.length - renderedTurnCount)
+
+  // Never cut the render window between a prompt and its response. Otherwise
+  // scrolling to the lazy-render boundary can show an assistant answer while
+  // the user message that started that turn remains hidden just above it.
+  if (
+    hiddenTurnCount > 0
+    && turnItems[hiddenTurnCount]?.kind === 'assistant'
+    && turnItems[hiddenTurnCount - 1]?.kind === 'user'
+  ) {
+    hiddenTurnCount -= 1
+  }
+
   return {
     hiddenTurnCount,
     visibleTurnItems: hiddenTurnCount > 0 ? turnItems.slice(hiddenTurnCount) : turnItems,

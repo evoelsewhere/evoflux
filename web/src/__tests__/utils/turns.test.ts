@@ -43,6 +43,24 @@ describe('turn partitioning', () => {
     expect(window.visibleTurnItems).toEqual(turns.slice(1))
   })
 
+  it('keeps the user prompt when the render boundary lands on its response', () => {
+    const turns = partitionTurns([
+      block('text', 'older answer'),
+      block('user', 'prompt that must stay visible'),
+      block('text', 'newer answer'),
+    ])
+
+    const window = getVisibleTurnWindow(turns, 1)
+
+    expect(window.hiddenTurnCount).toBe(1)
+    expect(window.visibleTurnItems).toEqual(turns.slice(1))
+    expect(window.visibleTurnItems[0]).toMatchObject({
+      kind: 'user',
+      block: { content: 'prompt that must stay visible' },
+    })
+    expect(window.visibleTurnItems[1]).toMatchObject({ kind: 'assistant' })
+  })
+
   it('marks only the newest item in a live turn as streaming', () => {
     expect(isLatestStreamingItem(true, 0, 3)).toBe(false)
     expect(isLatestStreamingItem(true, 1, 3)).toBe(false)
