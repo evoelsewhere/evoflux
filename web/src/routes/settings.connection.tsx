@@ -5,7 +5,7 @@
  * but rendered inline as a settings sub-page.
  */
 import { useEffect, useState } from 'react'
-import { AlertCircle, Pencil, Server, Trash2 } from 'lucide-react'
+import { AlertCircle, Server, Trash2 } from 'lucide-react'
 
 import {
   SettingsCallout,
@@ -15,16 +15,13 @@ import {
 } from '@/components/settings/SettingsLayout'
 import { ConductorConnectionSettings } from '@/components/settings/ConductorConnectionSettings'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
 import { apiBaseUrl, setApiBaseUrl } from '@/api/base-url'
 import { queryClient } from '@/lib/query-client'
 import { queryKeys } from '@/queries/keys'
-import { getAccessKey, setAccessKey } from '@/api/auth'
+import { getAccessKey } from '@/api/auth'
 import {
   getAppBackendStatus,
   removeAppBackendServer,
-  saveAppBackendServer,
   switchToExternalAppBackend,
   switchToBundledAppBackend,
   type SavedAppServer,
@@ -35,10 +32,6 @@ const DEFAULT_SERVERS: SavedAppServer[] = [{ base_url: 'http://127.0.0.1:4082', 
 
 export function BackendConnectionPage() {
   const [status, setStatus] = useState<AppBackendStatus | null>(null)
-  const [baseUrl, setBaseUrl] = useState('')
-  const [serverName, setServerName] = useState('')
-  const [accessKey, setAccessKeyInput] = useState('')
-  const [rememberServer, setRememberServer] = useState(true)
   const [serverHealth, setServerHealth] = useState<Record<string, 'checking' | 'online' | 'offline'>>({})
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -48,10 +41,6 @@ export function BackendConnectionPage() {
     void getAppBackendStatus().then((next) => {
       if (cancelled) return
       setStatus(next)
-      setBaseUrl('')
-      setServerName('')
-      setAccessKeyInput('')
-      setRememberServer(true)
       const servers = next?.servers ?? DEFAULT_SERVERS
       setServerHealth(Object.fromEntries(servers.map((server) => [normalizeServerBaseUrl(server.base_url), 'checking'])))
       for (const server of servers) {
@@ -65,7 +54,7 @@ export function BackendConnectionPage() {
     return () => { cancelled = true }
   }, [])
 
-  async function checkExternal(nextBaseUrl = baseUrl, nextName = serverName, persist = rememberServer) {
+  async function checkExternal(nextBaseUrl: string, nextName: string) {
     const target = normalizeServerBaseUrl(nextBaseUrl)
     const validationError = validateServerUrl(target)
     if (validationError) {
@@ -81,14 +70,13 @@ export function BackendConnectionPage() {
         setError(connectionFailureMessage(target))
         return
       }
-      const keyForConnect = accessKey.trim() || getAccessKey() || ''
+      const keyForConnect = getAccessKey() || ''
       const authorized = await checkServerAuth(target, keyForConnect)
       if (!authorized) {
         setError('Server is reachable, but the access key is invalid or missing.')
         return
       }
-      if (accessKey.trim()) setAccessKey(accessKey)
-      const next = await switchToExternalAppBackend(target, nextName, persist)
+      const next = await switchToExternalAppBackend(target, nextName, true)
       setApiBaseUrl(next.base_url)
       await refreshBackendQueries()
       setStatus(next)
@@ -101,30 +89,6 @@ export function BackendConnectionPage() {
 
   async function connectBundled() {
     await runConnectionSwitch(() => switchToBundledAppBackend())
-  }
-
-  async function saveServer() {
-    const target = normalizeServerBaseUrl(baseUrl)
-    const validationError = validateServerUrl(target)
-    if (validationError) {
-      setError(validationError)
-      return
-    }
-    setPending(true)
-    setError(null)
-    try {
-      const next = await saveAppBackendServer(target, serverName)
-      setStatus(next)
-      setBaseUrl('')
-      setServerName('')
-      setServerHealth((prev) => ({ ...prev, [target]: 'checking' }))
-      const online = await pingServer(target)
-      setServerHealth((prev) => ({ ...prev, [target]: online ? 'online' : 'offline' }))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setPending(false)
-    }
   }
 
   async function removeServer(url: string) {
@@ -221,10 +185,6 @@ export function BackendConnectionPage() {
           const normalizedServerUrl = normalizeServerBaseUrl(server.base_url)
           const active =
             status?.mode === 'external' && normalizeServerBaseUrl(status.base_url) === normalizedServerUrl
-          const loadIntoForm = () => {
-            setBaseUrl(normalizedServerUrl)
-            setServerName(server.name ?? '')
-          }
           return (
             <div key={server.base_url} className="flex items-center gap-3 px-4 py-3">
               <ServerStatusDot status={serverHealth[normalizedServerUrl] ?? serverHealth[server.base_url]} />
@@ -245,22 +205,13 @@ export function BackendConnectionPage() {
                     size="sm"
                     variant="ghost"
                     onClick={() => {
-                      void checkExternal(normalizedServerUrl, server.name ?? '', true)
+                      void checkExternal(normalizedServerUrl, server.name ?? '')
                     }}
                     disabled={pending}
                   >
                     Connect
                   </Button>
                 )}
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  onClick={loadIntoForm}
-                  disabled={pending}
-                  aria-label={`Edit ${server.name || server.base_url}`}
-                >
-                  <Pencil size={13} />
-                </Button>
                 <Button
                   size="icon-sm"
                   variant="ghost"
@@ -277,97 +228,6 @@ export function BackendConnectionPage() {
             </div>
           )
         })}
-      </SettingsGroup>
-
-      <SettingsGroup
-        title="Add or edit a server"
-        description="Save stores or renames an entry without switching to it."
-      >
-        <SettingsRow
-          label="Server URL"
-          description="Include the scheme and port, for example http://192.168.1.20:4082."
-          htmlFor="settings-backend-url"
-          stacked
-          control={
-            <div className="flex gap-2">
-              <Input
-                id="settings-backend-url"
-                value={baseUrl}
-                onChange={(event) => setBaseUrl(event.target.value)}
-                placeholder="http://<backend-host>:4082"
-                className="min-w-0 flex-1 font-mono text-sm"
-              />
-              <Button
-                size="sm"
-                className="shrink-0"
-                onClick={() => void checkExternal()}
-                disabled={pending}
-              >
-                {pending ? 'Connecting…' : 'Connect'}
-              </Button>
-            </div>
-          }
-        />
-
-        <SettingsRow
-          label="Remember this server"
-          description="Keep it in the list above and reconnect after a reload."
-          control={
-            <Switch
-              checked={rememberServer}
-              onCheckedChange={setRememberServer}
-              disabled={pending}
-              aria-label="Remember this server"
-            />
-          }
-        />
-
-        <SettingsRow
-          label="Access key"
-          description="Required when the server was started with --key."
-          htmlFor="settings-backend-key"
-          stacked
-          control={
-            <Input
-              id="settings-backend-key"
-              value={accessKey}
-              onChange={(event) => {
-                setAccessKeyInput(event.target.value)
-                setAccessKey(event.target.value)
-              }}
-              placeholder="Paste the server access key"
-              type="password"
-              className="w-full text-sm"
-            />
-          }
-        />
-
-        <SettingsRow
-          label="Display name"
-          description="Only used to label the entry in the list."
-          htmlFor="settings-backend-name"
-          stacked
-          control={
-            <div className="flex gap-2">
-              <Input
-                id="settings-backend-name"
-                value={serverName}
-                onChange={(event) => setServerName(event.target.value)}
-                placeholder="Work laptop, Home server, Local CLI"
-                className="min-w-0 flex-1 text-sm"
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                className="shrink-0"
-                onClick={() => void saveServer()}
-                disabled={pending}
-              >
-                Save server
-              </Button>
-            </div>
-          }
-        />
       </SettingsGroup>
 
       {error && (
