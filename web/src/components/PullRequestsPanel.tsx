@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   AlertCircle,
   ArrowRight,
@@ -964,16 +964,111 @@ function ReviewDetails({
 interface ConnectionDialogProps {
   target: RepositoryCodeReviews
   connection: GitServerConnection | null
+  connectionLoading?: boolean
   onClose: () => void
 }
 
-function ConnectionDialog({
+function ConnectionDetail({
+  label,
+  children,
+}: {
+  label: string
+  children: ReactNode
+}) {
+  return (
+    <div className="grid gap-0.5 px-3 py-2.5 sm:grid-cols-[8.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
+      <dt className="text-xs text-(--color-text-muted)">{label}</dt>
+      <dd className="min-w-0 break-words text-sm font-medium text-(--color-text)">
+        {children}
+      </dd>
+    </div>
+  )
+}
+
+export function GitServerConnectionSummary({
+  connection,
+  onClose,
+  onEdit,
+}: {
+  connection: GitServerConnection
+  onClose: () => void
+  onEdit: () => void
+}) {
+  const scopeLabel = SCOPES.find((scope) => scope.value === connection.scope)?.label
+    ?? connection.scope
+
+  return (
+    <>
+      <section
+        aria-label="Saved Git server connection"
+        className="overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-page)"
+      >
+        <div className="flex items-center gap-3 border-b border-(--color-border) px-3 py-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-(--color-success-subtle) text-(--color-success)">
+            <KeyRound size={16} aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-(--color-text)">
+              {connection.name}
+            </span>
+            <span className="mt-0.5 flex items-center gap-1 text-xs text-(--color-success)">
+              <CheckCircle2 size={12} aria-hidden="true" />
+              Configured
+            </span>
+          </span>
+        </div>
+        <dl className="divide-y divide-(--color-border)">
+          <ConnectionDetail label="Provider">
+            {providerLabel(connection.provider)}
+          </ConnectionDetail>
+          <ConnectionDetail label="Git server">
+            {connection.domain}
+          </ConnectionDetail>
+          <ConnectionDetail label="API endpoint">
+            <span className="font-mono text-xs">{connection.base_url}</span>
+          </ConnectionDetail>
+          <ConnectionDetail label="Credential scope">
+            {scopeLabel}
+          </ConnectionDetail>
+          <ConnectionDetail label="Access token">
+            <span className={connection.has_token ? 'text-(--color-success)' : 'text-(--color-error)'}>
+              {connection.has_token ? 'Saved securely' : 'Not configured'}
+            </span>
+          </ConnectionDetail>
+          {connection.username && (
+            <ConnectionDetail label="Username">
+              {connection.username}
+            </ConnectionDetail>
+          )}
+          <ConnectionDetail label="TLS verification">
+            {connection.verify_ssl ? 'Enabled' : 'Disabled'}
+          </ConnectionDetail>
+          <ConnectionDetail label="Last updated">
+            {formatRelativeDate(connection.updated_at)}
+          </ConnectionDetail>
+        </dl>
+      </section>
+
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>Close</Button>
+        <Button variant="outline" onClick={onEdit}>
+          <Settings2 size={13} aria-hidden="true" />
+          Edit connection
+        </Button>
+      </DialogFooter>
+    </>
+  )
+}
+
+export function ConnectionDialog({
   target,
   connection,
+  connectionLoading = false,
   onClose,
 }: ConnectionDialogProps) {
   const save = useSaveGitServerConnectionMutation()
   const test = useTestGitServerConnectionMutation()
+  const [editing, setEditing] = useState(!connection)
   const [name, setName] = useState(
     connection?.name ?? `${target.name} connection`,
   )
@@ -1053,22 +1148,57 @@ function ConnectionDialog({
   }
 
   const error = test.error ?? save.error
+  const expectsSavedConnection = Boolean(target.connection_id)
+  const showSavedConnection = connection !== null && !editing
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            {connection ? 'Edit Git server connection' : 'Connect Git server'}
+            {showSavedConnection
+              ? 'Git server connection'
+              : connection ? 'Edit Git server connection' : 'Connect Git server'}
           </DialogTitle>
           <DialogDescription>
-            {target
-              ? `One saved credential for pull requests and HTTPS Git sync in ${target.repository ?? target.name}. It is stored separately from repository metadata.`
-              : 'Configure pull-request API access and HTTPS Git sync for this server.'}
+            {showSavedConnection
+              ? `${target.repository ?? target.name} is using this saved connection for pull requests and HTTPS Git sync.`
+              : `One saved credential for pull requests and HTTPS Git sync in ${target.repository ?? target.name}. It is stored separately from repository metadata.`}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-3">
+        {showSavedConnection && (
+          <GitServerConnectionSummary
+            connection={connection}
+            onClose={onClose}
+            onEdit={() => setEditing(true)}
+          />
+        )}
+
+        {!connection && expectsSavedConnection && (
+          <>
+            <div className="flex min-h-28 items-center justify-center gap-2 rounded-lg border border-(--color-border) bg-(--bg-page) px-4 text-sm text-(--color-text-muted)">
+              {connectionLoading ? (
+                <>
+                  <Loader2 size={15} className="animate-spin" />
+                  Loading saved connection…
+                </>
+              ) : (
+                <>
+                  <AlertCircle size={15} className="text-(--color-warning)" />
+                  Saved connection details are unavailable. Refresh connections and try again.
+                </>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={onClose}>Close</Button>
+            </DialogFooter>
+          </>
+        )}
+
+        {!showSavedConnection && (!expectsSavedConnection || connection) && (
+          <>
+          <div className="grid gap-3">
           <label className="grid gap-1">
             <span className="text-xs font-medium text-(--color-text-muted)">
               Connection name
@@ -1214,28 +1344,30 @@ function ConnectionDialog({
               {error instanceof Error ? error.message : String(error)}
             </p>
           )}
-        </div>
+          </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => void testValues()}
-            disabled={!token.trim() || test.isPending}
-          >
-            {test.isPending && <Loader2 className="animate-spin" />}
-            Test
-          </Button>
-          <Button
-            onClick={() => void submit()}
-            disabled={!canSubmit || save.isPending}
-          >
-            {save.isPending && <Loader2 className="animate-spin" />}
-            Save connection
-          </Button>
-        </DialogFooter>
+          <DialogFooter>
+            <Button variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => void testValues()}
+              disabled={!token.trim() || test.isPending}
+            >
+              {test.isPending && <Loader2 className="animate-spin" />}
+              Test
+            </Button>
+            <Button
+              onClick={() => void submit()}
+              disabled={!canSubmit || save.isPending}
+            >
+              {save.isPending && <Loader2 className="animate-spin" />}
+              Save connection
+            </Button>
+          </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   )
@@ -1820,6 +1952,7 @@ export function PullRequestsPanel({
           key={`${configTarget.workspace_id}:${editConnection?.id ?? 'new'}`}
           target={configTarget}
           connection={editConnection}
+          connectionLoading={connections.isLoading || connections.isFetching}
           onClose={() => setConfigTarget(null)}
         />
       )}
