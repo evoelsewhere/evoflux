@@ -52,6 +52,7 @@ import { useToastStore } from '@/stores/useToastStore'
 import { isTransientNetworkError } from '@/utils/errors'
 import { cn } from '@/lib/utils'
 import { ProviderBrandIcon as SharedProviderBrandIcon } from '@/components/providers/ProviderBrandIcon'
+import { formatCreditBalance, formatProviderPlan } from '@/utils/provider-usage'
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -149,6 +150,7 @@ function UsageBar({ label, window }: { label: string; window: NonNullable<Provid
 function UsageLimitRows({ limit }: { limit: ProviderUsageLimit }) {
   const base = usageLabel(limit)
   const credits = limit.credits
+  const balance = formatCreditBalance(credits?.balance)
   return (
     <>
       {limit.primary && (
@@ -159,7 +161,11 @@ function UsageLimitRows({ limit }: { limit: ProviderUsageLimit }) {
       )}
       {credits && !limit.primary && !limit.secondary && (
         <p className="text-xs text-(--color-text-muted)">
-          {credits.unlimited ? 'Unlimited usage available' : credits.has_credits ? 'Usage credits available' : 'No usage credits available'}
+          {credits.unlimited
+            ? 'Unlimited usage available'
+            : credits.has_credits
+              ? balance ? `${balance} credits remaining` : 'Usage credits available'
+              : 'No usage credits available'}
         </p>
       )}
     </>
@@ -169,14 +175,13 @@ function UsageLimitRows({ limit }: { limit: ProviderUsageLimit }) {
 function UsagePanel({ limits }: { limits: ProviderUsageLimit[] }) {
   if (limits.length === 0) return null
   const primary = limits[0]
-  const credits = primary?.credits
+  const plan = formatProviderPlan(primary?.plan_type)
   return (
     <div className="space-y-2 rounded-lg border border-(--color-border) bg-(--bg-page) p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-semibold text-(--color-text)">Active usage</p>
         <p className="text-xs text-(--color-text-muted)">
-          {primary?.plan_type ? `Plan: ${primary.plan_type}` : 'Live usage'}
-          {credits?.unlimited ? ' · unlimited' : credits?.balance ? ` · credits ${credits.balance}` : ''}
+          {plan ? `Plan: ${plan}` : 'Live usage'}
         </p>
       </div>
       <div className="space-y-2">
