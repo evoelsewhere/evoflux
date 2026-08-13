@@ -6,7 +6,7 @@
  * Markdown-heavy conversations. Users can add one secondary agent for a
  * resizable two-pane comparison.
  */
-import { startTransition, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Activity,
@@ -280,14 +280,14 @@ export function SplitWorkbench({
   const paneReady = readyPaneKey === paneRenderKey
 
   // Commit the inexpensive Split shell and team rail first. Transcript
-  // Markdown mounts one paint later in a transition, preventing the layout
-  // click itself from being held hostage by a large response parse.
+  // Markdown mounts after the inexpensive shell has painted. Keep this state
+  // update at normal priority so live streaming cannot starve it indefinitely.
   useEffect(() => {
     if (!paneRenderKey) return
     let secondFrame: number | null = null
     const firstFrame = requestAnimationFrame(() => {
       secondFrame = requestAnimationFrame(() => {
-        startTransition(() => setReadyPaneKey(paneRenderKey))
+        setReadyPaneKey(paneRenderKey)
       })
     })
     return () => {

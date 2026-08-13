@@ -1534,15 +1534,17 @@ a svg.lucide,
   }
 }
 
-/* Codex-style conversation runway. While a turn is live, its minimum height
- * keeps the latest prompt in the upper quarter of the viewport and reserves
- * the remaining space for the response to grow before bottom-follow begins. */
-.oa-active-turn-runway {
+/* Codex-style conversation runway. The newest turn keeps the runway after its
+ * completion, avoiding a large scroll-height collapse on the terminal event.
+ * A following prompt replaces this runway with its own pending/live runway. */
+.oa-active-turn-runway,
+.oa-latest-turn-runway {
   min-height: clamp(18rem, 70svh, 44rem);
 }
 
 @media (max-width: 767px) {
-  .oa-active-turn-runway {
+  .oa-active-turn-runway,
+  .oa-latest-turn-runway {
     min-height: clamp(14rem, 62svh, 32rem);
   }
 }

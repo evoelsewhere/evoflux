@@ -118,18 +118,15 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
   }
 
   return (
-    <motion.header
-      layout="position"
-      transition={motionPreset.spring}
+    <header
       {...props.dragHandlers}
       className={cn(
-        'workbench-topbar flex h-12 shrink-0 items-center gap-2 overflow-hidden bg-(--bg-page) px-3 will-change-transform',
+        'workbench-topbar flex h-12 shrink-0 items-center gap-2 overflow-hidden bg-(--bg-page) px-3',
         props.isMacOverlay && 'mac-drag-region pt-3',
       )}
     >
       {(props.isMobile || props.sidebarOverlay) && (
         <motion.button
-          layout
           type="button"
           onClick={props.onOpenMobileSidebar}
           whileHover={{ scale: 1.05 }}
@@ -143,11 +140,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
         </motion.button>
       )}
 
-      <motion.div
-        layout="position"
-        transition={motionPreset.spring}
-        className="flex min-w-0 flex-1 items-center gap-2"
-      >
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <DropdownMenu>
           <DropdownMenuTrigger
             className="group flex h-9 min-w-0 max-w-full items-center gap-2 rounded-xl border border-transparent bg-(--bg-card)/45 py-1 pl-1.5 pr-2.5 text-sm font-medium text-(--color-text) outline-none transition-[background-color,border-color,box-shadow] hover:border-(--color-border) hover:bg-(--bg-card) hover:shadow-sm data-[popup-open]:border-(--color-border) data-[popup-open]:bg-(--bg-card)"
@@ -198,7 +191,6 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
         </DropdownMenu>
         {props.reviewContext && props.onOpenReviewContext && (
           <motion.button
-            layout
             type="button"
             onClick={props.onOpenReviewContext}
             whileHover={{ scale: 1.02 }}
@@ -213,11 +205,9 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             <span>Review #{props.reviewContext.number}</span>
           </motion.button>
         )}
-      </motion.div>
+      </div>
 
-      <motion.div
-        layout="position"
-        transition={motionPreset.spring}
+      <div
         className="flex shrink-0 items-center rounded-xl border border-(--color-border) bg-(--bg-card)/55 p-0.5 shadow-sm"
         data-no-drag
       >
@@ -247,18 +237,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
           >
             <ViewModeIcon size={14} />
             <span className="workbench-view-label overflow-hidden">
-              <AnimatePresence initial={false} mode="popLayout">
-                <motion.span
-                  key={viewModeLabel}
-                  initial={{ opacity: 0, y: 4 * motionPreset.distance }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 * motionPreset.distance }}
-                  transition={motionPreset.transition}
-                  className="inline-block"
-                >
-                  {viewModeLabel}
-                </motion.span>
-              </AnimatePresence>
+              <span className="inline-block">{viewModeLabel}</span>
             </span>
             <ChevronDown
               size={11}
@@ -340,7 +319,6 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
         )}
 
         <motion.button
-          layout
           type="button"
           onClick={handleWorkbenchToggle}
           whileHover={{ scale: 1.05 }}
@@ -356,10 +334,8 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
           title={workbenchOpen ? 'Hide side panel' : 'Show side panel'}
         >
           {workbenchOpen && (
-            <motion.span
-              layoutId="workbench-toggle-active"
+            <span
               className="absolute inset-0 rounded-lg bg-(--bg-key)"
-              transition={motionPreset.spring}
             />
           )}
           <motion.span
@@ -370,7 +346,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             <SidePanelIcon size={15} />
           </motion.span>
         </motion.button>
-      </motion.div>
-    </motion.header>
+      </div>
+    </header>
   )
 }

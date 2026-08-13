@@ -27,7 +27,6 @@
  */
 import {
   lazy,
-  startTransition,
   Suspense,
   useCallback,
   useEffect,
@@ -316,10 +315,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const [showPalette, setShowPalette] = useState(false)
   const [fileRefsEnabled, setFileRefsEnabled] = useState(false)
   const [viewMode, setViewModeState] = useState<ViewMode>('agent')
-  const [pendingViewMode, setPendingViewMode] = useState<ViewMode | null>(null)
   const [automaticSplitTransition, setAutomaticSplitTransition] = useState(false)
   const previousActiveAgentCountRef = useRef(0)
   const layoutSwitchFrameRef = useRef<number | null>(null)
+  const requestedViewModeRef = useRef<ViewMode>('agent')
   const [sideChatQuote, setSideChatQuote] = useState<string | null>(null)
   const [webBridgeEnabled, setWebBridgeEnabled] = useState(false)
   const [webBridgeDialogOpen, setWebBridgeDialogOpen] = useState(false)
@@ -329,31 +328,25 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   // On mobile, always force agent view — split/monitor require a wide screen.
   // Also close any desktop-only panels when shrinking to mobile.
   const effectiveViewMode: ViewMode = isMobile ? 'agent' : viewMode
-  const displayedViewMode: ViewMode = isMobile
-    ? 'agent'
-    : pendingViewMode ?? viewMode
+  const displayedViewMode: ViewMode = isMobile ? 'agent' : viewMode
   const setViewMode = useCallback((nextViewMode: ViewMode) => {
     setAutomaticSplitTransition(false)
-    setPendingViewMode(nextViewMode)
+    requestedViewModeRef.current = nextViewMode
     if (layoutSwitchFrameRef.current !== null) {
       cancelAnimationFrame(layoutSwitchFrameRef.current)
     }
-    // Let the dropdown close and its label update before React begins the
-    // Markdown-heavy layout render. The transition remains interruptible.
+    // Let the dropdown close before React begins the Markdown-heavy layout
+    // render. This update must stay at normal priority: a transition can be
+    // repeatedly interrupted by streaming transcript updates and make a
+    // valid layout click appear to do nothing.
     layoutSwitchFrameRef.current = requestAnimationFrame(() => {
       layoutSwitchFrameRef.current = null
-      startTransition(() => setViewModeState(nextViewMode))
+      setViewModeState(nextViewMode)
     })
   }, [])
   const completeAutomaticSplit = useCallback(() => {
     setViewMode('split')
   }, [setViewMode])
-
-  useEffect(() => {
-    if (pendingViewMode === null || pendingViewMode !== viewMode) return
-    const frame = requestAnimationFrame(() => setPendingViewMode(null))
-    return () => cancelAnimationFrame(frame)
-  }, [pendingViewMode, viewMode])
 
   useEffect(() => () => {
     if (layoutSwitchFrameRef.current !== null) {
@@ -1198,10 +1191,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   })
 
   const cycleViewMode = useCallback(() => {
-    const currentViewMode = pendingViewMode ?? viewMode
+    const currentViewMode = requestedViewModeRef.current
     const idx = VIEW_MODES.indexOf(currentViewMode)
     setViewMode(VIEW_MODES[(idx + 1) % VIEW_MODES.length])
-  }, [pendingViewMode, setViewMode, viewMode])
+  }, [setViewMode])
 
   const commands = useTeamCommands({
     viewMode,

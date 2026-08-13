@@ -15,6 +15,10 @@ interface UsePinnedTranscriptOptions {
   followKey?: string | number | null
   /** Optional work that should run once per painted scroll frame. */
   onScrollFrame?: (element: HTMLDivElement) => void
+  /** Keep wheel/touch intent inside a nested scroll region. */
+  isolateScroll?: boolean
+  /** Disable rendered-height following for dormant nested regions. */
+  followEnabled?: boolean
   bottomThreshold?: number
 }
 
@@ -55,6 +59,8 @@ export function usePinnedTranscript({
   resetKey,
   followKey,
   onScrollFrame,
+  isolateScroll = false,
+  followEnabled = true,
   bottomThreshold = DEFAULT_BOTTOM_THRESHOLD,
 }: UsePinnedTranscriptOptions) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -95,6 +101,7 @@ export function usePinnedTranscript({
   }, [cancelFollow, setScrollButtonVisible])
 
   const followRenderedHeight = useCallback(() => {
+    if (!followEnabled) return
     if (followFrameRef.current !== null) return
     let previousTimestamp: number | null = null
 
@@ -119,7 +126,7 @@ export function usePinnedTranscript({
     }
 
     followFrameRef.current = requestAnimationFrame(tick)
-  }, [])
+  }, [followEnabled])
 
   const scrollToBottom = useCallback((smooth = false) => {
     const element = scrollRef.current
@@ -180,10 +187,12 @@ export function usePinnedTranscript({
     }
 
     const onWheel = (event: WheelEvent) => {
+      if (isolateScroll) event.stopPropagation()
       if (event.deltaY < -USER_SCROLL_DETACH_DELTA) detach()
     }
 
     const onTouchMove = (event: TouchEvent) => {
+      if (isolateScroll) event.stopPropagation()
       const y = event.touches[0]?.clientY
       if (y == null) return
       if (lastTouchY !== null && y > lastTouchY + USER_SCROLL_DETACH_DELTA) detach()
@@ -207,7 +216,7 @@ export function usePinnedTranscript({
       element.removeEventListener('touchend', clearTouch)
       element.removeEventListener('touchcancel', clearTouch)
     }
-  }, [detach, isAtBottom, setScrollButtonVisible])
+  }, [detach, isAtBottom, isolateScroll, setScrollButtonVisible])
 
   useEffect(() => {
     const content = contentRef.current
@@ -222,14 +231,18 @@ export function usePinnedTranscript({
   }, [contentKey, followRenderedHeight])
 
   useEffect(() => {
-    if (resetKey == null) return
+    if (resetKey == null || !followEnabled) return
     reattach()
-  }, [reattach, resetKey])
+  }, [followEnabled, reattach, resetKey])
 
   useEffect(() => {
-    if (followKey == null) return
+    if (followKey == null || !followEnabled) return
     reattach()
-  }, [followKey, reattach])
+  }, [followEnabled, followKey, reattach])
+
+  useEffect(() => {
+    if (!followEnabled) cancelFollow()
+  }, [cancelFollow, followEnabled])
 
   useEffect(() => {
     if (!isEmpty) return
