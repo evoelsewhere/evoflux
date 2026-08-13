@@ -595,11 +595,6 @@ class SummarizationHook(BaseAgentHook):
                 )
                 return None
 
-        logger.info(
-            "summarization_triggered agent={} last_prompt_tokens={}",
-            ctx.agent_name,
-            state.usage.last_prompt_tokens,
-        )
         state.metadata["_compact_pending"] = True
         self._pending_summary = (ctx, state)
 
@@ -959,7 +954,7 @@ class SummarizationHook(BaseAgentHook):
             span.set_attribute("summarization.response_length", len(full_text))
             if last_usage is not None:
                 usage_dict = usage_to_dict(last_usage, model_id)
-                logger.info(
+                logger.debug(
                     "summarization_usage model={} input={} output={} cache={}",
                     model_id,
                     usage_dict.get("input"),

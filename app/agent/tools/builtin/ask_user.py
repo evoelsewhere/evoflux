@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Literal
 
-from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.agent.tools.registry import Tool
@@ -106,11 +105,6 @@ async def _ask_user(questions: list[AskUserQuestionSpec]) -> str:
     from app.agent.ask_user import get_ask_user_service
 
     svc = get_ask_user_service()
-    logger.info(
-        "ask_user_question session={} questions={}",
-        svc.session_id,
-        [q.question for q in questions],
-    )
     soft_questions = [
         QuestionSpec(
             question=question.question,
@@ -121,10 +115,8 @@ async def _ask_user(questions: list[AskUserQuestionSpec]) -> str:
         for question in questions
     ]
     answers = await svc.ask(soft_questions)
-    logger.info("ask_user_answered session={} answers={}", svc.session_id, answers)
     return "\n".join(
-        f"Q: {q.question}\nA: {a}"
-        for q, a in zip(soft_questions, answers, strict=True)
+        f"Q: {q.question}\nA: {a}" for q, a in zip(soft_questions, answers, strict=True)
     )
 
 

@@ -316,7 +316,7 @@ async def load_skill(
             )
 
     if skill_name in loaded:
-        logger.info("skill_reused name={}", skill_name)
+        logger.debug("skill_reused name={}", skill_name)
         return (
             f"Skill '{skill_name}' is already loaded; reuse its visible instructions."
         )
@@ -354,7 +354,7 @@ async def load_skill(
         )
     except Exception:  # noqa: BLE001 - telemetry cannot block activation
         pass
-    logger.info("skill_loaded name={} file={}", skill_name, record.skill_file)
+    logger.debug("skill_loaded name={} file={}", skill_name, record.skill_file)
     if _state is not None:
         loaded[skill_name] = rendered
         return rendered

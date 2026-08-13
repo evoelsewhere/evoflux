@@ -62,7 +62,7 @@ class SkillResolutionHook(BaseAgentHook):
             return
 
         state.metadata["skill_resolution"] = decision.as_dict()
-        logger.info(
+        logger.debug(
             "skill_resolution_decided agent={} mode={} status={} skill={} confidence={:.2f}",
             ctx.agent_name,
             self._mode,
@@ -103,7 +103,7 @@ class SkillResolutionHook(BaseAgentHook):
             content=content,
             source="resolved",
         )
-        logger.info(
+        logger.debug(
             "skill_resolution_activated agent={} skill={}",
             ctx.agent_name,
             decision.skill_name,

@@ -8,7 +8,6 @@ import shutil
 from pathlib import Path
 from typing import Annotated
 
-from loguru import logger
 from pydantic import Field
 
 from app.agent.sandbox import get_sandbox
@@ -51,7 +50,6 @@ async def _remove_path(
             meta_payload["deleted_lines"] = line_count
         meta = json.dumps(meta_payload, separators=(",", ":"))
         resolved.unlink()
-        logger.info("file_removed path={}", resolved)
         notify_fs_change(resolved)
         return (
             f"@@ EvoFlux-diff-meta {meta}\n"
@@ -61,14 +59,12 @@ async def _remove_path(
     # Me path is directory
     if recursive:
         await asyncio.to_thread(shutil.rmtree, resolved)
-        logger.info("dir_removed path={} recursive=true", resolved)
         notify_fs_change(resolved)
         return f"Removed directory: {rel}\nResolved path: {resolved}"
 
     # Me try remove empty dir
     try:
         resolved.rmdir()
-        logger.info("dir_removed path={} recursive=false", resolved)
         notify_fs_change(resolved)
         return f"Removed directory: {rel}\nResolved path: {resolved}"
     except OSError as exc:

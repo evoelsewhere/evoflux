@@ -103,15 +103,6 @@ async def _python(
     sandbox = get_sandbox()
     cwd = sandbox.workspace_root
 
-    desc_tag = f" ({description})" if description else ""
-    logger.info(
-        "python_execute_start code_len={} cwd={} timeout={}{}",
-        len(code),
-        cwd,
-        timeout,
-        desc_tag,
-    )
-
     # Write code to a temp file to avoid shell escaping issues and to
     # support multi-line scripts without heredoc gymnastics.
     tmp = tempfile.NamedTemporaryFile(
@@ -166,7 +157,7 @@ async def _python(
         except NotImplementedError:
             # Windows SelectorEventLoop does not support asyncio subprocess.
             # Fall back to synchronous subprocess.run() in a thread.
-            logger.info("python_execute_thread_fallback reason=NotImplementedError")
+            logger.debug("python_execute_thread_fallback reason=NotImplementedError")
 
             def _run_sync() -> subprocess.CompletedProcess[bytes]:
                 return subprocess.run(  # noqa: S603
@@ -190,7 +181,6 @@ async def _python(
         output = (raw_output or b"").decode(errors="replace").rstrip()
 
         if returncode == 0:
-            logger.info("python_execute_done exit=0 output_len={}", len(output))
             if not output:
                 return "[Succeeded]\n\n(No output)"
             if len(output.encode()) > _OUTPUT_MAX_BYTES:
@@ -205,11 +195,6 @@ async def _python(
                 return f"[Succeeded]\n\n{head}\n\n...output truncated (full output saved to {spill})"
             return f"[Succeeded]\n\n{output}"
         else:
-            logger.info(
-                "python_execute_failed exit={} output_len={}",
-                returncode,
-                len(output),
-            )
             return f"[Failed — exit code {returncode}]\n\n{output}"
 
     finally:

@@ -194,7 +194,7 @@ def make_tool_executor(
                 s, active_tool, args
             )
             if observation_short_circuit is not None:
-                logger.info(
+                logger.debug(
                     "tool_observation_short_circuit agent={} tool={} result={}",
                     agent_name,
                     tc.function.name,
@@ -214,7 +214,7 @@ def make_tool_executor(
                 summary = _plan_summary(tc.function.name, args)
                 result = plan_svc.record_step(tc.function.name, args, summary)
                 tool_elapsed = time.monotonic() - tool_start
-                logger.info(
+                logger.debug(
                     "plan_step_recorded agent={} tool={} elapsed={:.2f}s step={}",
                     agent_name,
                     tc.function.name,
@@ -245,7 +245,7 @@ def make_tool_executor(
                             detail,
                         )
                         return f"[Blocked — approved plan mismatch] {detail}"
-                    logger.info(
+                    logger.debug(
                         "approved_plan_call_matched agent={} tool={} detail={}",
                         agent_name,
                         tc.function.name,

@@ -96,7 +96,7 @@ async def web_search(
                 ),
             )
             if results:
-                logger.info(f"Web search succeeded with backend: {backend}")
+                logger.debug("web_search_succeeded backend={}", backend)
                 break
         except Exception as e:
             logger.debug(f"Web search failed with backend {backend}: {str(e)}")
