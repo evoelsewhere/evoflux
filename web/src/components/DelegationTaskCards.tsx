@@ -8,6 +8,7 @@ import {
   parseDelegationCall,
 } from '@/lib/delegation-activity'
 import { useTeamStore } from '@/stores/useTeamStore'
+import { ActivityStatus } from '@/components/motion/ActivityStatus'
 import type { ToolCallState } from '@/components/ToolCall/types'
 
 export function DelegationTaskCards({
@@ -40,35 +41,46 @@ export function DelegationTaskCards({
     return null
   }
 
+  const targets = parsed.targets.map((target) => {
+    const stream = agentStreams[target.agent]
+    const handoffMatch = delegationHandoffMatch(
+      activityLog,
+      stream,
+      target.taskId,
+      leadInboxBlocks,
+    )
+    const handoff = handoffMatch?.artifact ?? null
+    const status = delegationDisplayStatus({ toolState, stream, handoff })
+    return { handoff, handoffMatch, status, stream, target }
+  })
+  const activeCount = targets.filter(
+    ({ status }) => status === 'queued' || status === 'running',
+  ).length
+
   return (
     <div className="my-2 space-y-1.5">
-      {parsed.targets.map((target) => {
-        const stream = agentStreams[target.agent]
-        const handoffMatch = delegationHandoffMatch(
-          activityLog,
-          stream,
-          target.taskId,
-          leadInboxBlocks,
-        )
-        const handoff = handoffMatch?.artifact ?? null
-        const status = delegationDisplayStatus({ toolState, stream, handoff })
-        return (
-          <SubagentTaskCard
-            key={target.taskId ?? target.agent}
-            agent={target.agent}
-            title={parsed.title}
-            status={status}
-            activity={delegationActivityLabel(status, stream, handoff)}
-            handoff={handoff}
-            taskId={target.taskId}
-            startedAt={startedAt}
-            completedAt={handoffMatch?.receivedAt}
-            isolation={parsed.isolation}
-            repoCount={parsed.repoCount}
-            onFocus={() => setActiveAgent(target.agent)}
-          />
-        )
-      })}
+      {targets.map(({ handoff, handoffMatch, status, stream, target }) => (
+        <SubagentTaskCard
+          key={target.taskId ?? target.agent}
+          agent={target.agent}
+          title={parsed.title}
+          status={status}
+          activity={delegationActivityLabel(status, stream, handoff)}
+          handoff={handoff}
+          taskId={target.taskId}
+          startedAt={startedAt}
+          completedAt={handoffMatch?.receivedAt}
+          isolation={parsed.isolation}
+          repoCount={parsed.repoCount}
+          onFocus={() => setActiveAgent(target.agent)}
+        />
+      ))}
+      {activeCount > 0 && (
+        <ActivityStatus
+          label={`Waiting for ${activeCount} ${activeCount === 1 ? 'agent' : 'agents'}…`}
+          className="px-2.5 py-1 text-xs"
+        />
+      )}
     </div>
   )
 }

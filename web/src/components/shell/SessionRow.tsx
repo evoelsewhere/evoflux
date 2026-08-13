@@ -46,7 +46,7 @@ export interface SessionRowProps {
   /** Enables HTML5 drag so the row can be dropped onto a sidebar folder. */
   draggable?: boolean
   onDragStart?: (session: SessionResponse, event: React.DragEvent) => void
-  onDragEnd?: () => void
+  onDragEnd?: (session: SessionResponse, event: React.DragEvent) => void
 }
 
 /**
@@ -86,7 +86,7 @@ export function SessionRow({
       className="group relative"
       draggable={draggable || undefined}
       onDragStart={draggable ? (event) => onDragStart?.(session, event) : undefined}
-      onDragEnd={draggable ? onDragEnd : undefined}
+      onDragEnd={draggable ? (event) => onDragEnd?.(session, event) : undefined}
     >
       <LongPressButton
         enabled={mobileLongPressActions}
