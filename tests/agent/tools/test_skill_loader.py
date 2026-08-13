@@ -1363,51 +1363,16 @@ class TestBuiltinSkills:
                         missing.append(f"{skill_file.parent.name}: {raw}")
         assert missing == []
 
-    def test_pptx_project_example_uses_schema_v7_without_manual_contract_files(self):
-        pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
-        project = json.loads(
-            (pptx_root / "examples" / "project.example.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        validator = (pptx_root / "scripts" / "validate_slide_project.py").read_text(
-            encoding="utf-8"
-        )
-
-        assert project["schema_version"] == 7
-        assert project["width"] == 1280
-        assert project["height"] == 720
-        assert project["slides"]
-        assert "dna_path" not in project
-        assert "qa_ledger_path" not in project
-        assert "schema-v7 HTML-shell PPTX project" in validator
-
-    def test_pptx_skill_uses_html_shell_with_editable_text(self):
+    def test_pptx_skill_uses_direct_editable_authoring(self):
         pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
         skill = (pptx_root / "SKILL.md").read_text(encoding="utf-8")
-        contract = (pptx_root / "references" / "html-shell-editable-text.md").read_text(
-            encoding="utf-8"
-        )
-        example = (pptx_root / "examples" / "slide.example.html").read_text(
-            encoding="utf-8"
-        )
-        normalized = " ".join(f"{skill} {contract}".split())
+        normalized = " ".join(skill.split())
 
-        assert "glyph-free raster shell" in normalized
-        assert 'data-pptx-editable="text"' in normalized
-        assert "only an optional compatibility or selection hint" in normalized
-        assert 'data-pptx-text-mode="art"' in normalized
-        assert (
-            "automatically extracts eligible ordinary visible HTML text" in normalized
-        )
-        assert "Do not annotate every text node" in normalized
-        assert 'data-pptx-editable="text"' not in example
-        assert 'data-pptx-name="Opening title"' in example
-        assert "native PowerPoint text frames" in normalized
-        assert "Do not reconstruct the complete design" in normalized
-        assert "must not expose a second baked-in copy" in normalized
-        assert '`artifact(action="inspect", format="pptx",' in normalized
-        assert "OpenXML reopen" in normalized
+        assert "task-local script" in normalized
+        assert "python-pptx" in normalized
+        assert "Reopen the exact saved PPTX" in normalized
+        assert "Render every slide to PNG" in normalized
+        assert "artifact(action=" not in normalized
 
     def test_pptx_skill_distills_content_image_and_template_workflows(self):
         pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
@@ -1434,43 +1399,30 @@ class TestBuiltinSkills:
         assert "master → layout → slide" in templates
         assert "Choose layouts by fit" in templates
         assert "placeholder_idx + placeholder_type" in templates
-        assert (
-            "current template lane does not inject an arbitrary HTML shell" in templates
-        )
+        assert "Do not inject an arbitrary HTML shell" in templates
 
     def test_pptx_skill_bundle_exposes_only_distilled_resources(self):
         pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
         resources = {item["path"] for item in list_skill_resources(pptx_root)}
 
-        assert {
+        assert resources == {
             "references/content-derived-design-grammar.md",
-            "references/html-shell-editable-text.md",
             "references/image-intelligence.md",
             "references/template-layout-use.md",
-            "examples/project.example.json",
-            "examples/slide.example.html",
-            "examples/slide.example.css",
-            "examples/template-following.example.json",
-            "scripts/validate_slide_project.py",
-        } <= resources
+        }
         assert not any("dna" in path.lower() for path in resources)
         assert not any("qa-ledger" in path.lower() for path in resources)
         assert not any(path.startswith("templates/") for path in resources)
 
-    def test_pptx_skill_keeps_style_questions_inside_the_same_run(self):
-        """Presentation style policy must not force avoidable chat turns."""
+    def test_pptx_skill_has_no_artifact_tool_lifecycle(self):
         skill = (
             builtin_plugins_root() / "documents" / "skills" / "pptx" / "SKILL.md"
         ).read_text(encoding="utf-8")
         normalized = " ".join(skill.split())
 
-        assert "Treat explicit colors, typography, tone, density" in normalized
-        assert "call `ask_user` once" in normalized
-        assert "deferred `ask_user`" not in normalized
-        assert (
-            "resume outline, authoring, preview, and publication" in normalized.lower()
-        )
-        assert "never send a plain assistant message asking" in normalized
+        assert "artifact(action=" not in normalized
+        assert "Artifact Fabric" not in normalized
+        assert "workspace path" in normalized
 
     @pytest.mark.asyncio
     async def test_builtin_skill_dir_points_at_auxiliary_files(self):

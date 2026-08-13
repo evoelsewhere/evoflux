@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "evoflux.documents",
   "version": "1.0.0",
-  "description": "Create, inspect, preview, and validate DOCX, XLSX, PPTX, and PDF documents.",
+  "description": "Skill-guided creation and verification of DOCX, XLSX, PPTX, and PDF documents.",
   "author": {
     "name": "EvoFlux contributors"
   },
@@ -10,9 +10,7 @@
   "keywords": ["documents", "docx", "xlsx", "pptx", "pdf"],
   "extensions": {
     "org.evoelsewhere.evoflux.builtin": {
-      "artifact_provider": "app.agent.builtin_plugins.documents.runtime:artifact_drivers",
       "preview_provider": "app.agent.builtin_plugins.documents.runtime:preview_provider",
-      "api_router_provider": "app.agent.builtin_plugins.documents.runtime:api_router",
       "python_extra": "documents",
       "legacy_skill_settings": ["docx", "xlsx", "pptx", "pdf"],
       "runtime_dependencies": [

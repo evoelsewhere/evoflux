@@ -1226,16 +1226,18 @@ async def test_loading_plugin_skill_grants_its_mcp_tools_in_same_run(
 
     monkeypatch.setattr(
         "app.agent.tools.builtin.skill._resolve_record",
-        lambda skill_name, mode: (record, None)
-        if skill_name == record.name and mode == "work"
-        else (None, "not found"),
+        lambda skill_name, mode: (
+            (record, None)
+            if skill_name == record.name and mode == "work"
+            else (None, "not found")
+        ),
     )
     monkeypatch.setattr(
         plugin_mcp_runtime,
         "get_tools_for_installation",
-        lambda installation_id: [jira_search]
-        if installation_id == "installation-123"
-        else [],
+        lambda installation_id: (
+            [jira_search] if installation_id == "installation-123" else []
+        ),
     )
 
     calls: list[dict] = []
@@ -1600,15 +1602,15 @@ async def test_load_tool_search_keeps_short_terms_the_catalog_uses():
     """A two-letter alias like "cv" stays searchable despite the length filter."""
     state = _search_state(
         {
-            "artifact": DeferredToolEntry(
-                summary="Create or edit a durable document artifact.",
+            "document_builder": DeferredToolEntry(
+                summary="Create or edit a durable document.",
                 aliases=("cv", "resume"),
             ),
             "date": DeferredToolEntry(summary="Get the current local date and time."),
         }
     )
 
-    assert await _search(state, "cv") == ["artifact"]
+    assert await _search(state, "cv") == ["document_builder"]
 
 
 async def test_load_tool_search_survives_an_all_filler_query():

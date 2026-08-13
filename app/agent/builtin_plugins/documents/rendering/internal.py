@@ -1,4 +1,4 @@
-"""Document-plugin renderers used by artifact QA and preview pipelines.
+"""Document-plugin renderers used by document QA and preview pipelines.
 
 The renderers intentionally consume the same OOXML models that the authoring
 engines write.  They do not shell out to LibreOffice, Poppler, Chromium, or any
@@ -175,7 +175,7 @@ def render_pdf_pages(
 ) -> list[Path]:
     """Rasterize PDF pages with optional resource bounds.
 
-    Artifact QA leaves the limits unset so it can inspect every page. The
+    Document QA leaves the limits unset so it can inspect every page. The
     interactive preview supplies strict limits to keep untrusted documents
     from exhausting sidecar or WebView memory.
     """

@@ -1,4 +1,3 @@
-from .artifact import ArtifactJob, ArtifactReview, ArtifactRevision
 from .chat import (
     ChatSession,
     DreamLog,
@@ -24,9 +23,6 @@ from .webbridge import (
 from app.scheduler.models import ScheduledTask
 
 __all__ = [
-    "ArtifactJob",
-    "ArtifactReview",
-    "ArtifactRevision",
     "ChatSession",
     "DelegationTask",
     "DreamLog",

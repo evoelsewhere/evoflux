@@ -21,11 +21,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.agent.artifacts import session_artifact_dir
 from app.agent.sandbox_config import managed_worktree_roots
-from app.artifacts.service import get_artifact_service
-from app.artifacts.storage import ArtifactStore
 from app.core.logging_config import SESSION_LOG_DIR, remove_session_sink
 from app.core.paths import workspace_dir
-from app.models.artifact import ArtifactJob, ArtifactReview, ArtifactRevision
 from app.models.chat import (
     ChatSession,
     CodingProject,
@@ -65,9 +62,6 @@ class PurgeConflictError(ValueError):
 @dataclass(frozen=True, slots=True)
 class SessionFiles:
     session_ids: tuple[UUID, ...] = ()
-    artifact_job_ids: tuple[UUID, ...] = ()
-    artifact_revision_ids: tuple[UUID, ...] = ()
-    orphan_blob_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,7 +98,6 @@ async def _stop_session_runtime(session_ids: set[UUID]) -> None:
         return
     string_ids = {str(session_id) for session_id in session_ids}
     await team_manager.stop_sessions(string_ids)
-    await get_artifact_service().cancel_for_sessions(session_ids)
     for session_id in string_ids:
         agent_service.cancel_deferred_user_message(session_id)
         state = workflow_runner.active.get(session_id)
@@ -124,42 +117,6 @@ async def _purge_session_rows(
     session_ids: set[UUID] = {session.id for session in sessions}
     if not session_ids:
         return SessionFiles()
-
-    artifact_jobs = list(
-        (
-            await db.exec(
-                select(ArtifactJob).where(col(ArtifactJob.session_id).in_(session_ids))
-            )
-        ).all()
-    )
-    job_ids: set[UUID] = {job.id for job in artifact_jobs}
-    revisions = (
-        list(
-            (
-                await db.exec(
-                    select(ArtifactRevision).where(
-                        col(ArtifactRevision.job_id).in_(job_ids)
-                    )
-                )
-            ).all()
-        )
-        if job_ids
-        else []
-    )
-    revision_ids: set[UUID] = {revision.id for revision in revisions}
-    blob_keys = {revision.blob_key for revision in revisions}
-    referenced_keys: set[str] = set()
-    if blob_keys:
-        referenced_keys = set(
-            (
-                await db.exec(
-                    select(ArtifactRevision.blob_key).where(
-                        col(ArtifactRevision.blob_key).in_(blob_keys),
-                        ~col(ArtifactRevision.job_id).in_(job_ids),
-                    )
-                )
-            ).all()
-        )
 
     executions = list(
         (
@@ -182,17 +139,6 @@ async def _purge_session_rows(
     )
     draft_ids = {draft.id for draft in drafts}
 
-    if revision_ids:
-        await db.exec(
-            delete(ArtifactReview).where(
-                col(ArtifactReview.revision_id).in_(revision_ids)
-            )
-        )
-        await db.exec(
-            delete(ArtifactRevision).where(col(ArtifactRevision.id).in_(revision_ids))
-        )
-    if job_ids:
-        await db.exec(delete(ArtifactJob).where(col(ArtifactJob.id).in_(job_ids)))
     if execution_ids:
         await db.exec(
             delete(WorkflowGateRequest).where(
@@ -270,11 +216,6 @@ async def _purge_session_rows(
     await db.exec(delete(ChatSession).where(col(ChatSession.id).in_(session_ids)))
     return SessionFiles(
         session_ids=tuple(UUID(str(value)) for value in sorted(session_ids, key=str)),
-        artifact_job_ids=tuple(UUID(str(value)) for value in sorted(job_ids, key=str)),
-        artifact_revision_ids=tuple(
-            UUID(str(value)) for value in sorted(revision_ids, key=str)
-        ),
-        orphan_blob_keys=tuple(sorted(blob_keys - referenced_keys)),
     )
 
 
@@ -293,22 +234,6 @@ async def _purge_session_files(files: SessionFiles) -> None:
             _remove_tree(snapshot_dir(sid)),
             _remove_tree(SESSION_LOG_DIR / sid),
         )
-
-    store = ArtifactStore()
-    for job_id in files.artifact_job_ids:
-        await _remove_tree(store.root / "work" / str(job_id))
-    for revision_id in files.artifact_revision_ids:
-        await _remove_tree(store.revision_root / str(revision_id))
-    for key in files.orphan_blob_keys:
-        parts = key.split("/")
-        if len(parts) != 3 or parts[0] != "sha256" or len(parts[2]) != 64:
-            continue
-        blob = (store.blob_root / parts[1] / parts[2]).resolve()
-        try:
-            blob.relative_to(store.blob_root.resolve())
-        except ValueError:
-            continue
-        await asyncio.to_thread(blob.unlink, missing_ok=True)
 
 
 async def _purge_repository_caches(paths: set[str]) -> None:

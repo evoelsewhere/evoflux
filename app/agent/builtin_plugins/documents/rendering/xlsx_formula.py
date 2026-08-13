@@ -4,7 +4,7 @@ Excel remains the authority for recalculation when a workbook is opened.  The
 built-in preview engine still needs concrete display values, however, and must
 not claim that a workbook passed visual QA when it only rendered formula text.
 This module intentionally implements a documented, bounded subset and reports
-every unsupported formula as an error to the artifact pipeline.
+every unsupported formula as a document-QA error.
 """
 
 from __future__ import annotations
