@@ -55,7 +55,7 @@ describe('UserMessageNavigationRail', () => {
     render(<Harness onNavigate={onNavigate} />)
 
     expect(screen.getByRole('navigation', { name: 'User messages' })).toHaveClass(
-      '@[48rem]/agent-view:flex',
+      '@[64rem]/agent-view:flex',
     )
     const firstMarker = screen.getByRole('button', { name: 'Jump to user message 1' })
 

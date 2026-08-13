@@ -141,7 +141,7 @@ export function UserMessageNavigationRail({
     <>
       <nav
         aria-label="User messages"
-        className="pointer-events-none absolute inset-y-5 left-2 z-(--z-panel) hidden w-12 items-center @[48rem]/agent-view:flex"
+        className="pointer-events-none absolute inset-y-5 left-2 z-(--z-panel) hidden w-12 items-center @[64rem]/agent-view:flex"
       >
         <div
           className="pointer-events-auto flex max-h-[min(70vh,40rem)] w-10 touch-none flex-col overflow-y-auto overscroll-contain py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
