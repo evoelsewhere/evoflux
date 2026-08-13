@@ -64,6 +64,7 @@ export const STORAGE_KEYS = {
   work: {
     foldersExpanded: 'oa.workSidebar.foldersExpanded',
     recentCollapsed: 'oa.workSidebar.recentCollapsed',
+    recentWorkspaceFolders: 'oa.work.recentWorkspaceFolders',
   },
 
   desktopNotifications: {

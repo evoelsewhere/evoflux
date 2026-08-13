@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   Check,
   ChevronDown,
   Folder,
   FolderOpen,
+  History,
   Loader2,
   RotateCcw,
 } from 'lucide-react'
@@ -12,8 +13,10 @@ import {
 import { browseWorkspaces, updateSessionWorkspace } from '@/api/client'
 import { usePlatform } from '@/hooks/use-platform'
 import { queryKeys } from '@/queries/keys'
+import { useTeamSessionsQuery } from '@/queries/useSessionsQuery'
 import { useToastStore } from '@/stores/useToastStore'
 import { cn } from '@/lib/utils'
+import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -37,6 +40,51 @@ interface WorkFolderSelectorProps {
   loading?: boolean
 }
 
+const MAX_RECENT_FOLDERS = 5
+const MAX_STORED_RECENT_FOLDERS = 10
+
+function folderIdentity(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, '')
+  return /^[a-z]:[\\/]/i.test(trimmed) ? trimmed.toLowerCase() : trimmed
+}
+
+function uniqueFolders(paths: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const path of paths) {
+    if (!path) continue
+    const identity = folderIdentity(path)
+    if (!identity || seen.has(identity)) continue
+    seen.add(identity)
+    result.push(path)
+  }
+  return result
+}
+
+function loadRecentFolders(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(
+      localStorage.getItem(STORAGE_KEYS.work.recentWorkspaceFolders) ?? '[]',
+    )
+    if (!Array.isArray(parsed)) return []
+    return uniqueFolders(parsed.filter((item): item is string => typeof item === 'string'))
+      .slice(0, MAX_STORED_RECENT_FOLDERS)
+  } catch {
+    return []
+  }
+}
+
+function persistRecentFolders(paths: string[]): void {
+  try {
+    localStorage.setItem(
+      STORAGE_KEYS.work.recentWorkspaceFolders,
+      JSON.stringify(paths.slice(0, MAX_STORED_RECENT_FOLDERS)),
+    )
+  } catch {
+    // Keep the selector usable when storage is unavailable.
+  }
+}
+
 function folderName(path: string): string {
   const trimmed = path.replace(/[\\/]+$/, '')
   return trimmed.split(/[\\/]/).filter(Boolean).at(-1) ?? path
@@ -55,6 +103,7 @@ export function WorkFolderSelector({
   loading = false,
 }: WorkFolderSelectorProps) {
   const queryClient = useQueryClient()
+  const sessions = useTeamSessionsQuery('work')
   const { isTauri, os } = usePlatform()
   const pushToast = useToastStore((state) => state.push)
   const [saving, setSaving] = useState(false)
@@ -64,6 +113,7 @@ export function WorkFolderSelector({
   const [browserDirs, setBrowserDirs] = useState<Array<{ name: string; path: string }>>([])
   const [browserLoading, setBrowserLoading] = useState(false)
   const [browserError, setBrowserError] = useState<string | null>(null)
+  const [storedRecentFolders, setStoredRecentFolders] = useState(loadRecentFolders)
 
   const isTauriMobile = isTauri && (os === 'ios' || os === 'android')
   const isDefault = Boolean(
@@ -74,6 +124,29 @@ export function WorkFolderSelector({
     if (!workspaceRoot || isDefault) return 'Session folder'
     return folderName(workspaceRoot)
   }, [isDefault, loading, workspaceRoot])
+
+  const sessionFolders = useMemo(
+    () => sessions.data?.pages.flatMap((page) => page.data.map((session) => session.workspace)) ?? [],
+    [sessions.data?.pages],
+  )
+  const recentFolders = useMemo(() => {
+    const currentIdentity = workspaceRoot ? folderIdentity(workspaceRoot) : null
+    return uniqueFolders([...storedRecentFolders, ...sessionFolders])
+      .filter((path) => folderIdentity(path) !== currentIdentity)
+      .slice(0, MAX_RECENT_FOLDERS)
+  }, [sessionFolders, storedRecentFolders, workspaceRoot])
+
+  const rememberFolder = useCallback((path: string) => {
+    setStoredRecentFolders((current) => {
+      const next = uniqueFolders([path, ...current]).slice(0, MAX_STORED_RECENT_FOLDERS)
+      persistRecentFolders(next)
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    if (workspaceRoot && !isDefault) rememberFolder(workspaceRoot)
+  }, [isDefault, rememberFolder, workspaceRoot])
 
   const applyWorkspace = useCallback(async (path: string | null) => {
     if (!sessionId || saving) return
@@ -86,6 +159,8 @@ export function WorkFolderSelector({
         workspace_root: result.workspace_root,
       })
       queryClient.removeQueries({ queryKey: queryKeys.fileRefs.session(sessionId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
+      if (path) rememberFolder(result.workspace_root ?? path)
       setBrowserOpen(false)
       pushToast({
         tone: 'success',
@@ -100,7 +175,7 @@ export function WorkFolderSelector({
     } finally {
       setSaving(false)
     }
-  }, [pushToast, queryClient, saving, sessionId])
+  }, [pushToast, queryClient, rememberFolder, saving, sessionId])
 
   const loadBrowser = useCallback(async (path?: string | null) => {
     setBrowserLoading(true)
@@ -181,6 +256,30 @@ export function WorkFolderSelector({
             </p>
           </div>
           <DropdownMenuSeparator />
+          {recentFolders.length > 0 && (
+            <>
+              <p className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wide text-(--color-text-subtle)">
+                Recent folders
+              </p>
+              {recentFolders.map((path) => (
+                <DropdownMenuItem
+                  key={folderIdentity(path)}
+                  disabled={saving}
+                  onClick={() => { void applyWorkspace(path) }}
+                  className="min-h-9 px-2"
+                >
+                  <History aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-medium">{folderName(path)}</span>
+                    <span className="block truncate font-mono text-[10px] text-(--color-text-subtle)" title={path}>
+                      {path}
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+            </>
+          )}
           <DropdownMenuItem
             disabled={saving || isDefault}
             onClick={() => { void applyWorkspace(null) }}
