@@ -27,6 +27,43 @@
     return text(data?.tool_call_id || data?.id || `${data?.agent || "EvoFlux"}:${data?.name || "tool"}`);
   }
 
+  const FILE_ACTIVITY_TOOLS = new Set(["read", "read_file", "glob", "ls", "grep", "code_context"]);
+  const BROWSER_ACTIVITY_TOOLS = new Set(["browser_use", "webbridge"]);
+  const SHELL_ACTIVITY_TOOLS = new Set(["bash", "shell", "run_command"]);
+  const WRITE_ACTIVITY_TOOLS = new Set(["write", "write_file", "edit", "edit_file", "patch"]);
+
+  function toolFamily(name) {
+    const value = text(name);
+    if (FILE_ACTIVITY_TOOLS.has(value)) return "files";
+    if (BROWSER_ACTIVITY_TOOLS.has(value)) return "browser";
+    if (SHELL_ACTIVITY_TOOLS.has(value)) return "shell";
+    if (WRITE_ACTIVITY_TOOLS.has(value)) return "write";
+    return value;
+  }
+
+  function familyLabel(family) {
+    const labels = {
+      files: "Read files",
+      browser: "Browsed web",
+      shell: "Ran commands",
+      write: "Changed files",
+      python: "Ran Python",
+      git: "Ran Git",
+      skill: "Used skill tool",
+    };
+    return labels[family] || "Used tools";
+  }
+
+  function activityLabel(blocks, active) {
+    const labels = [...new Set(blocks
+      .filter((block) => block.type === "tool")
+      .map((block) => familyLabel(toolFamily(block.name))))];
+    if (!labels.length) return active ? "Thinking" : "Thought";
+    return labels
+      .map((label, index) => index === 0 ? label : label.charAt(0).toLowerCase() + label.slice(1))
+      .join(", ");
+  }
+
   function makeDisclosure(className, summaryText, open = false) {
     const details = document.createElement("details");
     details.className = className;
@@ -96,6 +133,7 @@
       this.tools = new Map();
       this.widgets = new Map();
       this.widgetFrames = new Map();
+      this.live = true;
     }
 
     hasTurn() { return Boolean(this.turn); }
@@ -105,12 +143,52 @@
     begin(agent = "EvoFlux") {
       const name = text(agent) || "EvoFlux";
       if (this.turn?.agent === name) return this.turn;
-      if (this.turn) this.finish();
+      if (this.turn) {
+        this.finish();
+        this.live = true;
+      }
       const created = this.options.createTurn(name);
       created.content.replaceChildren();
       created.content.classList.add("typed-blocks");
-      this.turn = { ...created, agent: name, blocks: [] };
+      this.turn = { ...created, agent: name, blocks: [], segments: [] };
       return this.turn;
+    }
+
+    _createActivitySegment(turn) {
+      const details = document.createElement("details");
+      details.className = "activity-timeline";
+      details.open = this.live;
+      const summary = document.createElement("summary");
+      summary.className = "activity-timeline-summary";
+      const chevron = document.createElement("span");
+      chevron.className = "activity-timeline-chevron";
+      chevron.textContent = "›";
+      const label = document.createElement("span");
+      label.className = "activity-timeline-label";
+      const status = document.createElement("span");
+      status.className = "activity-timeline-status";
+      summary.append(chevron, label, status);
+      const scroll = document.createElement("div");
+      scroll.className = "activity-timeline-scroll";
+      const body = document.createElement("div");
+      body.className = "activity-timeline-body";
+      scroll.append(body);
+      details.append(summary, scroll);
+      const segment = { kind: "activity", element: details, summary, label, status, scroll, body, blocks: [] };
+      turn.segments.push(segment);
+      turn.content.append(details);
+      return segment;
+    }
+
+    _refreshActivitySegment(segment) {
+      const active = this.live && segment === this.turn?.segments?.at(-1);
+      segment.label.textContent = activityLabel(segment.blocks, active);
+      segment.status.textContent = active ? "Running" : "";
+      segment.element.classList.toggle("active", active);
+      segment.element.classList.toggle("done", !active);
+      if (active && segment.element.open) {
+        segment.scroll.scrollTop = segment.scroll.scrollHeight;
+      }
     }
 
     _append(type, agent, element, fields = {}) {
@@ -118,7 +196,20 @@
       const turn = this.begin(agent);
       const block = { type, element, agent: text(agent) || "EvoFlux", ...fields };
       turn.blocks.push(block);
-      turn.content.append(element);
+      if (type === "thinking" || type === "tool") {
+        let segment = turn.segments.at(-1);
+        if (!segment || segment.kind !== "activity") segment = this._createActivitySegment(turn);
+        const row = document.createElement("div");
+        row.className = "activity-group-row";
+        row.append(element);
+        segment.blocks.push(block);
+        segment.body.append(row);
+        block.segment = segment;
+        this._refreshActivitySegment(segment);
+      } else {
+        turn.segments.push({ kind: "content", element, blocks: [block] });
+        turn.content.append(element);
+      }
       this.options.scroll?.();
       return block;
     }
@@ -176,6 +267,7 @@
         this.options.renderMarkdown?.(block.body, block.rawContent);
         this.options.hydrate?.(block.body);
       }
+      this._refreshActivitySegment(block.segment);
       this.options.scroll?.();
       return block;
     }
@@ -245,6 +337,7 @@
     toolCall(data) {
       const block = this._ensureTool(data);
       block.status.textContent = "Pending";
+      this._refreshActivitySegment(block.segment);
       return block;
     }
 
@@ -254,6 +347,7 @@
       const args = prettyJson(data?.arguments);
       block.argumentsSection.hidden = !args;
       block.argumentsBody.textContent = args;
+      this._refreshActivitySegment(block.segment);
       return block;
     }
 
@@ -277,6 +371,7 @@
         : block.output;
       if (desktopOnly) block.outputSection.dataset.desktopOnly = "tool-output";
       block.outputSection.dataset.stream = text(data?.stream || "combined");
+      this._refreshActivitySegment(block.segment);
       this.options.scroll?.();
       return block;
     }
@@ -291,6 +386,7 @@
       block.resultSection.hidden = !result;
       block.resultBody.textContent = result;
       block.element.classList.add("done");
+      this._refreshActivitySegment(block.segment);
       return block;
     }
 
@@ -371,9 +467,13 @@
 
     finish() {
       this.options.flushText?.();
+      this.live = false;
       this.turn?.item.classList.remove("live", "live-turn");
       for (const block of this.tools.values()) {
         if (!block.element.classList.contains("done")) block.status.textContent = "Stopped";
+      }
+      for (const segment of this.turn?.segments || []) {
+        if (segment.kind === "activity") this._refreshActivitySegment(segment);
       }
     }
 
@@ -385,6 +485,7 @@
       this.turn = null;
       this.tools.clear();
       this.widgets.clear();
+      this.live = true;
     }
 
     renderHistory(target, blocks) {
@@ -395,7 +496,8 @@
       const previousTools = this.tools;
       const previousWidgets = this.widgets;
       const historyAgent = text(blocks.find((entry) => entry?.agent)?.agent) || "EvoFlux";
-      this.turn = { item: target.closest?.(".message") || target, content: target, agent: historyAgent, blocks: [] };
+      this.live = false;
+      this.turn = { item: target.closest?.(".message") || target, content: target, agent: historyAgent, blocks: [], segments: [] };
       this.tools = new Map();
       this.widgets = new Map();
       for (const entry of blocks) {
@@ -434,6 +536,7 @@
       this.turn = previousTurn;
       this.tools = previousTools;
       this.widgets = previousWidgets;
+      this.live = true;
       return true;
     }
   }
@@ -443,5 +546,6 @@
     prettyJson,
     sanitizeWidgetHtml,
     widgetDocument,
+    activityLabel,
   };
 })();

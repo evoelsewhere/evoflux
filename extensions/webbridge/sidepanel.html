@@ -252,7 +252,11 @@
     .desktop-gate-actions { display: none; width: 100%; flex-wrap: wrap; justify-content: flex-end; gap: 5px; padding-left: 40px; }
     .desktop-gate-actions.visible { display: flex; }
     .desktop-gate-actions .danger { color: var(--error); }
-    .transcript { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 18px 14px 28px; overscroll-behavior: contain; scrollbar-gutter: stable; }
+    .transcript-shell { position: relative; flex: 1 1 auto; min-height: 0; }
+    .transcript { height: 100%; min-height: 0; overflow-y: auto; padding: 18px 14px 28px; overscroll-behavior: contain; scrollbar-gutter: stable; }
+    .transcript-latest { position: absolute; right: 16px; bottom: 10px; z-index: 2; display: none; min-height: 29px; align-items: center; gap: 5px; border: 1px solid var(--border-strong); border-radius: 999px; background: color-mix(in srgb, var(--surface) 94%, transparent); padding: 0 10px; color: var(--text); box-shadow: 0 6px 20px rgba(0,0,0,.18); font-size: 10px; font-weight: 650; backdrop-filter: blur(12px); }
+    .transcript-latest.visible { display: inline-flex; }
+    .transcript-latest svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
     .load-older { display: none; width: max-content; min-height: 27px; margin: 0 auto 12px; border: 1px solid var(--border); border-radius: 6px; padding: 0 9px; background: var(--surface); color: var(--muted); font-size: 10px; }
     .load-older.visible { display: block; }
     .empty { display: flex; min-height: 100%; max-width: 280px; margin: auto; align-items: center; justify-content: center; padding: 32px 20px; color: var(--muted); font-size: 13px; text-align: center; line-height: 1.65; }
@@ -266,8 +270,9 @@
     .message.live { border-color: var(--accent); }
     .message.live-turn { padding-top: 4px; }
     .message.live-turn .message-body:empty { display: none; }
-    .message-meta { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 550; }
-    .message.user .message-meta { color: var(--muted); }
+    .message-meta { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; font-weight: 550; }
+    .message-meta:empty { display: none; }
+    .message.user .message-meta { margin: 0 0 6px; color: var(--muted); }
     .message-body { min-width: 0; }
     .message.user .message-body { white-space: pre-wrap; }
     .message.assistant .message-body { color: var(--text); white-space: normal; font-size: 13px; line-height: 1.75; letter-spacing: -.003em; }
@@ -330,6 +335,19 @@
     .message-activity time { font-variant-numeric: tabular-nums; }
     .typed-blocks { display: grid; gap: 9px; }
     .typed-blocks > .message-body { min-width: 0; }
+    .activity-timeline { min-width: 0; overflow: hidden; border: 0; border-radius: 7px; background: transparent; }
+    .activity-timeline > summary { display: flex; min-height: 28px; cursor: pointer; list-style: none; align-items: center; gap: 6px; border-radius: 6px; padding: 4px 6px; color: var(--muted); font-size: 11px; user-select: none; transition: background .15s ease, color .15s ease; }
+    .activity-timeline > summary:hover, .activity-timeline > summary:focus-visible { background: var(--surface-raised); color: var(--text); outline: none; }
+    .activity-timeline > summary::-webkit-details-marker { display: none; }
+    .activity-timeline-chevron { width: 11px; flex: 0 0 auto; color: var(--subtle); font-size: 16px; line-height: 1; text-align: center; transform-origin: center; transition: transform .15s ease; }
+    .activity-timeline[open] .activity-timeline-chevron { transform: rotate(90deg); }
+    .activity-timeline-label { min-width: 0; overflow: hidden; color: var(--text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .activity-timeline-status { margin-left: auto; color: var(--accent); font-size: 9px; }
+    .activity-timeline.active .activity-timeline-status::before { display: inline-block; width: 5px; height: 5px; margin-right: 5px; border-radius: 50%; background: var(--accent); content: ""; animation: thinking-dot 1.2s ease-in-out infinite; }
+    .activity-timeline-scroll { max-height: min(42vh, 340px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+    .activity-timeline-body { display: grid; gap: 6px; padding: 2px 1px 5px 15px; }
+    .activity-group-row { min-width: 0; }
+    .activity-group-row > .thinking-block, .activity-group-row > .tool-block { border-color: var(--border-soft); background: var(--surface); }
     .thinking-block, .tool-block, .widget-block, .event-block { min-width: 0; overflow: hidden; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--surface); }
     .thinking-block > summary, .tool-block > summary, .event-block > summary { display: flex; min-height: 32px; cursor: pointer; list-style: none; align-items: center; gap: 7px; padding: 6px 9px; color: var(--muted); font-size: 11px; font-weight: 600; user-select: none; }
     .thinking-block > summary::-webkit-details-marker, .tool-block > summary::-webkit-details-marker, .event-block > summary::-webkit-details-marker { display: none; }
@@ -395,7 +413,7 @@
     .option { min-height: 25px; padding: 0 7px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text); font-size: 11px; }
     .option:hover { border-color: var(--accent); }
     .composer { position: relative; padding: 8px 10px 10px; background: linear-gradient(to bottom, transparent, var(--bg) 14px); }
-    .composer-shell { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: 0 8px 28px var(--composer-shadow); transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease; }
+    .composer-shell { position: relative; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: 0 8px 28px var(--composer-shadow); transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease; }
     .composer-shell:focus-within { border-color: var(--border-strong); box-shadow: 0 10px 32px var(--composer-shadow), 0 0 0 2px var(--accent-soft); }
     .composer.drag-active .composer-shell { border-color: var(--accent); box-shadow: 0 10px 32px var(--composer-shadow), 0 0 0 3px var(--accent-soft); }
     .composer-row { display: flex; align-items: flex-end; gap: 7px; }
@@ -426,7 +444,7 @@
     .tool-icon.stop-mode .send-glyph { display: none; }
     .tool-icon.stop-mode .stop-glyph { display: block; }
     .tool-icon:focus-visible, .model-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-    .model-picker { position: relative; min-width: 0; }
+    .model-picker { min-width: 0; }
     .model-trigger { display: flex; min-width: 0; max-width: 172px; height: 32px; align-items: center; gap: 5px; border: 1px solid transparent; border-radius: 8px; padding: 0 7px; background: transparent; color: var(--muted); }
     .model-trigger:hover:not(:disabled), .model-trigger[aria-expanded="true"] { border-color: var(--border); background: var(--surface-raised); color: var(--text); }
     .model-trigger > #modelLabel { overflow: hidden; min-width: 0; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
@@ -434,7 +452,7 @@
     .provider-badge.compact { width: 17px; height: 17px; border-radius: 4px; font-size: 6px; }
     .thinking-chip { flex: 0 0 auto; border-radius: 4px; padding: 2px 4px; background: color-mix(in srgb, var(--thinking-color, var(--thinking-neutral)) 16%, transparent); color: var(--thinking-color, var(--thinking-neutral)); font-size: 8px; font-weight: 700; }
     .model-trigger .chevron { width: 11px; height: 11px; }
-    .model-popover { position: absolute; z-index: 20; bottom: calc(100% + 7px); left: 0; display: none; width: min(288px, calc(100vw - 20px)); overflow: hidden; border: 1px solid var(--border-strong); border-radius: 10px; background: color-mix(in srgb, var(--surface) 96%, transparent); box-shadow: 0 18px 48px rgba(0,0,0,.3); backdrop-filter: blur(18px); }
+    .model-popover { position: absolute; z-index: 20; bottom: 47px; left: 6px; display: none; width: min(288px, calc(100vw - 32px)); max-height: calc(100vh - 20px); overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--border-strong); border-radius: 10px; background: color-mix(in srgb, var(--surface) 96%, transparent); box-shadow: 0 18px 48px rgba(0,0,0,.3); backdrop-filter: blur(18px); }
     .model-popover.visible { display: block; }
     .model-current { display: flex; min-width: 0; align-items: center; gap: 9px; padding: 9px 10px; border-bottom: 1px solid var(--border); }
     .model-current-copy { min-width: 0; flex: 1; }
@@ -455,15 +473,35 @@
     .model-provider-label { flex: 0 0 auto; color: var(--subtle); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 8px; text-transform: uppercase; }
     .model-check { width: 13px; height: 13px; flex: 0 0 auto; fill: none; stroke: var(--accent); stroke-width: 2; opacity: 0; }
     .model-option[aria-selected="true"] .model-check { opacity: 1; }
-    .model-empty { padding: 18px 10px; color: var(--muted); font-size: 10px; text-align: center; }
+    .model-empty { display: grid; justify-items: center; gap: 7px; padding: 18px 10px; color: var(--muted); font-size: 10px; text-align: center; }
+    .model-empty.error { color: var(--error); }
+    .model-empty button { min-height: 25px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised); padding: 0 8px; color: var(--text); font-size: 9px; font-weight: 650; }
     .model-setting-section { padding: 8px 10px 9px; border-top: 1px solid var(--border); }
     .model-setting-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
     .model-setting-heading strong { font-size: 10px; font-weight: 700; }
     .model-setting-heading span { color: var(--subtle); font-size: 8px; }
     .thinking-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+    .thinking-options.slider-mode { display: block; }
     .thinking-option { display: flex; height: 29px; min-width: 0; align-items: center; justify-content: center; gap: 5px; border: 1px solid transparent; border-radius: 6px; background: var(--surface-raised); color: var(--muted); font-size: 9px; }
     .thinking-option:hover:not(:disabled), .thinking-option[aria-checked="true"] { border-color: var(--border-strong); color: var(--text); }
     .thinking-option-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--thinking-color, var(--thinking-neutral)); }
+    .thinking-slider { --thinking-slider-color: var(--thinking-neutral); min-width: 0; user-select: none; }
+    .thinking-slider-control { position: relative; height: 31px; }
+    .thinking-slider-rail { position: absolute; right: 0; top: 50%; left: 0; height: 8px; overflow: hidden; transform: translateY(-50%); border: 1px solid var(--border); border-radius: 999px; background: var(--surface-raised); }
+    .thinking-slider-fill { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: linear-gradient(90deg, color-mix(in srgb, var(--thinking-slider-color) 35%, transparent), var(--thinking-slider-color)); transition: width var(--motion-fast) ease; }
+    .thinking-slider-ticks { position: absolute; inset: 0 8px; display: flex; align-items: center; justify-content: space-between; }
+    .thinking-slider-tick { width: 4px; height: 4px; border-radius: 50%; background: var(--subtle); opacity: .35; }
+    .thinking-slider-tick.passed { background: var(--accent-contrast); opacity: .5; }
+    .thinking-slider-tick.current { opacity: 0; }
+    .thinking-slider-thumb { position: absolute; top: 50%; display: grid; width: 18px; height: 20px; transform: translateY(-50%); place-items: center; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.25); pointer-events: none; transition: left var(--motion-fast) ease, transform var(--motion-fast) ease, box-shadow var(--motion-fast) ease; }
+    .thinking-slider-thumb i { width: 8px; height: 8px; border-radius: 50%; background: var(--thinking-slider-color); }
+    .thinking-slider-control:focus-within .thinking-slider-thumb { box-shadow: 0 1px 3px rgba(0,0,0,.25), 0 0 0 3px color-mix(in srgb, var(--thinking-slider-color) 35%, transparent); }
+    .thinking-slider-control input[type="range"] { position: absolute; inset: 0; z-index: 2; width: 100%; cursor: pointer; appearance: none; border: 0; background: transparent; opacity: 0; }
+    .thinking-slider-control input[type="range"]:disabled { cursor: default; }
+    .thinking-slider-marks { display: flex; gap: 1px; margin-top: 1px; }
+    .thinking-slider-marks button { min-width: 0; flex: 1; overflow: hidden; border: 0; border-radius: 4px; padding: 1px 0; background: transparent; color: var(--subtle); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+    .thinking-slider-marks button:hover { color: var(--muted); }
+    .thinking-slider-marks button.current { color: var(--text); font-weight: 700; }
     .speed-control { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px; border-radius: 7px; background: var(--surface-raised); }
     .speed-control button { height: 25px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 9px; }
     .speed-control button:hover:not(:disabled) { color: var(--text); }
@@ -700,7 +738,13 @@
       <button class="btn" id="desktopGateBtn" type="button">Open</button>
       <div class="desktop-gate-actions" id="desktopGateActions"></div>
     </section>
-    <section class="transcript" id="transcript" aria-live="polite"><button class="load-older" id="loadOlderBtn" type="button">Load older</button></section>
+    <div class="transcript-shell">
+      <section class="transcript" id="transcript" aria-live="polite" tabindex="0"><button class="load-older" id="loadOlderBtn" type="button">Load older</button></section>
+      <button class="transcript-latest" id="transcriptLatestBtn" type="button" aria-label="Back to latest">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        Back to latest
+      </button>
+    </div>
     <section class="turn-controls" id="turnControls" aria-label="Conversation actions">
       <button class="turn-action primary" id="continueBtn" type="button">Continue</button>
       <button class="turn-action" id="undoTurnBtn" type="button">Undo</button>
@@ -745,39 +789,6 @@
               <span class="thinking-chip" id="modelThinkingLabel">Default</span>
               <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>
             </button>
-            <div class="model-popover" id="modelPopover" role="dialog" aria-label="Model settings">
-              <div class="model-current">
-                <span class="provider-badge" id="modelCurrentProviderBadge" aria-hidden="true">AI</span>
-                <div class="model-current-copy">
-                  <strong id="modelCurrentName">Choose a model</strong>
-                  <span id="modelCurrentId">Lead agent default</span>
-                </div>
-              </div>
-              <div class="model-catalog">
-                <div class="model-search">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                  <input id="modelSearch" type="search" placeholder="Search models…" aria-label="Search models" autocomplete="off">
-                </div>
-                <div class="model-list" id="modelList" role="listbox" aria-label="Models"></div>
-              </div>
-              <section class="model-setting-section" aria-labelledby="thinkingHeading">
-                <div class="model-setting-heading">
-                  <strong id="thinkingHeading">Thinking</strong>
-                  <span id="thinkingAvailability">Provider default</span>
-                </div>
-                <div class="thinking-options" id="thinkingOptions" role="radiogroup" aria-label="Thinking effort"></div>
-              </section>
-              <section class="model-setting-section" aria-labelledby="speedHeading">
-                <div class="model-setting-heading">
-                  <strong id="speedHeading">Response speed</strong>
-                  <span id="speedAvailability"></span>
-                </div>
-                <div class="speed-control" id="speedControl" role="radiogroup" aria-label="Response speed">
-                  <button type="button" data-speed="standard" role="radio">Standard</button>
-                  <button type="button" data-speed="fast" role="radio">Fast</button>
-                </div>
-              </section>
-            </div>
           </div>
           <button class="tool-icon" id="attachPageBtn" title="Attach readable page" aria-label="Attach readable page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4M9 11h6M9 15h6"/></svg></button>
           <button class="tool-icon" id="attachSelectionBtn" title="Attach selected text" aria-label="Attach selected text"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 9h12M4 13h16M4 17h10"/></svg></button>
@@ -792,6 +803,39 @@
             <svg class="send-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7M12 19V5"/></svg>
             <svg class="stop-glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></svg>
           </button>
+        </div>
+        <div class="model-popover" id="modelPopover" role="dialog" aria-label="Model settings">
+          <div class="model-current">
+            <span class="provider-badge" id="modelCurrentProviderBadge" aria-hidden="true">AI</span>
+            <div class="model-current-copy">
+              <strong id="modelCurrentName">Choose a model</strong>
+              <span id="modelCurrentId">Lead agent default</span>
+            </div>
+          </div>
+          <div class="model-catalog">
+            <div class="model-search">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              <input id="modelSearch" type="search" placeholder="Search models…" aria-label="Search models" autocomplete="off">
+            </div>
+            <div class="model-list" id="modelList" role="listbox" aria-label="Models"></div>
+          </div>
+          <section class="model-setting-section" aria-labelledby="thinkingHeading">
+            <div class="model-setting-heading">
+              <strong id="thinkingHeading">Thinking</strong>
+              <span id="thinkingAvailability">Provider default</span>
+            </div>
+            <div class="thinking-options" id="thinkingOptions" role="radiogroup" aria-label="Thinking effort"></div>
+          </section>
+          <section class="model-setting-section" aria-labelledby="speedHeading">
+            <div class="model-setting-heading">
+              <strong id="speedHeading">Response speed</strong>
+              <span id="speedAvailability"></span>
+            </div>
+            <div class="speed-control" id="speedControl" role="radiogroup" aria-label="Response speed">
+              <button type="button" data-speed="standard" role="radio">Standard</button>
+              <button type="button" data-speed="fast" role="radio">Fast</button>
+            </div>
+          </section>
         </div>
       </div>
       <div class="composer-status" id="composerStatus"></div>
@@ -938,6 +982,7 @@
 
   <script src="markdown.js"></script>
   <script src="chat-renderer.js"></script>
+  <script src="transcript-follow.js"></script>
   <script src="annotation.js"></script>
   <script src="sidepanel.js"></script>
 </body>

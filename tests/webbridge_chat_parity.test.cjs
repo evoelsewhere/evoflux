@@ -107,6 +107,32 @@ test("history projection keeps chronology while dropping protected raw payloads"
   assert.doesNotMatch(serialized, /private reasoning|must-not-leak|private output|private result/);
 });
 
+test("model catalog accepts canonical and wrapped payloads and keeps the active session model", () => {
+  const start = sidePanelSource.indexOf("function normalizeBrowserModels");
+  const end = sidePanelSource.indexOf("\nasync function loadBrowserModels", start);
+  assert.ok(start >= 0 && end > start);
+  const context = vm.createContext({ currentSessionModel: "codex:gpt-active" });
+  vm.runInContext(
+    `${sidePanelSource.slice(start, end)}\nglobalThis.normalize = normalizeBrowserModels;`,
+    context,
+    { filename: "sidepanel-model-catalog.js" },
+  );
+
+  const canonical = context.normalize([
+    { id: "openai:gpt-test", provider: "openai", model: "gpt-test", thinking_levels: ["low", "low", "high"] },
+  ]);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(canonical.map((entry) => entry.id))),
+    ["codex:gpt-active", "openai:gpt-test"],
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(canonical[1].thinking_levels)), ["low", "high"]);
+
+  const wrapped = context.normalize({ models: [{ id: "codex:gpt-active", thinking_levels: ["medium"] }] });
+  assert.equal(wrapped.length, 1);
+  assert.equal(wrapped[0].provider, "codex");
+  assert.equal(wrapped[0].model, "gpt-active");
+});
+
 test("Side Chat exposes canonical turn, queue, gate, and composer controls", () => {
   for (const id of [
     "continueBtn", "undoTurnBtn", "redoTurnBtn", "revertNotice", "queuePanel",
@@ -121,6 +147,9 @@ test("Side Chat exposes canonical turn, queue, gate, and composer controls", () 
   assert.match(sidePanelSource, /type === "widget_delta"/);
   assert.match(sidePanelSource, /type === "plan_approval_requested"/);
   assert.match(sidePanelHtml, /chat-renderer\.js/);
+  assert.match(sidePanelHtml, /transcript-follow\.js/);
+  assert.match(sidePanelHtml, /id="transcriptLatestBtn"/);
+  assert.match(sidePanelSource, /WebBridgeTranscriptFollow\.create/);
 
   assert.match(backendSource, /\/sessions\/\{session_id\}\/commands/);
   assert.match(backendSource, /\/sessions\/\{session_id\}\/queued-messages/);

@@ -44,6 +44,10 @@ const sidePanelSource = fs.readFileSync(
   path.join(__dirname, "..", "extensions", "webbridge", "sidepanel.js"),
   "utf8"
 );
+const transcriptFollowSource = fs.readFileSync(
+  path.join(__dirname, "..", "extensions", "webbridge", "transcript-follow.js"),
+  "utf8"
+);
 const themeInitSource = fs.readFileSync(
   path.join(__dirname, "..", "extensions", "webbridge", "theme-init.js"),
   "utf8"
@@ -1618,7 +1622,9 @@ test("P2 Side Chat renders progressive activity and frame-schedules Markdown", (
   assert.match(sidePanelSource, /LOADING_VERBS/);
   assert.match(sidePanelSource, /requestAnimationFrame\(\(timestamp\) =>/);
   assert.match(sidePanelSource, /STREAM_FRAME_MS/);
-  assert.match(sidePanelSource, /transcriptPinned/);
+  assert.match(sidePanelSource, /WebBridgeTranscriptFollow\.create/);
+  assert.match(transcriptFollowSource, /this\.awaitingDeparture = this\.isAtBottom\(\)/);
+  assert.match(transcriptFollowSource, /event\.deltaY < -USER_DETACH_DELTA/);
   assert.match(sidePanelHtml, /id="loadOlderBtn"/);
   assert.match(sidePanelSource, /next_cursor/);
   assert.match(sidePanelSource, /history\?before=/);
@@ -1754,6 +1760,11 @@ test("P2 composer mirrors desktop model settings and icon-only browser controls"
   assert.match(sidePanelSource, /fast_mode: currentSessionFastMode/);
   assert.match(sidePanelSource, /function reconcileThinkingLevel/);
   assert.match(sidePanelSource, /function supportsFastMode/);
+  assert.match(sidePanelSource, /options\.length > 2/);
+  assert.match(sidePanelSource, /input\.type = "range"/);
+  assert.match(sidePanelSource, /aria-valuetext/);
+  assert.match(sidePanelHtml, /\.thinking-slider-rail/);
+  assert.match(sidePanelHtml, /\.thinking-slider-thumb/);
   assert.match(sidePanelSource, /Model settings synced from EvoFlux/);
   assert.match(sidePanelSource, /function renderComposerSubmitControl/);
   assert.match(sidePanelSource, /Queue a follow-up or stop the run/);
@@ -1771,6 +1782,94 @@ test("P2 composer mirrors desktop model settings and icon-only browser controls"
   assert.match(sidePanelSource, /function selectPanelFiles/);
   assert.match(sidePanelHtml, /id="openInEvoFluxBtn"/);
   assert.match(sidePanelSource, /function openInEvoFlux/);
+});
+
+test("model settings popover escapes the horizontally scrolling tool row", () => {
+  const popoverIndex = sidePanelHtml.indexOf('id="modelPopover"');
+  const sendButtonIndex = sidePanelHtml.indexOf('id="sendBtn"');
+
+  assert.ok(popoverIndex > sendButtonIndex, "popover must be a sibling of the clipped tool row");
+  assert.match(sidePanelHtml, /\.composer-shell \{ position: relative;/);
+  assert.match(sidePanelHtml, /\.model-popover \{ position: absolute;[^}]*bottom: 47px;/);
+  assert.match(
+    sidePanelSource,
+    /!modelTrigger\.contains\(event\.target\) && !modelPopover\.contains\(event\.target\)/,
+  );
+});
+
+test("typed history renders one activity group and keeps assistant metadata in the footer", () => {
+  class FakeElement {
+    constructor(tagName) {
+      this.tagName = tagName;
+      this.children = [];
+      this.dataset = {};
+      this.className = "";
+      this.textContent = "";
+      this.classList = { add: (...names) => { this.className += ` ${names.join(" ")}`; } };
+    }
+
+    append(...children) {
+      this.children.push(...children);
+    }
+
+    insertBefore(child, before) {
+      const index = this.children.indexOf(before);
+      if (index < 0) this.children.push(child);
+      else this.children.splice(index, 0, child);
+    }
+  }
+
+  const transcript = new FakeElement("section");
+  transcript.querySelector = () => null;
+  const document = { createElement: (tagName) => new FakeElement(tagName) };
+  let legacyActivityRenders = 0;
+  const context = vm.createContext({
+    document,
+    transcript,
+    loadOlderBtn: new FakeElement("button"),
+    transcriptResizeObserver: null,
+    ensureTypedBlockRenderer() {
+      return {
+        renderHistory(target) {
+          const group = new FakeElement("details");
+          group.className = "activity-timeline";
+          target.append(group);
+          return true;
+        },
+      };
+    },
+    protectedHistoryBlocks: (blocks) => blocks,
+    messageMeta: () => "gpt-5.6-luna · 6:50 PM · 5.6s",
+    renderMessageActivities(item) {
+      legacyActivityRenders += 1;
+      const activities = new FakeElement("div");
+      activities.className = "message-activities";
+      item.append(activities);
+    },
+    renderAttachments() {},
+    hydrateMarkdownMedia() {},
+    scrollTranscriptToEnd() {},
+  });
+  const start = sidePanelSource.indexOf("function appendMessage(");
+  const end = sidePanelSource.indexOf("function ensureLiveMessage", start);
+  vm.runInContext(
+    `${sidePanelSource.slice(start, end)}\nglobalThis.runAppendMessage = appendMessage;`,
+    context,
+    { filename: "sidepanel-typed-history.js" },
+  );
+
+  const rendered = context.runAppendMessage({
+    role: "assistant",
+    blocks: [{ type: "tool", name: "webbridge" }],
+    activities: [{ name: "webbridge", state: "done" }],
+  });
+
+  assert.equal(legacyActivityRenders, 0);
+  assert.deepEqual(
+    rendered.item.children.map((child) => child.className),
+    ["message-body", "message-meta"],
+  );
+  assert.equal(rendered.content.children[0].className, "activity-timeline");
 });
 
 test("P2 AskUser view replaces the composer until the pending question is answered", () => {

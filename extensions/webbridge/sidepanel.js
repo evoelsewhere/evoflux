@@ -45,6 +45,11 @@ const desktopGatePayload = document.getElementById("desktopGatePayload");
 const desktopGateFeedback = document.getElementById("desktopGateFeedback");
 const desktopGateActions = document.getElementById("desktopGateActions");
 const transcript = document.getElementById("transcript");
+const transcriptLatestBtn = document.getElementById("transcriptLatestBtn");
+const transcriptFollow = globalThis.WebBridgeTranscriptFollow.create({
+  element: transcript,
+  latestButton: transcriptLatestBtn,
+});
 const loadOlderBtn = document.getElementById("loadOlderBtn");
 const turnControls = document.getElementById("turnControls");
 const continueBtn = document.getElementById("continueBtn");
@@ -178,10 +183,10 @@ let currentSessionThinkingLevel = null;
 let currentSessionFastMode = false;
 let modelCatalogLoaded = false;
 let modelCatalogLoading = false;
+let modelCatalogError = "";
 let elementPickerActive = false;
 let markdownRenderFrame = null;
 let lastMarkdownPaint = 0;
-let transcriptPinned = true;
 let historyCursor = null;
 const mediaObjectUrls = new Map();
 const agentStates = new Map();
@@ -833,6 +838,17 @@ const THINKING_LABELS = {
   ultra: "Ultra",
 };
 
+const THINKING_MARKS = {
+  none: "None",
+  minimal: "Min",
+  low: "Low",
+  medium: "Med",
+  high: "High",
+  xhigh: "XH",
+  max: "Max",
+  ultra: "Ult",
+};
+
 function thinkingLabel(level) {
   return level ? THINKING_LABELS[level] || level : "Default";
 }
@@ -843,6 +859,10 @@ function thinkingColor(level) {
   if (level === "medium") return "var(--thinking-medium)";
   if (level === "high") return "var(--thinking-high)";
   return "var(--thinking-max)";
+}
+
+function thinkingMark(level) {
+  return level ? THINKING_MARKS[level] || String(level).slice(0, 3) : "Def";
 }
 
 function setProviderBadge(element, modelId) {
@@ -869,7 +889,79 @@ function renderThinkingOptions() {
   const levels = model?.thinking_levels || [];
   const options = [null, ...levels];
   thinkingOptions.replaceChildren();
+  thinkingOptions.classList.toggle("slider-mode", options.length > 2);
   thinkingAvailability.textContent = levels.length ? thinkingLabel(currentSessionThinkingLevel) : "Provider default";
+  if (options.length > 2) {
+    thinkingOptions.removeAttribute("role");
+    const selectedIndex = Math.max(0, options.indexOf(currentSessionThinkingLevel));
+    const slider = document.createElement("div");
+    slider.className = "thinking-slider";
+    const control = document.createElement("div");
+    control.className = "thinking-slider-control";
+    const rail = document.createElement("div");
+    rail.className = "thinking-slider-rail";
+    const fill = document.createElement("span");
+    fill.className = "thinking-slider-fill";
+    const ticks = document.createElement("span");
+    ticks.className = "thinking-slider-ticks";
+    for (let index = 0; index < options.length; index += 1) {
+      const tick = document.createElement("i");
+      tick.className = "thinking-slider-tick";
+      ticks.append(tick);
+    }
+    rail.append(fill, ticks);
+    const thumb = document.createElement("span");
+    thumb.className = "thinking-slider-thumb";
+    const thumbDot = document.createElement("i");
+    thumb.append(thumbDot);
+    const input = document.createElement("input");
+    input.type = "range";
+    input.min = "0";
+    input.max = String(options.length - 1);
+    input.step = "1";
+    input.value = String(selectedIndex);
+    input.disabled = !currentSessionModel;
+    input.setAttribute("aria-label", "Thinking");
+    const marks = document.createElement("div");
+    marks.className = "thinking-slider-marks";
+    const markButtons = options.map((level, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.tabIndex = -1;
+      button.dataset.thinkingLevel = level || "";
+      button.textContent = thinkingMark(level);
+      button.setAttribute("aria-label", `Set thinking to ${thinkingLabel(level)}`);
+      marks.append(button);
+      return button;
+    });
+    const paint = (rawIndex) => {
+      const index = Math.min(Math.max(Number(rawIndex) || 0, 0), options.length - 1);
+      const progress = index / (options.length - 1);
+      const level = options[index];
+      const color = thinkingColor(level);
+      slider.style.setProperty("--thinking-slider-color", color);
+      fill.style.width = `${progress * 100}%`;
+      thumb.style.left = `calc(${progress * 100}% - ${progress * 18}px)`;
+      input.setAttribute("aria-valuetext", thinkingLabel(level));
+      thinkingAvailability.textContent = thinkingLabel(level);
+      for (let tickIndex = 0; tickIndex < ticks.children.length; tickIndex += 1) {
+        ticks.children[tickIndex].classList.toggle("passed", tickIndex < index);
+        ticks.children[tickIndex].classList.toggle("current", tickIndex === index);
+        markButtons[tickIndex].classList.toggle("current", tickIndex === index);
+      }
+    };
+    input.addEventListener("input", () => paint(input.value));
+    input.addEventListener("change", () => {
+      const level = options[Number(input.value)] || null;
+      void selectThinkingLevel(level);
+    });
+    control.append(rail, thumb, input);
+    slider.append(control, marks);
+    thinkingOptions.append(slider);
+    paint(selectedIndex);
+    return;
+  }
+  thinkingOptions.setAttribute("role", "radiogroup");
   for (const level of options) {
     const button = document.createElement("button");
     button.type = "button";
@@ -934,6 +1026,7 @@ function renderModelOptions(query = "") {
   const visible = browserModels.filter((entry) => (
     !normalized || entry.id.toLowerCase().includes(normalized)
   )).slice(0, 60);
+  const hasCatalogMatch = visible.some((entry) => !entry.session_fallback);
   modelList.replaceChildren();
 
   const appendOption = (model, label, detail) => {
@@ -972,28 +1065,85 @@ function renderModelOptions(query = "") {
   for (const entry of visible) {
     appendOption(entry.id, entry.model || shortModelName(entry.id), entry.provider || "Configured model");
   }
-  if (!modelList.childElementCount) {
+  if (!hasCatalogMatch) {
     const empty = document.createElement("div");
     empty.className = "model-empty";
-    empty.textContent = modelCatalogLoading ? "Loading models…" : "No models found";
+    if (modelCatalogLoading) {
+      empty.textContent = "Loading models…";
+    } else if (modelCatalogError) {
+      empty.classList.add("error");
+      const message = document.createElement("span");
+      message.textContent = modelCatalogError;
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.dataset.retryModels = "true";
+      retry.textContent = "Retry";
+      empty.append(message, retry);
+    } else {
+      empty.textContent = browserModels.some((entry) => !entry.session_fallback)
+        ? "No models match this search"
+        : "No configured models in EvoFlux";
+    }
     modelList.append(empty);
   }
 }
 
-async function loadBrowserModels() {
-  if (modelCatalogLoaded || modelCatalogLoading) return;
+function normalizeBrowserModels(payload) {
+  const entries = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.models) ? payload.models : [];
+  const seen = new Set();
+  const normalized = entries.flatMap((entry) => {
+    if (!entry || typeof entry.id !== "string" || !entry.id.trim()) return [];
+    const id = entry.id.trim();
+    if (seen.has(id)) return [];
+    seen.add(id);
+    const [provider = "", ...modelParts] = id.split(":");
+    return [{
+      id,
+      provider: typeof entry.provider === "string" && entry.provider ? entry.provider : provider,
+      model: typeof entry.model === "string" && entry.model
+        ? entry.model
+        : modelParts.join(":") || id,
+      thinking_levels: Array.isArray(entry.thinking_levels)
+        ? [...new Set(entry.thinking_levels.filter((level) => typeof level === "string" && level))]
+        : [],
+    }];
+  });
+  if (currentSessionModel && !seen.has(currentSessionModel)) {
+    const [provider = "", ...modelParts] = currentSessionModel.split(":");
+    normalized.unshift({
+      id: currentSessionModel,
+      provider,
+      model: modelParts.join(":") || currentSessionModel,
+      thinking_levels: [],
+      session_fallback: true,
+    });
+  }
+  return normalized;
+}
+
+async function loadBrowserModels({ force = false } = {}) {
+  if ((!force && modelCatalogLoaded) || modelCatalogLoading) return;
   modelCatalogLoading = true;
+  modelCatalogError = "";
   renderModelOptions(modelSearch.value);
   try {
     const response = await panelFetch(MODELS_PATH);
-    browserModels = await response.json();
+    const payload = await response.json();
+    if (!Array.isArray(payload) && !Array.isArray(payload?.models)) {
+      throw new Error("EvoFlux returned an invalid model catalog.");
+    }
+    browserModels = normalizeBrowserModels(payload);
     modelCatalogLoaded = true;
-    currentSessionThinkingLevel = reconcileThinkingLevel(
-      currentSessionThinkingLevel,
-      selectedModelOption(),
-    );
+    const selected = selectedModelOption();
+    if (!selected?.session_fallback) {
+      currentSessionThinkingLevel = reconcileThinkingLevel(currentSessionThinkingLevel, selected);
+    }
   } catch (error) {
-    setComposerStatus(error.message || String(error), "error");
+    modelCatalogLoaded = false;
+    modelCatalogError = error.message || String(error);
+    setComposerStatus(modelCatalogError, "error");
   } finally {
     modelCatalogLoading = false;
     renderModelOptions(modelSearch.value);
@@ -1011,14 +1161,16 @@ async function openModelPicker() {
   modelPopover.classList.add("visible");
   modelTrigger.setAttribute("aria-expanded", "true");
   renderModelOptions(modelSearch.value);
-  await loadBrowserModels();
+  await loadBrowserModels({
+    force: modelCatalogLoaded && !browserModels.some((entry) => !entry.session_fallback),
+  });
   modelSearch.focus();
 }
 
 function setModelSettingsBusy(busy) {
   modelPopover.toggleAttribute("data-saving", busy);
   modelSearch.disabled = busy;
-  for (const button of modelPopover.querySelectorAll("button")) button.disabled = busy;
+  for (const control of modelPopover.querySelectorAll("button, input[type='range']")) control.disabled = busy;
   if (!busy) {
     renderThinkingOptions();
     renderSpeedControl();
@@ -1196,11 +1348,12 @@ async function hydrateMarkdownMedia(root) {
   }
 }
 
-async function renderAttachments(item, attachments = []) {
+async function renderAttachments(item, attachments = [], before = null) {
   if (!attachments.length) return;
   const root = document.createElement("div");
   root.className = "message-attachments";
-  item.append(root);
+  if (before) item.insertBefore(root, before);
+  else item.append(root);
   for (const attachment of attachments) {
     const entry = document.createElement(attachment.category === "image" ? "figure" : "div");
     entry.className = `message-attachment ${attachment.category === "image" ? "image" : "file"}`;
@@ -1264,8 +1417,11 @@ function addAttachmentDelete(entry, attachment) {
 }
 
 function scrollTranscriptToEnd() {
-  if (!transcriptPinned) return;
-  requestAnimationFrame(() => { transcript.scrollTop = transcript.scrollHeight; });
+  transcriptFollow.follow();
+}
+
+function resetTranscriptFollow() {
+  transcriptFollow.reset();
 }
 
 function shortDisplayModel(model) {
@@ -1273,7 +1429,7 @@ function shortDisplayModel(model) {
 }
 
 function messageMeta(message) {
-  const parts = [message.role === "user" ? "You" : (message.agent || "EvoFlux")];
+  const parts = message.role === "user" ? ["You"] : [];
   if (message.model) parts.push(shortDisplayModel(message.model));
   if (message.created_at) {
     const createdAt = new Date(message.created_at);
@@ -1385,25 +1541,33 @@ function appendMessage(message, { live = false, prepend = false } = {}) {
   const content = document.createElement("div");
   content.className = "message-body";
   const rawContent = message.content || "";
+  let typedHistoryRendered = false;
   if (message.is_summary) {
     content.textContent = "Session compacted";
-  } else if (
-    message.role === "assistant"
-    && Array.isArray(message.blocks)
-    && message.blocks.length
-    && ensureTypedBlockRenderer()?.renderHistory(content, protectedHistoryBlocks(message.blocks))
-  ) {
-    // Typed history has already rendered into the content root.
-  } else if (message.role === "assistant" && globalThis.WebBridgeMarkdown) {
-    globalThis.WebBridgeMarkdown.render(content, rawContent);
-    void hydrateMarkdownMedia(content);
   } else {
-    content.textContent = rawContent;
+    if (message.role === "assistant" && Array.isArray(message.blocks) && message.blocks.length) {
+      typedHistoryRendered = Boolean(
+        ensureTypedBlockRenderer()?.renderHistory(
+          content,
+          protectedHistoryBlocks(message.blocks),
+        ),
+      );
+    }
+    if (!typedHistoryRendered) {
+      if (message.role === "assistant" && globalThis.WebBridgeMarkdown) {
+        globalThis.WebBridgeMarkdown.render(content, rawContent);
+        void hydrateMarkdownMedia(content);
+      } else {
+        content.textContent = rawContent;
+      }
+    }
   }
-  item.append(meta, content);
+  if (message.role === "user") item.append(meta, content);
+  else item.append(content);
   if (message.shell) item.classList.add("shell-message");
-  renderMessageActivities(item, message.activities);
-  void renderAttachments(item, message.attachments || []);
+  if (!typedHistoryRendered) renderMessageActivities(item, message.activities);
+  if (message.role !== "user") item.append(meta);
+  void renderAttachments(item, message.attachments || [], message.role === "user" ? null : meta);
   if (prepend) transcript.insertBefore(item, loadOlderBtn.nextSibling);
   else transcript.append(item);
   transcriptResizeObserver?.observe(item);
@@ -1728,6 +1892,7 @@ async function refreshPanel({ preserveTranscript = false } = {}) {
     const previousSessionId = selectedSessionId;
     selectedSessionId = ensured.session_id || "";
     if (previousSessionId !== selectedSessionId) {
+      resetTranscriptFollow();
       composerCatalogLoadedFor = "";
       pendingQueue = [];
       revertState = null;
@@ -2935,7 +3100,7 @@ async function sendMessage() {
       regionCapture = null;
     }
     renderPanelContexts();
-    transcriptPinned = true;
+    resetTranscriptFollow();
     const optimisticMessage = appendMessage({ id: result.message_id || "", role: "user", content, shell });
     if (result.status === "queued" && result.message_id) {
       optimisticMessage.item.classList.add("queued");
@@ -3250,7 +3415,7 @@ async function reportIssue() {
     if (!response?.ok) throw new Error(response?.error || "Could not collect issue evidence");
     const result = await submitIssueReport(response.report);
     closeSettings();
-    transcriptPinned = true;
+    resetTranscriptFollow();
     appendMessage({ id: result.message_id || "", role: "user", content: "Investigate the captured browser issue." });
     setComposerStatus(result.status === "queued" ? "Issue report queued." : "Issue report sent.");
     startStream();
@@ -3345,6 +3510,11 @@ newGroupedTabBtn.addEventListener("click", () => void openGroupedTab());
 modelTrigger.addEventListener("click", () => void openModelPicker());
 modelSearch.addEventListener("input", () => renderModelOptions(modelSearch.value));
 modelList.addEventListener("click", (event) => {
+  const retry = event.target.closest("button[data-retry-models]");
+  if (retry) {
+    void loadBrowserModels({ force: true });
+    return;
+  }
   const option = event.target.closest("button[data-model-id]");
   if (option) void selectSessionModel(option.dataset.modelId || null);
 });
@@ -3357,7 +3527,9 @@ speedControl.addEventListener("click", (event) => {
   if (option) selectResponseSpeed(option.dataset.speed === "fast");
 });
 document.addEventListener("click", (event) => {
-  if (!event.target.closest(".model-picker")) closeModelPicker();
+  if (!modelTrigger.contains(event.target) && !modelPopover.contains(event.target)) {
+    closeModelPicker();
+  }
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && modelPopover.classList.contains("visible")) {
@@ -3448,9 +3620,6 @@ composer.addEventListener("input", () => {
   renderComposerSubmitControl();
 });
 composer.addEventListener("click", renderComposerSuggestions);
-transcript.addEventListener("scroll", () => {
-  transcriptPinned = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight <= 40;
-}, { passive: true });
 chrome.tabs.onActivated.addListener(() => void refreshPanel());
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (tabId === activeTab?.id && (changeInfo.url || changeInfo.status === "complete")) {

@@ -884,8 +884,72 @@ def test_side_chat_history_preserves_text_tool_text_row_order():
         "tool",
         "text",
     ]
+    assert len(projected) == 1
     serialized = json.dumps([message.model_dump() for message in projected])
     assert "must-not-leak" not in serialized
+
+
+def test_side_chat_history_groups_provider_cycles_under_one_turn_footer():
+    session_id = uuid4()
+    created_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+
+    def assistant_cycle(index: int, duration_ms: int) -> SimpleNamespace:
+        return SimpleNamespace(
+            id=uuid4(),
+            session_id=session_id,
+            role="assistant",
+            content=None,
+            reasoning_content=f"private reasoning {index}",
+            name="lead",
+            created_at=created_at,
+            extra={"model": "openai:gpt-test", "duration_ms": duration_ms},
+            tool_calls=[
+                {
+                    "id": f"call-{index}",
+                    "function": {
+                        "name": "webbridge",
+                        "arguments": '{"token":"must-not-leak"}',
+                    },
+                }
+            ],
+            tool_call_id=None,
+            is_summary=False,
+        )
+
+    rows: list[SimpleNamespace] = []
+    for index, duration_ms in enumerate((7900, 14500, 20200, 25000, 34000), 1):
+        rows.extend(
+            [
+                assistant_cycle(index, duration_ms),
+                SimpleNamespace(
+                    id=uuid4(),
+                    session_id=session_id,
+                    role="tool",
+                    content="private tool output",
+                    name="webbridge",
+                    created_at=created_at,
+                    extra={"duration_ms": 100},
+                    tool_calls=None,
+                    tool_call_id=f"call-{index}",
+                    is_summary=False,
+                ),
+            ]
+        )
+
+    projected = _browser_panel_messages(rows)
+
+    assert len(projected) == 1
+    assert projected[0].model == "openai:gpt-test"
+    assert projected[0].response_duration_ms == 34000
+    assert [block["type"] for block in projected[0].blocks or []] == [
+        "thinking",
+        "tool",
+    ] * 5
+    assert len(projected[0].activities) == 5
+    serialized = json.dumps(projected[0].model_dump())
+    assert "must-not-leak" not in serialized
+    assert "private reasoning" not in serialized
+    assert "private tool output" not in serialized
 
 
 async def test_side_chat_accepts_only_verified_tabs_in_primary_group(manager):
@@ -4101,6 +4165,59 @@ async def test_tab_binding_crud_is_scoped_and_updates_manager(
     removed = client.delete(f"{_PREFIX}/bindings/42", headers=headers)
     assert removed.status_code == 204
     assert manager.session_tab_binding(str(session.id)) is None
+
+
+async def test_pairing_authenticated_gets_work_on_query_only_lane(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    """Pairing auth must not autoflush metadata updates from a GET request."""
+    from sqlalchemy import event
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
+    from app.core import db as db_module
+
+    pairing = _pair_extension(client)
+    read_engine = create_async_engine(
+        str(db_module.engine.url),
+        connect_args={"check_same_thread": False},
+    )
+
+    @event.listens_for(read_engine.sync_engine, "connect")
+    def _set_query_only(dbapi_conn, connection_record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA query_only=ON")
+        cursor.close()
+
+    monkeypatch.setattr(
+        db_module,
+        "read_session_factory",
+        async_sessionmaker(
+            read_engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        ),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.agents.get_registry",
+        AsyncMock(return_value=SimpleNamespace(models=[])),
+    )
+    try:
+        bindings_response = client.get(
+            f"{_PREFIX}/bindings",
+            headers={"Authorization": f"Bearer {pairing['credential']}"},
+        )
+        models_response = client.get(
+            f"{_PREFIX}/models",
+            headers={"Authorization": f"Bearer {pairing['credential']}"},
+        )
+    finally:
+        await read_engine.dispose()
+
+    assert bindings_response.status_code == 200
+    assert bindings_response.json() == []
+    assert models_response.status_code == 200
+    assert models_response.json() == []
 
 
 async def test_tab_rebind_refuses_to_displace_running_session(

@@ -252,6 +252,7 @@ async def _paired_request(
         db,
         _bearer_token(request),
         required_scope=required_scope,
+        persist_updates=request.method not in {"GET", "HEAD", "OPTIONS"},
     )
     if pairing is None:
         raise HTTPException(
@@ -1765,31 +1766,69 @@ def _browser_panel_messages(
             continue
         raw_duration = extra.get("duration_ms")
         raw_model = extra.get("model")
-        messages.append(
-            BrowserPanelMessage(
-                id=str(row.id),
-                role=row.role,
-                content=str(display_content or ""),
-                agent=agent,
-                created_at=row.created_at.isoformat(),
-                attachments=attachments,
-                activities=activities,
-                is_summary=bool(row.is_summary),
-                model=raw_model if isinstance(raw_model, str) else None,
-                response_duration_ms=(
-                    max(0, round(raw_duration))
-                    if isinstance(raw_duration, int | float)
-                    else None
-                ),
-                blocks=blocks or None,
-                shell=(
-                    row.role == "user"
-                    and (
-                        extra.get("kind") == "user_shell" or extra.get("shell") is True
-                    )
-                ),
-            )
+        projected = BrowserPanelMessage(
+            id=str(row.id),
+            role=row.role,
+            content=str(display_content or ""),
+            agent=agent,
+            created_at=row.created_at.isoformat(),
+            attachments=attachments,
+            activities=activities,
+            is_summary=bool(row.is_summary),
+            model=raw_model if isinstance(raw_model, str) else None,
+            response_duration_ms=(
+                max(0, round(raw_duration))
+                if isinstance(raw_duration, int | float)
+                else None
+            ),
+            blocks=blocks or None,
+            shell=(
+                row.role == "user"
+                and (extra.get("kind") == "user_shell" or extra.get("shell") is True)
+            ),
         )
+
+        # One persisted assistant row is one provider cycle, not necessarily
+        # one visible turn. A tool-heavy turn commonly persists several
+        # assistant -> tool cycles before the next user message. Keep those
+        # cycles inside one Side Panel message so activity stays continuous
+        # and model/time/duration appear once at the actual end of the turn.
+        previous = messages[-1] if messages else None
+        if (
+            projected.role == "assistant"
+            and not projected.is_summary
+            and previous is not None
+            and previous.role == "assistant"
+            and not previous.is_summary
+            and previous.agent == projected.agent
+        ):
+            content_parts = [
+                part for part in (previous.content, projected.content) if part
+            ]
+            duration_values = [
+                value
+                for value in (
+                    previous.response_duration_ms,
+                    projected.response_duration_ms,
+                )
+                if value is not None
+            ]
+            messages[-1] = previous.model_copy(
+                update={
+                    "content": "\n\n".join(content_parts),
+                    "created_at": projected.created_at,
+                    "attachments": [*previous.attachments, *projected.attachments],
+                    "activities": [*previous.activities, *projected.activities],
+                    "model": projected.model or previous.model,
+                    "response_duration_ms": (
+                        max(duration_values) if duration_values else None
+                    ),
+                    "blocks": [*(previous.blocks or []), *(projected.blocks or [])]
+                    or None,
+                }
+            )
+            continue
+        messages.append(projected)
     return messages
 
 

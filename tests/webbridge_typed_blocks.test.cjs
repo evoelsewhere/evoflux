@@ -154,6 +154,10 @@ test("typed renderer preserves text → tool → text chronology with live outpu
     JSON.parse(JSON.stringify(renderer.turn.blocks.map((block) => block.type))),
     ["text", "tool", "text"],
   );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(renderer.turn.segments.map((segment) => segment.kind))),
+    ["content", "activity", "content"],
+  );
   assert.equal(renderer.turn.blocks[0].rawContent, "Before");
   assert.equal(renderer.turn.blocks[1].argumentsBody.textContent, '{\n  "command": "echo ok"\n}');
   assert.equal(renderer.turn.blocks[1].outputBody.textContent, "ok\n");
@@ -161,6 +165,37 @@ test("typed renderer preserves text → tool → text chronology with live outpu
   assert.equal(renderer.turn.blocks[2].rawContent, "After");
   renderer.finish();
   assert.equal(item.classList.contains("live"), false);
+});
+
+test("live activity grouping stays stable and preserves the reader collapse choice", () => {
+  const { context } = loadRenderer();
+  const root = new FakeElement("div");
+  const renderer = context.WebBridgeTypedBlocks.create({
+    createTurn() { return { item: new FakeElement("article"), content: root }; },
+  });
+
+  renderer.appendThinking({ agent: "Lead", chars: 10 });
+  const firstSegment = renderer.turn.segments[0];
+  const firstElement = firstSegment.element;
+  assert.equal(firstSegment.kind, "activity");
+  assert.equal(firstElement.open, true);
+  firstElement.open = false;
+
+  renderer.toolCall({ agent: "Lead", name: "read_file", tool_call_id: "tool-1" });
+  renderer.toolEnd({ agent: "Lead", name: "read_file", tool_call_id: "tool-1" });
+  assert.equal(renderer.turn.segments[0], firstSegment);
+  assert.equal(firstSegment.element, firstElement);
+  assert.equal(firstSegment.blocks.length, 2);
+  assert.equal(firstElement.open, false);
+  assert.equal(firstSegment.label.textContent, "Read files");
+
+  renderer.appendText({ agent: "Lead", text: "Checkpoint" });
+  renderer.toolCall({ agent: "Lead", name: "shell", tool_call_id: "tool-2" });
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(renderer.turn.segments.map((segment) => segment.kind))),
+    ["activity", "content", "activity"],
+  );
+  assert.notEqual(renderer.turn.segments[2].element, firstElement);
 });
 
 test("reasoning and tool payloads remain text-safe while widgets are sandboxed", () => {
@@ -295,7 +330,11 @@ test("redacted Thinking history renders a disclosure before later text", () => {
   ]), true);
 
   assert.equal(target.children.length, 2);
-  const thinkingDisclosure = target.children[0];
+  const activityGroup = target.children[0];
+  assert.equal(activityGroup.tagName, "DETAILS");
+  assert.equal(activityGroup.classList.contains("activity-timeline"), true);
+  assert.equal(activityGroup.open, false);
+  const thinkingDisclosure = activityGroup.children[1].children[0].children[0].children[0];
   assert.equal(thinkingDisclosure.tagName, "DETAILS");
   assert.equal(thinkingDisclosure.children[0].textContent, "Thinking · 987 chars");
   assert.equal(
