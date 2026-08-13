@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useMemo } from 'react'
-import { Activity, ArrowUp, ChevronDown, File, Folder, Loader2, MessageCircle, Paperclip, Quote, Square, SquareCheck, Terminal, X } from 'lucide-react'
+import { Activity, ArrowUp, ChevronDown, File, Folder, ListTodo, Loader2, MessageCircle, Paperclip, Quote, Square, SquareCheck, Terminal, X } from 'lucide-react'
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
 import { MentionOverlay } from './InputBar.overlay'
@@ -1442,15 +1442,14 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             >
               {allTodosFinished ? (
                 <SquareCheck size={15} className="text-(--color-success)" aria-hidden="true" />
-              ) : (
+              ) : isStreaming ? (
                 <Loader2
                   size={15}
-                  className={cn(
-                    'text-(--color-info)',
-                    activeTodoIndex >= 0 && 'animate-spin',
-                  )}
+                  className="animate-spin text-(--color-info)"
                   aria-hidden="true"
                 />
+              ) : (
+                <ListTodo size={15} className="text-(--color-info)" aria-hidden="true" />
               )}
               <span className="tabular-nums">Step {currentTodoStep} / {todoCount}</span>
               <ChevronDown
