@@ -11,8 +11,8 @@ Design
 - Sampling-aware: if ``OTEL_SPAN_SAMPLE_RATIO < 1.0``, the endpoint attaches
   ``sample_ratio`` to the payload so the UI can render a banner.  Turn counts
   are **not** scaled up — callers must decide whether to multiply.
-- Only ``agent_run`` spans count as a "turn"; ``chat``/``execute_tool`` spans
-  count as LLM / tool calls respectively.
+- Only ``agent_run`` spans count as a "turn". Chat, summarisation, and title
+  generation spans count as LLM calls; ``execute_tool`` spans count as tools.
 """
 
 from __future__ import annotations
@@ -127,6 +127,14 @@ class TraceDetail:
 
 
 @dataclass(frozen=True)
+class TracePage:
+    """A trace page and its total, produced from one DuckDB scan."""
+
+    items: list[TraceListItem]
+    total: int
+
+
+@dataclass(frozen=True)
 class ObservabilitySummary:
     """Serialisable aggregate for the observability page."""
 
@@ -142,16 +150,21 @@ class ObservabilitySummary:
     total_output_tokens: int
     total_cached_tokens: int
     total_estimated_cost_usd: float
-    total_errors: int
+    failed_turns: int
+    error_spans: int
 
     # Latency (ms)
     turn_p50_ms: float
     turn_p95_ms: float
     llm_p50_ms: float
     llm_p95_ms: float
+    tool_p50_ms: float
+    tool_p95_ms: float
 
-    # Per-day buckets
+    # Time buckets
     daily_turns: list[dict]  # [{"day": "2026-04-17", "turns": 12, "errors": 1}, ...]
+    time_series: list[dict]
+    bucket_size: str
 
     # Per-model + per-tool breakdowns
     by_model: list[dict]  # [{"model": "gpt-4o", "calls": 40, "input_tokens": …}]
@@ -174,15 +187,24 @@ class ObservabilitySummary:
                     self.total_cached_tokens, self.total_input_tokens
                 ),
                 "estimated_cost_usd": self.total_estimated_cost_usd,
-                "errors": self.total_errors,
+                # ``errors`` is retained as a compatibility alias, but now has
+                # the same precise meaning as the UI label: failed root turns.
+                "errors": self.failed_turns,
+                "failed_turns": self.failed_turns,
+                "error_spans": self.error_spans,
+                "error_rate": _percent(self.failed_turns, self.total_turns),
             },
             "latency_ms": {
                 "turn_p50": self.turn_p50_ms,
                 "turn_p95": self.turn_p95_ms,
                 "llm_p50": self.llm_p50_ms,
                 "llm_p95": self.llm_p95_ms,
+                "tool_p50": self.tool_p50_ms,
+                "tool_p95": self.tool_p95_ms,
             },
             "daily_turns": self.daily_turns,
+            "time_series": self.time_series,
+            "bucket_size": self.bucket_size,
             "by_model": self.by_model,
             "cache_by_step": self.cache_by_step,
             "by_tool": self.by_tool,
@@ -224,12 +246,19 @@ def _empty_summary(
         total_output_tokens=0,
         total_cached_tokens=0,
         total_estimated_cost_usd=0.0,
-        total_errors=0,
+        failed_turns=0,
+        error_spans=0,
         turn_p50_ms=0.0,
         turn_p95_ms=0.0,
         llm_p50_ms=0.0,
         llm_p95_ms=0.0,
+        tool_p50_ms=0.0,
+        tool_p95_ms=0.0,
         daily_turns=[],
+        time_series=[],
+        bucket_size=(
+            "hour" if window_end - window_start <= timedelta(days=1) else "day"
+        ),
         by_model=[],
         cache_by_step=[],
         by_tool=[],
@@ -265,33 +294,54 @@ def _create_spans_window_view(
 ) -> None:
     """Create temp views over ``files`` for observability queries.
 
-    ``spans_window`` preserves the original JSON schema (including struct
-    attributes) and is used when returning full span detail.  Aggregate
-    queries use ``spans_window_map``, where attributes are cast to a
-    string map so missing keys return ``NULL`` instead of raising a DuckDB
-    binder error.
+    Both relations are temporary *tables*, not lazy views. DuckDB otherwise
+    re-runs ``read_json`` for every aggregate query, multiplying I/O by the
+    number of cards and charts. ``spans_window`` preserves the original JSON
+    schema for detail responses; ``spans_window_map`` materialises the safe
+    attribute-map representation used by aggregates.
     """
     escaped = ", ".join("'" + str(f).replace("'", "''") + "'" for f in files)
-    con.execute(
-        f"CREATE TEMP VIEW spans AS "
-        f"SELECT * FROM read_json([{escaped}], union_by_name=true)"
-    )
     start_ns = int(window_start.timestamp() * 1_000_000_000)
     end_ns = int(window_end.timestamp() * 1_000_000_000)
     con.execute(
         f"""
-        CREATE TEMP VIEW spans_window AS
-        SELECT * FROM spans
+        CREATE TEMP TABLE spans_window AS
+        SELECT * FROM read_json([{escaped}], union_by_name=true)
         WHERE end_time IS NOT NULL
           AND end_time BETWEEN {start_ns} AND {end_ns}
         """
     )
     con.execute(
         """
-        CREATE TEMP VIEW spans_window_map AS
+        CREATE TEMP TABLE spans_window_map AS
         SELECT * EXCLUDE (attributes),
           attributes::MAP(VARCHAR, VARCHAR) AS attributes
         FROM spans_window
+        """
+    )
+    # Centralise semantic span definitions so every KPI, chart, and table
+    # counts the same population.  In particular, title generation and
+    # summarisation are real LLM calls even though their span name is not
+    # ``chat``.
+    con.execute(
+        """
+        CREATE TEMP VIEW turn_spans AS
+        SELECT * FROM spans_window_map WHERE name LIKE 'agent_run%';
+
+        CREATE TEMP VIEW llm_spans AS
+        SELECT * FROM spans_window_map
+        WHERE name NOT LIKE 'agent_run%'
+          AND (
+            name LIKE 'chat%'
+            OR name LIKE 'summarization_llm_call%'
+            OR name LIKE 'title_generation%'
+            OR attributes['gen_ai.operation.name'] IN (
+              'chat', 'summarization', 'title_generation'
+            )
+          );
+
+        CREATE TEMP VIEW tool_spans AS
+        SELECT * FROM spans_window_map WHERE name LIKE 'execute_tool%';
         """
     )
 
@@ -329,23 +379,26 @@ def _run_queries(
     window_start: datetime,
     window_end: datetime,
 ) -> ObservabilitySummary:
-    # ── Totals + latencies ───────────────────────────────────────────────
+    # Totals and percentiles all read the semantic views created above. This
+    # keeps the KPI cards, model/tool tables, and charts on one definition.
     totals_row = con.execute(
         """
         SELECT
-            count_if(name LIKE 'agent_run%') AS turns,
-            count_if(name LIKE 'chat%')      AS llm_calls,
-            count_if(name LIKE 'execute_tool%') AS tool_calls,
-            count_if(status = 'ERROR')       AS errors,
-            coalesce(sum(CASE WHEN name NOT LIKE 'agent_run%' THEN try_cast(attributes['gen_ai.usage.input_tokens'] AS BIGINT) END), 0)  AS input_tokens,
-            coalesce(sum(CASE WHEN name NOT LIKE 'agent_run%' THEN try_cast(attributes['gen_ai.usage.output_tokens'] AS BIGINT) END), 0) AS output_tokens,
-            coalesce(sum(CASE WHEN name NOT LIKE 'agent_run%' THEN try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT) END), 0) AS cached_tokens,
-            coalesce(sum(CASE WHEN name NOT LIKE 'agent_run%' THEN try_cast(attributes['gen_ai.usage.estimated_cost_usd'] AS DOUBLE) END), 0.0) AS estimated_cost_usd,
-            coalesce(quantile_cont(CASE WHEN name LIKE 'agent_run%' THEN duration_ms END, 0.5), 0.0) AS turn_p50,
-            coalesce(quantile_cont(CASE WHEN name LIKE 'agent_run%' THEN duration_ms END, 0.95), 0.0) AS turn_p95,
-            coalesce(quantile_cont(CASE WHEN name LIKE 'chat%'      THEN duration_ms END, 0.5), 0.0) AS llm_p50,
-            coalesce(quantile_cont(CASE WHEN name LIKE 'chat%'      THEN duration_ms END, 0.95), 0.0) AS llm_p95
-        FROM spans_window_map
+          (SELECT count(*) FROM turn_spans) AS turns,
+          (SELECT count(*) FROM llm_spans) AS llm_calls,
+          (SELECT count(*) FROM tool_spans) AS tool_calls,
+          (SELECT count_if(status = 'ERROR') FROM turn_spans) AS failed_turns,
+          (SELECT count_if(status = 'ERROR') FROM spans_window_map) AS error_spans,
+          (SELECT coalesce(sum(try_cast(attributes['gen_ai.usage.input_tokens'] AS BIGINT)), 0) FROM llm_spans) AS input_tokens,
+          (SELECT coalesce(sum(try_cast(attributes['gen_ai.usage.output_tokens'] AS BIGINT)), 0) FROM llm_spans) AS output_tokens,
+          (SELECT coalesce(sum(try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT)), 0) FROM llm_spans) AS cached_tokens,
+          (SELECT coalesce(sum(try_cast(attributes['gen_ai.usage.estimated_cost_usd'] AS DOUBLE)), 0.0) FROM llm_spans) AS estimated_cost_usd,
+          (SELECT coalesce(quantile_cont(duration_ms, 0.5), 0.0) FROM turn_spans) AS turn_p50,
+          (SELECT coalesce(quantile_cont(duration_ms, 0.95), 0.0) FROM turn_spans) AS turn_p95,
+          (SELECT coalesce(quantile_cont(duration_ms, 0.5), 0.0) FROM llm_spans) AS llm_p50,
+          (SELECT coalesce(quantile_cont(duration_ms, 0.95), 0.0) FROM llm_spans) AS llm_p95,
+          (SELECT coalesce(quantile_cont(duration_ms, 0.5), 0.0) FROM tool_spans) AS tool_p50,
+          (SELECT coalesce(quantile_cont(duration_ms, 0.95), 0.0) FROM tool_spans) AS tool_p95
         """
     ).fetchone()
 
@@ -356,7 +409,8 @@ def _run_queries(
         turns,
         llm_calls,
         tool_calls,
-        errors,
+        failed_turns,
+        error_spans,
         in_tokens,
         out_tokens,
         cached_tokens,
@@ -365,17 +419,17 @@ def _run_queries(
         turn_p95,
         llm_p50,
         llm_p95,
+        tool_p50,
+        tool_p95,
     ) = totals_row
 
-    # ── Daily turns ──────────────────────────────────────────────────────
     daily_rows = con.execute(
         """
         SELECT
             strftime(make_timestamp(end_time // 1000), '%Y-%m-%d') AS day,
             count(*) AS turns,
             count_if(status = 'ERROR') AS errors
-        FROM spans_window_map
-        WHERE name LIKE 'agent_run%'
+        FROM turn_spans
         GROUP BY day
         ORDER BY day
         """
@@ -385,7 +439,75 @@ def _run_queries(
         for day, turns, errs in daily_rows
     ]
 
-    # ── By model (on chat spans) ─────────────────────────────────────────
+    bucket_size = "hour" if window_end - window_start <= timedelta(days=1) else "day"
+    bucket_unit = "hour" if bucket_size == "hour" else "day"
+    bucket_format = "%Y-%m-%dT%H:00:00Z" if bucket_size == "hour" else "%Y-%m-%dT00:00:00Z"
+    series_rows = con.execute(
+        f"""
+        SELECT
+          strftime(date_trunc('{bucket_unit}', make_timestamp(end_time // 1000)), '{bucket_format}') AS bucket_start,
+          count_if(name LIKE 'agent_run%') AS turns,
+          count_if(name LIKE 'execute_tool%') AS tool_calls,
+          count_if(
+            name NOT LIKE 'agent_run%' AND (
+              name LIKE 'chat%' OR name LIKE 'summarization_llm_call%'
+              OR name LIKE 'title_generation%'
+              OR attributes['gen_ai.operation.name'] IN ('chat', 'summarization', 'title_generation')
+            )
+          ) AS llm_calls,
+          count_if(name LIKE 'agent_run%' AND status = 'ERROR') AS failed_turns,
+          count_if(status = 'ERROR') AS error_spans,
+          coalesce(sum(CASE WHEN name NOT LIKE 'agent_run%' AND (
+            name LIKE 'chat%' OR name LIKE 'summarization_llm_call%'
+            OR name LIKE 'title_generation%'
+            OR attributes['gen_ai.operation.name'] IN ('chat', 'summarization', 'title_generation')
+          ) THEN try_cast(attributes['gen_ai.usage.input_tokens'] AS BIGINT) END), 0) AS input_tokens,
+          coalesce(sum(CASE WHEN name NOT LIKE 'agent_run%' AND (
+            name LIKE 'chat%' OR name LIKE 'summarization_llm_call%'
+            OR name LIKE 'title_generation%'
+            OR attributes['gen_ai.operation.name'] IN ('chat', 'summarization', 'title_generation')
+          ) THEN try_cast(attributes['gen_ai.usage.output_tokens'] AS BIGINT) END), 0) AS output_tokens,
+          coalesce(sum(CASE WHEN name NOT LIKE 'agent_run%' AND (
+            name LIKE 'chat%' OR name LIKE 'summarization_llm_call%'
+            OR name LIKE 'title_generation%'
+            OR attributes['gen_ai.operation.name'] IN ('chat', 'summarization', 'title_generation')
+          ) THEN try_cast(attributes['gen_ai.usage.estimated_cost_usd'] AS DOUBLE) END), 0.0) AS estimated_cost_usd,
+          coalesce(quantile_cont(CASE WHEN name LIKE 'agent_run%' THEN duration_ms END, 0.95), 0.0) AS turn_p95_ms
+        FROM spans_window_map
+        GROUP BY bucket_start
+        ORDER BY bucket_start
+        """
+    ).fetchall()
+    sparse_series = {
+        str(bucket): {
+            "bucket_start": str(bucket),
+            "turns": int(bucket_turns),
+            "llm_calls": int(bucket_llm),
+            "tool_calls": int(bucket_tools),
+            "failed_turns": int(bucket_failed),
+            "error_spans": int(bucket_errors),
+            "input_tokens": int(bucket_input),
+            "output_tokens": int(bucket_output),
+            "estimated_cost_usd": round(float(bucket_cost), 8),
+            "turn_p95_ms": round(float(bucket_p95), 1),
+        }
+        for (
+            bucket,
+            bucket_turns,
+            bucket_tools,
+            bucket_llm,
+            bucket_failed,
+            bucket_errors,
+            bucket_input,
+            bucket_output,
+            bucket_cost,
+            bucket_p95,
+        ) in series_rows
+    }
+    time_series = _fill_time_series(
+        sparse_series, window_start, window_end, bucket_size=bucket_size
+    )
+
     model_rows = con.execute(
         """
         SELECT
@@ -396,13 +518,11 @@ def _run_queries(
             coalesce(sum(try_cast(attributes['gen_ai.usage.output_tokens'] AS BIGINT)), 0) AS output_tokens,
             coalesce(sum(try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT)), 0) AS cached_tokens,
             coalesce(sum(try_cast(attributes['gen_ai.usage.estimated_cost_usd'] AS DOUBLE)), 0.0) AS estimated_cost_usd,
+            count_if(status = 'ERROR') AS errors,
+            coalesce(avg(duration_ms), 0.0) AS avg_ms,
+            coalesce(quantile_cont(duration_ms, 0.5), 0.0) AS p50_ms,
             coalesce(quantile_cont(duration_ms, 0.95), 0.0) AS p95_ms
-        FROM spans_window_map
-        WHERE name NOT LIKE 'agent_run%'
-          AND (
-            attributes['gen_ai.usage.input_tokens'] IS NOT NULL
-            OR attributes['gen_ai.usage.output_tokens'] IS NOT NULL
-          )
+        FROM llm_spans
         GROUP BY provider, model
         ORDER BY estimated_cost_usd DESC, calls DESC
         """
@@ -418,9 +538,13 @@ def _run_queries(
             "cached_tokens": int(ct),
             "cache_percent": _percent(int(ct), int(it)),
             "estimated_cost_usd": round(float(cost), 8),
+            "errors": int(errors),
+            "error_rate": _percent(int(errors), int(c)),
+            "avg_ms": round(float(avg_ms), 1),
+            "p50_ms": round(float(p50), 1),
             "p95_ms": round(float(p95), 1),
         }
-        for provider, m, c, it, ot, ct, cost, p95 in model_rows
+        for provider, m, c, it, ot, ct, cost, errors, avg_ms, p50, p95 in model_rows
     ]
 
     cache_step_rows = con.execute(
@@ -441,12 +565,9 @@ def _run_queries(
             coalesce(sum(try_cast(attributes['gen_ai.usage.input_tokens'] AS BIGINT)), 0) AS input_tokens,
             coalesce(sum(try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT)), 0) AS cached_tokens,
             coalesce(sum(try_cast(attributes['gen_ai.usage.estimated_cost_usd'] AS DOUBLE)), 0.0) AS estimated_cost_usd
-        FROM spans_window_map
-        WHERE name NOT LIKE 'agent_run%'
-          AND (
-            attributes['gen_ai.usage.input_tokens'] IS NOT NULL
-            OR attributes['gen_ai.usage.cache_read.input_tokens'] IS NOT NULL
-          )
+        FROM llm_spans
+        WHERE attributes['gen_ai.usage.input_tokens'] IS NOT NULL
+           OR attributes['gen_ai.usage.cache_read.input_tokens'] IS NOT NULL
         GROUP BY step, provider, model
         ORDER BY estimated_cost_usd DESC, input_tokens DESC
         """
@@ -467,16 +588,16 @@ def _run_queries(
         for step, provider, model, calls, input_tokens, cached_tokens, cost in cache_step_rows
     ]
 
-    # ── By tool ──────────────────────────────────────────────────────────
     tool_rows = con.execute(
         """
         SELECT
             coalesce(attributes['gen_ai.tool.name'], 'unknown') AS tool,
             count(*) AS calls,
             count_if(status = 'ERROR') AS errors,
+            coalesce(avg(duration_ms), 0.0) AS avg_ms,
+            coalesce(quantile_cont(duration_ms, 0.5), 0.0) AS p50_ms,
             coalesce(quantile_cont(duration_ms, 0.95), 0.0) AS p95_ms
-        FROM spans_window_map
-        WHERE name LIKE 'execute_tool%'
+        FROM tool_spans
         GROUP BY tool
         ORDER BY calls DESC
         """
@@ -486,9 +607,12 @@ def _run_queries(
             "tool": t,
             "calls": int(c),
             "errors": int(e),
+            "error_rate": _percent(int(e), int(c)),
+            "avg_ms": round(float(avg_ms), 1),
+            "p50_ms": round(float(p50), 1),
             "p95_ms": round(float(p95), 1),
         }
-        for t, c, e, p95 in tool_rows
+        for t, c, e, avg_ms, p50, p95 in tool_rows
     ]
 
     return ObservabilitySummary(
@@ -502,34 +626,80 @@ def _run_queries(
         total_output_tokens=int(out_tokens),
         total_cached_tokens=int(cached_tokens),
         total_estimated_cost_usd=round(float(estimated_cost_usd), 8),
-        total_errors=int(errors),
+        failed_turns=int(failed_turns),
+        error_spans=int(error_spans),
         turn_p50_ms=round(float(turn_p50), 1),
         turn_p95_ms=round(float(turn_p95), 1),
         llm_p50_ms=round(float(llm_p50), 1),
         llm_p95_ms=round(float(llm_p95), 1),
+        tool_p50_ms=round(float(tool_p50), 1),
+        tool_p95_ms=round(float(tool_p95), 1),
         daily_turns=daily_turns,
+        time_series=time_series,
+        bucket_size=bucket_size,
         by_model=by_model,
         cache_by_step=cache_by_step,
         by_tool=by_tool,
     )
 
 
+def _fill_time_series(
+    sparse: dict[str, dict],
+    window_start: datetime,
+    window_end: datetime,
+    *,
+    bucket_size: str,
+) -> list[dict]:
+    """Fill empty time buckets so charts never imply missing time."""
+    if bucket_size == "hour":
+        cursor = window_start.replace(minute=0, second=0, microsecond=0)
+        end = window_end.replace(minute=0, second=0, microsecond=0)
+        step = timedelta(hours=1)
+        key_format = "%Y-%m-%dT%H:00:00Z"
+    else:
+        cursor = window_start.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = window_end.replace(hour=0, minute=0, second=0, microsecond=0)
+        step = timedelta(days=1)
+        key_format = "%Y-%m-%dT00:00:00Z"
+
+    result: list[dict] = []
+    while cursor <= end:
+        key = cursor.strftime(key_format)
+        result.append(
+            sparse.get(
+                key,
+                {
+                    "bucket_start": key,
+                    "turns": 0,
+                    "llm_calls": 0,
+                    "tool_calls": 0,
+                    "failed_turns": 0,
+                    "error_spans": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "estimated_cost_usd": 0.0,
+                    "turn_p95_ms": 0.0,
+                },
+            )
+        )
+        cursor += step
+    return result
+
+
 # ── Trace list + detail ───────────────────────────────────────────────────────
 
 
-def list_traces(
+def list_traces_page(
     days: int = 7,
     limit: int = 50,
     offset: int = 0,
-) -> list[TraceListItem]:
-    """Return ``agent_run`` spans (one per turn) in the window.
+) -> TracePage:
+    """Return one trace page and its total from a shared DuckDB view.
 
     Each row is a user-facing "turn" — ordered newest-first by ``end_time``.
-    Child counts (``llm_calls``, ``tool_calls``) come from a self-join on
-    ``trace_id``; this means team turns (where multiple ``agent_run`` spans
-    share a trace) will see the *same* global counts for every row of that
-    trace.  That's intentional — the UI treats each ``agent_run`` as a row
-    that drills into the full trace.
+    Child counts and usage are joined on ``trace_id`` + ``run_id``. This keeps
+    team turns independent even when multiple agents share one distributed
+    trace, avoiding duplicated token and cost totals in the list.
 
     Args:
         days: Look-back window in days (1–90).
@@ -544,7 +714,7 @@ def list_traces(
 
     files = _candidate_files(window_start)
     if not files:
-        return []
+        return TracePage(items=[], total=0)
 
     con = duckdb.connect(":memory:")
     try:
@@ -557,17 +727,55 @@ def list_traces(
                 FROM spans_window_map
                 WHERE name LIKE 'agent_run%'
               ),
-              counts AS (
+              run_keys AS (
                 SELECT
                   trace_id,
-                  count_if(name LIKE 'chat%')         AS llm_calls,
-                  count_if(name LIKE 'execute_tool%') AS tool_calls,
-                  coalesce(sum(CASE WHEN name NOT LIKE 'agent_run%' THEN try_cast(attributes['gen_ai.usage.input_tokens'] AS BIGINT) END), 0) AS input_tokens,
-                  coalesce(sum(CASE WHEN name NOT LIKE 'agent_run%' THEN try_cast(attributes['gen_ai.usage.output_tokens'] AS BIGINT) END), 0) AS output_tokens,
-                  coalesce(sum(CASE WHEN name NOT LIKE 'agent_run%' THEN try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT) END), 0) AS cached_tokens,
-                  coalesce(sum(CASE WHEN name NOT LIKE 'agent_run%' THEN try_cast(attributes['gen_ai.usage.estimated_cost_usd'] AS DOUBLE) END), 0.0) AS estimated_cost_usd
-                FROM spans_window_map
+                  count(*) AS run_count,
+                  max(attributes['run_id']) AS only_run_id
+                FROM runs
                 GROUP BY trace_id
+              ),
+              counts AS (
+                SELECT
+                  spans.trace_id,
+                  coalesce(
+                    spans.attributes['run_id'],
+                    CASE WHEN run_keys.run_count = 1 THEN run_keys.only_run_id END
+                  ) AS run_id,
+                  count_if(spans.name NOT LIKE 'agent_run%' AND (
+                    spans.name LIKE 'chat%' OR spans.name LIKE 'summarization_llm_call%'
+                    OR spans.name LIKE 'title_generation%'
+                    OR spans.attributes['gen_ai.operation.name'] IN ('chat', 'summarization', 'title_generation')
+                  )) AS llm_calls,
+                  count_if(spans.name LIKE 'execute_tool%') AS tool_calls,
+                  count_if(spans.status = 'ERROR') AS error_spans,
+                  coalesce(sum(CASE WHEN spans.name NOT LIKE 'agent_run%' AND (
+                    spans.name LIKE 'chat%' OR spans.name LIKE 'summarization_llm_call%'
+                    OR spans.name LIKE 'title_generation%'
+                    OR spans.attributes['gen_ai.operation.name'] IN ('chat', 'summarization', 'title_generation')
+                  ) THEN try_cast(spans.attributes['gen_ai.usage.input_tokens'] AS BIGINT) END), 0) AS input_tokens,
+                  coalesce(sum(CASE WHEN spans.name NOT LIKE 'agent_run%' AND (
+                    spans.name LIKE 'chat%' OR spans.name LIKE 'summarization_llm_call%'
+                    OR spans.name LIKE 'title_generation%'
+                    OR spans.attributes['gen_ai.operation.name'] IN ('chat', 'summarization', 'title_generation')
+                  ) THEN try_cast(spans.attributes['gen_ai.usage.output_tokens'] AS BIGINT) END), 0) AS output_tokens,
+                  coalesce(sum(CASE WHEN spans.name NOT LIKE 'agent_run%' AND (
+                    spans.name LIKE 'chat%' OR spans.name LIKE 'summarization_llm_call%'
+                    OR spans.name LIKE 'title_generation%'
+                    OR spans.attributes['gen_ai.operation.name'] IN ('chat', 'summarization', 'title_generation')
+                  ) THEN try_cast(spans.attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT) END), 0) AS cached_tokens,
+                  coalesce(sum(CASE WHEN spans.name NOT LIKE 'agent_run%' AND (
+                    spans.name LIKE 'chat%' OR spans.name LIKE 'summarization_llm_call%'
+                    OR spans.name LIKE 'title_generation%'
+                    OR spans.attributes['gen_ai.operation.name'] IN ('chat', 'summarization', 'title_generation')
+                  ) THEN try_cast(spans.attributes['gen_ai.usage.estimated_cost_usd'] AS DOUBLE) END), 0.0) AS estimated_cost_usd
+                FROM spans_window_map AS spans
+                JOIN run_keys USING (trace_id)
+                WHERE coalesce(
+                  spans.attributes['run_id'],
+                  CASE WHEN run_keys.run_count = 1 THEN run_keys.only_run_id END
+                ) IS NOT NULL
+                GROUP BY spans.trace_id, run_id
               )
             SELECT
               runs.trace_id,
@@ -586,17 +794,26 @@ def list_traces(
               coalesce(counts.estimated_cost_usd, 0.0) AS estimated_cost_usd,
               coalesce(counts.llm_calls,  0) AS llm_calls,
               coalesce(counts.tool_calls, 0) AS tool_calls,
-              (runs.status = 'ERROR')        AS error
-            FROM runs LEFT JOIN counts USING (trace_id)
+              (runs.status = 'ERROR' OR coalesce(counts.error_spans, 0) > 0) AS error,
+              count(*) OVER () AS total_rows
+            FROM runs
+            LEFT JOIN counts
+              ON runs.trace_id = counts.trace_id
+             AND runs.attributes['run_id'] = counts.run_id
             ORDER BY runs.end_time DESC
             LIMIT ? OFFSET ?
             """,
             [limit, offset],
         ).fetchall()
+        if rows:
+            total = int(rows[0][-1])
+        else:
+            total_row = con.execute("SELECT count(*) FROM turn_spans").fetchone()
+            total = int(total_row[0]) if total_row is not None else 0
     finally:
         con.close()
 
-    return [
+    items = [
         TraceListItem(
             trace_id=str(trace_id),
             span_id=str(span_id),
@@ -639,8 +856,19 @@ def list_traces(
             llm_calls,
             tool_calls,
             error,
+            _total_rows,
         ) in rows
     ]
+    return TracePage(items=items, total=total)
+
+
+def list_traces(
+    days: int = 7,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[TraceListItem]:
+    """Compatibility wrapper returning only trace rows."""
+    return list_traces_page(days=days, limit=limit, offset=offset).items
 
 
 def count_traces(days: int = 7) -> int:
@@ -659,8 +887,7 @@ def count_traces(days: int = 7) -> int:
         row = con.execute(
             """
             SELECT count(*)
-            FROM spans_window_map
-            WHERE name LIKE 'agent_run%'
+            FROM turn_spans
             """
         ).fetchone()
     finally:

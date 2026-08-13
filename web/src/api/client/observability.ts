@@ -18,14 +18,32 @@ export interface ObservabilitySummary {
     cache_percent: number
     estimated_cost_usd: number
     errors: number
+    failed_turns: number
+    error_spans: number
+    error_rate: number
   }
   latency_ms: {
     turn_p50: number
     turn_p95: number
     llm_p50: number
     llm_p95: number
+    tool_p50: number
+    tool_p95: number
   }
   daily_turns: Array<{ day: string; turns: number; errors: number }>
+  bucket_size: 'hour' | 'day'
+  time_series: Array<{
+    bucket_start: string
+    turns: number
+    llm_calls: number
+    tool_calls: number
+    failed_turns: number
+    error_spans: number
+    input_tokens: number
+    output_tokens: number
+    estimated_cost_usd: number
+    turn_p95_ms: number
+  }>
   by_model: Array<{
     provider: string
     model: string
@@ -36,6 +54,10 @@ export interface ObservabilitySummary {
     cached_tokens: number
     cache_percent: number
     estimated_cost_usd: number
+    errors: number
+    error_rate: number
+    avg_ms: number
+    p50_ms: number
     p95_ms: number
   }>
   cache_by_step: Array<{
@@ -50,7 +72,15 @@ export interface ObservabilitySummary {
     cache_percent: number
     estimated_cost_usd: number
   }>
-  by_tool: Array<{ tool: string; calls: number; errors: number; p95_ms: number }>
+  by_tool: Array<{
+    tool: string
+    calls: number
+    errors: number
+    error_rate: number
+    avg_ms: number
+    p50_ms: number
+    p95_ms: number
+  }>
 }
 
 export async function getObservabilitySummary(days: number): Promise<ObservabilitySummary> {

@@ -17,10 +17,12 @@ export function Stat({
   label,
   value,
   tone,
+  hint,
 }: {
   label: string
   value: string
   tone?: 'danger'
+  hint?: string
 }) {
   return (
     <div className="rounded-lg border border-(--color-border) bg-(--bg-card) p-3">
@@ -34,6 +36,7 @@ export function Stat({
       >
         {value}
       </p>
+      {hint && <p className="mt-0.5 truncate text-xs text-(--color-text-muted)">{hint}</p>}
     </div>
   )
 }
