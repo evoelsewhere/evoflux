@@ -62,7 +62,28 @@ class QuestionSpec(BaseModel):
     agent_spawn: AgentSpawnSpec | None = None
 
 
-async def _ask_user(questions: list[QuestionSpec]) -> str:
+class AskUserQuestionSpec(BaseModel):
+    """Question fields exposed to the model-facing ``ask_user`` tool.
+
+    ``strict`` is intentionally absent. Options from an ordinary agent are
+    suggestions and the user may always type another answer. Workflow gates
+    use :class:`QuestionSpec` directly when they need edge-safe strict choices.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(description="The question to show the user.")
+    options: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional 2-4 short suggested answers, shown as quick-pick "
+            "choices alongside a free-text field."
+        ),
+    )
+    browser_handoff: BrowserHandoffSpec | None = None
+
+
+async def _ask_user(questions: list[AskUserQuestionSpec]) -> str:
     """Ask the user one or more clarifying questions and wait for their answers.
 
     Use this whenever a task is ambiguous, underspecified, or has more than
@@ -90,10 +111,20 @@ async def _ask_user(questions: list[QuestionSpec]) -> str:
         svc.session_id,
         [q.question for q in questions],
     )
-    answers = await svc.ask(questions)
+    soft_questions = [
+        QuestionSpec(
+            question=question.question,
+            options=question.options,
+            strict=False,
+            browser_handoff=question.browser_handoff,
+        )
+        for question in questions
+    ]
+    answers = await svc.ask(soft_questions)
     logger.info("ask_user_answered session={} answers={}", svc.session_id, answers)
     return "\n".join(
-        f"Q: {q.question}\nA: {a}" for q, a in zip(questions, answers, strict=True)
+        f"Q: {q.question}\nA: {a}"
+        for q, a in zip(soft_questions, answers, strict=True)
     )
 
 
