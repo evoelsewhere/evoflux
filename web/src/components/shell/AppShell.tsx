@@ -28,6 +28,7 @@ import type { ReactNode, Ref, TouchEventHandler } from 'react'
 import { motion } from 'framer-motion'
 import { PanelLeft } from 'lucide-react'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
+import { usePlatform } from '@/hooks/use-platform'
 import { useMotionPreset } from '@/lib/motion'
 import { useUIStore } from '@/stores/useUIStore'
 import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
@@ -82,6 +83,7 @@ export function AppShell({
       ? toggleSidebarCollapsed
       : undefined
   const motionPreset = useMotionPreset()
+  const { isMacOverlay } = usePlatform()
 
   // Ctrl+B — the single shell-level sidebar toggle. See the file header for
   // why registration is gated on this shell having a sidebar.
@@ -90,7 +92,7 @@ export function AppShell({
   return (
     // h-dvh handles iOS Safari's dynamic toolbar.
     <div
-      className="mobile-safe-shell mobile-viewport flex h-dvh flex-col bg-(--bg-page) md:flex-row md:gap-0.5 md:p-0.5"
+      className="mobile-safe-shell mobile-viewport relative flex h-dvh flex-col bg-(--bg-page) md:flex-row md:gap-0.5 md:p-0.5"
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
@@ -101,7 +103,16 @@ export function AppShell({
 
       {/* Sidebar toggle — same placement + affordance in every mode. */}
       {hasDockedSidebar && (
-        <div className="flex shrink-0 flex-col items-center pt-2">
+        <div
+          className={
+            sidebarCollapsed
+              ? 'pointer-events-none absolute top-2 z-(--z-header) flex flex-col items-center'
+              : 'flex shrink-0 flex-col items-center pt-2'
+          }
+          style={sidebarCollapsed
+            ? { left: isMacOverlay ? 'var(--spacing-mac-traffic-inset)' : 4 }
+            : undefined}
+        >
           <motion.button
             type="button"
             onClick={toggleSidebarCollapsed}
@@ -111,7 +122,8 @@ export function AppShell({
             aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             aria-expanded={!sidebarCollapsed}
             title={`Toggle sidebar (${formatShortcutLabel('Ctrl+B')})`}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+            className="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+            data-no-drag
           >
             <PanelLeft size={15} aria-hidden="true" />
           </motion.button>

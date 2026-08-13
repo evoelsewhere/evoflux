@@ -196,7 +196,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
 ],
     tricks: [
       'Mode switcher nhớ last route theo mode — quay Coding là về đúng workspace path trước đó.',
-      'Sidebar thu gọn vẫn hiện mode rail; đổi mode không cần bung cả cây.',
+      'Sidebar biến mất hoàn toàn khi thu gọn; dùng Ctrl+B hoặc nút sidebar nổi để mở lại.',
       'Khi đang ở Settings, mode switcher bị ẩn; thoát Settings rồi mới đổi mode lại.',
       'Work hợp research, docs, browser task, script tạm; Coding cho repo bền.',
       'Permission mode, slash và hầu hết workbench tool chạy xuyên mode; Overview / Graph / Changes / Review chỉ trong Coding.',
@@ -240,7 +240,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Đổi mode từng bước: (1) bấm Work hoặc Coding trên mode rail, (2) đợi cây sidebar ổn, (3) chọn hoặc tạo session, (4) xác nhận workbench tool bạn cần có sẵn cho mode đó trước khi prompt agent.',
+        text: 'Đổi mode từng bước: (1) mở sidebar nếu đang thu gọn, (2) bấm Work hoặc Coding trong mode switcher, (3) chọn hoặc tạo session, (4) xác nhận workbench tool bạn cần có sẵn cho mode đó trước khi prompt agent.',
       }
 ],
     related: [

@@ -55,16 +55,12 @@ export function shouldUseSidebarOverlay({
   sidebarCollapsed,
   mainWidth,
   sidebarWidth,
-  macOverlay = false,
 }: AdaptiveSidebarOverlayDecision): boolean {
   if (!workbenchOpen || isMobile) return false
 
-  const collapsedWidth = macOverlay
-    ? WORKSPACE_PANEL.macCollapsedRailWidth
-    : WORKSPACE_PANEL.collapsedRailWidth
   const expandedDockedMainWidth = sidebarMode === 'overlay'
     ? mainWidth - sidebarWidth - WORKSPACE_PANEL.shellChromeWidth
-    : mainWidth - (sidebarCollapsed ? Math.max(0, sidebarWidth - collapsedWidth) : 0)
+    : mainWidth - (sidebarCollapsed ? sidebarWidth : 0)
 
   return (
     expandedDockedMainWidth < MIN_PRIMARY_COLUMN_WIDTH

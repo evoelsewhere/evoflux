@@ -21,7 +21,7 @@
  *   existed. A repo disappears from this list the moment it's added to a
  *   project, since sessions on it must then go through the project.
  *
- * The desktop chrome (resizable width, collapse-to-rail, search trigger,
+ * The desktop chrome (resizable width, collapse-to-zero, search trigger,
  * footer, section headers, session rows, session action surfaces) comes
  * from the shared `@/components/shell/` primitives — same as the work
  * sidebar. Coding keeps its stacked-cards layout (mode switch,
@@ -52,7 +52,6 @@ import {
   MessageSquareText,
   MoreHorizontal,
   Plus,
-  Search,
   Trash2,
   X,
 } from "lucide-react";
@@ -99,7 +98,6 @@ import {
   SidebarSearchTrigger,
   SidebarFooter,
   SidebarModeSlot,
-  SidebarModeRailSlot,
 } from "@/components/shell/SidebarShell";
 import { SidebarItem } from "@/components/ui/sidebar-item";
 import { SidePanel } from "@/components/shell/SidePanel";
@@ -135,7 +133,6 @@ import {
 } from "@/queries/useProjectsQuery";
 import { ProjectSetupModal } from "@/components/ProjectSetupModal";
 import { cn } from "@/lib/utils";
-import { formatShortcutLabel } from "@/lib/keyboard-shortcuts";
 
 
 function worktreeNameSlug(value: string): string {
@@ -1163,63 +1160,6 @@ export function CodingSidebar({
     setPendingDeleteSession(null);
   };
 
-  // Collapsed icon rail — desktop only; mode switch + primary actions above,
-  // footer trio below.
-  const rail = (
-    <>
-      <SidebarCard
-        className={`w-full shrink-0 items-center gap-0.5 px-1 pb-2 ${isMacOverlay ? 'pt-10' : 'pt-2'}`}
-      >
-        <SidebarModeRailSlot />
-        {onCommandPalette && (
-          <button
-            type="button"
-            onClick={onCommandPalette}
-            title={`Search (${formatShortcutLabel("Ctrl+P")})`}
-            aria-label="Search"
-            className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
-          >
-            <Search size={15} aria-hidden="true" />
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => { void openWorkspaceDialog(); }}
-          title="Open folder"
-          aria-label="Open folder"
-          className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
-        >
-          <Folder size={15} aria-hidden="true" />
-        </button>
-        <SidebarItem
-          Icon={CalendarClock}
-          label="Scheduler"
-          kbd="^S"
-          collapsed
-          onClick={toggleScheduler}
-        />
-        <SidebarItem
-          Icon={Blocks}
-          label="Plugins"
-          kbd="^K"
-          collapsed
-          onClick={() => togglePlugins("plugins")}
-        />
-        <SidebarItem
-          Icon={GitBranch}
-          label="Source Control"
-          kbd="^G"
-          collapsed
-          onClick={() => toggleSourceControl("source-control")}
-        />
-      </SidebarCard>
-      <div className="flex-1" />
-      <SidebarCard className="w-full shrink-0">
-        <SidebarFooter collapsed onCommandPalette={onCommandPalette} />
-      </SidebarCard>
-    </>
-  );
-
   // The PROJECTS + WORKSPACES navigator — one copy shared by the desktop
   // floating card and the mobile drawer.
   const navigatorContent = (
@@ -1638,11 +1578,10 @@ export function CodingSidebar({
   );
 
   // Desktop: the shell owns width persistence, the resize handle, and the
-  // collapse-to-rail animation; coding keeps its stacked separate cards.
+  // collapse-to-zero animation; coding keeps its stacked separate cards.
   const desktopShell = (
     <SidebarShell
       collapsed={sidebarCollapsed}
-      rail={rail}
       resizeLabel="Resize coding sidebar"
     >
       <SidebarCard
