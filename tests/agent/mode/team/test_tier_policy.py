@@ -149,7 +149,6 @@ class TestDefaultDeferredTools:
             "visualize_read_me",
             "show_widget",
             "create_pull_request",
-            "schedule_task",
         }
         assert all(registry[name].deferred for name in expected)
         assert all(registry[name].deferred_summary for name in expected)
@@ -196,6 +195,7 @@ class TestDefaultDeferredTools:
             "memory_search",
             "patch",
             "read",
+            "schedule_task",
             "shell",
             "skill",
             "todo_manage",
@@ -206,7 +206,7 @@ class TestDefaultDeferredTools:
             granted = set(tier_tools(registry, mode=mode, role="lead"))
             granted.update({"skill", "todo_manage", "schedule_task", "note"})
             eager = {name for name in granted if not registry[name].deferred}
-            assert 11 <= len(eager) <= 17
+            assert 12 <= len(eager) <= 18
             expected = set(expected_core)
             if mode == "coding":
                 expected.add("code_context")
@@ -260,6 +260,7 @@ class TestDefaultDeferredTools:
             "memory_search",
             "patch",
             "read",
+            "schedule_task",
             "shell",
             "skill",
             "team_delegate",
