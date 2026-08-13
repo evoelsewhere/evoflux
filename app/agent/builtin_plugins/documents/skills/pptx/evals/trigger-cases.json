@@ -12,6 +12,10 @@
     "should_trigger": true
   },
   {
+    "query": "Read the attached PPTX and summarize the decision and supporting evidence without changing the deck.",
+    "should_trigger": true
+  },
+  {
     "query": "Create a one-page static conference poster and export it as PDF.",
     "should_trigger": false,
     "near_miss": "A static poster is not a presentation deck."

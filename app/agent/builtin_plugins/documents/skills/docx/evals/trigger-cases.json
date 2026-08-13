@@ -12,6 +12,10 @@
     "should_trigger": true
   },
   {
+    "query": "Review the attached DOCX structure and answer which sections use landscape pages; do not modify the file.",
+    "should_trigger": true
+  },
+  {
     "query": "Draft the wording for a short policy memo in Markdown; I do not need a document file.",
     "should_trigger": false,
     "near_miss": "Professional prose without a Word deliverable belongs to writing."
