@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from uuid import UUID
+from zoneinfo import TZPATH, ZoneInfo, reset_tzpath
 
 import pytest
 from pydantic import ValidationError
@@ -12,6 +13,27 @@ from app.scheduler.schemas import ScheduledTaskCreate, ScheduledTaskUpdate
 
 
 _UTC = timezone.utc
+
+
+def test_timezone_validation_uses_bundled_tzdata_without_system_database():
+    """The Windows sidecar must not depend on an OS-provided zone database."""
+    try:
+        reset_tzpath(())
+        ZoneInfo.clear_cache()
+        body = ScheduledTaskCreate(
+            name="local-time",
+            mode="work",
+            schedule_type="cron",
+            cron_expression="0 9 * * *",
+            timezone="Asia/Ho_Chi_Minh",
+            prompt="hi",
+        )
+        assert body.timezone == "Asia/Ho_Chi_Minh"
+        update = ScheduledTaskUpdate(timezone="America/New_York")
+        assert update.timezone == "America/New_York"
+    finally:
+        reset_tzpath(TZPATH)
+        ZoneInfo.clear_cache()
 
 
 # ---------------------------------------------------------------------------

@@ -54,6 +54,10 @@ dependencies = [
     "python-multipart>=0.0.31",
     "prometheus-client>=0.21.0",
     "croniter>=6.2.2",
+    # Windows does not ship an IANA timezone database. zoneinfo falls back to
+    # this package so Scheduler validation accepts browser-reported zones in
+    # the bundled desktop sidecar as well as on Unix hosts.
+    "tzdata>=2025.2",
     "mcp>=1.28.1",
     "boto3>=1.35.0",
     "duckdb>=1.1.0",
