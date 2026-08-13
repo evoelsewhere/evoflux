@@ -274,6 +274,22 @@ def _render_docx(source: Path) -> str:
             rows.append(f"<tr>{''.join(cells)}</tr>")
         return f"<table>{''.join(rows)}</table>"
 
+    def render_existing_header_footer(header_footer: Any) -> str:
+        """Render inherited header/footer content without creating a new part.
+
+        Accessing ``section.header.paragraphs`` or ``section.footer.paragraphs``
+        makes python-docx create a default part when the document has no explicit
+        definition. Besides mutating the package during a read-only preview, that
+        attempts to load python-docx's template through an un-normalized packaged
+        path, which fails for Windows extended-length paths containing ``..``.
+        """
+        current = header_footer
+        while current is not None:
+            if current._has_definition:
+                return "".join(render_paragraph(p) for p in current.paragraphs)
+            current = current._prior_headerfooter
+        return ""
+
     blocks: list[str] = []
     for child in document.element.body.iterchildren():
         if isinstance(child, CT_P):
@@ -281,8 +297,8 @@ def _render_docx(source: Path) -> str:
         elif isinstance(child, CT_Tbl):
             blocks.append(render_table(Table(child, document)))
 
-    header = "".join(render_paragraph(p) for p in section.header.paragraphs)
-    footer = "".join(render_paragraph(p) for p in section.footer.paragraphs)
+    header = render_existing_header_footer(section.header)
+    footer = render_existing_header_footer(section.footer)
     geometry = (
         f"--page-width:{page_width:.2f}px;--page-height:{page_height:.2f}px;"
         f"--margin-top:{margin_top:.2f}px;--margin-right:{margin_right:.2f}px;"
@@ -831,9 +847,14 @@ def _render_xlsx(source: Path) -> str:
     return _page(title=source.name, body="".join(sections), css=css)
 
 
-def _picture_data_uri(shape: Any) -> str:
+def _picture_data_uri(shape: Any) -> str | None:
     relation_id = shape._pic.blip_rId
-    related_part = shape.part.related_part(relation_id)
+    if not relation_id:
+        return None
+    try:
+        related_part = shape.part.related_part(relation_id)
+    except KeyError:
+        return None
     extension = (related_part.partname.ext or "png").lower()
     mime = {
         "jpg": "image/jpeg",
@@ -2559,11 +2580,17 @@ def _render_picture(
         f"width:{image_width:.4f}%;height:{image_height:.4f}%;object-fit:fill"
     )
     alt_text = html.escape(_picture_alt_text(shape), quote=True)
+    data_uri = _picture_data_uri(shape)
+    image = (
+        f'<img class="picture" src="{data_uri}" alt="{alt_text}" '
+        f'style="{image_style}" draggable="false">'
+        if data_uri is not None
+        else '<span class="picture-missing" aria-hidden="true"></span>'
+    )
     return (
         f'<div class="shape picture-frame" {identity} {crop_attributes} '
         f'style="{";".join(styles)}">'
-        f'<img class="picture" src="{_picture_data_uri(shape)}" alt="{alt_text}" '
-        f'style="{image_style}" draggable="false"></div>'
+        f"{image}</div>"
     )
 
 

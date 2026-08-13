@@ -17,6 +17,7 @@ from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION, XL_MARKER_STYLE
 from pptx.enum.dml import MSO_THEME_COLOR
 from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
 from pptx.oxml.xmlchemy import OxmlElement
+from pptx.oxml.ns import qn as pptx_qn
 from pptx.util import Inches, Pt
 import pytest
 
@@ -566,6 +567,28 @@ def test_render_docx_preview_uses_cache(monkeypatch, tmp_path):
     assert "--page-width:" in rendered
 
 
+def test_render_docx_preview_does_not_create_missing_header_footer(
+    monkeypatch, tmp_path
+):
+    from docx.parts.hdrftr import FooterPart, HeaderPart
+
+    source = tmp_path / "report-without-header-footer.docx"
+    _docx(source)
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
+    def fail_if_created(*_args, **_kwargs):
+        raise OSError(22, "Invalid argument: extended Windows template path")
+
+    monkeypatch.setattr(HeaderPart, "new", fail_if_created)
+    monkeypatch.setattr(FooterPart, "new", fail_if_created)
+
+    rendered = preview.render_document_preview(source).read_text(encoding="utf-8")
+
+    assert "Quarterly review" in rendered
+    assert '<div class="document-header-template"></div>' in rendered
+    assert '<div class="document-footer-template"></div>' in rendered
+
+
 def test_render_document_preview_cache_includes_filename(monkeypatch, tmp_path):
     source = tmp_path / "report.docx"
     renamed = tmp_path / "renamed.docx"
@@ -699,6 +722,30 @@ def test_render_pptx_preview_renders_filled_picture_placeholder(monkeypatch, tmp
     assert 'class="shape picture-frame"' in rendered
     assert "data:image/png;base64," in rendered
     assert re.search(r'data-crop-(?:top|bottom)="0\.[1-9]', rendered)
+
+
+def test_render_pptx_preview_skips_picture_with_missing_relationship(
+    monkeypatch, tmp_path
+):
+    source_image = tmp_path / "missing-relationship.png"
+    Image.new("RGB", (100, 100), "#2563eb").save(source_image)
+    source = tmp_path / "missing-picture-relationship.pptx"
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text = (
+        "The rest of the slide remains visible"
+    )
+    picture = slide.shapes.add_picture(
+        str(source_image), Inches(1), Inches(2), Inches(2), Inches(2)
+    )
+    picture._pic.blipFill.blip.attrib.pop(pptx_qn("r:embed"))
+    presentation.save(source)
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
+    rendered = preview.render_document_preview(source).read_text(encoding="utf-8")
+
+    assert "The rest of the slide remains visible" in rendered
+    assert 'class="picture-missing"' in rendered
 
 
 def test_render_pptx_preview_keeps_titles_single_line_and_renders_area_charts(
