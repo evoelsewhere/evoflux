@@ -76,6 +76,41 @@ export function getVisibleTurnWindow(
   }
 }
 
+/**
+ * Append a hot live buffer to memoized finalized turns without repartitioning
+ * the full history on every streamed delta. A contiguous assistant boundary is
+ * merged so its React key and footer lifecycle stay stable on completion.
+ */
+export function appendLiveTurnItems(
+  finalized: TurnItem[],
+  currentBlocks: ContentBlock[],
+  finalizedBlockCount: number,
+): TurnItem[] {
+  if (currentBlocks.length === 0) return finalized
+
+  const live = partitionTurns(currentBlocks).map((item): TurnItem =>
+    item.kind === 'user'
+      ? { ...item, index: item.index + finalizedBlockCount }
+      : { ...item, startIndex: item.startIndex + finalizedBlockCount },
+  )
+  const lastFinalized = finalized.at(-1)
+  const firstLive = live[0]
+
+  if (lastFinalized?.kind === 'assistant' && firstLive?.kind === 'assistant') {
+    return [
+      ...finalized.slice(0, -1),
+      {
+        kind: 'assistant',
+        blocks: [...lastFinalized.blocks, ...firstLive.blocks],
+        startIndex: lastFinalized.startIndex,
+      },
+      ...live.slice(1),
+    ]
+  }
+
+  return [...finalized, ...live]
+}
+
 export function partitionTurns(blocks: ContentBlock[]): TurnItem[] {
   const items: TurnItem[] = []
   let i = 0

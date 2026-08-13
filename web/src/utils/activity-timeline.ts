@@ -1,27 +1,35 @@
 import type { ContentBlock } from '@/api/types'
 
-export interface AssistantActivityPartition {
-  activityBlocks: ContentBlock[]
-  answerBlocks: ContentBlock[]
+export type AssistantTurnSegment =
+  | { kind: 'activity'; blocks: ContentBlock[] }
+  | { kind: 'content'; blocks: ContentBlock[] }
+
+export function isActivityBlock(block: ContentBlock): boolean {
+  return block.type === 'thinking' || block.type === 'tool'
 }
 
 /**
- * Keep the chronological work trace intact through the latest thinking/tool
- * block. Thought remains its own rendered block; only consecutive tool calls
- * are grouped. Trailing answer prose renders outside the bounded timeline.
+ * Partition a turn without ever moving an already-rendered block to a new
+ * parent when a later event arrives. Text/widget/status blocks remain transcript
+ * content; only adjacent thinking/tool events form an activity group.
+ *
+ * This mirrors the semantic stream: commentary and output are content, while
+ * reasoning and tool lifecycle events are activity. A content event is a hard
+ * group boundary, so later tools start a new group instead of swallowing the
+ * preceding commentary into a growing work log.
  */
-export function partitionAssistantActivity(blocks: ContentBlock[]): AssistantActivityPartition {
-  let lastActivityIndex = -1
-  for (let index = blocks.length - 1; index >= 0; index--) {
-    if (blocks[index].type === 'thinking' || blocks[index].type === 'tool') {
-      lastActivityIndex = index
-      break
+export function segmentAssistantTurn(blocks: ContentBlock[]): AssistantTurnSegment[] {
+  const segments: AssistantTurnSegment[] = []
+
+  for (const block of blocks) {
+    const kind = isActivityBlock(block) ? 'activity' : 'content'
+    const previous = segments.at(-1)
+    if (previous?.kind === kind) {
+      previous.blocks.push(block)
+    } else {
+      segments.push({ kind, blocks: [block] } as AssistantTurnSegment)
     }
   }
 
-  if (lastActivityIndex < 0) return { activityBlocks: [], answerBlocks: blocks }
-  return {
-    activityBlocks: blocks.slice(0, lastActivityIndex + 1),
-    answerBlocks: blocks.slice(lastActivityIndex + 1),
-  }
+  return segments
 }

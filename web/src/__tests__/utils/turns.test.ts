@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ContentBlock } from '@/api/types'
-import { getVisibleTurnWindow, isLatestStreamingItem, partitionTurns } from '@/utils/turns'
+import { appendLiveTurnItems, getVisibleTurnWindow, isLatestStreamingItem, partitionTurns } from '@/utils/turns'
 
 const block = (type: ContentBlock['type'], content: string): ContentBlock =>
   ({ type, content, id: `${type}-${content}` }) as ContentBlock
@@ -66,6 +66,27 @@ describe('turn partitioning', () => {
     expect(isLatestStreamingItem(true, 1, 3)).toBe(false)
     expect(isLatestStreamingItem(true, 2, 3)).toBe(true)
     expect(isLatestStreamingItem(false, 2, 3)).toBe(false)
+  })
+
+  it('merges a live assistant tail without repartitioning finalized history', () => {
+    const finalized = partitionTurns([
+      block('user', 'prompt'),
+      block('text', 'commentary'),
+    ])
+
+    const merged = appendLiveTurnItems(finalized, [
+      block('thinking', 'inspect'),
+      block('tool', 'read'),
+    ], 2)
+
+    expect(merged).toHaveLength(2)
+    expect(merged[0]).toBe(finalized[0])
+    expect(merged[1]).toMatchObject({ kind: 'assistant', startIndex: 1 })
+    if (merged[1]?.kind === 'assistant') {
+      expect(merged[1].blocks.map((item) => item.content)).toEqual([
+        'commentary', 'inspect', 'read',
+      ])
+    }
   })
 
   it('folds delegation transport into the surrounding assistant lifecycle', () => {

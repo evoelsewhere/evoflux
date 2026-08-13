@@ -23,10 +23,9 @@ import { ChatWelcome } from './ChatWelcome'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { BlockRenderer } from './BlockRenderer'
 import { AssistantTurnFooter } from './AssistantTurnFooter'
-import { ActivityTimeline } from './ActivityTimeline'
-import { partitionAssistantActivity } from '@/utils/activity-timeline'
+import { AssistantTurnContent } from './AssistantTurnContent'
 import { PendingMessageQueue } from './PendingMessageQueue'
-import { getVisibleTurnWindow, isLatestStreamingItem, partitionTurns, type TurnItem } from '@/utils/turns'
+import { appendLiveTurnItems, getVisibleTurnWindow, partitionTurns } from '@/utils/turns'
 import { isDirectUserBlock, latestDirectUserBlockId } from '@/utils/blocks'
 import { buildUserMessageNavigationItems } from '@/utils/user-message-navigation'
 import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
@@ -34,7 +33,6 @@ import { usePinnedTranscript } from '@/hooks/usePinnedTranscript'
 import { cn } from '@/lib/utils'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { ActivityStatus } from './motion/ActivityStatus'
-import { BlockEnter } from './motion/BlockEnter'
 import { TextSelectionAction } from './TextSelectionAction'
 import { TurnChangesCard } from './TurnChangesCard'
 import { UserMessageNavigationRail } from './UserMessageNavigationRail'
@@ -87,6 +85,7 @@ interface AgentViewProps {
 interface AssistantTranscriptTurnProps {
   blocks: ContentBlock[]
   canContinue?: () => void
+  hasRunway: boolean
   latestMCPAppBlockIds: Set<string>
   sessionId?: string
   turnChanges: TurnChangesPending | null
@@ -97,27 +96,24 @@ interface AssistantTranscriptTurnProps {
 const AssistantTranscriptTurn = memo(function AssistantTranscriptTurn({
   blocks,
   canContinue,
+  hasRunway,
   latestMCPAppBlockIds,
   sessionId,
   turnChanges,
   turnIsStreaming,
 }: AssistantTranscriptTurnProps) {
-  const { activityBlocks, answerBlocks } = useMemo(
-    () => partitionAssistantActivity(blocks),
-    [blocks],
-  )
   const turnStartedAt = useMemo(
     () => blocks.find((block) => block.startedAt)?.startedAt,
     [blocks],
   )
 
   return (
-    <div className={turnIsStreaming ? 'oa-active-turn-runway' : 'oa-transcript-turn'}>
+    <div className={hasRunway ? 'oa-latest-turn-runway' : 'oa-transcript-turn'}>
       {turnIsStreaming && <StreamingTurnHeader startedAt={turnStartedAt} />}
       <div className="space-y-2">
-        <ActivityTimeline
-          blocks={activityBlocks}
-          isActive={turnIsStreaming && answerBlocks.length === 0}
+        <AssistantTurnContent
+          blocks={blocks}
+          turnIsStreaming={turnIsStreaming}
           sessionId={sessionId}
           latestMCPAppBlockIds={latestMCPAppBlockIds}
           renderBlock={({ block, isStreaming }) => (
@@ -129,19 +125,6 @@ const AssistantTranscriptTurn = memo(function AssistantTranscriptTurn({
             />
           )}
         />
-        {answerBlocks.map((block, index) => {
-          const isStreaming = isLatestStreamingItem(turnIsStreaming, index, answerBlocks.length)
-          return (
-            <BlockEnter key={block.id} disabled={isStreaming && block.type === 'text'}>
-              <BlockRenderer
-                block={block}
-                isStreaming={isStreaming}
-                sessionId={sessionId}
-                latestMCPAppBlockIds={latestMCPAppBlockIds}
-              />
-            </BlockEnter>
-          )
-        })}
         {!turnIsStreaming && (
           <AssistantTurnFooter
             turnBlocks={blocks}
@@ -196,32 +179,10 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   )
 
   const finalizedTurnItems = useMemo(() => partitionTurns(blocks), [blocks])
-  const turnItems = useMemo(() => {
-    if (currentBlocks.length === 0) return finalizedTurnItems
-    const offset = blocks.length
-    const liveTurnItems = partitionTurns(currentBlocks).map((item): TurnItem =>
-      item.kind === 'user'
-        ? { ...item, index: item.index + offset }
-        : { ...item, startIndex: item.startIndex + offset },
-    )
-    const lastFinalized = finalizedTurnItems[finalizedTurnItems.length - 1]
-    const firstLive = liveTurnItems[0]
-    // A trailing finalized assistant turn and a leading live assistant run
-    // are one contiguous turn — merge them so keys/footers match what a
-    // full partition of the merged block list would produce.
-    if (lastFinalized?.kind === 'assistant' && firstLive?.kind === 'assistant') {
-      return [
-        ...finalizedTurnItems.slice(0, -1),
-        {
-          kind: 'assistant' as const,
-          blocks: [...lastFinalized.blocks, ...firstLive.blocks],
-          startIndex: lastFinalized.startIndex,
-        },
-        ...liveTurnItems.slice(1),
-      ]
-    }
-    return [...finalizedTurnItems, ...liveTurnItems]
-  }, [blocks.length, currentBlocks, finalizedTurnItems])
+  const turnItems = useMemo(
+    () => appendLiveTurnItems(finalizedTurnItems, currentBlocks, blocks.length),
+    [blocks.length, currentBlocks, finalizedTurnItems],
+  )
   const { hiddenTurnCount, visibleTurnItems } = useMemo(
     () => getVisibleTurnWindow(turnItems, renderedTurnCount),
     [renderedTurnCount, turnItems],
@@ -418,6 +379,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                      key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}
                      blocks={item.blocks}
                      turnIsStreaming={turnIsStreaming}
+                     hasRunway={isTrailingTurn}
                      canContinue={isTrailingTurn && !isWorking ? onContinue : undefined}
                      sessionId={sessionId}
                      latestMCPAppBlockIds={latestMCPAppBlockIds}

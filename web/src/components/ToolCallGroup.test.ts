@@ -104,6 +104,13 @@ describe('groupConsecutiveToolCalls', () => {
     expect((result[0] as ToolBlockGroup).blocks).toHaveLength(3)
   })
 
+  it('deduplicates fallback labels for unknown tool families', () => {
+    expect(groupLabel([
+      block('artifact-1', 'tool', 'artifact'),
+      block('custom-1', 'tool', 'custom_tool'),
+    ])).toBe('Used tools')
+  })
+
   it('creates the final group container as soon as the first tool starts', () => {
     const pending = block('read-1', 'tool', 'read', false)
     const pendingResult = groupConsecutiveToolCalls([pending])

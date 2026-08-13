@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Maximize2, Menu, Minimize2, Plus, X } from 'lucide-react'
 import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { staggerDelay, useMotionPreset } from '@/lib/motion'
+import { EASINGS, staggerDelay, useMotionPreset } from '@/lib/motion'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { cn } from '@/lib/utils'
 import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
@@ -55,6 +55,9 @@ export function WorkbenchDock({
   const showLauncher = useUIStore((state) => state.showWorkbenchLauncher)
   const toggleMaximized = useUIStore((state) => state.toggleWorkbenchMaximized)
   const motionPreset = useMotionPreset()
+  const dockTransition = motionPreset.intensity === 'reduced'
+    ? { duration: 0 }
+    : { duration: 0.14, ease: EASINGS.out }
   const isMobile = useIsMobile()
   const resizable = useResizableWidth({
     storageKey: STORAGE_KEYS.panels.workbench,
@@ -84,7 +87,7 @@ export function WorkbenchDock({
       animate={{
         opacity: 1,
       }}
-      transition={motionPreset.transition}
+      transition={dockTransition}
       style={{
         width: maximized || isMobile ? '100%' : resizable.width,
       }}

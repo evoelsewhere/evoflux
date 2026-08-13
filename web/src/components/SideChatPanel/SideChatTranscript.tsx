@@ -3,8 +3,8 @@
  *
  * Renders `blocks` (finalized history) + `currentBlocks` (live streaming tail)
  * through the exact same pipeline as the main chat's AgentView:
- * `partitionTurns` → `BlockRenderer` (+ `groupConsecutiveToolCalls` for
- * finished turns) → `AssistantTurnFooter`. Narrow-panel differences only:
+ * `partitionTurns` → `AssistantTurnContent` → `BlockRenderer` →
+ * `AssistantTurnFooter`. Narrow-panel differences only:
  * no turn windowing, no revert, compact footers.
  */
 import { useMemo } from 'react'
@@ -12,11 +12,9 @@ import { ChevronDown } from 'lucide-react'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import { BlockRenderer } from '../BlockRenderer'
 import { AssistantTurnFooter } from '../AssistantTurnFooter'
-import { ActivityTimeline } from '../ActivityTimeline'
-import { partitionAssistantActivity } from '@/utils/activity-timeline'
+import { AssistantTurnContent } from '../AssistantTurnContent'
 import { ActivityStatus } from '../motion/ActivityStatus'
-import { BlockEnter } from '../motion/BlockEnter'
-import { isLatestStreamingItem, partitionTurns, type TurnItem } from '@/utils/turns'
+import { appendLiveTurnItems, partitionTurns } from '@/utils/turns'
 import { latestMCPAppResourceBlockIds } from '@/utils/mcp-app-artifacts'
 import { latestDirectUserBlockId } from '@/utils/blocks'
 import { usePinnedTranscript } from '@/hooks/usePinnedTranscript'
@@ -47,30 +45,11 @@ export function SideChatTranscript({
   // Merge finalized turns with the live tail — a trailing finalized assistant
   // turn and a leading live assistant run are one contiguous turn (same rule
   // as AgentView).
-  const turnItems = useMemo(() => {
-    const finalized = partitionTurns(blocks)
-    if (currentBlocks.length === 0) return finalized
-    const offset = blocks.length
-    const live = partitionTurns(currentBlocks).map((item): TurnItem =>
-      item.kind === 'user'
-        ? { ...item, index: item.index + offset }
-        : { ...item, startIndex: item.startIndex + offset },
-    )
-    const lastFinalized = finalized[finalized.length - 1]
-    const firstLive = live[0]
-    if (lastFinalized?.kind === 'assistant' && firstLive?.kind === 'assistant') {
-      return [
-        ...finalized.slice(0, -1),
-        {
-          kind: 'assistant' as const,
-          blocks: [...lastFinalized.blocks, ...firstLive.blocks],
-          startIndex: lastFinalized.startIndex,
-        },
-        ...live.slice(1),
-      ]
-    }
-    return [...finalized, ...live]
-  }, [blocks, currentBlocks])
+  const finalizedTurnItems = useMemo(() => partitionTurns(blocks), [blocks])
+  const turnItems = useMemo(
+    () => appendLiveTurnItems(finalizedTurnItems, currentBlocks, blocks.length),
+    [blocks.length, currentBlocks, finalizedTurnItems],
+  )
 
   // `BlockRenderer` only mounts the interactive MCP app for ids in this set, so
   // without it Side Chat silently downgraded every app resource to a raw tool
@@ -129,7 +108,6 @@ export function SideChatTranscript({
               }
               const isTrailingTurn = k === turnItems.length - 1
               const turnIsStreaming = isWorking && isTrailingTurn
-              const { activityBlocks, answerBlocks } = partitionAssistantActivity(item.blocks)
               return (
                 <div
                   key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}
@@ -140,9 +118,9 @@ export function SideChatTranscript({
                     <span className="text-xs font-medium text-(--color-text-muted)">{agentLabel}</span>
                   </div>
                   <div className="space-y-2">
-                    <ActivityTimeline
-                      blocks={activityBlocks}
-                      isActive={turnIsStreaming && answerBlocks.length === 0}
+                    <AssistantTurnContent
+                      blocks={item.blocks}
+                      turnIsStreaming={turnIsStreaming}
                       sessionId={sessionId}
                       latestMCPAppBlockIds={latestMCPAppBlockIds}
                       renderBlock={({ block, isStreaming }) => (
@@ -154,21 +132,6 @@ export function SideChatTranscript({
                         />
                       )}
                     />
-                    {answerBlocks.map((block, j) => {
-                      // Keep completed phases still; only the latest visible
-                      // item in the active turn is actually streaming.
-                      const isStreaming = isLatestStreamingItem(turnIsStreaming, j, answerBlocks.length)
-                      return (
-                        <BlockEnter key={block.id} disabled={isStreaming && block.type === 'text'}>
-                          <BlockRenderer
-                            block={block}
-                            isStreaming={isStreaming}
-                            sessionId={sessionId}
-                            latestMCPAppBlockIds={latestMCPAppBlockIds}
-                          />
-                        </BlockEnter>
-                      )
-                    })}
                     {!turnIsStreaming && (
                       <AssistantTurnFooter turnBlocks={item.blocks} size="compact" />
                     )}

@@ -15,7 +15,7 @@ import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { AssistantTurn } from './AssistantTurnFooter'
 import { BlockRenderer } from './BlockRenderer'
 import { AgentChip } from './ui/agent-chip'
-import { getVisibleTurnWindow, partitionTurns } from '@/utils/turns'
+import { appendLiveTurnItems, getVisibleTurnWindow, partitionTurns } from '@/utils/turns'
 import { latestDirectUserBlockId, mergeBlocks } from '@/utils/blocks'
 import { latestMCPAppResourceBlockIds } from '@/utils/mcp-app-artifacts'
 import { useTeamStore } from '@/stores/useTeamStore'
@@ -91,7 +91,11 @@ export function AgentPane({
     [stream.blocks, stream.currentBlocks],
   )
   const latestUserBlockId = useMemo(() => latestDirectUserBlockId(allBlocks), [allBlocks])
-  const turnItems = useMemo(() => partitionTurns(allBlocks), [allBlocks])
+  const finalizedTurnItems = useMemo(() => partitionTurns(stream.blocks), [stream.blocks])
+  const turnItems = useMemo(
+    () => appendLiveTurnItems(finalizedTurnItems, stream.currentBlocks, stream.blocks.length),
+    [finalizedTurnItems, stream.blocks.length, stream.currentBlocks],
+  )
   const { hiddenTurnCount, visibleTurnItems } = useMemo(
     () => getVisibleTurnWindow(turnItems, renderedTurnCount),
     [renderedTurnCount, turnItems],
@@ -268,7 +272,7 @@ export function AgentPane({
                    return (
                      <div
                        key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}
-                       className={isWorking && isTrailingTurn ? undefined : 'oa-transcript-turn'}
+                       className={isTrailingTurn ? 'oa-latest-turn-runway' : 'oa-transcript-turn'}
                      >
                        <AssistantTurn
                          blocks={item.blocks}

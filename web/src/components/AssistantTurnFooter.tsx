@@ -10,11 +10,8 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Copy, Check, Play } from 'lucide-react'
 import { formatTime, lastTurnText } from '@/utils/format'
-import { ActivityTimeline } from './ActivityTimeline'
-import { partitionAssistantActivity } from '@/utils/activity-timeline'
+import { AssistantTurnContent } from './AssistantTurnContent'
 import type { ContentBlock } from '@/api/types'
-import { isLatestStreamingItem } from '@/utils/turns'
-import { BlockEnter } from './motion/BlockEnter'
 
 export interface AssistantTurnFooterProps {
   /** Blocks belonging to a single assistant turn (no user blocks inside). */
@@ -159,7 +156,6 @@ export function AssistantTurn({
 }: AssistantTurnProps) {
   const turnIsStreaming = isWorking && isTrailingTurn
   const canContinue = isTrailingTurn && !isWorking ? onContinue : undefined
-  const { activityBlocks, answerBlocks } = partitionAssistantActivity(blocks)
   const blockAbsIdx = useMemo(
     () => new Map(blocks.map((b, j) => [b.id, startIndex + j])),
     [blocks, startIndex],
@@ -167,9 +163,9 @@ export function AssistantTurn({
 
   return (
     <div className="space-y-2">
-      <ActivityTimeline
-        blocks={activityBlocks}
-        isActive={turnIsStreaming && answerBlocks.length === 0}
+      <AssistantTurnContent
+        blocks={blocks}
+        turnIsStreaming={turnIsStreaming}
         sessionId={sessionId}
         latestMCPAppBlockIds={latestMCPAppBlockIds}
         compact={size === 'compact'}
@@ -179,21 +175,6 @@ export function AssistantTurn({
           isLast: (blockAbsIdx.get(block.id) ?? startIndex) === totalBlocks - 1,
         })}
       />
-      {answerBlocks.map((block, j) => {
-        const absoluteIdx = blockAbsIdx.get(block.id) ?? startIndex + j
-        // Earlier blocks in the live buffer are completed phases. Animate
-        // only the newest visible item in the trailing active turn.
-        const isStreaming = isLatestStreamingItem(turnIsStreaming, j, answerBlocks.length)
-        return (
-          <BlockEnter key={block.id} disabled={isStreaming && block.type === 'text'}>
-            {renderBlock({
-              block,
-              isStreaming,
-              isLast: absoluteIdx === totalBlocks - 1,
-            })}
-          </BlockEnter>
-        )
-      })}
       {!turnIsStreaming && <AssistantTurnFooter turnBlocks={blocks} size={size} onContinue={canContinue} />}
     </div>
   )

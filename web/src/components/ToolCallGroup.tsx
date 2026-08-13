@@ -132,7 +132,9 @@ export function groupLabel(blocks: ContentBlock[]): string {
   const families = [...new Set(blocks.flatMap((block) => (
     block.toolName ? [toolFamily(block)] : []
   )))]
-  const labels = families.map(familyLabel)
+  // Unknown tool families share the same fallback presentation. Dedupe after
+  // presentation mapping so summaries never read "Used tools, used tools".
+  const labels = [...new Set(families.map(familyLabel))]
   return labels
     .map((label, index) => index === 0 ? label : label.charAt(0).toLowerCase() + label.slice(1))
     .join(', ')

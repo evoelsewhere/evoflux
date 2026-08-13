@@ -29,9 +29,8 @@ import { motion } from 'framer-motion'
 import { X } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useModalFocus } from '@/hooks/useModalFocus'
-import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { useResizableWidth } from '@/hooks/use-resizable-width'
-import { panelTransition, useMotionPreset } from '@/lib/motion'
+import { EASINGS, useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 
 interface SidePanelProps {
@@ -123,7 +122,6 @@ export const SidePanel = forwardRef<HTMLElement, SidePanelProps>(function SidePa
   children,
 }, ref) {
   const detectedMobile = useIsMobile()
-  const prefersReducedMotion = useReducedMotion()
   const motionPreset = useMotionPreset()
   const breakpointOverlay = mobileOverlay && (mobileProp ?? detectedMobile)
   const overlay = !fillParent && (forceOverlay || breakpointOverlay)
@@ -148,9 +146,20 @@ export const SidePanel = forwardRef<HTMLElement, SidePanelProps>(function SidePa
   // framer-motion's spring animation) so resize drag is always instant.
   // The wrapper fixed container in TeamChatView handles open/close visuals.
   const isInner = (desktopOverlayInner && !overlay) || fillParent
-  const fade = prefersReducedMotion || overlay
   const hasHeader = title != null || headerActions != null || onClose != null
   const travel = 14 * motionPreset.distance
+  // Shell geometry should settle quickly even when the user prefers more
+  // expressive content motion. Long springs keep an exiting flex sibling's
+  // width reserved and make the conversation canvas feel unresponsive.
+  const surfaceTransition = motionPreset.intensity === 'reduced'
+    ? { duration: 0 }
+    : {
+        duration: Math.min(0.18, 0.12 + 0.04 * motionPreset.scale),
+        ease: EASINGS.out,
+      }
+  const surfaceExitTransition = motionPreset.intensity === 'reduced'
+    ? { duration: 0 }
+    : { duration: 0.1, ease: EASINGS.out }
   const panelStyle = fillParent
     ? { width: '100%' }
     : overlay
@@ -214,10 +223,7 @@ export const SidePanel = forwardRef<HTMLElement, SidePanelProps>(function SidePa
         )}
       >
         {hasHeader && (
-          <motion.div
-            layout="position"
-            className="flex shrink-0 items-center justify-between px-3 py-2"
-          >
+          <div className="flex shrink-0 items-center justify-between px-3 py-2">
             {typeof title === 'string' ? (
               <span className="text-xs font-semibold text-(--color-text-2)">{title}</span>
             ) : (
@@ -239,7 +245,7 @@ export const SidePanel = forwardRef<HTMLElement, SidePanelProps>(function SidePa
                 </motion.button>
               )}
             </div>
-          </motion.div>
+          </div>
         )}
         {children}
       </div>
@@ -268,17 +274,13 @@ export const SidePanel = forwardRef<HTMLElement, SidePanelProps>(function SidePa
         isInner
           ? undefined
           : overlay
-          ? { opacity: 0 }
-          : { opacity: 0, x: travel }
+          ? { opacity: 0, transition: surfaceExitTransition }
+          : { opacity: 0, x: travel, transition: surfaceExitTransition }
       }
       transition={
         isInner || !animated
           ? { duration: 0 }
-          : fade
-          ? motionPreset.transition
-          : overlay
-          ? motionPreset.transition
-          : panelTransition(motionPreset)
+          : surfaceTransition
       }
       className={cn(
         overlay

@@ -51,6 +51,7 @@ describe('WorkbenchBar browser access control', () => {
     onPopoverOpenChange = vi.fn(),
     identity = 'Lead',
     activeAgent = 'Lead',
+    onViewModeChange = vi.fn(),
   ) {
     render(
       <WorkbenchBar
@@ -58,7 +59,7 @@ describe('WorkbenchBar browser access control', () => {
         activeAgent={activeAgent}
         agentNames={['Lead', 'explorer#1']}
         viewMode="agent"
-        onViewModeChange={vi.fn()}
+        onViewModeChange={onViewModeChange}
         onSelectAgent={vi.fn()}
         onOpenMobileSidebar={vi.fn()}
         isMobile={false}
@@ -70,7 +71,7 @@ describe('WorkbenchBar browser access control', () => {
         onWebBridgePopoverOpenChange={onPopoverOpenChange}
       />,
     )
-    return { onChange, onPopoverOpenChange }
+    return { onChange, onPopoverOpenChange, onViewModeChange }
   }
 
   it('opens WebBridge settings from the top bar without enabling it immediately', () => {
@@ -90,6 +91,17 @@ describe('WorkbenchBar browser access control', () => {
     const selector = screen.getByRole('button', { name: 'Choose active agent' })
     expect(selector).toHaveTextContent('explorer#1')
     expect(selector).not.toHaveTextContent('evoflux')
+  })
+
+  it('dispatches a conversation layout selection on the first click', async () => {
+    const onViewModeChange = vi.fn()
+    renderBar(false, vi.fn(), false, vi.fn(), 'Lead', 'Lead', onViewModeChange)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Choose conversation layout' }))
+    fireEvent.click(await screen.findByText('Split'))
+
+    expect(onViewModeChange).toHaveBeenCalledOnce()
+    expect(onViewModeChange).toHaveBeenCalledWith('split')
   })
 
   it('enables WebBridge explicitly when the extension is connected', async () => {

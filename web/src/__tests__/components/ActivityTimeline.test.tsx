@@ -1,8 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ActivityTimeline } from '@/components/ActivityTimeline'
-import { partitionAssistantActivity } from '@/utils/activity-timeline'
+import { segmentAssistantTurn } from '@/utils/activity-timeline'
 import type { ContentBlock } from '@/api/types'
 
 function block(id: string, type: ContentBlock['type'], content = ''): ContentBlock {
@@ -25,23 +25,34 @@ beforeEach(() => {
   })
 })
 
-describe('partitionAssistantActivity', () => {
-  it('preserves the exact Thought/tool chronology and leaves final prose outside', () => {
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+describe('segmentAssistantTurn', () => {
+  it('uses content as a stable boundary between activity groups', () => {
     const blocks = [
+      block('commentary-1', 'text', 'I will inspect the flow.'),
       block('thought-1', 'thinking', 'Planning'),
       block('tool-1', 'tool'),
-      block('progress', 'text', 'Checking the result'),
+      block('commentary-2', 'text', 'The first issue is confirmed.'),
       block('thought-2', 'thinking', 'Reviewing'),
       block('tool-2', 'tool'),
       block('answer', 'text', 'Final answer'),
     ]
 
-    const partition = partitionAssistantActivity(blocks)
+    const segments = segmentAssistantTurn(blocks)
 
-    expect(partition.activityBlocks.map((item) => item.id)).toEqual([
-      'thought-1', 'tool-1', 'progress', 'thought-2', 'tool-2',
+    expect(segments.map((segment) => ({
+      kind: segment.kind,
+      ids: segment.blocks.map((item) => item.id),
+    }))).toEqual([
+      { kind: 'content', ids: ['commentary-1'] },
+      { kind: 'activity', ids: ['thought-1', 'tool-1'] },
+      { kind: 'content', ids: ['commentary-2'] },
+      { kind: 'activity', ids: ['thought-2', 'tool-2'] },
+      { kind: 'content', ids: ['answer'] },
     ])
-    expect(partition.answerBlocks.map((item) => item.id)).toEqual(['answer'])
   })
 })
 
@@ -64,18 +75,17 @@ describe('ActivityTimeline', () => {
       />,
     )
 
-    const groups = screen.getAllByRole('button', { name: /Read files, 1 action/ })
     const ordered = [
       screen.getByTestId('thought-1'),
-      groups[0],
+      screen.getByTestId('tool-1'),
       screen.getByTestId('thought-2'),
-      groups[1],
+      screen.getByTestId('tool-2'),
     ]
     ordered.slice(0, -1).forEach((node, index) => {
       expect(node.compareDocumentPosition(ordered[index + 1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
     expect(screen.getByRole('log', { name: 'Activity history' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Collapse Working · 2 actions' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Collapse Read files, 4 activities' })).toBeInTheDocument()
   })
 
   it('collapses completed activity to one summary row and expands on request', () => {
@@ -87,14 +97,45 @@ describe('ActivityTimeline', () => {
       />,
     )
 
-    const summary = screen.getByRole('button', { name: 'Expand Worked · 1 action' })
+    const summary = screen.getByRole('button', { name: 'Expand Read files, 1 activity' })
     expect(screen.queryByRole('log', { name: 'Activity history' })).not.toBeInTheDocument()
 
     fireEvent.click(summary)
     expect(screen.getByRole('log', { name: 'Activity history' })).toBeInTheDocument()
   })
 
-  it('collapses the live tool history when final answer prose begins', () => {
+  it('opens historical activity at the beginning instead of the live tail', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback)
+      return frames.length
+    })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+
+    render(
+      <ActivityTimeline
+        blocks={[block('tool-1', 'tool'), block('tool-2', 'tool')]}
+        isActive={false}
+        renderBlock={renderBlock}
+      />,
+    )
+
+    const log = screen.getByRole('log', { name: 'Activity history', hidden: true })
+    Object.defineProperties(log, {
+      clientHeight: { configurable: true, value: 100 },
+      scrollHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, writable: true, value: 400 },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Read files, 2 activities' }))
+    act(() => {
+      while (frames.length > 0) frames.shift()?.(16)
+    })
+
+    expect(log.scrollTop).toBe(0)
+  })
+
+  it('preserves the open group when final answer prose begins', () => {
     const blocks = [block('tool', 'tool')]
     const { rerender } = render(
       <ActivityTimeline blocks={blocks} isActive renderBlock={renderBlock} />,
@@ -103,8 +144,8 @@ describe('ActivityTimeline', () => {
 
     rerender(<ActivityTimeline blocks={blocks} isActive={false} renderBlock={renderBlock} />)
 
-    expect(screen.queryByRole('log', { name: 'Activity history' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Expand Worked · 1 action' })).toBeInTheDocument()
+    expect(screen.getByRole('log', { name: 'Activity history' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Collapse Read files, 1 activity' })).toBeInTheDocument()
   })
 
   it('stops following when the user scrolls upward and offers Latest activity', () => {
