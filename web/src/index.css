@@ -140,7 +140,9 @@
     --text-xs--line-height: 1.125rem;
 
     --spacing-app-header: 2.75rem;
-    --spacing-mac-traffic-inset: 70px;
+    /* Native traffic lights end before 62px; the app controls extend to 140px. */
+    --spacing-mac-traffic-inset: 62px;
+    --spacing-mac-window-controls-inset: 142px;
 }
 
 /* Stacking scale — referenced as z-(--z-panel) etc. This block must stay

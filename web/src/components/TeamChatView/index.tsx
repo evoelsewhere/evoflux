@@ -1708,10 +1708,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           isMacOverlay={isMacOverlay}
           isMobile={isMobile}
           sidebarOverlay={sidebarOverlay}
-          identity={codingIdentityLabel ?? activeAgent ?? sessionTitle ?? 'EvoFlux'}
           activeAgent={activeAgent}
-          agentNames={agentNames}
-          onSelectAgent={setActiveAgent}
           viewMode={displayedViewMode}
           onViewModeChange={setViewMode}
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}

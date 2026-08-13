@@ -1,5 +1,5 @@
 import type { MouseEvent as ReactMouseEvent } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
   Check,
   ChevronDown,
@@ -8,7 +8,6 @@ import {
   GitPullRequest,
   Menu,
 } from 'lucide-react'
-import { AgentLogo } from '@/components/AgentLogo'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,12 +33,9 @@ import { ContextBudgetBar } from '@/components/ContextBudgetBar'
 import { WebBridgeStatusPopover } from '@/components/shell/WebBridgeStatusDialog'
 
 interface WorkbenchBarProps {
-  identity: string
   activeAgent: string | null
-  agentNames: string[]
   viewMode: ViewMode
   onViewModeChange: (mode: ViewMode) => void
-  onSelectAgent: (agent: string) => void
   onOpenMobileSidebar: () => void
   isMobile: boolean
   /** Show the navigation button when desktop navigation is in drawer mode. */
@@ -109,7 +105,6 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
       : props.viewMode === 'split'
         ? SplitViewIcon
         : MonitorViewIcon
-  const activeAgentLabel = props.activeAgent ?? props.identity
   const handleWorkbenchToggle = () => {
     if (!workbenchOpen && props.mode === 'coding' && props.workspace && activeWorkbenchTool === null) {
       openWorkbenchTool('overview')
@@ -123,16 +118,15 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
       {...props.dragHandlers}
       className={cn(
         'workbench-topbar flex h-12 shrink-0 items-center gap-2 overflow-hidden bg-(--bg-page) px-3',
-        props.isMacOverlay && 'mac-drag-region pt-3',
-        sidebarCollapsed
-          && !props.isMobile
-          && !props.sidebarOverlay
+        props.isMacOverlay && 'mac-drag-region',
+        !props.isMobile
           && (props.isMacOverlay
-            ? 'pl-[calc(var(--spacing-mac-traffic-inset)+2.5rem)]'
-            : 'pl-12'),
+            ? (sidebarCollapsed || props.sidebarOverlay)
+              && 'pl-(--spacing-mac-window-controls-inset)'
+            : sidebarCollapsed && !props.sidebarOverlay && 'pl-12'),
       )}
     >
-      {(props.isMobile || props.sidebarOverlay) && (
+      {(props.isMobile || (props.sidebarOverlay && !props.isMacOverlay)) && (
         <motion.button
           type="button"
           onClick={props.onOpenMobileSidebar}
@@ -148,54 +142,6 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
       )}
 
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            className="group flex h-9 min-w-0 max-w-full items-center gap-2 rounded-xl border border-transparent bg-(--bg-card)/45 py-1 pl-1.5 pr-2.5 text-sm font-medium text-(--color-text) outline-none transition-[background-color,border-color,box-shadow] hover:border-(--color-border) hover:bg-(--bg-card) hover:shadow-sm data-[popup-open]:border-(--color-border) data-[popup-open]:bg-(--bg-card)"
-            aria-label="Choose active agent"
-            data-no-drag
-          >
-            <AgentLogo
-              name={props.activeAgent ?? 'EvoFlux'}
-              size="sm"
-              className="size-6 rounded-lg"
-              statusClassName="bg-(--color-success)"
-            />
-            <AnimatePresence initial={false} mode="popLayout">
-              <motion.span
-                key={activeAgentLabel}
-                initial={{ opacity: 0, y: 4 * motionPreset.distance }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 * motionPreset.distance }}
-                transition={motionPreset.transition}
-                className="workbench-identity-label max-w-44 truncate"
-              >
-                {activeAgentLabel}
-              </motion.span>
-            </AnimatePresence>
-            <ChevronDown
-              size={13}
-              className="shrink-0 text-(--color-text-subtle) transition-transform group-data-[popup-open]:rotate-180"
-            />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
-            <div className="px-1.5 py-1 text-xs font-medium text-(--color-text-muted)">
-              Active agent
-            </div>
-            {props.agentNames.map((agent) => (
-              <DropdownMenuItem
-                key={agent}
-                onClick={() => props.onSelectAgent(agent)}
-                className={cn(agent === props.activeAgent && 'bg-(--bg-key)')}
-              >
-                <AgentLogo name={agent} size="xs" />
-                <span className="truncate">{agent}</span>
-                {agent === props.activeAgent && (
-                  <Check size={13} className="ml-auto text-(--color-accent)" />
-                )}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
         {props.reviewContext && props.onOpenReviewContext && (
           <motion.button
             type="button"

@@ -6,7 +6,7 @@
  *   └────────────────────────────────────────────────────┘
  *
  * On macOS Tauri the OS overlays the traffic-light buttons over our
- * WebView; we reserve a 70 px left inset for them and use
+ * WebView; we reserve the native controls area at the left and use
  * `useTauriDrag` to make the header act as the window-drag region.
  * See `documents/docs/web/chrome.md` for the wider story.
  */
@@ -72,7 +72,7 @@ export function AppHeader({
       {...dragHandlers}
       className={cn(
         'mobile-safe-header relative z-(--z-drawer) flex h-(--spacing-app-header) shrink-0 items-center rounded-md bg-(--bg-sidebar)/80 backdrop-blur-xl',
-        isMacOverlay && 'pl-(--spacing-mac-traffic-inset) select-none',
+        isMacOverlay && 'pl-(--spacing-mac-window-controls-inset) select-none',
         className,
       )}
     >

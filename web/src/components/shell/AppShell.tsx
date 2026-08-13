@@ -24,7 +24,7 @@
  *   children      — the main content.
  */
 
-import type { ReactNode, Ref, TouchEventHandler } from 'react'
+import { useEffect, type ReactNode, type Ref, type TouchEventHandler } from 'react'
 import { motion } from 'framer-motion'
 import { PanelLeft } from 'lucide-react'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
@@ -32,6 +32,7 @@ import { usePlatform } from '@/hooks/use-platform'
 import { useMotionPreset } from '@/lib/motion'
 import { useUIStore } from '@/stores/useUIStore'
 import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
+import { SHELL_SIDEBAR_TOGGLE_EVENT } from '@/lib/shell-events'
 
 interface AppShellProps {
   sidebar?: ReactNode
@@ -77,7 +78,8 @@ export function AppShell({
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed)
   const toggleSidebarCollapsed = useUIStore((s) => s.toggleSidebarCollapsed)
   const hasDockedSidebar = sidebar != null
-  const toggleSidebar = sidebarOverlay
+  const hasResponsiveSidebar = mobileSidebar != null
+  const toggleSidebar = sidebarOverlay || (!hasDockedSidebar && hasResponsiveSidebar)
     ? onToggleSidebarOverlay
     : hasDockedSidebar
       ? toggleSidebarCollapsed
@@ -88,6 +90,16 @@ export function AppShell({
   // Ctrl+B — the single shell-level sidebar toggle. See the file header for
   // why registration is gated on this shell having a sidebar.
   useKeyboardShortcuts({ b: toggleSidebar })
+
+  // macOS renders the sidebar affordance beside the native traffic lights.
+  // Keep the action inside AppShell so adaptive drawer state remains local to
+  // TeamChatView and the title bar never needs feature-specific callbacks.
+  useEffect(() => {
+    if (!isMacOverlay || !toggleSidebar) return
+    const handleToggle = () => toggleSidebar()
+    window.addEventListener(SHELL_SIDEBAR_TOGGLE_EVENT, handleToggle)
+    return () => window.removeEventListener(SHELL_SIDEBAR_TOGGLE_EVENT, handleToggle)
+  }, [isMacOverlay, toggleSidebar])
 
   return (
     // h-dvh handles iOS Safari's dynamic toolbar.
@@ -102,7 +114,7 @@ export function AppShell({
       {mobileSidebar}
 
       {/* Sidebar toggle — same placement + affordance in every mode. */}
-      {hasDockedSidebar && (
+      {hasDockedSidebar && !isMacOverlay && (
         <div
           className={
             sidebarCollapsed
@@ -110,7 +122,7 @@ export function AppShell({
               : 'flex shrink-0 flex-col items-center pt-2'
           }
           style={sidebarCollapsed
-            ? { left: isMacOverlay ? 'var(--spacing-mac-traffic-inset)' : 4 }
+            ? { left: 4 }
             : undefined}
         >
           <motion.button
