@@ -52,7 +52,7 @@ describe('HTML slide editable extraction', () => {
     expect(result.issues.some((issue) => issue.code === 'editable-text-flattened')).toBe(true)
   })
 
-  it('flattens rich text and cropped images to preserve source fidelity', () => {
+  it('exports safe rich text while flattening cropped images for fidelity', () => {
     document.body.innerHTML = `
       <section data-slide-root>
         <p data-pptx-editable="text" style="font: 32px Arial; color: black">One <strong style="color: red">accent</strong></p>
@@ -76,10 +76,18 @@ describe('HTML slide editable extraction', () => {
       assets: { photo: { mime_type: 'image/png', suffix: '.png' } },
     })
 
-    expect(result.elements).toHaveLength(0)
-    expect(result.hidden).toHaveLength(0)
+    expect(result.elements).toHaveLength(1)
+    expect(result.elements[0]).toMatchObject({
+      kind: 'text',
+      paragraphs: [{
+        runs: [
+          { text: 'One ', color: '#000000' },
+          { text: 'accent', color: '#FF0000' },
+        ],
+      }],
+    })
+    expect(result.hidden).toEqual([text])
     expect(result.issues.map((issue) => issue.code)).toEqual([
-      'editable-text-flattened',
       'editable-image-flattened',
     ])
   })

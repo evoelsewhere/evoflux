@@ -1,8 +1,6 @@
 {
-  "schema_version": 6,
-  "title": "HTML-first presentation",
-  "dna_path": "slide-dna.json",
-  "qa_ledger_path": "qa-ledger.json",
+  "schema_version": 7,
+  "title": "HTML-shell presentation",
   "width": 1280,
   "height": 720,
   "slides": [

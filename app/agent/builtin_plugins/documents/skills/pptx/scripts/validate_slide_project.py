@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate an HTML-first PPTX project and its project-local Slide DNA."""
+"""Validate a schema-v7 HTML-shell PPTX project without rendering it."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from app.agent.builtin_plugins.documents.engines.pptx_html import (
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate a schema-v6 HTML PPTX project without rendering it."
+        description="Validate a schema-v7 HTML-shell PPTX project without rendering it."
     )
     parser.add_argument("project", type=Path, help="Path to project.json")
     args = parser.parse_args()

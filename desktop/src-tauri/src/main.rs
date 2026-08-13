@@ -196,6 +196,11 @@ const DEV_BACKEND_HEALTH_ATTEMPTS: u32 = 60;
 /// Label shown in the tray when no chat/coding session is active.
 const TRAY_SESSION_IDLE: &str = "No active session";
 
+#[cfg(target_os = "macos")]
+const MACOS_TRAFFIC_LIGHT_X: f64 = 12.0;
+#[cfg(target_os = "macos")]
+const MACOS_TRAFFIC_LIGHT_Y: f64 = 22.0;
+
 /// Hard cap on tray session label width. Keeps the menu from stretching
 /// uncomfortably wide when a session title or workspace name is long.
 const TRAY_SESSION_MAX_LEN: usize = 60;
@@ -205,9 +210,7 @@ const TRAY_SESSION_MAX_LEN: usize = 60;
 /// macOS uses an overlay title-bar; the React app reserves a 70 pt left
 /// inset for the traffic-lights. ``traffic_light_position`` must be set
 /// from Rust because the JSON config value is ignored when the window is
-/// built via ``WebviewWindowBuilder``. ``y`` is a *bottom* inset (tao
-/// resizes the native title-bar to ``button_height + y`` — tao 0.35.x,
-/// macos/view.rs:1152); 22 pt centres against our 40 pt header.
+/// built via ``WebviewWindowBuilder``.
 fn configure_window_chrome(
     builder: WebviewWindowBuilder<'_, tauri::Wry, AppHandle>,
 ) -> WebviewWindowBuilder<'_, tauri::Wry, AppHandle> {
@@ -217,7 +220,10 @@ fn configure_window_chrome(
         builder
             .title_bar_style(TitleBarStyle::Overlay)
             .hidden_title(true)
-            .traffic_light_position(LogicalPosition::new(12.0, 22.0))
+            .traffic_light_position(LogicalPosition::new(
+                MACOS_TRAFFIC_LIGHT_X,
+                MACOS_TRAFFIC_LIGHT_Y,
+            ))
     }
     #[cfg(target_os = "windows")]
     {
@@ -227,6 +233,55 @@ fn configure_window_chrome(
     {
         builder
     }
+}
+
+/// Reapply the macOS controls after Tauri/Wry installs and sizes its content
+/// view. The builder inset is applied too early and AppKit resets it during
+/// the post-build size pass, so relying on the builder alone has no visible
+/// effect for restored windows.
+#[cfg(target_os = "macos")]
+fn enforce_macos_traffic_light_position(window: &tauri::WebviewWindow) -> Result<()> {
+    use objc2_app_kit::{NSView, NSWindow, NSWindowButton};
+
+    window
+        .with_webview(|webview| unsafe {
+            let ns_window: &NSWindow = &*webview.ns_window().cast();
+            let Some(close) = ns_window.standardWindowButton(NSWindowButton::CloseButton) else {
+                log::warn!("desktop: macOS close button is unavailable");
+                return;
+            };
+            let Some(minimize) = ns_window.standardWindowButton(NSWindowButton::MiniaturizeButton)
+            else {
+                log::warn!("desktop: macOS minimize button is unavailable");
+                return;
+            };
+            let Some(title_bar_container) = close
+                .superview()
+                .and_then(|button_group| button_group.superview())
+            else {
+                log::warn!("desktop: macOS title-bar container is unavailable");
+                return;
+            };
+
+            let close_frame = NSView::frame(&close);
+            let title_bar_height = close_frame.size.height + MACOS_TRAFFIC_LIGHT_Y;
+            let mut title_bar_frame = NSView::frame(&title_bar_container);
+            title_bar_frame.size.height = title_bar_height;
+            title_bar_frame.origin.y = ns_window.frame().size.height - title_bar_height;
+            title_bar_container.setFrame(title_bar_frame);
+
+            let spacing = NSView::frame(&minimize).origin.x - close_frame.origin.x;
+            let mut buttons = vec![close, minimize];
+            if let Some(zoom) = ns_window.standardWindowButton(NSWindowButton::ZoomButton) {
+                buttons.push(zoom);
+            }
+            for (index, button) in buttons.into_iter().enumerate() {
+                let mut origin = NSView::frame(&button).origin;
+                origin.x = MACOS_TRAFFIC_LIGHT_X + index as f64 * spacing;
+                button.setFrameOrigin(origin);
+            }
+        })
+        .context("position macOS title-bar controls")
 }
 
 #[derive(Clone, Serialize)]
@@ -3393,6 +3448,8 @@ async fn build_app_window(
     let state: tauri::State<'_, AppState> = app.state();
     win.set_zoom(*state.zoom.lock().await).ok();
     win.show().context("show window")?;
+    #[cfg(target_os = "macos")]
+    enforce_macos_traffic_light_position(&win)?;
     win.set_focus().ok();
     Ok(win)
 }

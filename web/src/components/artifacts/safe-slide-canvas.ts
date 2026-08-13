@@ -99,6 +99,29 @@ function gradientFill(
       ? px(direction) * 360
       : px(direction, 180)
   }
+  const radialDescriptor = radial && parts[0] && !/^(?:#|rgba?\(|hsla?\(|transparent\b|[a-z]+\s+-?[\d.]+%)/i.test(parts[0])
+    ? parts.shift() ?? ''
+    : ''
+  const radialPosition = radialDescriptor.match(/\bat\s+(.+)$/i)?.[1]?.trim().split(/\s+/) ?? []
+  let radialX = 0.5
+  let radialY = 0.5
+  let numericPosition = 0
+  for (const token of radialPosition) {
+    const normalized = token.toLowerCase()
+    if (normalized === 'left') radialX = 0
+    else if (normalized === 'right') radialX = 1
+    else if (normalized === 'top') radialY = 0
+    else if (normalized === 'bottom') radialY = 1
+    else if (normalized === 'center') continue
+    else if (/^-?[\d.]+%$/.test(normalized)) {
+      const ratio = Math.max(0, Math.min(1, px(normalized) / 100))
+      if (numericPosition === 0) radialX = ratio
+      else radialY = ratio
+      numericPosition += 1
+    }
+  }
+  const radialCenterX = rect.x + rect.width * radialX
+  const radialCenterY = rect.y + rect.height * radialY
   const gradient = linear
     ? (() => {
         const radians = (angle - 90) * Math.PI / 180
@@ -114,11 +137,11 @@ function gradientFill(
         )
       })()
     : context.createRadialGradient(
-        rect.x + rect.width / 2,
-        rect.y + rect.height / 2,
+        radialCenterX,
+        radialCenterY,
         0,
-        rect.x + rect.width / 2,
-        rect.y + rect.height / 2,
+        radialCenterX,
+        radialCenterY,
         Math.max(rect.width, rect.height) / 2,
       )
   const stops = parts.filter((part) => !/^(?:circle|ellipse|closest|farthest|at\s)/i.test(part))
@@ -166,20 +189,67 @@ function paintBackground(
     context.fill()
   }
   if (image && image !== 'none') {
-    const gradient = gradientFill(context, image, rect)
-    if (gradient) {
-      roundedPath(context, rect, radii)
-      context.fillStyle = gradient
-      context.fill()
-    } else {
-      recordIssue(issues, seen, {
-        severity: 'error',
-        code: 'unsupported-canvas-background',
-        message: `${elementName} uses a background image the built-in rasterizer cannot reproduce.`,
-        element: elementName,
-      })
+    // CSS paints the first background layer on top. Canvas is imperative, so
+    // draw the list in reverse to preserve the browser's compositing order.
+    for (const layer of splitCssList(image).reverse()) {
+      const gradient = gradientFill(context, layer, rect)
+      if (gradient) {
+        roundedPath(context, rect, radii)
+        context.fillStyle = gradient
+        context.fill()
+      } else {
+        recordIssue(issues, seen, {
+          severity: 'error',
+          code: 'unsupported-canvas-background',
+          message: `${elementName} uses a background image the built-in rasterizer cannot reproduce.`,
+          element: elementName,
+        })
+      }
     }
   }
+}
+
+function integerAttribute(node: Element, name: string): number | undefined {
+  const raw = node.getAttribute(name)?.trim()
+  if (!raw || !/^[+-]?\d+$/.test(raw)) return undefined
+  const value = Number(raw)
+  return Number.isSafeInteger(value) ? value : undefined
+}
+
+function listMarker(element: HTMLElement, style: CSSStyleDeclaration): string | null {
+  if (element.tagName !== 'LI' || element.hasAttribute('data-evoflux-shell-text')) return null
+  if (style.listStyleType === 'none') return null
+  const list = element.parentElement?.closest<HTMLElement>('ul,ol')
+  if (list?.tagName !== 'OL') {
+    return { circle: '◦', square: '▪' }[style.listStyleType] ?? '•'
+  }
+  const items = Array.from(list.children).filter((child) => child.tagName === 'LI') as HTMLElement[]
+  const reversed = list.hasAttribute('reversed')
+  let ordinal = integerAttribute(list, 'start') ?? (reversed ? items.length : 1)
+  const step = reversed ? -1 : 1
+  for (const item of items) {
+    ordinal = integerAttribute(item, 'value') ?? ordinal
+    if (item === element) return `${ordinal}.`
+    ordinal += step
+  }
+  return null
+}
+
+function paintListMarker(
+  context: CanvasRenderingContext2D,
+  element: HTMLElement,
+  rect: RelativeRect,
+  style: CSSStyleDeclaration,
+) {
+  const marker = listMarker(element, style)
+  if (!marker || TRANSPARENT.test(style.color)) return
+  context.save()
+  context.fillStyle = style.color
+  context.font = style.font || [style.fontStyle, style.fontWeight, style.fontSize, style.fontFamily].join(' ')
+  context.textBaseline = 'top'
+  const width = context.measureText(marker).width
+  context.fillText(marker, Math.max(0, rect.x - width - Math.max(5, px(style.fontSize) * 0.25)), rect.y)
+  context.restore()
 }
 
 function paintBorder(
@@ -381,6 +451,7 @@ async function paintElement(
   context.globalAlpha *= Math.max(0, Math.min(1, px(style.opacity, 1)))
   paintBackground(context, rect, style, issues, seen, elementName)
   paintBorder(context, rect, style)
+  paintListMarker(context, element as HTMLElement, rect, style)
   if (style.overflow === 'hidden' || style.overflowX === 'hidden' || style.overflowY === 'hidden') {
     roundedPath(context, rect, elementRadii(style))
     context.clip()
@@ -459,6 +530,25 @@ export async function rasterizeSlideElement(
   if (!context) throw new Error('Slide canvas context is unavailable.')
   context.scale(options.pixelRatio, options.pixelRatio)
   const issues: RenderIssue[] = []
+  // PowerPoint's default slide surface is opaque white. Start from the same
+  // surface so an otherwise transparent HTML document cannot produce an RGBA
+  // shell that looks different after the PPTX renderer composites it.
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, options.width, options.height)
+  // A slide may rely on body/html background-color while the slide root only
+  // defines translucent gradient layers. Prefill that inherited opaque color
+  // so the PNG shell never changes appearance when PowerPoint composites it.
+  let ancestor: Element | null = root
+  while (ancestor) {
+    const style = ancestor.ownerDocument.defaultView?.getComputedStyle(ancestor)
+    const color = style?.backgroundColor
+    if (color && !TRANSPARENT.test(color)) {
+      context.fillStyle = color
+      context.fillRect(0, 0, options.width, options.height)
+      break
+    }
+    ancestor = ancestor.parentElement
+  }
   await paintElement(context, root, root.getBoundingClientRect(), issues, new Set())
   try {
     return { dataUrl: canvas.toDataURL('image/png'), issues }

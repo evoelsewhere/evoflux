@@ -22,9 +22,24 @@
     {
       "output_slide": 2,
       "source_slide": 3,
-      "narrative_role": "preserved reference frame",
-      "reuse_mode": "duplicate-slide",
+      "narrative_role": "fresh slide from inspected layout",
+      "reuse_mode": "use-layout",
       "edits": [],
+      "placeholder_fills": [
+        {
+          "operation": "set_text",
+          "placeholder_idx": 0,
+          "placeholder_type": "TITLE",
+          "text": "New takeaway title"
+        },
+        {
+          "operation": "set_image",
+          "placeholder_idx": 1,
+          "placeholder_type": "PICTURE",
+          "asset_path": "assets/hero.png",
+          "alt": "Verified product visual"
+        }
+      ],
       "speaker_notes": null
     }
   ],

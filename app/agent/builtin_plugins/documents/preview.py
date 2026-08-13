@@ -4091,7 +4091,11 @@ def _render_pptx_shape(
             coordinate_width=coordinate_width,
             coordinate_height=coordinate_height,
         )
-    if shape_type == "PICTURE":
+    is_native_picture = (
+        shape_type == "PICTURE"
+        or str(getattr(shape._element, "tag", "")).rsplit("}", 1)[-1] == "pic"
+    )
+    if is_native_picture:
         return _render_picture(
             shape,
             layer=layer,

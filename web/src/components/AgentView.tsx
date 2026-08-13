@@ -23,8 +23,8 @@ import { ChatWelcome } from './ChatWelcome'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { BlockRenderer } from './BlockRenderer'
 import { AssistantTurnFooter } from './AssistantTurnFooter'
-import { groupConsecutiveToolCalls, ToolCallGroupCard } from './ToolCallGroup'
-import type { ToolBlockGroup } from './ToolCallGroup'
+import { ActivityTimeline } from './ActivityTimeline'
+import { partitionAssistantActivity } from '@/utils/activity-timeline'
 import { PendingMessageQueue } from './PendingMessageQueue'
 import { getVisibleTurnWindow, isLatestStreamingItem, partitionTurns, type TurnItem } from '@/utils/turns'
 import { isDirectUserBlock, latestDirectUserBlockId } from '@/utils/blocks'
@@ -102,7 +102,10 @@ const AssistantTranscriptTurn = memo(function AssistantTranscriptTurn({
   turnChanges,
   turnIsStreaming,
 }: AssistantTranscriptTurnProps) {
-  const groupedBlocks = useMemo(() => groupConsecutiveToolCalls(blocks), [blocks])
+  const { activityBlocks, answerBlocks } = useMemo(
+    () => partitionAssistantActivity(blocks),
+    [blocks],
+  )
   const turnStartedAt = useMemo(
     () => blocks.find((block) => block.startedAt)?.startedAt,
     [blocks],
@@ -112,29 +115,22 @@ const AssistantTranscriptTurn = memo(function AssistantTranscriptTurn({
     <div className={turnIsStreaming ? 'oa-active-turn-runway' : 'oa-transcript-turn'}>
       {turnIsStreaming && <StreamingTurnHeader startedAt={turnStartedAt} />}
       <div className="space-y-2">
-        {groupedBlocks.map((renderItem, index) => {
-          if ('kind' in renderItem && (renderItem as ToolBlockGroup).kind === 'group') {
-            return (
-              <BlockEnter key={(renderItem as ToolBlockGroup).id}>
-                <ToolCallGroupCard
-                  group={renderItem as ToolBlockGroup}
-                  isStreaming={isLatestStreamingItem(
-                    turnIsStreaming,
-                    index,
-                    groupedBlocks.length,
-                  )}
-                  sessionId={sessionId}
-                  latestMCPAppBlockIds={latestMCPAppBlockIds}
-                />
-              </BlockEnter>
-            )
-          }
-          const block = renderItem as ContentBlock
-          const isStreaming = isLatestStreamingItem(
-            turnIsStreaming,
-            index,
-            groupedBlocks.length,
-          )
+        <ActivityTimeline
+          blocks={activityBlocks}
+          isActive={turnIsStreaming && answerBlocks.length === 0}
+          sessionId={sessionId}
+          latestMCPAppBlockIds={latestMCPAppBlockIds}
+          renderBlock={({ block, isStreaming }) => (
+            <BlockRenderer
+              block={block}
+              isStreaming={isStreaming}
+              sessionId={sessionId}
+              latestMCPAppBlockIds={latestMCPAppBlockIds}
+            />
+          )}
+        />
+        {answerBlocks.map((block, index) => {
+          const isStreaming = isLatestStreamingItem(turnIsStreaming, index, answerBlocks.length)
           return (
             <BlockEnter key={block.id} disabled={isStreaming && block.type === 'text'}>
               <BlockRenderer
