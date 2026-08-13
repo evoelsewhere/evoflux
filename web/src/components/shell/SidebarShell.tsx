@@ -185,7 +185,7 @@ export function SidebarShell({
           onDoubleClick={resetSidebarWidth}
         />
       )}
-      <div className="flex h-full flex-col gap-0.5 overflow-hidden p-0.5">
+      <div className="flex h-full flex-col gap-0.5 overflow-hidden">
         {!collapsed && children}
       </div>
     </aside>
@@ -208,7 +208,7 @@ export function SidebarCard({
     <div
       data-sidebar-card
       className={cn(
-        'flex min-h-0 flex-col overflow-hidden rounded-md bg-(--bg-sidebar)/80 backdrop-blur-xl',
+        'flex min-h-0 flex-col overflow-hidden bg-(--bg-sidebar)/80 backdrop-blur-xl',
         className,
       )}
     >
