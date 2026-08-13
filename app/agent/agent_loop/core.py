@@ -68,6 +68,12 @@ MAX_PROVIDER_RESUME_ATTEMPTS = 5
 # Base backoff (seconds) between in-loop resume attempts; grows linearly.
 PROVIDER_RESUME_BASE_DELAY = 3.0
 
+EMPTY_AFTER_TOOL_RECOVERY_PROMPT = (
+    "Your previous response after the tool results was empty. Continue the task now. "
+    "If the requested work is complete, briefly summarize the outcome; otherwise, "
+    "make the next required tool call. Do not return an empty response."
+)
+
 TContext = TypeVar("TContext", bound=AgentContext)
 
 
@@ -664,6 +670,22 @@ class Agent(Generic[TContext]):
                 if updated is not None:
                     model_request = updated
 
+            # Replaying an identical post-tool request makes deterministic
+            # empty completions repeat forever. Add an ephemeral user nudge to
+            # the next model request so it must either continue with tools or
+            # produce a final summary. It deliberately does not enter
+            # ``state.messages`` and therefore is never persisted or rendered.
+            if empty_after_tool_continuations:
+                model_request = model_request.override(
+                    messages=(
+                        *model_request.messages,
+                        HumanMessage(
+                            content=EMPTY_AFTER_TOOL_RECOVERY_PROMPT,
+                            extra={"system_generated": True},
+                        ),
+                    )
+                )
+
             # Me sync after before_model — persists summarization changes
             await self._sync(checkpointer, ctx, state)
 
@@ -791,7 +813,7 @@ class Agent(Generic[TContext]):
             previous_was_tool = bool(messages and isinstance(messages[-1], ToolMessage))
             if not has_assistant_payload and previous_was_tool:
                 empty_after_tool_continuations += 1
-                if empty_after_tool_continuations <= max_empty_after_tool_continuations:
+                if empty_after_tool_continuations < max_empty_after_tool_continuations:
                     logger.warning(
                         "agent_empty_after_tool_continue agent={} iteration={} attempt={}/{}",
                         self.name,

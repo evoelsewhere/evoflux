@@ -4,8 +4,11 @@ import asyncio
 from typing import Annotated, Any, AsyncIterator
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from app.agent.agent_loop import Agent
 from app.agent.agent_loop.core import (
+    EMPTY_AFTER_TOOL_RECOVERY_PROMPT,
     _build_tool_call_waves,
     _partition_tool_call_batch,
 )
@@ -471,6 +474,14 @@ async def test_agent_run_retries_empty_response_after_tool_result():
             [make_text_chunk("Final answer.")],
         ]
     )
+    requests: list[list[ChatMessage]] = []
+    original_stream = provider.stream
+
+    def capture_stream(messages, tools=None, **kwargs):
+        requests.append(messages)
+        return original_stream(messages, tools, **kwargs)
+
+    provider.stream = capture_stream  # type: ignore[method-assign]
     agent = Agent(name="bot", llm_provider=provider, tools=[Tool(lookup)])
 
     msgs = await agent.run([HumanMessage(content="lookup")])
@@ -478,6 +489,45 @@ async def test_agent_run_retries_empty_response_after_tool_result():
     assistants = [m for m in msgs if isinstance(m, AssistantMessage)]
     assert len(assistants) == 2
     assert assistants[-1].content == "Final answer."
+    assert len(requests) == 3
+    assert isinstance(requests[-1][-1], HumanMessage)
+    assert requests[-1][-1].content == EMPTY_AFTER_TOOL_RECOVERY_PROMPT
+    assert all(
+        message.content != EMPTY_AFTER_TOOL_RECOVERY_PROMPT for message in msgs
+    )
+
+
+async def test_agent_run_stops_on_third_empty_response_after_tool_result():
+    """The advertised three-response guard must not make a hidden fourth call."""
+    from app.agent.errors import AgentLoopError
+
+    def lookup() -> str:
+        """Returns the value."""
+        return "value"
+
+    provider = MockProvider(
+        [
+            [make_tool_chunk("lookup", "call_1", "{}")],
+            [make_empty_chunk()],
+            [make_empty_chunk()],
+            [make_empty_chunk()],
+        ]
+    )
+    call_count = 0
+    original_stream = provider.stream
+
+    def count_stream(messages, tools=None, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return original_stream(messages, tools, **kwargs)
+
+    provider.stream = count_stream  # type: ignore[method-assign]
+    agent = Agent(name="bot", llm_provider=provider, tools=[Tool(lookup)])
+
+    with pytest.raises(AgentLoopError, match="3 consecutive empty responses"):
+        await agent.run([HumanMessage(content="lookup")])
+
+    assert call_count == 4
 
 
 async def test_agent_run_resumes_after_provider_timeout_mid_task():
