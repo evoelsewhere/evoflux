@@ -39,6 +39,8 @@ decision:
 
 Select fewer strong images instead of filling every slide. Two images used
 together should share a defensible color, lighting, crop, or documentary logic.
+Do not reuse the same image across slides by default; repetition needs a clear
+narrative purpose such as before/after, zoom, or a recurring anchor.
 
 ## Read screenshots and visual references
 
@@ -51,10 +53,10 @@ Treat a reference image as design context. Identify:
 - repeated anchors, dividers, numbering, captions, and source treatment;
 - which details are structural and which are incidental content.
 
-Recreate that logic in HTML/CSS using the user's content. Do not paste a
-reference screenshot as the entire slide when editable text is expected. OCR
-or transcribed reference text is source material and must be verified before
-reuse.
+Recreate that logic with native PowerPoint composition using the user's
+content. Do not paste a reference screenshot as the entire slide when editable
+text is expected. OCR or transcribed reference text is source material and
+must be verified before reuse.
 
 ## Crop and placement rules
 
@@ -63,6 +65,8 @@ reuse.
   `object-position` explicitly for off-center subjects.
 - Preserve logos, UI controls, chart labels, and product geometry.
 - Do not stretch an image to fit a placeholder.
+- Match the frame to the source aspect ratio and place the focal point
+  deliberately; never rely on a centered crop for an off-center subject.
 - Reject visibly soft, over-compressed, distorted, stale, or mismatched assets.
 - Inspect the final rendered crop at full-slide size, not only as a thumbnail.
 

@@ -1,70 +1,69 @@
 ---
 name: docx
-description: Create, edit, inspect, render, and verify Word DOCX documents. Triggers on DOCX, Word, document, memo, report, proposal, brief, policy, SOP, or uploaded Word template.
+description: Create, edit, inspect, or verify editable Microsoft Word .docx files. Use when a DOCX or Word file is an input or required output, including template-preserving edits; do not trigger for prose, Markdown, PDF, spreadsheet, or slide work with no DOCX input or output.
 ---
 
-# Word-native DOCX authoring
+# Work directly with DOCX files
 
-Work directly with DOCX files using Python and `python-docx`. Keep authoring or
-template-edit logic in a task-local script, never turn a document into
-screenshots or flattened content, and never overwrite the source.
+Work with DOCX files using Python and `python-docx`. Keep authoring or
+template-edit logic in a task-local script, never flatten an editable document
+into screenshots, and never overwrite an uploaded source.
+
+EvoFlux no longer provides a document-authoring tool, job store, or publish
+step. Use the workspace's existing Python environment. Confirm `python-docx`
+is importable before authoring. Do not silently install it or change the
+project's environment; report the missing dependency.
 
 ## Choose the path
 
-- **New document:** choose exactly one design preset and one first-page header
-  pattern based on the communication job.
-- **Uploaded DOCX used as the template:** inspect its styles, sections, package
+- **New document:** derive a restrained style system from the audience,
+  content, language, and supplied brand assets. Read
+  [document design and layout](references/document-design-and-layout.md).
+- **Uploaded DOCX used as a template:** inspect styles, sections, package
   parts, relationships, headers, footers, tables, and content controls before
-  applying targeted edits.
+  applying targeted edits. Read
+  [template fidelity](references/template-fidelity.md).
 - **Uploaded DOCX used only as content:** extract its content and create a new
   document without claiming to preserve its design.
+- **Read or review only:** inspect the relevant content and structure, answer
+  the question, and do not modify or export the document unless asked.
 
-The source DOCX is always immutable.
+## Required workflow for create or edit
 
-## Required lifecycle
-
-1. Identify the document job, audience, and content structure.
-2. Choose a preset/header pattern, or inspect the uploaded template.
-3. Write and run a task-local Python authoring script.
-4. Reopen the exact saved DOCX and render every page for visual inspection.
-5. Fix clipping, broken tables, pagination, font substitution, and placeholders.
-6. Return the verified editable DOCX workspace path.
+1. Resolve source and output paths. Write a new `.docx`; keep uploads immutable.
+2. Inspect the source package and document model before choosing edit targets.
+3. Write and run a deterministic task-local Python authoring script.
+4. Reopen the exact saved output with `python-docx` and test the OOXML ZIP.
+5. Render every page with an available DOCX renderer and inspect the images.
+6. Fix structural or visual defects, rerun the script, and verify the exact
+   final bytes. Return the absolute workspace path and state any QA limitation.
 
 ## New documents
 
-Available presets are `standard_business_brief`, `compact_reference_guide`,
-and `narrative_proposal`. Available first-page patterns are `memo_masthead`,
-`proposal_centerpiece`, `editorial_cover`, `customer_pack`,
-`workshop_agenda`, and `customer_story`.
-
 Use real Word styles and paragraphs for headings and prose, real list styles
-for bullets/numbers, fixed-width native tables, native images with alt text,
-real hyperlinks, section headers/footers, and a PAGE field. Table column widths
-must total 9360 DXA. Do not use fake bullets, manual page numbers, repeated
-punctuation as rules, or tables to package normal prose. Do not silently shrink
-text to force content into a page.
+for bullets and numbering, native tables, images with alt text, hyperlinks,
+section headers and footers, and fields where the library supports them. Base
+table widths on the actual section width and margins. Do not use fake bullets,
+manual page numbers, repeated punctuation as rules, or tables to package normal
+prose. Change layout or content before silently shrinking text.
 
 ## Uploaded templates
 
-Inspect body, headers, footers, notes, comments, content-control tags,
-paragraphs, styles, table geometry, fields, relationships, and package parts.
+Prefer edits through stable document structure: paragraph and style identity,
+table coordinates established during inspection, bookmarks, or verified plain
+text content-control tags. Preserve run formatting when replacing substrings.
+Snapshot package-part hashes before editing and review every changed part.
 
-Template projects may use only:
-
-- `replace_text` for a substring inside a located paragraph;
-- `replace_paragraph` when the whole located paragraph is the slot;
-- `replace_content_control` for a verified plain-text tagged control;
-- `replace_table_cell` for a native table cell by exact part/table/row/column.
-
-Use locators from the manifest; never invent them. Avoid replacing rich-text,
-repeating-section, image, or table content controls. An unrelated package part
-changing is a hard failure. Preserve styles, numbering, theme, images,
-relationships, headers/footers, comments, controls, drawings, and embedded
-objects outside the declared editable parts.
+`python-docx` does not provide complete APIs for tracked changes, comments,
+all content controls, fields, drawings, or embedded objects. For an unsupported
+high-fidelity edit, use a narrowly scoped OOXML patch only after inspecting the
+relevant part and relationships; otherwise stop and disclose the limitation.
+Never claim preservation merely because the package reopens.
 
 ## Verification gate
 
-Use an independent OOXML reopen plus the bundled semantic renderer when
-available. Check package integrity, required Word parts, and every unrelated
-template part. Placeholder warnings require deliberate review rather than
-automatic deletion.
+Use an independent OOXML reopen plus a renderer. EvoFlux's in-app preview and
+bundled renderer are semantic approximations, not Microsoft Word layout
+engines. When exact pagination or font fidelity matters, also render with Word
+or LibreOffice if one is available. If no renderer is available, complete only
+structural checks and explicitly say that visual QA was not performed.

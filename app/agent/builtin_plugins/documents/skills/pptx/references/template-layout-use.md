@@ -1,20 +1,19 @@
 # Template and layout use
 
-Use this lane only after the source PPTX has been inspected and every source
-slide preview and object manifest is available. The source deck—not a generic
-style preset—is the visual authority.
+Use this reference only when an uploaded PPTX is the visual template. The
+source deck—not a generic style preset—is the visual authority.
 
 ## Inspect before mapping
 
-Record the source hash, slide size, masters, child layouts, placeholders,
-themes, fonts, colors, inherited backgrounds, recurring chrome, and high-risk
-native objects. Review every source slide at full size and as a contact sheet.
+Record the source file hash, slide size, masters, layouts, placeholders,
+themes, fonts, colors, inherited backgrounds, recurring chrome, notes, and
+high-risk native objects. Render and review every source slide when a renderer
+is available.
 
-Build a source-slide → output-slide map. For each output slide, record its
+Build a source-slide-to-output-slide map. For each output slide, record its
 communication job, selected source slide or layout, reuse mode, verified edit
-targets, and any source slide intentionally omitted. Use
-[`examples/template-following.example.json`](../examples/template-following.example.json)
-as a starter, never as evidence for slide numbers or object IDs.
+targets, and any source slide intentionally omitted. Derive this map from the
+actual deck; do not invent slide numbers, shape IDs, or placeholder indices.
 
 ## Choose layouts by fit
 
@@ -26,42 +25,40 @@ Prefer the existing layout whose placeholders and safe content frame best fit:
 - image aspect ratio and focal-point needs;
 - inherited footer, numbering, logo, and source-note anchors.
 
-Do not choose a layout only to create superficial variety. Reuse a strong
-layout when the communication job repeats, while varying the content
-silhouette inside its intended frame. Preserve the source aspect ratio; never
-coerce a 4:3, portrait, or custom template to 16:9.
+Do not choose a layout only for superficial variety. Reuse a strong layout when
+the communication job repeats, while varying the content silhouette inside its
+intended frame. Preserve the source aspect ratio; never coerce a 4:3, portrait,
+or custom template to 16:9.
 
-## Use the live template operations
+## Work within python-pptx limits
 
-Keep master/layout chrome and reusable template objects native. Choose
-`use-layout` to create a fresh slide from the inspected source slide's actual
-layout, then fill text and picture placeholders by the exact inspected
-`placeholder_idx + placeholder_type`. Choose `duplicate-slide` when an
-existing populated composition should be cloned and edited by verified shape
-ID.
+Create a slide from an actual source layout and fill verified placeholders by
+`placeholder_format.idx` and placeholder type. Duplicate an existing populated
+slide only when the package relationships and unsupported objects can be
+preserved safely; `python-pptx` has no complete public clone API.
 
-Do not cover inherited headers, footers, logos, numbering, or background art
-with an unnecessary full-slide raster. Do not inject an arbitrary HTML shell
-into a native layout or claim support for an edit that `python-pptx` cannot
-preserve safely.
+Keep master/layout chrome and reusable template objects native. Do not cover
+inherited headers, footers, logos, numbering, or background art with an
+unnecessary full-slide raster. Do not inject an arbitrary HTML shell into a
+native layout or claim support for an edit that `python-pptx` cannot preserve.
 
-## Edit semantics
+## Edit conservatively
 
-- Prefer substring `replace_text` when surrounding rich text must survive.
-- Use `set_text` only for a complete verified target.
-- For `use-layout`, use `placeholder_fills` rather than shape-ID `edits`.
-- Replace an image without changing its frame, crop, fit, geometry, rotation,
-  flips, or aspect lock unless the user requests a layout change.
-- Use typed native chart, table, and placeholder operations exposed by the
-  live catalog.
-- Treat an empty edit list as preserve-only; add no hidden overlays.
-- Preserve transitions, animations, relationships, custom XML, unsupported
-  native objects, and untouched content.
+- Prefer targeted run or paragraph edits when surrounding rich text must stay.
+- Replace an image without changing its frame, crop, geometry, rotation, or
+  aspect behavior unless the user requests a layout change.
+- Use native chart, table, text, and picture APIs only after inspecting the
+  actual object and confirming the API supports the requested change.
+- Treat transitions, animations, SmartArt, embedded objects, custom XML, and
+  unsupported chart features as preserve-only package content.
+- Snapshot package-part hashes and relationships before editing; review every
+  changed part after saving.
 
 ## Verify lineage and rendering
 
-Pass the completed inspect job and exact source hash to validation and preview.
-Fail rather than silently losing master → layout → slide lineage, resolving an
-unknown object ID, or leaving an unresolved placeholder. After publication,
-reopen the exact output and confirm source mapping, slide count, size,
-inherited chrome, native object behavior, and visual parity for every slide.
+Reopen the exact output and confirm slide count, size, master/layout lineage,
+placeholder identity, inherited chrome, notes, and required text. Render every
+slide with an available renderer and compare it with the source mapping. A
+semantic render is useful evidence but not proof of PowerPoint fidelity. Fail
+or disclose the limitation rather than silently losing an unsupported object,
+resolving an unknown target, or leaving an unresolved placeholder.

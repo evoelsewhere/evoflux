@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "evoflux.documents",
-  "version": "1.0.0",
-  "description": "Skill-guided creation and verification of DOCX, XLSX, PPTX, and PDF documents.",
+  "version": "1.2.0",
+  "description": "Skill-guided DOCX, XLSX, PPTX, and PDF workflows with safe read-only previews.",
   "author": {
     "name": "EvoFlux contributors"
   },

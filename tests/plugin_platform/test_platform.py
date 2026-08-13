@@ -11,7 +11,10 @@ from pydantic import ValidationError
 from app.agent.skills.discovery import builtin_skills_dir
 from app.core.config import settings
 from app.core.skill_settings import skill_settings_id, write_skill_runtime_settings
-from app.plugin_platform.builtins import list_builtin_installations
+from app.plugin_platform.builtins import (
+    builtin_plugins_root,
+    list_builtin_installations,
+)
 from app.plugin_platform.installer import (
     PluginInstallError,
     create_plugin,
@@ -379,6 +382,21 @@ def test_builtin_plugin_lifecycle_is_read_only(isolated_platform: Path) -> None:
 
     assert list_installations() == []
     assert list_effective_installations() == [builtin]
+
+
+def test_documents_builtin_declares_preview_only_native_runtime() -> None:
+    manifest = json.loads(
+        (builtin_plugins_root() / "documents" / "plugin.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    native = manifest["extensions"]["org.evoelsewhere.evoflux.builtin"]
+
+    assert manifest["version"] == "1.2.0"
+    assert "read-only previews" in manifest["description"]
+    assert native["preview_provider"].endswith(":preview_provider")
+    assert "artifact_provider" not in native
+    assert "api_router_provider" not in native
 
 
 def test_builtin_tree_rejects_create_and_pack_targets(

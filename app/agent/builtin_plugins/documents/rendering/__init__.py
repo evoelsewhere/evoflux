@@ -44,6 +44,7 @@ def __getattr__(name: str) -> Any:
 def __dir__() -> list[str]:
     return sorted(set(globals()) | set(__all__))
 
+
 __all__ = [
     "file_sha256",
     "render_docx_pages",

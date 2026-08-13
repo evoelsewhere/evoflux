@@ -12,6 +12,10 @@
     "should_trigger": true
   },
   {
+    "query": "Trace the formula behind the margin in cell H27 of this Excel workbook and explain its inputs; do not edit it.",
+    "should_trigger": true
+  },
+  {
     "query": "Analyze this CSV for churn drivers and return a written conclusion; no workbook is needed.",
     "should_trigger": false,
     "near_miss": "Data analysis without an XLSX deliverable belongs to the analysis workflow."

@@ -150,6 +150,25 @@ DOCX, XLSX, PPTX, and PDF skills plus a document preview provider. Authoring is
 skill-guided and writes files directly; the shared read-only viewer remains
 host-owned.
 
+The Documents package has two deliberately separate capability planes:
+
+- The native provider renders bounded, cached, self-contained HTML previews
+  for `.docx`, `.xlsx`, `.pptx`, and `.pdf` files opened through the shared
+  viewer. OOXML is preflighted before parsing; macros, active controls,
+  executable embedded content, unsafe archives, and oversized previews are
+  rejected. The renderer is semantic and does not emulate Microsoft Office.
+- The four Skills guide direct workspace authoring with available shell tools
+  and format libraries. They do not receive a private authoring API, persistent
+  document job, revision store, approval state, or publish operation. A
+  dependency present in the EvoFlux sidecar for preview does not guarantee the
+  same dependency exists in the user's workspace shell, so Skills must probe
+  capabilities and disclose unavailable rendering or recalculation steps.
+
+Opening a document in the shared viewer is therefore a read-only product
+feature, not proof that an agent-created file passed visual QA. Skills require
+an independent structural reopen and, when an appropriate renderer exists,
+inspection of the exact output bytes.
+
 ## Credential extension
 
 Agent Plugins 1.0 does not define a credential format. EvoFlux adds the optional

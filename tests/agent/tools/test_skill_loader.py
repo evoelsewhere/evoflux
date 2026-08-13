@@ -1371,7 +1371,8 @@ class TestBuiltinSkills:
         assert "task-local script" in normalized
         assert "python-pptx" in normalized
         assert "Reopen the exact saved PPTX" in normalized
-        assert "Render every slide to PNG" in normalized
+        assert "Render every slide with an available renderer" in normalized
+        assert "semantic renderer as a QA approximation" in normalized
         assert "artifact(action=" not in normalized
 
     def test_pptx_skill_distills_content_image_and_template_workflows(self):
@@ -1385,9 +1386,13 @@ class TestBuiltinSkills:
         templates = (pptx_root / "references" / "template-layout-use.md").read_text(
             encoding="utf-8"
         )
+        quality = (pptx_root / "references" / "slide-quality-gate.md").read_text(
+            encoding="utf-8"
+        )
         grammar = " ".join(grammar.split())
         images = " ".join(images.split())
         templates = " ".join(templates.split())
+        quality = " ".join(quality.split())
 
         assert "sample → converge → justify" in grammar
         assert "4–5 layout families" in grammar
@@ -1396,10 +1401,13 @@ class TestBuiltinSkills:
         assert "negative space" in images
         assert "safe crops" in images
         assert "source, license or permission" in images
-        assert "master → layout → slide" in templates
+        assert "master/layout lineage" in templates
         assert "Choose layouts by fit" in templates
-        assert "placeholder_idx + placeholder_type" in templates
+        assert "placeholder_format.idx" in templates
         assert "Do not inject an arbitrary HTML shell" in templates
+        assert "audience-facing copy" in quality
+        assert "contact sheet only" in quality
+        assert "does not replace individual inspection" in quality
 
     def test_pptx_skill_bundle_exposes_only_distilled_resources(self):
         pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
@@ -1408,6 +1416,7 @@ class TestBuiltinSkills:
         assert resources == {
             "references/content-derived-design-grammar.md",
             "references/image-intelligence.md",
+            "references/slide-quality-gate.md",
             "references/template-layout-use.md",
         }
         assert not any("dna" in path.lower() for path in resources)
@@ -1422,7 +1431,84 @@ class TestBuiltinSkills:
 
         assert "artifact(action=" not in normalized
         assert "Artifact Fabric" not in normalized
-        assert "workspace path" in normalized
+        assert "no longer provides a presentation-authoring tool" in normalized
+        assert "absolute final PPTX path" in normalized
+
+    def test_document_skills_describe_direct_authoring_boundaries(self):
+        root = builtin_plugins_root() / "documents" / "skills"
+        normalized = {
+            name: " ".join((root / name / "SKILL.md").read_text().split())
+            for name in ("docx", "pdf", "pptx", "xlsx")
+        }
+
+        assert "document-authoring tool" in normalized["docx"]
+        assert "PDF authoring or publish API" in normalized["pdf"]
+        assert "presentation-authoring tool" in normalized["pptx"]
+        assert "workbook-authoring tool" in normalized["xlsx"]
+        assert all(
+            "silently install" in body or "silently add" in body
+            for body in normalized.values()
+        )
+        assert all("Artifact Fabric" not in body for body in normalized.values())
+
+        assert "9360 DXA" not in normalized["docx"]
+        assert "locators from the manifest" not in normalized["docx"]
+        assert "does not calculate" in normalized["xlsx"]
+        assert "computed values were not recalculated" in normalized["xlsx"]
+
+    def test_docx_skill_distills_design_and_template_fidelity(self):
+        docx_root = builtin_plugins_root() / "documents" / "skills" / "docx"
+        design = (docx_root / "references" / "document-design-and-layout.md").read_text(
+            encoding="utf-8"
+        )
+        fidelity = (docx_root / "references" / "template-fidelity.md").read_text(
+            encoding="utf-8"
+        )
+        design = " ".join(design.split())
+        fidelity = " ".join(fidelity.split())
+
+        assert "Use a table only when" in design
+        assert "never use a fixed row height" in design
+        assert "Render every page" in design
+        assert "source is immutable and authoritative" in fidelity
+        assert "stable structure" in fidelity
+        assert "Pixel similarity alone is insufficient" in fidelity
+
+    def test_xlsx_skill_distills_design_formula_and_chart_workflows(self):
+        xlsx_root = builtin_plugins_root() / "documents" / "skills" / "xlsx"
+        design = (xlsx_root / "references" / "workbook-design.md").read_text(
+            encoding="utf-8"
+        )
+        formulas = (xlsx_root / "references" / "formulas-and-qa.md").read_text(
+            encoding="utf-8"
+        )
+        charts = (xlsx_root / "references" / "charts.md").read_text(encoding="utf-8")
+        design = " ".join(design.split())
+        formulas = " ".join(formulas.split())
+        charts = " ".join(charts.split())
+
+        assert "smallest plausible local change" in design
+        assert "typed values" in design
+        assert "Do not embed magic numbers" in formulas
+        assert "Do not edit or export" in formulas
+        assert "does not calculate formulas" in formulas
+        assert "one takeaway" in charts
+        assert "traceable to source cells" in charts
+        assert "blank or duplicate charts" in charts
+
+    def test_document_skill_descriptions_require_file_work(self):
+        root = builtin_plugins_root() / "documents" / "skills"
+        descriptions = {
+            name: _parse_frontmatter((root / name / "SKILL.md").read_text())[0][
+                "description"
+            ]
+            for name in ("docx", "pdf", "pptx", "xlsx")
+        }
+
+        assert "DOCX or Word file" in descriptions["docx"]
+        assert "PDF is an input" in descriptions["pdf"]
+        assert "PPTX or PowerPoint file" in descriptions["pptx"]
+        assert "XLSX or Excel workbook" in descriptions["xlsx"]
 
     @pytest.mark.asyncio
     async def test_builtin_skill_dir_points_at_auxiliary_files(self):
