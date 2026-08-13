@@ -49,18 +49,13 @@ describe('WorkbenchBar browser access control', () => {
     onChange = vi.fn(),
     popoverOpen = false,
     onPopoverOpenChange = vi.fn(),
-    identity = 'Lead',
-    activeAgent = 'Lead',
     onViewModeChange = vi.fn(),
   ) {
     render(
       <WorkbenchBar
-        identity={identity}
-        activeAgent={activeAgent}
-        agentNames={['Lead', 'explorer#1']}
+        activeAgent="Lead"
         viewMode="agent"
         onViewModeChange={onViewModeChange}
-        onSelectAgent={vi.fn()}
         onOpenMobileSidebar={vi.fn()}
         isMobile={false}
         isMacOverlay={false}
@@ -85,17 +80,9 @@ describe('WorkbenchBar browser access control', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('labels the agent selector with the selected agent instead of the workspace identity', () => {
-    renderBar(false, vi.fn(), false, vi.fn(), 'evoflux', 'explorer#1')
-
-    const selector = screen.getByRole('button', { name: 'Choose active agent' })
-    expect(selector).toHaveTextContent('explorer#1')
-    expect(selector).not.toHaveTextContent('evoflux')
-  })
-
   it('dispatches a conversation layout selection on the first click', async () => {
     const onViewModeChange = vi.fn()
-    renderBar(false, vi.fn(), false, vi.fn(), 'Lead', 'Lead', onViewModeChange)
+    renderBar(false, vi.fn(), false, vi.fn(), onViewModeChange)
 
     fireEvent.click(screen.getByRole('button', { name: 'Choose conversation layout' }))
     fireEvent.click(await screen.findByText('Split'))

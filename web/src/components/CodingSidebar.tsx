@@ -1306,7 +1306,7 @@ export function CodingSidebar({
                   )}
                 </div>
                 {isExpanded && (
-                  <div className="mx-2 mb-2 border-l border-(--color-border) pl-2">
+                  <div className="mx-2 mb-2 pl-2">
                     <div className="flex h-6 items-center justify-between px-2">
                       <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">
                         <GitBranch size={10} aria-hidden="true" />
@@ -1543,7 +1543,7 @@ export function CodingSidebar({
               </button>
             </div>
             {isWorkspaceExpanded && (
-              <div className="mx-2 mb-2 border-l border-(--color-border) pl-2">
+              <div className="mx-2 mb-2 pl-2">
                 <WorkspaceSessionList
                   workspace={path}
                   currentSessionId={currentSessionId}

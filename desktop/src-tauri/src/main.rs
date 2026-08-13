@@ -197,7 +197,7 @@ const DEV_BACKEND_HEALTH_ATTEMPTS: u32 = 60;
 const TRAY_SESSION_IDLE: &str = "No active session";
 
 #[cfg(target_os = "macos")]
-const MACOS_TRAFFIC_LIGHT_X: f64 = 12.0;
+const MACOS_TRAFFIC_LIGHT_X: f64 = 8.0;
 #[cfg(target_os = "macos")]
 const MACOS_TRAFFIC_LIGHT_Y: f64 = 22.0;
 
@@ -207,10 +207,10 @@ const TRAY_SESSION_MAX_LEN: usize = 60;
 
 /// Apply platform-specific window chrome.
 ///
-/// macOS uses an overlay title-bar; the React app reserves a 70 pt left
-/// inset for the traffic-lights. ``traffic_light_position`` must be set
-/// from Rust because the JSON config value is ignored when the window is
-/// built via ``WebviewWindowBuilder``.
+/// macOS uses an overlay title-bar; the React app places sidebar/history
+/// controls immediately after the traffic-lights. ``traffic_light_position``
+/// must be set from Rust because the JSON config value is ignored when the
+/// window is built via ``WebviewWindowBuilder``.
 fn configure_window_chrome(
     builder: WebviewWindowBuilder<'_, tauri::Wry, AppHandle>,
 ) -> WebviewWindowBuilder<'_, tauri::Wry, AppHandle> {
@@ -296,8 +296,13 @@ fn enforce_macos_traffic_light_position(window: &tauri::WebviewWindow) -> Result
                 buttons.push(zoom);
             }
             for (index, button) in buttons.into_iter().enumerate() {
-                let mut origin = NSView::frame(&button).origin;
+                let button_frame = NSView::frame(&button);
+                let mut origin = button_frame.origin;
                 origin.x = MACOS_TRAFFIC_LIGHT_X + index as f64 * spacing;
+                // AppKit may move the controls vertically when entering or
+                // leaving a maximized/full-height window. Keep their visual
+                // center locked to the 36 pt React title-bar strip.
+                origin.y = (title_bar_height - button_frame.size.height) / 2.0;
                 button.setFrameOrigin(origin);
             }
         })
@@ -3769,6 +3774,18 @@ fn main() {
                 tauri::async_runtime::block_on(async {
                     *state.active_window_label.lock().await = label.to_string();
                 });
+            }
+            #[cfg(target_os = "macos")]
+            RunEvent::WindowEvent {
+                label,
+                event: WindowEvent::Resized(_),
+                ..
+            } if label == MAIN_WINDOW || label.starts_with(SECONDARY_WINDOW_PREFIX) => {
+                if let Some(window) = app.get_webview_window(label.as_str()) {
+                    if let Err(error) = enforce_macos_traffic_light_position(&window) {
+                        log::warn!("desktop: could not realign macOS window controls: {error:#}");
+                    }
+                }
             }
             RunEvent::WindowEvent {
                 label,
