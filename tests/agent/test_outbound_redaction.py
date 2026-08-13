@@ -256,6 +256,20 @@ def test_standard_pii_masks_north_american_phone_format() -> None:
     assert report.categories == ("phone",)
 
 
+def test_standard_pii_preserves_svg_viewbox_coordinates() -> None:
+    messages = [HumanMessage(content='<svg viewBox="0 0 1280 720"></svg>')]
+
+    _, protected_messages, report = protect_outbound_payload(
+        system_prompt="",
+        messages=messages,
+        policy="redact",
+        pii_policy="standard",
+    )
+
+    assert protected_messages[0].content == '<svg viewBox="0 0 1280 720"></svg>'
+    assert report.pii_matches == 0
+
+
 def test_block_secret_policy_masks_pii_without_blocking_the_request() -> None:
     value = "person@example.com"
 

@@ -677,6 +677,30 @@ def test_render_pptx_preview(monkeypatch, tmp_path):
     assert "Arial,sans-serif" in rendered
 
 
+def test_render_pptx_preview_renders_filled_picture_placeholder(monkeypatch, tmp_path):
+    source_image = tmp_path / "portrait.png"
+    Image.new("RGB", (200, 400), "#2563eb").save(source_image)
+    source = tmp_path / "picture-placeholder.pptx"
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[8])
+    placeholder = next(
+        shape
+        for shape in slide.placeholders
+        if shape.placeholder_format.type.name == "PICTURE"
+    )
+    picture = placeholder.insert_picture(str(source_image))
+    picture.name = "Filled picture placeholder"
+    presentation.save(source)
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
+    rendered = preview.render_document_preview(source).read_text()
+
+    assert "Filled picture placeholder" in rendered
+    assert 'class="shape picture-frame"' in rendered
+    assert "data:image/png;base64," in rendered
+    assert re.search(r'data-crop-(?:top|bottom)="0\.[1-9]', rendered)
+
+
 def test_render_pptx_preview_keeps_titles_single_line_and_renders_area_charts(
     monkeypatch,
     tmp_path,

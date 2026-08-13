@@ -1,143 +1,135 @@
 ---
 name: pptx
-description: Create, redesign, render, and verify high-fidelity or selectively editable PowerPoint presentations through Artifact Fabric. Use when PPTX, PowerPoint, slides, a presentation, or a pitch deck is the requested input/output; do not use for a static poster, prose-only memo, or theme-only change to an otherwise complete artifact.
+description: Create, redesign, render, and verify high-fidelity PowerPoint presentations through Artifact Fabric. Use when PPTX, PowerPoint, slides, a presentation, or a pitch deck is the requested input/output; do not use for a static poster, prose-only memo, or theme-only change to an otherwise complete artifact.
 ---
 
 # Author a high-fidelity PowerPoint presentation
 
-Use the deferred `artifact` tool with `format: "pptx"`. Produce one
-communication job per slide and verify every rendered HTML preview. Do not
-load unrelated bundled references or examples when this skill activates; load
-the mandatory format contract below and the lane-specific resources only when
-their lane is selected.
+Use the deferred `artifact` tool with `format: "pptx"`. HTML/CSS is the visual
+source of truth for new composition. The exported deck combines a glyph-free
+raster shell for visual fidelity with native text overlays for practical
+editing. Do not reconstruct the complete design from miscellaneous PowerPoint
+primitives.
 
-After framing the request, always read
-[references/slide-dna-contract.md](references/slide-dna-contract.md) and
-[templates/powerpoint-slide-dna.json](templates/powerpoint-slide-dna.json).
-Instantiate a project-local `slide-dna.json` before authoring. This PowerPoint
-format DNA is mandatory for new and inherited decks; a style-specific DNA may
-extend it but never replace its representation and render-fidelity gates.
+Load only the references required by the selected lane. Keep generated HTML,
+CSS, images, and project JSON inside one project directory.
 
-## Choose one path
+## Choose the lane
 
-- **New deck or image/screenshot reference:** use the HTML/Tailwind hybrid lane.
-- **Uploaded PPTX used as the visual template:** inspect it, then use the
-  inherited-template lane; the source deck confirms the visual direction.
-- **Uploaded PPTX with ambiguous purpose:** ask whether it is the visual
-  template or only a content source before authoring.
+- **New deck or image/screenshot reference:** author an HTML-shell deck.
+- **Uploaded PPTX used as the visual template:** inspect it first, preserve its
+  master → layout → slide lineage, and bind new content to suitable layouts.
+- **Uploaded PPTX used only for content:** extract its facts and build a new
+  HTML-shell deck.
+- **Ambiguous uploaded PPTX:** ask once whether it is a visual template or a
+  content source before authoring.
 
-Never build a new deck from miscellaneous PowerPoint primitives. HTML is the
-visual source of truth. Only simple text and raster images explicitly marked
-editable become native PowerPoint objects; complex typography, charts,
-diagrams, icons, gradients, texture, and decorative composition remain in the
-visual shell.
+## Required workflow
 
-## Required state machine
+### 1. Frame the communication job
 
-### 1. Frame
+Identify the audience, decision or narrative outcome, presentation setting,
+duration or slide count, supplied facts, language, citation needs,
+editability expectations, brand assets, and final filename. Verify current or
+external claims before using them. Draft takeaway titles so every slide has
+one communication job.
 
-Identify audience, decision or narrative outcome, supplied facts, slide count
-or time, citation needs, editability expectations, brand assets, and final
-filename. Draft a slide-by-slide story whose titles state takeaways.
+Read [content-derived design grammar](references/content-derived-design-grammar.md).
+Derive the palette, typography, density, image treatment, recurring anchors,
+and 4–5 useful layout families from the content, brand, references, and
+audience. Do not select a bundled style preset.
 
-### 2. Resolve visual direction
+Treat explicit colors, typography, tone, density, brand rules, template
+lineage, or visual references as confirmed direction. Only when missing
+direction would materially change the result, call `ask_user` once with short
+options in the user's language. Resume outline, authoring, preview, and
+publication in the same run; never send a plain assistant message asking for
+an avoidable style choice.
 
-Treat colors, typography, tone, density, audience, layout references, brand
-rules, images, or recognizable design language as confirmed direction. Turn
-them into one coherent editorial system. Avoid repeated card grids and generic
-UI composition.
+### 2. Understand images before layout
 
-Only when direction is absent or two interpretations would materially change
-the deck, call the `ask_user` tool once with short options in the user's
-language. Never send a plain assistant message asking for a style choice.
-After the answer, resume outline, authoring, preview, and publication in the
-same run.
+Read [image intelligence](references/image-intelligence.md) whenever the user
+supplies images, screenshots, a brand/product, or image-led content. Inspect
+semantic role, focal point, negative space, crop safety, technical quality,
+provenance, and consistency before assigning an image to a slide. Real product
+images, UI captures, logos, charts, and evidence outrank decorative stock.
 
-For a dense blue-and-white paper briefing, read
-[references/research-paper-briefing-style.md](references/research-paper-briefing-style.md)
-and [templates/research-paper-briefing-dna.json](templates/research-paper-briefing-dna.json).
-Merge that style DNA over the PowerPoint baseline instead of treating it as a
-complete format contract.
-
-For a technical research or academic engineering deck that specifically calls
-for the compact Office-like blue-and-white diagram language, read
-[references/academic-engineering-blueprint-style.md](references/academic-engineering-blueprint-style.md)
-and [templates/academic-engineering-blueprint-dna.json](templates/academic-engineering-blueprint-dna.json).
-Prefer this measured ten-archetype system over the looser paper briefing style
-when the reference uses numbered rails, dense architecture panels, and a fixed
-takeaway band.
-
-### 3A. Inherited template
-
-Call `artifact(action="catalog", format="pptx")`, then inspect the source and
-review every preview and object manifest. Read
-[references/inherited-template-contract.md](references/inherited-template-contract.md)
-after inspection. Preserve masters, layouts, themes, transitions, and untouched
-objects.
-
-### 3B. New HTML deck
+### 3A. Author a new HTML-shell deck
 
 Call `artifact(action="catalog", format="pptx")`, then read
-[references/new-deck-contract.md](references/new-deck-contract.md). Author one
-HTML fragment and optional CSS file per slide at 1280×720. Use only local
-assets declared in the project JSON. Do not use scripts, remote URLs, CDN
-Tailwind, canvas, iframe, video, or audio.
+[HTML shell and editable text](references/html-shell-editable-text.md). Copy
+and adapt [the schema-v7 project example](examples/project.example.json).
+Author one deterministic 1280×720 HTML fragment and optional CSS file per
+slide. Use only project-local assets declared in project JSON. Do not use
+scripts, remote URLs, CDN assets, canvas, iframe, video, or audio.
 
-Copy and adapt the bundled
-[project-local Slide DNA example](examples/slide-dna.json); do not invent the
-top-level DNA structure from memory. Also copy
-[the six-dimension QA ledger example](examples/qa-ledger.json), keep every
-evidence path project-local, and leave `canvas-and-geometry` plus
-`reopened-render-parity` unverified for the runtime to score from actual
-renders. If the `artifact` tool is unavailable,
-authoring may continue only as a local draft that passes the supported schema
-validator:
-`python scripts/validate_slide_project.py /absolute/path/to/project.json`.
-Do not claim a preview, reopened-render score, publication, or deliverable PPTX
-until Artifact Fabric and its desktop WebView are available.
+Eligible ordinary visible HTML text is extracted by the WebView by default and
+exported as native PowerPoint text when its styling is supported. Do not
+annotate every text node. `data-pptx-editable="text"` remains an optional
+compatibility or selection hint, while `data-pptx-name` can give an overlay a
+stable name. Use `data-pptx-text-mode="art"` when stylized text must remain in
+the shell. Keep gradients, SVG, charts, diagrams, clipped imagery, texture,
+shadows, masks, and decorative composition in the shell; do not lower the
+whole deck's visual quality or build a fully native substitute.
 
-Use `data-pptx-editable="text"` only for solid-color text with export-safe
-fonts and no CSS transform, filter, text shadow, letter spacing, text transform,
-opacity, clipping, blend mode, or mixed inline styling. Use
-`data-pptx-editable="image" data-pptx-asset="..."` only for declared raster
-images without crop, mask, radius, filter, transform, opacity, or blend effects.
-Do not mark stylized text or SVG icons editable merely to increase an editability
-count.
+Write UTF-8 project JSON, call `validate`, then call `preview` while the
+EvoFlux desktop WebView remains connected. Inspect every returned slide at
+full size; for decks longer than the returned preview page, call `status` on
+the job with successive `preview_offset` values until every slide has been
+seen. Iterate with a new immutable preview job. If Artifact Fabric is
+unavailable, authoring may continue only as a local draft that passes:
 
-Write the UTF-8 project JSON and call `validate`. Call `preview` while the
-EvoFlux desktop window remains open, inspect every returned slide, and resolve
-all error-severity findings. Iterate with a new preview job; never mutate an
-accepted revision.
+```bash
+python scripts/validate_slide_project.py /absolute/path/to/project.json
+```
 
-### 4. Visual and round-trip QA
+Do not claim a preview, publication, or deliverable PPTX until Artifact Fabric
+and its desktop WebView are available.
 
-Inspect all rendered slides for hierarchy, clipping, broken assets, repeated
-silhouettes, unreadable density, weak contrast, and off-slide content. Verify
-sources and speaker notes. Reject blank/wrong-ratio previews and any editable
-element that overflows the canvas. The accepted HTML preview is the visual
-source, but it is not proof of exported PPTX fidelity. Read and execute
-[references/pptx-fidelity-checklist.md](references/pptx-fidelity-checklist.md).
-Inspect the 2× flattened shell and editable-element manifest before publishing.
-Structural OpenXML round-trip is required but earns no visual-fidelity credit.
-Mark unsupported or unrendered Office behavior as `unverified` rather than
-silently passing it.
+### 3B. Follow a PPTX template or layout library
 
-### 5. Publish
+Call `artifact(action="catalog", format="pptx")`, then inspect the source deck
+and review every preview and object manifest. Read
+[template and layout use](references/template-layout-use.md). Prefer an
+existing source layout whose placeholders and content frame fit the
+communication job. Preserve slide size, masters, layouts, themes, inherited
+chrome, untouched objects, and source relationships.
+
+Use [the template-following example](examples/template-following.example.json)
+only as a schema starter. Copy the exact inspected source hash and use verified
+slide numbers and object IDs. Do not invent edit targets or flatten an
+inherited template into a generic 16:9 screenshot.
+
+### 4. Verify visual and editable parity
+
+For every candidate revision, inspect:
+
+1. the complete HTML source preview;
+2. the high-resolution shell with editable glyphs removed;
+3. the editable-text manifest and overlay bounds;
+4. the exact published PPTX reopened by the built-in renderer.
+
+Reject blank or wrong-ratio slides, clipping, unintended overlap, broken
+assets, title wrapping, missing glyphs, unreadable density, duplicate shell
+text, font substitution, shifted overlays, crop drift, and unresolved
+placeholders. A successful OpenXML reopen is structural evidence, not visual
+proof. Put every externally sourced claim and visual in a `[Sources]` speaker
+notes block.
+
+### 5. Publish and reopen the exact bytes
 
 Call `artifact(action="publish", job_id=..., output="...pptx")` only after the
-pre-publication checklist gates pass. Publish reuses the exact immutable bytes
-already reviewed. Then call `artifact(action="inspect", format="pptx",
-source_path="...pptx")` on that exact output and compare every returned slide
-preview with the accepted HTML preview. Require the DNA score of at least
-90/100 as the runtime-computed `observedScore`, not merely the declared target,
-and resolve every hard failure. If the reopened render fails, do not
-deliver it—author and publish a new immutable revision. Report the native
-editable object count without implying that flattened visual details are
-semantically editable.
+accepted preview has no error-severity findings. Publication must reuse the
+reviewed immutable revision. Then call
+`artifact(action="inspect", format="pptx", source_path="...pptx")` on that
+exact output and compare every reopened slide with the accepted HTML preview.
+If the reopened deck drifts materially, author and publish a new revision.
 
 ## Stop conditions
 
-Stop when narrative and visual direction are coherent, every slide has been
-rendered and inspected, no error remains, template lineage is intact where
-required, the reopened PPTX render meets the 90/100 DNA gate, and the final
-PPTX passed structural round-trip.
+Stop only when the narrative is coherent, the design grammar is consistent
+without repetitive silhouettes, images have defensible roles and crops, every
+slide has accepted source and reopened previews, inherited template lineage is
+intact where applicable, and the final package passes structural round-trip.
+Report native editable text counts and any text intentionally retained in the
+visual shell without implying that flattened details are editable.

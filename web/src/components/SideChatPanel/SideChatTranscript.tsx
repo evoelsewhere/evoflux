@@ -12,8 +12,8 @@ import { ChevronDown } from 'lucide-react'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import { BlockRenderer } from '../BlockRenderer'
 import { AssistantTurnFooter } from '../AssistantTurnFooter'
-import { groupConsecutiveToolCalls, ToolCallGroupCard } from '../ToolCallGroup'
-import type { ToolBlockGroup } from '../ToolCallGroup'
+import { ActivityTimeline } from '../ActivityTimeline'
+import { partitionAssistantActivity } from '@/utils/activity-timeline'
 import { ActivityStatus } from '../motion/ActivityStatus'
 import { BlockEnter } from '../motion/BlockEnter'
 import { isLatestStreamingItem, partitionTurns, type TurnItem } from '@/utils/turns'
@@ -129,7 +129,7 @@ export function SideChatTranscript({
               }
               const isTrailingTurn = k === turnItems.length - 1
               const turnIsStreaming = isWorking && isTrailingTurn
-              const groupedBlocks = groupConsecutiveToolCalls(item.blocks)
+              const { activityBlocks, answerBlocks } = partitionAssistantActivity(item.blocks)
               return (
                 <div
                   key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}
@@ -140,23 +140,24 @@ export function SideChatTranscript({
                     <span className="text-xs font-medium text-(--color-text-muted)">{agentLabel}</span>
                   </div>
                   <div className="space-y-2">
-                    {groupedBlocks.map((renderItem, j) => {
-                      if ('kind' in renderItem && (renderItem as ToolBlockGroup).kind === 'group') {
-                        return (
-                          <BlockEnter key={(renderItem as ToolBlockGroup).id}>
-                            <ToolCallGroupCard
-                              group={renderItem as ToolBlockGroup}
-                              isStreaming={isLatestStreamingItem(turnIsStreaming, j, groupedBlocks.length)}
-                              sessionId={sessionId}
-                              latestMCPAppBlockIds={latestMCPAppBlockIds}
-                            />
-                          </BlockEnter>
-                        )
-                      }
-                      const block = renderItem as ContentBlock
+                    <ActivityTimeline
+                      blocks={activityBlocks}
+                      isActive={turnIsStreaming && answerBlocks.length === 0}
+                      sessionId={sessionId}
+                      latestMCPAppBlockIds={latestMCPAppBlockIds}
+                      renderBlock={({ block, isStreaming }) => (
+                        <BlockRenderer
+                          block={block}
+                          isStreaming={isStreaming}
+                          sessionId={sessionId}
+                          latestMCPAppBlockIds={latestMCPAppBlockIds}
+                        />
+                      )}
+                    />
+                    {answerBlocks.map((block, j) => {
                       // Keep completed phases still; only the latest visible
                       // item in the active turn is actually streaming.
-                      const isStreaming = isLatestStreamingItem(turnIsStreaming, j, groupedBlocks.length)
+                      const isStreaming = isLatestStreamingItem(turnIsStreaming, j, answerBlocks.length)
                       return (
                         <BlockEnter key={block.id} disabled={isStreaming && block.type === 'text'}>
                           <BlockRenderer

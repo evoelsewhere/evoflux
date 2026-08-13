@@ -35,19 +35,39 @@ class FakeArtifactService:
 class FakeRenderBroker:
     def __init__(self) -> None:
         self.heartbeats: list[str] = []
+        self.renderer_heartbeats: list[str] = []
         self.completed: list[tuple[str, object, dict]] = []
+        self.global_completed: list[tuple[object, dict]] = []
 
     async def heartbeat(self, session_id: str) -> None:
         self.heartbeats.append(session_id)
 
+    async def heartbeat_renderer(self, renderer_id: str) -> None:
+        self.renderer_heartbeats.append(renderer_id)
+
     async def claim(self, session_id: str):
         return {"request_id": str(uuid4()), "slide_id": "opening"}
+
+    async def claim_next(self, renderer_id: str):
+        return {
+            "request_id": str(uuid4()),
+            "session_id": str(uuid4()),
+            "renderer_id": renderer_id,
+            "slide_id": "background",
+        }
 
     async def complete(self, session_id: str, request_id, result: dict) -> bool:
         self.completed.append((session_id, request_id, result))
         return True
 
     async def fail(self, session_id: str, request_id, message: str) -> bool:
+        return False
+
+    async def complete_claim(self, request_id, result: dict) -> bool:
+        self.global_completed.append((request_id, result))
+        return True
+
+    async def fail_claim(self, request_id, message: str) -> bool:
         return False
 
 
@@ -109,6 +129,13 @@ async def test_html_slide_renderer_bridge_routes(
             "preview_png_base64": "cHJldmlldw==",
             "shell_png_base64": "c2hlbGw=",
             "editable_elements": [],
+            "text_coverage": {
+                "visible_blocks": 0,
+                "visible_characters": 0,
+                "native_blocks": 0,
+                "native_characters": 0,
+                "flattened": [],
+            },
             "issues": [],
         },
     )
@@ -123,4 +150,131 @@ async def test_html_slide_renderer_bridge_routes(
     assert claimed.json()["slide_id"] == "opening"
     assert completed.status_code == 204
     assert broker.completed[0][0] == str(session_id)
+    assert broker.completed[0][2]["text_coverage"]["visible_blocks"] == 0
     assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_global_html_slide_renderer_bridge_routes(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    broker = FakeRenderBroker()
+    monkeypatch.setattr(document_routes, "get_html_slide_render_broker", lambda: broker)
+    renderer_id = uuid4()
+    request_id = uuid4()
+
+    heartbeat = await client.post(
+        f"/api/artifacts/renderers/global/{renderer_id}/heartbeat"
+    )
+    claimed = await client.get(f"/api/artifacts/renderers/global/{renderer_id}/next")
+    completed = await client.post(
+        f"/api/artifacts/renderers/global/{renderer_id}/requests/{request_id}/complete",
+        json={
+            "preview_png_base64": "cHJldmlldw==",
+            "shell_png_base64": "c2hlbGw=",
+            "editable_elements": [],
+            "text_coverage": {
+                "visible_blocks": 0,
+                "visible_characters": 0,
+                "native_blocks": 0,
+                "native_characters": 0,
+                "flattened": [],
+            },
+            "issues": [],
+        },
+    )
+
+    assert heartbeat.status_code == 204
+    assert broker.renderer_heartbeats == [str(renderer_id)]
+    assert claimed.status_code == 200
+    assert claimed.json()["slide_id"] == "background"
+    assert completed.status_code == 204
+    assert broker.global_completed[0][0] == request_id
+
+
+@pytest.mark.asyncio
+async def test_html_slide_renderer_bridge_requires_text_coverage(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    broker = FakeRenderBroker()
+    monkeypatch.setattr(document_routes, "get_html_slide_render_broker", lambda: broker)
+
+    response = await client.post(
+        f"/api/artifacts/renderers/{uuid4()}/requests/{uuid4()}/complete",
+        json={
+            "preview_png_base64": "cHJldmlldw==",
+            "shell_png_base64": "c2hlbGw=",
+            "editable_elements": [],
+            "issues": [],
+        },
+    )
+
+    assert response.status_code == 422
+    assert broker.completed == []
+
+
+@pytest.mark.asyncio
+async def test_html_slide_renderer_bridge_rejects_malformed_native_text(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    broker = FakeRenderBroker()
+    monkeypatch.setattr(document_routes, "get_html_slide_render_broker", lambda: broker)
+
+    response = await client.post(
+        f"/api/artifacts/renderers/{uuid4()}/requests/{uuid4()}/complete",
+        json={
+            "preview_png_base64": "cHJldmlldw==",
+            "shell_png_base64": "c2hlbGw=",
+            "editable_elements": [
+                {
+                    "kind": "text",
+                    "name": "Broken title",
+                    "x": 0,
+                    "y": 0,
+                    "width": -1,
+                    "height": 40,
+                    "paragraphs": [{"runs": [{"text": "Rejected"}]}],
+                }
+            ],
+            "text_coverage": {
+                "visible_blocks": 1,
+                "visible_characters": 8,
+                "native_blocks": 1,
+                "native_characters": 8,
+                "flattened": [],
+            },
+            "issues": [],
+        },
+    )
+
+    assert response.status_code == 422
+    assert broker.completed == []
+
+
+@pytest.mark.asyncio
+async def test_html_slide_renderer_bridge_rejects_unknown_manifest_fields(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    broker = FakeRenderBroker()
+    monkeypatch.setattr(document_routes, "get_html_slide_render_broker", lambda: broker)
+
+    response = await client.post(
+        f"/api/artifacts/renderers/{uuid4()}/requests/{uuid4()}/complete",
+        json={
+            "preview_png_base64": "cHJldmlldw==",
+            "shell_png_base64": "c2hlbGw=",
+            "editable_elements": [],
+            "text_coverage": {
+                "visible_blocks": 0,
+                "visible_characters": 0,
+                "native_blocks": 0,
+                "native_characters": 0,
+                "flattened": [],
+                "typo_field": 1,
+            },
+            "issues": [],
+        },
+    )
+
+    assert response.status_code == 422
+    assert broker.completed == []

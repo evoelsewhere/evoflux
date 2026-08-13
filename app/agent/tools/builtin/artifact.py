@@ -57,7 +57,9 @@ def _uuid(value: str | None, label: str) -> UUID:
         raise ValueError(f"{label} must be a UUID") from exc
 
 
-def _result_parts(value: dict[str, Any]) -> list[Any]:
+def _result_parts(
+    value: dict[str, Any], *, preview_offset: int = 0, preview_limit: int = 6
+) -> list[Any]:
     parts: list[Any] = [TextBlock(text=_json(value))]
     paths: list[Path] = []
     revision = value.get("revision")
@@ -75,14 +77,40 @@ def _result_parts(value: dict[str, Any]) -> list[Any]:
         paths.extend(
             Path(path) for path in result.get("previews", []) if isinstance(path, str)
         )
-    for preview in paths[:6]:
-        if preview.is_file():
+    unique_paths = list(dict.fromkeys(path for path in paths if path.is_file()))
+    selected = unique_paths[preview_offset : preview_offset + preview_limit]
+    if unique_paths:
+        first = preview_offset + 1
+        last = preview_offset + len(selected)
+        if not selected:
             parts.append(
-                ImageDataBlock(
-                    data=base64.b64encode(preview.read_bytes()).decode("ascii"),
-                    media_type="image/png",
+                TextBlock(
+                    text=(
+                        f"No preview images at offset {preview_offset}; "
+                        f"the result contains {len(unique_paths)} previews."
+                    )
                 )
             )
+            return parts
+        parts.append(
+            TextBlock(
+                text=(
+                    f"Preview images {first}-{last} of {len(unique_paths)}. "
+                    "Call artifact(action='status', job_id=..., "
+                    f"preview_offset={preview_offset + preview_limit}) to review "
+                    "the next page."
+                    if last < len(unique_paths)
+                    else f"Preview images {first}-{last} of {len(unique_paths)}."
+                )
+            )
+        )
+    for preview in selected:
+        parts.append(
+            ImageDataBlock(
+                data=base64.b64encode(preview.read_bytes()).decode("ascii"),
+                media_type="image/png",
+            )
+        )
     return parts
 
 
@@ -169,12 +197,32 @@ async def _artifact(
             description="Optional immutable revision UUID for publish; defaults to latest."
         ),
     ] = None,
+    preview_offset: Annotated[
+        int,
+        Field(
+            ge=0,
+            le=10_000,
+            description=(
+                "Zero-based preview image offset for status, preview, inspect, or "
+                "publish result blocks so every page or slide can be reviewed."
+            ),
+        ),
+    ] = 0,
+    preview_limit: Annotated[
+        int,
+        Field(
+            ge=1,
+            le=12,
+            description="Number of preview images to return from preview_offset.",
+        ),
+    ] = 6,
 ) -> str | ToolResult:
     """Create and publish document artifacts through one durable lifecycle.
 
     Project content remains format-specific and is delegated to the active
     bundled plugin driver. Call preview before publish. Publish never rebuilds
-    a document.
+    a document. ``preview_offset`` and ``preview_limit`` control only the image
+    blocks returned to the caller; they never change a stored revision.
     """
 
     service = get_artifact_service()
@@ -187,7 +235,13 @@ async def _artifact(
             if action == "status"
             else await service.cancel(parsed_job)
         )
-        return ToolResult(parts=_result_parts(value))
+        return ToolResult(
+            parts=_result_parts(
+                value,
+                preview_offset=preview_offset if action == "status" else 0,
+                preview_limit=preview_limit if action == "status" else 6,
+            )
+        )
     if action == "publish":
         parsed_job = _uuid(job_id, "job_id")
         before = await service.status(parsed_job)
@@ -200,7 +254,11 @@ async def _artifact(
             destination=destination,
         )
         return ToolResult(
-            parts=_result_parts(value),
+            parts=_result_parts(
+                value,
+                preview_offset=preview_offset,
+                preview_limit=preview_limit,
+            ),
             attachments=_attachment(
                 destination,
                 media_type=driver.media_type,
@@ -238,7 +296,13 @@ async def _artifact(
         ),
         session_id=sandbox.session_id,
     )
-    return ToolResult(parts=_result_parts(value))
+    return ToolResult(
+        parts=_result_parts(
+            value,
+            preview_offset=preview_offset,
+            preview_limit=preview_limit,
+        )
+    )
 
 
 artifact = Tool(

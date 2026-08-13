@@ -1301,6 +1301,7 @@ dependencies = [
  "nix",
  "notify",
  "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
  "objc2-av-foundation",
  "objc2-speech",
  "once_cell",

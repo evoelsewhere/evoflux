@@ -10,11 +10,8 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Copy, Check, Play } from 'lucide-react'
 import { formatTime, lastTurnText } from '@/utils/format'
-import {
-  groupConsecutiveToolCalls,
-  ToolCallGroupCard,
-  type ToolBlockGroup,
-} from './ToolCallGroup'
+import { ActivityTimeline } from './ActivityTimeline'
+import { partitionAssistantActivity } from '@/utils/activity-timeline'
 import type { ContentBlock } from '@/api/types'
 import { isLatestStreamingItem } from '@/utils/turns'
 import { BlockEnter } from './motion/BlockEnter'
@@ -162,7 +159,7 @@ export function AssistantTurn({
 }: AssistantTurnProps) {
   const turnIsStreaming = isWorking && isTrailingTurn
   const canContinue = isTrailingTurn && !isWorking ? onContinue : undefined
-  const renderItems = groupConsecutiveToolCalls(blocks)
+  const { activityBlocks, answerBlocks } = partitionAssistantActivity(blocks)
   const blockAbsIdx = useMemo(
     () => new Map(blocks.map((b, j) => [b.id, startIndex + j])),
     [blocks, startIndex],
@@ -170,25 +167,23 @@ export function AssistantTurn({
 
   return (
     <div className="space-y-2">
-      {renderItems.map((renderItem, j) => {
-        if ('kind' in renderItem && (renderItem as ToolBlockGroup).kind === 'group') {
-          return (
-            <BlockEnter key={(renderItem as ToolBlockGroup).id}>
-              <ToolCallGroupCard
-                group={renderItem as ToolBlockGroup}
-                isStreaming={isLatestStreamingItem(turnIsStreaming, j, renderItems.length)}
-                sessionId={sessionId}
-                latestMCPAppBlockIds={latestMCPAppBlockIds}
-                compact={size === 'compact'}
-              />
-            </BlockEnter>
-          )
-        }
-        const block = renderItem as ContentBlock
+      <ActivityTimeline
+        blocks={activityBlocks}
+        isActive={turnIsStreaming && answerBlocks.length === 0}
+        sessionId={sessionId}
+        latestMCPAppBlockIds={latestMCPAppBlockIds}
+        compact={size === 'compact'}
+        renderBlock={({ block, isStreaming }) => renderBlock({
+          block,
+          isStreaming,
+          isLast: (blockAbsIdx.get(block.id) ?? startIndex) === totalBlocks - 1,
+        })}
+      />
+      {answerBlocks.map((block, j) => {
         const absoluteIdx = blockAbsIdx.get(block.id) ?? startIndex + j
         // Earlier blocks in the live buffer are completed phases. Animate
         // only the newest visible item in the trailing active turn.
-        const isStreaming = isLatestStreamingItem(turnIsStreaming, j, renderItems.length)
+        const isStreaming = isLatestStreamingItem(turnIsStreaming, j, answerBlocks.length)
         return (
           <BlockEnter key={block.id} disabled={isStreaming && block.type === 'text'}>
             {renderBlock({

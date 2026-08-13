@@ -18,17 +18,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.agent.builtin_plugins.documents.engines.html_slide_broker import (
     get_html_slide_render_broker,
 )
-from app.agent.builtin_plugins.documents.engines.pptx_dna import (
-    PowerPointSlideDna,
-    SlideDnaQaLedger,
-    fidelity_dimension_weights,
-    load_slide_dna,
-    load_slide_dna_qa_ledger,
-    representation_ledger,
-    slide_dna_catalog,
-    slide_dna_digest,
-    validate_slide_dna_for_project,
-)
 from app.agent.builtin_plugins.documents.rendering.internal import render_pptx_pages
 
 MAX_SLIDES = 80
@@ -37,6 +26,8 @@ MAX_HTML_BYTES = 2_000_000
 MAX_CSS_BYTES = 2_000_000
 MAX_ASSET_BYTES = 20_000_000
 MAX_TOTAL_ASSET_BYTES = 60_000_000
+PER_SLIDE_SIMILARITY_MIN = 0.90
+DECK_MEDIAN_SIMILARITY_MIN = 0.95
 _PLACEHOLDER = re.compile(r"\b(?:lorem ipsum|todo|tbd|click to add)\b", re.I)
 _UNSAFE_HTML = re.compile(
     r"<\s*/?\s*(?:script|iframe|object|embed|video|audio|canvas|form|input|button|textarea|select|html|head|body|meta|link|base|style|template)\b",
@@ -103,10 +94,8 @@ class HtmlSlidePlan(BaseModel):
 class HtmlPptxProject(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[6] = 6
+    schema_version: Literal[7] = 7
     title: str = Field(min_length=1, max_length=240)
-    dna_path: str = Field(min_length=1, max_length=2000)
-    qa_ledger_path: str = Field(min_length=1, max_length=2000)
     width: int = Field(default=1280, ge=640, le=3840)
     height: int = Field(default=720, ge=360, le=2160)
     slides: list[HtmlSlidePlan] = Field(min_length=1, max_length=MAX_SLIDES)
@@ -117,6 +106,131 @@ class HtmlPptxProject(BaseModel):
         if len(ids) != len(set(ids)):
             raise ValueError("slide ids must be unique")
         return self
+
+
+class NativeTextRun(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(max_length=20_000)
+    font_family: str | None = Field(default=None, max_length=500)
+    font_size: float | None = Field(default=None, ge=1, le=512)
+    bold: bool = False
+    italic: bool = False
+    underline: bool = False
+    color: str | None = Field(default=None, max_length=64)
+    letter_spacing: float = Field(default=0, ge=-32, le=128)
+
+
+class NativeTextBullet(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["bullet", "number"]
+    marker: str | None = Field(default=None, max_length=8)
+    level: int = Field(default=0, ge=0, le=8)
+    start: int | None = Field(default=None, ge=1, le=32_767)
+
+
+class NativeTextParagraph(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    runs: list[NativeTextRun] = Field(min_length=1, max_length=1_000)
+    bullet: NativeTextBullet | None = None
+    level: int = Field(default=0, ge=0, le=8)
+    text_align: str | None = Field(default=None, max_length=32)
+
+
+class NativeTextPadding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    left: float = Field(default=0, ge=0, le=512)
+    right: float = Field(default=0, ge=0, le=512)
+    top: float = Field(default=0, ge=0, le=512)
+    bottom: float = Field(default=0, ge=0, le=512)
+
+
+class NativeTextElement(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["text"]
+    name: str = Field(min_length=1, max_length=160)
+    role: str | None = Field(default=None, max_length=80)
+    x: float
+    y: float
+    width: float = Field(gt=0)
+    height: float = Field(gt=0)
+    padding: NativeTextPadding = Field(default_factory=NativeTextPadding)
+    text_align: str = "left"
+    vertical_align: str = "top"
+    line_height_ratio: float = Field(default=1.2, ge=0.5, le=5)
+    rotation: float = Field(default=0, ge=-360, le=360)
+    paragraphs: list[NativeTextParagraph] = Field(
+        default_factory=list, max_length=1_000
+    )
+    # Version-6 compatibility. New renderers emit paragraphs/runs.
+    text: str | None = Field(default=None, max_length=40_000)
+    font_family: str | None = Field(default=None, max_length=500)
+    font_size: float | None = Field(default=None, ge=1, le=512)
+    bold: bool = False
+    italic: bool = False
+    underline: bool = False
+    color: str | None = Field(default=None, max_length=64)
+
+    @model_validator(mode="after")
+    def has_text_content(self) -> NativeTextElement:
+        if not self.paragraphs and self.text is None:
+            raise ValueError("native text requires paragraphs or legacy text")
+        return self
+
+
+class NativeImageElement(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["image"]
+    name: str = Field(min_length=1, max_length=160)
+    x: float
+    y: float
+    width: float = Field(gt=0)
+    height: float = Field(gt=0)
+    asset_id: str = Field(min_length=1, max_length=64)
+    alt: str | None = Field(default=None, max_length=1_000)
+
+
+class FlattenedTextRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=160)
+    reason: str = Field(min_length=1, max_length=500)
+    characters: int = Field(default=0, ge=0)
+
+
+class TextCoverage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    visible_blocks: int = Field(ge=0)
+    visible_characters: int = Field(ge=0)
+    native_blocks: int = Field(ge=0)
+    native_characters: int = Field(ge=0)
+    flattened: list[FlattenedTextRecord] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def consistent_counts(self) -> TextCoverage:
+        if self.native_blocks > self.visible_blocks:
+            raise ValueError("native text blocks exceed visible text blocks")
+        if self.native_characters > self.visible_characters:
+            raise ValueError("native text characters exceed visible text characters")
+        return self
+
+
+class HtmlRenderResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preview_png_base64: str = Field(min_length=1)
+    shell_png_base64: str = Field(min_length=1)
+    editable_elements: list[NativeTextElement | NativeImageElement] = Field(
+        default_factory=list, max_length=5_000
+    )
+    text_coverage: TextCoverage
+    issues: list[dict[str, Any]] = Field(default_factory=list, max_length=5_000)
 
 
 @dataclass
@@ -215,8 +329,6 @@ def validate_html_pptx_project(
     project: HtmlPptxProject, project_path: Path
 ) -> dict[str, Any]:
     project_dir = project_path.parent.resolve()
-    dna_path, dna = _project_dna(project, project_path)
-    qa_path, qa_ledger, qa_evidence = _project_qa_ledger(project, project_path)
     placeholder_slides: list[str] = []
     for slide in project.slides:
         html, _css, _assets = _slide_sources(slide, project_dir)
@@ -231,62 +343,42 @@ def validate_html_pptx_project(
         "schema_version": project.schema_version,
         "slide_count": len(project.slides),
         "canvas": {"width": project.width, "height": project.height, "unit": "px"},
-        "rendering": "desktop-webview-html-tailwind",
-        "editable_kinds": ["text", "image"],
-        "dna": {
-            "path": str(dna_path),
-            "sha256": slide_dna_digest(dna_path),
-            "target_score": dna.deck.fidelity_target.target_score,
-            "representation_ledger": representation_ledger(dna),
-        },
-        "qa_ledger": {
-            "path": str(qa_path),
-            "dimensions": [item.id for item in qa_ledger.dimensions],
-            "evidence": {
-                dimension_id: [str(path) for path in paths]
-                for dimension_id, paths in qa_evidence.items()
-            },
-            "runtime_overrides": [
-                "canvas-and-geometry",
-                "reopened-render-parity",
-            ],
+        "rendering": "desktop-webview-html-css",
+        "representation": "html-shell-editable-text",
+        "editable_kinds": ["text", "simple-raster-image"],
+        "quality_policy": {
+            "evidence": "runtime-render-only",
+            "per_slide_similarity_min": PER_SLIDE_SIMILARITY_MIN,
+            "deck_median_similarity_min": DECK_MEDIAN_SIMILARITY_MIN,
         },
     }
 
 
 def html_pptx_catalog() -> dict[str, Any]:
     return {
-        "workflow": "html-tailwind-hybrid-pptx",
-        "schema_version": 6,
+        "workflow": "html-shell-editable-text-pptx",
+        "schema_version": 7,
         "canvas": {"width": 1280, "height": 720, "unit": "CSS px"},
         "project": {
-            "required": [
-                "schema_version",
-                "title",
-                "dna_path",
-                "qa_ledger_path",
-                "slides",
-            ],
+            "required": ["schema_version", "title", "slides"],
             "slide_required": ["id", "html_path"],
             "slide_optional": ["style_paths", "assets", "speaker_notes"],
-        },
-        "slide_dna": slide_dna_catalog(),
-        "qa_ledger": {
-            "required": True,
-            "project_field": "qa_ledger_path",
-            "runtime_overrides": [
-                "canvas-and-geometry",
-                "reopened-render-parity",
-            ],
-            "schema": SlideDnaQaLedger.model_json_schema(),
         },
         "html_contract": {
             "root": "exactly one element with data-slide-root",
             "asset_urls": "asset://<declared-key>",
-            "editable": {
-                "text": 'data-pptx-editable="text"',
-                "image": (
+            "text": {
+                "default": "ordinary visible HTML text becomes editable PowerPoint text",
+                "art_opt_out": 'data-pptx-text-mode="art"',
+                "compatibility_hint": 'data-pptx-editable="text"',
+            },
+            "image": {
+                "optional": (
                     'data-pptx-editable="image" data-pptx-asset="<declared-key>"'
+                ),
+                "constraint": (
+                    "declared raster with fill sizing and no crop, mask, radius, "
+                    "filter, transform, opacity, or blend effect"
                 ),
             },
             "scripts": False,
@@ -298,45 +390,17 @@ def html_pptx_catalog() -> dict[str, Any]:
             "headless_fallback": False,
         },
         "editability": (
-            "HTML is the visual source of truth. Only explicitly marked simple text "
-            "and raster images become native PowerPoint objects; all other styling "
-            "is flattened into the slide background."
+            "HTML/CSS is the visual source of truth. The WebView removes eligible "
+            "glyphs from a high-resolution shell and returns native text manifests; "
+            "images, charts, gradients, icons, and decoration remain in the shell."
         ),
+        "quality_policy": {
+            "source": "runtime render evidence, never an author-authored score",
+            "per_slide_similarity_min": PER_SLIDE_SIMILARITY_MIN,
+            "deck_median_similarity_min": DECK_MEDIAN_SIMILARITY_MIN,
+            "requires_text_coverage": True,
+        },
     }
-
-
-def _project_dna(
-    project: HtmlPptxProject, project_path: Path
-) -> tuple[Path, PowerPointSlideDna]:
-    project_dir = project_path.parent.resolve()
-    dna_path = _project_file(project_dir, project.dna_path, label="dna_path")
-    dna = load_slide_dna(dna_path)
-    validate_slide_dna_for_project(
-        dna,
-        slide_ids=[slide.id for slide in project.slides],
-        width=project.width,
-        height=project.height,
-    )
-    return dna_path, dna
-
-
-def _project_qa_ledger(
-    project: HtmlPptxProject, project_path: Path
-) -> tuple[Path, SlideDnaQaLedger, dict[str, list[Path]]]:
-    project_dir = project_path.parent.resolve()
-    qa_path = _project_file(project_dir, project.qa_ledger_path, label="qa_ledger_path")
-    ledger = load_slide_dna_qa_ledger(qa_path)
-    evidence: dict[str, list[Path]] = {}
-    for dimension in ledger.dimensions:
-        evidence[dimension.id] = [
-            _project_file(
-                project_dir,
-                value,
-                label=f"QA evidence for {dimension.id}",
-            )
-            for value in dimension.evidence
-        ]
-    return qa_path, ledger, evidence
 
 
 def _inline_assets(
@@ -419,63 +483,129 @@ def _rgb(value: str, fallback: str = "#111827") -> Any:
     return RGBColor.from_string(candidate.upper())
 
 
-def _add_text_overlay(slide: Any, element: dict[str, Any], *, scale: float) -> None:
-    from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+def _set_paragraph_bullet(paragraph: Any, bullet: NativeTextBullet, level: int) -> None:
+    from pptx.oxml.ns import qn
+    from pptx.oxml.xmlchemy import OxmlElement
+
+    properties = paragraph._p.get_or_add_pPr()  # noqa: SLF001
+    properties.set("lvl", str(max(0, min(8, level))))
+    properties.set("marL", str(int((18 + level * 18) * 12_700)))
+    properties.set("indent", str(-int(10 * 12_700)))
+    for child in list(properties):
+        if child.tag in {qn("a:buNone"), qn("a:buChar"), qn("a:buAutoNum")}:
+            properties.remove(child)
+    if bullet.kind == "number":
+        marker = OxmlElement("a:buAutoNum")
+        marker.set("type", "arabicPeriod")
+        if bullet.start is not None:
+            marker.set("startAt", str(bullet.start))
+    else:
+        marker = OxmlElement("a:buChar")
+        marker.set("char", bullet.marker or "•")
+    properties.append(marker)
+
+
+def _set_run_style(run: Any, value: NativeTextRun) -> None:
+    from pptx.util import Pt
+
+    family = (value.font_family or "Arial").split(",")[0].strip(" '\"")
+    run.font.name = family or "Arial"
+    run.font.size = Pt(float(value.font_size or 24) * 72 / 96)
+    run.font.bold = value.bold
+    run.font.italic = value.italic
+    run.font.underline = value.underline
+    run.font.color.rgb = _rgb(value.color or "#111827")
+    spacing = round(value.letter_spacing * 0.75 * 100)
+    properties = run._r.get_or_add_rPr()  # noqa: SLF001
+    properties.set("spc", str(spacing))
+
+
+def _add_styled_run(paragraph: Any, value: NativeTextRun) -> None:
+    parts = value.text.split("\n")
+    for index, part in enumerate(parts):
+        if index:
+            paragraph.add_line_break()
+        if part or len(parts) == 1:
+            run = paragraph.add_run()
+            run.text = part
+            _set_run_style(run, value)
+
+
+def _element_paragraphs(element: NativeTextElement) -> list[NativeTextParagraph]:
+    if element.paragraphs:
+        return element.paragraphs
+    return [
+        NativeTextParagraph(
+            runs=[
+                NativeTextRun(
+                    text=element.text or "",
+                    font_family=element.font_family,
+                    font_size=element.font_size,
+                    bold=element.bold,
+                    italic=element.italic,
+                    underline=element.underline,
+                    color=element.color,
+                )
+            ]
+        )
+    ]
+
+
+def _add_text_overlay(slide: Any, element: NativeTextElement, *, scale: float) -> None:
+    from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
     from pptx.util import Inches, Pt
 
-    x = float(element["x"])
-    y = float(element["y"])
-    width = float(element["width"])
-    height = float(element["height"])
     shape = slide.shapes.add_textbox(
-        Inches(x / scale),
-        Inches(y / scale),
-        Inches(width / scale),
-        Inches(height / scale),
+        Inches(element.x / scale),
+        Inches(element.y / scale),
+        Inches(element.width / scale),
+        Inches(element.height / scale),
     )
     frame = shape.text_frame
     frame.clear()
-    frame.margin_left = 0
-    frame.margin_right = 0
-    frame.margin_top = 0
-    frame.margin_bottom = 0
+    frame.auto_size = MSO_AUTO_SIZE.NONE
+    frame.word_wrap = True
+    frame.margin_left = Inches(element.padding.left / scale)
+    frame.margin_right = Inches(element.padding.right / scale)
+    frame.margin_top = Inches(element.padding.top / scale)
+    frame.margin_bottom = Inches(element.padding.bottom / scale)
     frame.vertical_anchor = {
         "middle": MSO_ANCHOR.MIDDLE,
         "bottom": MSO_ANCHOR.BOTTOM,
-    }.get(str(element.get("vertical_align")), MSO_ANCHOR.TOP)
-    paragraph = frame.paragraphs[0]
-    paragraph.text = str(element.get("text") or "")
-    paragraph.alignment = {
+    }.get(element.vertical_align, MSO_ANCHOR.TOP)
+    alignments = {
         "center": PP_ALIGN.CENTER,
         "right": PP_ALIGN.RIGHT,
         "justify": PP_ALIGN.JUSTIFY,
-    }.get(str(element.get("text_align")), PP_ALIGN.LEFT)
-    paragraph.space_before = Pt(0)
-    paragraph.space_after = Pt(0)
-    paragraph.line_spacing = float(element.get("line_height_ratio") or 1.0)
-    for run in paragraph.runs:
-        run.font.name = (
-            str(element.get("font_family") or "Arial").split(",")[0].strip(" '\"")
+    }
+    for index, value in enumerate(_element_paragraphs(element)):
+        paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
+        paragraph.alignment = alignments.get(
+            value.text_align or element.text_align, PP_ALIGN.LEFT
         )
-        run.font.size = Pt(float(element.get("font_size") or 24) * 72 / 96)
-        run.font.bold = bool(element.get("bold"))
-        run.font.italic = bool(element.get("italic"))
-        run.font.underline = bool(element.get("underline"))
-        run.font.color.rgb = _rgb(str(element.get("color") or "#111827"))
-    shape.rotation = float(element.get("rotation") or 0)
-    shape.name = str(element.get("name") or "Editable text")[:160]
+        paragraph.space_before = Pt(0)
+        paragraph.space_after = Pt(0)
+        paragraph.line_spacing = element.line_height_ratio
+        level = value.bullet.level if value.bullet else value.level
+        paragraph.level = max(0, min(8, level))
+        if value.bullet:
+            _set_paragraph_bullet(paragraph, value.bullet, level)
+        for run in value.runs:
+            _add_styled_run(paragraph, run)
+    shape.rotation = element.rotation
+    shape.name = element.name[:160]
 
 
 def _add_image_overlay(
     slide: Any,
-    element: dict[str, Any],
+    element: NativeImageElement,
     assets: dict[str, Path],
     *,
     scale: float,
 ) -> None:
     from pptx.util import Inches
 
-    asset_id = str(element.get("asset_id") or "")
+    asset_id = element.asset_id
     source = assets.get(asset_id)
     if source is None or source.suffix.lower() not in {
         ".png",
@@ -487,19 +617,15 @@ def _add_image_overlay(
         raise ValueError(
             f"editable image asset is not a supported raster image: {asset_id}"
         )
-    x = float(element["x"])
-    y = float(element["y"])
-    width = float(element["width"])
-    height = float(element["height"])
     picture = slide.shapes.add_picture(
         str(source),
-        Inches(x / scale),
-        Inches(y / scale),
-        Inches(width / scale),
-        Inches(height / scale),
+        Inches(element.x / scale),
+        Inches(element.y / scale),
+        Inches(element.width / scale),
+        Inches(element.height / scale),
     )
-    picture.name = str(element.get("name") or source.stem)[:160]
-    descr = str(element.get("alt") or source.stem)
+    picture.name = element.name[:160]
+    descr = element.alt or source.stem
     picture._element.nvPicPr.cNvPr.set("descr", descr)
 
 
@@ -508,7 +634,7 @@ def _compose_pptx(
     rendered: list[dict[str, Any]],
     slide_assets: list[dict[str, Path]],
     output: Path,
-) -> None:
+) -> dict[str, int]:
     from pptx import Presentation
     from pptx.util import Inches
 
@@ -525,10 +651,9 @@ def _compose_pptx(
             presentation.slide_height,
         )
         for element in item["editable_elements"]:
-            kind = str(element.get("kind"))
-            if kind == "text":
+            if isinstance(element, NativeTextElement):
                 _add_text_overlay(slide, element, scale=96)
-            elif kind == "image":
+            elif isinstance(element, NativeImageElement):
                 _add_image_overlay(slide, element, assets, scale=96)
         if plan.speaker_notes:
             slide.notes_slide.notes_text_frame.text = plan.speaker_notes
@@ -538,6 +663,29 @@ def _compose_pptx(
     check = Presentation(str(output))
     if len(check.slides) != len(project.slides):
         raise ValueError("PPTX round-trip slide count changed")
+    expected_text = sum(
+        isinstance(element, NativeTextElement)
+        for item in rendered
+        for element in item["editable_elements"]
+    )
+    actual_text = sum(
+        bool(getattr(shape, "has_text_frame", False))
+        for slide in check.slides
+        for shape in slide.shapes
+    )
+    if actual_text != expected_text:
+        raise ValueError(
+            "PPTX round-trip editable text count changed: "
+            f"expected {expected_text}, got {actual_text}"
+        )
+    return {
+        "editable_text_objects": actual_text,
+        "editable_image_objects": sum(
+            isinstance(element, NativeImageElement)
+            for item in rendered
+            for element in item["editable_elements"]
+        ),
+    }
 
 
 def _raster_parity(source: Path, reopened: Path) -> dict[str, Any]:
@@ -567,15 +715,6 @@ def _raster_parity(source: Path, reopened: Path) -> dict[str, Any]:
     }
 
 
-def _promote_dna_hard_failures(
-    issues: list[dict[str, Any]], hard_failures: set[str]
-) -> None:
-    for issue in issues:
-        if str(issue.get("code") or "") in hard_failures:
-            issue["severity"] = "error"
-            issue["dna_hard_failure"] = True
-
-
 def _render_surface_ledger(
     *,
     previews: list[Path],
@@ -591,7 +730,7 @@ def _render_surface_ledger(
             "evidence": [str(path) for path in previews],
         },
         {
-            "id": "flattened-shell",
+            "id": "html-visual-shell",
             "status": "verified" if len(shells) == len(previews) else "failed",
             "evidence": [str(path) for path in shells],
         },
@@ -608,109 +747,6 @@ def _render_surface_ledger(
     ]
 
 
-def _fidelity_scorecard(
-    *,
-    qa_ledger: SlideDnaQaLedger,
-    qa_evidence: dict[str, list[Path]],
-    previews: list[Path],
-    shells: list[Path],
-    reopened: list[Path],
-    quality: list[dict[str, Any]],
-    issues: list[dict[str, Any]],
-    reopened_parity: list[dict[str, Any]],
-    reopened_status: str,
-    slide_count: int,
-) -> tuple[list[dict[str, Any]], float]:
-    """Resolve the six-dimensional DNA score from evidence, not intent."""
-
-    weights = fidelity_dimension_weights()
-    declared = {item.id: item for item in qa_ledger.dimensions}
-    dimensions: list[dict[str, Any]] = []
-    for dimension_id, weight in weights.items():
-        item = declared[dimension_id]
-        dimensions.append(
-            {
-                "id": dimension_id,
-                "weight": weight,
-                "status": item.status,
-                "awarded_points": (
-                    round(item.awarded_points, 3) if item.status == "verified" else 0.0
-                ),
-                "evidence": [str(path) for path in qa_evidence.get(dimension_id, [])],
-                "observed_gap": item.observed_gap,
-                "disposition": item.disposition,
-                "evaluator": "qa-ledger",
-            }
-        )
-
-    by_id = {item["id"]: item for item in dimensions}
-    canvas_issue_codes = {
-        "blank-slide",
-        "canvas-mismatch",
-        "content-overflow",
-        "invalid-html-slide-preview",
-        "wrong-aspect-ratio",
-    }
-    canvas_verified = (
-        len(previews) == slide_count
-        and len(shells) == slide_count
-        and len(quality) == slide_count
-        and all(item.get("passed") for item in quality)
-        and not any(
-            issue.get("severity") == "error" and issue.get("code") in canvas_issue_codes
-            for issue in issues
-        )
-    )
-    canvas = by_id["canvas-and-geometry"]
-    canvas.update(
-        {
-            "status": "verified" if canvas_verified else "failed",
-            "awarded_points": canvas["weight"] if canvas_verified else 0.0,
-            "evidence": [str(path) for path in [*previews, *shells]],
-            "observed_gap": "" if canvas_verified else "Canvas render gate failed",
-            "disposition": "preserved" if canvas_verified else "unverified",
-            "evaluator": "runtime",
-            "basis": {
-                "expected_slide_count": slide_count,
-                "preview_count": len(previews),
-                "shell_count": len(shells),
-            },
-        }
-    )
-
-    parity_ratio = (
-        min(
-            min(item["score"] for item in reopened_parity),
-            median(item["score"] for item in reopened_parity),
-        )
-        if reopened_parity
-        else 0.0
-    )
-    parity_verified = reopened_status == "verified" and bool(reopened_parity)
-    parity = by_id["reopened-render-parity"]
-    parity.update(
-        {
-            "status": "verified" if parity_verified else "failed",
-            "awarded_points": (
-                round(parity["weight"] * parity_ratio, 3) if parity_verified else 0.0
-            ),
-            "evidence": [str(path) for path in [*previews, *reopened]],
-            "observed_gap": (
-                "" if parity_verified else "Reopened PPTX raster parity gate failed"
-            ),
-            "disposition": "preserved" if parity_verified else "unverified",
-            "evaluator": "runtime",
-            "basis": {
-                "metric": "normalized-rgb-rmse-similarity-v1",
-                "ratio": round(parity_ratio, 6),
-            },
-        }
-    )
-
-    observed_score = round(sum(float(item["awarded_points"]) for item in dimensions), 3)
-    return dimensions, observed_score
-
-
 async def compose_html_pptx_project(
     project_path: Path,
     output: Path,
@@ -722,13 +758,6 @@ async def compose_html_pptx_project(
     del workspace_root
     project = load_html_pptx_project(project_path)
     validate_html_pptx_project(project, project_path)
-    dna_path, dna = _project_dna(project, project_path)
-    qa_path, qa_ledger, qa_evidence = _project_qa_ledger(project, project_path)
-    dna_sha256 = slide_dna_digest(dna_path)
-    qa_sha256 = slide_dna_digest(qa_path)
-    dna_representation = representation_ledger(dna)
-    fidelity = dna.deck.fidelity_target
-    hard_failures = set(fidelity.hard_failures)
     project_dir = project_path.parent.resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
     broker = get_html_slide_render_broker()
@@ -740,28 +769,32 @@ async def compose_html_pptx_project(
     layouts: list[Path] = []
     all_assets: list[dict[str, Path]] = []
     quality: list[dict[str, Any]] = []
-    editable_count = 0
+    text_coverage: list[dict[str, Any]] = []
+    editable_text_count = 0
+    editable_image_count = 0
     for slide_number, slide in enumerate(project.slides, start=1):
         html, css, assets = _slide_sources(slide, project_dir)
         inlined_html, inlined_css, asset_metadata = _inline_assets(html, css, assets)
-        response = await broker.request(
-            session_id,
-            {
-                "slide_id": slide.id,
-                "width": project.width,
-                "height": project.height,
-                "html": inlined_html,
-                "css": inlined_css,
-                "assets": asset_metadata,
-            },
+        response = HtmlRenderResponse.model_validate(
+            await broker.request(
+                session_id,
+                {
+                    "slide_id": slide.id,
+                    "width": project.width,
+                    "height": project.height,
+                    "html": inlined_html,
+                    "css": inlined_css,
+                    "assets": asset_metadata,
+                },
+            )
         )
         preview = _decode_png(
-            str(response.get("preview_png_base64") or ""),
+            response.preview_png_base64,
             work_dir / "previews" / f"slide-{slide_number:03d}.png",
             label=f"slide {slide_number} preview",
         )
         shell = _decode_png(
-            str(response.get("shell_png_base64") or ""),
+            response.shell_png_base64,
             work_dir / "shells" / f"slide-{slide_number:03d}.png",
             label=f"slide {slide_number} shell",
         )
@@ -784,13 +817,75 @@ async def compose_html_pptx_project(
                     "quality": metric,
                 }
             )
-        for value in response.get("issues", []):
+        for value in response.issues:
             if isinstance(value, dict):
                 issues.append({**value, "slide": slide_number, "slide_id": slide.id})
-        elements = response.get("editable_elements", [])
-        if not isinstance(elements, list):
-            raise ValueError("renderer editable_elements must be a list")
-        editable_count += len(elements)
+        elements = response.editable_elements
+        slide_text_count = sum(
+            isinstance(element, NativeTextElement) for element in elements
+        )
+        editable_text_count += slide_text_count
+        editable_image_count += sum(
+            isinstance(element, NativeImageElement) for element in elements
+        )
+        coverage = response.text_coverage.model_dump()
+        flattened_blocks = len(response.text_coverage.flattened)
+        flattened_characters = sum(
+            record.characters for record in response.text_coverage.flattened
+        )
+        accounted_blocks = response.text_coverage.native_blocks + flattened_blocks
+        accounted_characters = (
+            response.text_coverage.native_characters + flattened_characters
+        )
+        coverage.update(
+            {
+                "slide": slide_number,
+                "slide_id": slide.id,
+                "accounted_blocks": accounted_blocks,
+                "accounted_characters": accounted_characters,
+                "native_character_ratio": (
+                    round(
+                        response.text_coverage.native_characters
+                        / response.text_coverage.visible_characters,
+                        6,
+                    )
+                    if response.text_coverage.visible_characters
+                    else 1.0
+                ),
+            }
+        )
+        text_coverage.append(coverage)
+        if slide_text_count != response.text_coverage.native_blocks:
+            issues.append(
+                {
+                    "severity": "error",
+                    "code": "editable-text-manifest-mismatch",
+                    "message": (
+                        f"Slide {slide_number} declares "
+                        f"{response.text_coverage.native_blocks} native text blocks "
+                        f"but returned {slide_text_count}"
+                    ),
+                    "slide": slide_number,
+                    "slide_id": slide.id,
+                }
+            )
+        if (
+            accounted_blocks != response.text_coverage.visible_blocks
+            or accounted_characters != response.text_coverage.visible_characters
+        ):
+            issues.append(
+                {
+                    "severity": "error",
+                    "code": "unaccounted-html-text",
+                    "message": (
+                        f"Slide {slide_number} did not account for every visible text "
+                        "block and character as native or intentionally flattened"
+                    ),
+                    "slide": slide_number,
+                    "slide_id": slide.id,
+                    "coverage": coverage,
+                }
+            )
         layout_path = work_dir / "layouts" / f"slide-{slide_number:03d}.json"
         layout_path.parent.mkdir(parents=True, exist_ok=True)
         layout_path.write_text(
@@ -798,7 +893,10 @@ async def compose_html_pptx_project(
                 {
                     "slide": slide_number,
                     "slide_id": slide.id,
-                    "editable_elements": elements,
+                    "editable_elements": [
+                        element.model_dump(mode="json") for element in elements
+                    ],
+                    "text_coverage": coverage,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -817,15 +915,20 @@ async def compose_html_pptx_project(
         shells.append(shell)
         layouts.append(layout_path)
         all_assets.append(assets)
-    _promote_dna_hard_failures(issues, hard_failures)
     source_passed = all(item["passed"] for item in quality) and not any(
         issue.get("severity") == "error" for issue in issues
     )
     candidate: Path | None = output
     reopened_parity: list[dict[str, Any]] = []
     reopened_status = "not-run"
+    structural_counts = {
+        "editable_text_objects": 0,
+        "editable_image_objects": 0,
+    }
     if not any(issue.get("severity") == "error" for issue in issues):
-        await asyncio.to_thread(_compose_pptx, project, rendered, all_assets, output)
+        structural_counts = await asyncio.to_thread(
+            _compose_pptx, project, rendered, all_assets, output
+        )
         try:
             reopened_previews = await asyncio.to_thread(
                 render_pptx_pages,
@@ -839,7 +942,6 @@ async def compose_html_pptx_project(
                     "severity": "error",
                     "code": "unrendered-reopened-slide",
                     "message": f"Generated PPTX could not be rendered after reopen: {exc}",
-                    "dna_hard_failure": True,
                 }
             )
             reopened_status = "failed"
@@ -852,12 +954,10 @@ async def compose_html_pptx_project(
                         "Generated PPTX reopened with "
                         f"{len(reopened_previews)} rendered slides; expected {len(previews)}"
                     ),
-                    "dna_hard_failure": True,
                 }
             )
             reopened_status = "failed"
         else:
-            per_slide_min = fidelity.raster_targets.per_slide_similarity_min
             for slide_number, (source_preview, reopened_preview) in enumerate(
                 zip(previews, reopened_previews, strict=True), start=1
             ):
@@ -866,18 +966,19 @@ async def compose_html_pptx_project(
                     {
                         "slide": slide_number,
                         "slide_id": project.slides[slide_number - 1].id,
-                        "threshold": per_slide_min,
+                        "threshold": PER_SLIDE_SIMILARITY_MIN,
                     }
                 )
                 reopened_parity.append(metric)
-                if metric["score"] < per_slide_min:
+                if metric["score"] < PER_SLIDE_SIMILARITY_MIN:
                     issues.append(
                         {
                             "severity": "error",
                             "code": "render-parity-below-target",
                             "message": (
                                 f"Slide {slide_number} reopened parity "
-                                f"{metric['score']:.3f} is below {per_slide_min:.3f}"
+                                f"{metric['score']:.3f} is below "
+                                f"{PER_SLIDE_SIMILARITY_MIN:.3f}"
                             ),
                             "slide": slide_number,
                             "slide_id": project.slides[slide_number - 1].id,
@@ -885,18 +986,17 @@ async def compose_html_pptx_project(
                         }
                     )
             deck_median = median(item["score"] for item in reopened_parity)
-            deck_median_min = fidelity.raster_targets.deck_median_similarity_min
-            if deck_median < deck_median_min:
+            if deck_median < DECK_MEDIAN_SIMILARITY_MIN:
                 issues.append(
                     {
                         "severity": "error",
                         "code": "render-parity-below-target",
                         "message": (
                             f"Deck reopened median parity {deck_median:.3f} is below "
-                            f"{deck_median_min:.3f}"
+                            f"{DECK_MEDIAN_SIMILARITY_MIN:.3f}"
                         ),
                         "median": round(deck_median, 6),
-                        "threshold": deck_median_min,
+                        "threshold": DECK_MEDIAN_SIMILARITY_MIN,
                     }
                 )
             reopened_status = (
@@ -914,7 +1014,6 @@ async def compose_html_pptx_project(
     else:
         output.unlink(missing_ok=True)
         candidate = None
-    _promote_dna_hard_failures(issues, hard_failures)
     surfaces = _render_surface_ledger(
         previews=previews,
         shells=shells,
@@ -927,67 +1026,34 @@ async def compose_html_pptx_project(
         if reopened_parity
         else None
     )
-    score_dimensions, observed_score = _fidelity_scorecard(
-        qa_ledger=qa_ledger,
-        qa_evidence=qa_evidence,
-        previews=previews,
-        shells=shells,
-        reopened=reopened_previews,
-        quality=quality,
-        issues=issues,
-        reopened_parity=reopened_parity,
-        reopened_status=reopened_status,
-        slide_count=len(project.slides),
-    )
-    if observed_score < fidelity.target_score:
-        issues.append(
-            {
-                "severity": "error",
-                "code": "fidelity-score-below-target",
-                "message": (
-                    f"Observed Slide DNA fidelity score {observed_score:.3f} is below "
-                    f"the required {fidelity.target_score:.3f}"
-                ),
-                "observed_score": observed_score,
-                "target_score": fidelity.target_score,
-            }
-        )
     accepted = not any(issue.get("severity") == "error" for issue in issues)
     if not accepted:
         output.unlink(missing_ok=True)
         candidate = None
     manifest_path = work_dir / "html-pptx-manifest.json"
     manifest = {
-        "schemaVersion": 6,
-        "engine": "evoflux-html-tailwind-hybrid",
+        "schemaVersion": 7,
+        "engine": "evoflux-html-shell-editable-text",
         "slideCount": len(project.slides),
-        "editableObjectCount": editable_count,
+        "editableTextObjectCount": editable_text_count,
+        "editableImageObjectCount": editable_image_count,
         "previewQuality": quality,
         "visualSource": "desktop-webview",
         "roundTrip": "structural-openxml",
-        "slideDna": {
-            "path": str(dna_path),
-            "sha256": dna_sha256,
-            "targetScore": fidelity.target_score,
-            "rasterTargets": fidelity.raster_targets.model_dump(),
+        "qualityPolicy": {
+            "evidence": "runtime-render-only",
+            "perSlideSimilarityMin": PER_SLIDE_SIMILARITY_MIN,
+            "deckMedianSimilarityMin": DECK_MEDIAN_SIMILARITY_MIN,
         },
-        "qaLedger": {
-            "path": str(qa_path),
-            "sha256": qa_sha256,
-        },
-        "fidelityScore": {
-            "targetScore": fidelity.target_score,
-            "observedScore": observed_score,
-            "dimensions": score_dimensions,
-            "accepted": accepted,
-        },
-        "representationLedger": dna_representation,
+        "textConversion": text_coverage,
+        "structuralCounts": structural_counts,
         "renderSurfaces": surfaces,
         "reopenedParity": {
             "metric": "normalized-rgb-rmse-similarity-v1",
             "perSlide": reopened_parity,
             "median": median_parity,
         },
+        "accepted": accepted,
     }
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return HtmlPptxPipelineResult(
@@ -999,10 +1065,12 @@ async def compose_html_pptx_project(
         manifest_path=manifest_path,
         issues=issues,
         metadata={
-            "engine": "evoflux-html-tailwind-hybrid",
+            "engine": "evoflux-html-shell-editable-text",
             "slide_count": len(project.slides),
-            "editable_object_count": editable_count,
-            "semantic_editable_object_count": editable_count,
+            "editable_object_count": editable_text_count + editable_image_count,
+            "editable_text_object_count": editable_text_count,
+            "semantic_editable_object_count": editable_text_count,
+            "text_conversion": text_coverage,
             "preview_quality": quality,
             "visual_verification": (
                 "reopened-plugin-preview"
@@ -1010,23 +1078,13 @@ async def compose_html_pptx_project(
                 else "failed-reopened-plugin-preview"
             ),
             "round_trip_verification": "structural-openxml",
-            "slide_dna": {
-                "path": str(dna_path),
-                "sha256": dna_sha256,
-                "target_score": fidelity.target_score,
-                "raster_targets": fidelity.raster_targets.model_dump(),
+            "quality_policy": {
+                "evidence": "runtime-render-only",
+                "per_slide_similarity_min": PER_SLIDE_SIMILARITY_MIN,
+                "deck_median_similarity_min": DECK_MEDIAN_SIMILARITY_MIN,
             },
-            "qa_ledger": {
-                "path": str(qa_path),
-                "sha256": qa_sha256,
-            },
-            "fidelity_score": {
-                "target_score": fidelity.target_score,
-                "observed_score": observed_score,
-                "dimensions": score_dimensions,
-                "accepted": accepted,
-            },
-            "representation_ledger": dna_representation,
+            "structural_counts": structural_counts,
+            "accepted": accepted,
             "render_surfaces": surfaces,
             "reopened_parity": {
                 "metric": "normalized-rgb-rmse-similarity-v1",

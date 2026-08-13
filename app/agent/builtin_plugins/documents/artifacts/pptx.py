@@ -21,7 +21,7 @@ class PptxArtifactDriver(ArtifactDriver):
     media_type = (
         "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
-    version = "evoflux-html-pptx-7"
+    version = "evoflux-html-pptx-8"
     required_extra = "documents"
 
     def catalog(self) -> dict[str, Any]:
@@ -33,7 +33,7 @@ class PptxArtifactDriver(ArtifactDriver):
         )
 
         return {
-            "workflow": "evoflux-html-hybrid-and-template-pptx",
+            "workflow": "evoflux-html-shell-and-template-pptx",
             "lanes": {
                 "new": html_pptx_catalog(),
                 "template": template_catalog(),
@@ -63,7 +63,7 @@ class PptxArtifactDriver(ArtifactDriver):
 
             project = load_html_pptx_project(project_path)
             value = validate_html_pptx_project(project, project_path)
-            engine = "evoflux-html-tailwind-hybrid"
+            engine = "evoflux-html-shell-editable-text"
         else:
             from app.agent.builtin_plugins.documents.engines.pptx_template import (
                 load_template_manifest,
@@ -133,7 +133,7 @@ def _html_result(result: Any, *, project_path: Path) -> ArtifactDriverResult:
         metadata=metadata,
         provenance={
             "project_sha256": file_sha256(project_path),
-            "engine": "evoflux-html-tailwind-hybrid",
+            "engine": "evoflux-html-shell-editable-text",
         },
     )
 

@@ -46,6 +46,7 @@ class OutboundContext:
     def label(self) -> str:
         return f"{self.channel}:{self.destination or 'external'}"
 
+
 _SENSITIVE_ENV_NAME = re.compile(
     r"(?:^|_)(?:API_?KEY|ACCESS_?KEY|AUTH|BEARER|CREDENTIAL|"
     r"PASSWORD|PASSWD|PRIVATE_?KEY|SECRET|SESSION|TOKEN)(?:_|$)",
@@ -285,6 +286,13 @@ class _Redactor:
 
     def _mask_phone(self, match: re.Match[str]) -> str:
         raw = match.group(0)
+        # SVG coordinate tuples such as viewBox="0 0 1280 720" resemble a
+        # spaced phone number but are executable design data. Redacting them
+        # corrupts slide markup and can trap the agent in a false repair loop.
+        if re.fullmatch(r"0\s+0\s+\d{2,5}\s+\d{2,5}", raw.strip()):
+            prefix = match.string[max(0, match.start() - 32) : match.start()]
+            if re.search(r"viewBox\s*=\s*[\"']?$", prefix, re.IGNORECASE):
+                return raw
         if not raw.startswith("+") and not re.search(r"[ ().-]", raw):
             return raw
         stripped = raw.strip()

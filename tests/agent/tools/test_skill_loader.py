@@ -1363,169 +1363,99 @@ class TestBuiltinSkills:
                         missing.append(f"{skill_file.parent.name}: {raw}")
         assert missing == []
 
-    def test_research_paper_briefing_dna_has_html_layout_registry(self):
-        template_dir = (
-            builtin_plugins_root() / "documents" / "skills" / "pptx" / "templates"
-        )
-        dna = json.loads(
-            (template_dir / "research-paper-briefing-dna.json").read_text(
+    def test_pptx_project_example_uses_schema_v7_without_manual_contract_files(self):
+        pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
+        project = json.loads(
+            (pptx_root / "examples" / "project.example.json").read_text(
                 encoding="utf-8"
             )
         )
-        layouts = dna["layouts"]
-        layout_ids = [layout["id"] for layout in layouts]
-        html_layout_classes = [layout["html_layout_class"] for layout in layouts]
-
-        assert dna["schema_version"] == 1
-        assert len(layouts) >= 14
-        assert len(layout_ids) == len(set(layout_ids))
-        assert {item["layout_id"] for item in dna["layout_selector"]} == set(layout_ids)
-        assert html_layout_classes == [
-            f"layout-{layout_id}" for layout_id in layout_ids
-        ]
-        assert len(html_layout_classes) == len(set(html_layout_classes))
-        assert dna["editability_contract"]["representation"] == "html-tailwind-hybrid"
-        assert "chart" in dna["editability_contract"]["flattened_components"]
-
-    def test_academic_engineering_blueprint_is_measured_and_schema_v6_ready(self):
-        pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
-        dna = json.loads(
-            (
-                pptx_root / "templates" / "academic-engineering-blueprint-dna.json"
-            ).read_text(encoding="utf-8")
-        )
-
-        assert dna["schema_version"] == 1
-        assert dna["project_schema_version"] == 6
-        assert dna["baseline_id"] == "powerpoint-office-like-baseline"
-        assert dna["project_contract"]["schema_version"] == 6
-
-        tokens = dna["visual_tokens"]
-        assert tokens["canvas"] == {
-            "width": 1280,
-            "height": 720,
-            "background": "#FFFFFF",
-            "aspect_ratio": "16:9",
-        }
-        assert tokens["measured_frame_px"] == {
-            "title_anchor": {"x": 28, "y": 18},
-            "title_rule": {"x": 28, "y": 66, "width": 1224, "height": 2},
-            "content_field": {"x": 28, "y": 78, "width": 1224, "height": 560},
-            "footer_band": {"x": 28, "y": 650, "width": 1224, "height": 54},
-            "safe_bottom": 16,
-        }
-        palette = tokens["palette"]
-        assert palette["structure"] == "#002E7E"
-        assert palette["pale_blue"] == "#EDF3FB"
-        assert palette["border"] == "#C8D6EC"
-        assert palette["semantic_red"] == "#D71920"
-
-        archetypes = dna["slide_archetypes"]
-        archetype_ids = [item["id"] for item in archetypes]
-        assert len(archetypes) == 10
-        assert len(set(archetype_ids)) == 10
-        assert [item["sequence_index"] for item in archetypes] == list(range(1, 11))
-        assert {item["archetype_id"] for item in dna["layout_selector"]} == set(
-            archetype_ids
-        )
-        assert dna["deck_rhythm"]["canonical_sequence"] == archetype_ids
-        assert dna["qa"]["fidelity_target"] == 90
-
-        skill = (pptx_root / "SKILL.md").read_text(encoding="utf-8")
-        assert "references/academic-engineering-blueprint-style.md" in skill
-        assert "templates/academic-engineering-blueprint-dna.json" in skill
-        assert "technical research or academic engineering deck" in skill
-
-    def test_powerpoint_slide_dna_defines_office_fidelity_gates(self):
-        pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
-        dna = json.loads(
-            (pptx_root / "templates" / "powerpoint-slide-dna.json").read_text(
-                encoding="utf-8"
-            )
-        )
-
-        assert dna["schema_version"] == 1
-        assert dna["format"] == "pptx"
-        assert dna["coordinate_contract"]["css_canvas_px"] == [1280, 720]
-        assert dna["coordinate_contract"]["emu_per_in"] == 914400
-        assert len(dna["slide_archetypes"]) >= 12
-        assert len({item["id"] for item in dna["slide_archetypes"]}) == len(
-            dna["slide_archetypes"]
-        )
-        visual_system = dna["visual_system_contract"]
-        assert visual_system["default_grid"]["columns"] == 12
-        assert "charts" in visual_system["required_token_groups"]
-        assert "source-notes" in visual_system["required_token_groups"]
-        assert "data-primary" in visual_system["semantic_color_roles"]
-
-        surfaces = {item["id"]: item for item in dna["render_surfaces"]}
-        assert surfaces["source-preview"]["required"] is True
-        assert surfaces["flattened-shell"]["required"] is True
-        assert surfaces["reopened-plugin-preview"]["required"] is True
-        assert surfaces["powerpoint-reference"]["required"] is False
-
-        features = {item["feature"]: item for item in dna["office_feature_matrix"]}
-        assert features["charts"]["html-hybrid-new"] == "flattened-fidelity"
-        assert features["charts"]["inherited-template"] == "preserve-native"
-        assert features["transitions-and-animations"]["html-hybrid-new"] == (
-            "unsupported"
-        )
-        scorecard = dna["fidelity_scorecard"]
-        assert scorecard["target_score"] == 90
-        assert sum(item["weight"] for item in scorecard["dimensions"]) == 100
-        assert scorecard["raster_targets"]["metric"] == (
-            "normalized-rgb-rmse-similarity-v1"
-        )
-        assert scorecard["structural_round_trip_has_visual_points"] is False
-        assert "unrendered-reopened-slide" in scorecard["hard_failures"]
-        issue_codes = {item["code"] for item in dna["issue_taxonomy"]}
-        assert "fidelity-score-below-target" in issue_codes
-        qa_ledger = json.loads(
-            (pptx_root / "examples" / "qa-ledger.json").read_text(encoding="utf-8")
-        )
-        assert [item["id"] for item in qa_ledger["dimensions"]] == [
-            item["id"] for item in scorecard["dimensions"]
-        ]
-
-    def test_pptx_skill_requires_slide_dna_and_reopened_render_evidence(self):
-        pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
-        skill = (pptx_root / "SKILL.md").read_text(encoding="utf-8")
-        checklist = (pptx_root / "references" / "pptx-fidelity-checklist.md").read_text(
+        validator = (pptx_root / "scripts" / "validate_slide_project.py").read_text(
             encoding="utf-8"
         )
-        normalized = " ".join(skill.split())
-        normalized_checklist = " ".join(checklist.split())
 
-        assert "references/slide-dna-contract.md" in skill
-        assert "templates/powerpoint-slide-dna.json" in skill
-        assert "examples/slide-dna.json" in skill
-        assert "examples/qa-ledger.json" in skill
-        assert "scripts/validate_slide_project.py" in skill
-        assert "references/pptx-fidelity-checklist.md" in skill
-        assert "project-local `slide-dna.json`" in normalized
-        assert '`artifact(action="inspect", format="pptx",' in skill
-        assert "at least 90/100" in normalized
-        assert "runtime-computed `observedScore`" in skill
-        assert "Structural OpenXML round-trip" in normalized
-        assert "Gate 4 — Reopened PPTX render" in checklist
-        assert "normalized-rgb-rmse-similarity-v1" in normalized_checklist
-        assert "Do not label this metric SSIM" in normalized_checklist
-        assert "Structural round-trip is mandatory and carries no visual" in checklist
+        assert project["schema_version"] == 7
+        assert project["width"] == 1280
+        assert project["height"] == 720
+        assert project["slides"]
+        assert "dna_path" not in project
+        assert "qa_ledger_path" not in project
+        assert "schema-v7 HTML-shell PPTX project" in validator
 
-    def test_pptx_skill_bundle_exposes_slide_dna_resources(self):
+    def test_pptx_skill_uses_html_shell_with_editable_text(self):
+        pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
+        skill = (pptx_root / "SKILL.md").read_text(encoding="utf-8")
+        contract = (pptx_root / "references" / "html-shell-editable-text.md").read_text(
+            encoding="utf-8"
+        )
+        example = (pptx_root / "examples" / "slide.example.html").read_text(
+            encoding="utf-8"
+        )
+        normalized = " ".join(f"{skill} {contract}".split())
+
+        assert "glyph-free raster shell" in normalized
+        assert 'data-pptx-editable="text"' in normalized
+        assert "only an optional compatibility or selection hint" in normalized
+        assert 'data-pptx-text-mode="art"' in normalized
+        assert (
+            "automatically extracts eligible ordinary visible HTML text" in normalized
+        )
+        assert "Do not annotate every text node" in normalized
+        assert 'data-pptx-editable="text"' not in example
+        assert 'data-pptx-name="Opening title"' in example
+        assert "native PowerPoint text frames" in normalized
+        assert "Do not reconstruct the complete design" in normalized
+        assert "must not expose a second baked-in copy" in normalized
+        assert '`artifact(action="inspect", format="pptx",' in normalized
+        assert "OpenXML reopen" in normalized
+
+    def test_pptx_skill_distills_content_image_and_template_workflows(self):
+        pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
+        grammar = (
+            pptx_root / "references" / "content-derived-design-grammar.md"
+        ).read_text(encoding="utf-8")
+        images = (pptx_root / "references" / "image-intelligence.md").read_text(
+            encoding="utf-8"
+        )
+        templates = (pptx_root / "references" / "template-layout-use.md").read_text(
+            encoding="utf-8"
+        )
+        grammar = " ".join(grammar.split())
+        images = " ".join(images.split())
+        templates = " ".join(templates.split())
+
+        assert "sample → converge → justify" in grammar
+        assert "4–5 layout families" in grammar
+        assert "author two structurally different showcase" in grammar
+        assert "focal point" in images
+        assert "negative space" in images
+        assert "safe crops" in images
+        assert "source, license or permission" in images
+        assert "master → layout → slide" in templates
+        assert "Choose layouts by fit" in templates
+        assert "placeholder_idx + placeholder_type" in templates
+        assert (
+            "current template lane does not inject an arbitrary HTML shell" in templates
+        )
+
+    def test_pptx_skill_bundle_exposes_only_distilled_resources(self):
         pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
         resources = {item["path"] for item in list_skill_resources(pptx_root)}
 
-        assert "references/slide-dna-contract.md" in resources
-        assert "references/pptx-fidelity-checklist.md" in resources
-        assert "templates/powerpoint-slide-dna.json" in resources
-        assert "examples/slide-dna.json" in resources
-        assert "examples/qa-ledger.json" in resources
-        assert "scripts/validate_slide_project.py" in resources
-        assert "references/academic-engineering-blueprint-style.md" in resources
-        assert "templates/academic-engineering-blueprint-dna.json" in resources
-        assert "templates/academic-engineering-blueprint.css" in resources
-        assert "templates/academic-engineering-blueprint.example.html" in resources
+        assert {
+            "references/content-derived-design-grammar.md",
+            "references/html-shell-editable-text.md",
+            "references/image-intelligence.md",
+            "references/template-layout-use.md",
+            "examples/project.example.json",
+            "examples/slide.example.html",
+            "examples/slide.example.css",
+            "examples/template-following.example.json",
+            "scripts/validate_slide_project.py",
+        } <= resources
+        assert not any("dna" in path.lower() for path in resources)
+        assert not any("qa-ledger" in path.lower() for path in resources)
+        assert not any(path.startswith("templates/") for path in resources)
 
     def test_pptx_skill_keeps_style_questions_inside_the_same_run(self):
         """Presentation style policy must not force avoidable chat turns."""
@@ -1534,11 +1464,13 @@ class TestBuiltinSkills:
         ).read_text(encoding="utf-8")
         normalized = " ".join(skill.split())
 
-        assert "Treat colors, typography, tone, density" in normalized
-        assert "call the `ask_user` tool" in normalized
+        assert "Treat explicit colors, typography, tone, density" in normalized
+        assert "call `ask_user` once" in normalized
         assert "deferred `ask_user`" not in normalized
-        assert "resume outline, authoring, preview, and publication" in normalized
-        assert "Never send a plain assistant message asking" in normalized
+        assert (
+            "resume outline, authoring, preview, and publication" in normalized.lower()
+        )
+        assert "never send a plain assistant message asking" in normalized
 
     @pytest.mark.asyncio
     async def test_builtin_skill_dir_points_at_auxiliary_files(self):

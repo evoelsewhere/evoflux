@@ -50,7 +50,14 @@ export async function renderHtmlSlide(request: RenderRequest) {
     [data-evoflux-shell-text], [data-evoflux-shell-text] * {
       color: transparent !important;
       -webkit-text-fill-color: transparent !important;
+      -webkit-text-stroke-color: transparent !important;
+      text-decoration-color: transparent !important;
       text-shadow: none !important;
+    }
+    [data-evoflux-shell-text]::marker, [data-evoflux-shell-text] *::marker {
+      color: transparent !important;
+      -webkit-text-fill-color: transparent !important;
+      -webkit-text-stroke-color: transparent !important;
     }
     [data-evoflux-shell-image] { visibility: hidden !important; }
   `
@@ -60,7 +67,7 @@ export async function renderHtmlSlide(request: RenderRequest) {
     <style>${slideRuntimeCss}</style>
     <style>${request.css}</style>
     <style>${shellRules}</style>
-    <style>html,body{margin:0;width:${request.width}px;height:${request.height}px;overflow:hidden;background:transparent}*{box-sizing:border-box}[data-slide-root]{width:${request.width}px;height:${request.height}px;overflow:hidden}</style>
+    <style>html{margin:0;width:${request.width}px;height:${request.height}px;overflow:hidden;background:transparent}body{margin:0;width:${request.width}px;height:${request.height}px;overflow:hidden}*{box-sizing:border-box}[data-slide-root]{width:${request.width}px;height:${request.height}px;overflow:hidden}</style>
   </head><body>${request.html}</body></html>`
   document.body.appendChild(iframe)
   try {
@@ -109,6 +116,7 @@ export async function renderHtmlSlide(request: RenderRequest) {
       preview_png_base64: pngPayload(preview.dataUrl),
       shell_png_base64: pngPayload(shell.dataUrl),
       editable_elements: editable.elements,
+      text_coverage: editable.text_coverage,
       issues,
     }
   } finally {

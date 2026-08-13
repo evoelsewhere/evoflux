@@ -14,7 +14,6 @@ from time import monotonic
 from typing import Any
 from uuid import UUID, uuid4
 
-RENDERER_LEASE_SECONDS = 15.0
 HEARTBEAT_RETENTION_SECONDS = 300.0
 
 
@@ -28,23 +27,43 @@ class _PendingRender:
 
 
 class HtmlSlideRenderBroker:
-    """Coordinate one-shot slide renders with a session's active WebView."""
+    """Coordinate one-shot slide renders with any active desktop WebView."""
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self._queues: dict[str, deque[UUID]] = defaultdict(deque)
         self._pending: dict[UUID, _PendingRender] = {}
         self._heartbeats: dict[str, float] = {}
+        self._renderer_heartbeats: dict[str, float] = {}
+
+    @staticmethod
+    def _fresh_heartbeats(values: dict[str, float], now: float) -> dict[str, float]:
+        return {
+            key: timestamp
+            for key, timestamp in values.items()
+            if now - timestamp <= HEARTBEAT_RETENTION_SECONDS
+        }
 
     async def heartbeat(self, session_id: str) -> None:
         async with self._lock:
             now = monotonic()
-            self._heartbeats = {
-                key: timestamp
-                for key, timestamp in self._heartbeats.items()
-                if now - timestamp <= HEARTBEAT_RETENTION_SECONDS
-            }
+            self._heartbeats = self._fresh_heartbeats(self._heartbeats, now)
             self._heartbeats[session_id] = now
+
+    async def heartbeat_renderer(self, renderer_id: str) -> None:
+        """Register one application-level WebView renderer.
+
+        Render capability belongs to the open desktop application, not to the
+        chat that happens to be selected in its UI. This lets background tasks
+        continue rendering when the user switches sessions.
+        """
+
+        async with self._lock:
+            now = monotonic()
+            self._renderer_heartbeats = self._fresh_heartbeats(
+                self._renderer_heartbeats, now
+            )
+            self._renderer_heartbeats[renderer_id] = now
 
     async def request(
         self,
@@ -62,15 +81,9 @@ class HtmlSlideRenderBroker:
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
         pending = _PendingRender(request_id, session_id, payload, future)
         async with self._lock:
-            last_heartbeat = self._heartbeats.get(session_id)
-            if (
-                last_heartbeat is None
-                or monotonic() - last_heartbeat > RENDERER_LEASE_SECONDS
-            ):
-                raise RuntimeError(
-                    "The HTML slide renderer is unavailable. Keep the EvoFlux "
-                    "desktop window open while generating slides."
-                )
+            # Queue first and let a WebView claim the work. A lease is only a
+            # health signal: rejecting before enqueue creates a race during
+            # dev reloads, background-session switches, and long raster jobs.
             self._pending[request_id] = pending
             self._queues[session_id].append(request_id)
         try:
@@ -108,6 +121,32 @@ class HtmlSlideRenderBroker:
             self._queues.pop(session_id, None)
             return None
 
+    async def claim_next(self, renderer_id: str) -> dict[str, Any] | None:
+        """Claim the oldest queued request across all desktop sessions."""
+
+        async with self._lock:
+            now = monotonic()
+            self._renderer_heartbeats = self._fresh_heartbeats(
+                self._renderer_heartbeats, now
+            )
+            self._renderer_heartbeats[renderer_id] = now
+            for session_id, queue in tuple(self._queues.items()):
+                while queue:
+                    request_id = queue.popleft()
+                    pending = self._pending.get(request_id)
+                    if pending is None or pending.future.done():
+                        continue
+                    pending.claimed = True
+                    if not queue:
+                        self._queues.pop(session_id, None)
+                    return {
+                        "request_id": str(request_id),
+                        "session_id": session_id,
+                        **pending.payload,
+                    }
+                self._queues.pop(session_id, None)
+            return None
+
     async def complete(
         self,
         session_id: str,
@@ -125,6 +164,18 @@ class HtmlSlideRenderBroker:
             pending.future.set_result(result)
             return True
 
+    async def complete_claim(
+        self,
+        request_id: UUID,
+        result: dict[str, Any],
+    ) -> bool:
+        async with self._lock:
+            pending = self._pending.get(request_id)
+            if pending is None or pending.future.done():
+                return False
+            pending.future.set_result(result)
+            return True
+
     async def fail(
         self,
         session_id: str,
@@ -138,6 +189,14 @@ class HtmlSlideRenderBroker:
                 or pending.session_id != session_id
                 or pending.future.done()
             ):
+                return False
+            pending.future.set_exception(RuntimeError(message))
+            return True
+
+    async def fail_claim(self, request_id: UUID, message: str) -> bool:
+        async with self._lock:
+            pending = self._pending.get(request_id)
+            if pending is None or pending.future.done():
                 return False
             pending.future.set_exception(RuntimeError(message))
             return True
