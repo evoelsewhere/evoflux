@@ -47,6 +47,7 @@ describe('delegation activity', () => {
       toolState: 'success',
       stream,
       handoff: null,
+      sessionWorking: true,
     })).toBe('queued')
 
     stream.status = 'working'
@@ -54,7 +55,23 @@ describe('delegation activity', () => {
       toolState: 'success',
       stream,
       handoff: null,
+      sessionWorking: true,
     })).toBe('running')
+  })
+
+  it('pauses an unfinished delegation when its session is no longer running', () => {
+    const stream = createDefaultAgentStream()
+    stream.status = 'offline'
+
+    expect(delegationDisplayStatus({
+      toolState: 'success',
+      stream,
+      handoff: null,
+      sessionWorking: false,
+    })).toBe('paused')
+    expect(delegationActivityLabel('paused', stream, null)).toBe(
+      'Session stopped before final handoff · resume to continue',
+    )
   })
 
   it('surfaces the active subagent tool in the lead card', () => {
@@ -94,6 +111,7 @@ describe('delegation activity', () => {
       toolState: 'success',
       stream,
       handoff,
+      sessionWorking: false,
     })).toBe('done')
     expect(delegationActivityLabel('done', stream, handoff)).toBe(
       'Audit completed successfully.',
@@ -137,6 +155,7 @@ describe('delegation activity', () => {
       toolState: 'success',
       stream: createDefaultAgentStream(),
       handoff: { status: 'final', workspace_result: { repositories: [] } },
+      sessionWorking: false,
     })).toBe('review')
   })
 
@@ -146,6 +165,7 @@ describe('delegation activity', () => {
       toolState: 'success',
       stream: createDefaultAgentStream(),
       handoff,
+      sessionWorking: true,
     })).toBe('running')
     expect(delegationActivityLabel('running', undefined, handoff)).toBe(
       'Partial handoff · Completed the audit; running tests next.',

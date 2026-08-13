@@ -25,6 +25,7 @@ export function DelegationTaskCards({
   const parsed = useMemo(() => parseDelegationCall(args, result), [args, result])
   const agentStreams = useTeamStore((state) => state.agentStreams)
   const activityLog = useTeamStore((state) => state.activityLog)
+  const sessionWorking = useTeamStore((state) => state.isTeamWorking)
   const leadName = useTeamStore((state) => state.leadName)
   const setActiveAgent = useTeamStore((state) => state.setActiveAgent)
   const leadStream = leadName ? agentStreams[leadName] : undefined
@@ -50,7 +51,12 @@ export function DelegationTaskCards({
       leadInboxBlocks,
     )
     const handoff = handoffMatch?.artifact ?? null
-    const status = delegationDisplayStatus({ toolState, stream, handoff })
+    const status = delegationDisplayStatus({
+      toolState,
+      stream,
+      handoff,
+      sessionWorking,
+    })
     return { handoff, handoffMatch, status, stream, target }
   })
   const activeCount = targets.filter(
