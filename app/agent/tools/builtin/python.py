@@ -32,7 +32,6 @@ from loguru import logger
 from pydantic import Field
 
 from app.agent.artifacts import shell_output_dir
-from app.agent.process_sandbox import sandboxed_process_argv
 from app.agent.sandbox import get_sandbox
 from app.agent.tools.registry import InjectedArg, Tool
 
@@ -120,22 +119,14 @@ async def _python(
         tmp.close()
 
     try:
-        # Keep arbitrary Python execution under the same native containment
-        # policy as shell commands.  In Required mode this also fails closed
-        # on platforms without a supported backend.
-        exec_bin, exec_argv = sandboxed_process_argv(
-            sys.executable,
-            ["-u", tmp_path],
-            sandbox=sandbox,
-            cwd=cwd,
-        )
         from app.agent.tools.builtin.shell import _scrubbed_env
 
         env = _scrubbed_env(inherit=sandbox.inherit_shell_environment)
         try:
             proc = await asyncio.create_subprocess_exec(
-                exec_bin,
-                *exec_argv,
+                sys.executable,
+                "-u",
+                tmp_path,
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
@@ -161,7 +152,7 @@ async def _python(
 
             def _run_sync() -> subprocess.CompletedProcess[bytes]:
                 return subprocess.run(  # noqa: S603
-                    [exec_bin, *exec_argv],
+                    [sys.executable, "-u", tmp_path],
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,

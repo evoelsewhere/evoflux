@@ -25,7 +25,6 @@ def observation_sandbox(tmp_path):
         SandboxConfig(
             workspace=str(tmp_path),
             session_id="observation-test",
-            native_process_isolation="best_effort",
             denied_roots=[],
             denied_patterns=[],
         )

@@ -36,7 +36,6 @@ def _make_sandbox(
         workspace=str(tmp_path / "ws"),
         denied_roots=denied if denied is not None else [],
         denied_patterns=denied_patterns if denied_patterns is not None else [],
-        native_process_isolation="required",
     )
 
 
@@ -91,8 +90,6 @@ def test_session_sandbox_loads_saved_process_security_policy(
             denied_patterns=["**/.env"],
             max_execution_seconds=45,
             max_output_bytes=8192,
-            allow_network=True,
-            native_process_isolation="required",
             inherit_shell_environment=True,
             load_shell_profile=True,
         ),
@@ -103,8 +100,6 @@ def test_session_sandbox_loads_saved_process_security_policy(
     assert sandbox.denied_patterns == ["**/.env"]
     assert sandbox.max_execution_seconds == 45
     assert sandbox.max_output_bytes == 8192
-    assert sandbox.allow_network is True
-    assert sandbox.native_process_isolation == "required"
     assert sandbox.inherit_shell_environment is True
     assert sandbox.load_shell_profile is True
 
@@ -161,7 +156,6 @@ def test_workspace_under_denied_root_still_allowed(tmp_path):
         workspace=str(workspace),
         memory=str(tmp_path / "mem"),
         denied_roots=[denied],
-        native_process_isolation="required",
     )
     # Files inside workspace are fine
     sandbox.validate_path("file.txt")
@@ -175,7 +169,6 @@ def test_state_logs_under_denied_root_allowed(tmp_path):
         workspace=str(tmp_path / "ws"),
         denied_roots=[Path(settings.EVOFLUX_STATE_DIR).resolve()],
         denied_patterns=[],
-        native_process_isolation="required",
     )
     log_path = (Path(settings.EVOFLUX_STATE_DIR) / "logs" / "app" / "app.log").resolve()
 
@@ -187,7 +180,6 @@ def test_state_non_log_paths_still_rejected(tmp_path):
         workspace=str(tmp_path / "ws"),
         denied_roots=[Path(settings.EVOFLUX_STATE_DIR).resolve()],
         denied_patterns=[],
-        native_process_isolation="required",
     )
 
     state_path = (Path(settings.EVOFLUX_STATE_DIR) / "private").resolve()
@@ -206,16 +198,14 @@ def test_tilde_prefix_rejected(tmp_path):
         workspace=str(tmp_path / "ws"),
         denied_roots=[],
         denied_patterns=[],
-        native_process_isolation="required",
     )
     with pytest.raises(PermissionError, match="Tilde paths are not allowed"):
         sandbox.validate_path("~/foo")
 
 
-def test_best_effort_keeps_application_path_sandbox(tmp_path):
+def test_application_path_sandbox_enforces_all_configured_boundaries(tmp_path):
     sandbox = SandboxConfig(
         workspace=str(tmp_path / "ws"),
-        native_process_isolation="best_effort",
         denied_roots=[tmp_path / "denied"],
         denied_patterns=["**/.env"],
         read_only_paths=[str(tmp_path / "readonly")],

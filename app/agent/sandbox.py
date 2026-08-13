@@ -4,11 +4,9 @@ Agent filesystem operations are confined to the active workspace, explicitly
 granted project roots, read-only roots, and session artifact locations.
 Sensitive deny patterns are applied even inside allowed roots.
 
-Those boundaries are enforced at the application layer for both isolation
-modes. ``required`` additionally wraps child processes in the strongest native
-containment backend available. ``best_effort`` only means that native process
-containment is unavailable or intentionally disabled; it must never disable the
-workspace allowlist, deny patterns, read-only roots, or write leases.
+Those boundaries are enforced at the application layer. Child processes are
+not wrapped in an operating-system sandbox, so command validation is a guardrail
+rather than a containment boundary.
 
 - ``EVOFLUX_DATA_DIR``    — EvoFlux's SQLite DB and other internal data.
 - ``EVOFLUX_STATE_DIR``   — logs, telemetry, OTEL rollups
@@ -57,7 +55,6 @@ from app.core.config import settings
 # ── Module-level defaults (no env-var overrides) ──────────────────────────
 DEFAULT_MAX_EXECUTION_SECONDS = 600
 DEFAULT_MAX_OUTPUT_BYTES = 131072
-DEFAULT_ALLOW_NETWORK = False
 
 # ── Context-aware Sandbox ───────────────────────────────────────────────
 
@@ -94,8 +91,6 @@ class SandboxConfig:
         denied_patterns: list[str] | None = None,
         max_execution_seconds: int | None = None,
         max_output_bytes: int | None = None,
-        allow_network: bool | None = None,
-        native_process_isolation: Literal["required", "best_effort"] | None = None,
         inherit_shell_environment: bool | None = None,
         load_shell_profile: bool | None = None,
         outbound_data_policy: Literal["block", "redact", "off"] | None = None,
@@ -188,24 +183,6 @@ class SandboxConfig:
                 file_config.max_output_bytes
                 if file_config is not None
                 else DEFAULT_MAX_OUTPUT_BYTES
-            )
-        )
-        self.allow_network: bool = (
-            allow_network
-            if allow_network is not None
-            else (
-                file_config.allow_network
-                if file_config is not None
-                else DEFAULT_ALLOW_NETWORK
-            )
-        )
-        self.native_process_isolation: Literal["required", "best_effort"] = (
-            native_process_isolation
-            if native_process_isolation is not None
-            else (
-                file_config.native_process_isolation
-                if file_config is not None
-                else "required"
             )
         )
         self.inherit_shell_environment: bool = (
@@ -413,9 +390,9 @@ class SandboxConfig:
             except OSError:
                 continue
             # The first shell token is the executable, not a workspace
-            # operand. Native process containment still constrains what it
-            # can access; allowing it here also lets callers report a missing
-            # executable cleanly instead of misclassifying it as file access.
+            # operand. Skipping it lets callers report a missing executable
+            # cleanly instead of misclassifying it as file access. This scan
+            # remains a guardrail and does not constrain the spawned process.
             if index == 0:
                 continue
             denied = self._is_denied(resolved)

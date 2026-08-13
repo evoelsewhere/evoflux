@@ -370,7 +370,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ツール承認が必要なとき、権限バーで Once、Always、Reject を選びます。',
       'エージェントが続行前に構造化回答を必要とするとき ask-user 質問モーダルが出ます — 答えて実行を解放します。',
       'Goal モードはセッションの権限や sandbox スコープを広げません — `/goal` 前にシールドを意図的に設定。',
-      'Bypass はすべての権限チェックをスキップ — 最速ですが、厳しめの denylist がある信頼できるローカル sandbox だけで。',
+      'Bypass はすべての権限チェックをスキップ — 最速ですが、使い捨て環境または完全に信頼できるホストだけで使用。',
       'Always は一致ルールに対して粘着 — エージェントが何を走らせたいか学んでいる間は Once を優先。'
 ],
     blocks: [
@@ -380,7 +380,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'きめ細かい制御により、ask、accept-edits、plan、auto、bypass を選べます。権限は「いつ聞くか」を決め、Required は deny glob を強制します。Best effort は Coding 互換性のため sandbox 強制を明示的に無効化します。',
+        text: 'きめ細かい制御により、ask、accept-edits、plan、auto、bypass を選べます。権限は「いつ聞くか」を決め、ファイルシステムツールは workspace と deny glob の検査を継続します。shell コマンドは denied path の best-effort 検査後にホスト上で直接実行されます。',
       },
       {
         type: 'p',
@@ -394,12 +394,12 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '3 Plan — 実行前にプランして承認。',
           '4 Auto — 操作を自動承認。',
           '5 Bypass — 権限チェックを完全スキップ。',
-          'Sandbox — bypass 下でも deny glob はブロック。'
+          'ファイルシステムツール — bypass 下でも deny glob を適用。'
 ],
       },
       {
         type: 'p',
-        text: 'どのモードをいつ使うか: 未知のレポや本番隣接ツリーは ask; ツリーを信頼した日常 Coding は accept-edits; 先に読みたい多段リファクタや 大きな変更は plan; 信頼 sandbox と予定メンテは auto; bypass は捨て環境や厳しめ denylist 上での短い意図的バーストだけ。',
+        text: 'どのモードをいつ使うか: 未知のレポや本番隣接ツリーは ask; ツリーを信頼した日常 Coding は accept-edits; 先に読みたい多段リファクタや大きな変更は plan; 信頼できるホストと予定メンテは auto; bypass は使い捨て環境での短い意図的バーストだけ。',
       },
       {
         type: 'p',
@@ -2239,7 +2239,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'settings',
     title: 'Sandbox とアウトバウンド保護',
     summary:
-      'deny glob、隔離、worktree 配置、ネットワークポリシー、PII リダクションを設定します。Required はファイル境界を強制し、Best effort は信頼済み Coding workspace 向けに強制を無効化します。',
+      'ファイルシステムツールの deny glob、worktree 配置、プロセス制限、shell 環境、アウトバウンド PII リダクションを設定します。',
     keywords: [
       'sandbox',
       'deny',
@@ -2271,15 +2271,15 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'denylist ファイルシステム sandbox は EvoFlux 状態とキャッシュディレクトリを守り、エージェントのファイル/プロセスアクセスを制約し、有効時は機微なアウトバウンド内容をモデルプロバイダ到達前に redact またはブロックできます。すべての権限モードの下のハードフロアです。',
+        text: '組み込みファイルシステムツールは、すべての権限モードで workspace root、read-only root、deny pattern を適用します。shell コマンドは明らかな denied path を検査しますが、OS レベルの containment なしでホスト上に直接実行されます。',
       },
       {
         type: 'p',
-        text: '権限モードはいつ聞くかを決めます。Required は禁止境界を強制し、Best effort にはその sandbox 下限がありません。Goal は選択中の隔離ポリシーを維持します。',
+        text: '権限モードはいつ聞くかを決めます。組み込みツールにはアプリケーションレベルのパス検査が残り、shell コマンド検査はセキュリティ境界ではなくガードレールです。Goal モードも同じポリシーを維持します。',
       },
       {
         type: 'p',
-        text: 'Settings → Sandbox を開く。deny glob を追加し、隔離オプションを選び、Coding の worktree 配置を設定し、必要ならアウトバウンド PII redact/block を有効化。変更後にサンプルツール呼び出しで再テスト。WebBridge 向けに Settings → Browser ドメインポリシーと組み合わせ。',
+        text: 'Settings → Sandbox を開く。deny glob を追加し、Coding の worktree 配置、プロセス制限、shell 環境を設定し、必要ならアウトバウンド PII redact/block を有効化。変更後にサンプルツール呼び出しで再テスト。WebBridge 向けに Settings → Browser ドメインポリシーと組み合わせ。',
       },
       {
         type: 'tips',
@@ -2456,7 +2456,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Memory — 長期 wiki + Dream スケジュール',
           'Connection — バンドル sidecar vs 外部 URL / アクセスキー',
           'Git & reviews — ホスト接続、タイムアウト、diff サイズ、force-with-lease',
-          'Sandbox — deny glob、隔離、worktree 配置、アウトバウンド PII',
+          'Sandbox — deny glob、プロセス制限、worktree 配置、アウトバウンド PII',
           'Browser — 内蔵 WebView + WebBridge マスターポリシー',
           'Notifications — フォーカス外のデスクトップ/モバイルアラート; テスト ping',
           'Appearance — テーマ、アクセント、フォント、モーション、ロケール（en / vi / ja）',

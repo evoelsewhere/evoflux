@@ -342,7 +342,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'chat',
     title: 'Permission mode và plan review',
     summary:
-      'Điều khiển độ tự do của tool bằng ask, accept-edits, plan, auto hoặc bypass — rồi duyệt tool Once/Always/Reject và review plan bằng Accept/Revise/Reject. Deny globs áp dưới mọi mode khi isolation là Required.',
+      'Điều khiển độ tự do của tool bằng ask, accept-edits, plan, auto hoặc bypass — rồi duyệt tool Once/Always/Reject và review plan bằng Accept/Revise/Reject. Tool filesystem áp deny glob dưới mọi mode.',
     keywords: [
       'permission',
       'ask',
@@ -371,7 +371,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Khi tool cần duyệt, chọn Once, Always hoặc Reject trên permission bar.',
       'Ask-user modal hiện khi agent cần câu trả lời có cấu trúc trước khi tiếp tục — trả lời để mở khóa run.',
       'Goal không bao giờ nới permission hay sandbox scope của session — set shield chủ đích trước `/goal`.',
-      'Bypass bỏ mọi permission check — nhanh nhất, chỉ dùng trong sandbox local tin cậy với denylist chặt.',
+      'Bypass bỏ mọi permission check — nhanh nhất, chỉ dùng trong môi trường disposable hoặc host bạn hoàn toàn tin cậy.',
       'Always dính theo rule khớp — ưu tiên Once khi còn đang học agent muốn chạy gì.'
 ],
     blocks: [
@@ -381,7 +381,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Kiểm soát mịn giúp bạn giữ tay trên việc rủi ro (ask), nhanh hơn với edit (accept-edits), buộc cổng plan rõ (plan), chạy không người canh trong cây tin cậy (auto), hoặc bỏ prompt hẳn (bypass). Permission quyết định khi nào hỏi; Required enforce deny globs, còn Best effort chủ đích tắt sandbox để tương thích Coding.',
+        text: 'Kiểm soát mịn giúp bạn giữ tay trên việc rủi ro (ask), nhanh hơn với edit (accept-edits), buộc cổng plan rõ (plan), chạy không người canh trong cây tin cậy (auto), hoặc bỏ prompt hẳn (bypass). Permission quyết định khi nào hỏi; tool filesystem vẫn kiểm tra workspace và deny glob. Lệnh shell chạy trực tiếp trên host sau bước quét denied path ở mức best effort.',
       },
       {
         type: 'p',
@@ -395,12 +395,12 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           '3 Plan — lập plan rồi duyệt trước khi chạy.',
           '4 Auto — tự approve thao tác.',
           '5 Bypass — bỏ permission check hoàn toàn.',
-          'Sandbox — vẫn chặn deny globs kể cả dưới bypass.'
+          'Tool filesystem — vẫn áp deny glob kể cả dưới bypass.'
 ],
       },
       {
         type: 'p',
-        text: 'Chọn mode nào: ask cho repo lạ và cây sát production; accept-edits cho Coding ngày thường khi đã tin cây; plan cho refactor nhiều bước và thay đổi lớn bạn muốn đọc trước; auto cho sandbox tin cậy và bảo trì theo lịch; bypass chỉ burst ngắn, chủ đích trên môi trường disposable hoặc denylist chặt.',
+        text: 'Chọn mode nào: ask cho repo lạ và cây sát production; accept-edits cho Coding ngày thường khi đã tin cây; plan cho refactor nhiều bước và thay đổi lớn bạn muốn đọc trước; auto cho host tin cậy và bảo trì theo lịch; bypass chỉ dùng theo burst ngắn, có chủ đích trong môi trường disposable.',
       },
       {
         type: 'p',
@@ -2219,7 +2219,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'settings',
     title: 'Sandbox và outbound protection',
     summary:
-      'Cấu hình deny globs, isolation, vị trí worktree, network policy và PII redaction. Required enforce biên filesystem; Best effort tắt enforcement cho workspace Coding tin cậy.',
+      'Cấu hình deny glob cho tool filesystem, vị trí worktree, giới hạn process, môi trường shell và PII redaction outbound.',
     keywords: [
       'sandbox',
       'deny',
@@ -2250,15 +2250,15 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Khi isolation là Required, denylist filesystem sandbox bảo vệ thư mục state và cache của EvoFlux, đồng thời giới hạn truy cập file/process dưới mọi permission mode. Best effort chủ đích bỏ các giới hạn filesystem này để tương thích Coding.',
+        text: 'Tool filesystem tích hợp enforce workspace root, read-only root và deny pattern dưới mọi permission mode. Lệnh shell được quét các denied path rõ ràng nhưng chạy trực tiếp trên host, không có containment cấp hệ điều hành.',
       },
       {
         type: 'p',
-        text: 'Permission mode quyết định khi nào hỏi. Required quyết định cái gì không bao giờ được phép; Best effort chạy không có sàn sandbox đó. Goal giữ nguyên isolation policy đang chọn.',
+        text: 'Permission mode quyết định khi nào hỏi. Kiểm tra path ở application-level vẫn áp dụng cho tool tích hợp, còn quét lệnh shell chỉ là guardrail chứ không phải security boundary. Goal giữ nguyên policy này.',
       },
       {
         type: 'p',
-        text: 'Mở Settings → Sandbox. Thêm deny globs, chọn isolation, set vị trí worktree cho Coding, và bật outbound PII redact/block khi cần. Test lại một tool call mẫu sau thay đổi. Ghép với domain policy Settings → Browser cho WebBridge.',
+        text: 'Mở Settings → Sandbox. Thêm deny glob, set vị trí worktree cho Coding, cấu hình giới hạn process và môi trường shell, rồi bật outbound PII redact/block khi cần. Test lại một tool call mẫu sau thay đổi. Ghép với domain policy Settings → Browser cho WebBridge.',
       },
       {
         type: 'tips',
@@ -2432,7 +2432,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Memory — wiki dài hạn + lịch Dream',
           'Connection — sidecar đóng gói vs URL ngoài / access key',
           'Git & reviews — kết nối host, timeout, diff size, force-with-lease',
-          'Sandbox — deny globs, isolation, vị trí worktree, outbound PII',
+          'Sandbox — deny glob, giới hạn process, vị trí worktree, outbound PII',
           'Browser — built-in WebView + master policy WebBridge',
           'Notifications — alert desktop/mobile khi không focus; test ping',
           'Appearance — theme, accent, fonts, motion, locale (en / vi / ja)',

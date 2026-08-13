@@ -234,7 +234,6 @@ async def test_read_allows_active_session_artifact_path_only(sandbox_workspace):
         SandboxConfig(
             workspace=str(sandbox_workspace),
             session_id=session_id,
-            native_process_isolation="required",
         )
     )
     try:
@@ -274,7 +273,6 @@ async def test_read_rejects_data_dir_outside_active_session(sandbox_workspace):
         SandboxConfig(
             workspace=str(sandbox_workspace),
             session_id="s",
-            native_process_isolation="required",
         )
     )
     try:
@@ -296,7 +294,6 @@ async def test_read_allows_log_paths(sandbox_workspace):
         SandboxConfig(
             workspace=str(sandbox_workspace),
             session_id="s",
-            native_process_isolation="required",
         )
     )
     try:
@@ -330,7 +327,6 @@ async def test_sandbox_validation(sandbox_workspace, tmp_path):
             workspace=str(sandbox_workspace),
             denied_roots=[denied],
             denied_patterns=[],
-            native_process_isolation="required",
         )
     )
 

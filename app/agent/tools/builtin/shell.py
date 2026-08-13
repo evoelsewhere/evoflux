@@ -13,7 +13,6 @@ from typing import Annotated, Any
 from loguru import logger
 from pydantic import Field
 
-from app.agent.process_sandbox import sandboxed_process_argv
 from app.agent.sandbox import get_sandbox
 from app.agent.tools.builtin import shell_runtime as _shell_mod
 from app.agent.tools.builtin.process import (
@@ -251,12 +250,6 @@ async def _shell(
         command,
         load_profile=sandbox.load_shell_profile,
     )
-    exec_bin, exec_argv = sandboxed_process_argv(
-        shell_bin,
-        argv,
-        sandbox=sandbox,
-        cwd=cwd,
-    )
     extra: dict[str, Any] = {}
     if sys.platform == "win32":
         extra["creationflags"] = (
@@ -276,8 +269,8 @@ async def _shell(
     )
     try:
         proc = await asyncio.create_subprocess_exec(
-            exec_bin,
-            *exec_argv,
+            shell_bin,
+            *argv,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,

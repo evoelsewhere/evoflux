@@ -13,8 +13,6 @@ File shape (YAML)::
       - "**/.env.*"
       - "**/secrets/**"
     worktree_location: repository
-    native_process_isolation: required  # fail closed when native containment is unavailable
-    allow_network: false
     inherit_shell_environment: false
     load_shell_profile: false
     outbound_data_policy: block
@@ -32,7 +30,7 @@ from typing import Literal
 
 import yaml
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.config import settings
 
@@ -62,17 +60,20 @@ class SandboxFileConfig(BaseModel):
             "or the per-user EvoFlux data directory."
         ),
     )
-    native_process_isolation: Literal["required", "best_effort"] = Field(
-        default="required",
-        description=(
-            "Require native process containment. Best effort keeps application "
-            "allowlists and skips only the native process wrapper."
-        ),
-    )
-    allow_network: bool = Field(
-        default=False,
-        description="Allow shell subprocesses to access the network.",
-    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_removed_process_controls(cls, value: object) -> object:
+        """Accept old config files after native process controls were removed."""
+        if isinstance(value, dict) and {
+            "native_process_isolation",
+            "allow_network",
+        }.intersection(value):
+            value = dict(value)
+            value.pop("native_process_isolation", None)
+            value.pop("allow_network", None)
+        return value
+
     inherit_shell_environment: bool = Field(
         default=False,
         description=(
@@ -231,14 +232,12 @@ def save_config(cfg: SandboxFileConfig, path: Path | None = None) -> Path:
 
     logger.info(
         "sandbox_config_saved path={} patterns={} worktree_location={} "
-        "native_isolation={} network={} inherit_env={} shell_profile={} "
+        "inherit_env={} shell_profile={} "
         "outbound_data_policy={} outbound_pii_policy={} "
         "max_seconds={} max_output_bytes={}",
         resolved,
         len(cfg.denied_patterns),
         cfg.worktree_location,
-        cfg.native_process_isolation,
-        cfg.allow_network,
         cfg.inherit_shell_environment,
         cfg.load_shell_profile,
         cfg.outbound_data_policy,

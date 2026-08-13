@@ -12,8 +12,8 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from app.agent.sandbox_config import DEFAULT_DENIED_PATTERNS
-from app.cli.seed import SeedDownloadError, SeedResult
 from app.api.routes import settings as settings_routes
+from app.cli.seed import SeedDownloadError, SeedResult
 from app.api.routes.settings import router
 from app.agent.providers.codex.oauth import CodexOAuth
 from app.agent.providers.copilot.oauth import CopilotOAuth
@@ -33,15 +33,6 @@ def isolated_config(tmp_path: Path):
     target = tmp_path / "sandbox.yaml"
     with patch("app.agent.sandbox_config.config_path", return_value=target):
         yield target
-
-
-@pytest.fixture(autouse=True)
-def _stable_native_sandbox_backend(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(
-        settings_routes,
-        "native_process_sandbox_backend",
-        lambda: "test-backend",
-    )
 
 
 @pytest.fixture(autouse=True)
@@ -169,15 +160,12 @@ def test_get_sandbox_returns_seed_defaults_when_file_missing(
     assert response.json() == {
         "denied_patterns": list(DEFAULT_DENIED_PATTERNS),
         "worktree_location": "repository",
-        "native_process_isolation": "required",
-        "allow_network": False,
         "inherit_shell_environment": False,
         "load_shell_profile": False,
         "outbound_data_policy": "block",
         "outbound_pii_policy": "standard",
         "max_execution_seconds": 600,
         "max_output_bytes": 131072,
-        "native_backend": "test-backend",
     }
     # GET must not write the file.
     assert not isolated_config.exists()
@@ -188,8 +176,6 @@ def test_put_sandbox_persists_patterns(isolated_config: Path) -> None:
     body = {
         "denied_patterns": ["**/.env", "**/secrets/**"],
         "worktree_location": "user_data",
-        "native_process_isolation": "required",
-        "allow_network": True,
         "inherit_shell_environment": True,
         "load_shell_profile": True,
         "outbound_data_policy": "block",
@@ -199,12 +185,12 @@ def test_put_sandbox_persists_patterns(isolated_config: Path) -> None:
     }
     response = client.put("/api/settings/sandbox", json=body)
     assert response.status_code == 200
-    assert response.json() == {**body, "native_backend": "test-backend"}
+    assert response.json() == body
     assert isolated_config.exists()
 
     # Round-trip — GET reflects what was saved.
     again = client.get("/api/settings/sandbox")
-    assert again.json() == {**body, "native_backend": "test-backend"}
+    assert again.json() == body
 
 
 def test_put_sandbox_strips_blank_patterns(isolated_config: Path) -> None:
@@ -217,15 +203,12 @@ def test_put_sandbox_strips_blank_patterns(isolated_config: Path) -> None:
     assert response.json() == {
         "denied_patterns": ["**/.env", "bar/*"],
         "worktree_location": "repository",
-        "native_process_isolation": "required",
-        "allow_network": False,
         "inherit_shell_environment": False,
         "load_shell_profile": False,
         "outbound_data_policy": "block",
         "outbound_pii_policy": "standard",
         "max_execution_seconds": 600,
         "max_output_bytes": 131072,
-        "native_backend": "test-backend",
     }
 
 

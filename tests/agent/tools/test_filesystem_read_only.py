@@ -24,7 +24,6 @@ def read_only_source(tmp_path):
     config = SandboxConfig(
         workspace=str(tmp_path / "target-repo"),
         read_only_paths=[str(source)],
-        native_process_isolation="required",
     )
     token = set_sandbox(config)
     yield source

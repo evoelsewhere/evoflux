@@ -352,7 +352,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'chat',
     title: 'Permission modes and plan review',
     summary:
-      'Control how freely tools run with ask, accept-edits, plan, auto, or bypass — then approve tools Once/Always/Reject and review plans with Accept/Revise/Reject. Sandbox deny globs apply underneath every mode when native isolation is Required.',
+      'Control how freely tools run with ask, accept-edits, plan, auto, or bypass — then approve tools Once/Always/Reject and review plans with Accept/Revise/Reject. Filesystem-tool deny globs apply underneath every mode.',
     keywords: [
       'permission',
       'ask',
@@ -384,7 +384,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'When a tool needs approval, choose Once, Always, or Reject on the permission bar.',
       'Ask-user question modals appear when the agent needs structured answers before continuing — answer to unblock the run.',
       'Goal mode never expands the session’s permissions or sandbox scope — set the shield deliberately before `/goal`.',
-      'Bypass skips all permission checks — fastest, but use only in trusted local sandboxes with a tight denylist.',
+      'Bypass skips all permission checks — fastest, but use only in a disposable environment or a host you fully trust.',
       'Always is sticky for matching rules — Prefer Once when you are still learning what the agent wants to run.'
 ],
     blocks: [
@@ -394,7 +394,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Fine-grained control lets you stay hands-on for risky work (ask), move faster on edits (accept-edits), force an explicit plan gate (plan), run unattended in a trusted tree (auto), or skip prompts entirely (bypass). Permissions decide when to ask; Required isolation enforces deny globs, while Best effort intentionally disables sandbox enforcement for compatibility.',
+        text: 'Fine-grained control lets you stay hands-on for risky work (ask), move faster on edits (accept-edits), force an explicit plan gate (plan), run unattended in a trusted tree (auto), or skip prompts entirely (bypass). Permissions decide when to ask; filesystem tools still apply workspace and deny-glob checks. Shell commands run directly on the host after a best-effort denied-path scan.',
       },
       {
         type: 'p',
@@ -408,12 +408,12 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           '3 Plan — plan then approve before execution.',
           '4 Auto — automatically approve operations.',
           '5 Bypass — skip permission checks entirely.',
-          'Required sandbox — still blocks deny globs even under bypass.'
+          'Filesystem tools — still apply deny globs even under bypass.'
 ],
       },
       {
         type: 'p',
-        text: 'When to use which mode: ask for unfamiliar repos and production-adjacent trees; accept-edits for day-to-day Coding once you trust the tree; plan for multi-step refactors and large changes you want to read first; auto for trusted sandboxes and scheduled maintenance; bypass only for short, deliberate bursts on disposable or tightly denylisted environments.',
+        text: 'When to use which mode: ask for unfamiliar repos and production-adjacent trees; accept-edits for day-to-day Coding once you trust the tree; plan for multi-step refactors and large changes you want to read first; auto for trusted hosts and scheduled maintenance; bypass only for short, deliberate bursts in disposable environments.',
       },
       {
         type: 'p',
@@ -2270,7 +2270,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'settings',
     title: 'Sandbox and outbound protection',
     summary:
-      'Configure deny globs, isolation, worktree location, network policy, and PII redaction. Required enforces filesystem bounds; Best effort disables sandbox enforcement for trusted Coding compatibility.',
+      'Configure filesystem-tool deny globs, worktree location, process limits, environment exposure, and outbound PII redaction.',
     keywords: [
       'sandbox',
       'deny',
@@ -2294,7 +2294,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Deny patterns use ** and * globs; help popovers in Settings explain syntax.',
       'Worktree location (repository vs user_data) lives on the Sandbox page.',
       'Outbound redact/block runs before content reaches the provider when enabled.',
-      'Required sandbox still applies under Goal mode; Best effort remains an explicit enforcement opt-out.',
+      'Goal mode keeps the same workspace and deny-pattern policy.',
       'Symlinks into blocked roots are rejected; shell commands are tokenized for denied-path checks.',
       'Combine accept-edits or auto with a tight denylist for day-to-day coding speed.',
       'Deny credential caches and unrelated disks even if you trust the model.',
@@ -2304,15 +2304,15 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'With native isolation set to Required, the denylist filesystem sandbox protects EvoFlux state and cache directories and constrains agent file/process access under every permission mode. Best effort intentionally skips those filesystem controls for trusted Coding compatibility.',
+        text: 'Built-in filesystem tools enforce workspace roots, read-only roots, and deny patterns under every permission mode. Shell commands are scanned for obvious denied paths, but run directly on the host without OS-level containment.',
       },
       {
         type: 'p',
-        text: 'Permission modes decide when to ask. Required isolation decides what is never allowed; Best effort runs without that floor. Goal mode keeps the selected isolation policy unchanged.',
+        text: 'Permission modes decide when to ask. Application-level path checks remain active for built-in tools, while shell-command scanning is a guardrail rather than a security boundary. Goal mode keeps the same policy.',
       },
       {
         type: 'p',
-        text: 'Open Settings → Sandbox. Add deny globs, choose isolation options, set worktree location for Coding, and enable outbound PII redact/block as needed. Re-test a sample tool call after changes. Pair with Settings → Browser domain policy for WebBridge.',
+        text: 'Open Settings → Sandbox. Add deny globs, set the Coding worktree location, configure process limits and environment exposure, and enable outbound PII redact/block as needed. Re-test a sample tool call after changes. Pair with Settings → Browser domain policy for WebBridge.',
       },
       {
         type: 'tips',
@@ -2489,7 +2489,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Memory — long-term wiki + Dream schedule',
           'Connection — bundled sidecar vs external URL / access key',
           'Git & reviews — host connections, timeouts, diff size, force-with-lease',
-          'Sandbox — deny globs, isolation, worktree location, outbound PII',
+          'Sandbox — deny globs, process limits, worktree location, outbound PII',
           'Browser — built-in WebView + WebBridge master policy',
           'Notifications — desktop/mobile alerts when unfocused; test ping',
           'Appearance — theme, accent, fonts, motion, locale (en / vi / ja)',
