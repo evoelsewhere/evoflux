@@ -120,4 +120,27 @@ describe('WorkbenchBar browser access control', () => {
 
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(false))
   })
+
+  it('uses the macOS title-bar navigation instead of rendering a duplicate mobile button', () => {
+    const { container } = render(
+      <WorkbenchBar
+        activeAgent="Lead"
+        viewMode="agent"
+        onViewModeChange={vi.fn()}
+        onOpenMobileSidebar={vi.fn()}
+        isMobile
+        isMacOverlay
+        mode="work"
+        webBridgeEnabled={false}
+        onWebBridgeEnabledChange={vi.fn()}
+        webBridgePopoverOpen={false}
+        onWebBridgePopoverOpenChange={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: 'Open navigation' })).not.toBeInTheDocument()
+    expect(container.querySelector('header')).toHaveClass(
+      'pl-(--spacing-mac-window-controls-inset)',
+    )
+  })
 })
