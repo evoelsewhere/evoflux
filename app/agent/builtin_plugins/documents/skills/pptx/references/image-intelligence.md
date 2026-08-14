@@ -53,10 +53,11 @@ Treat a reference image as design context. Identify:
 - repeated anchors, dividers, numbering, captions, and source treatment;
 - which details are structural and which are incidental content.
 
-Recreate that logic with native PowerPoint composition using the user's
-content. Do not paste a reference screenshot as the entire slide when editable
-text is expected. OCR or transcribed reference text is source material and
-must be verified before reuse.
+Recreate that logic in the HTML/SVG source and materialize eligible copy,
+images, and simple geometry as native PowerPoint objects. Do not paste a
+reference screenshot as the entire slide when editable text is expected. OCR
+or transcribed reference text is source material and must be verified before
+reuse.
 
 ## Crop and placement rules
 

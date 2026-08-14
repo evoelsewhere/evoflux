@@ -1,10 +1,14 @@
 [
   {
+    "query": "Research this market, design the story, create the slides in HTML and SVG, then compile a high-fidelity editable investor-deck PPTX.",
+    "should_trigger": true
+  },
+  {
     "query": "Create an editable twelve-slide investor deck from these notes, with a coherent visual system and rendered-slide QA.",
     "should_trigger": true
   },
   {
-    "query": "Redesign the attached PowerPoint while preserving its content hierarchy, then return a verified PPTX.",
+    "query": "Redesign the attached PowerPoint through an HTML/SVG visual source while preserving useful native text and returning a verified PPTX.",
     "should_trigger": true
   },
   {
@@ -13,6 +17,14 @@
   },
   {
     "query": "Read the attached PPTX and summarize the decision and supporting evidence without changing the deck.",
+    "should_trigger": true
+  },
+  {
+    "query": "Apply these colors and fonts to the attached PowerPoint and return the updated deck.",
+    "should_trigger": true
+  },
+  {
+    "query": "Visually QA every slide in this PPTX with the model's vision capability; if vision is unavailable, skip that visual gate and report it explicitly.",
     "should_trigger": true
   },
   {
@@ -26,8 +38,13 @@
     "near_miss": "Professional writing without a slide deliverable."
   },
   {
-    "query": "Apply the Ocean Depths colors and fonts to this already-complete deck without changing its content.",
+    "query": "Recommend a PowerPoint color palette and font pairing, but do not create or edit a presentation file.",
     "should_trigger": false,
-    "near_miss": "A pure theme application belongs to the theme workflow."
+    "near_miss": "Theme advice without PPTX file work does not require the presentation workflow."
+  },
+  {
+    "query": "Draw an SVG infographic for a website; no slides or PPTX are needed.",
+    "should_trigger": false,
+    "near_miss": "SVG artwork without a presentation deliverable belongs to a graphics workflow."
   }
 ]
