@@ -1,4 +1,4 @@
-"""Plugin-owned cached HTML preview engine for the shared document reader.
+"""Host-owned cached HTML engine for the read-only workspace document viewer.
 
 The renderer is intentionally self-contained: DOCX, XLSX, and PPTX are parsed
 with the Python OpenXML libraries already bundled in the EvoFlux sidecar.  It
@@ -21,12 +21,12 @@ from typing import Any
 
 from loguru import logger
 
-from app.agent.builtin_plugins.documents.rendering.xlsx_formula import (
+from app.services.document_preview.xlsx_formula import (
     FormulaEvaluation,
     evaluate_workbook_formulas,
     format_computed_value,
 )
-from app.agent.builtin_plugins.documents.preview_security import (
+from app.services.document_preview.security import (
     cached_preview_is_valid,
     maintain_preview_cache,
     mark_cached_preview_used,
@@ -34,10 +34,9 @@ from app.agent.builtin_plugins.documents.preview_security import (
     prepare_preview_cache_directory,
 )
 from app.core.config import settings
-from app.plugin_platform.previews import (
+from app.services.document_preview.contract import (
     DOCUMENT_PREVIEW_CSP,
     DocumentPreviewError,
-    DocumentPreviewProvider,
     DocumentPreviewUnsupportedError,
 )
 
@@ -49,7 +48,7 @@ MAX_PDF_PREVIEW_RASTER_BYTES = 24 * 1024 * 1024
 MAX_PDF_PREVIEW_PIXELS_PER_PAGE = 10_000_000
 MIN_XLSX_PREVIEW_ROWS = 40
 MIN_XLSX_PREVIEW_COLUMNS = 20
-_CACHE_SCHEMA_VERSION = "evoflux-document-html-v16"
+_CACHE_SCHEMA_VERSION = "evoflux-document-html-v18"
 _render_locks = tuple(threading.Lock() for _ in range(32))
 
 
@@ -1720,13 +1719,14 @@ def _shape_text(
                 paragraph_styles.append(
                     f"text-indent:{_text_length_cqw(indent, slide_width)}"
                 )
+        class_attr = ' class="has-bullet"' if marker else ""
         style_attr = (
             f' style="{";".join(paragraph_styles)}"' if paragraph_styles else ""
         )
-        paragraphs.append(
-            f'<p{style_attr}>{marker_html}<span class="paragraph-content">'
-            f"{runs}</span></p>"
+        content_html = (
+            f'<span class="paragraph-content">{runs}</span>' if marker else runs
         )
+        paragraphs.append(f"<p{class_attr}{style_attr}>{marker_html}{content_html}</p>")
     try:
         columns = max(int(_first_attribute(body_nodes, "numCol", "1") or 1), 1)
     except ValueError:
@@ -3870,10 +3870,9 @@ def _table_cell_paragraph_html(
             f'<span class="bullet-marker" style="{";".join(marker_styles)}">'
             f"{html.escape(marker)}</span>"
         )
-    return (
-        f'<p style="{";".join(styles)}">{marker_html}'
-        f'<span class="paragraph-content">{runs}</span></p>'
-    )
+    class_attr = ' class="has-bullet"' if marker else ""
+    content_html = f'<span class="paragraph-content">{runs}</span>' if marker else runs
+    return f'<p{class_attr} style="{";".join(styles)}">{marker_html}{content_html}</p>'
 
 
 def _table_cell_html(
@@ -4304,7 +4303,8 @@ def _render_pptx(source: Path) -> str:
     transform:scale(-1,-1)}
     .text-shape p{margin:0 0 .2em;line-height:1.12;white-space:pre-wrap;
     overflow-wrap:normal;word-break:normal;break-inside:avoid}.bullet-marker{text-align:center}
-    .text-shape.html-native{padding:0}.text-shape.html-native p{margin:0}
+    .text-shape.html-native{padding:0}.text-shape.html-native p{margin:0;
+    height:1lh;min-height:1lh;flex:0 0 1lh}
     .picture-frame{overflow:hidden}.picture{position:absolute;display:block;max-width:none;
     max-height:none}.table-shape table{width:100%;height:100%;border-collapse:collapse;
     table-layout:fixed}.table-shape td{border:1px solid #b8bdc6;overflow:hidden}
@@ -4319,7 +4319,7 @@ def _render_pptx(source: Path) -> str:
 
 
 def _render_pdf(source: Path) -> str:
-    from app.agent.builtin_plugins.documents.rendering.internal import (
+    from app.services.document_preview.pdf import (
         count_pdf_pages,
         render_pdf_pages,
     )
@@ -4450,11 +4450,6 @@ def _render_document_preview(source: Path) -> Path:
     return output
 
 
-document_preview_provider = DocumentPreviewProvider(
-    name="evoflux.documents",
-    extensions=SUPPORTED_DOCUMENT_PREVIEW_EXTENSIONS,
-    render=_render_document_preview,
-)
 render_document_preview = _render_document_preview
 
 
@@ -4468,6 +4463,5 @@ __all__ = [
     "MAX_PDF_PREVIEW_PIXELS_PER_PAGE",
     "MAX_PDF_PREVIEW_RASTER_BYTES",
     "SUPPORTED_DOCUMENT_PREVIEW_EXTENSIONS",
-    "document_preview_provider",
     "render_document_preview",
 ]

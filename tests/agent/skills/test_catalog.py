@@ -63,17 +63,21 @@ def test_catalog_ranks_matching_metadata_without_filtering_other_skills():
     rendered = render_skill_catalog(
         [
             _record("work-writing", "Draft substantial knowledge-work products."),
-            _record("pdf", "Create, edit, inspect, and verify PDF files."),
-            _record("xlsx", "Create and edit spreadsheet workbooks."),
+            _record("work-research", "Research and verify a sourced report."),
+            _record("work-planning", "Create an execution plan."),
         ],
         mode="work",
         preferred=("work-writing",),
-        query="Please create and verify a PDF report.",
+        query="Please research and verify a sourced report.",
     )
 
-    assert rendered.included == ("pdf", "work-writing", "xlsx")
-    assert rendered.query_ranked[0] == "pdf"
-    assert set(rendered.included) == {"pdf", "work-writing", "xlsx"}
+    assert rendered.included == ("work-research", "work-writing", "work-planning")
+    assert rendered.query_ranked[0] == "work-research"
+    assert set(rendered.included) == {
+        "work-planning",
+        "work-research",
+        "work-writing",
+    }
     assert "server-selected workflow" in rendered.text
 
 
@@ -180,7 +184,9 @@ async def test_catalog_hook_exposes_metadata_but_never_skill_body(
 async def test_catalog_hook_ranks_from_latest_user_turn(monkeypatch):
     records = {
         "work-writing": _record("work-writing", "Draft substantial knowledge work."),
-        "pdf": _record("pdf", "Create, edit, and verify PDF files."),
+        "work-research": _record(
+            "work-research", "Research and verify a sourced report."
+        ),
     }
     monkeypatch.setattr(
         "app.agent.tools.builtin.skill.discover_skill_records_runtime",
@@ -198,7 +204,7 @@ async def test_catalog_hook_ranks_from_latest_user_turn(monkeypatch):
     state = AgentState(
         messages=[
             HumanMessage(content="Earlier unrelated request"),
-            HumanMessage(content="Create and verify this PDF report"),
+            HumanMessage(content="Research and verify this sourced report"),
         ]
     )
     request = ModelRequest(messages=tuple(state.messages), system_prompt="Base")
@@ -209,10 +215,10 @@ async def test_catalog_hook_ranks_from_latest_user_turn(monkeypatch):
 
     assert updated is not None
     assert state.metadata["skill_catalog"]["included"][:2] == [
-        "pdf",
+        "work-research",
         "work-writing",
     ]
-    assert state.metadata["skill_catalog"]["query_ranked"][0] == "pdf"
+    assert state.metadata["skill_catalog"]["query_ranked"][0] == "work-research"
 
 
 @pytest.mark.asyncio

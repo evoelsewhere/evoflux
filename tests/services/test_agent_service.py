@@ -97,7 +97,17 @@ def test_require_team_raises_when_none():
         ("notes.txt", "text/plain", "text"),
         # Extension fallback when MIME is absent
         ("data.csv", None, "data"),
-        ("report.docx", None, "document"),
+        ("report.docx", None, "binary"),
+        (
+            "forecast.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "binary",
+        ),
+        (
+            "deck.pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "binary",
+        ),
         ("page.htm", None, "document"),
         ("pic.png", None, "image"),
         # Extension fallback when MIME is unrecognised

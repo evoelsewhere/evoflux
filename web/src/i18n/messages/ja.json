@@ -50,7 +50,6 @@
   "\u001b[31m[terminal error: {0}]\u001b[0m": "[31分[端末エラー: {0}] [0分",
   "[data-column=\"{0}\"]": "[data-column=\"{0}\"]",
   "[data-idx=\"{0}\"]": "[データidx=\"{0}\"]",
-  "[data-pptx-editable=\"text\"]": "[data-pptx-editable=\"text\"]",
   "[data-preview-item]": "[data-preview-item]",
   "[data-row=\"{0}\"]": "[data-row=\"{0}\"]",
   "[EMAIL_1] · [PHONE_1]": "[EMAIL_1] · [PHONE_1]",

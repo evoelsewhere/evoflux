@@ -708,10 +708,10 @@ def main() -> int:
     )
     ap.add_argument(
         "--extras",
-        default="documents",
+        default="office-preview",
         help=(
             "Comma-separated optional-dep extras to install "
-            "(default: documents; e.g. documents,azure-doc-intel or full)."
+            "(default: office-preview; e.g. office-preview,azure-doc-intel or full)."
         ),
     )
     ap.add_argument(

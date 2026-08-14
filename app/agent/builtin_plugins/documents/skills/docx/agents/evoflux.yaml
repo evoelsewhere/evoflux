@@ -1,6 +1,0 @@
-interface:
-  display_name: "Work with DOCX"
-  short_description: "Create, inspect, edit, and verify Word files"
-  default_prompt: "Use $docx to inspect, create, or edit this Word file as requested, preserve the source, verify the exact output after changes, and disclose any visual-QA limitation."
-policy:
-  allow_implicit_invocation: true

@@ -1,6 +1,0 @@
-interface:
-  display_name: "Build Editable PowerPoint Decks"
-  short_description: "Research, design, and compile editable PPTX decks"
-  default_prompt: "Use $pptx and obey its route-specific reference gate. For a new deck or redesign, create research and design evidence, validated and rendered HTML/SVG sources, then compile the hybrid editable PowerPoint; never fall back to a direct python-pptx deck builder."
-policy:
-  allow_implicit_invocation: true

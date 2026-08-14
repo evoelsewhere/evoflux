@@ -81,14 +81,6 @@ MIME_CATEGORY: dict[str, str] = {
     "image/bmp": "image",
     "image/tiff": "image",
     "application/pdf": "document",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "document",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "document",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "document",
-    "application/vnd.ms-excel": "document",
-    "application/vnd.ms-powerpoint": "document",
-    "application/msword": "document",
-    "application/vnd.ms-excel.sheet.macroEnabled.12": "document",
-    "application/vnd.ms-powerpoint.presentation.macroEnabled.12": "document",
     "application/vnd.oasis.opendocument.text": "document",
     "application/vnd.oasis.opendocument.spreadsheet": "document",
     "application/vnd.oasis.opendocument.presentation": "document",
@@ -113,14 +105,6 @@ EXT_CATEGORY: dict[str, str] = {
     ".tif": "image",
     ".tiff": "image",
     ".pdf": "document",
-    ".docx": "document",
-    ".doc": "document",
-    ".xlsx": "document",
-    ".xls": "document",
-    ".xlsm": "document",
-    ".pptx": "document",
-    ".ppt": "document",
-    ".pptm": "document",
     ".odt": "document",
     ".ods": "document",
     ".odp": "document",
@@ -481,9 +465,10 @@ async def validate_and_persist_attachments(
     chat session that owns them.
 
     Model capabilities choose the delivery strategy; they never reject a
-    valid upload. Text and documents are extracted locally when possible,
+    valid upload. Text, PDF, and HTML are extracted locally when possible,
     vision-capable models receive images natively, and every other format is
-    exposed to the agent through a read-only workspace path.
+    exposed through a read-only workspace path. Office files remain available
+    to the host UI viewer but are not extracted into agent context.
 
     Returns ``(session_id, attachment_metas)``.
 

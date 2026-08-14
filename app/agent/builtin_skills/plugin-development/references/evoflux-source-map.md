@@ -15,8 +15,7 @@ Use this map when changing the platform itself or when package behavior must be 
 - `app/plugin_platform/installer.py` — safe extraction, deterministic packing, managed install/link/update/uninstall, and scaffold.
 - `app/plugin_platform/registry.py` — installation identity, atomic registry persistence, enable state, and duplicate source rules.
 - `app/plugin_platform/builtins.py` — discovery and stable virtual identities for immutable release-bundled packages.
-- `app/plugin_platform/native.py` — private native-provider loading restricted to matching bundled package namespaces.
-- `app/plugin_platform/previews.py` — format-neutral document-preview provider selection.
+- `app/services/document_preview/` — host-owned, read-only Office/PDF viewer backend.
 - `app/plugin_platform/runtime.py` — plugin-scoped MCP adaptation, reconciliation, watchers, placeholders, credentials, and last-known-good behavior.
 - `app/plugin_platform/credentials.py` — schema projection, `0600` persistence, masking, required status, and environment injection.
 - `app/plugin_platform/skills.py` — plugin Skill discovery and precedence integration.
@@ -47,8 +46,8 @@ Build portable third-party packages outside this repository. Use temporary
 local fixtures in these suites to prove the public package and runtime
 contracts without shipping a reference third-party plugin in the EvoFlux
 source tree. Release-owned packages live under
-`app/agent/builtin_plugins/<package>/` and must keep native entrypoints inside
-that matching Python namespace.
+`app/agent/builtin_plugins/<package>/` and use the same portable Skill/MCP
+contract as managed packages.
 
 When adding a core built-in workflow, keep mode scope in
 `app/agent/builtin_skills/catalog.py`. A release-bundled plugin instead keeps

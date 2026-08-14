@@ -49,7 +49,7 @@ from app.core.db import async_session_factory
 from app.core.paths import session_workspace_dir, uploads_dir, workspace_dir
 from app.models.chat import ChatSession
 from app.services import team_manager
-from app.plugin_platform.previews import (
+from app.services.document_preview import (
     DOCUMENT_PREVIEW_CSP,
     DocumentPreviewError,
     DocumentPreviewUnsupportedError,
@@ -588,7 +588,7 @@ async def read_coding_workspace_file(
 
 @router.get("/workspace/files/preview")
 async def preview_coding_workspace_document(workspace: str, path: str) -> FileResponse:
-    """Render a coding-workspace document through the same bundled engine."""
+    """Render a coding-workspace document through the host viewer engine."""
 
     try:
         resolved_workspace = team_manager.validate_workspace(workspace)

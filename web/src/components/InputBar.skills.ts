@@ -7,7 +7,7 @@ export interface SkillDirectiveRange {
 /**
  * Find committed ``/skill:<name>`` directives at the start of a line.
  *
- * Flat skills use ``/skill:docx`` while one-level sub-skills use the same
+ * Flat skills use ``/skill:release-audit`` while one-level sub-skills use the same
  * colon notation as the settings UI (for example ``/skill:git:commit``).
  * When ``skillNames`` is provided, unknown directives remain plain text.
  */

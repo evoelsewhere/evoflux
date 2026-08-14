@@ -747,7 +747,6 @@ export function CopyContentsButton({
 function PreviewArea({
   sessionId,
   file,
-  files,
   workspaceRoot,
   onOpen,
   onReveal,
@@ -758,7 +757,6 @@ function PreviewArea({
 }: {
   sessionId: string
   file: WorkspaceFileInfo
-  files: WorkspaceFileInfo[]
   workspaceRoot: string | null
   onOpen: (file: WorkspaceFileInfo) => void
   onReveal: (file: WorkspaceFileInfo) => void
@@ -871,7 +869,6 @@ function PreviewArea({
             key={`${file.path}:${file.mtime}`}
             sessionId={sessionId}
             file={file}
-            files={files}
           />
         ) : kind === 'image' ? (
           <ImagePreview sessionId={sessionId} file={file} />
@@ -1750,7 +1747,6 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
                 key={selected.path}
                 sessionId={sessionId}
                 file={selected}
-                files={files}
                 workspaceRoot={workspaceRoot}
                 onOpen={(file) => void handleOpenFile(file)}
                 onReveal={(file) => void handleRevealFile(file)}

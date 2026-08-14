@@ -8,7 +8,6 @@ import {
   ChevronDown,
   Code2,
   FileArchive,
-  FileText,
   FolderInput,
   FolderPlus,
   KeyRound,
@@ -87,16 +86,6 @@ function conciseToolNames(server: PluginMcpRuntimeStatus): string {
     .join(', ')
 }
 
-function pluginDisplayName(item: PluginListItem): string {
-  if (
-    item.installation.source_type === 'builtin'
-    && item.installation.name === 'evoflux.documents'
-  ) {
-    return 'Documents'
-  }
-  return item.installation.name
-}
-
 function PluginCard({
   item,
   servers,
@@ -119,10 +108,8 @@ function PluginCard({
   onUpdate: () => void
 }) {
   const { installation, inspection } = item
-  const displayName = pluginDisplayName(item)
+  const displayName = installation.name
   const description = installation.description || 'Portable Agent Plugin'
-  const isDocumentsPlugin = installation.source_type === 'builtin'
-    && installation.name === 'evoflux.documents'
   const [expanded, setExpanded] = useState(false)
   const errors = diagnosticsCount(inspection)
   const isValid = inspection.valid
@@ -166,13 +153,11 @@ function PluginCard({
         <span
           className={cn(
             'flex size-11 shrink-0 items-center justify-center rounded-xl border shadow-sm',
-            isDocumentsPlugin
-              ? 'border-(--color-accent)/15 bg-(--color-accent)/10 text-(--color-accent)'
-              : 'border-(--color-border) bg-(--bg-key) text-(--color-text-muted)',
+            'border-(--color-border) bg-(--bg-key) text-(--color-text-muted)',
           )}
           aria-hidden="true"
         >
-          {isDocumentsPlugin ? <FileText size={21} /> : <Box size={21} />}
+          <Box size={21} />
         </span>
 
         <div className="min-w-0 flex-1">

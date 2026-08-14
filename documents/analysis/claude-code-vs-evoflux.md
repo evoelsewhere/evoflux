@@ -84,7 +84,7 @@ Claude Code can expose its own tools as an MCP server (`src/entrypoints/mcp.ts`)
 | **Wiki / long-term memory** | Dream scheduler consolidates sessions into semantic wiki |
 | **REST API** | Full HTTP API for programmatic integration — Claude Code is CLI-only |
 | **Browser agent** | `browser_use` tool for real browser automation |
-| **Multi-modal** | Document intake (PDF, DOCX, images) with markitdown |
+| **Multi-modal** | PDF/HTML intake with markitdown, image vision, and read-only Office previews |
 | **Agent config as `.md` files** | Human-readable, versionable agent definitions |
 
 ---
