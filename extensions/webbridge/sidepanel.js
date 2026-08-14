@@ -1512,6 +1512,9 @@ function protectedHistoryBlocks(blocks) {
         ...base,
         name: entry.name || entry.tool_name || entry.toolName || "tool",
         tool_call_id: entry.tool_call_id || entry.toolCallId || entry.id,
+        skill_action: entry.skill_action || entry.skillAction,
+        skill_name: entry.skill_name || entry.skillName,
+        display_arguments: entry.display_arguments || entry.displayArguments,
         done: Boolean(entry.done),
         duration_ms: entry.duration_ms,
       }];
@@ -2303,6 +2306,9 @@ function handleStreamEvent(type, data) {
         agent,
         name: data.name || "tool",
         duration_ms: data.duration_ms ?? data.metadata?.duration_ms,
+        skill_action: data.skill_action,
+        skill_name: data.skill_name,
+        display_arguments: data.display_arguments,
       };
       if (type === "tool_call") renderer.toolCall(safeToolData);
       else if (type === "tool_start") renderer.toolStart(safeToolData);

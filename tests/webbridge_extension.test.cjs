@@ -1449,6 +1449,47 @@ test("P2 queued turns finalize the live turn and dedupe optimistic user messages
   assert.equal(activityRenders, 2);
 });
 
+test("streaming tools forward only sanitized inspector arguments to the renderer", () => {
+  const start = sidePanelSource.indexOf("function handleStreamEvent");
+  const end = sidePanelSource.indexOf("\nasync function isSessionStillRunning", start);
+  assert.ok(start >= 0 && end > start);
+
+  const calls = [];
+  const renderer = {
+    toolStart(data) { calls.push(data); },
+  };
+  const context = vm.createContext({
+    renderer,
+    ensureTypedBlockRenderer() { return renderer; },
+    renderActivity() {},
+    renderLiveTurnDetails() {},
+  });
+  vm.runInContext(`
+    let liveMessage = null;
+    const liveThinkingChars = new Map();
+    const toolActivities = new Map();
+    const agentStates = new Map();
+    ${sidePanelSource.slice(start, end)}
+    globalThis.runHandleStreamEvent = handleStreamEvent;
+  `, context, { filename: "sidepanel-safe-tool-arguments.js" });
+
+  context.runHandleStreamEvent("tool_start", {
+    id: "browser-1",
+    agent: "Lead",
+    name: "webbridge",
+    display_arguments: { actions: [{ action: "status" }, { action: "get_tabs" }] },
+    arguments: { token: "must-not-leak" },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(calls[0].display_arguments)),
+    { actions: [{ action: "status" }, { action: "get_tabs" }] },
+  );
+  assert.equal(Object.hasOwn(calls[0], "arguments"), false);
+  assert.doesNotMatch(JSON.stringify(calls[0]), /must-not-leak/);
+});
+
 test("P2 Desktop action events show a request-scoped gate and its CTA opens Desktop", () => {
   const gateStart = sidePanelSource.indexOf("function showDesktopGate");
   const gateEnd = sidePanelSource.indexOf("\nfunction setComposerStatus", gateStart);

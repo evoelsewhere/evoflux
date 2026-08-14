@@ -198,6 +198,75 @@ test("live activity grouping stays stable and preserves the reader collapse choi
   assert.notEqual(renderer.turn.segments[2].element, firstElement);
 });
 
+test("Desktop parity keeps usage invisible and presents skill activity as inline rows", () => {
+  const { context } = loadRenderer();
+  const root = new FakeElement("div");
+  const renderer = context.WebBridgeTypedBlocks.create({
+    createTurn() { return { item: new FakeElement("article"), content: root }; },
+  });
+
+  renderer.appendThinking({ agent: "Lead", chars: 39 });
+  assert.equal(renderer.appendEvent("usage", { total_tokens: 100 }), null);
+  renderer.toolCall({
+    agent: "Lead",
+    name: "skill",
+    tool_call_id: "skill-1",
+    skill_action: "load",
+    skill_name: "pptx",
+  });
+  renderer.toolEnd({
+    agent: "Lead",
+    name: "skill",
+    tool_call_id: "skill-1",
+    duration_ms: 43,
+  });
+  renderer.toolCall({ agent: "Lead", name: "load_tool", tool_call_id: "load-1" });
+  renderer.toolEnd({ agent: "Lead", name: "load_tool", tool_call_id: "load-1", duration_ms: 16 });
+  renderer.finish();
+
+  assert.equal(renderer.turn.segments.length, 1);
+  assert.equal(renderer.turn.segments[0].label.textContent, "Loaded a skill, used tools");
+  assert.equal(renderer.turn.blocks[0].label.textContent, "Thought · 39 chars");
+  assert.equal(renderer.turn.blocks[1].label.textContent, "Loaded skill");
+  assert.equal(renderer.turn.blocks[1].header.textContent, "pptx");
+  assert.equal(renderer.turn.blocks[1].duration.textContent, "43ms");
+  assert.equal(renderer.turn.blocks[2].label.textContent, "Load Tool");
+  assert.equal(renderer.turn.blocks[2].duration.textContent, "16ms");
+});
+
+test("sanitized webbridge arguments populate the Desktop-style tool inspector", () => {
+  const { context } = loadRenderer();
+  const renderer = context.WebBridgeTypedBlocks.create({
+    createTurn() {
+      return { item: new FakeElement("article"), content: new FakeElement("div") };
+    },
+  });
+
+  renderer.toolStart({
+    agent: "Lead",
+    name: "webbridge",
+    tool_call_id: "browser-1",
+    display_arguments: {
+      actions: [{ action: "status" }, { action: "get_tabs" }],
+    },
+  });
+  renderer.toolEnd({
+    agent: "Lead",
+    name: "webbridge",
+    tool_call_id: "browser-1",
+    duration_ms: 97,
+  });
+
+  const block = renderer.turn.blocks[0];
+  assert.equal(block.label.textContent, "Browsed");
+  assert.equal(block.duration.textContent, "97ms");
+  assert.equal(block.argumentsSection.hidden, false);
+  assert.equal(
+    block.argumentsBody.textContent,
+    '{\n  "actions": [\n    {\n      "action": "status"\n    },\n    {\n      "action": "get_tabs"\n    }\n  ]\n}',
+  );
+});
+
 test("reasoning and tool payloads remain text-safe while widgets are sandboxed", () => {
   const { context, flushFrames } = loadRenderer({ DOMParser: FakeWidgetDOMParser });
   const root = new FakeElement("div");
@@ -288,13 +357,13 @@ test("redacted thinking and tool deltas show Desktop-only progress without raw-d
     ["thinking", "tool", "text"],
   );
   const thinking = renderer.turn.blocks[0];
-  assert.equal(thinking.summary.textContent, "Thinking · 1,234 chars");
+  assert.equal(thinking.label.textContent, "Thinking · 1,234 chars");
   assert.equal(thinking.body.textContent, "Reasoning remains in EvoFlux Desktop.");
   assert.equal(thinking.body.dataset.desktopOnly, "reasoning");
   assert.equal(thinking.rawContent, "");
 
   const tool = renderer.turn.blocks[1];
-  assert.equal(tool.status.textContent, "Running · 525 chars");
+  assert.equal(tool.duration.textContent, "Running · 525 chars");
   assert.equal(tool.outputBody.textContent, "525 chars received\nFull output available in EvoFlux Desktop");
   assert.equal(tool.outputSection.dataset.desktopOnly, "tool-output");
   assert.equal(tool.output, "");
@@ -336,7 +405,7 @@ test("redacted Thinking history renders a disclosure before later text", () => {
   assert.equal(activityGroup.open, false);
   const thinkingDisclosure = activityGroup.children[1].children[0].children[0].children[0];
   assert.equal(thinkingDisclosure.tagName, "DETAILS");
-  assert.equal(thinkingDisclosure.children[0].textContent, "Thinking · 987 chars");
+  assert.equal(thinkingDisclosure.children[0].children[1].textContent, "Thought · 987 chars");
   assert.equal(
     thinkingDisclosure.children[1].textContent,
     "Reasoning remains in EvoFlux Desktop.",
