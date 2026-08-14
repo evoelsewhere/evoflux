@@ -65,6 +65,8 @@ export function AgentPane({
   const pendingRestoreRef = useRef(false)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
   const sessionModel = useTeamStore((s) => s.sessionModel)
+  const isTeamWorking = useTeamStore((s) => s.isTeamWorking)
+  const compactTeam = useTeamStore((s) => s.compactTeam)
   const turnChanges = useTeamStore((s) => s.turnChanges)
   const registry = useRegistryQuery()
   const modelEntry = useMemo(() => {
@@ -181,6 +183,8 @@ export function AgentPane({
              output={stream.usage.completionTokens}
              cached={stream.usage.cachedTokens}
              trigger={modelEntry?.summary_trigger_tokens}
+             onCompact={isLead ? compactTeam : undefined}
+             compactDisabled={isTeamWorking}
            />
             <span aria-label={`Agent status: ${stream.status}`} className={`h-1.5 w-1.5 rounded-full ${
              isError ? 'bg-(--color-error)' : isWorking ? 'bg-(--color-accent)' : isOffline ? 'bg-(--color-text-subtle) opacity-50' : 'bg-(--color-success)'

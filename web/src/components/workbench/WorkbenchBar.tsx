@@ -69,6 +69,10 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
   const showTurnChanges = useTeamStore((s) => s.showTurnChanges)
   const planApproval = useTeamStore((s) => s.planApproval)
   const sessionModel = useTeamStore((s) => s.sessionModel)
+  const sessionId = useTeamStore((s) => s.sessionId)
+  const leadName = useTeamStore((s) => s.leadName)
+  const isTeamWorking = useTeamStore((s) => s.isTeamWorking)
+  const compactTeam = useTeamStore((s) => s.compactTeam)
   const activeUsage = useTeamStore((s) =>
     props.activeAgent ? s.agentStreams[props.activeAgent]?.usage : undefined,
   )
@@ -93,6 +97,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
     : undefined
   const contextMax = modelEntry?.context_length ?? undefined
   const summaryTrigger = modelEntry?.summary_trigger_tokens
+  const canCompactContext = Boolean(sessionId && props.activeAgent === leadName)
   const viewModeLabel =
     props.viewMode === 'agent'
       ? 'Agent'
@@ -236,6 +241,8 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             output={activeUsage.completionTokens}
             cached={activeUsage.cachedTokens}
             trigger={summaryTrigger}
+            onCompact={canCompactContext ? compactTeam : undefined}
+            compactDisabled={isTeamWorking}
           />
         )}
 
