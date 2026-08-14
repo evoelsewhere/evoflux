@@ -13,6 +13,8 @@ fn main() {
             "set_tray_session",
             "list_workspace_files",
             "read_workspace_file",
+            "open_workspace_root_with_handle",
+            "reveal_workspace_path_with_handle",
             "list_workspace_openers",
             "open_workspace_with",
         ]),

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-reveal-workspace-path-with-handle"
+description = "Enables the reveal_workspace_path_with_handle command without any pre-configured scope."
+commands.allow = ["reveal_workspace_path_with_handle"]
+
+[[permission]]
+identifier = "deny-reveal-workspace-path-with-handle"
+description = "Denies the reveal_workspace_path_with_handle command without any pre-configured scope."
+commands.deny = ["reveal_workspace_path_with_handle"]
