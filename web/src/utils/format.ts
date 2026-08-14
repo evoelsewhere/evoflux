@@ -14,6 +14,11 @@ export function isSleepMessage(content: string): boolean {
   return extractSleepPrefix(content) !== null
 }
 
+/** Runtime-owned replacement for the legacy text sentinel. */
+export function hasSleepLifecycle(extra?: Record<string, unknown> | null): boolean {
+  return extra?.lifecycle === 'sleep'
+}
+
 export function shortId(id: string): string {
   return id.slice(0, 8)
 }

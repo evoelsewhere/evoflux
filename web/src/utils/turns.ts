@@ -7,7 +7,7 @@
  */
 import type { ContentBlock } from '@/api/types'
 import { isConsolidatedDelegationMessage } from '@/utils/blocks'
-import { extractSleepPrefix } from '@/utils/format'
+import { extractSleepPrefix, hasSleepLifecycle } from '@/utils/format'
 
 export type TurnItem =
   | { kind: 'user'; block: ContentBlock; index: number }
@@ -30,7 +30,7 @@ function consolidateDelegationWaitPhase(blocks: ContentBlock[]): ContentBlock[] 
     if (
       delegationIndex >= 0
       && block.type === 'text'
-      && extractSleepPrefix(block.content) !== null
+      && (hasSleepLifecycle(block.extra) || extractSleepPrefix(block.content) !== null)
     ) {
       for (let candidate = delegationIndex + 1; candidate <= index; candidate++) {
         if (blocks[candidate]?.type === 'text') hiddenTextIndexes.add(candidate)

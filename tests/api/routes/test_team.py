@@ -50,6 +50,23 @@ def test_message_response_strips_internal_attachment_paths():
     ]
 
 
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [("<sleep>", None), ("Work is underway. [sleep]", "Work is underway.")],
+)
+def test_message_response_normalizes_legacy_sleep_sentinel(content, expected):
+    msg = SessionMessage(
+        session_id=uuid.uuid7(),
+        role="assistant",
+        content=content,
+    )
+
+    resp = _message_response(msg)
+
+    assert resp.content == expected
+    assert resp.extra == {"lifecycle": "sleep"}
+
+
 class MockTestProvider(LLMProviderBase):
     """Mock LLM provider."""
 
