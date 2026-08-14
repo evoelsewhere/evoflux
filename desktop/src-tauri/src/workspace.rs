@@ -415,8 +415,7 @@ pub fn reveal_workspace_path_with_handle(
                     .map(|_| ())
                     .map_err(|fallback_error| {
                         format!(
-                            "Failed to reveal workspace path: {opener_error}; "
-                            "Explorer fallback failed: {fallback_error}"
+                            "Failed to reveal workspace path: {opener_error}; Explorer fallback failed: {fallback_error}"
                         )
                     })
             }
