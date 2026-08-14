@@ -212,7 +212,7 @@ test("Desktop parity keeps usage invisible and presents skill activity as inline
     name: "skill",
     tool_call_id: "skill-1",
     skill_action: "load",
-    skill_name: "pptx",
+    skill_name: "work-writing",
   });
   renderer.toolEnd({
     agent: "Lead",
@@ -228,7 +228,7 @@ test("Desktop parity keeps usage invisible and presents skill activity as inline
   assert.equal(renderer.turn.segments[0].label.textContent, "Loaded a skill, used tools");
   assert.equal(renderer.turn.blocks[0].label.textContent, "Thought · 39 chars");
   assert.equal(renderer.turn.blocks[1].label.textContent, "Loaded skill");
-  assert.equal(renderer.turn.blocks[1].header.textContent, "pptx");
+  assert.equal(renderer.turn.blocks[1].header.textContent, "work-writing");
   assert.equal(renderer.turn.blocks[1].duration.textContent, "43ms");
   assert.equal(renderer.turn.blocks[2].label.textContent, "Load Tool");
   assert.equal(renderer.turn.blocks[2].duration.textContent, "16ms");

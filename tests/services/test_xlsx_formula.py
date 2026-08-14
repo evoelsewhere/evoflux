@@ -3,7 +3,7 @@ from __future__ import annotations
 from openpyxl import Workbook
 import pytest
 
-from app.agent.builtin_plugins.documents.rendering.xlsx_formula import (
+from app.services.document_preview.xlsx_formula import (
     evaluate_workbook_formulas,
     format_computed_value,
 )

@@ -1,4 +1,4 @@
-"""Safety boundaries for the bundled document preview engine.
+"""Safety boundaries for the host-owned document preview engine.
 
 OOXML files are ZIP containers.  Preview parsers must not see an archive until
 its central directory has passed inexpensive structural and resource checks.
@@ -17,7 +17,7 @@ import time
 import zipfile
 from pathlib import Path
 
-from app.plugin_platform.previews import (
+from app.services.document_preview.contract import (
     DocumentPreviewError,
     DocumentPreviewUnsupportedError,
 )

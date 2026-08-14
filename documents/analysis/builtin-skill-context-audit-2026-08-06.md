@@ -21,7 +21,7 @@ correct use requires more guidance than its execution schema. Always-applicable
 behavior belongs in the role contract; hard execution constraints remain in
 the native tool schema and service boundary.
 
-## Curated catalog (29)
+## Curated catalog (25)
 
 - Work workflows: `work-data-analysis`, `work-decision`, `work-planning`,
   `work-research`, and `work-writing`, behind the implicit `work-router`.
@@ -32,13 +32,13 @@ the native tool schema and service boundary.
 - Coding tool workflow: `code-graph-navigation` is independently discoverable
   for exact-symbol structural navigation while execution remains owned by the
   native `code_graph` tool.
-- Work artifacts/design: `algorithmic-art`, `canvas-design`, `docx`, `pdf`,
-  `pptx`, `theme-factory`, and `xlsx`.
+- Work artifacts/design: `algorithmic-art`, `canvas-design`, and
+  `theme-factory`.
 - Coding provider lifecycle: `review-pull-requests`.
 - Shared operational workflows: `frontend-design`, `mcp-installer`,
   `plugin-installer`, `skill-installer`, and `self-healing`.
 
-The mode projection is deliberate: Work sees 18 relevant entries and Coding
+The mode projection is deliberate: Work sees 14 relevant entries and Coding
 sees 16; only the five operational workflows are shared. User and project
 skills default to both modes and can be scoped to Work, Coding, or Both in
 Settings. EvoFlux persists that choice in a hidden `.evoflux.json` sidecar so

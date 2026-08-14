@@ -3,7 +3,8 @@
 Detects file type by extension and dispatches to the appropriate handler:
 
 - **Image** (.png, .jpg, .jpeg, .gif, .webp, .bmp, .svg): base64-encode → ImageDataBlock
-- **Document** (.pdf, .docx, .html): markitdown conversion → TextBlock
+- **Document** (.pdf, .html): markitdown conversion → TextBlock
+- **Office** (.docx, .xlsx, .pptx): view-only notice; no agent-side extraction
 - **Text** (everything else): read as UTF-8/Latin-1 text (existing behaviour)
 
 Each handler returns a :class:`~app.agent.schemas.chat.ToolResult` whose
@@ -47,11 +48,12 @@ _IMAGE_EXTENSIONS: frozenset[str] = frozenset(
 _DOCUMENT_EXTENSIONS: frozenset[str] = frozenset(
     {
         ".pdf",
-        ".docx",
         ".html",
         ".htm",
     }
 )
+
+_VIEW_ONLY_OFFICE_EXTENSIONS: frozenset[str] = frozenset({".docx", ".xlsx", ".pptx"})
 
 # Fallback MIME types for common image extensions when mimetypes module fails
 _IMAGE_MIME_FALLBACK: dict[str, str] = {
@@ -72,12 +74,14 @@ _IMAGE_MIME_FALLBACK: dict[str, str] = {
 
 
 def classify_file(path: Path) -> str:
-    """Return ``"image"``, ``"document"``, or ``"text"`` based on file extension."""
+    """Classify a file for the read tool's supported intake paths."""
     ext = path.suffix.lower()
     if ext in _IMAGE_EXTENSIONS:
         return "image"
     if ext in _DOCUMENT_EXTENSIONS:
         return "document"
+    if ext in _VIEW_ONLY_OFFICE_EXTENSIONS:
+        return "office"
     return "text"
 
 
@@ -116,7 +120,7 @@ def handle_image(resolved: Path, rel: Path | str) -> ToolResult:
 def handle_document(
     resolved: Path, rel: Path | str, *, vision: bool = False
 ) -> ToolResult:
-    """Convert a document (PDF, DOCX, etc.) to text via markitdown.
+    """Convert a PDF or HTML document to text via markitdown.
 
     When *vision* is ``True`` and markitdown fails for a PDF, falls back to
     sending the raw bytes as an ``ImageDataBlock``.

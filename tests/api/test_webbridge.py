@@ -277,7 +277,7 @@ def test_side_chat_stream_keeps_only_safe_skill_presentation():
                     "arguments": json.dumps(
                         {
                             "action": "load",
-                            "skill_name": "pptx",
+                            "skill_name": "work-writing",
                             "token": "must-not-leak",
                         }
                     ),
@@ -293,7 +293,7 @@ def test_side_chat_stream_keeps_only_safe_skill_presentation():
         "agent": "lead",
         "name": "skill",
         "skill_action": "load",
-        "skill_name": "pptx",
+        "skill_name": "work-writing",
         "state": "running",
     }
     assert "must-not-leak" not in event["data"]
@@ -846,7 +846,7 @@ def test_side_chat_history_keeps_safe_skill_presentation_without_arguments():
                     "arguments": json.dumps(
                         {
                             "action": "load",
-                            "skill_name": "pptx",
+                            "skill_name": "work-writing",
                             "token": "must-not-leak",
                         }
                     ),
@@ -880,7 +880,7 @@ def test_side_chat_history_keeps_safe_skill_presentation_without_arguments():
             "tool_call_id": "skill-1",
             "done": True,
             "skill_action": "load",
-            "skill_name": "pptx",
+            "skill_name": "work-writing",
             "duration_ms": 43,
         }
     ]

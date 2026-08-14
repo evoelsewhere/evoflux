@@ -24,6 +24,6 @@
   {
     "query": "Create a twelve-slide investor presentation from these notes.",
     "should_trigger": false,
-    "near_miss": "A presentation deck requires the PowerPoint workflow."
+    "near_miss": "A presentation deck is outside the static-canvas workflow."
   }
 ]

@@ -91,7 +91,7 @@ test("history projection keeps chronology while dropping protected raw payloads"
       name: "skill",
       tool_call_id: "tool-1",
       skill_action: "load",
-      skill_name: "pptx",
+      skill_name: "work-writing",
       display_arguments: { actions: [{ action: "status" }] },
       arguments: { token: "must-not-leak" },
       output: "private output",
@@ -107,7 +107,7 @@ test("history projection keeps chronology while dropping protected raw payloads"
   );
   assert.equal(blocks[1].chars, "private reasoning".length);
   assert.equal(blocks[2].skill_action, "load");
-  assert.equal(blocks[2].skill_name, "pptx");
+  assert.equal(blocks[2].skill_name, "work-writing");
   assert.deepEqual(
     JSON.parse(JSON.stringify(blocks[2].display_arguments)),
     { actions: [{ action: "status" }] },

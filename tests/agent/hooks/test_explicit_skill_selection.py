@@ -37,11 +37,11 @@ async def test_normal_request_never_routes_by_keywords():
 
 @pytest.mark.asyncio
 async def test_explicit_directive_loads_selected_skill():
-    state = _state(HumanMessage(content="/skill:pdf Inspect this PDF"))
+    state = _state(HumanMessage(content="/skill:work-writing Draft this memo"))
 
     await ExplicitSkillSelectionHook().before_agent(_ctx(), state)
 
-    assert set(state.metadata["loaded_skills"]) == {"pdf"}
+    assert set(state.metadata["loaded_skills"]) == {"work-writing"}
     assert isinstance(state.messages[1], AssistantMessage)
     assert state.messages[1].tool_calls[0].id.startswith("explicit_")
     assert isinstance(state.messages[2], ToolMessage)
@@ -49,22 +49,22 @@ async def test_explicit_directive_loads_selected_skill():
 
 @pytest.mark.asyncio
 async def test_codex_dollar_directive_loads_exact_selected_skill():
-    state = _state(HumanMessage(content="$pdf Inspect this PDF"))
+    state = _state(HumanMessage(content="$work-writing Draft this memo"))
 
     await ExplicitSkillSelectionHook().before_agent(_ctx(), state)
 
-    assert set(state.metadata["loaded_skills"]) == {"pdf"}
+    assert set(state.metadata["loaded_skills"]) == {"work-writing"}
     assert isinstance(state.messages[1], AssistantMessage)
     assert isinstance(state.messages[2], ToolMessage)
 
 
 @pytest.mark.asyncio
 async def test_openai_default_prompt_dollar_mention_loads_selected_skill():
-    state = _state(HumanMessage(content="Use $pdf to inspect this PDF."))
+    state = _state(HumanMessage(content="Use $work-writing to draft this memo."))
 
     await ExplicitSkillSelectionHook().before_agent(_ctx(), state)
 
-    assert set(state.metadata["loaded_skills"]) == {"pdf"}
+    assert set(state.metadata["loaded_skills"]) == {"work-writing"}
 
 
 @pytest.mark.asyncio
@@ -109,33 +109,33 @@ async def test_canonical_visible_activation_is_not_injected_twice():
             content=None,
             tool_calls=[
                 ToolCall(
-                    id="load_pdf",
+                    id="load_work_writing",
                     function=FunctionCall(
                         name="skill",
-                        arguments='{"action":"load","skill_name":"pdf"}',
+                        arguments='{"action":"load","skill_name":"work-writing"}',
                     ),
                 )
             ],
         ),
         ToolMessage(
-            tool_call_id="load_pdf",
+            tool_call_id="load_work_writing",
             name="skill",
-            content='<skill_content name="pdf">Instructions.</skill_content>',
+            content='<skill_content name="work-writing">Instructions.</skill_content>',
         ),
-        HumanMessage(content="/skill:pdf Inspect this PDF"),
+        HumanMessage(content="/skill:work-writing Draft this memo"),
     )
 
     await ExplicitSkillSelectionHook().before_agent(_ctx(), state)
 
     assert len(state.messages) == 3
-    assert set(state.metadata["loaded_skills"]) == {"pdf"}
-    assert state.metadata["explicit_skill_selected"] == "pdf"
+    assert set(state.metadata["loaded_skills"]) == {"work-writing"}
+    assert state.metadata["explicit_skill_selected"] == "work-writing"
 
 
 @pytest.mark.asyncio
 async def test_stale_loaded_metadata_does_not_suppress_explicit_activation():
-    state = _state(HumanMessage(content="/skill:pdf Inspect this PDF"))
-    state.metadata["loaded_skills"] = {"pdf": "stale activation"}
+    state = _state(HumanMessage(content="/skill:work-writing Draft this memo"))
+    state.metadata["loaded_skills"] = {"work-writing": "stale activation"}
 
     await ExplicitSkillSelectionHook().before_agent(_ctx(), state)
 
@@ -147,11 +147,17 @@ async def test_stale_loaded_metadata_does_not_suppress_explicit_activation():
 @pytest.mark.parametrize(
     ("arguments", "result"),
     [
-        ('{"action":"load","skill_name":"pdf"}', "Could not load skill 'pdf'."),
-        ('{"action":"list","skill_name":"pdf"}', "pdf: Portable document workflow"),
         (
-            '{"action":"read_resource","skill_name":"pdf","resource_path":"x"}',
-            '<skill_content name="pdf">Not an activation result.</skill_content>',
+            '{"action":"load","skill_name":"work-writing"}',
+            "Could not load skill 'work-writing'.",
+        ),
+        (
+            '{"action":"list","skill_name":"work-writing"}',
+            "work-writing: Professional writing workflow",
+        ),
+        (
+            '{"action":"read_resource","skill_name":"work-writing","resource_path":"x"}',
+            '<skill_content name="work-writing">Not an activation result.</skill_content>',
         ),
     ],
 )
@@ -163,17 +169,17 @@ async def test_irrelevant_skill_calls_do_not_suppress_explicit_activation(
             content=None,
             tool_calls=[
                 ToolCall(
-                    id="irrelevant_pdf",
+                    id="irrelevant_work_writing",
                     function=FunctionCall(name="skill", arguments=arguments),
                 )
             ],
         ),
         ToolMessage(
-            tool_call_id="irrelevant_pdf",
+            tool_call_id="irrelevant_work_writing",
             name="skill",
             content=result,
         ),
-        HumanMessage(content="/skill:pdf Inspect this PDF"),
+        HumanMessage(content="/skill:work-writing Draft this memo"),
     )
 
     await ExplicitSkillSelectionHook().before_agent(_ctx(), state)
@@ -189,25 +195,25 @@ async def test_excluded_historical_activation_does_not_suppress_selection():
         content=None,
         tool_calls=[
             ToolCall(
-                id="old_pdf",
+                id="old_work_writing",
                 function=FunctionCall(
                     name="skill",
-                    arguments='{"action":"load","skill_name":"pdf"}',
+                    arguments='{"action":"load","skill_name":"work-writing"}',
                 ),
             )
         ],
         exclude_from_context=True,
     )
     old_result = ToolMessage(
-        tool_call_id="old_pdf",
+        tool_call_id="old_work_writing",
         name="skill",
-        content='<skill_content name="pdf">Old instructions.</skill_content>',
+        content='<skill_content name="work-writing">Old instructions.</skill_content>',
         exclude_from_context=True,
     )
     state = _state(
         old_call,
         old_result,
-        HumanMessage(content="/skill:pdf Inspect this PDF"),
+        HumanMessage(content="/skill:work-writing Draft this memo"),
     )
 
     await ExplicitSkillSelectionHook().before_agent(_ctx(), state)

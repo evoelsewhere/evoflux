@@ -19,10 +19,10 @@ const slashCommands: SlashCommand[] = [
     hideAfterPrefix: 'skill:',
   },
   {
-    id: 'skill:docx',
-    label: 'docx',
-    displayName: 'skill:docx',
-    insertText: 'skill:docx',
+    id: 'skill:work-writing',
+    label: 'work-writing',
+    displayName: 'skill:work-writing',
+    insertText: 'skill:work-writing',
     description: 'Create Word documents',
     category: 'skill',
     keepInputOpen: true,
@@ -72,8 +72,8 @@ describe('InputBar skill directives', () => {
 
     fireEvent.keyDown(input, { key: 'Enter' })
 
-    expect(input).toHaveValue('/skill:docx ')
-    expect(screen.getByTestId('skill-chip')).toHaveTextContent('/skill:docx')
+    expect(input).toHaveValue('/skill:work-writing ')
+    expect(screen.getByTestId('skill-chip')).toHaveTextContent('/skill:work-writing')
   })
 
   it('submits the directive with the user prompt', async () => {
@@ -81,12 +81,12 @@ describe('InputBar skill directives', () => {
     render(<InputBar onSubmit={onSubmit} slashCommands={slashCommands} />)
     const input = screen.getByRole('textbox', { name: 'Message input' })
 
-    fireEvent.change(input, { target: { value: '/skill:docx Draft the report' } })
+    fireEvent.change(input, { target: { value: '/skill:work-writing Draft the report' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
 
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalledWith(
-        '/skill:docx Draft the report',
+        '/skill:work-writing Draft the report',
         undefined,
       )
     })
@@ -98,7 +98,7 @@ describe('InputBar skill directives', () => {
     expect(findSkillDirectives(text)).toEqual([
       { start: 20, end: 37, name: 'git:commit' },
     ])
-    expect(findSkillDirectives(text, new Set(['docx']))).toEqual([])
+    expect(findSkillDirectives(text, new Set(['work-writing']))).toEqual([])
   })
 
   it('keeps the selected skill highlighted after the message is sent', () => {
@@ -107,14 +107,14 @@ describe('InputBar skill directives', () => {
         block={{
           id: 'user-skill',
           type: 'user',
-          content: '/skill:docx Draft the report',
+          content: '/skill:work-writing Draft the report',
         }}
         isStreaming={false}
       />,
     )
 
     const chip = screen.getByTestId('skill-chip')
-    expect(chip).toHaveTextContent('/skill:docx')
+    expect(chip).toHaveTextContent('/skill:work-writing')
     expect(chip).toHaveClass('font-semibold')
   })
 })

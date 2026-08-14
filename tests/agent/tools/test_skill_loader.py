@@ -11,8 +11,6 @@ import pytest
 
 from app.agent.builtin_skills.catalog import BUNDLED_SKILL_MODES
 from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
-from app.agent.skills.discovery import list_skill_resources
-from app.plugin_platform.builtins import builtin_plugins_root
 from app.agent.tools.builtin.skill import (
     _builtin_skills_dir,
     _discover_skills_cached,
@@ -1134,13 +1132,10 @@ class TestBuiltinSkills:
             "coding-review",
             "coding-security",
             "coding-testing",
-            "docx",
             "frontend-design",
             "mcp-installer",
-            "pdf",
             "plugin-development",
             "plugin-installer",
-            "pptx",
             "review-pull-requests",
             "self-healing",
             "skill-installer",
@@ -1150,21 +1145,15 @@ class TestBuiltinSkills:
             "work-planning",
             "work-research",
             "work-writing",
-            "xlsx",
         }
-        assert set(discover_skills()) == set(BUNDLED_SKILL_MODES) | {
-            "docx",
-            "pdf",
-            "pptx",
-            "xlsx",
-        }
+        assert set(discover_skills()) == set(BUNDLED_SKILL_MODES)
 
     def test_mode_catalogs_expose_only_relevant_workflows(self):
         discovered = discover_skills()
         work = set(skills_for_mode(discovered, "work"))
         coding = set(skills_for_mode(discovered, "coding"))
 
-        assert {"work-research", "work-decision", "docx", "xlsx"} <= work
+        assert {"work-research", "work-decision", "work-writing"} <= work
         assert "plugin-development" in work
         assert {
             "coding-investigation",
@@ -1348,10 +1337,7 @@ class TestBuiltinSkills:
             r"`((?:references?|scripts?|assets?|templates?|themes?)/[^`]+)`)"
         )
         missing: list[str] = []
-        roots = [
-            _builtin_skills_dir(),
-            builtin_plugins_root() / "documents" / "skills",
-        ]
+        roots = [_builtin_skills_dir()]
         for root in roots:
             for skill_file in sorted(root.glob("*/SKILL.md")):
                 text = skill_file.read_text(encoding="utf-8")
@@ -1362,204 +1348,6 @@ class TestBuiltinSkills:
                     if not (skill_file.parent / raw).exists():
                         missing.append(f"{skill_file.parent.name}: {raw}")
         assert missing == []
-
-    def test_pptx_skill_uses_html_svg_hybrid_editable_authoring(self):
-        pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
-        skill = (pptx_root / "SKILL.md").read_text(encoding="utf-8")
-        normalized = " ".join(skill.split())
-
-        assert "research → design → HTML/SVG → PPTX → verify" in normalized
-        assert "hybrid deck" in normalized
-        assert "data-pptx-editable" in normalized
-        assert "python-pptx" in normalized
-        assert "Reopen the exact saved PPTX" in normalized
-        assert "use vision to inspect every complete source slide" in normalized
-        assert "vision QA: skipped (capability unavailable)" in normalized
-        assert "vector-picture editable" in normalized
-        assert "flattened" in normalized
-        assert "Required reference gate" in normalized
-        assert "Non-negotiable execution gates" in normalized
-        assert "Before the first authoring write" in normalized
-        assert "A direct `build_deck.py`-style program" in normalized
-        assert "stop and report the blocker" in normalized
-        assert "artifact(action=" not in normalized
-
-    def test_pptx_new_deck_route_requires_the_complete_core_reference_set(self):
-        skill = (
-            builtin_plugins_root() / "documents" / "skills" / "pptx" / "SKILL.md"
-        ).read_text(encoding="utf-8")
-        required = {
-            "references/html-svg-pptx-pipeline.md",
-            "references/content-derived-design-grammar.md",
-            "references/slide-quality-gate.md",
-            "references/vision-qa.md",
-            "references/style-library.md",
-        }
-
-        assert required <= set(re.findall(r"`(references/[^`]+\.md)`", skill))
-        assert "Write the chosen route and exact reference paths" in skill
-
-    def test_pptx_skill_distills_content_image_and_template_workflows(self):
-        pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
-        grammar = (
-            pptx_root / "references" / "content-derived-design-grammar.md"
-        ).read_text(encoding="utf-8")
-        images = (pptx_root / "references" / "image-intelligence.md").read_text(
-            encoding="utf-8"
-        )
-        templates = (pptx_root / "references" / "template-layout-use.md").read_text(
-            encoding="utf-8"
-        )
-        quality = (pptx_root / "references" / "slide-quality-gate.md").read_text(
-            encoding="utf-8"
-        )
-        grammar = " ".join(grammar.split())
-        images = " ".join(images.split())
-        templates = " ".join(templates.split())
-        quality = " ".join(quality.split())
-
-        assert "sample → converge → justify" in grammar
-        assert "4–5 layout families" in grammar
-        assert "author two structurally different showcase" in grammar
-        assert "focal point" in images
-        assert "negative space" in images
-        assert "safe crops" in images
-        assert "source, license or permission" in images
-        assert "master/layout lineage" in templates
-        assert "Choose layouts by fit" in templates
-        assert "placeholder_format.idx" in templates
-        assert "Do not replace inherited template chrome" in templates
-        assert "audience-facing copy" in quality
-        assert "contact sheet only" in quality
-        assert "does not replace individual inspection" in quality
-        assert "editability ledger" in quality
-        assert "SVG normally appears as one picture" in quality
-
-    def test_pptx_skill_bundle_exposes_pipeline_resources(self):
-        pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
-        resources = {item["path"] for item in list_skill_resources(pptx_root)}
-
-        style_names = {
-            "clean-professional",
-            "creative-magazine",
-            "data-dashboard",
-            "e-ink-magazine",
-            "handdrawn-technical",
-            "handdrawn-whiteboard",
-            "mckinsey-style",
-            "party-government-red",
-            "retro-flat-illustration",
-            "scientific-defense",
-            "teaching-courseware",
-            "warm-handmade",
-        }
-
-        assert resources == {
-            "examples/project.example.json",
-            "examples/slide.example.css",
-            "examples/slide.example.html",
-            "examples/style-previews/styles.css",
-            "references/content-derived-design-grammar.md",
-            "references/html-svg-pptx-pipeline.md",
-            "references/image-intelligence.md",
-            "references/slide-quality-gate.md",
-            "references/style-library.md",
-            "references/template-layout-use.md",
-            "references/vision-qa.md",
-            "scripts/validate_html_svg_project.py",
-        } | {f"assets/style-previews/{name}.webp" for name in style_names} | {
-            f"examples/style-previews/{name}.html" for name in style_names
-        }
-        assert not any("dna" in path.lower() for path in resources)
-        assert not any("qa-ledger" in path.lower() for path in resources)
-        assert not any(path.startswith("templates/") for path in resources)
-
-    def test_pptx_skill_has_no_artifact_tool_lifecycle(self):
-        skill = (
-            builtin_plugins_root() / "documents" / "skills" / "pptx" / "SKILL.md"
-        ).read_text(encoding="utf-8")
-        normalized = " ".join(skill.split())
-
-        assert "artifact(action=" not in normalized
-        assert "Artifact Fabric" not in normalized
-        assert "no longer provides a presentation-authoring tool" in normalized
-        assert "absolute final PPTX path" in normalized
-
-    def test_document_skills_describe_direct_authoring_boundaries(self):
-        root = builtin_plugins_root() / "documents" / "skills"
-        normalized = {
-            name: " ".join((root / name / "SKILL.md").read_text().split())
-            for name in ("docx", "pdf", "pptx", "xlsx")
-        }
-
-        assert "document-authoring tool" in normalized["docx"]
-        assert "PDF authoring or publish API" in normalized["pdf"]
-        assert "presentation-authoring tool" in normalized["pptx"]
-        assert "workbook-authoring tool" in normalized["xlsx"]
-        assert all(
-            "silently install" in body or "silently add" in body
-            for body in normalized.values()
-        )
-        assert all("Artifact Fabric" not in body for body in normalized.values())
-
-        assert "9360 DXA" not in normalized["docx"]
-        assert "locators from the manifest" not in normalized["docx"]
-        assert "does not calculate" in normalized["xlsx"]
-        assert "computed values were not recalculated" in normalized["xlsx"]
-
-    def test_docx_skill_distills_design_and_template_fidelity(self):
-        docx_root = builtin_plugins_root() / "documents" / "skills" / "docx"
-        design = (docx_root / "references" / "document-design-and-layout.md").read_text(
-            encoding="utf-8"
-        )
-        fidelity = (docx_root / "references" / "template-fidelity.md").read_text(
-            encoding="utf-8"
-        )
-        design = " ".join(design.split())
-        fidelity = " ".join(fidelity.split())
-
-        assert "Use a table only when" in design
-        assert "never use a fixed row height" in design
-        assert "Render every page" in design
-        assert "source is immutable and authoritative" in fidelity
-        assert "stable structure" in fidelity
-        assert "Pixel similarity alone is insufficient" in fidelity
-
-    def test_xlsx_skill_distills_design_formula_and_chart_workflows(self):
-        xlsx_root = builtin_plugins_root() / "documents" / "skills" / "xlsx"
-        design = (xlsx_root / "references" / "workbook-design.md").read_text(
-            encoding="utf-8"
-        )
-        formulas = (xlsx_root / "references" / "formulas-and-qa.md").read_text(
-            encoding="utf-8"
-        )
-        charts = (xlsx_root / "references" / "charts.md").read_text(encoding="utf-8")
-        design = " ".join(design.split())
-        formulas = " ".join(formulas.split())
-        charts = " ".join(charts.split())
-
-        assert "smallest plausible local change" in design
-        assert "typed values" in design
-        assert "Do not embed magic numbers" in formulas
-        assert "Do not edit or export" in formulas
-        assert "does not calculate formulas" in formulas
-        assert "one takeaway" in charts
-        assert "traceable to source cells" in charts
-        assert "blank or duplicate charts" in charts
-
-    def test_document_skill_descriptions_require_file_work(self):
-        root = builtin_plugins_root() / "documents" / "skills"
-        descriptions = {
-            name: _parse_frontmatter((root / name / "SKILL.md").read_text())[0][
-                "description"
-            ]
-            for name in ("docx", "pdf", "pptx", "xlsx")
-        }
-
-        assert "DOCX or Word file" in descriptions["docx"]
-        assert "PDF is an input" in descriptions["pdf"]
-        assert "PPTX or PowerPoint file" in descriptions["pptx"]
-        assert "XLSX or Excel workbook" in descriptions["xlsx"]
 
     @pytest.mark.asyncio
     async def test_builtin_skill_dir_points_at_auxiliary_files(self):
