@@ -51,6 +51,7 @@ from app.agent.hooks.stream_publisher import StreamPublisherHook
 from app.agent.hooks.summarization import build_team_summarization_hook
 from app.agent.hooks.title_generation import build_title_generation_hook
 from app.agent.hooks.memory_extraction import build_memory_extraction_hook
+from app.agent.lifecycle import is_sleep_message
 from app.agent.mode.team.hooks.queued_injection import QueuedMessageInjectionHook
 from app.agent.mode.team.hooks.team_inbox import TeamInboxHook
 from app.agent.mode.team.hooks.team_prompt import AgentTeamProtocolHook
@@ -1695,7 +1696,7 @@ class TeamMemberBase(abc.ABC):
         last = rows[0]
         if last.role != "assistant" or last.tool_calls:
             return
-        if (last.content or "").strip() in {"<sleep>", "[sleep]"}:
+        if is_sleep_message(last):
             return
         if str(last.id) == self._last_open_task_nudge_message_id:
             # Already nudged for this exact stopping point — re-checking on
@@ -1793,7 +1794,7 @@ class TeamMemberBase(abc.ABC):
         last = rows[0]
         if last.role != "assistant" or last.tool_calls:
             return
-        if (last.content or "").strip() in {"<sleep>", "[sleep]"}:
+        if is_sleep_message(last):
             return  # already complied
 
         pending_sorted = sorted(pending)

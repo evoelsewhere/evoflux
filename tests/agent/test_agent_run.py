@@ -24,6 +24,7 @@ from app.agent.errors import (
     ProviderRateLimitError,
     ProviderRequestError,
 )
+from app.agent.hooks import BaseAgentHook
 from app.agent.providers.base import LLMProviderBase
 from app.agent.providers.model_metadata import ModelCost
 from app.agent.tools.registry import InjectedArg, Tool
@@ -237,6 +238,62 @@ async def test_agent_run_returns_messages():
     last = last_assistant(msgs)
     assert last is not None
     assert last.content == "Hello!"
+
+
+async def test_agent_run_normalizes_chunked_sleep_suffix_before_hooks():
+    class CaptureDeltasHook(BaseAgentHook):
+        def __init__(self) -> None:
+            self.content: list[str] = []
+
+        async def on_model_delta(self, ctx, state, chunk) -> None:
+            if chunk.choices and chunk.choices[0].delta.content:
+                self.content.append(chunk.choices[0].delta.content)
+
+    provider = MockProvider(
+        [
+            [
+                make_text_chunk("Work is underway"),
+                make_text_chunk(" <"),
+                make_text_chunk("sle"),
+                make_text_chunk("ep>\n"),
+            ]
+        ]
+    )
+    capture = CaptureDeltasHook()
+    agent = Agent(name="bot", llm_provider=provider, hooks=[capture])
+
+    messages = await agent.run([HumanMessage(content="delegate")])
+
+    last = last_assistant(messages)
+    assert last is not None
+    assert last.content == "Work is underway"
+    assert last.extra and last.extra["lifecycle"] == "sleep"
+    assert "<sleep>" not in "".join(capture.content)
+
+
+@pytest.mark.parametrize("sentinel", ["<sleep>", "[sleep]"])
+async def test_agent_run_normalizes_exact_sleep_to_metadata(sentinel: str):
+    provider = MockProvider([[make_text_chunk(sentinel)]])
+    agent = Agent(name="bot", llm_provider=provider)
+
+    messages = await agent.run([HumanMessage(content="wait")])
+
+    last = last_assistant(messages)
+    assert last is not None
+    assert last.content is None
+    assert last.extra and last.extra["lifecycle"] == "sleep"
+
+
+async def test_agent_run_preserves_non_suffix_sleep_text():
+    provider = MockProvider([[make_text_chunk("Use <sleep> only while waiting.")]])
+    agent = Agent(name="bot", llm_provider=provider)
+
+    messages = await agent.run([HumanMessage(content="explain")])
+
+    last = last_assistant(messages)
+    assert last is not None
+    assert last.content == "Use <sleep> only while waiting."
+    assert not (last.extra and last.extra.get("lifecycle"))
 
 
 async def test_agent_run_stamps_agent_identity():

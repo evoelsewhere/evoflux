@@ -26,6 +26,7 @@ from loguru import logger
 from app.agent.agent_loop.streaming import stream_and_assemble
 from app.agent.agent_loop.tool_dispatch import gather_or_cancel, run_serially
 from app.agent.agent_loop.tool_executor import make_tool_executor
+from app.agent.lifecycle import normalize_sleep_message
 from app.agent.usage import usage_to_dict
 from app.agent.checkpointer import Checkpointer
 from app.agent.hooks import BaseAgentHook
@@ -782,6 +783,13 @@ class Agent(Generic[TContext]):
             # later, unrelated hiccup gets the full resume allowance again.
             provider_resume_attempts = 0
 
+            # Convert the legacy model-facing sentinel into runtime-owned
+            # metadata before after_model hooks, persistence, or completion
+            # logic inspect the response. Streaming providers normally arrive
+            # normalized by stream_and_assemble; this also covers hooks that
+            # replace it.
+            _is_sleep = normalize_sleep_message(assistant_msg)
+
             tc_list = assistant_msg.tool_calls or []
             last_usage = iter_usage_holder[0]
             effective_model = state.metadata.pop("effective_model", None)
@@ -803,7 +811,8 @@ class Agent(Generic[TContext]):
             )
 
             has_assistant_payload = bool(
-                (assistant_msg.content and assistant_msg.content.strip())
+                _is_sleep
+                or (assistant_msg.content and assistant_msg.content.strip())
                 or (
                     assistant_msg.reasoning_content
                     and assistant_msg.reasoning_content.strip()
@@ -872,9 +881,6 @@ class Agent(Generic[TContext]):
 
             # Me sync after after_model — captures assistant message + usage
             await self._sync(checkpointer, ctx, state)
-
-            # Me check sleep sentinel before deciding whether to continue
-            _is_sleep = (assistant_msg.content or "").strip() in ("<sleep>", "[sleep]")
 
             if not tc_list:
                 completion_feedback: list[str] = []

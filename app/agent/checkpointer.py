@@ -332,6 +332,7 @@ class SQLiteCheckpointer(Checkpointer):
                             or (msg.reasoning_content and msg.reasoning_content.strip())
                             or msg.tool_calls
                             or msg.is_summary
+                            or (msg.extra and msg.extra.get("lifecycle"))
                         )
                         if not has_content:
                             logger.debug(

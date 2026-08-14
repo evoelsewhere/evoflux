@@ -258,6 +258,31 @@ class TestSQLiteCheckpointerSync:
         assert any(m.content == "tool result" for m in messages)
 
     @pytest.mark.asyncio
+    async def test_sync_persists_lifecycle_only_assistant(self):
+        """Lifecycle metadata makes an empty assistant row durable."""
+        import app.core.db as _db
+        from app.services.chat_service import get_messages
+
+        sid = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _make_session(db, sid)
+
+        cp = SQLiteCheckpointer(_db.async_session_factory)
+        ctx = _ctx(str(sid))
+        state = AgentState(
+            messages=[AssistantMessage(content=None, extra={"lifecycle": "sleep"})]
+        )
+
+        await cp.sync(ctx, state)
+
+        async with _db.async_session_factory() as db:
+            messages = await get_messages(db, sid)
+        assert len(messages) == 1
+        assert messages[0].content in {None, ""}
+        assert messages[0].extra == {"lifecycle": "sleep"}
+
+    @pytest.mark.asyncio
     async def test_sync_persists_tool_message_extra_duration(self):
         """Tool duration metadata must survive reload via SessionMessage.extra."""
         import app.core.db as _db

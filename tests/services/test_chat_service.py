@@ -501,6 +501,22 @@ async def test_get_messages_excludes_hidden_from_user_extra(session):
     assert [m.content for m in llm_messages] == ["visible", "hidden from user"]
 
 
+@pytest.mark.asyncio
+async def test_get_messages_normalizes_legacy_sleep_sentinel(session):
+    chat_session = await create_chat_session(session)
+    await save_message(
+        session,
+        chat_session.id,
+        AssistantMessage(content="Work is underway. <sleep>"),
+    )
+
+    fetched = await get_messages(session, chat_session.id)
+
+    assert len(fetched) == 1
+    assert fetched[0].content == "Work is underway."
+    assert fetched[0].extra == {"lifecycle": "sleep"}
+
+
 async def test_queued_user_messages_are_hidden_until_popped(session):
     chat_session = await create_chat_session(session, "Queue")
     queued = await save_queued_user_message(session, chat_session.id, "next")

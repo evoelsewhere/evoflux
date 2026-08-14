@@ -128,4 +128,31 @@ describe('turn partitioning', () => {
       ])
     }
   })
+
+  it('folds delegation waits represented by lifecycle metadata', () => {
+    const delegationBlock: ContentBlock = {
+      ...block('tool', 'delegate'),
+      toolName: 'team_delegate',
+    }
+    const sleepBlock: ContentBlock = {
+      ...block('text', ''),
+      extra: { lifecycle: 'sleep' },
+    }
+
+    const turns = partitionTurns([
+      delegationBlock,
+      block('text', 'Work is underway.'),
+      sleepBlock,
+      block('text', 'Final synthesis.'),
+    ])
+
+    expect(turns).toHaveLength(1)
+    expect(turns[0]).toMatchObject({ kind: 'assistant' })
+    if (turns[0]?.kind === 'assistant') {
+      expect(turns[0].blocks.map((item) => item.content)).toEqual([
+        'delegate',
+        'Final synthesis.',
+      ])
+    }
+  })
 })

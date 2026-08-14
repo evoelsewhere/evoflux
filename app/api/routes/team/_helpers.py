@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from fastapi import HTTPException, UploadFile
 from loguru import logger
 
+from app.agent.lifecycle import SLEEP_LIFECYCLE, extract_sleep_prefix
 from app.api.schemas.sessions import MessageResponse
 from app.core.paths import session_workspace_dir
 from app.services import agent_service
@@ -42,6 +43,14 @@ _INTERNAL_ATTACHMENT_FIELDS = frozenset(
 
 def _message_response(m) -> MessageResponse:
     resp = MessageResponse.model_validate(m)
+    if resp.role == "assistant":
+        sleep_prefix = extract_sleep_prefix(resp.content)
+        if sleep_prefix is not None:
+            resp.content = sleep_prefix or None
+            resp.extra = {
+                **(resp.extra or {}),
+                "lifecycle": SLEEP_LIFECYCLE,
+            }
     if m.extra and m.extra.get("is_continuation"):
         resp.reasoning_content = None
     if m.extra and isinstance(m.extra.get("attachments"), list):

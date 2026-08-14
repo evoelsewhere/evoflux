@@ -95,6 +95,7 @@ function appendStreamingText(
   kind: BufferedTextKind,
   text: string,
   model?: string | null,
+  lifecycle?: string | null,
 ) {
   ensureAgent(draft, agent)
   const stream = draft.agentStreams[agent]
@@ -109,6 +110,7 @@ function appendStreamingText(
     if (last?.type === 'text') {
       if (!last.startedAt) last.startedAt = Date.now()
       if (model) last.extra = { ...(last.extra ?? {}), model }
+      if (lifecycle) last.extra = { ...(last.extra ?? {}), lifecycle }
     }
   }
   if (text) {
@@ -150,7 +152,14 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         const text = d.text as string
         const meta = d.metadata as Record<string, unknown> | undefined
         set((draft) => {
-          appendStreamingText(draft, agent, 'message', text, typeof meta?.model === 'string' ? meta.model : null)
+          appendStreamingText(
+            draft,
+            agent,
+            'message',
+            text,
+            typeof meta?.model === 'string' ? meta.model : null,
+            typeof meta?.lifecycle === 'string' ? meta.lifecycle : null,
+          )
         })
         break
       }

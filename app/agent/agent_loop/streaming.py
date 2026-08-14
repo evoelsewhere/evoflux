@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from app.agent.agent_loop.retry import StreamRestart, stream_with_retry
+from app.agent.lifecycle import SLEEP_LIFECYCLE, SleepSentinelStreamFilter
 from app.agent.outbound_redaction import (
     OutboundContext,
     load_outbound_data_policy,
@@ -33,6 +34,7 @@ from app.agent.usage import usage_to_dict
 from app.agent.schemas.chat import (
     AssistantMessage,
     ChatMessage,
+    ChatCompletionDelta,
     HumanMessage,
     SystemMessage,
     ToolCall,
@@ -175,6 +177,8 @@ async def stream_and_assemble(
     """
     full_content = ""
     reasoning = ""
+    content_filter = SleepSentinelStreamFilter()
+    last_choice_chunk = None
     tool_calls_buffer: dict[int, dict] = {}
     last_usage: Usage | None = None
 
@@ -236,11 +240,26 @@ async def stream_and_assemble(
             )
             full_content = ""
             reasoning = ""
+            content_filter.reset()
             tool_calls_buffer = {}
             continue
 
+        if chunk.choices:
+            last_choice_chunk = chunk
+        publish_chunk = chunk
+        if chunk.choices and chunk.choices[0].delta.content:
+            filtered_content = content_filter.feed(chunk.choices[0].delta.content)
+            if filtered_content != chunk.choices[0].delta.content:
+                delta = chunk.choices[0].delta.model_copy(
+                    update={"content": filtered_content or None}
+                )
+                choice = chunk.choices[0].model_copy(update={"delta": delta})
+                publish_chunk = chunk.model_copy(
+                    update={"choices": [choice, *chunk.choices[1:]]}
+                )
+
         for hook in hooks:
-            await hook.on_model_delta(ctx, state, chunk)
+            await hook.on_model_delta(ctx, state, publish_chunk)
 
         if chunk.usage:
             last_usage = chunk.usage
@@ -248,7 +267,7 @@ async def stream_and_assemble(
         if not chunk.choices:
             continue
 
-        delta = chunk.choices[0].delta
+        delta = publish_chunk.choices[0].delta
 
         if delta.reasoning_content:
             reasoning += delta.reasoning_content
@@ -350,6 +369,23 @@ async def stream_and_assemble(
                                 or ""
                             ) + tc.function.thought_signature
 
+    tail_content, is_sleep = content_filter.finish()
+    if tail_content:
+        full_content += tail_content
+        if last_choice_chunk is not None:
+            tail_delta = ChatCompletionDelta(content=tail_content)
+            tail_choice = last_choice_chunk.choices[0].model_copy(
+                update={"delta": tail_delta, "finish_reason": None}
+            )
+            tail_chunk = last_choice_chunk.model_copy(
+                update={"choices": [tail_choice], "usage": None}
+            )
+            for hook in hooks:
+                await hook.on_model_delta(ctx, state, tail_chunk)
+
+    if is_sleep:
+        full_content = full_content.rstrip()
+
     # Drop tool calls left half-formed by a mid-stream interrupt: missing
     # name (OpenAI Responses only emits it on the final ``done`` event) or
     # invalid JSON args. Empty ``arguments`` is a valid no-arg call.
@@ -384,10 +420,10 @@ async def stream_and_assemble(
     # chain.  The run loop re-asserts the same mapping — that
     # assignment is now idempotent but kept for clarity and to cover the
     # rare case of a hook replacing `assistant_msg` wholesale.
-    extra: dict | None = None
+    extra: dict | None = {"lifecycle": SLEEP_LIFECYCLE} if is_sleep else None
     if last_usage is not None:
         model_id = state.metadata.get("effective_model") or primary_label
-        extra = {"usage": usage_to_dict(last_usage, model_id)}
+        extra = {**(extra or {}), "usage": usage_to_dict(last_usage, model_id)}
 
     msg = AssistantMessage(
         content=full_content or None,
