@@ -54,6 +54,8 @@
     "allow-read-workspace-file",
     "allow-list-directory",
     "allow-open-workspace-file-with-handle",
+    "allow-open-workspace-root-with-handle",
+    "allow-reveal-workspace-path-with-handle",
     "allow-start-file-watcher",
     "allow-stop-file-watcher",
     "allow-list-workspace-openers",
