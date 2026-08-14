@@ -30,7 +30,7 @@ the communication job repeats, while varying the content silhouette inside its
 intended frame. Preserve the source aspect ratio; never coerce a 4:3, portrait,
 or custom template to 16:9.
 
-## Work within python-pptx limits
+## Work within authoring-library limits
 
 Create a slide from an actual source layout and fill verified placeholders by
 `placeholder_format.idx` and placeholder type. Duplicate an existing populated
@@ -39,8 +39,11 @@ preserved safely; `python-pptx` has no complete public clone API.
 
 Keep master/layout chrome and reusable template objects native. Do not cover
 inherited headers, footers, logos, numbering, or background art with an
-unnecessary full-slide raster. Do not inject an arbitrary HTML shell into a
-native layout or claim support for an edit that `python-pptx` cannot preserve.
+unnecessary full-slide raster. Do not replace inherited template chrome with a
+full-slide HTML shell. HTML/SVG may prototype or populate a redesigned content
+region only when its shell stays inside the verified placeholder or content
+frame. Do not claim support for an edit that the authoring library cannot
+preserve.
 
 ## Edit conservatively
 

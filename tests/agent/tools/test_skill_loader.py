@@ -1363,17 +1363,41 @@ class TestBuiltinSkills:
                         missing.append(f"{skill_file.parent.name}: {raw}")
         assert missing == []
 
-    def test_pptx_skill_uses_direct_editable_authoring(self):
+    def test_pptx_skill_uses_html_svg_hybrid_editable_authoring(self):
         pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
         skill = (pptx_root / "SKILL.md").read_text(encoding="utf-8")
         normalized = " ".join(skill.split())
 
-        assert "task-local script" in normalized
+        assert "research → design → HTML/SVG → PPTX → verify" in normalized
+        assert "hybrid deck" in normalized
+        assert "data-pptx-editable" in normalized
         assert "python-pptx" in normalized
         assert "Reopen the exact saved PPTX" in normalized
-        assert "Render every slide with an available renderer" in normalized
-        assert "semantic renderer as a QA approximation" in normalized
+        assert "use vision to inspect every complete source slide" in normalized
+        assert "vision QA: skipped (capability unavailable)" in normalized
+        assert "vector-picture editable" in normalized
+        assert "flattened" in normalized
+        assert "Required reference gate" in normalized
+        assert "Non-negotiable execution gates" in normalized
+        assert "Before the first authoring write" in normalized
+        assert "A direct `build_deck.py`-style program" in normalized
+        assert "stop and report the blocker" in normalized
         assert "artifact(action=" not in normalized
+
+    def test_pptx_new_deck_route_requires_the_complete_core_reference_set(self):
+        skill = (
+            builtin_plugins_root() / "documents" / "skills" / "pptx" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        required = {
+            "references/html-svg-pptx-pipeline.md",
+            "references/content-derived-design-grammar.md",
+            "references/slide-quality-gate.md",
+            "references/vision-qa.md",
+            "references/style-library.md",
+        }
+
+        assert required <= set(re.findall(r"`(references/[^`]+\.md)`", skill))
+        assert "Write the chosen route and exact reference paths" in skill
 
     def test_pptx_skill_distills_content_image_and_template_workflows(self):
         pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
@@ -1404,20 +1428,47 @@ class TestBuiltinSkills:
         assert "master/layout lineage" in templates
         assert "Choose layouts by fit" in templates
         assert "placeholder_format.idx" in templates
-        assert "Do not inject an arbitrary HTML shell" in templates
+        assert "Do not replace inherited template chrome" in templates
         assert "audience-facing copy" in quality
         assert "contact sheet only" in quality
         assert "does not replace individual inspection" in quality
+        assert "editability ledger" in quality
+        assert "SVG normally appears as one picture" in quality
 
-    def test_pptx_skill_bundle_exposes_only_distilled_resources(self):
+    def test_pptx_skill_bundle_exposes_pipeline_resources(self):
         pptx_root = builtin_plugins_root() / "documents" / "skills" / "pptx"
         resources = {item["path"] for item in list_skill_resources(pptx_root)}
 
+        style_names = {
+            "clean-professional",
+            "creative-magazine",
+            "data-dashboard",
+            "e-ink-magazine",
+            "handdrawn-technical",
+            "handdrawn-whiteboard",
+            "mckinsey-style",
+            "party-government-red",
+            "retro-flat-illustration",
+            "scientific-defense",
+            "teaching-courseware",
+            "warm-handmade",
+        }
+
         assert resources == {
+            "examples/project.example.json",
+            "examples/slide.example.css",
+            "examples/slide.example.html",
+            "examples/style-previews/styles.css",
             "references/content-derived-design-grammar.md",
+            "references/html-svg-pptx-pipeline.md",
             "references/image-intelligence.md",
             "references/slide-quality-gate.md",
+            "references/style-library.md",
             "references/template-layout-use.md",
+            "references/vision-qa.md",
+            "scripts/validate_html_svg_project.py",
+        } | {f"assets/style-previews/{name}.webp" for name in style_names} | {
+            f"examples/style-previews/{name}.html" for name in style_names
         }
         assert not any("dna" in path.lower() for path in resources)
         assert not any("qa-ledger" in path.lower() for path in resources)

@@ -1,0 +1,15 @@
+{
+  "schema_version": 8,
+  "title": "HTML and SVG source presentation",
+  "width": 1280,
+  "height": 720,
+  "slides": [
+    {
+      "id": "html-svg-opening",
+      "html_path": "slide.example.html",
+      "style_paths": ["slide.example.css"],
+      "assets": {},
+      "speaker_notes": "[Sources]\n- Add claim and visual provenance here."
+    }
+  ]
+}

@@ -1,9 +1,9 @@
 # Content-derived presentation grammar
 
-Use this reference before choosing layouts or building native slides. The deck's
-form must grow from its communication job, evidence, brand, supplied images,
-and presentation setting. A named aesthetic can narrow the search, but it is
-not a recipe.
+Use this reference before choosing layouts or authoring HTML/SVG slide sources.
+The deck's form must grow from its communication job, evidence, brand, supplied
+images, and presentation setting. A named aesthetic can narrow the search, but
+it is not a recipe.
 
 ## Derive the system
 
