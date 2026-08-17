@@ -40,6 +40,8 @@
     "allow-backend-health",
     "allow-backend-logs-path",
     "allow-app-backend-status",
+    "allow-app-retry-backend",
+    "allow-app-reveal-backend-log",
     "allow-app-remove-backend-server",
     "allow-app-save-backend-server",
     "allow-app-use-external-backend",
