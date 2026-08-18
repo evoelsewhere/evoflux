@@ -165,7 +165,7 @@
     color-scheme: dark;
 
     /* Surfaces — distinct enough to scan, close enough to feel like one app. */
-    --bg-page:           #232220;
+    --bg-page:           #222222;
     --bg-sidebar:        #1F1E1C;
     --bg-card:           #2D2C2A;
     --bg-input:          #282725;
@@ -344,7 +344,7 @@
     color-scheme: light;
 
     /* Surfaces */
-    --bg-page:           #FAFAFA;
+    --bg-page:           #FFFFFF;
     --bg-sidebar:        #F5F5F5;
     --bg-card:           #FFFFFF;
     --bg-input:          #FFFFFF;
