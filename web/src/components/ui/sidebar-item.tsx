@@ -65,8 +65,8 @@ export function SidebarItem({
         collapsed
           ? 'h-10 w-10 justify-center px-0 py-0'
           : compact
-            ? 'px-2.5 py-1.5'
-            : 'px-3 py-2',
+            ? 'h-8 px-2.5 py-0'
+            : 'h-10 px-3 py-0',
         active
           ? 'arc-active-indicator bg-(--bg-key) text-(--color-accent) font-semibold'
           : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
