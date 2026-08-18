@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit
 
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -44,6 +45,67 @@ _UNTRUSTED_ACTIONS = frozenset(
         "status",
     }
 )
+
+
+def _domain_matches(host: str, patterns: list[str]) -> bool:
+    normalized = host.lower().rstrip(".")
+    return any(
+        normalized == pattern.lower().strip().lstrip(".").rstrip(".")
+        or normalized.endswith("." + pattern.lower().strip().lstrip(".").rstrip("."))
+        for pattern in patterns
+        if pattern.strip().lstrip(".").rstrip(".")
+    )
+
+
+def _browser_policy_refusal(
+    action: str,
+    params: dict[str, Any],
+    current_url: str,
+    policy: Any,
+) -> str | None:
+    if action == "evaluate" and not policy.allow_evaluate:
+        return "JavaScript evaluate is disabled in Settings → Browser."
+    if action == "storage" and not policy.allow_storage:
+        return "Page storage access is disabled in Settings → Browser."
+    if action == "http" and not policy.allow_http_requests:
+        return "Page HTTP debugging is disabled in Settings → Browser."
+    if (
+        action == "cookies"
+        and params.get("include_values") is True
+        and not policy.allow_cookie_values
+    ):
+        return "Readable cookie values are disabled in Settings → Browser."
+
+    target_url = (
+        str(params.get("url") or "")
+        if action in {"navigate", "new_tab"}
+        else current_url
+    )
+    if not target_url:
+        if (policy.allowed_domains or policy.blocked_domains) and action not in {
+            "start",
+            "stop",
+            "status",
+            "get_tabs",
+        }:
+            return (
+                "Could not validate the active page against the browser domain policy."
+            )
+        return None
+    try:
+        parsed = urlsplit(target_url)
+    except ValueError:
+        return f"Invalid browser URL: {target_url}"
+    if action in {"navigate", "new_tab"} and parsed.scheme not in {"http", "https"}:
+        return "Agent browser navigation only allows http:// and https:// URLs."
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return None
+    if _domain_matches(host, policy.blocked_domains):
+        return f"Domain '{host}' is blocked in Settings → Browser."
+    if policy.allowed_domains and not _domain_matches(host, policy.allowed_domains):
+        return f"Domain '{host}' is not in the built-in browser allowlist."
+    return None
 
 
 def _get_sid(state: Any) -> str:
@@ -544,17 +606,53 @@ async def browser_use(
         )
 
     from app.services.direct_browser_bridge import direct_browser_bridge
+    from app.core.runtime_settings import BuiltInBrowserSettings, load_runtime_settings
+
+    try:
+        policy = load_runtime_settings().browser
+    except Exception:
+        policy = BuiltInBrowserSettings()
+
+    current_url = ""
+    domain_policy_active = bool(policy.allowed_domains or policy.blocked_domains)
+    if domain_policy_active:
+        try:
+            status = await direct_browser_bridge.request(session_id, "status", {})
+            if isinstance(status, dict) and isinstance(status.get("url"), str):
+                current_url = status["url"]
+        except Exception:
+            pass
 
     results: list[str | ToolResult] = []
     for action in actions:
         params = action.model_dump(exclude_none=True)
         name = str(params.pop("action"))
+        refusal = _browser_policy_refusal(name, params, current_url, policy)
+        if refusal is not None:
+            results.append(f"Error ({name}): {refusal}")
+            continue
         try:
             value = await direct_browser_bridge.request(session_id, name, params)
             if isinstance(value, dict) and value.get("kind") == "image":
                 results.append(_image_result(value))
             else:
                 results.append(_text_result(name, value))
+            if domain_policy_active and name in {
+                "navigate",
+                "new_tab",
+                "switch_tab",
+                "close_tab",
+                "back",
+                "forward",
+                "reload",
+            }:
+                refreshed = await direct_browser_bridge.request(
+                    session_id, "status", {}
+                )
+                if isinstance(refreshed, dict) and isinstance(
+                    refreshed.get("url"), str
+                ):
+                    current_url = refreshed["url"]
         except Exception as exc:
             logger.debug("direct_browser_error action={} error={}", name, exc)
             results.append(f"Error ({name}): {exc}")

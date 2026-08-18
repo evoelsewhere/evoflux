@@ -121,6 +121,47 @@ async def test_direct_errors_are_action_scoped(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_browser_policy_blocks_unsafe_urls_and_disabled_evaluate(
+    monkeypatch,
+) -> None:
+    from app.core.runtime_settings import BuiltInBrowserSettings
+
+    monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: True)
+    monkeypatch.setattr(
+        "app.core.runtime_settings.load_runtime_settings",
+        lambda: SimpleNamespace(
+            browser=BuiltInBrowserSettings(
+                blocked_domains=["private.example"],
+                allow_evaluate=False,
+            )
+        ),
+    )
+    requests: list[tuple[str, dict]] = []
+
+    async def request(_sid: str, action: str, params: dict):
+        requests.append((action, params))
+        if action == "status":
+            return {"url": "https://example.com"}
+        return f"direct:{action}"
+
+    monkeypatch.setattr(direct_browser_bridge, "request", request)
+
+    result = await browser_tool.browser_use.arun(
+        _injected={"_state": _state()},
+        actions=[
+            {"action": "navigate", "url": "file:///etc/passwd"},
+            {"action": "navigate", "url": "https://private.example/account"},
+            {"action": "evaluate", "script": "document.cookie"},
+        ],
+    )
+
+    assert "only allows http:// and https://" in result
+    assert "is blocked" in result
+    assert "evaluate is disabled" in result
+    assert requests == [("status", {})]
+
+
+@pytest.mark.asyncio
 async def test_expanded_control_and_debug_actions_are_forwarded(monkeypatch) -> None:
     monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: True)
     requests: list[tuple[str, dict]] = []
