@@ -9,6 +9,8 @@ import { useTeamStore } from '@/stores/useTeamStore'
 const api = vi.hoisted(() => ({
   applyChangeSet: vi.fn(),
   rejectChangeSet: vi.fn(),
+  runEditorAction: vi.fn(),
+  codingWorkspaceFileUrl: vi.fn(() => '/file'),
 }))
 
 vi.mock('@/api/client', () => api)
@@ -21,6 +23,8 @@ const proposal: ChangeSetResponse = {
   description: 'Review before apply',
   status: 'pending',
   snapshot_hash: null,
+  verification_commands: [],
+  verification: [],
   created_at: 1,
   updated_at: 1,
   files: [
@@ -40,6 +44,7 @@ const proposal: ChangeSetResponse = {
 beforeEach(() => {
   api.applyChangeSet.mockReset()
   api.rejectChangeSet.mockReset()
+  api.runEditorAction.mockReset()
   useChangeSetStore.setState({ active: proposal, busy: false })
   useTeamStore.setState({ sessionId: 'session-1' })
   Object.defineProperty(window, 'matchMedia', {

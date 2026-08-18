@@ -1,6 +1,11 @@
 import { Check, FileDiff, Loader2, X } from 'lucide-react'
 
-import { applyChangeSet, rejectChangeSet } from '@/api/client'
+import {
+  applyChangeSet,
+  codingWorkspaceFileUrl,
+  rejectChangeSet,
+  runEditorAction,
+} from '@/api/client'
 import type { ChangeSetFile, ChangeSetResponse } from '@/api/types'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { cn } from '@/lib/utils'
@@ -81,6 +86,7 @@ export function ChangeSetReviewPanel() {
 
   if (!active) return null
   const pendingPaths = active.files.filter((file) => file.status === 'pending').map((file) => file.path)
+  const failedVerification = active.verification.find((item) => item.status === 'failed')
 
   const decide = async (decision: 'apply' | 'reject', paths: string[]) => {
     if (busy || paths.length === 0) return
@@ -99,6 +105,35 @@ export function ChangeSetReviewPanel() {
       pushToast({
         tone: 'error',
         title: decision === 'apply' ? 'Could not apply changes' : 'Could not reject changes',
+        description: error instanceof Error ? error.message : undefined,
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const proposeFollowup = async () => {
+    const path = active.files.find((file) => file.status === 'applied')?.path
+    if (!path || !sessionId || !failedVerification || busy) return
+    setBusy(true)
+    try {
+      const fileResponse = await fetch(codingWorkspaceFileUrl(active.workspace, path))
+      if (!fileResponse.ok) throw new Error(`HTTP ${fileResponse.status}`)
+      const response = await runEditorAction(active.workspace, {
+        session_id: sessionId,
+        action: 'fix_diagnostic',
+        active_file: path,
+        content: await fileResponse.text(),
+        relevant_terminal_failure: String(failedVerification.output ?? failedVerification.message ?? ''),
+        instruction: 'Verification failed after applying the previous ChangeSet. Analyze the evidence and propose the next minimal guarded fix.',
+      })
+      if (!response.change_set) throw new Error('AI did not return a follow-up ChangeSet.')
+      setActive(response.change_set)
+      pushToast({ tone: 'info', title: 'Follow-up fix ready for review' })
+    } catch (error) {
+      pushToast({
+        tone: 'error',
+        title: 'Could not propose follow-up fix',
         description: error instanceof Error ? error.message : undefined,
       })
     } finally {
@@ -130,6 +165,33 @@ export function ChangeSetReviewPanel() {
         {active.files.map((file) => (
           <FileProposal key={file.path} file={file} busy={busy} onDecision={(decision, paths) => { void decide(decision, paths) }} />
         ))}
+        {active.verification.length > 0 && (
+          <section className="rounded-xl border border-(--color-border) bg-(--bg-card) p-3">
+            <h3 className="text-xs font-semibold text-(--color-text)">Verification</h3>
+            <div className="mt-2 space-y-1.5">
+              {active.verification.map((item, index) => (
+                <div key={`${String(item.kind)}:${index}`} className="flex items-start gap-2 text-[11px]">
+                  <span className={item.status === 'passed' ? 'text-(--color-success)' : item.status === 'failed' ? 'text-(--color-error)' : 'text-(--color-text-muted)'}>
+                    {item.status === 'passed' ? 'Passed' : item.status === 'failed' ? 'Failed' : 'Unavailable'}
+                  </span>
+                  <span className="min-w-0 flex-1 break-all font-mono text-(--color-text-muted)">
+                    {String(item.command ?? item.path ?? item.kind ?? 'verification')}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {failedVerification && (
+              <button
+                type="button"
+                disabled={busy || !sessionId}
+                onClick={() => { void proposeFollowup() }}
+                className="mt-3 rounded-md bg-(--color-accent)/12 px-2.5 py-1.5 text-[11px] font-medium text-(--color-accent) hover:bg-(--color-accent)/20 disabled:opacity-50"
+              >
+                Analyze failure and propose next fix
+              </button>
+            )}
+          </section>
+        )}
       </div>
       {pendingPaths.length > 0 && (
         <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-(--color-border) px-3 py-2">

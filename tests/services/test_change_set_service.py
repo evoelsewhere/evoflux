@@ -193,3 +193,25 @@ def test_workspace_edit_rejects_escape_and_overlapping_edits(tmp_path: Path):
                 }
             },
         )
+
+
+@pytest.mark.asyncio
+async def test_apply_runs_allowlisted_existing_verification_command(tmp_path: Path):
+    target = tmp_path / "notes.txt"
+    target.write_text("before\n", encoding="utf-8")
+    record = create_change_set(
+        tmp_path,
+        origin="ai",
+        title="Update notes",
+        files=[ChangeFileInput("notes.txt", "after\n")],
+        verification_commands=[
+            "python -c \"print('verified')\"",
+            "git status; echo unsafe",
+        ],
+    )
+
+    await apply_change_set(record.id, tmp_path)
+
+    assert record.verification_commands == ["python -c \"print('verified')\""]
+    assert record.verification[0]["status"] == "passed"
+    assert "verified" in record.verification[0]["output"]

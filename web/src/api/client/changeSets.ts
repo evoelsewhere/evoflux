@@ -35,12 +35,13 @@ async function decideChangeSet(
   decision: 'apply' | 'reject',
   paths?: string[],
   sessionId?: string | null,
+  verify = true,
 ): Promise<ChangeSetResponse> {
   const suffix = `/${encodeURIComponent(changeSetId)}/${decision}`
   const res = await fetch(changeSetUrl(workspace, suffix), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ paths, session_id: sessionId ?? undefined }),
+    body: JSON.stringify({ paths, session_id: sessionId ?? undefined, verify }),
   })
   if (!res.ok) await parseDetailOrThrow(res, `${decision}ChangeSet`)
   return res.json()

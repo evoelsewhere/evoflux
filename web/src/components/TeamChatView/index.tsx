@@ -1448,6 +1448,8 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
               sessionId={sessionIdState}
               terminalId={tab.id}
               active={active}
+              workspace={mode === 'coding' ? workspace : null}
+              activeFilePath={codingFileViewer?.path ?? null}
             />
           )}
         </WorkbenchSurface>
