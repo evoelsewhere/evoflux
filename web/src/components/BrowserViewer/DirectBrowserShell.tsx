@@ -27,6 +27,7 @@ import { useMotionPreset } from '@/lib/motion'
 import { openExternalUrl } from '@/lib/open-external'
 import { cn } from '@/lib/utils'
 import { useToastStore } from '@/stores/useToastStore'
+import { useUIStore } from '@/stores/useUIStore'
 import {
   loadBrowserPreferences,
   saveBrowserPreferences,
@@ -111,6 +112,13 @@ export function DirectBrowserShell({
     devtools: preferences.developerTools,
     onError: reportError,
     onRequestNewTab: (url) => onNewTab?.(url),
+    onActivate: async () => {
+      useUIStore.getState().selectWorkbenchTab(tabId)
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      })
+    },
+    onCloseSurface: onClose,
   })
 
   const currentUrl = browser.activeTab?.url ?? ''
