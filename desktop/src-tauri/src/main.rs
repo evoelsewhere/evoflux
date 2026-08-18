@@ -2166,17 +2166,45 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
 
                     if (action === 'accessibility') {{
                         const maxChars = Math.max(500, Math.min(100000, Number(params.max_chars) || 20000));
-                        const implicitRoles = {{ A: 'link', BUTTON: 'button', INPUT: 'textbox', TEXTAREA: 'textbox', SELECT: 'combobox', IMG: 'img', NAV: 'navigation', MAIN: 'main', FORM: 'form', TABLE: 'table', H1: 'heading', H2: 'heading', H3: 'heading', H4: 'heading', H5: 'heading', H6: 'heading' }};
-                        const lines = deepElements().filter((element) => params.include_hidden || visible(element)).map((element) => {{
-                            const role = element.getAttribute('role') || implicitRoles[element.tagName] || '';
-                            const name = accessibleName(element);
-                            if (!role && !name) return '';
-                            const states = ['checked', 'expanded', 'selected', 'pressed', 'disabled', 'required', 'invalid']
-                                .map((state) => element.getAttribute(`aria-${{state}}`) != null ? `${{state}}=${{element.getAttribute(`aria-${{state}}`)}}` : '')
-                                .filter(Boolean).join(' ');
-                            const level = /^H[1-6]$/.test(element.tagName) ? ` level=${{element.tagName.slice(1)}}` : '';
-                            return `${{role || element.tagName.toLowerCase()}}${{level}}${{name ? ` "${{name}}"` : ''}}${{states ? ` (${{states}})` : ''}}`;
-                        }}).filter(Boolean);
+                        const implicitRoles = {{ A: 'link', BUTTON: 'button', INPUT: 'textbox', TEXTAREA: 'textbox', SELECT: 'combobox', OPTION: 'option', IMG: 'img', NAV: 'navigation', MAIN: 'main', ASIDE: 'complementary', HEADER: 'banner', FOOTER: 'contentinfo', FORM: 'form', TABLE: 'table', TR: 'row', TH: 'columnheader', TD: 'cell', UL: 'list', OL: 'list', LI: 'listitem', DIALOG: 'dialog', H1: 'heading', H2: 'heading', H3: 'heading', H4: 'heading', H5: 'heading', H6: 'heading' }};
+                        const nodes = [];
+                        const refs = [];
+                        const visit = (root, depth, frameLabel = '') => {{
+                            const children = root?.children ? Array.from(root.children) : [];
+                            for (const element of children) {{
+                                if (!params.include_hidden && !visible(element)) continue;
+                                const role = element.getAttribute('role') || implicitRoles[element.tagName] || '';
+                                const name = accessibleName(element);
+                                const interactive = Boolean(role || name || element.tabIndex >= 0 || element.isContentEditable);
+                                if (interactive) {{
+                                    const ref = refs.length;
+                                    refs.push(element);
+                                    const states = [
+                                        'checked' in element ? `checked=${{Boolean(element.checked)}}` : '',
+                                        'disabled' in element ? `disabled=${{Boolean(element.disabled)}}` : '',
+                                        'selected' in element ? `selected=${{Boolean(element.selected)}}` : '',
+                                        ...['expanded', 'pressed', 'required', 'invalid', 'current', 'busy', 'live']
+                                            .map((state) => element.getAttribute(`aria-${{state}}`) != null ? `${{state}}=${{element.getAttribute(`aria-${{state}}`)}}` : ''),
+                                    ].filter(Boolean).join(' ');
+                                    const level = /^H[1-6]$/.test(element.tagName) ? ` level=${{element.tagName.slice(1)}}` : '';
+                                    const frame = frameLabel ? ` frame=${{JSON.stringify(frameLabel)}}` : '';
+                                    nodes.push(`${{'  '.repeat(Math.min(depth, 20))}}[ref=${{ref}}] ${{role || element.tagName.toLowerCase()}}${{level}}${{name ? ` "${{name}}"` : ''}}${{states ? ` (${{states}})` : ''}}${{frame}}`);
+                                }}
+                                if (element.shadowRoot) visit(element.shadowRoot, depth + 1, frameLabel);
+                                if (element.tagName === 'IFRAME') {{
+                                    const label = element.title || element.getAttribute('aria-label') || element.src || 'iframe';
+                                    try {{
+                                        if (element.contentDocument?.documentElement) visit(element.contentDocument.documentElement, depth + 1, label);
+                                        else nodes.push(`${{'  '.repeat(Math.min(depth + 1, 20))}}[cross-origin frame] ${{label}}`);
+                                    }} catch {{ nodes.push(`${{'  '.repeat(Math.min(depth + 1, 20))}}[cross-origin frame] ${{label}}`); }}
+                                }} else {{
+                                    visit(element, depth + 1, frameLabel);
+                                }}
+                            }}
+                        }};
+                        visit(document.documentElement, 0);
+                        globalThis.__evofluxAgentElements = refs;
+                        const lines = [`URL: ${{location.href}}`, `Title: ${{document.title}}`, '', ...nodes];
                         return lines.join('\n').slice(0, maxChars) || '(no accessibility nodes found)';
                     }}
 
@@ -4659,6 +4687,13 @@ mod tests {
         assert!(script.contains("globalThis.open"));
         assert!(script.contains("getUserMedia"));
         assert!(script.contains("getCurrentPosition"));
+        let accessibility = browser_agent_action_script(
+            "accessibility",
+            &serde_json::json!({ "max_chars": 20000 }),
+        )
+        .expect("accessibility action should compile");
+        assert!(accessibility.contains("[cross-origin frame]"));
+        assert!(accessibility.contains("[ref="));
         let emulation = browser_agent_action_script(
             "set_emulation",
             &serde_json::json!({ "width": 375, "height": 812, "device_scale_factor": 2 }),
