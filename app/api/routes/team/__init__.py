@@ -31,6 +31,7 @@ from app.api.routes.team import (
     folders,
     git,
     permissions,
+    problems,
     processes,
     projects,
     questions,
@@ -53,6 +54,7 @@ router.include_router(folders.router)
 router.include_router(chat.router)
 router.include_router(files.router)
 router.include_router(change_sets.router)
+router.include_router(problems.router)
 router.include_router(git.router)
 router.include_router(todos.router)
 router.include_router(permissions.router)

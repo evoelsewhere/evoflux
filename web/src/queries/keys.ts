@@ -46,6 +46,8 @@ export const queryKeys = {
       ['coding-workspace-diff', workspace] as const,
     status: (workspace: string) =>
       ['coding-workspace-status', workspace] as const,
+    problems: (workspace: string, includeResolved = false) =>
+      ['coding-workspace-problems', workspace, includeResolved] as const,
   },
   // Code knowledge graph panel — keyed by the absolute workspace path, like
   // the coding sidebar. Status + search share the path so a reindex can

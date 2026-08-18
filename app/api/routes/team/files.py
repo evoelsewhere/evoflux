@@ -58,6 +58,11 @@ from app.services.document_preview import (
     render_document_preview,
 )
 from app.services.workspace_file_watcher import workspace_file_watcher
+from app.services.problems_service import (
+    ProblemInput,
+    ProblemSeverity,
+    publish_problems,
+)
 from app.agent.lsp_manager import (
     LanguageServerUnavailable,
     get_language_server,
@@ -685,6 +690,8 @@ async def get_coding_workspace_diagnostics(
 
         _sandbox_ctx.reset(sandbox_token)
 
+    _publish_lsp_problems(root, body.path, diagnostics)
+
     return CodingDiagnosticsResponse(
         workspace=resolved,
         path=body.path,
@@ -813,6 +820,51 @@ def _semantic_position(body: CodingSemanticRequest) -> tuple[int, int]:
             detail=f"{body.action} requires line and column.",
         )
     return body.line, body.column
+
+
+def _publish_lsp_problems(
+    workspace: Path, relative_path: str, diagnostics: list[dict]
+) -> None:
+    severity: dict[int, ProblemSeverity] = {
+        1: "error",
+        2: "warning",
+        3: "info",
+        4: "hint",
+    }
+    inputs: list[ProblemInput] = []
+    for diagnostic in diagnostics[:200]:
+        raw_range = diagnostic.get("range") or {}
+        start = raw_range.get("start") or {}
+        end = raw_range.get("end") or {}
+        raw_severity = diagnostic.get("severity")
+        problem_severity: ProblemSeverity = (
+            severity.get(raw_severity, "warning")
+            if isinstance(raw_severity, int)
+            else "warning"
+        )
+        inputs.append(
+            ProblemInput(
+                message=str(diagnostic.get("message") or "Language server problem"),
+                severity=problem_severity,
+                path=relative_path,
+                line=int(start.get("line", 0)) + 1,
+                column=int(start.get("character", 0)) + 1,
+                end_line=int(end.get("line", start.get("line", 0))) + 1,
+                end_column=int(end.get("character", start.get("character", 0))) + 1,
+                code=(
+                    str(diagnostic["code"])
+                    if diagnostic.get("code") is not None
+                    else None
+                ),
+                provenance={"producer": diagnostic.get("source") or "LSP"},
+            )
+        )
+    publish_problems(
+        workspace,
+        source="lsp",
+        scope=f"lsp:{relative_path}",
+        problems=inputs,
+    )
 
 
 @router.put("/workspace/files/write")

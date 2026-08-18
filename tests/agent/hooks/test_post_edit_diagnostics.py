@@ -24,12 +24,16 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture
 def sandbox(tmp_path):
+    from app.services.problems_service import clear_problems
+
+    clear_problems()
     sb = SandboxConfig(workspace=str(tmp_path))
     token = set_sandbox(sb)
     yield sb, tmp_path
     from app.agent.sandbox import _sandbox_ctx
 
     _sandbox_ctx.reset(token)
+    clear_problems()
 
 
 def _tool_call(tool: str, path: str) -> ToolCall:
@@ -247,6 +251,12 @@ async def test_typescript_edit_receives_current_version_lsp_delta(sandbox):
 
     assert "introduced 1 lsp issue(s)" in result
     assert "TS2322" in result
+    from app.services.problems_service import list_problems
+
+    problems = list_problems(tmp_path)
+    assert len(problems) == 1
+    assert problems[0].source == "lsp"
+    assert problems[0].code == "TS2322"
     assert lsp_client.diagnostics.await_args_list[0].kwargs == {
         "require_current_version": False
     }

@@ -31,6 +31,7 @@ export {
   useProcessesQuery,
   useTerminateProcessMutation,
 } from './useProcessesQuery'
+export { useProblemsQuery, useProblemDecisionMutation } from './useProblemsQuery'
 export {
   useAgentFilesQuery,
   useAgentFileQuery,
