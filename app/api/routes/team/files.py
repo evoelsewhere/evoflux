@@ -758,12 +758,13 @@ async def get_coding_workspace_semantic_result(
                 body.content,
             )
         elif body.action == "format":
-            result = await client.formatting(
+            edits = await client.formatting(
                 target,
                 body.content,
                 tab_size=body.tab_size,
                 insert_spaces=body.insert_spaces,
             )
+            result = {"changes": {target.as_uri(): edits}} if edits else None
         elif body.action == "organize_imports":
             result = await client.organize_imports(target, body.content)
         elif body.action == "document_symbols":
