@@ -914,6 +914,8 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
   const { isMacOverlay, isTauri } = usePlatform()
   const sidebarWidth = useUIStore((state) => state.sidebarWidth)
   const sidebarCollapsed = useUIStore((state) => state.sidebarCollapsed)
+  const workspaceFileRequest = useUIStore((state) => state.workspaceFileRequest)
+  const clearWorkspaceFileRequest = useUIStore((state) => state.clearWorkspaceFileRequest)
   const [viewportWidth, setViewportWidth] = useState(() =>
     typeof window === 'undefined' ? 1440 : window.innerWidth,
   )
@@ -1047,6 +1049,33 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
       : files.length,
     [files, visiblePaths],
   )
+  const refreshedRequestRef = useRef<number | null>(null)
+
+  // Artifact links in the transcript open Files and request one path. Refresh
+  // once for that request (the file may have landed after the cached listing),
+  // then select it as soon as it appears in the workspace response.
+  useEffect(() => {
+    if (
+      !open
+      || !sessionId
+      || workspaceFileRequest?.sessionId !== sessionId
+      || refreshedRequestRef.current === workspaceFileRequest.id
+    ) return
+    refreshedRequestRef.current = workspaceFileRequest.id
+    void refetch()
+  }, [open, refetch, sessionId, workspaceFileRequest])
+
+  useEffect(() => {
+    if (!open || !sessionId || workspaceFileRequest?.sessionId !== sessionId) return
+    const requested = files.find((file) => file.path === workspaceFileRequest.path)
+      ?? (!workspaceFileRequest.path.includes('/')
+        ? files.find((file) => file.name === workspaceFileRequest.path)
+        : undefined)
+    if (!requested) return
+    setSelectedPath(requested.path)
+    setMobilePane('preview')
+    clearWorkspaceFileRequest(workspaceFileRequest.id)
+  }, [clearWorkspaceFileRequest, files, open, sessionId, workspaceFileRequest])
 
   // ── Workspace picker ────────────────────────────────────────────────────────
 
