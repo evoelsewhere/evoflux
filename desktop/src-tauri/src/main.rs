@@ -2143,6 +2143,61 @@ async fn capture_browser_webview(
             .and_then(serde_json::Value::as_f64)
             .unwrap_or(viewport_height)
             .max(1.0);
+        if let Ok(bytes) = capture_native_browser_viewport(app, label).await {
+            if let Ok(decoded) = xcap::image::load_from_memory(&bytes) {
+                let image = decoded.to_rgba8();
+                let native_scale_x = image.width() as f64 / viewport_width;
+                let native_scale_y = image.height() as f64 / viewport_height;
+                let crop_x = (css_origin_x * native_scale_x)
+                    .floor()
+                    .clamp(0.0, image.width().saturating_sub(1) as f64)
+                    as u32;
+                let crop_y = (css_origin_y * native_scale_y)
+                    .floor()
+                    .clamp(0.0, image.height().saturating_sub(1) as f64)
+                    as u32;
+                let crop_width = (css_width * native_scale_x)
+                    .ceil()
+                    .max(1.0)
+                    .min(image.width().saturating_sub(crop_x) as f64)
+                    as u32;
+                let crop_height = (css_height * native_scale_y)
+                    .ceil()
+                    .max(1.0)
+                    .min(image.height().saturating_sub(crop_y) as f64)
+                    as u32;
+                let cropped = xcap::image::imageops::crop_imm(
+                    &image,
+                    crop_x,
+                    crop_y,
+                    crop_width,
+                    crop_height,
+                )
+                .to_image();
+                let mut png = std::io::Cursor::new(Vec::new());
+                xcap::image::DynamicImage::ImageRgba8(cropped)
+                    .write_to(&mut png, xcap::image::ImageFormat::Png)
+                    .map_err(|error| format!("Could not encode element snapshot: {error}"))?;
+                return Ok(serde_json::json!({
+                    "kind": "image",
+                    "media_type": "image/png",
+                    "data": BASE64_STANDARD.encode(png.into_inner()),
+                    "text": format!("[In-app browser element screenshot: {}x{}]", crop_width, crop_height),
+                    "capture_backend": "webview",
+                    "full_page": false,
+                    "coordinate_mapping": {
+                        "css_origin_x": css_origin_x,
+                        "css_origin_y": css_origin_y,
+                        "css_per_pixel_x": css_width / crop_width.max(1) as f64,
+                        "css_per_pixel_y": css_height / crop_height.max(1) as f64,
+                        "css_width": css_width,
+                        "css_height": css_height,
+                        "image_width": crop_width,
+                        "image_height": crop_height,
+                    },
+                }));
+            }
+        }
         let scale_x = width as f64 / viewport_width;
         let scale_y = height as f64 / viewport_height;
         screen_x += (rect
