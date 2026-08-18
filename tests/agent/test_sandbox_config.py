@@ -53,12 +53,12 @@ def test_worktree_location_defaults_to_repository() -> None:
     assert SandboxFileConfig().worktree_location == "repository"
 
 
-def test_security_defaults_fail_safe_for_credentials() -> None:
+def test_shell_and_outbound_policy_defaults() -> None:
     cfg = SandboxFileConfig()
     assert cfg.inherit_shell_environment is False
     assert cfg.load_shell_profile is False
-    assert cfg.outbound_data_policy == "block"
-    assert cfg.outbound_pii_policy == "standard"
+    assert cfg.outbound_data_policy == "off"
+    assert cfg.outbound_pii_policy == "off"
     assert cfg.max_execution_seconds == 600
     assert cfg.max_output_bytes == 131072
 

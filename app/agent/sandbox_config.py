@@ -15,8 +15,8 @@ File shape (YAML)::
     worktree_location: repository
     inherit_shell_environment: false
     load_shell_profile: false
-    outbound_data_policy: block
-    outbound_pii_policy: standard
+    outbound_data_policy: off
+    outbound_pii_policy: off
     max_execution_seconds: 600
     max_output_bytes: 131072
 """
@@ -90,14 +90,14 @@ class SandboxFileConfig(BaseModel):
         ),
     )
     outbound_data_policy: Literal["block", "redact", "off"] = Field(
-        default="block",
+        default="off",
         description=(
             "Block, redact, or allow detected secrets immediately before a payload "
             "is sent to a model provider, web service, or MCP server."
         ),
     )
     outbound_pii_policy: Literal["off", "standard", "strict"] = Field(
-        default="standard",
+        default="off",
         description=(
             "Mask common personal data with stable per-request placeholders. "
             "Strict mode also protects structured names, addresses, identifiers, "

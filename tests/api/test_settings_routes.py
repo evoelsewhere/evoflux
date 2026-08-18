@@ -162,8 +162,8 @@ def test_get_sandbox_returns_seed_defaults_when_file_missing(
         "worktree_location": "repository",
         "inherit_shell_environment": False,
         "load_shell_profile": False,
-        "outbound_data_policy": "block",
-        "outbound_pii_policy": "standard",
+        "outbound_data_policy": "off",
+        "outbound_pii_policy": "off",
         "max_execution_seconds": 600,
         "max_output_bytes": 131072,
     }
@@ -205,8 +205,8 @@ def test_put_sandbox_strips_blank_patterns(isolated_config: Path) -> None:
         "worktree_location": "repository",
         "inherit_shell_environment": False,
         "load_shell_profile": False,
-        "outbound_data_policy": "block",
-        "outbound_pii_policy": "standard",
+        "outbound_data_policy": "off",
+        "outbound_pii_policy": "off",
         "max_execution_seconds": 600,
         "max_output_bytes": 131072,
     }
