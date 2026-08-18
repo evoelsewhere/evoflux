@@ -1,10 +1,12 @@
 /**
  * SessionRow — the unified session list row shared by the mode sidebars.
  *
- * Two densities, both lifted verbatim from their original sidebars:
+ * Three densities, tuned for the two mode sidebars and touch drawers:
  *   - "comfortable" (work Sidebar): two-line row — animated title +
  *     sched badge + running spinner, relative date underneath
  *     (`px-2.5 py-2 rounded-lg`).
+ *   - "dense" (docked work Sidebar): keeps the two-line information model
+ *     while reducing type and vertical padding.
  *   - "compact" (CodingSidebar): single-line row — running dot + title +
  *     right-aligned date (`px-2 py-1 text-xs rounded-md`).
  *
@@ -26,7 +28,7 @@ import type { SessionResponse } from '@/api/types'
 export interface SessionRowProps {
   session: SessionResponse
   isActive: boolean
-  density?: 'comfortable' | 'compact'
+  density?: 'comfortable' | 'dense' | 'compact'
   onSelect: (session: SessionResponse) => void
   onDelete: (session: SessionResponse) => void
   pendingDelete: boolean
@@ -77,6 +79,8 @@ export function SessionRow({
   const index = enterIndex
   const enter = index !== undefined ? fadeRise(preset, 6) : null
   const compact = density === 'compact'
+  const dense = density === 'dense'
+  const smallActions = compact || dense
   const isScheduled = Boolean(session.scheduled_task_name)
   const isRunning = session.running === true
   const isBrowserCreated = session.tags?.includes('webbridge_origin:browser') ?? false
@@ -109,11 +113,11 @@ export function SessionRow({
                   ? 'bg-(--bg-key) text-(--color-accent)'
                   : 'text-(--color-text-2) hover:bg-(--bg-key)/50 hover:text-(--color-text)'
               }`
-            : `flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
+            : `flex w-full items-start rounded-md text-left transition-colors ${
                 isActive
                   ? 'bg-(--bg-key) text-(--color-accent)'
                   : 'text-(--color-text-2) hover:bg-(--bg-key)/50 hover:text-(--color-text)'
-              }`
+              } ${dense ? 'gap-1.5 px-2.5 py-1.5' : 'gap-2 px-2 py-1.5'}`
         }
       >
         {compact ? (
@@ -150,7 +154,7 @@ export function SessionRow({
                   initial={{ opacity: 0, y: -6 * preset.distance }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 6 * preset.distance }}
-                  className={`min-w-0 truncate text-xs transition-colors ${
+                  className={`min-w-0 truncate transition-colors ${dense ? 'text-[11px] leading-4' : 'text-xs'} ${
                     isActive
                       ? 'font-semibold text-(--color-accent)'
                       : 'text-(--color-text-2) group-hover:font-medium group-hover:text-(--color-text)'
@@ -160,13 +164,16 @@ export function SessionRow({
                 </motion.p>
               </AnimatePresence>
               {isScheduled && (
-                <span className="shrink-0 rounded-xs px-1 py-px text-xs leading-tight bg-(--bg-key) text-(--color-text-subtle)">
+                <span className={cn(
+                  'shrink-0 rounded-xs bg-(--bg-key) px-1 py-px leading-tight text-(--color-text-subtle)',
+                  dense ? 'text-[10px]' : 'text-xs',
+                )}>
                   sched
                 </span>
               )}
               {isBrowserCreated && (
                 <span title="Created from browser" aria-label="Created from browser">
-                  <Globe2 size={11} className="shrink-0 text-(--color-text-subtle)" aria-hidden="true" />
+                  <Globe2 size={dense ? 10 : 11} className="shrink-0 text-(--color-text-subtle)" aria-hidden="true" />
                 </span>
               )}
               {isRunning && (
@@ -175,7 +182,7 @@ export function SessionRow({
                   aria-label="Session running"
                 >
                   <Loader2
-                    size={11}
+                    size={dense ? 10 : 11}
                     className="animate-spin"
                     aria-hidden="true"
                   />
@@ -183,11 +190,17 @@ export function SessionRow({
               )}
             </div>
             {isScheduled && (
-              <p className="mt-0.5 truncate text-xs text-(--color-text-subtle) transition-colors group-hover:text-(--color-text-muted)">
+              <p className={cn(
+                'truncate text-(--color-text-subtle) transition-colors group-hover:text-(--color-text-muted)',
+                dense ? 'text-[10px] leading-3.5' : 'mt-0.5 text-xs',
+              )}>
                 {session.scheduled_task_name}
               </p>
             )}
-            <p className="mt-0.5 truncate text-xs text-(--color-text-subtle) transition-colors group-hover:text-(--color-text-muted)">
+            <p className={cn(
+              'truncate text-(--color-text-subtle) transition-colors group-hover:text-(--color-text-muted)',
+              dense ? 'text-[10px] leading-3.5' : 'mt-0.5 text-xs',
+            )}>
               {formatRelativeDate(session.created_at)}
             </p>
           </div>
@@ -219,7 +232,7 @@ export function SessionRow({
                 aria-label={`Open side chat for ${session.title || 'Untitled'}`}
                 title="Open side chat"
               >
-                <MessageCirclePlus size={compact ? 11 : 12} />
+                <MessageCirclePlus size={smallActions ? 11 : 12} />
               </button>
             )}
             <button
@@ -231,7 +244,7 @@ export function SessionRow({
               className="flex h-5 w-5 items-center justify-center rounded-sm text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:outline-2 focus-visible:outline-(--focus-ring)"
               aria-label={`Edit session ${session.title || 'Untitled'}`}
             >
-              <Pencil size={compact ? 11 : 12} />
+              <Pencil size={smallActions ? 11 : 12} />
             </button>
             <button
               type="button"
@@ -242,7 +255,7 @@ export function SessionRow({
               className="flex h-5 w-5 items-center justify-center rounded-sm text-(--color-text-subtle) transition-colors hover:bg-(--color-error-subtle) hover:text-(--color-error) focus-visible:outline-2 focus-visible:outline-(--focus-ring)"
               aria-label={`Delete session ${session.title || 'Untitled'}`}
             >
-              <Trash2 size={compact ? 11 : 12} />
+              <Trash2 size={smallActions ? 11 : 12} />
             </button>
           </div>
         </>

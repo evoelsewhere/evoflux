@@ -104,6 +104,7 @@ export function AppShell({
   return (
     // h-dvh handles iOS Safari's dynamic toolbar.
     <div
+      data-app-shell
       className="mobile-safe-shell mobile-viewport relative flex h-dvh flex-col bg-(--bg-page) md:flex-row md:gap-0.5 md:p-0.5"
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}

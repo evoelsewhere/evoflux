@@ -1589,8 +1589,8 @@ export function CodingSidebar({
       >
         <SidebarModeSlot />
         {onCommandPalette && (
-          <div className="pt-2.5">
-            <SidebarSearchTrigger onClick={onCommandPalette} />
+          <div className="pt-1.5">
+            <SidebarSearchTrigger onClick={onCommandPalette} compact />
           </div>
         )}
       </SidebarCard>
@@ -1601,18 +1601,21 @@ export function CodingSidebar({
           Icon={CalendarClock}
           label="Scheduler"
           kbd="^S"
+          compact
           onClick={toggleScheduler}
         />
         <SidebarItem
           Icon={Blocks}
           label="Plugins"
           kbd="^K"
+          compact
           onClick={() => togglePlugins("plugins")}
         />
         <SidebarItem
           Icon={GitBranch}
           label="Source Control"
           kbd="^G"
+          compact
           onClick={() => toggleSourceControl("source-control")}
         />
       </SidebarCard>

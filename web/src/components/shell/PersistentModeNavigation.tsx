@@ -48,7 +48,7 @@ export function PersistentModeNavigation() {
           isMacOverlay ? 'pt-10' : 'pt-2'
         }`}
       >
-        <ModeSwitchTabs active={active} />
+        <ModeSwitchTabs active={active} compact />
       </div>
     </div>
   )
