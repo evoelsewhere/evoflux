@@ -228,6 +228,55 @@ def test_encode_browser_uploads_rejects_workspace_escape(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_download_saves_into_session_workspace(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: True)
+    state = SimpleNamespace(
+        metadata={"session_id": "desktop-session", "workspace": str(tmp_path)}
+    )
+
+    async def request(_sid: str, action: str, params: dict):
+        assert action == "download"
+        assert params["url"] == "https://example.com/report.txt"
+        return {
+            "url": params["url"],
+            "filename": "report.txt",
+            "media_type": "text/plain",
+            "bytes": 5,
+            "data": "aGVsbG8=",
+        }
+
+    monkeypatch.setattr(direct_browser_bridge, "request", request)
+    result = await browser_tool.browser_use.arun(
+        _injected={"_state": state},
+        actions=[
+            {
+                "action": "download",
+                "url": "https://example.com/report.txt",
+            }
+        ],
+    )
+
+    assert "downloads/report.txt" in result
+    assert (tmp_path / "downloads" / "report.txt").read_text() == "hello"
+
+
+def test_save_browser_download_avoids_overwrite(tmp_path) -> None:
+    payload = {
+        "url": "https://example.com/report.txt",
+        "filename": "report.txt",
+        "data": "MQ==",
+    }
+    first = browser_tool._save_browser_download(
+        tmp_path, payload, None, browser_tool._MAX_DOWNLOAD_BYTES
+    )
+    second = browser_tool._save_browser_download(
+        tmp_path, payload, None, browser_tool._MAX_DOWNLOAD_BYTES
+    )
+    assert first == "downloads/report.txt"
+    assert second == "downloads/report (1).txt"
+
+
+@pytest.mark.asyncio
 async def test_expanded_control_and_debug_actions_are_forwarded(monkeypatch) -> None:
     monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: True)
     requests: list[tuple[str, dict]] = []

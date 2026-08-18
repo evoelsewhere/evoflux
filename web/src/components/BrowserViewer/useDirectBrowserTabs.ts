@@ -717,6 +717,8 @@ export function useDirectBrowserTabs({
       'extract',
       'scroll',
       'screenshot',
+      'page_assets',
+      'download',
       'console',
       'network',
       'dialogs',
