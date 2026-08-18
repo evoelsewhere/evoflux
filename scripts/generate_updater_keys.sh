@@ -3,9 +3,8 @@
 #
 # Run once, locally, by a maintainer. The private key is stored as the
 # `TAURI_SIGNING_PRIVATE_KEY` GitHub secret (and its password as
-# `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). The public key is committed
-# into `desktop/src-tauri/tauri.conf.json` under
-# `plugins.updater.pubkey`.
+# `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). The public key is stored as the
+# `TAURI_SIGNING_PUBLIC_KEY` GitHub secret and injected into release builds.
 #
 # Re-running this script invalidates every installed copy of the app —
 # only do it on a security incident.
@@ -35,17 +34,15 @@ Generated:
   Public key:  $OUT_DIR/EvoFlux.key.pub
 
 Next steps:
-  1. Commit the PUBLIC key (only) to source control:
-       cat "$OUT_DIR/EvoFlux.key.pub" | pbcopy   # macOS
-     then paste it into:
-       desktop/src-tauri/tauri.conf.json → plugins.updater.pubkey
-
-  2. Add the private key as a GitHub secret:
+  1. Add the public and private keys as GitHub secrets:
+       gh secret set TAURI_SIGNING_PUBLIC_KEY < "$OUT_DIR/EvoFlux.key.pub"
        gh secret set TAURI_SIGNING_PRIVATE_KEY < "$OUT_DIR/EvoFlux.key"
-       gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --body '<the password>'
 
-  3. NEVER commit the private key. Add to .gitignore:
-       echo "$OUT_DIR/" >> .gitignore
+     If you protected the key with a password, add it separately:
+       gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+
+  2. NEVER commit the private key. The default .tauri-keys/ directory is
+     already ignored by this repository.
 
 If you lose the private key, you cannot publish updates. Back it up
 to a password manager.

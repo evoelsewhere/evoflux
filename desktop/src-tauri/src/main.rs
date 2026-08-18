@@ -2725,6 +2725,14 @@ fn handle_desktop_menu(app: &AppHandle, id: &str) {
         MENU_ZOOM_RESET => set_zoom(app, ZOOM_DEFAULT),
         MENU_OPEN_CONFIG_DIR => open_config_dir(app),
         MENU_REVEAL_BACKEND_LOG => reveal_backend_log(app),
+        MENU_CHECK_UPDATES => {
+            let handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = run_update_check(&handle, true).await {
+                    log::warn!("desktop: manual update check failed: {error:#}");
+                }
+            });
+        }
         MENU_QUIT => quit_app(app),
         _ => {}
     }
@@ -2785,7 +2793,6 @@ async fn shutdown_sidecar_now(app: &AppHandle) {
 /// user pressed (rfd's behaviour, surfaced through tauri-plugin-dialog).
 /// Some platforms still report a plain ``Ok``/``Cancel`` for the bundled
 /// system dialog, so we accept either spelling of "yes".
-#[cfg(test)]
 fn dialog_result_is_accept(result: &MessageDialogResult, ok_label: &str) -> bool {
     match result {
         MessageDialogResult::Ok | MessageDialogResult::Yes => true,
@@ -2799,7 +2806,6 @@ fn dialog_result_is_accept(result: &MessageDialogResult, ok_label: &str) -> bool
 /// Release notes are truncated to ~600 characters with an ellipsis so a
 /// runaway changelog never produces a multi-screen modal. An empty/None
 /// body collapses the notes paragraph entirely.
-#[cfg(test)]
 fn format_update_prompt(new_version: &str, current_version: &str, body: Option<&str>) -> String {
     const MAX_NOTES_CHARS: usize = 600;
     let notes = body.unwrap_or_default().trim();
@@ -2811,10 +2817,12 @@ fn format_update_prompt(new_version: &str, current_version: &str, body: Option<&
         notes.to_string()
     };
     if trimmed.is_empty() {
-        format!("EvoFlux {new_version} is available (you have {current_version}).\n\nDownload now?")
+        format!(
+            "EvoFlux {new_version} is available (you have {current_version}).\n\nDownload, verify, install, and restart now?"
+        )
     } else {
         format!(
-            "EvoFlux {new_version} is available (you have {current_version}).\n\n{trimmed}\n\nDownload now?"
+            "EvoFlux {new_version} is available (you have {current_version}).\n\n{trimmed}\n\nDownload, verify, install, and restart now?"
         )
     }
 }
@@ -2824,15 +2832,233 @@ fn format_update_prompt(new_version: &str, current_version: &str, body: Option<&
 /// ``total == Some(0)`` is treated the same as ``None`` — some HTTP
 /// responses omit ``Content-Length`` and our caller passes whatever it
 /// has — so we never produce a misleading ``"5/0 MB"`` label.
-#[cfg(test)]
 fn format_download_progress(downloaded_mb: usize, total_bytes: Option<u64>) -> String {
     match total_bytes {
-        Some(total) if total > 0 => {
+        Some(total) if total >= 1024 * 1024 => {
             let total_mb = total / (1024 * 1024);
             format!("Status: Downloading {downloaded_mb}/{total_mb} MB")
         }
         _ => format!("Status: Downloading {downloaded_mb} MB"),
     }
+}
+
+/// The updater public key is injected at compile time by the release workflow.
+/// Keeping it out of the committed config lets normal local builds remain
+/// updater-disabled until a maintainer provisions the long-lived signing key.
+fn updater_is_configured() -> bool {
+    !cfg!(debug_assertions)
+        && option_env!("EVOFLUX_UPDATER_PUBLIC_KEY").is_some_and(|key| !key.trim().is_empty())
+}
+
+struct UpdateBusyGuard(Arc<AtomicBool>);
+
+impl Drop for UpdateBusyGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+async fn show_update_dialog(
+    app: &AppHandle,
+    title: &str,
+    message: String,
+    kind: MessageDialogKind,
+    buttons: MessageDialogButtons,
+) -> MessageDialogResult {
+    let (tx, rx) = oneshot::channel();
+    app.dialog()
+        .message(message)
+        .title(title)
+        .kind(kind)
+        .buttons(buttons)
+        .show_with_result(move |result| {
+            let _ = tx.send(result);
+        });
+    rx.await.unwrap_or_default()
+}
+
+async fn show_update_message(
+    app: &AppHandle,
+    title: &str,
+    message: impl Into<String>,
+    kind: MessageDialogKind,
+) {
+    let _ = show_update_dialog(app, title, message.into(), kind, MessageDialogButtons::Ok).await;
+}
+
+async fn run_update_check(app: &AppHandle, user_initiated: bool) -> Result<()> {
+    if !updater_is_configured() {
+        if user_initiated {
+            let message = if cfg!(debug_assertions) {
+                "Update checks are disabled in development builds. Install a packaged release to test the production updater."
+            } else {
+                "This build was not configured with an updater signing key. Install an official EvoFlux release to receive signed updates."
+            };
+            show_update_message(app, "Updates unavailable", message, MessageDialogKind::Info).await;
+        }
+        return Ok(());
+    }
+
+    let busy = {
+        let state: tauri::State<'_, AppState> = app.state();
+        state.updater_busy.clone()
+    };
+    if busy
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        if user_initiated {
+            show_update_message(
+                app,
+                "Checking for updates",
+                "An update check or download is already in progress.",
+                MessageDialogKind::Info,
+            )
+            .await;
+        }
+        return Ok(());
+    }
+    let _busy_guard = UpdateBusyGuard(busy);
+
+    update_tray_status(app, "Status: Checking for updates…");
+    let updater = match app.updater() {
+        Ok(updater) => updater,
+        Err(error) => {
+            update_tray_status(app, "Status: Running");
+            if user_initiated {
+                show_update_message(
+                    app,
+                    "Updates unavailable",
+                    format!("This build has an invalid updater configuration.\n\n{error}"),
+                    MessageDialogKind::Error,
+                )
+                .await;
+            }
+            return Err(error).context("initialize desktop updater");
+        }
+    };
+    let update = match updater.check().await {
+        Ok(update) => update,
+        Err(error) => {
+            update_tray_status(app, "Status: Running");
+            if user_initiated {
+                show_update_message(
+                    app,
+                    "Update check failed",
+                    format!("EvoFlux could not check GitHub Releases.\n\n{error}"),
+                    MessageDialogKind::Error,
+                )
+                .await;
+            }
+            return Err(error).context("check GitHub release update metadata");
+        }
+    };
+
+    let Some(update) = update else {
+        update_tray_status(app, "Status: Running");
+        if user_initiated {
+            show_update_message(
+                app,
+                "EvoFlux is up to date",
+                format!(
+                    "You already have the latest version ({}).",
+                    env!("CARGO_PKG_VERSION")
+                ),
+                MessageDialogKind::Info,
+            )
+            .await;
+        }
+        return Ok(());
+    };
+
+    let install_label = "Install and Restart";
+    let prompt = format_update_prompt(
+        &update.version,
+        &update.current_version,
+        update.body.as_deref(),
+    );
+    let response = show_update_dialog(
+        app,
+        "EvoFlux update available",
+        prompt,
+        MessageDialogKind::Info,
+        MessageDialogButtons::OkCancelCustom(install_label.into(), "Later".into()),
+    )
+    .await;
+    if !dialog_result_is_accept(&response, install_label) {
+        update_tray_status(app, "Status: Running");
+        return Ok(());
+    }
+
+    let progress_app = app.clone();
+    let finish_app = app.clone();
+    let mut downloaded_bytes = 0usize;
+    let mut reported_mb = usize::MAX;
+    let bytes = match update
+        .download(
+            move |chunk_length, total_bytes| {
+                downloaded_bytes = downloaded_bytes.saturating_add(chunk_length);
+                let downloaded_mb = downloaded_bytes / (1024 * 1024);
+                if downloaded_mb != reported_mb {
+                    reported_mb = downloaded_mb;
+                    update_tray_status(
+                        &progress_app,
+                        &format_download_progress(downloaded_mb, total_bytes),
+                    );
+                }
+            },
+            move || {
+                update_tray_status(&finish_app, "Status: Verifying update…");
+            },
+        )
+        .await
+    {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            update_tray_status(app, "Status: Update failed");
+            show_update_message(
+                app,
+                "Update download failed",
+                format!(
+                    "The update was not installed. EvoFlux verified no changes to the current app.\n\n{error}"
+                ),
+                MessageDialogKind::Error,
+            )
+            .await;
+            update_tray_status(app, "Status: Running");
+            return Err(error).context("download or verify desktop update");
+        }
+    };
+
+    update_tray_status(app, "Status: Installing update…");
+    persist_active_window_state(app);
+    {
+        let state: tauri::State<'_, AppState> = app.state();
+        state.quitting.store(true, Ordering::SeqCst);
+    }
+    shutdown_sidecar_now(app).await;
+
+    if let Err(error) = update.install(bytes) {
+        show_update_message(
+            app,
+            "Update installation failed",
+            format!("EvoFlux will restart the current version.\n\n{error}"),
+            MessageDialogKind::Error,
+        )
+        .await;
+        app.restart();
+    }
+
+    // On Windows the NSIS updater exits and restarts the application during
+    // `install`. macOS returns here after replacing the bundle.
+    app.restart();
+}
+
+#[tauri::command]
+async fn app_check_for_updates(app: AppHandle) -> Result<(), String> {
+    run_update_check(&app, true)
+        .await
+        .map_err(|error| format!("{error:#}"))
 }
 
 fn install_desktop_menus(app: &tauri::App) -> Result<()> {
@@ -2875,6 +3101,13 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
         app,
         MENU_REVEAL_BACKEND_LOG,
         "View Backend Log",
+        true,
+        None::<&str>,
+    )?;
+    let app_check_updates = MenuItem::with_id(
+        app,
+        MENU_CHECK_UPDATES,
+        "Check for Updates…",
         true,
         None::<&str>,
     )?;
@@ -2958,6 +3191,7 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
         .separator()
         .item(&app_open_config_dir)
         .item(&app_reveal_backend_log)
+        .item(&app_check_updates)
         .separator()
         .item(&app_quit)
         .build()?;
@@ -3042,6 +3276,13 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
         None::<&str>,
     )?;
     let tray_reload = MenuItem::with_id(app, MENU_RELOAD, "Reload Window", true, None::<&str>)?;
+    let tray_check_updates = MenuItem::with_id(
+        app,
+        MENU_CHECK_UPDATES,
+        "Check for Updates…",
+        true,
+        None::<&str>,
+    )?;
     let tray_quit = MenuItem::with_id(app, MENU_QUIT, "Quit EvoFlux", true, None::<&str>)?;
     let tray_menu = Menu::with_items(
         app,
@@ -3059,6 +3300,7 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
             &tray_open_config_dir,
             &tray_reveal_backend_log,
             &tray_reload,
+            &tray_check_updates,
             &PredefinedMenuItem::separator(app)?,
             &tray_quit,
         ],
@@ -3981,6 +4223,7 @@ fn main() {
         startup_started: Instant::now(),
         force_reloading: Arc::new(AtomicBool::new(false)),
         quitting: Arc::new(AtomicBool::new(false)),
+        updater_busy: Arc::new(AtomicBool::new(false)),
         tray_status: Arc::new(Mutex::new(None)),
         tray_session: Arc::new(Mutex::new(None)),
         active_window_label: Arc::new(Mutex::new(MAIN_WINDOW.to_string())),
@@ -3990,9 +4233,17 @@ fn main() {
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Info)
         .build();
+    let mut updater_plugin = tauri_plugin_updater::Builder::new();
+    if let Some(public_key) = option_env!("EVOFLUX_UPDATER_PUBLIC_KEY")
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+    {
+        updater_plugin = updater_plugin.pubkey(public_key);
+    }
 
     tauri::Builder::default()
         .plugin(log_plugin)
+        .plugin(updater_plugin.build())
         .plugin(
             tauri::plugin::Builder::<tauri::Wry>::new("browser-observability")
                 .js_init_script(browser_observability_init_script())
@@ -4016,6 +4267,7 @@ fn main() {
             app_backend_status,
             app_retry_backend,
             app_reveal_backend_log,
+            app_check_for_updates,
             app_remove_backend_server,
             app_save_backend_server,
             app_use_external_backend,
@@ -4055,6 +4307,13 @@ fn main() {
                         },
                     )
                     .await;
+                    return;
+                }
+                if updater_is_configured() {
+                    tokio::time::sleep(AUTOMATIC_UPDATE_CHECK_DELAY).await;
+                    if let Err(error) = run_update_check(&handle, false).await {
+                        log::warn!("desktop: automatic update check failed: {error:#}");
+                    }
                 }
             });
             Ok(())
@@ -4424,7 +4683,7 @@ mod tests {
         let prompt = format_update_prompt("1.2.0", "1.1.0", None);
         assert!(prompt.contains("1.2.0"));
         assert!(prompt.contains("1.1.0"));
-        assert!(prompt.contains("Download now?"));
+        assert!(prompt.contains("install, and restart now?"));
         // Exactly one blank line between the version line and the call to
         // action — i.e. no orphan ``\n\n\n`` from an empty body.
         assert!(!prompt.contains("\n\n\n"));
@@ -4460,7 +4719,7 @@ mod tests {
         assert!(prompt.contains('…'));
         assert!(prompt.len() < 1000);
         assert!(prompt.contains("1.2.0"));
-        assert!(prompt.contains("Download now?"));
+        assert!(prompt.contains("install, and restart now?"));
     }
 
     #[test]
@@ -4508,14 +4767,11 @@ mod tests {
 
     #[test]
     fn download_progress_handles_partial_megabyte_total() {
-        // 500 KB total → integer-MB division yields 0, so we treat it
+        // 500 KB total → integer-MB division yields 0, so treat it
         // identically to "no total" rather than printing "0/0 MB".
         let small_total = 500 * 1024;
         let label = format_download_progress(0, Some(small_total));
-        // Integer division gives ``0`` MB; not ideal but at least not
-        // misleading — the formatter still prints a valid "downloading"
-        // string and never panics.
-        assert!(label.starts_with("Status: Downloading"));
+        assert_eq!(label, "Status: Downloading 0 MB");
     }
 
     #[test]
