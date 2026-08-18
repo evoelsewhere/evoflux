@@ -329,6 +329,12 @@ class TestCodingLspDiagnostics:
         lsp_client.diagnostics.assert_awaited_once_with(
             source.resolve(), "value: int = 'bad'\n"
         )
+        from app.services.problems_service import list_problems
+
+        problems = list_problems(tmp_path)
+        assert len(problems) == 1
+        assert problems[0].source == "lsp"
+        assert problems[0].path == "main.py"
 
     def test_reports_unavailable_language_server(self, client, tmp_path, monkeypatch):
         source = tmp_path / "main.py"

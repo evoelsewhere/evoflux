@@ -77,6 +77,12 @@ async def test_lsp_diagnostics_with_issues(
 
     assert "F401" in result
     assert "imported but unused" in result
+    from app.services.problems_service import list_problems
+
+    problems = list_problems(tmp_path)
+    assert len(problems) == 1
+    assert problems[0].source == "static"
+    assert problems[0].code == "F401"
 
 
 @pytest.mark.asyncio

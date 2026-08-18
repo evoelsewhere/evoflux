@@ -163,6 +163,11 @@ const PluginCenterPanel = lazy(() =>
     default: module.PluginCenterPanel,
   })),
 )
+const ProblemsPanel = lazy(() =>
+  import('@/components/ProblemsPanel').then((module) => ({
+    default: module.ProblemsPanel,
+  })),
+)
 const loadSplitWorkbench = () =>
   import('./SplitWorkbench').then((module) => ({
     default: module.SplitWorkbench,
@@ -487,11 +492,13 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       closeWorkbenchTool('graph')
       closeWorkbenchTool('source-control')
       closeWorkbenchTool('pull-requests')
+      closeWorkbenchTool('problems')
     }
     if (mode === 'coding' && !workspace) {
       closeWorkbenchTool('files')
       closeWorkbenchTool('graph')
       closeWorkbenchTool('source-control')
+      closeWorkbenchTool('problems')
     }
   }, [closeWorkbenchTool, mode, sessionIdState, workspace])
 
@@ -1534,6 +1541,30 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                 />
               )}
             </WorkbenchSurface>
+            {workspace && <WorkbenchSurface tool="problems">
+              {(_tab, active) => (
+                <ProblemsPanel
+                  workspace={workspace}
+                  active={active}
+                  onOpenFile={(path) => {
+                    setCodingFileViewer({
+                      path,
+                      name: path.split('/').pop() ?? path,
+                      size: 0,
+                      mtime: 0,
+                      mime: 'text/plain',
+                    })
+                    setCodingFileViewerHost('standalone')
+                    setCodingFileViewerMode('file')
+                    openWorkbenchTool('files')
+                  }}
+                  onSendToAgent={(prompt) => {
+                    inputRef.current?.setValue(prompt)
+                    inputRef.current?.focus()
+                  }}
+                />
+              )}
+            </WorkbenchSurface>}
           </>
         )}
       </Suspense>

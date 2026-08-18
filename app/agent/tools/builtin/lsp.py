@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -183,6 +184,7 @@ async def _ruff_diagnostics(target: Path, *, include_warnings: bool) -> str:
 
     if not stdout.strip():
         if rc == 0:
+            _publish_static_ruff(target, [])
             return f"[OK] No issues found in {target}"
         # Non-JSON error
         return f"[Error] ruff failed: {stderr.strip() or '(no output)'}"
@@ -193,7 +195,10 @@ async def _ruff_diagnostics(target: Path, *, include_warnings: bool) -> str:
         return f"[Error] Could not parse ruff output:\n{stdout[:500]}"
 
     if not issues:
+        _publish_static_ruff(target, [])
         return f"[OK] No issues found in {target}"
+
+    _publish_static_ruff(target, issues)
 
     capped = issues[:_MAX_DIAG]
     lines = [
@@ -229,6 +234,7 @@ async def _tsc_diagnostics(target: Path, *, include_warnings: bool) -> str:
 
     combined = (stdout + stderr).strip()
     if not combined:
+        _publish_static_tsc(target, tsconfig_dir, [])
         return f"[OK] No TypeScript errors found in {target}"
 
     lines_raw = combined.splitlines()
@@ -238,7 +244,10 @@ async def _tsc_diagnostics(target: Path, *, include_warnings: bool) -> str:
         diag_lines = [ln for ln in diag_lines if ": error TS" in ln]
 
     if not diag_lines:
+        _publish_static_tsc(target, tsconfig_dir, [])
         return f"[OK] No TypeScript errors found in {target}"
+
+    _publish_static_tsc(target, tsconfig_dir, diag_lines)
 
     capped = diag_lines[:_MAX_DIAG]
     result = [
@@ -247,6 +256,71 @@ async def _tsc_diagnostics(target: Path, *, include_warnings: bool) -> str:
     for line in capped:
         result.append(f"  {line}")
     return "\n".join(result)
+
+
+def _publish_static_ruff(target: Path, issues: list[dict]) -> None:
+    from app.services.problems_service import ProblemInput, publish_problems
+
+    sandbox = get_sandbox()
+    inputs: list[ProblemInput] = []
+    for issue in issues[:_MAX_DIAG]:
+        location = issue.get("location") or {}
+        inputs.append(
+            ProblemInput(
+                message=str(issue.get("message") or "Ruff problem"),
+                severity="warning",
+                path=str(issue.get("filename") or target),
+                line=int(location.get("row", 1)),
+                column=int(location.get("column", 1)),
+                code=str(issue["code"]) if issue.get("code") is not None else None,
+                provenance={"producer": "ruff"},
+            )
+        )
+    publish_problems(
+        sandbox.workspace_root,
+        source="static",
+        scope=f"static:ruff:{sandbox.display_path(target)}",
+        problems=inputs,
+        session_id=sandbox.session_id,
+    )
+
+
+def _publish_static_tsc(
+    target: Path, tsconfig_dir: Path, diagnostic_lines: list[str]
+) -> None:
+    from app.services.problems_service import ProblemInput, publish_problems
+
+    sandbox = get_sandbox()
+    pattern = re.compile(
+        r"^(?P<path>.+)\((?P<line>\d+),(?P<column>\d+)\): "
+        r"(?P<severity>error|warning) (?P<code>TS\d+): (?P<message>.*)$"
+    )
+    inputs: list[ProblemInput] = []
+    for row in diagnostic_lines[:_MAX_DIAG]:
+        match = pattern.match(row.strip())
+        if match is None:
+            continue
+        path = Path(match.group("path"))
+        if not path.is_absolute():
+            path = (tsconfig_dir / path).resolve()
+        inputs.append(
+            ProblemInput(
+                message=match.group("message"),
+                severity="error" if match.group("severity") == "error" else "warning",
+                path=str(path),
+                line=int(match.group("line")),
+                column=int(match.group("column")),
+                code=match.group("code"),
+                provenance={"producer": "tsc"},
+            )
+        )
+    publish_problems(
+        sandbox.workspace_root,
+        source="static",
+        scope=f"static:tsc:{sandbox.display_path(target)}",
+        problems=inputs,
+        session_id=sandbox.session_id,
+    )
 
 
 # ── Real language-server tools ───────────────────────────────────────────────

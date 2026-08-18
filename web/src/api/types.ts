@@ -299,6 +299,39 @@ export interface ChangeSetResponse {
   files: ChangeSetFile[]
 }
 
+export type ProblemSource = 'lsp' | 'static' | 'build' | 'test' | 'ai_review' | 'security' | 'plugin'
+export type ProblemSeverity = 'error' | 'warning' | 'info' | 'hint'
+export type ProblemStatus = 'open' | 'dismissed' | 'suppressed'
+
+export interface CodingProblem {
+  id: string
+  workspace: string
+  source: ProblemSource
+  scope: string
+  message: string
+  severity: ProblemSeverity
+  path: string | null
+  line: number | null
+  column: number | null
+  end_line: number | null
+  end_column: number | null
+  code: string | null
+  title: string | null
+  details: string | null
+  fix: Record<string, unknown> | null
+  suppression_key: string
+  provenance: Record<string, unknown>
+  session_id: string | null
+  status: ProblemStatus
+  created_at: number
+  updated_at: number
+}
+
+export interface ProblemsResponse {
+  problems: CodingProblem[]
+  counts: Record<'error' | 'warning' | 'info' | 'hint' | 'total', number>
+}
+
 // ── Code context (/api/code-context) ────────────────────────────────────────
 
 export interface CodeGraphStatusResponse {

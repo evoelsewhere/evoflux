@@ -30,6 +30,7 @@ export type WorkbenchTool =
   | 'plugins'
   | 'source-control'
   | 'pull-requests'
+  | 'problems'
 
 export interface WorkbenchTab {
   id: string

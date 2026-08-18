@@ -118,6 +118,7 @@ class PostEditDiagnosticsHook(BaseAgentHook):
                     logger.debug("post_edit_diagnostics_stale path={}", path)
                     continue
                 checked += 1
+                self._publish_problem_snapshot(path, after)
                 baseline = (
                     before.issues
                     if before is not None and before.source == after.source
@@ -315,6 +316,58 @@ class PostEditDiagnosticsHook(BaseAgentHook):
             return _content_hash(path) == expected
         except OSError:
             return False
+
+    @staticmethod
+    def _publish_problem_snapshot(path: Path, scan: _Scan) -> None:
+        from app.agent.sandbox import get_sandbox
+        from app.services.problems_service import (
+            ProblemInput,
+            ProblemSeverity,
+            publish_problems,
+        )
+
+        sandbox = get_sandbox()
+        severity_map: dict[int, ProblemSeverity] = {
+            1: "error",
+            2: "warning",
+            3: "info",
+            4: "hint",
+        }
+        relative = sandbox.display_path(path)
+        inputs: list[ProblemInput] = []
+        for issue in scan.issues[:200]:
+            location = issue.get("location") or {}
+            raw_range = issue.get("range") or {}
+            start = raw_range.get("start") or {}
+            end = raw_range.get("end") or {}
+            raw_severity = issue.get("severity")
+            severity: ProblemSeverity = (
+                severity_map.get(raw_severity, "warning")
+                if isinstance(raw_severity, int)
+                else "warning"
+            )
+            inputs.append(
+                ProblemInput(
+                    message=str(issue.get("message") or "Diagnostic problem"),
+                    severity=severity,
+                    path=relative,
+                    line=int(location.get("row", start.get("line", 0)))
+                    + (0 if location else 1),
+                    column=int(location.get("column", start.get("character", 0)))
+                    + (0 if location else 1),
+                    end_line=int(end.get("line", start.get("line", 0))) + 1,
+                    end_column=int(end.get("character", start.get("character", 0))) + 1,
+                    code=str(issue["code"]) if issue.get("code") is not None else None,
+                    provenance={"producer": scan.source},
+                )
+            )
+        publish_problems(
+            sandbox.workspace_root,
+            source="lsp" if scan.source == "lsp" else "static",
+            scope=f"{scan.source}:{relative}",
+            problems=inputs,
+            session_id=sandbox.session_id,
+        )
 
 
 def _supports_diagnostics(path: Path) -> bool:
