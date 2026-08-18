@@ -38,6 +38,7 @@ from app.api.routes.team import (
     projects,
     questions,
     reviews,
+    search_everywhere,
     terminal,
     todos,
     webbridge,
@@ -65,6 +66,7 @@ router.include_router(permissions.router)
 router.include_router(processes.router)
 router.include_router(questions.router)
 router.include_router(reviews.router)
+router.include_router(search_everywhere.router)
 router.include_router(terminal.router)
 router.include_router(worktrees.router)
 router.include_router(projects.router)

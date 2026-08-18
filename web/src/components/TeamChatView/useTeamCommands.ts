@@ -91,6 +91,21 @@ export function useTeamCommands({
           action: () => useUIStore.getState().openWorkbenchTool('overview'),
         }]
       : []),
+    ...(mode === 'coding'
+      ? [{
+          id: 'ai-review-changes',
+          group: 'Git',
+          label: 'Review changes with AI',
+          description: 'Review uncommitted changes and publish findings to Problems',
+          keywords: ['review thay đổi chưa commit', 'review uncommitted changes'],
+          action: () => {
+            useUIStore.getState().openWorkbenchTool('source-control')
+            window.setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('evoflux:git-ai-review'))
+            }, 0)
+          },
+        }]
+      : []),
     mode === 'coding'
       ? { id: 'collapse-sidebar', group: 'View', label: 'Toggle Coding Sidebar', description: 'Collapse or expand workspaces and sessions', shortcut: 'Ctrl+B', action: handleCodingSidebarToggle }
       : { id: 'collapse-sidebar', group: 'View', label: 'Toggle Sidebar', description: '', shortcut: 'Ctrl+B', action: () => useUIStore.getState().toggleSidebarCollapsed() },
@@ -115,6 +130,14 @@ export function useTeamCommands({
     { id: 'settings-skills', group: 'Settings', label: 'Manage Skills', description: 'Edit skill .md files',  action: () => useUIStore.getState().openSettings('skills') },
     { id: 'settings-new-skill', group: 'Settings', label: 'New Skill',  description: 'Create a new skill',    action: () => useUIStore.getState().openSettings('skills/new') },
     { id: 'settings-memory', group: 'Settings', label: 'Memory Settings',  description: 'Review memory and configure Dream synthesis', action: () => useUIStore.getState().openSettings('memory') },
+    {
+      id: 'settings-sandbox',
+      group: 'Settings',
+      label: 'Sandbox Settings',
+      description: 'Manage filesystem, command, and outbound-data policies',
+      keywords: ['mở nơi quản lý sandbox', 'open sandbox settings'],
+      action: () => useUIStore.getState().openSettings('sandbox'),
+    },
     ...agentNames.map((name) => ({
       id: `edit-${name}`, group: 'Settings',
       label: `Edit ${name}…`,

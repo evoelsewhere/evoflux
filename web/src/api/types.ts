@@ -413,6 +413,31 @@ export interface GitAIResponse {
   evidence_sha256: string
 }
 
+export type SearchEverywhereKind =
+  | 'file'
+  | 'folder'
+  | 'symbol'
+  | 'code'
+  | 'git_branch'
+  | 'git_commit'
+  | 'problem'
+  | 'skill'
+  | 'workflow'
+
+export interface SearchEverywhereItem {
+  id: string
+  kind: SearchEverywhereKind
+  label: string
+  description: string
+  path: string | null
+  line: number | null
+  metadata: Record<string, unknown> | null
+}
+
+export interface SearchEverywhereResponse {
+  items: SearchEverywhereItem[]
+}
+
 // ── Code context (/api/code-context) ────────────────────────────────────────
 
 export interface CodeGraphStatusResponse {

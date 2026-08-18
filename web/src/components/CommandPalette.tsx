@@ -25,18 +25,22 @@ export interface Command {
   shortcut?: string
   /** Optional category for grouping */
   group?: string
+  keywords?: string[]
   action: () => void
 }
 
 interface CommandPaletteProps {
   commands: Command[]
+  searchCommands?: (query: string, signal: AbortSignal) => Promise<Command[]>
   onClose: () => void
 }
 
-export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
+export function CommandPalette({ commands, searchCommands, onClose }: CommandPaletteProps) {
   const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [activeIdx, setActiveIdx] = useState(0)
+  const [remoteCommands, setRemoteCommands] = useState<Command[]>([])
+  const [searching, setSearching] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const mouseY = useProximityTracker(listRef)
@@ -60,17 +64,51 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
     group: command.group ? t(command.group) : undefined,
   })), [commands, t])
 
-  const filtered = useMemo(() => query.trim()
-    ? localizedCommands.filter((cmd) => {
+  useEffect(() => {
+    const normalized = query.trim()
+    if (!searchCommands || normalized.length < 2) {
+      setRemoteCommands([]) // eslint-disable-line react-hooks/set-state-in-effect -- query reset owns remote results
+      setSearching(false)
+      return
+    }
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      setSearching(true)
+      void searchCommands(normalized, controller.signal)
+        .then((items) => {
+          if (!controller.signal.aborted) setRemoteCommands(items)
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setRemoteCommands([])
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSearching(false)
+        })
+    }, 180)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [query, searchCommands])
+
+  const filtered = useMemo(() => {
+    const local = query.trim()
+      ? localizedCommands.filter((cmd) => {
         const q = query.toLowerCase()
         return (
           cmd.label.toLowerCase().includes(q) ||
           cmd.description?.toLowerCase().includes(q) ||
-          cmd.group?.toLowerCase().includes(q)
+          cmd.group?.toLowerCase().includes(q) ||
+          cmd.keywords?.some((keyword) => keyword.toLowerCase().includes(q))
         )
       })
-    : localizedCommands,
-  [localizedCommands, query])
+      : localizedCommands
+    const byId = new Map<string, Command>(
+      local.map((command) => [command.id, command]),
+    )
+    for (const command of remoteCommands) byId.set(command.id, command)
+    return [...byId.values()]
+  }, [localizedCommands, query, remoteCommands])
 
   // Scroll active item into view
   useEffect(() => {
@@ -221,6 +259,7 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
             <span className="text-xs text-(--color-text-muted)">run</span>
             <kbd className="rounded-xs border border-(--color-border) bg-(--bg-page) px-1 py-0.5 font-mono text-xs text-(--color-text-muted)">Esc</kbd>
             <span className="text-xs text-(--color-text-muted)">close</span>
+            {searching && <span className="ml-auto text-xs text-(--color-accent)">Searching repository…</span>}
           </div>
         </motion.div>
       </motion.div>
