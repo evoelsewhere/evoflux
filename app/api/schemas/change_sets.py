@@ -18,11 +18,13 @@ class ChangeSetCreateRequest(BaseModel):
     description: str | None = Field(default=None, max_length=4000)
     files: list[ChangeSetFileProposal] = Field(default_factory=list, max_length=100)
     workspace_edit: dict | None = None
+    verification_commands: list[str] = Field(default_factory=list, max_length=10)
 
 
 class ChangeSetSelectionRequest(BaseModel):
     paths: list[str] | None = Field(default=None, max_length=100)
     session_id: str | None = Field(default=None, max_length=128)
+    verify: bool = True
 
 
 class ChangeSetFileResponse(BaseModel):
@@ -44,6 +46,8 @@ class ChangeSetResponse(BaseModel):
     description: str | None
     status: Literal["pending", "applied", "rejected", "partial"]
     snapshot_hash: str | None
+    verification_commands: list[str] = Field(default_factory=list)
+    verification: list[dict] = Field(default_factory=list)
     created_at: float
     updated_at: float
     files: list[ChangeSetFileResponse]

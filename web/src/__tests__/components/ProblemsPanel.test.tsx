@@ -104,6 +104,8 @@ describe('ProblemsPanel', () => {
       description: null,
       status: 'pending',
       snapshot_hash: null,
+      verification_commands: [],
+      verification: [],
       created_at: 1,
       updated_at: 1,
       files: [],

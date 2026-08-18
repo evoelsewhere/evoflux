@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertCircle, Check, Copy, Download, ExternalLink, FileText, GitCompare, Loader2, PanelRightClose, PanelRightOpen, Pencil, Save, Undo2, X, Eye } from 'lucide-react'
 import Editor, { DiffEditor, useMonaco } from '@monaco-editor/react'
+import type { editor as MonacoEditor } from 'monaco-editor'
 
 import { codingWorkspaceFileUrl, getCodingWorkspaceDiagnostics, getCodingWorkspaceGitDiff, writeCodingWorkspaceFile } from '@/api/client'
 import { isTauriAvailable, tauriOpenWorkspaceFile } from '@/api/tauri-workspace'
@@ -15,7 +16,15 @@ import { MarkdownBlock } from '@/utils/markdown'
 import { useMonacoTheme, languageForExt } from '@/hooks/useMonacoTheme'
 import { queryKeys } from '@/queries'
 import { SidePanel } from './shell/SidePanel'
-import type { CodingLspDiagnostic, WorkspaceFileInfo } from '@/api/types'
+import { EditorAiActionDialog } from './EditorAiActionDialog'
+import { useTeamStore } from '@/stores/useTeamStore'
+import { useUIStore } from '@/stores/useUIStore'
+import type {
+  CodingLspDiagnostic,
+  EditorActionRequest,
+  EditorAiAction,
+  WorkspaceFileInfo,
+} from '@/api/types'
 
 const DocumentPreview = lazy(() =>
   import('./workspace-document-preview').then((module) => ({ default: module.WorkspaceDocumentPreview })),
@@ -119,7 +128,10 @@ function TextPreview({
   const [diagnostics, setDiagnostics] = useState<CodingLspDiagnostic[]>([])
   const [diagnosticStatus, setDiagnosticStatus] = useState<'idle' | 'checking' | 'ready' | 'unavailable' | 'unsupported' | 'error'>('idle')
   const [diagnosticMessage, setDiagnosticMessage] = useState<string | null>(null)
+  const [aiRequest, setAiRequest] = useState<EditorActionRequest | null>(null)
   const editorRef = useRef<Parameters<NonNullable<Parameters<typeof Editor>[0]['onMount']>>[0] | null>(null)
+  const sessionId = useTeamStore((state) => state.sessionId)
+  const openWorkbenchTool = useUIStore((state) => state.openWorkbenchTool)
 
   const monaco = useMonaco()
   const theme = useMonacoTheme(monaco)
@@ -220,52 +232,66 @@ function TextPreview({
     const editor = editorRef.current
     const disposables: { dispose: () => void }[] = []
 
-    if (!editing && onSendToChat) {
-      disposables.push(
-        editor.addAction({
-          id: 'evoflux.explain',
-          label: 'Explain this code',
-          contextMenuGroupId: 'evoflux',
-          contextMenuOrder: 1,
-          run: (ed) => {
-            const sel = ed.getSelection()
-            const text = sel ? ed.getModel()?.getValueInRange(sel) : ''
-            if (text && sel) onSendToChat('explain', text, file.path, sel.startLineNumber, sel.endLineNumber)
-          },
-        }),
-      )
-      disposables.push(
-        editor.addAction({
-          id: 'evoflux.refactor',
-          label: 'Refactor selection',
-          contextMenuGroupId: 'evoflux',
-          contextMenuOrder: 2,
-          run: (ed) => {
-            const sel = ed.getSelection()
-            const text = sel ? ed.getModel()?.getValueInRange(sel) : ''
-            if (text && sel) onSendToChat('refactor', text, file.path, sel.startLineNumber, sel.endLineNumber)
-          },
-        }),
-      )
-      disposables.push(
-        editor.addAction({
-          id: 'evoflux.fix',
-          label: 'Fix this code',
-          contextMenuGroupId: 'evoflux',
-          contextMenuOrder: 3,
-          run: (ed) => {
-            const sel = ed.getSelection()
-            const text = sel ? ed.getModel()?.getValueInRange(sel) : ''
-            if (text && sel) onSendToChat('fix', text, file.path, sel.startLineNumber, sel.endLineNumber)
-          },
-        }),
-      )
+    const startAiAction = (action: EditorAiAction, ed: MonacoEditor.ICodeEditor) => {
+      const model = ed.getModel()
+      if (!model || !sessionId) return
+      const selection = ed.getSelection()
+      const selectedText = selection && !selection.isEmpty()
+        ? model.getValueInRange(selection)
+        : ''
+      const position = ed.getPosition()
+      const word = position ? model.getWordAtPosition(position)?.word ?? null : null
+      setAiRequest({
+        session_id: sessionId,
+        action,
+        active_file: file.path,
+        content: model.getValue(),
+        document_version: model.getVersionId(),
+        selection: selection && selectedText
+          ? {
+              text: selectedText,
+              start_line: selection.startLineNumber,
+              start_column: selection.startColumn,
+              end_line: selection.endLineNumber,
+              end_column: selection.endColumn,
+            }
+          : null,
+        cursor_symbol: word,
+        diagnostics,
+        mention_paths: [],
+      })
+    }
+
+    if (!editing && sessionId) {
+      const actions: Array<{ action: EditorAiAction; label: string }> = [
+        { action: 'explain_code', label: 'AI: Explain code or symbol' },
+        { action: 'fix_diagnostic', label: 'AI: Fix diagnostic' },
+        { action: 'refactor_selection', label: 'AI: Refactor selection' },
+        { action: 'generate_tests', label: 'AI: Generate tests' },
+        { action: 'generate_documentation', label: 'AI: Generate documentation' },
+        { action: 'find_problems', label: 'AI: Find potential problems' },
+        { action: 'simplify_code', label: 'AI: Simplify code' },
+        { action: 'convert_pattern', label: 'AI: Convert implementation pattern' },
+        { action: 'propagate_api_change', label: 'AI: Propagate API change' },
+      ]
+      actions.forEach(({ action, label }, index) => {
+        disposables.push(editor.addAction({
+          id: `evoflux.ai.${action}`,
+          label,
+          contextMenuGroupId: 'evoflux-ai',
+          contextMenuOrder: index + 1,
+          run: (ed) => startAiAction(action, ed),
+        }))
+      })
+    }
+
+    if (!editing && (onAddComment || onAddCodeToChat || onSendToChat)) {
       disposables.push(
         editor.addAction({
           id: 'evoflux.addComment',
           label: 'Add to chat as reference',
           contextMenuGroupId: 'evoflux',
-          contextMenuOrder: 4,
+          contextMenuOrder: 20,
           run: (ed) => {
             const sel = ed.getSelection()
             if (sel) onAddComment?.(file.path, sel.startLineNumber, sel.endLineNumber)
@@ -277,7 +303,7 @@ function TextPreview({
           id: 'evoflux.addToChat',
           label: 'Add to chat',
           contextMenuGroupId: 'evoflux',
-          contextMenuOrder: 5,
+          contextMenuOrder: 21,
           run: (ed) => {
             const sel = ed.getSelection()
             const text = sel ? ed.getModel()?.getValueInRange(sel) : ''
@@ -301,7 +327,7 @@ function TextPreview({
 
     return () => { disposables.forEach((d) => d.dispose()) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monaco, editorMounted, editing, onSendToChat, onAddComment, onAddCodeToChat, file.path])
+  }, [monaco, editorMounted, editing, onSendToChat, onAddComment, onAddCodeToChat, file.path, sessionId, diagnostics])
 
   const handleEditorMount = useCallback((editor: Parameters<NonNullable<Parameters<typeof Editor>[0]['onMount']>>[0]) => {
     editorRef.current = editor
@@ -509,6 +535,14 @@ function TextPreview({
             </div>
           )}
         </div>
+      )}
+      {aiRequest && (
+        <EditorAiActionDialog
+          workspace={workspace}
+          request={aiRequest}
+          onClose={() => setAiRequest(null)}
+          onOpenProblems={() => openWorkbenchTool('problems')}
+        />
       )}
     </div>
   )

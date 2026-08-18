@@ -11,6 +11,9 @@ from __future__ import annotations
 import asyncio
 import difflib
 import hashlib
+import json
+import os
+import shlex
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,6 +31,25 @@ _MAX_FILES = 100
 _MAX_FILE_BYTES = 2_000_000
 _MAX_TOTAL_BYTES = 10_000_000
 _TTL_SECONDS = 60 * 60
+_VERIFICATION_EXECUTABLES = frozenset(
+    {
+        "uv",
+        "bun",
+        "npm",
+        "pnpm",
+        "yarn",
+        "pytest",
+        "python",
+        "python3",
+        "go",
+        "cargo",
+        "mvn",
+        "mvnw",
+        "gradle",
+        "gradlew",
+        "dotnet",
+    }
+)
 
 
 class ChangeSetError(ValueError):
@@ -77,6 +99,8 @@ class ChangeSet:
     files: list[ChangeFile]
     status: ChangeSetStatus = "pending"
     snapshot_hash: str | None = None
+    verification_commands: list[str] = field(default_factory=list)
+    verification: list[dict[str, Any]] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
 
@@ -102,6 +126,7 @@ def create_change_set(
     description: str | None = None,
     files: list[ChangeFileInput] | None = None,
     workspace_edit: dict[str, Any] | None = None,
+    verification_commands: list[str] | None = None,
 ) -> ChangeSet:
     """Create a guarded proposal from full contents and/or an LSP WorkspaceEdit."""
     root = workspace.resolve()
@@ -169,6 +194,11 @@ def create_change_set(
         title=title.strip() or "Proposed changes",
         description=description,
         files=proposed_files,
+        verification_commands=_verification_commands(
+            root,
+            [item.path for item in proposed_files],
+            verification_commands or [],
+        ),
     )
     _change_sets[record.id] = record
     return record
@@ -180,6 +210,7 @@ async def apply_change_set(
     *,
     paths: list[str] | None = None,
     session_id: str | None = None,
+    verify: bool = True,
 ) -> ChangeSet:
     """Apply selected pending files after validating every base hash."""
     root = workspace.resolve()
@@ -228,7 +259,15 @@ async def apply_change_set(
             item.status = "applied"
         record.updated_at = time.time()
         _refresh_status(record)
-        return record
+    if verify:
+        record.verification = await verify_change_set(
+            record,
+            root,
+            paths=[item.path for item in selected],
+            session_id=session_id,
+        )
+        record.updated_at = time.time()
+    return record
 
 
 def reject_change_set(
@@ -263,6 +302,8 @@ def serialize_change_set(record: ChangeSet) -> dict[str, Any]:
         "description": record.description,
         "status": record.status,
         "snapshot_hash": record.snapshot_hash,
+        "verification_commands": record.verification_commands,
+        "verification": record.verification,
         "created_at": record.created_at,
         "updated_at": record.updated_at,
         "files": [
@@ -333,6 +374,163 @@ def inputs_from_workspace_edit(
             )
         )
     return result
+
+
+async def verify_change_set(
+    record: ChangeSet,
+    workspace: Path,
+    *,
+    paths: list[str],
+    session_id: str | None,
+) -> list[dict[str, Any]]:
+    """Run bounded LSP checks and allowlisted existing verification commands."""
+    results: list[dict[str, Any]] = []
+    from app.agent.lsp_manager import (
+        LanguageServerUnavailable,
+        get_language_server,
+        language_server_spec,
+    )
+    from app.agent.sandbox import SandboxConfig, set_sandbox
+    from app.services.problems_service import (
+        ProblemInput,
+        ProblemSeverity,
+        publish_problems,
+    )
+
+    token = set_sandbox(SandboxConfig(workspace=str(workspace), session_id=session_id))
+    try:
+        for relative in paths:
+            target = workspace / relative
+            if not target.is_file() or language_server_spec(target) is None:
+                continue
+            try:
+                client = await get_language_server(workspace, target)
+                diagnostics = await client.diagnostics(
+                    target, require_current_version=True
+                )
+                severity: dict[int, ProblemSeverity] = {
+                    1: "error",
+                    2: "warning",
+                    3: "info",
+                    4: "hint",
+                }
+                problem_inputs: list[ProblemInput] = []
+                for item in diagnostics[:200]:
+                    raw_severity = item.get("severity")
+                    problem_severity: ProblemSeverity = (
+                        severity.get(raw_severity, "warning")
+                        if isinstance(raw_severity, int)
+                        else "warning"
+                    )
+                    start = (item.get("range") or {}).get("start") or {}
+                    problem_inputs.append(
+                        ProblemInput(
+                            message=str(item.get("message") or "LSP problem"),
+                            severity=problem_severity,
+                            path=relative,
+                            line=int(start.get("line", 0)) + 1,
+                            column=int(start.get("character", 0)) + 1,
+                            code=(
+                                str(item["code"])
+                                if item.get("code") is not None
+                                else None
+                            ),
+                            provenance={"producer": item.get("source") or "LSP"},
+                        )
+                    )
+                publish_problems(
+                    workspace,
+                    source="lsp",
+                    scope=f"lsp:{relative}",
+                    problems=problem_inputs,
+                    session_id=session_id,
+                )
+                results.append(
+                    {
+                        "kind": "lsp",
+                        "path": relative,
+                        "status": "passed" if not diagnostics else "failed",
+                        "diagnostics": len(diagnostics),
+                        "note": "LSP diagnostics do not replace behavioral tests.",
+                    }
+                )
+            except (LanguageServerUnavailable, OSError, RuntimeError) as exc:
+                results.append(
+                    {
+                        "kind": "lsp",
+                        "path": relative,
+                        "status": "unavailable",
+                        "message": str(exc),
+                    }
+                )
+
+        for command in record.verification_commands:
+            results.append(
+                await _run_verification_command(
+                    workspace, command, session_id=session_id
+                )
+            )
+    finally:
+        from app.agent.sandbox import _sandbox_ctx
+
+        _sandbox_ctx.reset(token)
+    return results
+
+
+async def _run_verification_command(
+    workspace: Path, command: str, *, session_id: str | None
+) -> dict[str, Any]:
+    argv = shlex.split(command, posix=os.name != "nt")
+    if not argv:
+        return {"kind": "command", "command": command, "status": "skipped"}
+    try:
+        from app.agent.tools.builtin.shell import _scrubbed_env
+
+        process = await asyncio.create_subprocess_exec(
+            *argv,
+            cwd=str(workspace),
+            env=_scrubbed_env(inherit=False),
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=120)
+        output = stdout.decode("utf-8", errors="replace")
+        if len(output) > 32_000:
+            output = output[-32_000:]
+        status = "passed" if process.returncode == 0 else "failed"
+        from app.agent.hooks.problem_capture import publish_command_output
+
+        publish_command_output(
+            workspace,
+            command=command,
+            result=f"[{'Succeeded' if status == 'passed' else 'Failed'}]\n{output}",
+            session_id=session_id,
+        )
+        return {
+            "kind": "command",
+            "command": command,
+            "status": status,
+            "exit_code": process.returncode,
+            "output": output,
+        }
+    except TimeoutError:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
+        return {
+            "kind": "command",
+            "command": command,
+            "status": "failed",
+            "message": "Timed out after 120 seconds.",
+        }
+    except OSError as exc:
+        return {
+            "kind": "command",
+            "command": command,
+            "status": "unavailable",
+            "message": str(exc),
+        }
 
 
 def _apply_lsp_text_edits(content: str, edits: list[dict[str, Any]]) -> str:
@@ -471,6 +669,69 @@ def _select_pending(record: ChangeSet, paths: list[str] | None) -> list[ChangeFi
         for item in record.files
         if item.status == "pending" and (not requested or item.path in requested)
     ]
+
+
+def _verification_commands(
+    workspace: Path, paths: list[str], requested: list[str]
+) -> list[str]:
+    commands: list[str] = []
+    for command in requested:
+        normalized = command.strip()
+        if not normalized or any(
+            token in normalized
+            for token in ("\n", ";", "&&", "||", "|", ">", "<", "`", "$(")
+        ):
+            continue
+        try:
+            argv = shlex.split(normalized, posix=os.name != "nt")
+        except ValueError:
+            continue
+        executable = Path(argv[0]).name.casefold() if argv else ""
+        if executable in _VERIFICATION_EXECUTABLES and normalized not in commands:
+            commands.append(normalized)
+        if len(commands) >= 2:
+            return commands
+    if commands:
+        return commands
+
+    candidates = [workspace / path for path in paths]
+    if (workspace / "pyproject.toml").is_file() and (workspace / "tests").is_dir():
+        return [
+            "uv run pytest --no-cov -q"
+            if (workspace / "uv.lock").is_file()
+            else "pytest -q"
+        ]
+    if (workspace / "Cargo.toml").is_file():
+        return ["cargo test"]
+    if (workspace / "go.mod").is_file():
+        return ["go test ./..."]
+
+    package_roots: list[Path] = []
+    for candidate in candidates:
+        current = candidate.parent
+        while current == workspace or workspace in current.parents:
+            if (current / "package.json").is_file():
+                package_roots.append(current)
+                break
+            if current == workspace:
+                break
+            current = current.parent
+    for package_root in package_roots:
+        try:
+            package = json.loads((package_root / "package.json").read_text())
+        except (OSError, ValueError):
+            continue
+        scripts = package.get("scripts") if isinstance(package, dict) else None
+        if not isinstance(scripts, dict) or "test" not in scripts:
+            continue
+        prefix = package_root.relative_to(workspace).as_posix()
+        cwd_arg = f" --cwd {shlex.quote(prefix)}" if prefix != "." else ""
+        if (workspace / "bun.lock").is_file() or (workspace / "bun.lockb").is_file():
+            return [f"bun{cwd_arg} run test"]
+        if (workspace / "pnpm-lock.yaml").is_file():
+            return [f"pnpm{cwd_arg} test"]
+        return [f"npm{cwd_arg} test"]
+    return []
 
 
 def _refresh_status(record: ChangeSet) -> None:

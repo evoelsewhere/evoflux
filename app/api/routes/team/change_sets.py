@@ -59,6 +59,7 @@ async def create_change_set_route(
                 for item in body.files
             ],
             workspace_edit=body.workspace_edit,
+            verification_commands=body.verification_commands,
         )
     except ChangeSetStale as exc:
         raise HTTPException(
@@ -91,6 +92,7 @@ async def apply_change_set_route(
             root,
             paths=body.paths,
             session_id=body.session_id,
+            verify=body.verify,
         )
     except ChangeSetNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

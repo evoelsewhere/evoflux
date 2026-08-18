@@ -273,6 +273,7 @@ export interface ChangeSetCreateRequest {
   description?: string | null
   files?: ChangeSetFileProposal[]
   workspace_edit?: Record<string, unknown> | null
+  verification_commands?: string[]
 }
 
 export interface ChangeSetFile {
@@ -294,6 +295,8 @@ export interface ChangeSetResponse {
   description: string | null
   status: ChangeSetStatus
   snapshot_hash: string | null
+  verification_commands: string[]
+  verification: Array<Record<string, unknown>>
   created_at: number
   updated_at: number
   files: ChangeSetFile[]
@@ -330,6 +333,57 @@ export interface CodingProblem {
 export interface ProblemsResponse {
   problems: CodingProblem[]
   counts: Record<'error' | 'warning' | 'info' | 'hint' | 'total', number>
+}
+
+export type EditorAiAction =
+  | 'explain_code'
+  | 'fix_diagnostic'
+  | 'refactor_selection'
+  | 'generate_tests'
+  | 'generate_documentation'
+  | 'find_problems'
+  | 'simplify_code'
+  | 'convert_pattern'
+  | 'propagate_api_change'
+  | 'explain_failure'
+
+export interface EditorSelectionContext {
+  text: string
+  start_line: number
+  start_column: number
+  end_line: number
+  end_column: number
+}
+
+export interface EditorContextRequest {
+  session_id?: string | null
+  active_file: string
+  content: string
+  document_version?: number | null
+  selection?: EditorSelectionContext | null
+  cursor_symbol?: string | null
+  diagnostics?: CodingLspDiagnostic[]
+  mention_paths?: string[]
+  relevant_terminal_failure?: string | null
+}
+
+export interface EditorActionRequest extends EditorContextRequest {
+  action: EditorAiAction
+  instruction?: string | null
+}
+
+export interface EditorContextResponse {
+  context: Record<string, unknown>
+}
+
+export interface EditorActionResponse {
+  kind: 'explanation' | 'changes' | 'findings'
+  summary: string
+  explanation: string | null
+  verification_commands: string[]
+  context: Record<string, unknown>
+  change_set: ChangeSetResponse | null
+  findings: string[]
 }
 
 // ── Code context (/api/code-context) ────────────────────────────────────────
