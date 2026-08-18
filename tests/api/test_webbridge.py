@@ -5621,8 +5621,10 @@ async def test_sharing_capture_flags_gate_command_plane_reads(
     manager.get_extension("e1").current_url = "https://example.com/page"
     screenshot = await manager.send_command("sess", "screenshot", {})
     snapshot = await manager.send_command("sess", "semantic_snapshot", {})
+    dialogs = await manager.send_command("sess", "dialogs", {})
     assert screenshot["success"] is False
     assert snapshot["success"] is False
+    assert dialogs["success"] is False
     assert sent == []
 
 
@@ -6047,6 +6049,77 @@ async def test_tool_rich_interaction_actions_map_params(
         ),
         ("key", {"key": "a", "modifiers": ["Meta", "Shift"], "tab_id": 7}),
     ]
+
+
+async def test_tool_responsive_viewport_and_dialog_actions_map_params(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+
+    def handler(action: str, params: dict):
+        seen.append((action, params))
+        data = {
+            "resize": {"viewport": {"width": 375, "height": 812, "dpr": 2}},
+            "reset_viewport": {"viewport": {"width": 1440, "height": 900, "dpr": 2}},
+            "dialogs": {
+                "active": {"type": "prompt", "message": "Name?"},
+                "history": [],
+            },
+            "handle_dialog": {"type": "prompt", "accepted": True},
+        }[action]
+        return {"success": True, "data": data, "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    result = await webbridge(
+        actions=[
+            _action(
+                {
+                    "action": "resize",
+                    "preset": "mobile",
+                    "device_scale_factor": 2,
+                    "color_scheme": "dark",
+                    "tab_id": 7,
+                }
+            ),
+            _action({"action": "dialogs", "tab_id": 7}),
+            _action(
+                {
+                    "action": "handle_dialog",
+                    "accept": True,
+                    "prompt_text": "EvoFlux",
+                    "tab_id": 7,
+                }
+            ),
+            _action({"action": "reset_viewport", "tab_id": 7}),
+        ]
+    )
+
+    assert isinstance(result, str)
+    assert "Responsive viewport set to 375x812" in result
+    assert "Untrusted browser content" in result
+    assert "Accepted prompt dialog" in result
+    assert seen == [
+        (
+            "resize",
+            {
+                "device_scale_factor": 2.0,
+                "preset": "mobile",
+                "color_scheme": "dark",
+                "tab_id": 7,
+            },
+        ),
+        ("dialogs", {"clear": False, "limit": 20, "tab_id": 7}),
+        (
+            "handle_dialog",
+            {"accept": True, "prompt_text": "EvoFlux", "tab_id": 7},
+        ),
+        ("reset_viewport", {"tab_id": 7}),
+    ]
+
+
+def test_resize_requires_preset_or_explicit_dimensions():
+    with pytest.raises(Exception, match="preset or both width and height"):
+        _action({"action": "resize", "width": 375})
 
 
 async def test_tool_open_and_close_tab(

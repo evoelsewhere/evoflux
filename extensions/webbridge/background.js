@@ -74,6 +74,8 @@ let automationStateBroadcastTimer = null;
 const agentControlOverlays = new Set();
 const overlayCaptureSuspensions = new Map();
 const agentPointerPositions = new Map();
+const activePageDialogs = new Map();
+const pageDialogHistory = new Map();
 
 const COMMAND_CAPABILITIES = [
   "navigate", "click", "dblclick", "type", "key", "scroll", "screenshot",
@@ -82,7 +84,8 @@ const COMMAND_CAPABILITIES = [
   "wait_for_network_idle", "click_selector", "click_text", "hover", "focus",
   "select_option", "set_checked", "drag", "fill", "open_tab", "close_tab",
   "snapshot", "semantic_snapshot", "semantic_read", "semantic_select",
-  "semantic_write", "extract_elements", "scroll_to_bottom", "status",
+  "semantic_write", "extract_elements", "scroll_to_bottom", "resize",
+  "reset_viewport", "dialogs", "handle_dialog", "status",
 ];
 
 // ── Config (persisted in chrome.storage.local, edited in Side Chat settings) ─
@@ -1692,6 +1695,18 @@ async function handleCommand(msg) {
       case "scroll":
         result = await cmdScroll(params);
         break;
+      case "resize":
+        result = await cmdResize(params);
+        break;
+      case "reset_viewport":
+        result = await cmdResetViewport(params);
+        break;
+      case "dialogs":
+        result = await cmdDialogs(params);
+        break;
+      case "handle_dialog":
+        result = await cmdHandleDialog(params);
+        break;
       case "screenshot":
         result = await cmdScreenshot(params);
         break;
@@ -2475,6 +2490,11 @@ async function ensureDebuggerAttached(tabId, { showControl = true } = {}) {
       }
     });
   });
+  // Page.enable is idempotent and makes JavaScript dialog events observable,
+  // allowing the agent or Side Chat to handle native alert/confirm/prompt UI.
+  await sendCommandOnce(tabId, "Page.enable", {}).catch((error) => {
+    console.warn("[WebBridge] Page dialog events unavailable:", error.message);
+  });
   if (showControl) {
     await setAgentControlOverlay(tabId, true);
     notifyAutomationState("browser_control", tabId);
@@ -2758,7 +2778,34 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   const tabId = source.tabId;
   if (!tabId || !params) return;
   const diagnostics = activeDiagnosticCapture(tabId);
-  if (method === "Network.requestWillBeSent") {
+  if (method === "Page.javascriptDialogOpening") {
+    const history = pageDialogHistory.get(tabId) || [];
+    const dialog = {
+      id: `${tabId}:${Date.now()}:${history.length + 1}`,
+      tab_id: tabId,
+      type: String(params.type || "alert"),
+      message: String(params.message || ""),
+      default_prompt: String(params.defaultPrompt || ""),
+      url: safePageUrl(params.url || ""),
+      opened_at: new Date().toISOString(),
+      active: true,
+    };
+    activePageDialogs.set(tabId, dialog);
+    history.push(dialog);
+    if (history.length > 100) history.splice(0, history.length - 100);
+    pageDialogHistory.set(tabId, history);
+    chrome.runtime.sendMessage({ type: "browser_dialog_opened", dialog }).catch(() => {});
+  } else if (method === "Page.javascriptDialogClosed") {
+    const dialog = activePageDialogs.get(tabId);
+    if (dialog) {
+      dialog.active = false;
+      dialog.accepted = Boolean(params.result);
+      dialog.user_input = params.userInput ? String(params.userInput) : "";
+      dialog.closed_at = new Date().toISOString();
+      activePageDialogs.delete(tabId);
+      chrome.runtime.sendMessage({ type: "browser_dialog_closed", dialog }).catch(() => {});
+    }
+  } else if (method === "Network.requestWillBeSent") {
     netInc(tabId, params.requestId);
     if (diagnostics) {
       diagnostics.requests.set(params.requestId, {
@@ -2825,6 +2872,7 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 chrome.debugger.onDetach.addListener((source) => {
   networkInflight.delete(source.tabId);
   diagnosticCaptures.delete(source.tabId);
+  activePageDialogs.delete(source.tabId);
   setAgentControlOverlay(source.tabId, false).catch(() => {});
   if (source.tabId && attachedTabs.delete(source.tabId)) {
     console.warn("[WebBridge] Debugger detached from tab", source.tabId);
@@ -2840,6 +2888,8 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   agentPointerPositions.delete(tabId);
   networkInflight.delete(tabId);
   diagnosticCaptures.delete(tabId);
+  activePageDialogs.delete(tabId);
+  pageDialogHistory.delete(tabId);
   notifyAutomationState("tab_closed", tabId);
   cancelTextWatchesForTab(tabId).catch((error) => {
     console.warn("[WebBridge] Failed to cancel tab text watches:", error.message);
@@ -3019,6 +3069,86 @@ async function getViewportMetrics(tabId) {
     pageWidth: Math.round(Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0)),
     pageHeight: Math.round(Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)),
   }))()`);
+}
+
+async function cmdResize(params) {
+  const tab = await resolveTab(params);
+  const presets = {
+    mobile: { width: 375, height: 812, mobile: true, touch: true },
+    tablet: { width: 768, height: 1024, mobile: true, touch: true },
+    desktop: { width: 1280, height: 800, mobile: false, touch: false },
+  };
+  const preset = typeof params?.preset === "string" ? presets[params.preset] : null;
+  const width = Math.round(Number(preset?.width ?? params?.width));
+  const height = Math.round(Number(preset?.height ?? params?.height));
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 200 || height < 200) {
+    throw new Error("resize requires a preset or width and height of at least 200px");
+  }
+  const dpr = Math.max(0.5, Math.min(4, Number(params?.device_scale_factor) || 1));
+  const mobile = typeof params?.mobile === "boolean" ? params.mobile : Boolean(preset?.mobile);
+  const touch = typeof params?.touch === "boolean" ? params.touch : Boolean(preset?.touch);
+  await cdpSend(tab.id, "Emulation.setDeviceMetricsOverride", {
+    width: Math.min(4000, width),
+    height: Math.min(4000, height),
+    deviceScaleFactor: dpr,
+    mobile,
+    screenWidth: Math.min(4000, width),
+    screenHeight: Math.min(4000, height),
+  });
+  await cdpSend(tab.id, "Emulation.setTouchEmulationEnabled", {
+    enabled: touch,
+    maxTouchPoints: touch ? 5 : 1,
+  });
+  if (params?.color_scheme === "light" || params?.color_scheme === "dark") {
+    await cdpSend(tab.id, "Emulation.setEmulatedMedia", {
+      media: "",
+      features: [{ name: "prefers-color-scheme", value: params.color_scheme }],
+    });
+  }
+  return {
+    success: true,
+    viewport: await getViewportMetrics(tab.id),
+    mobile,
+    touch,
+    color_scheme: params?.color_scheme || null,
+  };
+}
+
+async function cmdResetViewport(params) {
+  const tab = await resolveTab(params);
+  await cdpSend(tab.id, "Emulation.clearDeviceMetricsOverride", {});
+  await cdpSend(tab.id, "Emulation.setTouchEmulationEnabled", {
+    enabled: false,
+    maxTouchPoints: 1,
+  });
+  await cdpSend(tab.id, "Emulation.setEmulatedMedia", { media: "", features: [] });
+  return { success: true, viewport: await getViewportMetrics(tab.id) };
+}
+
+async function cmdDialogs(params) {
+  const tab = await resolveTab(params);
+  const limit = Math.max(1, Math.min(100, Number(params?.limit) || 20));
+  const history = (pageDialogHistory.get(tab.id) || []).slice(-limit);
+  const active = activePageDialogs.get(tab.id) || null;
+  if (params?.clear) pageDialogHistory.set(tab.id, active ? [active] : []);
+  return { success: true, active, history };
+}
+
+async function cmdHandleDialog(params) {
+  const tab = await resolveTab(params);
+  return handlePageDialogForTab(tab.id, params);
+}
+
+async function handlePageDialogForTab(tabId, params) {
+  const dialog = activePageDialogs.get(tabId);
+  if (!dialog) throw new Error("No active JavaScript dialog in this tab");
+  const accept = dialog.type === "alert" ? true : Boolean(params?.accept);
+  const command = { accept };
+  if (dialog.type === "prompt" && accept && params?.prompt_text != null) {
+    command.promptText = String(params.prompt_text);
+  }
+  await sendCommandResilient(tabId, "Page.handleJavaScriptDialog", command, { showControl: false });
+  return { success: true, type: dialog.type, accepted: accept, dialog_id: dialog.id };
 }
 
 async function cmdScreenshot(params) {
@@ -3928,6 +4058,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     agentControlOverlays.delete(tabId);
     overlayCaptureSuspensions.delete(tabId);
     agentPointerPositions.delete(tabId);
+    activePageDialogs.delete(tabId);
   }
   if (changeInfo.url || changeInfo.status === "loading") {
     rotateTabPageInstance(tabId).catch((error) => {
@@ -3988,6 +4119,32 @@ chrome.tabs.onMoved.addListener(() => {
 // ── Message handlers (Side Chat and content scripts) ─────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === "get_browser_dialog") {
+    (async () => {
+      const tab = msg.tab_id != null ? await chrome.tabs.get(msg.tab_id) : await getActiveTab();
+      sendResponse({
+        ok: true,
+        dialog: tab?.id == null ? null : activePageDialogs.get(tab.id) || null,
+      });
+    })().catch((e) => sendResponse({ ok: false, error: e.message }));
+    return true;
+  }
+
+  if (msg.type === "handle_browser_dialog") {
+    (async () => {
+      const tab = msg.tab_id != null ? await chrome.tabs.get(msg.tab_id) : await getActiveTab();
+      if (!tab?.id) throw new Error("No active browser tab");
+      sendResponse({
+        ok: true,
+        ...(await handlePageDialogForTab(tab.id, {
+          accept: Boolean(msg.accept),
+          prompt_text: msg.prompt_text,
+        })),
+      });
+    })().catch((e) => sendResponse({ ok: false, error: e.message }));
+    return true;
+  }
+
   if (msg.type === "region_selected") {
     (async () => {
       try {
