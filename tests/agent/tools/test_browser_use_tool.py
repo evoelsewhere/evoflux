@@ -148,6 +148,8 @@ async def test_expanded_control_and_debug_actions_are_forwarded(monkeypatch) -> 
                 "script": "Promise.resolve(42)",
                 "await_promise": True,
             },
+            {"action": "resize", "preset": "mobile", "color_scheme": "dark"},
+            {"action": "reset_viewport"},
         ],
     )
 
@@ -161,6 +163,8 @@ async def test_expanded_control_and_debug_actions_are_forwarded(monkeypatch) -> 
         "performance",
         "http",
         "evaluate",
+        "resize",
+        "reset_viewport",
     ]
     assert requests[0][1] == {
         "selector": "[data-testid]",
@@ -179,3 +183,5 @@ async def test_expanded_control_and_debug_actions_are_forwarded(monkeypatch) -> 
         "await_promise": True,
         "timeout_ms": 15_000,
     }
+    assert requests[8][1] == {"preset": "mobile", "color_scheme": "dark"}
+    assert requests[9][1] == {}

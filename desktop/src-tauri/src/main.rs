@@ -740,7 +740,7 @@ fn browser_observability_init_script() -> &'static str {
         (() => {
             const label = window.__TAURI_INTERNALS__?.metadata?.currentWebview?.label;
             if (!String(label || '').startsWith('browser-') || globalThis.__evofluxBrowserRuntime) return;
-            const runtime = { console: [], network: [], dialogs: [], dialogBehavior: { behavior: 'dismiss', promptText: null } };
+            const runtime = { console: [], network: [], dialogs: [], nextDialogId: 1, dialogBehavior: { behavior: 'dismiss', promptText: null } };
             const keep = (items, value, max) => {
                 items.push(value);
                 if (items.length > max) items.splice(0, items.length - max);
@@ -774,15 +774,17 @@ fn browser_observability_init_script() -> &'static str {
                 text: String(event.reason?.stack || event.reason || 'Unhandled rejection').slice(0, 4000),
             }, 400));
             globalThis.alert = (message) => {
-                keep(runtime.dialogs, { ts: Date.now(), type: 'alert', message: String(message) }, 100);
+                keep(runtime.dialogs, { id: runtime.nextDialogId++, ts: Date.now(), type: 'alert', message: String(message), response: 'accepted' }, 100);
             };
             globalThis.confirm = (message) => {
-                keep(runtime.dialogs, { ts: Date.now(), type: 'confirm', message: String(message) }, 100);
-                return runtime.dialogBehavior.behavior === 'accept';
+                const accepted = runtime.dialogBehavior.behavior === 'accept';
+                keep(runtime.dialogs, { id: runtime.nextDialogId++, ts: Date.now(), type: 'confirm', message: String(message), response: accepted ? 'accepted' : 'dismissed' }, 100);
+                return accepted;
             };
             globalThis.prompt = (message, defaultValue = '') => {
-                keep(runtime.dialogs, { ts: Date.now(), type: 'prompt', message: String(message), default_value: String(defaultValue) }, 100);
-                return runtime.dialogBehavior.behavior === 'accept'
+                const accepted = runtime.dialogBehavior.behavior === 'accept';
+                keep(runtime.dialogs, { id: runtime.nextDialogId++, ts: Date.now(), type: 'prompt', message: String(message), default_value: String(defaultValue), response: accepted ? 'accepted' : 'dismissed' }, 100);
+                return accepted
                     ? String(runtime.dialogBehavior.promptText ?? defaultValue)
                     : null;
             };
@@ -1532,7 +1534,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
 
                     if (action === 'instrument') {{
                         if (!globalThis.__evofluxBrowserRuntime) {{
-                            const runtime = {{ console: [], network: [], dialogs: [], dialogBehavior: {{ behavior: 'dismiss', promptText: null }} }};
+                            const runtime = {{ console: [], network: [], dialogs: [], nextDialogId: 1, dialogBehavior: {{ behavior: 'dismiss', promptText: null }} }};
                             const keep = (items, value, max) => {{ items.push(value); if (items.length > max) items.splice(0, items.length - max); }};
                             for (const level of ['debug', 'log', 'info', 'warn', 'error']) {{
                                 const original = console[level]?.bind(console);
@@ -1544,14 +1546,16 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             }}
                             addEventListener('error', (event) => keep(runtime.console, {{ ts: Date.now(), level: 'error', source: event.filename || '', line: event.lineno || 0, column: event.colno || 0, text: String(event.error?.stack || event.message || 'Page error').slice(0, 4000) }}, 400));
                             addEventListener('unhandledrejection', (event) => keep(runtime.console, {{ ts: Date.now(), level: 'error', text: String(event.reason?.stack || event.reason || 'Unhandled rejection').slice(0, 4000) }}, 400));
-                            globalThis.alert = (message) => keep(runtime.dialogs, {{ ts: Date.now(), type: 'alert', message: String(message) }}, 100);
+                            globalThis.alert = (message) => keep(runtime.dialogs, {{ id: runtime.nextDialogId++, ts: Date.now(), type: 'alert', message: String(message), response: 'accepted' }}, 100);
                             globalThis.confirm = (message) => {{
-                                keep(runtime.dialogs, {{ ts: Date.now(), type: 'confirm', message: String(message) }}, 100);
-                                return runtime.dialogBehavior.behavior === 'accept';
+                                const accepted = runtime.dialogBehavior.behavior === 'accept';
+                                keep(runtime.dialogs, {{ id: runtime.nextDialogId++, ts: Date.now(), type: 'confirm', message: String(message), response: accepted ? 'accepted' : 'dismissed' }}, 100);
+                                return accepted;
                             }};
                             globalThis.prompt = (message, defaultValue = '') => {{
-                                keep(runtime.dialogs, {{ ts: Date.now(), type: 'prompt', message: String(message), default_value: String(defaultValue) }}, 100);
-                                return runtime.dialogBehavior.behavior === 'accept' ? String(runtime.dialogBehavior.promptText ?? defaultValue) : null;
+                                const accepted = runtime.dialogBehavior.behavior === 'accept';
+                                keep(runtime.dialogs, {{ id: runtime.nextDialogId++, ts: Date.now(), type: 'prompt', message: String(message), default_value: String(defaultValue), response: accepted ? 'accepted' : 'dismissed' }}, 100);
+                                return accepted ? String(runtime.dialogBehavior.promptText ?? defaultValue) : null;
                             }};
                             const originalFetch = globalThis.fetch?.bind(globalThis);
                             if (originalFetch) globalThis.fetch = async (...args) => {{
@@ -3964,6 +3968,8 @@ mod tests {
         assert!(script.contains("startsWith('browser-')"));
         assert!(script.contains("unhandledrejection"));
         assert!(script.contains("XMLHttpRequest.prototype.send"));
+        assert!(script.contains("nextDialogId"));
+        assert!(script.contains("response: accepted ? 'accepted' : 'dismissed'"));
         assert!(script.contains("globalThis.__evofluxBrowserRuntime = runtime"));
     }
 

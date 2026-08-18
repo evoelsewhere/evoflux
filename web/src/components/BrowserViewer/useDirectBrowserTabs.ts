@@ -11,6 +11,20 @@ export interface DirectBrowserTab {
   url: string
 }
 
+export interface BrowserPageDialog {
+  id?: number
+  ts: number
+  type: 'alert' | 'confirm' | 'prompt'
+  message: string
+  default_value?: string
+  response?: 'accepted' | 'dismissed'
+}
+
+export interface BrowserViewportOverride {
+  width: number
+  height: number
+}
+
 interface UseDirectBrowserTabsOptions {
   sessionId: string
   instanceId?: string
@@ -26,11 +40,15 @@ interface UseDirectBrowserTabsOptions {
   onRequestNewTab?: (url: string) => void
 }
 
-interface NativeBounds {
+export interface NativeBounds {
   x: number
   y: number
   width: number
   height: number
+}
+
+export interface BrowserViewportLayout extends NativeBounds {
+  scale: number
 }
 
 export interface BrowserWaitProbe {
@@ -75,12 +93,16 @@ export function useDirectBrowserTabs({
   })
   const counterRef = useRef(0)
   const boundsRef = useRef<NativeBounds | null>(null)
+  const viewportOverrideRef = useRef<BrowserViewportOverride | null>(null)
+  const viewportScaleRef = useRef(1)
+  const lastDialogKeyRef = useRef('')
   const visibilityRef = useRef(new Map<string, boolean>())
   const creatingRef = useRef(false)
   const [tabs, setTabs] = useState<DirectBrowserTab[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [agentConnected, setAgentConnected] = useState(false)
+  const [pageDialog, setPageDialog] = useState<BrowserPageDialog | null>(null)
 
   activeIdRef.current = activeTabId
 
@@ -213,6 +235,7 @@ export function useDirectBrowserTabs({
 
       webviewsRef.current.set(id, webview)
       visibilityRef.current.set(id, true)
+      boundsRef.current = null
       const tab = { id, label, url: initialUrl }
       tabsRef.current = [...tabsRef.current, tab]
       setTabs(tabsRef.current)
@@ -241,6 +264,7 @@ export function useDirectBrowserTabs({
     const next = webviewsRef.current.get(id)
     await previous?.hide().catch(() => {})
     visibilityRef.current.set(activeIdRef.current ?? '', false)
+    activeIdRef.current = id
     setActiveTabId(id)
     if (visible && next) {
       await next.show()
@@ -330,6 +354,32 @@ export function useDirectBrowserTabs({
     setTabs([])
     setActiveTabId(null)
   }, [])
+
+  const applyAgentViewport = useCallback(async (tabId: string) => {
+    const viewport = viewportRef.current
+    const webview = webviewsRef.current.get(tabId)
+    if (!viewport || !webview) throw new Error('Desktop browser is unavailable')
+    const rect = viewport.getBoundingClientRect()
+    const layout = browserViewportLayout({
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height,
+    }, viewportOverrideRef.current)
+    const { LogicalPosition, LogicalSize } = await import('@tauri-apps/api/dpi')
+    await Promise.all([
+      webview.setPosition(new LogicalPosition(layout.x, layout.y)),
+      webview.setSize(new LogicalSize(layout.width, layout.height)),
+      webview.setZoom(viewportOverrideRef.current ? layout.scale : zoom / 100),
+    ])
+    viewportScaleRef.current = layout.scale
+    boundsRef.current = {
+      x: layout.x,
+      y: layout.y,
+      width: layout.width,
+      height: layout.height,
+    }
+  }, [viewportRef, zoom])
 
   const executeAgentCommand = useCallback(async (
     action: string,
@@ -477,13 +527,14 @@ export function useDirectBrowserTabs({
       if (!Number.isFinite(width) || !Number.isFinite(height)) {
         throw new Error('resize requires a preset or width and height')
       }
-      const webview = webviewsRef.current.get(tab.id)
-      if (!webview) throw new Error('Desktop browser is unavailable')
-      const { LogicalSize } = await import('@tauri-apps/api/dpi')
-      await webview.setSize(new LogicalSize(
-        Math.max(200, Math.min(4000, width)),
-        Math.max(200, Math.min(4000, height)),
-      ))
+      viewportOverrideRef.current = {
+        width: Math.max(200, Math.min(4000, width)),
+        height: Math.max(200, Math.min(4000, height)),
+      }
+      // Apply synchronously for the command response; the animation-frame
+      // synchronizer keeps the same override stable as app chrome moves.
+      boundsRef.current = null
+      await applyAgentViewport(tab.id)
       if (params.color_scheme) {
         await invokeFor('app_browser_webview_agent_action', tab.label, {
           action: 'evaluate',
@@ -494,12 +545,20 @@ export function useDirectBrowserTabs({
       }
       return `Resized in-app browser to ${Math.round(width)}x${Math.round(height)}`
     }
+    if (action === 'reset_viewport') {
+      viewportOverrideRef.current = null
+      viewportScaleRef.current = 1
+      boundsRef.current = null
+      await applyAgentViewport(tab.id)
+      return 'Reset in-app browser viewport to the panel size'
+    }
     if (action === 'zoom') {
       const percent = Math.max(25, Math.min(500, Number(params.percent)))
       if (!Number.isFinite(percent)) throw new Error('zoom requires a percent')
       const webview = webviewsRef.current.get(tab.id)
       if (!webview) throw new Error('Desktop browser is unavailable')
-      await webview.setZoom(percent / 100)
+      const scale = viewportOverrideRef.current ? viewportScaleRef.current : 1
+      await webview.setZoom((percent / 100) * scale)
       return `Set in-app browser zoom to ${Math.round(percent)}%`
     }
     if (action === 'print') {
@@ -556,7 +615,7 @@ export function useDirectBrowserTabs({
     throw new Error(
       `${action} is not supported by the direct desktop browser yet`,
     )
-  }, [closeAll, closeTab, createTab, invokeFor, onRequestNewTab, selectTab, singleTab, waitForNavigation, waitForPageReady])
+  }, [applyAgentViewport, closeAll, closeTab, createTab, invokeFor, onRequestNewTab, selectTab, singleTab, waitForNavigation, waitForPageReady])
 
   agentHandlerRef.current = executeAgentCommand
 
@@ -622,8 +681,43 @@ export function useDirectBrowserTabs({
 
   useEffect(() => {
     const webview = webviewsRef.current.get(activeTabId ?? '')
-    if (webview) void webview.setZoom(zoom / 100).catch(() => {})
+    const scale = viewportOverrideRef.current ? viewportScaleRef.current : 1
+    const effectiveZoom = viewportOverrideRef.current ? scale : zoom / 100
+    if (webview) void webview.setZoom(effectiveZoom).catch(() => {})
   }, [activeTabId, zoom])
+
+  useEffect(() => {
+    if (!supported || !activeTab || !visible) return
+    let disposed = false
+    let polling = false
+    const pollDialogs = async () => {
+      if (disposed || polling || pageDialog) return
+      polling = true
+      try {
+        const dialogs = await invokeFor<BrowserPageDialog[]>(
+          'app_browser_webview_agent_action',
+          activeTab.label,
+          { action: 'dialogs', params: {} },
+        )
+        const latest = Array.isArray(dialogs) ? dialogs.at(-1) : null
+        if (!latest) return
+        const key = `${activeTab.label}:${latest.id ?? latest.ts}:${latest.ts}`
+        if (key === lastDialogKeyRef.current) return
+        lastDialogKeyRef.current = key
+        setPageDialog(latest)
+      } catch {
+        // Navigation briefly invalidates eval callbacks; the next poll retries.
+      } finally {
+        polling = false
+      }
+    }
+    void pollDialogs()
+    const timer = window.setInterval(() => void pollDialogs(), 500)
+    return () => {
+      disposed = true
+      window.clearInterval(timer)
+    }
+  }, [activeTab, invokeFor, pageDialog, supported, visible])
 
   useEffect(() => {
     if (!supported) return
@@ -640,23 +734,31 @@ export function useDirectBrowserTabs({
           const rect = viewport.getBoundingClientRect()
           const cssVisible = getComputedStyle(viewport).visibility !== 'hidden'
           const shouldShow = visible && cssVisible && rect.width >= 2 && rect.height >= 2
+          const layout = browserViewportLayout({
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height,
+          }, viewportOverrideRef.current)
+          viewportScaleRef.current = layout.scale
           const bounds = {
-            x: Math.round(rect.left),
-            y: Math.round(rect.top),
-            width: Math.max(1, Math.round(rect.width)),
-            height: Math.max(1, Math.round(rect.height)),
+            x: layout.x,
+            y: layout.y,
+            width: layout.width,
+            height: layout.height,
           }
           const changed = !sameBounds(boundsRef.current, bounds)
-          if (changed) boundsRef.current = bounds
 
           for (const [id, webview] of webviewsRef.current) {
             const isActive = id === activeIdRef.current
-            const show = shouldShow && isActive
-            if (show && changed) {
+            const show = shouldShow && isActive && !pageDialog
+            const currentlyVisible = visibilityRef.current.get(id) === true
+            if (show && (changed || !currentlyVisible)) {
               const { LogicalPosition, LogicalSize } = await import('@tauri-apps/api/dpi')
               await Promise.all([
                 webview.setPosition(new LogicalPosition(bounds.x, bounds.y)),
                 webview.setSize(new LogicalSize(bounds.width, bounds.height)),
+                webview.setZoom(viewportOverrideRef.current ? layout.scale : zoom / 100),
               ])
             }
             if (visibilityRef.current.get(id) !== show) {
@@ -664,6 +766,7 @@ export function useDirectBrowserTabs({
               visibilityRef.current.set(id, show)
             }
           }
+          if (changed) boundsRef.current = bounds
         } catch {
           // The next animation frame retries bounds/visibility synchronization.
         } finally {
@@ -678,7 +781,7 @@ export function useDirectBrowserTabs({
       disposed = true
       cancelAnimationFrame(frame)
     }
-  }, [supported, viewportRef, visible])
+  }, [pageDialog, supported, viewportRef, visible, zoom])
 
   useEffect(() => {
     if (!supported || !activeTab) return
@@ -708,6 +811,8 @@ export function useDirectBrowserTabs({
     activeTabId,
     creating,
     agentConnected,
+    pageDialog,
+    dismissPageDialog: () => setPageDialog(null),
     createTab,
     selectTab,
     closeTab,
@@ -716,6 +821,37 @@ export function useDirectBrowserTabs({
     find,
     clearBrowsingData,
     closeAll,
+  }
+}
+
+export function browserViewportLayout(
+  container: NativeBounds,
+  override: BrowserViewportOverride | null,
+): BrowserViewportLayout {
+  const containerWidth = Math.max(1, container.width)
+  const containerHeight = Math.max(1, container.height)
+  if (!override) {
+    return {
+      x: Math.round(container.x),
+      y: Math.round(container.y),
+      width: Math.max(1, Math.round(containerWidth)),
+      height: Math.max(1, Math.round(containerHeight)),
+      scale: 1,
+    }
+  }
+  const scale = Math.min(
+    1,
+    containerWidth / override.width,
+    containerHeight / override.height,
+  )
+  const width = Math.max(1, Math.round(override.width * scale))
+  const height = Math.max(1, Math.round(override.height * scale))
+  return {
+    x: Math.round(container.x + (containerWidth - width) / 2),
+    y: Math.round(container.y + (containerHeight - height) / 2),
+    width,
+    height,
+    scale,
   }
 }
 
