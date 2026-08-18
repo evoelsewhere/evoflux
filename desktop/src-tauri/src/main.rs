@@ -679,13 +679,24 @@ fn app_browser_webview(app: &AppHandle, label: &str) -> Result<tauri::Webview, S
         .ok_or_else(|| format!("Browser webview not found: {label}"))
 }
 
+fn browser_navigation_url(value: &str) -> Result<url::Url, String> {
+    let parsed = url::Url::parse(value).map_err(|error| format!("Invalid browser URL: {error}"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("Browser navigation only allows http:// and https:// URLs".into());
+    }
+    if parsed.host_str().is_none() {
+        return Err("Browser navigation requires a host".into());
+    }
+    Ok(parsed)
+}
+
 #[tauri::command]
 async fn app_browser_webview_navigate(
     app: AppHandle,
     label: String,
     url: String,
 ) -> Result<String, String> {
-    let parsed = url::Url::parse(&url).map_err(|error| format!("Invalid browser URL: {error}"))?;
+    let parsed = browser_navigation_url(&url)?;
     let webview = app_browser_webview(&app, &label)?;
     webview
         .navigate(parsed)
@@ -3985,6 +3996,24 @@ mod tests {
             .expect_err("external browser actions must not be supported");
 
         assert!(error.contains("Unsupported direct browser action"));
+    }
+
+    #[test]
+    fn browser_navigation_rejects_local_and_executable_schemes() {
+        for value in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "data:text/html,secret",
+            "about:blank",
+        ] {
+            assert!(browser_navigation_url(value).is_err(), "accepted {value}");
+        }
+        assert_eq!(
+            browser_navigation_url("https://example.com/path")
+                .expect("https URL")
+                .host_str(),
+            Some("example.com")
+        );
     }
 
     #[test]

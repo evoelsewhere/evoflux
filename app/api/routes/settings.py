@@ -18,6 +18,7 @@ from loguru import logger
 from app.agent.sandbox_config import SandboxFileConfig, load_config, save_config
 from app.core.config import settings
 from app.core.runtime_settings import (
+    BuiltInBrowserSettings,
     CodeReviewSettings,
     ConductorSettings,
     GitSettings,
@@ -318,6 +319,12 @@ def _webbridge_settings_body() -> WebBridgeSettingsBody:
     return WebBridgeSettingsBody(
         enabled=cfg.webbridge.enabled,
         allow_evaluate=cfg.webbridge.allow_evaluate,
+        built_in_allowed_domains=cfg.browser.allowed_domains,
+        built_in_blocked_domains=cfg.browser.blocked_domains,
+        built_in_allow_evaluate=cfg.browser.allow_evaluate,
+        built_in_allow_storage=cfg.browser.allow_storage,
+        built_in_allow_cookie_values=cfg.browser.allow_cookie_values,
+        built_in_allow_http_requests=cfg.browser.allow_http_requests,
     )
 
 
@@ -345,6 +352,14 @@ async def update_webbridge_settings(
         audit_log_size=cfg.webbridge.audit_log_size,
         sharing=cfg.webbridge.sharing,
         interactions=cfg.webbridge.interactions,
+    )
+    cfg.browser = BuiltInBrowserSettings(
+        allowed_domains=body.built_in_allowed_domains,
+        blocked_domains=body.built_in_blocked_domains,
+        allow_evaluate=body.built_in_allow_evaluate,
+        allow_storage=body.built_in_allow_storage,
+        allow_cookie_values=body.built_in_allow_cookie_values,
+        allow_http_requests=body.built_in_allow_http_requests,
     )
     save_runtime_settings(cfg)
     # Keep the live policy cache in sync without waiting for the cleanup loop.

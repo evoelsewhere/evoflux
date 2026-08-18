@@ -42,12 +42,18 @@ class VersionControlSettingsBody(BaseModel):
 
 
 class WebBridgeSettingsBody(BaseModel):
-    """User-editable WebBridge policy exposed in Settings → Browser."""
+    """User-editable browser policies exposed in Settings → Browser."""
 
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
     allow_evaluate: bool = True
+    built_in_allowed_domains: list[str] = Field(default_factory=list)
+    built_in_blocked_domains: list[str] = Field(default_factory=list)
+    built_in_allow_evaluate: bool = True
+    built_in_allow_storage: bool = True
+    built_in_allow_cookie_values: bool = False
+    built_in_allow_http_requests: bool = True
 
 
 class ConductorSettingsBody(BaseModel):

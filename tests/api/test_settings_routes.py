@@ -1261,8 +1261,18 @@ def test_webbridge_settings_round_trip(tmp_path, monkeypatch):
     assert defaults.status_code == 200
     assert defaults.json()["enabled"] is True
     assert defaults.json()["allow_evaluate"] is True
+    assert defaults.json()["built_in_allow_cookie_values"] is False
 
-    payload = {"enabled": False, "allow_evaluate": False}
+    payload = {
+        "enabled": False,
+        "allow_evaluate": False,
+        "built_in_allowed_domains": ["example.com"],
+        "built_in_blocked_domains": ["private.example.com"],
+        "built_in_allow_evaluate": False,
+        "built_in_allow_storage": False,
+        "built_in_allow_cookie_values": True,
+        "built_in_allow_http_requests": False,
+    }
     updated = client.put("/api/settings/webbridge", json=payload)
 
     assert updated.status_code == 200
@@ -1270,6 +1280,8 @@ def test_webbridge_settings_round_trip(tmp_path, monkeypatch):
     written = (tmp_path / "settings.yaml").read_text(encoding="utf-8")
     assert "enabled: false" in written
     assert "allow_evaluate: false" in written
+    assert "allowed_domains:" in written
+    assert "private.example.com" in written
 
     reread = client.get("/api/settings/webbridge")
     assert reread.status_code == 200
