@@ -774,6 +774,85 @@ fn send_native_browser_pointer(
 }
 
 #[cfg(target_os = "macos")]
+fn send_native_browser_drag(from: (f64, f64), to: (f64, f64)) -> Result<(), String> {
+    use core_graphics::event::{CGEvent, CGEventTapLocation, CGEventType, CGMouseButton};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+    use core_graphics::geometry::CGPoint;
+
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "Could not create macOS drag event source".to_string())?;
+    let point = |value: (f64, f64)| CGPoint::new(value.0, value.1);
+    CGEvent::new_mouse_event(
+        source.clone(),
+        CGEventType::MouseMoved,
+        point(from),
+        CGMouseButton::Left,
+    )
+    .map_err(|_| "Could not create macOS drag move".to_string())?
+    .post(CGEventTapLocation::HID);
+    CGEvent::new_mouse_event(
+        source.clone(),
+        CGEventType::LeftMouseDown,
+        point(from),
+        CGMouseButton::Left,
+    )
+    .map_err(|_| "Could not create macOS drag down".to_string())?
+    .post(CGEventTapLocation::HID);
+    for step in 1..=14 {
+        let progress = step as f64 / 14.0;
+        let current = (
+            from.0 + (to.0 - from.0) * progress,
+            from.1 + (to.1 - from.1) * progress,
+        );
+        CGEvent::new_mouse_event(
+            source.clone(),
+            CGEventType::LeftMouseDragged,
+            point(current),
+            CGMouseButton::Left,
+        )
+        .map_err(|_| "Could not create macOS drag step".to_string())?
+        .post(CGEventTapLocation::HID);
+        std::thread::sleep(Duration::from_millis(18));
+    }
+    CGEvent::new_mouse_event(
+        source,
+        CGEventType::LeftMouseUp,
+        point(to),
+        CGMouseButton::Left,
+    )
+    .map_err(|_| "Could not create macOS drag release".to_string())?
+    .post(CGEventTapLocation::HID);
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn send_native_browser_drag(from: (f64, f64), to: (f64, f64)) -> Result<(), String> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        mouse_event, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
+
+    unsafe { SetCursorPos(from.0.round() as i32, from.1.round() as i32) }
+        .map_err(|error| format!("Could not position Windows drag pointer: {error}"))?;
+    unsafe { mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0) };
+    for step in 1..=14 {
+        let progress = step as f64 / 14.0;
+        let x = from.0 + (to.0 - from.0) * progress;
+        let y = from.1 + (to.1 - from.1) * progress;
+        unsafe { SetCursorPos(x.round() as i32, y.round() as i32) }
+            .map_err(|error| format!("Could not move Windows drag pointer: {error}"))?;
+        std::thread::sleep(Duration::from_millis(18));
+    }
+    unsafe { mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0) };
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn send_native_browser_drag(_from: (f64, f64), _to: (f64, f64)) -> Result<(), String> {
+    Err("Native browser drag injection is unavailable on this platform".into())
+}
+
+#[cfg(target_os = "macos")]
 fn send_native_browser_text(text: &str) -> Result<(), String> {
     use core_graphics::event::{CGEvent, CGEventTapLocation, KeyCode};
     use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
@@ -1028,6 +1107,74 @@ async fn run_native_browser_pointer_action(
         "target": target.get("description"),
         "x": css_x,
         "y": css_y,
+    }))
+}
+
+async fn run_native_browser_drag_action(
+    app: &AppHandle,
+    label: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let targets = eval_browser_webview_action(app, label, "native_drag_targets", params).await?;
+    let webview = app_browser_webview(app, label)?;
+    let child_position = webview
+        .position()
+        .map_err(|error| format!("Could not read browser position: {error}"))?;
+    let child_size = webview
+        .size()
+        .map_err(|error| format!("Could not read browser size: {error}"))?;
+    let window = webview.window();
+    let window_position = window
+        .inner_position()
+        .map_err(|error| format!("Could not read browser window position: {error}"))?;
+    let viewport_width = targets
+        .get("viewport_width")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(child_size.width as f64)
+        .max(1.0);
+    let viewport_height = targets
+        .get("viewport_height")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(child_size.height as f64)
+        .max(1.0);
+    let screen_point = |name: &str| -> Result<(f64, f64), String> {
+        let value = targets
+            .get(name)
+            .ok_or_else(|| format!("Native drag has no {name} target"))?;
+        let x = value
+            .get("x")
+            .and_then(serde_json::Value::as_f64)
+            .ok_or_else(|| format!("Native drag {name} has no x coordinate"))?;
+        let y = value
+            .get("y")
+            .and_then(serde_json::Value::as_f64)
+            .ok_or_else(|| format!("Native drag {name} has no y coordinate"))?;
+        Ok((
+            window_position.x as f64
+                + child_position.x as f64
+                + x * child_size.width as f64 / viewport_width,
+            window_position.y as f64
+                + child_position.y as f64
+                + y * child_size.height as f64 / viewport_height,
+        ))
+    };
+    let mut source = screen_point("source")?;
+    let mut target = screen_point("target")?;
+    #[cfg(target_os = "macos")]
+    if let Ok(Some(monitor)) = window.current_monitor() {
+        let scale = monitor.scale_factor().max(1.0);
+        source = (source.0 / scale, source.1 / scale);
+        target = (target.0 / scale, target.1 / scale);
+    }
+    let _ = window.set_focus();
+    let _ = webview.set_focus();
+    tokio::time::sleep(Duration::from_millis(25)).await;
+    send_native_browser_drag(source, target)?;
+    Ok(serde_json::json!({
+        "trusted": true,
+        "action": "drag",
+        "source": targets.get("source").and_then(|value| value.get("description")),
+        "target": targets.get("target").and_then(|value| value.get("description")),
     }))
 }
 
@@ -1450,6 +1597,14 @@ async fn app_browser_webview_agent_action(
             Ok(result) => return Ok(result),
             Err(error) => {
                 log::debug!("native browser pointer fallback action={action} error={error}");
+            }
+        }
+    }
+    if action == "drag" {
+        match run_native_browser_drag_action(&app, &label, &params).await {
+            Ok(result) => return Ok(result),
+            Err(error) => {
+                log::debug!("native browser drag fallback error={error}");
             }
         }
     }
@@ -2039,6 +2194,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         "element_rect",
         "native_target",
         "native_focus",
+        "native_drag_targets",
         "exists",
         "probe",
         "status",
@@ -2352,6 +2508,25 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             selection.addRange(range);
                         }}
                         return {{ description: describe(element) }};
+                    }}
+
+                    if (action === 'native_drag_targets') {{
+                        const source = resolveElement();
+                        const target = Number.isInteger(params.target_index)
+                            ? globalThis.__evofluxAgentElements?.[params.target_index]
+                            : deepElements().find((element) => {{ try {{ return element.matches(String(params.target_selector || '')); }} catch {{ return false; }} }});
+                        if (!source || !target) throw new Error('Native drag source or target not found');
+                        source.scrollIntoView({{ block: 'nearest', inline: 'nearest' }});
+                        target.scrollIntoView({{ block: 'nearest', inline: 'nearest' }});
+                        const sourceRect = source.getBoundingClientRect();
+                        const targetRect = target.getBoundingClientRect();
+                        const point = (element, rect) => ({{ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, description: describe(element) }});
+                        const sourcePoint = point(source, sourceRect);
+                        const targetPoint = point(target, targetRect);
+                        const cursor = globalThis.__evofluxEnsureAgentCursor();
+                        cursor.move(sourcePoint.x, sourcePoint.y, 'press');
+                        setTimeout(() => cursor.move(targetPoint.x, targetPoint.y, 'release'), 120);
+                        return {{ source: sourcePoint, target: targetPoint, viewport_width: innerWidth, viewport_height: innerHeight }};
                     }}
 
                     if (action === 'click') {{
@@ -5045,6 +5220,7 @@ mod tests {
             "element_rect",
             "native_target",
             "native_focus",
+            "native_drag_targets",
             "exists",
             "probe",
             "status",
