@@ -233,6 +233,30 @@ export function BrowserSettingsPage() {
                 }
               />
               <SettingsRow
+                label={t('Allow clipboard reads')}
+                description={t('Permit the agent to read text currently stored in the operating-system clipboard.')}
+                control={
+                  <Switch
+                    checked={draft.built_in_allow_clipboard_read}
+                    disabled={!preferences.enabled}
+                    onCheckedChange={(checked) => patchWebBridge('built_in_allow_clipboard_read', checked)}
+                    aria-label={t('Allow built-in browser clipboard reads')}
+                  />
+                }
+              />
+              <SettingsRow
+                label={t('Allow clipboard writes')}
+                description={t('Permit the agent to place text in the operating-system clipboard.')}
+                control={
+                  <Switch
+                    checked={draft.built_in_allow_clipboard_write}
+                    disabled={!preferences.enabled}
+                    onCheckedChange={(checked) => patchWebBridge('built_in_allow_clipboard_write', checked)}
+                    aria-label={t('Allow built-in browser clipboard writes')}
+                  />
+                }
+              />
+              <SettingsRow
                 stacked
                 label={t('Allowed domains')}
                 description={t('Optional comma-separated allowlist. Subdomains are included.')}

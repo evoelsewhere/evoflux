@@ -137,6 +137,8 @@ class BuiltInBrowserSettings(BaseModel):
     allow_storage: bool = True
     allow_cookie_values: bool = False
     allow_http_requests: bool = True
+    allow_clipboard_read: bool = False
+    allow_clipboard_write: bool = True
 
 
 class ConductorSettings(BaseModel):

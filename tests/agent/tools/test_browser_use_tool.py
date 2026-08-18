@@ -162,6 +162,21 @@ async def test_browser_policy_blocks_unsafe_urls_and_disabled_evaluate(
 
 
 @pytest.mark.asyncio
+async def test_browser_policy_blocks_clipboard_reads_by_default(monkeypatch) -> None:
+    monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: True)
+
+    result = await browser_tool.browser_use.arun(
+        _injected={"_state": _state()},
+        actions=[{"action": "clipboard_read"}],
+    )
+
+    assert (
+        result
+        == "Error (clipboard_read): Clipboard reads are disabled in Settings → Browser."
+    )
+
+
+@pytest.mark.asyncio
 async def test_expanded_control_and_debug_actions_are_forwarded(monkeypatch) -> None:
     monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: True)
     requests: list[tuple[str, dict]] = []

@@ -1272,6 +1272,8 @@ def test_webbridge_settings_round_trip(tmp_path, monkeypatch):
         "built_in_allow_storage": False,
         "built_in_allow_cookie_values": True,
         "built_in_allow_http_requests": False,
+        "built_in_allow_clipboard_read": True,
+        "built_in_allow_clipboard_write": False,
     }
     updated = client.put("/api/settings/webbridge", json=payload)
 
