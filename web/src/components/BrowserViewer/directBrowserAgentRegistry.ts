@@ -29,6 +29,18 @@ interface BrowserSessionRegistry {
 
 const registries = new Map<string, BrowserSessionRegistry>()
 let registrationOrder = 0
+const DIRECT_BROWSER_COMMANDS = [
+  'start', 'stop', 'status', 'navigate', 'back', 'forward', 'reload', 'wait',
+  'snapshot', 'query', 'inspect', 'html', 'accessibility', 'extract', 'screenshot',
+  'click', 'click_at', 'dblclick', 'hover', 'focus', 'fill', 'type', 'clear',
+  'submit', 'press', 'select', 'set_checked', 'set_files', 'drag', 'scroll',
+  'scroll_into_view', 'dispatch_event', 'console', 'network', 'dialogs', 'popups',
+  'dialog_behavior', 'permission_requests', 'resolve_permission', 'performance',
+  'clear_logs', 'storage', 'cookies', 'http', 'download', 'page_assets',
+  'debug_summary', 'evaluate', 'resize', 'reset_viewport', 'zoom', 'print',
+  'clipboard_read', 'clipboard_write', 'new_tab', 'close_tab', 'get_tabs',
+  'switch_tab',
+]
 
 export function nextBrowserSurfaceOrder(): number {
   registrationOrder += 1
@@ -127,7 +139,15 @@ function connectRegistry(registry: BrowserSessionRegistry): void {
   registry.socket = socket
   socket.onopen = () => {
     if (registry.socket !== socket || registry.disposed) return
-    socket.send(JSON.stringify({ type: 'ready', version: 2, capabilities: ['multi_tab'] }))
+    socket.send(JSON.stringify({
+      type: 'ready',
+      protocol_version: 2,
+      version: 2,
+      capabilities: {
+        commands: DIRECT_BROWSER_COMMANDS,
+        features: ['multi_tab', 'responsive_viewport', 'native_input', 'dialog_handoff'],
+      },
+    }))
     setConnected(registry, true)
   }
   socket.onmessage = (event) => {

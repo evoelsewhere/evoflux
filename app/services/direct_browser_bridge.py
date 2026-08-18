@@ -22,6 +22,8 @@ class _Connection:
     command_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     pending: dict[str, asyncio.Future[Any]] = field(default_factory=dict)
     ready: bool = False
+    protocol_version: int = 1
+    capabilities: dict[str, Any] = field(default_factory=dict)
 
     def fail_pending(self, message: str) -> None:
         for future in self.pending.values():
@@ -96,6 +98,14 @@ class DirectBrowserBridge:
             while True:
                 message = await websocket.receive_json()
                 if message.get("type") == "ready":
+                    version = message.get("protocol_version", message.get("version", 1))
+                    connection.protocol_version = (
+                        version if isinstance(version, int) and version > 0 else 1
+                    )
+                    capabilities = message.get("capabilities")
+                    connection.capabilities = (
+                        capabilities if isinstance(capabilities, dict) else {}
+                    )
                     connection.ready = True
                     logger.info("direct_browser_ready session_id={}", session_id)
                     continue
@@ -137,6 +147,11 @@ class DirectBrowserBridge:
             raise DirectBrowserUnavailable(
                 "Open the Browser panel in the EvoFlux desktop app first"
             )
+        commands = connection.capabilities.get("commands")
+        if isinstance(commands, list) and commands and action not in commands:
+            raise DirectBrowserUnavailable(
+                f"Desktop browser protocol v{connection.protocol_version} does not support '{action}'. Update EvoFlux Desktop."
+            )
 
         async with connection.command_lock:
             request_id = uuid4().hex
@@ -152,6 +167,12 @@ class DirectBrowserBridge:
                 raise TimeoutError(f"Browser command timed out: {action}") from exc
             finally:
                 connection.pending.pop(request_id, None)
+
+    def connection_info(self, session_id: str) -> tuple[int, dict[str, Any]]:
+        connection = self._connections.get(session_id)
+        if connection is None:
+            return 0, {}
+        return connection.protocol_version, dict(connection.capabilities)
 
 
 direct_browser_bridge = DirectBrowserBridge()

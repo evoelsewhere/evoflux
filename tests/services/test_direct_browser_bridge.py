@@ -87,6 +87,32 @@ async def test_bridge_serializes_concurrent_browser_commands() -> None:
 
 
 @pytest.mark.asyncio
+async def test_bridge_negotiates_capabilities_and_rejects_unknown_command() -> None:
+    bridge = DirectBrowserBridge()
+    websocket = _FakeWebSocket()
+    attach_task = asyncio.create_task(bridge.attach("session-1", websocket))
+    await websocket.received.put(
+        {
+            "type": "ready",
+            "protocol_version": 2,
+            "capabilities": {"commands": ["snapshot"], "features": ["multi_tab"]},
+        }
+    )
+    await asyncio.sleep(0)
+
+    assert bridge.connection_info("session-1") == (
+        2,
+        {"commands": ["snapshot"], "features": ["multi_tab"]},
+    )
+    with pytest.raises(DirectBrowserUnavailable, match="does not support 'download'"):
+        await bridge.request("session-1", "download", {"url": "https://example.com"})
+    assert websocket.sent.empty()
+
+    await websocket.received.put(None)
+    await attach_task
+
+
+@pytest.mark.asyncio
 async def test_bridge_requires_connected_browser() -> None:
     bridge = DirectBrowserBridge()
 
