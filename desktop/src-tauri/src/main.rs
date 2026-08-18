@@ -22,11 +22,11 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalSize, RunEvent, WebviewUrl, WebviewWindowBuilder,
     WindowEvent, Wry,
 };
-use tauri_plugin_dialog::DialogExt;
-
-#[cfg(test)]
-use tauri_plugin_dialog::MessageDialogResult;
+use tauri_plugin_dialog::{
+    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
+};
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_updater::UpdaterExt;
 use tokio::sync::{oneshot, Mutex};
 
 use crate::sidecar::{Handshake, Sidecar};
@@ -43,6 +43,7 @@ struct AppState {
     startup_started: Instant,
     force_reloading: Arc<AtomicBool>,
     quitting: Arc<AtomicBool>,
+    updater_busy: Arc<AtomicBool>,
     tray_status: Arc<Mutex<Option<MenuItem<Wry>>>>,
     tray_session: Arc<Mutex<Option<MenuItem<Wry>>>>,
     active_window_label: Arc<Mutex<String>>,
@@ -168,6 +169,7 @@ const MENU_ZOOM_OUT: &str = "zoom_out";
 const MENU_ZOOM_RESET: &str = "zoom_reset";
 const MENU_OPEN_CONFIG_DIR: &str = "open_config_dir";
 const MENU_REVEAL_BACKEND_LOG: &str = "reveal_backend_log";
+const MENU_CHECK_UPDATES: &str = "check_updates";
 const MENU_QUIT: &str = "quit";
 const MENU_EDIT_UNDO: &str = "edit_undo";
 const MENU_EDIT_REDO: &str = "edit_redo";
@@ -204,6 +206,10 @@ const MACOS_TRAFFIC_LIGHT_Y: f64 = 22.0;
 /// Hard cap on tray session label width. Keeps the menu from stretching
 /// uncomfortably wide when a session title or workspace name is long.
 const TRAY_SESSION_MAX_LEN: usize = 60;
+
+/// Delay automatic checks until the main window and local backend have had
+/// time to finish their first paint/startup work.
+const AUTOMATIC_UPDATE_CHECK_DELAY: Duration = Duration::from_secs(8);
 
 /// Apply platform-specific window chrome.
 ///
@@ -751,7 +757,7 @@ fn browser_observability_init_script() -> &'static str {
         (() => {
             const label = window.__TAURI_INTERNALS__?.metadata?.currentWebview?.label;
             if (!String(label || '').startsWith('browser-') || globalThis.__evofluxBrowserRuntime) return;
-            const runtime = { console: [], network: [], dialogs: [], nextDialogId: 1, dialogBehavior: { behavior: 'dismiss', promptText: null } };
+            const runtime = { documentId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`, console: [], network: [], dialogs: [], nextDialogId: 1, dialogBehavior: { behavior: 'dismiss', promptText: null } };
             const keep = (items, value, max) => {
                 items.push(value);
                 if (items.length > max) items.splice(0, items.length - max);
@@ -1595,7 +1601,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
 
                     if (action === 'instrument') {{
                         if (!globalThis.__evofluxBrowserRuntime) {{
-                            const runtime = {{ console: [], network: [], dialogs: [], nextDialogId: 1, dialogBehavior: {{ behavior: 'dismiss', promptText: null }} }};
+                            const runtime = {{ documentId: `${{Date.now().toString(36)}}-${{Math.random().toString(36).slice(2)}}`, console: [], network: [], dialogs: [], nextDialogId: 1, dialogBehavior: {{ behavior: 'dismiss', promptText: null }} }};
                             const keep = (items, value, max) => {{ items.push(value); if (items.length > max) items.splice(0, items.length - max); }};
                             for (const level of ['debug', 'log', 'info', 'warn', 'error']) {{
                                 const original = console[level]?.bind(console);
@@ -2201,6 +2207,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             readyState: document.readyState,
                             online: navigator.onLine,
                             userAgent: navigator.userAgent,
+                            documentId: globalThis.__evofluxBrowserRuntime?.documentId || null,
                             viewport: {{ width: innerWidth, height: innerHeight, devicePixelRatio, scrollX, scrollY }},
                             historyLength: history.length,
                             activeElement: document.activeElement ? describe(document.activeElement) : null,
@@ -4048,6 +4055,7 @@ mod tests {
         assert!(script.contains("unhandledrejection"));
         assert!(script.contains("XMLHttpRequest.prototype.send"));
         assert!(script.contains("nextDialogId"));
+        assert!(script.contains("documentId"));
         assert!(script.contains("response: accepted ? 'accepted' : 'dismissed'"));
         assert!(script.contains("globalThis.__evofluxBrowserRuntime = runtime"));
     }

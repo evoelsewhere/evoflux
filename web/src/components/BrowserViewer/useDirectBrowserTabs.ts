@@ -63,6 +63,14 @@ export interface BrowserWaitProbe {
   readyState?: string
 }
 
+export interface BrowserRuntimeStatus {
+  url?: string
+  title?: string
+  readyState?: string
+  documentId?: string | null
+  viewport?: { width?: number; height?: number }
+}
+
 const NEW_TAB_URL = '/browser-new-tab.html'
 const BROWSER_DATA_DIRECTORY = 'browser-profile'
 const BROWSER_DATA_STORE_ID = [
@@ -156,27 +164,25 @@ export function useDirectBrowserTabs({
     label: string,
     requestedUrl: string,
     previousUrl: string,
+    previousDocumentId: string | null,
   ): Promise<string> => {
     const requested = normalizeComparableUrl(requestedUrl)
     const previous = normalizeComparableUrl(previousUrl)
     let current = previousUrl
     for (let attempt = 0; attempt < 100; attempt += 1) {
       try {
-        const status = await invokeFor<{ url?: string; readyState?: string }>(
+        const status = await invokeFor<BrowserRuntimeStatus>(
           'app_browser_webview_agent_action',
           label,
           { action: 'status', params: {} },
         )
         current = status.url ?? current
-        const normalized = normalizeComparableUrl(current)
-        const committed = status.readyState === 'interactive' || status.readyState === 'complete'
-        if (
-          committed
-          && (
-            normalized === requested
-            || (normalized !== previous && !isBrowserNewTab(current))
-          )
-        ) {
+        if (browserNavigationCommitted(
+          status,
+          requested,
+          previous,
+          previousDocumentId,
+        )) {
           return current
         }
       } catch {
@@ -185,6 +191,29 @@ export function useDirectBrowserTabs({
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
     throw new Error(`Browser navigation did not commit: ${requestedUrl}`)
+  }, [invokeFor])
+
+  const waitForDocumentNavigation = useCallback(async (
+    label: string,
+    previousDocumentId: string | null,
+  ): Promise<BrowserRuntimeStatus> => {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      try {
+        const status = await invokeFor<BrowserRuntimeStatus>(
+          'app_browser_webview_agent_action',
+          label,
+          { action: 'status', params: {} },
+        )
+        const ready = status.readyState === 'interactive' || status.readyState === 'complete'
+        if (ready && (!previousDocumentId || status.documentId !== previousDocumentId)) {
+          return status
+        }
+      } catch {
+        // The target document is between WebView evaluation contexts.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    throw new Error('Browser document did not commit after navigation')
   }, [invokeFor])
 
   const createTab = useCallback(async (initialUrl = NEW_TAB_URL) => {
@@ -319,8 +348,18 @@ export function useDirectBrowserTabs({
   const navigate = useCallback(async (url: string) => {
     if (!activeTab) return
     try {
+      const before = await invokeFor<BrowserRuntimeStatus>(
+        'app_browser_webview_agent_action',
+        activeTab.label,
+        { action: 'status', params: {} },
+      )
       await invokeFor('app_browser_webview_navigate', activeTab.label, { url })
-      const committedUrl = await waitForNavigation(activeTab.label, url, activeTab.url)
+      const committedUrl = await waitForNavigation(
+        activeTab.label,
+        url,
+        activeTab.url,
+        before.documentId ?? null,
+      )
       tabsRef.current = tabsRef.current.map((tab) => tab.id === activeTab.id ? { ...tab, url: committedUrl } : tab)
       setTabs(tabsRef.current)
     } catch (error) {
@@ -460,7 +499,7 @@ export function useDirectBrowserTabs({
     const tab = await ensureActive()
     if (!tab) throw new Error('Desktop browser is unavailable')
     if (action === 'status') {
-      const status = await invokeFor<{ url?: string; title?: string; readyState?: string }>(
+      const status = await invokeFor<BrowserRuntimeStatus>(
         'app_browser_webview_agent_action',
         tab.label,
         { action: 'status', params: {} },
@@ -477,8 +516,18 @@ export function useDirectBrowserTabs({
     if (action === 'navigate') {
       const url = typeof params.url === 'string' ? params.url : ''
       if (!url) throw new Error('navigate requires a URL')
+      const before = await invokeFor<BrowserRuntimeStatus>(
+        'app_browser_webview_agent_action',
+        tab.label,
+        { action: 'status', params: {} },
+      )
       await invokeFor('app_browser_webview_navigate', tab.label, { url })
-      const committedUrl = await waitForNavigation(tab.label, url, tab.url)
+      const committedUrl = await waitForNavigation(
+        tab.label,
+        url,
+        tab.url,
+        before.documentId ?? null,
+      )
       tabsRef.current = tabsRef.current.map((item) => item.id === tab.id
         ? { ...item, url: committedUrl }
         : item)
@@ -490,8 +539,22 @@ export function useDirectBrowserTabs({
       return `Navigated to ${url}`
     }
     if (action === 'back' || action === 'forward' || action === 'reload') {
+      const before = await invokeFor<BrowserRuntimeStatus>(
+        'app_browser_webview_agent_action',
+        tab.label,
+        { action: 'status', params: {} },
+      )
       await invokeFor('app_browser_webview_command', tab.label, { action })
-      await waitForPageReady(tab.label)
+      const committed = await waitForDocumentNavigation(
+        tab.label,
+        before.documentId ?? null,
+      )
+      if (committed.url) {
+        tabsRef.current = tabsRef.current.map((item) => item.id === tab.id
+          ? { ...item, url: committed.url ?? item.url }
+          : item)
+        setTabs(tabsRef.current)
+      }
       await invokeFor('app_browser_webview_agent_action', tab.label, {
         action: 'instrument',
         params: {},
@@ -662,7 +725,7 @@ export function useDirectBrowserTabs({
     throw new Error(
       `${action} is not supported by the direct desktop browser yet`,
     )
-  }, [applyAgentViewport, closeAll, closeTab, createTab, invokeFor, onRequestNewTab, selectTab, singleTab, waitForNavigation, waitForPageReady])
+  }, [applyAgentViewport, closeAll, closeTab, createTab, invokeFor, onRequestNewTab, selectTab, singleTab, waitForDocumentNavigation, waitForNavigation])
 
   agentHandlerRef.current = executeAgentCommand
 
@@ -883,6 +946,20 @@ function sameBounds(left: NativeBounds | null, right: NativeBounds): boolean {
 
 function normalizeComparableUrl(value: string): string {
   return value.replace(/\/$/, '')
+}
+
+export function browserNavigationCommitted(
+  status: BrowserRuntimeStatus,
+  requestedUrl: string,
+  previousUrl: string,
+  previousDocumentId: string | null,
+): boolean {
+  const ready = status.readyState === 'interactive' || status.readyState === 'complete'
+  if (!ready) return false
+  if (previousDocumentId && status.documentId === previousDocumentId) return false
+  const current = normalizeComparableUrl(status.url ?? '')
+  return current === requestedUrl
+    || (current !== previousUrl && !isBrowserNewTab(status.url ?? ''))
 }
 
 export function isBrowserNewTab(url: string): boolean {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   browserScreenshotPoint,
+  browserNavigationCommitted,
   browserViewportLayout,
   browserWaitConditionSatisfied,
 } from '@/components/BrowserViewer/useDirectBrowserTabs'
@@ -82,5 +83,33 @@ describe('direct browser responsive viewport layout', () => {
       { width: 640, height: 400 },
       { width: 1280, height: 800 },
     )).toEqual({ x: 640, y: 400 })
+  })
+})
+
+describe('direct browser document navigation', () => {
+  it('does not accept the old complete document when navigating to the same URL', () => {
+    expect(browserNavigationCommitted(
+      {
+        url: 'https://example.com',
+        readyState: 'complete',
+        documentId: 'old-document',
+      },
+      'https://example.com',
+      'https://example.com',
+      'old-document',
+    )).toBe(false)
+  })
+
+  it('accepts a new committed document and redirects', () => {
+    expect(browserNavigationCommitted(
+      {
+        url: 'https://example.com/dashboard',
+        readyState: 'interactive',
+        documentId: 'new-document',
+      },
+      'https://example.com/login',
+      'https://example.com',
+      'old-document',
+    )).toBe(true)
   })
 })
