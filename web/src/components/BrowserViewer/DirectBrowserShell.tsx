@@ -111,6 +111,7 @@ export function DirectBrowserShell({
     singleTab: true,
     zoom: preferences.defaultZoom,
     devtools: preferences.developerTools,
+    profileMode: preferences.profileMode,
     onError: reportError,
     onRequestNewTab: (url) => onNewTab?.(url),
     onActivate: async () => {

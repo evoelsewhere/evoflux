@@ -5,12 +5,14 @@ export interface BrowserPreferences {
   enabled: boolean
   defaultZoom: number
   developerTools: boolean
+  profileMode: 'shared' | 'session' | 'incognito'
 }
 
 const DEFAULT_BROWSER_PREFERENCES: BrowserPreferences = {
   enabled: true,
   defaultZoom: 100,
   developerTools: false,
+  profileMode: 'shared',
 }
 
 const BROWSER_PREFERENCES_VERSION = 5
@@ -28,6 +30,9 @@ export function loadBrowserPreferences(): BrowserPreferences {
           ? Math.max(50, Math.min(200, value.defaultZoom))
           : DEFAULT_BROWSER_PREFERENCES.defaultZoom,
       developerTools: value.developerTools === true,
+      profileMode: value.profileMode === 'session' || value.profileMode === 'incognito'
+        ? value.profileMode
+        : 'shared',
     }
   } catch {
     return { ...DEFAULT_BROWSER_PREFERENCES }
