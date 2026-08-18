@@ -777,6 +777,7 @@ export function useDirectBrowserTabs({
       'screenshot',
       'page_assets',
       'download',
+      'save_pdf',
       'console',
       'network',
       'dialogs',

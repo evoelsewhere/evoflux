@@ -37,7 +37,7 @@ const DIRECT_BROWSER_COMMANDS = [
   'scroll_into_view', 'dispatch_event', 'console', 'network', 'dialogs', 'popups',
   'dialog_behavior', 'permission_requests', 'resolve_permission', 'performance',
   'clear_logs', 'storage', 'cookies', 'http', 'download', 'page_assets',
-  'debug_summary', 'evaluate', 'resize', 'reset_viewport', 'zoom', 'print',
+  'debug_summary', 'evaluate', 'resize', 'reset_viewport', 'zoom', 'print', 'save_pdf',
   'clipboard_read', 'clipboard_write', 'new_tab', 'close_tab', 'get_tabs',
   'switch_tab',
 ]

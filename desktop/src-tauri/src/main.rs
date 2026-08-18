@@ -1589,6 +1589,18 @@ async fn app_browser_webview_agent_action(
         }
         return result;
     }
+    if action == "save_pdf" {
+        let bytes = capture_browser_pdf(&app, &label).await?;
+        if bytes.len() > 15 * 1024 * 1024 {
+            return Err("Browser PDF exceeds the 15 MB transfer limit".into());
+        }
+        return Ok(serde_json::json!({
+            "filename": params.get("filename").and_then(serde_json::Value::as_str).unwrap_or("page.pdf"),
+            "media_type": "application/pdf",
+            "bytes": bytes.len(),
+            "data": BASE64_STANDARD.encode(bytes),
+        }));
+    }
     if action == "cookies" {
         return manage_browser_cookies(&app, &label, &params);
     }
@@ -2119,6 +2131,115 @@ async fn capture_browser_webview(
             "image_height": height,
         },
     }))
+}
+
+#[cfg(target_os = "macos")]
+async fn capture_browser_pdf(app: &AppHandle, label: &str) -> Result<Vec<u8>, String> {
+    use block2::RcBlock;
+    use objc2_foundation::{NSData, NSError};
+    use objc2_web_kit::WKWebView;
+
+    let webview = app_browser_webview(app, label)?;
+    let (sender, receiver) = oneshot::channel();
+    let sender = Arc::new(std::sync::Mutex::new(Some(sender)));
+    webview
+        .with_webview(move |platform| unsafe {
+            let wk_webview: &WKWebView = &*platform.inner().cast();
+            let callback_sender = sender.clone();
+            let completion = RcBlock::new(move |data: *mut NSData, error: *mut NSError| {
+                let result = if let Some(data) = data.as_ref() {
+                    Ok(data.to_vec())
+                } else {
+                    Err(format!("WKWebView PDF export failed: {error:p}"))
+                };
+                if let Ok(mut guard) = callback_sender.lock() {
+                    if let Some(sender) = guard.take() {
+                        let _ = sender.send(result);
+                    }
+                }
+            });
+            wk_webview.createPDFWithConfiguration_completionHandler(None, &completion);
+        })
+        .map_err(|error| format!("Could not start WKWebView PDF export: {error}"))?;
+    tokio::time::timeout(Duration::from_secs(35), receiver)
+        .await
+        .map_err(|_| "WKWebView PDF export timed out".to_string())?
+        .map_err(|_| "WKWebView PDF response channel closed".to_string())?
+}
+
+#[cfg(target_os = "windows")]
+async fn capture_browser_pdf(app: &AppHandle, label: &str) -> Result<Vec<u8>, String> {
+    use webview2_com::callback::PrintToPdfCompletedHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_7;
+    use windows::core::{Interface, HSTRING};
+
+    let webview = app_browser_webview(app, label)?;
+    let temp_path = std::env::temp_dir().join(format!(
+        "evoflux-browser-{}-{}.pdf",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    let path_text = temp_path.to_string_lossy().to_string();
+    let (sender, receiver) = oneshot::channel();
+    let sender = Arc::new(std::sync::Mutex::new(Some(sender)));
+    let callback_path = temp_path.clone();
+    webview
+        .with_webview(move |platform| {
+            let callback_sender = sender.clone();
+            let result = (|| -> Result<(), String> {
+                let controller = platform.controller();
+                let core = unsafe { controller.CoreWebView2() }
+                    .map_err(|error| format!("Could not access WebView2 core: {error}"))?;
+                let pdf: ICoreWebView2_7 = core
+                    .cast()
+                    .map_err(|error| format!("WebView2 PDF API unavailable: {error}"))?;
+                let handler =
+                    PrintToPdfCompletedHandler::create(Box::new(move |error, success| {
+                        let result = if let Err(error) = error {
+                            Err(format!("WebView2 PDF export failed: {error}"))
+                        } else if !success {
+                            Err("WebView2 PDF export returned unsuccessful".to_string())
+                        } else {
+                            std::fs::read(&callback_path)
+                                .map_err(|error| format!("Could not read WebView2 PDF: {error}"))
+                        };
+                        let _ = std::fs::remove_file(&callback_path);
+                        if let Ok(mut guard) = callback_sender.lock() {
+                            if let Some(sender) = guard.take() {
+                                let _ = sender.send(result);
+                            }
+                        }
+                        Ok(())
+                    }));
+                unsafe {
+                    pdf.PrintToPdf(&HSTRING::from(path_text), None, &handler)
+                        .map_err(|error| format!("Could not start WebView2 PDF export: {error}"))?;
+                }
+                Ok(())
+            })();
+            if let Err(error) = result {
+                if let Ok(mut guard) = sender.lock() {
+                    if let Some(sender) = guard.take() {
+                        let _ = sender.send(Err(error));
+                    }
+                }
+            }
+        })
+        .map_err(|error| format!("Could not access WebView2 for PDF export: {error}"))?;
+    let result = tokio::time::timeout(Duration::from_secs(35), receiver)
+        .await
+        .map_err(|_| "WebView2 PDF export timed out".to_string())?
+        .map_err(|_| "WebView2 PDF response channel closed".to_string())?;
+    let _ = std::fs::remove_file(temp_path);
+    result
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+async fn capture_browser_pdf(_app: &AppHandle, _label: &str) -> Result<Vec<u8>, String> {
+    Err("Direct PDF export is unavailable on this platform; use print instead".into())
 }
 
 fn parse_browser_agent_result(raw: &str) -> Result<serde_json::Value, String> {
