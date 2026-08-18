@@ -82,6 +82,12 @@ async def test_screenshot_becomes_multimodal_tool_result(monkeypatch) -> None:
             "media_type": "image/png",
             "data": "aGVsbG8=",
             "text": "[In-app browser screenshot]",
+            "coordinate_mapping": {
+                "css_origin_x": 0,
+                "css_origin_y": 0,
+                "css_per_pixel_x": 2.0,
+                "css_per_pixel_y": 2.0,
+            },
         }
 
     monkeypatch.setattr(direct_browser_bridge, "request", request)
@@ -94,6 +100,8 @@ async def test_screenshot_becomes_multimodal_tool_result(monkeypatch) -> None:
     assert isinstance(result, ToolResult)
     assert any(isinstance(part, TextBlock) for part in result.parts)
     assert any(isinstance(part, ImageDataBlock) for part in result.parts)
+    text = next(part for part in result.parts if isinstance(part, TextBlock))
+    assert "image_x×2.0000" in text.text
 
 
 @pytest.mark.asyncio

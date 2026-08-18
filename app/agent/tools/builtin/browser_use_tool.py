@@ -139,9 +139,20 @@ class ScrollIntoViewAction(ElementTargetAction):
 
 class ClickAtAction(BaseModel):
     action: Literal["click_at"]
-    x: float = Field(description="Viewport x coordinate in CSS pixels.")
-    y: float = Field(description="Viewport y coordinate in CSS pixels.")
+    x: float = Field(
+        description="Horizontal coordinate in the selected coordinate space."
+    )
+    y: float = Field(
+        description="Vertical coordinate in the selected coordinate space."
+    )
     button: Literal["left", "middle", "right"] = "left"
+    coordinate_space: Literal["screenshot", "css"] = Field(
+        default="screenshot",
+        description=(
+            "Screenshot pixels are mapped back to page CSS pixels automatically. "
+            "Use css only for coordinates returned by inspect/query/status."
+        ),
+    )
 
 
 class DispatchEventAction(ElementTargetAction):
@@ -467,12 +478,27 @@ def _image_result(result: dict[str, Any]) -> str | ToolResult:
             f"Screenshot too large for vision input ({decoded_size // 1024} KB > "
             f"{_MAX_IMAGE_BYTES // 1024} KB). Screenshot a specific element instead."
         )
+    mapping = result.get("coordinate_mapping")
+    mapping_text = ""
+    if isinstance(mapping, dict):
+        scale_x = mapping.get("css_per_pixel_x")
+        scale_y = mapping.get("css_per_pixel_y")
+        origin_x = mapping.get("css_origin_x", 0)
+        origin_y = mapping.get("css_origin_y", 0)
+        if isinstance(scale_x, (int, float)) and isinstance(scale_y, (int, float)):
+            mapping_text = (
+                "\nScreenshot coordinate mapping: "
+                f"css_x={origin_x}+image_x×{scale_x:.4f}, "
+                f"css_y={origin_y}+image_y×{scale_y:.4f}. "
+                "click_at defaults to screenshot coordinates and applies this mapping."
+            )
     return ToolResult(
         parts=[
             TextBlock(
                 text=(
                     f"{_UNTRUSTED_BROWSER_NOTICE}\n"
                     f"{result.get('text') or '[In-app browser screenshot]'}"
+                    f"{mapping_text}"
                 )
             ),
             ImageDataBlock(data=data, media_type=str(media_type)),

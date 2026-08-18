@@ -1260,6 +1260,25 @@ async fn capture_browser_webview(
     let mut screen_y = window_position.y + child_position.y;
     let mut width = child_size.width;
     let mut height = child_size.height;
+    let status = eval_browser_webview_action(app, label, "status", &serde_json::json!({}))
+        .await
+        .ok();
+    let mut css_origin_x = 0.0_f64;
+    let mut css_origin_y = 0.0_f64;
+    let mut css_width = status
+        .as_ref()
+        .and_then(|value| value.get("viewport"))
+        .and_then(|value| value.get("width"))
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(width as f64)
+        .max(1.0);
+    let mut css_height = status
+        .as_ref()
+        .and_then(|value| value.get("viewport"))
+        .and_then(|value| value.get("height"))
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(height as f64)
+        .max(1.0);
 
     if params
         .get("selector")
@@ -1280,6 +1299,24 @@ async fn capture_browser_webview(
             .get("viewport_height")
             .and_then(serde_json::Value::as_f64)
             .unwrap_or(height as f64)
+            .max(1.0);
+        css_origin_x = rect
+            .get("x")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0);
+        css_origin_y = rect
+            .get("y")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0);
+        css_width = rect
+            .get("width")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(viewport_width)
+            .max(1.0);
+        css_height = rect
+            .get("height")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(viewport_height)
             .max(1.0);
         let scale_x = width as f64 / viewport_width;
         let scale_y = height as f64 / viewport_height;
@@ -1355,6 +1392,8 @@ async fn capture_browser_webview(
     let image = monitor
         .capture_region(relative_x, relative_y, width, height)
         .map_err(|error| format!("Could not capture the in-app browser: {error}"))?;
+    let css_per_pixel_x = css_width / width.max(1) as f64;
+    let css_per_pixel_y = css_height / height.max(1) as f64;
     let mut png = std::io::Cursor::new(Vec::new());
     xcap::image::DynamicImage::ImageRgba8(image)
         .write_to(&mut png, xcap::image::ImageFormat::Png)
@@ -1364,6 +1403,17 @@ async fn capture_browser_webview(
         "media_type": "image/png",
         "data": BASE64_STANDARD.encode(png.into_inner()),
         "text": format!("[In-app browser screenshot: {}x{}]", width, height),
+        "capture_backend": "screen",
+        "coordinate_mapping": {
+            "css_origin_x": css_origin_x,
+            "css_origin_y": css_origin_y,
+            "css_per_pixel_x": css_per_pixel_x,
+            "css_per_pixel_y": css_per_pixel_y,
+            "css_width": css_width,
+            "css_height": css_height,
+            "image_width": width,
+            "image_height": height,
+        },
     }))
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  browserScreenshotPoint,
   browserViewportLayout,
   browserWaitConditionSatisfied,
 } from '@/components/BrowserViewer/useDirectBrowserTabs'
@@ -73,5 +74,13 @@ describe('direct browser responsive viewport layout', () => {
       height: 812,
       scale: 1,
     })
+  })
+
+  it('maps scaled screenshot pixels back to CSS viewport coordinates', () => {
+    expect(browserScreenshotPoint(
+      { x: 320, y: 200 },
+      { width: 640, height: 400 },
+      { width: 1280, height: 800 },
+    )).toEqual({ x: 640, y: 400 })
   })
 })
