@@ -1274,6 +1274,7 @@ def test_webbridge_settings_round_trip(tmp_path, monkeypatch):
         "built_in_allow_http_requests": False,
         "built_in_allow_clipboard_read": True,
         "built_in_allow_clipboard_write": False,
+        "built_in_allow_file_uploads": True,
     }
     updated = client.put("/api/settings/webbridge", json=payload)
 

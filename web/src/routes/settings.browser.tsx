@@ -257,6 +257,18 @@ export function BrowserSettingsPage() {
                 }
               />
               <SettingsRow
+                label={t('Allow browser file uploads')}
+                description={t('Permit files from the current session workspace to be attached to page file inputs.')}
+                control={
+                  <Switch
+                    checked={draft.built_in_allow_file_uploads}
+                    disabled={!preferences.enabled}
+                    onCheckedChange={(checked) => patchWebBridge('built_in_allow_file_uploads', checked)}
+                    aria-label={t('Allow built-in browser file uploads')}
+                  />
+                }
+              />
+              <SettingsRow
                 stacked
                 label={t('Allowed domains')}
                 description={t('Optional comma-separated allowlist. Subdomains are included.')}

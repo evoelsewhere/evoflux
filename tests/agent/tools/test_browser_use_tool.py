@@ -177,6 +177,57 @@ async def test_browser_policy_blocks_clipboard_reads_by_default(monkeypatch) -> 
 
 
 @pytest.mark.asyncio
+async def test_set_files_reads_only_session_workspace_files(
+    monkeypatch, tmp_path
+) -> None:
+    from app.core.runtime_settings import BuiltInBrowserSettings
+
+    upload = tmp_path / "report.txt"
+    upload.write_text("hello", encoding="utf-8")
+    state = SimpleNamespace(
+        metadata={"session_id": "desktop-session", "workspace": str(tmp_path)}
+    )
+    seen: dict = {}
+    monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: True)
+    monkeypatch.setattr(
+        "app.core.runtime_settings.load_runtime_settings",
+        lambda: SimpleNamespace(
+            browser=BuiltInBrowserSettings(allow_file_uploads=True)
+        ),
+    )
+
+    async def request(_sid: str, action: str, params: dict):
+        seen.update({"action": action, "params": params})
+        return {"files": [{"name": "report.txt", "size": 5}]}
+
+    monkeypatch.setattr(direct_browser_bridge, "request", request)
+    result = await browser_tool.browser_use.arun(
+        _injected={"_state": state},
+        actions=[
+            {
+                "action": "set_files",
+                "selector": "input[type=file]",
+                "paths": ["report.txt"],
+            }
+        ],
+    )
+
+    assert "report.txt" in result
+    assert seen["action"] == "set_files"
+    assert seen["params"]["files"][0]["data"] == "aGVsbG8="
+    assert "paths" not in seen["params"]
+
+
+def test_encode_browser_uploads_rejects_workspace_escape(tmp_path) -> None:
+    outside = tmp_path.parent / "outside-browser-upload.txt"
+    outside.write_text("private", encoding="utf-8")
+    with pytest.raises(ValueError, match="escapes"):
+        browser_tool._encode_browser_uploads(
+            tmp_path, ["../outside-browser-upload.txt"]
+        )
+
+
+@pytest.mark.asyncio
 async def test_expanded_control_and_debug_actions_are_forwarded(monkeypatch) -> None:
     monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: True)
     requests: list[tuple[str, dict]] = []

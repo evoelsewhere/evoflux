@@ -139,6 +139,7 @@ class BuiltInBrowserSettings(BaseModel):
     allow_http_requests: bool = True
     allow_clipboard_read: bool = False
     allow_clipboard_write: bool = True
+    allow_file_uploads: bool = False
 
 
 class ConductorSettings(BaseModel):
