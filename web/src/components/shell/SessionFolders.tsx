@@ -210,10 +210,10 @@ export function SessionFolders({
   }
   const labelClass = isMobile
     ? 'px-2 pb-0.5 pt-2 text-xs text-(--color-text-subtle)'
-    : 'px-3 pb-1 pt-2 text-xs font-medium text-(--color-text-subtle)'
+    : 'px-2 pb-0.5 pt-1 text-[11px] font-medium text-(--color-text-subtle)'
 
   return (
-    <div className="pb-1">
+    <div className={isMobile ? 'pb-1' : 'pb-0.5'}>
       <CollapsibleSection
         label="Folders"
         collapsed={sectionCollapsed}
@@ -225,8 +225,8 @@ export function SessionFolders({
         }}
         addLabel="New folder"
         AddIcon={FolderPlus}
-        size="large"
-        className="px-2"
+        size={isMobile ? 'large' : 'default'}
+        className={isMobile ? 'px-2' : 'px-1.5 pb-0.5'}
       />
 
       {!sectionCollapsed && (
@@ -299,7 +299,8 @@ export function SessionFolders({
                 key={folder.id}
                 data-session-folder-drop-zone={folder.id}
                 className={cn(
-                  'rounded-lg py-1 transition-colors',
+                  'rounded-lg transition-colors',
+                  isMobile ? 'py-1' : 'py-0.5',
                   isDropTarget && 'bg-(--bg-key)/60 ring-1 ring-(--color-accent)',
                 )}
                 onDragEnter={(event) => {
@@ -336,7 +337,8 @@ export function SessionFolders({
               >
                 <div
                   className={cn(
-                    'group/folder relative flex min-h-11 items-center rounded-lg pr-1 transition-colors',
+                    'group/folder relative flex items-center rounded-lg pr-1 transition-colors',
+                    isMobile ? 'min-h-11' : 'min-h-8',
                     isDropTarget
                       ? 'bg-(--bg-key)'
                       : 'hover:bg-(--bg-key)/50',
@@ -350,14 +352,19 @@ export function SessionFolders({
                     type="button"
                     onClick={() => toggleFolder(folder.id)}
                     aria-expanded={isExpanded}
-                    className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-2.5 text-left text-sm text-(--color-text-2) hover:text-(--color-text)"
+                    className={cn(
+                      'flex min-w-0 flex-1 items-center rounded-lg text-left text-(--color-text-2) hover:text-(--color-text)',
+                      isMobile
+                        ? 'gap-2 px-2.5 py-2.5 text-sm'
+                        : 'gap-1.5 px-2.5 py-2 text-xs',
+                    )}
                   >
                     {isExpanded ? (
-                      <ChevronDown size={14} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+                      <ChevronDown size={isMobile ? 14 : 12} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
                     ) : (
-                      <ChevronRight size={14} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+                      <ChevronRight size={isMobile ? 14 : 12} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
                     )}
-                    <Folder size={17} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+                    <Folder size={isMobile ? 17 : 15} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
                     <span className="min-w-0 flex-1 truncate font-medium">{folder.name}</span>
                     {folder.share_context && (
                       <span title="Shared context on" aria-label="Shared context on">
@@ -379,19 +386,25 @@ export function SessionFolders({
                         y: rect.bottom + 4,
                       })
                     }}
-                    className="shrink-0 rounded-md p-1.5 text-(--color-text-subtle) opacity-0 transition-opacity hover:bg-(--bg-key) hover:text-(--color-text) group-hover/folder:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
+                    className={cn(
+                      'shrink-0 rounded-md text-(--color-text-subtle) opacity-0 transition-opacity hover:bg-(--bg-key) hover:text-(--color-text) group-hover/folder:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100',
+                      isMobile ? 'p-1.5' : 'p-1',
+                    )}
                     aria-label={`More actions for ${folder.name}`}
                     aria-haspopup="menu"
                     aria-expanded={menuAnchor?.folder.id === folder.id}
                   >
-                    <MoreHorizontal size={15} aria-hidden="true" />
+                    <MoreHorizontal size={isMobile ? 15 : 13} aria-hidden="true" />
                   </button>
                 </div>
 
                 {isExpanded && (
-                  <div className="pb-1 pl-5">
+                  <div className={isMobile ? 'pb-1 pl-5' : 'pb-0.5 pl-1.5'}>
                     {folder.sessions.length === 0 ? (
-                      <p className="px-2.5 py-2 text-sm text-(--color-text-subtle)">
+                      <p className={cn(
+                        'text-(--color-text-subtle)',
+                        isMobile ? 'px-2.5 py-2 text-sm' : 'px-2 py-1 text-[11px]',
+                      )}>
                         Drag chats here
                       </p>
                     ) : (
@@ -402,7 +415,10 @@ export function SessionFolders({
                         type="button"
                         onClick={() => onLoadMore(folder)}
                         disabled={loadingFolderId === folder.id}
-                        className="flex w-full items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-(--color-text-muted) hover:bg-(--bg-key)/50 hover:text-(--color-text) disabled:opacity-60"
+                        className={cn(
+                          'flex w-full items-center justify-center gap-1.5 rounded-md px-2 text-(--color-text-muted) hover:bg-(--bg-key)/50 hover:text-(--color-text) disabled:opacity-60',
+                          isMobile ? 'py-1.5 text-xs' : 'py-1 text-[11px]',
+                        )}
                       >
                         {loadingFolderId === folder.id && (
                           <Loader2 size={11} className="animate-spin" aria-hidden="true" />

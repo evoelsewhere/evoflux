@@ -22,23 +22,25 @@ const TABS: Array<{ mode: AppMode; label: string; Icon: LucideIcon; to: string }
 function ModeIcon({
   Icon,
   active,
+  compact,
 }: {
   Icon: LucideIcon
   active: boolean
+  compact: boolean
 }) {
   return (
     <span
       aria-hidden="true"
       className={cn(
         'grid shrink-0 place-items-center transition-[color,filter] duration-(--motion-fast)',
-        'size-5',
+        compact ? 'size-4' : 'size-5',
         active
           ? 'text-(--color-accent) [filter:drop-shadow(0_0_3px_color-mix(in_srgb,var(--color-accent)_58%,transparent))]'
           : 'text-(--color-text-subtle) group-hover:text-(--color-text)',
       )}
     >
       <Icon
-        size={15}
+        size={compact ? 14 : 15}
         strokeWidth={1.75}
         absoluteStrokeWidth
       />
@@ -77,11 +79,14 @@ export function ModeSwitchTabs({
   active,
   onNavigate,
   className,
+  compact = false,
 }: {
   active: AppMode
   /** Runs after switching modes (e.g. close the mobile drawer). */
   onNavigate?: () => void
   className?: string
+  /** Denser desktop treatment; transient touch drawers keep the default size. */
+  compact?: boolean
 }) {
   const { preset, preloadMode, switchMode } = useAnimatedModeNavigation(onNavigate)
   const activeIndex = TABS.findIndex((tab) => tab.mode === active)
@@ -115,7 +120,10 @@ export function ModeSwitchTabs({
     // clip the text), collapsing gracefully to icons + tooltips.
     <div className={cn('@container/modeswitch', className)}>
       <div
-        className="relative grid h-10 grid-cols-2 items-center rounded-xl bg-(--bg-key)/55 p-1 shadow-[inset_0_0_0_1px_var(--color-border)]"
+        className={cn(
+          'relative grid grid-cols-2 items-center bg-(--bg-key)/55 shadow-[inset_0_0_0_1px_var(--color-border)]',
+          compact ? 'h-9 rounded-lg p-0.5' : 'h-10 rounded-xl p-1',
+        )}
         role="tablist"
         aria-label="Application mode"
         onKeyDown={onTabListKeyDown}
@@ -124,7 +132,12 @@ export function ModeSwitchTabs({
           data-testid="mode-switch-indicator"
           data-active-mode={active}
           aria-hidden="true"
-          className="pointer-events-none absolute bottom-1 left-1 top-1 w-[calc((100%-0.5rem)/2)] rounded-lg bg-(--bg-card) shadow-[0_1px_4px_rgba(0,0,0,0.08),0_0_0_1px_var(--color-border)]"
+          className={cn(
+            'pointer-events-none absolute bg-(--bg-card) shadow-[0_1px_4px_rgba(0,0,0,0.08),0_0_0_1px_var(--color-border)]',
+            compact
+              ? 'bottom-0.5 left-0.5 top-0.5 w-[calc((100%-0.25rem)/2)] rounded-md'
+              : 'bottom-1 left-1 top-1 w-[calc((100%-0.5rem)/2)] rounded-lg',
+          )}
           initial={false}
           animate={{ x: `${Math.max(0, activeIndex) * 100}%` }}
           transition={preset.spring}
@@ -148,13 +161,14 @@ export function ModeSwitchTabs({
             aria-selected={mode === active}
             role="tab"
             className={cn(
-              'group relative z-(--z-panel) flex h-8 min-w-0 items-center justify-center gap-1 rounded-lg px-1 text-xs font-medium outline-none transition-[color,transform] duration-(--motion-fast) active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35 @[12.5rem]/modeswitch:gap-1.5 @[12.5rem]/modeswitch:px-2',
+              'group relative z-(--z-panel) flex h-8 min-w-0 items-center justify-center gap-1 px-1 font-medium outline-none transition-[color,transform] duration-(--motion-fast) active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35 @[12.5rem]/modeswitch:gap-1.5 @[12.5rem]/modeswitch:px-2',
+              compact ? 'rounded-md text-[11px]' : 'rounded-lg text-xs',
               mode === active
                 ? 'text-(--color-accent)'
                 : 'text-(--color-text-subtle) hover:text-(--color-text)',
             )}
           >
-            <ModeIcon Icon={Icon} active={mode === active} />
+            <ModeIcon Icon={Icon} active={mode === active} compact={compact} />
             <span className="hidden whitespace-nowrap @[12.5rem]/modeswitch:inline">{label}</span>
           </button>
         ))}

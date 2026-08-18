@@ -34,6 +34,7 @@ import {
 } from 'react'
 import { HelpCircle, Search, Settings } from 'lucide-react'
 import { usePlatform } from '@/hooks/use-platform'
+import { useNativeSidebarGlass } from '@/hooks/use-native-sidebar-glass'
 import { DURATIONS, useMotionPreset } from '@/lib/motion'
 import { SIDEBAR_WIDTH, useUIStore } from '@/stores/useUIStore'
 import { ThemeToggle } from '@/components/ThemeToggle'
@@ -56,6 +57,7 @@ export function SidebarShell({
 }: SidebarShellProps) {
   const { isTauri, os } = usePlatform()
   const isDesktopShell = isTauri && os !== 'ios' && os !== 'android'
+  useNativeSidebarGlass()
   const motionPreset = useMotionPreset()
   const sidebarWidth = useUIStore((state) => state.sidebarWidth)
   const setSidebarResizing = useUIStore((state) => state.setSidebarResizing)
@@ -229,7 +231,7 @@ export function SidebarShellDivider({ className }: { className?: string }) {
  * render this inert slot instead of mounting their own copy of the switcher.
  */
 export function SidebarModeSlot({ className }: { className?: string }) {
-  return <div aria-hidden="true" className={cn('h-10 shrink-0', className)} />
+  return <div aria-hidden="true" className={cn('h-9 shrink-0', className)} />
 }
 
 /**
@@ -238,21 +240,36 @@ export function SidebarModeSlot({ className }: { className?: string }) {
  */
 export function SidebarSearchTrigger({
   onClick,
+  compact = false,
 }: {
   onClick?: () => void
+  /** Match the denser docked desktop sidebar without shrinking touch drawers. */
+  compact?: boolean
 }) {
   const shortcut = formatShortcutLabel('^P')
   return (
     <button
       type="button"
       onClick={onClick}
-      className="focus-ring-control group flex h-9 w-full items-center gap-2 rounded-xl border border-transparent bg-(--bg-key)/40 px-2.5 text-left text-xs text-(--color-text-muted) shadow-[inset_0_0_0_1px_var(--color-border)] transition-[background-color,color,box-shadow] duration-(--motion-fast) hover:bg-(--bg-key)/70 hover:text-(--color-text-2) hover:shadow-[inset_0_0_0_1px_var(--color-border-strong)]"
+      className={cn(
+        'focus-ring-control group flex w-full items-center border border-transparent bg-(--bg-key)/40 text-left text-(--color-text-muted) shadow-[inset_0_0_0_1px_var(--color-border)] transition-[background-color,color,box-shadow] duration-(--motion-fast) hover:bg-(--bg-key)/70 hover:text-(--color-text-2) hover:shadow-[inset_0_0_0_1px_var(--color-border-strong)]',
+        compact
+          ? 'h-8 gap-1.5 rounded-lg px-2 text-[11px]'
+          : 'h-9 gap-2 rounded-xl px-2.5 text-xs',
+      )}
       aria-label="Open command palette"
       title={`Open command palette (${shortcut})`}
     >
-      <Search size={13} className="text-(--color-text-subtle) transition-colors group-hover:text-(--color-text-muted)" aria-hidden="true" />
+      <Search size={compact ? 12 : 13} className="text-(--color-text-subtle) transition-colors group-hover:text-(--color-text-muted)" aria-hidden="true" />
       <span className="flex-1">Search…</span>
-      <kbd className="rounded-md bg-(--bg-card)/75 px-1.5 py-1 font-sans text-[11px] font-medium leading-none tracking-normal text-(--color-text-muted) shadow-[inset_0_0_0_1px_var(--color-border)]">{shortcut}</kbd>
+      <kbd
+        className={cn(
+          'rounded-md bg-(--bg-card)/75 px-1.5 font-sans font-medium leading-none tracking-normal text-(--color-text-muted) shadow-[inset_0_0_0_1px_var(--color-border)]',
+          compact ? 'py-0.5 text-[10px]' : 'py-1 text-[11px]',
+        )}
+      >
+        {shortcut}
+      </kbd>
     </button>
   )
 }

@@ -216,8 +216,19 @@ fn configure_window_chrome(
 ) -> WebviewWindowBuilder<'_, tauri::Wry, AppHandle> {
     #[cfg(target_os = "macos")]
     {
-        use tauri::{LogicalPosition, TitleBarStyle};
+        use tauri::{
+            utils::config::WindowEffectsConfig,
+            window::{Effect, EffectState},
+            LogicalPosition, TitleBarStyle,
+        };
         builder
+            .transparent(true)
+            .effects(WindowEffectsConfig {
+                effects: vec![Effect::Sidebar],
+                state: Some(EffectState::FollowsWindowActiveState),
+                radius: Some(12.0),
+                color: None,
+            })
             .title_bar_style(TitleBarStyle::Overlay)
             .hidden_title(true)
             .traffic_light_position(LogicalPosition::new(

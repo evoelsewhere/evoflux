@@ -309,6 +309,7 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
 
   return (
     <aside
+      data-settings-sidebar
       className="flex h-full w-[16.5rem] shrink-0 flex-col border-r border-(--color-border-subtle) bg-(--bg-sidebar)"
     >
       <div

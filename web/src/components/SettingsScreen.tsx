@@ -9,6 +9,7 @@ import { ArrowLeft, ChevronRight } from 'lucide-react'
 import { SettingsSidebar } from '@/components/settings/SettingsSidebar'
 import { SettingsProvider } from '@/contexts/SettingsContext'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useNativeSidebarGlass } from '@/hooks/use-native-sidebar-glass'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
 import { confirmDiscardSettingsDraft } from '@/lib/settings-dirty'
 import { useUIStore } from '@/stores/useUIStore'
@@ -111,6 +112,7 @@ function SettingsContent({ path }: { path: string }) {
 }
 
 export function SettingsScreen() {
+  useNativeSidebarGlass()
   const settingsPath = useUIStore((state) => state.settingsPath)
   const settingsSearch = useUIStore((state) => state.settingsSearch)
   const closeSettings = useUIStore((state) => state.closeSettings)
@@ -166,6 +168,7 @@ export function SettingsScreen() {
 
   return (
     <section
+      data-settings-screen
       ref={screenRef}
       tabIndex={-1}
       aria-labelledby="settings-screen-title"
@@ -181,7 +184,7 @@ export function SettingsScreen() {
         />
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-(--bg-page)">
         <header
           {...dragHandlers}
           className="mobile-safe-header flex min-h-12 shrink-0 items-center gap-2 border-b border-(--color-border-subtle) bg-(--bg-sidebar)/65 px-3 md:px-5"
