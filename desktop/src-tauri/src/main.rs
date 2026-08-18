@@ -763,7 +763,35 @@ fn send_native_browser_pointer(action: &str, x: f64, y: f64, button: &str) -> Re
     Ok(())
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(target_os = "linux")]
+fn send_native_browser_pointer(action: &str, x: f64, y: f64, button: &str) -> Result<(), String> {
+    let button_number = match button {
+        "middle" => "2",
+        "right" => "3",
+        _ => "1",
+    };
+    let x = x.round().to_string();
+    let y = y.round().to_string();
+    let mut command = std::process::Command::new("xdotool");
+    command.args(["mousemove", "--sync", &x, &y]);
+    if action != "hover" {
+        command.args([
+            "click",
+            "--repeat",
+            if action == "dblclick" { "2" } else { "1" },
+            button_number,
+        ]);
+    }
+    let status = command
+        .status()
+        .map_err(|error| format!("xdotool pointer input unavailable: {error}"))?;
+    if !status.success() {
+        return Err(format!("xdotool pointer input exited with {status}"));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn send_native_browser_pointer(
     _action: &str,
     _x: f64,
@@ -847,7 +875,36 @@ fn send_native_browser_drag(from: (f64, f64), to: (f64, f64)) -> Result<(), Stri
     Ok(())
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(target_os = "linux")]
+fn send_native_browser_drag(from: (f64, f64), to: (f64, f64)) -> Result<(), String> {
+    let from_x = from.0.round().to_string();
+    let from_y = from.1.round().to_string();
+    let to_x = to.0.round().to_string();
+    let to_y = to.1.round().to_string();
+    let status = std::process::Command::new("xdotool")
+        .args([
+            "mousemove",
+            "--sync",
+            &from_x,
+            &from_y,
+            "mousedown",
+            "1",
+            "mousemove",
+            "--sync",
+            &to_x,
+            &to_y,
+            "mouseup",
+            "1",
+        ])
+        .status()
+        .map_err(|error| format!("xdotool drag input unavailable: {error}"))?;
+    if !status.success() {
+        return Err(format!("xdotool drag input exited with {status}"));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn send_native_browser_drag(_from: (f64, f64), _to: (f64, f64)) -> Result<(), String> {
     Err("Native browser drag injection is unavailable on this platform".into())
 }
@@ -906,7 +963,19 @@ fn send_native_browser_text(text: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(target_os = "linux")]
+fn send_native_browser_text(text: &str) -> Result<(), String> {
+    let status = std::process::Command::new("xdotool")
+        .args(["type", "--clearmodifiers", "--", text])
+        .status()
+        .map_err(|error| format!("xdotool keyboard input unavailable: {error}"))?;
+    if !status.success() {
+        return Err(format!("xdotool keyboard input exited with {status}"));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn send_native_browser_text(_text: &str) -> Result<(), String> {
     Err("Native browser keyboard injection is unavailable on this platform".into())
 }
@@ -1040,7 +1109,31 @@ fn send_native_browser_key(key: &str, modifiers: &[String]) -> Result<(), String
     Ok(())
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(target_os = "linux")]
+fn send_native_browser_key(key: &str, modifiers: &[String]) -> Result<(), String> {
+    let mut parts: Vec<String> = modifiers
+        .iter()
+        .map(|modifier| match modifier.to_ascii_lowercase().as_str() {
+            "meta" | "command" => "super".to_string(),
+            "control" => "ctrl".to_string(),
+            "alt" | "option" => "alt".to_string(),
+            "shift" => "shift".to_string(),
+            value => value.to_string(),
+        })
+        .collect();
+    parts.push(key.to_ascii_lowercase());
+    let chord = parts.join("+");
+    let status = std::process::Command::new("xdotool")
+        .args(["key", "--clearmodifiers", &chord])
+        .status()
+        .map_err(|error| format!("xdotool key input unavailable: {error}"))?;
+    if !status.success() {
+        return Err(format!("xdotool key input exited with {status}"));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn send_native_browser_key(_key: &str, _modifiers: &[String]) -> Result<(), String> {
     Err("Native browser keyboard injection is unavailable on this platform".into())
 }
