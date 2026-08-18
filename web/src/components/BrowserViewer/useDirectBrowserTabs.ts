@@ -568,6 +568,38 @@ export function useDirectBrowserTabs({
       await invokeFor('app_browser_webview_command', tab.label, { action: 'print' })
       return 'Opened the in-app browser print dialog'
     }
+    if (action === 'click_at') {
+      const coordinateSpace = params.coordinate_space === 'css' ? 'css' : 'screenshot'
+      const mappedParams = { ...params }
+      delete mappedParams.coordinate_space
+      if (coordinateSpace === 'screenshot') {
+        const status = await invokeFor<{ viewport?: { width?: number; height?: number } }>(
+          'app_browser_webview_agent_action',
+          tab.label,
+          { action: 'status', params: {} },
+        )
+        const bounds = boundsRef.current
+        const cssWidth = Number(status.viewport?.width)
+        const cssHeight = Number(status.viewport?.height)
+        if (bounds && cssWidth > 0 && cssHeight > 0) {
+          const point = browserScreenshotPoint(
+            { x: Number(params.x), y: Number(params.y) },
+            bounds,
+            { width: cssWidth, height: cssHeight },
+          )
+          mappedParams.x = point.x
+          mappedParams.y = point.y
+        }
+      }
+      await invokeFor('app_browser_webview_agent_action', tab.label, {
+        action: 'instrument',
+        params: {},
+      })
+      return invokeFor('app_browser_webview_agent_action', tab.label, {
+        action,
+        params: mappedParams,
+      })
+    }
     if ([
       'snapshot',
       'query',
@@ -575,7 +607,6 @@ export function useDirectBrowserTabs({
       'html',
       'accessibility',
       'click',
-      'click_at',
       'dblclick',
       'hover',
       'focus',
@@ -856,6 +887,17 @@ export function browserViewportLayout(
     width,
     height,
     scale,
+  }
+}
+
+export function browserScreenshotPoint(
+  point: { x: number; y: number },
+  imageBounds: Pick<NativeBounds, 'width' | 'height'>,
+  cssViewport: { width: number; height: number },
+): { x: number; y: number } {
+  return {
+    x: point.x * cssViewport.width / Math.max(1, imageBounds.width),
+    y: point.y * cssViewport.height / Math.max(1, imageBounds.height),
   }
 }
 
