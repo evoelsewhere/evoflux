@@ -33,6 +33,12 @@ def test_porcelain_v2_preserves_dual_state_renames_and_conflict_paths() -> None:
     assert parsed.files[2].old_path == "old name.txt"
 
 
+def test_porcelain_v2_decodes_git_octal_escaped_utf8_paths() -> None:
+    parsed = parse_porcelain_v2_files('? "caf\\303\\251 notes.txt"\n')
+
+    assert parsed.files[0].path == "café notes.txt"
+
+
 def test_detect_inprogress_operation_resolves_linked_worktree_gitdir(
     tmp_path: Path,
 ) -> None:

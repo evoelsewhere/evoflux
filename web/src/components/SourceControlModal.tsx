@@ -77,6 +77,11 @@ import {
 } from '@/queries/useGitQuery'
 import type { CodingProject, ChangedFile, GitLogEntry } from '@/api/types'
 import { getIntlLocale } from '@/i18n'
+import {
+  parseUnifiedDiff,
+  type UnifiedDiffHunk as DiffHunk,
+  type UnifiedDiffLine as DiffLine,
+} from '@/lib/unified-diff'
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
@@ -118,56 +123,6 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   renamed: { label: 'R', cls: 'bg-blue-500/20 text-blue-400' },
   untracked: { label: '??', cls: 'bg-(--bg-key) text-(--color-text-muted)' },
   unmerged: { label: 'U', cls: 'bg-red-500/20 text-red-400' },
-}
-
-/**
- * Parse a unified diff string into structured hunks.
- * Each hunk has a header and an array of lines with their type.
- */
-function parseUnifiedDiff(raw: string): DiffHunk[] {
-  if (!raw) return []
-  const hunks: DiffHunk[] = []
-  let current: DiffHunk | null = null
-
-  for (const line of raw.split('\n')) {
-    if (line.startsWith('@@ ')) {
-      // Hunk header: @@ -oldStart,oldCount +newStart,newCount @@
-      const match = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/)
-      if (match) {
-        current = {
-          header: line,
-          oldStart: parseInt(match[1], 10),
-          newStart: parseInt(match[3], 10),
-          lines: [],
-        }
-        hunks.push(current)
-      }
-    } else if (current) {
-      if (line.startsWith('-')) {
-        current.lines.push({ type: 'del', content: line.slice(1) })
-      } else if (line.startsWith('+')) {
-        current.lines.push({ type: 'add', content: line.slice(1) })
-      } else if (line.startsWith(' ')) {
-        current.lines.push({ type: 'ctx', content: line.slice(1) })
-      } else if (line.startsWith('\\')) {
-        // "\ No newline at end of file"
-        current.lines.push({ type: 'info', content: line })
-      }
-    }
-  }
-  return hunks
-}
-
-interface DiffHunk {
-  header: string
-  oldStart: number
-  newStart: number
-  lines: DiffLine[]
-}
-
-interface DiffLine {
-  type: 'add' | 'del' | 'ctx' | 'info'
-  content: string
 }
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
@@ -581,11 +536,11 @@ function CommitArea({ workspace, stagedCount }: { workspace: string; stagedCount
           <button
             type="button"
             onClick={handleCommit}
-            disabled={commitMutation.isPending || (!message.trim() && !amend) || stagedCount === 0}
+            disabled={commitMutation.isPending || (!message.trim() && !amend) || (stagedCount === 0 && !amend)}
             className="flex h-7 items-center gap-1.5 rounded-md bg-(--color-accent) px-3 text-[11px] font-semibold text-(--color-text-on-accent) transition-colors hover:bg-(--color-accent)/90 disabled:opacity-40"
           >
             {commitMutation.isPending ? <Loader2 size={11} className="animate-spin" /> : <GitCommit size={11} />}
-            Commit
+            {amend ? 'Amend' : 'Commit'}
           </button>
         </div>
       </div>
@@ -633,7 +588,7 @@ function FileListPanel({ workspace, stagedFiles, unstagedFiles, isLoading, selec
               <span className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">Unstaged · {filteredUnstaged.length}</span>
               <button type="button" onClick={() => stageMutation.mutate(filteredUnstaged.map((f) => f.path))} className="flex items-center gap-1 rounded px-1.5 py-1 text-[9px] text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)" title="Stage all"><Plus size={10} /> All</button>
             </div>
-            {filteredUnstaged.map((file) => <FileRow key={file.path} file={file} selected={selectedPath === file.path} onSelect={() => onSelect(file.path)} onToggleStage={() => stageMutation.mutate([file.path])} onDiscard={file.status !== 'untracked' ? () => discardMutation.mutate([file.path]) : undefined} />)}
+            {filteredUnstaged.map((file) => <FileRow key={file.path} file={file} selected={selectedPath === file.path} onSelect={() => onSelect(file.path)} onToggleStage={() => stageMutation.mutate([file.path])} onDiscard={() => discardMutation.mutate([file.path])} />)}
           </div>
         )}
         {filtered.length === 0 && <div className="flex flex-col items-center justify-center py-8 text-center"><p className="text-[11px] text-(--color-text-subtle)">{filter ? 'No matching files' : 'No changes'}</p></div>}
@@ -666,10 +621,16 @@ function FileRow({ file, selected, onSelect, onToggleStage, onDiscard }: {
     },
   ]
   if (onDiscard) {
+    const discardLabel = file.status === 'untracked' ? 'Delete untracked file' : 'Discard changes'
     actions.push({
-      label: 'Discard changes',
+      label: discardLabel,
       icon: <RotateCcw size={12} />,
-      onSelect: onDiscard,
+      onSelect: () => {
+        const warning = file.status === 'untracked'
+          ? `Delete untracked file ${file.path}? This cannot be undone.`
+          : `Discard all unstaged changes in ${file.path}? This cannot be undone.`
+        if (window.confirm(warning)) onDiscard()
+      },
       danger: true,
       separatorBefore: true,
     })

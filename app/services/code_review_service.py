@@ -8,7 +8,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote, urlparse, urlunparse
 
 import httpx
@@ -27,6 +27,7 @@ SUPPORTED_PROVIDERS = {
     "gitea",
     "azure_devops",
 }
+ReviewListState = Literal["open", "closed", "merged"]
 
 REVIEW_CAPABILITIES: dict[str, dict[str, bool]] = {
     "github": {
@@ -722,6 +723,69 @@ async def _request_json(
         raise GitServerApiError("The Git server returned invalid JSON.") from exc
 
 
+async def _request_paginated_json(
+    connection: GitServerConnection,
+    token: str,
+    path: str,
+    *,
+    params: dict[str, str | int] | None = None,
+    items_key: str | None = None,
+    page_size: int,
+    cursor_param: str = "page",
+    cursor_start: int = 1,
+    extra_headers: dict[str, str] | None = None,
+) -> Any:
+    """Read and combine a bounded provider collection.
+
+    ``items_key=None`` covers GitHub/GitLab/Gitea list responses. Bitbucket and
+    Azure wrap rows in a provider-specific key. The configured page cap keeps
+    detail views and agent context bounded just like repository aggregation.
+    """
+    rows: list[Any] = []
+    first_payload: dict[str, Any] | None = None
+    cursor = cursor_start
+    max_pages = load_runtime_settings().code_reviews.max_pages_per_repository
+    for _ in range(max_pages):
+        page_params = dict(params or {})
+        page_params[cursor_param] = cursor
+        payload = await _request_json(
+            connection,
+            token,
+            path,
+            params=page_params,
+            extra_headers=extra_headers,
+        )
+        if items_key is None:
+            page_rows = _list(payload)
+        else:
+            payload_dict = _dict(payload)
+            if first_payload is None:
+                first_payload = payload_dict
+            page_rows = _list(payload_dict.get(items_key))
+        rows.extend(page_rows)
+
+        payload_dict = _dict(payload)
+        if payload_dict.get("isLastPage") is True:
+            break
+        if items_key == "values" and "next" in payload_dict:
+            if not payload_dict.get("next"):
+                break
+        if len(page_rows) < page_size:
+            break
+        if cursor_param == "start":
+            cursor = int(payload_dict.get("nextPageStart") or cursor + page_size)
+        else:
+            cursor += page_size if cursor_param == "$skip" else 1
+
+    if items_key is None:
+        return rows
+    combined = dict(first_payload or {})
+    combined[items_key] = rows
+    combined.pop("next", None)
+    combined["isLastPage"] = True
+    return combined
+
+
 def _validated_review_image_url(
     connection: GitServerConnection,
     url: str,
@@ -929,6 +993,176 @@ def _change_rows(changes: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _normalized_change_status(
+    value: Any,
+    *,
+    added: bool = False,
+    deleted: bool = False,
+    renamed: bool = False,
+) -> str:
+    """Map provider-specific change kinds to a stable UI/tool contract."""
+    if renamed:
+        return "renamed"
+    if added:
+        return "added"
+    if deleted:
+        return "deleted"
+    normalized = str(value or "modified").strip().lower().replace("_", "-")
+    if normalized in {"add", "added", "addition", "new"}:
+        return "added"
+    if normalized in {"delete", "deleted", "deletion", "remove", "removed"}:
+        return "deleted"
+    if normalized in {"rename", "renamed", "move", "moved"}:
+        return "renamed"
+    if normalized in {"copy", "copied"}:
+        return "copied"
+    return "modified"
+
+
+def _review_diff_coordinates(provider: str, review: Any) -> dict[str, str | None]:
+    row = _dict(review)
+    head = _dict(row.get("head"))
+    base = _dict(row.get("base"))
+    source = _dict(row.get("source"))
+    destination = _dict(row.get("destination"))
+    diff_refs = _dict(row.get("diff_refs"))
+    from_ref = _dict(row.get("fromRef"))
+    to_ref = _dict(row.get("toRef"))
+    source_commit = _dict(row.get("lastMergeSourceCommit"))
+    target_commit = _dict(row.get("lastMergeTargetCommit"))
+
+    commit_id = (
+        head.get("sha")
+        or _dict(source.get("commit")).get("hash")
+        or diff_refs.get("head_sha")
+        or from_ref.get("latestCommit")
+        or source_commit.get("commitId")
+        or row.get("sourceCommit")
+    )
+    base_commit_id = (
+        base.get("sha")
+        or _dict(destination.get("commit")).get("hash")
+        or diff_refs.get("base_sha")
+        or to_ref.get("latestCommit")
+        or target_commit.get("commitId")
+        or row.get("targetCommit")
+    )
+    start_commit_id = diff_refs.get("start_sha") or base_commit_id
+    return {
+        "commit_id": str(commit_id) if commit_id else None,
+        "base_commit_id": str(base_commit_id) if base_commit_id else None,
+        "start_commit_id": str(start_commit_id) if start_commit_id else None,
+        "position_kind": "diff" if provider != "azure_devops" else "file",
+    }
+
+
+def _normalize_change_files(
+    provider: str,
+    review: Any,
+    changes: Any,
+) -> list[dict[str, Any]]:
+    """Normalize changed-file metadata without discarding the provider payload.
+
+    GitHub, GitLab, and Gitea include unified patches in their file-list APIs.
+    Other providers return file metadata only on these bounded endpoints; those
+    entries remain useful for navigation and AI grounding while explicitly
+    reporting that an inline patch is unavailable.
+    """
+    coordinates = _review_diff_coordinates(provider, review)
+    files: list[dict[str, Any]] = []
+    for row in _change_rows(changes):
+        old_path: Any = None
+        path: Any = None
+        status: Any = None
+        additions: Any = None
+        deletions: Any = None
+        patch: Any = None
+        added = False
+        deleted = False
+        renamed = False
+        binary = bool(row.get("binary") or row.get("isBinary"))
+
+        if provider in {"github", "gitea"}:
+            path = row.get("filename")
+            old_path = row.get("previous_filename")
+            status = row.get("status")
+            additions = row.get("additions")
+            deletions = row.get("deletions")
+            patch = row.get("patch")
+        elif provider == "gitlab":
+            path = row.get("new_path") or row.get("old_path")
+            old_path = row.get("old_path") if row.get("old_path") != path else None
+            added = bool(row.get("new_file"))
+            deleted = bool(row.get("deleted_file"))
+            renamed = bool(row.get("renamed_file"))
+            status = row.get("status")
+            patch = row.get("diff")
+        elif provider == "bitbucket_cloud":
+            old = _dict(row.get("old"))
+            new = _dict(row.get("new"))
+            path = new.get("path") or old.get("path")
+            old_path = old.get("path") if old.get("path") != path else None
+            status = row.get("status")
+            additions = row.get("lines_added")
+            deletions = row.get("lines_removed")
+        elif provider == "bitbucket_server":
+            target_path = _dict(row.get("path"))
+            source_path = _dict(row.get("srcPath"))
+            path = (
+                target_path.get("toString")
+                or target_path.get("displayId")
+                or target_path.get("name")
+            )
+            old_path = (
+                source_path.get("toString")
+                or source_path.get("displayId")
+                or source_path.get("name")
+            )
+            if old_path == path:
+                old_path = None
+            status = row.get("type")
+        elif provider == "azure_devops":
+            item = _dict(row.get("item"))
+            path = item.get("path")
+            old_path = _dict(row.get("originalPath")).get("path")
+            status = row.get("changeType")
+            binary = binary or bool(item.get("isBinary"))
+
+        normalized_path = str(path or "").strip()
+        if not normalized_path:
+            continue
+        patch_text = str(patch) if isinstance(patch, str) and patch else None
+        patch_truncated = bool(patch_text and len(patch_text) > 12_000)
+        if patch_truncated and patch_text:
+            patch_text = f"{patch_text[:12_000]}\n[truncated]"
+        normalized_status = _normalized_change_status(
+            status,
+            added=added,
+            deleted=deleted,
+            renamed=renamed or bool(old_path),
+        )
+        files.append(
+            {
+                "path": normalized_path,
+                "old_path": str(old_path).strip() if old_path else None,
+                "status": normalized_status,
+                "additions": _optional_int(additions),
+                "deletions": _optional_int(deletions),
+                "patch": patch_text,
+                "patch_truncated": patch_truncated,
+                "binary": binary,
+                "can_comment": bool(
+                    patch_text
+                    and REVIEW_CAPABILITIES.get(provider, {}).get(
+                        "inline_comment", False
+                    )
+                ),
+                **coordinates,
+            }
+        )
+    return files
+
+
 def _sum_change_metric(rows: list[dict[str, Any]], *keys: str) -> int | None:
     values: list[int] = []
     for row in rows:
@@ -1028,7 +1262,11 @@ def _github_items(payload: Any) -> list[ReviewItem]:
             ReviewItem(
                 number=int(row.get("number") or 0),
                 title=str(row.get("title") or "Untitled pull request"),
-                state=str(row.get("state") or "open").lower(),
+                state=(
+                    "merged"
+                    if row.get("merged") or row.get("merged_at")
+                    else str(row.get("state") or "open").lower()
+                ),
                 draft=bool(row.get("draft")),
                 author=str(user.get("login") or "") or None,
                 author_avatar_url=_person_avatar_url(user),
@@ -1142,7 +1380,11 @@ def _gitea_items(payload: Any) -> list[ReviewItem]:
             ReviewItem(
                 number=int(row.get("number") or 0),
                 title=str(row.get("title") or "Untitled pull request"),
-                state=str(row.get("state") or "open").lower(),
+                state=(
+                    "merged"
+                    if row.get("merged") or row.get("merged_at")
+                    else str(row.get("state") or "open").lower()
+                ),
                 draft=bool(row.get("draft")),
                 author=str(user.get("login") or user.get("full_name") or "") or None,
                 author_avatar_url=_person_avatar_url(user),
@@ -1174,7 +1416,11 @@ def _azure_items(payload: Any) -> list[ReviewItem]:
             ReviewItem(
                 number=int(row.get("pullRequestId") or 0),
                 title=str(row.get("title") or "Untitled pull request"),
-                state=str(row.get("status") or "active").lower(),
+                state=(
+                    "merged"
+                    if str(row.get("status") or "").lower() == "completed"
+                    else str(row.get("status") or "active").lower()
+                ),
                 draft=bool(row.get("isDraft")),
                 author=str(author.get("displayName") or "") or None,
                 author_avatar_url=_person_avatar_url(author),
@@ -1457,6 +1703,8 @@ def _normalize_approvals(provider: str, review: Any) -> list[dict[str, Any]]:
 async def list_repository_reviews(
     target: RepositoryTarget,
     connection: GitServerConnection,
+    *,
+    state: ReviewListState = "open",
 ) -> RepositoryReviews:
     max_pages = load_runtime_settings().code_reviews.max_pages_per_repository
     token = connection_token(connection)
@@ -1484,7 +1732,7 @@ async def list_repository_reviews(
                     token,
                     f"repos/{quote(repository, safe='/')}/pulls",
                     params={
-                        "state": "open",
+                        "state": "closed" if state in {"closed", "merged"} else "open",
                         "per_page": 100,
                         "page": page,
                         "sort": "updated",
@@ -1503,7 +1751,7 @@ async def list_repository_reviews(
                     token,
                     f"projects/{quote(repository, safe='')}/merge_requests",
                     params={
-                        "state": "opened",
+                        "state": "opened" if state == "open" else state,
                         "per_page": 100,
                         "page": page,
                         "order_by": "updated_at",
@@ -1522,7 +1770,15 @@ async def list_repository_reviews(
                     connection,
                     token,
                     f"repositories/{quote(repository, safe='/')}/pullrequests",
-                    params={"state": "OPEN", "pagelen": 50, "page": page},
+                    params={
+                        "state": {
+                            "open": "OPEN",
+                            "closed": "DECLINED",
+                            "merged": "MERGED",
+                        }[state],
+                        "pagelen": 50,
+                        "page": page,
+                    },
                 )
                 page_items = _bitbucket_cloud_items(payload)
                 items.extend(page_items)
@@ -1537,7 +1793,15 @@ async def list_repository_reviews(
                     connection,
                     token,
                     f"projects/{quote(project)}/repos/{quote(repo)}/pull-requests",
-                    params={"state": "OPEN", "limit": 100, "start": start},
+                    params={
+                        "state": {
+                            "open": "OPEN",
+                            "closed": "DECLINED",
+                            "merged": "MERGED",
+                        }[state],
+                        "limit": 100,
+                        "start": start,
+                    },
                 )
                 page_items = _bitbucket_server_items(payload)
                 items.extend(page_items)
@@ -1552,7 +1816,11 @@ async def list_repository_reviews(
                     connection,
                     token,
                     f"repos/{quote(repository, safe='/')}/pulls",
-                    params={"state": "open", "limit": 50, "page": page},
+                    params={
+                        "state": "closed" if state in {"closed", "merged"} else "open",
+                        "limit": 50,
+                        "page": page,
+                    },
                 )
                 page_items = _gitea_items(payload)
                 items.extend(page_items)
@@ -1570,7 +1838,11 @@ async def list_repository_reviews(
                         "/pullrequests"
                     ),
                     params={
-                        "searchCriteria.status": "active",
+                        "searchCriteria.status": {
+                            "open": "active",
+                            "closed": "abandoned",
+                            "merged": "completed",
+                        }[state],
                         "$top": 100,
                         "$skip": page * 100,
                         "api-version": "7.1",
@@ -1589,11 +1861,16 @@ async def list_repository_reviews(
             provider=connection.provider,
             error=str(exc),
         )
+    expected_states = {
+        "open": {"open", "opened", "active"},
+        "closed": {"closed", "declined", "abandoned", "superseded"},
+        "merged": {"merged", "fulfilled", "completed"},
+    }[state]
     return RepositoryReviews(
         target=target,
         connection_id=str(connection.id),
         provider=connection.provider,
-        items=items,
+        items=[item for item in items if item.state.lower() in expected_states],
     )
 
 
@@ -1628,33 +1905,37 @@ async def get_repository_review_context(
             extra_headers={"Accept": "application/vnd.github.full+json"},
         )
         if include_changes:
-            changes = await _request_json(
+            changes = await _request_paginated_json(
                 connection,
                 token,
                 f"{root}/pulls/{number}/files",
                 params={"per_page": 100},
+                page_size=100,
             )
         if include_comments:
             conversation, inline, approvals_payload = await asyncio.gather(
-                _request_json(
+                _request_paginated_json(
                     connection,
                     token,
                     f"{root}/issues/{number}/comments",
                     params={"per_page": 100},
+                    page_size=100,
                     extra_headers={"Accept": "application/vnd.github.full+json"},
                 ),
-                _request_json(
+                _request_paginated_json(
                     connection,
                     token,
                     f"{root}/pulls/{number}/comments",
                     params={"per_page": 100},
+                    page_size=100,
                     extra_headers={"Accept": "application/vnd.github.full+json"},
                 ),
-                _request_json(
+                _request_paginated_json(
                     connection,
                     token,
                     f"{root}/pulls/{number}/reviews",
                     params={"per_page": 100},
+                    page_size=100,
                 ),
             )
             comments = {"conversation": conversation, "inline": inline}
@@ -1662,19 +1943,21 @@ async def get_repository_review_context(
         root = f"projects/{quote(repository, safe='')}/merge_requests/{number}"
         review = await _request_json(connection, token, root)
         if include_changes:
-            changes = await _request_json(
+            changes = await _request_paginated_json(
                 connection,
                 token,
                 f"{root}/diffs",
                 params={"per_page": 100},
+                page_size=100,
             )
         if include_comments:
             comments, approvals_payload = await asyncio.gather(
-                _request_json(
+                _request_paginated_json(
                     connection,
                     token,
                     f"{root}/discussions",
                     params={"per_page": 100},
+                    page_size=100,
                 ),
                 _request_json(connection, token, f"{root}/approvals"),
             )
@@ -1682,53 +1965,67 @@ async def get_repository_review_context(
         root = f"repositories/{quote(repository, safe='/')}/pullrequests/{number}"
         review = await _request_json(connection, token, root)
         if include_changes:
-            changes = await _request_json(
+            changes = await _request_paginated_json(
                 connection,
                 token,
                 f"{root}/diffstat",
                 params={"pagelen": 100},
+                items_key="values",
+                page_size=100,
             )
         if include_comments:
-            comments = await _request_json(
+            comments = await _request_paginated_json(
                 connection,
                 token,
                 f"{root}/comments",
                 params={"pagelen": 100},
+                items_key="values",
+                page_size=100,
             )
     elif provider == "bitbucket_server":
         project, repo = _bitbucket_server_coordinates(repository)
         root = f"projects/{quote(project)}/repos/{quote(repo)}/pull-requests/{number}"
         review = await _request_json(connection, token, root)
         if include_changes:
-            changes = await _request_json(
+            changes = await _request_paginated_json(
                 connection,
                 token,
                 f"{root}/changes",
                 params={"limit": 100},
+                items_key="values",
+                page_size=100,
+                cursor_param="start",
+                cursor_start=0,
             )
         if include_comments:
-            comments = await _request_json(
+            comments = await _request_paginated_json(
                 connection,
                 token,
                 f"{root}/activities",
                 params={"limit": 100},
+                items_key="values",
+                page_size=100,
+                cursor_param="start",
+                cursor_start=0,
             )
     elif provider == "gitea":
         root = f"repos/{quote(repository, safe='/')}"
         review = await _request_json(connection, token, f"{root}/pulls/{number}")
         if include_changes:
-            changes = await _request_json(
+            changes = await _request_paginated_json(
                 connection,
                 token,
                 f"{root}/pulls/{number}/files",
                 params={"limit": 100},
+                page_size=100,
             )
         if include_comments:
-            comments = await _request_json(
+            comments = await _request_paginated_json(
                 connection,
                 token,
                 f"{root}/issues/{number}/comments",
                 params={"limit": 100},
+                page_size=100,
             )
     elif provider == "azure_devops":
         project, repo = _azure_coordinates(repository)
@@ -1748,11 +2045,15 @@ async def get_repository_review_context(
             iteration_rows = _list(_dict(iterations).get("value"))
             if iteration_rows:
                 iteration_id = int(_dict(iteration_rows[-1]).get("id") or 1)
-                changes = await _request_json(
+                changes = await _request_paginated_json(
                     connection,
                     token,
                     f"{root}/iterations/{iteration_id}/changes",
                     params={"$top": 200, "api-version": "7.1"},
+                    items_key="changeEntries",
+                    page_size=200,
+                    cursor_param="$skip",
+                    cursor_start=0,
                 )
         if include_comments:
             comments = await _request_json(
@@ -1793,6 +2094,15 @@ async def get_repository_review_context(
         mergeable_raw = review_row.get("merge_status") or review_row.get(
             "detailed_merge_status"
         )
+    normalized_files = (
+        _normalize_change_files(provider, review_row, changes)
+        if include_changes
+        else []
+    )
+    normalized_comment_rows = normalized_comments or []
+    bounded_comments = [
+        _bounded_payload(comment) for comment in normalized_comment_rows[:200]
+    ]
     return {
         "provider": provider,
         "repository": repository,
@@ -1800,7 +2110,10 @@ async def get_repository_review_context(
         "summary": _review_summary(review_row, changes if include_changes else None),
         "review": _bounded_payload(review_row),
         "changes": _bounded_payload(changes) if include_changes else None,
-        "comments": _bounded_payload(normalized_comments),
+        "files": normalized_files[:100] if include_changes else None,
+        "files_truncated": max(0, len(normalized_files) - 100),
+        "comments": bounded_comments,
+        "comments_truncated": max(0, len(normalized_comment_rows) - 200),
         "approvals": _normalize_approvals(provider, review_row),
         "checks": _bounded_payload(checks),
         "state": state,
@@ -2031,6 +2344,7 @@ async def add_code_review_inline_comment(
     *,
     path: str,
     line: int,
+    old_path: str | None = None,
     side: str = "RIGHT",
     commit_id: str | None = None,
     base_commit_id: str | None = None,
@@ -2061,16 +2375,20 @@ async def add_code_review_inline_comment(
                 "from get_code_review."
             )
         endpoint = f"{root}/discussions"
+        position: dict[str, Any] = {
+            "position_type": "text",
+            "new_path": path,
+            "head_sha": commit_id,
+            "base_sha": base_commit_id,
+            "start_sha": start_commit_id,
+        }
+        if side.upper() == "LEFT":
+            position.update({"old_path": old_path or path, "old_line": line})
+        else:
+            position["new_line"] = line
         payload = {
             "body": body,
-            "position": {
-                "position_type": "text",
-                "new_path": path,
-                "new_line": line,
-                "head_sha": commit_id,
-                "base_sha": base_commit_id,
-                "start_sha": start_commit_id,
-            },
+            "position": position,
         }
     elif provider == "bitbucket_cloud":
         endpoint = f"{root}/comments"
@@ -2397,9 +2715,17 @@ async def merge_code_review(
             "merge_commit_message": commit_title,
             "squash": method == "squash" if method else None,
         }
-    elif provider in {"bitbucket_cloud", "bitbucket_server"}:
+    elif provider == "bitbucket_cloud":
         endpoint = f"{root}/merge"
         payload = {"message": commit_title, "merge_strategy": method}
+    elif provider == "bitbucket_server":
+        current = _dict(await _request_json(connection, token, root))
+        endpoint = f"{root}/merge"
+        payload = {
+            "version": current.get("version"),
+            "message": commit_title,
+            "strategyId": method,
+        }
     elif provider == "gitea":
         endpoint = f"{root}/merge"
         payload = {
@@ -2618,6 +2944,8 @@ async def create_repository_review(
 async def aggregate_reviews(
     targets: list[RepositoryTarget],
     connections: list[GitServerConnection],
+    *,
+    state: ReviewListState = "open",
 ) -> list[RepositoryReviews]:
     semaphore = asyncio.Semaphore(
         load_runtime_settings().code_reviews.max_concurrent_repositories
@@ -2647,7 +2975,9 @@ async def aggregate_reviews(
                 error="Connect this repository to a Git server API.",
             )
         async with semaphore:
-            return await list_repository_reviews(target, connection)
+            if state == "open":
+                return await list_repository_reviews(target, connection)
+            return await list_repository_reviews(target, connection, state=state)
 
     return list(await asyncio.gather(*(load(target) for target in targets)))
 
