@@ -2277,6 +2277,16 @@ async fn capture_browser_webview(
             .and_then(serde_json::Value::as_f64)
             .unwrap_or(css_height)
             .max(css_height);
+        let native_slice_dimensions = capture_native_browser_viewport(app, label)
+            .await
+            .ok()
+            .and_then(|bytes| xcap::image::load_from_memory(&bytes).ok())
+            .map(|image| (image.width(), image.height()));
+        let use_native_slices = native_slice_dimensions.is_some();
+        if let Some((native_width, native_height)) = native_slice_dimensions {
+            width = native_width.max(1);
+            height = native_height.max(1);
+        }
         let css_to_image = height as f64 / css_height.max(1.0);
         let max_css_for_pixels = 20_000.0 / css_to_image.max(0.01);
         let stitched_css_height = page_css_height.min(20_000.0).min(max_css_for_pixels);
@@ -2308,9 +2318,16 @@ async fn capture_browser_webview(
                 )
                 .await?;
                 tokio::time::sleep(Duration::from_millis(90)).await;
-                let slice = monitor
-                    .capture_region(relative_x, relative_y, width, height)
-                    .map_err(|error| format!("Could not capture browser page slice: {error}"))?;
+                let slice = if use_native_slices {
+                    let bytes = capture_native_browser_viewport(app, label).await?;
+                    xcap::image::load_from_memory(&bytes)
+                        .map_err(|error| format!("Could not decode browser page slice: {error}"))?
+                        .to_rgba8()
+                } else {
+                    monitor
+                        .capture_region(relative_x, relative_y, width, height)
+                        .map_err(|error| format!("Could not capture browser page slice: {error}"))?
+                };
                 let destination_y = (offset * css_to_image).round() as i64;
                 xcap::image::imageops::replace(&mut stitched, &slice, 0, destination_y);
             }
