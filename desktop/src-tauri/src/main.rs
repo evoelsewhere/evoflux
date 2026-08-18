@@ -1633,6 +1633,8 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         "probe",
         "status",
         "cursor_control",
+        "set_emulation",
+        "reset_emulation",
     ];
     if !SUPPORTED.contains(&action) {
         return Err(format!("Unsupported direct browser action: {action}"));
@@ -1830,6 +1832,43 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const cursor = globalThis.__evofluxAgentCursor;
                         if (cursor && typeof params.suspended === 'boolean') cursor.setSuspended(params.suspended);
                         return {{ active: Boolean(cursor?.enabled), suspended: Boolean(cursor?.suspended) }};
+                    }}
+
+                    if (action === 'set_emulation') {{
+                        const runtime = globalThis.__evofluxBrowserRuntime;
+                        if (!runtime) throw new Error('Browser observability is not initialized');
+                        runtime.emulation ||= {{}};
+                        const define = (target, key, value) => {{
+                            try {{ Object.defineProperty(target, key, {{ configurable: true, get: () => value }}); }} catch {{}}
+                        }};
+                        const width = Math.max(1, Number(params.width) || innerWidth);
+                        const height = Math.max(1, Number(params.height) || innerHeight);
+                        const dpr = Math.max(.5, Math.min(4, Number(params.device_scale_factor) || 1));
+                        const touch = params.touch === true;
+                        const orientation = params.orientation === 'landscape' ? 'landscape' : 'portrait';
+                        define(globalThis, 'devicePixelRatio', dpr);
+                        define(screen, 'width', width);
+                        define(screen, 'height', height);
+                        define(screen, 'availWidth', width);
+                        define(screen, 'availHeight', height);
+                        define(navigator, 'maxTouchPoints', touch ? 5 : 0);
+                        if (params.user_agent) define(navigator, 'userAgent', String(params.user_agent));
+                        document.documentElement.style.colorScheme = params.color_scheme === 'dark' ? 'dark' : params.color_scheme === 'light' ? 'light' : '';
+                        runtime.emulation = {{ width, height, dpr, touch, mobile: params.mobile === true, orientation, color_scheme: params.color_scheme || null, user_agent: params.user_agent || null }};
+                        dispatchEvent(new Event('resize'));
+                        dispatchEvent(new Event('orientationchange'));
+                        return runtime.emulation;
+                    }}
+
+                    if (action === 'reset_emulation') {{
+                        const runtime = globalThis.__evofluxBrowserRuntime;
+                        for (const [target, keys] of [[globalThis, ['devicePixelRatio']], [screen, ['width', 'height', 'availWidth', 'availHeight']], [navigator, ['maxTouchPoints', 'userAgent']]]) {{
+                            for (const key of keys) {{ try {{ delete target[key]; }} catch {{}} }}
+                        }}
+                        document.documentElement.style.colorScheme = '';
+                        if (runtime) runtime.emulation = null;
+                        dispatchEvent(new Event('resize'));
+                        return {{ reset: true }};
                     }}
 
                     if (action === 'snapshot') {{
@@ -2481,6 +2520,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                                 width: Math.max(document.documentElement?.scrollWidth || 0, document.body?.scrollWidth || 0, innerWidth),
                                 height: Math.max(document.documentElement?.scrollHeight || 0, document.body?.scrollHeight || 0, innerHeight),
                             }},
+                            emulation: globalThis.__evofluxBrowserRuntime?.emulation || null,
                             historyLength: history.length,
                             activeElement: document.activeElement ? describe(document.activeElement) : null,
                         }};
@@ -4529,6 +4569,8 @@ mod tests {
             "probe",
             "status",
             "cursor_control",
+            "set_emulation",
+            "reset_emulation",
         ] {
             browser_agent_action_script(action, &serde_json::json!({}))
                 .unwrap_or_else(|error| panic!("{action} should be supported: {error}"));
@@ -4617,6 +4659,13 @@ mod tests {
         assert!(script.contains("globalThis.open"));
         assert!(script.contains("getUserMedia"));
         assert!(script.contains("getCurrentPosition"));
+        let emulation = browser_agent_action_script(
+            "set_emulation",
+            &serde_json::json!({ "width": 375, "height": 812, "device_scale_factor": 2 }),
+        )
+        .expect("device emulation action should compile");
+        assert!(emulation.contains("devicePixelRatio"));
+        assert!(emulation.contains("maxTouchPoints"));
         assert!(script.contains("target || '').toLowerCase() !== '_blank'"));
         assert!(script.contains("response: accepted ? 'accepted' : 'dismissed'"));
         assert!(script.contains("globalThis.__evofluxBrowserRuntime = runtime"));
