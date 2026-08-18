@@ -28,6 +28,14 @@ export interface BrowserPopupRequest {
   url: string
 }
 
+export interface BrowserPermissionRequest {
+  id: number
+  ts: number
+  kind: 'notifications' | 'media' | 'geolocation' | string
+  detail?: Record<string, unknown>
+  state: 'pending'
+}
+
 export interface BrowserViewportOverride {
   width: number
   height: number
@@ -128,6 +136,7 @@ export function useDirectBrowserTabs({
   const [creating, setCreating] = useState(false)
   const [agentConnected, setAgentConnected] = useState(false)
   const [pageDialog, setPageDialog] = useState<BrowserPageDialog | null>(null)
+  const [pagePermission, setPagePermission] = useState<BrowserPermissionRequest | null>(null)
   const [viewportOverride, setViewportOverride] = useState<BrowserViewportOverride | null>(null)
 
   activeIdRef.current = activeTabId
@@ -723,6 +732,8 @@ export function useDirectBrowserTabs({
       'network',
       'dialogs',
       'popups',
+      'permission_requests',
+      'resolve_permission',
       'dialog_behavior',
       'performance',
       'clear_logs',
@@ -779,10 +790,10 @@ export function useDirectBrowserTabs({
     let disposed = false
     let polling = false
     const pollDialogs = async () => {
-      if (disposed || polling || pageDialog) return
+      if (disposed || polling || pageDialog || pagePermission) return
       polling = true
       try {
-        const [dialogs, popups] = await Promise.all([
+        const [dialogs, popups, permissions] = await Promise.all([
           invokeFor<BrowserPageDialog[]>(
             'app_browser_webview_agent_action',
             activeTab.label,
@@ -792,6 +803,11 @@ export function useDirectBrowserTabs({
             'app_browser_webview_agent_action',
             activeTab.label,
             { action: 'popups', params: { clear: true } },
+          ),
+          invokeFor<BrowserPermissionRequest[]>(
+            'app_browser_webview_agent_action',
+            activeTab.label,
+            { action: 'permission_requests', params: {} },
           ),
         ])
         for (const popup of Array.isArray(popups) ? popups : []) {
@@ -811,6 +827,8 @@ export function useDirectBrowserTabs({
             setPageDialog(latest)
           }
         }
+        const permission = Array.isArray(permissions) ? permissions[0] : null
+        if (permission) setPagePermission(permission)
       } catch {
         // Navigation briefly invalidates eval callbacks; the next poll retries.
       } finally {
@@ -823,7 +841,18 @@ export function useDirectBrowserTabs({
       disposed = true
       window.clearInterval(timer)
     }
-  }, [activeTab, invokeFor, onRequestNewTab, pageDialog, supported, visible])
+  }, [activeTab, invokeFor, onRequestNewTab, pageDialog, pagePermission, supported, visible])
+
+  const resolvePagePermission = useCallback(async (allow: boolean) => {
+    const tab = tabsRef.current.find((item) => item.id === activeIdRef.current)
+    const permission = pagePermission
+    if (!tab || !permission) return
+    await invokeFor('app_browser_webview_agent_action', tab.label, {
+      action: 'resolve_permission',
+      params: { id: permission.id, allow },
+    })
+    setPagePermission(null)
+  }, [invokeFor, pagePermission])
 
   useEffect(() => {
     if (!supported) return
@@ -857,7 +886,7 @@ export function useDirectBrowserTabs({
 
           for (const [id, webview] of webviewsRef.current) {
             const isActive = id === activeIdRef.current
-            const show = shouldShow && isActive && !pageDialog
+            const show = shouldShow && isActive && !pageDialog && !pagePermission
             const currentlyVisible = visibilityRef.current.get(id) === true
             if (show && (changed || !currentlyVisible)) {
               const { LogicalPosition, LogicalSize } = await import('@tauri-apps/api/dpi')
@@ -887,7 +916,7 @@ export function useDirectBrowserTabs({
       disposed = true
       cancelAnimationFrame(frame)
     }
-  }, [pageDialog, supported, viewportRef, visible, zoom])
+  }, [pageDialog, pagePermission, supported, viewportRef, visible, zoom])
 
   useEffect(() => {
     if (!supported || !activeTab) return
@@ -918,6 +947,8 @@ export function useDirectBrowserTabs({
     creating,
     agentConnected,
     pageDialog,
+    pagePermission,
+    resolvePagePermission,
     viewportOverride,
     dismissPageDialog: () => setPageDialog(null),
     createTab,

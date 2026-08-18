@@ -281,6 +281,18 @@ export function BrowserSettingsPage() {
                 }
               />
               <SettingsRow
+                label={t('Allow agent permission acceptance')}
+                description={t('When off, camera, microphone, location and notification requests must be approved by you in the Browser panel.')}
+                control={
+                  <Switch
+                    checked={draft.built_in_allow_agent_permission_accept}
+                    disabled={!preferences.enabled}
+                    onCheckedChange={(checked) => patchWebBridge('built_in_allow_agent_permission_accept', checked)}
+                    aria-label={t('Allow agent browser permission acceptance')}
+                  />
+                }
+              />
+              <SettingsRow
                 stacked
                 label={t('Allowed domains')}
                 description={t('Optional comma-separated allowlist. Subdomains are included.')}

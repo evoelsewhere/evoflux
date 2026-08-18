@@ -141,6 +141,7 @@ class BuiltInBrowserSettings(BaseModel):
     allow_clipboard_write: bool = True
     allow_file_uploads: bool = False
     allow_downloads: bool = True
+    allow_agent_permission_accept: bool = False
 
 
 class ConductorSettings(BaseModel):

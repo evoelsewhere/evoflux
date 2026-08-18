@@ -757,7 +757,7 @@ fn browser_observability_init_script() -> &'static str {
         (() => {
             const label = window.__TAURI_INTERNALS__?.metadata?.currentWebview?.label;
             if (!String(label || '').startsWith('browser-') || globalThis.__evofluxBrowserRuntime) return;
-            const runtime = { documentId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`, console: [], network: [], dialogs: [], popups: [], nextDialogId: 1, nextPopupId: 1, dialogBehavior: { behavior: 'dismiss', promptText: null } };
+            const runtime = { documentId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`, console: [], network: [], dialogs: [], popups: [], permissions: [], permissionResolvers: new Map(), nextDialogId: 1, nextPopupId: 1, nextPermissionId: 1, dialogBehavior: { behavior: 'dismiss', promptText: null } };
             const keep = (items, value, max) => {
                 items.push(value);
                 if (items.length > max) items.splice(0, items.length - max);
@@ -777,6 +777,31 @@ fn browser_observability_init_script() -> &'static str {
                 event.preventDefault();
                 queuePopup(anchor.href);
             }, true);
+            const queuePermission = (kind, detail, grant, deny) => {
+                const request = { id: runtime.nextPermissionId++, ts: Date.now(), kind, detail, state: 'pending' };
+                keep(runtime.permissions, request, 100);
+                runtime.permissionResolvers.set(request.id, { request, grant, deny });
+                return request.id;
+            };
+            try {
+                const original = Notification?.requestPermission?.bind(Notification);
+                if (original) Notification.requestPermission = () => new Promise((resolve) => {
+                    queuePermission('notifications', {}, () => original().then(resolve, () => resolve('denied')), () => resolve('denied'));
+                });
+            } catch {}
+            try {
+                const original = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
+                if (original) navigator.mediaDevices.getUserMedia = (constraints) => new Promise((resolve, reject) => {
+                    const detail = JSON.parse(JSON.stringify(constraints || {}));
+                    queuePermission('media', detail, () => original(constraints).then(resolve, reject), () => reject(new DOMException('Permission denied by user', 'NotAllowedError')));
+                });
+            } catch {}
+            try {
+                const original = navigator.geolocation?.getCurrentPosition?.bind(navigator.geolocation);
+                if (original) navigator.geolocation.getCurrentPosition = (success, error, options) => {
+                    queuePermission('geolocation', {}, () => original(success, error, options), () => error?.({ code: 1, message: 'Permission denied by user', PERMISSION_DENIED: 1 }));
+                };
+            } catch {}
             for (const level of ['debug', 'log', 'info', 'warn', 'error']) {
                 const original = console[level]?.bind(console);
                 if (!original) continue;
@@ -1588,6 +1613,8 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         "network",
         "dialogs",
         "popups",
+        "permission_requests",
+        "resolve_permission",
         "dialog_behavior",
         "performance",
         "clear_logs",
@@ -1705,7 +1732,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
 
                     if (action === 'instrument') {{
                         if (!globalThis.__evofluxBrowserRuntime) {{
-                            const runtime = {{ documentId: `${{Date.now().toString(36)}}-${{Math.random().toString(36).slice(2)}}`, console: [], network: [], dialogs: [], popups: [], nextDialogId: 1, nextPopupId: 1, dialogBehavior: {{ behavior: 'dismiss', promptText: null }} }};
+                            const runtime = {{ documentId: `${{Date.now().toString(36)}}-${{Math.random().toString(36).slice(2)}}`, console: [], network: [], dialogs: [], popups: [], permissions: [], permissionResolvers: new Map(), nextDialogId: 1, nextPopupId: 1, nextPermissionId: 1, dialogBehavior: {{ behavior: 'dismiss', promptText: null }} }};
                             const keep = (items, value, max) => {{ items.push(value); if (items.length > max) items.splice(0, items.length - max); }};
                             const queuePopup = (value) => {{
                                 try {{
@@ -1722,6 +1749,31 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                                 event.preventDefault();
                                 queuePopup(anchor.href);
                             }}, true);
+                            const queuePermission = (kind, detail, grant, deny) => {{
+                                const request = {{ id: runtime.nextPermissionId++, ts: Date.now(), kind, detail, state: 'pending' }};
+                                keep(runtime.permissions, request, 100);
+                                runtime.permissionResolvers.set(request.id, {{ request, grant, deny }});
+                                return request.id;
+                            }};
+                            try {{
+                                const original = Notification?.requestPermission?.bind(Notification);
+                                if (original) Notification.requestPermission = () => new Promise((resolve) => {{
+                                    queuePermission('notifications', {{}}, () => original().then(resolve, () => resolve('denied')), () => resolve('denied'));
+                                }});
+                            }} catch {{}}
+                            try {{
+                                const original = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
+                                if (original) navigator.mediaDevices.getUserMedia = (constraints) => new Promise((resolve, reject) => {{
+                                    const detail = JSON.parse(JSON.stringify(constraints || {{}}));
+                                    queuePermission('media', detail, () => original(constraints).then(resolve, reject), () => reject(new DOMException('Permission denied by user', 'NotAllowedError')));
+                                }});
+                            }} catch {{}}
+                            try {{
+                                const original = navigator.geolocation?.getCurrentPosition?.bind(navigator.geolocation);
+                                if (original) navigator.geolocation.getCurrentPosition = (success, error, options) => {{
+                                    queuePermission('geolocation', {{}}, () => original(success, error, options), () => error?.({{ code: 1, message: 'Permission denied by user', PERMISSION_DENIED: 1 }}));
+                                }};
+                            }} catch {{}}
                             for (const level of ['debug', 'log', 'info', 'warn', 'error']) {{
                                 const original = console[level]?.bind(console);
                                 if (!original) continue;
@@ -2149,6 +2201,23 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const popups = Array.from(globalThis.__evofluxBrowserRuntime?.popups || []);
                         if (params.clear && globalThis.__evofluxBrowserRuntime) globalThis.__evofluxBrowserRuntime.popups.length = 0;
                         return popups;
+                    }}
+
+                    if (action === 'permission_requests') {{
+                        return Array.from(globalThis.__evofluxBrowserRuntime?.permissions || []).filter((request) => request.state === 'pending');
+                    }}
+
+                    if (action === 'resolve_permission') {{
+                        const runtime = globalThis.__evofluxBrowserRuntime;
+                        const id = Number(params.id);
+                        const resolver = runtime?.permissionResolvers?.get(id);
+                        if (!resolver) throw new Error(`Permission request not found: ${{id}}`);
+                        runtime.permissionResolvers.delete(id);
+                        resolver.request.state = params.allow === true ? 'allowed' : 'denied';
+                        resolver.request.resolved_at = Date.now();
+                        if (params.allow === true) resolver.grant();
+                        else resolver.deny();
+                        return {{ id, state: resolver.request.state, kind: resolver.request.kind }};
                     }}
 
                     if (action === 'dialog_behavior') {{
@@ -4440,6 +4509,8 @@ mod tests {
             "network",
             "dialogs",
             "popups",
+            "permission_requests",
+            "resolve_permission",
             "dialog_behavior",
             "performance",
             "clear_logs",
@@ -4544,6 +4615,8 @@ mod tests {
         assert!(script.contains("nextDialogId"));
         assert!(script.contains("documentId"));
         assert!(script.contains("globalThis.open"));
+        assert!(script.contains("getUserMedia"));
+        assert!(script.contains("getCurrentPosition"));
         assert!(script.contains("target || '').toLowerCase() !== '_blank'"));
         assert!(script.contains("response: accepted ? 'accepted' : 'dismissed'"));
         assert!(script.contains("globalThis.__evofluxBrowserRuntime = runtime"));

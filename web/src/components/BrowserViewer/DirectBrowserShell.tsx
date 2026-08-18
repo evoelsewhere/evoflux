@@ -37,6 +37,7 @@ import {
 import { DirectBrowserSettingsView } from './DirectBrowserSettingsView'
 import {
   type BrowserPageDialog,
+  type BrowserPermissionRequest,
   isBrowserNewTab,
   useDirectBrowserTabs,
 } from './useDirectBrowserTabs'
@@ -405,6 +406,12 @@ export function DirectBrowserShell({
                   onContinue={browser.dismissPageDialog}
                 />
               )}
+              {browser.pagePermission && !settingsOpen && (
+                <BrowserPermissionPrompt
+                  permission={browser.pagePermission}
+                  onDecision={browser.resolvePagePermission}
+                />
+              )}
             </div>
 
             <AnimatePresence initial={false}>
@@ -431,6 +438,70 @@ export function DirectBrowserShell({
         </motion.section>
       </>
     </AnimatePresence>
+  )
+}
+
+function BrowserPermissionPrompt({
+  permission,
+  onDecision,
+}: {
+  permission: BrowserPermissionRequest
+  onDecision: (allow: boolean) => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const titleId = useId()
+  const descriptionId = useId()
+  const decide = async (allow: boolean) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await onDecision(allow)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+      setBusy(false)
+    }
+  }
+  const detail = permission.detail && Object.keys(permission.detail).length
+    ? JSON.stringify(permission.detail)
+    : null
+  return (
+    <div
+      className="absolute inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-4 backdrop-blur-sm"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      data-modal-focus="true"
+    >
+      <div className="w-full max-w-sm overflow-hidden rounded-xl border border-(--color-primary)/35 bg-(--bg-page) shadow-xl">
+        <div className="flex items-center gap-2 border-b border-(--color-border) bg-(--color-primary)/5 px-4 py-2.5">
+          <CircleAlert size={15} className="shrink-0 text-(--color-primary)" aria-hidden="true" />
+          <span id={titleId} className="text-xs font-semibold text-(--color-text)">
+            Browser permission request
+          </span>
+        </div>
+        <div className="space-y-3 px-4 py-3">
+          <p id={descriptionId} className="text-sm leading-5 text-(--color-text)">
+            This page wants access to <strong>{permission.kind}</strong>.
+          </p>
+          {detail && (
+            <code className="block max-h-24 overflow-auto rounded-md bg-(--bg-key) p-2 text-[11px] text-(--color-text-muted)">
+              {detail}
+            </code>
+          )}
+          {error && <p className="text-xs text-(--color-error)">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void decide(false)}>
+              Deny
+            </Button>
+            <Button type="button" size="sm" disabled={busy} onClick={() => void decide(true)} autoFocus>
+              Allow
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
