@@ -1162,6 +1162,8 @@ async fn eval_browser_webview_action(
 ) -> Result<serde_json::Value, String> {
     let async_start = if action == "http" {
         Some("http_start")
+    } else if action == "download" {
+        Some("download_start")
     } else if action == "evaluate"
         && params
             .get("await_promise")
@@ -1593,6 +1595,8 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         "cookies",
         "http",
         "http_start",
+        "download_start",
+        "page_assets",
         "evaluate_start",
         "async_result",
         "debug_summary",
@@ -2282,6 +2286,56 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             headers: Object.fromEntries(response.headers.entries()),
                             body: (await response.text()).slice(0, maxChars),
                         }})).finally(() => clearTimeout(timer));
+                        return beginAsync(asyncId, request);
+                    }}
+
+                    if (action === 'page_assets') {{
+                        const limit = Math.max(1, Math.min(500, Number(params.limit) || 100));
+                        const seen = new Set();
+                        const assets = [];
+                        const add = (url, type, text = '') => {{
+                            try {{
+                                const absolute = new URL(String(url || ''), location.href);
+                                if (!['http:', 'https:'].includes(absolute.protocol) || seen.has(absolute.href)) return;
+                                seen.add(absolute.href);
+                                assets.push({{ url: absolute.href, type, text: String(text || '').trim().replace(/\s+/g, ' ').slice(0, 200) }});
+                            }} catch {{}}
+                        }};
+                        for (const anchor of document.querySelectorAll('a[href]')) add(anchor.href, anchor.hasAttribute('download') ? 'download' : 'link', anchor.innerText || anchor.getAttribute('aria-label'));
+                        for (const image of document.images) add(image.currentSrc || image.src, 'image', image.alt);
+                        for (const media of document.querySelectorAll('video[src],audio[src],source[src]')) add(media.src, media.tagName.toLowerCase(), media.getAttribute('type'));
+                        for (const link of document.querySelectorAll('link[href]')) add(link.href, `link:${{link.rel || 'resource'}}`, link.getAttribute('type'));
+                        return assets.slice(0, limit);
+                    }}
+
+                    if (action === 'download_start') {{
+                        const url = String(params.url || '');
+                        const asyncId = String(params.async_id || '');
+                        if (!url) throw new Error('download requires a URL');
+                        if (!asyncId) throw new Error('download action is missing its internal async id');
+                        const maxBytes = Math.max(1, Math.min(20 * 1024 * 1024, Number(params.max_bytes) || 20 * 1024 * 1024));
+                        const timeoutMs = Math.max(100, Math.min(30000, Number(params.timeout_ms) || 30000));
+                        const controller = new AbortController();
+                        const timer = setTimeout(() => controller.abort(`Timed out after ${{timeoutMs}}ms`), timeoutMs);
+                        const request = fetch(url, {{ credentials: 'include', signal: controller.signal }}).then(async (response) => {{
+                            if (!response.ok) throw new Error(`Download failed: HTTP ${{response.status}}`);
+                            const buffer = await response.arrayBuffer();
+                            if (buffer.byteLength > maxBytes) throw new Error(`Download exceeds ${{Math.floor(maxBytes / 1048576)}} MB`);
+                            const bytes = new Uint8Array(buffer);
+                            let binary = '';
+                            for (let offset = 0; offset < bytes.length; offset += 32768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
+                            const disposition = response.headers.get('content-disposition') || '';
+                            const match = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
+                            let filename = match?.[1] || new URL(response.url || url, location.href).pathname.split('/').pop() || 'download';
+                            try {{ filename = decodeURIComponent(filename.replace(/^\"|\"$/g, '')); }} catch {{}}
+                            return {{
+                                url: response.url || new URL(url, location.href).href,
+                                filename,
+                                media_type: response.headers.get('content-type') || 'application/octet-stream',
+                                bytes: buffer.byteLength,
+                                data: btoa(binary),
+                            }};
+                        }}).finally(() => clearTimeout(timer));
                         return beginAsync(asyncId, request);
                     }}
 
@@ -4134,6 +4188,8 @@ mod tests {
             "cookies",
             "http",
             "http_start",
+            "download_start",
+            "page_assets",
             "evaluate_start",
             "async_result",
             "debug_summary",
@@ -4200,11 +4256,22 @@ mod tests {
             &serde_json::json!({ "async_id": "job-2", "script": "Promise.resolve(42)" }),
         )
         .expect("async evaluate action should compile");
+        let download = browser_agent_action_script(
+            "download_start",
+            &serde_json::json!({
+                "async_id": "job-3",
+                "url": "https://example.com/report.pdf",
+                "max_bytes": 1024
+            }),
+        )
+        .expect("download action should compile");
 
         assert!(http.contains("AbortController"));
         assert!(http.contains("credentials: 'include'"));
         assert!(evaluate.contains("beginAsync"));
         assert!(evaluate.contains("Promise.resolve(42)"));
+        assert!(download.contains("arrayBuffer"));
+        assert!(download.contains("content-disposition"));
     }
 
     #[test]

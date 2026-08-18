@@ -269,6 +269,18 @@ export function BrowserSettingsPage() {
                 }
               />
               <SettingsRow
+                label={t('Allow browser downloads')}
+                description={t('Permit page resources to be saved into the current session workspace.')}
+                control={
+                  <Switch
+                    checked={draft.built_in_allow_downloads}
+                    disabled={!preferences.enabled}
+                    onCheckedChange={(checked) => patchWebBridge('built_in_allow_downloads', checked)}
+                    aria-label={t('Allow built-in browser downloads')}
+                  />
+                }
+              />
+              <SettingsRow
                 stacked
                 label={t('Allowed domains')}
                 description={t('Optional comma-separated allowlist. Subdomains are included.')}
