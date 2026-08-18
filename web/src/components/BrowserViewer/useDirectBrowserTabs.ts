@@ -103,6 +103,7 @@ export function useDirectBrowserTabs({
   const [creating, setCreating] = useState(false)
   const [agentConnected, setAgentConnected] = useState(false)
   const [pageDialog, setPageDialog] = useState<BrowserPageDialog | null>(null)
+  const [viewportOverride, setViewportOverride] = useState<BrowserViewportOverride | null>(null)
 
   activeIdRef.current = activeTabId
 
@@ -531,6 +532,7 @@ export function useDirectBrowserTabs({
         width: Math.max(200, Math.min(4000, width)),
         height: Math.max(200, Math.min(4000, height)),
       }
+      setViewportOverride(viewportOverrideRef.current)
       // Apply synchronously for the command response; the animation-frame
       // synchronizer keeps the same override stable as app chrome moves.
       boundsRef.current = null
@@ -547,6 +549,7 @@ export function useDirectBrowserTabs({
     }
     if (action === 'reset_viewport') {
       viewportOverrideRef.current = null
+      setViewportOverride(null)
       viewportScaleRef.current = 1
       boundsRef.current = null
       await applyAgentViewport(tab.id)
@@ -812,6 +815,7 @@ export function useDirectBrowserTabs({
     creating,
     agentConnected,
     pageDialog,
+    viewportOverride,
     dismissPageDialog: () => setPageDialog(null),
     createTab,
     selectTab,
