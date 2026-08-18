@@ -226,11 +226,11 @@ export function SourceControlPanel({
   // Auto-select first file when dialog opens
   useEffect(() => {
     if (open && !selectedPath && files.length > 0) {
-      setSelectedPath(files[0].path) // eslint-disable-line react-hooks/set-state-in-effect -- intentional one-time init
+      setSelectedPath(files[0].path)
     }
   }, [open, files, selectedPath])
 
-  const runAi = async (action: GitAIAction, reference?: string) => {
+  const runAi = useCallback(async (action: GitAIAction, reference?: string) => {
     if (!sessionId || gitAiBusy) return
     setGitAiBusy(true)
     try {
@@ -261,7 +261,14 @@ export function SourceControlPanel({
     } finally {
       setGitAiBusy(false)
     }
-  }
+  }, [gitAiBusy, openWorkbenchTool, sessionId, setChangeSet, workspace])
+
+  useEffect(() => {
+    if (!open) return
+    const review = () => { void runAi('self_review') }
+    window.addEventListener('evoflux:git-ai-review', review)
+    return () => window.removeEventListener('evoflux:git-ai-review', review)
+  }, [open, runAi])
 
   return (
       <div

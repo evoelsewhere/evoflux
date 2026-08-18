@@ -78,6 +78,7 @@ export function ChatTrailingPanels({
 interface ChatOverlayPanelsProps {
   showPalette: boolean
   paletteCommands: Command[]
+  searchPaletteCommands?: (query: string, signal: AbortSignal) => Promise<Command[]>
   onClosePalette: () => void
   runInputsRequest: RunInputsRequest | null
   onCancelRunInputs: () => void
@@ -89,6 +90,7 @@ interface ChatOverlayPanelsProps {
 export function ChatOverlayPanels({
   showPalette,
   paletteCommands,
+  searchPaletteCommands,
   onClosePalette,
   runInputsRequest,
   onCancelRunInputs,
@@ -97,7 +99,11 @@ export function ChatOverlayPanels({
   return (
     <>
       {showPalette && (
-        <CommandPalette commands={paletteCommands} onClose={onClosePalette} />
+        <CommandPalette
+          commands={paletteCommands}
+          searchCommands={searchPaletteCommands}
+          onClose={onClosePalette}
+        />
       )}
       {runInputsRequest && (
         <RunInputsDialog
