@@ -342,7 +342,23 @@ export function DirectBrowserShell({
           </div>
 
           <div className="relative flex min-h-0 flex-1 overflow-hidden">
-            <div ref={viewportRef} className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-white">
+            <div
+              ref={viewportRef}
+              className={cn(
+                'relative min-h-0 min-w-0 flex-1 overflow-hidden transition-colors',
+                browser.viewportOverride
+                  ? 'bg-[#202124] bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.13)_0.75px,transparent_0.75px)] bg-size-[12px_12px]'
+                  : 'bg-white',
+              )}
+            >
+              {browser.viewportOverride && (
+                <>
+                  <div className="pointer-events-none absolute inset-3 rounded-lg border border-white/12 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.35)]" />
+                  <div className="pointer-events-none absolute bottom-2 left-1/2 z-(--z-panel) -translate-x-1/2 rounded-full border border-white/15 bg-black/65 px-2.5 py-1 font-mono text-[10px] tabular-nums text-white/80 shadow-lg backdrop-blur-md">
+                    {browser.viewportOverride.width} × {browser.viewportOverride.height}
+                  </div>
+                </>
+              )}
               {settingsOpen ? (
                 <DirectBrowserSettingsView
                   active={enabled}
