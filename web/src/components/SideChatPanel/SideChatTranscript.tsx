@@ -79,7 +79,7 @@ export function SideChatTranscript({
     isEmpty,
     contentKey: totalLen,
     resetKey: sessionId,
-    followKey: latestLiveUserBlockId,
+    topAnchorKey: latestLiveUserBlockId,
   })
 
   return (
@@ -96,7 +96,11 @@ export function SideChatTranscript({
             {turnItems.map((item, k) => {
               if (item.kind === 'user') {
                 return (
-                  <div key={item.block.id} className="oa-transcript-turn">
+                  <div
+                    key={item.block.id}
+                    className="oa-transcript-turn"
+                    data-transcript-top-anchor={item.block.id === latestLiveUserBlockId ? 'true' : undefined}
+                  >
                     <BlockRenderer
                       block={item.block}
                       isStreaming={false}

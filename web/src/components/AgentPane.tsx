@@ -118,7 +118,8 @@ export function AgentPane({
     isEmpty,
     contentKey: allBlocks.length,
     resetKey: sessionId,
-    followKey: latestLiveUserBlockId ?? (isWorking && isContinuing ? `continue:${sessionId ?? ''}:${name}` : null),
+    followKey: isWorking && isContinuing ? `continue:${sessionId ?? ''}:${name}` : null,
+    topAnchorKey: latestLiveUserBlockId,
   })
 
   const showEarlierTurns = useCallback(() => {
@@ -258,7 +259,11 @@ export function AgentPane({
                {visibleTurnItems.map((item, k) => {
                    if (item.kind === 'user') {
                      return (
-                       <div key={item.block.id} className="oa-transcript-turn">
+                       <div
+                         key={item.block.id}
+                         className="oa-transcript-turn"
+                         data-transcript-top-anchor={item.block.id === latestLiveUserBlockId ? 'true' : undefined}
+                       >
                          <BlockRenderer
                            block={item.block}
                            isStreaming={false}
