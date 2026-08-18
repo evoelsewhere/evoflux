@@ -280,6 +280,10 @@ class AccessibilityAction(BaseModel):
 
 class ScreenshotAction(ElementTargetAction):
     action: Literal["screenshot"]
+    full_page: bool = Field(
+        default=False,
+        description="Capture and stitch the full scrollable page instead of the viewport.",
+    )
 
 
 class ConsoleAction(BaseModel):
@@ -572,12 +576,20 @@ def _image_result(result: dict[str, Any]) -> str | ToolResult:
         origin_x = mapping.get("css_origin_x", 0)
         origin_y = mapping.get("css_origin_y", 0)
         if isinstance(scale_x, (int, float)) and isinstance(scale_y, (int, float)):
-            mapping_text = (
-                "\nScreenshot coordinate mapping: "
-                f"css_x={origin_x}+image_x×{scale_x:.4f}, "
-                f"css_y={origin_y}+image_y×{scale_y:.4f}. "
-                "click_at defaults to screenshot coordinates and applies this mapping."
-            )
+            if result.get("full_page") is True:
+                mapping_text = (
+                    "\nFull-page coordinate mapping: "
+                    f"css_x={origin_x}+image_x×{scale_x:.4f}, "
+                    f"css_y={origin_y}+image_y×{scale_y:.4f}. "
+                    "Use snapshot/scroll before clicking content outside the visible viewport."
+                )
+            else:
+                mapping_text = (
+                    "\nScreenshot coordinate mapping: "
+                    f"css_x={origin_x}+image_x×{scale_x:.4f}, "
+                    f"css_y={origin_y}+image_y×{scale_y:.4f}. "
+                    "click_at defaults to screenshot coordinates and applies this mapping."
+                )
     return ToolResult(
         parts=[
             TextBlock(
