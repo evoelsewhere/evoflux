@@ -386,6 +386,33 @@ export interface EditorActionResponse {
   findings: string[]
 }
 
+export type GitAIAction =
+  | 'self_review'
+  | 'generate_commit_message'
+  | 'explain_commit'
+  | 'generate_pr_description'
+  | 'summarize_pull_request'
+  | 'propose_conflict_resolution'
+  | 'review_resolved_conflicts'
+
+export interface GitAIRequest {
+  session_id: string
+  action: GitAIAction
+  reference?: string | null
+  remote_context?: Record<string, unknown> | null
+}
+
+export interface GitAIResponse {
+  kind: 'review' | 'text' | 'pr' | 'changes'
+  summary: string
+  message: string | null
+  title: string | null
+  body: string | null
+  findings: string[]
+  change_set: ChangeSetResponse | null
+  evidence_sha256: string
+}
+
 // ── Code context (/api/code-context) ────────────────────────────────────────
 
 export interface CodeGraphStatusResponse {
