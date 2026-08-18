@@ -9,6 +9,8 @@
   if (globalThis.__evofluxAgentControlOverlay) return;
 
   const HOST_ID = "__evoflux-agent-control-overlay";
+  const TIP_X = 4;
+  const TIP_Y = 2.7;
   let host = null;
   let cursor = null;
   let cursorPulse = null;
@@ -62,27 +64,28 @@
         }
         .badge-dot { width: 7px; height: 7px; border-radius: 50%; background: #7ffcff; box-shadow: 0 0 9px #5effff; animation: evoflux-dot 1s ease-in-out infinite alternate; }
         .cursor {
-          position: absolute; left: 0; top: 0; width: 17px; height: 18px;
+          position: absolute; left: 0; top: 0; width: 24px; height: 27px;
           transform: translate3d(var(--cursor-x, 72vw), var(--cursor-y, 34vh), 0);
-          transform-origin: 3px 2.5px;
+          transform-origin: 4px 2.7px;
           transition: transform 28ms linear;
           will-change: transform;
         }
         .cursor-aura {
-          position: absolute; left: -2px; top: -2px; width: 14px; height: 14px;
-          border-radius: 50%; opacity: .34;
-          background: radial-gradient(circle, rgba(255, 255, 255, .38) 0 8%, rgba(91, 221, 239, .14) 34%, transparent 72%);
-          filter: blur(2px);
+          position: absolute; left: -7px; top: -7px; width: 25px; height: 25px;
+          border-radius: 50%; opacity: .46;
+          background: radial-gradient(circle, rgba(255,255,255,.34) 0 8%, rgba(119,92,255,.24) 32%, rgba(67,210,255,.11) 54%, transparent 74%);
+          filter: blur(3px);
         }
         .cursor svg {
           position: relative; display: block; width: 100%; height: 100%; overflow: visible;
-          filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .38)) drop-shadow(0 0 3px rgba(72, 202, 224, .42));
+          filter: drop-shadow(0 1px 1px rgba(0,0,0,.5)) drop-shadow(0 0 4px rgba(126,93,255,.58)) drop-shadow(0 0 8px rgba(67,210,255,.22));
         }
-        .cursor-outline { fill: none; stroke: rgba(255, 255, 255, .96); stroke-width: 2.7; stroke-linejoin: round; stroke-linecap: round; }
-        .cursor-core { fill: url(#evoflux-cursor-fill); stroke: #10151a; stroke-width: .85; stroke-linejoin: round; stroke-linecap: round; }
+        .cursor-glow { fill: none; stroke: rgba(123,91,255,.68); stroke-width: 5.5; stroke-linejoin: round; stroke-linecap: round; opacity: .42; filter: blur(2px); }
+        .cursor-outline { fill: none; stroke: rgba(255,255,255,.99); stroke-width: 3.8; stroke-linejoin: round; stroke-linecap: round; }
+        .cursor-core { fill: url(#evoflux-cursor-fill); stroke: #030407; stroke-width: .9; stroke-linejoin: round; stroke-linecap: round; }
         .cursor-pulse {
-          position: absolute; left: -4px; top: -4px; width: 14px; height: 14px;
-          border: 1.5px solid rgba(105, 229, 241, .78); border-radius: 50%; opacity: 0; transform: scale(.25);
+          position: absolute; left: -5px; top: -5px; width: 17px; height: 17px;
+          border: 2px solid rgba(126,102,255,.86); box-shadow: 0 0 8px rgba(70,211,255,.72); border-radius: 50%; opacity: 0; transform: scale(.25);
         }
         .cursor.pressed { transform: translate3d(var(--cursor-x), var(--cursor-y), 0) scale(.9); transition-duration: 55ms; }
         .cursor.pressed .cursor-aura { opacity: .78; filter: blur(2px); }
@@ -108,16 +111,17 @@
         <div class="cursor">
           <span class="cursor-aura"></span>
           <span class="cursor-pulse"></span>
-          <svg viewBox="0 0 17 18" aria-hidden="true">
+          <svg viewBox="0 0 24 27" aria-hidden="true">
             <defs>
-              <linearGradient id="evoflux-cursor-fill" x1="3" y1="2.5" x2="9" y2="13" gradientUnits="userSpaceOnUse">
-                <stop offset="0" stop-color="#20272d"/>
-                <stop offset=".55" stop-color="#0d1115"/>
-                <stop offset="1" stop-color="#020405"/>
+              <linearGradient id="evoflux-cursor-fill" x1="5" y1="2" x2="15" y2="24" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#111319"/>
+                <stop offset=".58" stop-color="#050609"/>
+                <stop offset="1" stop-color="#010102"/>
               </linearGradient>
             </defs>
-            <path class="cursor-outline" d="M3 2.7 14.1 10.4 7.6 12.2Z"/>
-            <path class="cursor-core" d="M3 2.7 14.1 10.4 7.6 12.2Z"/>
+            <path class="cursor-glow" d="M4 2.7v18.5c0 2.6 3.2 3.8 4.9 1.8l4.35-5.2h5.95c2.55 0 3.7-3.2 1.75-4.82L7.75 1.35C6.25.1 4 1.17 4 2.7Z"/>
+            <path class="cursor-outline" d="M4 2.7v18.5c0 2.6 3.2 3.8 4.9 1.8l4.35-5.2h5.95c2.55 0 3.7-3.2 1.75-4.82L7.75 1.35C6.25.1 4 1.17 4 2.7Z"/>
+            <path class="cursor-core" d="M4 2.7v18.5c0 2.6 3.2 3.8 4.9 1.8l4.35-5.2h5.95c2.55 0 3.7-3.2 1.75-4.82L7.75 1.35C6.25.1 4 1.17 4 2.7Z"/>
           </svg>
         </div>
       </div>`;
@@ -127,8 +131,8 @@
       lastX = Math.max(0, Math.min(innerWidth - 1, innerWidth * 0.72));
       lastY = Math.max(0, Math.min(innerHeight - 1, innerHeight * 0.34));
     }
-    cursor.style.setProperty("--cursor-x", `${lastX - 3}px`);
-    cursor.style.setProperty("--cursor-y", `${lastY - 2.5}px`);
+    cursor.style.setProperty("--cursor-x", `${lastX - TIP_X}px`);
+    cursor.style.setProperty("--cursor-y", `${lastY - TIP_Y}px`);
     (document.documentElement || document).appendChild(host);
     host.style.visibility = suspended ? "hidden" : "visible";
   }
@@ -146,10 +150,10 @@
     if (!cursor || !Number.isFinite(x) || !Number.isFinite(y)) return;
     lastX = Math.max(0, Math.min(innerWidth - 1, x));
     lastY = Math.max(0, Math.min(innerHeight - 1, y));
-    // The SVG pointer tip is at (3, 2.7); offset the visual so its tip is the
+    // The SVG pointer tip is at (4, 2.7); offset the visual so its tip is the
     // exact CSS-pixel coordinate sent to CDP.
-    cursor.style.setProperty("--cursor-x", `${lastX - 3}px`);
-    cursor.style.setProperty("--cursor-y", `${lastY - 2.5}px`);
+    cursor.style.setProperty("--cursor-x", `${lastX - TIP_X}px`);
+    cursor.style.setProperty("--cursor-y", `${lastY - TIP_Y}px`);
     cursor.classList.toggle("pressed", phase === "press" || phase === "drag");
     if (phase !== "release" && phase !== "click") return;
     cursor.classList.remove("pressed");

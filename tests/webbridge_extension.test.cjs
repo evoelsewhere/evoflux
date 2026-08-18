@@ -1122,14 +1122,14 @@ test("P2 Side Chat supports persisted light and dark themes", () => {
 
 test("P2 Side Chat color tokens stay aligned with Desktop light and dark palettes", () => {
   const sharedValues = [
-    ["--bg", "--bg-page", "#232220"],
+    ["--bg", "--bg-page", "#222222"],
     ["--surface", "--bg-card", "#2D2C2A"],
     ["--surface-raised", "--bg-key", "#383534"],
     ["--input-bg", "--bg-input", "#282725"],
     ["--border", "--color-border", "#494540"],
     ["--text", "--color-text", "#F3F2EF"],
     ["--accent", "--color-accent", "#A39D96"],
-    ["--bg", "--bg-page", "#FAFAFA"],
+    ["--bg", "--bg-page", "#FFFFFF"],
     ["--surface", "--bg-card", "#FFFFFF"],
     ["--surface-raised", "--bg-key", "#EFEFEF"],
     ["--border", "--color-border", "#D8D8D8"],
@@ -3276,17 +3276,15 @@ test("agent control mirrors CDP pointer events and releases the visual overlay",
   assert.match(agentControlOverlaySource, /EvoFlux control/);
   assert.match(agentControlOverlaySource, /class="cursor-aura"/);
   assert.match(agentControlOverlaySource, /id="evoflux-cursor-fill"/);
-  assert.match(agentControlOverlaySource, /width: 17px; height: 18px/);
+  assert.match(agentControlOverlaySource, /width: 24px; height: 27px/);
   assert.match(agentControlOverlaySource, /stroke-linejoin: round; stroke-linecap: round/);
-  assert.match(agentControlOverlaySource, /M3 2\.7 14\.1 10\.4 7\.6 12\.2Z/);
-  assert.match(agentControlOverlaySource, /drop-shadow\(0 0 3px rgba\(72, 202, 224, \.42\)\)/);
-  assert.match(agentControlOverlaySource, /stop-color="#020405"/);
-  assert.match(agentControlOverlaySource, /stroke: rgba\(255, 255, 255, \.96\)/);
-  assert.doesNotMatch(agentControlOverlaySource, /117, 76, 255/);
-  assert.doesNotMatch(agentControlOverlaySource, /#(?:8d68ff|b65cff)|101, 86, 255|124, 88, 255/);
+  assert.match(agentControlOverlaySource, /M4 2\.7v18\.5c0 2\.6/);
+  assert.match(agentControlOverlaySource, /drop-shadow\(0 0 4px rgba\(126,93,255,\.58\)\)/);
+  assert.match(agentControlOverlaySource, /stop-color="#010102"/);
+  assert.match(agentControlOverlaySource, /stroke: rgba\(255,255,255,\.99\)/);
   assert.match(agentControlOverlaySource, /@keyframes evoflux-frame-wave/);
   assert.doesNotMatch(agentControlOverlaySource, /evoflux-edge-flow|class="edge /);
-  assert.doesNotMatch(agentControlOverlaySource, /class="cursor-glow"/);
+  assert.match(agentControlOverlaySource, /class="cursor-glow"/);
   assert.doesNotMatch(agentControlOverlaySource, /class="cursor-highlight"/);
   assert.doesNotMatch(agentControlOverlaySource, /21\.6 16l-8\.2 1\.2/);
   assert.match(agentControlOverlaySource, /function setSuspended/);
