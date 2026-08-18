@@ -83,6 +83,7 @@ export type WebBridgeSettings = {
   built_in_allow_http_requests: boolean
   built_in_allow_clipboard_read: boolean
   built_in_allow_clipboard_write: boolean
+  built_in_allow_file_uploads: boolean
 }
 
 export async function getWebBridgeSettings(): Promise<WebBridgeSettings> {

@@ -704,6 +704,7 @@ export function useDirectBrowserTabs({
       'hover',
       'focus',
       'fill',
+      'set_files',
       'type',
       'clear',
       'submit',

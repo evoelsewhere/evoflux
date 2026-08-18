@@ -1564,6 +1564,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         "hover",
         "focus",
         "fill",
+        "set_files",
         "type",
         "clear",
         "submit",
@@ -1854,6 +1855,23 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         setEditableValue(element, params.clear === false ? current + text : text, 'insertText', text);
                         element.dispatchEvent(new Event('change', {{ bubbles: true }}));
                         return `Filled ${{describe(element)}} (${{text.length}} chars)`;
+                    }}
+
+                    if (action === 'set_files') {{
+                        const element = resolveElement();
+                        if (!element || element.tagName !== 'INPUT' || element.type !== 'file') throw new Error('File input not found');
+                        const transfer = new DataTransfer();
+                        for (const item of Array.isArray(params.files) ? params.files : []) {{
+                            const binary = atob(String(item.data || ''));
+                            const bytes = new Uint8Array(binary.length);
+                            for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+                            transfer.items.add(new File([bytes], String(item.name || 'upload'), {{ type: String(item.media_type || 'application/octet-stream') }}));
+                        }}
+                        if (!transfer.files.length) throw new Error('No files were provided');
+                        element.files = transfer.files;
+                        element.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        element.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        return {{ files: Array.from(transfer.files, (file) => ({{ name: file.name, size: file.size, type: file.type }})) }};
                     }}
 
                     if (action === 'type') {{
@@ -4087,6 +4105,7 @@ mod tests {
             "hover",
             "focus",
             "fill",
+            "set_files",
             "type",
             "clear",
             "submit",

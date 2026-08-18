@@ -56,6 +56,7 @@ class WebBridgeSettingsBody(BaseModel):
     built_in_allow_http_requests: bool = True
     built_in_allow_clipboard_read: bool = False
     built_in_allow_clipboard_write: bool = True
+    built_in_allow_file_uploads: bool = False
 
 
 class ConductorSettingsBody(BaseModel):
