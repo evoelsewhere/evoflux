@@ -81,6 +81,8 @@ export type WebBridgeSettings = {
   built_in_allow_storage: boolean
   built_in_allow_cookie_values: boolean
   built_in_allow_http_requests: boolean
+  built_in_allow_clipboard_read: boolean
+  built_in_allow_clipboard_write: boolean
 }
 
 export async function getWebBridgeSettings(): Promise<WebBridgeSettings> {

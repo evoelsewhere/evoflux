@@ -31,6 +31,7 @@ _UNTRUSTED_ACTIONS = frozenset(
         "inspect",
         "html",
         "accessibility",
+        "clipboard_read",
         "extract",
         "console",
         "network",
@@ -70,6 +71,10 @@ def _browser_policy_refusal(
         return "Page storage access is disabled in Settings → Browser."
     if action == "http" and not policy.allow_http_requests:
         return "Page HTTP debugging is disabled in Settings → Browser."
+    if action == "clipboard_read" and not policy.allow_clipboard_read:
+        return "Clipboard reads are disabled in Settings → Browser."
+    if action == "clipboard_write" and not policy.allow_clipboard_write:
+        return "Clipboard writes are disabled in Settings → Browser."
     if (
         action == "cookies"
         and params.get("include_values") is True
@@ -386,6 +391,15 @@ class PrintAction(BaseModel):
     action: Literal["print"]
 
 
+class ClipboardReadAction(BaseModel):
+    action: Literal["clipboard_read"]
+
+
+class ClipboardWriteAction(BaseModel):
+    action: Literal["clipboard_write"]
+    text: str = Field(max_length=1_000_000)
+
+
 class EvaluateAction(BaseModel):
     action: Literal["evaluate"]
     script: str = Field(
@@ -490,6 +504,8 @@ AnyAction = Annotated[
     | ResetViewportAction
     | ZoomAction
     | PrintAction
+    | ClipboardReadAction
+    | ClipboardWriteAction
     | EvaluateAction
     | ScrollAction
     | BackAction
@@ -517,6 +533,7 @@ scroll, scroll_into_view.
 Interact: click, click_at, dblclick, hover, focus, fill, type, clear, submit,
 press, select, set_checked, drag, dispatch_event.
 Viewport: resize to an exact responsive-test size, reset_viewport, zoom, print.
+Clipboard: clipboard_read, clipboard_write (subject to Settings policy).
 Tabs: new_tab, close_tab, get_tabs, switch_tab, start, stop.
 
 Preferred workflow: navigate → wait → snapshot/query → inspect/interact by index

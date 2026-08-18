@@ -651,6 +651,16 @@ export function useDirectBrowserTabs({
       await invokeFor('app_browser_webview_command', tab.label, { action: 'print' })
       return 'Opened the in-app browser print dialog'
     }
+    if (action === 'clipboard_read') {
+      const { readText } = await import('@tauri-apps/plugin-clipboard-manager')
+      return readText()
+    }
+    if (action === 'clipboard_write') {
+      const { writeText } = await import('@tauri-apps/plugin-clipboard-manager')
+      const text = typeof params.text === 'string' ? params.text : ''
+      await writeText(text)
+      return `Wrote ${text.length} characters to the clipboard`
+    }
     if (action === 'click_at') {
       const coordinateSpace = params.coordinate_space === 'css' ? 'css' : 'screenshot'
       const mappedParams = { ...params }
