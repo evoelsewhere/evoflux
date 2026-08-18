@@ -125,7 +125,7 @@ def _fts_query(query: str) -> str:
     if not tokens:
         return '"' + query.replace('"', '""') + '"'
     return " OR ".join(
-        f'"{token.replace(chr(34), chr(34) * 2)}"' for token in tokens[:24]
+        f'"{token.replace(chr(34), chr(34) * 2)}"*' for token in tokens[:24]
     )
 
 
@@ -151,6 +151,15 @@ async def search_index(
 ) -> CodeContextResult:
     """Merge repository-local FTS ranks into one bounded result set."""
     wanted_languages = {value.casefold() for value in languages or []}
+    # The public limit is global. Keep each repository's candidate pool bounded
+    # so a project with many repositories does not multiply the work by the
+    # full global limit on every keypress.
+    per_repository_candidates = min(
+        500,
+        max(
+            80, ((max(1, limit) + max(1, len(indexes)) - 1) // max(1, len(indexes))) * 8
+        ),
+    )
 
     def search_one(
         label: str, index: RepositoryIndex
@@ -173,7 +182,7 @@ async def search_index(
                         ORDER BY rank
                         LIMIT ?
                         """,
-                        (_fts_query(query), min(2_000, max(100, limit * 16))),
+                        (_fts_query(query), per_repository_candidates),
                     ).fetchall()
                 except Exception as exc:
                     lexical_available = False

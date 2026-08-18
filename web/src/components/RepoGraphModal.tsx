@@ -12,7 +12,7 @@ import {
   Search,
   X,
 } from 'lucide-react'
-import { getProjectCodeGraphData } from '@/api/client'
+import { getProjectCodeGraphData, getWorkspaceCodeGraphData } from '@/api/client'
 import type {
   CodeGraphNode,
   CodingProject,
@@ -21,6 +21,7 @@ import type {
 } from '@/api/types'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useProjectCodeGraph } from '@/hooks/useProjectCodeGraph'
+import { useWorkspaceCodeGraph } from '@/hooks/useWorkspaceCodeGraph'
 import { getIntlLocale } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { queryKeys } from '@/queries/keys'
@@ -53,25 +54,45 @@ function compactNumber(value: number): string {
   }).format(value)
 }
 
-export interface RepoGraphModalProps {
+interface SharedRepoGraphModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  project: CodingProject
   onFileSelect?: (file: WorkspaceFileInfo | null) => void
 }
 
-export function RepoGraphModal({ open, onOpenChange, project, onFileSelect }: RepoGraphModalProps) {
+export type RepoGraphModalProps = SharedRepoGraphModalProps & (
+  | { project: CodingProject; workspace?: never }
+  | { project?: never; workspace: string }
+)
+
+export function RepoGraphModal(props: RepoGraphModalProps) {
+  const { open, onOpenChange, onFileSelect } = props
+  const project = props.project ?? null
+  const workspace = props.workspace ?? null
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [hiddenRepos, setHiddenRepos] = useState<Set<string>>(new Set())
-  const { repos: liveRepos, summary, reindex, isBusy } = useProjectCodeGraph(project.id)
+  const projectGraph = useProjectCodeGraph(project?.id ?? '', project !== null)
+  const workspaceGraph = useWorkspaceCodeGraph(workspace ?? '', workspace !== null)
+  const activeGraph = project ? projectGraph : workspaceGraph
+  const { repos: liveRepos, summary, reindex, isBusy } = activeGraph
+  const scopeName = project?.name ?? repoLabel(workspace ?? '')
 
   const graphQuery = useQuery({
-    queryKey: queryKeys.projects.codeGraphData(project.id, NODE_LIMIT, EDGE_LIMIT),
-    queryFn: () => getProjectCodeGraphData(project.id, {
-      nodeLimitPerRepo: NODE_LIMIT,
-      edgeLimitPerRepo: EDGE_LIMIT,
-    }),
+    queryKey: project
+      ? queryKeys.projects.codeGraphData(project.id, NODE_LIMIT, EDGE_LIMIT)
+      : queryKeys.codeGraph.data(workspace ?? '', NODE_LIMIT, EDGE_LIMIT),
+    queryFn: ({ signal }) => project
+      ? getProjectCodeGraphData(project.id, {
+          nodeLimitPerRepo: NODE_LIMIT,
+          edgeLimitPerRepo: EDGE_LIMIT,
+          signal,
+        })
+      : getWorkspaceCodeGraphData(workspace ?? '', {
+          nodeLimitPerRepo: NODE_LIMIT,
+          edgeLimitPerRepo: EDGE_LIMIT,
+          signal,
+        }),
     enabled: open && summary.indexed > 0,
     staleTime: 30_000,
   })
@@ -156,7 +177,7 @@ export function RepoGraphModal({ open, onOpenChange, project, onFileSelect }: Re
             <div className="min-w-0">
               <DialogTitle className="truncate text-sm font-semibold">Code graph</DialogTitle>
               <p className="truncate text-[10px] text-(--color-text-subtle)">
-                {project.name} · architecture explorer
+                {scopeName} · architecture explorer
               </p>
             </div>
 
@@ -168,7 +189,7 @@ export function RepoGraphModal({ open, onOpenChange, project, onFileSelect }: Re
                 <strong className="font-mono font-semibold text-(--color-text)">{compactNumber(data?.total_edge_count ?? summary.relations)}</strong> relations
               </span>
               <span className="rounded-md bg-(--bg-key) px-2 py-1 text-[10px] text-(--color-text-muted)">
-                <strong className="font-mono font-semibold text-(--color-text)">{repos.length}</strong> repositories
+                <strong className="font-mono font-semibold text-(--color-text)">{repos.length}</strong> {repos.length === 1 ? 'repository' : 'repositories'}
               </span>
             </div>
 
@@ -278,7 +299,7 @@ export function RepoGraphModal({ open, onOpenChange, project, onFileSelect }: Re
               })}
             </div>
             <div className="space-y-2 border-t border-(--color-border-subtle) p-3 text-[9px] text-(--color-text-subtle)">
-              <div className="flex items-center justify-between"><span>Repository link</span><span className="h-px w-8 bg-(--accent-green)" /></div>
+              {project && <div className="flex items-center justify-between"><span>Cross-repository link</span><span className="h-px w-8 bg-(--accent-green)" /></div>}
               <div className="flex items-center justify-between"><span>Internal relation</span><span className="h-px w-8 bg-(--color-text-subtle)" /></div>
               <p className="pt-1 leading-relaxed">Drag to move · scroll to zoom · select a node to inspect</p>
             </div>
@@ -289,7 +310,7 @@ export function RepoGraphModal({ open, onOpenChange, project, onFileSelect }: Re
               <div className="flex h-full flex-col items-center justify-center px-6 text-center text-(--color-text-muted)">
                 <Network size={28} className="mb-3 text-(--color-text-subtle)" />
                 <p className="text-sm font-medium">No graph data yet</p>
-                <p className="mt-1 max-w-sm text-xs text-(--color-text-subtle)">Build the project index to discover symbols and relationships.</p>
+                <p className="mt-1 max-w-sm text-xs text-(--color-text-subtle)">Build the index to discover symbols and relationships.</p>
                 <button type="button" onClick={() => reindex(false)} className="mt-4 rounded-md bg-(--color-text) px-3 py-1.5 text-xs font-semibold text-(--bg-page)">Build index</button>
               </div>
             ) : graphQuery.isLoading ? (

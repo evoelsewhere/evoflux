@@ -76,6 +76,13 @@ def test_status_index_and_query_share_repository_target(
     assert body["hits"][0]["repository_path"] == str(repository)
     assert body["strategy"] == "code-index-vector-fts5-cross-repo"
 
+    graph = client.get("/api/code-context/graph-data", params=params)
+    assert graph.status_code == 200
+    graph_body = graph.json()
+    assert graph_body["repos"][0]["path"] == str(repository)
+    assert graph_body["nodes"]
+    assert graph_body["total_node_count"] >= len(graph_body["nodes"])
+
 
 def test_graph_action_rejects_prose_at_http_boundary(
     code_context_client: tuple[TestClient, Path],
