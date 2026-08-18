@@ -211,6 +211,23 @@ const TRAY_SESSION_MAX_LEN: usize = 60;
 /// controls immediately after the traffic-lights. ``traffic_light_position``
 /// must be set from Rust because the JSON config value is ignored when the
 /// window is built via ``WebviewWindowBuilder``.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn windows_acrylic_effects() -> tauri::utils::config::WindowEffectsConfig {
+    use tauri::{
+        utils::config::{Color, WindowEffectsConfig},
+        window::Effect,
+    };
+
+    WindowEffectsConfig {
+        // Acrylic is supported across Windows 10 and 11. The frontend
+        // reapplies its tint whenever EvoFlux's resolved theme changes.
+        effects: vec![Effect::Acrylic],
+        state: None,
+        radius: None,
+        color: Some(Color(250, 250, 250, 110)),
+    }
+}
+
 fn configure_window_chrome(
     builder: WebviewWindowBuilder<'_, tauri::Wry, AppHandle>,
 ) -> WebviewWindowBuilder<'_, tauri::Wry, AppHandle> {
@@ -238,7 +255,7 @@ fn configure_window_chrome(
     }
     #[cfg(target_os = "windows")]
     {
-        builder
+        builder.transparent(true).effects(windows_acrylic_effects())
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {

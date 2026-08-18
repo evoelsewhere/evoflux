@@ -187,7 +187,7 @@ export function SidebarShell({
           onDoubleClick={resetSidebarWidth}
         />
       )}
-      <div className="flex h-full flex-col gap-0.5 overflow-hidden">
+      <div className="flex h-full flex-col overflow-hidden">
         {!collapsed && children}
       </div>
     </aside>
