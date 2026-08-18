@@ -23,7 +23,7 @@
  * BrowserViewer keeps its own drag handle — only their configs are shared.
  */
 
-import { forwardRef, useEffect } from 'react'
+import { forwardRef, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import { X } from 'lucide-react'
@@ -32,6 +32,8 @@ import { useModalFocus } from '@/hooks/useModalFocus'
 import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { EASINGS, useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
+import { getResponsiveSidePanelLayout } from '@/lib/side-panel-layout'
+import { useUIStore } from '@/stores/useUIStore'
 
 interface SidePanelProps {
   /** localStorage key the resized width persists under. */
@@ -123,7 +125,33 @@ export const SidePanel = forwardRef<HTMLElement, SidePanelProps>(function SidePa
 }, ref) {
   const detectedMobile = useIsMobile()
   const motionPreset = useMotionPreset()
-  const breakpointOverlay = mobileOverlay && (mobileProp ?? detectedMobile)
+  const sidebarWidth = useUIStore((state) => state.sidebarWidth)
+  const sidebarCollapsed = useUIStore((state) => state.sidebarCollapsed)
+  const sidebarOverlay = useUIStore((state) => state.sidebarOverlay)
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === 'undefined' ? 1440 : window.innerWidth,
+  )
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+  const responsiveInFlow = !fillParent
+    && !forceOverlay
+    && !desktopOverlay
+    && !desktopOverlayInner
+  const responsiveLayout = getResponsiveSidePanelLayout({
+    viewportWidth,
+    sidebarWidth,
+    sidebarCollapsed,
+    sidebarOverlay,
+    minWidth,
+    maxWidth,
+    canOverlay: mobileOverlay,
+    inFlow: responsiveInFlow,
+  })
+  const breakpointOverlay = mobileOverlay
+    && ((mobileProp ?? detectedMobile) || responsiveLayout.overlay)
   const overlay = !fillParent && (forceOverlay || breakpointOverlay)
   const overlayModal = overlay && onClose != null
   const fixedDesktopDrawer = desktopOverlay && !overlay && !desktopOverlayInner
@@ -132,9 +160,10 @@ export const SidePanel = forwardRef<HTMLElement, SidePanelProps>(function SidePa
     storageKey,
     defaultWidth,
     minWidth,
-    maxWidth,
+    maxWidth: responsiveLayout.maxWidth,
     edge: 'left',
     disabled: overlay || fillParent,
+    preserveOutOfRange: true,
   })
   const width = widthOverride ?? resizable.width
 
@@ -175,23 +204,23 @@ export const SidePanel = forwardRef<HTMLElement, SidePanelProps>(function SidePa
       ? 'relative box-border flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden'
       : overlay
       ? cn(
-          'pointer-events-auto box-border flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-(--color-border) shadow-xl',
+          'pointer-events-auto box-border flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-(--color-border-subtle)/32 shadow-xl',
           forceOverlay
             ? 'h-full w-full max-w-none'
             : 'mobile-safe-top fixed inset-x-0 bottom-0 w-full max-w-none',
         )
       : forceOverlay
-      ? 'fixed inset-0 z-(--z-overlay) box-border min-h-0 min-w-0 w-full max-w-none overflow-hidden border-l border-(--color-border) shadow-xl'
+      ? 'fixed inset-0 z-(--z-overlay) box-border min-h-0 min-w-0 w-full max-w-none overflow-hidden border-l border-(--color-border-subtle)/32 shadow-xl'
       : fixedDesktopDrawer
       ? cn(
-          'fixed inset-y-0 right-0 z-(--z-overlay) box-border flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border)',
+          'fixed inset-y-0 right-0 z-(--z-overlay) box-border flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border-subtle)/32',
           desktopOverlayShadow ? 'shadow-xl' : 'shadow-none',
         )
       : desktopOverlayInner && !overlay
-      ? 'relative box-border flex h-full min-h-0 min-w-0 shrink-0 flex-col border-l border-(--color-border)'
+      ? 'relative box-border flex h-full min-h-0 min-w-0 shrink-0 flex-col border-l border-(--color-border-subtle)/32'
       : mobileOverlay
-      ? 'fixed bottom-0 right-0 z-(--z-overlay) box-border min-h-0 min-w-0 w-full overflow-hidden border-l border-(--color-border) shadow-xl md:relative md:inset-y-auto md:right-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none'
-      : 'relative box-border flex h-full min-w-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border)',
+      ? 'fixed bottom-0 right-0 z-(--z-overlay) box-border min-h-0 min-w-0 w-full overflow-hidden border-l border-(--color-border-subtle)/32 shadow-xl md:relative md:inset-y-auto md:right-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none'
+      : 'relative box-border flex h-full min-w-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border-subtle)/32',
     !overlay && breakpointOverlay && !forceOverlay && 'mobile-safe-top max-w-none',
     !overlay && forceOverlay && 'max-w-none',
     className,
