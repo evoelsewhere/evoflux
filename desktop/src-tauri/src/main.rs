@@ -696,6 +696,148 @@ fn browser_navigation_url(value: &str) -> Result<url::Url, String> {
     Ok(parsed)
 }
 
+#[cfg(target_os = "macos")]
+fn send_native_browser_pointer(action: &str, x: f64, y: f64, button: &str) -> Result<(), String> {
+    use core_graphics::event::{CGEvent, CGEventTapLocation, CGEventType, CGMouseButton};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+    use core_graphics::geometry::CGPoint;
+
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "Could not create macOS input event source".to_string())?;
+    let point = CGPoint::new(x, y);
+    let mouse_button = match button {
+        "right" => CGMouseButton::Right,
+        "middle" => CGMouseButton::Center,
+        _ => CGMouseButton::Left,
+    };
+    let (down, up) = match mouse_button {
+        CGMouseButton::Right => (CGEventType::RightMouseDown, CGEventType::RightMouseUp),
+        CGMouseButton::Center => (CGEventType::OtherMouseDown, CGEventType::OtherMouseUp),
+        CGMouseButton::Left => (CGEventType::LeftMouseDown, CGEventType::LeftMouseUp),
+    };
+    CGEvent::new_mouse_event(source.clone(), CGEventType::MouseMoved, point, mouse_button)
+        .map_err(|_| "Could not create macOS pointer move".to_string())?
+        .post(CGEventTapLocation::HID);
+    if action == "hover" {
+        return Ok(());
+    }
+    let clicks = if action == "dblclick" { 2 } else { 1 };
+    for _ in 0..clicks {
+        CGEvent::new_mouse_event(source.clone(), down, point, mouse_button)
+            .map_err(|_| "Could not create macOS pointer down".to_string())?
+            .post(CGEventTapLocation::HID);
+        std::thread::sleep(Duration::from_millis(42));
+        CGEvent::new_mouse_event(source.clone(), up, point, mouse_button)
+            .map_err(|_| "Could not create macOS pointer up".to_string())?
+            .post(CGEventTapLocation::HID);
+        std::thread::sleep(Duration::from_millis(58));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn send_native_browser_pointer(action: &str, x: f64, y: f64, button: &str) -> Result<(), String> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        mouse_event, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN,
+        MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
+
+    unsafe { SetCursorPos(x.round() as i32, y.round() as i32) }
+        .map_err(|error| format!("Could not move Windows pointer: {error}"))?;
+    if action == "hover" {
+        return Ok(());
+    }
+    let (down, up) = match button {
+        "right" => (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP),
+        "middle" => (MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP),
+        _ => (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP),
+    };
+    let clicks = if action == "dblclick" { 2 } else { 1 };
+    for _ in 0..clicks {
+        unsafe { mouse_event(down, 0, 0, 0, 0) };
+        std::thread::sleep(Duration::from_millis(42));
+        unsafe { mouse_event(up, 0, 0, 0, 0) };
+        std::thread::sleep(Duration::from_millis(58));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn send_native_browser_pointer(
+    _action: &str,
+    _x: f64,
+    _y: f64,
+    _button: &str,
+) -> Result<(), String> {
+    Err("Native browser pointer injection is unavailable on this platform".into())
+}
+
+async fn run_native_browser_pointer_action(
+    app: &AppHandle,
+    label: &str,
+    action: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let target = eval_browser_webview_action(app, label, "native_target", params).await?;
+    let webview = app_browser_webview(app, label)?;
+    let child_position = webview
+        .position()
+        .map_err(|error| format!("Could not read browser position: {error}"))?;
+    let child_size = webview
+        .size()
+        .map_err(|error| format!("Could not read browser size: {error}"))?;
+    let window = webview.window();
+    let window_position = window
+        .inner_position()
+        .map_err(|error| format!("Could not read browser window position: {error}"))?;
+    let viewport_width = target
+        .get("viewport_width")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(child_size.width as f64)
+        .max(1.0);
+    let viewport_height = target
+        .get("viewport_height")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(child_size.height as f64)
+        .max(1.0);
+    let css_x = target
+        .get("x")
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| "Native pointer target has no x coordinate".to_string())?;
+    let css_y = target
+        .get("y")
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| "Native pointer target has no y coordinate".to_string())?;
+    let mut screen_x = window_position.x as f64
+        + child_position.x as f64
+        + css_x * child_size.width as f64 / viewport_width;
+    let mut screen_y = window_position.y as f64
+        + child_position.y as f64
+        + css_y * child_size.height as f64 / viewport_height;
+    #[cfg(target_os = "macos")]
+    if let Ok(Some(monitor)) = window.current_monitor() {
+        let scale = monitor.scale_factor().max(1.0);
+        screen_x /= scale;
+        screen_y /= scale;
+    }
+    let _ = window.set_focus();
+    let _ = webview.set_focus();
+    tokio::time::sleep(Duration::from_millis(25)).await;
+    let button = params
+        .get("button")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("left");
+    send_native_browser_pointer(action, screen_x, screen_y, button)?;
+    Ok(serde_json::json!({
+        "trusted": true,
+        "action": action,
+        "target": target.get("description"),
+        "x": css_x,
+        "y": css_y,
+    }))
+}
+
 #[tauri::command]
 async fn app_browser_webview_navigate(
     app: AppHandle,
@@ -1052,6 +1194,14 @@ async fn app_browser_webview_agent_action(
     }
     if action == "cookies" {
         return manage_browser_cookies(&app, &label, &params);
+    }
+    if matches!(action.as_str(), "click" | "dblclick" | "hover" | "click_at") {
+        match run_native_browser_pointer_action(&app, &label, &action, &params).await {
+            Ok(result) => return Ok(result),
+            Err(error) => {
+                log::debug!("native browser pointer fallback action={action} error={error}");
+            }
+        }
     }
     eval_browser_webview_action(&app, &label, &action, &params).await
 }
@@ -1629,6 +1779,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         "debug_summary",
         "evaluate",
         "element_rect",
+        "native_target",
         "exists",
         "probe",
         "status",
@@ -1902,6 +2053,21 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         if (!element) throw new Error('Element not found; run snapshot again or provide a selector');
                         const rect = element.getBoundingClientRect();
                         return {{ x: Math.max(0, rect.x), y: Math.max(0, rect.y), width: rect.width, height: rect.height, viewport_width: innerWidth, viewport_height: innerHeight }};
+                    }}
+
+                    if (action === 'native_target') {{
+                        let x = Number(params.x);
+                        let y = Number(params.y);
+                        let element = Number.isFinite(x) && Number.isFinite(y) ? document.elementFromPoint(x, y) : resolveElement();
+                        if (!element) throw new Error('Native pointer target not found');
+                        if (!Number.isFinite(x) || !Number.isFinite(y)) {{
+                            element.scrollIntoView({{ block: 'center', inline: 'center' }});
+                            const rect = element.getBoundingClientRect();
+                            x = rect.left + rect.width / 2;
+                            y = rect.top + rect.height / 2;
+                        }}
+                        globalThis.__evofluxEnsureAgentCursor().move(x, y, action === 'hover' ? 'move' : 'release');
+                        return {{ x, y, viewport_width: innerWidth, viewport_height: innerHeight, description: describe(element) }};
                     }}
 
                     if (action === 'click') {{
@@ -4593,6 +4759,7 @@ mod tests {
             "debug_summary",
             "evaluate",
             "element_rect",
+            "native_target",
             "exists",
             "probe",
             "status",

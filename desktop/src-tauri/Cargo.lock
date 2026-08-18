@@ -1315,6 +1315,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "block2 0.6.2",
+ "core-graphics",
  "file_icon_provider",
  "log",
  "mime_guess",
