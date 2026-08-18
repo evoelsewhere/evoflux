@@ -84,8 +84,9 @@ class SandboxFileConfig(BaseModel):
     load_shell_profile: bool = Field(
         default=False,
         description=(
-            "Source the user's zsh/bash profile before shell commands. Profiles "
-            "may execute code or export secrets."
+            "Source the full zsh/bash profile before shell commands. PATH is "
+            "discovered separately even when this is disabled; enabling it also "
+            "imports aliases, functions, and other exports that may include secrets."
         ),
     )
     outbound_data_policy: Literal["block", "redact", "off"] = Field(

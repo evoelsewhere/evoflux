@@ -23,6 +23,7 @@ from app.agent.errors import ToolExecutionError
 from app.agent.sandbox import SandboxConfig, set_sandbox
 from app.agent.tools.builtin.shell import (
     _PYTHON_ENV_LEAK_KEYS,
+    _command_env,
     _scrubbed_env,
     _shell,
     _tail_text,
@@ -210,6 +211,39 @@ def test_scrubbed_env_leak_keys_covers_known_offenders():
         "UV_PROJECT_ENVIRONMENT",
     }
     assert expected.issubset(_PYTHON_ENV_LEAK_KEYS)
+
+
+@_posix_only
+def test_command_env_uses_only_path_from_login_profile(monkeypatch):
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-leak")
+    monkeypatch.setattr(
+        "app.agent.tools.builtin.shell.discover_login_path",
+        lambda _shell: "/usr/local/bin:/usr/bin:/bin",
+    )
+
+    env = _command_env("/bin/zsh")
+
+    assert env["PATH"] == "/usr/local/bin:/usr/bin:/bin"
+    assert env["SHELL"] == "/bin/zsh"
+    assert "OPENAI_API_KEY" not in env
+
+
+def test_command_env_preserves_windows_path_without_profile_probe(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("PATH", r"C:\Program Files\nodejs;C:\Windows\System32")
+    monkeypatch.setenv("SYSTEMROOT", r"C:\Windows")
+    monkeypatch.setenv("EVOFLUX_DESKTOP_TOKEN", "internal")
+    monkeypatch.setattr(
+        "app.agent.tools.builtin.shell.discover_login_path",
+        lambda _shell: r"C:\Program Files\nodejs;C:\Windows\System32",
+    )
+
+    env = _command_env("cmd.exe")
+
+    assert env["PATH"] == r"C:\Program Files\nodejs;C:\Windows\System32"
+    assert env["SYSTEMROOT"] == r"C:\Windows"
+    assert "EVOFLUX_DESKTOP_TOKEN" not in env
 
 
 @_posix_only
