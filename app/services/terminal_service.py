@@ -37,6 +37,12 @@ from typing import Any
 
 from loguru import logger
 
+from app.services.user_shell import (
+    interactive_login_argv,
+    resolve_login_shell,
+    user_terminal_environment,
+)
+
 if sys.platform != "win32":
     # POSIX-only PTY plumbing; the Windows path (ConPTY via pywinpty) uses
     # none of these. Gated so the module imports cleanly on Windows.
@@ -272,7 +278,7 @@ class TerminalManager:
         cols: int,
         rows: int,
     ) -> TerminalSession:
-        shell = os.environ.get("SHELL") or "/bin/bash"
+        shell = resolve_login_shell()
         # A missing cwd would make the shell spawn raise — fall back to $HOME
         # so a terminal always opens even if the workspace dir isn't there yet.
         if not os.path.isdir(cwd):
@@ -280,7 +286,7 @@ class TerminalManager:
         master_fd, slave_fd = os.openpty()
         _set_winsize(master_fd, rows, cols)
 
-        child_env = self._child_env(session_id, env)
+        child_env = self._child_env(session_id, env, shell=shell)
 
         def _child_setup() -> None:
             # New session + make the slave our controlling terminal so job
@@ -340,7 +346,7 @@ class TerminalManager:
                 "(pip install pywinpty)"
             ) from exc
 
-        shell = os.environ.get("COMSPEC") or "cmd.exe"
+        shell = resolve_login_shell()
         # Same fallback as POSIX: never let a missing workspace dir keep the
         # terminal from opening.
         if not os.path.isdir(cwd):
@@ -352,7 +358,7 @@ class TerminalManager:
             cwd=cwd,
             # pywinpty's low-level spawn takes the raw CreateProcessW
             # environment string, not a dict.
-            env=_env_block(self._child_env(session_id, env)),
+            env=_env_block(self._child_env(session_id, env, shell=shell)),
         )
 
         backend = _ConPty(proc, asyncio.get_running_loop())
@@ -376,10 +382,17 @@ class TerminalManager:
         return session
 
     @staticmethod
-    def _child_env(session_id: str, env: dict[str, str] | None) -> dict[str, str]:
-        child_env = os.environ.copy()
+    def _child_env(
+        session_id: str,
+        env: dict[str, str] | None,
+        *,
+        shell: str | None = None,
+    ) -> dict[str, str]:
+        child_env = user_terminal_environment()
         child_env["TERM"] = "xterm-256color"
         child_env["EVOFLUX_SESSION"] = session_id
+        if shell and sys.platform != "win32":
+            child_env["SHELL"] = shell
         if env:
             child_env.update(env)
         return child_env
@@ -482,9 +495,7 @@ class TerminalManager:
                         queue.get(), timeout=min(idle_s, remaining)
                     )
                 except asyncio.TimeoutError:
-                    captured = _strip_ansi(
-                        b"".join(chunks).decode("utf-8", "replace")
-                    )
+                    captured = _strip_ansi(b"".join(chunks).decode("utf-8", "replace"))
                     # Interactive PTYs echo submitted input before the command
                     # starts producing output. Under load that echo can be
                     # followed by a quiet period longer than ``idle_s``; do not
@@ -612,10 +623,8 @@ def _is_command_echo_only(captured: str, command: str) -> bool:
 
 
 def _shell_argv(shell: str) -> list[str]:
-    """Interactive-shell argv: bash/sh/zsh get ``-i`` to force a prompt."""
-    if os.path.basename(shell) in ("bash", "sh", "zsh"):
-        return [shell, "-i"]
-    return [shell]
+    """Interactive login-shell argv for the human-facing terminal."""
+    return interactive_login_argv(shell)
 
 
 def _env_block(env: dict[str, str]) -> str:

@@ -266,6 +266,8 @@ async def test_spawn_windows_uses_comspec_and_conpty(
     fake_winpty, monkeypatch, tmp_path
 ):
     monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
+    monkeypatch.setenv("EVOFLUX_DESKTOP_TOKEN", "secret")
+    monkeypatch.setenv("PYTHONPATH", r"C:\bundled\site-packages")
 
     manager = TerminalManager()
     session = manager.attach(
@@ -283,6 +285,8 @@ async def test_spawn_windows_uses_comspec_and_conpty(
     assert env.endswith("\0")
     assert env_map["EVOFLUX_SESSION"] == "s1"
     assert env_map["EVOFLUX_MODE"] == "work"
+    assert "EVOFLUX_DESKTOP_TOKEN" not in env_map
+    assert "PYTHONPATH" not in env_map
 
     # write() encodes bytes → str and normalizes Enter to CR for ConPTY/cmd.
     manager.write("s1", b"dir\r\n")
@@ -508,9 +512,7 @@ async def test_run_command_does_not_treat_input_echo_as_completion():
         manager._handle_data(session, b"delayed\r\nprompt> ")
 
     feeder = asyncio.create_task(feed())
-    output = await manager.run_command(
-        "s1", "echo delayed", timeout_s=2, idle_s=0.05
-    )
+    output = await manager.run_command("s1", "echo delayed", timeout_s=2, idle_s=0.05)
     await feeder
 
     assert "delayed\nprompt>" in output
@@ -520,9 +522,9 @@ async def test_run_command_does_not_treat_input_echo_as_completion():
 @pytest.mark.parametrize(
     ("shell", "argv"),
     [
-        ("/bin/bash", ["/bin/bash", "-i"]),
+        ("/bin/bash", ["/bin/bash", "-il"]),
         ("/bin/sh", ["/bin/sh", "-i"]),
-        ("/usr/bin/zsh", ["/usr/bin/zsh", "-i"]),
+        ("/usr/bin/zsh", ["/usr/bin/zsh", "-il"]),
         ("/usr/bin/fish", ["/usr/bin/fish"]),
         ("pwsh", ["pwsh"]),
     ],
@@ -539,3 +541,24 @@ def test_env_block_is_nul_joined_createprocess_format():
         "A": "1",
         "B": "two",
     }
+
+
+def test_child_env_scrubs_sidecar_runtime_and_keeps_terminal_context(monkeypatch):
+    monkeypatch.setenv("EVOFLUX_DESKTOP_TOKEN", "secret")
+    monkeypatch.setenv("PYTHONPATH", "/bundled/site-packages")
+    monkeypatch.setenv("VIRTUAL_ENV", "/bundled/venv")
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+
+    env = TerminalManager._child_env(
+        "session-1",
+        {"EVOFLUX_MODE": "coding"},
+        shell="/bin/zsh",
+    )
+
+    assert env["PATH"] == "/usr/bin:/bin"
+    assert env["SHELL"] == "/bin/zsh"
+    assert env["EVOFLUX_SESSION"] == "session-1"
+    assert env["EVOFLUX_MODE"] == "coding"
+    assert "EVOFLUX_DESKTOP_TOKEN" not in env
+    assert "PYTHONPATH" not in env
+    assert "VIRTUAL_ENV" not in env

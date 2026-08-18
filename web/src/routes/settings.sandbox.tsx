@@ -363,7 +363,7 @@ export function SandboxSettingsPage() {
           />
           <SettingsRow
             label="Load shell profile"
-            description="Source .zshrc or .bashrc before commands. Profiles can execute code and export credentials, so this is disabled by default."
+            description="Source the full .zshrc or .bashrc before commands. PATH is discovered separately; enable this only for aliases, functions, and other exports that may include credentials."
             control={
               <Switch
                 checked={draft.loadShellProfile}
