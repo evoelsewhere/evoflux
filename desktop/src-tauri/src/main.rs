@@ -213,18 +213,15 @@ const TRAY_SESSION_MAX_LEN: usize = 60;
 /// window is built via ``WebviewWindowBuilder``.
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 fn windows_acrylic_effects() -> tauri::utils::config::WindowEffectsConfig {
-    use tauri::{
-        utils::config::{Color, WindowEffectsConfig},
-        window::Effect,
-    };
+    use tauri::{utils::config::WindowEffectsConfig, window::Effect};
 
     WindowEffectsConfig {
-        // Acrylic is supported across Windows 10 and 11. The frontend
-        // reapplies its tint whenever EvoFlux's resolved theme changes.
+        // Acrylic is supported across Windows 10 and 11. Keep its native blur
+        // untinted; the transparent WebView supplies the resolved app palette.
         effects: vec![Effect::Acrylic],
         state: None,
         radius: None,
-        color: Some(Color(250, 250, 250, 110)),
+        color: None,
     }
 }
 
@@ -241,8 +238,10 @@ fn configure_window_chrome(
         builder
             .transparent(true)
             .effects(WindowEffectsConfig {
-                effects: vec![Effect::Sidebar],
-                state: Some(EffectState::FollowsWindowActiveState),
+                // Under-window material gives the transparent sidebar and
+                // Settings rail a stronger native blur than Sidebar material.
+                effects: vec![Effect::UnderWindowBackground],
+                state: Some(EffectState::Active),
                 radius: Some(12.0),
                 color: None,
             })
