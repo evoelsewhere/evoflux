@@ -18,6 +18,7 @@
   [![BYOM](https://img.shields.io/badge/Models-12%20providers-7C3AED)](#bring-your-own-model)
 
   [Two modes](#two-specialized-modes) ·
+  [Download](#download) ·
   [Quick start](#quick-start) ·
   [Working model](#agent-working-model) ·
   [Architecture](#architecture) ·
@@ -73,11 +74,33 @@ Coding opens your real repository — or several repositories as one project —
 
 ---
 
+## Download
+
+Current stable release: **[EvoFlux v0.0.6](https://github.com/evoelsewhere/evoflux/releases/tag/v0.0.6)**
+
+| Platform | Package | SHA-256 |
+|---|---|---|
+| macOS · Apple Silicon | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux_0.0.6_aarch64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/evoflux-macos-apple-silicon-SHA256SUMS.txt) |
+| macOS · Intel | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux_0.0.6_x64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/evoflux-macos-intel-SHA256SUMS.txt) |
+| Windows · x64 | [Download installer](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux_0.0.6_x64-setup.exe) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/evoflux-windows-x64-SHA256SUMS.txt) |
+| Chrome / Edge WebBridge · v2.4.0 | [Download extension ZIP](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux-WebBridge-2.4.0.zip) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux-WebBridge-2.4.0-SHA256SUMS.txt) |
+
+The desktop packages include the native Python sidecar. To install WebBridge,
+extract the ZIP, open `chrome://extensions` or `edge://extensions`, enable
+**Developer mode**, and choose **Load unpacked**.
+
+> [!NOTE]
+> The v0.0.6 macOS packages use an ad-hoc signature and the Windows installer
+> is unsigned because production signing credentials are not yet configured.
+
+---
+
 ## Quick Start
 
 ### Install the desktop app
 
-Download the [latest release](https://github.com/evoelsewhere/evoflux/releases/latest) for macOS (`.dmg`), Windows (`-setup.exe`), or Linux (`.deb` / AppImage). The packaged app includes its Python sidecar.
+Choose the package for your platform in [Download](#download), install it, and
+launch EvoFlux. The packaged app includes its Python sidecar.
 
 On first launch:
 
