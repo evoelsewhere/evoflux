@@ -234,6 +234,32 @@ export function SidebarModeSlot({ className }: { className?: string }) {
   return <div aria-hidden="true" className={cn('h-9 shrink-0', className)} />
 }
 
+/** Canonical vertical rhythm for the primary action rows in every mode sidebar. */
+export function SidebarNavGroup({
+  ariaLabel,
+  compact = false,
+  className,
+  children,
+}: {
+  ariaLabel: string
+  compact?: boolean
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <nav
+      aria-label={ariaLabel}
+      className={cn(
+        'flex shrink-0 flex-col',
+        compact ? 'gap-0.5' : 'gap-1',
+        className,
+      )}
+    >
+      {children}
+    </nav>
+  )
+}
+
 /**
  * Fake search input that opens the command palette (Ctrl+P). Canonical
  * background is `bg-(--bg-page)` (the work variant).

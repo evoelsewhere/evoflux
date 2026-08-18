@@ -97,6 +97,7 @@ import { isTransientNetworkError } from "@/utils/errors";
 import {
   SidebarShell,
   SidebarCard,
+  SidebarNavGroup,
   SidebarSearchTrigger,
   SidebarFooter,
   SidebarModeSlot,
@@ -1212,7 +1213,7 @@ export function CodingSidebar({
   const navigatorContent = (
     <>
       {/* PROJECTS */}
-      <div className="px-2 pb-1 pt-2">
+      <div className={cn("px-2 pb-1", isDrawer ? "pt-2" : "pt-0")}>
         <CollapsibleSection
           label="Projects"
           collapsed={projectsSectionCollapsed}
@@ -1632,39 +1633,41 @@ export function CodingSidebar({
       resizeLabel="Resize coding sidebar"
     >
       <SidebarCard
-        className={`shrink-0 px-2.5 pb-1 ${isMacOverlay ? 'pt-10' : 'pt-1.5'}`}
+        className={`shrink-0 px-2.5 pb-0 ${isMacOverlay ? 'pt-10' : 'pt-1.5'}`}
       >
         <SidebarModeSlot />
         {onCommandPalette && (
-          <div className="pt-1.5">
+          <div className="pt-1">
             <SidebarSearchTrigger onClick={onCommandPalette} compact />
           </div>
         )}
       </SidebarCard>
 
       {/* Scheduler toggle */}
-      <SidebarCard className="shrink-0 px-1.5 py-0.5">
-        <SidebarItem
-          Icon={CalendarClock}
-          label="Scheduler"
-          kbd="^S"
-          compact
-          onClick={toggleScheduler}
-        />
-        <SidebarItem
-          Icon={Blocks}
-          label="Plugins"
-          kbd="^K"
-          compact
-          onClick={() => togglePlugins("plugins")}
-        />
-        <SidebarItem
-          Icon={GitBranch}
-          label="Source Control"
-          kbd="^G"
-          compact
-          onClick={() => toggleSourceControl("source-control")}
-        />
+      <SidebarCard className="shrink-0">
+        <SidebarNavGroup ariaLabel="Primary" compact className="px-1.5 pb-0.5 pt-1">
+          <SidebarItem
+            Icon={CalendarClock}
+            label="Scheduler"
+            kbd="^S"
+            compact
+            onClick={toggleScheduler}
+          />
+          <SidebarItem
+            Icon={Blocks}
+            label="Plugins"
+            kbd="^K"
+            compact
+            onClick={() => togglePlugins("plugins")}
+          />
+          <SidebarItem
+            Icon={GitBranch}
+            label="Source Control"
+            kbd="^G"
+            compact
+            onClick={() => toggleSourceControl("source-control")}
+          />
+        </SidebarNavGroup>
       </SidebarCard>
 
       {/* Unified workspace navigator */}
@@ -1720,7 +1723,7 @@ export function CodingSidebar({
       </div>
 
       {/* Scheduler toggle — mobile */}
-      <div className="px-3 pt-2">
+      <SidebarNavGroup ariaLabel="Primary" className="px-3 pt-2">
         <SidebarItem
           Icon={CalendarClock}
           label="Scheduler"
@@ -1748,7 +1751,7 @@ export function CodingSidebar({
             onMobileClose?.();
           }}
         />
-      </div>
+      </SidebarNavGroup>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {navigatorContent}

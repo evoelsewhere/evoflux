@@ -38,6 +38,7 @@ import { usePinnedSessions } from "@/stores/usePinnedSessions";
 import {
   SidebarShell,
   SidebarCard,
+  SidebarNavGroup,
   SidebarShellDivider,
   SidebarSearchTrigger,
   SidebarFooter,
@@ -689,11 +690,11 @@ export function Sidebar({
             <SidebarModeSlot />
           </div>
           {onCommandPalette && (
-            <div className="px-2 pt-1.5">
+            <div className="px-2 pt-1">
               <SidebarSearchTrigger onClick={onCommandPalette} compact />
             </div>
           )}
-          <nav aria-label="Primary" className="space-y-0.5 px-1.5 pb-1 pt-1.5">
+          <SidebarNavGroup ariaLabel="Primary" compact className="px-1.5 pb-1 pt-1">
             <SidebarItem
               Icon={Plus}
               label="New Chat"
@@ -715,7 +716,7 @@ export function Sidebar({
               compact
               onClick={() => togglePlugins("plugins")}
             />
-          </nav>
+          </SidebarNavGroup>
         </div>
 
         {/* ─── Sessions section ─── */}
@@ -781,7 +782,7 @@ export function Sidebar({
       </div>
 
       {/* Nav */}
-      <nav aria-label="Primary" className="space-y-0.5 px-1.5 pb-1.5 pt-1.5">
+      <SidebarNavGroup ariaLabel="Primary" className="px-1.5 pb-1.5 pt-1.5">
         <SidebarItem
           Icon={Plus}
           label="New Chat"
@@ -800,7 +801,7 @@ export function Sidebar({
           kbd="^K"
           onClick={() => { togglePlugins("plugins"); onMobileClose?.(); }}
         />
-      </nav>
+      </SidebarNavGroup>
 
       {/* Sessions */}
       <AnimatePresence>
