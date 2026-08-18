@@ -59,6 +59,10 @@ export const queryKeys = {
       ['code-context', workspace, 'search', query] as const,
     query: (workspace: string, query: string) =>
       ['code-context', workspace, 'query', query] as const,
+    data: (workspace: string, nodeLimit?: number, edgeLimit?: number) =>
+      nodeLimit === undefined && edgeLimit === undefined
+        ? (['code-context', workspace, 'data'] as const)
+        : (['code-context', workspace, 'data', nodeLimit, edgeLimit] as const),
   },
   // File references for the input bar's @-mention picker. Keyed by the
   // workspace path (coding mode) or session id (normal mode) so the two
