@@ -294,6 +294,10 @@ class ResizeAction(BaseModel):
     color_scheme: Literal["light", "dark"] | None = None
 
 
+class ResetViewportAction(BaseModel):
+    action: Literal["reset_viewport"]
+
+
 class ZoomAction(BaseModel):
     action: Literal["zoom"]
     percent: int = Field(ge=25, le=500)
@@ -403,6 +407,7 @@ AnyAction = Annotated[
     | HttpAction
     | DebugSummaryAction
     | ResizeAction
+    | ResetViewportAction
     | ZoomAction
     | PrintAction
     | EvaluateAction
@@ -431,7 +436,7 @@ Navigate: navigate, back, forward, reload, wait by selector/text/URL/load state,
 scroll, scroll_into_view.
 Interact: click, click_at, dblclick, hover, focus, fill, type, clear, submit,
 press, select, set_checked, drag, dispatch_event.
-Viewport: resize, zoom, print.
+Viewport: resize to an exact responsive-test size, reset_viewport, zoom, print.
 Tabs: new_tab, close_tab, get_tabs, switch_tab, start, stop.
 
 Preferred workflow: navigate → wait → snapshot/query → inspect/interact by index
