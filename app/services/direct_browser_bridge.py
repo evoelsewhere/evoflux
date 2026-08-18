@@ -19,6 +19,7 @@ class DirectBrowserUnavailable(RuntimeError):
 class _Connection:
     websocket: WebSocket
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    command_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     pending: dict[str, asyncio.Future[Any]] = field(default_factory=dict)
     ready: bool = False
 
@@ -137,19 +138,20 @@ class DirectBrowserBridge:
                 "Open the Browser panel in the EvoFlux desktop app first"
             )
 
-        request_id = uuid4().hex
-        future = asyncio.get_running_loop().create_future()
-        connection.pending[request_id] = future
-        try:
-            async with connection.send_lock:
-                await connection.websocket.send_json(
-                    {"id": request_id, "action": action, "params": params}
-                )
-            return await asyncio.wait_for(future, timeout=timeout)
-        except TimeoutError as exc:
-            raise TimeoutError(f"Browser command timed out: {action}") from exc
-        finally:
-            connection.pending.pop(request_id, None)
+        async with connection.command_lock:
+            request_id = uuid4().hex
+            future = asyncio.get_running_loop().create_future()
+            connection.pending[request_id] = future
+            try:
+                async with connection.send_lock:
+                    await connection.websocket.send_json(
+                        {"id": request_id, "action": action, "params": params}
+                    )
+                return await asyncio.wait_for(future, timeout=timeout)
+            except TimeoutError as exc:
+                raise TimeoutError(f"Browser command timed out: {action}") from exc
+            finally:
+                connection.pending.pop(request_id, None)
 
 
 direct_browser_bridge = DirectBrowserBridge()

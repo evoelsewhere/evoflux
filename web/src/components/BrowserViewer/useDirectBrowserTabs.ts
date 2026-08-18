@@ -91,6 +91,7 @@ export function useDirectBrowserTabs({
   ) => Promise<unknown>>(async () => {
     throw new Error('Browser is not ready')
   })
+  const commandQueueRef = useRef<Promise<void>>(Promise.resolve())
   const counterRef = useRef(0)
   const boundsRef = useRef<NativeBounds | null>(null)
   const viewportOverrideRef = useRef<BrowserViewportOverride | null>(null)
@@ -680,21 +681,23 @@ export function useDirectBrowserTabs({
         const params = message.params && typeof message.params === 'object'
           ? message.params as Record<string, unknown>
           : {}
-        void agentHandlerRef.current(action, params)
-          .then((result) => {
-            if (socket?.readyState === WebSocket.OPEN) {
-              socket.send(JSON.stringify({ id, ok: true, result }))
+        const commandSocket = event.currentTarget as WebSocket
+        commandQueueRef.current = commandQueueRef.current.then(async () => {
+          try {
+            const result = await agentHandlerRef.current(action, params)
+            if (commandSocket.readyState === WebSocket.OPEN) {
+              commandSocket.send(JSON.stringify({ id, ok: true, result }))
             }
-          })
-          .catch((error) => {
-            if (socket?.readyState === WebSocket.OPEN) {
-              socket.send(JSON.stringify({
+          } catch (error) {
+            if (commandSocket.readyState === WebSocket.OPEN) {
+              commandSocket.send(JSON.stringify({
                 id,
                 ok: false,
                 error: error instanceof Error ? error.message : String(error),
               }))
             }
-          })
+          }
+        })
       }
       socket.onclose = () => {
         setAgentConnected(false)

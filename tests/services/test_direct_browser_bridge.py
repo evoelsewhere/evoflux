@@ -56,6 +56,37 @@ async def test_bridge_round_trip() -> None:
 
 
 @pytest.mark.asyncio
+async def test_bridge_serializes_concurrent_browser_commands() -> None:
+    bridge = DirectBrowserBridge()
+    websocket = _FakeWebSocket()
+    attach_task = asyncio.create_task(bridge.attach("session-1", websocket))
+    await websocket.received.put({"type": "ready", "version": 1})
+    await asyncio.sleep(0)
+
+    first = asyncio.create_task(
+        bridge.request("session-1", "navigate", {"url": "https://a.test"})
+    )
+    second = asyncio.create_task(bridge.request("session-1", "click", {"index": 1}))
+    first_command = await websocket.sent.get()
+    await asyncio.sleep(0)
+    assert websocket.sent.empty()
+
+    await websocket.received.put(
+        {"id": first_command["id"], "ok": True, "result": "first"}
+    )
+    assert await first == "first"
+    second_command = await websocket.sent.get()
+    assert second_command["action"] == "click"
+    await websocket.received.put(
+        {"id": second_command["id"], "ok": True, "result": "second"}
+    )
+    assert await second == "second"
+
+    await websocket.received.put(None)
+    await attach_task
+
+
+@pytest.mark.asyncio
 async def test_bridge_requires_connected_browser() -> None:
     bridge = DirectBrowserBridge()
 
