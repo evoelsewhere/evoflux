@@ -615,11 +615,17 @@ export function useDirectBrowserTabs({
         desktop: [1280, 800],
       }
       const preset = typeof params.preset === 'string' ? presets[params.preset] : undefined
-      const width = preset?.[0] ?? Number(params.width)
-      const height = preset?.[1] ?? Number(params.height)
+      let width = preset?.[0] ?? Number(params.width)
+      let height = preset?.[1] ?? Number(params.height)
       if (!Number.isFinite(width) || !Number.isFinite(height)) {
         throw new Error('resize requires a preset or width and height')
       }
+      const orientation = params.orientation === 'landscape' ? 'landscape' : 'portrait'
+      if (orientation === 'landscape' && height > width) [width, height] = [height, width]
+      if (orientation === 'portrait' && width > height) [width, height] = [height, width]
+      const presetMobile = params.preset === 'mobile' || params.preset === 'tablet'
+      const mobile = typeof params.mobile === 'boolean' ? params.mobile : presetMobile
+      const touch = typeof params.touch === 'boolean' ? params.touch : presetMobile
       viewportOverrideRef.current = {
         width: Math.max(200, Math.min(4000, width)),
         height: Math.max(200, Math.min(4000, height)),
@@ -629,14 +635,19 @@ export function useDirectBrowserTabs({
       // synchronizer keeps the same override stable as app chrome moves.
       boundsRef.current = null
       await applyAgentViewport(tab.id)
-      if (params.color_scheme) {
-        await invokeFor('app_browser_webview_agent_action', tab.label, {
-          action: 'evaluate',
-          params: {
-            script: `() => { document.documentElement.style.colorScheme = ${JSON.stringify(params.color_scheme)}; return 'color-scheme ${String(params.color_scheme)}'; }`,
-          },
-        })
-      }
+      await invokeFor('app_browser_webview_agent_action', tab.label, {
+        action: 'set_emulation',
+        params: {
+          width,
+          height,
+          device_scale_factor: Number(params.device_scale_factor) || 1,
+          mobile,
+          touch,
+          orientation,
+          color_scheme: params.color_scheme,
+          user_agent: params.user_agent,
+        },
+      })
       return `Resized in-app browser to ${Math.round(width)}x${Math.round(height)}`
     }
     if (action === 'reset_viewport') {
@@ -645,6 +656,10 @@ export function useDirectBrowserTabs({
       viewportScaleRef.current = 1
       boundsRef.current = null
       await applyAgentViewport(tab.id)
+      await invokeFor('app_browser_webview_agent_action', tab.label, {
+        action: 'reset_emulation',
+        params: {},
+      })
       return 'Reset in-app browser viewport to the panel size'
     }
     if (action === 'zoom') {

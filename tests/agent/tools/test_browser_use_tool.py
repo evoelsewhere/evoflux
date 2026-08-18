@@ -359,5 +359,10 @@ async def test_expanded_control_and_debug_actions_are_forwarded(monkeypatch) -> 
         "await_promise": True,
         "timeout_ms": 15_000,
     }
-    assert requests[8][1] == {"preset": "mobile", "color_scheme": "dark"}
+    assert requests[8][1] == {
+        "preset": "mobile",
+        "color_scheme": "dark",
+        "device_scale_factor": 1.0,
+        "orientation": "portrait",
+    }
     assert requests[9][1] == {}

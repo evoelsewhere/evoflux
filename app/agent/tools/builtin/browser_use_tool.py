@@ -519,6 +519,11 @@ class ResizeAction(BaseModel):
     width: int | None = Field(default=None, ge=200, le=4000)
     height: int | None = Field(default=None, ge=200, le=4000)
     color_scheme: Literal["light", "dark"] | None = None
+    device_scale_factor: float = Field(default=1.0, ge=0.5, le=4.0)
+    mobile: bool | None = None
+    touch: bool | None = None
+    orientation: Literal["portrait", "landscape"] = "portrait"
+    user_agent: str | None = Field(default=None, max_length=1000)
 
 
 class ResetViewportAction(BaseModel):
