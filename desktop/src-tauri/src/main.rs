@@ -1884,6 +1884,148 @@ fn browser_full_page_offsets(page_height: f64, viewport_height: f64) -> Vec<f64>
     offsets
 }
 
+fn png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.len() < 24 || &bytes[..8] != b"\x89PNG\r\n\x1a\n" {
+        return None;
+    }
+    Some((
+        u32::from_be_bytes(bytes[16..20].try_into().ok()?),
+        u32::from_be_bytes(bytes[20..24].try_into().ok()?),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+async fn capture_native_browser_viewport(app: &AppHandle, label: &str) -> Result<Vec<u8>, String> {
+    use block2::RcBlock;
+    use objc2_app_kit::NSImage;
+    use objc2_foundation::NSError;
+    use objc2_web_kit::WKWebView;
+
+    let webview = app_browser_webview(app, label)?;
+    let (sender, receiver) = oneshot::channel();
+    let sender = Arc::new(std::sync::Mutex::new(Some(sender)));
+    webview
+        .with_webview(move |platform| unsafe {
+            let wk_webview: &WKWebView = &*platform.inner().cast();
+            let callback_sender = sender.clone();
+            let completion = RcBlock::new(move |image: *mut NSImage, error: *mut NSError| {
+                let result = (|| -> Result<Vec<u8>, String> {
+                    let image = image
+                        .as_ref()
+                        .ok_or_else(|| format!("WKWebView snapshot failed: {error:p}"))?;
+                    let tiff = image
+                        .TIFFRepresentation()
+                        .ok_or_else(|| "WKWebView snapshot returned no image data".to_string())?;
+                    let decoded = xcap::image::load_from_memory(&tiff.to_vec())
+                        .map_err(|error| format!("Could not decode WKWebView snapshot: {error}"))?;
+                    let mut png = std::io::Cursor::new(Vec::new());
+                    decoded
+                        .write_to(&mut png, xcap::image::ImageFormat::Png)
+                        .map_err(|error| format!("Could not encode WKWebView snapshot: {error}"))?;
+                    Ok(png.into_inner())
+                })();
+                if let Ok(mut guard) = callback_sender.lock() {
+                    if let Some(sender) = guard.take() {
+                        let _ = sender.send(result);
+                    }
+                }
+            });
+            wk_webview.takeSnapshotWithConfiguration_completionHandler(None, &completion);
+        })
+        .map_err(|error| format!("Could not start WKWebView snapshot: {error}"))?;
+    tokio::time::timeout(Duration::from_secs(20), receiver)
+        .await
+        .map_err(|_| "WKWebView snapshot timed out".to_string())?
+        .map_err(|_| "WKWebView snapshot response channel closed".to_string())?
+}
+
+#[cfg(target_os = "windows")]
+async fn capture_native_browser_viewport(app: &AppHandle, label: &str) -> Result<Vec<u8>, String> {
+    use webview2_com::callback::CapturePreviewCompletedHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG;
+    use windows::core::HSTRING;
+    use windows::Win32::System::Com::{STGM_CREATE, STGM_SHARE_DENY_WRITE, STGM_WRITE};
+    use windows::Win32::UI::Shell::SHCreateStreamOnFileEx;
+
+    let webview = app_browser_webview(app, label)?;
+    let temp_path = std::env::temp_dir().join(format!(
+        "evoflux-browser-snapshot-{}-{}.png",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    let path_text = temp_path.to_string_lossy().to_string();
+    let callback_path = temp_path.clone();
+    let (sender, receiver) = oneshot::channel();
+    let sender = Arc::new(std::sync::Mutex::new(Some(sender)));
+    webview
+        .with_webview(move |platform| {
+            let callback_sender = sender.clone();
+            let result = (|| -> Result<(), String> {
+                let stream = unsafe {
+                    SHCreateStreamOnFileEx(
+                        &HSTRING::from(path_text),
+                        (STGM_CREATE | STGM_WRITE | STGM_SHARE_DENY_WRITE).0,
+                        0,
+                        true,
+                        None,
+                    )
+                }
+                .map_err(|error| format!("Could not create WebView2 snapshot stream: {error}"))?;
+                let core = unsafe { platform.controller().CoreWebView2() }
+                    .map_err(|error| format!("Could not access WebView2 core: {error}"))?;
+                let handler = CapturePreviewCompletedHandler::create(Box::new(move |error| {
+                    let result = if let Err(error) = error {
+                        Err(format!("WebView2 snapshot failed: {error}"))
+                    } else {
+                        std::fs::read(&callback_path)
+                            .map_err(|error| format!("Could not read WebView2 snapshot: {error}"))
+                    };
+                    let _ = std::fs::remove_file(&callback_path);
+                    if let Ok(mut guard) = callback_sender.lock() {
+                        if let Some(sender) = guard.take() {
+                            let _ = sender.send(result);
+                        }
+                    }
+                    Ok(())
+                }));
+                unsafe {
+                    core.CapturePreview(
+                        COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
+                        &stream,
+                        &handler,
+                    )
+                    .map_err(|error| format!("Could not start WebView2 snapshot: {error}"))?;
+                }
+                Ok(())
+            })();
+            if let Err(error) = result {
+                if let Ok(mut guard) = sender.lock() {
+                    if let Some(sender) = guard.take() {
+                        let _ = sender.send(Err(error));
+                    }
+                }
+            }
+        })
+        .map_err(|error| format!("Could not access WebView2 snapshot API: {error}"))?;
+    let result = tokio::time::timeout(Duration::from_secs(20), receiver)
+        .await
+        .map_err(|_| "WebView2 snapshot timed out".to_string())?
+        .map_err(|_| "WebView2 snapshot response channel closed".to_string())?;
+    let _ = std::fs::remove_file(temp_path);
+    result
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+async fn capture_native_browser_viewport(
+    _app: &AppHandle,
+    _label: &str,
+) -> Result<Vec<u8>, String> {
+    Err("Native WebView snapshot is unavailable on this platform".into())
+}
+
 async fn capture_browser_webview(
     app: &AppHandle,
     label: &str,
@@ -1940,6 +2082,36 @@ async fn capture_browser_webview(
         .and_then(serde_json::Value::as_f64)
         .unwrap_or(height as f64)
         .max(1.0);
+
+    if !full_page && !has_element_target {
+        match capture_native_browser_viewport(app, label).await {
+            Ok(bytes) => {
+                let (image_width, image_height) =
+                    png_dimensions(&bytes).unwrap_or((width.max(1), height.max(1)));
+                return Ok(serde_json::json!({
+                    "kind": "image",
+                    "media_type": "image/png",
+                    "data": BASE64_STANDARD.encode(bytes),
+                    "text": format!("[In-app browser screenshot: {}x{}]", image_width, image_height),
+                    "capture_backend": "webview",
+                    "full_page": false,
+                    "coordinate_mapping": {
+                        "css_origin_x": 0,
+                        "css_origin_y": 0,
+                        "css_per_pixel_x": css_width / image_width.max(1) as f64,
+                        "css_per_pixel_y": css_height / image_height.max(1) as f64,
+                        "css_width": css_width,
+                        "css_height": css_height,
+                        "image_width": image_width,
+                        "image_height": image_height,
+                    },
+                }));
+            }
+            Err(error) => {
+                log::debug!("native WebView snapshot fallback label={label} error={error}");
+            }
+        }
+    }
 
     if has_element_target {
         let rect = eval_browser_webview_action(app, label, "element_rect", params).await?;
@@ -5387,6 +5559,11 @@ mod tests {
             vec![0.0, 800.0, 1600.0, 1700.0]
         );
         assert_eq!(browser_full_page_offsets(600.0, 800.0), vec![0.0]);
+        let mut header = b"\x89PNG\r\n\x1a\n".to_vec();
+        header.extend_from_slice(&[0, 0, 0, 13, b'I', b'H', b'D', b'R']);
+        header.extend_from_slice(&640_u32.to_be_bytes());
+        header.extend_from_slice(&480_u32.to_be_bytes());
+        assert_eq!(png_dimensions(&header), Some((640, 480)));
     }
 
     #[test]
