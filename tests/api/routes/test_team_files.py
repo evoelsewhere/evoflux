@@ -282,7 +282,6 @@ class TestWorkspaceFilesListing:
         assert body["truncated"] is True
         assert len(body["files"]) == cap
 
-
     # NB: The previous mtime-based "revert boundary" filter is gone. After
     # the move to the Git snapshot service (see app/services/snapshot_service.py),
     # the workspace filesystem is authoritative — restoring a snapshot
@@ -362,6 +361,125 @@ class TestCodingLspDiagnostics:
 
         assert response.status_code == 200
         assert response.json()["status"] == "unsupported"
+
+
+class TestCodingLspSemantic:
+    def test_returns_unapplied_rename_edit(self, client, tmp_path, monkeypatch):
+        source = tmp_path / "main.py"
+        source.write_text("value = 1\n")
+        workspace_edit = {
+            "changes": {
+                source.as_uri(): [
+                    {
+                        "range": {
+                            "start": {"line": 0, "character": 0},
+                            "end": {"line": 0, "character": 5},
+                        },
+                        "newText": "renamed",
+                    }
+                ]
+            }
+        }
+        lsp_client = SimpleNamespace(
+            capabilities={"renameProvider": True},
+            rename=AsyncMock(return_value=workspace_edit),
+        )
+        from app.api.routes.team import files as team_routes
+
+        monkeypatch.setattr(
+            team_routes, "get_language_server", AsyncMock(return_value=lsp_client)
+        )
+
+        response = client.post(
+            "/api/team/workspace/lsp/semantic",
+            params={"workspace": str(tmp_path)},
+            json={
+                "action": "rename",
+                "path": "main.py",
+                "content": "value = 1\n",
+                "line": 1,
+                "column": 2,
+                "new_name": "renamed",
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "ready"
+        assert body["result"] == workspace_edit
+        assert body["capabilities"] == {"renameProvider": True}
+        lsp_client.rename.assert_awaited_once_with(
+            source.resolve(), 1, 2, "renamed", "value = 1\n"
+        )
+
+    def test_code_actions_receive_current_diagnostics(
+        self, client, tmp_path, monkeypatch
+    ):
+        source = tmp_path / "main.py"
+        source.write_text("value = 1\n")
+        lsp_client = SimpleNamespace(
+            capabilities={},
+            diagnostics=AsyncMock(return_value=[{"message": "Type mismatch"}]),
+            code_actions=AsyncMock(
+                return_value=[{"title": "Fix mismatch", "kind": "quickfix"}]
+            ),
+        )
+        from app.api.routes.team import files as team_routes
+
+        monkeypatch.setattr(
+            team_routes, "get_language_server", AsyncMock(return_value=lsp_client)
+        )
+
+        response = client.post(
+            "/api/team/workspace/lsp/semantic",
+            params={"workspace": str(tmp_path)},
+            json={
+                "action": "code_actions",
+                "path": "main.py",
+                "content": "value = 1\n",
+                "line": 1,
+                "column": 1,
+                "end_line": 1,
+                "end_column": 6,
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["result"][0]["kind"] == "quickfix"
+        lsp_client.code_actions.assert_awaited_once_with(
+            source.resolve(),
+            start_line=1,
+            start_column=1,
+            end_line=1,
+            end_column=6,
+            diagnostics=[{"message": "Type mismatch"}],
+            content="value = 1\n",
+        )
+
+    def test_position_action_requires_coordinates(self, client, tmp_path):
+        source = tmp_path / "main.py"
+        source.write_text("value = 1\n")
+
+        response = client.post(
+            "/api/team/workspace/lsp/semantic",
+            params={"workspace": str(tmp_path)},
+            json={"action": "hover", "path": "main.py"},
+        )
+
+        assert response.status_code == 422
+
+    def test_semantic_path_cannot_escape_repository(self, client, tmp_path):
+        outside = tmp_path.parent / "outside.py"
+        outside.write_text("value = 1\n")
+
+        response = client.post(
+            "/api/team/workspace/lsp/semantic",
+            params={"workspace": str(tmp_path)},
+            json={"action": "document_symbols", "path": "../outside.py"},
+        )
+
+        assert response.status_code == 400
+
 
 class TestSessionWorkspaceSelection:
     def test_get_workspace_root_does_not_scan_files(

@@ -221,6 +221,41 @@ export interface CodingDiagnosticsResponse {
   message: string | null
 }
 
+export type CodingSemanticAction =
+  | 'hover'
+  | 'code_actions'
+  | 'rename'
+  | 'format'
+  | 'organize_imports'
+  | 'document_symbols'
+  | 'workspace_symbols'
+
+export interface CodingSemanticRequest {
+  action: CodingSemanticAction
+  path: string
+  content?: string | null
+  line?: number | null
+  column?: number | null
+  end_line?: number | null
+  end_column?: number | null
+  new_name?: string | null
+  query?: string | null
+  diagnostics?: CodingLspDiagnostic[]
+  tab_size?: number
+  insert_spaces?: boolean
+}
+
+export interface CodingSemanticResponse {
+  workspace: string
+  path: string
+  action: CodingSemanticAction
+  language: string | null
+  status: CodingDiagnosticsStatus
+  result: unknown
+  capabilities: Record<string, unknown>
+  message: string | null
+}
+
 // ── Code context (/api/code-context) ────────────────────────────────────────
 
 export interface CodeGraphStatusResponse {
