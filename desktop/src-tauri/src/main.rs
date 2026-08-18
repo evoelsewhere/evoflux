@@ -757,11 +757,26 @@ fn browser_observability_init_script() -> &'static str {
         (() => {
             const label = window.__TAURI_INTERNALS__?.metadata?.currentWebview?.label;
             if (!String(label || '').startsWith('browser-') || globalThis.__evofluxBrowserRuntime) return;
-            const runtime = { documentId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`, console: [], network: [], dialogs: [], nextDialogId: 1, dialogBehavior: { behavior: 'dismiss', promptText: null } };
+            const runtime = { documentId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`, console: [], network: [], dialogs: [], popups: [], nextDialogId: 1, nextPopupId: 1, dialogBehavior: { behavior: 'dismiss', promptText: null } };
             const keep = (items, value, max) => {
                 items.push(value);
                 if (items.length > max) items.splice(0, items.length - max);
             };
+            const queuePopup = (value) => {
+                try {
+                    const url = new URL(String(value || ''), location.href);
+                    if (!['http:', 'https:'].includes(url.protocol)) return null;
+                    keep(runtime.popups, { id: runtime.nextPopupId++, ts: Date.now(), url: url.href }, 100);
+                    return null;
+                } catch { return null; }
+            };
+            globalThis.open = (url) => queuePopup(url);
+            addEventListener('click', (event) => {
+                const anchor = event.composedPath?.().find((node) => node?.tagName === 'A');
+                if (!anchor || String(anchor.target || '').toLowerCase() !== '_blank' || !anchor.href) return;
+                event.preventDefault();
+                queuePopup(anchor.href);
+            }, true);
             for (const level of ['debug', 'log', 'info', 'warn', 'error']) {
                 const original = console[level]?.bind(console);
                 if (!original) continue;
@@ -1486,6 +1501,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         "console",
         "network",
         "dialogs",
+        "popups",
         "dialog_behavior",
         "performance",
         "clear_logs",
@@ -1601,8 +1617,23 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
 
                     if (action === 'instrument') {{
                         if (!globalThis.__evofluxBrowserRuntime) {{
-                            const runtime = {{ documentId: `${{Date.now().toString(36)}}-${{Math.random().toString(36).slice(2)}}`, console: [], network: [], dialogs: [], nextDialogId: 1, dialogBehavior: {{ behavior: 'dismiss', promptText: null }} }};
+                            const runtime = {{ documentId: `${{Date.now().toString(36)}}-${{Math.random().toString(36).slice(2)}}`, console: [], network: [], dialogs: [], popups: [], nextDialogId: 1, nextPopupId: 1, dialogBehavior: {{ behavior: 'dismiss', promptText: null }} }};
                             const keep = (items, value, max) => {{ items.push(value); if (items.length > max) items.splice(0, items.length - max); }};
+                            const queuePopup = (value) => {{
+                                try {{
+                                    const url = new URL(String(value || ''), location.href);
+                                    if (!['http:', 'https:'].includes(url.protocol)) return null;
+                                    keep(runtime.popups, {{ id: runtime.nextPopupId++, ts: Date.now(), url: url.href }}, 100);
+                                    return null;
+                                }} catch {{ return null; }}
+                            }};
+                            globalThis.open = (url) => queuePopup(url);
+                            addEventListener('click', (event) => {{
+                                const anchor = event.composedPath?.().find((node) => node?.tagName === 'A');
+                                if (!anchor || String(anchor.target || '').toLowerCase() !== '_blank' || !anchor.href) return;
+                                event.preventDefault();
+                                queuePopup(anchor.href);
+                            }}, true);
                             for (const level of ['debug', 'log', 'info', 'warn', 'error']) {{
                                 const original = console[level]?.bind(console);
                                 if (!original) continue;
@@ -2000,6 +2031,12 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const dialogs = Array.from(globalThis.__evofluxBrowserRuntime?.dialogs || []);
                         if (params.clear && globalThis.__evofluxBrowserRuntime) globalThis.__evofluxBrowserRuntime.dialogs.length = 0;
                         return dialogs.length ? dialogs : '(no dialogs captured)';
+                    }}
+
+                    if (action === 'popups') {{
+                        const popups = Array.from(globalThis.__evofluxBrowserRuntime?.popups || []);
+                        if (params.clear && globalThis.__evofluxBrowserRuntime) globalThis.__evofluxBrowserRuntime.popups.length = 0;
+                        return popups;
                     }}
 
                     if (action === 'dialog_behavior') {{
@@ -3975,6 +4012,7 @@ mod tests {
             "console",
             "network",
             "dialogs",
+            "popups",
             "dialog_behavior",
             "performance",
             "clear_logs",
@@ -4056,6 +4094,8 @@ mod tests {
         assert!(script.contains("XMLHttpRequest.prototype.send"));
         assert!(script.contains("nextDialogId"));
         assert!(script.contains("documentId"));
+        assert!(script.contains("globalThis.open"));
+        assert!(script.contains("target || '').toLowerCase() !== '_blank'"));
         assert!(script.contains("response: accepted ? 'accepted' : 'dismissed'"));
         assert!(script.contains("globalThis.__evofluxBrowserRuntime = runtime"));
     }

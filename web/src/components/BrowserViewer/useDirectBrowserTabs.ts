@@ -22,6 +22,12 @@ export interface BrowserPageDialog {
   response?: 'accepted' | 'dismissed'
 }
 
+export interface BrowserPopupRequest {
+  id: number
+  ts: number
+  url: string
+}
+
 export interface BrowserViewportOverride {
   width: number
   height: number
@@ -114,6 +120,7 @@ export function useDirectBrowserTabs({
   const viewportOverrideRef = useRef<BrowserViewportOverride | null>(null)
   const viewportScaleRef = useRef(1)
   const lastDialogKeyRef = useRef('')
+  const seenPopupKeysRef = useRef(new Set<string>())
   const visibilityRef = useRef(new Map<string, boolean>())
   const creatingRef = useRef(false)
   const [tabs, setTabs] = useState<DirectBrowserTab[]>([])
@@ -702,6 +709,7 @@ export function useDirectBrowserTabs({
       'console',
       'network',
       'dialogs',
+      'popups',
       'dialog_behavior',
       'performance',
       'clear_logs',
@@ -761,17 +769,35 @@ export function useDirectBrowserTabs({
       if (disposed || polling || pageDialog) return
       polling = true
       try {
-        const dialogs = await invokeFor<BrowserPageDialog[]>(
-          'app_browser_webview_agent_action',
-          activeTab.label,
-          { action: 'dialogs', params: {} },
-        )
+        const [dialogs, popups] = await Promise.all([
+          invokeFor<BrowserPageDialog[]>(
+            'app_browser_webview_agent_action',
+            activeTab.label,
+            { action: 'dialogs', params: {} },
+          ),
+          invokeFor<BrowserPopupRequest[]>(
+            'app_browser_webview_agent_action',
+            activeTab.label,
+            { action: 'popups', params: { clear: true } },
+          ),
+        ])
+        for (const popup of Array.isArray(popups) ? popups : []) {
+          const popupKey = `${activeTab.label}:${popup.id}:${popup.ts}`
+          if (seenPopupKeysRef.current.has(popupKey)) continue
+          seenPopupKeysRef.current.add(popupKey)
+          onRequestNewTab?.(popup.url)
+        }
+        if (seenPopupKeysRef.current.size > 200) {
+          seenPopupKeysRef.current = new Set([...seenPopupKeysRef.current].slice(-100))
+        }
         const latest = Array.isArray(dialogs) ? dialogs.at(-1) : null
-        if (!latest) return
-        const key = `${activeTab.label}:${latest.id ?? latest.ts}:${latest.ts}`
-        if (key === lastDialogKeyRef.current) return
-        lastDialogKeyRef.current = key
-        setPageDialog(latest)
+        if (latest) {
+          const key = `${activeTab.label}:${latest.id ?? latest.ts}:${latest.ts}`
+          if (key !== lastDialogKeyRef.current) {
+            lastDialogKeyRef.current = key
+            setPageDialog(latest)
+          }
+        }
       } catch {
         // Navigation briefly invalidates eval callbacks; the next poll retries.
       } finally {
@@ -784,7 +810,7 @@ export function useDirectBrowserTabs({
       disposed = true
       window.clearInterval(timer)
     }
-  }, [activeTab, invokeFor, pageDialog, supported, visible])
+  }, [activeTab, invokeFor, onRequestNewTab, pageDialog, supported, visible])
 
   useEffect(() => {
     if (!supported) return
