@@ -1267,6 +1267,21 @@ async fn eval_browser_webview_action_once(
     }
 }
 
+fn browser_full_page_offsets(page_height: f64, viewport_height: f64) -> Vec<f64> {
+    let viewport = viewport_height.max(1.0);
+    let max_scroll = (page_height.max(viewport) - viewport).max(0.0);
+    let mut offsets = vec![0.0_f64];
+    let mut next = viewport;
+    while next < max_scroll {
+        offsets.push(next);
+        next += viewport;
+    }
+    if max_scroll > 0.0 && offsets.last().map_or(true, |last| *last < max_scroll) {
+        offsets.push(max_scroll);
+    }
+    offsets
+}
+
 async fn capture_browser_webview(
     app: &AppHandle,
     label: &str,
@@ -1297,6 +1312,18 @@ async fn capture_browser_webview(
         .ok();
     let mut css_origin_x = 0.0_f64;
     let mut css_origin_y = 0.0_f64;
+    let full_page = params.get("full_page").and_then(serde_json::Value::as_bool) == Some(true);
+    let has_element_target = params
+        .get("selector")
+        .and_then(serde_json::Value::as_str)
+        .is_some()
+        || params
+            .get("index")
+            .and_then(serde_json::Value::as_i64)
+            .is_some();
+    if full_page && has_element_target {
+        return Err("Full-page screenshots cannot also target an element".into());
+    }
     let mut css_width = status
         .as_ref()
         .and_then(|value| value.get("viewport"))
@@ -1312,15 +1339,7 @@ async fn capture_browser_webview(
         .unwrap_or(height as f64)
         .max(1.0);
 
-    if params
-        .get("selector")
-        .and_then(serde_json::Value::as_str)
-        .is_some()
-        || params
-            .get("index")
-            .and_then(serde_json::Value::as_i64)
-            .is_some()
-    {
+    if has_element_target {
         let rect = eval_browser_webview_action(app, label, "element_rect", params).await?;
         let viewport_width = rect
             .get("viewport_width")
@@ -1421,9 +1440,71 @@ async fn capture_browser_webview(
         .map_err(|error| format!("Could not read display bounds: {error}"))?;
     width = width.min(monitor_width.saturating_sub(relative_x)).max(1);
     height = height.min(monitor_height.saturating_sub(relative_y)).max(1);
-    let image = monitor
-        .capture_region(relative_x, relative_y, width, height)
-        .map_err(|error| format!("Could not capture the in-app browser: {error}"))?;
+    let image = if full_page {
+        let page_css_height = status
+            .as_ref()
+            .and_then(|value| value.get("document"))
+            .and_then(|value| value.get("height"))
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(css_height)
+            .max(css_height);
+        let css_to_image = height as f64 / css_height.max(1.0);
+        let max_css_for_pixels = 20_000.0 / css_to_image.max(0.01);
+        let stitched_css_height = page_css_height.min(20_000.0).min(max_css_for_pixels);
+        let stitched_pixel_height = (stitched_css_height * css_to_image)
+            .ceil()
+            .clamp(height as f64, 20_000.0) as u32;
+        let original_scroll_x = status
+            .as_ref()
+            .and_then(|value| value.get("viewport"))
+            .and_then(|value| value.get("scrollX"))
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0);
+        let original_scroll_y = status
+            .as_ref()
+            .and_then(|value| value.get("viewport"))
+            .and_then(|value| value.get("scrollY"))
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0);
+        let offsets = browser_full_page_offsets(stitched_css_height, css_height);
+
+        let capture_result: Result<xcap::image::RgbaImage, String> = async {
+            let mut stitched = xcap::image::RgbaImage::new(width, stitched_pixel_height);
+            for offset in offsets {
+                eval_browser_webview_action(
+                    app,
+                    label,
+                    "scroll_position",
+                    &serde_json::json!({ "x": 0, "y": offset }),
+                )
+                .await?;
+                tokio::time::sleep(Duration::from_millis(90)).await;
+                let slice = monitor
+                    .capture_region(relative_x, relative_y, width, height)
+                    .map_err(|error| format!("Could not capture browser page slice: {error}"))?;
+                let destination_y = (offset * css_to_image).round() as i64;
+                xcap::image::imageops::replace(&mut stitched, &slice, 0, destination_y);
+            }
+            Ok(stitched)
+        }
+        .await;
+        let _ = eval_browser_webview_action(
+            app,
+            label,
+            "scroll_position",
+            &serde_json::json!({ "x": original_scroll_x, "y": original_scroll_y }),
+        )
+        .await;
+        css_origin_x = 0.0;
+        css_origin_y = 0.0;
+        css_height = stitched_css_height;
+        height = stitched_pixel_height;
+        capture_result?
+    } else {
+        monitor
+            .capture_region(relative_x, relative_y, width, height)
+            .map_err(|error| format!("Could not capture the in-app browser: {error}"))?
+    };
     let css_per_pixel_x = css_width / width.max(1) as f64;
     let css_per_pixel_y = css_height / height.max(1) as f64;
     let mut png = std::io::Cursor::new(Vec::new());
@@ -1434,7 +1515,8 @@ async fn capture_browser_webview(
         "kind": "image",
         "media_type": "image/png",
         "data": BASE64_STANDARD.encode(png.into_inner()),
-        "text": format!("[In-app browser screenshot: {}x{}]", width, height),
+        "text": format!("[In-app browser {}screenshot: {}x{}]", if full_page { "full-page " } else { "" }, width, height),
+        "full_page": full_page,
         "capture_backend": "screen",
         "coordinate_mapping": {
             "css_origin_x": css_origin_x,
@@ -1498,6 +1580,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         "html",
         "accessibility",
         "scroll",
+        "scroll_position",
         "console",
         "network",
         "dialogs",
@@ -2002,6 +2085,13 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         return `Scrolled ${{params.direction || 'down'}} ${{Math.abs(pixels)}}px`;
                     }}
 
+                    if (action === 'scroll_position') {{
+                        const x = Number(params.x) || 0;
+                        const y = Number(params.y) || 0;
+                        scrollTo(x, y);
+                        return {{ x: scrollX, y: scrollY }};
+                    }}
+
                     if (action === 'console') {{
                         const requested = String(params.level || 'all');
                         const limit = Math.max(1, Math.min(200, Number(params.limit) || 50));
@@ -2246,6 +2336,10 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             userAgent: navigator.userAgent,
                             documentId: globalThis.__evofluxBrowserRuntime?.documentId || null,
                             viewport: {{ width: innerWidth, height: innerHeight, devicePixelRatio, scrollX, scrollY }},
+                            document: {{
+                                width: Math.max(document.documentElement?.scrollWidth || 0, document.body?.scrollWidth || 0, innerWidth),
+                                height: Math.max(document.documentElement?.scrollHeight || 0, document.body?.scrollHeight || 0, innerHeight),
+                            }},
                             historyLength: history.length,
                             activeElement: document.activeElement ? describe(document.activeElement) : null,
                         }};
@@ -4009,6 +4103,7 @@ mod tests {
             "html",
             "accessibility",
             "scroll",
+            "scroll_position",
             "console",
             "network",
             "dialogs",
@@ -4059,6 +4154,15 @@ mod tests {
                 .host_str(),
             Some("example.com")
         );
+    }
+
+    #[test]
+    fn browser_full_page_offsets_cover_bottom_without_blank_tail() {
+        assert_eq!(
+            browser_full_page_offsets(2500.0, 800.0),
+            vec![0.0, 800.0, 1600.0, 1700.0]
+        );
+        assert_eq!(browser_full_page_offsets(600.0, 800.0), vec![0.0]);
     }
 
     #[test]

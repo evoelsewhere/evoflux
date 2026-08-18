@@ -76,7 +76,7 @@ async def test_screenshot_becomes_multimodal_tool_result(monkeypatch) -> None:
 
     async def request(_sid: str, action: str, params: dict):
         assert action == "screenshot"
-        assert params == {"index": 4}
+        assert params == {"index": 4, "full_page": False}
         return {
             "kind": "image",
             "media_type": "image/png",
