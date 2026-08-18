@@ -52,6 +52,7 @@ interface UseDirectBrowserTabsOptions {
   singleTab?: boolean
   zoom: number
   devtools: boolean
+  profileMode: 'shared' | 'session' | 'incognito'
   onError: (message: string) => void
   onRequestNewTab?: (url: string) => void
   onActivate?: () => void
@@ -103,6 +104,7 @@ export function useDirectBrowserTabs({
   singleTab = false,
   zoom,
   devtools,
+  profileMode,
   onError,
   onRequestNewTab,
   onActivate,
@@ -289,9 +291,13 @@ export function useDirectBrowserTabs({
         width: Math.max(1, Math.round(rect.width)),
         height: Math.max(1, Math.round(rect.height)),
         focus: true,
-        incognito: false,
-        dataDirectory: BROWSER_DATA_DIRECTORY,
-        dataStoreIdentifier: BROWSER_DATA_STORE_ID,
+        incognito: profileMode === 'incognito',
+        dataDirectory: profileMode === 'session'
+          ? `${BROWSER_DATA_DIRECTORY}/${safeSession || 'default'}`
+          : BROWSER_DATA_DIRECTORY,
+        dataStoreIdentifier: profileMode === 'session'
+          ? browserDataStoreIdentifier(sessionId)
+          : BROWSER_DATA_STORE_ID,
         devtools,
         zoomHotkeysEnabled: true,
       })
@@ -338,7 +344,7 @@ export function useDirectBrowserTabs({
       creatingRef.current = false
       setCreating(false)
     }
-  }, [devtools, enabled, instanceId, onError, sessionId, singleTab, supported, viewportRef, waitForPageReady, zoom])
+  }, [devtools, enabled, instanceId, onError, profileMode, sessionId, singleTab, supported, viewportRef, waitForPageReady, zoom])
 
   useEffect(() => {
     if (!supported || !enabled || tabs.length > 0 || creating) return
@@ -1073,6 +1079,19 @@ export function browserScreenshotPoint(
     x: point.x * cssViewport.width / Math.max(1, imageBounds.width),
     y: point.y * cssViewport.height / Math.max(1, imageBounds.height),
   }
+}
+
+export function browserDataStoreIdentifier(sessionId: string): number[] {
+  const bytes = new Uint8Array(16)
+  const input = new TextEncoder().encode(`evoflux-browser:${sessionId}`)
+  for (let index = 0; index < input.length; index += 1) {
+    const slot = index % bytes.length
+    bytes[slot] = (bytes[slot] * 31 + input[index] + index) & 0xff
+  }
+  // UUID-compatible variant/version bits keep WKWebsiteDataStore identifiers valid.
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  return [...bytes]
 }
 
 function sameBounds(left: NativeBounds | null, right: NativeBounds): boolean {

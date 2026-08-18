@@ -162,6 +162,26 @@ export function BrowserSettingsPage() {
           }
         />
         <SettingsRow
+          label={t('Browser profile')}
+          description={t('Choose whether sign-in and site data are shared, isolated per chat, or discarded on close.')}
+          control={
+            <select
+              value={preferences.profileMode}
+              disabled={!preferences.enabled}
+              onChange={(event) => patchBuiltIn(
+                'profileMode',
+                event.target.value as BrowserPreferences['profileMode'],
+              )}
+              className="h-8 rounded-md border border-(--color-border) bg-(--bg-key) px-2 text-xs text-(--color-text)"
+              aria-label={t('Built-in browser profile mode')}
+            >
+              <option value="shared">{t('Shared')}</option>
+              <option value="session">{t('Per session')}</option>
+              <option value="incognito">{t('Incognito')}</option>
+            </select>
+          }
+        />
+        <SettingsRow
           label={t('Enable WebView inspector')}
           description={t('Allow native developer tools for newly created tabs')}
           control={

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   browserScreenshotPoint,
   browserNavigationCommitted,
+  browserDataStoreIdentifier,
   browserViewportLayout,
   browserWaitConditionSatisfied,
 } from '@/components/BrowserViewer/useDirectBrowserTabs'
@@ -111,5 +112,16 @@ describe('direct browser document navigation', () => {
       'https://example.com',
       'old-document',
     )).toBe(true)
+  })
+})
+
+describe('direct browser profile isolation', () => {
+  it('derives stable distinct 16-byte data-store identifiers per session', () => {
+    const first = browserDataStoreIdentifier('session-one')
+    expect(first).toHaveLength(16)
+    expect(browserDataStoreIdentifier('session-one')).toEqual(first)
+    expect(browserDataStoreIdentifier('session-two')).not.toEqual(first)
+    expect(first[6] & 0xf0).toBe(0x40)
+    expect(first[8] & 0xc0).toBe(0x80)
   })
 })
