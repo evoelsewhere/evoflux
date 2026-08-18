@@ -773,6 +773,199 @@ fn send_native_browser_pointer(
     Err("Native browser pointer injection is unavailable on this platform".into())
 }
 
+#[cfg(target_os = "macos")]
+fn send_native_browser_text(text: &str) -> Result<(), String> {
+    use core_graphics::event::{CGEvent, CGEventTapLocation, KeyCode};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "Could not create macOS keyboard event source".to_string())?;
+    for character in text.chars() {
+        let value = character.to_string();
+        let down = CGEvent::new_keyboard_event(source.clone(), KeyCode::ANSI_A, true)
+            .map_err(|_| "Could not create macOS key down".to_string())?;
+        down.set_string(&value);
+        down.post(CGEventTapLocation::HID);
+        CGEvent::new_keyboard_event(source.clone(), KeyCode::ANSI_A, false)
+            .map_err(|_| "Could not create macOS key up".to_string())?
+            .post(CGEventTapLocation::HID);
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn send_native_browser_text(text: &str) -> Result<(), String> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
+        VIRTUAL_KEY,
+    };
+
+    let mut inputs = Vec::with_capacity(text.encode_utf16().count() * 2);
+    for unit in text.encode_utf16() {
+        for flags in [KEYEVENTF_UNICODE, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP] {
+            inputs.push(INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VIRTUAL_KEY(0),
+                        wScan: unit,
+                        dwFlags: flags,
+                        time: 0,
+                        dwExtraInfo: 0,
+                    },
+                },
+            });
+        }
+    }
+    let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+    if sent != inputs.len() as u32 {
+        return Err(format!(
+            "Windows accepted {sent}/{} keyboard events",
+            inputs.len()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn send_native_browser_text(_text: &str) -> Result<(), String> {
+    Err("Native browser keyboard injection is unavailable on this platform".into())
+}
+
+#[cfg(target_os = "macos")]
+fn send_native_browser_key(key: &str, modifiers: &[String]) -> Result<(), String> {
+    use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation, KeyCode};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+    let normalized = key.to_ascii_lowercase();
+    let keycode = match normalized.as_str() {
+        "enter" | "return" => KeyCode::RETURN,
+        "tab" => KeyCode::TAB,
+        "escape" => KeyCode::ESCAPE,
+        "backspace" | "delete" => KeyCode::DELETE,
+        "arrowleft" => KeyCode::LEFT_ARROW,
+        "arrowright" => KeyCode::RIGHT_ARROW,
+        "arrowup" => KeyCode::UP_ARROW,
+        "arrowdown" => KeyCode::DOWN_ARROW,
+        "home" => KeyCode::HOME,
+        "end" => KeyCode::END,
+        "pageup" => KeyCode::PAGE_UP,
+        "pagedown" => KeyCode::PAGE_DOWN,
+        " " | "space" => KeyCode::SPACE,
+        "a" => KeyCode::ANSI_A,
+        "c" => KeyCode::ANSI_C,
+        "f" => KeyCode::ANSI_F,
+        "k" => KeyCode::ANSI_K,
+        "l" => KeyCode::ANSI_L,
+        "r" => KeyCode::ANSI_R,
+        "v" => KeyCode::ANSI_V,
+        "x" => KeyCode::ANSI_X,
+        "z" => KeyCode::ANSI_Z,
+        _ if key.chars().count() == 1 && modifiers.is_empty() => {
+            return send_native_browser_text(key);
+        }
+        _ => return Err(format!("Unsupported native macOS key: {key}")),
+    };
+    let mut flags = CGEventFlags::empty();
+    for modifier in modifiers {
+        match modifier.to_ascii_lowercase().as_str() {
+            "meta" | "command" => flags |= CGEventFlags::CGEventFlagCommand,
+            "control" | "ctrl" => flags |= CGEventFlags::CGEventFlagControl,
+            "alt" | "option" => flags |= CGEventFlags::CGEventFlagAlternate,
+            "shift" => flags |= CGEventFlags::CGEventFlagShift,
+            _ => {}
+        }
+    }
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "Could not create macOS keyboard event source".to_string())?;
+    for down in [true, false] {
+        let event = CGEvent::new_keyboard_event(source.clone(), keycode, down)
+            .map_err(|_| "Could not create macOS key event".to_string())?;
+        event.set_flags(flags);
+        event.post(CGEventTapLocation::HID);
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn send_native_browser_key(key: &str, modifiers: &[String]) -> Result<(), String> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
+        VK_BACK, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LEFT, VK_LMENU,
+        VK_LSHIFT, VK_LWIN, VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SPACE, VK_TAB, VK_UP,
+    };
+
+    let normalized = key.to_ascii_lowercase();
+    let virtual_key = match normalized.as_str() {
+        "enter" | "return" => VK_RETURN,
+        "tab" => VK_TAB,
+        "escape" => VK_ESCAPE,
+        "backspace" => VK_BACK,
+        "delete" => VK_DELETE,
+        "arrowleft" => VK_LEFT,
+        "arrowright" => VK_RIGHT,
+        "arrowup" => VK_UP,
+        "arrowdown" => VK_DOWN,
+        "home" => VK_HOME,
+        "end" => VK_END,
+        "pageup" => VK_PRIOR,
+        "pagedown" => VK_NEXT,
+        " " | "space" => VK_SPACE,
+        _ if key.len() == 1 => VIRTUAL_KEY(key.to_ascii_uppercase().as_bytes()[0] as u16),
+        _ => return Err(format!("Unsupported native Windows key: {key}")),
+    };
+    let modifier_keys: Vec<VIRTUAL_KEY> = modifiers
+        .iter()
+        .filter_map(|modifier| match modifier.to_ascii_lowercase().as_str() {
+            "meta" | "command" => Some(VK_LWIN),
+            "control" | "ctrl" => Some(VK_CONTROL),
+            "alt" | "option" => Some(VK_LMENU),
+            "shift" => Some(VK_LSHIFT),
+            _ => None,
+        })
+        .collect();
+    let input = |key: VIRTUAL_KEY, key_up: bool| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: key,
+                wScan: 0,
+                dwFlags: if key_up {
+                    KEYEVENTF_KEYUP
+                } else {
+                    Default::default()
+                },
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    };
+    let mut inputs = Vec::new();
+    inputs.extend(modifier_keys.iter().copied().map(|key| input(key, false)));
+    inputs.push(input(virtual_key, false));
+    inputs.push(input(virtual_key, true));
+    inputs.extend(
+        modifier_keys
+            .iter()
+            .rev()
+            .copied()
+            .map(|key| input(key, true)),
+    );
+    let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+    if sent != inputs.len() as u32 {
+        return Err(format!(
+            "Windows accepted {sent}/{} keyboard events",
+            inputs.len()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn send_native_browser_key(_key: &str, _modifiers: &[String]) -> Result<(), String> {
+    Err("Native browser keyboard injection is unavailable on this platform".into())
+}
+
 async fn run_native_browser_pointer_action(
     app: &AppHandle,
     label: &str,
@@ -836,6 +1029,63 @@ async fn run_native_browser_pointer_action(
         "x": css_x,
         "y": css_y,
     }))
+}
+
+async fn run_native_browser_keyboard_action(
+    app: &AppHandle,
+    label: &str,
+    action: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let mut focus_params = params.clone();
+    focus_params
+        .as_object_mut()
+        .ok_or_else(|| "Browser keyboard parameters must be an object".to_string())?
+        .insert("mode".into(), serde_json::Value::String(action.into()));
+    let target = eval_browser_webview_action(app, label, "native_focus", &focus_params).await?;
+    let webview = app_browser_webview(app, label)?;
+    let window = webview.window();
+    let _ = window.set_focus();
+    let _ = webview.set_focus();
+    tokio::time::sleep(Duration::from_millis(25)).await;
+
+    match action {
+        "type" | "fill" => {
+            let text = params
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            send_native_browser_text(text)?;
+            Ok(serde_json::json!({
+                "trusted": true,
+                "action": action,
+                "characters": text.chars().count(),
+                "target": target.get("description"),
+            }))
+        }
+        "press" => {
+            let chord = params
+                .get("key")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            let mut parts: Vec<String> = chord
+                .split('+')
+                .filter(|part| !part.is_empty())
+                .map(str::to_string)
+                .collect();
+            let key = parts
+                .pop()
+                .ok_or_else(|| "press requires a key".to_string())?;
+            send_native_browser_key(&key, &parts)?;
+            Ok(serde_json::json!({
+                "trusted": true,
+                "action": action,
+                "key": chord,
+                "target": target.get("description"),
+            }))
+        }
+        _ => Err(format!("Unsupported native keyboard action: {action}")),
+    }
 }
 
 #[tauri::command]
@@ -1200,6 +1450,14 @@ async fn app_browser_webview_agent_action(
             Ok(result) => return Ok(result),
             Err(error) => {
                 log::debug!("native browser pointer fallback action={action} error={error}");
+            }
+        }
+    }
+    if matches!(action.as_str(), "type" | "fill" | "press") {
+        match run_native_browser_keyboard_action(&app, &label, &action, &params).await {
+            Ok(result) => return Ok(result),
+            Err(error) => {
+                log::debug!("native browser keyboard fallback action={action} error={error}");
             }
         }
     }
@@ -1780,6 +2038,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         "evaluate",
         "element_rect",
         "native_target",
+        "native_focus",
         "exists",
         "probe",
         "status",
@@ -2068,6 +2327,31 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         }}
                         globalThis.__evofluxEnsureAgentCursor().move(x, y, action === 'hover' ? 'move' : 'release');
                         return {{ x, y, viewport_width: innerWidth, viewport_height: innerHeight, description: describe(element) }};
+                    }}
+
+                    if (action === 'native_focus') {{
+                        const element = resolveElement() || document.activeElement;
+                        if (!element) throw new Error('Native keyboard target not found');
+                        element.scrollIntoView?.({{ block: 'center', inline: 'center' }});
+                        element.focus?.({{ preventScroll: true }});
+                        if (params.mode === 'fill' && params.clear !== false) {{
+                            if (typeof element.select === 'function') element.select();
+                            else if (element.isContentEditable) {{
+                                const selection = getSelection();
+                                const range = document.createRange();
+                                range.selectNodeContents(element);
+                                selection.removeAllRanges();
+                                selection.addRange(range);
+                            }}
+                        }} else if (element.isContentEditable) {{
+                            const selection = getSelection();
+                            const range = document.createRange();
+                            range.selectNodeContents(element);
+                            range.collapse(false);
+                            selection.removeAllRanges();
+                            selection.addRange(range);
+                        }}
+                        return {{ description: describe(element) }};
                     }}
 
                     if (action === 'click') {{
@@ -4760,6 +5044,7 @@ mod tests {
             "evaluate",
             "element_rect",
             "native_target",
+            "native_focus",
             "exists",
             "probe",
             "status",
@@ -4861,6 +5146,12 @@ mod tests {
         .expect("accessibility action should compile");
         assert!(accessibility.contains("[cross-origin frame]"));
         assert!(accessibility.contains("[ref="));
+        let native_focus = browser_agent_action_script(
+            "native_focus",
+            &serde_json::json!({ "selector": "#editor", "mode": "fill" }),
+        )
+        .expect("native keyboard focus action should compile");
+        assert!(native_focus.contains("selection.addRange"));
         let emulation = browser_agent_action_script(
             "set_emulation",
             &serde_json::json!({ "width": 375, "height": 812, "device_scale_factor": 2 }),
