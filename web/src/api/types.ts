@@ -256,6 +256,49 @@ export interface CodingSemanticResponse {
   message: string | null
 }
 
+export type ChangeSetOrigin = 'lsp' | 'ai' | 'agent' | 'review' | 'git'
+export type ChangeSetStatus = 'pending' | 'applied' | 'rejected' | 'partial'
+export type ChangeSetFileStatus = 'pending' | 'applied' | 'rejected'
+
+export interface ChangeSetFileProposal {
+  path: string
+  proposed_content: string
+  base_hash?: string | null
+  document_version?: number | null
+}
+
+export interface ChangeSetCreateRequest {
+  origin: ChangeSetOrigin
+  title: string
+  description?: string | null
+  files?: ChangeSetFileProposal[]
+  workspace_edit?: Record<string, unknown> | null
+}
+
+export interface ChangeSetFile {
+  path: string
+  base_hash: string | null
+  proposed_hash: string
+  document_version: number | null
+  diff: string
+  additions: number
+  deletions: number
+  status: ChangeSetFileStatus
+}
+
+export interface ChangeSetResponse {
+  id: string
+  workspace: string
+  origin: ChangeSetOrigin
+  title: string
+  description: string | null
+  status: ChangeSetStatus
+  snapshot_hash: string | null
+  created_at: number
+  updated_at: number
+  files: ChangeSetFile[]
+}
+
 // ── Code context (/api/code-context) ────────────────────────────────────────
 
 export interface CodeGraphStatusResponse {

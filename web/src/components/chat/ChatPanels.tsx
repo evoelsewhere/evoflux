@@ -17,6 +17,7 @@
 import { AnimatePresence } from 'framer-motion'
 import { PlanReviewPanel } from '../PlanReviewPanel'
 import { ChangesReviewPanel } from '../ChangesReviewPanel'
+import { ChangeSetReviewPanel } from '../ChangeSetReviewPanel'
 import { ActivityPanel } from '../ActivityPanel'
 import { CommandPalette, type Command } from '../CommandPalette'
 import { RunInputsDialog, type RunInputsRequest } from '../RunInputsDialog'
@@ -49,6 +50,7 @@ export function ChatTrailingPanels({
         mode={mode}
         onOpenFile={onOpenChangedFile}
       />
+      <ChangeSetReviewPanel />
       <AnimatePresence>
         {showActivity && (
           <SidePanel
