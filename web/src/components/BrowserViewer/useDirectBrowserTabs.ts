@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Webview } from '@tauri-apps/api/webview'
 
-import { apiWsBaseUrl } from '@/api/base-url'
-import { withTokenParam } from '@/api/auth'
 import { getPlatform } from '@/hooks/use-platform'
+import {
+  nextBrowserSurfaceOrder,
+  registerDirectBrowserSurface,
+} from './directBrowserAgentRegistry'
 
 export interface DirectBrowserTab {
   id: string
@@ -38,6 +40,8 @@ interface UseDirectBrowserTabsOptions {
   devtools: boolean
   onError: (message: string) => void
   onRequestNewTab?: (url: string) => void
+  onActivate?: () => void
+  onCloseSurface?: () => void
 }
 
 export interface NativeBounds {
@@ -79,6 +83,8 @@ export function useDirectBrowserTabs({
   devtools,
   onError,
   onRequestNewTab,
+  onActivate,
+  onCloseSurface,
 }: UseDirectBrowserTabsOptions) {
   const platform = getPlatform()
   const supported = platform.isTauri && platform.os !== 'ios' && platform.os !== 'android'
@@ -91,7 +97,10 @@ export function useDirectBrowserTabs({
   ) => Promise<unknown>>(async () => {
     throw new Error('Browser is not ready')
   })
-  const commandQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const registryOrderRef = useRef(nextBrowserSurfaceOrder())
+  const registryActiveRef = useRef(bridgeEnabled)
+  const registryActivateRef = useRef(onActivate)
+  const registryCloseRef = useRef(onCloseSurface)
   const counterRef = useRef(0)
   const boundsRef = useRef<NativeBounds | null>(null)
   const viewportOverrideRef = useRef<BrowserViewportOverride | null>(null)
@@ -107,6 +116,9 @@ export function useDirectBrowserTabs({
   const [viewportOverride, setViewportOverride] = useState<BrowserViewportOverride | null>(null)
 
   activeIdRef.current = activeTabId
+  registryActiveRef.current = bridgeEnabled
+  registryActivateRef.current = onActivate
+  registryCloseRef.current = onCloseSurface
 
   const invokeFor = useCallback(async <T,>(
     command: string,
@@ -655,66 +667,21 @@ export function useDirectBrowserTabs({
   agentHandlerRef.current = executeAgentCommand
 
   useEffect(() => {
-    if (!supported || !enabled || !bridgeEnabled) return
-    let alive = true
-    let socket: WebSocket | null = null
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-
-    const connect = () => {
-      if (!alive) return
-      socket = new WebSocket(directBrowserBridgeUrl(sessionId))
-      socket.onopen = () => {
-        socket?.send(JSON.stringify({ type: 'ready', version: 1 }))
-        setAgentConnected(true)
-      }
-      socket.onmessage = (event) => {
-        if (typeof event.data !== 'string') return
-        let message: Record<string, unknown>
-        try {
-          message = JSON.parse(event.data) as Record<string, unknown>
-        } catch {
-          return
-        }
-        const id = message.id
-        const action = message.action
-        if (typeof id !== 'string' || typeof action !== 'string') return
-        const params = message.params && typeof message.params === 'object'
-          ? message.params as Record<string, unknown>
-          : {}
-        const commandSocket = event.currentTarget as WebSocket
-        commandQueueRef.current = commandQueueRef.current.then(async () => {
-          try {
-            const result = await agentHandlerRef.current(action, params)
-            if (commandSocket.readyState === WebSocket.OPEN) {
-              commandSocket.send(JSON.stringify({ id, ok: true, result }))
-            }
-          } catch (error) {
-            if (commandSocket.readyState === WebSocket.OPEN) {
-              commandSocket.send(JSON.stringify({
-                id,
-                ok: false,
-                error: error instanceof Error ? error.message : String(error),
-              }))
-            }
-          }
-        })
-      }
-      socket.onclose = () => {
-        setAgentConnected(false)
-        socket = null
-        if (alive) reconnectTimer = setTimeout(connect, 1000)
-      }
-      socket.onerror = () => socket?.close()
-    }
-
-    connect()
-    return () => {
-      alive = false
-      setAgentConnected(false)
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      socket?.close()
-    }
-  }, [bridgeEnabled, enabled, sessionId, supported])
+    if (!supported || !enabled) return
+    return registerDirectBrowserSurface(
+      sessionId,
+      {
+        instanceId,
+        order: registryOrderRef.current,
+        isActive: () => registryActiveRef.current,
+        getTab: () => tabsRef.current.find((tab) => tab.id === activeIdRef.current) ?? null,
+        execute: (action, params) => agentHandlerRef.current(action, params),
+        activate: () => registryActivateRef.current?.(),
+        close: () => registryCloseRef.current?.(),
+      },
+      setAgentConnected,
+    )
+  }, [enabled, instanceId, sessionId, supported])
 
   useEffect(() => {
     const webview = webviewsRef.current.get(activeTabId ?? '')
@@ -902,12 +869,6 @@ export function browserScreenshotPoint(
     x: point.x * cssViewport.width / Math.max(1, imageBounds.width),
     y: point.y * cssViewport.height / Math.max(1, imageBounds.height),
   }
-}
-
-function directBrowserBridgeUrl(sessionId: string): string {
-  return withTokenParam(
-    `${apiWsBaseUrl()}/team/${encodeURIComponent(sessionId)}/browser/agent`,
-  )
 }
 
 function sameBounds(left: NativeBounds | null, right: NativeBounds): boolean {
