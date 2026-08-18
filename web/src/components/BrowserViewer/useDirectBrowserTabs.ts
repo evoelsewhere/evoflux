@@ -232,6 +232,34 @@ export function useDirectBrowserTabs({
     throw new Error('Browser document did not commit after navigation')
   }, [invokeFor])
 
+  const waitForPossibleDocumentNavigation = useCallback(async (
+    label: string,
+    previousDocumentId: string | null,
+    timeoutMs = 900,
+  ): Promise<BrowserRuntimeStatus | null> => {
+    if (!previousDocumentId) return null
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      try {
+        const status = await invokeFor<BrowserRuntimeStatus>(
+          'app_browser_webview_agent_action',
+          label,
+          { action: 'status', params: {} },
+        )
+        if (status.documentId && status.documentId !== previousDocumentId) {
+          if (status.readyState === 'interactive' || status.readyState === 'complete') {
+            return status
+          }
+          return waitForDocumentNavigation(label, previousDocumentId)
+        }
+      } catch {
+        // A navigation can temporarily tear down the old evaluation context.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 75))
+    }
+    return null
+  }, [invokeFor, waitForDocumentNavigation])
+
   const createTab = useCallback(async (initialUrl = NEW_TAB_URL) => {
     if (!supported || !enabled || creatingRef.current) return
     if (singleTab && tabsRef.current.length > 0) return tabsRef.current[0]
@@ -760,19 +788,47 @@ export function useDirectBrowserTabs({
     ].includes(action)) {
       // A click can navigate without going through our navigate handler. Install
       // observability idempotently in the current document before every action.
+      const navigationAware = action === 'click'
+        || action === 'dblclick'
+        || action === 'submit'
+        || (action === 'press' && String(params.key || '').split('+').at(-1) === 'Enter')
+      const before = navigationAware
+        ? await invokeFor<BrowserRuntimeStatus>(
+            'app_browser_webview_agent_action',
+            tab.label,
+            { action: 'status', params: {} },
+          )
+        : null
       await invokeFor('app_browser_webview_agent_action', tab.label, {
         action: 'instrument',
         params: {},
       })
-      return invokeFor('app_browser_webview_agent_action', tab.label, {
+      const result = await invokeFor('app_browser_webview_agent_action', tab.label, {
         action,
         params,
       })
+      if (before) {
+        const committed = await waitForPossibleDocumentNavigation(
+          tab.label,
+          before.documentId ?? null,
+        )
+        if (committed?.url) {
+          tabsRef.current = tabsRef.current.map((item) => item.id === tab.id
+            ? { ...item, url: committed.url ?? item.url }
+            : item)
+          setTabs(tabsRef.current)
+          await invokeFor('app_browser_webview_agent_action', tab.label, {
+            action: 'instrument',
+            params: {},
+          })
+        }
+      }
+      return result
     }
     throw new Error(
       `${action} is not supported by the direct desktop browser yet`,
     )
-  }, [applyAgentViewport, closeAll, closeTab, createTab, invokeFor, onRequestNewTab, selectTab, singleTab, waitForDocumentNavigation, waitForNavigation])
+  }, [applyAgentViewport, closeAll, closeTab, createTab, invokeFor, onRequestNewTab, selectTab, singleTab, waitForDocumentNavigation, waitForNavigation, waitForPossibleDocumentNavigation])
 
   agentHandlerRef.current = executeAgentCommand
 
