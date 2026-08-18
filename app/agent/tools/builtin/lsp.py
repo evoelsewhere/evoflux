@@ -16,7 +16,7 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from urllib.parse import unquote, urlparse
 
 from pydantic import Field
@@ -342,6 +342,119 @@ async def _real_lsp_references(
     return _format_lsp_locations(locations[:limit], "reference")
 
 
+async def _lsp_semantic(
+    action: Annotated[
+        Literal[
+            "hover",
+            "code_actions",
+            "rename",
+            "format",
+            "organize_imports",
+            "document_symbols",
+            "workspace_symbols",
+        ],
+        Field(description="Repository-local semantic LSP operation."),
+    ],
+    path: Annotated[
+        str,
+        Field(
+            description=(
+                "Workspace-relative source file. For workspace_symbols, this "
+                "selects which language server to query."
+            )
+        ),
+    ],
+    line: Annotated[
+        int | None,
+        Field(description="1-based start/cursor line.", ge=1),
+    ] = None,
+    column: Annotated[
+        int | None,
+        Field(description="1-based start/cursor column.", ge=1),
+    ] = None,
+    end_line: Annotated[
+        int | None,
+        Field(description="1-based selection end line.", ge=1),
+    ] = None,
+    end_column: Annotated[
+        int | None,
+        Field(description="1-based selection end column.", ge=1),
+    ] = None,
+    new_name: Annotated[
+        str | None,
+        Field(description="New symbol name for rename."),
+    ] = None,
+    query: Annotated[
+        str | None,
+        Field(description="Symbol query for workspace_symbols."),
+    ] = None,
+    tab_size: Annotated[
+        int,
+        Field(description="Formatting tab size.", ge=1, le=16),
+    ] = 4,
+    insert_spaces: Annotated[
+        bool,
+        Field(description="Use spaces instead of tabs when formatting."),
+    ] = True,
+) -> str:
+    """Inspect or calculate semantic edits without mutating the repository."""
+    target = _resolve_path(path)
+    if not target.is_file():
+        return f"[Error] Source file does not exist: {target}"
+    try:
+        client = await get_language_server(get_sandbox().workspace_root, target)
+        if action == "hover":
+            cursor_line, cursor_column = _require_position(line, column, action)
+            result: Any = await client.hover(target, cursor_line, cursor_column)
+        elif action == "code_actions":
+            start_line, start_column = _require_position(line, column, action)
+            diagnostics = await client.diagnostics(target)
+            result = await client.code_actions(
+                target,
+                start_line=start_line,
+                start_column=start_column,
+                end_line=end_line or start_line,
+                end_column=end_column or start_column,
+                diagnostics=diagnostics,
+            )
+        elif action == "rename":
+            cursor_line, cursor_column = _require_position(line, column, action)
+            if not new_name or not new_name.strip():
+                return "[Error] rename requires a non-empty new_name."
+            result = await client.rename(
+                target,
+                cursor_line,
+                cursor_column,
+                new_name.strip(),
+            )
+        elif action == "format":
+            result = await client.formatting(
+                target,
+                tab_size=tab_size,
+                insert_spaces=insert_spaces,
+            )
+        elif action == "organize_imports":
+            result = await client.organize_imports(target)
+        elif action == "document_symbols":
+            result = await client.document_symbols(target)
+        else:
+            result = await client.workspace_symbols(query or "")
+    except (LanguageServerUnavailable, RuntimeError, ValueError) as exc:
+        return f"[Unavailable] {exc}"
+
+    if result in (None, [], {}):
+        return f"No {action.replace('_', ' ')} result returned by the language server."
+    return json.dumps(result, indent=2, ensure_ascii=False)[:40_000]
+
+
+def _require_position(
+    line: int | None, column: int | None, action: str
+) -> tuple[int, int]:
+    if line is None or column is None:
+        raise ValueError(f"{action} requires line and column.")
+    return line, column
+
+
 def _format_lsp_locations(locations: list[dict[str, Any]], kind: str) -> str:
     if not locations:
         return f"No {kind} locations returned by the language server."
@@ -454,4 +567,31 @@ lsp_references = Tool(
     deferred_summary="Find live references with a language server.",
     capabilities=("source_navigation",),
     observation_kind="structural",
+)
+
+lsp_semantic = Tool(
+    _lsp_semantic,
+    name="lsp_semantic",
+    tiers=("coding",),
+    description=(
+        "Inspect hover information, quick-fixes/code actions, repository-local "
+        "rename edits, formatting, organize-imports actions, and document or "
+        "workspace symbols. It returns proposed edits but never applies them."
+    ),
+    concurrency_safe=True,
+    read_only=True,
+    deferred=True,
+    deferred_summary="Inspect semantic code information or calculate LSP edits.",
+    capabilities=("source_navigation", "semantic_edits"),
+    observation_kind="structural",
+    search_aliases=(
+        "hover",
+        "quick fix",
+        "code action",
+        "rename",
+        "format",
+        "organize imports",
+        "symbols",
+        "lsp",
+    ),
 )

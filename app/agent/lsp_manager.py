@@ -1,4 +1,11 @@
-"""Opt-in Language Server Protocol client manager."""
+"""Repository-scoped Language Server Protocol client manager.
+
+The coding editor and coding agents share this client.  It deliberately owns
+the complete semantic request surface that EvoFlux exposes instead of leaking
+server-specific JSON-RPC calls into routes or tools.  Every client is scoped to
+one repository; multi-repository federation belongs to the code-context layer,
+not to this process manager.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +13,7 @@ import asyncio
 import hashlib
 import json
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -62,12 +70,15 @@ SPECS: tuple[LanguageServerSpec, ...] = (
         "dart", frozenset({".dart"}), (("dart", "language-server", "--protocol=lsp"),)
     ),
     LanguageServerSpec(
-        "ruby", frozenset({".rb", ".rake", ".gemspec"}),
+        "ruby",
+        frozenset({".rb", ".rake", ".gemspec"}),
         (("ruby-lsp",), ("solargraph", "stdio")),
     ),
     LanguageServerSpec("lua", frozenset({".lua"}), (("lua-language-server",),)),
     LanguageServerSpec(
-        "html", frozenset({".html", ".htm"}), (("vscode-html-language-server", "--stdio"),)
+        "html",
+        frozenset({".html", ".htm"}),
+        (("vscode-html-language-server", "--stdio"),),
     ),
     LanguageServerSpec(
         "css",
@@ -83,7 +94,9 @@ SPECS: tuple[LanguageServerSpec, ...] = (
         "yaml", frozenset({".yaml", ".yml"}), (("yaml-language-server", "--stdio"),)
     ),
     LanguageServerSpec(
-        "bash", frozenset({".sh", ".bash"}), (("bash-language-server", "start", "--stdio"),)
+        "bash",
+        frozenset({".sh", ".bash"}),
+        (("bash-language-server", "start", "--stdio"),),
     ),
     LanguageServerSpec(
         "markdown",
@@ -91,8 +104,12 @@ SPECS: tuple[LanguageServerSpec, ...] = (
         (("marksman", "server"),),
     ),
     LanguageServerSpec("toml", frozenset({".toml"}), (("taplo", "lsp", "stdio"),)),
-    LanguageServerSpec("vue", frozenset({".vue"}), (("vue-language-server", "--stdio"),)),
-    LanguageServerSpec("svelte", frozenset({".svelte"}), (("svelteserver", "--stdio"),)),
+    LanguageServerSpec(
+        "vue", frozenset({".vue"}), (("vue-language-server", "--stdio"),)
+    ),
+    LanguageServerSpec(
+        "svelte", frozenset({".svelte"}), (("svelteserver", "--stdio"),)
+    ),
     LanguageServerSpec("go", frozenset({".go"}), (("gopls",),)),
     LanguageServerSpec("rust", frozenset({".rs"}), (("rust-analyzer",),)),
 )
@@ -125,7 +142,13 @@ class LanguageServerClient:
         # decide whether a didChange notification is required.
         self._versions: dict[str, tuple[int, str]] = {}
         self._diagnostics: dict[str, list[dict[str, Any]]] = {}
+        self._diagnostic_versions: dict[str, int | None] = {}
         self._diagnostic_events: dict[str, asyncio.Event] = {}
+        self.capabilities: dict[str, Any] = {}
+        self.server_info: dict[str, Any] = {}
+        self.workspace_folders: list[dict[str, str]] = [
+            {"uri": self.workspace.as_uri(), "name": self.workspace.name}
+        ]
 
     async def start(self) -> None:
         if self._process is not None and self._process.returncode is None:
@@ -147,27 +170,53 @@ class LanguageServerClient:
                 self._read_messages(),
                 name=f"lsp:{self.spec.language_id}:{self.workspace.name}",
             )
-            await self.request(
+            initialize_result = await self.request(
                 "initialize",
                 {
                     "processId": None,
                     "rootUri": self.workspace.as_uri(),
                     "capabilities": {
+                        "general": {"positionEncodings": ["utf-16"]},
                         "textDocument": {
+                            "synchronization": {
+                                "didSave": True,
+                                "dynamicRegistration": False,
+                            },
+                            "hover": {"contentFormat": ["markdown", "plaintext"]},
+                            "codeAction": {
+                                "dataSupport": True,
+                                "resolveSupport": {"properties": ["edit", "command"]},
+                            },
+                            "rename": {"prepareSupport": True},
+                            "formatting": {},
+                            "rangeFormatting": {},
+                            "documentSymbol": {
+                                "hierarchicalDocumentSymbolSupport": True
+                            },
                             "publishDiagnostics": {
                                 "relatedInformation": True,
                                 "versionSupport": True,
-                            }
+                            },
                         },
-                        "workspace": {"configuration": False},
+                        "workspace": {
+                            "applyEdit": False,
+                            "configuration": True,
+                            "symbol": {"dynamicRegistration": False},
+                            "workspaceFolders": True,
+                        },
                     },
-                    "workspaceFolders": [
-                        {"uri": self.workspace.as_uri(), "name": self.workspace.name}
-                    ],
+                    "workspaceFolders": self.workspace_folders,
                 },
                 ensure_started=False,
                 timeout=20,
             )
+            if isinstance(initialize_result, dict):
+                raw_capabilities = initialize_result.get("capabilities")
+                if isinstance(raw_capabilities, dict):
+                    self.capabilities = raw_capabilities
+                raw_server_info = initialize_result.get("serverInfo")
+                if isinstance(raw_server_info, dict):
+                    self.server_info = raw_server_info
             await self.notify("initialized", {}, ensure_started=False)
             logger.info(
                 "lsp_started language={} workspace={} command={}",
@@ -214,6 +263,12 @@ class LanguageServerClient:
     ) -> tuple[str, bool]:
         await self.start()
         resolved = path.resolve()
+        try:
+            resolved.relative_to(self.workspace)
+        except ValueError as exc:
+            raise LanguageServerUnavailable(
+                f"Source file is outside the LSP repository root: {resolved}"
+            ) from exc
         uri = resolved.as_uri()
         if content is None:
             content = resolved.read_text(encoding="utf-8", errors="replace")
@@ -252,16 +307,54 @@ class LanguageServerClient:
         self._versions[uri] = (version, fingerprint)
         return uri, changed
 
+    async def close_document(self, path: Path) -> None:
+        """Close one previously synchronized document."""
+        uri = path.resolve().as_uri()
+        if uri not in self._versions:
+            return
+        await self.notify("textDocument/didClose", {"textDocument": {"uri": uri}})
+        self._versions.pop(uri, None)
+        self._diagnostics.pop(uri, None)
+        self._diagnostic_versions.pop(uri, None)
+        self._diagnostic_events.pop(uri, None)
+
     async def diagnostics(
-        self, path: Path, content: str | None = None
+        self,
+        path: Path,
+        content: str | None = None,
+        *,
+        require_current_version: bool = False,
     ) -> list[dict[str, Any]]:
         uri, changed = await self.sync_document(path, content)
         event = self._diagnostic_events.setdefault(uri, asyncio.Event())
-        if changed:
+        current_version = self._versions[uri][0]
+        if changed or (
+            require_current_version
+            and self._diagnostic_versions.get(uri) != current_version
+        ):
+            deadline = time.monotonic() + 2.0
             try:
-                await asyncio.wait_for(event.wait(), timeout=2)
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    await asyncio.wait_for(event.wait(), timeout=remaining)
+                    if (
+                        not require_current_version
+                        or self._diagnostic_versions.get(uri) == current_version
+                    ):
+                        break
+                    event.clear()
             except TimeoutError:
                 pass
+        if (
+            require_current_version
+            and self._diagnostic_versions.get(uri) != current_version
+        ):
+            raise LanguageServerUnavailable(
+                "Language server did not publish diagnostics for the current "
+                f"document version ({current_version})."
+            )
         return list(self._diagnostics.get(uri, []))
 
     async def definition(
@@ -276,6 +369,21 @@ class LanguageServerClient:
             },
         )
         return _locations(result)
+
+    async def hover(
+        self,
+        path: Path,
+        line: int,
+        column: int,
+        content: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Return semantic hover information for an exact source position."""
+        uri, _ = await self.sync_document(path, content)
+        result = await self.request(
+            "textDocument/hover",
+            _position_params(uri, line, column),
+        )
+        return result if isinstance(result, dict) else None
 
     async def references(
         self,
@@ -295,6 +403,113 @@ class LanguageServerClient:
             },
         )
         return _locations(result)
+
+    async def code_actions(
+        self,
+        path: Path,
+        *,
+        start_line: int,
+        start_column: int,
+        end_line: int,
+        end_column: int,
+        diagnostics: list[dict[str, Any]] | None = None,
+        only: list[str] | None = None,
+        content: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return quick-fixes and source actions without applying them."""
+        uri, _ = await self.sync_document(path, content)
+        context: dict[str, Any] = {"diagnostics": diagnostics or []}
+        if only:
+            context["only"] = only
+        result = await self.request(
+            "textDocument/codeAction",
+            {
+                "textDocument": {"uri": uri},
+                "range": _range(
+                    start_line,
+                    start_column,
+                    end_line,
+                    end_column,
+                ),
+                "context": context,
+            },
+        )
+        return _dict_list(result)
+
+    async def resolve_code_action(self, action: dict[str, Any]) -> dict[str, Any]:
+        """Resolve a lazy code action; the returned edit is still unapplied."""
+        result = await self.request("codeAction/resolve", action)
+        return result if isinstance(result, dict) else action
+
+    async def rename(
+        self,
+        path: Path,
+        line: int,
+        column: int,
+        new_name: str,
+        content: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Calculate a repository-local semantic rename WorkspaceEdit."""
+        uri, _ = await self.sync_document(path, content)
+        result = await self.request(
+            "textDocument/rename",
+            {**_position_params(uri, line, column), "newName": new_name},
+        )
+        return result if isinstance(result, dict) else None
+
+    async def formatting(
+        self,
+        path: Path,
+        content: str | None = None,
+        *,
+        tab_size: int = 4,
+        insert_spaces: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Calculate full-document formatting edits."""
+        uri, _ = await self.sync_document(path, content)
+        result = await self.request(
+            "textDocument/formatting",
+            {
+                "textDocument": {"uri": uri},
+                "options": {
+                    "tabSize": tab_size,
+                    "insertSpaces": insert_spaces,
+                },
+            },
+        )
+        return _dict_list(result)
+
+    async def organize_imports(
+        self, path: Path, content: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Return organize-imports source actions for a document."""
+        if content is None:
+            content = path.read_text(encoding="utf-8", errors="replace")
+        end_line = max(1, len(content.splitlines()) or 1)
+        return await self.code_actions(
+            path,
+            start_line=1,
+            start_column=1,
+            end_line=end_line,
+            end_column=1,
+            only=["source.organizeImports"],
+            content=content,
+        )
+
+    async def document_symbols(
+        self, path: Path, content: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Return hierarchical or flat symbols for one document."""
+        uri, _ = await self.sync_document(path, content)
+        result = await self.request(
+            "textDocument/documentSymbol", {"textDocument": {"uri": uri}}
+        )
+        return _dict_list(result)
+
+    async def workspace_symbols(self, query: str) -> list[dict[str, Any]]:
+        """Return symbols from this repository's language workspace."""
+        result = await self.request("workspace/symbol", {"query": query})
+        return _dict_list(result)
 
     async def close(self) -> None:
         process = self._process
@@ -343,12 +558,19 @@ class LanguageServerClient:
                     else:
                         future.set_result(message.get("result"))
                     continue
+                if request_id is not None and isinstance(message.get("method"), str):
+                    await self._handle_server_request(message)
+                    continue
                 if message.get("method") == "textDocument/publishDiagnostics":
                     params = message.get("params") or {}
                     uri = str(params.get("uri") or "")
                     diagnostics = params.get("diagnostics") or []
                     self._diagnostics[uri] = (
                         diagnostics if isinstance(diagnostics, list) else []
+                    )
+                    raw_version = params.get("version")
+                    self._diagnostic_versions[uri] = (
+                        raw_version if isinstance(raw_version, int) else None
                     )
                     self._diagnostic_events.setdefault(uri, asyncio.Event()).set()
         except (
@@ -364,6 +586,45 @@ class LanguageServerClient:
                     future.set_exception(
                         LanguageServerUnavailable("Language server exited.")
                     )
+
+    async def _handle_server_request(self, message: dict[str, Any]) -> None:
+        """Answer the small standard request set semantic servers depend on."""
+        request_id = message.get("id")
+        method = str(message.get("method") or "")
+        params = message.get("params")
+        if method == "workspace/configuration":
+            items = params.get("items", []) if isinstance(params, dict) else []
+            result: Any = [{} for _ in items] if isinstance(items, list) else []
+        elif method == "workspace/workspaceFolders":
+            result = self.workspace_folders
+        elif method in {
+            "client/registerCapability",
+            "client/unregisterCapability",
+            "window/workDoneProgress/create",
+        }:
+            result = None
+        elif method == "workspace/applyEdit":
+            result = {
+                "applied": False,
+                "failureReason": (
+                    "EvoFlux applies semantic edits only through reviewed ChangeSets."
+                ),
+            }
+        elif method == "window/showMessageRequest":
+            result = None
+        else:
+            await self._send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {
+                        "code": -32601,
+                        "message": f"Unsupported request: {method}",
+                    },
+                }
+            )
+            return
+        await self._send({"jsonrpc": "2.0", "id": request_id, "result": result})
 
 
 _clients: dict[tuple[Path, str], LanguageServerClient] = {}
@@ -432,3 +693,39 @@ def _locations(result: Any) -> list[dict[str, Any]]:
         if isinstance(result, list)
         else []
     )
+
+
+def _dict_list(result: Any) -> list[dict[str, Any]]:
+    return (
+        [item for item in result if isinstance(item, dict)]
+        if isinstance(result, list)
+        else []
+    )
+
+
+def _position_params(uri: str, line: int, column: int) -> dict[str, Any]:
+    return {
+        "textDocument": {"uri": uri},
+        "position": {
+            "line": max(0, line - 1),
+            "character": max(0, column - 1),
+        },
+    }
+
+
+def _range(
+    start_line: int,
+    start_column: int,
+    end_line: int,
+    end_column: int,
+) -> dict[str, Any]:
+    return {
+        "start": {
+            "line": max(0, start_line - 1),
+            "character": max(0, start_column - 1),
+        },
+        "end": {
+            "line": max(0, end_line - 1),
+            "character": max(0, end_column - 1),
+        },
+    }

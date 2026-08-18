@@ -29,6 +29,8 @@ import type {
   WorkspaceRootResponse,
   CodingWorkspaceFilesResponse,
   CodingDiagnosticsResponse,
+  CodingSemanticRequest,
+  CodingSemanticResponse,
   TodosResponse,
   CodingProject,
   ProjectCreateRequest,
@@ -708,6 +710,23 @@ export async function getCodingWorkspaceDiagnostics(
     signal,
   })
   if (!res.ok) await parseDetailOrThrow(res, 'getCodingWorkspaceDiagnostics')
+  return res.json()
+}
+
+/** Request semantic LSP information or a proposed, unapplied WorkspaceEdit. */
+export async function getCodingWorkspaceSemanticResult(
+  workspace: string,
+  request: CodingSemanticRequest,
+  signal?: AbortSignal,
+): Promise<CodingSemanticResponse> {
+  const params = new URLSearchParams({ workspace })
+  const res = await fetch(apiUrl(`/team/workspace/lsp/semantic?${params}`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(request),
+    signal,
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'getCodingWorkspaceSemanticResult')
   return res.json()
 }
 
