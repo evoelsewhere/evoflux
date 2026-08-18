@@ -289,6 +289,33 @@ def test_save_browser_download_avoids_overwrite(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_save_pdf_stores_native_pdf_in_workspace(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: True)
+    state = SimpleNamespace(
+        metadata={"session_id": "desktop-session", "workspace": str(tmp_path)}
+    )
+
+    async def request(_sid: str, action: str, params: dict):
+        assert action == "save_pdf"
+        assert params["filename"] == "capture.pdf"
+        return {
+            "filename": "capture.pdf",
+            "media_type": "application/pdf",
+            "bytes": 8,
+            "data": "JVBERi0xLjQ=",
+        }
+
+    monkeypatch.setattr(direct_browser_bridge, "request", request)
+    result = await browser_tool.browser_use.arun(
+        _injected={"_state": state},
+        actions=[{"action": "save_pdf", "filename": "capture.pdf"}],
+    )
+
+    assert "downloads/capture.pdf" in result
+    assert (tmp_path / "downloads" / "capture.pdf").read_bytes() == b"%PDF-1.4"
+
+
+@pytest.mark.asyncio
 async def test_expanded_control_and_debug_actions_are_forwarded(monkeypatch) -> None:
     monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: True)
     requests: list[tuple[str, dict]] = []

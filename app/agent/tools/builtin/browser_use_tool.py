@@ -87,7 +87,7 @@ def _browser_policy_refusal(
         return "Clipboard writes are disabled in Settings → Browser."
     if action == "set_files" and not policy.allow_file_uploads:
         return "Browser file uploads are disabled in Settings → Browser."
-    if action == "download" and not policy.allow_downloads:
+    if action in {"download", "save_pdf"} and not policy.allow_downloads:
         return "Browser downloads are disabled in Settings → Browser."
     if (
         action == "resolve_permission"
@@ -539,6 +539,11 @@ class PrintAction(BaseModel):
     action: Literal["print"]
 
 
+class SavePdfAction(BaseModel):
+    action: Literal["save_pdf"]
+    filename: str = Field(default="page.pdf", max_length=255)
+
+
 class ClipboardReadAction(BaseModel):
     action: Literal["clipboard_read"]
 
@@ -657,6 +662,7 @@ AnyAction = Annotated[
     | ResetViewportAction
     | ZoomAction
     | PrintAction
+    | SavePdfAction
     | ClipboardReadAction
     | ClipboardWriteAction
     | EvaluateAction
@@ -687,7 +693,7 @@ Navigate: navigate, back, forward, reload, wait by selector/text/URL/load state,
 scroll, scroll_into_view.
 Interact: click, click_at, dblclick, hover, focus, fill, type, clear, submit,
 press, select, set_checked, set_files, drag, dispatch_event.
-Viewport: resize to an exact responsive-test size, reset_viewport, zoom, print.
+Viewport: resize to an exact responsive-test size, reset_viewport, zoom, print, save_pdf.
 Clipboard: clipboard_read, clipboard_write (subject to Settings policy).
 Tabs: new_tab, close_tab, get_tabs, switch_tab, start, stop.
 
@@ -831,7 +837,7 @@ async def browser_use(
                 continue
         try:
             value = await direct_browser_bridge.request(session_id, name, params)
-            if name == "download" and isinstance(value, dict):
+            if name in {"download", "save_pdf"} and isinstance(value, dict):
                 requested_name = params.get("filename")
                 relative_path = await asyncio.to_thread(
                     _save_browser_download,
