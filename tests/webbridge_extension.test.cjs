@@ -1920,6 +1920,9 @@ test("P2 AskUser view replaces the composer until the pending question is answer
   assert.match(sidePanelSource, /composerRoot\.toggleAttribute\("inert", asking\)/);
   assert.match(sidePanelSource, /questionsRoot\.querySelector\("textarea\.answer:not\(\[hidden\]\)"\)\?\.focus\(\)/);
   assert.match(sidePanelSource, /requestAnimationFrame\(\(\) => composer\.focus\(\)\)/);
+  assert.match(sidePanelSource, /pendingBrowserDialog/);
+  assert.match(sidePanelSource, /handle_browser_dialog/);
+  assert.match(sidePanelSource, /The page is waiting for your response/);
 });
 
 test("P2 typed browser handoffs reuse AskUser without reading secret values", () => {
@@ -3328,6 +3331,100 @@ test("screenshots suspend and restore the take-control overlay", async () => {
   );
   assert.equal(worker.run("agentControlOverlays.has(1)"), true);
   assert.equal(worker.run("overlayCaptureSuspensions.has(1)"), false);
+});
+
+test("responsive viewport emulation sets and resets device metrics", async () => {
+  const worker = loadWorker();
+  worker.setCdpResponder((method) => {
+    if (method === "Runtime.evaluate") {
+      return {
+        result: {
+          value: {
+            width: 375,
+            height: 812,
+            dpr: 2,
+            scrollX: 0,
+            scrollY: 0,
+            pageWidth: 375,
+            pageHeight: 1600,
+          },
+        },
+      };
+    }
+    return {};
+  });
+
+  const resized = await worker.run(`cmdResize({
+    preset: "mobile",
+    device_scale_factor: 2,
+    color_scheme: "dark"
+  })`);
+  assert.equal(resized.viewport.width, 375);
+  assert.equal(resized.viewport.height, 812);
+  assert.equal(resized.mobile, true);
+  assert.equal(resized.touch, true);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(
+      worker.cdpCalls.find((call) => call.method === "Emulation.setDeviceMetricsOverride").params
+    )),
+    {
+      width: 375,
+      height: 812,
+      deviceScaleFactor: 2,
+      mobile: true,
+      screenWidth: 375,
+      screenHeight: 812,
+    }
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(
+      worker.cdpCalls.find((call) => call.method === "Emulation.setEmulatedMedia").params.features
+    )),
+    [{ name: "prefers-color-scheme", value: "dark" }]
+  );
+
+  worker.cdpCalls.length = 0;
+  await worker.run("cmdResetViewport({})");
+  assert.ok(worker.cdpCalls.some((call) => call.method === "Emulation.clearDeviceMetricsOverride"));
+  assert.ok(worker.cdpCalls.some((call) => (
+    call.method === "Emulation.setTouchEmulationEnabled" && call.params.enabled === false
+  )));
+});
+
+test("javascript dialogs are observable and controllable through CDP", async () => {
+  const worker = loadWorker();
+  await worker.run("ensureDebuggerAttached(1)");
+  await worker.run(`chrome.debugger.onEvent.emit(
+    { tabId: 1 },
+    "Page.javascriptDialogOpening",
+    { type: "prompt", message: "Your name?", defaultPrompt: "Evo", url: "https://example.com/active" }
+  )`);
+
+  const captured = await worker.run("cmdDialogs({ tab_id: 1 })");
+  assert.equal(captured.active.type, "prompt");
+  assert.equal(captured.active.message, "Your name?");
+  assert.equal(captured.history.length, 1);
+
+  const handled = await worker.run(`cmdHandleDialog({
+    tab_id: 1,
+    accept: true,
+    prompt_text: "EvoFlux"
+  })`);
+  assert.equal(handled.accepted, true);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(
+      worker.cdpCalls.find((call) => call.method === "Page.handleJavaScriptDialog").params
+    )),
+    { accept: true, promptText: "EvoFlux" }
+  );
+
+  await worker.run(`chrome.debugger.onEvent.emit(
+    { tabId: 1 },
+    "Page.javascriptDialogClosed",
+    { result: true, userInput: "EvoFlux" }
+  )`);
+  assert.equal(worker.run("activePageDialogs.has(1)"), false);
+  assert.equal(worker.run("pageDialogHistory.get(1)[0].accepted"), true);
 });
 
 test("bound-origin guard rejects a tab that navigated before a command executes", async () => {
