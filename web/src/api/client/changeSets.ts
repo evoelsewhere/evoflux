@@ -1,4 +1,4 @@
-import type { ChangeSetCreateRequest, ChangeSetResponse } from '../types'
+import type { ChangeSetCreateRequest, ChangeSetFileContent, ChangeSetResponse } from '../types'
 import { apiUrl } from '../base-url'
 import { parseDetailOrThrow } from './_shared'
 
@@ -26,6 +26,17 @@ export async function getChangeSet(
 ): Promise<ChangeSetResponse> {
   const res = await fetch(changeSetUrl(workspace, `/${encodeURIComponent(changeSetId)}`))
   if (!res.ok) await parseDetailOrThrow(res, 'getChangeSet')
+  return res.json()
+}
+
+export async function getChangeSetFileContent(
+  workspace: string,
+  changeSetId: string,
+  path: string,
+): Promise<ChangeSetFileContent> {
+  const suffix = `/${encodeURIComponent(changeSetId)}/files/${path.split('/').map(encodeURIComponent).join('/')}`
+  const res = await fetch(changeSetUrl(workspace, suffix))
+  if (!res.ok) await parseDetailOrThrow(res, 'getChangeSetFileContent')
   return res.json()
 }
 

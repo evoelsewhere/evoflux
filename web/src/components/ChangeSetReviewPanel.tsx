@@ -1,8 +1,12 @@
+import { useState } from 'react'
 import { Check, FileDiff, Loader2, X } from 'lucide-react'
+import { DiffEditor, useMonaco } from '@monaco-editor/react'
+import { useQuery } from '@tanstack/react-query'
 
 import {
   applyChangeSet,
   codingWorkspaceFileUrl,
+  getChangeSetFileContent,
   rejectChangeSet,
   runEditorAction,
 } from '@/api/client'
@@ -13,6 +17,7 @@ import { useChangeSetStore } from '@/stores/useChangeSetStore'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
 import { SidePanel } from './shell/SidePanel'
+import { languageForExt, useMonacoTheme } from '@/hooks/useMonacoTheme'
 
 function DiffLine({ line }: { line: string }) {
   const tone = line.startsWith('+++') || line.startsWith('---')
@@ -31,15 +36,19 @@ function FileProposal({
   file,
   busy,
   onDecision,
+  selected,
+  onSelect,
 }: {
   file: ChangeSetFile
   busy: boolean
   onDecision: (decision: 'apply' | 'reject', paths: string[]) => void
+  selected: boolean
+  onSelect: () => void
 }) {
   return (
     <section className="overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card)">
       <header className="flex items-center gap-2 border-b border-(--color-border) px-3 py-2">
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-(--color-text)">{file.path}</span>
+        <button type="button" onClick={onSelect} className={selected ? 'min-w-0 flex-1 truncate text-left font-mono text-xs text-(--color-accent)' : 'min-w-0 flex-1 truncate text-left font-mono text-xs text-(--color-text)'}>{file.path}</button>
         <span className="font-mono text-[10px] tabular-nums text-(--color-text-muted)">
           <span className="text-(--color-success)">+{file.additions}</span>{' '}
           <span className="text-(--color-error)">−{file.deletions}</span>
@@ -83,6 +92,19 @@ export function ChangeSetReviewPanel() {
   const setBusy = useChangeSetStore((state) => state.setBusy)
   const sessionId = useTeamStore((state) => state.sessionId)
   const pushToast = useToastStore((state) => state.push)
+  const [selectedPath, setSelectedPath] = useState<string | null>(active?.files[0]?.path ?? null)
+  const monaco = useMonaco()
+  const theme = useMonacoTheme(monaco)
+  const selected = active?.files.find((file) => file.path === selectedPath) ?? active?.files[0]
+  const contentQuery = useQuery({
+    queryKey: ['change-set-file', active?.id, selected?.path],
+    queryFn: () => {
+      if (!active || !selected) throw new Error('No ChangeSet file selected.')
+      return getChangeSetFileContent(active.workspace, active.id, selected.path)
+    },
+    enabled: Boolean(active && selected),
+    staleTime: Infinity,
+  })
 
   if (!active) return null
   const pendingPaths = active.files.filter((file) => file.status === 'pending').map((file) => file.path)
@@ -162,8 +184,46 @@ export function ChangeSetReviewPanel() {
       </header>
       {active.description && <p className="border-b border-(--color-border) px-4 py-2 text-xs text-(--color-text-muted)">{active.description}</p>}
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        {selected && (
+          <section className="overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card)">
+            <div className="flex items-center justify-between border-b border-(--color-border) px-3 py-2">
+              <span className="truncate font-mono text-xs text-(--color-text)">{selected.path}</span>
+              <span className="text-[10px] text-(--color-text-muted)">Monaco diff preview</span>
+            </div>
+            <div className="h-96 min-h-72">
+              {contentQuery.isLoading ? (
+                <div className="flex h-full items-center justify-center"><Loader2 size={14} className="animate-spin text-(--color-text-muted)" /></div>
+              ) : contentQuery.data ? (
+                <DiffEditor
+                  theme={theme}
+                  language={languageForExt(selected.path.split('.').pop() ?? '')}
+                  original={contentQuery.data.original_content}
+                  modified={contentQuery.data.proposed_content}
+                  options={{
+                    readOnly: true,
+                    renderSideBySide: false,
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    fontSize: 12,
+                    lineHeight: 20,
+                    automaticLayout: true,
+                  }}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-xs text-(--color-error)">Unable to load Monaco diff preview.</div>
+              )}
+            </div>
+          </section>
+        )}
         {active.files.map((file) => (
-          <FileProposal key={file.path} file={file} busy={busy} onDecision={(decision, paths) => { void decide(decision, paths) }} />
+          <FileProposal
+            key={file.path}
+            file={file}
+            busy={busy}
+            selected={file.path === selected?.path}
+            onSelect={() => setSelectedPath(file.path)}
+            onDecision={(decision, paths) => { void decide(decision, paths) }}
+          />
         ))}
         {active.verification.length > 0 && (
           <section className="rounded-xl border border-(--color-border) bg-(--bg-card) p-3">
