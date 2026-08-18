@@ -16,6 +16,20 @@ class GitInitRequest(BaseModel):
     default_branch: str = "main"
 
 
+class GitCloneRequest(BaseModel):
+    parent: str
+    url: str = Field(min_length=1, max_length=4096)
+    directory: str | None = Field(default=None, min_length=1, max_length=255)
+    branch: str | None = Field(default=None, min_length=1, max_length=512)
+    depth: int | None = Field(default=None, ge=1, le=1_000_000)
+
+
+class GitCloneOut(BaseModel):
+    workspace: str
+    name: str
+    remote_url: str
+
+
 class GitIdentityRequest(BaseModel):
     workspace: str
     name: str = Field(min_length=1, max_length=512)

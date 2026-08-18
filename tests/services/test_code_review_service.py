@@ -395,6 +395,157 @@ def test_review_items_keep_provider_avatar_urls(parser, payload, expected_url):
     assert items[0].author_avatar_url == expected_url
 
 
+@pytest.mark.parametrize(
+    ("provider", "review", "changes", "expected"),
+    [
+        (
+            "github",
+            {"head": {"sha": "head"}, "base": {"sha": "base"}},
+            [
+                {
+                    "filename": "src/new.py",
+                    "previous_filename": "src/old.py",
+                    "status": "renamed",
+                    "additions": 4,
+                    "deletions": 2,
+                    "patch": "@@ -1 +1 @@\n-old\n+new",
+                }
+            ],
+            {
+                "path": "src/new.py",
+                "old_path": "src/old.py",
+                "status": "renamed",
+                "additions": 4,
+                "deletions": 2,
+                "commit_id": "head",
+                "base_commit_id": "base",
+                "start_commit_id": "base",
+                "can_comment": True,
+            },
+        ),
+        (
+            "gitlab",
+            {
+                "diff_refs": {
+                    "head_sha": "head",
+                    "base_sha": "base",
+                    "start_sha": "start",
+                }
+            },
+            [
+                {
+                    "old_path": "src/app.py",
+                    "new_path": "src/app.py",
+                    "new_file": False,
+                    "deleted_file": False,
+                    "renamed_file": False,
+                    "diff": "@@ -1 +1 @@\n-old\n+new",
+                }
+            ],
+            {
+                "path": "src/app.py",
+                "old_path": None,
+                "status": "modified",
+                "commit_id": "head",
+                "base_commit_id": "base",
+                "start_commit_id": "start",
+                "can_comment": True,
+            },
+        ),
+        (
+            "bitbucket_cloud",
+            {
+                "source": {"commit": {"hash": "head"}},
+                "destination": {"commit": {"hash": "base"}},
+            },
+            {
+                "values": [
+                    {
+                        "status": "modified",
+                        "old": {"path": "README.md"},
+                        "new": {"path": "README.md"},
+                        "lines_added": 3,
+                        "lines_removed": 1,
+                    }
+                ]
+            },
+            {
+                "path": "README.md",
+                "old_path": None,
+                "status": "modified",
+                "additions": 3,
+                "deletions": 1,
+                "commit_id": "head",
+                "base_commit_id": "base",
+                "can_comment": False,
+            },
+        ),
+        (
+            "bitbucket_server",
+            {"fromRef": {"latestCommit": "head"}, "toRef": {"latestCommit": "base"}},
+            {
+                "values": [
+                    {
+                        "type": "MOVE",
+                        "path": {"toString": "src/new.ts"},
+                        "srcPath": {"toString": "src/old.ts"},
+                    }
+                ]
+            },
+            {
+                "path": "src/new.ts",
+                "old_path": "src/old.ts",
+                "status": "renamed",
+                "commit_id": "head",
+                "base_commit_id": "base",
+                "can_comment": False,
+            },
+        ),
+        (
+            "azure_devops",
+            {
+                "lastMergeSourceCommit": {"commitId": "head"},
+                "lastMergeTargetCommit": {"commitId": "base"},
+            },
+            {"changeEntries": [{"changeType": "add", "item": {"path": "/src/new.cs"}}]},
+            {
+                "path": "/src/new.cs",
+                "old_path": None,
+                "status": "added",
+                "commit_id": "head",
+                "base_commit_id": "base",
+                "position_kind": "file",
+                "can_comment": False,
+            },
+        ),
+    ],
+)
+def test_review_changes_are_normalized_across_providers(
+    provider,
+    review,
+    changes,
+    expected,
+):
+    files = service._normalize_change_files(provider, review, changes)
+
+    assert len(files) == 1
+    assert files[0] | expected == files[0]
+
+
+def test_review_change_patch_is_bounded_and_marked_truncated():
+    patch = "@@ -1 +1 @@\n" + ("+x\n" * 5_000)
+
+    [file] = service._normalize_change_files(
+        "github",
+        {"head": {"sha": "head"}},
+        [{"filename": "large.txt", "status": "modified", "patch": patch}],
+    )
+
+    assert file["patch_truncated"] is True
+    assert len(file["patch"]) < len(patch)
+    assert file["patch"].endswith("[truncated]")
+
+
 def test_person_avatar_url_rejects_unsafe_urls():
     assert service._person_avatar_url({"avatar_url": "javascript:alert(1)"}) is None
     assert (
@@ -610,6 +761,60 @@ async def test_github_list_is_normalized_and_uses_api_not_cli(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("requested_state", "expected_number"),
+    [("closed", 1), ("merged", 2)],
+)
+async def test_github_review_list_separates_closed_and_merged(
+    monkeypatch: pytest.MonkeyPatch,
+    requested_state,
+    expected_number,
+):
+    monkeypatch.setenv("GITHUB_STATE_TOKEN", "secret")
+    seen_params = None
+
+    async def fake_request(connection, token, path, *, params=None):
+        nonlocal seen_params
+        seen_params = params
+        return [
+            {"number": 1, "title": "Closed", "state": "closed"},
+            {
+                "number": 2,
+                "title": "Merged",
+                "state": "closed",
+                "merged_at": "2026-08-18T00:00:00Z",
+            },
+        ]
+
+    monkeypatch.setattr(service, "_request_json", fake_request)
+    connection = GitServerConnection(
+        name="GitHub",
+        provider="github",
+        base_url="https://api.github.com",
+        host="github.com",
+        token_env_var="GITHUB_STATE_TOKEN",
+    )
+    target = service.RepositoryTarget(
+        workspace_id=str(uuid4()),
+        workspace="/repo",
+        name="repo",
+        remote_url="git@github.com:acme/repo.git",
+        host="github.com",
+        repository="acme/repo",
+        detected_provider="github",
+    )
+
+    result = await service.list_repository_reviews(
+        target,
+        connection,
+        state=requested_state,
+    )
+
+    assert [item.number for item in result.items] == [expected_number]
+    assert seen_params["state"] == "closed"
+
+
+@pytest.mark.asyncio
 async def test_gitlab_nested_repository_path_is_url_encoded(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -727,6 +932,24 @@ async def test_github_review_context_reads_files_and_both_comment_streams(
 
     assert context["review"]["number"] == 42
     assert context["changes"][0]["filename"] == "app.py"
+    assert context["files"] == [
+        {
+            "path": "app.py",
+            "old_path": None,
+            "status": "modified",
+            "additions": 4,
+            "deletions": 2,
+            "patch": "+fixed",
+            "patch_truncated": False,
+            "binary": False,
+            "can_comment": True,
+            "commit_id": "abc123",
+            "base_commit_id": None,
+            "start_commit_id": None,
+            "position_kind": "diff",
+        }
+    ]
+    assert context["files_truncated"] == 0
     assert context["summary"] == {
         "description": "<p>Adds the <strong>release</strong> workflow.</p>",
         "author": "author",
@@ -742,6 +965,7 @@ async def test_github_review_context_reads_files_and_both_comment_streams(
         "deletions": 2,
     }
     assert len(context["comments"]) == 2
+    assert context["comments_truncated"] == 0
     assert context["comments"][0]["stable_id"].startswith("github:")
     assert context["comments"][0]["author"] == "octocat"
     assert context["comments"][0]["body"] == "<p>Looks <strong>good</strong></p>"
@@ -765,6 +989,96 @@ async def test_github_review_context_reads_files_and_both_comment_streams(
         "repos/acme/repo/pulls/42/reviews",
         "repos/acme/repo/commits/abc123/check-runs",
     ]
+
+
+@pytest.mark.asyncio
+async def test_review_detail_pagination_combines_list_pages(monkeypatch):
+    calls: list[dict[str, int | str]] = []
+
+    async def fake_request(
+        connection,
+        token,
+        path,
+        *,
+        params=None,
+        method="GET",
+        json_body=None,
+        extra_headers=None,
+    ):
+        calls.append(params)
+        page = int(params["page"])
+        return [{"id": page * 10 + index} for index in range(2 if page == 1 else 1)]
+
+    monkeypatch.setattr(service, "_request_json", fake_request)
+    connection = GitServerConnection(
+        name="GitHub",
+        provider="github",
+        base_url="https://api.github.com",
+        host="github.com",
+        token_env_var="TOKEN",
+    )
+
+    rows = await service._request_paginated_json(
+        connection,
+        "secret",
+        "repos/acme/repo/pulls/1/files",
+        params={"per_page": 2},
+        page_size=2,
+    )
+
+    assert [row["id"] for row in rows] == [10, 11, 20]
+    assert calls == [
+        {"per_page": 2, "page": 1},
+        {"per_page": 2, "page": 2},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_review_detail_pagination_uses_bitbucket_next_page_start(monkeypatch):
+    calls: list[int] = []
+
+    async def fake_request(
+        connection,
+        token,
+        path,
+        *,
+        params=None,
+        method="GET",
+        json_body=None,
+        extra_headers=None,
+    ):
+        start = int(params["start"])
+        calls.append(start)
+        if start == 0:
+            return {
+                "values": [{"id": 1}, {"id": 2}],
+                "isLastPage": False,
+                "nextPageStart": 8,
+            }
+        return {"values": [{"id": 3}], "isLastPage": True}
+
+    monkeypatch.setattr(service, "_request_json", fake_request)
+    connection = GitServerConnection(
+        name="Bitbucket",
+        provider="bitbucket_server",
+        base_url="https://bitbucket.example.com/rest/api/1.0",
+        host="bitbucket.example.com",
+        token_env_var="TOKEN",
+    )
+
+    payload = await service._request_paginated_json(
+        connection,
+        "secret",
+        "projects/TEAM/repos/repo/pull-requests/1/changes",
+        params={"limit": 2},
+        items_key="values",
+        page_size=2,
+        cursor_param="start",
+        cursor_start=0,
+    )
+
+    assert [row["id"] for row in payload["values"]] == [1, 2, 3]
+    assert calls == [0, 8]
 
 
 @pytest.mark.asyncio
@@ -1015,6 +1329,137 @@ async def test_github_inline_comment_maps_position_and_idempotency(
         "side": "RIGHT",
         "commit_id": "abc",
     }
+
+
+@pytest.mark.asyncio
+async def test_gitlab_inline_comment_maps_left_side_to_old_line(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("GITLAB_INLINE_TOKEN", "secret")
+    seen: dict = {}
+
+    async def fake_request(
+        connection,
+        token,
+        path,
+        *,
+        params=None,
+        method="GET",
+        json_body=None,
+        extra_headers=None,
+    ):
+        seen.update(path=path, method=method, json_body=json_body)
+        return {"id": "discussion-1"}
+
+    monkeypatch.setattr(service, "_request_json", fake_request)
+    connection = GitServerConnection(
+        name="GitLab",
+        provider="gitlab",
+        base_url="https://gitlab.example.com/api/v4",
+        host="gitlab.example.com",
+        token_env_var="GITLAB_INLINE_TOKEN",
+    )
+    target = service.RepositoryTarget(
+        workspace_id=str(uuid4()),
+        workspace="/repo",
+        name="repo",
+        remote_url="git@gitlab.example.com:group/repo.git",
+        host="gitlab.example.com",
+        repository="group/repo",
+        detected_provider="gitlab",
+    )
+
+    await service.add_code_review_inline_comment(
+        target,
+        connection,
+        9,
+        "This deletion changes the fallback.",
+        path="src/new.py",
+        old_path="src/old.py",
+        line=21,
+        side="LEFT",
+        commit_id="head",
+        base_commit_id="base",
+        start_commit_id="start",
+    )
+
+    assert seen == {
+        "path": "projects/group%2Frepo/merge_requests/9/discussions",
+        "method": "POST",
+        "json_body": {
+            "body": "This deletion changes the fallback.",
+            "position": {
+                "position_type": "text",
+                "new_path": "src/new.py",
+                "old_path": "src/old.py",
+                "old_line": 21,
+                "head_sha": "head",
+                "base_sha": "base",
+                "start_sha": "start",
+            },
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_bitbucket_server_merge_uses_current_version_and_strategy_id(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("BITBUCKET_MERGE_TOKEN", "secret")
+    calls: list[tuple[str, str, dict | None]] = []
+
+    async def fake_request(
+        connection,
+        token,
+        path,
+        *,
+        params=None,
+        method="GET",
+        json_body=None,
+        extra_headers=None,
+    ):
+        calls.append((path, method, json_body))
+        return {"version": 7} if method == "GET" else {"state": "MERGED"}
+
+    monkeypatch.setattr(service, "_request_json", fake_request)
+    connection = GitServerConnection(
+        name="Bitbucket",
+        provider="bitbucket_server",
+        base_url="https://bitbucket.example.com/rest/api/1.0",
+        host="bitbucket.example.com",
+        token_env_var="BITBUCKET_MERGE_TOKEN",
+    )
+    target = service.RepositoryTarget(
+        workspace_id=str(uuid4()),
+        workspace="/repo",
+        name="repo",
+        remote_url="ssh://git@bitbucket.example.com/TEAM/repo.git",
+        host="bitbucket.example.com",
+        repository="TEAM/repo",
+        detected_provider="bitbucket_server",
+    )
+
+    await service.merge_code_review(
+        target,
+        connection,
+        11,
+        method="server-strategy-id",
+        commit_title="Merge reviewed change",
+    )
+
+    root = "projects/TEAM/repos/repo/pull-requests/11"
+    assert calls == [
+        (root, "GET", None),
+        (
+            f"{root}/merge",
+            "POST",
+            {
+                "version": 7,
+                "message": "Merge reviewed change",
+                "strategyId": "server-strategy-id",
+            },
+        ),
+    ]
 
 
 @pytest.mark.asyncio

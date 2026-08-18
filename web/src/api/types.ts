@@ -1223,6 +1223,12 @@ export interface GitRepository {
   user_email: string | null
 }
 
+export interface GitCloneResult {
+  workspace: string
+  name: string
+  remote_url: string
+}
+
 export interface GitRemote {
   name: string
   fetch_url: string
@@ -1431,6 +1437,22 @@ export interface CodeReviewSummary {
   deletions: number | null
 }
 
+export interface CodeReviewFile {
+  path: string
+  old_path: string | null
+  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | string
+  additions: number | null
+  deletions: number | null
+  patch: string | null
+  patch_truncated: boolean
+  binary: boolean
+  can_comment: boolean
+  commit_id: string | null
+  base_commit_id: string | null
+  start_commit_id: string | null
+  position_kind: 'diff' | 'file'
+}
+
 export interface CodeReviewContext {
   provider: GitServerProvider
   repository: string
@@ -1438,7 +1460,10 @@ export interface CodeReviewContext {
   summary: CodeReviewSummary
   review: Record<string, unknown>
   changes: unknown
+  files: CodeReviewFile[] | null
+  files_truncated: number
   comments: CodeReviewComment[]
+  comments_truncated: number
   approvals: Array<{ id: string; author: string | null; state: string }>
   checks: { summary: string; items: CodeReviewCheck[] }
   state: string
@@ -1474,6 +1499,7 @@ export interface CodeReviewActionInput {
   body?: string
   thread_id?: string
   path?: string
+  old_path?: string
   line?: number
   side?: 'LEFT' | 'RIGHT'
   commit_id?: string

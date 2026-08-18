@@ -32,10 +32,10 @@ Never invent a selector. When several repositories contain the same number, reso
 ### `list_code_reviews`
 
 ```text
-list_code_reviews(repository?)
+list_code_reviews(repository?, state="open")
 ```
 
-Omit `repository` to search every repository allowed by the active project session. For graph actions, an exact repository selector disambiguates the root symbol while authorized siblings remain available for cross-repository traversal.
+Omit `repository` to search every repository allowed by the active project session. `state` is `open`, `closed`, or `merged`. For graph actions, an exact repository selector disambiguates the root symbol while authorized siblings remain available for cross-repository traversal.
 
 ### `get_code_review`
 
@@ -92,6 +92,7 @@ add_code_review_inline_comment(
   path,
   line,
   repository?,
+  old_path?,
   side="RIGHT",
   commit_id?,
   base_commit_id?,
@@ -99,7 +100,7 @@ add_code_review_inline_comment(
 )
 ```
 
-Copy `path`, `line`, `side`, and commit coordinates from the latest normalized review context. Never calculate a provider line solely from the local working tree.
+Copy `path`, `old_path` (for renamed/deleted left-side lines), `line`, `side`, and commit coordinates from the latest normalized review context. Never calculate a provider line solely from the local working tree.
 
 ### `reply_code_review_thread`
 
