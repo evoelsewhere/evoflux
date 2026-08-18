@@ -102,6 +102,11 @@ extract the ZIP, open `chrome://extensions` or `edge://extensions`, enable
 Choose the package for your platform in [Download](#download), install it, and
 launch EvoFlux. The packaged app includes its Python sidecar.
 
+Updater-aware builds check the latest GitHub Release after startup. You can
+also run a manual signed update check from **Settings > About**, the application
+menu, or the tray menu. The first updater-aware release must be installed
+manually once; later releases can update in place.
+
 On first launch:
 
 1. Connect an LLM provider.

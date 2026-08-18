@@ -43,6 +43,7 @@
     "allow-app-backend-status",
     "allow-app-retry-backend",
     "allow-app-reveal-backend-log",
+    "allow-app-check-for-updates",
     "allow-app-remove-backend-server",
     "allow-app-save-backend-server",
     "allow-app-use-external-backend",

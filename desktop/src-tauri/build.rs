@@ -1,4 +1,7 @@
 fn main() {
+    // The updater verification key is compiled into release binaries. Make
+    // Cargo invalidate cached builds when CI provisions or rotates the key.
+    println!("cargo:rerun-if-env-changed=EVOFLUX_UPDATER_PUBLIC_KEY");
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "request_voice_permissions",
@@ -8,6 +11,7 @@ fn main() {
             "app_backend_status",
             "app_retry_backend",
             "app_reveal_backend_log",
+            "app_check_for_updates",
             "app_remove_backend_server",
             "app_save_backend_server",
             "app_use_external_backend",
