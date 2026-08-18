@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.api.schemas.change_sets import (
     ChangeSetCreateRequest,
+    ChangeSetFileContentResponse,
     ChangeSetResponse,
     ChangeSetSelectionRequest,
 )
@@ -20,6 +21,7 @@ from app.services.change_set_service import (
     apply_change_set,
     create_change_set,
     get_change_set,
+    get_change_file_contents,
     reject_change_set,
     serialize_change_set,
 )
@@ -75,6 +77,21 @@ async def create_change_set_route(
 async def get_change_set_route(change_set_id: str, workspace: str) -> ChangeSetResponse:
     try:
         return _response(get_change_set(change_set_id, _workspace(workspace)))
+    except ChangeSetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{change_set_id}/files/{path:path}",
+    response_model=ChangeSetFileContentResponse,
+)
+async def get_change_set_file_route(
+    change_set_id: str, path: str, workspace: str
+) -> ChangeSetFileContentResponse:
+    try:
+        return ChangeSetFileContentResponse.model_validate(
+            get_change_file_contents(change_set_id, _workspace(workspace), path)
+        )
     except ChangeSetNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

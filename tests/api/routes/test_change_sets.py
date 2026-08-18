@@ -65,6 +65,13 @@ def test_create_preview_apply_and_reject_files(client, tmp_path):
     assert record["status"] == "pending"
     assert "+first = 2" in record["files"][0]["diff"]
     assert "proposed_content" not in record["files"][0]
+    content_response = client.get(
+        f"/api/team/workspace/change-sets/{record['id']}/files/first.py",
+        params={"workspace": str(tmp_path)},
+    )
+    assert content_response.status_code == 200
+    assert content_response.json()["original_content"] == "first = 1\n"
+    assert content_response.json()["proposed_content"] == "first = 2\n"
 
     applied = client.post(
         f"/api/team/workspace/change-sets/{record['id']}/apply",

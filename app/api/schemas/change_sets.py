@@ -51,3 +51,13 @@ class ChangeSetResponse(BaseModel):
     created_at: float
     updated_at: float
     files: list[ChangeSetFileResponse]
+
+
+class ChangeSetFileContentResponse(BaseModel):
+    path: str
+    base_hash: str | None
+    proposed_hash: str
+    original_content: str
+    proposed_content: str
+    document_version: int | None
+    status: Literal["pending", "applied", "rejected"]

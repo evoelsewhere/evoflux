@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import type { ChangeSetResponse } from '@/api/types'
 import { ChangeSetReviewPanel } from '@/components/ChangeSetReviewPanel'
@@ -11,9 +12,16 @@ const api = vi.hoisted(() => ({
   rejectChangeSet: vi.fn(),
   runEditorAction: vi.fn(),
   codingWorkspaceFileUrl: vi.fn(() => '/file'),
+  getChangeSetFileContent: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => api)
+vi.mock('@monaco-editor/react', () => ({
+  DiffEditor: ({ original, modified }: { original: string; modified: string }) => (
+    <div data-testid="monaco-diff">{original} → {modified}</div>
+  ),
+  useMonaco: () => null,
+}))
 
 const proposal: ChangeSetResponse = {
   id: 'change-1',
@@ -45,6 +53,16 @@ beforeEach(() => {
   api.applyChangeSet.mockReset()
   api.rejectChangeSet.mockReset()
   api.runEditorAction.mockReset()
+  api.getChangeSetFileContent.mockReset()
+  api.getChangeSetFileContent.mockResolvedValue({
+    path: 'app/main.py',
+    base_hash: 'a'.repeat(64),
+    proposed_hash: 'b'.repeat(64),
+    original_content: 'value = 1\n',
+    proposed_content: 'value = 2\n',
+    document_version: 3,
+    status: 'pending',
+  })
   useChangeSetStore.setState({ active: proposal, busy: false })
   useTeamStore.setState({ sessionId: 'session-1' })
   Object.defineProperty(window, 'matchMedia', {
@@ -66,11 +84,13 @@ describe('ChangeSetReviewPanel', () => {
     }
     api.applyChangeSet.mockResolvedValue(applied)
 
-    render(<ChangeSetReviewPanel />)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={queryClient}><ChangeSetReviewPanel /></QueryClientProvider>)
 
     expect(screen.getByText('Fix type mismatch')).toBeInTheDocument()
-    expect(screen.getByText('app/main.py')).toBeInTheDocument()
+    expect(screen.getAllByText('app/main.py')).toHaveLength(2)
     expect(screen.getByText('+value = 2')).toBeInTheDocument()
+    expect(await screen.findByTestId('monaco-diff')).toHaveTextContent('value = 1')
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }))
 
     await waitFor(() => {
@@ -91,7 +111,8 @@ describe('ChangeSetReviewPanel', () => {
       files: [{ ...proposal.files[0]!, status: 'rejected' }],
     })
 
-    render(<ChangeSetReviewPanel />)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={queryClient}><ChangeSetReviewPanel /></QueryClientProvider>)
     fireEvent.click(screen.getByRole('button', { name: 'Reject all' }))
 
     await waitFor(() => {

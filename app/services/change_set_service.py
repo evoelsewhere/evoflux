@@ -81,6 +81,7 @@ class ChangeFile:
     path: str
     base_hash: str | None
     proposed_hash: str
+    base_content: str
     proposed_content: str
     document_version: int | None
     diff: str
@@ -176,6 +177,7 @@ def create_change_set(
                 path=path,
                 base_hash=current_hash,
                 proposed_hash=_hash_bytes(proposed_bytes),
+                base_content=original or "",
                 proposed_content=item.proposed_content,
                 document_version=item.document_version,
                 diff=diff,
@@ -291,6 +293,25 @@ def get_change_set(change_set_id: str, workspace: Path) -> ChangeSet:
     if record is None or record.workspace != str(workspace.resolve()):
         raise ChangeSetNotFound("ChangeSet not found or expired.")
     return record
+
+
+def get_change_file_contents(
+    change_set_id: str, workspace: Path, path: str
+) -> dict[str, Any]:
+    record = get_change_set(change_set_id, workspace)
+    normalized = _normalize_relative_path(workspace.resolve(), path)
+    item = next((row for row in record.files if row.path == normalized), None)
+    if item is None:
+        raise ChangeSetNotFound("ChangeSet file not found.")
+    return {
+        "path": item.path,
+        "base_hash": item.base_hash,
+        "proposed_hash": item.proposed_hash,
+        "original_content": item.base_content,
+        "proposed_content": item.proposed_content,
+        "document_version": item.document_version,
+        "status": item.status,
+    }
 
 
 def serialize_change_set(record: ChangeSet) -> dict[str, Any]:

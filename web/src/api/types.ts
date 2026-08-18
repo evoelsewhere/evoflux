@@ -302,6 +302,16 @@ export interface ChangeSetResponse {
   files: ChangeSetFile[]
 }
 
+export interface ChangeSetFileContent {
+  path: string
+  base_hash: string | null
+  proposed_hash: string
+  original_content: string
+  proposed_content: string
+  document_version: number | null
+  status: ChangeSetFileStatus
+}
+
 export type ProblemSource = 'lsp' | 'static' | 'build' | 'test' | 'ai_review' | 'security' | 'plugin'
 export type ProblemSeverity = 'error' | 'warning' | 'info' | 'hint'
 export type ProblemStatus = 'open' | 'dismissed' | 'suppressed'

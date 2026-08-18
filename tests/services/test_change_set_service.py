@@ -13,6 +13,7 @@ from app.services.change_set_service import (
     apply_change_set,
     clear_change_sets,
     create_change_set,
+    get_change_file_contents,
     inputs_from_workspace_edit,
     reject_change_set,
     serialize_change_set,
@@ -50,6 +51,9 @@ async def test_multi_file_preview_partial_apply_and_reject(tmp_path: Path):
     assert preview["files"][0]["base_hash"] == _sha("first = 1\n")
     assert preview["files"][0]["document_version"] == 4
     assert "+first = 2" in preview["files"][0]["diff"]
+    contents = get_change_file_contents(record.id, tmp_path, "first.py")
+    assert contents["original_content"] == "first = 1\n"
+    assert contents["proposed_content"] == "first = 2\n"
 
     await apply_change_set(record.id, tmp_path, paths=["first.py"])
     reject_change_set(record.id, tmp_path, paths=["second.py"])
