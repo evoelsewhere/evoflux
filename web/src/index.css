@@ -644,7 +644,7 @@ a svg.lucide,
     transform var(--motion-fast) ease;
 }
 
-/* Native macOS sidebar material can only show through when the WebView's
+/* Native macOS/Windows sidebar material can only show through when the WebView's
  * document and the shell gutter are transparent. Main/workbench canvases keep
  * their own opaque palette surfaces, so only the application chrome receives
  * the system backdrop—matching the Codex desktop hierarchy. */
@@ -670,11 +670,22 @@ html[data-native-sidebar-glass="true"] [data-settings-sidebar] {
 }
 
 [data-desktop-sidebar-glass="true"] [data-sidebar-card] {
-  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 58%, transparent);
+  border: 0;
+}
+
+/* Coding composes four stacked cards. A single quiet hairline between them
+ * avoids the heavy double borders produced by two adjacent card outlines. */
+[data-desktop-sidebar-glass="true"] [data-sidebar-card]:not(:last-child) {
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 38%, transparent);
+}
+
+/* Keep the sidebar/content boundary visible without turning it into a rail. */
+[data-desktop-sidebar-glass="true"] {
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--color-border-subtle) 32%, transparent);
 }
 
 html[data-native-sidebar-glass="true"] [data-settings-sidebar] {
-  border-color: color-mix(in srgb, var(--color-border-subtle) 58%, transparent);
+  border-color: color-mix(in srgb, var(--color-border-subtle) 32%, transparent);
 }
 
 .mobile-safe-header {

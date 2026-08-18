@@ -16,6 +16,8 @@
     "core:window:allow-start-dragging",
     "core:window:allow-toggle-maximize",
     "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-set-effects",
+    "core:window:allow-set-theme",
     "core:webview:default",
     "core:webview:allow-create-webview",
     "core:webview:allow-set-webview-position",
