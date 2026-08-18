@@ -462,6 +462,43 @@ class TestCodingLspSemantic:
             content="value = 1\n",
         )
 
+    def test_formatting_is_normalized_to_workspace_edit(
+        self, client, tmp_path, monkeypatch
+    ):
+        source = tmp_path / "main.py"
+        source.write_text("value=1\n")
+        edits = [
+            {
+                "range": {
+                    "start": {"line": 0, "character": 0},
+                    "end": {"line": 0, "character": 7},
+                },
+                "newText": "value = 1",
+            }
+        ]
+        lsp_client = SimpleNamespace(
+            capabilities={"documentFormattingProvider": True},
+            formatting=AsyncMock(return_value=edits),
+        )
+        from app.api.routes.team import files as team_routes
+
+        monkeypatch.setattr(
+            team_routes, "get_language_server", AsyncMock(return_value=lsp_client)
+        )
+
+        response = client.post(
+            "/api/team/workspace/lsp/semantic",
+            params={"workspace": str(tmp_path)},
+            json={
+                "action": "format",
+                "path": "main.py",
+                "content": "value=1\n",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["result"] == {"changes": {source.as_uri(): edits}}
+
     def test_position_action_requires_coordinates(self, client, tmp_path):
         source = tmp_path / "main.py"
         source.write_text("value = 1\n")

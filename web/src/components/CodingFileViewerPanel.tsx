@@ -1,10 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertCircle, Check, Copy, Download, ExternalLink, FileText, GitCompare, Loader2, PanelRightClose, PanelRightOpen, Pencil, Save, Undo2, X, Eye } from 'lucide-react'
+import { AlertCircle, Check, Copy, Download, ExternalLink, FileText, GitCompare, Lightbulb, Loader2, PanelRightClose, PanelRightOpen, Pencil, Save, Undo2, X, Eye } from 'lucide-react'
 import Editor, { DiffEditor, useMonaco } from '@monaco-editor/react'
 import type { editor as MonacoEditor } from 'monaco-editor'
 
-import { codingWorkspaceFileUrl, getCodingWorkspaceDiagnostics, getCodingWorkspaceGitDiff, writeCodingWorkspaceFile } from '@/api/client'
+import { codingWorkspaceFileUrl, createChangeSet, getCodingWorkspaceDiagnostics, getCodingWorkspaceGitDiff, getCodingWorkspaceSemanticResult, writeCodingWorkspaceFile } from '@/api/client'
 import { isTauriAvailable, tauriOpenWorkspaceFile } from '@/api/tauri-workspace'
 import { downloadCodingWorkspaceFile } from '@/lib/coding-workspace-download'
 import { openExternalUrl } from '@/lib/open-external'
@@ -19,6 +19,8 @@ import { SidePanel } from './shell/SidePanel'
 import { EditorAiActionDialog } from './EditorAiActionDialog'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { useChangeSetStore } from '@/stores/useChangeSetStore'
+import { useToastStore } from '@/stores/useToastStore'
 import type {
   CodingLspDiagnostic,
   EditorActionRequest,
@@ -132,6 +134,8 @@ function TextPreview({
   const editorRef = useRef<Parameters<NonNullable<Parameters<typeof Editor>[0]['onMount']>>[0] | null>(null)
   const sessionId = useTeamStore((state) => state.sessionId)
   const openWorkbenchTool = useUIStore((state) => state.openWorkbenchTool)
+  const setChangeSet = useChangeSetStore((state) => state.setActive)
+  const pushToast = useToastStore((state) => state.push)
 
   const monaco = useMonaco()
   const theme = useMonacoTheme(monaco)
@@ -226,6 +230,74 @@ function TextPreview({
     return () => monaco.editor.setModelMarkers(model, 'evoflux-lsp', [])
   }, [monaco, editorMounted, diagnostics])
 
+  const runSemanticAction = useCallback(async (
+    action: 'hover' | 'code_actions' | 'rename' | 'format' | 'organize_imports',
+    options: {
+      line?: number
+      column?: number
+      endLine?: number
+      endColumn?: number
+      newName?: string
+      diagnostic?: CodingLspDiagnostic
+    } = {},
+  ) => {
+    if (diagnosticContent === null) return
+    try {
+      const response = await getCodingWorkspaceSemanticResult(workspace, {
+        action,
+        path: file.path,
+        content: diagnosticContent,
+        line: options.line,
+        column: options.column,
+        end_line: options.endLine,
+        end_column: options.endColumn,
+        new_name: options.newName,
+        diagnostics: options.diagnostic ? [options.diagnostic] : undefined,
+      })
+      if (action === 'hover') {
+        pushToast({
+          tone: 'info',
+          title: 'LSP hover',
+          description: response.result ? JSON.stringify(response.result).slice(0, 360) : 'No hover information.',
+        })
+        return
+      }
+      let workspaceEdit: Record<string, unknown> | null = null
+      let title = action === 'rename'
+        ? `Rename symbol to ${options.newName}`
+        : action === 'format'
+          ? `Format ${file.path}`
+          : action === 'organize_imports'
+            ? `Organize imports in ${file.path}`
+            : `Quick fix in ${file.path}`
+      if (response.result && !Array.isArray(response.result)) {
+        workspaceEdit = response.result as Record<string, unknown>
+      } else if (Array.isArray(response.result)) {
+        const candidate = response.result.find((item) => (
+          item && typeof item === 'object' && 'edit' in item
+        )) as { title?: string; edit?: Record<string, unknown> } | undefined
+        workspaceEdit = candidate?.edit ?? null
+        if (candidate?.title) title = candidate.title
+      }
+      if (!workspaceEdit) {
+        pushToast({ tone: 'info', title: 'No applicable LSP edit returned' })
+        return
+      }
+      const changeSet = await createChangeSet(workspace, {
+        origin: 'lsp',
+        title,
+        workspace_edit: workspaceEdit,
+      })
+      setChangeSet(changeSet)
+    } catch (error) {
+      pushToast({
+        tone: 'error',
+        title: 'LSP action failed',
+        description: error instanceof Error ? error.message : undefined,
+      })
+    }
+  }, [diagnosticContent, file.path, pushToast, setChangeSet, workspace])
+
   // Register custom context menu actions
   useEffect(() => {
     if (!monaco || !editorMounted || !editorRef.current) return
@@ -285,6 +357,44 @@ function TextPreview({
       })
     }
 
+    if (!editing) {
+      disposables.push(editor.addAction({
+        id: 'evoflux.lsp.hover',
+        label: 'LSP: Show hover information',
+        contextMenuGroupId: 'evoflux-lsp',
+        contextMenuOrder: 1,
+        run: (ed) => {
+          const position = ed.getPosition()
+          if (position) void runSemanticAction('hover', { line: position.lineNumber, column: position.column })
+        },
+      }))
+      disposables.push(editor.addAction({
+        id: 'evoflux.lsp.rename',
+        label: 'LSP: Rename symbol',
+        contextMenuGroupId: 'evoflux-lsp',
+        contextMenuOrder: 2,
+        run: (ed) => {
+          const position = ed.getPosition()
+          const name = window.prompt('Rename symbol to:')?.trim()
+          if (position && name) void runSemanticAction('rename', { line: position.lineNumber, column: position.column, newName: name })
+        },
+      }))
+      disposables.push(editor.addAction({
+        id: 'evoflux.lsp.format',
+        label: 'LSP: Format document',
+        contextMenuGroupId: 'evoflux-lsp',
+        contextMenuOrder: 3,
+        run: () => { void runSemanticAction('format') },
+      }))
+      disposables.push(editor.addAction({
+        id: 'evoflux.lsp.organizeImports',
+        label: 'LSP: Organize imports',
+        contextMenuGroupId: 'evoflux-lsp',
+        contextMenuOrder: 4,
+        run: () => { void runSemanticAction('organize_imports') },
+      }))
+    }
+
     if (!editing && (onAddComment || onAddCodeToChat || onSendToChat)) {
       disposables.push(
         editor.addAction({
@@ -327,7 +437,7 @@ function TextPreview({
 
     return () => { disposables.forEach((d) => d.dispose()) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monaco, editorMounted, editing, onSendToChat, onAddComment, onAddCodeToChat, file.path, sessionId, diagnostics])
+  }, [monaco, editorMounted, editing, onSendToChat, onAddComment, onAddCodeToChat, file.path, sessionId, diagnostics, runSemanticAction])
 
   const handleEditorMount = useCallback((editor: Parameters<NonNullable<Parameters<typeof Editor>[0]['onMount']>>[0]) => {
     editorRef.current = editor
@@ -521,15 +631,34 @@ function TextPreview({
                 const line = (diagnostic.range?.start?.line ?? 0) + 1
                 const column = (diagnostic.range?.start?.character ?? 0) + 1
                 return (
-                  <button
-                    key={`${line}:${column}:${diagnostic.message}:${index}`}
-                    type="button"
-                    onClick={() => jumpToDiagnostic(diagnostic)}
-                    className="flex w-full items-start gap-2 px-3 py-1 text-left text-(--color-text-muted) hover:bg-(--bg-page)"
-                  >
-                    <span className="shrink-0 font-mono text-(--color-text-subtle)">{line}:{column}</span>
-                    <span className="truncate">{diagnostic.message}</span>
-                  </button>
+                  <div key={`${line}:${column}:${diagnostic.message}:${index}`} className="flex items-center hover:bg-(--bg-page)">
+                    <button
+                      type="button"
+                      onClick={() => jumpToDiagnostic(diagnostic)}
+                      className="flex min-w-0 flex-1 items-start gap-2 px-3 py-1 text-left text-(--color-text-muted)"
+                    >
+                      <span className="shrink-0 font-mono text-(--color-text-subtle)">{line}:{column}</span>
+                      <span className="truncate">{diagnostic.message}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const end = diagnostic.range?.end ?? diagnostic.range?.start
+                        void runSemanticAction('code_actions', {
+                          line,
+                          column,
+                          endLine: (end?.line ?? line - 1) + 1,
+                          endColumn: (end?.character ?? column - 1) + 1,
+                          diagnostic,
+                        })
+                      }}
+                      className="mr-2 flex h-6 w-6 shrink-0 items-center justify-center rounded text-(--color-accent) hover:bg-(--bg-key)"
+                      aria-label={`Quick fix: ${diagnostic.message}`}
+                      title="Show LSP quick fix"
+                    >
+                      <Lightbulb size={11} />
+                    </button>
+                  </div>
                 )
               })}
             </div>
