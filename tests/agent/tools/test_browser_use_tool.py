@@ -177,6 +177,18 @@ async def test_browser_policy_blocks_clipboard_reads_by_default(monkeypatch) -> 
 
 
 @pytest.mark.asyncio
+async def test_browser_policy_requires_user_for_permission_accept(monkeypatch) -> None:
+    monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: True)
+
+    result = await browser_tool.browser_use.arun(
+        _injected={"_state": _state()},
+        actions=[{"action": "resolve_permission", "id": 1, "allow": True}],
+    )
+
+    assert "ask the user to decide" in result
+
+
+@pytest.mark.asyncio
 async def test_set_files_reads_only_session_workspace_files(
     monkeypatch, tmp_path
 ) -> None:

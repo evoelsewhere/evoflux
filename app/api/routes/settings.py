@@ -329,6 +329,7 @@ def _webbridge_settings_body() -> WebBridgeSettingsBody:
         built_in_allow_clipboard_write=cfg.browser.allow_clipboard_write,
         built_in_allow_file_uploads=cfg.browser.allow_file_uploads,
         built_in_allow_downloads=cfg.browser.allow_downloads,
+        built_in_allow_agent_permission_accept=cfg.browser.allow_agent_permission_accept,
     )
 
 
@@ -368,6 +369,7 @@ async def update_webbridge_settings(
         allow_clipboard_write=body.built_in_allow_clipboard_write,
         allow_file_uploads=body.built_in_allow_file_uploads,
         allow_downloads=body.built_in_allow_downloads,
+        allow_agent_permission_accept=body.built_in_allow_agent_permission_accept,
     )
     save_runtime_settings(cfg)
     # Keep the live policy cache in sync without waiting for the cleanup loop.
