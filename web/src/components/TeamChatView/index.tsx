@@ -430,6 +430,8 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const closeWorkbenchTab = useUIStore((s) => s.closeWorkbenchTab)
   const closeWorkbenchTool = useUIStore((s) => s.closeWorkbenchTool)
   const updateWorkbenchTab = useUIStore((s) => s.updateWorkbenchTab)
+  const workspaceFileRequest = useUIStore((s) => s.workspaceFileRequest)
+  const clearWorkspaceFileRequest = useUIStore((s) => s.clearWorkspaceFileRequest)
   const wikiOpen = workbenchTabs.some((tab) => tab.tool === 'wiki')
   const browserOpen = workbenchTabs.some((tab) => tab.tool === 'browser')
   const sideChatOpen = workbenchTabs.some((tab) => tab.tool === 'side-chat')
@@ -447,6 +449,26 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     setCodingFileViewerHost(null)
     setCodingFileViewerMode('file')
   }, [codingFileViewerHost, workbenchOpen, workbenchTabs])
+
+  useEffect(() => {
+    if (
+      mode !== 'coding'
+      || !workspace
+      || !sessionIdState
+      || workspaceFileRequest?.sessionId !== sessionIdState
+    ) return
+    const path = workspaceFileRequest.path
+    setCodingFileViewer({
+      path,
+      name: path.split('/').at(-1) ?? path,
+      size: 0,
+      mtime: 0,
+      mime: 'application/octet-stream',
+    })
+    setCodingFileViewerHost('files')
+    setCodingFileViewerMode('file')
+    clearWorkspaceFileRequest(workspaceFileRequest.id)
+  }, [clearWorkspaceFileRequest, mode, sessionIdState, workspace, workspaceFileRequest])
 
   useEffect(() => {
     if (previousWorkbenchSessionRef.current !== sessionIdState) {
