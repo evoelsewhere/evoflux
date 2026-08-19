@@ -412,6 +412,41 @@ async def test_capabilities_set_on_agent_state():
     assert isinstance(captured_state.tool_names, list)
 
 
+async def test_runtime_model_override_sets_agent_state_capabilities():
+    """Tools must see capabilities for the provider used by this run."""
+    captured_state = None
+
+    class CapturingHook(BaseAgentHook):
+        async def before_agent(self, ctx, state):
+            nonlocal captured_state
+            captured_state = state
+
+    async def _gen():
+        yield _finish_chunk()
+
+    default_provider = MagicMock()
+    default_provider.stream.return_value = _gen()
+    runtime_provider = MagicMock()
+    runtime_provider.stream.return_value = _gen()
+    agent = Agent(
+        llm_provider=default_provider,
+        model_id="deepseek:deepseek-v4-pro",
+        name="test-agent",
+        system_prompt="You are helpful.",
+        hooks=[CapturingHook()],
+    )
+
+    await agent.run(
+        [HumanMessage(content="inspect image")],
+        config=RunConfig(session_id="s-runtime-vision", run_id="r-runtime-vision"),
+        llm_provider=runtime_provider,
+        model_id="openai:gpt-5.5",
+    )
+
+    assert captured_state is not None
+    assert captured_state.capabilities.input.vision is True
+
+
 async def test_tool_result_creates_tool_message_with_parts():
     """When a tool returns ToolResult, the resulting ToolMessage has .parts set."""
     from app.agent.schemas.chat import ImageDataBlock, TextBlock, ToolResult

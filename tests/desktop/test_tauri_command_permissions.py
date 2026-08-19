@@ -68,3 +68,13 @@ def test_invoke_commands_have_generated_permissions_and_capabilities() -> None:
             for allowed in permission.get("commands", {}).get("allow", [])
         }
         assert command in allow_commands
+
+
+def test_clipboard_edit_items_use_native_webview_actions() -> None:
+    """Keyboard paste must preserve WebView ClipboardEvent file/image items."""
+
+    source = (TAURI_ROOT / "src" / "main.rs").read_text(encoding="utf-8")
+
+    assert "PredefinedMenuItem::paste(app" in source
+    assert "MenuItem::with_id(app, MENU_EDIT_PASTE" not in source
+    assert 'emit_frontend_command(app, "edit_paste")' not in source

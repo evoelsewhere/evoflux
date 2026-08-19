@@ -72,21 +72,25 @@ def _require_team(team: AgentTeam | None) -> AgentTeam:
 async def _read_upload_as_attachment(file: UploadFile) -> RawAttachment | None:
     """Materialise an ``UploadFile`` into a transport-neutral ``RawAttachment``.
 
-    Returns ``None`` for files with no filename (skipped, matches prior
-    behaviour).
+    Some WebView clipboard implementations submit an image part with an empty
+    filename. Give it a deterministic media-derived name instead of silently
+    discarding bytes the composer already showed as attached.
     """
-    if not file.filename:
-        return None
+    filename = file.filename
+    if not filename:
+        media_type = (file.content_type or "application/octet-stream").split(";", 1)[0]
+        extension = mimetypes.guess_extension(media_type) or ".bin"
+        filename = f"clipboard-upload{extension}"
     # Bound memory use before materialising multipart data into RawAttachment.
     # The service applies the same aggregate limit across the complete batch.
     data = await file.read(GLOBAL_SIZE_LIMIT + 1)
     if len(data) > GLOBAL_SIZE_LIMIT:
         raise HTTPException(
             status_code=413,
-            detail=f"'{file.filename}' exceeds the per-message upload limit.",
+            detail=f"'{filename}' exceeds the per-message upload limit.",
         )
     return RawAttachment(
-        filename=file.filename,
+        filename=filename,
         content_type=file.content_type,
         data=data,
     )

@@ -9,13 +9,16 @@ ceiling + global byte cap).
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from starlette.datastructures import Headers, UploadFile
 
 from app.api.routes.team._helpers import (
     _extract_mention_paths,
+    _read_upload_as_attachment,
     _safe_join,
     collect_mention_attachments,
 )
@@ -32,6 +35,21 @@ def _make_team(*, vision: bool = True, document_text: bool = True) -> MagicMock:
     team = MagicMock()
     team.lead = lead
     return team
+
+
+@pytest.mark.asyncio
+async def test_unnamed_clipboard_upload_gets_media_filename() -> None:
+    upload = UploadFile(
+        file=io.BytesIO(b"\x89PNG\r\n\x1a\n"),
+        filename="",
+        headers=Headers({"content-type": "image/png"}),
+    )
+
+    attachment = await _read_upload_as_attachment(upload)
+
+    assert attachment is not None
+    assert attachment.filename == "clipboard-upload.png"
+    assert attachment.content_type == "image/png"
 
 
 # ── _extract_mention_paths ───────────────────────────────────────────────────

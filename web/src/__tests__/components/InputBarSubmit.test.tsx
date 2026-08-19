@@ -75,4 +75,38 @@ describe('InputBar submit lifecycle', () => {
       )
     })
   })
+
+  it('assigns a filename to unnamed clipboard images before submit', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<InputBar onSubmit={onSubmit} />)
+    const input = screen.getByRole('textbox', { name: 'Message input' })
+    const unnamed = new File([new Uint8Array([137, 80, 78, 71])], '', {
+      type: 'image/png',
+    })
+
+    fireEvent.paste(input, {
+      clipboardData: {
+        items: [
+          {
+            kind: 'file',
+            type: 'image/png',
+            getAsFile: () => unnamed,
+          },
+        ],
+      },
+    })
+
+    const preview = await screen.findByRole('button', {
+      name: /^Open clipboard-\d+-1\.png preview$/,
+    })
+    expect(preview).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+
+    await waitFor(() => {
+      const submitted = onSubmit.mock.calls[0]?.[1] as File[] | undefined
+      expect(submitted).toHaveLength(1)
+      expect(submitted?.[0]?.name).toMatch(/^clipboard-\d+-1\.png$/)
+      expect(submitted?.[0]?.type).toBe('image/png')
+    })
+  })
 })

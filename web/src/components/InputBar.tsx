@@ -172,6 +172,26 @@ export interface InputBarHandle {
 
 const CHAR_WARN_THRESHOLD = 500
 
+const CLIPBOARD_FILE_EXTENSIONS: Readonly<Record<string, string>> = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+  'image/bmp': '.bmp',
+  'image/tiff': '.tiff',
+}
+
+function normalizeClipboardFile(file: File, index: number, clipboardType: string): File {
+  if (file.name.trim()) return file
+  const mediaType = file.type || clipboardType || 'application/octet-stream'
+  const extension = CLIPBOARD_FILE_EXTENSIONS[mediaType] ?? '.bin'
+  return new globalThis.File(
+    [file],
+    `clipboard-${Date.now()}-${index + 1}${extension}`,
+    { type: mediaType, lastModified: file.lastModified || Date.now() },
+  )
+}
+
 function findActiveSnippet(text: string, caret: number) {
   const hash = text.lastIndexOf('#', Math.max(0, caret - 1))
   if (hash === -1) return null
@@ -554,7 +574,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         const file = item.getAsFile()
         if (file) {
           e.preventDefault()
-          addFile(file)
+          addFile(normalizeClipboardFile(file, i, item.type))
         }
       }
     }
