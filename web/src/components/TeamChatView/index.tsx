@@ -1299,12 +1299,15 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           return
         }
         if (item.path) {
+          const size = item.metadata?.size
+          const mtime = item.metadata?.mtime
+          const mime = item.metadata?.mime
           setCodingFileViewer({
             path: item.path,
             name: item.path.split('/').pop() ?? item.path,
-            size: 0,
-            mtime: 0,
-            mime: 'text/plain',
+            size: typeof size === 'number' ? size : 0,
+            mtime: typeof mtime === 'number' ? mtime : 0,
+            mime: typeof mime === 'string' ? mime : 'text/plain',
           })
           setCodingFileViewerHost('standalone')
           setCodingFileViewerMode('file')
