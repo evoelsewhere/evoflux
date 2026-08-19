@@ -181,6 +181,29 @@ jobs:
 
           echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
           if [[ "$enabled" == "true" ]]; then
+            normalized_public_key="$(python - <<'PY'
+          import base64
+          import binascii
+          import os
+
+          value = os.environ["UPDATER_PUBLIC_KEY"].strip()
+          try:
+              decoded = base64.b64decode(value, validate=True).decode("utf-8").strip()
+          except (binascii.Error, ValueError, UnicodeDecodeError):
+              decoded = value
+
+          if decoded.startswith("untrusted comment:"):
+              public_key = decoded
+          elif "\n" not in decoded and decoded.startswith("RW"):
+              public_key = f"untrusted comment: minisign public key\n{decoded}"
+          else:
+              raise SystemExit("TAURI_SIGNING_PUBLIC_KEY is not a minisign public key")
+
+          print(base64.b64encode(f"{public_key}\n".encode()).decode())
+          PY
+            )"
+            echo "::add-mask::$normalized_public_key"
+            echo "EVOFLUX_UPDATER_PUBLIC_KEY=$normalized_public_key" >> "$GITHUB_ENV"
             echo "Signed updater artifacts are enabled."
           else
             echo "Updater artifacts are disabled for this non-release build."
@@ -298,16 +321,23 @@ jobs:
               env_file.write(f"TAURI_BUNDLE_CONFIG={path}\n")
           PY
 
-      - name: Build macOS app
-        if: runner.os == 'macOS'
+      - name: Build signed macOS app
+        if: runner.os == 'macOS' && steps.mac_signing.outputs.enabled == 'true'
         working-directory: desktop/src-tauri
         env:
-          APPLE_CERTIFICATE: ${{ steps.mac_signing.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ steps.mac_signing.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
-          APPLE_SIGNING_IDENTITY: ${{ steps.mac_signing.outputs.enabled == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
-          APPLE_API_ISSUER: ${{ steps.mac_signing.outputs.enabled == 'true' && secrets.APPLE_API_ISSUER || '' }}
-          APPLE_API_KEY: ${{ steps.mac_signing.outputs.enabled == 'true' && secrets.APPLE_API_KEY || '' }}
-          EVOFLUX_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: cargo tauri build --bundles app --verbose --config "$TAURI_BUNDLE_CONFIG"
+
+      - name: Build ad-hoc macOS app
+        if: runner.os == 'macOS' && steps.mac_signing.outputs.enabled != 'true'
+        working-directory: desktop/src-tauri
+        env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: cargo tauri build --bundles app --verbose --config "$TAURI_BUNDLE_CONFIG"
@@ -386,7 +416,6 @@ jobs:
         shell: pwsh
         working-directory: desktop/src-tauri
         env:
-          EVOFLUX_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: cargo tauri build --bundles nsis --verbose --config $env:TAURI_BUNDLE_CONFIG
