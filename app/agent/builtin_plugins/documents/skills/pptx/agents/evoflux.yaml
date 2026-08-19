@@ -1,6 +1,0 @@
-interface:
-  display_name: "Work with Presentations"
-  short_description: "Create, inspect, edit, and verify PowerPoint decks"
-  default_prompt: "Use $pptx to inspect, create, or edit this PowerPoint file as requested, preserve the source, verify the exact output after changes, and disclose any rendering limitation."
-policy:
-  allow_implicit_invocation: true

@@ -14,6 +14,7 @@ import type {
 export interface CodeReviewScope {
   workspace?: string | null
   projectId?: string | null
+  state?: 'open' | 'closed' | 'merged'
 }
 
 export function getCodeReviewImageUrl(
@@ -44,6 +45,7 @@ export async function getCodeReviews(
   const params = new URLSearchParams()
   if (scope.projectId) params.set('project_id', scope.projectId)
   else if (scope.workspace) params.set('workspace', scope.workspace)
+  if (scope.state) params.set('state', scope.state)
   const query = params.size > 0 ? `?${params.toString()}` : ''
   const res = await fetch(`${apiBaseUrl()}/team/reviews${query}`)
   if (!res.ok) await parseDetailOrThrow(res, 'getCodeReviews')

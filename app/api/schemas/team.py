@@ -108,6 +108,47 @@ class CodingDiagnosticsResponse(BaseModel):
     message: str | None = None
 
 
+CodingSemanticAction = Literal[
+    "hover",
+    "code_actions",
+    "rename",
+    "format",
+    "organize_imports",
+    "document_symbols",
+    "workspace_symbols",
+]
+
+
+class CodingSemanticRequest(BaseModel):
+    """Repository-local semantic request from the coding editor."""
+
+    action: CodingSemanticAction
+    path: str = Field(min_length=1, max_length=4096)
+    content: str | None = Field(default=None, max_length=2_000_000)
+    line: int | None = Field(default=None, ge=1)
+    column: int | None = Field(default=None, ge=1)
+    end_line: int | None = Field(default=None, ge=1)
+    end_column: int | None = Field(default=None, ge=1)
+    new_name: str | None = Field(default=None, min_length=1, max_length=512)
+    query: str | None = Field(default=None, max_length=512)
+    diagnostics: list[dict] = Field(default_factory=list, max_length=200)
+    tab_size: int = Field(default=4, ge=1, le=16)
+    insert_spaces: bool = True
+
+
+class CodingSemanticResponse(BaseModel):
+    """Semantic result; WorkspaceEdits are proposed and never applied here."""
+
+    workspace: str
+    path: str
+    action: CodingSemanticAction
+    language: str | None = None
+    status: Literal["ready", "unavailable", "unsupported"]
+    result: object | None = None
+    capabilities: dict = Field(default_factory=dict)
+    message: str | None = None
+
+
 # ── Todos ────────────────────────────────────────────────────────────────────
 
 

@@ -1,6 +1,9 @@
 name: Build desktop packages
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       platform:
@@ -27,14 +30,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: desktop-packages-${{ github.ref }}-${{ inputs.platform }}
+  group: desktop-packages-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'all' }}
   cancel-in-progress: false
 
 env:
   PYTHON_VERSION: "3.12"
   BUN_VERSION: latest
   SIDECAR_DIR: desktop/sidecar-bundle
-  SIGNING_MODE: ${{ inputs.signing }}
+  SIGNING_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.signing || 'auto' }}
 
 jobs:
   prepare:
@@ -47,7 +50,7 @@ jobs:
         id: matrix
         shell: bash
         env:
-          SELECTED_PLATFORM: ${{ inputs.platform }}
+          SELECTED_PLATFORM: ${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'all' }}
         run: |
           case "$SELECTED_PLATFORM" in
             all)
@@ -157,6 +160,55 @@ jobs:
             Write-Host "Building an unsigned NSIS installer."
           }
 
+      - name: Resolve updater signing
+        id: updater_signing
+        shell: bash
+        env:
+          UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+        run: |
+          missing=()
+          [[ -n "$UPDATER_PRIVATE_KEY" ]] || missing+=(TAURI_SIGNING_PRIVATE_KEY)
+          [[ -n "$UPDATER_PUBLIC_KEY" ]] || missing+=(TAURI_SIGNING_PUBLIC_KEY)
+
+          enabled=false
+          if [[ "$GITHUB_REF" == refs/tags/* && ${#missing[@]} -gt 0 ]]; then
+            echo "Tagged releases require updater signing; missing: ${missing[*]}" >&2
+            exit 1
+          elif [[ ${#missing[@]} -eq 0 ]]; then
+            enabled=true
+          fi
+
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+          if [[ "$enabled" == "true" ]]; then
+            normalized_public_key="$(python - <<'PY'
+          import base64
+          import binascii
+          import os
+
+          value = os.environ["UPDATER_PUBLIC_KEY"].strip()
+          try:
+              decoded = base64.b64decode(value, validate=True).decode("utf-8").strip()
+          except (binascii.Error, ValueError, UnicodeDecodeError):
+              decoded = value
+
+          if decoded.startswith("untrusted comment:"):
+              public_key = decoded
+          elif "\n" not in decoded and decoded.startswith("RW"):
+              public_key = f"untrusted comment: minisign public key\n{decoded}"
+          else:
+              raise SystemExit("TAURI_SIGNING_PUBLIC_KEY is not a minisign public key")
+
+          print(base64.b64encode(f"{public_key}\n".encode()).decode())
+          PY
+            )"
+            echo "::add-mask::$normalized_public_key"
+            echo "EVOFLUX_UPDATER_PUBLIC_KEY=$normalized_public_key" >> "$GITHUB_ENV"
+            echo "Signed updater artifacts are enabled."
+          else
+            echo "Updater artifacts are disabled for this non-release build."
+          fi
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
 
@@ -239,7 +291,45 @@ jobs:
         shell: bash
         run: rm -rf desktop/src-tauri/target/release/bundle
 
-      - name: Build signed and notarized app
+      - name: Write platform bundle override
+        shell: bash
+        env:
+          UPDATER_ENABLED: ${{ steps.updater_signing.outputs.enabled }}
+          MAC_SIGNING_ENABLED: ${{ steps.mac_signing.outputs.enabled }}
+          WINDOWS_SIGNING_ENABLED: ${{ steps.windows_signing.outputs.enabled }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          bundle = {
+              "createUpdaterArtifacts": os.environ["UPDATER_ENABLED"] == "true"
+          }
+          if os.environ["RUNNER_OS"] == "macOS" and os.environ.get("MAC_SIGNING_ENABLED") != "true":
+              bundle["macOS"] = {"signingIdentity": "-"}
+          if os.environ["RUNNER_OS"] == "Windows" and os.environ.get("WINDOWS_SIGNING_ENABLED") == "true":
+              bundle["windows"] = {
+                  "certificateThumbprint": os.environ["WINDOWS_CERT_THUMBPRINT"],
+                  "digestAlgorithm": "sha256",
+                  "timestampUrl": "http://timestamp.digicert.com",
+              }
+
+          config = {"bundle": bundle}
+          if os.environ["UPDATER_ENABLED"] == "true":
+              config["plugins"] = {
+                  "updater": {
+                      "pubkey": os.environ["EVOFLUX_UPDATER_PUBLIC_KEY"],
+                  }
+              }
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "evoflux-bundle-override.json"
+          path.write_text(json.dumps(config), encoding="utf-8")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
+              env_file.write(f"TAURI_BUNDLE_CONFIG={path}\n")
+          PY
+
+      - name: Build signed macOS app
         if: runner.os == 'macOS' && steps.mac_signing.outputs.enabled == 'true'
         working-directory: desktop/src-tauri
         env:
@@ -248,14 +338,37 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-        run: cargo tauri build --bundles app --verbose
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: cargo tauri build --bundles app --verbose --config "$TAURI_BUNDLE_CONFIG"
 
-      - name: Build ad-hoc signed app
+      - name: Build ad-hoc macOS app
         if: runner.os == 'macOS' && steps.mac_signing.outputs.enabled != 'true'
         working-directory: desktop/src-tauri
-        run: >-
-          cargo tauri build --bundles app --verbose
-          --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: cargo tauri build --bundles app --verbose --config "$TAURI_BUNDLE_CONFIG"
+
+      - name: Prepare macOS updater assets
+        if: runner.os == 'macOS' && steps.updater_signing.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          archives=(desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz)
+          if [[ ${#archives[@]} -ne 1 || ! -f "${archives[0]}.sig" ]]; then
+            echo "Expected one signed macOS updater archive." >&2
+            exit 1
+          fi
+          config=desktop/src-tauri/tauri.conf.json
+          product_name="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["productName"])' "$config")"
+          version="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$config")"
+          updater_dir=desktop/src-tauri/target/release/bundle/updater
+          updater_path="$updater_dir/${product_name}_${version}_${{ matrix.dmg_architecture }}.app.tar.gz"
+          mkdir -p "$updater_dir"
+          mv "${archives[0]}" "$updater_path"
+          mv "${archives[0]}.sig" "$updater_path.sig"
 
       - name: Create DMG without mounting a volume
         if: runner.os == 'macOS'
@@ -306,27 +419,26 @@ jobs:
             --wait
           xcrun stapler staple "${{ steps.create_dmg.outputs.path }}"
 
-      - name: Build signed NSIS installer
-        if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled == 'true'
+      - name: Build Windows NSIS installer
+        if: runner.os == 'Windows'
         shell: pwsh
         working-directory: desktop/src-tauri
-        run: |
-          $config = @{
-            bundle = @{
-              windows = @{
-                certificateThumbprint = $env:WINDOWS_CERT_THUMBPRINT
-                digestAlgorithm = "sha256"
-                timestampUrl = "http://timestamp.digicert.com"
-              }
-            }
-          } | ConvertTo-Json -Depth 5 -Compress
-          cargo tauri build --bundles nsis --verbose --config $config
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: cargo tauri build --bundles nsis --verbose --config $env:TAURI_BUNDLE_CONFIG
 
-      - name: Build unsigned NSIS installer
-        if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled != 'true'
-        shell: pwsh
-        working-directory: desktop/src-tauri
-        run: cargo tauri build --bundles nsis --verbose
+      - name: Validate Windows updater asset
+        if: runner.os == 'Windows' && steps.updater_signing.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          signatures=(desktop/src-tauri/target/release/bundle/nsis/*-setup.exe.sig)
+          if [[ ${#signatures[@]} -ne 1 ]]; then
+            echo "Expected one signed Windows updater artifact." >&2
+            exit 1
+          fi
 
       - name: Smoke-test first Windows app launch
         if: runner.os == 'Windows'
@@ -482,6 +594,8 @@ jobs:
           name: ${{ matrix.artifact }}
           path: |
             desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            desktop/src-tauri/target/release/bundle/updater/*.app.tar.gz
+            desktop/src-tauri/target/release/bundle/updater/*.app.tar.gz.sig
             ${{ runner.temp }}/${{ matrix.artifact }}-SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
@@ -493,6 +607,110 @@ jobs:
           name: ${{ matrix.artifact }}
           path: |
             desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+            desktop/src-tauri/target/release/bundle/nsis/*-setup.exe.sig
             ${{ runner.temp }}/${{ matrix.artifact }}-SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: release-assets
+
+      - name: Validate release version
+        id: version
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import tomllib
+          from pathlib import Path
+
+          root = Path.cwd()
+          versions = {
+              "pyproject.toml": tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"],
+              "app/version.txt": (root / "app/version.txt").read_text().strip(),
+              "web/package.json": json.loads((root / "web/package.json").read_text())["version"],
+              "desktop/src-tauri/Cargo.toml": tomllib.loads((root / "desktop/src-tauri/Cargo.toml").read_text())["package"]["version"],
+              "desktop/src-tauri/tauri.conf.json": json.loads((root / "desktop/src-tauri/tauri.conf.json").read_text())["version"],
+          }
+          unique = set(versions.values())
+          if len(unique) != 1:
+              raise SystemExit(f"release versions are out of sync: {versions}")
+          version = unique.pop()
+          tag = os.environ["GITHUB_REF_NAME"]
+          if tag != f"v{version}":
+              raise SystemExit(f"tag {tag!r} does not match version {version!r}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"value={version}\n")
+          PY
+
+      - name: Package WebBridge extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(jq -r .version extensions/webbridge/manifest.json)"
+          filename="EvoFlux-WebBridge-${version}.zip"
+          output="$GITHUB_WORKSPACE/release-assets/$filename"
+          (cd extensions/webbridge && zip -qr "$output" .)
+          (cd release-assets && sha256sum "$filename" > "EvoFlux-WebBridge-${version}-SHA256SUMS.txt")
+
+      - name: Create draft release and release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
+            if [[ "$is_draft" != "true" ]]; then
+              echo "Release $TAG is already published; refusing to replace immutable assets." >&2
+              exit 1
+            fi
+            gh release edit "$TAG" --title "EvoFlux v$VERSION"
+          else
+            gh release create "$TAG" \
+              --draft \
+              --generate-notes \
+              --title "EvoFlux v$VERSION"
+          fi
+          gh release view "$TAG" --json body --jq .body > release-notes.md
+
+      - name: Generate updater manifest
+        run: |
+          python scripts/generate_updater_manifest.py \
+            --artifacts-dir release-assets \
+            --repository "$GITHUB_REPOSITORY" \
+            --tag "$GITHUB_REF_NAME" \
+            --version "${{ steps.version.outputs.value }}" \
+            --notes-file release-notes.md \
+            --pub-date "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --output release-assets/latest.json
+
+      - name: Upload assets and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' assets < <(find release-assets -type f -print0 | sort -z)
+          if [[ ${#assets[@]} -eq 0 ]]; then
+            echo "No release assets were downloaded." >&2
+            exit 1
+          fi
+          gh release upload "$TAG" "${assets[@]}" --clobber
+          gh release edit "$TAG" --draft=false --latest

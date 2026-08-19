@@ -522,12 +522,6 @@ async def test_registry_returns_catalog(
     assert by_name["read"]["lead_only"] is False
     assert by_name["memory_search"]["tiers"] is None
     assert "artifact" not in by_name
-    assert {
-        "docx_document",
-        "xlsx_artifact",
-        "pptx_template",
-        "pptx_html",
-    }.isdisjoint(by_name)
     assert by_name["lsp_diagnostics"]["tiers"] == ["coding"]
     assert by_name["worktree_start"]["tiers"] == ["coding"]
     assert by_name["read"]["tiers"] is None

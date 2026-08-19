@@ -357,7 +357,13 @@ def _decode_git_path(value: str) -> str:
         try:
             decoded = ast.literal_eval(value)
             if isinstance(decoded, str):
-                return decoded
+                # Git octal-escapes the UTF-8 bytes, while ``literal_eval``
+                # turns each byte into a Latin-1 code point. Reassemble the
+                # bytes before applying the platform filesystem decoder.
+                try:
+                    return os.fsdecode(decoded.encode("latin-1"))
+                except UnicodeEncodeError:
+                    return decoded
         except (SyntaxError, ValueError):
             pass
     return value

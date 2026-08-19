@@ -1,6 +1,6 @@
 [package]
 name = "evoflux-desktop"
-version = "0.0.6"
+version = "0.0.7"
 description = "EvoFlux — on-machine AI agents (desktop shell)"
 authors = ["EvoFlux contributors"]
 license = "Apache-2.0"
@@ -13,7 +13,7 @@ rust-version = "1.77"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset", "tray-icon", "unstable"] }
+tauri = { version = "2", features = ["macos-private-api", "protocol-asset", "tray-icon", "unstable"] }
 tauri-plugin-log = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
@@ -28,6 +28,7 @@ anyhow = "1"
 once_cell = "1"
 tauri-plugin-single-instance = "2"
 tauri-plugin-clipboard-manager = "2"
+tauri-plugin-updater = "2.10.1"
 url = "2.5.8"
 walkdir = "2"
 mime_guess = "2"
@@ -42,16 +43,22 @@ png = "0.17"
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 block2 = "0.6"
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSButton", "NSControl", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSButton", "NSControl", "NSImage", "NSView", "NSWindow"] }
 objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["AVCaptureDevice", "AVMediaFormat", "block2"] }
 objc2-speech = { version = "0.3.2", default-features = false, features = ["SFSpeechRecognizer", "block2"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.25"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSData", "NSError"] }
+objc2-web-kit = { version = "0.3.2", default-features = false, features = ["block2", "WKPDFConfiguration", "WKSnapshotConfiguration", "WKWebView"] }
 
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.29", features = ["signal"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.58", features = [
+webview2-com = "0.38"
+windows = { version = "0.61", features = [
     "Win32_Foundation",
     # Required for CreateJobObjectW (it takes a
     # SECURITY_ATTRIBUTES pointer in its signature).
@@ -59,6 +66,10 @@ windows = { version = "0.58", features = [
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_JobObjects",
     "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Com",
 ] }
 
 [features]

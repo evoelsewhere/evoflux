@@ -126,6 +126,24 @@ class WebBridgeSettings(BaseModel):
     )
 
 
+class BuiltInBrowserSettings(BaseModel):
+    """Agent guardrails for the persistent in-app browser profile."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    allowed_domains: list[str] = Field(default_factory=list)
+    blocked_domains: list[str] = Field(default_factory=list)
+    allow_evaluate: bool = True
+    allow_storage: bool = True
+    allow_cookie_values: bool = False
+    allow_http_requests: bool = True
+    allow_clipboard_read: bool = False
+    allow_clipboard_write: bool = True
+    allow_file_uploads: bool = False
+    allow_downloads: bool = True
+    allow_agent_permission_accept: bool = False
+
+
 class ConductorSettings(BaseModel):
     """Connection and enforcement policy for the organization control plane."""
 
@@ -208,6 +226,7 @@ class RuntimeSettings(BaseModel):
     providers: dict[str, ProviderUiSettings] = Field(default_factory=dict)
     git: GitSettings = Field(default_factory=GitSettings)
     code_reviews: CodeReviewSettings = Field(default_factory=CodeReviewSettings)
+    browser: BuiltInBrowserSettings = Field(default_factory=BuiltInBrowserSettings)
     webbridge: WebBridgeSettings = Field(default_factory=WebBridgeSettings)
     conductor: ConductorSettings = Field(default_factory=ConductorSettings)
 

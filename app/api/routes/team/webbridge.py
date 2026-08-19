@@ -29,6 +29,7 @@ import ipaddress
 import json
 import mimetypes
 import os
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -1590,6 +1591,151 @@ def _browser_panel_reasoning(row: Any, extra: dict[str, Any]) -> str | None:
     return None
 
 
+_BROWSER_PANEL_SKILL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,99}$")
+_BROWSER_PANEL_ACTION_NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_BROWSER_PANEL_SAFE_ACTION_NUMBERS = frozenset(
+    {
+        "concurrency",
+        "delay_ms",
+        "dx",
+        "dy",
+        "id",
+        "idle_ms",
+        "index",
+        "limit",
+        "max_cells",
+        "max_chars",
+        "max_elements",
+        "max_items",
+        "max_scrolls",
+        "ms",
+        "quality",
+        "source_index",
+        "steps",
+        "tab_id",
+        "target_index",
+        "timeout_ms",
+        "x",
+        "y",
+    }
+)
+_BROWSER_PANEL_SAFE_ACTION_BOOLS = frozenset(
+    {
+        "active",
+        "checked",
+        "clear",
+        "close_tabs",
+        "exact",
+        "full_page",
+        "include_values",
+        "scroll",
+        "submit",
+    }
+)
+_BROWSER_PANEL_SAFE_ACTION_ENUMS = {
+    "button": frozenset({"left", "right", "middle"}),
+    "format": frozenset({"png", "jpeg", "text", "markdown", "html"}),
+    "match": frozenset({"value", "label"}),
+    "state": frozenset({"visible", "attached", "hidden", "load", "domcontentloaded"}),
+    "value_mode": frozenset({"display", "formula", "both"}),
+    "verify": frozenset({"none", "normalized"}),
+    "wait": frozenset({"load", "networkidle", "none"}),
+}
+_BROWSER_PANEL_SAFE_ACTION_LISTS = {
+    "kinds": frozenset({"text", "grid", "slide", "control"}),
+    "modifiers": frozenset({"Alt", "Control", "Meta", "Shift"}),
+}
+
+
+def _browser_panel_skill_presentation(
+    tool_name: str,
+    raw_arguments: Any,
+) -> dict[str, str]:
+    """Expose only bounded display metadata for the built-in skill tool."""
+    if tool_name != "skill":
+        return {}
+    arguments = raw_arguments
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except (TypeError, json.JSONDecodeError):
+            return {}
+    if not isinstance(arguments, dict):
+        return {}
+    skill_name = arguments.get("skill_name")
+    safe_name = (
+        skill_name.strip()
+        if isinstance(skill_name, str)
+        and _BROWSER_PANEL_SKILL_NAME.fullmatch(skill_name.strip())
+        else None
+    )
+    action = arguments.get("action")
+    if not isinstance(action, str) and safe_name:
+        action = "load"
+    safe_action = action if action in {"load", "read_resource", "list"} else None
+    return {
+        **({"skill_action": safe_action} if safe_action else {}),
+        **({"skill_name": safe_name} if safe_name else {}),
+    }
+
+
+def _browser_panel_tool_display_arguments(
+    tool_name: str,
+    raw_arguments: Any,
+) -> dict[str, Any] | None:
+    """Build a bounded inspector payload without forwarding raw tool input."""
+    if tool_name != "webbridge":
+        return None
+    arguments = raw_arguments
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except (TypeError, json.JSONDecodeError):
+            return None
+    if not isinstance(arguments, dict) or not isinstance(
+        arguments.get("actions"), list
+    ):
+        return None
+    safe_actions: list[dict[str, Any]] = []
+    for raw_action in arguments["actions"][:100]:
+        if not isinstance(raw_action, dict):
+            continue
+        action_name = raw_action.get("action")
+        if not isinstance(action_name, str) or not _BROWSER_PANEL_ACTION_NAME.fullmatch(
+            action_name
+        ):
+            continue
+        safe_action: dict[str, Any] = {"action": action_name}
+        for key, value in list(raw_action.items())[:32]:
+            if key == "action" or not isinstance(key, str):
+                continue
+            if (
+                key in _BROWSER_PANEL_SAFE_ACTION_NUMBERS
+                and isinstance(value, int | float)
+                and not isinstance(value, bool)
+            ):
+                safe_action[key] = value
+            elif key in _BROWSER_PANEL_SAFE_ACTION_BOOLS and isinstance(value, bool):
+                safe_action[key] = value
+            elif (
+                key in _BROWSER_PANEL_SAFE_ACTION_ENUMS
+                and isinstance(value, str)
+                and value in _BROWSER_PANEL_SAFE_ACTION_ENUMS[key]
+            ):
+                safe_action[key] = value
+            elif key in _BROWSER_PANEL_SAFE_ACTION_LISTS and isinstance(value, list):
+                safe_action[key] = [
+                    item
+                    for item in value[:16]
+                    if isinstance(item, str)
+                    and item in _BROWSER_PANEL_SAFE_ACTION_LISTS[key]
+                ]
+            else:
+                safe_action[key] = "[redacted]"
+        safe_actions.append(safe_action)
+    return {"actions": safe_actions} if safe_actions else None
+
+
 def _browser_panel_blocks(
     row: Any,
     *,
@@ -1654,7 +1800,13 @@ def _browser_panel_blocks(
             "name": name,
             "tool_call_id": tool_call_id,
             "done": tool_result is not None,
+            **_browser_panel_skill_presentation(name, function.get("arguments")),
         }
+        display_arguments = _browser_panel_tool_display_arguments(
+            name, function.get("arguments")
+        )
+        if display_arguments is not None:
+            block["display_arguments"] = display_arguments
         if duration_ms is not None:
             block["duration_ms"] = duration_ms
 
@@ -1970,6 +2122,18 @@ def _browser_panel_stream_event(event: dict[str, Any]) -> dict[str, str] | None:
         if isinstance(identifier, str):
             projected["id"] = identifier
         copy_strings("agent", "name")
+        projected.update(
+            _browser_panel_skill_presentation(
+                str(data.get("name") or ""),
+                data.get("arguments"),
+            )
+        )
+        display_arguments = _browser_panel_tool_display_arguments(
+            str(data.get("name") or ""),
+            data.get("arguments"),
+        )
+        if display_arguments is not None:
+            projected["display_arguments"] = display_arguments
         projected["state"] = {
             "tool_call": "queued",
             "tool_start": "running",

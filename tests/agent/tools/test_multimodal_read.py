@@ -93,8 +93,12 @@ class TestClassifyFile:
         assert classify_file(Path("f.JPG")) == "image"
 
     def test_classify_document_extensions(self):
-        for ext in (".pdf", ".docx", ".html", ".htm"):
+        for ext in (".pdf", ".html", ".htm"):
             assert classify_file(Path(f"f{ext}")) == "document", ext
+
+    def test_classify_office_extensions_as_view_only(self):
+        for ext in (".docx", ".xlsx", ".pptx"):
+            assert classify_file(Path(f"f{ext}")) == "office", ext
 
     def test_classify_text_extensions(self):
         for ext in (".py", ".txt", ".md", ".json", ".yaml"):
@@ -210,14 +214,14 @@ class TestHandleDocument:
         assert "Unable to extract text" in text
 
     def test_non_pdf_failure(self, tmp_path):
-        docx = tmp_path / "test.docx"
-        docx.write_bytes(b"PK\x03\x04" + b"\x00" * 100)
+        html = tmp_path / "test.html"
+        html.write_bytes(b"<html></html>")
 
         with patch(
             "app.agent.tools.builtin.filesystem.handlers._convert_with_markitdown"
         ) as m:
             m.return_value = None
-            result = handle_document(docx, Path("test.docx"))
+            result = handle_document(html, Path("test.html"))
 
         text = _text_from_parts(result.parts)
         assert "Unable to extract text" in text
@@ -350,6 +354,19 @@ class TestReadFileNoVision:
 
         assert isinstance(result, str)
         assert result == "00001| hello"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("filename", ["report.docx", "forecast.xlsx", "deck.pptx"])
+    async def test_office_file_is_view_only(self, workspace, filename):
+        (workspace / filename).write_bytes(b"PK\x03\x04fixture")
+
+        result = await read_file.arun(
+            _injected={"_state": _make_state(vision=True)}, path=filename
+        )
+
+        assert isinstance(result, str)
+        assert "view-only" in result
+        assert "agent-side extraction and editing are disabled" in result
 
     @pytest.mark.asyncio
     async def test_document_still_converts_text(self, workspace):

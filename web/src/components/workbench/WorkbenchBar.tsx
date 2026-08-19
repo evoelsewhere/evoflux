@@ -69,6 +69,10 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
   const showTurnChanges = useTeamStore((s) => s.showTurnChanges)
   const planApproval = useTeamStore((s) => s.planApproval)
   const sessionModel = useTeamStore((s) => s.sessionModel)
+  const sessionId = useTeamStore((s) => s.sessionId)
+  const leadName = useTeamStore((s) => s.leadName)
+  const isTeamWorking = useTeamStore((s) => s.isTeamWorking)
+  const compactTeam = useTeamStore((s) => s.compactTeam)
   const activeUsage = useTeamStore((s) =>
     props.activeAgent ? s.agentStreams[props.activeAgent]?.usage : undefined,
   )
@@ -93,6 +97,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
     : undefined
   const contextMax = modelEntry?.context_length ?? undefined
   const summaryTrigger = modelEntry?.summary_trigger_tokens
+  const canCompactContext = Boolean(sessionId && props.activeAgent === leadName)
   const viewModeLabel =
     props.viewMode === 'agent'
       ? 'Agent'
@@ -119,14 +124,13 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
       className={cn(
         'workbench-topbar flex h-12 shrink-0 items-center gap-2 overflow-hidden bg-(--bg-page) px-3',
         props.isMacOverlay && 'mac-drag-region',
-        !props.isMobile
-          && (props.isMacOverlay
-            ? (sidebarCollapsed || props.sidebarOverlay)
-              && 'pl-(--spacing-mac-window-controls-inset)'
-            : sidebarCollapsed && !props.sidebarOverlay && 'pl-12'),
+        props.isMacOverlay
+          ? (props.isMobile || sidebarCollapsed || props.sidebarOverlay)
+            && 'pl-(--spacing-mac-window-controls-inset)'
+          : !props.isMobile && sidebarCollapsed && !props.sidebarOverlay && 'pl-12',
       )}
     >
-      {(props.isMobile || (props.sidebarOverlay && !props.isMacOverlay)) && (
+      {!props.isMacOverlay && (props.isMobile || props.sidebarOverlay) && (
         <motion.button
           type="button"
           onClick={props.onOpenMobileSidebar}
@@ -236,6 +240,8 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             output={activeUsage.completionTokens}
             cached={activeUsage.cachedTokens}
             trigger={summaryTrigger}
+            onCompact={canCompactContext ? compactTeam : undefined}
+            compactDisabled={isTeamWorking}
           />
         )}
 

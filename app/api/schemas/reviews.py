@@ -179,6 +179,7 @@ class ReviewActionRequest(BaseModel):
     body: str | None = Field(default=None, max_length=100_000)
     thread_id: str | None = Field(default=None, max_length=512)
     path: str | None = Field(default=None, max_length=4096)
+    old_path: str | None = Field(default=None, max_length=4096)
     line: int | None = Field(default=None, gt=0)
     side: Literal["LEFT", "RIGHT"] = "RIGHT"
     commit_id: str | None = Field(default=None, max_length=512)

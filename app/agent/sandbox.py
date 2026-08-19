@@ -203,7 +203,7 @@ class SandboxConfig:
             outbound_data_policy
             if outbound_data_policy is not None
             else (
-                getattr(file_config, "outbound_data_policy", "block")
+                getattr(file_config, "outbound_data_policy", "off")
                 if file_config is not None
                 else "block"
             )
@@ -212,7 +212,7 @@ class SandboxConfig:
             outbound_pii_policy
             if outbound_pii_policy is not None
             else (
-                getattr(file_config, "outbound_pii_policy", "standard")
+                getattr(file_config, "outbound_pii_policy", "off")
                 if file_config is not None
                 else "standard"
             )

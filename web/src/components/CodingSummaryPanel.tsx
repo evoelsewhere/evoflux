@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ChevronRight,
   CircleDot,
+  CircleAlert,
   FileDiff,
   Files,
   GitBranch,
@@ -241,6 +242,12 @@ export function CodingSummaryPanel({
                   <span className="text-(--color-error)">−{currentTurnChanges.deletions}</span>
                 </span>
               )}
+            />
+            <SummaryRow
+              icon={CircleAlert}
+              label="Problems"
+              detail="LSP, build, test, AI, security, and plugin findings"
+              onClick={openTool('problems')}
             />
             <SummaryRow
               icon={Files}

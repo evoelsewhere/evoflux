@@ -13,6 +13,8 @@ interface UsePinnedTranscriptOptions {
   resetKey?: string | number | null
   /** A newly submitted prompt explicitly reattaches bottom-follow. */
   followKey?: string | number | null
+  /** A newly submitted prompt that should be pinned to the viewport top. */
+  topAnchorKey?: string | number | null
   /** Optional work that should run once per painted scroll frame. */
   onScrollFrame?: (element: HTMLDivElement) => void
   /** Keep wheel/touch intent inside a nested scroll region. */
@@ -70,6 +72,7 @@ export function usePinnedTranscript({
   contentKey,
   resetKey,
   followKey,
+  topAnchorKey,
   onScrollFrame,
   isolateScroll = false,
   followEnabled = true,
@@ -267,6 +270,22 @@ export function usePinnedTranscript({
     if (followKey == null || !followEnabled) return
     reattach()
   }, [followEnabled, followKey, reattach])
+
+  useEffect(() => {
+    if (topAnchorKey == null || !followEnabled) return
+    cancelFollow()
+    pinnedRef.current = false
+    const frame = requestAnimationFrame(() => {
+      const container = scrollRef.current
+      const anchor = container?.querySelector<HTMLElement>(
+        '[data-transcript-top-anchor="true"]',
+      )
+      if (!anchor) return
+      anchor.scrollIntoView({ behavior: 'auto', block: 'start' })
+      setScrollButtonVisible(false)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [cancelFollow, followEnabled, setScrollButtonVisible, topAnchorKey])
 
   useEffect(() => {
     if (!followEnabled) cancelFollow()

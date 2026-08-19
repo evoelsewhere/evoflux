@@ -40,6 +40,8 @@ from sse_starlette.sse import EventSourceResponse
 from app.api.schemas.team import (
     CodingDiagnosticsRequest,
     CodingDiagnosticsResponse,
+    CodingSemanticRequest,
+    CodingSemanticResponse,
     CodingWorkspaceFilesResponse,
     WorkspaceFileInfo,
     WorkspaceFilesResponse,
@@ -49,13 +51,18 @@ from app.core.db import async_session_factory
 from app.core.paths import session_workspace_dir, uploads_dir, workspace_dir
 from app.models.chat import ChatSession
 from app.services import team_manager
-from app.plugin_platform.previews import (
+from app.services.document_preview import (
     DOCUMENT_PREVIEW_CSP,
     DocumentPreviewError,
     DocumentPreviewUnsupportedError,
     render_document_preview,
 )
 from app.services.workspace_file_watcher import workspace_file_watcher
+from app.services.problems_service import (
+    ProblemInput,
+    ProblemSeverity,
+    publish_problems,
+)
 from app.agent.lsp_manager import (
     LanguageServerUnavailable,
     get_language_server,
@@ -588,7 +595,7 @@ async def read_coding_workspace_file(
 
 @router.get("/workspace/files/preview")
 async def preview_coding_workspace_document(workspace: str, path: str) -> FileResponse:
-    """Render a coding-workspace document through the same bundled engine."""
+    """Render a coding-workspace document through the host viewer engine."""
 
     try:
         resolved_workspace = team_manager.validate_workspace(workspace)
@@ -683,12 +690,181 @@ async def get_coding_workspace_diagnostics(
 
         _sandbox_ctx.reset(sandbox_token)
 
+    _publish_lsp_problems(root, body.path, diagnostics)
+
     return CodingDiagnosticsResponse(
         workspace=resolved,
         path=body.path,
         language=spec.language_id,
         status="ready",
         diagnostics=diagnostics,
+    )
+
+
+@router.post("/workspace/lsp/semantic", response_model=CodingSemanticResponse)
+async def get_coding_workspace_semantic_result(
+    workspace: str, body: CodingSemanticRequest
+) -> CodingSemanticResponse:
+    """Return repository-local semantic information or an unapplied edit."""
+    try:
+        resolved = team_manager.validate_workspace(workspace)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    root = Path(resolved).resolve()
+    target = _coding_lsp_target(root, body.path)
+    spec = language_server_spec(target)
+    if spec is None:
+        return CodingSemanticResponse(
+            workspace=resolved,
+            path=body.path,
+            action=body.action,
+            status="unsupported",
+            message=f"No language server mapping for extension '{target.suffix}'.",
+        )
+
+    position: tuple[int, int] | None = None
+    if body.action in {"hover", "code_actions", "rename"}:
+        position = _semantic_position(body)
+    if body.action == "rename" and (not body.new_name or not body.new_name.strip()):
+        raise HTTPException(status_code=422, detail="rename requires new_name.")
+    line, column = position or (1, 1)
+    new_name = body.new_name.strip() if body.new_name else ""
+
+    sandbox_token = set_sandbox(SandboxConfig(workspace=resolved))
+    try:
+        client = await get_language_server(root, target)
+        if body.action == "hover":
+            result = await client.hover(target, line, column, body.content)
+        elif body.action == "code_actions":
+            diagnostics = body.diagnostics
+            if not diagnostics:
+                diagnostics = await client.diagnostics(target, body.content)
+            result = await client.code_actions(
+                target,
+                start_line=line,
+                start_column=column,
+                end_line=body.end_line or line,
+                end_column=body.end_column or column,
+                diagnostics=diagnostics,
+                content=body.content,
+            )
+        elif body.action == "rename":
+            result = await client.rename(
+                target,
+                line,
+                column,
+                new_name,
+                body.content,
+            )
+        elif body.action == "format":
+            edits = await client.formatting(
+                target,
+                body.content,
+                tab_size=body.tab_size,
+                insert_spaces=body.insert_spaces,
+            )
+            result = {"changes": {target.as_uri(): edits}} if edits else None
+        elif body.action == "organize_imports":
+            result = await client.organize_imports(target, body.content)
+        elif body.action == "document_symbols":
+            result = await client.document_symbols(target, body.content)
+        else:
+            result = await client.workspace_symbols(body.query or "")
+    except HTTPException:
+        raise
+    except (LanguageServerUnavailable, OSError, RuntimeError, ValueError) as exc:
+        return CodingSemanticResponse(
+            workspace=resolved,
+            path=body.path,
+            action=body.action,
+            language=spec.language_id,
+            status="unavailable",
+            message=str(exc),
+        )
+    finally:
+        from app.agent.sandbox import _sandbox_ctx
+
+        _sandbox_ctx.reset(sandbox_token)
+
+    return CodingSemanticResponse(
+        workspace=resolved,
+        path=body.path,
+        action=body.action,
+        language=spec.language_id,
+        status="ready",
+        result=result,
+        capabilities=dict(getattr(client, "capabilities", {}) or {}),
+    )
+
+
+def _coding_lsp_target(root: Path, raw_path: str) -> Path:
+    candidate = Path(raw_path)
+    if candidate.is_absolute() or (len(raw_path) >= 2 and raw_path[1] == ":"):
+        raise HTTPException(status_code=400, detail="Absolute paths rejected.")
+    target = (root / candidate).resolve(strict=False)
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail="Path escapes workspace root."
+        ) from exc
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="File not found.")
+    return target
+
+
+def _semantic_position(body: CodingSemanticRequest) -> tuple[int, int]:
+    if body.line is None or body.column is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{body.action} requires line and column.",
+        )
+    return body.line, body.column
+
+
+def _publish_lsp_problems(
+    workspace: Path, relative_path: str, diagnostics: list[dict]
+) -> None:
+    severity: dict[int, ProblemSeverity] = {
+        1: "error",
+        2: "warning",
+        3: "info",
+        4: "hint",
+    }
+    inputs: list[ProblemInput] = []
+    for diagnostic in diagnostics[:200]:
+        raw_range = diagnostic.get("range") or {}
+        start = raw_range.get("start") or {}
+        end = raw_range.get("end") or {}
+        raw_severity = diagnostic.get("severity")
+        problem_severity: ProblemSeverity = (
+            severity.get(raw_severity, "warning")
+            if isinstance(raw_severity, int)
+            else "warning"
+        )
+        inputs.append(
+            ProblemInput(
+                message=str(diagnostic.get("message") or "Language server problem"),
+                severity=problem_severity,
+                path=relative_path,
+                line=int(start.get("line", 0)) + 1,
+                column=int(start.get("character", 0)) + 1,
+                end_line=int(end.get("line", start.get("line", 0))) + 1,
+                end_column=int(end.get("character", start.get("character", 0))) + 1,
+                code=(
+                    str(diagnostic["code"])
+                    if diagnostic.get("code") is not None
+                    else None
+                ),
+                provenance={"producer": diagnostic.get("source") or "LSP"},
+            )
+        )
+    publish_problems(
+        workspace,
+        source="lsp",
+        scope=f"lsp:{relative_path}",
+        problems=inputs,
     )
 
 
@@ -962,7 +1138,7 @@ async def watch_session_files(session_id: str, request: Request):
     from typing import AsyncGenerator
 
     resolved = await _session_workspace(session_id)
-    queue = await workspace_file_watcher.subscribe(resolved)
+    queue = await workspace_file_watcher.subscribe(str(resolved))
 
     async def _gen() -> AsyncGenerator[dict, None]:
         try:
@@ -978,7 +1154,7 @@ async def watch_session_files(session_id: str, request: Request):
                 except TimeoutError:
                     yield {"event": "keepalive", "data": "{}"}
         finally:
-            await workspace_file_watcher.unsubscribe(resolved, queue)
+            await workspace_file_watcher.unsubscribe(str(resolved), queue)
 
     return EventSourceResponse(_gen())
 

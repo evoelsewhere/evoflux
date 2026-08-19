@@ -185,8 +185,8 @@ def test_get_sandbox_returns_seed_defaults_when_file_missing(
         "worktree_location": "repository",
         "inherit_shell_environment": False,
         "load_shell_profile": False,
-        "outbound_data_policy": "block",
-        "outbound_pii_policy": "standard",
+        "outbound_data_policy": "off",
+        "outbound_pii_policy": "off",
         "max_execution_seconds": 600,
         "max_output_bytes": 131072,
     }
@@ -228,8 +228,8 @@ def test_put_sandbox_strips_blank_patterns(isolated_config: Path) -> None:
         "worktree_location": "repository",
         "inherit_shell_environment": False,
         "load_shell_profile": False,
-        "outbound_data_policy": "block",
-        "outbound_pii_policy": "standard",
+        "outbound_data_policy": "off",
+        "outbound_pii_policy": "off",
         "max_execution_seconds": 600,
         "max_output_bytes": 131072,
     }
@@ -1284,8 +1284,23 @@ def test_webbridge_settings_round_trip(tmp_path, monkeypatch):
     assert defaults.status_code == 200
     assert defaults.json()["enabled"] is True
     assert defaults.json()["allow_evaluate"] is True
+    assert defaults.json()["built_in_allow_cookie_values"] is False
 
-    payload = {"enabled": False, "allow_evaluate": False}
+    payload = {
+        "enabled": False,
+        "allow_evaluate": False,
+        "built_in_allowed_domains": ["example.com"],
+        "built_in_blocked_domains": ["private.example.com"],
+        "built_in_allow_evaluate": False,
+        "built_in_allow_storage": False,
+        "built_in_allow_cookie_values": True,
+        "built_in_allow_http_requests": False,
+        "built_in_allow_clipboard_read": True,
+        "built_in_allow_clipboard_write": False,
+        "built_in_allow_file_uploads": True,
+        "built_in_allow_downloads": False,
+        "built_in_allow_agent_permission_accept": True,
+    }
     updated = client.put("/api/settings/webbridge", json=payload)
 
     assert updated.status_code == 200
@@ -1293,6 +1308,8 @@ def test_webbridge_settings_round_trip(tmp_path, monkeypatch):
     written = (tmp_path / "settings.yaml").read_text(encoding="utf-8")
     assert "enabled: false" in written
     assert "allow_evaluate: false" in written
+    assert "allowed_domains:" in written
+    assert "private.example.com" in written
 
     reread = client.get("/api/settings/webbridge")
     assert reread.status_code == 200

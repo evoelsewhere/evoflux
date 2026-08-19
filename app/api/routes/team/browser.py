@@ -53,6 +53,8 @@ class BrowserSessionResponse(BaseModel):
 class DirectBrowserAgentStatus(BaseModel):
     connected: bool
     available: bool
+    protocol_version: int = 0
+    capabilities: dict[str, Any] = Field(default_factory=dict)
 
 
 class DirectBrowserCommandRequest(BaseModel):
@@ -110,9 +112,13 @@ async def get_direct_browser_agent_status(
 ) -> DirectBrowserAgentStatus:
     from app.services.direct_browser_bridge import direct_browser_bridge
 
+    protocol_version, capabilities = direct_browser_bridge.connection_info(session_id)
+
     return DirectBrowserAgentStatus(
         connected=direct_browser_bridge.is_connected(session_id),
         available=direct_browser_bridge.is_available(session_id),
+        protocol_version=protocol_version,
+        capabilities=capabilities,
     )
 
 

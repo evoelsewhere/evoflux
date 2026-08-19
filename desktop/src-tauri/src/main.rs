@@ -22,11 +22,11 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalSize, RunEvent, WebviewUrl, WebviewWindowBuilder,
     WindowEvent, Wry,
 };
-use tauri_plugin_dialog::DialogExt;
-
-#[cfg(test)]
-use tauri_plugin_dialog::MessageDialogResult;
+use tauri_plugin_dialog::{
+    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
+};
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_updater::UpdaterExt;
 use tokio::sync::{oneshot, Mutex};
 
 use crate::sidecar::{Handshake, Sidecar};
@@ -43,6 +43,7 @@ struct AppState {
     startup_started: Instant,
     force_reloading: Arc<AtomicBool>,
     quitting: Arc<AtomicBool>,
+    updater_busy: Arc<AtomicBool>,
     tray_status: Arc<Mutex<Option<MenuItem<Wry>>>>,
     tray_session: Arc<Mutex<Option<MenuItem<Wry>>>>,
     active_window_label: Arc<Mutex<String>>,
@@ -168,13 +169,10 @@ const MENU_ZOOM_OUT: &str = "zoom_out";
 const MENU_ZOOM_RESET: &str = "zoom_reset";
 const MENU_OPEN_CONFIG_DIR: &str = "open_config_dir";
 const MENU_REVEAL_BACKEND_LOG: &str = "reveal_backend_log";
+const MENU_CHECK_UPDATES: &str = "check_updates";
 const MENU_QUIT: &str = "quit";
 const MENU_EDIT_UNDO: &str = "edit_undo";
 const MENU_EDIT_REDO: &str = "edit_redo";
-const MENU_EDIT_CUT: &str = "edit_cut";
-const MENU_EDIT_COPY: &str = "edit_copy";
-const MENU_EDIT_PASTE: &str = "edit_paste";
-const MENU_EDIT_SELECT_ALL: &str = "edit_select_all";
 
 /// Zoom factor bounds and step. ``ZOOM_STEP`` is the multiplier per
 /// ⌘+/⌘- press (≈20%, matching Chrome). Bounds keep the factor from
@@ -205,19 +203,50 @@ const MACOS_TRAFFIC_LIGHT_Y: f64 = 22.0;
 /// uncomfortably wide when a session title or workspace name is long.
 const TRAY_SESSION_MAX_LEN: usize = 60;
 
+/// Delay automatic checks until the main window and local backend have had
+/// time to finish their first paint/startup work.
+const AUTOMATIC_UPDATE_CHECK_DELAY: Duration = Duration::from_secs(8);
+
 /// Apply platform-specific window chrome.
 ///
 /// macOS uses an overlay title-bar; the React app places sidebar/history
 /// controls immediately after the traffic-lights. ``traffic_light_position``
 /// must be set from Rust because the JSON config value is ignored when the
 /// window is built via ``WebviewWindowBuilder``.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn windows_acrylic_effects() -> tauri::utils::config::WindowEffectsConfig {
+    use tauri::{utils::config::WindowEffectsConfig, window::Effect};
+
+    WindowEffectsConfig {
+        // Acrylic is supported across Windows 10 and 11. Keep its native blur
+        // untinted; the transparent WebView supplies the resolved app palette.
+        effects: vec![Effect::Acrylic],
+        state: None,
+        radius: None,
+        color: None,
+    }
+}
+
 fn configure_window_chrome(
     builder: WebviewWindowBuilder<'_, tauri::Wry, AppHandle>,
 ) -> WebviewWindowBuilder<'_, tauri::Wry, AppHandle> {
     #[cfg(target_os = "macos")]
     {
-        use tauri::{LogicalPosition, TitleBarStyle};
+        use tauri::{
+            utils::config::WindowEffectsConfig,
+            window::{Effect, EffectState},
+            LogicalPosition, TitleBarStyle,
+        };
         builder
+            .transparent(true)
+            .effects(WindowEffectsConfig {
+                // Under-window material gives the transparent sidebar and
+                // Settings rail a stronger native blur than Sidebar material.
+                effects: vec![Effect::UnderWindowBackground],
+                state: Some(EffectState::Active),
+                radius: Some(12.0),
+                color: None,
+            })
             .title_bar_style(TitleBarStyle::Overlay)
             .hidden_title(true)
             .traffic_light_position(LogicalPosition::new(
@@ -227,7 +256,7 @@ fn configure_window_chrome(
     }
     #[cfg(target_os = "windows")]
     {
-        builder
+        builder.transparent(true).effects(windows_acrylic_effects())
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
@@ -652,13 +681,656 @@ fn app_browser_webview(app: &AppHandle, label: &str) -> Result<tauri::Webview, S
         .ok_or_else(|| format!("Browser webview not found: {label}"))
 }
 
+fn browser_navigation_url(value: &str) -> Result<url::Url, String> {
+    let parsed = url::Url::parse(value).map_err(|error| format!("Invalid browser URL: {error}"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("Browser navigation only allows http:// and https:// URLs".into());
+    }
+    if parsed.host_str().is_none() {
+        return Err("Browser navigation requires a host".into());
+    }
+    Ok(parsed)
+}
+
+#[cfg(target_os = "macos")]
+fn send_native_browser_pointer(action: &str, x: f64, y: f64, button: &str) -> Result<(), String> {
+    use core_graphics::event::{CGEvent, CGEventTapLocation, CGEventType, CGMouseButton};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+    use core_graphics::geometry::CGPoint;
+
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "Could not create macOS input event source".to_string())?;
+    let point = CGPoint::new(x, y);
+    let mouse_button = match button {
+        "right" => CGMouseButton::Right,
+        "middle" => CGMouseButton::Center,
+        _ => CGMouseButton::Left,
+    };
+    let (down, up) = match mouse_button {
+        CGMouseButton::Right => (CGEventType::RightMouseDown, CGEventType::RightMouseUp),
+        CGMouseButton::Center => (CGEventType::OtherMouseDown, CGEventType::OtherMouseUp),
+        CGMouseButton::Left => (CGEventType::LeftMouseDown, CGEventType::LeftMouseUp),
+    };
+    CGEvent::new_mouse_event(source.clone(), CGEventType::MouseMoved, point, mouse_button)
+        .map_err(|_| "Could not create macOS pointer move".to_string())?
+        .post(CGEventTapLocation::HID);
+    if action == "hover" {
+        return Ok(());
+    }
+    let clicks = if action == "dblclick" { 2 } else { 1 };
+    for _ in 0..clicks {
+        CGEvent::new_mouse_event(source.clone(), down, point, mouse_button)
+            .map_err(|_| "Could not create macOS pointer down".to_string())?
+            .post(CGEventTapLocation::HID);
+        std::thread::sleep(Duration::from_millis(42));
+        CGEvent::new_mouse_event(source.clone(), up, point, mouse_button)
+            .map_err(|_| "Could not create macOS pointer up".to_string())?
+            .post(CGEventTapLocation::HID);
+        std::thread::sleep(Duration::from_millis(58));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn send_native_browser_pointer(action: &str, x: f64, y: f64, button: &str) -> Result<(), String> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        mouse_event, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN,
+        MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
+
+    unsafe { SetCursorPos(x.round() as i32, y.round() as i32) }
+        .map_err(|error| format!("Could not move Windows pointer: {error}"))?;
+    if action == "hover" {
+        return Ok(());
+    }
+    let (down, up) = match button {
+        "right" => (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP),
+        "middle" => (MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP),
+        _ => (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP),
+    };
+    let clicks = if action == "dblclick" { 2 } else { 1 };
+    for _ in 0..clicks {
+        unsafe { mouse_event(down, 0, 0, 0, 0) };
+        std::thread::sleep(Duration::from_millis(42));
+        unsafe { mouse_event(up, 0, 0, 0, 0) };
+        std::thread::sleep(Duration::from_millis(58));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn send_native_browser_pointer(action: &str, x: f64, y: f64, button: &str) -> Result<(), String> {
+    let button_number = match button {
+        "middle" => "2",
+        "right" => "3",
+        _ => "1",
+    };
+    let x = x.round().to_string();
+    let y = y.round().to_string();
+    let mut command = std::process::Command::new("xdotool");
+    command.args(["mousemove", "--sync", &x, &y]);
+    if action != "hover" {
+        command.args([
+            "click",
+            "--repeat",
+            if action == "dblclick" { "2" } else { "1" },
+            button_number,
+        ]);
+    }
+    let status = command
+        .status()
+        .map_err(|error| format!("xdotool pointer input unavailable: {error}"))?;
+    if !status.success() {
+        return Err(format!("xdotool pointer input exited with {status}"));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+fn send_native_browser_pointer(
+    _action: &str,
+    _x: f64,
+    _y: f64,
+    _button: &str,
+) -> Result<(), String> {
+    Err("Native browser pointer injection is unavailable on this platform".into())
+}
+
+#[cfg(target_os = "macos")]
+fn send_native_browser_drag(from: (f64, f64), to: (f64, f64)) -> Result<(), String> {
+    use core_graphics::event::{CGEvent, CGEventTapLocation, CGEventType, CGMouseButton};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+    use core_graphics::geometry::CGPoint;
+
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "Could not create macOS drag event source".to_string())?;
+    let point = |value: (f64, f64)| CGPoint::new(value.0, value.1);
+    CGEvent::new_mouse_event(
+        source.clone(),
+        CGEventType::MouseMoved,
+        point(from),
+        CGMouseButton::Left,
+    )
+    .map_err(|_| "Could not create macOS drag move".to_string())?
+    .post(CGEventTapLocation::HID);
+    CGEvent::new_mouse_event(
+        source.clone(),
+        CGEventType::LeftMouseDown,
+        point(from),
+        CGMouseButton::Left,
+    )
+    .map_err(|_| "Could not create macOS drag down".to_string())?
+    .post(CGEventTapLocation::HID);
+    for step in 1..=14 {
+        let progress = step as f64 / 14.0;
+        let current = (
+            from.0 + (to.0 - from.0) * progress,
+            from.1 + (to.1 - from.1) * progress,
+        );
+        CGEvent::new_mouse_event(
+            source.clone(),
+            CGEventType::LeftMouseDragged,
+            point(current),
+            CGMouseButton::Left,
+        )
+        .map_err(|_| "Could not create macOS drag step".to_string())?
+        .post(CGEventTapLocation::HID);
+        std::thread::sleep(Duration::from_millis(18));
+    }
+    CGEvent::new_mouse_event(
+        source,
+        CGEventType::LeftMouseUp,
+        point(to),
+        CGMouseButton::Left,
+    )
+    .map_err(|_| "Could not create macOS drag release".to_string())?
+    .post(CGEventTapLocation::HID);
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn send_native_browser_drag(from: (f64, f64), to: (f64, f64)) -> Result<(), String> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        mouse_event, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
+
+    unsafe { SetCursorPos(from.0.round() as i32, from.1.round() as i32) }
+        .map_err(|error| format!("Could not position Windows drag pointer: {error}"))?;
+    unsafe { mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0) };
+    for step in 1..=14 {
+        let progress = step as f64 / 14.0;
+        let x = from.0 + (to.0 - from.0) * progress;
+        let y = from.1 + (to.1 - from.1) * progress;
+        unsafe { SetCursorPos(x.round() as i32, y.round() as i32) }
+            .map_err(|error| format!("Could not move Windows drag pointer: {error}"))?;
+        std::thread::sleep(Duration::from_millis(18));
+    }
+    unsafe { mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0) };
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn send_native_browser_drag(from: (f64, f64), to: (f64, f64)) -> Result<(), String> {
+    let from_x = from.0.round().to_string();
+    let from_y = from.1.round().to_string();
+    let to_x = to.0.round().to_string();
+    let to_y = to.1.round().to_string();
+    let status = std::process::Command::new("xdotool")
+        .args([
+            "mousemove",
+            "--sync",
+            &from_x,
+            &from_y,
+            "mousedown",
+            "1",
+            "mousemove",
+            "--sync",
+            &to_x,
+            &to_y,
+            "mouseup",
+            "1",
+        ])
+        .status()
+        .map_err(|error| format!("xdotool drag input unavailable: {error}"))?;
+    if !status.success() {
+        return Err(format!("xdotool drag input exited with {status}"));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+fn send_native_browser_drag(_from: (f64, f64), _to: (f64, f64)) -> Result<(), String> {
+    Err("Native browser drag injection is unavailable on this platform".into())
+}
+
+#[cfg(target_os = "macos")]
+fn send_native_browser_text(text: &str) -> Result<(), String> {
+    use core_graphics::event::{CGEvent, CGEventTapLocation, KeyCode};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "Could not create macOS keyboard event source".to_string())?;
+    for character in text.chars() {
+        let value = character.to_string();
+        let down = CGEvent::new_keyboard_event(source.clone(), KeyCode::ANSI_A, true)
+            .map_err(|_| "Could not create macOS key down".to_string())?;
+        down.set_string(&value);
+        down.post(CGEventTapLocation::HID);
+        CGEvent::new_keyboard_event(source.clone(), KeyCode::ANSI_A, false)
+            .map_err(|_| "Could not create macOS key up".to_string())?
+            .post(CGEventTapLocation::HID);
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn send_native_browser_text(text: &str) -> Result<(), String> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
+        VIRTUAL_KEY,
+    };
+
+    let mut inputs = Vec::with_capacity(text.encode_utf16().count() * 2);
+    for unit in text.encode_utf16() {
+        for flags in [KEYEVENTF_UNICODE, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP] {
+            inputs.push(INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VIRTUAL_KEY(0),
+                        wScan: unit,
+                        dwFlags: flags,
+                        time: 0,
+                        dwExtraInfo: 0,
+                    },
+                },
+            });
+        }
+    }
+    let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+    if sent != inputs.len() as u32 {
+        return Err(format!(
+            "Windows accepted {sent}/{} keyboard events",
+            inputs.len()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn send_native_browser_text(text: &str) -> Result<(), String> {
+    let status = std::process::Command::new("xdotool")
+        .args(["type", "--clearmodifiers", "--", text])
+        .status()
+        .map_err(|error| format!("xdotool keyboard input unavailable: {error}"))?;
+    if !status.success() {
+        return Err(format!("xdotool keyboard input exited with {status}"));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+fn send_native_browser_text(_text: &str) -> Result<(), String> {
+    Err("Native browser keyboard injection is unavailable on this platform".into())
+}
+
+#[cfg(target_os = "macos")]
+fn send_native_browser_key(key: &str, modifiers: &[String]) -> Result<(), String> {
+    use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation, KeyCode};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+    let normalized = key.to_ascii_lowercase();
+    let keycode = match normalized.as_str() {
+        "enter" | "return" => KeyCode::RETURN,
+        "tab" => KeyCode::TAB,
+        "escape" => KeyCode::ESCAPE,
+        "backspace" | "delete" => KeyCode::DELETE,
+        "arrowleft" => KeyCode::LEFT_ARROW,
+        "arrowright" => KeyCode::RIGHT_ARROW,
+        "arrowup" => KeyCode::UP_ARROW,
+        "arrowdown" => KeyCode::DOWN_ARROW,
+        "home" => KeyCode::HOME,
+        "end" => KeyCode::END,
+        "pageup" => KeyCode::PAGE_UP,
+        "pagedown" => KeyCode::PAGE_DOWN,
+        " " | "space" => KeyCode::SPACE,
+        "a" => KeyCode::ANSI_A,
+        "c" => KeyCode::ANSI_C,
+        "f" => KeyCode::ANSI_F,
+        "k" => KeyCode::ANSI_K,
+        "l" => KeyCode::ANSI_L,
+        "r" => KeyCode::ANSI_R,
+        "v" => KeyCode::ANSI_V,
+        "x" => KeyCode::ANSI_X,
+        "z" => KeyCode::ANSI_Z,
+        _ if key.chars().count() == 1 && modifiers.is_empty() => {
+            return send_native_browser_text(key);
+        }
+        _ => return Err(format!("Unsupported native macOS key: {key}")),
+    };
+    let mut flags = CGEventFlags::empty();
+    for modifier in modifiers {
+        match modifier.to_ascii_lowercase().as_str() {
+            "meta" | "command" => flags |= CGEventFlags::CGEventFlagCommand,
+            "control" | "ctrl" => flags |= CGEventFlags::CGEventFlagControl,
+            "alt" | "option" => flags |= CGEventFlags::CGEventFlagAlternate,
+            "shift" => flags |= CGEventFlags::CGEventFlagShift,
+            _ => {}
+        }
+    }
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "Could not create macOS keyboard event source".to_string())?;
+    for down in [true, false] {
+        let event = CGEvent::new_keyboard_event(source.clone(), keycode, down)
+            .map_err(|_| "Could not create macOS key event".to_string())?;
+        event.set_flags(flags);
+        event.post(CGEventTapLocation::HID);
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn send_native_browser_key(key: &str, modifiers: &[String]) -> Result<(), String> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
+        VK_BACK, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LEFT, VK_LMENU,
+        VK_LSHIFT, VK_LWIN, VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SPACE, VK_TAB, VK_UP,
+    };
+
+    let normalized = key.to_ascii_lowercase();
+    let virtual_key = match normalized.as_str() {
+        "enter" | "return" => VK_RETURN,
+        "tab" => VK_TAB,
+        "escape" => VK_ESCAPE,
+        "backspace" => VK_BACK,
+        "delete" => VK_DELETE,
+        "arrowleft" => VK_LEFT,
+        "arrowright" => VK_RIGHT,
+        "arrowup" => VK_UP,
+        "arrowdown" => VK_DOWN,
+        "home" => VK_HOME,
+        "end" => VK_END,
+        "pageup" => VK_PRIOR,
+        "pagedown" => VK_NEXT,
+        " " | "space" => VK_SPACE,
+        _ if key.len() == 1 => VIRTUAL_KEY(key.to_ascii_uppercase().as_bytes()[0] as u16),
+        _ => return Err(format!("Unsupported native Windows key: {key}")),
+    };
+    let modifier_keys: Vec<VIRTUAL_KEY> = modifiers
+        .iter()
+        .filter_map(|modifier| match modifier.to_ascii_lowercase().as_str() {
+            "meta" | "command" => Some(VK_LWIN),
+            "control" | "ctrl" => Some(VK_CONTROL),
+            "alt" | "option" => Some(VK_LMENU),
+            "shift" => Some(VK_LSHIFT),
+            _ => None,
+        })
+        .collect();
+    let input = |key: VIRTUAL_KEY, key_up: bool| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: key,
+                wScan: 0,
+                dwFlags: if key_up {
+                    KEYEVENTF_KEYUP
+                } else {
+                    Default::default()
+                },
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    };
+    let mut inputs = Vec::new();
+    inputs.extend(modifier_keys.iter().copied().map(|key| input(key, false)));
+    inputs.push(input(virtual_key, false));
+    inputs.push(input(virtual_key, true));
+    inputs.extend(
+        modifier_keys
+            .iter()
+            .rev()
+            .copied()
+            .map(|key| input(key, true)),
+    );
+    let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+    if sent != inputs.len() as u32 {
+        return Err(format!(
+            "Windows accepted {sent}/{} keyboard events",
+            inputs.len()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn send_native_browser_key(key: &str, modifiers: &[String]) -> Result<(), String> {
+    let mut parts: Vec<String> = modifiers
+        .iter()
+        .map(|modifier| match modifier.to_ascii_lowercase().as_str() {
+            "meta" | "command" => "super".to_string(),
+            "control" => "ctrl".to_string(),
+            "alt" | "option" => "alt".to_string(),
+            "shift" => "shift".to_string(),
+            value => value.to_string(),
+        })
+        .collect();
+    parts.push(key.to_ascii_lowercase());
+    let chord = parts.join("+");
+    let status = std::process::Command::new("xdotool")
+        .args(["key", "--clearmodifiers", &chord])
+        .status()
+        .map_err(|error| format!("xdotool key input unavailable: {error}"))?;
+    if !status.success() {
+        return Err(format!("xdotool key input exited with {status}"));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+fn send_native_browser_key(_key: &str, _modifiers: &[String]) -> Result<(), String> {
+    Err("Native browser keyboard injection is unavailable on this platform".into())
+}
+
+async fn run_native_browser_pointer_action(
+    app: &AppHandle,
+    label: &str,
+    action: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let target = eval_browser_webview_action(app, label, "native_target", params).await?;
+    let webview = app_browser_webview(app, label)?;
+    let child_position = webview
+        .position()
+        .map_err(|error| format!("Could not read browser position: {error}"))?;
+    let child_size = webview
+        .size()
+        .map_err(|error| format!("Could not read browser size: {error}"))?;
+    let window = webview.window();
+    let window_position = window
+        .inner_position()
+        .map_err(|error| format!("Could not read browser window position: {error}"))?;
+    let viewport_width = target
+        .get("viewport_width")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(child_size.width as f64)
+        .max(1.0);
+    let viewport_height = target
+        .get("viewport_height")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(child_size.height as f64)
+        .max(1.0);
+    let css_x = target
+        .get("x")
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| "Native pointer target has no x coordinate".to_string())?;
+    let css_y = target
+        .get("y")
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| "Native pointer target has no y coordinate".to_string())?;
+    let mut screen_x = window_position.x as f64
+        + child_position.x as f64
+        + css_x * child_size.width as f64 / viewport_width;
+    let mut screen_y = window_position.y as f64
+        + child_position.y as f64
+        + css_y * child_size.height as f64 / viewport_height;
+    #[cfg(target_os = "macos")]
+    if let Ok(Some(monitor)) = window.current_monitor() {
+        let scale = monitor.scale_factor().max(1.0);
+        screen_x /= scale;
+        screen_y /= scale;
+    }
+    let _ = window.set_focus();
+    let _ = webview.set_focus();
+    tokio::time::sleep(Duration::from_millis(25)).await;
+    let button = params
+        .get("button")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("left");
+    send_native_browser_pointer(action, screen_x, screen_y, button)?;
+    Ok(serde_json::json!({
+        "trusted": true,
+        "action": action,
+        "target": target.get("description"),
+        "x": css_x,
+        "y": css_y,
+    }))
+}
+
+async fn run_native_browser_drag_action(
+    app: &AppHandle,
+    label: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let targets = eval_browser_webview_action(app, label, "native_drag_targets", params).await?;
+    let webview = app_browser_webview(app, label)?;
+    let child_position = webview
+        .position()
+        .map_err(|error| format!("Could not read browser position: {error}"))?;
+    let child_size = webview
+        .size()
+        .map_err(|error| format!("Could not read browser size: {error}"))?;
+    let window = webview.window();
+    let window_position = window
+        .inner_position()
+        .map_err(|error| format!("Could not read browser window position: {error}"))?;
+    let viewport_width = targets
+        .get("viewport_width")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(child_size.width as f64)
+        .max(1.0);
+    let viewport_height = targets
+        .get("viewport_height")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(child_size.height as f64)
+        .max(1.0);
+    let screen_point = |name: &str| -> Result<(f64, f64), String> {
+        let value = targets
+            .get(name)
+            .ok_or_else(|| format!("Native drag has no {name} target"))?;
+        let x = value
+            .get("x")
+            .and_then(serde_json::Value::as_f64)
+            .ok_or_else(|| format!("Native drag {name} has no x coordinate"))?;
+        let y = value
+            .get("y")
+            .and_then(serde_json::Value::as_f64)
+            .ok_or_else(|| format!("Native drag {name} has no y coordinate"))?;
+        Ok((
+            window_position.x as f64
+                + child_position.x as f64
+                + x * child_size.width as f64 / viewport_width,
+            window_position.y as f64
+                + child_position.y as f64
+                + y * child_size.height as f64 / viewport_height,
+        ))
+    };
+    let mut source = screen_point("source")?;
+    let mut target = screen_point("target")?;
+    #[cfg(target_os = "macos")]
+    if let Ok(Some(monitor)) = window.current_monitor() {
+        let scale = monitor.scale_factor().max(1.0);
+        source = (source.0 / scale, source.1 / scale);
+        target = (target.0 / scale, target.1 / scale);
+    }
+    let _ = window.set_focus();
+    let _ = webview.set_focus();
+    tokio::time::sleep(Duration::from_millis(25)).await;
+    send_native_browser_drag(source, target)?;
+    Ok(serde_json::json!({
+        "trusted": true,
+        "action": "drag",
+        "source": targets.get("source").and_then(|value| value.get("description")),
+        "target": targets.get("target").and_then(|value| value.get("description")),
+    }))
+}
+
+async fn run_native_browser_keyboard_action(
+    app: &AppHandle,
+    label: &str,
+    action: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let mut focus_params = params.clone();
+    focus_params
+        .as_object_mut()
+        .ok_or_else(|| "Browser keyboard parameters must be an object".to_string())?
+        .insert("mode".into(), serde_json::Value::String(action.into()));
+    let target = eval_browser_webview_action(app, label, "native_focus", &focus_params).await?;
+    let webview = app_browser_webview(app, label)?;
+    let window = webview.window();
+    let _ = window.set_focus();
+    let _ = webview.set_focus();
+    tokio::time::sleep(Duration::from_millis(25)).await;
+
+    match action {
+        "type" | "fill" => {
+            let text = params
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            send_native_browser_text(text)?;
+            Ok(serde_json::json!({
+                "trusted": true,
+                "action": action,
+                "characters": text.chars().count(),
+                "target": target.get("description"),
+            }))
+        }
+        "press" => {
+            let chord = params
+                .get("key")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            let mut parts: Vec<String> = chord
+                .split('+')
+                .filter(|part| !part.is_empty())
+                .map(str::to_string)
+                .collect();
+            let key = parts
+                .pop()
+                .ok_or_else(|| "press requires a key".to_string())?;
+            send_native_browser_key(&key, &parts)?;
+            Ok(serde_json::json!({
+                "trusted": true,
+                "action": action,
+                "key": chord,
+                "target": target.get("description"),
+            }))
+        }
+        _ => Err(format!("Unsupported native keyboard action: {action}")),
+    }
+}
+
 #[tauri::command]
 async fn app_browser_webview_navigate(
     app: AppHandle,
     label: String,
     url: String,
 ) -> Result<String, String> {
-    let parsed = url::Url::parse(&url).map_err(|error| format!("Invalid browser URL: {error}"))?;
+    let parsed = browser_navigation_url(&url)?;
     let webview = app_browser_webview(&app, &label)?;
     webview
         .navigate(parsed)
@@ -713,11 +1385,51 @@ fn browser_observability_init_script() -> &'static str {
         (() => {
             const label = window.__TAURI_INTERNALS__?.metadata?.currentWebview?.label;
             if (!String(label || '').startsWith('browser-') || globalThis.__evofluxBrowserRuntime) return;
-            const runtime = { console: [], network: [], dialogs: [], dialogBehavior: { behavior: 'dismiss', promptText: null } };
+            const runtime = { documentId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`, console: [], network: [], dialogs: [], popups: [], permissions: [], permissionResolvers: new Map(), nextDialogId: 1, nextPopupId: 1, nextPermissionId: 1, dialogBehavior: { behavior: 'dismiss', promptText: null } };
             const keep = (items, value, max) => {
                 items.push(value);
                 if (items.length > max) items.splice(0, items.length - max);
             };
+            const queuePopup = (value) => {
+                try {
+                    const url = new URL(String(value || ''), location.href);
+                    if (!['http:', 'https:'].includes(url.protocol)) return null;
+                    keep(runtime.popups, { id: runtime.nextPopupId++, ts: Date.now(), url: url.href }, 100);
+                    return null;
+                } catch { return null; }
+            };
+            globalThis.open = (url) => queuePopup(url);
+            addEventListener('click', (event) => {
+                const anchor = event.composedPath?.().find((node) => node?.tagName === 'A');
+                if (!anchor || String(anchor.target || '').toLowerCase() !== '_blank' || !anchor.href) return;
+                event.preventDefault();
+                queuePopup(anchor.href);
+            }, true);
+            const queuePermission = (kind, detail, grant, deny) => {
+                const request = { id: runtime.nextPermissionId++, ts: Date.now(), kind, detail, state: 'pending' };
+                keep(runtime.permissions, request, 100);
+                runtime.permissionResolvers.set(request.id, { request, grant, deny });
+                return request.id;
+            };
+            try {
+                const original = Notification?.requestPermission?.bind(Notification);
+                if (original) Notification.requestPermission = () => new Promise((resolve) => {
+                    queuePermission('notifications', {}, () => original().then(resolve, () => resolve('denied')), () => resolve('denied'));
+                });
+            } catch {}
+            try {
+                const original = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
+                if (original) navigator.mediaDevices.getUserMedia = (constraints) => new Promise((resolve, reject) => {
+                    const detail = JSON.parse(JSON.stringify(constraints || {}));
+                    queuePermission('media', detail, () => original(constraints).then(resolve, reject), () => reject(new DOMException('Permission denied by user', 'NotAllowedError')));
+                });
+            } catch {}
+            try {
+                const original = navigator.geolocation?.getCurrentPosition?.bind(navigator.geolocation);
+                if (original) navigator.geolocation.getCurrentPosition = (success, error, options) => {
+                    queuePermission('geolocation', {}, () => original(success, error, options), () => error?.({ code: 1, message: 'Permission denied by user', PERMISSION_DENIED: 1 }));
+                };
+            } catch {}
             for (const level of ['debug', 'log', 'info', 'warn', 'error']) {
                 const original = console[level]?.bind(console);
                 if (!original) continue;
@@ -747,15 +1459,17 @@ fn browser_observability_init_script() -> &'static str {
                 text: String(event.reason?.stack || event.reason || 'Unhandled rejection').slice(0, 4000),
             }, 400));
             globalThis.alert = (message) => {
-                keep(runtime.dialogs, { ts: Date.now(), type: 'alert', message: String(message) }, 100);
+                keep(runtime.dialogs, { id: runtime.nextDialogId++, ts: Date.now(), type: 'alert', message: String(message), response: 'accepted' }, 100);
             };
             globalThis.confirm = (message) => {
-                keep(runtime.dialogs, { ts: Date.now(), type: 'confirm', message: String(message) }, 100);
-                return runtime.dialogBehavior.behavior === 'accept';
+                const accepted = runtime.dialogBehavior.behavior === 'accept';
+                keep(runtime.dialogs, { id: runtime.nextDialogId++, ts: Date.now(), type: 'confirm', message: String(message), response: accepted ? 'accepted' : 'dismissed' }, 100);
+                return accepted;
             };
             globalThis.prompt = (message, defaultValue = '') => {
-                keep(runtime.dialogs, { ts: Date.now(), type: 'prompt', message: String(message), default_value: String(defaultValue) }, 100);
-                return runtime.dialogBehavior.behavior === 'accept'
+                const accepted = runtime.dialogBehavior.behavior === 'accept';
+                keep(runtime.dialogs, { id: runtime.nextDialogId++, ts: Date.now(), type: 'prompt', message: String(message), default_value: String(defaultValue), response: accepted ? 'accepted' : 'dismissed' }, 100);
+                return accepted
                     ? String(runtime.dialogBehavior.promptText ?? defaultValue)
                     : null;
             };
@@ -797,8 +1511,8 @@ fn browser_agent_cursor_runtime_script() -> &'static str {
         (() => {
             if (globalThis.__evofluxEnsureAgentCursor) return;
             const HOST_ID = '__evoflux-agent-cursor';
-            const TIP_X = 3;
-            const TIP_Y = 2.5;
+            const TIP_X = 4;
+            const TIP_Y = 2.7;
             let pulseTimer = null;
             const controller = {
                 host: null,
@@ -826,26 +1540,27 @@ fn browser_agent_cursor_runtime_script() -> &'static str {
                             :host { all: initial; }
                             .layer { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
                             .cursor {
-                                position: absolute; left: 0; top: 0; width: 17px; height: 18px;
+                                position: absolute; left: 0; top: 0; width: 24px; height: 27px;
                                 transform: translate3d(var(--cursor-x, 72vw), var(--cursor-y, 34vh), 0);
-                                transform-origin: 3px 2.5px; transition: transform 28ms linear;
+                                transform-origin: 4px 2.7px; transition: transform 28ms linear;
                                 will-change: transform;
                             }
                             .cursor-aura {
-                                position: absolute; left: -2px; top: -2px; width: 14px; height: 14px;
-                                border-radius: 50%; opacity: .34;
-                                background: radial-gradient(circle, rgba(255, 255, 255, .38) 0 8%, rgba(91, 221, 239, .14) 34%, transparent 72%);
-                                filter: blur(2px);
+                                position: absolute; left: -7px; top: -7px; width: 25px; height: 25px;
+                                border-radius: 50%; opacity: .46;
+                                background: radial-gradient(circle, rgba(255,255,255,.34) 0 8%, rgba(119,92,255,.24) 32%, rgba(67,210,255,.11) 54%, transparent 74%);
+                                filter: blur(3px);
                             }
                             .cursor svg {
                                 position: relative; display: block; width: 100%; height: 100%; overflow: visible;
-                                filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .38)) drop-shadow(0 0 3px rgba(72, 202, 224, .42));
+                                filter: drop-shadow(0 1px 1px rgba(0,0,0,.5)) drop-shadow(0 0 4px rgba(126,93,255,.58)) drop-shadow(0 0 8px rgba(67,210,255,.22));
                             }
-                            .cursor-outline { fill: none; stroke: rgba(255, 255, 255, .96); stroke-width: 2.7; stroke-linejoin: round; stroke-linecap: round; }
-                            .cursor-core { fill: url(#evoflux-cursor-fill); stroke: #10151a; stroke-width: .85; stroke-linejoin: round; stroke-linecap: round; }
+                            .cursor-glow { fill: none; stroke: rgba(123,91,255,.68); stroke-width: 5.5; stroke-linejoin: round; stroke-linecap: round; opacity: .42; filter: blur(2px); }
+                            .cursor-outline { fill: none; stroke: rgba(255,255,255,.99); stroke-width: 3.8; stroke-linejoin: round; stroke-linecap: round; }
+                            .cursor-core { fill: url(#evoflux-cursor-fill); stroke: #030407; stroke-width: .9; stroke-linejoin: round; stroke-linecap: round; }
                             .cursor-pulse {
-                                position: absolute; left: -4px; top: -4px; width: 14px; height: 14px;
-                                border: 1.5px solid rgba(105, 229, 241, .78); border-radius: 50%;
+                                position: absolute; left: -5px; top: -5px; width: 17px; height: 17px;
+                                border: 2px solid rgba(126,102,255,.86); box-shadow: 0 0 8px rgba(70,211,255,.72); border-radius: 50%;
                                 opacity: 0; transform: scale(.25);
                             }
                             .cursor.pressed { transform: translate3d(var(--cursor-x), var(--cursor-y), 0) scale(.9); transition-duration: 55ms; }
@@ -858,16 +1573,17 @@ fn browser_agent_cursor_runtime_script() -> &'static str {
                             <div class="cursor">
                                 <span class="cursor-aura"></span>
                                 <span class="cursor-pulse"></span>
-                                <svg viewBox="0 0 17 18" aria-hidden="true">
+                                <svg viewBox="0 0 24 27" aria-hidden="true">
                                     <defs>
-                                        <linearGradient id="evoflux-cursor-fill" x1="3" y1="2.5" x2="9" y2="13" gradientUnits="userSpaceOnUse">
-                                            <stop offset="0" stop-color="#20272d"/>
-                                            <stop offset=".55" stop-color="#0d1115"/>
-                                            <stop offset="1" stop-color="#020405"/>
+                                        <linearGradient id="evoflux-cursor-fill" x1="5" y1="2" x2="15" y2="24" gradientUnits="userSpaceOnUse">
+                                            <stop offset="0" stop-color="#111319"/>
+                                            <stop offset=".58" stop-color="#050609"/>
+                                            <stop offset="1" stop-color="#010102"/>
                                         </linearGradient>
                                     </defs>
-                                    <path class="cursor-outline" d="M3 2.7 14.1 10.4 7.6 12.2Z"/>
-                                    <path class="cursor-core" d="M3 2.7 14.1 10.4 7.6 12.2Z"/>
+                                    <path class="cursor-glow" d="M4 2.7v18.5c0 2.6 3.2 3.8 4.9 1.8l4.35-5.2h5.95c2.55 0 3.7-3.2 1.75-4.82L7.75 1.35C6.25.1 4 1.17 4 2.7Z"/>
+                                    <path class="cursor-outline" d="M4 2.7v18.5c0 2.6 3.2 3.8 4.9 1.8l4.35-5.2h5.95c2.55 0 3.7-3.2 1.75-4.82L7.75 1.35C6.25.1 4 1.17 4 2.7Z"/>
+                                    <path class="cursor-core" d="M4 2.7v18.5c0 2.6 3.2 3.8 4.9 1.8l4.35-5.2h5.95c2.55 0 3.7-3.2 1.75-4.82L7.75 1.35C6.25.1 4 1.17 4 2.7Z"/>
                                 </svg>
                             </div>
                         </div>`;
@@ -962,8 +1678,44 @@ async fn app_browser_webview_agent_action(
         }
         return result;
     }
+    if action == "save_pdf" {
+        let bytes = capture_browser_pdf(&app, &label).await?;
+        if bytes.len() > 15 * 1024 * 1024 {
+            return Err("Browser PDF exceeds the 15 MB transfer limit".into());
+        }
+        return Ok(serde_json::json!({
+            "filename": params.get("filename").and_then(serde_json::Value::as_str).unwrap_or("page.pdf"),
+            "media_type": "application/pdf",
+            "bytes": bytes.len(),
+            "data": BASE64_STANDARD.encode(bytes),
+        }));
+    }
     if action == "cookies" {
         return manage_browser_cookies(&app, &label, &params);
+    }
+    if matches!(action.as_str(), "click" | "dblclick" | "hover" | "click_at") {
+        match run_native_browser_pointer_action(&app, &label, &action, &params).await {
+            Ok(result) => return Ok(result),
+            Err(error) => {
+                log::debug!("native browser pointer fallback action={action} error={error}");
+            }
+        }
+    }
+    if action == "drag" {
+        match run_native_browser_drag_action(&app, &label, &params).await {
+            Ok(result) => return Ok(result),
+            Err(error) => {
+                log::debug!("native browser drag fallback error={error}");
+            }
+        }
+    }
+    if matches!(action.as_str(), "type" | "fill" | "press") {
+        match run_native_browser_keyboard_action(&app, &label, &action, &params).await {
+            Ok(result) => return Ok(result),
+            Err(error) => {
+                log::debug!("native browser keyboard fallback action={action} error={error}");
+            }
+        }
     }
     eval_browser_webview_action(&app, &label, &action, &params).await
 }
@@ -1099,6 +1851,8 @@ async fn eval_browser_webview_action(
 ) -> Result<serde_json::Value, String> {
     let async_start = if action == "http" {
         Some("http_start")
+    } else if action == "download" {
+        Some("download_start")
     } else if action == "evaluate"
         && params
             .get("await_promise")
@@ -1204,6 +1958,216 @@ async fn eval_browser_webview_action_once(
     }
 }
 
+fn browser_full_page_offsets(page_height: f64, viewport_height: f64) -> Vec<f64> {
+    let viewport = viewport_height.max(1.0);
+    let max_scroll = (page_height.max(viewport) - viewport).max(0.0);
+    let mut offsets = vec![0.0_f64];
+    let mut next = viewport;
+    while next < max_scroll {
+        offsets.push(next);
+        next += viewport;
+    }
+    if max_scroll > 0.0 && offsets.last().map_or(true, |last| *last < max_scroll) {
+        offsets.push(max_scroll);
+    }
+    offsets
+}
+
+fn png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.len() < 24 || &bytes[..8] != b"\x89PNG\r\n\x1a\n" {
+        return None;
+    }
+    Some((
+        u32::from_be_bytes(bytes[16..20].try_into().ok()?),
+        u32::from_be_bytes(bytes[20..24].try_into().ok()?),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+async fn capture_native_browser_viewport(app: &AppHandle, label: &str) -> Result<Vec<u8>, String> {
+    use block2::RcBlock;
+    use objc2_app_kit::NSImage;
+    use objc2_foundation::NSError;
+    use objc2_web_kit::WKWebView;
+
+    let webview = app_browser_webview(app, label)?;
+    let (sender, receiver) = oneshot::channel();
+    let sender = Arc::new(std::sync::Mutex::new(Some(sender)));
+    webview
+        .with_webview(move |platform| unsafe {
+            let wk_webview: &WKWebView = &*platform.inner().cast();
+            let callback_sender = sender.clone();
+            let completion = RcBlock::new(move |image: *mut NSImage, error: *mut NSError| {
+                let result = (|| -> Result<Vec<u8>, String> {
+                    let image = image
+                        .as_ref()
+                        .ok_or_else(|| format!("WKWebView snapshot failed: {error:p}"))?;
+                    let tiff = image
+                        .TIFFRepresentation()
+                        .ok_or_else(|| "WKWebView snapshot returned no image data".to_string())?;
+                    let decoded = xcap::image::load_from_memory(&tiff.to_vec())
+                        .map_err(|error| format!("Could not decode WKWebView snapshot: {error}"))?;
+                    let mut png = std::io::Cursor::new(Vec::new());
+                    decoded
+                        .write_to(&mut png, xcap::image::ImageFormat::Png)
+                        .map_err(|error| format!("Could not encode WKWebView snapshot: {error}"))?;
+                    Ok(png.into_inner())
+                })();
+                if let Ok(mut guard) = callback_sender.lock() {
+                    if let Some(sender) = guard.take() {
+                        let _ = sender.send(result);
+                    }
+                }
+            });
+            wk_webview.takeSnapshotWithConfiguration_completionHandler(None, &completion);
+        })
+        .map_err(|error| format!("Could not start WKWebView snapshot: {error}"))?;
+    tokio::time::timeout(Duration::from_secs(20), receiver)
+        .await
+        .map_err(|_| "WKWebView snapshot timed out".to_string())?
+        .map_err(|_| "WKWebView snapshot response channel closed".to_string())?
+}
+
+#[cfg(target_os = "windows")]
+async fn capture_native_browser_viewport(app: &AppHandle, label: &str) -> Result<Vec<u8>, String> {
+    use webview2_com::CapturePreviewCompletedHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG;
+    use windows::core::HSTRING;
+    use windows::Win32::System::Com::{STGM_CREATE, STGM_SHARE_DENY_WRITE, STGM_WRITE};
+    use windows::Win32::UI::Shell::SHCreateStreamOnFileEx;
+
+    let webview = app_browser_webview(app, label)?;
+    let temp_path = std::env::temp_dir().join(format!(
+        "evoflux-browser-snapshot-{}-{}.png",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    let path_text = temp_path.to_string_lossy().to_string();
+    let callback_path = temp_path.clone();
+    let (sender, receiver) = oneshot::channel();
+    let sender = Arc::new(std::sync::Mutex::new(Some(sender)));
+    webview
+        .with_webview(move |platform| {
+            let callback_sender = sender.clone();
+            let result = (|| -> Result<(), String> {
+                let stream = unsafe {
+                    SHCreateStreamOnFileEx(
+                        &HSTRING::from(path_text),
+                        (STGM_CREATE | STGM_WRITE | STGM_SHARE_DENY_WRITE).0,
+                        0,
+                        true,
+                        None,
+                    )
+                }
+                .map_err(|error| format!("Could not create WebView2 snapshot stream: {error}"))?;
+                let core = unsafe { platform.controller().CoreWebView2() }
+                    .map_err(|error| format!("Could not access WebView2 core: {error}"))?;
+                let handler = CapturePreviewCompletedHandler::create(Box::new(move |error| {
+                    let result = if let Err(error) = error {
+                        Err(format!("WebView2 snapshot failed: {error}"))
+                    } else {
+                        std::fs::read(&callback_path)
+                            .map_err(|error| format!("Could not read WebView2 snapshot: {error}"))
+                    };
+                    let _ = std::fs::remove_file(&callback_path);
+                    if let Ok(mut guard) = callback_sender.lock() {
+                        if let Some(sender) = guard.take() {
+                            let _ = sender.send(result);
+                        }
+                    }
+                    Ok(())
+                }));
+                unsafe {
+                    core.CapturePreview(
+                        COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
+                        &stream,
+                        &handler,
+                    )
+                    .map_err(|error| format!("Could not start WebView2 snapshot: {error}"))?;
+                }
+                Ok(())
+            })();
+            if let Err(error) = result {
+                if let Ok(mut guard) = sender.lock() {
+                    if let Some(sender) = guard.take() {
+                        let _ = sender.send(Err(error));
+                    }
+                }
+            }
+        })
+        .map_err(|error| format!("Could not access WebView2 snapshot API: {error}"))?;
+    let result = tokio::time::timeout(Duration::from_secs(20), receiver)
+        .await
+        .map_err(|_| "WebView2 snapshot timed out".to_string())?
+        .map_err(|_| "WebView2 snapshot response channel closed".to_string())?;
+    let _ = std::fs::remove_file(temp_path);
+    result
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+async fn capture_native_browser_viewport(
+    _app: &AppHandle,
+    _label: &str,
+) -> Result<Vec<u8>, String> {
+    Err("Native WebView snapshot is unavailable on this platform".into())
+}
+
+fn browser_capture_monitor(
+    target_name: Option<&str>,
+    target_width: f64,
+    target_height: f64,
+) -> Result<xcap::Monitor, String> {
+    xcap::Monitor::all()
+        .map_err(|error| format!("Could not list browser displays: {error}"))?
+        .into_iter()
+        .min_by_key(|candidate| {
+            let candidate_name = candidate.friendly_name().ok();
+            let name_penalty = match (target_name, candidate_name.as_deref()) {
+                (Some(left), Some(right)) if left == right => 0_u64,
+                _ => 1_000_000,
+            };
+            let candidate_width = candidate.width().unwrap_or_default() as f64;
+            let candidate_height = candidate.height().unwrap_or_default() as f64;
+            name_penalty
+                + (candidate_width - target_width).abs().round() as u64
+                + (candidate_height - target_height).abs().round() as u64
+        })
+        .ok_or_else(|| "Could not find the display containing the browser".to_string())
+}
+
+fn browser_capture_monitor_bounds(
+    target_name: Option<&str>,
+    target_width: f64,
+    target_height: f64,
+) -> Result<(u32, u32), String> {
+    let monitor = browser_capture_monitor(target_name, target_width, target_height)?;
+    let width = monitor
+        .width()
+        .map_err(|error| format!("Could not read display bounds: {error}"))?;
+    let height = monitor
+        .height()
+        .map_err(|error| format!("Could not read display bounds: {error}"))?;
+    Ok((width, height))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn capture_browser_screen_region(
+    target_name: Option<&str>,
+    target_width: f64,
+    target_height: f64,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+) -> Result<xcap::image::RgbaImage, String> {
+    browser_capture_monitor(target_name, target_width, target_height)?
+        .capture_region(x, y, width, height)
+        .map_err(|error| format!("Could not capture the in-app browser: {error}"))
+}
+
 async fn capture_browser_webview(
     app: &AppHandle,
     label: &str,
@@ -1229,16 +2193,69 @@ async fn capture_browser_webview(
     let mut screen_y = window_position.y + child_position.y;
     let mut width = child_size.width;
     let mut height = child_size.height;
-
-    if params
+    let status = eval_browser_webview_action(app, label, "status", &serde_json::json!({}))
+        .await
+        .ok();
+    let mut css_origin_x = 0.0_f64;
+    let mut css_origin_y = 0.0_f64;
+    let full_page = params.get("full_page").and_then(serde_json::Value::as_bool) == Some(true);
+    let has_element_target = params
         .get("selector")
         .and_then(serde_json::Value::as_str)
         .is_some()
         || params
             .get("index")
             .and_then(serde_json::Value::as_i64)
-            .is_some()
-    {
+            .is_some();
+    if full_page && has_element_target {
+        return Err("Full-page screenshots cannot also target an element".into());
+    }
+    let mut css_width = status
+        .as_ref()
+        .and_then(|value| value.get("viewport"))
+        .and_then(|value| value.get("width"))
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(width as f64)
+        .max(1.0);
+    let mut css_height = status
+        .as_ref()
+        .and_then(|value| value.get("viewport"))
+        .and_then(|value| value.get("height"))
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(height as f64)
+        .max(1.0);
+
+    if !full_page && !has_element_target {
+        match capture_native_browser_viewport(app, label).await {
+            Ok(bytes) => {
+                let (image_width, image_height) =
+                    png_dimensions(&bytes).unwrap_or((width.max(1), height.max(1)));
+                return Ok(serde_json::json!({
+                    "kind": "image",
+                    "media_type": "image/png",
+                    "data": BASE64_STANDARD.encode(bytes),
+                    "text": format!("[In-app browser screenshot: {}x{}]", image_width, image_height),
+                    "capture_backend": "webview",
+                    "full_page": false,
+                    "coordinate_mapping": {
+                        "css_origin_x": 0,
+                        "css_origin_y": 0,
+                        "css_per_pixel_x": css_width / image_width.max(1) as f64,
+                        "css_per_pixel_y": css_height / image_height.max(1) as f64,
+                        "css_width": css_width,
+                        "css_height": css_height,
+                        "image_width": image_width,
+                        "image_height": image_height,
+                    },
+                }));
+            }
+            Err(error) => {
+                log::debug!("native WebView snapshot fallback label={label} error={error}");
+            }
+        }
+    }
+
+    if has_element_target {
         let rect = eval_browser_webview_action(app, label, "element_rect", params).await?;
         let viewport_width = rect
             .get("viewport_width")
@@ -1250,6 +2267,79 @@ async fn capture_browser_webview(
             .and_then(serde_json::Value::as_f64)
             .unwrap_or(height as f64)
             .max(1.0);
+        css_origin_x = rect
+            .get("x")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0);
+        css_origin_y = rect
+            .get("y")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0);
+        css_width = rect
+            .get("width")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(viewport_width)
+            .max(1.0);
+        css_height = rect
+            .get("height")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(viewport_height)
+            .max(1.0);
+        if let Ok(bytes) = capture_native_browser_viewport(app, label).await {
+            if let Ok(decoded) = xcap::image::load_from_memory(&bytes) {
+                let image = decoded.to_rgba8();
+                let native_scale_x = image.width() as f64 / viewport_width;
+                let native_scale_y = image.height() as f64 / viewport_height;
+                let crop_x = (css_origin_x * native_scale_x)
+                    .floor()
+                    .clamp(0.0, image.width().saturating_sub(1) as f64)
+                    as u32;
+                let crop_y = (css_origin_y * native_scale_y)
+                    .floor()
+                    .clamp(0.0, image.height().saturating_sub(1) as f64)
+                    as u32;
+                let crop_width = (css_width * native_scale_x)
+                    .ceil()
+                    .max(1.0)
+                    .min(image.width().saturating_sub(crop_x) as f64)
+                    as u32;
+                let crop_height = (css_height * native_scale_y)
+                    .ceil()
+                    .max(1.0)
+                    .min(image.height().saturating_sub(crop_y) as f64)
+                    as u32;
+                let cropped = xcap::image::imageops::crop_imm(
+                    &image,
+                    crop_x,
+                    crop_y,
+                    crop_width,
+                    crop_height,
+                )
+                .to_image();
+                let mut png = std::io::Cursor::new(Vec::new());
+                xcap::image::DynamicImage::ImageRgba8(cropped)
+                    .write_to(&mut png, xcap::image::ImageFormat::Png)
+                    .map_err(|error| format!("Could not encode element snapshot: {error}"))?;
+                return Ok(serde_json::json!({
+                    "kind": "image",
+                    "media_type": "image/png",
+                    "data": BASE64_STANDARD.encode(png.into_inner()),
+                    "text": format!("[In-app browser element screenshot: {}x{}]", crop_width, crop_height),
+                    "capture_backend": "webview",
+                    "full_page": false,
+                    "coordinate_mapping": {
+                        "css_origin_x": css_origin_x,
+                        "css_origin_y": css_origin_y,
+                        "css_per_pixel_x": css_width / crop_width.max(1) as f64,
+                        "css_per_pixel_y": css_height / crop_height.max(1) as f64,
+                        "css_width": css_width,
+                        "css_height": css_height,
+                        "image_width": crop_width,
+                        "image_height": crop_height,
+                    },
+                }));
+            }
+        }
         let scale_x = width as f64 / viewport_width;
         let scale_y = height as f64 / viewport_height;
         screen_x += (rect
@@ -1294,36 +2384,110 @@ async fn capture_browser_webview(
     width = (width as f64 / capture_scale).round().max(1.0) as u32;
     height = (height as f64 / capture_scale).round().max(1.0) as u32;
 
-    let target_name = tauri_monitor.name().map(String::as_str);
+    let target_name = tauri_monitor.name().cloned();
     let target_width = tauri_monitor.size().width as f64 / capture_scale;
     let target_height = tauri_monitor.size().height as f64 / capture_scale;
-    let monitor = xcap::Monitor::all()
-        .map_err(|error| format!("Could not list browser displays: {error}"))?
-        .into_iter()
-        .min_by_key(|candidate| {
-            let candidate_name = candidate.friendly_name().ok();
-            let name_penalty = match (target_name, candidate_name.as_deref()) {
-                (Some(left), Some(right)) if left == right => 0_u64,
-                _ => 1_000_000,
-            };
-            let candidate_width = candidate.width().unwrap_or_default() as f64;
-            let candidate_height = candidate.height().unwrap_or_default() as f64;
-            name_penalty
-                + (candidate_width - target_width).abs().round() as u64
-                + (candidate_height - target_height).abs().round() as u64
-        })
-        .ok_or_else(|| "Could not find the display containing the browser".to_string())?;
-    let monitor_width = monitor
-        .width()
-        .map_err(|error| format!("Could not read display bounds: {error}"))?;
-    let monitor_height = monitor
-        .height()
-        .map_err(|error| format!("Could not read display bounds: {error}"))?;
+    drop(tauri_monitor);
+    let (monitor_width, monitor_height) =
+        browser_capture_monitor_bounds(target_name.as_deref(), target_width, target_height)?;
     width = width.min(monitor_width.saturating_sub(relative_x)).max(1);
     height = height.min(monitor_height.saturating_sub(relative_y)).max(1);
-    let image = monitor
-        .capture_region(relative_x, relative_y, width, height)
-        .map_err(|error| format!("Could not capture the in-app browser: {error}"))?;
+    let image = if full_page {
+        let page_css_height = status
+            .as_ref()
+            .and_then(|value| value.get("document"))
+            .and_then(|value| value.get("height"))
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(css_height)
+            .max(css_height);
+        let native_slice_dimensions = capture_native_browser_viewport(app, label)
+            .await
+            .ok()
+            .and_then(|bytes| xcap::image::load_from_memory(&bytes).ok())
+            .map(|image| (image.width(), image.height()));
+        let use_native_slices = native_slice_dimensions.is_some();
+        if let Some((native_width, native_height)) = native_slice_dimensions {
+            width = native_width.max(1);
+            height = native_height.max(1);
+        }
+        let css_to_image = height as f64 / css_height.max(1.0);
+        let max_css_for_pixels = 20_000.0 / css_to_image.max(0.01);
+        let stitched_css_height = page_css_height.min(20_000.0).min(max_css_for_pixels);
+        let stitched_pixel_height = (stitched_css_height * css_to_image)
+            .ceil()
+            .clamp(height as f64, 20_000.0) as u32;
+        let original_scroll_x = status
+            .as_ref()
+            .and_then(|value| value.get("viewport"))
+            .and_then(|value| value.get("scrollX"))
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0);
+        let original_scroll_y = status
+            .as_ref()
+            .and_then(|value| value.get("viewport"))
+            .and_then(|value| value.get("scrollY"))
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0);
+        let offsets = browser_full_page_offsets(stitched_css_height, css_height);
+
+        let capture_result: Result<xcap::image::RgbaImage, String> = async {
+            let mut stitched = xcap::image::RgbaImage::new(width, stitched_pixel_height);
+            for offset in offsets {
+                eval_browser_webview_action(
+                    app,
+                    label,
+                    "scroll_position",
+                    &serde_json::json!({ "x": 0, "y": offset }),
+                )
+                .await?;
+                tokio::time::sleep(Duration::from_millis(90)).await;
+                let slice = if use_native_slices {
+                    let bytes = capture_native_browser_viewport(app, label).await?;
+                    xcap::image::load_from_memory(&bytes)
+                        .map_err(|error| format!("Could not decode browser page slice: {error}"))?
+                        .to_rgba8()
+                } else {
+                    capture_browser_screen_region(
+                        target_name.as_deref(),
+                        target_width,
+                        target_height,
+                        relative_x,
+                        relative_y,
+                        width,
+                        height,
+                    )?
+                };
+                let destination_y = (offset * css_to_image).round() as i64;
+                xcap::image::imageops::replace(&mut stitched, &slice, 0, destination_y);
+            }
+            Ok(stitched)
+        }
+        .await;
+        let _ = eval_browser_webview_action(
+            app,
+            label,
+            "scroll_position",
+            &serde_json::json!({ "x": original_scroll_x, "y": original_scroll_y }),
+        )
+        .await;
+        css_origin_x = 0.0;
+        css_origin_y = 0.0;
+        css_height = stitched_css_height;
+        height = stitched_pixel_height;
+        capture_result?
+    } else {
+        capture_browser_screen_region(
+            target_name.as_deref(),
+            target_width,
+            target_height,
+            relative_x,
+            relative_y,
+            width,
+            height,
+        )?
+    };
+    let css_per_pixel_x = css_width / width.max(1) as f64;
+    let css_per_pixel_y = css_height / height.max(1) as f64;
     let mut png = std::io::Cursor::new(Vec::new());
     xcap::image::DynamicImage::ImageRgba8(image)
         .write_to(&mut png, xcap::image::ImageFormat::Png)
@@ -1332,8 +2496,129 @@ async fn capture_browser_webview(
         "kind": "image",
         "media_type": "image/png",
         "data": BASE64_STANDARD.encode(png.into_inner()),
-        "text": format!("[In-app browser screenshot: {}x{}]", width, height),
+        "text": format!("[In-app browser {}screenshot: {}x{}]", if full_page { "full-page " } else { "" }, width, height),
+        "full_page": full_page,
+        "capture_backend": "screen",
+        "coordinate_mapping": {
+            "css_origin_x": css_origin_x,
+            "css_origin_y": css_origin_y,
+            "css_per_pixel_x": css_per_pixel_x,
+            "css_per_pixel_y": css_per_pixel_y,
+            "css_width": css_width,
+            "css_height": css_height,
+            "image_width": width,
+            "image_height": height,
+        },
     }))
+}
+
+#[cfg(target_os = "macos")]
+async fn capture_browser_pdf(app: &AppHandle, label: &str) -> Result<Vec<u8>, String> {
+    use block2::RcBlock;
+    use objc2_foundation::{NSData, NSError};
+    use objc2_web_kit::WKWebView;
+
+    let webview = app_browser_webview(app, label)?;
+    let (sender, receiver) = oneshot::channel();
+    let sender = Arc::new(std::sync::Mutex::new(Some(sender)));
+    webview
+        .with_webview(move |platform| unsafe {
+            let wk_webview: &WKWebView = &*platform.inner().cast();
+            let callback_sender = sender.clone();
+            let completion = RcBlock::new(move |data: *mut NSData, error: *mut NSError| {
+                let result = if let Some(data) = data.as_ref() {
+                    Ok(data.to_vec())
+                } else {
+                    Err(format!("WKWebView PDF export failed: {error:p}"))
+                };
+                if let Ok(mut guard) = callback_sender.lock() {
+                    if let Some(sender) = guard.take() {
+                        let _ = sender.send(result);
+                    }
+                }
+            });
+            wk_webview.createPDFWithConfiguration_completionHandler(None, &completion);
+        })
+        .map_err(|error| format!("Could not start WKWebView PDF export: {error}"))?;
+    tokio::time::timeout(Duration::from_secs(35), receiver)
+        .await
+        .map_err(|_| "WKWebView PDF export timed out".to_string())?
+        .map_err(|_| "WKWebView PDF response channel closed".to_string())?
+}
+
+#[cfg(target_os = "windows")]
+async fn capture_browser_pdf(app: &AppHandle, label: &str) -> Result<Vec<u8>, String> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_7;
+    use webview2_com::PrintToPdfCompletedHandler;
+    use windows::core::{Interface, HSTRING};
+
+    let webview = app_browser_webview(app, label)?;
+    let temp_path = std::env::temp_dir().join(format!(
+        "evoflux-browser-{}-{}.pdf",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    let path_text = temp_path.to_string_lossy().to_string();
+    let (sender, receiver) = oneshot::channel();
+    let sender = Arc::new(std::sync::Mutex::new(Some(sender)));
+    let callback_path = temp_path.clone();
+    webview
+        .with_webview(move |platform| {
+            let callback_sender = sender.clone();
+            let result = (|| -> Result<(), String> {
+                let controller = platform.controller();
+                let core = unsafe { controller.CoreWebView2() }
+                    .map_err(|error| format!("Could not access WebView2 core: {error}"))?;
+                let pdf: ICoreWebView2_7 = core
+                    .cast()
+                    .map_err(|error| format!("WebView2 PDF API unavailable: {error}"))?;
+                let handler =
+                    PrintToPdfCompletedHandler::create(Box::new(move |error, success| {
+                        let result = if let Err(error) = error {
+                            Err(format!("WebView2 PDF export failed: {error}"))
+                        } else if !success {
+                            Err("WebView2 PDF export returned unsuccessful".to_string())
+                        } else {
+                            std::fs::read(&callback_path)
+                                .map_err(|error| format!("Could not read WebView2 PDF: {error}"))
+                        };
+                        let _ = std::fs::remove_file(&callback_path);
+                        if let Ok(mut guard) = callback_sender.lock() {
+                            if let Some(sender) = guard.take() {
+                                let _ = sender.send(result);
+                            }
+                        }
+                        Ok(())
+                    }));
+                unsafe {
+                    pdf.PrintToPdf(&HSTRING::from(path_text), None, &handler)
+                        .map_err(|error| format!("Could not start WebView2 PDF export: {error}"))?;
+                }
+                Ok(())
+            })();
+            if let Err(error) = result {
+                if let Ok(mut guard) = sender.lock() {
+                    if let Some(sender) = guard.take() {
+                        let _ = sender.send(Err(error));
+                    }
+                }
+            }
+        })
+        .map_err(|error| format!("Could not access WebView2 for PDF export: {error}"))?;
+    let result = tokio::time::timeout(Duration::from_secs(35), receiver)
+        .await
+        .map_err(|_| "WebView2 PDF export timed out".to_string())?
+        .map_err(|_| "WebView2 PDF response channel closed".to_string())?;
+    let _ = std::fs::remove_file(temp_path);
+    result
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+async fn capture_browser_pdf(_app: &AppHandle, _label: &str) -> Result<Vec<u8>, String> {
+    Err("Direct PDF export is unavailable on this platform; use print instead".into())
 }
 
 fn parse_browser_agent_result(raw: &str) -> Result<serde_json::Value, String> {
@@ -1369,6 +2654,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         "hover",
         "focus",
         "fill",
+        "set_files",
         "type",
         "clear",
         "submit",
@@ -1385,9 +2671,13 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         "html",
         "accessibility",
         "scroll",
+        "scroll_position",
         "console",
         "network",
         "dialogs",
+        "popups",
+        "permission_requests",
+        "resolve_permission",
         "dialog_behavior",
         "performance",
         "clear_logs",
@@ -1395,15 +2685,22 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         "cookies",
         "http",
         "http_start",
+        "download_start",
+        "page_assets",
         "evaluate_start",
         "async_result",
         "debug_summary",
         "evaluate",
         "element_rect",
+        "native_target",
+        "native_focus",
+        "native_drag_targets",
         "exists",
         "probe",
         "status",
         "cursor_control",
+        "set_emulation",
+        "reset_emulation",
     ];
     if !SUPPORTED.contains(&action) {
         return Err(format!("Unsupported direct browser action: {action}"));
@@ -1503,8 +2800,48 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
 
                     if (action === 'instrument') {{
                         if (!globalThis.__evofluxBrowserRuntime) {{
-                            const runtime = {{ console: [], network: [], dialogs: [], dialogBehavior: {{ behavior: 'dismiss', promptText: null }} }};
+                            const runtime = {{ documentId: `${{Date.now().toString(36)}}-${{Math.random().toString(36).slice(2)}}`, console: [], network: [], dialogs: [], popups: [], permissions: [], permissionResolvers: new Map(), nextDialogId: 1, nextPopupId: 1, nextPermissionId: 1, dialogBehavior: {{ behavior: 'dismiss', promptText: null }} }};
                             const keep = (items, value, max) => {{ items.push(value); if (items.length > max) items.splice(0, items.length - max); }};
+                            const queuePopup = (value) => {{
+                                try {{
+                                    const url = new URL(String(value || ''), location.href);
+                                    if (!['http:', 'https:'].includes(url.protocol)) return null;
+                                    keep(runtime.popups, {{ id: runtime.nextPopupId++, ts: Date.now(), url: url.href }}, 100);
+                                    return null;
+                                }} catch {{ return null; }}
+                            }};
+                            globalThis.open = (url) => queuePopup(url);
+                            addEventListener('click', (event) => {{
+                                const anchor = event.composedPath?.().find((node) => node?.tagName === 'A');
+                                if (!anchor || String(anchor.target || '').toLowerCase() !== '_blank' || !anchor.href) return;
+                                event.preventDefault();
+                                queuePopup(anchor.href);
+                            }}, true);
+                            const queuePermission = (kind, detail, grant, deny) => {{
+                                const request = {{ id: runtime.nextPermissionId++, ts: Date.now(), kind, detail, state: 'pending' }};
+                                keep(runtime.permissions, request, 100);
+                                runtime.permissionResolvers.set(request.id, {{ request, grant, deny }});
+                                return request.id;
+                            }};
+                            try {{
+                                const original = Notification?.requestPermission?.bind(Notification);
+                                if (original) Notification.requestPermission = () => new Promise((resolve) => {{
+                                    queuePermission('notifications', {{}}, () => original().then(resolve, () => resolve('denied')), () => resolve('denied'));
+                                }});
+                            }} catch {{}}
+                            try {{
+                                const original = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
+                                if (original) navigator.mediaDevices.getUserMedia = (constraints) => new Promise((resolve, reject) => {{
+                                    const detail = JSON.parse(JSON.stringify(constraints || {{}}));
+                                    queuePermission('media', detail, () => original(constraints).then(resolve, reject), () => reject(new DOMException('Permission denied by user', 'NotAllowedError')));
+                                }});
+                            }} catch {{}}
+                            try {{
+                                const original = navigator.geolocation?.getCurrentPosition?.bind(navigator.geolocation);
+                                if (original) navigator.geolocation.getCurrentPosition = (success, error, options) => {{
+                                    queuePermission('geolocation', {{}}, () => original(success, error, options), () => error?.({{ code: 1, message: 'Permission denied by user', PERMISSION_DENIED: 1 }}));
+                                }};
+                            }} catch {{}}
                             for (const level of ['debug', 'log', 'info', 'warn', 'error']) {{
                                 const original = console[level]?.bind(console);
                                 if (!original) continue;
@@ -1515,14 +2852,16 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             }}
                             addEventListener('error', (event) => keep(runtime.console, {{ ts: Date.now(), level: 'error', source: event.filename || '', line: event.lineno || 0, column: event.colno || 0, text: String(event.error?.stack || event.message || 'Page error').slice(0, 4000) }}, 400));
                             addEventListener('unhandledrejection', (event) => keep(runtime.console, {{ ts: Date.now(), level: 'error', text: String(event.reason?.stack || event.reason || 'Unhandled rejection').slice(0, 4000) }}, 400));
-                            globalThis.alert = (message) => keep(runtime.dialogs, {{ ts: Date.now(), type: 'alert', message: String(message) }}, 100);
+                            globalThis.alert = (message) => keep(runtime.dialogs, {{ id: runtime.nextDialogId++, ts: Date.now(), type: 'alert', message: String(message), response: 'accepted' }}, 100);
                             globalThis.confirm = (message) => {{
-                                keep(runtime.dialogs, {{ ts: Date.now(), type: 'confirm', message: String(message) }}, 100);
-                                return runtime.dialogBehavior.behavior === 'accept';
+                                const accepted = runtime.dialogBehavior.behavior === 'accept';
+                                keep(runtime.dialogs, {{ id: runtime.nextDialogId++, ts: Date.now(), type: 'confirm', message: String(message), response: accepted ? 'accepted' : 'dismissed' }}, 100);
+                                return accepted;
                             }};
                             globalThis.prompt = (message, defaultValue = '') => {{
-                                keep(runtime.dialogs, {{ ts: Date.now(), type: 'prompt', message: String(message), default_value: String(defaultValue) }}, 100);
-                                return runtime.dialogBehavior.behavior === 'accept' ? String(runtime.dialogBehavior.promptText ?? defaultValue) : null;
+                                const accepted = runtime.dialogBehavior.behavior === 'accept';
+                                keep(runtime.dialogs, {{ id: runtime.nextDialogId++, ts: Date.now(), type: 'prompt', message: String(message), default_value: String(defaultValue), response: accepted ? 'accepted' : 'dismissed' }}, 100);
+                                return accepted ? String(runtime.dialogBehavior.promptText ?? defaultValue) : null;
                             }};
                             const originalFetch = globalThis.fetch?.bind(globalThis);
                             if (originalFetch) globalThis.fetch = async (...args) => {{
@@ -1561,6 +2900,43 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         return {{ active: Boolean(cursor?.enabled), suspended: Boolean(cursor?.suspended) }};
                     }}
 
+                    if (action === 'set_emulation') {{
+                        const runtime = globalThis.__evofluxBrowserRuntime;
+                        if (!runtime) throw new Error('Browser observability is not initialized');
+                        runtime.emulation ||= {{}};
+                        const define = (target, key, value) => {{
+                            try {{ Object.defineProperty(target, key, {{ configurable: true, get: () => value }}); }} catch {{}}
+                        }};
+                        const width = Math.max(1, Number(params.width) || innerWidth);
+                        const height = Math.max(1, Number(params.height) || innerHeight);
+                        const dpr = Math.max(.5, Math.min(4, Number(params.device_scale_factor) || 1));
+                        const touch = params.touch === true;
+                        const orientation = params.orientation === 'landscape' ? 'landscape' : 'portrait';
+                        define(globalThis, 'devicePixelRatio', dpr);
+                        define(screen, 'width', width);
+                        define(screen, 'height', height);
+                        define(screen, 'availWidth', width);
+                        define(screen, 'availHeight', height);
+                        define(navigator, 'maxTouchPoints', touch ? 5 : 0);
+                        if (params.user_agent) define(navigator, 'userAgent', String(params.user_agent));
+                        document.documentElement.style.colorScheme = params.color_scheme === 'dark' ? 'dark' : params.color_scheme === 'light' ? 'light' : '';
+                        runtime.emulation = {{ width, height, dpr, touch, mobile: params.mobile === true, orientation, color_scheme: params.color_scheme || null, user_agent: params.user_agent || null }};
+                        dispatchEvent(new Event('resize'));
+                        dispatchEvent(new Event('orientationchange'));
+                        return runtime.emulation;
+                    }}
+
+                    if (action === 'reset_emulation') {{
+                        const runtime = globalThis.__evofluxBrowserRuntime;
+                        for (const [target, keys] of [[globalThis, ['devicePixelRatio']], [screen, ['width', 'height', 'availWidth', 'availHeight']], [navigator, ['maxTouchPoints', 'userAgent']]]) {{
+                            for (const key of keys) {{ try {{ delete target[key]; }} catch {{}} }}
+                        }}
+                        document.documentElement.style.colorScheme = '';
+                        if (runtime) runtime.emulation = null;
+                        dispatchEvent(new Event('resize'));
+                        return {{ reset: true }};
+                    }}
+
                     if (action === 'snapshot') {{
                         document.querySelectorAll('[data-evoflux-agent-index]').forEach((element) => element.removeAttribute('data-evoflux-agent-index'));
                         const interactiveTags = new Set(['A', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY', 'DETAILS']);
@@ -1592,6 +2968,65 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         if (!element) throw new Error('Element not found; run snapshot again or provide a selector');
                         const rect = element.getBoundingClientRect();
                         return {{ x: Math.max(0, rect.x), y: Math.max(0, rect.y), width: rect.width, height: rect.height, viewport_width: innerWidth, viewport_height: innerHeight }};
+                    }}
+
+                    if (action === 'native_target') {{
+                        let x = Number(params.x);
+                        let y = Number(params.y);
+                        let element = Number.isFinite(x) && Number.isFinite(y) ? document.elementFromPoint(x, y) : resolveElement();
+                        if (!element) throw new Error('Native pointer target not found');
+                        if (!Number.isFinite(x) || !Number.isFinite(y)) {{
+                            element.scrollIntoView({{ block: 'center', inline: 'center' }});
+                            const rect = element.getBoundingClientRect();
+                            x = rect.left + rect.width / 2;
+                            y = rect.top + rect.height / 2;
+                        }}
+                        globalThis.__evofluxEnsureAgentCursor().move(x, y, action === 'hover' ? 'move' : 'release');
+                        return {{ x, y, viewport_width: innerWidth, viewport_height: innerHeight, description: describe(element) }};
+                    }}
+
+                    if (action === 'native_focus') {{
+                        const element = resolveElement() || document.activeElement;
+                        if (!element) throw new Error('Native keyboard target not found');
+                        element.scrollIntoView?.({{ block: 'center', inline: 'center' }});
+                        element.focus?.({{ preventScroll: true }});
+                        if (params.mode === 'fill' && params.clear !== false) {{
+                            if (typeof element.select === 'function') element.select();
+                            else if (element.isContentEditable) {{
+                                const selection = getSelection();
+                                const range = document.createRange();
+                                range.selectNodeContents(element);
+                                selection.removeAllRanges();
+                                selection.addRange(range);
+                            }}
+                        }} else if (element.isContentEditable) {{
+                            const selection = getSelection();
+                            const range = document.createRange();
+                            range.selectNodeContents(element);
+                            range.collapse(false);
+                            selection.removeAllRanges();
+                            selection.addRange(range);
+                        }}
+                        return {{ description: describe(element) }};
+                    }}
+
+                    if (action === 'native_drag_targets') {{
+                        const source = resolveElement();
+                        const target = Number.isInteger(params.target_index)
+                            ? globalThis.__evofluxAgentElements?.[params.target_index]
+                            : deepElements().find((element) => {{ try {{ return element.matches(String(params.target_selector || '')); }} catch {{ return false; }} }});
+                        if (!source || !target) throw new Error('Native drag source or target not found');
+                        source.scrollIntoView({{ block: 'nearest', inline: 'nearest' }});
+                        target.scrollIntoView({{ block: 'nearest', inline: 'nearest' }});
+                        const sourceRect = source.getBoundingClientRect();
+                        const targetRect = target.getBoundingClientRect();
+                        const point = (element, rect) => ({{ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, description: describe(element) }});
+                        const sourcePoint = point(source, sourceRect);
+                        const targetPoint = point(target, targetRect);
+                        const cursor = globalThis.__evofluxEnsureAgentCursor();
+                        cursor.move(sourcePoint.x, sourcePoint.y, 'press');
+                        setTimeout(() => cursor.move(targetPoint.x, targetPoint.y, 'release'), 120);
+                        return {{ source: sourcePoint, target: targetPoint, viewport_width: innerWidth, viewport_height: innerHeight }};
                     }}
 
                     if (action === 'click') {{
@@ -1640,6 +3075,23 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         setEditableValue(element, params.clear === false ? current + text : text, 'insertText', text);
                         element.dispatchEvent(new Event('change', {{ bubbles: true }}));
                         return `Filled ${{describe(element)}} (${{text.length}} chars)`;
+                    }}
+
+                    if (action === 'set_files') {{
+                        const element = resolveElement();
+                        if (!element || element.tagName !== 'INPUT' || element.type !== 'file') throw new Error('File input not found');
+                        const transfer = new DataTransfer();
+                        for (const item of Array.isArray(params.files) ? params.files : []) {{
+                            const binary = atob(String(item.data || ''));
+                            const bytes = new Uint8Array(binary.length);
+                            for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+                            transfer.items.add(new File([bytes], String(item.name || 'upload'), {{ type: String(item.media_type || 'application/octet-stream') }}));
+                        }}
+                        if (!transfer.files.length) throw new Error('No files were provided');
+                        element.files = transfer.files;
+                        element.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        element.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        return {{ files: Array.from(transfer.files, (file) => ({{ name: file.name, size: file.size, type: file.type }})) }};
                     }}
 
                     if (action === 'type') {{
@@ -1839,17 +3291,45 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
 
                     if (action === 'accessibility') {{
                         const maxChars = Math.max(500, Math.min(100000, Number(params.max_chars) || 20000));
-                        const implicitRoles = {{ A: 'link', BUTTON: 'button', INPUT: 'textbox', TEXTAREA: 'textbox', SELECT: 'combobox', IMG: 'img', NAV: 'navigation', MAIN: 'main', FORM: 'form', TABLE: 'table', H1: 'heading', H2: 'heading', H3: 'heading', H4: 'heading', H5: 'heading', H6: 'heading' }};
-                        const lines = deepElements().filter((element) => params.include_hidden || visible(element)).map((element) => {{
-                            const role = element.getAttribute('role') || implicitRoles[element.tagName] || '';
-                            const name = accessibleName(element);
-                            if (!role && !name) return '';
-                            const states = ['checked', 'expanded', 'selected', 'pressed', 'disabled', 'required', 'invalid']
-                                .map((state) => element.getAttribute(`aria-${{state}}`) != null ? `${{state}}=${{element.getAttribute(`aria-${{state}}`)}}` : '')
-                                .filter(Boolean).join(' ');
-                            const level = /^H[1-6]$/.test(element.tagName) ? ` level=${{element.tagName.slice(1)}}` : '';
-                            return `${{role || element.tagName.toLowerCase()}}${{level}}${{name ? ` "${{name}}"` : ''}}${{states ? ` (${{states}})` : ''}}`;
-                        }}).filter(Boolean);
+                        const implicitRoles = {{ A: 'link', BUTTON: 'button', INPUT: 'textbox', TEXTAREA: 'textbox', SELECT: 'combobox', OPTION: 'option', IMG: 'img', NAV: 'navigation', MAIN: 'main', ASIDE: 'complementary', HEADER: 'banner', FOOTER: 'contentinfo', FORM: 'form', TABLE: 'table', TR: 'row', TH: 'columnheader', TD: 'cell', UL: 'list', OL: 'list', LI: 'listitem', DIALOG: 'dialog', H1: 'heading', H2: 'heading', H3: 'heading', H4: 'heading', H5: 'heading', H6: 'heading' }};
+                        const nodes = [];
+                        const refs = [];
+                        const visit = (root, depth, frameLabel = '') => {{
+                            const children = root?.children ? Array.from(root.children) : [];
+                            for (const element of children) {{
+                                if (!params.include_hidden && !visible(element)) continue;
+                                const role = element.getAttribute('role') || implicitRoles[element.tagName] || '';
+                                const name = accessibleName(element);
+                                const interactive = Boolean(role || name || element.tabIndex >= 0 || element.isContentEditable);
+                                if (interactive) {{
+                                    const ref = refs.length;
+                                    refs.push(element);
+                                    const states = [
+                                        'checked' in element ? `checked=${{Boolean(element.checked)}}` : '',
+                                        'disabled' in element ? `disabled=${{Boolean(element.disabled)}}` : '',
+                                        'selected' in element ? `selected=${{Boolean(element.selected)}}` : '',
+                                        ...['expanded', 'pressed', 'required', 'invalid', 'current', 'busy', 'live']
+                                            .map((state) => element.getAttribute(`aria-${{state}}`) != null ? `${{state}}=${{element.getAttribute(`aria-${{state}}`)}}` : ''),
+                                    ].filter(Boolean).join(' ');
+                                    const level = /^H[1-6]$/.test(element.tagName) ? ` level=${{element.tagName.slice(1)}}` : '';
+                                    const frame = frameLabel ? ` frame=${{JSON.stringify(frameLabel)}}` : '';
+                                    nodes.push(`${{'  '.repeat(Math.min(depth, 20))}}[ref=${{ref}}] ${{role || element.tagName.toLowerCase()}}${{level}}${{name ? ` "${{name}}"` : ''}}${{states ? ` (${{states}})` : ''}}${{frame}}`);
+                                }}
+                                if (element.shadowRoot) visit(element.shadowRoot, depth + 1, frameLabel);
+                                if (element.tagName === 'IFRAME') {{
+                                    const label = element.title || element.getAttribute('aria-label') || element.src || 'iframe';
+                                    try {{
+                                        if (element.contentDocument?.documentElement) visit(element.contentDocument.documentElement, depth + 1, label);
+                                        else nodes.push(`${{'  '.repeat(Math.min(depth + 1, 20))}}[cross-origin frame] ${{label}}`);
+                                    }} catch {{ nodes.push(`${{'  '.repeat(Math.min(depth + 1, 20))}}[cross-origin frame] ${{label}}`); }}
+                                }} else {{
+                                    visit(element, depth + 1, frameLabel);
+                                }}
+                            }}
+                        }};
+                        visit(document.documentElement, 0);
+                        globalThis.__evofluxAgentElements = refs;
+                        const lines = [`URL: ${{location.href}}`, `Title: ${{document.title}}`, '', ...nodes];
                         return lines.join('\n').slice(0, maxChars) || '(no accessibility nodes found)';
                     }}
 
@@ -1869,6 +3349,13 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const delta = params.direction === 'up' ? -pixels : pixels;
                         window.scrollBy({{ top: delta, behavior: 'instant' }});
                         return `Scrolled ${{params.direction || 'down'}} ${{Math.abs(pixels)}}px`;
+                    }}
+
+                    if (action === 'scroll_position') {{
+                        const x = Number(params.x) || 0;
+                        const y = Number(params.y) || 0;
+                        scrollTo(x, y);
+                        return {{ x: scrollX, y: scrollY }};
                     }}
 
                     if (action === 'console') {{
@@ -1900,6 +3387,29 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const dialogs = Array.from(globalThis.__evofluxBrowserRuntime?.dialogs || []);
                         if (params.clear && globalThis.__evofluxBrowserRuntime) globalThis.__evofluxBrowserRuntime.dialogs.length = 0;
                         return dialogs.length ? dialogs : '(no dialogs captured)';
+                    }}
+
+                    if (action === 'popups') {{
+                        const popups = Array.from(globalThis.__evofluxBrowserRuntime?.popups || []);
+                        if (params.clear && globalThis.__evofluxBrowserRuntime) globalThis.__evofluxBrowserRuntime.popups.length = 0;
+                        return popups;
+                    }}
+
+                    if (action === 'permission_requests') {{
+                        return Array.from(globalThis.__evofluxBrowserRuntime?.permissions || []).filter((request) => request.state === 'pending');
+                    }}
+
+                    if (action === 'resolve_permission') {{
+                        const runtime = globalThis.__evofluxBrowserRuntime;
+                        const id = Number(params.id);
+                        const resolver = runtime?.permissionResolvers?.get(id);
+                        if (!resolver) throw new Error(`Permission request not found: ${{id}}`);
+                        runtime.permissionResolvers.delete(id);
+                        resolver.request.state = params.allow === true ? 'allowed' : 'denied';
+                        resolver.request.resolved_at = Date.now();
+                        if (params.allow === true) resolver.grant();
+                        else resolver.deny();
+                        return {{ id, state: resolver.request.state, kind: resolver.request.kind }};
                     }}
 
                     if (action === 'dialog_behavior') {{
@@ -2040,6 +3550,56 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         return beginAsync(asyncId, request);
                     }}
 
+                    if (action === 'page_assets') {{
+                        const limit = Math.max(1, Math.min(500, Number(params.limit) || 100));
+                        const seen = new Set();
+                        const assets = [];
+                        const add = (url, type, text = '') => {{
+                            try {{
+                                const absolute = new URL(String(url || ''), location.href);
+                                if (!['http:', 'https:'].includes(absolute.protocol) || seen.has(absolute.href)) return;
+                                seen.add(absolute.href);
+                                assets.push({{ url: absolute.href, type, text: String(text || '').trim().replace(/\s+/g, ' ').slice(0, 200) }});
+                            }} catch {{}}
+                        }};
+                        for (const anchor of document.querySelectorAll('a[href]')) add(anchor.href, anchor.hasAttribute('download') ? 'download' : 'link', anchor.innerText || anchor.getAttribute('aria-label'));
+                        for (const image of document.images) add(image.currentSrc || image.src, 'image', image.alt);
+                        for (const media of document.querySelectorAll('video[src],audio[src],source[src]')) add(media.src, media.tagName.toLowerCase(), media.getAttribute('type'));
+                        for (const link of document.querySelectorAll('link[href]')) add(link.href, `link:${{link.rel || 'resource'}}`, link.getAttribute('type'));
+                        return assets.slice(0, limit);
+                    }}
+
+                    if (action === 'download_start') {{
+                        const url = String(params.url || '');
+                        const asyncId = String(params.async_id || '');
+                        if (!url) throw new Error('download requires a URL');
+                        if (!asyncId) throw new Error('download action is missing its internal async id');
+                        const maxBytes = Math.max(1, Math.min(20 * 1024 * 1024, Number(params.max_bytes) || 20 * 1024 * 1024));
+                        const timeoutMs = Math.max(100, Math.min(30000, Number(params.timeout_ms) || 30000));
+                        const controller = new AbortController();
+                        const timer = setTimeout(() => controller.abort(`Timed out after ${{timeoutMs}}ms`), timeoutMs);
+                        const request = fetch(url, {{ credentials: 'include', signal: controller.signal }}).then(async (response) => {{
+                            if (!response.ok) throw new Error(`Download failed: HTTP ${{response.status}}`);
+                            const buffer = await response.arrayBuffer();
+                            if (buffer.byteLength > maxBytes) throw new Error(`Download exceeds ${{Math.floor(maxBytes / 1048576)}} MB`);
+                            const bytes = new Uint8Array(buffer);
+                            let binary = '';
+                            for (let offset = 0; offset < bytes.length; offset += 32768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
+                            const disposition = response.headers.get('content-disposition') || '';
+                            const match = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
+                            let filename = match?.[1] || new URL(response.url || url, location.href).pathname.split('/').pop() || 'download';
+                            try {{ filename = decodeURIComponent(filename.replace(/^\"|\"$/g, '')); }} catch {{}}
+                            return {{
+                                url: response.url || new URL(url, location.href).href,
+                                filename,
+                                media_type: response.headers.get('content-type') || 'application/octet-stream',
+                                bytes: buffer.byteLength,
+                                data: btoa(binary),
+                            }};
+                        }}).finally(() => clearTimeout(timer));
+                        return beginAsync(asyncId, request);
+                    }}
+
                     if (action === 'evaluate_start') {{
                         const source = String(params.script || '');
                         const asyncId = String(params.async_id || '');
@@ -2107,7 +3667,13 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             readyState: document.readyState,
                             online: navigator.onLine,
                             userAgent: navigator.userAgent,
+                            documentId: globalThis.__evofluxBrowserRuntime?.documentId || null,
                             viewport: {{ width: innerWidth, height: innerHeight, devicePixelRatio, scrollX, scrollY }},
+                            document: {{
+                                width: Math.max(document.documentElement?.scrollWidth || 0, document.body?.scrollWidth || 0, innerWidth),
+                                height: Math.max(document.documentElement?.scrollHeight || 0, document.body?.scrollHeight || 0, innerHeight),
+                            }},
+                            emulation: globalThis.__evofluxBrowserRuntime?.emulation || null,
                             historyLength: history.length,
                             activeElement: document.activeElement ? describe(document.activeElement) : null,
                         }};
@@ -2406,10 +3972,6 @@ fn handle_desktop_menu(app: &AppHandle, id: &str) {
         MENU_SCHEDULER => emit_frontend_command(app, "scheduler"),
         MENU_EDIT_UNDO => emit_frontend_command(app, "edit_undo"),
         MENU_EDIT_REDO => emit_frontend_command(app, "edit_redo"),
-        MENU_EDIT_CUT => emit_frontend_command(app, "edit_cut"),
-        MENU_EDIT_COPY => emit_frontend_command(app, "edit_copy"),
-        MENU_EDIT_PASTE => emit_frontend_command(app, "edit_paste"),
-        MENU_EDIT_SELECT_ALL => emit_frontend_command(app, "edit_select_all"),
         MENU_SETTINGS => navigate_main_window(app, "/settings"),
         MENU_PROVIDERS => navigate_main_window(app, "/settings/providers"),
         MENU_NOTIFICATIONS => navigate_main_window(app, "/settings/notifications"),
@@ -2421,6 +3983,14 @@ fn handle_desktop_menu(app: &AppHandle, id: &str) {
         MENU_ZOOM_RESET => set_zoom(app, ZOOM_DEFAULT),
         MENU_OPEN_CONFIG_DIR => open_config_dir(app),
         MENU_REVEAL_BACKEND_LOG => reveal_backend_log(app),
+        MENU_CHECK_UPDATES => {
+            let handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = run_update_check(&handle, true).await {
+                    log::warn!("desktop: manual update check failed: {error:#}");
+                }
+            });
+        }
         MENU_QUIT => quit_app(app),
         _ => {}
     }
@@ -2481,7 +4051,6 @@ async fn shutdown_sidecar_now(app: &AppHandle) {
 /// user pressed (rfd's behaviour, surfaced through tauri-plugin-dialog).
 /// Some platforms still report a plain ``Ok``/``Cancel`` for the bundled
 /// system dialog, so we accept either spelling of "yes".
-#[cfg(test)]
 fn dialog_result_is_accept(result: &MessageDialogResult, ok_label: &str) -> bool {
     match result {
         MessageDialogResult::Ok | MessageDialogResult::Yes => true,
@@ -2495,7 +4064,6 @@ fn dialog_result_is_accept(result: &MessageDialogResult, ok_label: &str) -> bool
 /// Release notes are truncated to ~600 characters with an ellipsis so a
 /// runaway changelog never produces a multi-screen modal. An empty/None
 /// body collapses the notes paragraph entirely.
-#[cfg(test)]
 fn format_update_prompt(new_version: &str, current_version: &str, body: Option<&str>) -> String {
     const MAX_NOTES_CHARS: usize = 600;
     let notes = body.unwrap_or_default().trim();
@@ -2507,10 +4075,12 @@ fn format_update_prompt(new_version: &str, current_version: &str, body: Option<&
         notes.to_string()
     };
     if trimmed.is_empty() {
-        format!("EvoFlux {new_version} is available (you have {current_version}).\n\nDownload now?")
+        format!(
+            "EvoFlux {new_version} is available (you have {current_version}).\n\nDownload, verify, install, and restart now?"
+        )
     } else {
         format!(
-            "EvoFlux {new_version} is available (you have {current_version}).\n\n{trimmed}\n\nDownload now?"
+            "EvoFlux {new_version} is available (you have {current_version}).\n\n{trimmed}\n\nDownload, verify, install, and restart now?"
         )
     }
 }
@@ -2520,15 +4090,233 @@ fn format_update_prompt(new_version: &str, current_version: &str, body: Option<&
 /// ``total == Some(0)`` is treated the same as ``None`` — some HTTP
 /// responses omit ``Content-Length`` and our caller passes whatever it
 /// has — so we never produce a misleading ``"5/0 MB"`` label.
-#[cfg(test)]
 fn format_download_progress(downloaded_mb: usize, total_bytes: Option<u64>) -> String {
     match total_bytes {
-        Some(total) if total > 0 => {
+        Some(total) if total >= 1024 * 1024 => {
             let total_mb = total / (1024 * 1024);
             format!("Status: Downloading {downloaded_mb}/{total_mb} MB")
         }
         _ => format!("Status: Downloading {downloaded_mb} MB"),
     }
+}
+
+/// The updater public key is injected at compile time by the release workflow.
+/// Keeping it out of the committed config lets normal local builds remain
+/// updater-disabled until a maintainer provisions the long-lived signing key.
+fn updater_is_configured() -> bool {
+    !cfg!(debug_assertions)
+        && option_env!("EVOFLUX_UPDATER_PUBLIC_KEY").is_some_and(|key| !key.trim().is_empty())
+}
+
+struct UpdateBusyGuard(Arc<AtomicBool>);
+
+impl Drop for UpdateBusyGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+async fn show_update_dialog(
+    app: &AppHandle,
+    title: &str,
+    message: String,
+    kind: MessageDialogKind,
+    buttons: MessageDialogButtons,
+) -> MessageDialogResult {
+    let (tx, rx) = oneshot::channel();
+    app.dialog()
+        .message(message)
+        .title(title)
+        .kind(kind)
+        .buttons(buttons)
+        .show_with_result(move |result| {
+            let _ = tx.send(result);
+        });
+    rx.await.unwrap_or_default()
+}
+
+async fn show_update_message(
+    app: &AppHandle,
+    title: &str,
+    message: impl Into<String>,
+    kind: MessageDialogKind,
+) {
+    let _ = show_update_dialog(app, title, message.into(), kind, MessageDialogButtons::Ok).await;
+}
+
+async fn run_update_check(app: &AppHandle, user_initiated: bool) -> Result<()> {
+    if !updater_is_configured() {
+        if user_initiated {
+            let message = if cfg!(debug_assertions) {
+                "Update checks are disabled in development builds. Install a packaged release to test the production updater."
+            } else {
+                "This build was not configured with an updater signing key. Install an official EvoFlux release to receive signed updates."
+            };
+            show_update_message(app, "Updates unavailable", message, MessageDialogKind::Info).await;
+        }
+        return Ok(());
+    }
+
+    let busy = {
+        let state: tauri::State<'_, AppState> = app.state();
+        state.updater_busy.clone()
+    };
+    if busy
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        if user_initiated {
+            show_update_message(
+                app,
+                "Checking for updates",
+                "An update check or download is already in progress.",
+                MessageDialogKind::Info,
+            )
+            .await;
+        }
+        return Ok(());
+    }
+    let _busy_guard = UpdateBusyGuard(busy);
+
+    update_tray_status(app, "Status: Checking for updates…");
+    let updater = match app.updater() {
+        Ok(updater) => updater,
+        Err(error) => {
+            update_tray_status(app, "Status: Running");
+            if user_initiated {
+                show_update_message(
+                    app,
+                    "Updates unavailable",
+                    format!("This build has an invalid updater configuration.\n\n{error}"),
+                    MessageDialogKind::Error,
+                )
+                .await;
+            }
+            return Err(error).context("initialize desktop updater");
+        }
+    };
+    let update = match updater.check().await {
+        Ok(update) => update,
+        Err(error) => {
+            update_tray_status(app, "Status: Running");
+            if user_initiated {
+                show_update_message(
+                    app,
+                    "Update check failed",
+                    format!("EvoFlux could not check GitHub Releases.\n\n{error}"),
+                    MessageDialogKind::Error,
+                )
+                .await;
+            }
+            return Err(error).context("check GitHub release update metadata");
+        }
+    };
+
+    let Some(update) = update else {
+        update_tray_status(app, "Status: Running");
+        if user_initiated {
+            show_update_message(
+                app,
+                "EvoFlux is up to date",
+                format!(
+                    "You already have the latest version ({}).",
+                    env!("CARGO_PKG_VERSION")
+                ),
+                MessageDialogKind::Info,
+            )
+            .await;
+        }
+        return Ok(());
+    };
+
+    let install_label = "Install and Restart";
+    let prompt = format_update_prompt(
+        &update.version,
+        &update.current_version,
+        update.body.as_deref(),
+    );
+    let response = show_update_dialog(
+        app,
+        "EvoFlux update available",
+        prompt,
+        MessageDialogKind::Info,
+        MessageDialogButtons::OkCancelCustom(install_label.into(), "Later".into()),
+    )
+    .await;
+    if !dialog_result_is_accept(&response, install_label) {
+        update_tray_status(app, "Status: Running");
+        return Ok(());
+    }
+
+    let progress_app = app.clone();
+    let finish_app = app.clone();
+    let mut downloaded_bytes = 0usize;
+    let mut reported_mb = usize::MAX;
+    let bytes = match update
+        .download(
+            move |chunk_length, total_bytes| {
+                downloaded_bytes = downloaded_bytes.saturating_add(chunk_length);
+                let downloaded_mb = downloaded_bytes / (1024 * 1024);
+                if downloaded_mb != reported_mb {
+                    reported_mb = downloaded_mb;
+                    update_tray_status(
+                        &progress_app,
+                        &format_download_progress(downloaded_mb, total_bytes),
+                    );
+                }
+            },
+            move || {
+                update_tray_status(&finish_app, "Status: Verifying update…");
+            },
+        )
+        .await
+    {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            update_tray_status(app, "Status: Update failed");
+            show_update_message(
+                app,
+                "Update download failed",
+                format!(
+                    "The update was not installed. EvoFlux verified no changes to the current app.\n\n{error}"
+                ),
+                MessageDialogKind::Error,
+            )
+            .await;
+            update_tray_status(app, "Status: Running");
+            return Err(error).context("download or verify desktop update");
+        }
+    };
+
+    update_tray_status(app, "Status: Installing update…");
+    persist_active_window_state(app);
+    {
+        let state: tauri::State<'_, AppState> = app.state();
+        state.quitting.store(true, Ordering::SeqCst);
+    }
+    shutdown_sidecar_now(app).await;
+
+    if let Err(error) = update.install(bytes) {
+        show_update_message(
+            app,
+            "Update installation failed",
+            format!("EvoFlux will restart the current version.\n\n{error}"),
+            MessageDialogKind::Error,
+        )
+        .await;
+        app.restart();
+    }
+
+    // On Windows the NSIS updater exits and restarts the application during
+    // `install`. macOS returns here after replacing the bundle.
+    app.restart();
+}
+
+#[tauri::command]
+async fn app_check_for_updates(app: AppHandle) -> Result<(), String> {
+    run_update_check(&app, true)
+        .await
+        .map_err(|error| format!("{error:#}"))
 }
 
 fn install_desktop_menus(app: &tauri::App) -> Result<()> {
@@ -2571,6 +4359,13 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
         app,
         MENU_REVEAL_BACKEND_LOG,
         "View Backend Log",
+        true,
+        None::<&str>,
+    )?;
+    let app_check_updates = MenuItem::with_id(
+        app,
+        MENU_CHECK_UPDATES,
+        "Check for Updates…",
         true,
         None::<&str>,
     )?;
@@ -2621,24 +4416,18 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
         Some("CmdOrCtrl+0"),
     )?;
 
-    // Edit submenu: PredefinedMenuItem gives native ⌘A/⌘C/⌘V/⌘X/⌘Z behavior on
-    // macOS and adds visible menu entries on Windows/Linux, but on Windows the
-    // predefined items may not bind Ctrl+A/C/V/X/Z accelerators automatically.
-    // We therefore use explicit MenuItem entries with CmdOrCtrl accelerators
-    // and route their events back to the webview via ``emit_frontend_command``,
-    // which dispatches the corresponding document.execCommand.
+    // Keep text transfer on the WebView's native edit path. In particular,
+    // replacing Paste with a custom CmdOrCtrl+V accelerator loses the native
+    // ClipboardEvent (including image/file items) and races the focused input
+    // while an async clipboard read is in flight. Muda's predefined items
+    // dispatch the platform edit action to WKWebView/WebView2, matching the
+    // context-menu behavior on both macOS and Windows.
     let edit_undo = MenuItem::with_id(app, MENU_EDIT_UNDO, "Undo", true, Some("CmdOrCtrl+Z"))?;
     let edit_redo = MenuItem::with_id(app, MENU_EDIT_REDO, "Redo", true, Some("CmdOrCtrl+Y"))?;
-    let edit_cut = MenuItem::with_id(app, MENU_EDIT_CUT, "Cut", true, Some("CmdOrCtrl+X"))?;
-    let edit_copy = MenuItem::with_id(app, MENU_EDIT_COPY, "Copy", true, Some("CmdOrCtrl+C"))?;
-    let edit_paste = MenuItem::with_id(app, MENU_EDIT_PASTE, "Paste", true, Some("CmdOrCtrl+V"))?;
-    let edit_select_all = MenuItem::with_id(
-        app,
-        MENU_EDIT_SELECT_ALL,
-        "Select All",
-        true,
-        Some("CmdOrCtrl+A"),
-    )?;
+    let edit_cut = PredefinedMenuItem::cut(app, Some("Cut"))?;
+    let edit_copy = PredefinedMenuItem::copy(app, Some("Copy"))?;
+    let edit_paste = PredefinedMenuItem::paste(app, Some("Paste"))?;
+    let edit_select_all = PredefinedMenuItem::select_all(app, Some("Select All"))?;
 
     let app_menu = SubmenuBuilder::new(app, "EvoFlux")
         .item(&app_about)
@@ -2654,6 +4443,7 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
         .separator()
         .item(&app_open_config_dir)
         .item(&app_reveal_backend_log)
+        .item(&app_check_updates)
         .separator()
         .item(&app_quit)
         .build()?;
@@ -2738,6 +4528,13 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
         None::<&str>,
     )?;
     let tray_reload = MenuItem::with_id(app, MENU_RELOAD, "Reload Window", true, None::<&str>)?;
+    let tray_check_updates = MenuItem::with_id(
+        app,
+        MENU_CHECK_UPDATES,
+        "Check for Updates…",
+        true,
+        None::<&str>,
+    )?;
     let tray_quit = MenuItem::with_id(app, MENU_QUIT, "Quit EvoFlux", true, None::<&str>)?;
     let tray_menu = Menu::with_items(
         app,
@@ -2755,6 +4552,7 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
             &tray_open_config_dir,
             &tray_reveal_backend_log,
             &tray_reload,
+            &tray_check_updates,
             &PredefinedMenuItem::separator(app)?,
             &tray_quit,
         ],
@@ -3677,6 +5475,7 @@ fn main() {
         startup_started: Instant::now(),
         force_reloading: Arc::new(AtomicBool::new(false)),
         quitting: Arc::new(AtomicBool::new(false)),
+        updater_busy: Arc::new(AtomicBool::new(false)),
         tray_status: Arc::new(Mutex::new(None)),
         tray_session: Arc::new(Mutex::new(None)),
         active_window_label: Arc::new(Mutex::new(MAIN_WINDOW.to_string())),
@@ -3686,9 +5485,17 @@ fn main() {
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Info)
         .build();
+    let mut updater_plugin = tauri_plugin_updater::Builder::new();
+    if let Some(public_key) = option_env!("EVOFLUX_UPDATER_PUBLIC_KEY")
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+    {
+        updater_plugin = updater_plugin.pubkey(public_key);
+    }
 
     tauri::Builder::default()
         .plugin(log_plugin)
+        .plugin(updater_plugin.build())
         .plugin(
             tauri::plugin::Builder::<tauri::Wry>::new("browser-observability")
                 .js_init_script(browser_observability_init_script())
@@ -3712,6 +5519,7 @@ fn main() {
             app_backend_status,
             app_retry_backend,
             app_reveal_backend_log,
+            app_check_for_updates,
             app_remove_backend_server,
             app_save_backend_server,
             app_use_external_backend,
@@ -3751,6 +5559,13 @@ fn main() {
                         },
                     )
                     .await;
+                    return;
+                }
+                if updater_is_configured() {
+                    tokio::time::sleep(AUTOMATIC_UPDATE_CHECK_DELAY).await;
+                    if let Err(error) = run_update_check(&handle, false).await {
+                        log::warn!("desktop: automatic update check failed: {error:#}");
+                    }
                 }
             });
             Ok(())
@@ -3855,6 +5670,7 @@ mod tests {
             "hover",
             "focus",
             "fill",
+            "set_files",
             "type",
             "clear",
             "submit",
@@ -3871,9 +5687,13 @@ mod tests {
             "html",
             "accessibility",
             "scroll",
+            "scroll_position",
             "console",
             "network",
             "dialogs",
+            "popups",
+            "permission_requests",
+            "resolve_permission",
             "dialog_behavior",
             "performance",
             "clear_logs",
@@ -3881,15 +5701,22 @@ mod tests {
             "cookies",
             "http",
             "http_start",
+            "download_start",
+            "page_assets",
             "evaluate_start",
             "async_result",
             "debug_summary",
             "evaluate",
             "element_rect",
+            "native_target",
+            "native_focus",
+            "native_drag_targets",
             "exists",
             "probe",
             "status",
             "cursor_control",
+            "set_emulation",
+            "reset_emulation",
         ] {
             browser_agent_action_script(action, &serde_json::json!({}))
                 .unwrap_or_else(|error| panic!("{action} should be supported: {error}"));
@@ -3902,6 +5729,38 @@ mod tests {
             .expect_err("external browser actions must not be supported");
 
         assert!(error.contains("Unsupported direct browser action"));
+    }
+
+    #[test]
+    fn browser_navigation_rejects_local_and_executable_schemes() {
+        for value in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "data:text/html,secret",
+            "about:blank",
+        ] {
+            assert!(browser_navigation_url(value).is_err(), "accepted {value}");
+        }
+        assert_eq!(
+            browser_navigation_url("https://example.com/path")
+                .expect("https URL")
+                .host_str(),
+            Some("example.com")
+        );
+    }
+
+    #[test]
+    fn browser_full_page_offsets_cover_bottom_without_blank_tail() {
+        assert_eq!(
+            browser_full_page_offsets(2500.0, 800.0),
+            vec![0.0, 800.0, 1600.0, 1700.0]
+        );
+        assert_eq!(browser_full_page_offsets(600.0, 800.0), vec![0.0]);
+        let mut header = b"\x89PNG\r\n\x1a\n".to_vec();
+        header.extend_from_slice(&[0, 0, 0, 13, b'I', b'H', b'D', b'R']);
+        header.extend_from_slice(&640_u32.to_be_bytes());
+        header.extend_from_slice(&480_u32.to_be_bytes());
+        assert_eq!(png_dimensions(&header), Some((640, 480)));
     }
 
     #[test]
@@ -3920,11 +5779,22 @@ mod tests {
             &serde_json::json!({ "async_id": "job-2", "script": "Promise.resolve(42)" }),
         )
         .expect("async evaluate action should compile");
+        let download = browser_agent_action_script(
+            "download_start",
+            &serde_json::json!({
+                "async_id": "job-3",
+                "url": "https://example.com/report.pdf",
+                "max_bytes": 1024
+            }),
+        )
+        .expect("download action should compile");
 
         assert!(http.contains("AbortController"));
         assert!(http.contains("credentials: 'include'"));
         assert!(evaluate.contains("beginAsync"));
         assert!(evaluate.contains("Promise.resolve(42)"));
+        assert!(download.contains("arrayBuffer"));
+        assert!(download.contains("content-disposition"));
     }
 
     #[test]
@@ -3935,11 +5805,38 @@ mod tests {
         assert!(script.contains("startsWith('browser-')"));
         assert!(script.contains("unhandledrejection"));
         assert!(script.contains("XMLHttpRequest.prototype.send"));
+        assert!(script.contains("nextDialogId"));
+        assert!(script.contains("documentId"));
+        assert!(script.contains("globalThis.open"));
+        assert!(script.contains("getUserMedia"));
+        assert!(script.contains("getCurrentPosition"));
+        let accessibility = browser_agent_action_script(
+            "accessibility",
+            &serde_json::json!({ "max_chars": 20000 }),
+        )
+        .expect("accessibility action should compile");
+        assert!(accessibility.contains("[cross-origin frame]"));
+        assert!(accessibility.contains("[ref="));
+        let native_focus = browser_agent_action_script(
+            "native_focus",
+            &serde_json::json!({ "selector": "#editor", "mode": "fill" }),
+        )
+        .expect("native keyboard focus action should compile");
+        assert!(native_focus.contains("selection.addRange"));
+        let emulation = browser_agent_action_script(
+            "set_emulation",
+            &serde_json::json!({ "width": 375, "height": 812, "device_scale_factor": 2 }),
+        )
+        .expect("device emulation action should compile");
+        assert!(emulation.contains("devicePixelRatio"));
+        assert!(emulation.contains("maxTouchPoints"));
+        assert!(script.contains("target || '').toLowerCase() !== '_blank'"));
+        assert!(script.contains("response: accepted ? 'accepted' : 'dismissed'"));
         assert!(script.contains("globalThis.__evofluxBrowserRuntime = runtime"));
     }
 
     #[test]
-    fn browser_agent_cursor_is_compact_tail_free_and_tracks_pointer_actions() {
+    fn browser_agent_cursor_is_classic_glowing_and_tracks_pointer_actions() {
         let cursor = browser_agent_cursor_runtime_script();
         let click = browser_agent_action_script("click", &serde_json::json!({ "index": 2 }))
             .expect("click action should compile");
@@ -3949,10 +5846,11 @@ mod tests {
             browser_agent_action_script("click_at", &serde_json::json!({ "x": 24, "y": 36 }))
                 .expect("coordinate click should compile");
 
-        assert!(cursor.contains("width: 17px; height: 18px"));
+        assert!(cursor.contains("width: 24px; height: 27px"));
         assert!(cursor.contains("stroke-linejoin: round; stroke-linecap: round"));
-        assert!(cursor.contains("M3 2.7 14.1 10.4 7.6 12.2Z"));
-        assert!(!cursor.contains("21.6 16l-8.2 1.2"));
+        assert!(cursor.contains("M4 2.7v18.5c0 2.6"));
+        assert!(cursor.contains("class=\"cursor-glow\""));
+        assert!(cursor.contains("drop-shadow(0 0 4px rgba(126,93,255,.58))"));
         assert!(click.contains("moveToElement(element, 'release')"));
         assert!(hover.contains("moveToElement(element)"));
         assert!(click_at.contains("move(x, y, 'release')"));
@@ -4071,7 +5969,7 @@ mod tests {
         let prompt = format_update_prompt("1.2.0", "1.1.0", None);
         assert!(prompt.contains("1.2.0"));
         assert!(prompt.contains("1.1.0"));
-        assert!(prompt.contains("Download now?"));
+        assert!(prompt.contains("install, and restart now?"));
         // Exactly one blank line between the version line and the call to
         // action — i.e. no orphan ``\n\n\n`` from an empty body.
         assert!(!prompt.contains("\n\n\n"));
@@ -4107,7 +6005,7 @@ mod tests {
         assert!(prompt.contains('…'));
         assert!(prompt.len() < 1000);
         assert!(prompt.contains("1.2.0"));
-        assert!(prompt.contains("Download now?"));
+        assert!(prompt.contains("install, and restart now?"));
     }
 
     #[test]
@@ -4155,14 +6053,11 @@ mod tests {
 
     #[test]
     fn download_progress_handles_partial_megabyte_total() {
-        // 500 KB total → integer-MB division yields 0, so we treat it
+        // 500 KB total → integer-MB division yields 0, so treat it
         // identically to "no total" rather than printing "0/0 MB".
         let small_total = 500 * 1024;
         let label = format_download_progress(0, Some(small_total));
-        // Integer division gives ``0`` MB; not ideal but at least not
-        // misleading — the formatter still prints a valid "downloading"
-        // string and never panics.
-        assert!(label.starts_with("Status: Downloading"));
+        assert_eq!(label, "Status: Downloading 0 MB");
     }
 
     #[test]

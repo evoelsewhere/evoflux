@@ -183,9 +183,9 @@ async def test_resolution_hook_defers_to_explicit_selection():
     provider = _Provider(
         {"skill_name": None, "confidence": 1.0, "reason": "No implicit work."}
     )
-    state = AgentState(messages=[HumanMessage(content="$pdf edit this")])
+    state = AgentState(messages=[HumanMessage(content="$work-writing draft this")])
     state.metadata["_runtime_provider"] = provider
-    state.metadata["explicit_skill_selected"] = "pdf"
+    state.metadata["explicit_skill_selected"] = "work-writing"
 
     await SkillResolutionHook(mode="work").before_agent(
         SimpleNamespace(agent_name="agent"), state

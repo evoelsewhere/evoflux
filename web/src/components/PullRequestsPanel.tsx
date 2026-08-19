@@ -4,7 +4,9 @@ import {
   ArrowRight,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
+  ChevronRight,
   ExternalLink,
   FileDiff,
   GitBranch,
@@ -23,20 +25,24 @@ import {
   Users,
   XCircle,
   Copy,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react'
 
 import type {
   CodeReviewItem,
+  CodeReviewActionInput,
   CodeReviewComment,
   CodeReviewContext,
+  CodeReviewFile,
   GitServerConnection,
   GitServerConnectionInput,
   GitServerConnectionScope,
   GitServerProvider,
+  GitAIResponse,
   RepositoryCodeReviews,
 } from '@/api/types'
-import { getCodeReviewImageUrl } from '@/api/client'
+import { getCodeReviewImageUrl, gitJobs, gitPush, runGitAIAction } from '@/api/client'
 import {
   Dialog,
   DialogContent,
@@ -77,6 +83,7 @@ import {
 } from '@/queries'
 import {
   useGitBranchesQuery,
+  useGitRemotesQuery,
   useGitRepositoryQuery,
 } from '@/queries/useGitQuery'
 import { useTeamSessionsQuery } from '@/queries/useSessionsQuery'
@@ -84,11 +91,14 @@ import { formatRelativeDate } from '@/utils/format'
 import { MarkdownBlock } from '@/utils/markdown'
 import { cn } from '@/lib/utils'
 import { useToastStore } from '@/stores/useToastStore'
+import { useTeamStore } from '@/stores/useTeamStore'
+import { GitAiResultDialog } from '@/components/GitAiResultDialog'
 import { GitActionSurface, type GitAction } from '@/components/git/GitActionMenu'
 import type { PullRequestsScope } from '@/stores/useUIStore'
 import { getIntlLocale } from '@/i18n'
+import { parseUnifiedDiff } from '@/lib/unified-diff'
 
-type ReviewFilter = 'all' | 'ready' | 'draft'
+type ReviewFilter = 'open' | 'ready' | 'draft' | 'closed' | 'merged'
 
 const PROVIDERS: Array<{
   value: GitServerProvider
@@ -104,9 +114,11 @@ const PROVIDERS: Array<{
 ]
 
 const FILTERS: ReadonlyArray<{ value: ReviewFilter; label: string }> = [
-  { value: 'all', label: 'Open' },
+  { value: 'open', label: 'Open' },
   { value: 'ready', label: 'Ready' },
   { value: 'draft', label: 'Drafts' },
+  { value: 'closed', label: 'Closed' },
+  { value: 'merged', label: 'Merged' },
 ]
 
 const SCOPES: ReadonlyArray<{
@@ -551,7 +563,7 @@ function ReviewCommentCard({
 }: {
   comment: CodeReviewComment
   pending: boolean
-  onReply: (comment: CodeReviewComment, body: string) => Promise<void>
+  onReply: (comment: CodeReviewComment, body: string) => Promise<boolean>
   transformImageSrc: (src: string) => string
   onToggleResolved: (comment: CodeReviewComment) => Promise<void>
 }) {
@@ -612,7 +624,9 @@ function ReviewCommentCard({
               onClick={() => {
                 const value = reply.trim()
                 if (!value) return
-                void onReply(comment, value).then(() => setReply(''))
+                void onReply(comment, value).then((success) => {
+                  if (success) setReply('')
+                })
               }}
             >
               Reply
@@ -621,6 +635,331 @@ function ReviewCommentCard({
         )}
       </div>
     </div>
+  )
+}
+
+type InlineCommentTarget = {
+  line: number
+  side: 'LEFT' | 'RIGHT'
+}
+
+type ReviewLifecycleAction = 'merge' | 'close' | 'reopen'
+
+const MERGE_METHODS: Record<GitServerProvider, ReadonlyArray<{ value: string; label: string }>> = {
+  github: [
+    { value: 'merge', label: 'Merge commit' },
+    { value: 'squash', label: 'Squash and merge' },
+    { value: 'rebase', label: 'Rebase and merge' },
+  ],
+  gitlab: [
+    { value: 'merge', label: 'Merge commit' },
+    { value: 'squash', label: 'Squash and merge' },
+  ],
+  bitbucket_cloud: [
+    { value: 'merge_commit', label: 'Merge commit' },
+    { value: 'squash', label: 'Squash' },
+    { value: 'fast_forward', label: 'Fast-forward' },
+  ],
+  bitbucket_server: [],
+  gitea: [
+    { value: 'merge', label: 'Merge commit' },
+    { value: 'squash', label: 'Squash and merge' },
+    { value: 'rebase', label: 'Rebase' },
+    { value: 'rebase-merge', label: 'Rebase then merge' },
+  ],
+  azure_devops: [
+    { value: 'noFastForward', label: 'Merge commit' },
+    { value: 'squash', label: 'Squash' },
+    { value: 'rebase', label: 'Rebase' },
+    { value: 'rebaseMerge', label: 'Rebase then merge' },
+  ],
+}
+
+function ReviewLifecycleDialog({
+  action,
+  context,
+  pending,
+  onClose,
+  onConfirm,
+}: {
+  action: ReviewLifecycleAction | null
+  context: CodeReviewContext
+  pending: boolean
+  onClose: () => void
+  onConfirm: (input: CodeReviewActionInput) => Promise<boolean>
+}) {
+  const mergeMethods = MERGE_METHODS[context.provider]
+  const [mergeMethod, setMergeMethod] = useState('')
+  const [commitTitle, setCommitTitle] = useState('')
+  const mergeBlocked = context.draft || context.mergeability.conflicts || context.mergeability.merged
+
+  const confirm = async () => {
+    if (!action) return
+    const success = await onConfirm(
+      action === 'merge'
+        ? {
+            action: 'merge',
+            merge_method: mergeMethod || undefined,
+            commit_title: commitTitle.trim() || undefined,
+          }
+        : { action },
+    )
+    if (success) onClose()
+  }
+
+  const title = action === 'merge'
+    ? 'Merge this review?'
+    : action === 'close'
+      ? 'Close this review?'
+      : 'Reopen this review?'
+  return (
+    <Dialog open={action !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>
+            {action === 'merge'
+              ? 'EvoFlux will refresh the provider state after this important action. Repository branch protections still apply.'
+              : action === 'close'
+                ? 'This stops the active review without deleting its branch or discussion.'
+                : 'This restores the review to its provider’s active state.'}
+          </DialogDescription>
+        </DialogHeader>
+        {action === 'merge' && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 divide-x divide-(--color-border) overflow-hidden rounded-lg border border-(--color-border) text-center">
+              <span className="px-2 py-2 text-[10px] text-(--color-text-muted)">
+                <strong className="block text-xs capitalize text-(--color-text)">{context.checks.summary}</strong>
+                checks
+              </span>
+              <span className="px-2 py-2 text-[10px] text-(--color-text-muted)">
+                <strong className="block text-xs text-(--color-text)">{context.approvals.filter((item) => item.state === 'approved').length}</strong>
+                approvals
+              </span>
+              <span className="px-2 py-2 text-[10px] text-(--color-text-muted)">
+                <strong className={cn(
+                  'block text-xs',
+                  context.mergeability.conflicts ? 'text-(--color-error)' : 'text-(--color-success)',
+                )}>
+                  {context.mergeability.conflicts ? 'Conflicts' : 'No conflicts'}
+                </strong>
+                merge state
+              </span>
+            </div>
+            {mergeBlocked && (
+              <p className="rounded-lg bg-(--color-error-subtle) px-3 py-2 text-xs text-(--color-error)">
+                {context.mergeability.merged
+                  ? 'This review is already merged.'
+                  : context.draft
+                    ? 'Draft reviews must be marked ready before merging.'
+                    : 'Resolve merge conflicts before merging.'}
+              </p>
+            )}
+            <label className="block space-y-1.5 text-xs text-(--color-text-muted)">
+              <span>Merge strategy</span>
+              <NativeSelect
+                value={mergeMethod}
+                onChange={(event) => setMergeMethod(event.target.value)}
+                className="w-full"
+              >
+                <NativeSelectOption value="">Provider default</NativeSelectOption>
+                {mergeMethods.map((method) => (
+                  <NativeSelectOption key={method.value} value={method.value}>
+                    {method.label}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </label>
+            <label className="block space-y-1.5 text-xs text-(--color-text-muted)">
+              <span>Commit title (optional)</span>
+              <Input
+                value={commitTitle}
+                onChange={(event) => setCommitTitle(event.target.value)}
+                placeholder="Use provider default"
+              />
+            </label>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            variant={action === 'close' ? 'destructive' : 'default'}
+            disabled={pending || (action === 'merge' && mergeBlocked)}
+            onClick={() => void confirm()}
+          >
+            {pending && <Loader2 size={13} className="animate-spin" />}
+            {action === 'merge' ? 'Merge review' : action === 'close' ? 'Close review' : 'Reopen review'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function reviewFileStatusTone(status: string): string {
+  if (status === 'added') return 'bg-(--color-success-subtle) text-(--color-success)'
+  if (status === 'deleted') return 'bg-(--color-error-subtle) text-(--color-error)'
+  if (status === 'renamed' || status === 'copied') return 'bg-(--accent-blue-soft) text-(--accent-blue)'
+  return 'bg-(--color-warning-subtle) text-(--color-warning)'
+}
+
+function ReviewFileCard({
+  file,
+  pending,
+  onComment,
+}: {
+  file: CodeReviewFile
+  pending: boolean
+  onComment: (
+    file: CodeReviewFile,
+    target: InlineCommentTarget,
+    body: string,
+  ) => Promise<boolean>
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [target, setTarget] = useState<InlineCommentTarget | null>(null)
+  const [body, setBody] = useState('')
+  const hunks = useMemo(() => parseUnifiedDiff(file.patch ?? ''), [file.patch])
+
+  const submit = async () => {
+    if (!target || !body.trim()) return
+    if (await onComment(file, target, body.trim())) {
+      setBody('')
+      setTarget(null)
+    }
+  }
+
+  return (
+    <article className="overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-card)">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-(--bg-key)/60"
+        aria-expanded={expanded}
+      >
+        {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        <FileDiff size={13} className="shrink-0 text-(--color-text-muted)" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-mono text-[11px] text-(--color-text)">
+            {file.path}
+          </span>
+          {file.old_path && (
+            <span className="block truncate font-mono text-[10px] text-(--color-text-subtle)">
+              from {file.old_path}
+            </span>
+          )}
+        </span>
+        {file.additions !== null && (
+          <span className="text-[10px] tabular-nums text-(--color-success)">+{file.additions}</span>
+        )}
+        {file.deletions !== null && (
+          <span className="text-[10px] tabular-nums text-(--color-error)">-{file.deletions}</span>
+        )}
+        <span className={cn(
+          'rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase',
+          reviewFileStatusTone(file.status),
+        )}>
+          {file.status}
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-(--color-border)">
+          {hunks.length === 0 ? (
+            <p className="px-3 py-4 text-center text-[11px] text-(--color-text-muted)">
+              {file.binary
+                ? 'Binary file — no text preview is available.'
+                : 'This provider returned file metadata without an inline patch. Review it in chat or open the provider view for the full diff.'}
+            </p>
+          ) : (
+            <div className="overflow-x-auto bg-(--bg-page)">
+              {hunks.map((hunk, hunkIndex) => {
+                let oldLine = hunk.oldStart
+                let newLine = hunk.newStart
+                return (
+                  <div key={`${hunk.header}:${hunkIndex}`} className="min-w-max">
+                    <div className="sticky left-0 border-y border-(--color-border) bg-(--accent-blue-soft) px-3 py-1 font-mono text-[10px] text-(--accent-blue)">
+                      {hunk.header}
+                    </div>
+                    {hunk.lines.map((line, lineIndex) => {
+                      const oldNumber = line.type === 'add' || line.type === 'info' ? null : oldLine++
+                      const newNumber = line.type === 'del' || line.type === 'info' ? null : newLine++
+                      const side = line.type === 'del' ? 'LEFT' : 'RIGHT'
+                      const lineNumber = side === 'LEFT' ? oldNumber : newNumber
+                      const selectable = Boolean(
+                        file.can_comment && lineNumber && line.type !== 'info',
+                      )
+                      const selected = target?.line === lineNumber && target.side === side
+                      return (
+                        <button
+                          type="button"
+                          key={`${hunkIndex}:${lineIndex}`}
+                          disabled={!selectable}
+                          onClick={() => {
+                            if (lineNumber) setTarget({ line: lineNumber, side })
+                          }}
+                          className={cn(
+                            'grid w-full grid-cols-[3rem_3rem_1.25rem_minmax(20rem,1fr)] text-left font-mono text-[11px] leading-5',
+                            line.type === 'add' && 'bg-(--color-success-subtle)',
+                            line.type === 'del' && 'bg-(--color-error-subtle)',
+                            selectable && 'cursor-pointer hover:ring-1 hover:ring-inset hover:ring-(--color-accent)/45',
+                            selected && 'ring-1 ring-inset ring-(--color-accent)',
+                          )}
+                          title={selectable ? `Comment on ${file.path}:${lineNumber}` : undefined}
+                        >
+                          <span className="select-none border-r border-(--color-border)/60 px-1 text-right text-(--color-text-subtle)">
+                            {oldNumber ?? ''}
+                          </span>
+                          <span className="select-none border-r border-(--color-border)/60 px-1 text-right text-(--color-text-subtle)">
+                            {newNumber ?? ''}
+                          </span>
+                          <span className={cn(
+                            'select-none text-center',
+                            line.type === 'add' && 'text-(--color-success)',
+                            line.type === 'del' && 'text-(--color-error)',
+                          )}>
+                            {line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' '}
+                          </span>
+                          <span className="whitespace-pre px-1.5 text-(--color-text-2)">{line.content || ' '}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {file.patch_truncated && (
+            <p className="border-t border-(--color-border) px-3 py-2 text-[10px] text-(--color-warning)">
+              Patch preview was truncated to keep review context responsive.
+            </p>
+          )}
+          {target && (
+            <div className="space-y-2 border-t border-(--color-border) bg-(--bg-card) p-3">
+              <p className="text-[10px] text-(--color-text-muted)">
+                Inline comment on <span className="font-mono text-(--color-text)">{file.path}:{target.line}</span>
+              </p>
+              <Textarea
+                value={body}
+                onChange={(event) => setBody(event.target.value)}
+                placeholder="Write an evidence-based inline comment…"
+                className="min-h-20 text-xs"
+                autoFocus
+              />
+              <div className="flex justify-end gap-2">
+                <Button size="sm" variant="outline" onClick={() => setTarget(null)}>
+                  Cancel
+                </Button>
+                <Button size="sm" disabled={pending || !body.trim()} onClick={() => void submit()}>
+                  {pending ? <Loader2 size={12} className="animate-spin" /> : <MessageCircle size={12} />}
+                  Add inline comment
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </article>
   )
 }
 
@@ -644,14 +983,31 @@ function ReviewDetails({
     item.number,
   )
   const [comment, setComment] = useState('')
+  const [lifecycleAction, setLifecycleAction] = useState<ReviewLifecycleAction | null>(null)
+  const [aiSummary, setAiSummary] = useState<GitAIResponse | null>(null)
+  const [aiSummarizing, setAiSummarizing] = useState(false)
+  const sessionId = useTeamStore((state) => state.sessionId)
+  const pushToast = useToastStore((state) => state.push)
   const transformImageSrc = useMemo(
     () => (src: string) => getCodeReviewImageUrl(repository.workspace_id, src),
     [repository.workspace_id],
   )
 
-  const mutate = async (input: Parameters<typeof action.mutateAsync>[0]) => {
-    await action.mutateAsync(input)
-    await detail.refetch()
+  const mutate = async (
+    input: Parameters<typeof action.mutateAsync>[0],
+  ): Promise<boolean> => {
+    try {
+      await action.mutateAsync(input)
+      await detail.refetch()
+      return true
+    } catch (error) {
+      pushToast({
+        tone: 'error',
+        title: 'Review action failed',
+        description: error instanceof Error ? error.message : String(error),
+      })
+      return false
+    }
   }
   const capabilities = detail.data?.capabilities ?? {}
   const summary = detail.data?.summary
@@ -661,6 +1017,9 @@ function ReviewDetails({
   const approvedCount = detail.data?.approvals.filter(
     (approval) => approval.state === 'approved',
   ).length ?? 0
+  const normalizedState = detail.data?.state.toLowerCase() ?? item.state.toLowerCase()
+  const isOpen = ['open', 'opened', 'active'].includes(normalizedState)
+  const isClosed = ['closed', 'declined', 'abandoned'].includes(normalizedState)
   const hasMetrics = Boolean(summary && [
     summary.commit_count,
     summary.changed_files,
@@ -678,6 +1037,30 @@ function ReviewDetails({
             aria-label="Back to pull requests"
           >
             <ChevronLeft size={15} />
+          </button>
+          <button
+            type="button"
+            disabled={!sessionId || !detail.data || aiSummarizing}
+            onClick={() => {
+              if (!sessionId || !detail.data) return
+              setAiSummarizing(true)
+              void runGitAIAction(repository.workspace, {
+                session_id: sessionId,
+                action: 'summarize_pull_request',
+                remote_context: detail.data as unknown as Record<string, unknown>,
+              }).then(setAiSummary).catch((error: unknown) => {
+                pushToast({
+                  tone: 'error',
+                  title: 'Could not summarize pull request',
+                  description: error instanceof Error ? error.message : undefined,
+                })
+              }).finally(() => setAiSummarizing(false))
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-(--color-accent) hover:bg-(--bg-key) disabled:opacity-40"
+            aria-label="Summarize pull request with AI"
+            title="Summarize with AI"
+          >
+            {aiSummarizing ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
           </button>
           <div className="min-w-0 flex-1">
             <h3 className="text-sm font-semibold text-(--color-text)">
@@ -721,6 +1104,7 @@ function ReviewDetails({
             />
           </button>
         </div>
+        {aiSummary && <GitAiResultDialog result={aiSummary} onClose={() => setAiSummary(null)} />}
         {(summary?.source_branch ?? item.source_branch) && (
           <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-md bg-(--bg-key)/70 px-2 py-1.5 font-mono text-[10px] text-(--color-text-muted)">
             <span className="truncate">{summary?.source_branch ?? item.source_branch}</span>
@@ -754,6 +1138,38 @@ function ReviewDetails({
             >
               <XCircle size={13} />
               Request changes
+            </Button>
+          )}
+          {capabilities.merge && isOpen && !detail.data?.mergeability.merged && (
+            <Button
+              size="sm"
+              disabled={action.isPending}
+              onClick={() => setLifecycleAction('merge')}
+            >
+              <GitMerge size={13} />
+              Merge
+            </Button>
+          )}
+          {capabilities.close && isOpen && (
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={action.isPending}
+              onClick={() => setLifecycleAction('close')}
+            >
+              <XCircle size={13} />
+              Close
+            </Button>
+          )}
+          {capabilities.reopen && isClosed && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={action.isPending}
+              onClick={() => setLifecycleAction('reopen')}
+            >
+              <RefreshCw size={13} />
+              Reopen
             </Button>
           )}
           <Button
@@ -842,6 +1258,48 @@ function ReviewDetails({
               ) : null}
             </section>
             <section className="border-t border-(--color-border) pt-4">
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="text-xs font-semibold text-(--color-text)">
+                  Files changed
+                </h4>
+                <span className="text-[10px] text-(--color-text-subtle)">
+                  {detail.data.files?.length ?? summary?.changed_files ?? 0} files
+                </span>
+              </div>
+              <div className="mt-2 space-y-2">
+                {(detail.data.files ?? []).map((file) => (
+                  <ReviewFileCard
+                    key={`${file.old_path ?? ''}:${file.path}`}
+                    file={file}
+                    pending={action.isPending}
+                    onComment={(targetFile, lineTarget, body) =>
+                      mutate({
+                        action: 'inline_comment',
+                        body,
+                        path: targetFile.path,
+                        old_path: targetFile.old_path ?? undefined,
+                        line: lineTarget.line,
+                        side: lineTarget.side,
+                        commit_id: targetFile.commit_id ?? undefined,
+                        base_commit_id: targetFile.base_commit_id ?? undefined,
+                        start_commit_id: targetFile.start_commit_id ?? undefined,
+                      })
+                    }
+                  />
+                ))}
+                {(detail.data.files?.length ?? 0) === 0 && (
+                  <p className="rounded-lg border border-dashed border-(--color-border) p-4 text-center text-xs text-(--color-text-muted)">
+                    No changed-file metadata was returned by this provider.
+                  </p>
+                )}
+                {detail.data.files_truncated > 0 && (
+                  <p className="rounded-lg border border-(--color-warning)/35 bg-(--color-warning-subtle) px-3 py-2 text-[11px] text-(--color-warning)">
+                    {detail.data.files_truncated} additional files are omitted from this bounded preview. Review the complete change set in chat.
+                  </p>
+                )}
+              </div>
+            </section>
+            <section className="border-t border-(--color-border) pt-4">
               <h4 className="text-xs font-semibold text-(--color-text)">
                 Merge readiness
               </h4>
@@ -917,7 +1375,9 @@ function ReviewDetails({
                       action: 'comment',
                       body: value,
                       idempotency_key: crypto.randomUUID(),
-                    }).then(() => setComment(''))
+                    }).then((success) => {
+                      if (success) setComment('')
+                    })
                   }}
                 >
                   Comment
@@ -940,7 +1400,7 @@ function ReviewDetails({
                         action: 'reply',
                         thread_id: target.thread_id,
                         body,
-                      }).then(() => undefined)
+                      })
                     }
                     onToggleResolved={(target) =>
                       mutate({
@@ -952,11 +1412,26 @@ function ReviewDetails({
                     }
                   />
                 ))}
+                {detail.data.comments_truncated > 0 && (
+                  <p className="rounded-lg border border-(--color-warning)/35 bg-(--color-warning-subtle) px-3 py-2 text-[11px] text-(--color-warning)">
+                    {detail.data.comments_truncated} older comments are omitted from this bounded preview. Continue in chat for the complete provider context.
+                  </p>
+                )}
               </div>
             </section>
           </>
         )}
       </div>
+      {detail.data && (
+        <ReviewLifecycleDialog
+          key={`${lifecycleAction ?? 'closed'}:${detail.data.provider}`}
+          action={lifecycleAction}
+          context={detail.data}
+          pending={action.isPending}
+          onClose={() => setLifecycleAction(null)}
+          onConfirm={mutate}
+        />
+      )}
     </div>
   )
 }
@@ -1443,6 +1918,7 @@ function CreateReviewDialog({
   const workspace = target?.workspace ?? ''
   const repository = useGitRepositoryQuery(workspace, Boolean(target))
   const branches = useGitBranchesQuery(workspace, Boolean(target))
+  const remotes = useGitRemotesQuery(workspace, Boolean(target))
   const create = useCreateCodeReviewMutation(target?.workspace_id ?? '')
   const push = useToastStore((state) => state.push)
   const [form, setForm] = useState({
@@ -1451,9 +1927,14 @@ function CreateReviewDialog({
     sourceBranch: '',
     targetBranch: '',
   })
+  const [publishing, setPublishing] = useState(false)
 
   const localBranches = useMemo(
     () => (branches.data ?? []).filter((branch) => branch.remote === null),
+    [branches.data],
+  )
+  const remoteBranches = useMemo(
+    () => (branches.data ?? []).filter((branch) => branch.remote !== null),
     [branches.data],
   )
 
@@ -1465,10 +1946,57 @@ function CreateReviewDialog({
     ?? 'main'
   const sourceBranch = form.sourceBranch || detectedSource
   const targetBranch = form.targetBranch || likelyTarget
+  const localSourceExists = localBranches.some((branch) => branch.name === sourceBranch)
+  const sourcePublished = remoteBranches.some((branch) =>
+    branch.name.endsWith(`/${sourceBranch}`),
+  )
+  const upstreamRemote = repository.data?.upstream?.split('/', 1)[0]
+  const publishRemote =
+    (remotes.data ?? []).find((remote) => remote.name === upstreamRemote)?.name
+    ?? remotes.data?.find((remote) => remote.name === 'origin')?.name
+    ?? remotes.data?.[0]?.name
+
+  const waitForPush = async () => {
+    const deadline = Date.now() + 5 * 60_000
+    while (Date.now() < deadline) {
+      const job = await gitJobs(workspace)
+      if (!job) throw new Error('The Git push job disappeared before completion.')
+      if (job.op !== 'push') {
+        throw new Error(`A ${job.op} operation is already running for this repository.`)
+      }
+      if (job.status === 'done') return
+      if (job.status !== 'running') {
+        throw new Error(job.error || `Git push ended with status ${job.status}.`)
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 500))
+    }
+    throw new Error('Timed out waiting for the source branch to finish pushing.')
+  }
 
   const submit = async () => {
     if (!target) return
     try {
+      if (!sourcePublished) {
+        if (!localSourceExists) {
+          throw new Error(`Local source branch '${sourceBranch}' does not exist.`)
+        }
+        if (!publishRemote) {
+          throw new Error('Add a Git remote before creating this review.')
+        }
+        setPublishing(true)
+        const job = await gitPush(workspace, {
+          remote: publishRemote,
+          branch: sourceBranch,
+          setUpstream: true,
+        })
+        if (job.op !== 'push') {
+          throw new Error(`A ${job.op} operation is already running for this repository.`)
+        }
+        if (job.status === 'running') await waitForPush()
+        else if (job.status !== 'done') {
+          throw new Error(job.error || `Git push ended with status ${job.status}.`)
+        }
+      }
       const created = await create.mutateAsync({
         title: form.title.trim(),
         body: form.body.trim(),
@@ -1487,6 +2015,8 @@ function CreateReviewDialog({
         title: `Could not create ${providerReviewName(target.provider).toLowerCase()}`,
         description: error instanceof Error ? error.message : String(error),
       })
+    } finally {
+      setPublishing(false)
     }
   }
 
@@ -1496,7 +2026,7 @@ function CreateReviewDialog({
         <DialogHeader>
           <DialogTitle>Create {providerReviewName(target?.provider ?? null).toLowerCase()}</DialogTitle>
           <DialogDescription>
-            The source branch must already be pushed. EvoFlux creates the review through the saved Git server API connection.
+            EvoFlux publishes the source branch when needed, then creates the review through the saved Git server connection.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -1531,6 +2061,20 @@ function CreateReviewDialog({
               ))}
             </datalist>
           </div>
+          {!sourcePublished && sourceBranch && (
+            <div className={cn(
+              'rounded-lg border px-3 py-2 text-xs',
+              localSourceExists && publishRemote
+                ? 'border-(--color-accent)/30 bg-(--color-accent)/8 text-(--color-text-muted)'
+                : 'border-(--color-warning)/35 bg-(--color-warning-subtle) text-(--color-warning)',
+            )}>
+              {localSourceExists && publishRemote
+                ? `The branch will be pushed to ${publishRemote} before the review is created.`
+                : !localSourceExists
+                  ? `Local branch '${sourceBranch}' was not found.`
+                  : 'Add a Git remote before creating this review.'}
+            </div>
+          )}
           <label className="block space-y-1.5 text-xs text-(--color-text-muted)">
             <span>Title</span>
             <Input
@@ -1562,14 +2106,22 @@ function CreateReviewDialog({
             onClick={() => void submit()}
             disabled={
               create.isPending
+              || publishing
               || !form.title.trim()
               || !sourceBranch.trim()
               || !targetBranch.trim()
               || sourceBranch.trim() === targetBranch.trim()
+              || (!sourcePublished && (!localSourceExists || !publishRemote))
             }
           >
             <GitPullRequest size={13} aria-hidden="true" />
-            {create.isPending ? 'Creating…' : 'Create review'}
+            {publishing
+              ? 'Pushing branch…'
+              : create.isPending
+                ? 'Creating…'
+                : sourcePublished
+                  ? 'Create review'
+                  : 'Push & create review'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1597,17 +2149,19 @@ export function PullRequestsPanel({
   focus,
   onOpenInChat,
 }: PullRequestsPanelProps) {
+  const [filter, setFilter] = useState<ReviewFilter>('open')
+  const providerState: 'open' | 'closed' | 'merged' =
+    filter === 'closed' || filter === 'merged' ? filter : 'open'
   const reviewScope =
     scope === 'session'
       ? projectId
-        ? { projectId }
-        : { workspace }
-      : {}
+        ? { projectId, state: providerState }
+        : { workspace, state: providerState }
+      : { state: providerState }
   const reviews = useCodeReviewsQuery(open, reviewScope)
   const connections = useGitServerConnectionsQuery(open)
   const codingSessions = useTeamSessionsQuery('coding')
   const contentRef = useRef<HTMLDivElement>(null)
-  const [filter, setFilter] = useState<ReviewFilter>('all')
   const [repositoryFilter, setRepositoryFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [openingReviewKey, setOpeningReviewKey] = useState<string | null>(null)
@@ -1669,7 +2223,7 @@ export function PullRequestsPanel({
 
   useEffect(() => {
     if (!open || !focus) return
-    setFilter('all')
+    setFilter('open')
     setRepositoryFilter(focus.workspaceId)
     setSearch('')
   }, [focus, open])
@@ -1740,7 +2294,7 @@ export function PullRequestsPanel({
           <p className="min-w-0 flex-1 truncate text-[11px] text-(--color-text-muted)">
             {reviews.isLoading
               ? 'Loading registered repositories…'
-              : `${visibleCount} open · ${visibleRepositories.length} repositories · ${
+              : `${visibleCount} ${providerState} · ${visibleRepositories.length} repositories · ${
                   scope === 'all'
                     ? 'all Coding repositories'
                     : projectId

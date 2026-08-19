@@ -31,6 +31,7 @@ export {
   useProcessesQuery,
   useTerminateProcessMutation,
 } from './useProcessesQuery'
+export { useProblemsQuery, useProblemDecisionMutation } from './useProblemsQuery'
 export {
   useAgentFilesQuery,
   useAgentFileQuery,
@@ -102,6 +103,10 @@ export {
   useInstallSeedMutation,
 } from './useProvidersQuery'
 export { queryKeys } from './keys'
+export {
+  useLanguageServersQuery,
+  useInstallLanguageServerMutation,
+} from './useLanguageServersQuery'
 export {
   useCodeReviewActionMutation,
   useCreateCodeReviewMutation,

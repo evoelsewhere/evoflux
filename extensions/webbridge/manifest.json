@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "EvoFlux WebBridge",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA02ehFLSfipKs2DG51G4hbyUSIQ+d72O6hkBD9mLemrQsJwKq3pE6FutJcrPyd7hJNvrsjKyCDBHjHB3ROFpYpC1w8z/9wyIt02TvAyOiJLaUezsMR8ycj1qjLPv6LzMBnKkYzx9SK70pZtg1XCJPratXDbD7C3j3PFQd0c5UdXTqimZy3Zcw6LJWaWcZWva8jmt+JI5Qd5LtXYbjzYwyfF3u2q2nO/XVqBIfVtO1L51Kxd6eRg/SRiX/5OtFdi8Bb9dDHvVfAFGNXROgbUulh8L6FTHIFKktjrn3v4ijTP2Xyk+NKGQ8A7tUReKbDCk6jRVUrvb32mgdAU2ePX3AzwIDAQAB",
   "minimum_chrome_version": "116",
   "description": "Securely connects your real Chrome/Edge browser to EvoFlux for agent automation and browser-originated interactions.",

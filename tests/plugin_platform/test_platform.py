@@ -10,11 +10,8 @@ from pydantic import ValidationError
 
 from app.agent.skills.discovery import builtin_skills_dir
 from app.core.config import settings
-from app.core.skill_settings import skill_settings_id, write_skill_runtime_settings
-from app.plugin_platform.builtins import (
-    builtin_plugins_root,
-    list_builtin_installations,
-)
+from app.core.skill_settings import write_skill_runtime_settings
+from app.plugin_platform.builtins import list_builtin_installations
 from app.plugin_platform.installer import (
     PluginInstallError,
     create_plugin,
@@ -327,76 +324,20 @@ def test_builtin_discovery_is_stable_and_effective_list_keeps_registry_managed_o
     list_builtin_installations.cache_clear()
     second = list_builtin_installations()
 
-    assert [item.id for item in first] == ["7d76b6df28f0617022e8223d2dda5315"]
-    assert [item.model_dump(mode="json") for item in second] == [
-        item.model_dump(mode="json") for item in first
-    ]
-    builtin = first[0]
-    assert builtin.name == "evoflux.documents"
-    assert builtin.source_type == "builtin"
-    assert builtin.source_ref == "evoflux://builtin/documents"
-    assert builtin.enabled is True
-    assert Path(builtin.root).is_dir()
-    assert len(builtin.content_sha256) == 64
+    assert first == ()
+    assert second == ()
 
     # Bundled records are virtual package metadata. They must not leak into the
     # user-owned registry document or make an empty registry appear non-empty.
     assert list_installations() == []
-    assert list_effective_installations() == [builtin]
+    assert list_effective_installations() == []
 
     managed_root = _plugin(isolated_platform / "managed-plugin")
     managed = link_plugin(managed_root)
 
     assert list_installations() == [managed]
-    assert {item.id for item in list_effective_installations()} == {
-        builtin.id,
-        managed.id,
-    }
-    assert {item.id for item in list_effective_installations(enabled_only=True)} == {
-        builtin.id,
-        managed.id,
-    }
-
-
-def test_builtin_plugin_lifecycle_is_read_only(isolated_platform: Path) -> None:
-    list_builtin_installations.cache_clear()
-    builtin = list_builtin_installations()[0]
-    replacement = _plugin(
-        isolated_platform / "replacement",
-        name=builtin.name,
-        skill=None,
-    )
-
-    with pytest.raises(PluginInstallError, match="cannot be linked or reinstalled"):
-        link_plugin(builtin.root)
-    with pytest.raises(PluginInstallError, match="cannot be reinstalled"):
-        install_plugin(builtin.root)
-    with pytest.raises(PluginInstallError, match="cannot be packed separately"):
-        pack_plugin(builtin.root, isolated_platform / "builtin.evoplugin")
-    with pytest.raises(PluginInstallError):
-        update_plugin(builtin.id, replacement)
-    with pytest.raises(ValueError, match="always enabled"):
-        set_enabled(builtin.id, False)
-    with pytest.raises(ValueError, match="cannot be uninstalled"):
-        uninstall_plugin(builtin.id)
-
-    assert list_installations() == []
-    assert list_effective_installations() == [builtin]
-
-
-def test_documents_builtin_declares_preview_only_native_runtime() -> None:
-    manifest = json.loads(
-        (builtin_plugins_root() / "documents" / "plugin.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    native = manifest["extensions"]["org.evoelsewhere.evoflux.builtin"]
-
-    assert manifest["version"] == "1.2.0"
-    assert "read-only previews" in manifest["description"]
-    assert native["preview_provider"].endswith(":preview_provider")
-    assert "artifact_provider" not in native
-    assert "api_router_provider" not in native
+    assert list_effective_installations() == [managed]
+    assert list_effective_installations(enabled_only=True) == [managed]
 
 
 def test_builtin_tree_rejects_create_and_pack_targets(
@@ -424,8 +365,19 @@ def test_builtin_tree_rejects_create_and_pack_targets(
 def test_registry_rejects_and_filters_persisted_builtin_records(
     isolated_platform: Path,
 ) -> None:
-    list_builtin_installations.cache_clear()
-    builtin = list_builtin_installations()[0]
+    builtin = PluginInstallation(
+        id="b" * 32,
+        name="release-bundled-test",
+        version="1.0.0",
+        description="Virtual bundled record",
+        root=str(isolated_platform / "release-bundled-test"),
+        source_type="builtin",
+        source_ref="evoflux://builtin/release-bundled-test",
+        content_sha256="0" * 64,
+        enabled=True,
+        installed_at="1970-01-01T00:00:00+00:00",
+        updated_at="1970-01-01T00:00:00+00:00",
+    )
 
     with pytest.raises(ValueError, match="cannot be persisted"):
         add_installation(builtin)
@@ -437,34 +389,13 @@ def test_registry_rejects_and_filters_persisted_builtin_records(
     path.write_text(json.dumps(document), encoding="utf-8")
 
     assert list_installations() == [managed]
-    assert {item.id for item in list_effective_installations()} == {
-        builtin.id,
-        managed.id,
-    }
+    assert list_effective_installations() == [managed]
 
     updated = set_enabled(managed.id, False)
     persisted = json.loads(path.read_text(encoding="utf-8"))
     assert updated.enabled is False
     assert [item["id"] for item in persisted["installations"]] == [managed.id]
     assert persisted["installations"][0]["source_type"] == "linked"
-
-
-def test_managed_plugin_skill_precedes_bundled_plugin_skill(
-    isolated_platform: Path,
-) -> None:
-    plugin = _plugin(
-        isolated_platform / "documents-override",
-        name="documents-override",
-        skill="docx",
-    )
-    managed = link_plugin(plugin)
-
-    selected = discover_plugin_skill_records()["docx"]
-
-    assert selected.source == f"plugin:{managed.id}"
-    assert selected.alternates
-    assert selected.alternates[0].source.startswith("plugin:")
-    assert selected.alternates[0].source != selected.source
 
 
 def test_plugin_skill_applies_persisted_runtime_settings(
@@ -492,34 +423,6 @@ def test_plugin_skill_applies_persisted_runtime_settings(
     assert overridden.allow_implicit_invocation is False
     assert overridden.user_invocable is False
     assert overridden.settings_overridden is True
-
-
-def test_documents_plugin_preserves_legacy_builtin_skill_settings_identity(
-    isolated_platform: Path,
-) -> None:
-    list_builtin_installations.cache_clear()
-    record = discover_plugin_skill_records()["docx"]
-    legacy_id = skill_settings_id(
-        source="builtin",
-        root=builtin_skills_dir(),
-        stem="docx",
-    )
-
-    assert record.source.startswith("plugin:")
-    assert record.settings_id == legacy_id
-
-    write_skill_runtime_settings(
-        legacy_id,
-        name=record.name,
-        source="builtin",
-        modes=["coding"],
-        allow_implicit_invocation=False,
-        user_invocable=False,
-    )
-    migrated = discover_plugin_skill_records()["docx"]
-
-    assert migrated.settings_overridden is True
-    assert migrated.modes == ("coding",)
 
 
 @pytest.mark.parametrize(

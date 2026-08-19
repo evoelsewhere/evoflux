@@ -30,6 +30,7 @@ export type WorkbenchTool =
   | 'plugins'
   | 'source-control'
   | 'pull-requests'
+  | 'problems'
 
 export interface WorkbenchTab {
   id: string
@@ -47,6 +48,12 @@ export interface WorkbenchTabOptions {
 export type PullRequestsScope = 'all' | 'session'
 export type GitWorkspaceView = 'changes' | 'reviews'
 
+export interface WorkspaceFileRequest {
+  id: number
+  sessionId: string
+  path: string
+}
+
 interface WorkbenchState {
   workbenchTabs: WorkbenchTab[]
   activeWorkbenchTabId: string | null
@@ -59,6 +66,7 @@ interface WorkbenchState {
 
 const MULTI_INSTANCE_TOOLS = new Set<WorkbenchTool>(['terminal', 'browser'])
 let workbenchTabSequence = 0
+let workspaceFileRequestSequence = 0
 
 function newWorkbenchTab(
   tool: WorkbenchTool,
@@ -234,6 +242,8 @@ interface UIStore {
    * TeamChatView once that session is active.
    */
   sideChatRequest: string | null
+  /** One-shot request from a transcript artifact link to preview a workspace file. */
+  workspaceFileRequest: WorkspaceFileRequest | null
   createWorkbenchTab: (tool: WorkbenchTool, options?: WorkbenchTabOptions) => void
   restoreWorkbenchTabs: (
     tool: WorkbenchTool,
@@ -275,6 +285,8 @@ interface UIStore {
   closeGuidelines: () => void
   requestSideChat: (sessionId: string) => void
   clearSideChatRequest: () => void
+  requestWorkspaceFile: (sessionId: string, path: string) => void
+  clearWorkspaceFileRequest: (requestId?: number) => void
 }
 
 export const useUIStore = create<UIStore>()(
@@ -445,5 +457,19 @@ export const useUIStore = create<UIStore>()(
     sideChatRequest: null,
     requestSideChat: (sessionId) => set((state) => { state.sideChatRequest = sessionId }),
     clearSideChatRequest: () => set((state) => { state.sideChatRequest = null }),
+    workspaceFileRequest: null,
+    requestWorkspaceFile: (sessionId, path) => set((state) => {
+      workspaceFileRequestSequence += 1
+      state.workspaceFileRequest = {
+        id: workspaceFileRequestSequence,
+        sessionId,
+        path,
+      }
+      addOrActivateTool(state, 'files')
+    }),
+    clearWorkspaceFileRequest: (requestId) => set((state) => {
+      if (requestId !== undefined && state.workspaceFileRequest?.id !== requestId) return
+      state.workspaceFileRequest = null
+    }),
   }))
 )

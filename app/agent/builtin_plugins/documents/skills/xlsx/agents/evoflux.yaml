@@ -1,6 +1,0 @@
-interface:
-  display_name: "Work with Workbooks"
-  short_description: "Create, inspect, edit, and verify Excel workbooks"
-  default_prompt: "Use $xlsx to inspect, create, or edit this workbook as requested, preserve the source, verify the exact output after changes, and disclose any rendering or recalculation limitation."
-policy:
-  allow_implicit_invocation: true

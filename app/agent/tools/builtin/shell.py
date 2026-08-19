@@ -27,6 +27,7 @@ from app.agent.tools.builtin.process import (
     stash_result_metadata,
 )
 from app.agent.tools.registry import InjectedArg, Tool
+from app.services.user_shell import discover_login_path
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -143,6 +144,21 @@ def _scrubbed_env(*, inherit: bool = False) -> dict[str, str]:
         for key, value in os.environ.items()
         if key not in blocked and (key in _SAFE_SHELL_ENV_KEYS or key.startswith("LC_"))
     }
+
+
+def _command_env(shell_bin: str, *, inherit: bool = False) -> dict[str, str]:
+    """Shell environment with a desktop-safe login PATH.
+
+    Only PATH is discovered from the user's profile; credentials and other
+    exports remain subject to the normal inheritance policy.
+    """
+    env = _scrubbed_env(inherit=inherit)
+    login_path = discover_login_path(shell_bin)
+    if login_path:
+        env["PATH"] = login_path
+    if sys.platform != "win32":
+        env["SHELL"] = shell_bin
+    return env
 
 
 def _tail_text(text: str, max_lines: int, max_bytes: int) -> tuple[str, bool]:
@@ -275,7 +291,10 @@ async def _shell(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=str(cwd),
-            env=_scrubbed_env(inherit=sandbox.inherit_shell_environment),
+            env=_command_env(
+                shell_bin,
+                inherit=sandbox.inherit_shell_environment,
+            ),
             **extra,
         )
     except NotImplementedError:

@@ -17,6 +17,10 @@
   }
 
   function prettyJson(value) {
+    if (value && typeof value === "object") {
+      try { return JSON.stringify(value, null, 2); }
+      catch { return ""; }
+    }
     const raw = text(value).trim();
     if (!raw) return "";
     try { return JSON.stringify(JSON.parse(raw), null, 2); }
@@ -32,12 +36,28 @@
   const SHELL_ACTIVITY_TOOLS = new Set(["bash", "shell", "run_command"]);
   const WRITE_ACTIVITY_TOOLS = new Set(["write", "write_file", "edit", "edit_file", "patch"]);
 
-  function toolFamily(name) {
-    const value = text(name);
+  function skillPresentation(data) {
+    const action = text(data?.skill_action || data?.skillAction);
+    const skillName = text(data?.skill_name || data?.skillName);
+    if (action === "load" || (!action && skillName)) {
+      return { family: "skill-load", completedLabel: "Loaded skill", target: skillName };
+    }
+    if (action === "read_resource") {
+      return { family: "skill-resource", completedLabel: "Read skill resource", target: skillName };
+    }
+    if (action === "list") {
+      return { family: "skill-list", completedLabel: "Listed skills", target: "" };
+    }
+    return { family: "skill", completedLabel: "Used skill tool", target: skillName };
+  }
+
+  function toolFamily(block) {
+    const value = text(block?.name);
     if (FILE_ACTIVITY_TOOLS.has(value)) return "files";
     if (BROWSER_ACTIVITY_TOOLS.has(value)) return "browser";
     if (SHELL_ACTIVITY_TOOLS.has(value)) return "shell";
     if (WRITE_ACTIVITY_TOOLS.has(value)) return "write";
+    if (value === "skill") return skillPresentation(block).family;
     return value;
   }
 
@@ -49,6 +69,9 @@
       write: "Changed files",
       python: "Ran Python",
       git: "Ran Git",
+      "skill-load": "Loaded a skill",
+      "skill-resource": "Read skill resources",
+      "skill-list": "Listed skills",
       skill: "Used skill tool",
     };
     return labels[family] || "Used tools";
@@ -57,7 +80,7 @@
   function activityLabel(blocks, active) {
     const labels = [...new Set(blocks
       .filter((block) => block.type === "tool")
-      .map((block) => familyLabel(toolFamily(block.name))))];
+      .map((block) => familyLabel(toolFamily(block))))];
     if (!labels.length) return active ? "Thinking" : "Thought";
     return labels
       .map((label, index) => index === 0 ? label : label.charAt(0).toLowerCase() + label.slice(1))
@@ -74,6 +97,38 @@
     body.className = `${className}-body`;
     details.append(summary, body);
     return { details, summary, body };
+  }
+
+  function formatToolName(name) {
+    const value = text(name) || "tool";
+    return value
+      .replace(/^mcp__/, "")
+      .split(/[_-]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+
+  function completedToolLabel(name) {
+    const labels = {
+      read: "Read", read_file: "Read",
+      write: "Wrote", write_file: "Wrote",
+      edit: "Edited", edit_file: "Edited", patch: "Edited",
+      grep: "Searched", code_context: "Searched",
+      glob: "Listed", ls: "Listed",
+      shell: "Ran", bash: "Ran", run_command: "Ran",
+      browser_use: "Browsed", webbridge: "Browsed",
+    };
+    return labels[text(name)] || formatToolName(name);
+  }
+
+  function formatDuration(ms) {
+    const value = Math.max(0, Number(ms));
+    if (!Number.isFinite(value)) return "";
+    if (value < 1000) return `${Math.round(value)}ms`;
+    if (value < 60_000) return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)}s`;
+    const seconds = Math.round(value / 1000);
+    return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
   }
 
   function safeWidgetImageSource(value) {
@@ -237,10 +292,18 @@
       const turn = this.begin(agent);
       let block = turn.blocks.at(-1);
       if (!block || block.type !== "thinking") {
-        const ui = makeDisclosure("thinking-block", "Thinking", false);
+        const ui = makeDisclosure("thinking-block", "", false);
+        const chevron = document.createElement("span");
+        chevron.className = "inline-disclosure-chevron";
+        chevron.textContent = "›";
+        const label = document.createElement("span");
+        label.className = "thinking-block-label";
+        label.textContent = "Thinking";
+        ui.summary.append(chevron, label);
         block = this._append("thinking", agent, ui.details, {
           body: ui.body,
           summary: ui.summary,
+          label,
           rawContent: "",
           chars: 0,
           redactedChars: 0,
@@ -254,9 +317,9 @@
       block.chars += chunk.length + redactedChars;
       block.redactedChars += redactedChars;
       block.desktopOnly ||= desktopOnly;
-      block.summary.textContent = block.chars
-        ? `Thinking · ${block.chars.toLocaleString()} chars`
-        : "Thinking";
+      block.label.textContent = block.chars
+        ? `${this.live ? "Thinking" : "Thought"} · ${block.chars.toLocaleString()} chars`
+        : this.live ? "Thinking" : "Thought";
       if (block.rawContent) {
         this.options.renderMarkdown?.(block.body, block.rawContent);
         this.options.hydrate?.(block.body);
@@ -272,16 +335,37 @@
       return block;
     }
 
+    _refreshToolPresentation(block, data = {}) {
+      block.name = text(data?.name || block.name) || "tool";
+      block.skillAction = text(data?.skill_action || data?.skillAction || block.skillAction);
+      block.skillName = text(data?.skill_name || data?.skillName || block.skillName);
+      const skill = block.name === "skill" ? skillPresentation(block) : null;
+      block.label.textContent = skill?.completedLabel || completedToolLabel(block.name);
+      block.header.textContent = skill?.target || "";
+      block.header.hidden = !block.header.textContent;
+      const duration = Number(data?.duration_ms ?? data?.metadata?.duration_ms);
+      block.duration.textContent = Number.isFinite(duration) ? formatDuration(duration) : "";
+      block.duration.hidden = !block.duration.textContent;
+    }
+
     _ensureTool(data) {
       const key = blockKey(data);
       const existing = this.tools.get(key);
       if (existing) return existing;
       const agent = text(data?.agent) || "EvoFlux";
-      const ui = makeDisclosure("tool-block", text(data?.name) || "Tool", true);
-      const status = document.createElement("span");
-      status.className = "tool-block-status";
-      status.textContent = "Pending";
-      ui.summary.append(status);
+      const ui = makeDisclosure("tool-block", "", false);
+      const icon = document.createElement("span");
+      icon.className = "tool-block-icon";
+      const label = document.createElement("span");
+      label.className = "tool-block-label";
+      const header = document.createElement("span");
+      header.className = "tool-block-header";
+      const duration = document.createElement("time");
+      duration.className = "tool-block-duration";
+      const chevron = document.createElement("span");
+      chevron.className = "inline-disclosure-chevron tool-block-chevron";
+      chevron.textContent = "›";
+      ui.summary.append(icon, label, header, duration, chevron);
 
       const argumentsSection = document.createElement("section");
       argumentsSection.className = "tool-section tool-arguments";
@@ -318,7 +402,9 @@
         key,
         name: text(data?.name) || "tool",
         summary: ui.summary,
-        status,
+        label,
+        header,
+        duration,
         argumentsSection,
         argumentsBody,
         outputSection,
@@ -330,21 +416,22 @@
         redactedOutputChars: 0,
         desktopOnlyOutput: false,
       });
+      this._refreshToolPresentation(block, data);
       this.tools.set(key, block);
       return block;
     }
 
     toolCall(data) {
       const block = this._ensureTool(data);
-      block.status.textContent = "Pending";
+      this._refreshToolPresentation(block, data);
       this._refreshActivitySegment(block.segment);
       return block;
     }
 
     toolStart(data) {
       const block = this._ensureTool(data);
-      block.status.textContent = "Running";
-      const args = prettyJson(data?.arguments);
+      this._refreshToolPresentation(block, data);
+      const args = prettyJson(data?.display_arguments ?? data?.displayArguments ?? data?.arguments);
       block.argumentsSection.hidden = !args;
       block.argumentsBody.textContent = args;
       this._refreshActivitySegment(block.segment);
@@ -361,9 +448,10 @@
       block.redactedOutputChars += redactedChars;
       block.desktopOnlyOutput ||= desktopOnly;
       const streamStatus = data?.stream === "stderr" ? "Running · stderr" : "Running";
-      block.status.textContent = block.desktopOnlyOutput
+      block.duration.textContent = block.desktopOnlyOutput
         ? `${streamStatus} · ${block.redactedOutputChars.toLocaleString()} chars`
         : streamStatus;
+      block.duration.hidden = false;
       block.outputSection.hidden = false;
       const desktopProgress = `${block.redactedOutputChars.toLocaleString()} chars received\n${DESKTOP_TOOL_OUTPUT_NOTE}`;
       block.outputBody.textContent = block.desktopOnlyOutput
@@ -378,10 +466,7 @@
 
     toolEnd(data) {
       const block = this._ensureTool(data);
-      const duration = Number(data?.duration_ms ?? data?.metadata?.duration_ms);
-      block.status.textContent = Number.isFinite(duration)
-        ? `Done · ${(Math.max(0, duration) / 1000).toFixed(1)}s`
-        : "Done";
+      this._refreshToolPresentation(block, data);
       const result = text(data?.result);
       block.resultSection.hidden = !result;
       block.resultBody.textContent = result;
@@ -416,9 +501,11 @@
     }
 
     appendEvent(type, data = {}) {
+      // Desktop records usage in turn state; it is not a visible content
+      // block and must not split one adjacent thinking/tool activity run.
+      if (type === "usage") return null;
       const agent = text(data.agent) || this.turn?.agent || "EvoFlux";
       const labels = {
-        usage: "Token usage",
         inbox: "Inbox message",
         handoff: "Agent handoff",
         delegation: "Delegation",
@@ -470,7 +557,16 @@
       this.live = false;
       this.turn?.item.classList.remove("live", "live-turn");
       for (const block of this.tools.values()) {
-        if (!block.element.classList.contains("done")) block.status.textContent = "Stopped";
+        if (!block.element.classList.contains("done")) {
+          block.duration.textContent = "Stopped";
+          block.duration.hidden = false;
+        }
+      }
+      for (const block of this.turn?.blocks || []) {
+        if (block.type !== "thinking") continue;
+        block.label.textContent = block.chars
+          ? `Thought · ${block.chars.toLocaleString()} chars`
+          : "Thought";
       }
       for (const segment of this.turn?.segments || []) {
         if (segment.kind === "activity") this._refreshActivitySegment(segment);
@@ -516,7 +612,9 @@
             agent: historyAgent,
             name: entry.name ?? entry.tool_name ?? entry.toolName,
             tool_call_id: entry.tool_call_id ?? entry.toolCallId,
-            arguments: entry.arguments ?? entry.tool_args ?? entry.toolArgs,
+            skill_action: entry.skill_action ?? entry.skillAction,
+            skill_name: entry.skill_name ?? entry.skillName,
+            display_arguments: entry.display_arguments ?? entry.displayArguments,
             result: entry.result ?? entry.tool_result ?? entry.toolResult,
           };
           this.toolStart(payload);
@@ -547,5 +645,7 @@
     sanitizeWidgetHtml,
     widgetDocument,
     activityLabel,
+    formatDuration,
+    skillPresentation,
   };
 })();

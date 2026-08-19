@@ -57,7 +57,7 @@ class ModelInputCapabilities:
 
     # Vision — accepts image/* attachments (png/jpg/gif/webp).
     vision: bool = False
-    # Document text — markitdown converts pdf/docx/txt/csv/json/md to
+    # Document text — markitdown converts PDF/HTML and textual formats to
     # text before the model sees it. True for every model: the
     # conversion happens on the client side, not at the model boundary.
     document_text: bool = True
@@ -275,3 +275,16 @@ def get_capabilities(model_id: str | None) -> ModelCapabilities:
         spec["input"]["video"] = False
         return _merge_caps(spec)
     return resolved
+
+
+def has_runtime_model_capabilities(model_id: str | None) -> bool:
+    """Return whether live provider capability metadata exists for a model."""
+    return bool(model_id and model_id.lower() in _runtime_capabilities)
+
+
+def has_model_capabilities(model_id: str | None) -> bool:
+    """Return whether bundled registry or live capabilities recognize a model."""
+    if not model_id:
+        return False
+    normalized = model_id.lower()
+    return normalized in load_model_registry() or normalized in _runtime_capabilities

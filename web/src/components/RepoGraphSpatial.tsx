@@ -520,7 +520,7 @@ export function RepoGraphSpatial({
     <div ref={containerRef} className={cn('relative h-full min-h-0 overflow-hidden bg-(--terminal-bg)', className)}>
       <canvas
         ref={canvasRef}
-        aria-label="Interactive project code constellation"
+        aria-label="Interactive code constellation"
         className={cn('absolute inset-0 touch-none cursor-grab active:cursor-grabbing', hoveredId && 'cursor-pointer')}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -535,7 +535,7 @@ export function RepoGraphSpatial({
       <div className="pointer-events-none absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-1.5">
         <div className="pointer-events-auto flex items-center gap-2 rounded-md border border-(--color-border) bg-(--bg-card)/85 px-2.5 py-1.5 text-[9px] text-(--color-text-muted) shadow-lg backdrop-blur-md">
           <span className="h-1.5 w-1.5 rounded-full bg-(--accent-purple) shadow-[0_0_8px_currentColor]" />
-          {selectedId ? 'Focused neighborhood' : query ? `${graph.matchIds.size} matches` : 'Project constellation'}
+          {selectedId ? 'Focused neighborhood' : query ? `${graph.matchIds.size} matches` : 'Code constellation'}
           <span className="text-(--color-border-strong)">|</span>
           <span className="font-mono text-(--color-text)">{graph.layoutNodes.length.toLocaleString(getIntlLocale())} nodes</span>
           <span className="font-mono text-(--color-text-subtle)">{graph.edges.length.toLocaleString(getIntlLocale())} edges</span>

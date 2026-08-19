@@ -633,6 +633,7 @@ def test_code_owned_role_prompts_do_not_name_optional_tool_schemas():
         "browser_use",
         "static_diagnostics",
         "lsp_diagnostics",
+        "lsp_semantic",
         "preview",
         "web_search",
         "load_tool",

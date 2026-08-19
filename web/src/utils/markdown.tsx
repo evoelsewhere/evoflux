@@ -22,6 +22,10 @@ import { withTokenParam } from '@/api/auth'
 import { ImageLightbox } from '@/components/ImageLightbox'
 import { useStreamingReveal } from '@/hooks/useStreamingReveal'
 import { cn } from '@/lib/utils'
+import {
+  openWorkspaceFileLink,
+  workspaceFilePathFromHref,
+} from '@/lib/workspace-file-link'
 
 // Me: extensions we render as ``<video>`` instead of ``<img>``. The backend
 // `generate_video` tool writes ``.mp4`` files today, but keep the list
@@ -579,17 +583,23 @@ export const MarkdownBlock = memo(function MarkdownBlock({
         ) {
           return <>{children}</>
         }
+        const workspaceFilePath =
+          typeof props.href === 'string' && sessionId
+            ? workspaceFilePathFromHref(props.href, sessionId)
+            : null
         return (
           <a
             {...props}
-            target="_blank"
-            rel="noopener noreferrer"
+            target={workspaceFilePath ? undefined : '_blank'}
+            rel={workspaceFilePath ? undefined : 'noopener noreferrer'}
+            title={workspaceFilePath ? `Preview ${workspaceFilePath} in Files` : props.title}
+            data-workspace-file-link={workspaceFilePath || undefined}
             onClick={(event) => {
               onClick?.(event)
               if (
                 !event.defaultPrevented &&
                 typeof props.href === 'string' &&
-                onLinkClick?.(props.href)
+                (onLinkClick?.(props.href) || openWorkspaceFileLink(props.href, sessionId))
               ) {
                 event.preventDefault()
               }

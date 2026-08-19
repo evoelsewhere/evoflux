@@ -76,6 +76,17 @@ export async function updateVersionControlSettings(
 export type WebBridgeSettings = {
   enabled: boolean
   allow_evaluate: boolean
+  built_in_allowed_domains: string[]
+  built_in_blocked_domains: string[]
+  built_in_allow_evaluate: boolean
+  built_in_allow_storage: boolean
+  built_in_allow_cookie_values: boolean
+  built_in_allow_http_requests: boolean
+  built_in_allow_clipboard_read: boolean
+  built_in_allow_clipboard_write: boolean
+  built_in_allow_file_uploads: boolean
+  built_in_allow_downloads: boolean
+  built_in_allow_agent_permission_accept: boolean
 }
 
 export async function getWebBridgeSettings(): Promise<WebBridgeSettings> {

@@ -17,6 +17,7 @@ from app.models.chat import CodingProjectWorkspace, GitServerConnection
 from app.services.code_review_service import (
     GitServerApiError,
     RepositoryTarget,
+    ReviewListState,
     add_code_review_comment as service_add_comment,
     add_code_review_inline_comment as service_add_inline_comment,
     aggregate_reviews,
@@ -148,6 +149,10 @@ async def _list_code_reviews(
             )
         ),
     ] = None,
+    state: Annotated[
+        ReviewListState,
+        Field(description="Review lifecycle state to list."),
+    ] = "open",
     _state: Annotated[AgentState | None, InjectedArg()] = None,
 ) -> str:
     """List open PRs/MRs through saved Git server API credentials.
@@ -159,7 +164,7 @@ async def _list_code_reviews(
     targets, connections = await _session_targets(_state)
     if repository:
         targets = [_select_target(targets, repository)]
-    results = await aggregate_reviews(targets, connections)
+    results = await aggregate_reviews(targets, connections, state=state)
     return json.dumps(
         {
             "repositories": [
@@ -252,6 +257,7 @@ async def _add_code_review_inline_comment(
     path: Annotated[str, Field(min_length=1)],
     line: Annotated[int, Field(gt=0)],
     repository: str | None = None,
+    old_path: str | None = None,
     side: Annotated[str, Field(pattern="^(LEFT|RIGHT)$")] = "RIGHT",
     commit_id: str | None = None,
     base_commit_id: str | None = None,
@@ -266,6 +272,7 @@ async def _add_code_review_inline_comment(
         number,
         body,
         path=path,
+        old_path=old_path,
         line=line,
         side=side,
         commit_id=commit_id,

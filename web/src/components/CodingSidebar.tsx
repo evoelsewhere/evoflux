@@ -28,7 +28,7 @@
  * search, navigator, footer as separate floating cards) and all of its
  * workspace/worktree dialogs in-file.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
@@ -43,6 +43,7 @@ import {
   CalendarClock,
   ChevronDown,
   ChevronRight,
+  Download,
   Folder,
   FolderPlus,
   GitBranch,
@@ -68,6 +69,7 @@ import {
 import { apiBaseUrl } from "@/api/base-url";
 import {
   browseWorkspaces,
+  gitClone,
   listWorktrees,
   removeWorktree,
   resolveTeamSession,
@@ -95,6 +97,7 @@ import { isTransientNetworkError } from "@/utils/errors";
 import {
   SidebarShell,
   SidebarCard,
+  SidebarNavGroup,
   SidebarSearchTrigger,
   SidebarFooter,
   SidebarModeSlot,
@@ -356,6 +359,7 @@ export function CodingSidebar({
   drawerMode = false,
 }: CodingSidebarProps) {
   const isMobile = useIsMobile();
+  const consumedWorkspaceDialogKey = useRef(openWorkspaceDialogKey);
   const isDrawer = isMobile || drawerMode;
   const { isTauri, os, isMacOverlay } = usePlatform();
   const [nativeFolderPickerEnabled, setNativeFolderPickerEnabled] =
@@ -500,6 +504,8 @@ export function CodingSidebar({
   }, [activeWorkspace]);
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [workspacePickerMode, setWorkspacePickerMode] =
+    useState<"open" | "clone">("open");
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(
     null,
   );
@@ -510,6 +516,10 @@ export function CodingSidebar({
   const [loading, setLoading] = useState(false);
   const [pendingWorkspace, setPendingWorkspace] = useState<string | null>(null);
   const [trustWorkspace, setTrustWorkspace] = useState<string | null>(null);
+  const [cloneUrl, setCloneUrl] = useState("");
+  const [cloneDirectory, setCloneDirectory] = useState("");
+  const [cloneBranch, setCloneBranch] = useState("");
+  const [cloneParent, setCloneParent] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<SessionResponse | null>(null);
   const [editTitle, setEditTitle] = useState("");
   // Keep the full session — project/workspace lists are separate queries and
@@ -581,12 +591,15 @@ export function CodingSidebar({
     setDialogOpen(false);
     setTrustWorkspace(null);
     setAddRepoDialogProjectId(null);
+    setWorkspacePickerMode("open");
+    setCloneParent(null);
   }, []);
 
   const openWorkspaceDialog = useCallback(async () => {
     setError(null);
     setSelectedWorkspace(null);
     setTrustWorkspace(null);
+    setWorkspacePickerMode("open");
 
     if (!isTauri || isTauriMobile) {
       openWebWorkspaceDialog();
@@ -606,32 +619,33 @@ export function CodingSidebar({
       return;
     }
     setNativeFolderPickerEnabled(true);
-
     setDialogOpen(true);
+  }, [isTauri, isTauriMobile, openWebWorkspaceDialog]);
+
+  const pickNativeFolder = useCallback(async (purpose: "workspace" | "clone") => {
     setLoading(true);
+    setError(null);
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const selected = await open({
         directory: true,
         multiple: false,
-        title: "Open workspace",
+        title: purpose === "clone" ? "Choose clone destination" : "Open workspace",
       });
-      if (typeof selected !== "string") {
-        setDialogOpen(false);
-        setTrustWorkspace(null);
-        setAddRepoDialogProjectId(null);
+      if (typeof selected !== "string") return;
+      if (purpose === "clone") {
+        setCloneParent(selected);
         return;
       }
       setSelectedWorkspace(selected);
       const result = await validateWorkspace(selected);
       setTrustWorkspace(result.workspace);
-      setDialogOpen(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to open workspace");
+      setError(err instanceof Error ? err.message : "Unable to choose folder");
     } finally {
       setLoading(false);
     }
-  }, [isTauri, isTauriMobile, openWebWorkspaceDialog]);
+  }, []);
 
   const refreshWorkspaceTree = useCallback(async () => {
     // Force the merged Projects + Workspaces snapshot to be fetched even if
@@ -656,7 +670,12 @@ export function CodingSidebar({
   }, [refreshWorkspaceTree]);
 
   useEffect(() => {
-    if (openWorkspaceDialogKey > 0) void openWorkspaceDialog();
+    if (
+      openWorkspaceDialogKey <= 0 ||
+      openWorkspaceDialogKey === consumedWorkspaceDialogKey.current
+    ) return;
+    consumedWorkspaceDialogKey.current = openWorkspaceDialogKey;
+    void openWorkspaceDialog();
   }, [openWorkspaceDialogKey, openWorkspaceDialog]);
 
   useEffect(() => {
@@ -1009,6 +1028,35 @@ export function CodingSidebar({
     }
   };
 
+  const cloneRepositoryFromDialog = async () => {
+    const parent = nativeFolderPickerEnabled && !isTauriMobile
+      ? cloneParent
+      : browserPath;
+    if (!parent || !cloneUrl.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await gitClone({
+        parent,
+        url: cloneUrl.trim(),
+        directory: cloneDirectory.trim() || undefined,
+        branch: cloneBranch.trim() || undefined,
+      });
+      setSelectedWorkspace(result.workspace);
+      const validation = await validateWorkspace(result.workspace);
+      setTrustWorkspace(validation.workspace);
+      useToastStore.getState().push({
+        tone: "success",
+        title: "Repository cloned",
+        description: `${result.name} is ready to trust and open.`,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to clone repository");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const confirmTrustedWorkspace = () => {
     if (!trustWorkspace) return;
     const workspaceToOpen = trustWorkspace;
@@ -1165,7 +1213,7 @@ export function CodingSidebar({
   const navigatorContent = (
     <>
       {/* PROJECTS */}
-      <div className="px-2 pb-1 pt-2">
+      <div className={cn("px-2 pb-1", isDrawer ? "pt-2" : "pt-0")}>
         <CollapsibleSection
           label="Projects"
           collapsed={projectsSectionCollapsed}
@@ -1585,36 +1633,41 @@ export function CodingSidebar({
       resizeLabel="Resize coding sidebar"
     >
       <SidebarCard
-        className={`shrink-0 px-2.5 pb-1 ${isMacOverlay ? 'pt-10' : 'pt-1.5'}`}
+        className={`shrink-0 px-2.5 pb-0 ${isMacOverlay ? 'pt-10' : 'pt-1.5'}`}
       >
         <SidebarModeSlot />
         {onCommandPalette && (
-          <div className="pt-2.5">
-            <SidebarSearchTrigger onClick={onCommandPalette} />
+          <div className="pt-2">
+            <SidebarSearchTrigger onClick={onCommandPalette} compact />
           </div>
         )}
       </SidebarCard>
 
       {/* Scheduler toggle */}
-      <SidebarCard className="shrink-0 px-1.5 py-0.5">
-        <SidebarItem
-          Icon={CalendarClock}
-          label="Scheduler"
-          kbd="^S"
-          onClick={toggleScheduler}
-        />
-        <SidebarItem
-          Icon={Blocks}
-          label="Plugins"
-          kbd="^K"
-          onClick={() => togglePlugins("plugins")}
-        />
-        <SidebarItem
-          Icon={GitBranch}
-          label="Source Control"
-          kbd="^G"
-          onClick={() => toggleSourceControl("source-control")}
-        />
+      <SidebarCard className="shrink-0">
+        <SidebarNavGroup ariaLabel="Primary" compact className="px-1.5 pb-0.5 pt-1">
+          <SidebarItem
+            Icon={CalendarClock}
+            label="Scheduler"
+            kbd="^S"
+            compact
+            onClick={toggleScheduler}
+          />
+          <SidebarItem
+            Icon={Blocks}
+            label="Plugins"
+            kbd="^K"
+            compact
+            onClick={() => togglePlugins("plugins")}
+          />
+          <SidebarItem
+            Icon={GitBranch}
+            label="Source Control"
+            kbd="^G"
+            compact
+            onClick={() => toggleSourceControl("source-control")}
+          />
+        </SidebarNavGroup>
       </SidebarCard>
 
       {/* Unified workspace navigator */}
@@ -1670,7 +1723,7 @@ export function CodingSidebar({
       </div>
 
       {/* Scheduler toggle — mobile */}
-      <div className="px-3 pt-2">
+      <SidebarNavGroup ariaLabel="Primary" className="px-3 pt-2">
         <SidebarItem
           Icon={CalendarClock}
           label="Scheduler"
@@ -1698,7 +1751,7 @@ export function CodingSidebar({
             onMobileClose?.();
           }}
         />
-      </div>
+      </SidebarNavGroup>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {navigatorContent}
@@ -1741,20 +1794,127 @@ export function CodingSidebar({
             maxWidth={720}
             mobileOverlay
             mobile={isMobile}
-            title={addRepoProject ? `Add repository to ${addRepoProject.name}` : "Open workspace"}
+            title={workspacePickerMode === "clone"
+              ? addRepoProject
+                ? `Clone repository into ${addRepoProject.name}`
+                : "Clone repository"
+              : addRepoProject
+                ? `Add repository to ${addRepoProject.name}`
+                : "Open workspace"}
             onClose={closeWorkspaceDialog}
             closeLabel="Close workspace picker"
             resizeLabel="Resize workspace picker"
-            ariaLabel="Open workspace"
+            ariaLabel={workspacePickerMode === "clone" ? "Clone repository" : "Open workspace"}
             className="bg-(--bg-card)"
           >
             <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
               <p className="text-sm text-(--color-text-subtle)">
-                {nativeFolderPickerEnabled && !isTauriMobile
-                  ? "Use the desktop folder picker to choose a local project folder."
-                  : "Choose a server-local project folder."}
+                Open an existing folder or clone a remote repository without leaving EvoFlux.
               </p>
-              {nativeFolderPickerEnabled && !isTauriMobile ? (
+              <div className="grid grid-cols-2 gap-1 rounded-lg border border-(--color-border) bg-(--bg-key)/60 p-1">
+                <button
+                  type="button"
+                  onClick={() => setWorkspacePickerMode("open")}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-xs font-medium",
+                    workspacePickerMode === "open"
+                      ? "bg-(--bg-card) text-(--color-text) shadow-sm"
+                      : "text-(--color-text-muted) hover:text-(--color-text)",
+                  )}
+                >
+                  Open folder
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWorkspacePickerMode("clone")}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-xs font-medium",
+                    workspacePickerMode === "clone"
+                      ? "bg-(--bg-card) text-(--color-text) shadow-sm"
+                      : "text-(--color-text-muted) hover:text-(--color-text)",
+                  )}
+                >
+                  Clone repository
+                </button>
+              </div>
+              {workspacePickerMode === "clone" ? (
+                <div className="flex min-h-0 flex-1 flex-col gap-3">
+                  <label className="space-y-1.5 text-xs text-(--color-text-muted)">
+                    <span>Repository URL</span>
+                    <input
+                      value={cloneUrl}
+                      onChange={(event) => setCloneUrl(event.target.value)}
+                      placeholder="https://github.com/org/repository.git"
+                      spellCheck={false}
+                      className="h-9 w-full rounded-md border border-(--color-border) bg-(--bg-page) px-3 font-mono text-xs text-(--color-text) outline-none focus:border-(--color-accent)"
+                    />
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="space-y-1.5 text-xs text-(--color-text-muted)">
+                      <span>Folder name (optional)</span>
+                      <input
+                        value={cloneDirectory}
+                        onChange={(event) => setCloneDirectory(event.target.value)}
+                        placeholder="Auto-detect"
+                        className="h-9 w-full rounded-md border border-(--color-border) bg-(--bg-page) px-3 text-xs text-(--color-text) outline-none focus:border-(--color-accent)"
+                      />
+                    </label>
+                    <label className="space-y-1.5 text-xs text-(--color-text-muted)">
+                      <span>Branch (optional)</span>
+                      <input
+                        value={cloneBranch}
+                        onChange={(event) => setCloneBranch(event.target.value)}
+                        placeholder="Default branch"
+                        className="h-9 w-full rounded-md border border-(--color-border) bg-(--bg-page) px-3 font-mono text-xs text-(--color-text) outline-none focus:border-(--color-accent)"
+                      />
+                    </label>
+                  </div>
+                  <div className="min-h-0 flex-1 space-y-2">
+                    <span className="text-xs text-(--color-text-muted)">Clone into</span>
+                    <div className="rounded-lg border border-(--color-border) bg-(--bg-page) px-3 py-2 font-mono text-xs text-(--color-text-muted) [overflow-wrap:anywhere]">
+                      {(nativeFolderPickerEnabled && !isTauriMobile ? cloneParent : browserPath) ?? "Choose a destination folder"}
+                    </div>
+                    {nativeFolderPickerEnabled && !isTauriMobile ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={loading}
+                        onClick={() => void pickNativeFolder("clone")}
+                      >
+                        <Folder size={13} />
+                        Choose destination…
+                      </Button>
+                    ) : (
+                      <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-(--color-border) p-1">
+                        {parentPath && (
+                          <button type="button" className="w-full rounded-md px-2 py-1.5 text-left text-sm hover:bg-(--bg-key)" onClick={() => void loadBrowser(parentPath)}>..</button>
+                        )}
+                        {dirs.map((dir) => (
+                          <button type="button" key={dir.path} className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-(--bg-key)" onClick={() => void loadBrowser(dir.path)}>
+                            <Folder size={14} className="shrink-0" />
+                            <span className="min-w-0 truncate">{dir.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {error && <p className="text-xs text-(--color-error)">{error}</p>}
+                  <p className="text-[11px] text-(--color-text-subtle)">
+                    HTTPS clones reuse matching credentials from Git & reviews. SSH URLs use your SSH agent; credentials in URLs are rejected.
+                  </p>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={closeWorkspaceDialog}>Cancel</Button>
+                    <Button
+                      type="button"
+                      disabled={loading || !cloneUrl.trim() || !(nativeFolderPickerEnabled && !isTauriMobile ? cloneParent : browserPath)}
+                      onClick={() => void cloneRepositoryFromDialog()}
+                    >
+                      {loading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                      {loading ? "Cloning…" : "Clone repository"}
+                    </Button>
+                  </div>
+                </div>
+              ) : nativeFolderPickerEnabled && !isTauriMobile ? (
             <>
               <div className="min-w-0 space-y-2">
                 {selectedWorkspace && (
@@ -1783,7 +1943,7 @@ export function CodingSidebar({
                   type="button"
                   disabled={loading}
                   onClick={() => {
-                    void openWorkspaceDialog();
+                    void pickNativeFolder("workspace");
                   }}
                 >
                   {loading ? "Opening…" : "Choose folder…"}

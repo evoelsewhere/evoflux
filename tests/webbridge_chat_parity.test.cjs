@@ -88,8 +88,11 @@ test("history projection keeps chronology while dropping protected raw payloads"
     { type: "thinking", content: "private reasoning" },
     {
       type: "tool",
-      name: "shell",
+      name: "skill",
       tool_call_id: "tool-1",
+      skill_action: "load",
+      skill_name: "work-writing",
+      display_arguments: { actions: [{ action: "status" }] },
       arguments: { token: "must-not-leak" },
       output: "private output",
       result: "private result",
@@ -103,6 +106,12 @@ test("history projection keeps chronology while dropping protected raw payloads"
     ["text", "thinking", "tool", "text"],
   );
   assert.equal(blocks[1].chars, "private reasoning".length);
+  assert.equal(blocks[2].skill_action, "load");
+  assert.equal(blocks[2].skill_name, "work-writing");
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(blocks[2].display_arguments)),
+    { actions: [{ action: "status" }] },
+  );
   const serialized = JSON.stringify(blocks);
   assert.doesNotMatch(serialized, /private reasoning|must-not-leak|private output|private result/);
 });

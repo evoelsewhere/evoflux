@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import Editor, { useMonaco } from '@monaco-editor/react'
+import Editor from '@monaco-editor/react'
 import {
   ArrowLeft,
   CheckCircle2,
@@ -30,7 +30,7 @@ import type { PluginInspection, PluginWorkspaceEntry } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FileTypeIcon, FolderTypeIcon } from '@/components/FileTypeIcon'
-import { languageForExt, useMonacoTheme } from '@/hooks/useMonacoTheme'
+import { languageForExt, useMonacoTheme, useSafeMonaco } from '@/hooks/useMonacoTheme'
 import { cn } from '@/lib/utils'
 import { useToastStore } from '@/stores/useToastStore'
 
@@ -169,7 +169,7 @@ export function PluginWorkspaceEditor({
   onLink: () => Promise<void>
 }) {
   const pushToast = useToastStore((state) => state.push)
-  const monaco = useMonaco()
+  const monaco = useSafeMonaco()
   const theme = useMonacoTheme(monaco)
   const [selectedPath, setSelectedPath] = useState('plugin.json')
   const [savedContent, setSavedContent] = useState('')

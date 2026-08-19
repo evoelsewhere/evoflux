@@ -46,6 +46,8 @@ export const queryKeys = {
       ['coding-workspace-diff', workspace] as const,
     status: (workspace: string) =>
       ['coding-workspace-status', workspace] as const,
+    problems: (workspace: string, includeResolved = false) =>
+      ['coding-workspace-problems', workspace, includeResolved] as const,
   },
   // Code knowledge graph panel — keyed by the absolute workspace path, like
   // the coding sidebar. Status + search share the path so a reindex can
@@ -59,6 +61,10 @@ export const queryKeys = {
       ['code-context', workspace, 'search', query] as const,
     query: (workspace: string, query: string) =>
       ['code-context', workspace, 'query', query] as const,
+    data: (workspace: string, nodeLimit?: number, edgeLimit?: number) =>
+      nodeLimit === undefined && edgeLimit === undefined
+        ? (['code-context', workspace, 'data'] as const)
+        : (['code-context', workspace, 'data', nodeLimit, edgeLimit] as const),
   },
   // File references for the input bar's @-mention picker. Keyed by the
   // workspace path (coding mode) or session id (normal mode) so the two
@@ -172,6 +178,8 @@ export const queryKeys = {
     webbridge: () => ['settings', 'webbridge'] as const,
     multimodal: () => ['settings', 'multimodal'] as const,
     providers: () => ['settings', 'providers'] as const,
+    languageServers: (workspaces: readonly string[]) =>
+      ['settings', 'language-servers', workspaces] as const,
     providerModels: (providerId: string) => ['settings', 'providers', providerId, 'models'] as const,
     providerUsage: (providerId: string) => ['settings', 'providers', providerId, 'usage'] as const,
     conductorStatus: () => ['settings', 'conductor', 'status'] as const,

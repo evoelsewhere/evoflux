@@ -25,6 +25,8 @@ from app.api.schemas.git import (
     FetchRequest,
     GitBranchOut,
     GitChangesOut,
+    GitCloneOut,
+    GitCloneRequest,
     GitCommitOut,
     GitConflictsOut,
     GitIdentityRequest,
@@ -54,7 +56,10 @@ from app.api.schemas.git import (
     WorkspaceRequest,
 )
 from app.services import team_manager
-from app.services.git_credentials import resolve_workspace_git_credential
+from app.services.git_credentials import (
+    resolve_remote_git_credential,
+    resolve_workspace_git_credential,
+)
 from app.services.git_ops import (
     GitResult,
     _SHA_RE,
@@ -160,6 +165,64 @@ async def init_repository(body: GitInitRequest) -> GitRepositoryOut:
     return await get_repository(cwd)
 
 
+def _clone_directory_name(remote_url: str) -> str:
+    parsed = urlparse(remote_url)
+    path = parsed.path if parsed.scheme else remote_url.rsplit(":", 1)[-1]
+    name = Path(path.rstrip("/\\")).name
+    if name.lower().endswith(".git"):
+        name = name[:-4]
+    return name or "repository"
+
+
+def _validate_clone_directory(value: str) -> str:
+    name = value.strip()
+    if (
+        not name
+        or name in {".", ".."}
+        or Path(name).name != name
+        or Path(name).is_absolute()
+        or any(ord(char) < 32 for char in name)
+    ):
+        raise HTTPException(status_code=422, detail="Invalid clone directory name")
+    return name
+
+
+@router.post("/repository/clone", response_model=GitCloneOut)
+async def clone_repository(body: GitCloneRequest, db: DbSession) -> GitCloneOut:
+    parent = Path(await _validate(body.parent)).resolve()
+    url = _validate_remote_url(body.url)
+    directory = _validate_clone_directory(body.directory or _clone_directory_name(url))
+    destination = parent / directory
+    if destination.exists() or destination.is_symlink():
+        raise HTTPException(
+            status_code=409,
+            detail=f"Clone destination already exists: {destination}",
+        )
+    if body.branch and not validate_ref_name(body.branch):
+        raise HTTPException(status_code=422, detail="Invalid clone branch")
+    args = ["clone", "--origin", "origin"]
+    if body.branch:
+        args.extend(["--branch", body.branch])
+    if body.depth:
+        args.extend(["--depth", str(body.depth)])
+    args.extend(["--", url, directory])
+    credential = await resolve_remote_git_credential(db, url)
+    result = await run_git_long(
+        str(parent),
+        *args,
+        timeout=load_runtime_settings().git.network_timeout_seconds,
+        credential=credential,
+        max_output_bytes=load_runtime_settings().git.max_diff_bytes,
+    )
+    if not result.ok:
+        _check(result)
+    return GitCloneOut(
+        workspace=str(destination),
+        name=directory,
+        remote_url=url,
+    )
+
+
 @router.post("/repository/identity")
 async def set_repository_identity(body: GitIdentityRequest) -> GitRepositoryOut:
     cwd = await _validate(body.workspace)
@@ -199,7 +262,14 @@ async def get_changes(workspace: str) -> GitChangesOut:
             behind=0,
             files=[],
         )
-    result = await run_git(cwd, "status", "--porcelain=v2", "--branch", timeout=10.0)
+    result = await run_git(
+        cwd,
+        "status",
+        "--porcelain=v2",
+        "--branch",
+        "--untracked-files=all",
+        timeout=10.0,
+    )
     if not result.ok:
         return GitChangesOut(branch=None, ahead=0, behind=0, files=[])
     parsed = parse_porcelain_v2_files(result.stdout)
@@ -272,21 +342,44 @@ async def discard_changes(body: StageRequest) -> dict:
     _require_repo(cwd)
     async with git_locks.acquire(cwd):
         if body.paths:
-            result = await run_git(
-                cwd, "restore", *pathspec_args(body.paths), timeout=30.0
+            status = await run_git(
+                cwd,
+                "status",
+                "--porcelain=v2",
+                "--untracked-files=all",
+                timeout=10.0,
             )
-            if not result.ok:
+            _check(status)
+            parsed = parse_porcelain_v2_files(status.stdout)
+            untracked = {
+                file.path
+                for file in parsed.files
+                if file.status == "untracked" and not file.staged
+            }
+            tracked_paths = [path for path in body.paths if path not in untracked]
+            untracked_paths = [path for path in body.paths if path in untracked]
+            if tracked_paths:
+                result = await run_git(
+                    cwd, "restore", *pathspec_args(tracked_paths), timeout=30.0
+                )
                 _check(result)
-            clean_result = await run_git(
-                cwd, "clean", "-f", *pathspec_args(body.paths), timeout=30.0
-            )
-            if not clean_result.ok:
+            if untracked_paths:
+                clean_result = await run_git(
+                    cwd,
+                    "clean",
+                    "-f",
+                    "-d",
+                    *pathspec_args(untracked_paths),
+                    timeout=30.0,
+                )
                 _check(clean_result)
         else:
             result = await run_git(cwd, "restore", "--", ".", timeout=30.0)
             if not result.ok:
                 _check(result)
-            clean_result = await run_git(cwd, "clean", "-f", "--", ".", timeout=30.0)
+            clean_result = await run_git(
+                cwd, "clean", "-f", "-d", "--", ".", timeout=30.0
+            )
             if not clean_result.ok:
                 _check(clean_result)
     return {"ok": True}
@@ -412,21 +505,20 @@ async def get_diff_view(workspace: str, path: str) -> dict:
         raise HTTPException(status_code=422, detail="Invalid path")
 
     # Determine whether the file is staged or unstaged
-    status_result = await run_git(cwd, "status", "--porcelain=v2", timeout=5.0)
+    status_result = await run_git(
+        cwd,
+        "status",
+        "--porcelain=v2",
+        "--untracked-files=all",
+        timeout=5.0,
+    )
     staged = False
     untracked = False
     if status_result.ok:
-        for line in status_result.stdout.splitlines():
-            if line.startswith("1 ") or line.startswith("2 "):
-                parts = line.split(" ", 8)
-                if len(parts) >= 9 and parts[8] == path:
-                    xy = parts[1]
-                    if xy[0] != ".":
-                        staged = True
-                    break
-            elif line.startswith("? ") and line[2:].strip() == path:
-                untracked = True
-                break
+        parsed_status = parse_porcelain_v2_files(status_result.stdout)
+        path_changes = [file for file in parsed_status.files if file.path == path]
+        staged = any(file.staged for file in path_changes)
+        untracked = any(file.status == "untracked" for file in path_changes)
 
     if untracked:
         # Show entire file as additions

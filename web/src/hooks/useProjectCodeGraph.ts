@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getProjectCodeGraphStatus, reindexProjectCodeGraph } from '@/api/client'
 import { queryKeys } from '@/queries/keys'
 
-export function useProjectCodeGraph(projectId: string) {
+export function useProjectCodeGraph(projectId: string, enabled = true) {
   const queryClient = useQueryClient()
   const wasIndexing = useRef(false)
   const statusKey = queryKeys.projects.codeGraphStatus(projectId)
@@ -11,6 +11,7 @@ export function useProjectCodeGraph(projectId: string) {
   const statusQuery = useQuery({
     queryKey: statusKey,
     queryFn: () => getProjectCodeGraphStatus(projectId),
+    enabled: enabled && projectId.length > 0,
     staleTime: 2_000,
     refetchInterval: (query) =>
       query.state.data?.some((repo) => repo.indexing) ? 500 : false,

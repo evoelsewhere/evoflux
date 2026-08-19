@@ -60,11 +60,11 @@ describe('BlockRenderer assistant artifacts', () => {
           extra: {
             attachments: [
               {
-                filename: 'report.docx',
-                original_name: 'report.docx',
+                filename: 'report.md',
+                original_name: 'report.md',
                 category: 'document',
                 media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                url: '/api/team/session/media/report.docx',
+                url: '/api/team/session/media/report.md',
               },
             ],
           },
@@ -74,7 +74,7 @@ describe('BlockRenderer assistant artifacts', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'report.docx' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'report.md' })).toBeInTheDocument()
   })
 
   it('does not render task-bound handoffs as separate chat bubbles', () => {

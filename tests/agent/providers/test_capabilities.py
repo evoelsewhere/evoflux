@@ -20,6 +20,8 @@ from app.agent.providers.capabilities import (
     _merge_caps,
     clear_runtime_model_capabilities,
     get_capabilities,
+    has_model_capabilities,
+    has_runtime_model_capabilities,
     replace_runtime_provider_capabilities,
 )
 
@@ -121,6 +123,7 @@ class TestGetCapabilities:
         assert caps.input.vision is False
         assert caps.input.document_text is True
         assert caps.output.text is True
+        assert has_model_capabilities("openai:made-up-model-zzz") is False
 
     def test_unknown_provider_returns_default(self) -> None:
         caps = get_capabilities("nonexistent_provider:foo")
@@ -170,9 +173,12 @@ class TestGetCapabilities:
                 "openai",
                 {"made-up-model-zzz": {"input": {"vision": True}}},
             )
+            assert has_runtime_model_capabilities("openai:made-up-model-zzz") is True
+            assert has_model_capabilities("openai:made-up-model-zzz") is True
             assert get_capabilities("openai:made-up-model-zzz").input.vision is True
         finally:
             clear_runtime_model_capabilities()
+        assert has_runtime_model_capabilities("openai:made-up-model-zzz") is False
 
     def test_case_insensitive_lookup(self) -> None:
         lower = get_capabilities("openai:gpt-5.5")

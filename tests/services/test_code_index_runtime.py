@@ -18,7 +18,7 @@ from app.services.code_index.project import (
     RepositoryIndexRegistry,
 )
 from app.services.code_index.paths import paths_for_repository
-from app.services.code_index.query import search_index
+from app.services.code_index.query import _fts_query, search_index
 from app.services.code_index.service import query_code_context
 from app.services.code_index.chunking import (
     MAX_CHUNK_CHARS,
@@ -33,6 +33,11 @@ def isolated_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cache = tmp_path / "cache"
     monkeypatch.setattr(settings, "EVOFLUX_CACHE_DIR", str(cache))
     return cache
+
+
+def test_ui_search_uses_fts_prefixes_for_partial_symbol_names() -> None:
+    assert _fts_query("settle_pay") == '"settle_pay"*'
+    assert _fts_query("payment service") == '"payment"* OR "service"*'
 
 
 @pytest.mark.asyncio

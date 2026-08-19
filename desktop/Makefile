@@ -1,8 +1,8 @@
 # Build the desktop app and its Python sidecar.
 #
 # Targets:
-#   make sidecar        Build the standard sidecar with [documents].
-#   make sidecar-full   Same, but with [documents,azure-doc-intel].
+#   make sidecar        Build the standard sidecar with [office-preview].
+#   make sidecar-full   Same, but with [office-preview,azure-doc-intel].
 #   make icons          Regenerate .icns / .ico from icons/icon.png.
 #   make dev            Tauri shell connected to the source API at :8000.
 #                       Run root ``make dev-web`` in another terminal.
@@ -26,7 +26,7 @@
 ROOT       := $(abspath ..)
 BUNDLE     := sidecar-bundle
 PYVER      := 3.12
-EXTRAS     ?= documents             # set to e.g. "documents,azure-doc-intel" or "full"
+EXTRAS     ?= office-preview        # e.g. "office-preview,azure-doc-intel" or "full"
 DEV_BACKEND_URL ?= http://127.0.0.1:8000
 sidecar:
 	@python3 ../scripts/build_sidecar.py \
@@ -42,7 +42,7 @@ open-prod:
 	@open "src-tauri/target/release/bundle/macos/evoflux.app"
 
 sidecar-full:
-	@$(MAKE) sidecar EXTRAS="documents,azure-doc-intel"
+	@$(MAKE) sidecar EXTRAS="office-preview,azure-doc-intel"
 
 icons:
 	cd src-tauri && cargo tauri icon icons/icon.png

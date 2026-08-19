@@ -17,7 +17,7 @@
     "near_miss": "Evidence gathering must precede writing."
   },
   {
-    "query": "Convert this finalized memo to DOCX without changing the wording.",
+    "query": "Copy this finalized memo into another file format without changing the wording.",
     "should_trigger": false,
     "near_miss": "File-format production rather than substantive writing."
   },

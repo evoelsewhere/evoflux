@@ -9,7 +9,7 @@
  */
 
 import { useState } from 'react'
-import { X } from 'lucide-react'
+import { LoaderCircle, Minimize2, X } from 'lucide-react'
 import {
   Popover,
   PopoverClose,
@@ -41,6 +41,10 @@ export interface ContextBudgetBarProps {
   cached?: number
   /** Auto-summary input threshold. */
   trigger?: number
+  /** Manually summarize earlier turns to free context. */
+  onCompact?: () => void | Promise<void>
+  /** Disable manual compaction while the session is busy. */
+  compactDisabled?: boolean
 }
 
 type UsageCategoryId = 'input' | 'cache' | 'output'
@@ -108,8 +112,11 @@ export function ContextBudgetBar({
   output = 0,
   cached = 0,
   trigger,
+  onCompact,
+  compactDisabled = false,
 }: ContextBudgetBarProps) {
   const [open, setOpen] = useState(false)
+  const [compactPending, setCompactPending] = useState(false)
   const safeMax = Math.max(max, 1)
   // Context occupancy is the latest prompt size; fall back to `used` when
   // callers only pass a single aggregate.
@@ -121,6 +128,18 @@ export function ContextBudgetBar({
   const contextCategories = categories.filter((c) => c.inContext && c.tokens > 0)
   const contextSegmentTotal = contextCategories.reduce((sum, c) => sum + c.tokens, 0)
   const summaryUsed = contextSegmentTotal > 0 ? contextSegmentTotal : contextUsed
+
+  const handleCompact = async () => {
+    if (!onCompact || compactDisabled || compactPending) return
+    setCompactPending(true)
+    try {
+      await onCompact()
+    } catch {
+      // The action owner surfaces command errors; keep this control retryable.
+    } finally {
+      setCompactPending(false)
+    }
+  }
 
   const ariaLabel = isDanger
     ? `Context ${pct}% full — auto-summarization imminent (${formatTokensShort(contextUsed)} / ${formatTokensShort(safeMax)})`
@@ -294,6 +313,26 @@ export function ContextBudgetBar({
             </li>
           )}
         </ul>
+
+        {onCompact && (
+          <div className="mt-3 border-t border-(--color-border) pt-3">
+            <button
+              type="button"
+              onClick={() => void handleCompact()}
+              disabled={compactDisabled || compactPending}
+              aria-label={compactPending ? 'Compacting context' : 'Compact context'}
+              title={compactDisabled ? 'Wait for the current turn to finish' : undefined}
+              className="flex h-8 w-full items-center justify-center gap-2 rounded-lg border border-(--color-border) bg-(--bg-key) px-3 text-[12px] font-medium text-(--color-text-2) outline-none transition-colors hover:border-(--color-border-strong) hover:bg-(--bg-hover) hover:text-(--color-text) focus-visible:ring-2 focus-visible:ring-(--focus-ring) disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {compactPending ? (
+                <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />
+              ) : (
+                <Minimize2 size={13} aria-hidden="true" />
+              )}
+              <span>{compactPending ? 'Compacting…' : 'Compact context'}</span>
+            </button>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   )

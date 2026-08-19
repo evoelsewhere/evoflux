@@ -14,6 +14,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from pydantic import TypeAdapter
 
 from app.agent.multimodal import build_parts_from_metas
+from app.agent.lifecycle import normalize_sleep_message
 from app.agent.schemas.chat import (
     AssistantMessage,
     ChatMessage,
@@ -1388,6 +1389,8 @@ def _deserialize_messages(
             if d.get("tool_call_id") is None:
                 d["tool_call_id"] = ""
             msg = _chat_message_adapter.validate_python(d)
+            if isinstance(msg, AssistantMessage):
+                normalize_sleep_message(msg)
             # Me stash DB row PK so checkpointer can do reliable PK lookups
             msg.db_id = m.id
 

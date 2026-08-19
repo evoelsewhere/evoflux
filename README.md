@@ -18,6 +18,7 @@
   [![BYOM](https://img.shields.io/badge/Models-12%20providers-7C3AED)](#bring-your-own-model)
 
   [Two modes](#two-specialized-modes) ·
+  [Download](#download) ·
   [Quick start](#quick-start) ·
   [Working model](#agent-working-model) ·
   [Architecture](#architecture) ·
@@ -73,11 +74,38 @@ Coding opens your real repository — or several repositories as one project —
 
 ---
 
+## Download
+
+Current stable release: **[EvoFlux v0.0.6](https://github.com/evoelsewhere/evoflux/releases/tag/v0.0.6)**
+
+| Platform | Package | SHA-256 |
+|---|---|---|
+| macOS · Apple Silicon | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux_0.0.6_aarch64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/evoflux-macos-apple-silicon-SHA256SUMS.txt) |
+| macOS · Intel | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux_0.0.6_x64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/evoflux-macos-intel-SHA256SUMS.txt) |
+| Windows · x64 | [Download installer](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux_0.0.6_x64-setup.exe) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/evoflux-windows-x64-SHA256SUMS.txt) |
+| Chrome / Edge WebBridge · v2.4.0 | [Download extension ZIP](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux-WebBridge-2.4.0.zip) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux-WebBridge-2.4.0-SHA256SUMS.txt) |
+
+The desktop packages include the native Python sidecar. To install WebBridge,
+extract the ZIP, open `chrome://extensions` or `edge://extensions`, enable
+**Developer mode**, and choose **Load unpacked**.
+
+> [!NOTE]
+> The v0.0.6 macOS packages use an ad-hoc signature and the Windows installer
+> is unsigned because production signing credentials are not yet configured.
+
+---
+
 ## Quick Start
 
 ### Install the desktop app
 
-Download the [latest release](https://github.com/evoelsewhere/evoflux/releases/latest) for macOS (`.dmg`), Windows (`-setup.exe`), or Linux (`.deb` / AppImage). The packaged app includes its Python sidecar.
+Choose the package for your platform in [Download](#download), install it, and
+launch EvoFlux. The packaged app includes its Python sidecar.
+
+Updater-aware builds check the latest GitHub Release after startup. You can
+also run a manual signed update check from **Settings > About**, the application
+menu, or the tray menu. The first updater-aware release must be installed
+manually once; later releases can update in place.
 
 On first launch:
 
@@ -205,6 +233,10 @@ The model receives one native `code_context` tool:
 
 The first query normally uses `refresh=true`; immediate follow-ups over the same indexed version can use `refresh=false`. Structural results are static evidence, so runtime-only behavior still requires tests, logs, LSP, or debugger evidence. The full storage, query, ambiguity, and tool contract is documented in [`documents/architecture/coding-agent-code-context.md`](documents/architecture/coding-agent-code-context.md).
 
+Coding's repository-local LSP, automatic post-edit feedback, Guarded ChangeSets,
+Problems hub, explicit AI editor/Git actions, and Search Everywhere contracts are
+documented in [`documents/architecture/coding-semantic-intelligence.md`](documents/architecture/coding-semantic-intelligence.md).
+
 ### Memory and Dream
 
 The scheduled or manually triggered **Dream** agent consolidates sessions and notes into an inspectable Markdown wiki: `topics/`, `entities/`, `notes/`, and `imports/`, with `INDEX.md`, an append-only `LOG.md`, source citations, confidence, and related-page metadata.
@@ -256,7 +288,7 @@ Pairings, tickets, tab bindings, and Teach drafts are persisted through Alembic 
 
 ### Beyond the real-browser bridge
 
-EvoFlux also includes direct control of its persistent in-app browser, PDF/DOCX/HTML intake through `markitdown`, cron-driven agent prompts, OpenTelemetry, Prometheus, and DuckDB-backed observability summaries.
+EvoFlux also includes direct control of its persistent in-app browser, PDF/HTML intake through `markitdown`, read-only DOCX/XLSX/PPTX workspace previews, cron-driven agent prompts, OpenTelemetry, Prometheus, and DuckDB-backed observability summaries.
 
 ---
 

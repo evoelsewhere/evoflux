@@ -29,6 +29,8 @@ export interface SidebarItemProps {
   kbd?: string
   active?: boolean
   collapsed?: boolean
+  /** Denser desktop row; touch drawers keep the default target size. */
+  compact?: boolean
   onClick?: MouseEventHandler<HTMLButtonElement>
   title?: string
   /** Optional override for the right-side slot when expanded. */
@@ -42,6 +44,7 @@ export function SidebarItem({
   kbd,
   active = false,
   collapsed = false,
+  compact = false,
   onClick,
   title,
   rightSlot,
@@ -57,15 +60,20 @@ export function SidebarItem({
       aria-label={collapsed ? label : undefined}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'interactive-weight relative flex w-full items-center gap-2.5 rounded-lg text-sm transition-colors',
-        collapsed ? 'h-10 w-10 justify-center px-0 py-0' : 'px-3 py-2',
+        'interactive-weight relative flex w-full items-center transition-colors',
+        compact ? 'gap-2 rounded-md text-xs' : 'gap-2.5 rounded-lg text-sm',
+        collapsed
+          ? 'h-10 w-10 justify-center px-0 py-0'
+          : compact
+            ? 'h-8 px-2.5 py-0'
+            : 'h-10 px-3 py-0',
         active
           ? 'arc-active-indicator bg-(--bg-key) text-(--color-accent) font-semibold'
           : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
         className,
       )}
     >
-      <Icon size={16} className="shrink-0" />
+      <Icon size={compact ? 14 : 16} className="shrink-0" />
       <AnimatePresence initial={false}>
         {!collapsed && (
           <motion.span
@@ -84,7 +92,12 @@ export function SidebarItem({
         (rightSlot !== undefined ? (
           rightSlot
         ) : kbd ? (
-          <kbd className="shrink-0 rounded border border-(--color-border) bg-(--bg-page) px-1.5 py-1 font-sans text-[11px] font-medium leading-none tracking-normal text-(--color-text-muted)">
+          <kbd
+            className={cn(
+              'shrink-0 rounded border border-(--color-border) bg-(--bg-page) px-1.5 font-sans font-medium leading-none tracking-normal text-(--color-text-muted)',
+              compact ? 'py-0.5 text-[10px]' : 'py-1 text-[11px]',
+            )}
+          >
             {formatShortcutLabel(kbd)}
           </kbd>
         ) : null)}
