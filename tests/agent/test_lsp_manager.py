@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -253,3 +253,62 @@ async def test_current_version_diagnostics_wait_for_matching_publish(tmp_path: P
     await task
 
     assert result == [{"message": "current"}]
+
+
+@pytest.mark.asyncio
+async def test_current_diagnostics_accept_versionless_post_change_publish(
+    tmp_path: Path,
+):
+    source = tmp_path / "source.py"
+    source.write_text("value = 2\n", encoding="utf-8")
+    uri = source.as_uri()
+    client = LanguageServerClient(tmp_path, SPECS[0], ("pyright-langserver", "--stdio"))
+    client.sync_document = AsyncMock(return_value=(uri, True))
+    client._versions[uri] = (2, "hash")
+    event = client._diagnostic_events.setdefault(uri, asyncio.Event())
+
+    async def publish_without_version():
+        await asyncio.sleep(0)
+        client._diagnostics[uri] = [{"message": "current without version"}]
+        client._diagnostic_versions[uri] = None
+        client._diagnostic_generations[uri] = 1
+        event.set()
+
+    task = asyncio.create_task(publish_without_version())
+    result = await client.diagnostics(source, require_current_version=True)
+    await task
+
+    assert result == [{"message": "current without version"}]
+
+
+@pytest.mark.asyncio
+async def test_failed_initialize_terminates_process_and_drops_stale_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    client = LanguageServerClient(tmp_path, SPECS[0], ("pyright-langserver", "--stdio"))
+    client._versions["file:///stale.py"] = (9, "stale")
+    terminate = MagicMock()
+    process = SimpleNamespace(
+        returncode=None,
+        stdin=None,
+        stdout=None,
+        terminate=terminate,
+        kill=MagicMock(),
+        wait=AsyncMock(return_value=0),
+    )
+    monkeypatch.setattr(
+        "app.agent.lsp_manager.asyncio.create_subprocess_exec",
+        AsyncMock(return_value=process),
+    )
+    monkeypatch.setattr(
+        "app.agent.lsp_manager.get_sandbox",
+        lambda: SimpleNamespace(inherit_shell_environment=False),
+    )
+    client.request = AsyncMock(side_effect=RuntimeError("initialize failed"))
+
+    with pytest.raises(RuntimeError, match="initialize failed"):
+        await client.start()
+
+    terminate.assert_called_once()
+    assert client._process is None
+    assert client._versions == {}

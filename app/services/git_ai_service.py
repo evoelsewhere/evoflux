@@ -21,7 +21,9 @@ from app.agent.providers.base import LLMProviderBase
 from app.agent.schemas.chat import ChatMessage, HumanMessage, SystemMessage
 from app.services.change_set_service import (
     ChangeFileInput,
+    ChangeSetStale,
     create_change_set,
+    normalize_change_path,
     serialize_change_set,
 )
 from app.services.git_ops import run_git
@@ -122,6 +124,7 @@ async def run_git_ai_action(
     except TimeoutError as exc:
         raise ValueError("AI Git action timed out.") from exc
     output = _parse_output(response.content or "")
+    _validate_action_output(action, output)
     result: dict[str, Any] = {
         "kind": output.kind,
         "summary": output.summary,
@@ -174,10 +177,7 @@ async def run_git_ai_action(
             origin="git",
             title=output.summary,
             description=output.message,
-            files=[
-                ChangeFileInput(path=item.path, proposed_content=item.proposed_content)
-                for item in output.files
-            ],
+            files=_guarded_conflict_inputs(root, evidence, output.files),
         )
         result["change_set"] = serialize_change_set(record)
     return result
@@ -190,7 +190,7 @@ async def _evidence(
     remote_context: dict[str, Any] | None,
 ) -> dict[str, Any]:
     if action == "explain_commit":
-        ref = reference or "HEAD"
+        ref = await _verified_commit(workspace, reference or "HEAD")
         shown = await run_git(
             str(workspace),
             "show",
@@ -238,6 +238,16 @@ async def _evidence(
         for problem in open_problems[:200]
     ]
     changed_paths = _status_paths(status.stdout)
+    if action == "generate_commit_message":
+        return {
+            "status": status.stdout,
+            "staged_diff": staged.stdout[:_MAX_EVIDENCE],
+            "diagnostics": diagnostics,
+            "test_evidence": [
+                item for item in diagnostics if item["source"] in {"test", "build"}
+            ],
+            "guidelines": _guidelines(workspace),
+        }
     return {
         "status": status.stdout,
         "staged_diff": staged.stdout[:_MAX_EVIDENCE],
@@ -252,13 +262,28 @@ async def _evidence(
     }
 
 
+async def _verified_commit(workspace: Path, reference: str) -> str:
+    verified = await run_git(
+        str(workspace),
+        "rev-parse",
+        "--verify",
+        "--end-of-options",
+        f"{reference}^{{commit}}",
+        timeout=5,
+    )
+    sha = verified.stdout.strip()
+    if not verified.ok or not re.fullmatch(r"[0-9a-fA-F]{40,64}", sha):
+        raise ValueError(f"Invalid Git commit reference: {reference}")
+    return sha
+
+
 async def _conflict_evidence(workspace: Path) -> list[dict[str, Any]]:
     status = await run_git(
         str(workspace), "diff", "--name-only", "--diff-filter=U", timeout=5
     )
     rows: list[dict[str, Any]] = []
     for path in status.stdout.splitlines()[:50]:
-        stages: dict[str, str] = {}
+        stages: dict[str, Any] = {}
         for stage, label in ((1, "base"), (2, "ours"), (3, "theirs")):
             value = await run_git(
                 str(workspace),
@@ -269,13 +294,80 @@ async def _conflict_evidence(workspace: Path) -> list[dict[str, Any]]:
             )
             stages[label] = value.stdout[:64_000]
         working = workspace / path
-        stages["working"] = (
-            working.read_text(encoding="utf-8", errors="replace")[:64_000]
-            if working.is_file()
-            else ""
-        )
+        if working.is_file():
+            raw_working = working.read_bytes()
+            stages["working"] = raw_working.decode("utf-8", errors="replace")[:64_000]
+            stages["working_sha256"] = hashlib.sha256(raw_working).hexdigest()
+            stages["working_truncated"] = len(raw_working) > 64_000
+        else:
+            stages["working"] = ""
+            stages["working_sha256"] = ""
+            stages["working_truncated"] = False
         rows.append({"path": path, **stages})
     return rows
+
+
+def _validate_action_output(action: GitAIAction, output: _Output) -> None:
+    expected: dict[GitAIAction, set[str]] = {
+        "self_review": {"review"},
+        "generate_commit_message": {"text"},
+        "explain_commit": {"text"},
+        "generate_pr_description": {"pr"},
+        "summarize_pull_request": {"review", "text", "pr"},
+        "propose_conflict_resolution": {"changes"},
+        "review_resolved_conflicts": {"review"},
+    }
+    if output.kind not in expected[action]:
+        raise ValueError(
+            f"AI Git action {action} returned unexpected kind: {output.kind}"
+        )
+    if action == "propose_conflict_resolution" and not output.files:
+        raise ValueError("AI conflict resolution returned no file proposals.")
+    if action != "propose_conflict_resolution" and output.files:
+        raise ValueError("Only conflict resolution may return file proposals.")
+
+
+def _guarded_conflict_inputs(
+    workspace: Path,
+    evidence: dict[str, Any],
+    files: list[_File],
+) -> list[ChangeFileInput]:
+    conflicts = evidence.get("conflicts")
+    if not isinstance(conflicts, list):
+        raise ValueError("Conflict evidence is unavailable.")
+    reviewed: dict[str, tuple[str | None, bool]] = {}
+    for item in conflicts:
+        if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+            continue
+        normalized = normalize_change_path(workspace, item["path"])
+        raw_hash = item.get("working_sha256")
+        reviewed[normalized] = (
+            raw_hash if isinstance(raw_hash, str) and raw_hash else None,
+            bool(item.get("working_truncated")),
+        )
+
+    inputs: list[ChangeFileInput] = []
+    for item in files:
+        normalized = normalize_change_path(workspace, item.path)
+        if normalized not in reviewed:
+            raise ValueError(
+                f"AI proposed a file outside the reviewed conflict set: {normalized}"
+            )
+        base_hash, truncated = reviewed[normalized]
+        if truncated:
+            raise ValueError(
+                f"Conflict file was truncated in reviewed evidence: {normalized}"
+            )
+        if base_hash is None and (workspace / normalized).exists():
+            raise ChangeSetStale([normalized])
+        inputs.append(
+            ChangeFileInput(
+                path=normalized,
+                proposed_content=item.proposed_content,
+                base_hash=base_hash,
+            )
+        )
+    return inputs
 
 
 async def _code_impact(workspace: Path, paths: list[str]) -> list[dict[str, Any]]:

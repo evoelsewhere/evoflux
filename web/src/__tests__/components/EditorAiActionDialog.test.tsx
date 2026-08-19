@@ -32,6 +32,7 @@ beforeEach(() => {
   api.previewEditorContext.mockReset()
   api.runEditorAction.mockReset()
   api.previewEditorContext.mockResolvedValue({
+    context_sha256: 'c'.repeat(64),
     context: {
       active_file: 'app.py',
       provenance: [
@@ -98,6 +99,12 @@ describe('EditorAiActionDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Run explicit action' }))
 
     await waitFor(() => expect(api.runEditorAction).toHaveBeenCalled())
+    expect(api.runEditorAction).toHaveBeenCalledWith('/repo', {
+      ...request,
+      instruction: undefined,
+      mention_paths: [],
+      expected_context_sha256: 'c'.repeat(64),
+    })
     expect(useChangeSetStore.getState().active?.id).toBe('change-1')
     expect(close).toHaveBeenCalled()
   })

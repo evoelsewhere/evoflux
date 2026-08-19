@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import mimetypes
 import os
 import re
@@ -84,23 +85,16 @@ async def search_everywhere(
 async def _parallel_sources(
     workspace: Path, query: str, limit: int
 ) -> list[list[SearchEverywhereItem]]:
-    import asyncio
-
-    async_results = await asyncio.gather(
+    results = await asyncio.gather(
+        asyncio.to_thread(_path_items, workspace, query, limit),
+        asyncio.to_thread(_problem_items, workspace, query, limit),
         _code_items(workspace, query, limit),
         _git_items(workspace, query, limit),
+        asyncio.to_thread(_skill_items, workspace, query, limit),
+        asyncio.to_thread(_workflow_items, workspace, query, limit),
         return_exceptions=True,
     )
-    code = async_results[0] if isinstance(async_results[0], list) else []
-    git = async_results[1] if isinstance(async_results[1], list) else []
-    return [
-        _path_items(workspace, query, limit),
-        _problem_items(workspace, query, limit),
-        code,
-        git,
-        _skill_items(workspace, query, limit),
-        _workflow_items(workspace, query, limit),
-    ]
+    return [result if isinstance(result, list) else [] for result in results]
 
 
 def _path_items(workspace: Path, query: str, limit: int) -> list[SearchEverywhereItem]:
@@ -251,8 +245,6 @@ async def _git_items(
 async def _git_queries(
     workspace: Path, query: str, limit: int
 ) -> tuple[list[str], list[str]]:
-    import asyncio
-
     branch_result, commit_result = await asyncio.gather(
         run_git(str(workspace), "branch", "--format=%(refname:short)", timeout=5),
         run_git(

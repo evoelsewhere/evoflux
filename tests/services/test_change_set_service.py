@@ -200,7 +200,7 @@ def test_workspace_edit_rejects_escape_and_overlapping_edits(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_apply_runs_allowlisted_existing_verification_command(tmp_path: Path):
+async def test_model_command_cannot_expand_verification_authority(tmp_path: Path):
     target = tmp_path / "notes.txt"
     target.write_text("before\n", encoding="utf-8")
     record = create_change_set(
@@ -216,6 +216,23 @@ async def test_apply_runs_allowlisted_existing_verification_command(tmp_path: Pa
 
     await apply_change_set(record.id, tmp_path)
 
-    assert record.verification_commands == ["python -c \"print('verified')\""]
-    assert record.verification[0]["status"] == "passed"
-    assert "verified" in record.verification[0]["output"]
+    assert record.verification_commands == []
+    assert record.verification == []
+
+
+def test_verification_is_discovered_from_existing_project_contract(tmp_path: Path):
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='demo'\n")
+    (tmp_path / "uv.lock").write_text("version = 1\n")
+    (tmp_path / "tests").mkdir()
+    target = tmp_path / "app.py"
+    target.write_text("value = 1\n", encoding="utf-8")
+
+    record = create_change_set(
+        tmp_path,
+        origin="ai",
+        title="Update app",
+        files=[ChangeFileInput("app.py", "value = 2\n")],
+        verification_commands=["python -c \"print('unsafe')\""],
+    )
+
+    assert record.verification_commands == ["uv run pytest --no-cov -q"]

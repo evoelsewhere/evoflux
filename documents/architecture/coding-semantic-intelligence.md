@@ -67,6 +67,10 @@ observation. The hook:
 5. reports newly introduced and resolved diagnostics;
 6. publishes the complete current snapshot into Problems.
 
+Because `publishDiagnostics.version` is optional in LSP, a server that omits it
+is accepted only after a new publication generation arrives following the
+corresponding `didOpen`/`didChange`; cached pre-edit diagnostics are not reused.
+
 Python falls back to Ruff when no language server is available. Clean output
 explicitly states that static/LSP evidence does not replace behavioral tests.
 
@@ -82,9 +86,19 @@ AI, LSP, review, and Git workflows produce the same ChangeSet contract:
 - stale-base validation before any write;
 - atomic file replacement with rollback of earlier files on failure;
 - optional session snapshot;
-- bounded LSP and allowlisted existing test/lint command verification.
+- bounded LSP and deterministic existing-project test/lint verification.
+
+Model-provided verification strings never expand execution authority. EvoFlux
+derives commands from existing project manifests and lockfiles, shows them in
+the ChangeSet review before apply, and invokes them without a shell.
 
 No model or language server writes proposed edits directly.
+AI may replace an existing file only when its complete content and SHA-256 were
+present in the reviewed context. Truncated or unseen existing files are
+rejected; new files remain guarded by expected absence at apply time.
+Project-bound Coding sessions may run explicit editor and Git AI actions in any
+repository that is a persisted member of that project; arbitrary sibling paths
+remain unauthorized.
 
 ## Problems hub
 
@@ -110,6 +124,9 @@ reviews the assembled context, and explicitly starts the call. Supported
 actions are explanation, diagnostic fixing, refactoring, tests,
 documentation, problem finding, simplification, pattern conversion, API-change
 propagation, and terminal build/test failure explanation.
+Action kinds are closed: explanation actions cannot return file changes,
+problem scans cannot return mutations, and change actions must return a
+Guarded ChangeSet.
 
 `EditorContextEnvelope` contains:
 
@@ -123,7 +140,9 @@ propagation, and terminal build/test failure explanation.
 
 `.aiignore` is enforced before content enters the envelope. Provider-bound
 messages pass through the existing outbound secret/PII policy. Source payloads
-are not written to application logs.
+are not written to application logs. The preview returns a digest of the exact
+envelope; execution is rejected if Git hunks, attachments, instructions, graph
+evidence, or other context changed before the user starts the action.
 
 ## Git AI
 
@@ -131,7 +150,10 @@ Git actions are also explicit. The service supports self-review, commit-message
 generation, commit explanation, PR title/description generation, incoming PR
 summaries, merge-conflict proposals, and post-resolution review. Review and
 security findings enter Problems; conflict resolutions enter Guarded
-ChangeSets.
+ChangeSets. Commit references are resolved to a verified commit SHA before
+`git show`; option-like input is never passed through as a revision. Only
+conflict-resolution actions may emit file proposals, and every existing target
+is bound to the working-file hash captured in the reviewed conflict evidence.
 
 ## Search Everywhere
 

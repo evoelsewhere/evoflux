@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,7 +12,7 @@ import pytest
 from app.agent.sandbox import SandboxConfig, set_sandbox
 from app.agent.schemas.chat import AssistantMessage
 from app.services.change_set_service import clear_change_sets
-from app.services.git_ai_service import run_git_ai_action
+from app.services.git_ai_service import _evidence, run_git_ai_action
 from app.services.problems_service import clear_problems, list_problems
 
 
@@ -101,6 +102,9 @@ async def test_self_review_publishes_ai_and_security_findings(repository: Path):
 @pytest.mark.asyncio
 async def test_generate_commit_message_returns_structured_text(repository: Path):
     subprocess.run(["git", "add", "app.py"], cwd=repository, check=True)
+    (repository / "notes.txt").write_text(
+        "UNSTAGED_CONTENT_MUST_NOT_SHAPE_COMMIT\n", encoding="utf-8"
+    )
     provider = SimpleNamespace(
         provider_name="test",
         chat=AsyncMock(
@@ -128,6 +132,8 @@ async def test_generate_commit_message_returns_structured_text(repository: Path)
         )
 
     assert result["message"] == "fix: update application value"
+    prompt = provider.chat.await_args.args[0][1].content
+    assert "UNSTAGED_CONTENT_MUST_NOT_SHAPE_COMMIT" not in prompt
 
 
 @pytest.mark.asyncio
@@ -151,7 +157,13 @@ async def test_conflict_proposal_becomes_guarded_change_set(repository: Path):
     with patch(
         "app.services.git_ai_service._conflict_evidence",
         new_callable=AsyncMock,
-        return_value=[{"path": "app.py", "ours": "value = 2\n"}],
+        return_value=[
+            {
+                "path": "app.py",
+                "ours": "value = 2\n",
+                "working_sha256": hashlib.sha256(b"value = 2\n").hexdigest(),
+            }
+        ],
     ):
         result = await run_git_ai_action(
             workspace=repository,
@@ -162,3 +174,131 @@ async def test_conflict_proposal_becomes_guarded_change_set(repository: Path):
 
     assert result["change_set"]["origin"] == "git"
     assert "+value = 3" in result["change_set"]["files"][0]["diff"]
+
+
+@pytest.mark.asyncio
+async def test_explain_commit_rejects_option_like_reference(repository: Path):
+    outside = repository.parent / "leaked.patch"
+
+    with pytest.raises(ValueError, match="Invalid Git commit reference"):
+        await _evidence(
+            repository,
+            "explain_commit",
+            f"--output={outside}",
+            None,
+        )
+
+    assert not outside.exists()
+
+
+@pytest.mark.asyncio
+async def test_non_conflict_action_cannot_return_file_changes(repository: Path):
+    provider = SimpleNamespace(
+        provider_name="test",
+        chat=AsyncMock(
+            return_value=AssistantMessage(
+                content=json.dumps(
+                    {
+                        "kind": "changes",
+                        "summary": "Unexpected mutation",
+                        "files": [
+                            {"path": "app.py", "proposed_content": "value = 9\n"}
+                        ],
+                    }
+                )
+            )
+        ),
+    )
+    with patch(
+        "app.services.git_ai_service._code_impact",
+        new_callable=AsyncMock,
+        return_value=[],
+    ):
+        with pytest.raises(ValueError, match="unexpected kind"):
+            await run_git_ai_action(
+                workspace=repository,
+                provider=provider,
+                action="self_review",
+                session_id="session-1",
+            )
+
+
+@pytest.mark.asyncio
+async def test_conflict_change_is_stale_if_working_file_changes_during_model_call(
+    repository: Path,
+):
+    async def mutate_then_reply(*_args, **_kwargs):
+        (repository / "app.py").write_text("value = 4\n", encoding="utf-8")
+        return AssistantMessage(
+            content=json.dumps(
+                {
+                    "kind": "changes",
+                    "summary": "Resolve conflict",
+                    "files": [{"path": "app.py", "proposed_content": "value = 3\n"}],
+                }
+            )
+        )
+
+    provider = SimpleNamespace(
+        provider_name="test",
+        chat=AsyncMock(side_effect=mutate_then_reply),
+    )
+    evidence = [
+        {
+            "path": "app.py",
+            "working": "value = 2\n",
+            "working_sha256": hashlib.sha256(b"value = 2\n").hexdigest(),
+        }
+    ]
+    with patch(
+        "app.services.git_ai_service._conflict_evidence",
+        new_callable=AsyncMock,
+        return_value=evidence,
+    ):
+        with pytest.raises(ValueError, match="changed since preview"):
+            await run_git_ai_action(
+                workspace=repository,
+                provider=provider,
+                action="propose_conflict_resolution",
+                session_id="session-1",
+            )
+
+
+@pytest.mark.asyncio
+async def test_conflict_change_rejects_truncated_working_file(repository: Path):
+    provider = SimpleNamespace(
+        provider_name="test",
+        chat=AsyncMock(
+            return_value=AssistantMessage(
+                content=json.dumps(
+                    {
+                        "kind": "changes",
+                        "summary": "Resolve large conflict",
+                        "files": [
+                            {"path": "app.py", "proposed_content": "value = 3\n"}
+                        ],
+                    }
+                )
+            )
+        ),
+    )
+    evidence = [
+        {
+            "path": "app.py",
+            "working": "value = 2\n",
+            "working_sha256": hashlib.sha256(b"value = 2\n").hexdigest(),
+            "working_truncated": True,
+        }
+    ]
+    with patch(
+        "app.services.git_ai_service._conflict_evidence",
+        new_callable=AsyncMock,
+        return_value=evidence,
+    ):
+        with pytest.raises(ValueError, match="truncated"):
+            await run_git_ai_action(
+                workspace=repository,
+                provider=provider,
+                action="propose_conflict_resolution",
+                session_id="session-1",
+            )

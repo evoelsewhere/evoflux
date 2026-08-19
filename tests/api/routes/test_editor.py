@@ -44,6 +44,7 @@ async def client(tmp_path, monkeypatch):
         workspace=str(tmp_path),
         model=None,
         thinking_level=None,
+        project_id=None,
     )
     db = SimpleNamespace(get=AsyncMock(return_value=session))
 
@@ -64,13 +65,13 @@ async def client(tmp_path, monkeypatch):
     transport = ASGITransport(app=app)
     clear_change_sets()
     async with AsyncClient(transport=transport, base_url="http://t") as http:
-        yield http, tmp_path, str(session_id), provider
+        yield http, tmp_path, str(session_id), provider, session
     clear_change_sets()
 
 
 @pytest.mark.asyncio
 async def test_context_preview_is_inspectable_and_explicit(client):
-    http, workspace, session_id, _provider = client
+    http, workspace, session_id, _provider, _session = client
     response = await http.post(
         "/api/team/workspace/editor/context",
         params={"workspace": str(workspace)},
@@ -95,21 +96,28 @@ async def test_context_preview_is_inspectable_and_explicit(client):
     assert context["document_version"] == 3
     assert context["selection"]["text"] == "value"
     assert context["provenance"][0]["source"] == "editor-buffer"
+    assert len(response.json()["context_sha256"]) == 64
 
 
 @pytest.mark.asyncio
 async def test_explicit_action_returns_guarded_change_set(client):
-    http, workspace, session_id, provider = client
+    http, workspace, session_id, provider, _session = client
+    request = {
+        "session_id": session_id,
+        "action": "simplify_code",
+        "active_file": "main.py",
+        "content": "value = 1\n",
+        "document_version": 3,
+    }
+    preview = await http.post(
+        "/api/team/workspace/editor/context",
+        params={"workspace": str(workspace)},
+        json=request,
+    )
     response = await http.post(
         "/api/team/workspace/editor/action",
         params={"workspace": str(workspace)},
-        json={
-            "session_id": session_id,
-            "action": "simplify_code",
-            "active_file": "main.py",
-            "content": "value = 1\n",
-            "document_version": 3,
-        },
+        json={**request, "expected_context_sha256": preview.json()["context_sha256"]},
     )
 
     assert response.status_code == 200
@@ -121,25 +129,99 @@ async def test_explicit_action_returns_guarded_change_set(client):
 
 @pytest.mark.asyncio
 async def test_dirty_buffer_must_be_saved_before_ai_change(client):
-    http, workspace, session_id, provider = client
+    http, workspace, session_id, provider, _session = client
+    request = {
+        "session_id": session_id,
+        "action": "refactor_selection",
+        "active_file": "main.py",
+        "content": "value = 99\n",
+        "selection": {
+            "text": "value = 99",
+            "start_line": 1,
+            "start_column": 1,
+            "end_line": 1,
+            "end_column": 11,
+        },
+    }
+    preview = await http.post(
+        "/api/team/workspace/editor/context",
+        params={"workspace": str(workspace)},
+        json=request,
+    )
     response = await http.post(
         "/api/team/workspace/editor/action",
         params={"workspace": str(workspace)},
-        json={
-            "session_id": session_id,
-            "action": "refactor_selection",
-            "active_file": "main.py",
-            "content": "value = 99\n",
-            "selection": {
-                "text": "value = 99",
-                "start_line": 1,
-                "start_column": 1,
-                "end_line": 1,
-                "end_column": 11,
-            },
-        },
+        json={**request, "expected_context_sha256": preview.json()["context_sha256"]},
     )
 
     assert response.status_code == 409
     assert "Save the active editor buffer" in response.json()["detail"]
     provider.chat.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_action_rejects_context_changed_after_preview(client):
+    http, workspace, session_id, provider, _session = client
+    note = workspace / "note.md"
+    note.write_text("first\n", encoding="utf-8")
+    request = {
+        "session_id": session_id,
+        "action": "explain_code",
+        "active_file": "main.py",
+        "content": "value = 1\n",
+        "mention_paths": ["note.md"],
+    }
+    preview = await http.post(
+        "/api/team/workspace/editor/context",
+        params={"workspace": str(workspace)},
+        json=request,
+    )
+    note.write_text("second\n", encoding="utf-8")
+
+    response = await http.post(
+        "/api/team/workspace/editor/action",
+        params={"workspace": str(workspace)},
+        json={**request, "expected_context_sha256": preview.json()["context_sha256"]},
+    )
+
+    assert response.status_code == 409
+    assert "context changed" in response.json()["detail"].lower()
+    provider.chat.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_project_session_authorizes_sibling_repository(
+    client, monkeypatch: pytest.MonkeyPatch
+):
+    http, primary, session_id, provider, session = client
+    sibling = primary.parent / "sibling-repository"
+    sibling.mkdir()
+    (sibling / "main.py").write_text("value = 1\n", encoding="utf-8")
+    session.project_id = uuid4()
+    membership = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        "app.api.routes.team.editor.coding_workspace_authorization.project_contains_workspace_path",
+        membership,
+    )
+    request = {
+        "session_id": session_id,
+        "action": "simplify_code",
+        "active_file": "main.py",
+        "content": "value = 1\n",
+    }
+    preview = await http.post(
+        "/api/team/workspace/editor/context",
+        params={"workspace": str(sibling)},
+        json=request,
+    )
+    response = await http.post(
+        "/api/team/workspace/editor/action",
+        params={"workspace": str(sibling)},
+        json={**request, "expected_context_sha256": preview.json()["context_sha256"]},
+    )
+
+    assert response.status_code == 200
+    membership.assert_awaited_once()
+    assert membership.await_args.args[1] == session.project_id
+    assert membership.await_args.args[2] == sibling.resolve()
+    provider.chat.assert_awaited_once()

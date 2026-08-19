@@ -31,25 +31,6 @@ _MAX_FILES = 100
 _MAX_FILE_BYTES = 2_000_000
 _MAX_TOTAL_BYTES = 10_000_000
 _TTL_SECONDS = 60 * 60
-_VERIFICATION_EXECUTABLES = frozenset(
-    {
-        "uv",
-        "bun",
-        "npm",
-        "pnpm",
-        "yarn",
-        "pytest",
-        "python",
-        "python3",
-        "go",
-        "cargo",
-        "mvn",
-        "mvnw",
-        "gradle",
-        "gradlew",
-        "dotnet",
-    }
-)
 
 
 class ChangeSetError(ValueError):
@@ -635,6 +616,11 @@ def _normalize_relative_path(workspace: Path, raw_path: str) -> str:
     return relative.as_posix()
 
 
+def normalize_change_path(workspace: Path, raw_path: str) -> str:
+    """Public path guard shared by proposal producers before construction."""
+    return _normalize_relative_path(workspace.resolve(), raw_path)
+
+
 def _read_utf8(path: Path) -> str | None:
     if not path.exists():
         return None
@@ -695,25 +681,11 @@ def _select_pending(record: ChangeSet, paths: list[str] | None) -> list[ChangeFi
 def _verification_commands(
     workspace: Path, paths: list[str], requested: list[str]
 ) -> list[str]:
-    commands: list[str] = []
-    for command in requested:
-        normalized = command.strip()
-        if not normalized or any(
-            token in normalized
-            for token in ("\n", ";", "&&", "||", "|", ">", "<", "`", "$(")
-        ):
-            continue
-        try:
-            argv = shlex.split(normalized, posix=os.name != "nt")
-        except ValueError:
-            continue
-        executable = Path(argv[0]).name.casefold() if argv else ""
-        if executable in _VERIFICATION_EXECUTABLES and normalized not in commands:
-            commands.append(normalized)
-        if len(commands) >= 2:
-            return commands
-    if commands:
-        return commands
+    # Model-provided command strings are suggestions, never executable
+    # authority. In particular, an allowlisted launcher such as ``python`` or
+    # ``npm`` can execute arbitrary code through ``-c``/``exec``. Verification
+    # is therefore derived only from deterministic, existing project files.
+    del requested
 
     candidates = [workspace / path for path in paths]
     if (workspace / "pyproject.toml").is_file() and (workspace / "tests").is_dir():

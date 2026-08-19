@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertCircle, Check, Copy, Download, ExternalLink, FileText, GitCompare, Lightbulb, Loader2, PanelRightClose, PanelRightOpen, Pencil, Save, Undo2, X, Eye } from 'lucide-react'
-import Editor, { DiffEditor, useMonaco } from '@monaco-editor/react'
+import Editor, { DiffEditor } from '@monaco-editor/react'
 import type { editor as MonacoEditor } from 'monaco-editor'
 
 import { codingWorkspaceFileUrl, createChangeSet, getCodingWorkspaceDiagnostics, getCodingWorkspaceGitDiff, getCodingWorkspaceSemanticResult, writeCodingWorkspaceFile } from '@/api/client'
@@ -13,7 +13,7 @@ import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { isWorkspaceDocumentKind, workspaceFileKind, type WorkspaceFileKind } from '@/lib/workspace-file-kind'
 import { formatBytes } from '@/utils/format'
 import { MarkdownBlock } from '@/utils/markdown'
-import { useMonacoTheme, languageForExt } from '@/hooks/useMonacoTheme'
+import { useMonacoTheme, languageForExt, useSafeMonaco } from '@/hooks/useMonacoTheme'
 import { queryKeys } from '@/queries'
 import { SidePanel } from './shell/SidePanel'
 import { EditorAiActionDialog } from './EditorAiActionDialog'
@@ -138,7 +138,7 @@ function TextPreview({
   const setChangeSet = useChangeSetStore((state) => state.setActive)
   const pushToast = useToastStore((state) => state.push)
 
-  const monaco = useMonaco()
+  const monaco = useSafeMonaco()
   const theme = useMonacoTheme(monaco)
   const isDirty = modified !== null && modified !== content
   const diagnosticContent = modified ?? content
@@ -255,6 +255,9 @@ function TextPreview({
         new_name: options.newName,
         diagnostics: options.diagnostic ? [options.diagnostic] : undefined,
       })
+      if (response.status !== 'ready') {
+        throw new Error(response.message ?? `LSP ${response.status} for ${file.path}`)
+      }
       if (action === 'hover') {
         pushToast({
           tone: 'info',

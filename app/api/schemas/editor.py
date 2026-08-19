@@ -39,10 +39,14 @@ class EditorActionRequest(EditorContextRequest):
         "explain_failure",
     ]
     instruction: str | None = Field(default=None, max_length=8000)
+    expected_context_sha256: str | None = Field(
+        default=None, min_length=64, max_length=64
+    )
 
 
 class EditorContextResponse(BaseModel):
     context: dict
+    context_sha256: str
 
 
 class EditorActionResponse(BaseModel):

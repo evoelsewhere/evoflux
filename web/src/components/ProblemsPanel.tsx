@@ -128,6 +128,21 @@ export function ProblemsPanel({
           <div className="flex h-full items-center justify-center gap-2 text-xs text-(--color-text-muted)">
             <Loader2 size={14} className="animate-spin" /> Loading problems…
           </div>
+        ) : query.isError ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+            <AlertTriangle size={22} className="text-(--color-error)" />
+            <p className="text-sm text-(--color-text)">Could not load Problems</p>
+            <p className="text-xs text-(--color-text-muted)">
+              {query.error instanceof Error ? query.error.message : 'The repository problem state is unavailable.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => { void query.refetch() }}
+              className="mt-1 rounded-md bg-(--bg-key) px-2.5 py-1.5 text-xs text-(--color-text-2) hover:bg-(--color-border)"
+            >
+              Retry
+            </button>
+          </div>
         ) : rows.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
             <CheckCircle2 size={22} className="text-(--color-success)" />

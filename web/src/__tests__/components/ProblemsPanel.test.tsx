@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   createChangeSet: vi.fn(),
   mutate: vi.fn(),
   refetch: vi.fn(),
+  query: vi.fn(),
 }))
 
 const problems: ProblemsResponse = {
@@ -65,12 +66,7 @@ const problems: ProblemsResponse = {
 
 vi.mock('@/api/client', () => ({ createChangeSet: mocks.createChangeSet }))
 vi.mock('@/queries', () => ({
-  useProblemsQuery: () => ({
-    data: problems,
-    isLoading: false,
-    isFetching: false,
-    refetch: mocks.refetch,
-  }),
+  useProblemsQuery: () => mocks.query(),
   useProblemDecisionMutation: () => ({ mutate: mocks.mutate }),
 }))
 
@@ -78,6 +74,15 @@ beforeEach(() => {
   mocks.createChangeSet.mockReset()
   mocks.mutate.mockReset()
   mocks.refetch.mockReset()
+  mocks.query.mockReset()
+  mocks.query.mockReturnValue({
+    data: problems,
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+    error: null,
+    refetch: mocks.refetch,
+  })
   useChangeSetStore.setState({ active: null, busy: false })
 })
 
@@ -117,5 +122,23 @@ describe('ProblemsPanel', () => {
 
     await waitFor(() => expect(mocks.createChangeSet).toHaveBeenCalled())
     expect(useChangeSetStore.getState().active?.id).toBe('change-1')
+  })
+
+  it('does not present an API failure as a clean repository', () => {
+    mocks.query.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetching: false,
+      isError: true,
+      error: new Error('backend offline'),
+      refetch: mocks.refetch,
+    })
+
+    render(<ProblemsPanel workspace="/repo" active />)
+
+    expect(screen.getByText('Could not load Problems')).toBeInTheDocument()
+    expect(screen.queryByText('No open problems')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(mocks.refetch).toHaveBeenCalled()
   })
 })

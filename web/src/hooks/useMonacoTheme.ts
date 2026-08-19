@@ -3,13 +3,45 @@
  * the app's CSS custom properties so the editor blends with the current
  * light/dark mode without any hardcoded colours.
  */
-import { useEffect } from 'react'
-import type { Monaco } from '@monaco-editor/react'
+import { useEffect, useState } from 'react'
+import { loader, type Monaco } from '@monaco-editor/react'
 import type { editor as MonacoEditor } from 'monaco-editor'
 
 const DARK_THEME = 'evoflux-dark'
 const LIGHT_THEME = 'evoflux-light'
 type MonacoThemeData = MonacoEditor.IStandaloneThemeData
+
+/**
+ * Keep Monaco's shared loader alive through React StrictMode's development
+ * cleanup. The library hook cancels that shared promise and rejects with a
+ * plain object, which otherwise becomes an unhandled rejection.
+ */
+export function useSafeMonaco(): Monaco | null {
+  const availableLoader = loader as typeof loader | undefined
+  const [monaco, setMonaco] = useState<Monaco | null>(
+    () => availableLoader?.__getMonacoInstance() ?? null,
+  )
+
+  useEffect(() => {
+    if (monaco || !availableLoader) return
+    let active = true
+    void availableLoader.init()
+      .then((instance) => {
+        if (active) setMonaco(instance)
+      })
+      .catch((error: unknown) => {
+        const cancellation = error as { type?: string }
+        if (cancellation?.type !== 'cancelation') {
+          console.error('Monaco initialization failed', error)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [availableLoader, monaco])
+
+  return monaco
+}
 
 /** Read a CSS custom property from :root. */
 function cssVar(name: string): string {

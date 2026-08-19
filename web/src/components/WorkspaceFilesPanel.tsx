@@ -21,7 +21,7 @@
  */
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Editor, { useMonaco } from '@monaco-editor/react'
+import Editor from '@monaco-editor/react'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import {
   X,
@@ -66,7 +66,7 @@ import { queryKeys } from '@/queries/keys'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useSessionFilesWatcher } from '@/hooks/useSessionFilesWatcher'
 import { usePlatform } from '@/hooks/use-platform'
-import { languageForExt, useMonacoTheme } from '@/hooks/useMonacoTheme'
+import { languageForExt, useMonacoTheme, useSafeMonaco } from '@/hooks/useMonacoTheme'
 import { mediumHapticFeedback } from '@/lib/haptics'
 import { formatBytes } from '@/utils/format'
 import { errorMessage } from '@/utils/errors'
@@ -526,7 +526,7 @@ const MAX_TEXT_PREVIEW_BYTES = 512 * 1024  // 512 KB
 
 function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; file: WorkspaceFileInfo; workspaceRoot?: string | null }) {
   const tooLarge = file.size > MAX_TEXT_PREVIEW_BYTES
-  const monaco = useMonaco()
+  const monaco = useSafeMonaco()
   const theme = useMonacoTheme(monaco)
   // Start in a loading state *unless* the file is too large — the effect is
   // skipped in that case and flipping loading=false there would trigger the

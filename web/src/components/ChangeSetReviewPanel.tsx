@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Check, FileDiff, Loader2, X } from 'lucide-react'
-import { DiffEditor, useMonaco } from '@monaco-editor/react'
+import { DiffEditor } from '@monaco-editor/react'
 import { useQuery } from '@tanstack/react-query'
 
 import {
@@ -8,16 +8,17 @@ import {
   codingWorkspaceFileUrl,
   getChangeSetFileContent,
   rejectChangeSet,
-  runEditorAction,
 } from '@/api/client'
-import type { ChangeSetFile, ChangeSetResponse } from '@/api/types'
+import type { ChangeSetFile, ChangeSetResponse, EditorActionRequest } from '@/api/types'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { cn } from '@/lib/utils'
 import { useChangeSetStore } from '@/stores/useChangeSetStore'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
 import { SidePanel } from './shell/SidePanel'
-import { languageForExt, useMonacoTheme } from '@/hooks/useMonacoTheme'
+import { languageForExt, useMonacoTheme, useSafeMonaco } from '@/hooks/useMonacoTheme'
+import { EditorAiActionDialog } from './EditorAiActionDialog'
+import { useUIStore } from '@/stores/useUIStore'
 
 function DiffLine({ line }: { line: string }) {
   const tone = line.startsWith('+++') || line.startsWith('---')
@@ -93,7 +94,9 @@ export function ChangeSetReviewPanel() {
   const sessionId = useTeamStore((state) => state.sessionId)
   const pushToast = useToastStore((state) => state.push)
   const [selectedPath, setSelectedPath] = useState<string | null>(active?.files[0]?.path ?? null)
-  const monaco = useMonaco()
+  const [followupRequest, setFollowupRequest] = useState<EditorActionRequest | null>(null)
+  const openWorkbenchTool = useUIStore((state) => state.openWorkbenchTool)
+  const monaco = useSafeMonaco()
   const theme = useMonacoTheme(monaco)
   const selected = active?.files.find((file) => file.path === selectedPath) ?? active?.files[0]
   const contentQuery = useQuery({
@@ -141,7 +144,7 @@ export function ChangeSetReviewPanel() {
     try {
       const fileResponse = await fetch(codingWorkspaceFileUrl(active.workspace, path))
       if (!fileResponse.ok) throw new Error(`HTTP ${fileResponse.status}`)
-      const response = await runEditorAction(active.workspace, {
+      setFollowupRequest({
         session_id: sessionId,
         action: 'fix_diagnostic',
         active_file: path,
@@ -149,9 +152,6 @@ export function ChangeSetReviewPanel() {
         relevant_terminal_failure: String(failedVerification.output ?? failedVerification.message ?? ''),
         instruction: 'Verification failed after applying the previous ChangeSet. Analyze the evidence and propose the next minimal guarded fix.',
       })
-      if (!response.change_set) throw new Error('AI did not return a follow-up ChangeSet.')
-      setActive(response.change_set)
-      pushToast({ tone: 'info', title: 'Follow-up fix ready for review' })
     } catch (error) {
       pushToast({
         tone: 'error',
@@ -184,6 +184,21 @@ export function ChangeSetReviewPanel() {
       </header>
       {active.description && <p className="border-b border-(--color-border) px-4 py-2 text-xs text-(--color-text-muted)">{active.description}</p>}
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        {active.verification_commands.length > 0 && (
+          <section className="rounded-xl border border-(--color-border) bg-(--bg-card) p-3">
+            <h3 className="text-xs font-semibold text-(--color-text)">Verification after apply</h3>
+            <p className="mt-1 text-[11px] text-(--color-text-muted)">
+              Deterministically discovered from the existing project; model-supplied commands are not executed.
+            </p>
+            <div className="mt-2 space-y-1">
+              {active.verification_commands.map((command) => (
+                <code key={command} className="block break-all rounded-md bg-(--bg-key) px-2 py-1 font-mono text-[10px] text-(--color-text-2)">
+                  {command}
+                </code>
+              ))}
+            </div>
+          </section>
+        )}
         {selected && (
           <section className="overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card)">
             <div className="flex items-center justify-between border-b border-(--color-border) px-3 py-2">
@@ -272,6 +287,14 @@ export function ChangeSetReviewPanel() {
             Accept all
           </button>
         </footer>
+      )}
+      {followupRequest && (
+        <EditorAiActionDialog
+          workspace={active.workspace}
+          request={followupRequest}
+          onClose={() => setFollowupRequest(null)}
+          onOpenProblems={() => openWorkbenchTool('problems')}
+        />
       )}
     </SidePanel>
   )

@@ -35,6 +35,7 @@ export function EditorAiActionDialog({
   onOpenProblems?: () => void
 }) {
   const [context, setContext] = useState<Record<string, unknown> | null>(null)
+  const [contextDigest, setContextDigest] = useState<string | null>(null)
   const [loadingContext, setLoadingContext] = useState(true)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -54,13 +55,18 @@ export function EditorAiActionDialog({
   const loadContext = (controller: AbortController) => {
     setLoadingContext(true)
     setError(null)
+    setContext(null)
+    setContextDigest(null)
     return previewEditorContext(
       workspace,
       { ...request, mention_paths: mentionPaths() },
       controller.signal,
     )
       .then((response) => {
-        if (!controller.signal.aborted) setContext(response.context)
+        if (!controller.signal.aborted) {
+          setContext(response.context)
+          setContextDigest(response.context_sha256)
+        }
       })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) {
@@ -81,7 +87,7 @@ export function EditorAiActionDialog({
   }, [request, workspace])
 
   const run = async () => {
-    if (running || loadingContext || !context) return
+    if (running || loadingContext || !context || !contextDigest) return
     setRunning(true)
     setError(null)
     try {
@@ -89,6 +95,7 @@ export function EditorAiActionDialog({
         ...request,
         instruction: instruction.trim() || undefined,
         mention_paths: mentionPaths(),
+        expected_context_sha256: contextDigest,
       })
       setResult(response)
       if (response.change_set) {
@@ -154,6 +161,7 @@ export function EditorAiActionDialog({
               onChange={(event) => {
                 setMentionText(event.target.value)
                 setContext(null)
+                setContextDigest(null)
               }}
               placeholder="@src/auth.py @tests/"
               className="mt-2 w-full rounded-xl border border-(--color-border) bg-(--bg-card) px-3 py-2 font-mono text-xs text-(--color-text) outline-none focus:border-(--color-accent)"
@@ -192,7 +200,7 @@ export function EditorAiActionDialog({
           ) : (
             <>
               <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-xs text-(--color-text-muted) hover:bg-(--bg-key)">Cancel</button>
-              <button type="button" onClick={() => { void run() }} disabled={running || loadingContext || !context} className="flex items-center gap-1.5 rounded-lg bg-(--color-accent) px-3 py-2 text-xs font-medium text-(--color-text-on-accent) disabled:opacity-50">
+              <button type="button" onClick={() => { void run() }} disabled={running || loadingContext || !context || !contextDigest} className="flex items-center gap-1.5 rounded-lg bg-(--color-accent) px-3 py-2 text-xs font-medium text-(--color-text-on-accent) disabled:opacity-50">
                 {running ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
                 {running ? 'Working…' : 'Run explicit action'}
               </button>
