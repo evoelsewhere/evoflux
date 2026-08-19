@@ -18,6 +18,7 @@ import {
 } from '@/components/settings/SettingsLayout'
 import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
@@ -67,6 +68,13 @@ export function BrowserSettingsPage() {
     const source = current ?? query.data
     return source ? { ...source, [key]: value } : current
   })
+
+  const domainList = (value: string) => [...new Set(
+    value
+      .split(/[\s,]+/)
+      .map((domain) => domain.trim().toLowerCase().replace(/^\.+|\.+$/g, ''))
+      .filter(Boolean),
+  )]
 
   const handleWebBridgeDefaultChange = (checked: boolean) => {
     setWebBridgeDefault(checked)
@@ -154,6 +162,26 @@ export function BrowserSettingsPage() {
           }
         />
         <SettingsRow
+          label={t('Browser profile')}
+          description={t('Choose whether sign-in and site data are shared, isolated per chat, or discarded on close.')}
+          control={
+            <select
+              value={preferences.profileMode}
+              disabled={!preferences.enabled}
+              onChange={(event) => patchBuiltIn(
+                'profileMode',
+                event.target.value as BrowserPreferences['profileMode'],
+              )}
+              className="h-8 rounded-md border border-(--color-border) bg-(--bg-key) px-2 text-xs text-(--color-text)"
+              aria-label={t('Built-in browser profile mode')}
+            >
+              <option value="shared">{t('Shared')}</option>
+              <option value="session">{t('Per session')}</option>
+              <option value="incognito">{t('Incognito')}</option>
+            </select>
+          }
+        />
+        <SettingsRow
           label={t('Enable WebView inspector')}
           description={t('Allow native developer tools for newly created tabs')}
           control={
@@ -165,6 +193,156 @@ export function BrowserSettingsPage() {
             />
           }
         />
+        <SettingsAsyncBoundary
+          loading={query.isLoading}
+          hasData={Boolean(query.data)}
+          error={query.error}
+          variant="detail"
+          loadingLabel={t('Loading browser settings')}
+          errorTitle={t('Failed to load browser settings')}
+          onRetry={() => void query.refetch()}
+        >
+          {draft && (
+            <>
+              <SettingsRow
+                label={t('Allow JavaScript evaluate')}
+                description={t('Permit arbitrary page JavaScript in the built-in browser.')}
+                control={
+                  <Switch
+                    checked={draft.built_in_allow_evaluate}
+                    disabled={!preferences.enabled}
+                    onCheckedChange={(checked) => patchWebBridge('built_in_allow_evaluate', checked)}
+                    aria-label={t('Allow built-in browser JavaScript evaluate')}
+                  />
+                }
+              />
+              <SettingsRow
+                label={t('Allow page storage')}
+                description={t('Permit agent reads and writes to localStorage and sessionStorage.')}
+                control={
+                  <Switch
+                    checked={draft.built_in_allow_storage}
+                    disabled={!preferences.enabled}
+                    onCheckedChange={(checked) => patchWebBridge('built_in_allow_storage', checked)}
+                    aria-label={t('Allow built-in browser page storage')}
+                  />
+                }
+              />
+              <SettingsRow
+                label={t('Reveal readable cookie values')}
+                description={t('HttpOnly cookies remain protected. Keep this off unless a debugging task requires values.')}
+                control={
+                  <Switch
+                    checked={draft.built_in_allow_cookie_values}
+                    disabled={!preferences.enabled}
+                    onCheckedChange={(checked) => patchWebBridge('built_in_allow_cookie_values', checked)}
+                    aria-label={t('Reveal built-in browser cookie values')}
+                  />
+                }
+              />
+              <SettingsRow
+                label={t('Allow page HTTP debugging')}
+                description={t('Permit same-page HTTP requests through the browser debug tool.')}
+                control={
+                  <Switch
+                    checked={draft.built_in_allow_http_requests}
+                    disabled={!preferences.enabled}
+                    onCheckedChange={(checked) => patchWebBridge('built_in_allow_http_requests', checked)}
+                    aria-label={t('Allow built-in browser HTTP debugging')}
+                  />
+                }
+              />
+              <SettingsRow
+                label={t('Allow clipboard reads')}
+                description={t('Permit the agent to read text currently stored in the operating-system clipboard.')}
+                control={
+                  <Switch
+                    checked={draft.built_in_allow_clipboard_read}
+                    disabled={!preferences.enabled}
+                    onCheckedChange={(checked) => patchWebBridge('built_in_allow_clipboard_read', checked)}
+                    aria-label={t('Allow built-in browser clipboard reads')}
+                  />
+                }
+              />
+              <SettingsRow
+                label={t('Allow clipboard writes')}
+                description={t('Permit the agent to place text in the operating-system clipboard.')}
+                control={
+                  <Switch
+                    checked={draft.built_in_allow_clipboard_write}
+                    disabled={!preferences.enabled}
+                    onCheckedChange={(checked) => patchWebBridge('built_in_allow_clipboard_write', checked)}
+                    aria-label={t('Allow built-in browser clipboard writes')}
+                  />
+                }
+              />
+              <SettingsRow
+                label={t('Allow browser file uploads')}
+                description={t('Permit files from the current session workspace to be attached to page file inputs.')}
+                control={
+                  <Switch
+                    checked={draft.built_in_allow_file_uploads}
+                    disabled={!preferences.enabled}
+                    onCheckedChange={(checked) => patchWebBridge('built_in_allow_file_uploads', checked)}
+                    aria-label={t('Allow built-in browser file uploads')}
+                  />
+                }
+              />
+              <SettingsRow
+                label={t('Allow browser downloads')}
+                description={t('Permit page resources to be saved into the current session workspace.')}
+                control={
+                  <Switch
+                    checked={draft.built_in_allow_downloads}
+                    disabled={!preferences.enabled}
+                    onCheckedChange={(checked) => patchWebBridge('built_in_allow_downloads', checked)}
+                    aria-label={t('Allow built-in browser downloads')}
+                  />
+                }
+              />
+              <SettingsRow
+                label={t('Allow agent permission acceptance')}
+                description={t('When off, camera, microphone, location and notification requests must be approved by you in the Browser panel.')}
+                control={
+                  <Switch
+                    checked={draft.built_in_allow_agent_permission_accept}
+                    disabled={!preferences.enabled}
+                    onCheckedChange={(checked) => patchWebBridge('built_in_allow_agent_permission_accept', checked)}
+                    aria-label={t('Allow agent browser permission acceptance')}
+                  />
+                }
+              />
+              <SettingsRow
+                stacked
+                label={t('Allowed domains')}
+                description={t('Optional comma-separated allowlist. Subdomains are included.')}
+                control={
+                  <Input
+                    value={draft.built_in_allowed_domains.join(', ')}
+                    disabled={!preferences.enabled}
+                    onChange={(event) => patchWebBridge('built_in_allowed_domains', domainList(event.target.value))}
+                    placeholder="example.com, localhost"
+                    aria-label={t('Built-in browser allowed domains')}
+                  />
+                }
+              />
+              <SettingsRow
+                stacked
+                label={t('Blocked domains')}
+                description={t('Always denied for agent control, even when also allowed above.')}
+                control={
+                  <Input
+                    value={draft.built_in_blocked_domains.join(', ')}
+                    disabled={!preferences.enabled}
+                    onChange={(event) => patchWebBridge('built_in_blocked_domains', domainList(event.target.value))}
+                    placeholder="bank.example, mail.example"
+                    aria-label={t('Built-in browser blocked domains')}
+                  />
+                }
+              />
+            </>
+          )}
+        </SettingsAsyncBoundary>
       </SettingsGroup>
 
       <SettingsGroup

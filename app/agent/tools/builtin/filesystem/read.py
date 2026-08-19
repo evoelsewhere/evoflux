@@ -5,8 +5,9 @@ Supports multimodal file types:
 - **Images** (.png, .jpg, .gif, .webp, ...): base64-encoded and returned as
   ``ToolResult`` with ``ImageDataBlock`` parts for vision-capable models.
   Non-vision models receive a text notice instead.
-- **Documents** (.pdf, .docx, .html): converted to markdown text via
+- **Documents** (.pdf, .html): converted to markdown text via
   markitdown. If conversion fails, PDFs are sent as raw bytes to vision models.
+- **Office files** (.docx, .xlsx, .pptx): intentionally view-only in the UI.
 - **Text** (everything else): read as UTF-8/Latin-1 text (original behaviour).
 """
 
@@ -104,11 +105,11 @@ async def _read_file(
     ] = None,
     _state: Annotated[Any, InjectedArg()] = None,
 ) -> str | ToolResult:
-    """Read a file from the workspace. Supports text, images, PDFs, and documents.
+    """Read a file from the workspace. Supports text, images, PDFs, and HTML.
 
     For text files, prepends "[X-Y/N]" header when offset/limit active. Max 5 MB.
     For images, returns base64-encoded image data for visual analysis.
-    For documents (PDF, DOCX, HTML), extracts text content.
+    For PDF and HTML documents, extracts text content. Office files are UI-only.
     """
     sandbox = get_sandbox()
     resolved = sandbox.validate_path(path)
@@ -136,6 +137,13 @@ async def _read_file(
     # ── Document files → markitdown conversion ────────────────────────────
     if category == "document":
         return handle_document(resolved, rel, vision=vision)
+
+    if category == "office":
+        return (
+            f"[Office file: {rel}] ({resolved.stat().st_size:,} bytes)\n"
+            "DOCX, XLSX, and PPTX files are view-only. Open this file in the "
+            "workspace viewer; agent-side extraction and editing are disabled."
+        )
 
     # ── Text files → existing behaviour ───────────────────────────────────
     raw = resolved.read_bytes()
@@ -172,8 +180,8 @@ read_file = Tool(
     name="read",
     description=(
         "Read a file from the workspace. Supports text files, images "
-        "(PNG, JPG, GIF, WebP), and documents (PDF, DOCX, PPTX, XLSX). "
-        "Images and documents are processed for visual/text analysis. "
+        "(PNG, JPG, GIF, WebP), plus PDF and HTML documents. "
+        "DOCX, XLSX, and PPTX files are view-only in the workspace UI. "
         "Paths are workspace-relative. Text lines are prefixed with "
         "'NNNNN| ' line numbers — display-only metadata: NEVER include the "
         "prefix in edit old_string/new_string or write content."

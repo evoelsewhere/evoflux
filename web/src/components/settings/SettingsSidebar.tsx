@@ -22,6 +22,7 @@ import {
   Plug,
   Search,
   Server,
+  ServerCog,
   Shield,
   Sparkles,
   Stethoscope,
@@ -58,6 +59,7 @@ type SidebarPath =
   | '/settings/agents'
   | '/settings/skills'
   | '/settings/mcp'
+  | '/settings/language-servers'
   | '/settings/memory'
   | '/settings/sandbox'
   | '/settings/browser'
@@ -236,6 +238,12 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             matchPrefix: '/settings/mcp',
             count: mcpQ.data?.servers.length ?? null,
           },
+          {
+            to: '/settings/language-servers',
+            label: t('Language servers'),
+            icon: ServerCog,
+            matchPrefix: '/settings/language-servers',
+          },
         ],
       },
       {
@@ -373,6 +381,7 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
 
   return (
     <aside
+      data-settings-sidebar
       className="flex h-full w-[16.5rem] shrink-0 flex-col border-r border-(--color-border-subtle) bg-(--bg-sidebar)"
     >
       <div

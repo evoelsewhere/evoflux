@@ -9,6 +9,7 @@ import type {
   CodeGraphNavigateResponse,
   CodeGraphNode,
   CodeGraphOperation,
+  ProjectCodeGraphData,
   CodeGraphReindexResponse,
   CodeGraphSearchResponse,
   CodeGraphStatusResponse,
@@ -119,21 +120,31 @@ async function runQuery(
 export async function searchCodeGraph(
   workspace: string,
   query: string,
-  options?: { kind?: string; limit?: number },
+  options?: { kind?: string; limit?: number; signal?: AbortSignal },
 ): Promise<CodeGraphSearchResponse> {
-  const result = await runQuery(workspace, {
-    action: 'search',
-    query,
-    limit: options?.limit ?? 20,
-    refresh: true,
-  })
+  const result = await runQuery(
+    workspace,
+    {
+      action: 'search',
+      query,
+      limit: options?.limit ?? 20,
+      // UI search reads the committed index. File-watcher invalidation and the
+      // explicit Refresh action own index updates; rescanning on each keypress
+      // made autocomplete latency scale with repository size.
+      refresh: false,
+    },
+    options?.signal,
+  )
   const nodes: CodeGraphNode[] = result.hits.map((hit) => {
     const qualified = hit.symbol ?? hit.file_path
+    const name = qualified === hit.file_path
+      ? hit.file_path.split(/[\\/]/).pop() ?? hit.file_path
+      : qualified.split('.').pop() ?? qualified
     return {
       id: `${hit.repository}:${hit.file_path}:${hit.line_start}`,
       workspace_id: workspace,
       kind: options?.kind ?? 'source',
-      name: qualified.split('.').pop() ?? qualified,
+      name,
       qualified_name: qualified,
       file_path: hit.file_path,
       language: hit.language,
@@ -144,6 +155,29 @@ export async function searchCodeGraph(
     }
   })
   return { nodes }
+}
+
+export async function getWorkspaceCodeGraphData(
+  workspace: string,
+  options?: {
+    nodeLimitPerRepo?: number
+    edgeLimitPerRepo?: number
+    signal?: AbortSignal
+  },
+): Promise<ProjectCodeGraphData> {
+  const params = statusParams(workspace)
+  if (options?.nodeLimitPerRepo !== undefined) {
+    params.set('node_limit_per_repo', String(options.nodeLimitPerRepo))
+  }
+  if (options?.edgeLimitPerRepo !== undefined) {
+    params.set('edge_limit_per_repo', String(options.edgeLimitPerRepo))
+  }
+  const res = await fetch(`${apiBaseUrl()}/code-context/graph-data?${params}`, {
+    headers: { Accept: 'application/json' },
+    signal: options?.signal,
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'getWorkspaceCodeGraphData')
+  return res.json()
 }
 
 function symbol(value: RawSymbol): CodeGraphSymbol {

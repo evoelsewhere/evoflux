@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { WorkspaceFileInfo } from '@/api/types'
@@ -54,7 +54,7 @@ describe('WorkspaceHtmlPreview', () => {
       'site/pages/styles/site.css': '.hero{background-image:url("../fonts/texture.png")}',
     })
 
-    render(<WorkspaceHtmlPreview sessionId="session-1" file={html} files={[html]} />)
+    render(<WorkspaceHtmlPreview sessionId="session-1" file={html} />)
 
     const frame = await screen.findByTitle('index.html preview')
     const srcDoc = frame.getAttribute('srcdoc') ?? ''
@@ -64,42 +64,5 @@ describe('WorkspaceHtmlPreview', () => {
     expect(srcDoc).toContain('/media/site/assets/hero.png?_token=test-token')
     expect(srcDoc).toContain('/media/site/pages/fonts/texture.png?_token=test-token')
     expect(srcDoc).not.toContain('rel="stylesheet"')
-  })
-
-  it('assembles slide HTML with manifest CSS, assets, and a fitted canvas', async () => {
-    const html = file('pptx_remake/slide-01.html')
-    const project = file('pptx_remake/project.json', 'application/json')
-    const css = file('pptx_remake/slide-01.css', 'text/css')
-    const asset = file('pptx_remake/assets/hero.png', 'image/png')
-    mockWorkspaceFiles({
-      'pptx_remake/slide-01.html': '<main data-slide-root class="relative"><img src="asset://hero"></main>',
-      'pptx_remake/project.json': JSON.stringify({
-        width: 1280,
-        height: 720,
-        slides: [{
-          id: 'opening',
-          html_path: 'slide-01.html',
-          style_paths: ['slide-01.css'],
-          assets: { hero: 'assets/hero.png' },
-        }],
-      }),
-      'pptx_remake/slide-01.css': '[data-slide-root]{background-image:url(asset://hero)}',
-    })
-
-    render(
-      <WorkspaceHtmlPreview
-        sessionId="session-1"
-        file={html}
-        files={[project, css, html, asset]}
-      />,
-    )
-
-    const frame = await screen.findByTitle('slide-01.html preview')
-    const srcDoc = frame.getAttribute('srcdoc') ?? ''
-    expect(frame).toHaveStyle({ width: '1280px', height: '720px' })
-    expect(srcDoc).toContain('[data-slide-root]{background-image:url("/media/pptx_remake/assets/hero.png?_token=test-token")}')
-    expect(srcDoc).toContain('src="/media/pptx_remake/assets/hero.png?_token=test-token"')
-    expect(srcDoc).toContain('[data-slide-root]{width:1280px;height:720px;overflow:hidden}')
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3))
   })
 })

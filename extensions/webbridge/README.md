@@ -22,6 +22,13 @@ Chrome DevTools Protocol (`chrome.debugger`):
   and scroll. `key` supports Alt/Control/Meta/Shift modifiers for shortcuts.
 - **Waiting** — wait, wait_for_selector, wait_for_text, wait_for_load, and
   wait_for_network_idle.
+- **Responsive testing** — resize applies mobile/tablet/desktop or explicit
+  viewport dimensions with DPR, touch, and color-scheme emulation;
+  reset_viewport restores the real browser size.
+- **JavaScript dialogs** — dialogs reports active/recent alert, confirm, and
+  prompt state; handle_dialog accepts or dismisses the native dialog. Side Chat
+  mirrors an active dialog in its AskUser-style question surface so the user can
+  respond when the agent hands control back.
 - **Reading** — screenshot (viewport or full_page, at CSS-pixel scale),
   extract (text/Markdown/HTML), extract_elements (structured records), and
   evaluate.

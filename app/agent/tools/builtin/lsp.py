@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from urllib.parse import unquote, urlparse
 
 from pydantic import Field
@@ -183,6 +184,7 @@ async def _ruff_diagnostics(target: Path, *, include_warnings: bool) -> str:
 
     if not stdout.strip():
         if rc == 0:
+            _publish_static_ruff(target, [])
             return f"[OK] No issues found in {target}"
         # Non-JSON error
         return f"[Error] ruff failed: {stderr.strip() or '(no output)'}"
@@ -193,7 +195,10 @@ async def _ruff_diagnostics(target: Path, *, include_warnings: bool) -> str:
         return f"[Error] Could not parse ruff output:\n{stdout[:500]}"
 
     if not issues:
+        _publish_static_ruff(target, [])
         return f"[OK] No issues found in {target}"
+
+    _publish_static_ruff(target, issues)
 
     capped = issues[:_MAX_DIAG]
     lines = [
@@ -229,6 +234,7 @@ async def _tsc_diagnostics(target: Path, *, include_warnings: bool) -> str:
 
     combined = (stdout + stderr).strip()
     if not combined:
+        _publish_static_tsc(target, tsconfig_dir, [])
         return f"[OK] No TypeScript errors found in {target}"
 
     lines_raw = combined.splitlines()
@@ -238,7 +244,10 @@ async def _tsc_diagnostics(target: Path, *, include_warnings: bool) -> str:
         diag_lines = [ln for ln in diag_lines if ": error TS" in ln]
 
     if not diag_lines:
+        _publish_static_tsc(target, tsconfig_dir, [])
         return f"[OK] No TypeScript errors found in {target}"
+
+    _publish_static_tsc(target, tsconfig_dir, diag_lines)
 
     capped = diag_lines[:_MAX_DIAG]
     result = [
@@ -247,6 +256,71 @@ async def _tsc_diagnostics(target: Path, *, include_warnings: bool) -> str:
     for line in capped:
         result.append(f"  {line}")
     return "\n".join(result)
+
+
+def _publish_static_ruff(target: Path, issues: list[dict]) -> None:
+    from app.services.problems_service import ProblemInput, publish_problems
+
+    sandbox = get_sandbox()
+    inputs: list[ProblemInput] = []
+    for issue in issues[:_MAX_DIAG]:
+        location = issue.get("location") or {}
+        inputs.append(
+            ProblemInput(
+                message=str(issue.get("message") or "Ruff problem"),
+                severity="warning",
+                path=str(issue.get("filename") or target),
+                line=int(location.get("row", 1)),
+                column=int(location.get("column", 1)),
+                code=str(issue["code"]) if issue.get("code") is not None else None,
+                provenance={"producer": "ruff"},
+            )
+        )
+    publish_problems(
+        sandbox.workspace_root,
+        source="static",
+        scope=f"static:ruff:{sandbox.display_path(target)}",
+        problems=inputs,
+        session_id=sandbox.session_id,
+    )
+
+
+def _publish_static_tsc(
+    target: Path, tsconfig_dir: Path, diagnostic_lines: list[str]
+) -> None:
+    from app.services.problems_service import ProblemInput, publish_problems
+
+    sandbox = get_sandbox()
+    pattern = re.compile(
+        r"^(?P<path>.+)\((?P<line>\d+),(?P<column>\d+)\): "
+        r"(?P<severity>error|warning) (?P<code>TS\d+): (?P<message>.*)$"
+    )
+    inputs: list[ProblemInput] = []
+    for row in diagnostic_lines[:_MAX_DIAG]:
+        match = pattern.match(row.strip())
+        if match is None:
+            continue
+        path = Path(match.group("path"))
+        if not path.is_absolute():
+            path = (tsconfig_dir / path).resolve()
+        inputs.append(
+            ProblemInput(
+                message=match.group("message"),
+                severity="error" if match.group("severity") == "error" else "warning",
+                path=str(path),
+                line=int(match.group("line")),
+                column=int(match.group("column")),
+                code=match.group("code"),
+                provenance={"producer": "tsc"},
+            )
+        )
+    publish_problems(
+        sandbox.workspace_root,
+        source="static",
+        scope=f"static:tsc:{sandbox.display_path(target)}",
+        problems=inputs,
+        session_id=sandbox.session_id,
+    )
 
 
 # ── Real language-server tools ───────────────────────────────────────────────
@@ -340,6 +414,119 @@ async def _real_lsp_references(
     except LanguageServerUnavailable as exc:
         return f"[Unavailable] {exc} Use code_context for a known symbol."
     return _format_lsp_locations(locations[:limit], "reference")
+
+
+async def _lsp_semantic(
+    action: Annotated[
+        Literal[
+            "hover",
+            "code_actions",
+            "rename",
+            "format",
+            "organize_imports",
+            "document_symbols",
+            "workspace_symbols",
+        ],
+        Field(description="Repository-local semantic LSP operation."),
+    ],
+    path: Annotated[
+        str,
+        Field(
+            description=(
+                "Workspace-relative source file. For workspace_symbols, this "
+                "selects which language server to query."
+            )
+        ),
+    ],
+    line: Annotated[
+        int | None,
+        Field(description="1-based start/cursor line.", ge=1),
+    ] = None,
+    column: Annotated[
+        int | None,
+        Field(description="1-based start/cursor column.", ge=1),
+    ] = None,
+    end_line: Annotated[
+        int | None,
+        Field(description="1-based selection end line.", ge=1),
+    ] = None,
+    end_column: Annotated[
+        int | None,
+        Field(description="1-based selection end column.", ge=1),
+    ] = None,
+    new_name: Annotated[
+        str | None,
+        Field(description="New symbol name for rename."),
+    ] = None,
+    query: Annotated[
+        str | None,
+        Field(description="Symbol query for workspace_symbols."),
+    ] = None,
+    tab_size: Annotated[
+        int,
+        Field(description="Formatting tab size.", ge=1, le=16),
+    ] = 4,
+    insert_spaces: Annotated[
+        bool,
+        Field(description="Use spaces instead of tabs when formatting."),
+    ] = True,
+) -> str:
+    """Inspect or calculate semantic edits without mutating the repository."""
+    target = _resolve_path(path)
+    if not target.is_file():
+        return f"[Error] Source file does not exist: {target}"
+    try:
+        client = await get_language_server(get_sandbox().workspace_root, target)
+        if action == "hover":
+            cursor_line, cursor_column = _require_position(line, column, action)
+            result: Any = await client.hover(target, cursor_line, cursor_column)
+        elif action == "code_actions":
+            start_line, start_column = _require_position(line, column, action)
+            diagnostics = await client.diagnostics(target)
+            result = await client.code_actions(
+                target,
+                start_line=start_line,
+                start_column=start_column,
+                end_line=end_line or start_line,
+                end_column=end_column or start_column,
+                diagnostics=diagnostics,
+            )
+        elif action == "rename":
+            cursor_line, cursor_column = _require_position(line, column, action)
+            if not new_name or not new_name.strip():
+                return "[Error] rename requires a non-empty new_name."
+            result = await client.rename(
+                target,
+                cursor_line,
+                cursor_column,
+                new_name.strip(),
+            )
+        elif action == "format":
+            result = await client.formatting(
+                target,
+                tab_size=tab_size,
+                insert_spaces=insert_spaces,
+            )
+        elif action == "organize_imports":
+            result = await client.organize_imports(target)
+        elif action == "document_symbols":
+            result = await client.document_symbols(target)
+        else:
+            result = await client.workspace_symbols(query or "")
+    except (LanguageServerUnavailable, RuntimeError, ValueError) as exc:
+        return f"[Unavailable] {exc}"
+
+    if result in (None, [], {}):
+        return f"No {action.replace('_', ' ')} result returned by the language server."
+    return json.dumps(result, indent=2, ensure_ascii=False)[:40_000]
+
+
+def _require_position(
+    line: int | None, column: int | None, action: str
+) -> tuple[int, int]:
+    if line is None or column is None:
+        raise ValueError(f"{action} requires line and column.")
+    return line, column
 
 
 def _format_lsp_locations(locations: list[dict[str, Any]], kind: str) -> str:
@@ -454,4 +641,31 @@ lsp_references = Tool(
     deferred_summary="Find live references with a language server.",
     capabilities=("source_navigation",),
     observation_kind="structural",
+)
+
+lsp_semantic = Tool(
+    _lsp_semantic,
+    name="lsp_semantic",
+    tiers=("coding",),
+    description=(
+        "Inspect hover information, quick-fixes/code actions, repository-local "
+        "rename edits, formatting, organize-imports actions, and document or "
+        "workspace symbols. It returns proposed edits but never applies them."
+    ),
+    concurrency_safe=True,
+    read_only=True,
+    deferred=True,
+    deferred_summary="Inspect semantic code information or calculate LSP edits.",
+    capabilities=("source_navigation", "semantic_edits"),
+    observation_kind="structural",
+    search_aliases=(
+        "hover",
+        "quick fix",
+        "code action",
+        "rename",
+        "format",
+        "organize imports",
+        "symbols",
+        "lsp",
+    ),
 )

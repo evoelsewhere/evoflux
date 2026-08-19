@@ -145,6 +145,23 @@ class TestModelTiming:
 
         assert response.extra == {"usage": {"input": 1}}
 
+    @pytest.mark.asyncio
+    async def test_after_model_publishes_sleep_lifecycle_without_text_sentinel(self):
+        hook = _make_hook()
+        response = AssistantMessage(content=None, extra={"lifecycle": "sleep"})
+        pushed = []
+
+        async def fake_push(sid, event):
+            pushed.append(event)
+
+        with patch("app.services.memory_stream_store.push_event", new=fake_push):
+            await hook.after_model(MagicMock(), MagicMock(), response)
+
+        assert len(pushed) == 1
+        assert pushed[0].event == "message"
+        assert pushed[0].data["text"] == ""
+        assert pushed[0].data["metadata"] == {"lifecycle": "sleep"}
+
 
 # ---------------------------------------------------------------------------
 # on_model_delta — message

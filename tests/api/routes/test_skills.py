@@ -194,8 +194,7 @@ async def test_list_skills_empty(client):
     resp = await client.get("/api/skills")
     assert resp.status_code == 200
     skills = resp.json()["skills"]
-    assert {item["name"] for item in skills} == {"docx", "xlsx", "pptx", "pdf"}
-    assert all(item["source"].startswith("plugin:") for item in skills)
+    assert skills == []
 
 
 @pytest.mark.asyncio

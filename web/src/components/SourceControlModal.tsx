@@ -29,6 +29,7 @@ import {
   Tag,
   Pencil,
   UserRound,
+  Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { GitActionSurface, type GitAction } from '@/components/git/GitActionMenu'
@@ -75,8 +76,18 @@ import {
   useGitSetIdentityMutation,
   useGitRevertMutation,
 } from '@/queries/useGitQuery'
-import type { CodingProject, ChangedFile, GitLogEntry } from '@/api/types'
+import type { CodingProject, ChangedFile, GitAIAction, GitAIResponse, GitLogEntry } from '@/api/types'
+import { runGitAIAction } from '@/api/client'
+import { useTeamStore } from '@/stores/useTeamStore'
+import { useUIStore } from '@/stores/useUIStore'
+import { useChangeSetStore } from '@/stores/useChangeSetStore'
+import { GitAiResultDialog } from '@/components/GitAiResultDialog'
 import { getIntlLocale } from '@/i18n'
+import {
+  parseUnifiedDiff,
+  type UnifiedDiffHunk as DiffHunk,
+  type UnifiedDiffLine as DiffLine,
+} from '@/lib/unified-diff'
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
@@ -120,56 +131,6 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   unmerged: { label: 'U', cls: 'bg-red-500/20 text-red-400' },
 }
 
-/**
- * Parse a unified diff string into structured hunks.
- * Each hunk has a header and an array of lines with their type.
- */
-function parseUnifiedDiff(raw: string): DiffHunk[] {
-  if (!raw) return []
-  const hunks: DiffHunk[] = []
-  let current: DiffHunk | null = null
-
-  for (const line of raw.split('\n')) {
-    if (line.startsWith('@@ ')) {
-      // Hunk header: @@ -oldStart,oldCount +newStart,newCount @@
-      const match = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/)
-      if (match) {
-        current = {
-          header: line,
-          oldStart: parseInt(match[1], 10),
-          newStart: parseInt(match[3], 10),
-          lines: [],
-        }
-        hunks.push(current)
-      }
-    } else if (current) {
-      if (line.startsWith('-')) {
-        current.lines.push({ type: 'del', content: line.slice(1) })
-      } else if (line.startsWith('+')) {
-        current.lines.push({ type: 'add', content: line.slice(1) })
-      } else if (line.startsWith(' ')) {
-        current.lines.push({ type: 'ctx', content: line.slice(1) })
-      } else if (line.startsWith('\\')) {
-        // "\ No newline at end of file"
-        current.lines.push({ type: 'info', content: line })
-      }
-    }
-  }
-  return hunks
-}
-
-interface DiffHunk {
-  header: string
-  oldStart: number
-  newStart: number
-  lines: DiffLine[]
-}
-
-interface DiffLine {
-  type: 'add' | 'del' | 'ctx' | 'info'
-  content: string
-}
-
 /* ── Types ───────────────────────────────────────────────────────────────── */
 
 export interface SourceControlPanelProps {
@@ -194,6 +155,11 @@ export function SourceControlPanel({
   const observedRunningJob = useRef(false)
   const [showDiff, setShowDiff] = useState(true)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const [gitAiBusy, setGitAiBusy] = useState(false)
+  const [gitAiResult, setGitAiResult] = useState<GitAIResponse | null>(null)
+  const sessionId = useTeamStore((state) => state.sessionId)
+  const openWorkbenchTool = useUIStore((state) => state.openWorkbenchTool)
+  const setChangeSet = useChangeSetStore((state) => state.setActive)
 
   const [activeView, setActiveView] = useState<'changes' | 'branches' | 'history' | 'stash' | 'remotes' | 'tags'>('changes')
 
@@ -260,9 +226,49 @@ export function SourceControlPanel({
   // Auto-select first file when dialog opens
   useEffect(() => {
     if (open && !selectedPath && files.length > 0) {
-      setSelectedPath(files[0].path) // eslint-disable-line react-hooks/set-state-in-effect -- intentional one-time init
+      setSelectedPath(files[0].path)
     }
   }, [open, files, selectedPath])
+
+  const runAi = useCallback(async (action: GitAIAction, reference?: string) => {
+    if (!sessionId || gitAiBusy) return
+    setGitAiBusy(true)
+    try {
+      const result = await runGitAIAction(workspace, {
+        session_id: sessionId,
+        action,
+        reference,
+      })
+      if (result.change_set) {
+        setChangeSet(result.change_set)
+      } else if (result.kind === 'review') {
+        openWorkbenchTool('problems')
+        useToastStore.getState().push({
+          tone: 'info',
+          title: result.findings.length
+            ? `${result.findings.length} AI review finding${result.findings.length === 1 ? '' : 's'}`
+            : 'AI review found no concrete problems',
+        })
+      } else {
+        setGitAiResult(result)
+      }
+    } catch (error) {
+      useToastStore.getState().push({
+        tone: 'error',
+        title: 'AI Git action failed',
+        description: error instanceof Error ? error.message : undefined,
+      })
+    } finally {
+      setGitAiBusy(false)
+    }
+  }, [gitAiBusy, openWorkbenchTool, sessionId, setChangeSet, workspace])
+
+  useEffect(() => {
+    if (!open) return
+    const review = () => { void runAi('self_review') }
+    window.addEventListener('evoflux:git-ai-review', review)
+    return () => window.removeEventListener('evoflux:git-ai-review', review)
+  }, [open, runAi])
 
   return (
       <div
@@ -329,6 +335,32 @@ export function SourceControlPanel({
             </span>
           )}
           <div className="flex-1" />
+          <ToolbarButton
+            icon={gitAiBusy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+            label="Review changes with AI"
+            disabled={!sessionId || gitAiBusy || files.length === 0}
+            onClick={() => { void runAi('self_review') }}
+          />
+          <ToolbarButton
+            icon={<Sparkles size={12} />}
+            label="Explain HEAD"
+            disabled={!sessionId || gitAiBusy || !isGitRepo}
+            onClick={() => { void runAi('explain_commit', 'HEAD') }}
+          />
+          <ToolbarButton
+            icon={<Sparkles size={12} />}
+            label="Draft PR description"
+            disabled={!sessionId || gitAiBusy || !isGitRepo}
+            onClick={() => { void runAi('generate_pr_description') }}
+          />
+          {hasConflicts && (
+            <ToolbarButton
+              icon={<Sparkles size={12} />}
+              label="Resolve conflicts with AI"
+              disabled={!sessionId || gitAiBusy}
+              onClick={() => { void runAi('propose_conflict_resolution') }}
+            />
+          )}
           <ToolbarButton icon={<RefreshCw size={12} />} label="Refresh" onClick={() => changesQuery.refetch()} compact />
           <ToolbarButton
             icon={<CloudDownload size={12} />}
@@ -464,6 +496,7 @@ export function SourceControlPanel({
         )}
 
         {isGitRepo && activeView === 'changes' && <CommitArea workspace={workspace} stagedCount={stagedFiles.length} />}
+        {gitAiResult && <GitAiResultDialog result={gitAiResult} onClose={() => setGitAiResult(null)} />}
       </div>
   )
 }
@@ -542,6 +575,8 @@ function CommitArea({ workspace, stagedCount }: { workspace: string; stagedCount
   const [message, setMessage] = useState('')
   const [amend, setAmend] = useState(false)
   const commitMutation = useGitCommitMutation(workspace)
+  const sessionId = useTeamStore((state) => state.sessionId)
+  const [generating, setGenerating] = useState(false)
 
   const handleCommit = useCallback(() => {
     if (!message.trim() && !amend) return
@@ -553,6 +588,26 @@ function CommitArea({ workspace, stagedCount }: { workspace: string; stagedCount
       },
     )
   }, [message, amend, commitMutation])
+
+  const generateMessage = async () => {
+    if (!sessionId || generating || stagedCount === 0) return
+    setGenerating(true)
+    try {
+      const result = await runGitAIAction(workspace, {
+        session_id: sessionId,
+        action: 'generate_commit_message',
+      })
+      if (result.message) setMessage(result.message)
+    } catch (error) {
+      useToastStore.getState().push({
+        tone: 'error',
+        title: 'Could not generate commit message',
+        description: error instanceof Error ? error.message : undefined,
+      })
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   return (
     <div className="shrink-0 border-t border-(--color-border) bg-(--bg-card) p-2">
@@ -580,12 +635,21 @@ function CommitArea({ workspace, stagedCount }: { workspace: string; stagedCount
           <div className="flex-1" />
           <button
             type="button"
+            onClick={() => { void generateMessage() }}
+            disabled={!sessionId || generating || stagedCount === 0}
+            className="flex h-7 items-center gap-1.5 rounded-md px-2 text-[10px] font-medium text-(--color-accent) hover:bg-(--bg-key) disabled:opacity-40"
+          >
+            {generating ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+            Generate message
+          </button>
+          <button
+            type="button"
             onClick={handleCommit}
-            disabled={commitMutation.isPending || (!message.trim() && !amend) || stagedCount === 0}
+            disabled={commitMutation.isPending || (!message.trim() && !amend) || (stagedCount === 0 && !amend)}
             className="flex h-7 items-center gap-1.5 rounded-md bg-(--color-accent) px-3 text-[11px] font-semibold text-(--color-text-on-accent) transition-colors hover:bg-(--color-accent)/90 disabled:opacity-40"
           >
             {commitMutation.isPending ? <Loader2 size={11} className="animate-spin" /> : <GitCommit size={11} />}
-            Commit
+            {amend ? 'Amend' : 'Commit'}
           </button>
         </div>
       </div>
@@ -633,7 +697,7 @@ function FileListPanel({ workspace, stagedFiles, unstagedFiles, isLoading, selec
               <span className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">Unstaged · {filteredUnstaged.length}</span>
               <button type="button" onClick={() => stageMutation.mutate(filteredUnstaged.map((f) => f.path))} className="flex items-center gap-1 rounded px-1.5 py-1 text-[9px] text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)" title="Stage all"><Plus size={10} /> All</button>
             </div>
-            {filteredUnstaged.map((file) => <FileRow key={file.path} file={file} selected={selectedPath === file.path} onSelect={() => onSelect(file.path)} onToggleStage={() => stageMutation.mutate([file.path])} onDiscard={file.status !== 'untracked' ? () => discardMutation.mutate([file.path]) : undefined} />)}
+            {filteredUnstaged.map((file) => <FileRow key={file.path} file={file} selected={selectedPath === file.path} onSelect={() => onSelect(file.path)} onToggleStage={() => stageMutation.mutate([file.path])} onDiscard={() => discardMutation.mutate([file.path])} />)}
           </div>
         )}
         {filtered.length === 0 && <div className="flex flex-col items-center justify-center py-8 text-center"><p className="text-[11px] text-(--color-text-subtle)">{filter ? 'No matching files' : 'No changes'}</p></div>}
@@ -666,10 +730,16 @@ function FileRow({ file, selected, onSelect, onToggleStage, onDiscard }: {
     },
   ]
   if (onDiscard) {
+    const discardLabel = file.status === 'untracked' ? 'Delete untracked file' : 'Discard changes'
     actions.push({
-      label: 'Discard changes',
+      label: discardLabel,
       icon: <RotateCcw size={12} />,
-      onSelect: onDiscard,
+      onSelect: () => {
+        const warning = file.status === 'untracked'
+          ? `Delete untracked file ${file.path}? This cannot be undone.`
+          : `Discard all unstaged changes in ${file.path}? This cannot be undone.`
+        if (window.confirm(warning)) onDiscard()
+      },
       danger: true,
       separatorBefore: true,
     })
@@ -1102,6 +1172,8 @@ function HistoryPanel({ workspace }: { workspace: string }) {
   const logFilesQuery = useGitLogFilesQuery(workspace, expandedSha, !!expandedSha)
   const cherryPickMutation = useGitCherryPickMutation(workspace)
   const revertMutation = useGitRevertMutation(workspace)
+  const sessionId = useTeamStore((state) => state.sessionId)
+  const [aiResult, setAiResult] = useState<GitAIResponse | null>(null)
   const entries = useMemo(
     () => logQuery.data?.pages.flatMap((page) => page.entries) ?? [],
     [logQuery.data?.pages],
@@ -1182,6 +1254,20 @@ function HistoryPanel({ workspace }: { workspace: string }) {
                 },
                 onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to revert commit', description: error instanceof Error ? error.message : undefined }),
               })}
+              onExplain={() => {
+                if (!sessionId) return
+                void runGitAIAction(workspace, {
+                  session_id: sessionId,
+                  action: 'explain_commit',
+                  reference: entry.sha,
+                }).then(setAiResult).catch((error: unknown) => {
+                  useToastStore.getState().push({
+                    tone: 'error',
+                    title: 'Could not explain commit',
+                    description: error instanceof Error ? error.message : undefined,
+                  })
+                })
+              }}
               filesQuery={logFilesQuery}
               isFilesLoading={logFilesQuery.isLoading && expandedSha === entry.sha}
               files={expandedSha === entry.sha ? (logFilesQuery.data ?? []) : []}
@@ -1202,6 +1288,7 @@ function HistoryPanel({ workspace }: { workspace: string }) {
               <span className="text-[9px] text-(--color-text-subtle)">Complete history · {entries.length} commits loaded</span>
             )}
           </div>
+          {aiResult && <GitAiResultDialog result={aiResult} onClose={() => setAiResult(null)} />}
         </div>
       )}
     </div>
@@ -1212,14 +1299,14 @@ function HistoryPanel({ workspace }: { workspace: string }) {
 
 function CommitRow({
   entry, layout, graphWidth, isHead, isExpanded,
-  onToggle, onCherryPick, onRevert, isFilesLoading, files,
+  onToggle, onCherryPick, onRevert, onExplain, isFilesLoading, files,
 }: {
   entry: GitLogEntry
   layout: CommitGraphLayout
   graphWidth: number
   isHead: boolean
   isExpanded: boolean
-  onToggle: () => void; onCherryPick: () => void; onRevert: () => void
+  onToggle: () => void; onCherryPick: () => void; onRevert: () => void; onExplain: () => void
   filesQuery: ReturnType<typeof useGitLogFilesQuery>
   isFilesLoading: boolean
   files: { path: string; status: string }[]
@@ -1231,6 +1318,12 @@ function CommitRow({
       label: isExpanded ? 'Hide changed files' : 'Show changed files',
       icon: <FileDiff size={12} />,
       onSelect: onToggle,
+    },
+    {
+      label: 'Explain commit with AI',
+      icon: <Sparkles size={12} />,
+      onSelect: onExplain,
+      separatorBefore: true,
     },
     {
       label: 'Copy full commit SHA',

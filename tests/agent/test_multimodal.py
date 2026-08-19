@@ -205,7 +205,8 @@ def test_workspace_delivery_emits_read_only_tool_instructions(tmp_path):
     assert len(parts) == 2
     assert isinstance(parts[0], TextBlock)
     assert f"Read-only workspace path: {binary}" in parts[0].text
-    assert "write/run parsing code" in parts[0].text
+    assert "Use the Read tool first" in parts[0].text
+    assert "Do not install OCR" in parts[0].text
     assert "do not execute it directly" in parts[0].text
     assert parts[-1].text == "inspect this"
 

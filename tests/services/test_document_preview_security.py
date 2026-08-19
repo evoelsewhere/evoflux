@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from app.agent.builtin_plugins.documents import preview, preview_security
+from app.services.document_preview import service as preview
+from app.services.document_preview import security as preview_security
 
 
 def _minimal_ooxml(

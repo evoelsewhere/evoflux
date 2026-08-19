@@ -35,6 +35,7 @@ export const STORAGE_KEYS = {
   panels: {
     activity: 'oa.activityPanel.width',
     changes: 'oa.changesPanel.width',
+    changeSet: 'oa.changeSetPanel.width',
     terminal: 'oa.terminalPanel.width',
     codingWorkspace: 'oa.codingWorkspacePanel.width',
     codingWorkspacePicker: 'oa.codingWorkspacePicker.width',

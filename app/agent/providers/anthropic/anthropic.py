@@ -18,7 +18,10 @@ from app.agent.schemas.chat import (
     FunctionCall,
     FunctionCallDelta,
     HumanMessage,
+    ImageDataBlock,
+    ImageUrlBlock,
     SystemMessage,
+    TextBlock,
     ToolCall,
     ToolCallDelta,
     ToolMessage,
@@ -54,6 +57,33 @@ def _headers(
     return headers
 
 
+def _anthropic_content_blocks(parts: list[Any]) -> list[dict[str, Any]]:
+    """Convert canonical multimodal parts to Anthropic Messages blocks."""
+    blocks: list[dict[str, Any]] = []
+    for part in parts:
+        if isinstance(part, TextBlock):
+            blocks.append({"type": "text", "text": part.text})
+        elif isinstance(part, ImageDataBlock):
+            blocks.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": part.media_type,
+                        "data": part.data,
+                    },
+                }
+            )
+        elif isinstance(part, ImageUrlBlock):
+            blocks.append(
+                {
+                    "type": "image",
+                    "source": {"type": "url", "url": part.url},
+                }
+            )
+    return blocks
+
+
 def _split_messages(
     messages: list[ChatMessage],
 ) -> tuple[str | None, list[dict[str, Any]]]:
@@ -65,7 +95,10 @@ def _split_messages(
                 system_parts.append(message.content)
             continue
         if isinstance(message, HumanMessage):
-            out.append({"role": "user", "content": message.content or ""})
+            content: str | list[dict[str, Any]] = message.content or ""
+            if message.parts:
+                content = _anthropic_content_blocks(message.parts)
+            out.append({"role": "user", "content": content})
         elif isinstance(message, AssistantMessage) and message.tool_calls:
             blocks: list[dict[str, Any]] = []
             if message.content:
@@ -83,6 +116,9 @@ def _split_messages(
         elif isinstance(message, AssistantMessage):
             out.append({"role": "assistant", "content": message.content or ""})
         elif isinstance(message, ToolMessage):
+            tool_content: str | list[dict[str, Any]] = message.content or ""
+            if message.parts:
+                tool_content = _anthropic_content_blocks(message.parts)
             out.append(
                 {
                     "role": "user",
@@ -90,7 +126,7 @@ def _split_messages(
                         {
                             "type": "tool_result",
                             "tool_use_id": message.tool_call_id,
-                            "content": message.content or "",
+                            "content": tool_content,
                         }
                     ],
                 }

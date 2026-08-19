@@ -16,6 +16,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from app.agent.hooks.base import BaseAgentHook
+from app.agent.lifecycle import SLEEP_LIFECYCLE
 from app.agent.tool_id_resolver import ToolIdResolver
 from app.services import memory_stream_store as stream_store
 from app.agent.schemas.events import (
@@ -138,6 +139,14 @@ class StreamPublisherHook(BaseAgentHook):
             response.extra["duration_ms"] = round(
                 (time.monotonic() - started) * 1000,
                 3,
+            )
+        if response.extra and response.extra.get("lifecycle") == SLEEP_LIFECYCLE:
+            await self._push(
+                MessageEvent(
+                    agent=self._agent_name,
+                    text="",
+                    metadata={"lifecycle": SLEEP_LIFECYCLE},
+                )
             )
 
     async def on_model_delta(

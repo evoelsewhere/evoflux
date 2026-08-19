@@ -1,29 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FileText, Loader2 } from 'lucide-react'
 
 import { workspaceMediaUrl } from '@/api/client'
 import type { WorkspaceFileInfo } from '@/api/types'
 import { formatBytes } from '@/utils/format'
-import slideRuntimeCss from './artifacts/slide-runtime.css?inline'
 
 const MAX_HTML_PREVIEW_BYTES = 512 * 1024
-const PREVIEW_PADDING = 24
-
-type SlideProjectEntry = {
-  html_path?: unknown
-  style_paths?: unknown
-  assets?: unknown
-}
-
-type SlideProject = {
-  width?: unknown
-  height?: unknown
-  slides?: unknown
-}
 
 type PreparedHtml = {
   srcDoc: string
-  canvas: { width: number; height: number } | null
 }
 
 type WorkspaceReference = {
@@ -34,10 +19,6 @@ type WorkspaceReference = {
 function dirname(path: string): string {
   const index = path.lastIndexOf('/')
   return index < 0 ? '' : path.slice(0, index)
-}
-
-function joinWorkspacePath(directory: string, path: string): string {
-  return directory ? `${directory}/${path}` : path
 }
 
 function splitReferenceSuffix(reference: string): { pathname: string; suffix: string } {
@@ -165,106 +146,6 @@ async function fetchWorkspaceText(sessionId: string, path: string): Promise<stri
   return response.text()
 }
 
-function candidateProjectPaths(filePath: string, files: WorkspaceFileInfo[]): string[] {
-  const available = new Set(files.map((file) => file.path))
-  const candidates: string[] = []
-  let directory = dirname(filePath)
-  while (true) {
-    const candidate = joinWorkspacePath(directory, 'project.json')
-    if (available.has(candidate)) candidates.push(candidate)
-    if (!directory) break
-    directory = dirname(directory)
-  }
-  return candidates
-}
-
-function slideCanvas(project: SlideProject): { width: number; height: number } {
-  const width = typeof project.width === 'number' && project.width > 0 ? project.width : 1280
-  const height = typeof project.height === 'number' && project.height > 0 ? project.height : 720
-  return { width, height }
-}
-
-function isSlideEntry(value: unknown): value is SlideProjectEntry {
-  return Boolean(value && typeof value === 'object')
-}
-
-function replaceAssetReferences(
-  value: string,
-  assets: Record<string, string>,
-  sessionId: string,
-  projectPath: string,
-): string {
-  let result = value
-  for (const [key, relativePath] of Object.entries(assets)) {
-    const resolved = resolveWorkspaceReference(projectPath, relativePath)
-    if (!resolved) continue
-    result = result.split(`asset://${key}`).join(workspaceMediaUrl(sessionId, resolved.path))
-  }
-  return result
-}
-
-async function prepareSlideProject(
-  sessionId: string,
-  file: WorkspaceFileInfo,
-  files: WorkspaceFileInfo[],
-  source: string,
-): Promise<PreparedHtml | null> {
-  for (const projectPath of candidateProjectPaths(file.path, files)) {
-    let project: SlideProject
-    try {
-      project = JSON.parse(await fetchWorkspaceText(sessionId, projectPath)) as SlideProject
-    } catch {
-      continue
-    }
-    if (!Array.isArray(project.slides)) continue
-
-    const slide = project.slides.filter(isSlideEntry).find((entry) => {
-      if (typeof entry.html_path !== 'string') return false
-      return resolveWorkspaceReference(projectPath, entry.html_path)?.path === file.path
-    })
-    if (!slide) continue
-
-    const assets = slide.assets && typeof slide.assets === 'object' && !Array.isArray(slide.assets)
-      ? Object.fromEntries(
-          Object.entries(slide.assets).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-        )
-      : {}
-    const stylePaths = Array.isArray(slide.style_paths)
-      ? slide.style_paths.filter((value): value is string => typeof value === 'string')
-      : []
-    const cssParts = await Promise.all(stylePaths.map(async (stylePath) => {
-      const resolved = resolveWorkspaceReference(projectPath, stylePath)
-      if (!resolved) return ''
-      try {
-        const css = await fetchWorkspaceText(sessionId, resolved.path)
-        return replaceAssetReferences(
-          rewriteCssUrls(css, sessionId, resolved.path),
-          assets,
-          sessionId,
-          projectPath,
-        )
-      } catch {
-        return ''
-      }
-    }))
-    const canvas = slideCanvas(project)
-    const document = new DOMParser().parseFromString('<!doctype html><html><head></head><body></body></html>', 'text/html')
-    const runtimeStyle = document.createElement('style')
-    runtimeStyle.textContent = slideRuntimeCss
-    document.head.append(runtimeStyle)
-    const projectStyle = document.createElement('style')
-    projectStyle.textContent = cssParts.join('\n')
-    document.head.append(projectStyle)
-    const frameStyle = document.createElement('style')
-    frameStyle.textContent = `html,body{margin:0;width:${canvas.width}px;height:${canvas.height}px;overflow:hidden;background:transparent}*{box-sizing:border-box}[data-slide-root]{width:${canvas.width}px;height:${canvas.height}px;overflow:hidden}`
-    document.head.append(frameStyle)
-    document.body.innerHTML = replaceAssetReferences(source, assets, sessionId, projectPath)
-    installPreviewPolicy(document, sessionId, file.path)
-    return { srcDoc: `<!doctype html>${document.documentElement.outerHTML}`, canvas }
-  }
-  return null
-}
-
 async function prepareRegularHtml(
   sessionId: string,
   file: WorkspaceFileInfo,
@@ -309,71 +190,15 @@ async function prepareRegularHtml(
     if (value) element.setAttribute('style', rewriteCssUrls(value, sessionId, file.path))
   })
   installPreviewPolicy(document, sessionId, file.path)
-  return { srcDoc: `<!doctype html>${document.documentElement.outerHTML}`, canvas: null }
-}
-
-function SlideFrame({ prepared, title }: { prepared: PreparedHtml; title: string }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [availableSize, setAvailableSize] = useState<{ width: number; height: number } | null>(null)
-  const canvas = prepared.canvas!
-
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-    const update = () => {
-      const bounds = container.getBoundingClientRect()
-      setAvailableSize({ width: bounds.width, height: bounds.height })
-    }
-    update()
-    if (typeof ResizeObserver === 'undefined') {
-      window.addEventListener('resize', update)
-      return () => window.removeEventListener('resize', update)
-    }
-    const observer = new ResizeObserver(update)
-    observer.observe(container)
-    return () => observer.disconnect()
-  }, [])
-
-  const scale = availableSize
-    ? Math.min(
-        1,
-        Math.max(0.05, (availableSize.width - PREVIEW_PADDING * 2) / canvas.width),
-        Math.max(0.05, (availableSize.height - PREVIEW_PADDING * 2) / canvas.height),
-      )
-    : 1
-
-  return (
-    <div ref={containerRef} className="flex h-full items-center justify-center overflow-auto bg-(--bg-page) p-6">
-      <div
-        className="shrink-0 overflow-hidden rounded border border-(--color-border) bg-white shadow-lg"
-        style={{ width: canvas.width * scale, height: canvas.height * scale }}
-      >
-        <iframe
-          srcDoc={prepared.srcDoc}
-          title={`${title} preview`}
-          sandbox=""
-          referrerPolicy="no-referrer"
-          className="block border-0 bg-white"
-          style={{
-            width: canvas.width,
-            height: canvas.height,
-            transform: `scale(${scale})`,
-            transformOrigin: 'top left',
-          }}
-        />
-      </div>
-    </div>
-  )
+  return { srcDoc: `<!doctype html>${document.documentElement.outerHTML}` }
 }
 
 export function WorkspaceHtmlPreview({
   sessionId,
   file,
-  files,
 }: {
   sessionId: string
   file: WorkspaceFileInfo
-  files: WorkspaceFileInfo[]
 }) {
   const tooLarge = file.size > MAX_HTML_PREVIEW_BYTES
   const [prepared, setPrepared] = useState<PreparedHtml | null>(null)
@@ -384,10 +209,7 @@ export function WorkspaceHtmlPreview({
     if (tooLarge) return
     let cancelled = false
     void fetchWorkspaceText(sessionId, file.path)
-      .then(async (source) => (
-        await prepareSlideProject(sessionId, file, files, source)
-        ?? await prepareRegularHtml(sessionId, file, source)
-      ))
+      .then((source) => prepareRegularHtml(sessionId, file, source))
       .then((result) => {
         if (!cancelled) {
           setPrepared(result)
@@ -401,7 +223,7 @@ export function WorkspaceHtmlPreview({
         }
     })
     return () => { cancelled = true }
-  }, [file, files, sessionId, tooLarge])
+  }, [file, sessionId, tooLarge])
 
   if (tooLarge) {
     return (
@@ -430,7 +252,6 @@ export function WorkspaceHtmlPreview({
   }
   if (!prepared) return null
 
-  if (prepared.canvas) return <SlideFrame prepared={prepared} title={file.name} />
   return (
     <iframe
       srcDoc={prepared.srcDoc}

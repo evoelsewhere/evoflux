@@ -14,6 +14,7 @@ from app.agent.providers.base import LLMProviderBase
 from app.agent.mode.team.member import TeamLead, TeamMember
 from app.agent.mode.team.team import AgentTeam
 from app.api.routes.team._helpers import _message_response
+from app.api.routes.team.chat import _resolve_effective_request_model
 from app.models.chat import SessionMessage
 
 
@@ -48,6 +49,47 @@ def test_message_response_strips_internal_attachment_paths():
             "url": "/api/team/sid/uploads/abc.png",
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [("<sleep>", None), ("Work is underway. [sleep]", "Work is underway.")],
+)
+def test_message_response_normalizes_legacy_sleep_sentinel(content, expected):
+    msg = SessionMessage(
+        session_id=uuid.uuid7(),
+        role="assistant",
+        content=content,
+    )
+
+    resp = _message_response(msg)
+
+    assert resp.content == expected
+    assert resp.extra == {"lifecycle": "sleep"}
+
+
+def test_effective_model_preserves_persisted_override_when_field_omitted():
+    assert (
+        _resolve_effective_request_model(
+            None,
+            provided=False,
+            persisted="openai:gpt-5.5",
+            default="deepseek:deepseek-v4-pro",
+        )
+        == "openai:gpt-5.5"
+    )
+
+
+def test_effective_model_blank_field_resets_to_lead_default():
+    assert (
+        _resolve_effective_request_model(
+            None,
+            provided=True,
+            persisted="openai:gpt-5.5",
+            default="deepseek:deepseek-v4-pro",
+        )
+        == "deepseek:deepseek-v4-pro"
+    )
 
 
 class MockTestProvider(LLMProviderBase):

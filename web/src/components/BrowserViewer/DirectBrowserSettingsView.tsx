@@ -112,6 +112,27 @@ export function DirectBrowserSettingsView({
           />
           <SettingsRow
             Icon={Database}
+            title="Browser profile"
+            description="Applies to newly created tabs"
+            action={(
+              <select
+                value={preferences.profileMode}
+                disabled={!active}
+                onChange={(event) => onPreferencesChange({
+                  ...preferences,
+                  profileMode: event.target.value as BrowserPreferences['profileMode'],
+                })}
+                className="h-8 rounded-md border border-(--color-border) bg-(--bg-key) px-2 text-xs text-(--color-text)"
+                aria-label="Browser profile mode"
+              >
+                <option value="shared">Shared</option>
+                <option value="session">Per session</option>
+                <option value="incognito">Incognito</option>
+              </select>
+            )}
+          />
+          <SettingsRow
+            Icon={Database}
             title="Browsing data"
             description="Clear cookies, cache, history, and local site storage"
             action={(

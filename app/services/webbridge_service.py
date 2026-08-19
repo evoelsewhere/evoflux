@@ -82,6 +82,7 @@ _PAGE_READ_ACTIONS: frozenset[str] = frozenset(
         "semantic_read",
         "screenshot",
         "evaluate",
+        "dialogs",
     }
 )
 # Actions resolved by the extension's ``resolveTab`` helper. A visible
@@ -94,6 +95,10 @@ _TAB_SCOPED_ACTIONS: frozenset[str] = frozenset(
         "type",
         "key",
         "scroll",
+        "resize",
+        "reset_viewport",
+        "dialogs",
+        "handle_dialog",
         "screenshot",
         "extract",
         "evaluate",
@@ -348,6 +353,7 @@ class WebBridgeManager:
                 "semantic_snapshot",
                 "semantic_read",
                 "evaluate",
+                "dialogs",
             }
             and not pol.sharing.allow_readable_page
         ):

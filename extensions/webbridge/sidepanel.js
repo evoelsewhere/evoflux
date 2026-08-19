@@ -163,6 +163,7 @@ let liveMessage = null;
 let typedBlockRenderer = null;
 const liveThinkingChars = new Map();
 let pendingQuestions = new Map();
+let pendingBrowserDialog = null;
 const activeTakeoverRequests = new Set();
 let humanControlLease = null;
 let pendingComposerRequest = null;
@@ -1512,6 +1513,9 @@ function protectedHistoryBlocks(blocks) {
         ...base,
         name: entry.name || entry.tool_name || entry.toolName || "tool",
         tool_call_id: entry.tool_call_id || entry.toolCallId || entry.id,
+        skill_action: entry.skill_action || entry.skillAction,
+        skill_name: entry.skill_name || entry.skillName,
+        display_arguments: entry.display_arguments || entry.displayArguments,
         done: Boolean(entry.done),
         duration_ms: entry.duration_ms,
       }];
@@ -1681,7 +1685,7 @@ function renderQuestions() {
   const focusWasInQuestions = questionsRoot.contains(document.activeElement);
   questionsRoot.replaceChildren();
   const questions = [...pendingQuestions.values()];
-  const asking = questions.length > 0;
+  const asking = questions.length > 0 || Boolean(pendingBrowserDialog);
   const liveRequestIds = new Set(questions.map((request) => request.request_id));
   for (const requestId of activeTakeoverRequests) {
     if (!liveRequestIds.has(requestId)) activeTakeoverRequests.delete(requestId);
@@ -1690,6 +1694,66 @@ function renderQuestions() {
   composerRoot.toggleAttribute("inert", asking);
   composerRoot.setAttribute("aria-hidden", String(asking));
   questionsRoot.classList.toggle("visible", asking);
+  if (pendingBrowserDialog) {
+    const dialog = pendingBrowserDialog;
+    const card = document.createElement("article");
+    card.className = "question-card";
+    const meta = document.createElement("div");
+    meta.className = "handoff-meta";
+    const title = document.createElement("strong");
+    title.textContent = `Browser ${dialog.type || "dialog"}`;
+    const detail = document.createElement("div");
+    detail.textContent = "The page is waiting for your response.";
+    meta.append(title, detail);
+    const prompt = document.createElement("p");
+    prompt.textContent = dialog.message || "This page opened an empty dialog.";
+    card.append(meta, prompt);
+    let promptInput = null;
+    if (dialog.type === "prompt") {
+      promptInput = document.createElement("textarea");
+      promptInput.className = "answer";
+      promptInput.value = dialog.default_prompt || "";
+      promptInput.placeholder = "Prompt response";
+      promptInput.setAttribute("aria-label", "Browser prompt response");
+      card.append(promptInput);
+    }
+    const options = document.createElement("div");
+    options.className = "options";
+    const respond = async (accept) => {
+      for (const button of options.querySelectorAll("button")) button.disabled = true;
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: "handle_browser_dialog",
+          tab_id: dialog.tab_id,
+          accept,
+          prompt_text: promptInput?.value || null,
+        });
+        if (!response?.ok) throw new Error(response?.error || "Could not close browser dialog");
+        if (pendingBrowserDialog?.id === dialog.id) pendingBrowserDialog = null;
+        renderQuestions();
+        clearNotice();
+      } catch (error) {
+        setNotice(error.message || String(error), "error");
+        for (const button of options.querySelectorAll("button")) button.disabled = false;
+      }
+    };
+    if (dialog.type !== "alert") {
+      const dismiss = document.createElement("button");
+      dismiss.type = "button";
+      dismiss.className = "option";
+      dismiss.textContent = "Cancel";
+      dismiss.addEventListener("click", () => void respond(false));
+      options.append(dismiss);
+    }
+    const accept = document.createElement("button");
+    accept.type = "button";
+    accept.className = "option";
+    accept.textContent = dialog.type === "alert" ? "Continue" : "OK";
+    accept.addEventListener("click", () => void respond(true));
+    options.append(accept);
+    card.append(options);
+    questionsRoot.append(card);
+  }
   for (const request of questions) {
     const card = document.createElement("article");
     card.className = "question-card";
@@ -1768,6 +1832,18 @@ function renderQuestions() {
   } else if (!asking && wasAsking && focusWasInQuestions) {
     requestAnimationFrame(() => composer.focus());
   }
+}
+
+async function loadPendingBrowserDialog() {
+  if (!activeTab?.id) {
+    pendingBrowserDialog = null;
+    return;
+  }
+  const response = await chrome.runtime.sendMessage({
+    type: "get_browser_dialog",
+    tab_id: activeTab.id,
+  });
+  pendingBrowserDialog = response?.ok ? response.dialog || null : null;
 }
 
 async function loadPendingQuestions() {
@@ -1886,6 +1962,7 @@ async function refreshPanel({ preserveTranscript = false } = {}) {
       panelFileTabId = null;
     }
     activeTab = nextTab;
+    await loadPendingBrowserDialog();
     pageTitle.textContent = activeTab.title || safePageUrl(activeTab.url || activeTab.pendingUrl || "") || "Side Chat";
     const ensured = await resolvePanelSession(activeTab);
     if (generation !== refreshGeneration) return;
@@ -2303,6 +2380,9 @@ function handleStreamEvent(type, data) {
         agent,
         name: data.name || "tool",
         duration_ms: data.duration_ms ?? data.metadata?.duration_ms,
+        skill_action: data.skill_action,
+        skill_name: data.skill_name,
+        display_arguments: data.display_arguments,
       };
       if (type === "tool_call") renderer.toolCall(safeToolData);
       else if (type === "tool_start") renderer.toolStart(safeToolData);
@@ -3643,6 +3723,19 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === "browser_dialog_opened") {
+    if (message.dialog?.tab_id !== activeTab?.id) return;
+    pendingBrowserDialog = message.dialog;
+    renderQuestions();
+    return;
+  }
+  if (message?.type === "browser_dialog_closed") {
+    if (pendingBrowserDialog?.id === message.dialog?.id) {
+      pendingBrowserDialog = null;
+      renderQuestions();
+    }
+    return;
+  }
   if (message?.type === "connection_state") {
     const isConnected = Boolean(message.connected);
     const isConnecting = Boolean(message.connecting);

@@ -29,6 +29,8 @@ import type {
   WorkspaceRootResponse,
   CodingWorkspaceFilesResponse,
   CodingDiagnosticsResponse,
+  CodingSemanticRequest,
+  CodingSemanticResponse,
   TodosResponse,
   CodingProject,
   ProjectCreateRequest,
@@ -711,6 +713,23 @@ export async function getCodingWorkspaceDiagnostics(
   return res.json()
 }
 
+/** Request semantic LSP information or a proposed, unapplied WorkspaceEdit. */
+export async function getCodingWorkspaceSemanticResult(
+  workspace: string,
+  request: CodingSemanticRequest,
+  signal?: AbortSignal,
+): Promise<CodingSemanticResponse> {
+  const params = new URLSearchParams({ workspace })
+  const res = await fetch(apiUrl(`/team/workspace/lsp/semantic?${params}`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(request),
+    signal,
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'getCodingWorkspaceSemanticResult')
+  return res.json()
+}
+
 export async function getTodos(sessionId: string): Promise<TodosResponse> {
   const res = await fetch(`${apiBaseUrl()}/team/sessions/${encodeURIComponent(sessionId)}/todos`)
   if (!res.ok) await parseDetailOrThrow(res, 'getTodos')
@@ -996,7 +1015,7 @@ export async function getProjectCodeGraphStatus(
 export async function searchProjectCodeGraph(
   projectId: string,
   query: string,
-  options?: { kind?: string; limitPerRepo?: number },
+  options?: { kind?: string; limit?: number; signal?: AbortSignal },
 ): Promise<ProjectCodeSearchResponse> {
   const res = await fetch(
     `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-context/query`,
@@ -1006,9 +1025,10 @@ export async function searchProjectCodeGraph(
       body: JSON.stringify({
         action: 'search',
         query,
-        limit: Math.max(1, (options?.limitPerRepo ?? 10) * 8),
-        refresh: true,
+        limit: Math.max(1, Math.min(100, options?.limit ?? 40)),
+        refresh: false,
       }),
+      signal: options?.signal,
     },
   )
   if (!res.ok) await parseDetailOrThrow(res, 'searchProjectCodeGraph')
@@ -1026,13 +1046,16 @@ export async function searchProjectCodeGraph(
   return {
     results: data.hits.map((hit) => {
       const qualified = hit.symbol ?? hit.file_path
+      const name = qualified === hit.file_path
+        ? hit.file_path.split(/[\\/]/).pop() ?? hit.file_path
+        : qualified.split('.').pop() ?? qualified
       return {
         path: hit.repository_path ?? hit.repository,
         node: {
           id: `${hit.repository}:${hit.file_path}:${hit.line_start}`,
           workspace_id: hit.repository,
           kind: options?.kind ?? 'source',
-          name: qualified.split('.').pop() ?? qualified,
+          name,
           qualified_name: qualified,
           file_path: hit.file_path,
           language: hit.language,
@@ -1048,7 +1071,11 @@ export async function searchProjectCodeGraph(
 
 export async function getProjectCodeGraphData(
   projectId: string,
-  options?: { nodeLimitPerRepo?: number; edgeLimitPerRepo?: number },
+  options?: {
+    nodeLimitPerRepo?: number
+    edgeLimitPerRepo?: number
+    signal?: AbortSignal
+  },
 ): Promise<ProjectCodeGraphData> {
   const params = new URLSearchParams()
   if (options?.nodeLimitPerRepo !== undefined) {
@@ -1060,6 +1087,7 @@ export async function getProjectCodeGraphData(
   const qs = params.toString()
   const res = await fetch(
     `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-context/graph-data${qs ? `?${qs}` : ''}`,
+    { signal: options?.signal },
   )
   if (!res.ok) await parseDetailOrThrow(res, 'getProjectCodeGraphData')
   return res.json()

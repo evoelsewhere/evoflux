@@ -107,6 +107,43 @@ class ScrollAction(BaseModel):
     tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
 
 
+class ResizeAction(BaseModel):
+    action: Literal["resize"]
+    preset: Literal["mobile", "tablet", "desktop"] | None = None
+    width: int | None = Field(default=None, ge=200, le=4000)
+    height: int | None = Field(default=None, ge=200, le=4000)
+    device_scale_factor: float = Field(default=1.0, ge=0.5, le=4.0)
+    mobile: bool | None = None
+    touch: bool | None = None
+    color_scheme: Literal["light", "dark"] | None = None
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+    @model_validator(mode="after")
+    def _validate_size(self) -> "ResizeAction":
+        if self.preset is None and (self.width is None or self.height is None):
+            raise ValueError("resize requires a preset or both width and height")
+        return self
+
+
+class ResetViewportAction(BaseModel):
+    action: Literal["reset_viewport"]
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+class DialogsAction(BaseModel):
+    action: Literal["dialogs"]
+    clear: bool = False
+    limit: int = Field(default=20, ge=1, le=100)
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+class HandleDialogAction(BaseModel):
+    action: Literal["handle_dialog"]
+    accept: bool = False
+    prompt_text: str | None = Field(default=None, max_length=10_000)
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
 class ScreenshotAction(BaseModel):
     action: Literal["screenshot"]
     format: Literal["png", "jpeg"] = Field(default="png")
@@ -566,6 +603,10 @@ AnyAction = Annotated[
     | TypeAction
     | KeyAction
     | ScrollAction
+    | ResizeAction
+    | ResetViewportAction
+    | DialogsAction
+    | HandleDialogAction
     | ScreenshotAction
     | ExtractAction
     | GetTabsAction
@@ -635,6 +676,10 @@ Actions:
   type            — Type text into the focused element.
   key             — Press a key (Enter, Tab, Escape, etc.).
   scroll          — Scroll by dx,dy pixels.
+  resize          — Emulate an exact mobile/tablet/desktop viewport, DPR, touch, and color scheme.
+  reset_viewport  — Clear viewport/device emulation and return to the real browser size.
+  dialogs         — Inspect the active JavaScript alert/confirm/prompt and recent dialog history.
+  handle_dialog   — Accept or dismiss the active dialog; prompt_text supplies a prompt response.
   wait            — Pause for N milliseconds.
   wait_for_selector — Wait until a selector is visible/attached/hidden.
     wait_for_text   — Wait until text becomes visible or hidden, optionally within a selector.
@@ -679,6 +724,7 @@ _UNTRUSTED_BROWSER_ACTIONS = frozenset(
         "extract",
         "extract_elements",
         "get_tabs",
+        "dialogs",
         "screenshot",
         "snapshot",
         "semantic_snapshot",
@@ -780,6 +826,14 @@ async def _dispatch_webbridge(act: Any, session_id: str) -> str | ToolResult:
         return await _handle_key(session_id, act)
     if action == "scroll":
         return await _handle_scroll(session_id, act)
+    if action == "resize":
+        return await _handle_resize(session_id, act)
+    if action == "reset_viewport":
+        return await _handle_reset_viewport(session_id, act)
+    if action == "dialogs":
+        return await _handle_dialogs(session_id, act)
+    if action == "handle_dialog":
+        return await _handle_dialog(session_id, act)
     if action == "screenshot":
         return await _handle_screenshot(session_id, act)
     if action == "extract":
@@ -939,6 +993,80 @@ async def _handle_scroll(session_id: str, act: ScrollAction) -> str:
     if resp.get("success"):
         return f"Scrolled ({act.dx}, {act.dy})"
     return f"Scroll failed: {resp.get('error', 'unknown')}"
+
+
+async def _handle_resize(session_id: str, act: ResizeAction) -> str:
+    params = {
+        "device_scale_factor": act.device_scale_factor,
+        **{
+            key: value
+            for key, value in {
+                "preset": act.preset,
+                "width": act.width,
+                "height": act.height,
+                "mobile": act.mobile,
+                "touch": act.touch,
+                "color_scheme": act.color_scheme,
+            }.items()
+            if value is not None
+        },
+    }
+    resp = await _send_command(
+        session_id,
+        "resize",
+        _tab_params(act, **params),
+    )
+    if not resp.get("success"):
+        return f"Resize failed: {resp.get('error', 'unknown')}"
+    data = resp.get("data") or {}
+    viewport = data.get("viewport") or data
+    return (
+        "Responsive viewport set to "
+        f"{viewport.get('width', act.width)}x{viewport.get('height', act.height)} "
+        f"css-px (DPR {viewport.get('dpr', act.device_scale_factor)})."
+    )
+
+
+async def _handle_reset_viewport(session_id: str, act: ResetViewportAction) -> str:
+    resp = await _send_command(session_id, "reset_viewport", _tab_params(act))
+    if not resp.get("success"):
+        return f"Reset viewport failed: {resp.get('error', 'unknown')}"
+    data = resp.get("data") or {}
+    viewport = data.get("viewport") or data
+    return (
+        "Responsive viewport reset"
+        f" ({viewport.get('width', '?')}x{viewport.get('height', '?')} css-px)."
+    )
+
+
+async def _handle_dialogs(session_id: str, act: DialogsAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "dialogs",
+        _tab_params(act, clear=act.clear, limit=act.limit),
+    )
+    if not resp.get("success"):
+        return f"Dialogs failed: {resp.get('error', 'unknown')}"
+    data = resp.get("data") or {}
+    if not data.get("active") and not data.get("history"):
+        return "No JavaScript dialogs captured."
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+async def _handle_dialog(session_id: str, act: HandleDialogAction) -> str:
+    params: dict[str, Any] = {"accept": act.accept}
+    if act.prompt_text is not None:
+        params["prompt_text"] = act.prompt_text
+    resp = await _send_command(
+        session_id,
+        "handle_dialog",
+        _tab_params(act, **params),
+    )
+    if not resp.get("success"):
+        return f"Handle dialog failed: {resp.get('error', 'unknown')}"
+    data = resp.get("data") or {}
+    verb = "Accepted" if data.get("accepted", act.accept) else "Dismissed"
+    return f"{verb} {data.get('type', 'JavaScript')} dialog."
 
 
 async def _handle_screenshot(session_id: str, act: ScreenshotAction) -> ToolResult:

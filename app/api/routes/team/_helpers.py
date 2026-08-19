@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from fastapi import HTTPException, UploadFile
 from loguru import logger
 
+from app.agent.lifecycle import SLEEP_LIFECYCLE, extract_sleep_prefix
 from app.api.schemas.sessions import MessageResponse
 from app.core.paths import session_workspace_dir
 from app.services import agent_service
@@ -42,6 +43,14 @@ _INTERNAL_ATTACHMENT_FIELDS = frozenset(
 
 def _message_response(m) -> MessageResponse:
     resp = MessageResponse.model_validate(m)
+    if resp.role == "assistant":
+        sleep_prefix = extract_sleep_prefix(resp.content)
+        if sleep_prefix is not None:
+            resp.content = sleep_prefix or None
+            resp.extra = {
+                **(resp.extra or {}),
+                "lifecycle": SLEEP_LIFECYCLE,
+            }
     if m.extra and m.extra.get("is_continuation"):
         resp.reasoning_content = None
     if m.extra and isinstance(m.extra.get("attachments"), list):
@@ -63,21 +72,25 @@ def _require_team(team: AgentTeam | None) -> AgentTeam:
 async def _read_upload_as_attachment(file: UploadFile) -> RawAttachment | None:
     """Materialise an ``UploadFile`` into a transport-neutral ``RawAttachment``.
 
-    Returns ``None`` for files with no filename (skipped, matches prior
-    behaviour).
+    Some WebView clipboard implementations submit an image part with an empty
+    filename. Give it a deterministic media-derived name instead of silently
+    discarding bytes the composer already showed as attached.
     """
-    if not file.filename:
-        return None
+    filename = file.filename
+    if not filename:
+        media_type = (file.content_type or "application/octet-stream").split(";", 1)[0]
+        extension = mimetypes.guess_extension(media_type) or ".bin"
+        filename = f"clipboard-upload{extension}"
     # Bound memory use before materialising multipart data into RawAttachment.
     # The service applies the same aggregate limit across the complete batch.
     data = await file.read(GLOBAL_SIZE_LIMIT + 1)
     if len(data) > GLOBAL_SIZE_LIMIT:
         raise HTTPException(
             status_code=413,
-            detail=f"'{file.filename}' exceeds the per-message upload limit.",
+            detail=f"'{filename}' exceeds the per-message upload limit.",
         )
     return RawAttachment(
-        filename=file.filename,
+        filename=filename,
         content_type=file.content_type,
         data=data,
     )

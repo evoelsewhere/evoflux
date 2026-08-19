@@ -86,6 +86,19 @@ if TYPE_CHECKING:
 router = APIRouter()
 
 
+def _resolve_effective_request_model(
+    requested: str | None,
+    *,
+    provided: bool,
+    persisted: str | None,
+    default: str | None,
+) -> str | None:
+    """Resolve one model id for capability checks and runtime dispatch."""
+    if provided:
+        return requested or default
+    return persisted or default
+
+
 async def _validate_thinking_level_for_model(
     model_id: str | None, thinking_level: str | None
 ) -> None:
@@ -404,10 +417,15 @@ async def team_chat(
     if existing is not None:
         team_obj.permission_mode = existing.permission_mode
 
-    effective_request_model = (
-        model
-        or (existing.model if existing is not None else None)
-        or team_obj.lead.agent.model_id
+    # An explicit blank model clears the session override and therefore uses
+    # the lead default for this very turn. When the field is omitted, preserve
+    # the persisted session selection. This same resolved id must drive both
+    # attachment delivery and the runtime provider.
+    effective_request_model = _resolve_effective_request_model(
+        model,
+        provided=model_provided,
+        persisted=existing.model if existing is not None else None,
+        default=team_obj.lead.agent.model_id,
     )
     effective_thinking_level = (
         thinking_level
@@ -531,7 +549,7 @@ async def team_chat(
                         team_obj,
                         mention_attachments,
                         session_id,
-                        model_override=model,
+                        model_override=effective_request_model,
                     )
                 except AttachmentError as exc:
                     raise HTTPException(
@@ -591,6 +609,7 @@ async def team_chat(
                 mode=mode,
                 workspace=workspace,
                 model=model,
+                attachment_model=effective_request_model,
                 model_provided=model_provided,
                 thinking_level=thinking_level,
                 thinking_level_provided=thinking_level_provided,

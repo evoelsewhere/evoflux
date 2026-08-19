@@ -22,7 +22,9 @@ def _make_state(workspace: Path) -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_lsp_diagnostics_no_issues(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+async def test_lsp_diagnostics_no_issues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """lsp_diagnostics returns OK when ruff finds no issues."""
     from app.agent.tools.builtin.lsp import static_diagnostics
 
@@ -30,7 +32,9 @@ async def test_lsp_diagnostics_no_issues(tmp_path: Path, monkeypatch: pytest.Mon
     clean_file.write_text("x = 1\n")
 
     state = _make_state(tmp_path)
-    monkeypatch.setattr("app.agent.tools.builtin.lsp.shutil.which", lambda _name: "ruff")
+    monkeypatch.setattr(
+        "app.agent.tools.builtin.lsp.shutil.which", lambda _name: "ruff"
+    )
 
     # Patch _run to simulate ruff returning empty JSON array
     with patch(
@@ -53,7 +57,9 @@ async def test_lsp_diagnostics_with_issues(
     py_file.write_text("import os\n")
 
     state = _make_state(tmp_path)
-    monkeypatch.setattr("app.agent.tools.builtin.lsp.shutil.which", lambda _name: "ruff")
+    monkeypatch.setattr(
+        "app.agent.tools.builtin.lsp.shutil.which", lambda _name: "ruff"
+    )
 
     ruff_output = json.dumps(
         [
@@ -71,6 +77,12 @@ async def test_lsp_diagnostics_with_issues(
 
     assert "F401" in result
     assert "imported but unused" in result
+    from app.services.problems_service import list_problems
+
+    problems = list_problems(tmp_path)
+    assert len(problems) == 1
+    assert problems[0].source == "static"
+    assert problems[0].code == "F401"
 
 
 @pytest.mark.asyncio
@@ -139,3 +151,83 @@ async def test_real_lsp_definition_requires_exact_position(tmp_path: Path):
         )
 
     assert "definition.py:1:5" in result
+
+
+@pytest.mark.asyncio
+async def test_lsp_semantic_returns_unapplied_rename_workspace_edit(tmp_path: Path):
+    from app.agent.tools.builtin.lsp import lsp_semantic
+
+    source = tmp_path / "live.py"
+    source.write_text("value = 1\n", encoding="utf-8")
+    state = _make_state(tmp_path)
+    client = AsyncMock()
+    client.rename.return_value = {
+        "changes": {
+            source.as_uri(): [
+                {
+                    "range": {
+                        "start": {"line": 0, "character": 0},
+                        "end": {"line": 0, "character": 5},
+                    },
+                    "newText": "renamed",
+                }
+            ]
+        }
+    }
+
+    with patch(
+        "app.agent.tools.builtin.lsp.get_language_server",
+        new_callable=AsyncMock,
+        return_value=client,
+    ):
+        result = await lsp_semantic.arun(
+            action="rename",
+            path="live.py",
+            line=1,
+            column=2,
+            new_name="renamed",
+            _state=state,
+        )
+
+    payload = json.loads(result)
+    assert payload["changes"][source.as_uri()][0]["newText"] == "renamed"
+    client.rename.assert_awaited_once_with(source.resolve(), 1, 2, "renamed")
+
+
+@pytest.mark.asyncio
+async def test_lsp_semantic_code_actions_include_live_diagnostics(tmp_path: Path):
+    from app.agent.tools.builtin.lsp import lsp_semantic
+
+    source = tmp_path / "live.py"
+    source.write_text("value = 1\n", encoding="utf-8")
+    state = _make_state(tmp_path)
+    client = AsyncMock()
+    client.diagnostics.return_value = [{"message": "Type mismatch"}]
+    client.code_actions.return_value = [
+        {"title": "Fix type mismatch", "kind": "quickfix"}
+    ]
+
+    with patch(
+        "app.agent.tools.builtin.lsp.get_language_server",
+        new_callable=AsyncMock,
+        return_value=client,
+    ):
+        result = await lsp_semantic.arun(
+            action="code_actions",
+            path="live.py",
+            line=1,
+            column=1,
+            end_line=1,
+            end_column=6,
+            _state=state,
+        )
+
+    assert json.loads(result)[0]["kind"] == "quickfix"
+    client.code_actions.assert_awaited_once_with(
+        source.resolve(),
+        start_line=1,
+        start_column=1,
+        end_line=1,
+        end_column=6,
+        diagnostics=[{"message": "Type mismatch"}],
+    )

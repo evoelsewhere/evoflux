@@ -6,6 +6,7 @@ import { apiBaseUrl } from '../base-url'
 import { parseDetailOrThrow } from './_shared'
 import type {
   GitChangesResponse,
+  GitCloneResult,
   GitCommitResponse,
   GitBranch,
   GitMergeResponse,
@@ -44,6 +45,22 @@ export async function gitInit(workspace: string, defaultBranch = 'main'): Promis
     body: JSON.stringify({ workspace, default_branch: defaultBranch }),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'gitInit')
+  return res.json()
+}
+
+export async function gitClone(input: {
+  parent: string
+  url: string
+  directory?: string
+  branch?: string
+  depth?: number
+}): Promise<GitCloneResult> {
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/repository/clone`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'gitClone')
   return res.json()
 }
 

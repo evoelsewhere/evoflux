@@ -60,6 +60,8 @@ export function codeReviewSessionPrompt(
     '',
     'Code review context:',
     `- Repository: ${repository.repository ?? repository.name}`,
+    `- Repository selector: ${repository.repository ?? repository.workspace_id}`,
+    `- Coding workspace ID: ${repository.workspace_id}`,
     `- Provider: ${provider ?? 'unknown Git server'}`,
     `- Branches: ${item.source_branch || 'unknown'} -> ${item.target_branch || 'unknown'}`,
   ]
@@ -70,7 +72,9 @@ export function codeReviewSessionPrompt(
   if (item.pipeline_status) lines.push(`- Pipeline status: ${item.pipeline_status}`)
   lines.push(
     '',
+    `First load the provider-neutral review context with get_code_review(number=${item.number}, repository=${JSON.stringify(repository.repository ?? repository.workspace_id)}). Ground the review in its current head commit, normalized changed files, existing threads, approvals, checks, and mergeability; refresh it if the source head changes.`,
     'Inspect the local repository and the full diff against the target branch. Identify correctness issues, regressions, security or performance risks, and missing tests. Start with an evidence-based review summary, then help me implement fixes when appropriate.',
+    'Treat this as read-only review work. Do not publish a comment, approval, request-changes decision, metadata update, close, or merge unless I explicitly ask for that remote mutation.',
   )
   return lines.join('\n')
 }

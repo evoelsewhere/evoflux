@@ -28,8 +28,9 @@ export function useCodeReviewsQuery(
     : scope.workspace
       ? `workspace:${scope.workspace}`
       : 'all'
+  const stateKey = scope.state ?? 'open'
   return useQuery({
-    queryKey: queryKeys.git.reviews(scopeKey),
+    queryKey: queryKeys.git.reviews(`${scopeKey}:${stateKey}`),
     queryFn: () => getCodeReviews(scope),
     enabled,
     staleTime: 30_000,

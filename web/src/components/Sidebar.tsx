@@ -38,6 +38,7 @@ import { usePinnedSessions } from "@/stores/usePinnedSessions";
 import {
   SidebarShell,
   SidebarCard,
+  SidebarNavGroup,
   SidebarShellDivider,
   SidebarSearchTrigger,
   SidebarFooter,
@@ -448,6 +449,7 @@ export function Sidebar({
       key={session.id}
       session={session}
       isActive={session.id === currentSessionId}
+      density={isDrawer ? 'comfortable' : 'dense'}
       enterIndex={sessionEnterIndex(session.id)}
       onSelect={(s) => handleSelect(s.id)}
       onOpenSideChat={(s) => handleSideChat(s.id)}
@@ -508,12 +510,14 @@ export function Sidebar({
                 className={
                   isMobile
                     ? "px-2 pb-0.5 pt-2 text-xs text-(--color-text-subtle) first:pt-1"
-                    : "px-3 pb-1 pt-3 text-xs font-medium text-(--color-text-subtle) first:pt-1.5"
+                    : "px-3 pb-0.5 pt-2 text-[10px] font-medium text-(--color-text-subtle) first:pt-1"
                 }
               >
                 Pinned
               </p>
-              {pinnedSessions.map(renderSessionRow)}
+              <div className={isDrawer ? undefined : 'pl-1.5'}>
+                {pinnedSessions.map(renderSessionRow)}
+              </div>
             </div>
           )}
           {groupByDate(unpinnedSessions).map(({ label, sessions: group }) => (
@@ -522,12 +526,14 @@ export function Sidebar({
                 className={
                   isMobile
                     ? "px-2 pb-0.5 pt-2 text-xs text-(--color-text-subtle) first:pt-1"
-                    : "px-3 pb-1 pt-3 text-xs font-medium text-(--color-text-subtle) first:pt-1.5"
+                    : "px-3 pb-0.5 pt-2 text-[10px] font-medium text-(--color-text-subtle) first:pt-1"
                 }
               >
                 {label}
               </p>
-              {group.map(renderSessionRow)}
+              <div className={isDrawer ? undefined : 'pl-1.5'}>
+                {group.map(renderSessionRow)}
+              </div>
             </div>
           ))}
           <div ref={loadMoreRef} className="h-1" aria-hidden />
@@ -538,131 +544,138 @@ export function Sidebar({
   );
 
   const sessionSections = (
-    <>
-      {/* Folders and Recent are separate scroll regions. Scrolling a long
-          Recent list must not move the folder controls out of view. */}
-      <div className="max-h-[45%] shrink-0 overflow-y-auto px-1.5">
-        <div className="mx-1.5 h-px bg-(--color-border)" aria-hidden="true" />
-        <SessionFolders
-          folders={folderList}
-          isLoading={folders.isLoading}
-          isError={folders.isError}
-          isMobile={isMobile}
-          renderSession={renderSessionRow}
-          onNewChatInFolder={(folder) => void handleNewChatInFolder(folder)}
-          onDropSession={moveSessionToFolder}
-          onLoadMore={(folder) => {
-            if (!folder.next_cursor) return;
-            loadMoreFolderSessions.mutate(
-              { folderId: folder.id, before: folder.next_cursor },
-              {
-                onError: (err) =>
-                  pushToast({
-                    tone: "error",
-                    title: "Could not load older chats",
-                    description:
-                      err instanceof Error ? err.message : "Please try again.",
-                  }),
-              },
-            );
-          }}
-          loadingFolderId={
-            loadMoreFolderSessions.isPending
-              ? loadMoreFolderSessions.variables?.folderId
-              : null
-          }
-          onRetry={() => void folders.refetch()}
-        />
-      </div>
-
-      {/* Dropping a row here takes it out of its folder — the mirror of
-          dropping it on a folder header. */}
       <div
-        data-session-unfile-drop-zone
-        className={cn(
-          "flex min-h-0 flex-1 flex-col rounded-md px-1.5 transition-colors",
-          unfileDropActive && "bg-(--bg-key)/40 ring-1 ring-(--color-accent)",
-        )}
-        onDragEnter={(event) => {
-          if (!isSessionDrag(event)) return;
-          event.preventDefault();
-          setSessionDropTarget(null);
-          setUnfileDropActive(true);
-        }}
-        onDragOver={(event) => {
-          if (!isSessionDrag(event)) return;
-          event.preventDefault();
-          event.dataTransfer.dropEffect = "move";
-          setSessionDropTarget(null);
-        }}
-        onDragLeave={(event) => {
-          if (event.currentTarget.contains(event.relatedTarget as Node)) return;
-          clearSessionDropTarget(null);
-          setUnfileDropActive(false);
-        }}
-        onDrop={(event) => {
-          if (!isSessionDrag(event)) return;
-          event.preventDefault();
-          markSessionDropHandled();
-          setUnfileDropActive(false);
-          const sessionId = readSessionDragPayload(event);
-          if (sessionId) moveSessionToFolder(sessionId, null);
-        }}
+        ref={sessionListRef}
+        className="relative min-h-0 flex-1 overflow-y-auto pb-1.5"
+        onTouchStart={handleSessionListTouchStart}
+        onTouchMove={handleSessionListTouchMove}
+        onTouchEnd={handleSessionListTouchEnd}
+        onTouchCancel={handleSessionListTouchEnd}
       >
-        <div className="mx-1.5 h-px shrink-0 bg-(--color-border)" aria-hidden="true" />
-        <CollapsibleSection
-          label="Recent"
-          collapsed={recentCollapsed}
-          onToggle={() => setRecentCollapsed((value) => !value)}
-          size="large"
-          className="shrink-0 px-2 pb-1 pt-1"
-          rightSlot={(
-            <button
-              type="button"
-              onClick={() => void refreshSidebar()}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-              aria-label="Refresh folders and recent chats"
-              title={`Refresh sidebar (${formatShortcutLabel("Ctrl+R")})`}
-            >
-              <RefreshCw
-                size={15}
-                className={sessions.isFetching || folders.isFetching ? "animate-spin" : ""}
-                aria-hidden="true"
-              />
-            </button>
-          )}
-        />
-        {!recentCollapsed && (
+        {canPullRefresh && (
           <div
-            ref={sessionListRef}
-            className="relative min-h-0 flex-1 overflow-y-auto pb-1.5"
-            onTouchStart={handleSessionListTouchStart}
-            onTouchMove={handleSessionListTouchMove}
-            onTouchEnd={handleSessionListTouchEnd}
-            onTouchCancel={handleSessionListTouchEnd}
+            className="pointer-events-none sticky top-0 z-(--z-panel) flex justify-center overflow-hidden transition-[height] duration-(--motion-fast)"
+            style={{ height: pullDistance }}
+            aria-hidden
           >
-            {canPullRefresh && (
-              <div
-                className="pointer-events-none sticky top-0 z-(--z-panel) flex justify-center overflow-hidden transition-[height] duration-(--motion-fast)"
-                style={{ height: pullDistance }}
-                aria-hidden
-              >
-                <div className="mt-2 inline-flex h-8 items-center gap-2 rounded-full border border-(--color-border) bg-(--bg-card) px-3 text-xs text-(--color-text-muted) shadow-sm">
-                  <RefreshCw size={12} className={pullDistance >= 54 || sessions.isFetching ? 'animate-spin' : ''} />
-                  {pullDistance >= 54 ? 'Release to refresh' : 'Pull to refresh'}
-                </div>
-              </div>
-            )}
-            {unfileDropActive && (
-              <p className="px-3 py-2 text-center text-xs text-(--color-text-muted)">
-                Drop to remove from folder
-              </p>
-            )}
-            {ungroupedList}
+            <div className="mt-2 inline-flex h-8 items-center gap-2 rounded-full border border-(--color-border) bg-(--bg-card) px-3 text-xs text-(--color-text-muted) shadow-sm">
+              <RefreshCw size={12} className={pullDistance >= 54 || sessions.isFetching ? 'animate-spin' : ''} />
+              {pullDistance >= 54 ? 'Release to refresh' : 'Pull to refresh'}
+            </div>
           </div>
         )}
+
+        {/* Folders and Recent share one scroll track and one horizontal grid. */}
+        <div className={isDrawer ? 'px-1.5' : 'px-1'}>
+          <div className="mx-1.5 h-px bg-(--color-border)" aria-hidden="true" />
+          <SessionFolders
+            folders={folderList}
+            isLoading={folders.isLoading}
+            isError={folders.isError}
+            isMobile={isMobile}
+            renderSession={renderSessionRow}
+            onNewChatInFolder={(folder) => void handleNewChatInFolder(folder)}
+            onDropSession={moveSessionToFolder}
+            onLoadMore={(folder) => {
+              if (!folder.next_cursor) return;
+              loadMoreFolderSessions.mutate(
+                { folderId: folder.id, before: folder.next_cursor },
+                {
+                  onError: (err) =>
+                    pushToast({
+                      tone: "error",
+                      title: "Could not load older chats",
+                      description:
+                        err instanceof Error ? err.message : "Please try again.",
+                    }),
+                },
+              );
+            }}
+            loadingFolderId={
+              loadMoreFolderSessions.isPending
+                ? loadMoreFolderSessions.variables?.folderId
+                : null
+            }
+            onRetry={() => void folders.refetch()}
+          />
+        </div>
+
+        {/* Dropping a row here takes it out of its folder — the mirror of
+            dropping it on a folder header. */}
+        <div
+          data-session-unfile-drop-zone
+          className={cn(
+            'rounded-md transition-colors',
+            isDrawer && 'px-1.5',
+            unfileDropActive && 'bg-(--bg-key)/40 ring-1 ring-(--color-accent)',
+          )}
+          onDragEnter={(event) => {
+            if (!isSessionDrag(event)) return;
+            event.preventDefault();
+            setSessionDropTarget(null);
+            setUnfileDropActive(true);
+          }}
+          onDragOver={(event) => {
+            if (!isSessionDrag(event)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            setSessionDropTarget(null);
+          }}
+          onDragLeave={(event) => {
+            if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+            clearSessionDropTarget(null);
+            setUnfileDropActive(false);
+          }}
+          onDrop={(event) => {
+            if (!isSessionDrag(event)) return;
+            event.preventDefault();
+            markSessionDropHandled();
+            setUnfileDropActive(false);
+            const sessionId = readSessionDragPayload(event);
+            if (sessionId) moveSessionToFolder(sessionId, null);
+          }}
+        >
+          <div className="mx-1.5 h-px bg-(--color-border)" aria-hidden="true" />
+          <CollapsibleSection
+            label="Recent"
+            collapsed={recentCollapsed}
+            onToggle={() => setRecentCollapsed((value) => !value)}
+            size={isDrawer ? 'large' : 'default'}
+            className={cn(
+              'px-2',
+              isDrawer ? 'pb-1 pt-1' : 'pb-0.5 pt-0.5',
+            )}
+            rightSlot={(
+              <button
+                type="button"
+                onClick={() => void refreshSidebar()}
+                className={cn(
+                  'flex shrink-0 items-center justify-center rounded text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
+                  isDrawer ? 'h-7 w-7' : 'h-5 w-5',
+                )}
+                aria-label="Refresh folders and recent chats"
+                title={`Refresh sidebar (${formatShortcutLabel("Ctrl+R")})`}
+              >
+                <RefreshCw
+                  size={isDrawer ? 15 : 12}
+                  className={sessions.isFetching || folders.isFetching ? "animate-spin" : ""}
+                  aria-hidden="true"
+                />
+              </button>
+            )}
+          />
+          {!recentCollapsed && (
+            <>
+              {unfileDropActive && (
+                <p className="px-3 py-2 text-center text-xs text-(--color-text-muted)">
+                  Drop to remove from folder
+                </p>
+              )}
+              {ungroupedList}
+            </>
+          )}
+        </div>
       </div>
-    </>
   );
 
   // Desktop: one floating card with internal dividers (work style).
@@ -677,30 +690,33 @@ export function Sidebar({
             <SidebarModeSlot />
           </div>
           {onCommandPalette && (
-            <div className="px-2.5 pt-2.5">
-              <SidebarSearchTrigger onClick={onCommandPalette} />
+            <div className="px-2.5 pt-2">
+              <SidebarSearchTrigger onClick={onCommandPalette} compact />
             </div>
           )}
-          <nav aria-label="Primary" className="space-y-0.5 px-1.5 pb-1.5 pt-2">
+          <SidebarNavGroup ariaLabel="Primary" compact className="px-1.5 pb-1 pt-1">
             <SidebarItem
               Icon={Plus}
               label="New Chat"
               kbd="^N"
+              compact
               onClick={handleNewChat}
             />
             <SidebarItem
               Icon={CalendarClock}
               label="Scheduler"
               kbd="^S"
+              compact
               onClick={toggleScheduler}
             />
             <SidebarItem
               Icon={Blocks}
               label="Plugins"
               kbd="^K"
+              compact
               onClick={() => togglePlugins("plugins")}
             />
-          </nav>
+          </SidebarNavGroup>
         </div>
 
         {/* ─── Sessions section ─── */}
@@ -766,7 +782,7 @@ export function Sidebar({
       </div>
 
       {/* Nav */}
-      <nav aria-label="Primary" className="space-y-0.5 px-1.5 pb-1.5 pt-1.5">
+      <SidebarNavGroup ariaLabel="Primary" className="px-1.5 pb-1.5 pt-1.5">
         <SidebarItem
           Icon={Plus}
           label="New Chat"
@@ -785,7 +801,7 @@ export function Sidebar({
           kbd="^K"
           onClick={() => { togglePlugins("plugins"); onMobileClose?.(); }}
         />
-      </nav>
+      </SidebarNavGroup>
 
       {/* Sessions */}
       <AnimatePresence>

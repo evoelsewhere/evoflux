@@ -7,6 +7,8 @@ interface ResizableWidthOptions {
   maxWidth: number
   edge: 'left' | 'right'
   disabled?: boolean
+  /** Keep a temporarily clamped preferred width for responsive layouts. */
+  preserveOutOfRange?: boolean
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -20,12 +22,14 @@ export function useResizableWidth({
   maxWidth,
   edge,
   disabled = false,
+  preserveOutOfRange = false,
 }: ResizableWidthOptions) {
   const [width, setWidth] = useState(() => {
     if (typeof window === 'undefined') return defaultWidth
     const stored = window.localStorage.getItem(storageKey)
     const parsed = stored ? Number(stored) : Number.NaN
-    return Number.isFinite(parsed) ? clamp(parsed, minWidth, maxWidth) : defaultWidth
+    if (!Number.isFinite(parsed)) return defaultWidth
+    return preserveOutOfRange ? parsed : clamp(parsed, minWidth, maxWidth)
   })
   const clampedWidth = clamp(width, minWidth, maxWidth)
   // Always-current live width — updated during drag without triggering renders.
@@ -37,8 +41,11 @@ export function useResizableWidth({
 
   useEffect(() => {
     if (disabled) return
-    window.localStorage.setItem(storageKey, String(clampedWidth))
-  }, [clampedWidth, disabled, storageKey])
+    // A responsive max can temporarily clamp the rendered width. Preserve the
+    // wider user preference so it returns when the viewport grows again.
+    if (preserveOutOfRange && (width < minWidth || width > maxWidth)) return
+    window.localStorage.setItem(storageKey, String(preserveOutOfRange ? width : clampedWidth))
+  }, [clampedWidth, disabled, maxWidth, minWidth, preserveOutOfRange, storageKey, width])
 
   const resetWidth = useCallback(() => setWidth(defaultWidth), [defaultWidth])
 

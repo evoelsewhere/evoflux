@@ -1,11 +1,4 @@
-"""Trusted, package-owned Agent Plugins bundled with EvoFlux.
-
-Bundled plugins keep first-party document engines out of the portable plugin
-runtime while presenting the same ``plugin.json`` and immediate-child Skill
-contract in Plugin Center.  Only packages below :func:`builtin_plugins_root`
-may use the private native-provider extension; installed and linked packages
-remain limited to portable Skills and MCP declarations.
-"""
+"""Immutable, portable Agent Plugin packages bundled with EvoFlux releases."""
 
 from __future__ import annotations
 

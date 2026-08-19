@@ -1,6 +1,6 @@
 # Desktop packaging and signing
 
-Last reviewed: 2026-08-02.
+Last reviewed: 2026-08-18.
 
 ## Audit summary
 
@@ -42,8 +42,11 @@ Last reviewed: 2026-08-02.
 ## Consolidated workflow
 
 `.github/workflows/desktop-packages.yml` is the only GitHub Actions workflow.
-Run it from **Actions > Build desktop packages > Run workflow**. The `platform`
-input can build all three targets or only `macos-intel`,
+Run it from **Actions > Build desktop packages > Run workflow** for an
+unpublished package audit. Pushing a version tag such as `v0.0.7` builds all
+targets, creates signed updater artifacts, generates `latest.json`, and
+publishes the GitHub Release. The `platform` input for manual runs can build
+all three targets or only `macos-intel`,
 `macos-apple-silicon`, or `windows-x64`. The selected matrix produces these
 artifacts:
 
@@ -70,6 +73,43 @@ The `signing` input has three modes:
 - `required`: fail a platform job immediately when any signing secret is
   missing. Use this for a real public release.
 - `off`: always build ad-hoc DMGs and an unsigned NSIS installer.
+
+## In-app updates from GitHub Releases
+
+Packaged release builds check
+`https://github.com/evoelsewhere/evoflux/releases/latest/download/latest.json`
+after startup and when the user chooses **Check for Updates** from Settings,
+the application menu, or the tray menu. Tauri compares semantic versions,
+downloads only the current OS/architecture artifact, verifies its updater
+signature, installs it, and restarts EvoFlux. Development builds and manual
+audit builds without the updater key have update checks disabled.
+
+Updater signing is independent from Apple Developer ID and Windows
+Authenticode signing. It is free and is required even while the outer packages
+remain ad-hoc/unsigned: it prevents a modified GitHub asset or manifest from
+being installed over an existing EvoFlux copy.
+
+Provision the updater key once from the repository root:
+
+```bash
+./scripts/generate_updater_keys.sh
+gh secret set TAURI_SIGNING_PUBLIC_KEY < .tauri-keys/EvoFlux.key.pub
+gh secret set TAURI_SIGNING_PRIVATE_KEY < .tauri-keys/EvoFlux.key
+# Only when the private key was generated with a password:
+gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+```
+
+Back up the private key and password before publishing the first updater-aware
+release. Losing or rotating this key prevents already-installed copies from
+accepting future updates. A tagged release fails before packaging when the
+public or private updater key secret is missing.
+
+Tauri produces a signed `.app.tar.gz` for each macOS architecture and a
+signature next to the Windows NSIS installer. The release job renames the
+macOS archives with architecture suffixes, builds a static `latest.json`,
+uploads all packages/signatures/checksums, then publishes the draft release.
+The first updater-aware version is a bootstrap release: users on older builds
+must install it manually once; subsequent versions update in-app.
 
 ## macOS Developer ID signing and notarization
 

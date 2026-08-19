@@ -65,6 +65,8 @@ export function AgentPane({
   const pendingRestoreRef = useRef(false)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
   const sessionModel = useTeamStore((s) => s.sessionModel)
+  const isTeamWorking = useTeamStore((s) => s.isTeamWorking)
+  const compactTeam = useTeamStore((s) => s.compactTeam)
   const turnChanges = useTeamStore((s) => s.turnChanges)
   const registry = useRegistryQuery()
   const modelEntry = useMemo(() => {
@@ -116,7 +118,8 @@ export function AgentPane({
     isEmpty,
     contentKey: allBlocks.length,
     resetKey: sessionId,
-    followKey: latestLiveUserBlockId ?? (isWorking && isContinuing ? `continue:${sessionId ?? ''}:${name}` : null),
+    followKey: isWorking && isContinuing ? `continue:${sessionId ?? ''}:${name}` : null,
+    topAnchorKey: latestLiveUserBlockId,
   })
 
   const showEarlierTurns = useCallback(() => {
@@ -181,6 +184,8 @@ export function AgentPane({
              output={stream.usage.completionTokens}
              cached={stream.usage.cachedTokens}
              trigger={modelEntry?.summary_trigger_tokens}
+             onCompact={isLead ? compactTeam : undefined}
+             compactDisabled={isTeamWorking}
            />
             <span aria-label={`Agent status: ${stream.status}`} className={`h-1.5 w-1.5 rounded-full ${
              isError ? 'bg-(--color-error)' : isWorking ? 'bg-(--color-accent)' : isOffline ? 'bg-(--color-text-subtle) opacity-50' : 'bg-(--color-success)'
@@ -254,7 +259,11 @@ export function AgentPane({
                {visibleTurnItems.map((item, k) => {
                    if (item.kind === 'user') {
                      return (
-                       <div key={item.block.id} className="oa-transcript-turn">
+                       <div
+                         key={item.block.id}
+                         className="oa-transcript-turn"
+                         data-transcript-top-anchor={item.block.id === latestLiveUserBlockId ? 'true' : undefined}
+                       >
                          <BlockRenderer
                            block={item.block}
                            isStreaming={false}

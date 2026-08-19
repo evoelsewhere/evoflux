@@ -4,10 +4,13 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Maximize2, Menu, Minimize2, Plus, X } from 'lucide-react'
 import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { usePlatform } from '@/hooks/use-platform'
+import { useTauriDrag } from '@/hooks/use-tauri-drag'
 import { EASINGS, staggerDelay, useMotionPreset } from '@/lib/motion'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { cn } from '@/lib/utils'
 import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
+import { getResponsiveSidePanelLayout } from '@/lib/side-panel-layout'
 import {
   loadBrowserPreferences,
   subscribeBrowserPreferences,
@@ -49,23 +52,47 @@ export function WorkbenchDock({
   const activeTabId = useUIStore((state) => state.activeWorkbenchTabId)
   const activeTool = useUIStore((state) => state.activeWorkbenchTool)
   const maximized = useUIStore((state) => state.workbenchMaximized)
+  const sidebarWidth = useUIStore((state) => state.sidebarWidth)
+  const sidebarCollapsed = useUIStore((state) => state.sidebarCollapsed)
+  const sidebarOverlay = useUIStore((state) => state.sidebarOverlay)
   const selectTab = useUIStore((state) => state.selectWorkbenchTab)
   const closeTab = useUIStore((state) => state.closeWorkbenchTab)
   const closeWorkbench = useUIStore((state) => state.closeWorkbench)
   const showLauncher = useUIStore((state) => state.showWorkbenchLauncher)
   const toggleMaximized = useUIStore((state) => state.toggleWorkbenchMaximized)
   const motionPreset = useMotionPreset()
+  const { isMacOverlay } = usePlatform()
+  const dragHandlers = useTauriDrag()
   const dockTransition = motionPreset.intensity === 'reduced'
     ? { duration: 0 }
     : { duration: 0.14, ease: EASINGS.out }
   const isMobile = useIsMobile()
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === 'undefined' ? 1440 : window.innerWidth,
+  )
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+  const responsiveLayout = getResponsiveSidePanelLayout({
+    viewportWidth,
+    sidebarWidth,
+    sidebarCollapsed,
+    sidebarOverlay,
+    minWidth: 360,
+    maxWidth: 1080,
+    canOverlay: false,
+    inFlow: !maximized && !isMobile,
+  })
   const resizable = useResizableWidth({
     storageKey: STORAGE_KEYS.panels.workbench,
     defaultWidth: 540,
     minWidth: 360,
-    maxWidth: 1080,
+    maxWidth: responsiveLayout.maxWidth,
     edge: 'left',
     disabled: maximized || isMobile,
+    preserveOutOfRange: true,
   })
   const closeTabAndResources = (tabId: string) => {
     window.dispatchEvent(new CustomEvent('evoflux:workbench-tab-close', {
@@ -92,7 +119,7 @@ export function WorkbenchDock({
         width: maximized || isMobile ? '100%' : resizable.width,
       }}
       className={cn(
-        'flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-(--color-border-strong) bg-(--bg-page)',
+        'flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-(--color-border-subtle)/32 bg-(--bg-page)',
         isMobile
           ? 'mobile-safe-top fixed inset-x-0 bottom-0 z-(--z-overlay) h-auto w-full max-w-none'
           : 'relative shrink-0',
@@ -113,9 +140,16 @@ export function WorkbenchDock({
         />
       )}
       <motion.header
-        className="flex h-11 shrink-0 items-center gap-1 px-2"
+        {...(maximized ? dragHandlers : {})}
+        className={cn(
+          'flex h-11 shrink-0 items-center gap-1 px-2',
+          maximized
+            && isMacOverlay
+            && (sidebarCollapsed || sidebarOverlay)
+            && 'pl-(--spacing-mac-window-controls-inset) select-none',
+        )}
       >
-        {maximized && onOpenSidebar && (
+        {maximized && onOpenSidebar && !isMacOverlay && (
           <motion.button
             type="button"
             onClick={onOpenSidebar}
@@ -231,7 +265,7 @@ export function WorkbenchDock({
           <X size={15} />
         </motion.button>
       </motion.header>
-      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden border-t border-(--color-border)">
+      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden border-t border-(--color-border-subtle)/50">
         <AnimatePresence initial={false}>
           {activeTool === null && (
             <WorkbenchLauncher

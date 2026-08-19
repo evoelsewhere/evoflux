@@ -24,7 +24,7 @@ import { HandoffCard } from './HandoffCard'
 import { CompactionDivider } from './CompactionDivider'
 import { ImageAttachment } from './ImageAttachment'
 import { FileCard } from './FileCard'
-import { extractSleepPrefix, formatTime } from '@/utils/format'
+import { extractSleepPrefix, formatTime, hasSleepLifecycle } from '@/utils/format'
 import { isConsolidatedDelegationMessage } from '@/utils/blocks'
 import { findCommittedMentions } from './InputBar.mentions'
 import { findSkillDirectives } from './InputBar.skills'
@@ -399,16 +399,16 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
       )
     }
     case 'text': {
-      // Me sleep sentinel — show any preceding content normally, then append idle pill
+      // Lifecycle-only blocks are control state, not chat content. Keep the
+      // legacy suffix parser so old persisted history is sanitized too.
       const sleepPrefix = extractSleepPrefix(block.content)
-      if (sleepPrefix !== null) {
+      if (hasSleepLifecycle(block.extra) || sleepPrefix !== null) {
+        const visibleContent = sleepPrefix ?? block.content
+        if (!visibleContent) return null
         return (
-          <div>
-            {sleepPrefix && <LazyMarkdownBlock content={sleepPrefix} sessionId={sessionId} isStreaming={isStreaming} />}
-            <p className="text-xs text-(--color-text-subtle) italic">— idle —</p>
-    </div>
-  )
-}
+          <LazyMarkdownBlock content={visibleContent} sessionId={sessionId} isStreaming={isStreaming} />
+        )
+      }
 
       return (
         <LazyMarkdownBlock content={block.content} sessionId={sessionId} isStreaming={isStreaming} />

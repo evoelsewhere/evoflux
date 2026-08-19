@@ -47,19 +47,20 @@ function assistantBlocks(
     blocks.push({ id: generateBlockId(), type: 'thinking', content: msg.reasoning_content, timestamp })
   }
 
-  const extra = msg.extra as { duration_ms?: number; model?: unknown } | null
+  const extra = msg.extra as { duration_ms?: number; model?: unknown; lifecycle?: unknown } | null
   const responseDurationMs = typeof extra?.duration_ms === 'number' ? extra.duration_ms : undefined
   const model = typeof extra?.model === 'string' ? extra.model : undefined
+  const lifecycle = extra?.lifecycle === 'sleep' ? 'sleep' : undefined
 
   // Me text before tools — LLM emits content first, then tool_calls
-  if (msg.content) {
+  if (msg.content || lifecycle) {
     blocks.push({
       id: generateBlockId(),
       type: 'text',
-      content: msg.content,
+      content: msg.content || '',
       timestamp,
       responseDurationMs,
-      extra: model ? { model } : undefined,
+      extra: model || lifecycle ? { ...(model ? { model } : {}), ...(lifecycle ? { lifecycle } : {}) } : undefined,
     })
   }
 

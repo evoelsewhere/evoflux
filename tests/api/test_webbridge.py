@@ -265,6 +265,93 @@ def test_side_chat_stream_sanitizes_typed_block_payloads(
     assert "must-not-leak" not in event["data"]
 
 
+def test_side_chat_stream_keeps_only_safe_skill_presentation():
+    event = _browser_panel_stream_event(
+        {
+            "event": "tool_start",
+            "data": json.dumps(
+                {
+                    "agent": "lead",
+                    "tool_call_id": "skill-1",
+                    "name": "skill",
+                    "arguments": json.dumps(
+                        {
+                            "action": "load",
+                            "skill_name": "work-writing",
+                            "token": "must-not-leak",
+                        }
+                    ),
+                }
+            ),
+        }
+    )
+
+    assert event is not None
+    assert json.loads(event["data"]) == {
+        "type": "tool_start",
+        "id": "skill-1",
+        "agent": "lead",
+        "name": "skill",
+        "skill_action": "load",
+        "skill_name": "work-writing",
+        "state": "running",
+    }
+    assert "must-not-leak" not in event["data"]
+
+
+def test_side_chat_stream_projects_sanitized_webbridge_arguments():
+    event = _browser_panel_stream_event(
+        {
+            "event": "tool_start",
+            "data": json.dumps(
+                {
+                    "agent": "lead",
+                    "tool_call_id": "browser-1",
+                    "name": "webbridge",
+                    "arguments": json.dumps(
+                        {
+                            "actions": [
+                                {"action": "status"},
+                                {"action": "get_tabs"},
+                                {
+                                    "action": "fill",
+                                    "selector": "#password",
+                                    "value": "must-not-leak",
+                                    "submit": True,
+                                },
+                                {
+                                    "action": "click",
+                                    "x": 12.5,
+                                    "y": 42,
+                                    "button": "left",
+                                },
+                            ]
+                        }
+                    ),
+                }
+            ),
+        }
+    )
+
+    assert event is not None
+    payload = json.loads(event["data"])
+    assert payload["display_arguments"] == {
+        "actions": [
+            {"action": "status"},
+            {"action": "get_tabs"},
+            {
+                "action": "fill",
+                "selector": "[redacted]",
+                "value": "[redacted]",
+                "submit": True,
+            },
+            {"action": "click", "x": 12.5, "y": 42, "button": "left"},
+        ]
+    }
+    assert "must-not-leak" not in event["data"]
+    assert "#password" not in event["data"]
+
+
 def test_side_chat_stream_keeps_safe_queued_turn_chronology():
     event = _browser_panel_stream_event(
         {
@@ -737,6 +824,117 @@ def test_side_chat_history_sanitizes_typed_blocks_and_keeps_message_fields():
     assert "must-not-leak" not in serialized
     assert "private tool output" not in serialized
     assert "I should inspect the selected page." not in serialized
+
+
+def test_side_chat_history_keeps_safe_skill_presentation_without_arguments():
+    session_id = uuid4()
+    created_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    assistant = SimpleNamespace(
+        id=uuid4(),
+        session_id=session_id,
+        role="assistant",
+        content=None,
+        reasoning_content=None,
+        name="lead",
+        created_at=created_at,
+        extra=None,
+        tool_calls=[
+            {
+                "id": "skill-1",
+                "function": {
+                    "name": "skill",
+                    "arguments": json.dumps(
+                        {
+                            "action": "load",
+                            "skill_name": "work-writing",
+                            "token": "must-not-leak",
+                        }
+                    ),
+                },
+            }
+        ],
+        tool_call_id=None,
+        is_summary=False,
+    )
+    result = SimpleNamespace(
+        id=uuid4(),
+        session_id=session_id,
+        role="tool",
+        content="private tool output",
+        name="skill",
+        created_at=created_at,
+        extra={"duration_ms": 43},
+        tool_calls=None,
+        tool_call_id="skill-1",
+        is_summary=False,
+    )
+
+    projected = _browser_panel_messages([assistant, result])
+
+    assert projected[0].blocks == [
+        {
+            "id": f"{assistant.id}:tool:skill-1",
+            "type": "tool",
+            "agent": "lead",
+            "name": "skill",
+            "tool_call_id": "skill-1",
+            "done": True,
+            "skill_action": "load",
+            "skill_name": "work-writing",
+            "duration_ms": 43,
+        }
+    ]
+    serialized = json.dumps(projected[0].model_dump())
+    assert "must-not-leak" not in serialized
+    assert "private tool output" not in serialized
+
+
+def test_side_chat_history_keeps_sanitized_webbridge_arguments():
+    session_id = uuid4()
+    created_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    assistant = SimpleNamespace(
+        id=uuid4(),
+        session_id=session_id,
+        role="assistant",
+        content=None,
+        reasoning_content=None,
+        name="lead",
+        created_at=created_at,
+        extra=None,
+        tool_calls=[
+            {
+                "id": "browser-1",
+                "function": {
+                    "name": "webbridge",
+                    "arguments": json.dumps(
+                        {
+                            "actions": [
+                                {"action": "status"},
+                                {"action": "get_tabs"},
+                                {
+                                    "action": "fill",
+                                    "value": "must-not-leak",
+                                },
+                            ]
+                        }
+                    ),
+                },
+            }
+        ],
+        tool_call_id=None,
+        is_summary=False,
+    )
+
+    projected = _browser_panel_messages([assistant])
+
+    assert projected[0].blocks[0]["display_arguments"] == {
+        "actions": [
+            {"action": "status"},
+            {"action": "get_tabs"},
+            {"action": "fill", "value": "[redacted]"},
+        ]
+    }
+    assert "must-not-leak" not in json.dumps(projected[0].model_dump())
 
 
 def test_side_chat_history_marks_user_shell_messages():
@@ -5423,8 +5621,10 @@ async def test_sharing_capture_flags_gate_command_plane_reads(
     manager.get_extension("e1").current_url = "https://example.com/page"
     screenshot = await manager.send_command("sess", "screenshot", {})
     snapshot = await manager.send_command("sess", "semantic_snapshot", {})
+    dialogs = await manager.send_command("sess", "dialogs", {})
     assert screenshot["success"] is False
     assert snapshot["success"] is False
+    assert dialogs["success"] is False
     assert sent == []
 
 
@@ -5849,6 +6049,77 @@ async def test_tool_rich_interaction_actions_map_params(
         ),
         ("key", {"key": "a", "modifiers": ["Meta", "Shift"], "tab_id": 7}),
     ]
+
+
+async def test_tool_responsive_viewport_and_dialog_actions_map_params(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+
+    def handler(action: str, params: dict):
+        seen.append((action, params))
+        data = {
+            "resize": {"viewport": {"width": 375, "height": 812, "dpr": 2}},
+            "reset_viewport": {"viewport": {"width": 1440, "height": 900, "dpr": 2}},
+            "dialogs": {
+                "active": {"type": "prompt", "message": "Name?"},
+                "history": [],
+            },
+            "handle_dialog": {"type": "prompt", "accepted": True},
+        }[action]
+        return {"success": True, "data": data, "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    result = await webbridge(
+        actions=[
+            _action(
+                {
+                    "action": "resize",
+                    "preset": "mobile",
+                    "device_scale_factor": 2,
+                    "color_scheme": "dark",
+                    "tab_id": 7,
+                }
+            ),
+            _action({"action": "dialogs", "tab_id": 7}),
+            _action(
+                {
+                    "action": "handle_dialog",
+                    "accept": True,
+                    "prompt_text": "EvoFlux",
+                    "tab_id": 7,
+                }
+            ),
+            _action({"action": "reset_viewport", "tab_id": 7}),
+        ]
+    )
+
+    assert isinstance(result, str)
+    assert "Responsive viewport set to 375x812" in result
+    assert "Untrusted browser content" in result
+    assert "Accepted prompt dialog" in result
+    assert seen == [
+        (
+            "resize",
+            {
+                "device_scale_factor": 2.0,
+                "preset": "mobile",
+                "color_scheme": "dark",
+                "tab_id": 7,
+            },
+        ),
+        ("dialogs", {"clear": False, "limit": 20, "tab_id": 7}),
+        (
+            "handle_dialog",
+            {"accept": True, "prompt_text": "EvoFlux", "tab_id": 7},
+        ),
+        ("reset_viewport", {"tab_id": 7}),
+    ]
+
+
+def test_resize_requires_preset_or_explicit_dimensions():
+    with pytest.raises(Exception, match="preset or both width and height"):
+        _action({"action": "resize", "width": 375})
 
 
 async def test_tool_open_and_close_tab(

@@ -14,8 +14,8 @@ class SandboxSettingsBody(BaseModel):
     worktree_location: Literal["repository", "user_data"] = "repository"
     inherit_shell_environment: bool = False
     load_shell_profile: bool = False
-    outbound_data_policy: Literal["block", "redact", "off"] = "block"
-    outbound_pii_policy: Literal["off", "standard", "strict"] = "standard"
+    outbound_data_policy: Literal["block", "redact", "off"] = "off"
+    outbound_pii_policy: Literal["off", "standard", "strict"] = "off"
     max_execution_seconds: int = Field(default=600, ge=5, le=3600)
     max_output_bytes: int = Field(default=131072, ge=4096, le=1048576)
 
@@ -42,12 +42,23 @@ class VersionControlSettingsBody(BaseModel):
 
 
 class WebBridgeSettingsBody(BaseModel):
-    """User-editable WebBridge policy exposed in Settings → Browser."""
+    """User-editable browser policies exposed in Settings → Browser."""
 
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
     allow_evaluate: bool = True
+    built_in_allowed_domains: list[str] = Field(default_factory=list)
+    built_in_blocked_domains: list[str] = Field(default_factory=list)
+    built_in_allow_evaluate: bool = True
+    built_in_allow_storage: bool = True
+    built_in_allow_cookie_values: bool = False
+    built_in_allow_http_requests: bool = True
+    built_in_allow_clipboard_read: bool = False
+    built_in_allow_clipboard_write: bool = True
+    built_in_allow_file_uploads: bool = False
+    built_in_allow_downloads: bool = True
+    built_in_allow_agent_permission_accept: bool = False
 
 
 class ConductorSettingsBody(BaseModel):

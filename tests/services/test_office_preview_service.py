@@ -21,7 +21,7 @@ from pptx.oxml.ns import qn as pptx_qn
 from pptx.util import Inches, Pt
 import pytest
 
-from app.agent.builtin_plugins.documents import preview
+from app.services.document_preview import service as preview
 
 
 def _docx(path):
@@ -732,9 +732,9 @@ def test_render_pptx_preview_skips_picture_with_missing_relationship(
     source = tmp_path / "missing-picture-relationship.pptx"
     presentation = Presentation()
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
-    slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text = (
-        "The rest of the slide remains visible"
-    )
+    slide.shapes.add_textbox(
+        Inches(1), Inches(1), Inches(4), Inches(1)
+    ).text = "The rest of the slide remains visible"
     picture = slide.shapes.add_picture(
         str(source_image), Inches(1), Inches(2), Inches(2), Inches(2)
     )
@@ -1013,6 +1013,10 @@ def test_render_pptx_preview_resolves_inherited_master_text_responsively(
     )[0]
     title_style = title_span.get("style", "")
 
+    # A neutral wrapper with the browser's default 16px font creates an extra
+    # inline strut around large native runs.  That inflates every line box and
+    # clips the final line in the fixed PowerPoint text frame.
+    assert title_span.getparent().tag == "p"
     assert _css_number(title_style, "font-size", "cqw") == pytest.approx(
         4.5833, abs=0.001
     )
@@ -1358,7 +1362,7 @@ def test_render_document_preview_rejects_oversized_generated_html(
 
 
 def test_render_pdf_preview_is_bounded_and_cleans_rasters(monkeypatch, tmp_path):
-    from app.agent.builtin_plugins.documents.rendering import internal
+    from app.services.document_preview import pdf
 
     source = tmp_path / "large.pdf"
     source.write_bytes(b"pdf fixture")
@@ -1372,8 +1376,8 @@ def test_render_pdf_preview_is_bounded_and_cleans_rasters(monkeypatch, tmp_path)
         page.write_bytes(b"preview")
         return [page]
 
-    monkeypatch.setattr(internal, "count_pdf_pages", lambda _source: 5)
-    monkeypatch.setattr(internal, "render_pdf_pages", fake_render)
+    monkeypatch.setattr(pdf, "count_pdf_pages", lambda _source: 5)
+    monkeypatch.setattr(pdf, "render_pdf_pages", fake_render)
 
     rendered = preview._render_pdf(source)
 

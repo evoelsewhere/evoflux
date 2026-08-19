@@ -165,7 +165,7 @@
     color-scheme: dark;
 
     /* Surfaces — distinct enough to scan, close enough to feel like one app. */
-    --bg-page:           #232220;
+    --bg-page:           #222222;
     --bg-sidebar:        #1F1E1C;
     --bg-card:           #2D2C2A;
     --bg-input:          #282725;
@@ -344,7 +344,7 @@
     color-scheme: light;
 
     /* Surfaces */
-    --bg-page:           #FAFAFA;
+    --bg-page:           #FFFFFF;
     --bg-sidebar:        #F5F5F5;
     --bg-card:           #FFFFFF;
     --bg-input:          #FFFFFF;
@@ -644,22 +644,48 @@ a svg.lucide,
     transform var(--motion-fast) ease;
 }
 
-/* Desktop-only smoked glass. The sidebar follows the active page palette
- * instead of introducing another opaque slab. Mobile drawers and the web app
- * keep their solid surfaces for contrast and cheaper compositing. */
-[data-desktop-sidebar-glass="true"] [data-sidebar-card] {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--bg-sidebar) 64%, transparent),
-      color-mix(in srgb, var(--bg-page) 78%, transparent)
-    );
-  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 72%, transparent);
-  -webkit-backdrop-filter: blur(22px) saturate(108%);
-  backdrop-filter: blur(22px) saturate(108%);
+/* Native macOS/Windows sidebar material can only show through when the WebView's
+ * document and the shell gutter are transparent. Main/workbench canvases keep
+ * their own opaque palette surfaces, so only the application chrome receives
+ * the system backdrop—matching the Codex desktop hierarchy. */
+html[data-native-sidebar-glass="true"],
+html[data-native-sidebar-glass="true"] body,
+html[data-native-sidebar-glass="true"] #root,
+html[data-native-sidebar-glass="true"] [data-app-shell],
+html[data-native-sidebar-glass="true"] [data-settings-screen] {
+  background: transparent;
+}
+
+/* Desktop-only smoked glass. Tint from the same page token as the canvas so
+ * light/dark themes remain synchronized while native vibrancy supplies the
+ * environmental color. Mobile drawers and the web app keep solid surfaces. */
+[data-desktop-sidebar-glass="true"] [data-sidebar-card],
+html[data-native-sidebar-glass="true"] [data-settings-sidebar] {
+  background: color-mix(in srgb, var(--bg-page) 68%, transparent);
+  -webkit-backdrop-filter: blur(26px) saturate(120%);
+  backdrop-filter: blur(26px) saturate(120%);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--color-text) 3%, transparent),
-    0 10px 30px rgb(0 0 0 / 7%);
+    0 10px 30px rgb(0 0 0 / 5%);
+}
+
+[data-desktop-sidebar-glass="true"] [data-sidebar-card] {
+  border: 0;
+}
+
+/* Coding composes four stacked cards. A single quiet hairline between them
+ * avoids the heavy double borders produced by two adjacent card outlines. */
+[data-desktop-sidebar-glass="true"] [data-sidebar-card]:not(:last-child) {
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 38%, transparent);
+}
+
+/* Keep the sidebar/content boundary visible without turning it into a rail. */
+[data-desktop-sidebar-glass="true"] {
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--color-border-subtle) 32%, transparent);
+}
+
+html[data-native-sidebar-glass="true"] [data-settings-sidebar] {
+  border-color: color-mix(in srgb, var(--color-border-subtle) 32%, transparent);
 }
 
 .mobile-safe-header {

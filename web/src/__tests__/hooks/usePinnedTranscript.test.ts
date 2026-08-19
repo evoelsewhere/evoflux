@@ -119,6 +119,46 @@ describe('usePinnedTranscript follow boundaries', () => {
     expect(result.current.showScrollButton).toBe(false)
   })
 
+  it('pins a new user message to the viewport top and stops bottom-follow', () => {
+    const frames = new Map<number, FrameRequestCallback>()
+    let frameId = 0
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frameId += 1
+      frames.set(frameId, callback)
+      return frameId
+    })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
+
+    const { result, rerender } = renderHook(
+      ({ topAnchorKey }) => usePinnedTranscript({
+        isEmpty: false,
+        contentKey: 1,
+        resetKey: null,
+        topAnchorKey,
+      }),
+      { initialProps: { topAnchorKey: null as string | null } },
+    )
+    const scroller = document.createElement('div')
+    const anchor = document.createElement('div')
+    anchor.dataset.transcriptTopAnchor = 'true'
+    anchor.scrollIntoView = vi.fn()
+    scroller.appendChild(anchor)
+    result.current.scrollRef.current = scroller
+
+    rerender({ topAnchorKey: 'user-2' })
+    act(() => {
+      for (const callback of frames.values()) callback(16)
+      frames.clear()
+    })
+
+    expect(anchor.scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'auto',
+      block: 'start',
+    })
+    expect(result.current.isPinned()).toBe(false)
+    expect(result.current.showScrollButton).toBe(false)
+  })
+
   it('still follows after StrictMode replays mount effects', () => {
     const frames = new Map<number, FrameRequestCallback>()
     let frameId = 0

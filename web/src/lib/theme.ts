@@ -18,8 +18,8 @@ export type ResolvedTheme = 'light' | 'dark'
 export const THEME_STORAGE_KEY = STORAGE_KEYS.theme
 const MEDIA_QUERY = '(prefers-color-scheme: dark)'
 const THEME_COLOR: Record<ResolvedTheme, string> = {
-  light: '#FAFAFA',
-  dark: '#232220',
+  light: '#FFFFFF',
+  dark: '#222222',
 }
 
 function isTheme(value: unknown): value is ThemePreference {

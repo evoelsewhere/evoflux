@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "evoflux"
-version = "0.0.6"  # keep in sync with app/version.txt
+version = "0.0.7"  # keep in sync with app/version.txt
 description = "Self-hosted AI agents — streaming chat, tool use, persistent memory, multi-agent teams"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -37,8 +37,8 @@ dependencies = [
     # Backport of uuid.uuid7(), which only lands in the stdlib `uuid` module
     # in Python 3.14. Shimmed onto `uuid` in app/__init__.py for 3.12/3.13.
     "uuid7>=0.1.0",
-    # Core text/HTML conversion only. Binary document engines live in the
-    # bundled ``evoflux.documents`` plugin and its optional dependency set.
+    # Core PDF/HTML intake. Office files are view-only and are never converted
+    # into agent context by this dependency.
     "markitdown>=0.1.5",
     "markdown-it-py>=4.0.0",
     "pyyaml>=6.0.3",
@@ -92,16 +92,12 @@ dev = [
     "ruff>=0.15.8",
     "tiktoken>=0.12.0",
     "ty>=0.0.33,<0.1",
-    # Exercise the bundled Documents plugin in source checkouts without making
-    # its format engines part of the slim server dependency surface.
+    # Exercise the host-owned, read-only Office/PDF viewer in source checkouts
+    # without making its format engines part of the slim server surface.
     "python-docx>=1.2.0",
     "openpyxl>=3.1.5",
     "python-pptx>=1.0.2",
-    "pdfplumber>=0.11.0",
-    "pypdf>=6.1.0",
     "pypdfium2>=5.7.0",
-    "pillow>=12.0.0",
-    "reportlab>=4.4.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -115,19 +111,14 @@ packages = ["app"]
 "seed" = "app/_seed"
 
 [project.optional-dependencies]
-# Runtime dependencies owned by the read-only bundled Documents plugin. Desktop
-# packages install this extra; slim/API-only installs can omit the plugin engine
-# without importing any Office/PDF library at process startup.
-documents = [
-    "markitdown[pdf,docx]>=0.1.5",
+# Runtime dependencies for the host-owned, read-only workspace viewer. Desktop
+# packages install this extra; slim/API-only installs can omit Office/PDF
+# rendering without importing those libraries at process startup.
+office-preview = [
     "python-docx>=1.2.0",
     "openpyxl>=3.1.5",
     "python-pptx>=1.0.2",
-    "pdfplumber>=0.11.0",
-    "pypdf>=6.1.0",
     "pypdfium2>=5.7.0",
-    "pillow>=12.0.0",
-    "reportlab>=4.4.0",
 ]
 
 # Azure Document Intelligence routing in markitdown — server-side OCR fallback.
@@ -136,7 +127,7 @@ azure-doc-intel = ["markitdown[az-doc-intel]>=0.1.5"]
 
 # Convenience: everything-but-the-kitchen-sink. Used by
 # ``uv tool install evoflux[full]`` for users who don't care about size.
-full = ["evoflux[azure-doc-intel,documents]"]
+full = ["evoflux[azure-doc-intel,office-preview]"]
 
 [tool.uv]
 package = true

@@ -81,14 +81,6 @@ MIME_CATEGORY: dict[str, str] = {
     "image/bmp": "image",
     "image/tiff": "image",
     "application/pdf": "document",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "document",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "document",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "document",
-    "application/vnd.ms-excel": "document",
-    "application/vnd.ms-powerpoint": "document",
-    "application/msword": "document",
-    "application/vnd.ms-excel.sheet.macroEnabled.12": "document",
-    "application/vnd.ms-powerpoint.presentation.macroEnabled.12": "document",
     "application/vnd.oasis.opendocument.text": "document",
     "application/vnd.oasis.opendocument.spreadsheet": "document",
     "application/vnd.oasis.opendocument.presentation": "document",
@@ -113,14 +105,6 @@ EXT_CATEGORY: dict[str, str] = {
     ".tif": "image",
     ".tiff": "image",
     ".pdf": "document",
-    ".docx": "document",
-    ".doc": "document",
-    ".xlsx": "document",
-    ".xls": "document",
-    ".xlsm": "document",
-    ".pptx": "document",
-    ".ppt": "document",
-    ".pptm": "document",
     ".odt": "document",
     ".ods": "document",
     ".odp": "document",
@@ -481,9 +465,10 @@ async def validate_and_persist_attachments(
     chat session that owns them.
 
     Model capabilities choose the delivery strategy; they never reject a
-    valid upload. Text and documents are extracted locally when possible,
+    valid upload. Text, PDF, and HTML are extracted locally when possible,
     vision-capable models receive images natively, and every other format is
-    exposed to the agent through a read-only workspace path.
+    exposed through a read-only workspace path. Office files remain available
+    to the host UI viewer but are not extracted into agent context.
 
     Returns ``(session_id, attachment_metas)``.
 
@@ -492,18 +477,31 @@ async def validate_and_persist_attachments(
     is expected to abort the turn, and a future cleanup task can sweep any
     orphaned uploads that never got referenced.
     """
-    from app.agent.providers.capabilities import get_capabilities
+    from app.agent.providers.capabilities import (
+        get_capabilities,
+        has_model_capabilities,
+        has_runtime_model_capabilities,
+    )
     from app.agent.providers.model_discovery import ensure_runtime_model_metadata
 
     effective_model_id = model_override or getattr(team.lead.agent, "model_id", None)
-    is_fci_model = bool(
-        effective_model_id and effective_model_id.lower().startswith("fci:")
+    provider_id = (
+        effective_model_id.split(":", 1)[0].lower()
+        if effective_model_id and ":" in effective_model_id
+        else ""
     )
-    if is_fci_model and effective_model_id:
+    if effective_model_id and (
+        provider_id in {"fci", "copilot", "codex"}
+        or not has_model_capabilities(effective_model_id)
+    ):
         await ensure_runtime_model_metadata(effective_model_id)
     caps = (
         get_capabilities(effective_model_id)
-        if model_override or is_fci_model
+        if model_override
+        or (
+            effective_model_id is not None
+            and has_runtime_model_capabilities(effective_model_id)
+        )
         else team.lead.agent.capabilities
     )
 
@@ -550,6 +548,7 @@ async def dispatch_user_message(
     workspace: str | None = None,
     project_id: uuid.UUID | None = None,
     model: str | None = None,
+    attachment_model: str | None = None,
     model_provided: bool = False,
     thinking_level: str | None = None,
     thinking_level_provided: bool = False,
@@ -585,7 +584,10 @@ async def dispatch_user_message(
         metas = attachment_metas
     elif atts:
         _, metas = await validate_and_persist_attachments(
-            team, atts, sid, model_override=model
+            team,
+            atts,
+            sid,
+            model_override=attachment_model or model,
         )
     else:
         metas = []

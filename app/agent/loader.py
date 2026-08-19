@@ -298,6 +298,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         lsp_diagnostics,
         lsp_definition,
         lsp_references,
+        lsp_semantic,
         static_diagnostics,
     )
     from app.agent.tools.builtin.visualize import visualize_read_me, show_widget
@@ -354,6 +355,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         "lsp_diagnostics": lsp_diagnostics,
         "lsp_definition": lsp_definition,
         "lsp_references": lsp_references,
+        "lsp_semantic": lsp_semantic,
         "static_diagnostics": static_diagnostics,
         "visualize_read_me": visualize_read_me,
         "show_widget": show_widget,

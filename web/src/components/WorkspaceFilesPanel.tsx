@@ -21,7 +21,7 @@
  */
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Editor, { useMonaco } from '@monaco-editor/react'
+import Editor from '@monaco-editor/react'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import {
   X,
@@ -66,7 +66,7 @@ import { queryKeys } from '@/queries/keys'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useSessionFilesWatcher } from '@/hooks/useSessionFilesWatcher'
 import { usePlatform } from '@/hooks/use-platform'
-import { languageForExt, useMonacoTheme } from '@/hooks/useMonacoTheme'
+import { languageForExt, useMonacoTheme, useSafeMonaco } from '@/hooks/useMonacoTheme'
 import { mediumHapticFeedback } from '@/lib/haptics'
 import { formatBytes } from '@/utils/format'
 import { errorMessage } from '@/utils/errors'
@@ -526,7 +526,7 @@ const MAX_TEXT_PREVIEW_BYTES = 512 * 1024  // 512 KB
 
 function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; file: WorkspaceFileInfo; workspaceRoot?: string | null }) {
   const tooLarge = file.size > MAX_TEXT_PREVIEW_BYTES
-  const monaco = useMonaco()
+  const monaco = useSafeMonaco()
   const theme = useMonacoTheme(monaco)
   // Start in a loading state *unless* the file is too large — the effect is
   // skipped in that case and flipping loading=false there would trigger the
@@ -747,7 +747,6 @@ export function CopyContentsButton({
 function PreviewArea({
   sessionId,
   file,
-  files,
   workspaceRoot,
   onOpen,
   onReveal,
@@ -758,7 +757,6 @@ function PreviewArea({
 }: {
   sessionId: string
   file: WorkspaceFileInfo
-  files: WorkspaceFileInfo[]
   workspaceRoot: string | null
   onOpen: (file: WorkspaceFileInfo) => void
   onReveal: (file: WorkspaceFileInfo) => void
@@ -871,7 +869,6 @@ function PreviewArea({
             key={`${file.path}:${file.mtime}`}
             sessionId={sessionId}
             file={file}
-            files={files}
           />
         ) : kind === 'image' ? (
           <ImagePreview sessionId={sessionId} file={file} />
@@ -917,6 +914,8 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
   const { isMacOverlay, isTauri } = usePlatform()
   const sidebarWidth = useUIStore((state) => state.sidebarWidth)
   const sidebarCollapsed = useUIStore((state) => state.sidebarCollapsed)
+  const workspaceFileRequest = useUIStore((state) => state.workspaceFileRequest)
+  const clearWorkspaceFileRequest = useUIStore((state) => state.clearWorkspaceFileRequest)
   const [viewportWidth, setViewportWidth] = useState(() =>
     typeof window === 'undefined' ? 1440 : window.innerWidth,
   )
@@ -1050,6 +1049,33 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
       : files.length,
     [files, visiblePaths],
   )
+  const refreshedRequestRef = useRef<number | null>(null)
+
+  // Artifact links in the transcript open Files and request one path. Refresh
+  // once for that request (the file may have landed after the cached listing),
+  // then select it as soon as it appears in the workspace response.
+  useEffect(() => {
+    if (
+      !open
+      || !sessionId
+      || workspaceFileRequest?.sessionId !== sessionId
+      || refreshedRequestRef.current === workspaceFileRequest.id
+    ) return
+    refreshedRequestRef.current = workspaceFileRequest.id
+    void refetch()
+  }, [open, refetch, sessionId, workspaceFileRequest])
+
+  useEffect(() => {
+    if (!open || !sessionId || workspaceFileRequest?.sessionId !== sessionId) return
+    const requested = files.find((file) => file.path === workspaceFileRequest.path)
+      ?? (!workspaceFileRequest.path.includes('/')
+        ? files.find((file) => file.name === workspaceFileRequest.path)
+        : undefined)
+    if (!requested) return
+    setSelectedPath(requested.path)
+    setMobilePane('preview')
+    clearWorkspaceFileRequest(workspaceFileRequest.id)
+  }, [clearWorkspaceFileRequest, files, open, sessionId, workspaceFileRequest])
 
   // ── Workspace picker ────────────────────────────────────────────────────────
 
@@ -1750,7 +1776,6 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
                 key={selected.path}
                 sessionId={sessionId}
                 file={selected}
-                files={files}
                 workspaceRoot={workspaceRoot}
                 onOpen={(file) => void handleOpenFile(file)}
                 onReveal={(file) => void handleRevealFile(file)}

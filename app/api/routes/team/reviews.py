@@ -6,7 +6,7 @@ import asyncio
 import os
 import re
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query, Response
@@ -433,6 +433,7 @@ async def list_reviews(
     db: DbSession,
     workspace: str | None = Query(default=None),
     project_id: UUID | None = Query(default=None),
+    state: Literal["open", "closed", "merged"] = Query(default="open"),
 ) -> ReviewsOut:
     if workspace and project_id:
         raise HTTPException(
@@ -486,7 +487,7 @@ async def list_reviews(
             )
         ).all()
     )
-    repositories = await aggregate_reviews(targets, connections)
+    repositories = await aggregate_reviews(targets, connections, state=state)
     output: list[RepositoryReviewsOut] = []
     for repository in repositories:
         target = repository.target
@@ -679,6 +680,7 @@ async def mutate_review(
                 number,
                 body.body or "",
                 path=body.path,
+                old_path=body.old_path,
                 line=body.line,
                 side=body.side,
                 commit_id=body.commit_id,

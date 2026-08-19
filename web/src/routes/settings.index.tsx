@@ -16,6 +16,7 @@ import {
   GitBranch,
   Globe2,
   Server,
+  ServerCog,
   Info,
   KeyRound,
   Palette,
@@ -23,8 +24,10 @@ import {
   Shield,
   Sparkles,
   Stethoscope,
+  RefreshCw,
   type LucideIcon,
 } from 'lucide-react'
+import { useState } from 'react'
 
 import { cn } from '@/lib/utils'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -45,6 +48,8 @@ import {
 } from '@/queries'
 import { useActiveSkillDiscoveryScope } from '@/hooks/useActiveSkillDiscoveryScope'
 import { enterpriseAttentionCount, resourceHasUpdate } from '@/lib/enterprise'
+import { usePlatform } from '@/hooks/use-platform'
+import { checkForAppUpdates } from '@/lib/app-updater'
 
 interface NavRow {
   to: string
@@ -101,7 +106,10 @@ function SettingsNavRow({ row }: { row: NavRow }) {
 
 export function SettingsHubPage() {
   const isMobile = useIsMobile()
+  const platform = usePlatform()
   const navigate = useSettingsNavigate()
+  const [checkingForUpdate, setCheckingForUpdate] = useState(false)
+  const [updateError, setUpdateError] = useState<string | null>(null)
   const agentsQ = useAgentFilesQuery()
   const skillScope = useActiveSkillDiscoveryScope()
   const skillsQ = useSkillFilesQuery(skillScope)
@@ -124,6 +132,20 @@ export function SettingsHubPage() {
   const resourceUpdates = conductorQ.data?.resources.filter(resourceHasUpdate) ?? []
   const agentUpdateCount = resourceUpdates.filter((resource) => resource.kind === 'agent').length
   const skillUpdateCount = resourceUpdates.filter((resource) => resource.kind === 'skill').length
+  const desktopUpdaterAvailable =
+    platform.isTauri && platform.os !== 'ios' && platform.os !== 'android'
+
+  const checkForUpdates = async () => {
+    setCheckingForUpdate(true)
+    setUpdateError(null)
+    try {
+      await checkForAppUpdates()
+    } catch (error) {
+      setUpdateError(error instanceof Error ? error.message : 'Update check failed.')
+    } finally {
+      setCheckingForUpdate(false)
+    }
+  }
 
   const groups: Array<{ label: string; rows: NavRow[] }> = [
     {
@@ -166,6 +188,12 @@ export function SettingsHubPage() {
           description: 'External tools over Model Context Protocol',
           count: mcpCount,
           countLabel: mcpCount === 1 ? 'server' : 'servers',
+        },
+        {
+          to: '/settings/language-servers',
+          icon: ServerCog,
+          title: 'Language servers',
+          description: 'Semantic engines detected and managed per repository',
         },
       ],
     },
@@ -280,6 +308,33 @@ export function SettingsHubPage() {
         </span>
       }
     >
+      <SettingsGroup title="Updates">
+        <SettingsRow
+          label="App updates"
+          description={
+            updateError ??
+            (desktopUpdaterAvailable
+              ? 'Check GitHub Releases for a signed EvoFlux update. Downloads are verified before installation.'
+              : 'Update checks are available in the packaged EvoFlux desktop app.')
+          }
+          control={
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!desktopUpdaterAvailable || checkingForUpdate}
+              onClick={() => void checkForUpdates()}
+            >
+              <RefreshCw
+                size={13}
+                className={checkingForUpdate ? 'animate-spin' : undefined}
+                aria-hidden="true"
+              />
+              {checkingForUpdate ? 'Checking…' : 'Check now'}
+            </Button>
+          }
+        />
+      </SettingsGroup>
+
       <SettingsGroup title="Backend">
         <SettingsRow
           label="Backend connection"

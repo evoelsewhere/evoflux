@@ -1,7 +1,18 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import { MarkdownBlock, splitStreamingMarkdown } from '@/utils/markdown'
+import { useUIStore } from '@/stores/useUIStore'
+
+beforeEach(() => {
+  useUIStore.setState({
+    workspaceFileRequest: null,
+    workbenchTabs: [],
+    activeWorkbenchTabId: null,
+    activeWorkbenchTool: null,
+    workbenchOpen: false,
+  })
+})
 
 describe('splitStreamingMarkdown', () => {
   it('freezes completed prose blocks and leaves the growing tail isolated', () => {
@@ -62,5 +73,31 @@ describe('MarkdownBlock code fences', () => {
     expect(code).toHaveClass('hljs')
     expect(code?.className).not.toContain('language-sql')
     expect(code?.querySelector('[class^="hljs-"]')).not.toBeInTheDocument()
+  })
+})
+
+describe('MarkdownBlock workspace links', () => {
+  it('opens generated documents in the Files workbench instead of a browser tab', () => {
+    render(
+      <MarkdownBlock
+        content="[Tải deck](attention_is_all_you_need_vi.pptx)"
+        sessionId="session-1"
+      />,
+    )
+
+    const link = screen.getByRole('link', { name: 'Tải deck' })
+    expect(link).not.toHaveAttribute('target')
+    expect(link).toHaveAttribute(
+      'title',
+      'Preview attention_is_all_you_need_vi.pptx in Files',
+    )
+    fireEvent.click(link)
+
+    expect(useUIStore.getState().workspaceFileRequest).toMatchObject({
+      sessionId: 'session-1',
+      path: 'attention_is_all_you_need_vi.pptx',
+    })
+    expect(useUIStore.getState().activeWorkbenchTool).toBe('files')
+    expect(useUIStore.getState().workbenchOpen).toBe(true)
   })
 })
