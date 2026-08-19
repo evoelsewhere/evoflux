@@ -311,6 +311,10 @@ class ManagedResourceRecord(BaseModel):
         default_factory=lambda: list(DEFAULT_RESOURCE_TARGET_MODES)
     )
     content_sha256: str | None = None
+    # Digest of the immutable artifact that was actually applied. Older V2
+    # state files omit this field; inventory must then omit its digest rather
+    # than pairing a desired-version digest with an older applied version.
+    applied_content_sha256: str | None = None
     content_size: int = Field(default=0, ge=0, le=500 * 1024 * 1024)
     minimum_evoflux_version: str | None = None
     local_content_sha256: str | None = None
@@ -378,3 +382,34 @@ class ResourceInventoryRequest(BaseModel):
 
     installation_id: str
     items: list[ResourceInventoryItem] = Field(default_factory=list, max_length=500)
+
+
+class TelemetryDeliverySummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    installation_id: str
+    window_days: int = Field(ge=1)
+    window_start: datetime = Field(validation_alias="from")
+    window_end: datetime = Field(validation_alias="to")
+    events: int = Field(ge=0)
+    requests: int = Field(ge=0)
+    model_calls: int = Field(ge=0)
+    tool_calls: int = Field(ge=0)
+    tokens_in: int = Field(ge=0)
+    tokens_out: int = Field(ge=0)
+    cache_read_tokens: int = Field(ge=0)
+    estimated_cost_usd_micros: int = Field(ge=0)
+    unpriced_model_calls: int = Field(ge=0)
+    attributed_events: int = Field(ge=0)
+    attributed_requests: int = Field(ge=0)
+    attributed_model_calls: int = Field(ge=0)
+    attributed_tool_calls: int = Field(ge=0)
+    attributed_estimated_cost_usd_micros: int = Field(ge=0)
+
+
+class TelemetryBatchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    accepted: int = Field(ge=0)
+    duplicates: int = Field(ge=0)
+    summary: TelemetryDeliverySummary | None = None
