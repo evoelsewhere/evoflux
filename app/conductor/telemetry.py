@@ -59,10 +59,22 @@ class TelemetryOutbox:
             return False
         with self._lock:
             events = self._read()
+            event_id = clean.get(TelemetryField.EVENT_ID)
+            if any(item.get(TelemetryField.EVENT_ID) == event_id for item in events):
+                return True
+            if len(events) >= self._max_events:
+                logger.error(
+                    "conductor_telemetry_outbox_full pending=%s capacity=%s",
+                    len(events),
+                    self._max_events,
+                )
+                return False
             events.append(clean)
-            if len(events) > self._max_events:
-                events = events[-self._max_events :]
             return self._write(events)
+
+    @property
+    def max_events(self) -> int:
+        return self._max_events
 
     def peek(
         self,
@@ -99,6 +111,61 @@ class TelemetryOutbox:
         with self._lock:
             return len(self._read())
 
+    def stats(self, installation_id: str | None = None) -> dict[str, Any]:
+        """Return content-free queue health and aggregate usage metadata."""
+
+        with self._lock:
+            events = self._read()
+        if installation_id is not None:
+            events = [
+                event
+                for event in events
+                if event.get(TelemetryField.INSTALLATION_ID) == installation_id
+            ]
+        event_types = {
+            "request": 0,
+            "model_call": 0,
+            "tool_call": 0,
+        }
+        tokens_in = 0
+        tokens_out = 0
+        cache_read_tokens = 0
+        estimated_cost_usd_micros = 0
+        attributed_events = 0
+        reported_at: list[str] = []
+        for event in events:
+            event_type = event.get(TelemetryField.EVENT_TYPE)
+            if isinstance(event_type, str) and event_type in event_types:
+                event_types[event_type] += 1
+            tokens_in += _non_negative_int(event.get(TelemetryField.TOKENS_IN))
+            tokens_out += _non_negative_int(event.get(TelemetryField.TOKENS_OUT))
+            cache_read_tokens += _non_negative_int(
+                event.get(TelemetryField.CACHE_READ_TOKENS)
+            )
+            estimated_cost_usd_micros += _non_negative_int(
+                event.get(TelemetryField.ESTIMATED_COST_USD_MICROS)
+            )
+            if event.get(TelemetryField.RESOURCES):
+                attributed_events += 1
+            timestamp = event.get(TelemetryField.REPORTED_AT)
+            if isinstance(timestamp, str) and timestamp:
+                reported_at.append(timestamp)
+        pending = len(events)
+        return {
+            "pending_events": pending,
+            "capacity": self._max_events,
+            "utilization_percent": round((pending / self._max_events) * 100, 1),
+            "oldest_event_at": min(reported_at) if reported_at else None,
+            "pending_requests": event_types["request"],
+            "pending_model_calls": event_types["model_call"],
+            "pending_tool_calls": event_types["tool_call"],
+            "attributed_events": attributed_events,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "cache_read_tokens": cache_read_tokens,
+            "estimated_cost_usd_micros": estimated_cost_usd_micros,
+        }
+
     def _read(self) -> list[dict[str, Any]]:
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
@@ -131,6 +198,14 @@ def _valid_event(event: dict[str, Any]) -> bool:
     return all(
         isinstance(event.get(field), str) and bool(event[field])
         for field in TELEMETRY_REQUIRED_STRING_FIELDS
+    )
+
+
+def _non_negative_int(value: Any) -> int:
+    return (
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0
+        else 0
     )
 
 
