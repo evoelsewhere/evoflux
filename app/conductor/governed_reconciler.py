@@ -556,6 +556,7 @@ class GovernedResourceReconciler:
                 "observed_state": "applied",
                 "applied_version_id": record.version_id,
                 "applied_version": record.version,
+                "applied_content_sha256": record.content_sha256,
                 "trust_required": False,
                 "observed_at": datetime.now(UTC),
                 "message": "Local Plugin trust was approved.",
@@ -578,7 +579,7 @@ class GovernedResourceReconciler:
                     )
                 ),
                 "release_channel": item.release_channel,
-                "content_sha256": item.content_sha256,
+                "content_sha256": item.applied_content_sha256,
                 "plugin_installation_id": item.plugin_installation_id,
                 "observed_state": item.observed_state,
                 "error_category": item.error_category,
@@ -674,6 +675,13 @@ class GovernedResourceReconciler:
             slug=change.slug,
             modes=modes or list(DEFAULT_RESOURCE_TARGET_MODES),
             content_sha256=change.sha256,
+            applied_content_sha256=(
+                change.sha256
+                if state == "applied"
+                else previous.applied_content_sha256
+                if previous is not None
+                else None
+            ),
             content_size=change.size,
             minimum_evoflux_version=change.minimum_evoflux_version,
             local_content_sha256=local_content_sha256,
@@ -743,6 +751,11 @@ def _refresh_record_metadata(
             "version_history": change.version_history,
             "release_channel": change.release_channel,
             "content_sha256": change.sha256,
+            "applied_content_sha256": (
+                change.sha256
+                if _applied_version_id(record) == change.version_id
+                else record.applied_content_sha256
+            ),
             "content_size": change.size,
             "minimum_evoflux_version": change.minimum_evoflux_version,
             "trust_required": change.trust_required,
