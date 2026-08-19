@@ -67,6 +67,10 @@ export const STORAGE_KEYS = {
     recentWorkspaceFolders: 'oa.work.recentWorkspaceFolders',
   },
 
+  enterprise: {
+    favorites: 'oa.enterprise.favorites',
+  },
+
   desktopNotifications: {
     enabled: 'oa-desktop-notifications-enabled',
     soundEnabled: 'oa-desktop-notifications-sound-enabled',
