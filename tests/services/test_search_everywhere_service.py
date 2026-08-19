@@ -48,6 +48,11 @@ async def test_search_aggregates_repository_paths_and_problems(tmp_path: Path):
         item.kind == "file" and item.path == "app/services/auth_service.py"
         for item in path_rows
     )
+    file_row = next(item for item in path_rows if item.kind == "file")
+    assert file_row.metadata is not None
+    assert file_row.metadata["size"] == source.stat().st_size
+    assert file_row.metadata["mtime"] == source.stat().st_mtime
+    assert file_row.metadata["mime"] == "text/x-python"
     assert any(
         item.kind == "problem" and item.path == "app/services/auth_service.py"
         for item in problem_rows

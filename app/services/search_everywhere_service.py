@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import mimetypes
 import os
 import re
 from dataclasses import dataclass
@@ -38,6 +39,24 @@ class SearchEverywhereItem:
     path: str | None = None
     line: int | None = None
     metadata: dict[str, Any] | None = None
+
+
+def _file_metadata(workspace: Path, relative_path: str) -> dict[str, Any]:
+    """Return viewer metadata for an in-workspace file search result."""
+    try:
+        target = (workspace / relative_path).resolve(strict=True)
+        target.relative_to(workspace.resolve())
+        if not target.is_file():
+            return {}
+        stat = target.stat()
+    except (OSError, RuntimeError, ValueError):
+        return {}
+    mime, _ = mimetypes.guess_type(str(target))
+    return {
+        "size": stat.st_size,
+        "mtime": stat.st_mtime,
+        "mime": mime or "application/octet-stream",
+    }
 
 
 async def search_everywhere(
@@ -121,6 +140,9 @@ def _path_items(workspace: Path, query: str, limit: int) -> list[SearchEverywher
                     if kind == "folder"
                     else "Repository file",
                     path=path,
+                    metadata=_file_metadata(workspace, path)
+                    if kind == "file"
+                    else None,
                 )
             )
             if len(rows) >= limit:
@@ -159,7 +181,11 @@ async def _code_items(
                 description=symbol.signature or f"{symbol.kind} · {symbol.file_path}",
                 path=symbol.file_path,
                 line=symbol.line_start,
-                metadata={"language": symbol.language, "strategy": result.strategy},
+                metadata={
+                    "language": symbol.language,
+                    "strategy": result.strategy,
+                    **_file_metadata(workspace, symbol.file_path),
+                },
             )
         )
     for hit in result.hits[:limit]:
@@ -171,7 +197,11 @@ async def _code_items(
                 description=" ".join(hit.content.strip().split())[:240],
                 path=hit.file_path,
                 line=hit.line_start,
-                metadata={"language": hit.language, "score": hit.score},
+                metadata={
+                    "language": hit.language,
+                    "score": hit.score,
+                    **_file_metadata(workspace, hit.file_path),
+                },
             )
         )
     for relation in result.relations[:limit]:
@@ -183,6 +213,7 @@ async def _code_items(
                 description=f"{relation.kind} · {relation.callsite_file}:{relation.callsite_line}",
                 path=relation.callsite_file,
                 line=relation.callsite_line,
+                metadata=_file_metadata(workspace, relation.callsite_file),
             )
         )
     return rows[:limit]
