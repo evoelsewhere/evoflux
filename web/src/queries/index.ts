@@ -53,6 +53,10 @@ export {
 } from './useSkillFilesQuery'
 export { useObservabilitySummaryQuery } from './useObservabilitySummaryQuery'
 export {
+  useConductorStatusQuery,
+  useSyncConductorMutation,
+} from './useConductorStatusQuery'
+export {
   useInfiniteTracesQuery,
   useTracesQuery,
   useTraceDetailQuery,
