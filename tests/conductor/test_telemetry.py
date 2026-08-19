@@ -52,6 +52,29 @@ class MemoryCredentialStore:
         self.value = None
 
 
+def telemetry_delivery_payload(installation_id: str) -> dict[str, object]:
+    return {
+        "installation_id": installation_id,
+        "window_days": 30,
+        "from": "2026-07-19T10:00:00Z",
+        "to": "2026-08-18T10:00:00Z",
+        "events": 201,
+        "requests": 10,
+        "model_calls": 120,
+        "tool_calls": 71,
+        "tokens_in": 90_000,
+        "tokens_out": 12_000,
+        "cache_read_tokens": 5_000,
+        "estimated_cost_usd_micros": 900_000,
+        "unpriced_model_calls": 3,
+        "attributed_events": 133,
+        "attributed_requests": 7,
+        "attributed_model_calls": 80,
+        "attributed_tool_calls": 46,
+        "attributed_estimated_cost_usd_micros": 640_000,
+    }
+
+
 def _configure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, installation_id: str
 ) -> None:
@@ -363,33 +386,53 @@ async def test_hook_closes_failed_request_once_with_resource_attribution(
     assert "private failure" not in json.dumps(events)
 
 
-def test_outbox_is_bounded_and_acknowledges_by_event_id(tmp_path: Path) -> None:
+def test_outbox_preserves_oldest_events_and_reports_queue_health(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "outbox.json"
     outbox = TelemetryOutbox(path, max_events=2)
     installation_id = str(uuid.uuid4())
+    results = []
     for index in range(3):
-        assert outbox.enqueue(
-            {
-                TelemetryField.EVENT_ID: f"event-{index}",
-                TelemetryField.INSTALLATION_ID: installation_id,
-                TelemetryField.REQUEST_ID: "request-1",
-                TelemetryField.EVENT_TYPE: TelemetryEventType.MODEL_CALL,
-                TelemetryField.STATUS: TelemetryEventStatus.SUCCESS,
-                TelemetryField.REPORTED_AT: "2026-08-10T00:00:00+00:00",
-                TelemetryField.TOKENS_IN: index,
-                "prompt": "never persisted",
-            }
+        results.append(
+            outbox.enqueue(
+                {
+                    TelemetryField.EVENT_ID: f"event-{index}",
+                    TelemetryField.INSTALLATION_ID: installation_id,
+                    TelemetryField.REQUEST_ID: "request-1",
+                    TelemetryField.EVENT_TYPE: TelemetryEventType.MODEL_CALL,
+                    TelemetryField.STATUS: TelemetryEventStatus.SUCCESS,
+                    TelemetryField.REPORTED_AT: "2026-08-10T00:00:00+00:00",
+                    TelemetryField.TOKENS_IN: index,
+                    "prompt": "never persisted",
+                }
+            )
         )
+    assert results == [True, True, False]
     assert [
         event[TelemetryField.EVENT_ID] for event in outbox.peek(installation_id)
     ] == [
+        "event-0",
         "event-1",
-        "event-2",
     ]
+    assert outbox.stats(installation_id) == {
+        "pending_events": 2,
+        "capacity": 2,
+        "utilization_percent": 100.0,
+        "oldest_event_at": "2026-08-10T00:00:00+00:00",
+        "pending_requests": 0,
+        "pending_model_calls": 2,
+        "pending_tool_calls": 0,
+        "attributed_events": 0,
+        "tokens_in": 1,
+        "tokens_out": 0,
+        "cache_read_tokens": 0,
+        "estimated_cost_usd_micros": 0,
+    }
     outbox.acknowledge({"event-1"})
     assert [
         event[TelemetryField.EVENT_ID] for event in outbox.peek(installation_id)
-    ] == ["event-2"]
+    ] == ["event-0"]
     assert "never persisted" not in path.read_text(encoding="utf-8")
 
 
@@ -414,7 +457,7 @@ async def test_client_posts_sanitized_batch() -> None:
         transport=httpx.MockTransport(handler),
     )
     try:
-        await client.report_telemetry(
+        response = await client.report_telemetry(
             installation_id,
             [
                 {
@@ -429,6 +472,43 @@ async def test_client_posts_sanitized_batch() -> None:
                 }
             ],
         )
+        assert response.accepted == 1
+        assert response.duplicates == 0
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_posts_empty_batch_to_refresh_delivery_summary() -> None:
+    installation_id = str(uuid.uuid4())
+    store = MemoryCredentialStore("evc_telemetry")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == V1_TELEMETRY_PATH
+        assert json.loads(request.content) == {
+            TelemetryBatchField.INSTALLATION_ID: installation_id,
+            TelemetryBatchField.EVENTS: [],
+        }
+        return httpx.Response(
+            200,
+            json={
+                "accepted": 0,
+                "duplicates": 0,
+                "summary": telemetry_delivery_payload(installation_id),
+            },
+        )
+
+    client = ConductorClient(
+        "https://conductor.example",
+        store,
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        response = await client.report_telemetry(installation_id, [])
+        assert response.accepted == 0
+        assert response.summary is not None
+        assert response.summary.events == 201
+        assert response.summary.attributed_requests == 7
     finally:
         await client.close()
 
