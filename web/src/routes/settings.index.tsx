@@ -11,6 +11,7 @@ import {
   BookOpen,
   Bot,
   BrainCircuit,
+  Building2,
   ChevronRight,
   GitBranch,
   Globe2,
@@ -32,8 +33,10 @@ import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/settings/
 import { Button } from '@/components/ui/button'
 import { useUIStore } from '@/stores/useUIStore'
 import { Skeleton } from '@/components/ui/skeleton'
+import { EnterpriseAttentionDot } from '@/components/settings/EnterpriseAttentionDot'
 import {
   useAgentFilesQuery,
+  useConductorStatusQuery,
   useHealthQuery,
   useMcpServersQuery,
   useProvidersQuery,
@@ -41,6 +44,7 @@ import {
   useSkillFilesQuery,
 } from '@/queries'
 import { useActiveSkillDiscoveryScope } from '@/hooks/useActiveSkillDiscoveryScope'
+import { enterpriseAttentionCount, resourceHasUpdate } from '@/lib/enterprise'
 
 interface NavRow {
   to: string
@@ -49,6 +53,7 @@ interface NavRow {
   description: string
   count?: number | null
   countLabel?: string
+  attention?: string | null
 }
 
 function SettingsNavRow({ row }: { row: NavRow }) {
@@ -70,6 +75,9 @@ function SettingsNavRow({ row }: { row: NavRow }) {
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="truncate text-sm font-medium text-(--color-text)">{row.title}</span>
+          {row.attention ? (
+            <EnterpriseAttentionDot label={row.attention} />
+          ) : null}
           {row.count === null ? (
             <Skeleton className="h-3 w-12 rounded" />
           ) : row.count !== undefined ? (
@@ -101,6 +109,7 @@ export function SettingsHubPage() {
   const providersQ = useProvidersQuery()
   const sandboxQ = useSandboxSettingsQuery()
   const healthQ = useHealthQuery()
+  const conductorQ = useConductorStatusQuery()
 
   const agentsCount = agentsQ.data?.agents.length ?? null
   const skillsCount = skillsQ.data?.skills.length ?? null
@@ -109,6 +118,12 @@ export function SettingsHubPage() {
     providersQ.data?.providers.filter((provider) => provider.is_configured).length ?? null
   const sandboxCount = sandboxQ.data?.denied_patterns.length ?? null
   const version = healthQ.data?.version
+  const enterpriseProject =
+    conductorQ.data?.project_display_name ?? conductorQ.data?.project_name
+  const enterpriseNotifications = enterpriseAttentionCount(conductorQ.data)
+  const resourceUpdates = conductorQ.data?.resources.filter(resourceHasUpdate) ?? []
+  const agentUpdateCount = resourceUpdates.filter((resource) => resource.kind === 'agent').length
+  const skillUpdateCount = resourceUpdates.filter((resource) => resource.kind === 'skill').length
 
   const groups: Array<{ label: string; rows: NavRow[] }> = [
     {
@@ -129,6 +144,9 @@ export function SettingsHubPage() {
           description: 'Model, tools and system prompt per team member',
           count: agentsCount,
           countLabel: agentsCount === 1 ? 'agent' : 'agents',
+          attention: agentUpdateCount > 0
+            ? `${agentUpdateCount} managed Agent ${agentUpdateCount === 1 ? 'update' : 'updates'} available`
+            : null,
         },
         {
           to: '/settings/skills',
@@ -137,6 +155,9 @@ export function SettingsHubPage() {
           description: 'Instruction packs agents load on demand',
           count: skillsCount,
           countLabel: skillsCount === 1 ? 'skill' : 'skills',
+          attention: skillUpdateCount > 0
+            ? `${skillUpdateCount} managed Skill ${skillUpdateCount === 1 ? 'update' : 'updates'} available`
+            : null,
         },
         {
           to: '/settings/mcp',
@@ -156,6 +177,22 @@ export function SettingsHubPage() {
           icon: BrainCircuit,
           title: 'Memory',
           description: 'Long-term knowledge and Dream synthesis',
+        },
+      ],
+    },
+    {
+      label: 'Workspace',
+      rows: [
+        {
+          to: '/settings/enterprise',
+          icon: Building2,
+          title: 'Enterprise',
+          description: enterpriseProject
+            ? `Connected to ${enterpriseProject}`
+            : 'Project resources, usage, updates and sync health',
+          attention: enterpriseNotifications > 0
+            ? `${enterpriseNotifications} Enterprise ${enterpriseNotifications === 1 ? 'notification' : 'notifications'}`
+            : null,
         },
       ],
     },

@@ -13,6 +13,7 @@ import {
   Bell,
   Bot,
   BrainCircuit,
+  Building2,
   GitBranch,
   Globe2,
   Info,
@@ -36,13 +37,19 @@ import { usePlatform } from '@/hooks/use-platform'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
 import {
   useAgentFilesQuery,
+  useConductorStatusQuery,
   useMcpServersQuery,
   useSandboxSettingsQuery,
   useSkillFilesQuery,
 } from '@/queries'
 import { useUIStore } from '@/stores/useUIStore'
 import { Skeleton } from '@/components/ui/skeleton'
+import { EnterpriseAttentionDot } from '@/components/settings/EnterpriseAttentionDot'
 import { useI18n } from '@/i18n'
+import {
+  enterpriseAttentionCount,
+  resourceHasUpdate,
+} from '@/lib/enterprise'
 
 type SidebarPath =
   | '/settings/providers'
@@ -58,6 +65,7 @@ type SidebarPath =
   | '/settings/appearance'
   | '/settings/diagnostics'
   | '/settings/telemetry'
+  | '/settings/enterprise'
   | '/settings'
 
 interface SidebarItem {
@@ -69,6 +77,10 @@ interface SidebarItem {
   matchPrefix: string
   /** Optional badge with a live count. */
   count?: number | null
+  /** Optional compact connection/context label. */
+  badge?: string | null
+  connected?: boolean
+  attention?: string | null
 }
 
 interface SidebarSection {
@@ -130,11 +142,28 @@ function SidebarRow({
       <span className={cn('relative z-(--z-panel) min-w-0 flex-1 truncate', active && 'font-semibold')}>
         {item.label}
       </span>
+      {item.attention ? (
+        <EnterpriseAttentionDot
+          label={item.attention}
+          className="relative z-(--z-panel)"
+        />
+      ) : null}
       {item.count === null ? (
         <Skeleton className="relative z-(--z-panel) h-3 w-5 shrink-0 rounded" />
       ) : item.count !== undefined ? (
         <span className="relative z-(--z-panel) min-w-5 shrink-0 rounded-full bg-(--bg-key) px-1.5 py-0.5 text-center font-mono text-[10px] tabular-nums text-(--color-text-muted)">
           {item.count}
+        </span>
+      ) : item.badge ? (
+        <span className="relative z-(--z-panel) flex max-w-24 shrink-0 items-center gap-1 rounded-full bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted)">
+          <span
+            aria-hidden="true"
+            className={cn(
+              'size-1.5 shrink-0 rounded-full',
+              item.connected ? 'bg-(--color-success)' : 'bg-(--color-text-subtle)',
+            )}
+          />
+          <span className="truncate">{item.badge}</span>
         </span>
       ) : null}
     </button>
@@ -161,6 +190,13 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
   const skillsQ = useSkillFilesQuery()
   const mcpQ = useMcpServersQuery()
   const sandboxQ = useSandboxSettingsQuery()
+  const conductorQ = useConductorStatusQuery()
+  const enterpriseProject =
+    conductorQ.data?.project_display_name ?? conductorQ.data?.project_name
+  const enterpriseNotifications = enterpriseAttentionCount(conductorQ.data)
+  const resourceUpdates = conductorQ.data?.resources.filter(resourceHasUpdate) ?? []
+  const agentUpdateCount = resourceUpdates.filter((resource) => resource.kind === 'agent').length
+  const skillUpdateCount = resourceUpdates.filter((resource) => resource.kind === 'skill').length
 
   const sections = useMemo<SidebarSection[]>(
     () => [
@@ -179,6 +215,9 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             icon: Bot,
             matchPrefix: '/settings/agents',
             count: agentsQ.data?.agents.length ?? null,
+            attention: agentUpdateCount > 0
+              ? `${agentUpdateCount} managed Agent ${agentUpdateCount === 1 ? 'update' : 'updates'} available`
+              : null,
           },
           {
             to: '/settings/skills',
@@ -186,6 +225,9 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             icon: Sparkles,
             matchPrefix: '/settings/skills',
             count: skillsQ.data?.skills.length ?? null,
+            attention: skillUpdateCount > 0
+              ? `${skillUpdateCount} managed Skill ${skillUpdateCount === 1 ? 'update' : 'updates'} available`
+              : null,
           },
           {
             to: '/settings/mcp',
@@ -204,6 +246,22 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             label: t('Memory'),
             icon: BrainCircuit,
             matchPrefix: '/settings/memory',
+          },
+        ],
+      },
+      {
+        label: t('Workspace'),
+        items: [
+          {
+            to: '/settings/enterprise',
+            label: t('Enterprise'),
+            icon: Building2,
+            matchPrefix: '/settings/enterprise',
+            badge: enterpriseProject ?? (conductorQ.data?.enrolled ? 'Connected' : null),
+            connected: Boolean(conductorQ.data?.enrolled && !conductorQ.data?.offline),
+            attention: enterpriseNotifications > 0
+              ? `${enterpriseNotifications} Enterprise ${enterpriseNotifications === 1 ? 'notification' : 'notifications'}`
+              : null,
           },
         ],
       },
@@ -275,9 +333,15 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
     ],
     [
       agentsQ.data?.agents.length,
+      agentUpdateCount,
       skillsQ.data?.skills.length,
+      skillUpdateCount,
       mcpQ.data?.servers.length,
       sandboxQ.data?.denied_patterns.length,
+      conductorQ.data?.enrolled,
+      conductorQ.data?.offline,
+      enterpriseNotifications,
+      enterpriseProject,
       t,
     ],
   )
