@@ -1346,7 +1346,7 @@ dependencies = [
  "url",
  "walkdir",
  "webview2-com",
- "windows 0.58.0",
+ "windows 0.61.3",
  "xcap",
 ]
 
