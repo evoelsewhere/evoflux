@@ -32,6 +32,7 @@ import { SkillsListPage } from '@/routes/settings.skills'
 import { TelemetrySettingsPage } from '@/routes/settings.telemetry'
 import { VersionControlSettingsPage } from '@/routes/settings.version-control'
 import { BrowserSettingsPage } from '@/routes/settings.browser'
+import { EnterpriseSettingsPage } from '@/components/settings/EnterpriseSettings'
 
 const LIST_SECTIONS: Readonly<Record<string, string>> = {
   agents: 'Agents',
@@ -50,6 +51,7 @@ const LEAF_SECTIONS: Readonly<Record<string, string>> = {
   appearance: 'Appearance',
   telemetry: 'Telemetry',
   diagnostics: 'Diagnostics',
+  enterprise: 'Enterprise',
 }
 
 interface Crumb {
@@ -107,6 +109,7 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'appearance') return <AppearanceSettingsPage />
   if (section === 'diagnostics') return <DiagnosticsPage />
   if (section === 'telemetry') return <TelemetrySettingsPage />
+  if (section === 'enterprise') return <EnterpriseSettingsPage />
   return <SettingsHubPage />
 }
 
