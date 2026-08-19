@@ -2034,7 +2034,7 @@ async fn capture_native_browser_viewport(app: &AppHandle, label: &str) -> Result
 
 #[cfg(target_os = "windows")]
 async fn capture_native_browser_viewport(app: &AppHandle, label: &str) -> Result<Vec<u8>, String> {
-    use webview2_com::callback::CapturePreviewCompletedHandler;
+    use webview2_com::CapturePreviewCompletedHandler;
     use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG;
     use windows::core::HSTRING;
     use windows::Win32::System::Com::{STGM_CREATE, STGM_SHARE_DENY_WRITE, STGM_WRITE};
@@ -2117,6 +2117,59 @@ async fn capture_native_browser_viewport(
     _label: &str,
 ) -> Result<Vec<u8>, String> {
     Err("Native WebView snapshot is unavailable on this platform".into())
+}
+
+fn browser_capture_monitor(
+    target_name: Option<&str>,
+    target_width: f64,
+    target_height: f64,
+) -> Result<xcap::Monitor, String> {
+    xcap::Monitor::all()
+        .map_err(|error| format!("Could not list browser displays: {error}"))?
+        .into_iter()
+        .min_by_key(|candidate| {
+            let candidate_name = candidate.friendly_name().ok();
+            let name_penalty = match (target_name, candidate_name.as_deref()) {
+                (Some(left), Some(right)) if left == right => 0_u64,
+                _ => 1_000_000,
+            };
+            let candidate_width = candidate.width().unwrap_or_default() as f64;
+            let candidate_height = candidate.height().unwrap_or_default() as f64;
+            name_penalty
+                + (candidate_width - target_width).abs().round() as u64
+                + (candidate_height - target_height).abs().round() as u64
+        })
+        .ok_or_else(|| "Could not find the display containing the browser".to_string())
+}
+
+fn browser_capture_monitor_bounds(
+    target_name: Option<&str>,
+    target_width: f64,
+    target_height: f64,
+) -> Result<(u32, u32), String> {
+    let monitor = browser_capture_monitor(target_name, target_width, target_height)?;
+    let width = monitor
+        .width()
+        .map_err(|error| format!("Could not read display bounds: {error}"))?;
+    let height = monitor
+        .height()
+        .map_err(|error| format!("Could not read display bounds: {error}"))?;
+    Ok((width, height))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn capture_browser_screen_region(
+    target_name: Option<&str>,
+    target_width: f64,
+    target_height: f64,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+) -> Result<xcap::image::RgbaImage, String> {
+    browser_capture_monitor(target_name, target_width, target_height)?
+        .capture_region(x, y, width, height)
+        .map_err(|error| format!("Could not capture the in-app browser: {error}"))
 }
 
 async fn capture_browser_webview(
@@ -2335,31 +2388,12 @@ async fn capture_browser_webview(
     width = (width as f64 / capture_scale).round().max(1.0) as u32;
     height = (height as f64 / capture_scale).round().max(1.0) as u32;
 
-    let target_name = tauri_monitor.name().map(String::as_str);
+    let target_name = tauri_monitor.name().cloned();
     let target_width = tauri_monitor.size().width as f64 / capture_scale;
     let target_height = tauri_monitor.size().height as f64 / capture_scale;
-    let monitor = xcap::Monitor::all()
-        .map_err(|error| format!("Could not list browser displays: {error}"))?
-        .into_iter()
-        .min_by_key(|candidate| {
-            let candidate_name = candidate.friendly_name().ok();
-            let name_penalty = match (target_name, candidate_name.as_deref()) {
-                (Some(left), Some(right)) if left == right => 0_u64,
-                _ => 1_000_000,
-            };
-            let candidate_width = candidate.width().unwrap_or_default() as f64;
-            let candidate_height = candidate.height().unwrap_or_default() as f64;
-            name_penalty
-                + (candidate_width - target_width).abs().round() as u64
-                + (candidate_height - target_height).abs().round() as u64
-        })
-        .ok_or_else(|| "Could not find the display containing the browser".to_string())?;
-    let monitor_width = monitor
-        .width()
-        .map_err(|error| format!("Could not read display bounds: {error}"))?;
-    let monitor_height = monitor
-        .height()
-        .map_err(|error| format!("Could not read display bounds: {error}"))?;
+    drop(tauri_monitor);
+    let (monitor_width, monitor_height) =
+        browser_capture_monitor_bounds(target_name.as_deref(), target_width, target_height)?;
     width = width.min(monitor_width.saturating_sub(relative_x)).max(1);
     height = height.min(monitor_height.saturating_sub(relative_y)).max(1);
     let image = if full_page {
@@ -2417,9 +2451,15 @@ async fn capture_browser_webview(
                         .map_err(|error| format!("Could not decode browser page slice: {error}"))?
                         .to_rgba8()
                 } else {
-                    monitor
-                        .capture_region(relative_x, relative_y, width, height)
-                        .map_err(|error| format!("Could not capture browser page slice: {error}"))?
+                    capture_browser_screen_region(
+                        target_name.as_deref(),
+                        target_width,
+                        target_height,
+                        relative_x,
+                        relative_y,
+                        width,
+                        height,
+                    )?
                 };
                 let destination_y = (offset * css_to_image).round() as i64;
                 xcap::image::imageops::replace(&mut stitched, &slice, 0, destination_y);
@@ -2440,9 +2480,15 @@ async fn capture_browser_webview(
         height = stitched_pixel_height;
         capture_result?
     } else {
-        monitor
-            .capture_region(relative_x, relative_y, width, height)
-            .map_err(|error| format!("Could not capture the in-app browser: {error}"))?
+        capture_browser_screen_region(
+            target_name.as_deref(),
+            target_width,
+            target_height,
+            relative_x,
+            relative_y,
+            width,
+            height,
+        )?
     };
     let css_per_pixel_x = css_width / width.max(1) as f64;
     let css_per_pixel_y = css_height / height.max(1) as f64;
@@ -2506,8 +2552,8 @@ async fn capture_browser_pdf(app: &AppHandle, label: &str) -> Result<Vec<u8>, St
 
 #[cfg(target_os = "windows")]
 async fn capture_browser_pdf(app: &AppHandle, label: &str) -> Result<Vec<u8>, String> {
-    use webview2_com::callback::PrintToPdfCompletedHandler;
     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_7;
+    use webview2_com::PrintToPdfCompletedHandler;
     use windows::core::{Interface, HSTRING};
 
     let webview = app_browser_webview(app, label)?;
