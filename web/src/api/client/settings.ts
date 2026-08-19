@@ -164,6 +164,57 @@ export type ConductorStatus = {
   maintenance_required: boolean
   error: string | null
   resources: Array<ConductorManagedResource | LegacyConductorResource>
+  sync?: {
+    heartbeat: ConductorSyncLaneStatus
+    resources: ConductorSyncLaneStatus
+    inventory: ConductorSyncLaneStatus
+    telemetry: ConductorSyncLaneStatus
+  }
+  telemetry?: {
+    pending_events: number
+    capacity: number
+    utilization_percent: number
+    oldest_event_at: string | null
+    pending_requests: number
+    pending_model_calls: number
+    pending_tool_calls: number
+    attributed_events: number
+    tokens_in: number
+    tokens_out: number
+    cache_read_tokens: number
+    estimated_cost_usd_micros: number
+    last_flush_accepted: number
+    last_flush_duplicates: number
+    delivery: ConductorTelemetryDeliverySummary | null
+  }
+}
+
+export type ConductorTelemetryDeliverySummary = {
+  installation_id: string
+  window_days: number
+  window_start: string
+  window_end: string
+  events: number
+  requests: number
+  model_calls: number
+  tool_calls: number
+  tokens_in: number
+  tokens_out: number
+  cache_read_tokens: number
+  estimated_cost_usd_micros: number
+  unpriced_model_calls: number
+  attributed_events: number
+  attributed_requests: number
+  attributed_model_calls: number
+  attributed_tool_calls: number
+  attributed_estimated_cost_usd_micros: number
+}
+
+export type ConductorSyncLaneStatus = {
+  state: 'idle' | 'syncing' | 'healthy' | 'offline' | 'paused' | 'error'
+  last_attempt_at: string | null
+  last_success_at: string | null
+  error: string | null
 }
 
 export async function getConductorSettings(): Promise<ConductorSettings> {
