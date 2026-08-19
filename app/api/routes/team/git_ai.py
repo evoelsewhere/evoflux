@@ -12,6 +12,8 @@ from app.api.deps import DbSession
 from app.api.schemas.git_ai import GitAIRequest, GitAIResponse
 from app.models.chat import ChatSession
 from app.services import team_manager
+from app.services import coding_workspace_authorization
+from app.services.change_set_service import ChangeSetStale
 from app.services.git_ai_service import run_git_ai_action
 
 router = APIRouter(prefix="/workspace/git/ai")
@@ -31,7 +33,17 @@ async def run_git_ai_action_route(
     session = await db.get(ChatSession, session_uuid)
     if session is None or session.mode != "coding":
         raise HTTPException(status_code=404, detail="Coding session not found.")
-    if not session.workspace or Path(session.workspace).resolve() != root:
+    if not session.workspace:
+        raise HTTPException(status_code=409, detail="Coding session has no workspace.")
+    project_id = getattr(session, "project_id", None)
+    primary_matches = Path(session.workspace).resolve() == root
+    project_matches = bool(
+        project_id
+        and await coding_workspace_authorization.project_contains_workspace_path(
+            db, project_id, root
+        )
+    )
+    if not primary_matches and not project_matches:
         raise HTTPException(
             status_code=409, detail="Session belongs to another workspace."
         )
@@ -39,7 +51,7 @@ async def run_git_ai_action_route(
     team = team_manager.find_team_for_session(body.session_id)
     if team is None:
         team = await team_manager.get_or_start_coding_team(
-            str(root), body.session_id, mode="coding"
+            str(Path(session.workspace).resolve()), body.session_id, mode="coding"
         )
     provider = team.lead.agent.llm_provider
     provider_factory = getattr(team, "_provider_factory", None)
@@ -59,6 +71,11 @@ async def run_git_ai_action_route(
             reference=body.reference,
             remote_context=body.remote_context,
         )
+    except ChangeSetStale as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "stale_change_set", "paths": exc.paths},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     finally:

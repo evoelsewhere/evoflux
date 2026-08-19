@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -11,7 +12,7 @@ from app.agent.sandbox import SandboxConfig, set_sandbox
 from app.agent.schemas.chat import AssistantMessage
 from app.services.change_set_service import clear_change_sets
 from app.services.editor_action_service import run_editor_action
-from app.services.editor_context_service import EditorContextEnvelope
+from app.services.editor_context_service import ContextProvenance, EditorContextEnvelope
 from app.services.problems_service import clear_problems, list_problems
 
 
@@ -28,12 +29,14 @@ def context(tmp_path: Path):
     )
     clear_change_sets()
     clear_problems()
+    content = "value = 1\n"
+    content_sha = hashlib.sha256(content.encode()).hexdigest()
     yield EditorContextEnvelope(
         workspace=str(tmp_path),
         active_file="main.py",
         document_version=1,
-        content="value = 1\n",
-        content_sha256="a" * 64,
+        content=content,
+        content_sha256=content_sha,
         selection=None,
         cursor_symbol="value",
         diagnostics=[],
@@ -45,6 +48,14 @@ def context(tmp_path: Path):
         relevant_terminal_failure=None,
         project_instructions=[],
         attachments=[],
+        provenance=[
+            ContextProvenance(
+                kind="active_file",
+                source="editor-buffer",
+                path="main.py",
+                sha256=content_sha,
+            )
+        ],
     )
     from app.agent.sandbox import _sandbox_ctx
 
@@ -133,4 +144,108 @@ async def test_change_action_rejects_prose_response(context):
             instruction=None,
             context=context,
             session_id=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_change_action_rejects_unseen_existing_file(context):
+    workspace = Path(context.workspace)
+    (workspace / "unseen.py").write_text("keep = True\n", encoding="utf-8")
+    payload = {
+        "kind": "changes",
+        "summary": "Replace unseen file",
+        "files": [{"path": "unseen.py", "proposed_content": "keep = False\n"}],
+    }
+    provider = SimpleNamespace(
+        provider_name="test",
+        chat=AsyncMock(return_value=AssistantMessage(content=json.dumps(payload))),
+    )
+
+    with pytest.raises(ValueError, match="not fully included"):
+        await run_editor_action(
+            provider=provider,
+            action="simplify_code",
+            instruction=None,
+            context=context,
+            session_id="session-1",
+        )
+
+
+@pytest.mark.asyncio
+async def test_change_action_rejects_file_changed_after_context_preview(context):
+    workspace = Path(context.workspace)
+    original = "helper = 1\n"
+    helper = workspace / "helper.py"
+    helper.write_text(original, encoding="utf-8")
+    context.provenance.append(
+        ContextProvenance(
+            kind="attachment",
+            source="explicit-mention",
+            path="helper.py",
+            sha256=hashlib.sha256(original.encode()).hexdigest(),
+        )
+    )
+    helper.write_text("helper = 2\n", encoding="utf-8")
+    payload = {
+        "kind": "changes",
+        "summary": "Update helper",
+        "files": [{"path": "helper.py", "proposed_content": "helper = 3\n"}],
+    }
+    provider = SimpleNamespace(
+        provider_name="test",
+        chat=AsyncMock(return_value=AssistantMessage(content=json.dumps(payload))),
+    )
+
+    with pytest.raises(ValueError, match="changed since preview"):
+        await run_editor_action(
+            provider=provider,
+            action="propagate_api_change",
+            instruction=None,
+            context=context,
+            session_id="session-1",
+        )
+
+
+@pytest.mark.asyncio
+async def test_change_action_rejects_truncated_existing_file(context):
+    context.provenance[0].truncated = True
+    payload = {
+        "kind": "changes",
+        "summary": "Unsafe truncation",
+        "files": [{"path": "main.py", "proposed_content": "value = 2\n"}],
+    }
+    provider = SimpleNamespace(
+        provider_name="test",
+        chat=AsyncMock(return_value=AssistantMessage(content=json.dumps(payload))),
+    )
+
+    with pytest.raises(ValueError, match="not fully included"):
+        await run_editor_action(
+            provider=provider,
+            action="simplify_code",
+            instruction=None,
+            context=context,
+            session_id="session-1",
+        )
+
+
+@pytest.mark.asyncio
+async def test_explanation_action_cannot_return_file_changes(context):
+    payload = {
+        "kind": "changes",
+        "summary": "Unexpected mutation",
+        "files": [{"path": "main.py", "proposed_content": "value = 2\n"}],
+    }
+    provider = SimpleNamespace(
+        provider_name="test",
+        chat=AsyncMock(return_value=AssistantMessage(content=json.dumps(payload))),
+    )
+
+    with pytest.raises(ValueError, match="expected explanation"):
+        await run_editor_action(
+            provider=provider,
+            action="explain_code",
+            instruction=None,
+            context=context,
+            session_id="session-1",
         )

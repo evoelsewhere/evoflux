@@ -380,10 +380,12 @@ export interface EditorContextRequest {
 export interface EditorActionRequest extends EditorContextRequest {
   action: EditorAiAction
   instruction?: string | null
+  expected_context_sha256?: string | null
 }
 
 export interface EditorContextResponse {
   context: Record<string, unknown>
+  context_sha256: string
 }
 
 export interface EditorActionResponse {

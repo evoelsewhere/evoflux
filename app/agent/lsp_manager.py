@@ -146,6 +146,7 @@ class LanguageServerClient:
         self._versions: dict[str, tuple[int, str]] = {}
         self._diagnostics: dict[str, list[dict[str, Any]]] = {}
         self._diagnostic_versions: dict[str, int | None] = {}
+        self._diagnostic_generations: dict[str, int] = {}
         self._diagnostic_events: dict[str, asyncio.Event] = {}
         self.capabilities: dict[str, Any] = {}
         self.server_info: dict[str, Any] = {}
@@ -159,74 +160,82 @@ class LanguageServerClient:
         async with self._start_lock:
             if self._process is not None and self._process.returncode is None:
                 return
+            await self._terminate_process()
+            self._reset_server_state()
             sandbox = get_sandbox()
-            self._process = await asyncio.create_subprocess_exec(
-                self.command[0],
-                *self.command[1:],
-                cwd=str(self.workspace),
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
-                env=_scrubbed_env(inherit=sandbox.inherit_shell_environment),
-            )
-            self._reader_task = asyncio.create_task(
-                self._read_messages(),
-                name=f"lsp:{self.spec.language_id}:{self.workspace.name}",
-            )
-            initialize_result = await self.request(
-                "initialize",
-                {
-                    "processId": None,
-                    "rootUri": self.workspace.as_uri(),
-                    "capabilities": {
-                        "general": {"positionEncodings": ["utf-16"]},
-                        "textDocument": {
-                            "synchronization": {
-                                "didSave": True,
-                                "dynamicRegistration": False,
+            try:
+                self._process = await asyncio.create_subprocess_exec(
+                    self.command[0],
+                    *self.command[1:],
+                    cwd=str(self.workspace),
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                    env=_scrubbed_env(inherit=sandbox.inherit_shell_environment),
+                )
+                self._reader_task = asyncio.create_task(
+                    self._read_messages(),
+                    name=f"lsp:{self.spec.language_id}:{self.workspace.name}",
+                )
+                initialize_result = await self.request(
+                    "initialize",
+                    {
+                        "processId": None,
+                        "rootUri": self.workspace.as_uri(),
+                        "capabilities": {
+                            "general": {"positionEncodings": ["utf-16"]},
+                            "textDocument": {
+                                "synchronization": {
+                                    "didSave": True,
+                                    "dynamicRegistration": False,
+                                },
+                                "hover": {"contentFormat": ["markdown", "plaintext"]},
+                                "codeAction": {
+                                    "dataSupport": True,
+                                    "resolveSupport": {
+                                        "properties": ["edit", "command"]
+                                    },
+                                },
+                                "rename": {"prepareSupport": True},
+                                "formatting": {},
+                                "rangeFormatting": {},
+                                "documentSymbol": {
+                                    "hierarchicalDocumentSymbolSupport": True
+                                },
+                                "publishDiagnostics": {
+                                    "relatedInformation": True,
+                                    "versionSupport": True,
+                                },
                             },
-                            "hover": {"contentFormat": ["markdown", "plaintext"]},
-                            "codeAction": {
-                                "dataSupport": True,
-                                "resolveSupport": {"properties": ["edit", "command"]},
-                            },
-                            "rename": {"prepareSupport": True},
-                            "formatting": {},
-                            "rangeFormatting": {},
-                            "documentSymbol": {
-                                "hierarchicalDocumentSymbolSupport": True
-                            },
-                            "publishDiagnostics": {
-                                "relatedInformation": True,
-                                "versionSupport": True,
+                            "workspace": {
+                                "applyEdit": False,
+                                "configuration": True,
+                                "symbol": {"dynamicRegistration": False},
+                                "workspaceFolders": True,
                             },
                         },
-                        "workspace": {
-                            "applyEdit": False,
-                            "configuration": True,
-                            "symbol": {"dynamicRegistration": False},
-                            "workspaceFolders": True,
-                        },
+                        "workspaceFolders": self.workspace_folders,
                     },
-                    "workspaceFolders": self.workspace_folders,
-                },
-                ensure_started=False,
-                timeout=20,
-            )
-            if isinstance(initialize_result, dict):
-                raw_capabilities = initialize_result.get("capabilities")
-                if isinstance(raw_capabilities, dict):
-                    self.capabilities = raw_capabilities
-                raw_server_info = initialize_result.get("serverInfo")
-                if isinstance(raw_server_info, dict):
-                    self.server_info = raw_server_info
-            await self.notify("initialized", {}, ensure_started=False)
-            logger.info(
-                "lsp_started language={} workspace={} command={}",
-                self.spec.language_id,
-                self.workspace,
-                self.command[0],
-            )
+                    ensure_started=False,
+                    timeout=20,
+                )
+                if isinstance(initialize_result, dict):
+                    raw_capabilities = initialize_result.get("capabilities")
+                    if isinstance(raw_capabilities, dict):
+                        self.capabilities = raw_capabilities
+                    raw_server_info = initialize_result.get("serverInfo")
+                    if isinstance(raw_server_info, dict):
+                        self.server_info = raw_server_info
+                await self.notify("initialized", {}, ensure_started=False)
+                logger.info(
+                    "lsp_started language={} workspace={} command={}",
+                    self.spec.language_id,
+                    self.workspace,
+                    self.command[0],
+                )
+            except BaseException:
+                await self._terminate_process()
+                raise
 
     async def request(
         self,
@@ -319,6 +328,7 @@ class LanguageServerClient:
         self._versions.pop(uri, None)
         self._diagnostics.pop(uri, None)
         self._diagnostic_versions.pop(uri, None)
+        self._diagnostic_generations.pop(uri, None)
         self._diagnostic_events.pop(uri, None)
 
     async def diagnostics(
@@ -328,13 +338,27 @@ class LanguageServerClient:
         *,
         require_current_version: bool = False,
     ) -> list[dict[str, Any]]:
+        resolved_uri = path.resolve().as_uri()
+        prior_generation = self._diagnostic_generations.get(resolved_uri, 0)
         uri, changed = await self.sync_document(path, content)
         event = self._diagnostic_events.setdefault(uri, asyncio.Event())
         current_version = self._versions[uri][0]
-        if changed or (
-            require_current_version
-            and self._diagnostic_versions.get(uri) != current_version
-        ):
+
+        def _has_current_publication() -> bool:
+            if uri not in self._diagnostic_versions:
+                return False
+            published_version = self._diagnostic_versions[uri]
+            if published_version == current_version:
+                return True
+            # publishDiagnostics.version is optional in LSP. Since the event is
+            # cleared before didOpen/didChange, a newer publication generation
+            # is sufficient when the server omits it.
+            if published_version is None:
+                generation = self._diagnostic_generations.get(uri, 0)
+                return (not changed and generation > 0) or generation > prior_generation
+            return False
+
+        if changed or (require_current_version and not _has_current_publication()):
             deadline = time.monotonic() + 2.0
             try:
                 while True:
@@ -342,18 +366,12 @@ class LanguageServerClient:
                     if remaining <= 0:
                         break
                     await asyncio.wait_for(event.wait(), timeout=remaining)
-                    if (
-                        not require_current_version
-                        or self._diagnostic_versions.get(uri) == current_version
-                    ):
+                    if not require_current_version or _has_current_publication():
                         break
                     event.clear()
             except TimeoutError:
                 pass
-        if (
-            require_current_version
-            and self._diagnostic_versions.get(uri) != current_version
-        ):
+        if require_current_version and not _has_current_publication():
             raise LanguageServerUnavailable(
                 "Language server did not publish diagnostics for the current "
                 f"document version ({current_version})."
@@ -523,14 +541,39 @@ class LanguageServerClient:
             await self.notify("exit", {}, ensure_started=False)
         except Exception:  # noqa: BLE001
             pass
-        if process.returncode is None:
-            process.terminate()
+        await self._terminate_process()
+        self._reset_server_state()
+
+    def _reset_server_state(self) -> None:
+        """Drop state that cannot survive a server-process restart."""
+        self._versions.clear()
+        self._diagnostics.clear()
+        self._diagnostic_versions.clear()
+        self._diagnostic_generations.clear()
+        self._diagnostic_events.clear()
+        self.capabilities = {}
+        self.server_info = {}
+
+    async def _terminate_process(self) -> None:
+        process = self._process
+        reader_task = self._reader_task
+        if process is not None and process.returncode is None:
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
             try:
                 await asyncio.wait_for(process.wait(), timeout=3)
             except TimeoutError:
-                process.kill()
-        if self._reader_task is not None:
-            self._reader_task.cancel()
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                await process.wait()
+        if reader_task is not None and reader_task is not asyncio.current_task():
+            reader_task.cancel()
+            await asyncio.gather(reader_task, return_exceptions=True)
+        self._reader_task = None
         self._process = None
 
     async def _send(self, payload: dict[str, Any]) -> None:
@@ -574,6 +617,9 @@ class LanguageServerClient:
                     raw_version = params.get("version")
                     self._diagnostic_versions[uri] = (
                         raw_version if isinstance(raw_version, int) else None
+                    )
+                    self._diagnostic_generations[uri] = (
+                        self._diagnostic_generations.get(uri, 0) + 1
                     )
                     self._diagnostic_events.setdefault(uri, asyncio.Event()).set()
         except (

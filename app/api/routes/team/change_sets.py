@@ -79,6 +79,8 @@ async def get_change_set_route(change_set_id: str, workspace: str) -> ChangeSetR
         return _response(get_change_set(change_set_id, _workspace(workspace)))
     except ChangeSetNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ChangeSetError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -94,6 +96,8 @@ async def get_change_set_file_route(
         )
     except ChangeSetNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ChangeSetError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/{change_set_id}/apply", response_model=ChangeSetResponse)

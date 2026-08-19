@@ -22,6 +22,7 @@ from app.agent.schemas.chat import ChatMessage, HumanMessage, SystemMessage
 from app.services.change_set_service import (
     ChangeFileInput,
     create_change_set,
+    normalize_change_path,
     serialize_change_set,
 )
 from app.services.editor_context_service import EditorContextEnvelope
@@ -150,10 +151,18 @@ async def run_editor_action(
         raise ValueError("AI editor action timed out.") from exc
     output = _parse_output(response.content or "")
 
-    if action in _CHANGE_ACTIONS and output.kind != "changes":
-        raise ValueError("AI editor action did not return structured changes.")
-    if action == "find_problems" and output.kind != "findings":
-        raise ValueError("AI problem scan did not return structured findings.")
+    expected_kind = (
+        "changes"
+        if action in _CHANGE_ACTIONS
+        else "findings"
+        if action == "find_problems"
+        else "explanation"
+    )
+    if output.kind != expected_kind:
+        raise ValueError(
+            f"AI editor action {action} returned {output.kind}; "
+            f"expected {expected_kind}."
+        )
 
     result: dict[str, Any] = {
         "kind": output.kind,
@@ -183,10 +192,7 @@ async def run_editor_action(
             origin="ai",
             title=output.summary,
             description=output.explanation,
-            files=[
-                ChangeFileInput(path=item.path, proposed_content=item.proposed_content)
-                for item in output.files
-            ],
+            files=_guarded_change_inputs(context, output.files),
             verification_commands=output.verification_commands,
         )
         result["change_set"] = serialize_change_set(record)
@@ -223,6 +229,43 @@ async def run_editor_action(
         len(output.findings),
     )
     return result
+
+
+def _guarded_change_inputs(
+    context: EditorContextEnvelope,
+    files: list[_AIFile],
+) -> list[ChangeFileInput]:
+    """Bind existing-file proposals to the exact reviewed context snapshot."""
+    root = Path(context.workspace).resolve()
+    reviewed_hashes = {
+        item.path: item.sha256
+        for item in context.provenance
+        if item.path
+        and item.sha256
+        and not item.truncated
+        and item.source in {"editor-buffer", "explicit-mention"}
+        and not item.path.endswith("/")
+    }
+    guarded: list[ChangeFileInput] = []
+    for item in files:
+        normalized = normalize_change_path(root, item.path)
+        target = root / normalized
+        base_hash: str | None = None
+        if target.exists():
+            base_hash = reviewed_hashes.get(normalized)
+            if base_hash is None:
+                raise ValueError(
+                    "AI proposed replacing an existing file that was not fully "
+                    f"included in the reviewed context: {normalized}"
+                )
+        guarded.append(
+            ChangeFileInput(
+                path=normalized,
+                proposed_content=item.proposed_content,
+                base_hash=base_hash,
+            )
+        )
+    return guarded
 
 
 def _parse_output(raw: str) -> _AIOutput:

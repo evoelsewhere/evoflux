@@ -20,7 +20,10 @@ vi.mock('@monaco-editor/react', () => ({
   DiffEditor: ({ original, modified }: { original: string; modified: string }) => (
     <div data-testid="monaco-diff">{original} → {modified}</div>
   ),
-  useMonaco: () => null,
+  loader: {
+    __getMonacoInstance: () => null,
+    init: () => Promise.resolve(null),
+  },
 }))
 
 const proposal: ChangeSetResponse = {
@@ -31,7 +34,7 @@ const proposal: ChangeSetResponse = {
   description: 'Review before apply',
   status: 'pending',
   snapshot_hash: null,
-  verification_commands: [],
+  verification_commands: ['uv run pytest --no-cov -q'],
   verification: [],
   created_at: 1,
   updated_at: 1,
@@ -90,6 +93,7 @@ describe('ChangeSetReviewPanel', () => {
     expect(screen.getByText('Fix type mismatch')).toBeInTheDocument()
     expect(screen.getAllByText('app/main.py')).toHaveLength(2)
     expect(screen.getByText('+value = 2')).toBeInTheDocument()
+    expect(screen.getByText('uv run pytest --no-cov -q')).toBeInTheDocument()
     expect(await screen.findByTestId('monaco-diff')).toHaveTextContent('value = 1')
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }))
 

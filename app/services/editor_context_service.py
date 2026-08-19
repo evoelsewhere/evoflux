@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -56,6 +57,16 @@ class EditorContextEnvelope:
         payload = asdict(self)
         payload["provenance"] = [asdict(item) for item in self.provenance]
         return payload
+
+    def digest(self) -> str:
+        """Hash the exact inspectable payload approved before a model call."""
+        encoded = json.dumps(
+            self.to_dict(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return _sha(encoded)
 
 
 async def build_editor_context(
