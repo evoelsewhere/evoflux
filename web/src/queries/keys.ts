@@ -174,5 +174,6 @@ export const queryKeys = {
     providers: () => ['settings', 'providers'] as const,
     providerModels: (providerId: string) => ['settings', 'providers', providerId, 'models'] as const,
     providerUsage: (providerId: string) => ['settings', 'providers', providerId, 'usage'] as const,
+    conductorStatus: () => ['settings', 'conductor', 'status'] as const,
   },
 }
