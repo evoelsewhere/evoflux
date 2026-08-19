@@ -25,6 +25,7 @@ import {
   Users,
   XCircle,
   Copy,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -38,9 +39,10 @@ import type {
   GitServerConnectionInput,
   GitServerConnectionScope,
   GitServerProvider,
+  GitAIResponse,
   RepositoryCodeReviews,
 } from '@/api/types'
-import { getCodeReviewImageUrl, gitJobs, gitPush } from '@/api/client'
+import { getCodeReviewImageUrl, gitJobs, gitPush, runGitAIAction } from '@/api/client'
 import {
   Dialog,
   DialogContent,
@@ -89,6 +91,8 @@ import { formatRelativeDate } from '@/utils/format'
 import { MarkdownBlock } from '@/utils/markdown'
 import { cn } from '@/lib/utils'
 import { useToastStore } from '@/stores/useToastStore'
+import { useTeamStore } from '@/stores/useTeamStore'
+import { GitAiResultDialog } from '@/components/GitAiResultDialog'
 import { GitActionSurface, type GitAction } from '@/components/git/GitActionMenu'
 import type { PullRequestsScope } from '@/stores/useUIStore'
 import { getIntlLocale } from '@/i18n'
@@ -980,6 +984,9 @@ function ReviewDetails({
   )
   const [comment, setComment] = useState('')
   const [lifecycleAction, setLifecycleAction] = useState<ReviewLifecycleAction | null>(null)
+  const [aiSummary, setAiSummary] = useState<GitAIResponse | null>(null)
+  const [aiSummarizing, setAiSummarizing] = useState(false)
+  const sessionId = useTeamStore((state) => state.sessionId)
   const pushToast = useToastStore((state) => state.push)
   const transformImageSrc = useMemo(
     () => (src: string) => getCodeReviewImageUrl(repository.workspace_id, src),
@@ -1031,6 +1038,30 @@ function ReviewDetails({
           >
             <ChevronLeft size={15} />
           </button>
+          <button
+            type="button"
+            disabled={!sessionId || !detail.data || aiSummarizing}
+            onClick={() => {
+              if (!sessionId || !detail.data) return
+              setAiSummarizing(true)
+              void runGitAIAction(repository.workspace, {
+                session_id: sessionId,
+                action: 'summarize_pull_request',
+                remote_context: detail.data as unknown as Record<string, unknown>,
+              }).then(setAiSummary).catch((error: unknown) => {
+                pushToast({
+                  tone: 'error',
+                  title: 'Could not summarize pull request',
+                  description: error instanceof Error ? error.message : undefined,
+                })
+              }).finally(() => setAiSummarizing(false))
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-(--color-accent) hover:bg-(--bg-key) disabled:opacity-40"
+            aria-label="Summarize pull request with AI"
+            title="Summarize with AI"
+          >
+            {aiSummarizing ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+          </button>
           <div className="min-w-0 flex-1">
             <h3 className="text-sm font-semibold text-(--color-text)">
               {item.title}
@@ -1073,6 +1104,7 @@ function ReviewDetails({
             />
           </button>
         </div>
+        {aiSummary && <GitAiResultDialog result={aiSummary} onClose={() => setAiSummary(null)} />}
         {(summary?.source_branch ?? item.source_branch) && (
           <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-md bg-(--bg-key)/70 px-2 py-1.5 font-mono text-[10px] text-(--color-text-muted)">
             <span className="truncate">{summary?.source_branch ?? item.source_branch}</span>

@@ -46,11 +46,12 @@ import { useProjectQuery } from '@/queries/useProjectsQuery'
 import { CodingSidebar } from '../CodingSidebar'
 import { Sidebar } from '../Sidebar'
 import { ChatOverlayPanels, ChatTrailingPanels } from '@/components/chat/ChatPanels'
+import type { Command } from '@/components/CommandPalette'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useRegistryQuery, useTriggerDreamMutation, useWebBridgeSettingsQuery } from '@/queries'
-import { getSessionWorkspaceRoot, getWebBridgeStatus, replyPlanApproval, resolveTeamSession, setSessionPermissionMode } from '@/api/client'
+import { getSessionWorkspaceRoot, getWebBridgeStatus, replyPlanApproval, resolveTeamSession, searchEverywhere, setSessionPermissionMode } from '@/api/client'
 import { apiBaseUrl } from '@/api/base-url'
 import { useShallow } from 'zustand/react/shallow'
 import { useTeamStore } from '@/stores/useTeamStore'
@@ -161,6 +162,11 @@ const SchedulerPanel = lazy(() =>
 const PluginCenterPanel = lazy(() =>
   import('@/components/PluginCenterPanel').then((module) => ({
     default: module.PluginCenterPanel,
+  })),
+)
+const ProblemsPanel = lazy(() =>
+  import('@/components/ProblemsPanel').then((module) => ({
+    default: module.ProblemsPanel,
   })),
 )
 const loadSplitWorkbench = () =>
@@ -487,11 +493,13 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       closeWorkbenchTool('graph')
       closeWorkbenchTool('source-control')
       closeWorkbenchTool('pull-requests')
+      closeWorkbenchTool('problems')
     }
     if (mode === 'coding' && !workspace) {
       closeWorkbenchTool('files')
       closeWorkbenchTool('graph')
       closeWorkbenchTool('source-control')
+      closeWorkbenchTool('problems')
     }
   }, [closeWorkbenchTool, mode, sessionIdState, workspace])
 
@@ -1223,6 +1231,91 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     navigate,
   })
   const paletteCommands = commands
+  const searchPaletteCommands = useCallback(async (
+    query: string,
+    signal: AbortSignal,
+  ): Promise<Command[]> => {
+    const normalized = query.trim().toLowerCase()
+    const recent: Command[] = (turnChanges?.files ?? [])
+      .filter((file) => file.path.toLowerCase().includes(normalized))
+      .slice(0, 8)
+      .map((file) => ({
+        id: `recent:${file.path}`,
+        group: 'Recent files',
+        label: file.path,
+        description: 'Changed in the latest agent turn',
+        action: () => {
+          setCodingFileViewer({
+            path: file.path,
+            name: file.path.split('/').pop() ?? file.path,
+            size: 0,
+            mtime: 0,
+            mime: 'text/plain',
+          })
+          setCodingFileViewerHost('standalone')
+          setCodingFileViewerMode('file')
+        },
+      }))
+    if (mode !== 'coding' || !workspace) return recent
+    const response = await searchEverywhere(workspace, query, 50, signal)
+    const remote = response.items.map<Command>((item) => ({
+      id: `search:${item.id}`,
+      group: item.kind === 'git_branch' || item.kind === 'git_commit'
+        ? 'Git'
+        : item.kind === 'problem'
+          ? 'Problems'
+          : item.kind === 'skill'
+            ? 'Skills'
+            : item.kind === 'workflow'
+              ? 'Workflows'
+              : item.kind === 'file' || item.kind === 'folder'
+                ? 'Files'
+                : 'Code',
+      label: item.label,
+      description: item.description,
+      action: () => {
+        if (item.kind === 'problem') {
+          openWorkbenchTool('problems')
+          return
+        }
+        if (item.kind === 'git_branch' || item.kind === 'git_commit') {
+          openWorkbenchTool('source-control')
+          return
+        }
+        if (item.kind === 'skill') {
+          const name = String(item.metadata?.name ?? item.label)
+          inputRef.current?.setValue(`/skill:${name} `)
+          inputRef.current?.focus()
+          return
+        }
+        if (item.kind === 'workflow') {
+          const name = String(item.metadata?.name ?? item.label)
+          inputRef.current?.setValue(`/workflow ${name} `)
+          inputRef.current?.focus()
+          return
+        }
+        if (item.kind === 'folder') {
+          openWorkbenchTool('files')
+          return
+        }
+        if (item.path) {
+          const size = item.metadata?.size
+          const mtime = item.metadata?.mtime
+          const mime = item.metadata?.mime
+          setCodingFileViewer({
+            path: item.path,
+            name: item.path.split('/').pop() ?? item.path,
+            size: typeof size === 'number' ? size : 0,
+            mtime: typeof mtime === 'number' ? mtime : 0,
+            mime: typeof mime === 'string' ? mime : 'text/plain',
+          })
+          setCodingFileViewerHost('standalone')
+          setCodingFileViewerMode('file')
+        }
+      },
+    }))
+    return [...recent, ...remote]
+  }, [mode, openWorkbenchTool, turnChanges?.files, workspace])
 
   useKeyboardShortcuts({
     n: handleNewSession,
@@ -1441,6 +1534,8 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
               sessionId={sessionIdState}
               terminalId={tab.id}
               active={active}
+              workspace={mode === 'coding' ? workspace : null}
+              activeFilePath={codingFileViewer?.path ?? null}
             />
           )}
         </WorkbenchSurface>
@@ -1534,6 +1629,30 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                 />
               )}
             </WorkbenchSurface>
+            {workspace && <WorkbenchSurface tool="problems">
+              {(_tab, active) => (
+                <ProblemsPanel
+                  workspace={workspace}
+                  active={active}
+                  onOpenFile={(path) => {
+                    setCodingFileViewer({
+                      path,
+                      name: path.split('/').pop() ?? path,
+                      size: 0,
+                      mtime: 0,
+                      mime: 'text/plain',
+                    })
+                    setCodingFileViewerHost('standalone')
+                    setCodingFileViewerMode('file')
+                    openWorkbenchTool('files')
+                  }}
+                  onSendToAgent={(prompt) => {
+                    inputRef.current?.setValue(prompt)
+                    inputRef.current?.focus()
+                  }}
+                />
+              )}
+            </WorkbenchSurface>}
           </>
         )}
       </Suspense>
@@ -1696,6 +1815,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     <ChatOverlayPanels
       showPalette={showPalette}
       paletteCommands={paletteCommands}
+      searchPaletteCommands={searchPaletteCommands}
       onClosePalette={() => setShowPalette(false)}
       runInputsRequest={runInputsRequest}
       onCancelRunInputs={() => setRunInputsRequest(null)}

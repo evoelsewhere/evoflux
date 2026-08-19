@@ -43,6 +43,7 @@ from app.agent.hooks.pipeline import HookPipeline, HookStage
 from app.agent.hooks.wiki_injection import default_wiki_injection_hook
 from app.agent.hooks.workspace_instructions import WorkspaceInstructionsHook
 from app.agent.hooks.post_edit_diagnostics import PostEditDiagnosticsHook
+from app.agent.hooks.problem_capture import ProblemCaptureHook
 from app.agent.verification import CompletionVerificationHook
 from app.agent.hooks.otel import OpenTelemetryHook
 from app.agent.hooks.conductor_telemetry import ConductorTelemetryHook
@@ -1423,6 +1424,11 @@ class TeamMemberBase(abc.ABC):
                 HookStage.WORKSPACE,
                 "post-edit-diagnostics",
                 PostEditDiagnosticsHook(),
+            )
+            pipeline.add(
+                HookStage.WORKSPACE,
+                "problem-capture",
+                ProblemCaptureHook(),
             )
             pipeline.add(
                 HookStage.WORKSPACE,

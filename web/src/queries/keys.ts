@@ -46,6 +46,8 @@ export const queryKeys = {
       ['coding-workspace-diff', workspace] as const,
     status: (workspace: string) =>
       ['coding-workspace-status', workspace] as const,
+    problems: (workspace: string, includeResolved = false) =>
+      ['coding-workspace-problems', workspace, includeResolved] as const,
   },
   // Code knowledge graph panel — keyed by the absolute workspace path, like
   // the coding sidebar. Status + search share the path so a reindex can
@@ -176,6 +178,8 @@ export const queryKeys = {
     webbridge: () => ['settings', 'webbridge'] as const,
     multimodal: () => ['settings', 'multimodal'] as const,
     providers: () => ['settings', 'providers'] as const,
+    languageServers: (workspaces: readonly string[]) =>
+      ['settings', 'language-servers', workspaces] as const,
     providerModels: (providerId: string) => ['settings', 'providers', providerId, 'models'] as const,
     providerUsage: (providerId: string) => ['settings', 'providers', providerId, 'usage'] as const,
   },

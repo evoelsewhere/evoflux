@@ -1,46 +1,56 @@
-"""PostEditDiagnosticsHook — auto-lint Python files after mutations.
+"""Automatic, version-safe diagnostics after repository mutations.
 
-Closes the edit→verify feedback loop: around successful ``edit``/``write``/
-``patch`` calls, run ``ruff check`` on changed Python files before and after the
-mutation and append **newly introduced** diagnostics to the tool result. The
-model sees errors it just caused in the same round instead of discovering
-them later (or never) via a manual ``lsp_diagnostics`` call — while
-pre-existing issues in the file stay out of the way, so the agent is not
-lured into out-of-scope fixes.
+The harness owns the edit-to-diagnose loop. Successful ``edit``/``write``/
+``patch`` calls are inspected automatically, so an agent does not need to
+spend another tool call asking whether it introduced a syntax or type error.
+Only the diagnostic delta is reported. A clean receipt explicitly says that
+LSP evidence is not a substitute for behavioral tests.
 
-Scope remains latency-bounded: single-file Ruff checks run concurrently and
-TypeScript stays in the completion contract because ``tsc`` has no fast
-single-file mode. Any failure (no Ruff, timeout, parse error) leaves the tool
-  result untouched. This hook must never break tool execution.
+LSP is preferred for every mapped language. Python falls back to Ruff when a
+language server is unavailable. Failures must never fail the mutation itself.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import shutil
 import subprocess
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
+from app.agent.lsp_manager import (
+    LanguageServerUnavailable,
+    get_language_server,
+    language_server_spec,
+)
 
 if TYPE_CHECKING:
     from app.agent.schemas.chat import ToolCall
     from app.agent.state import AgentState, RunContext
 
-_LINT_TOOLS = frozenset({"edit", "write", "patch"})
-_PY_SUFFIXES = (".py", ".pyi")
-_RUFF_TIMEOUT_S = 15.0
+_MUTATION_TOOLS = frozenset({"edit", "write", "patch"})
+_PY_SUFFIXES = (".py", ".pyi", ".pyw")
+_DIAGNOSTIC_TIMEOUT_S = 6.0
+_RUFF_TIMEOUT_S = 10.0
 _MAX_ISSUES_SHOWN = 10
 
 
+@dataclass(slots=True)
+class _Scan:
+    source: str
+    issues: list[dict[str, Any]]
+    content_hash: str
+
+
 def _ruff_command() -> list[str] | None:
-    """Resolve a ruff invocation, mirroring lsp.py's module-vs-binary logic."""
     if shutil.which("ruff"):
         return ["ruff"]
     if shutil.which("python"):
@@ -49,11 +59,10 @@ def _ruff_command() -> list[str] | None:
 
 
 class PostEditDiagnosticsHook(BaseAgentHook):
-    """Append newly-introduced ruff diagnostics to edit/write tool results."""
+    """Append one aggregated diagnostic observation to a mutation result."""
 
     def __init__(self) -> None:
-        # Resolved lazily on first use; None = probed and unavailable.
-        self._ruff_cmd: list[str] | None | bool = False  # False = not probed yet
+        self._ruff_cmd: list[str] | None | bool = False
 
     async def wrap_tool_call(
         self,
@@ -63,54 +72,90 @@ class PostEditDiagnosticsHook(BaseAgentHook):
         handler,
     ) -> str:
         target_specs: list[tuple[Path, Path]] = []
-        before_by_target: dict[Path, list[dict] | None] = {}
+        before_by_target: dict[Path, _Scan | None] = {}
         try:
-            if tool_call.function.name in _LINT_TOOLS:
+            if tool_call.function.name in _MUTATION_TOOLS:
                 target_specs = self._target_specs(tool_call)
                 before_results = await asyncio.gather(
-                    *(self._run_ruff(before) for before, _after in target_specs)
+                    *(
+                        self._scan(before, require_current=False)
+                        for before, _ in target_specs
+                    )
                 )
                 before_by_target = {
-                    after: diagnostics
-                    for (_before, after), diagnostics in zip(
+                    after: scan
+                    for (_before, after), scan in zip(
                         target_specs, before_results, strict=True
                     )
                 }
-        except Exception as exc:  # noqa: BLE001 — never break tool execution
+        except Exception as exc:  # noqa: BLE001 - diagnostics never break edits
             logger.debug("post_edit_diagnostics_pre_skipped error={}", exc)
             target_specs = []
 
         result = await handler(ctx, state, tool_call)
 
         try:
-            if not target_specs or not isinstance(result, str):
-                return result
-            # tool_executor stringifies tool failures as "Error: ..." — a
-            # failed edit wrote nothing, so there is nothing to lint.
-            if result.startswith("Error"):
+            if (
+                not target_specs
+                or not isinstance(result, str)
+                or result.startswith("Error")
+            ):
                 return result
             after_results = await asyncio.gather(
-                *(self._run_ruff(after) for _before, after in target_specs)
+                *(self._scan(after, require_current=True) for _, after in target_specs)
             )
             reports: list[str] = []
+            checked = 0
+            resolved_count = 0
+            unavailable: list[str] = []
             for (_before, path), after in zip(target_specs, after_results, strict=True):
                 before = before_by_target.get(path)
-                # None means Ruff was unavailable or a scan failed; skip rather
-                # than attributing pre-existing issues to this mutation.
-                if after is None or before is None:
+                if after is None:
+                    if language_server_spec(path) is not None:
+                        unavailable.append(path.name)
                     continue
-                introduced = self._new_issues(before, after)
+                if not self._hash_is_current(path, after.content_hash):
+                    logger.debug("post_edit_diagnostics_stale path={}", path)
+                    continue
+                checked += 1
+                self._publish_problem_snapshot(path, after)
+                baseline = (
+                    before.issues
+                    if before is not None and before.source == after.source
+                    else []
+                )
+                introduced = self._new_issues(baseline, after.issues)
+                resolved_count += len(self._new_issues(after.issues, baseline))
                 if introduced:
-                    reports.append(self._format(path, introduced))
-            if reports:
-                result += "\n\n[auto-diagnostics] " + "\n".join(reports)
-        except Exception as exc:  # noqa: BLE001 — never break tool execution
+                    reports.append(self._format(path, after.source, introduced))
+
+            if checked or unavailable:
+                lines = [
+                    "[auto-diagnostics] Post-edit semantic check "
+                    f"({checked} checked, {len(unavailable)} unavailable)."
+                ]
+                lines.extend(reports)
+                if not reports and checked:
+                    lines.append("No new diagnostics were introduced.")
+                if resolved_count:
+                    lines.append(f"Resolved diagnostics: {resolved_count}.")
+                if unavailable:
+                    lines.append(
+                        "No current-version diagnostics for: "
+                        + ", ".join(sorted(unavailable))
+                        + "."
+                    )
+                lines.append(
+                    "LSP/static diagnostics are not a substitute for behavioral tests."
+                )
+                result += "\n\n" + "\n".join(lines)
+        except Exception as exc:  # noqa: BLE001 - diagnostics never break edits
             logger.debug("post_edit_diagnostics_skipped error={}", exc)
         return result
 
     @staticmethod
     def _target_specs(tool_call: "ToolCall") -> list[tuple[Path, Path]]:
-        """Return ``(pre-edit path, post-edit path)`` Python targets."""
+        """Return repository-local ``(pre-edit path, post-edit path)`` pairs."""
         try:
             args = json.loads(tool_call.function.arguments or "{}")
         except (TypeError, ValueError):
@@ -139,32 +184,65 @@ class PostEditDiagnosticsHook(BaseAgentHook):
 
         sandbox = get_sandbox()
         targets: list[tuple[Path, Path]] = []
+        seen: set[Path] = set()
         try:
             for before_raw, after_raw in raw_specs:
-                if not after_raw.endswith(_PY_SUFFIXES):
+                after = sandbox.validate_path(after_raw)
+                if not _supports_diagnostics(after) or after in seen:
                     continue
-                targets.append(
-                    (
-                        sandbox.validate_path(before_raw),
-                        sandbox.validate_path(after_raw),
-                    )
-                )
-        except Exception:  # noqa: BLE001 — sandbox rejection = nothing to lint
+                seen.add(after)
+                targets.append((sandbox.validate_path(before_raw), after))
+        except Exception:  # noqa: BLE001 - sandbox rejection means no scan
             return []
         return targets
 
+    async def _scan(self, path: Path, *, require_current: bool) -> _Scan | None:
+        if not path.exists() or not path.is_file():
+            return None
+        content_hash = _content_hash(path)
+        spec = language_server_spec(path)
+        if spec is not None:
+            try:
+                from app.agent.sandbox import get_sandbox
+
+                client = await asyncio.wait_for(
+                    get_language_server(get_sandbox().workspace_root, path),
+                    timeout=_DIAGNOSTIC_TIMEOUT_S,
+                )
+                issues = await asyncio.wait_for(
+                    client.diagnostics(
+                        path,
+                        require_current_version=require_current,
+                    ),
+                    timeout=_DIAGNOSTIC_TIMEOUT_S,
+                )
+                return _Scan("lsp", list(issues), content_hash)
+            except (
+                LanguageServerUnavailable,
+                OSError,
+                RuntimeError,
+                TimeoutError,
+            ) as exc:
+                logger.debug("post_edit_lsp_unavailable path={} error={}", path, exc)
+
+        if path.suffix.casefold() in _PY_SUFFIXES:
+            issues = await self._run_ruff(path)
+            if issues is not None:
+                return _Scan("ruff", issues, content_hash)
+        return None
+
     @staticmethod
     def _new_issues(before: list[dict], after: list[dict]) -> list[dict]:
-        """Issues present after the edit but not before.
+        """Return the multiset delta while ignoring line shifts."""
 
-        Rows shift when lines are inserted, so identity is (code, message) —
-        an issue that merely moved is not "new".
-        """
+        def _key(issue: dict) -> tuple[str, str, str]:
+            return (
+                str(issue.get("code")),
+                str(issue.get("message")),
+                str(issue.get("severity")),
+            )
 
-        def _key(issue: dict) -> tuple[str, str]:
-            return (str(issue.get("code")), str(issue.get("message")))
-
-        seen = Counter(_key(i) for i in before)
+        seen = Counter(_key(issue) for issue in before)
         fresh: list[dict] = []
         for issue in after:
             key = _key(issue)
@@ -174,15 +252,12 @@ class PostEditDiagnosticsHook(BaseAgentHook):
                 fresh.append(issue)
         return fresh
 
-    async def _run_ruff(self, path: Path) -> list[dict] | None:
-        """Run ``ruff check`` on one file; return parsed issues or None on failure."""
+    async def _run_ruff(self, path: Path) -> list[dict[str, Any]] | None:
         if self._ruff_cmd is False:
             self._ruff_cmd = _ruff_command()
         ruff_cmd = self._ruff_cmd
         if not isinstance(ruff_cmd, list):
             return None
-        if not path.exists():
-            return []  # new file about to be created — nothing pre-existing
         cmd = [
             *ruff_cmd,
             "check",
@@ -194,14 +269,14 @@ class PostEditDiagnosticsHook(BaseAgentHook):
 
         def _sync() -> str | None:
             try:
-                r = subprocess.run(
+                completed = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
                     timeout=_RUFF_TIMEOUT_S,
                     check=False,
                 )
-                return r.stdout
+                return completed.stdout
             except (OSError, subprocess.TimeoutExpired):
                 return None
 
@@ -217,17 +292,89 @@ class PostEditDiagnosticsHook(BaseAgentHook):
         return issues if isinstance(issues, list) else None
 
     @staticmethod
-    def _format(path: Path, issues: list[dict]) -> str:
+    def _format(path: Path, source: str, issues: list[dict]) -> str:
         shown = issues[:_MAX_ISSUES_SHOWN]
-        header = f"this change introduced {len(issues)} ruff issue(s)"
+        header = f"{path.name}: introduced {len(issues)} {source} issue(s)"
         if len(issues) > _MAX_ISSUES_SHOWN:
             header += f" (showing first {_MAX_ISSUES_SHOWN})"
         lines = [header + ":"]
         for issue in shown:
-            loc = issue.get("location", {})
+            location = issue.get("location") or {}
+            start = (issue.get("range") or {}).get("start") or {}
+            row = location.get("row", int(start.get("line", -1)) + 1)
+            column = location.get("column", int(start.get("character", -1)) + 1)
             lines.append(
-                f"  {path.name}:{loc.get('row', '?')}:{loc.get('column', '?')}  "
+                f"  {path.name}:{row}:{column}  "
                 f"{issue.get('code', '?')}  {issue.get('message', '')}"
             )
         lines.append("  Fix these before moving on, or say why they are expected.")
         return "\n".join(lines)
+
+    @staticmethod
+    def _hash_is_current(path: Path, expected: str) -> bool:
+        try:
+            return _content_hash(path) == expected
+        except OSError:
+            return False
+
+    @staticmethod
+    def _publish_problem_snapshot(path: Path, scan: _Scan) -> None:
+        from app.agent.sandbox import get_sandbox
+        from app.services.problems_service import (
+            ProblemInput,
+            ProblemSeverity,
+            publish_problems,
+        )
+
+        sandbox = get_sandbox()
+        severity_map: dict[int, ProblemSeverity] = {
+            1: "error",
+            2: "warning",
+            3: "info",
+            4: "hint",
+        }
+        relative = sandbox.display_path(path)
+        inputs: list[ProblemInput] = []
+        for issue in scan.issues[:200]:
+            location = issue.get("location") or {}
+            raw_range = issue.get("range") or {}
+            start = raw_range.get("start") or {}
+            end = raw_range.get("end") or {}
+            raw_severity = issue.get("severity")
+            severity: ProblemSeverity = (
+                severity_map.get(raw_severity, "warning")
+                if isinstance(raw_severity, int)
+                else "warning"
+            )
+            inputs.append(
+                ProblemInput(
+                    message=str(issue.get("message") or "Diagnostic problem"),
+                    severity=severity,
+                    path=relative,
+                    line=int(location.get("row", start.get("line", 0)))
+                    + (0 if location else 1),
+                    column=int(location.get("column", start.get("character", 0)))
+                    + (0 if location else 1),
+                    end_line=int(end.get("line", start.get("line", 0))) + 1,
+                    end_column=int(end.get("character", start.get("character", 0))) + 1,
+                    code=str(issue["code"]) if issue.get("code") is not None else None,
+                    provenance={"producer": scan.source},
+                )
+            )
+        publish_problems(
+            sandbox.workspace_root,
+            source="lsp" if scan.source == "lsp" else "static",
+            scope=f"{scan.source}:{relative}",
+            problems=inputs,
+            session_id=sandbox.session_id,
+        )
+
+
+def _supports_diagnostics(path: Path) -> bool:
+    return (
+        language_server_spec(path) is not None or path.suffix.casefold() in _PY_SUFFIXES
+    )
+
+
+def _content_hash(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()

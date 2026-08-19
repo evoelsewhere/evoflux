@@ -14,13 +14,19 @@ import {
   useEffect,
   useImperativeHandle,
   useRef,
+  useState,
 } from 'react'
 import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import { Send } from 'lucide-react'
+import { Send, Sparkles } from 'lucide-react'
 import { apiBaseUrl, apiWsBaseUrl } from '@/api/base-url'
 import { withTokenParam } from '@/api/auth'
+import { codingWorkspaceFileUrl } from '@/api/client'
+import type { EditorActionRequest } from '@/api/types'
+import { EditorAiActionDialog } from './EditorAiActionDialog'
+import { useUIStore } from '@/stores/useUIStore'
+import { useToastStore } from '@/stores/useToastStore'
 
 const DARK_ANSI_THEME: ITheme = {
   black: '#232220',
@@ -95,6 +101,7 @@ function collectText(term: Terminal): string {
 
 interface TerminalHandle {
   sendToAgent: () => void
+  collectText: () => string
 }
 
 const TerminalInstance = forwardRef<
@@ -133,6 +140,10 @@ const TerminalInstance = forwardRef<
           detail: { text: `Terminal output:\n\`\`\`\n${text}\n\`\`\`` },
         }),
       )
+    },
+    collectText: () => {
+      const term = termRef.current
+      return term ? collectText(term) : ''
     },
   }), [])
 
@@ -243,12 +254,19 @@ export function TerminalPanel({
   sessionId,
   terminalId,
   active,
+  workspace = null,
+  activeFilePath = null,
 }: {
   sessionId: string | null
   terminalId: string
   active: boolean
+  workspace?: string | null
+  activeFilePath?: string | null
 }) {
   const instanceRef = useRef<TerminalHandle | null>(null)
+  const [aiRequest, setAiRequest] = useState<EditorActionRequest | null>(null)
+  const openWorkbenchTool = useUIStore((state) => state.openWorkbenchTool)
+  const pushToast = useToastStore((state) => state.push)
 
   useEffect(() => {
     if (!sessionId) return
@@ -264,19 +282,57 @@ export function TerminalPanel({
   }, [sessionId, terminalId])
 
   const sendToAgent = () => instanceRef.current?.sendToAgent()
+  const explainFailure = async () => {
+    const terminalOutput = instanceRef.current?.collectText() ?? ''
+    if (!sessionId || !workspace || !activeFilePath || !terminalOutput.trim()) {
+      pushToast({
+        tone: 'info',
+        title: 'Open a source file and select terminal output first',
+      })
+      return
+    }
+    try {
+      const response = await fetch(codingWorkspaceFileUrl(workspace, activeFilePath))
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      setAiRequest({
+        session_id: sessionId,
+        action: 'explain_failure',
+        active_file: activeFilePath,
+        content: await response.text(),
+        relevant_terminal_failure: terminalOutput,
+      })
+    } catch (error) {
+      pushToast({
+        tone: 'error',
+        title: 'Could not prepare terminal explanation',
+        description: error instanceof Error ? error.message : undefined,
+      })
+    }
+  }
 
   return (
     <div className="group relative flex h-full min-h-0 flex-col overflow-hidden bg-(--terminal-bg)">
       {sessionId && (
-        <button
-          type="button"
-          onClick={sendToAgent}
-          title="Send selection (or recent output) to the chat composer"
-          aria-label="Send terminal output to agent"
-          className="absolute right-2 top-2 z-(--z-panel) flex h-7 w-7 items-center justify-center rounded-md border border-(--color-border) bg-(--bg-page)/90 text-(--color-text-muted) opacity-0 shadow-sm backdrop-blur-sm transition-[opacity,background-color,color] hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:opacity-100 group-hover:opacity-100"
-        >
-          <Send size={13} />
-        </button>
+        <div className="absolute right-2 top-2 z-(--z-panel) flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          <button
+            type="button"
+            onClick={() => { void explainFailure() }}
+            title="Explain selection or recent terminal failure with AI"
+            aria-label="Explain terminal failure with AI"
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-(--color-border) bg-(--bg-page)/90 text-(--color-accent) shadow-sm backdrop-blur-sm hover:bg-(--bg-key)"
+          >
+            <Sparkles size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={sendToAgent}
+            title="Send selection (or recent output) to the chat composer"
+            aria-label="Send terminal output to agent"
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-(--color-border) bg-(--bg-page)/90 text-(--color-text-muted) shadow-sm backdrop-blur-sm hover:bg-(--bg-key) hover:text-(--color-text)"
+          >
+            <Send size={13} />
+          </button>
+        </div>
       )}
       {sessionId ? (
         <div className="min-h-0 flex-1">
@@ -291,6 +347,14 @@ export function TerminalPanel({
         <div className="flex flex-1 items-center justify-center p-4 text-xs text-(--color-text-subtle)">
           Start a session to open a terminal.
         </div>
+      )}
+      {aiRequest && workspace && (
+        <EditorAiActionDialog
+          workspace={workspace}
+          request={aiRequest}
+          onClose={() => setAiRequest(null)}
+          onOpenProblems={() => openWorkbenchTool('problems')}
+        />
       )}
     </div>
   )

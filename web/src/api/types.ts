@@ -221,6 +221,268 @@ export interface CodingDiagnosticsResponse {
   message: string | null
 }
 
+export type CodingSemanticAction =
+  | 'hover'
+  | 'code_actions'
+  | 'rename'
+  | 'format'
+  | 'organize_imports'
+  | 'document_symbols'
+  | 'workspace_symbols'
+
+export interface CodingSemanticRequest {
+  action: CodingSemanticAction
+  path: string
+  content?: string | null
+  line?: number | null
+  column?: number | null
+  end_line?: number | null
+  end_column?: number | null
+  new_name?: string | null
+  query?: string | null
+  diagnostics?: CodingLspDiagnostic[]
+  tab_size?: number
+  insert_spaces?: boolean
+}
+
+export interface CodingSemanticResponse {
+  workspace: string
+  path: string
+  action: CodingSemanticAction
+  language: string | null
+  status: CodingDiagnosticsStatus
+  result: unknown
+  capabilities: Record<string, unknown>
+  message: string | null
+}
+
+export type ChangeSetOrigin = 'lsp' | 'ai' | 'agent' | 'review' | 'git'
+export type ChangeSetStatus = 'pending' | 'applied' | 'rejected' | 'partial'
+export type ChangeSetFileStatus = 'pending' | 'applied' | 'rejected'
+
+export interface ChangeSetFileProposal {
+  path: string
+  proposed_content: string
+  base_hash?: string | null
+  document_version?: number | null
+}
+
+export interface ChangeSetCreateRequest {
+  origin: ChangeSetOrigin
+  title: string
+  description?: string | null
+  files?: ChangeSetFileProposal[]
+  workspace_edit?: Record<string, unknown> | null
+  verification_commands?: string[]
+}
+
+export interface ChangeSetFile {
+  path: string
+  base_hash: string | null
+  proposed_hash: string
+  document_version: number | null
+  diff: string
+  additions: number
+  deletions: number
+  status: ChangeSetFileStatus
+}
+
+export interface ChangeSetResponse {
+  id: string
+  workspace: string
+  origin: ChangeSetOrigin
+  title: string
+  description: string | null
+  status: ChangeSetStatus
+  snapshot_hash: string | null
+  verification_commands: string[]
+  verification: Array<Record<string, unknown>>
+  created_at: number
+  updated_at: number
+  files: ChangeSetFile[]
+}
+
+export interface ChangeSetFileContent {
+  path: string
+  base_hash: string | null
+  proposed_hash: string
+  original_content: string
+  proposed_content: string
+  document_version: number | null
+  status: ChangeSetFileStatus
+}
+
+export type ProblemSource = 'lsp' | 'static' | 'build' | 'test' | 'ai_review' | 'security' | 'plugin'
+export type ProblemSeverity = 'error' | 'warning' | 'info' | 'hint'
+export type ProblemStatus = 'open' | 'dismissed' | 'suppressed'
+
+export interface CodingProblem {
+  id: string
+  workspace: string
+  source: ProblemSource
+  scope: string
+  message: string
+  severity: ProblemSeverity
+  path: string | null
+  line: number | null
+  column: number | null
+  end_line: number | null
+  end_column: number | null
+  code: string | null
+  title: string | null
+  details: string | null
+  fix: Record<string, unknown> | null
+  suppression_key: string
+  provenance: Record<string, unknown>
+  session_id: string | null
+  status: ProblemStatus
+  created_at: number
+  updated_at: number
+}
+
+export interface ProblemsResponse {
+  problems: CodingProblem[]
+  counts: Record<'error' | 'warning' | 'info' | 'hint' | 'total', number>
+}
+
+export type EditorAiAction =
+  | 'explain_code'
+  | 'fix_diagnostic'
+  | 'refactor_selection'
+  | 'generate_tests'
+  | 'generate_documentation'
+  | 'find_problems'
+  | 'simplify_code'
+  | 'convert_pattern'
+  | 'propagate_api_change'
+  | 'explain_failure'
+
+export interface EditorSelectionContext {
+  text: string
+  start_line: number
+  start_column: number
+  end_line: number
+  end_column: number
+}
+
+export interface EditorContextRequest {
+  session_id?: string | null
+  active_file: string
+  content: string
+  document_version?: number | null
+  selection?: EditorSelectionContext | null
+  cursor_symbol?: string | null
+  diagnostics?: CodingLspDiagnostic[]
+  mention_paths?: string[]
+  relevant_terminal_failure?: string | null
+}
+
+export interface EditorActionRequest extends EditorContextRequest {
+  action: EditorAiAction
+  instruction?: string | null
+  expected_context_sha256?: string | null
+}
+
+export interface EditorContextResponse {
+  context: Record<string, unknown>
+  context_sha256: string
+}
+
+export interface EditorActionResponse {
+  kind: 'explanation' | 'changes' | 'findings'
+  summary: string
+  explanation: string | null
+  verification_commands: string[]
+  context: Record<string, unknown>
+  change_set: ChangeSetResponse | null
+  findings: string[]
+}
+
+export type GitAIAction =
+  | 'self_review'
+  | 'generate_commit_message'
+  | 'explain_commit'
+  | 'generate_pr_description'
+  | 'summarize_pull_request'
+  | 'propose_conflict_resolution'
+  | 'review_resolved_conflicts'
+
+export interface GitAIRequest {
+  session_id: string
+  action: GitAIAction
+  reference?: string | null
+  remote_context?: Record<string, unknown> | null
+}
+
+export interface GitAIResponse {
+  kind: 'review' | 'text' | 'pr' | 'changes'
+  summary: string
+  message: string | null
+  title: string | null
+  body: string | null
+  findings: string[]
+  change_set: ChangeSetResponse | null
+  evidence_sha256: string
+}
+
+export type SearchEverywhereKind =
+  | 'file'
+  | 'folder'
+  | 'symbol'
+  | 'code'
+  | 'git_branch'
+  | 'git_commit'
+  | 'problem'
+  | 'skill'
+  | 'workflow'
+
+export interface SearchEverywhereItem {
+  id: string
+  kind: SearchEverywhereKind
+  label: string
+  description: string
+  path: string | null
+  line: number | null
+  metadata: Record<string, unknown> | null
+}
+
+export interface SearchEverywhereResponse {
+  items: SearchEverywhereItem[]
+}
+
+export interface LanguageServerDetectedRepository {
+  workspace: string
+  name: string
+  file_count: number
+}
+
+export type LanguageServerState = 'ready' | 'missing' | 'update_available'
+export type LanguageServerSource = 'managed' | 'system' | 'missing'
+
+export interface LanguageServerStatus {
+  language_id: string
+  display_name: string
+  extensions: string[]
+  detected: boolean
+  file_count: number
+  repositories: LanguageServerDetectedRepository[]
+  state: LanguageServerState
+  source: LanguageServerSource
+  command: string | null
+  installed_version: string | null
+  expected_version: string | null
+  installable: boolean
+  installer: 'npm' | 'uv' | null
+  installer_available: boolean
+  install_hint: string
+}
+
+export interface LanguageServerOverview {
+  workspaces: string[]
+  cache_dir: string
+  servers: LanguageServerStatus[]
+}
+
 // ── Code context (/api/code-context) ────────────────────────────────────────
 
 export interface CodeGraphStatusResponse {

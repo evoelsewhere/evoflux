@@ -25,15 +25,21 @@ from fastapi import APIRouter
 
 from app.api.routes.team import (
     browser,
+    change_sets,
+    editor,
     chat,
     files,
     folders,
     git,
+    git_ai,
+    language_servers,
     permissions,
+    problems,
     processes,
     projects,
     questions,
     reviews,
+    search_everywhere,
     terminal,
     todos,
     webbridge,
@@ -51,12 +57,18 @@ router.include_router(browser.router)
 router.include_router(folders.router)
 router.include_router(chat.router)
 router.include_router(files.router)
+router.include_router(change_sets.router)
+router.include_router(editor.router)
+router.include_router(problems.router)
 router.include_router(git.router)
+router.include_router(git_ai.router)
+router.include_router(language_servers.router)
 router.include_router(todos.router)
 router.include_router(permissions.router)
 router.include_router(processes.router)
 router.include_router(questions.router)
 router.include_router(reviews.router)
+router.include_router(search_everywhere.router)
 router.include_router(terminal.router)
 router.include_router(worktrees.router)
 router.include_router(projects.router)

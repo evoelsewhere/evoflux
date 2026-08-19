@@ -146,6 +146,7 @@ class TestDefaultDeferredTools:
             "lsp_diagnostics",
             "lsp_definition",
             "lsp_references",
+            "lsp_semantic",
             "visualize_read_me",
             "show_widget",
             "create_pull_request",

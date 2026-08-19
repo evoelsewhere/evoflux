@@ -10,6 +10,7 @@ import {
   Network,
   ListTree,
   Blocks,
+  CircleAlert,
   Terminal,
   type LucideIcon,
 } from 'lucide-react'
@@ -94,6 +95,11 @@ export const WORKBENCH_TOOLS: Record<
     description: 'Review pull requests and merge requests',
     icon: GitPullRequest,
   },
+  problems: {
+    label: 'Problems',
+    description: 'Review LSP, build, test, AI, security, and plugin findings',
+    icon: CircleAlert,
+  },
 }
 
 export const WORKBENCH_TOOL_ORDER = Object.keys(WORKBENCH_TOOLS) as WorkbenchTool[]
@@ -103,6 +109,9 @@ export function isWorkbenchToolEnabled(
   context: WorkbenchContext,
 ): boolean {
   if (tool === 'overview') {
+    return context.mode === 'coding' && Boolean(context.workspace)
+  }
+  if (tool === 'problems') {
     return context.mode === 'coding' && Boolean(context.workspace)
   }
   if (tool === 'source-control' || tool === 'pull-requests') {
