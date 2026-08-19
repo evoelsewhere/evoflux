@@ -213,14 +213,21 @@ const AUTOMATIC_UPDATE_CHECK_DELAY: Duration = Duration::from_secs(8);
 /// controls immediately after the traffic-lights. ``traffic_light_position``
 /// must be set from Rust because the JSON config value is ignored when the
 /// window is built via ``WebviewWindowBuilder``.
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-fn windows_acrylic_effects() -> tauri::utils::config::WindowEffectsConfig {
+#[cfg(target_os = "windows")]
+fn windows_sidebar_effects() -> tauri::utils::config::WindowEffectsConfig {
     use tauri::{utils::config::WindowEffectsConfig, window::Effect};
 
+    let effect = if windows_version::OsVersion::current().build >= 22_000 {
+        Effect::Mica
+    } else {
+        Effect::Acrylic
+    };
+
     WindowEffectsConfig {
-        // Acrylic is supported across Windows 10 and 11. Keep its native blur
-        // untinted; the transparent WebView supplies the resolved app palette.
-        effects: vec![Effect::Acrylic],
+        // Mica is the stable Windows 11 main-window material and avoids the
+        // resize artifacts of Acrylic. Windows 10 keeps Acrylic as a fallback;
+        // the transparent WebView supplies the theme-aware surface tint.
+        effects: vec![effect],
         state: None,
         radius: None,
         color: None,
@@ -256,7 +263,7 @@ fn configure_window_chrome(
     }
     #[cfg(target_os = "windows")]
     {
-        builder.transparent(true).effects(windows_acrylic_effects())
+        builder.transparent(true).effects(windows_sidebar_effects())
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {

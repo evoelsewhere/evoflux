@@ -86,8 +86,12 @@ export function SidebarShell({
     const navigation = document.querySelector<HTMLElement>(
       '[data-sidebar-width-follower]',
     )
+    const toggle = document.querySelector<HTMLElement>(
+      '[data-sidebar-toggle-follower]',
+    )
     const shellTransition = shell.style.transition
     const navigationTransition = navigation?.style.transition ?? ''
+    const toggleTransition = toggle?.style.transition ?? ''
     const startX = event.clientX
     // Read the rendered width so grabbing the handle also cancels an
     // in-flight expand animation at its current position.
@@ -102,6 +106,7 @@ export function SidebarShell({
       shell.style.width = `${width}px`
       shell.style.minWidth = `${width}px`
       if (navigation) navigation.style.width = `${Math.max(0, width - 8)}px`
+      if (toggle) toggle.style.left = `${width + 4}px`
     }
 
     // CSS owns the collapse/expand transition, but pointer movement must be
@@ -109,6 +114,7 @@ export function SidebarShell({
     // so an unfinished expand cannot keep tweening underneath the drag.
     shell.style.transition = 'none'
     if (navigation) navigation.style.transition = 'none'
+    if (toggle) toggle.style.transition = 'none'
     applyLiveWidth(startWidth)
     setSidebarResizing(true)
 
@@ -146,6 +152,7 @@ export function SidebarShell({
       window.requestAnimationFrame(() => {
         shell.style.transition = shellTransition
         if (navigation) navigation.style.transition = navigationTransition
+        if (toggle) toggle.style.transition = toggleTransition
       })
     }
     const handleUp = () => finish(true)
