@@ -648,11 +648,11 @@ a svg.lucide,
  * document and the shell gutter are transparent. Main/workbench canvases keep
  * their own opaque palette surfaces, so only the application chrome receives
  * the system backdrop—matching the Codex desktop hierarchy. */
-html[data-native-sidebar-glass="true"],
-html[data-native-sidebar-glass="true"] body,
-html[data-native-sidebar-glass="true"] #root,
-html[data-native-sidebar-glass="true"] [data-app-shell],
-html[data-native-sidebar-glass="true"] [data-settings-screen] {
+html[data-native-sidebar-glass],
+html[data-native-sidebar-glass] body,
+html[data-native-sidebar-glass] #root,
+html[data-native-sidebar-glass] [data-app-shell],
+html[data-native-sidebar-glass] [data-settings-screen] {
   background: transparent;
 }
 
@@ -660,13 +660,23 @@ html[data-native-sidebar-glass="true"] [data-settings-screen] {
  * light/dark themes remain synchronized while native vibrancy supplies the
  * environmental color. Mobile drawers and the web app keep solid surfaces. */
 [data-desktop-sidebar-glass="true"] [data-sidebar-card],
-html[data-native-sidebar-glass="true"] [data-settings-sidebar] {
+html[data-native-sidebar-glass] [data-settings-sidebar] {
   background: color-mix(in srgb, var(--bg-page) 68%, transparent);
   -webkit-backdrop-filter: blur(26px) saturate(120%);
   backdrop-filter: blur(26px) saturate(120%);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--color-text) 3%, transparent),
     0 10px 30px rgb(0 0 0 / 5%);
+}
+
+/* DWM already composites and blurs the Windows 11 Mica backdrop. Applying a
+ * second WebView backdrop-filter produces an opaque grey slab and rendering
+ * artifacts, most visibly when Settings replaces the regular app shell. */
+html[data-native-sidebar-glass="windows"] [data-sidebar-card],
+html[data-native-sidebar-glass="windows"] [data-settings-sidebar] {
+  background: color-mix(in srgb, var(--bg-page) 52%, transparent);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 [data-desktop-sidebar-glass="true"] [data-sidebar-card] {
@@ -684,7 +694,7 @@ html[data-native-sidebar-glass="true"] [data-settings-sidebar] {
   box-shadow: inset -1px 0 0 color-mix(in srgb, var(--color-border-subtle) 32%, transparent);
 }
 
-html[data-native-sidebar-glass="true"] [data-settings-sidebar] {
+html[data-native-sidebar-glass] [data-settings-sidebar] {
   border-color: color-mix(in srgb, var(--color-border-subtle) 32%, transparent);
 }
 
