@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from app.conductor.governed_reconciler import GovernedResourceReconciler
 from app.conductor.managed_state import ManagedResourceStore
 from app.conductor.models import (
     EffectiveResourceVersion,
+    ManagedResourceRecord,
     ResourceChange,
     ResourceChangePage,
     ResourceVersionNotice,
@@ -69,6 +71,71 @@ class FakeClient:
         assert hashlib.sha256(self.artifact).hexdigest() == expected_sha256
         assert len(self.artifact) == expected_size
         return self.artifact
+
+
+def test_inventory_pairs_digest_with_the_applied_version_only(
+    governed_dirs: Path,
+) -> None:
+    store = ManagedResourceStore(governed_dirs / "state" / "conductor")
+    reconciler = GovernedResourceReconciler(store)
+    record = ManagedResourceRecord(
+        project_id="project-1",
+        resource_id="agent-1",
+        version_id="desired-version-2",
+        version="2.0.0",
+        applied_version_id="applied-version-1",
+        applied_version="1.0.0",
+        kind="agent",
+        slug="managed-agent",
+        content_sha256="d" * 64,
+        applied_content_sha256="a" * 64,
+        observed_state="update_pending",
+        observed_at=datetime.now(UTC),
+    )
+    store.upsert(record)
+
+    [item] = reconciler.inventory()
+
+    assert item["desired_version_id"] == "desired-version-2"
+    assert item["applied_version_id"] == "applied-version-1"
+    assert item["content_sha256"] == "a" * 64
+
+
+def test_legacy_inventory_omits_an_unverified_applied_digest(
+    governed_dirs: Path,
+) -> None:
+    store = ManagedResourceStore(governed_dirs / "state" / "conductor")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "project_id": "project-1",
+                "committed_cursor": "cursor-1",
+                "resources": [
+                    {
+                        "project_id": "project-1",
+                        "resource_id": "agent-1",
+                        "version_id": "desired-version-2",
+                        "version": "2.0.0",
+                        "applied_version_id": "applied-version-1",
+                        "applied_version": "1.0.0",
+                        "kind": "agent",
+                        "slug": "managed-agent",
+                        "content_sha256": "d" * 64,
+                        "observed_state": "update_pending",
+                        "observed_at": datetime.now(UTC).isoformat(),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    [item] = GovernedResourceReconciler(store).inventory()
+
+    assert item["applied_version_id"] == "applied-version-1"
+    assert item["content_sha256"] is None
 
 
 def _change(kind: str, sha256: str, size: int) -> ResourceChange:
