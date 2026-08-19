@@ -233,6 +233,10 @@ The model receives one native `code_context` tool:
 
 The first query normally uses `refresh=true`; immediate follow-ups over the same indexed version can use `refresh=false`. Structural results are static evidence, so runtime-only behavior still requires tests, logs, LSP, or debugger evidence. The full storage, query, ambiguity, and tool contract is documented in [`documents/architecture/coding-agent-code-context.md`](documents/architecture/coding-agent-code-context.md).
 
+Coding's repository-local LSP, automatic post-edit feedback, Guarded ChangeSets,
+Problems hub, explicit AI editor/Git actions, and Search Everywhere contracts are
+documented in [`documents/architecture/coding-semantic-intelligence.md`](documents/architecture/coding-semantic-intelligence.md).
+
 ### Memory and Dream
 
 The scheduled or manually triggered **Dream** agent consolidates sessions and notes into an inspectable Markdown wiki: `topics/`, `entities/`, `notes/`, and `imports/`, with `INDEX.md`, an append-only `LOG.md`, source citations, confidence, and related-page metadata.

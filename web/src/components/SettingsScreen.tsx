@@ -33,6 +33,7 @@ import { SkillsListPage } from '@/routes/settings.skills'
 import { TelemetrySettingsPage } from '@/routes/settings.telemetry'
 import { VersionControlSettingsPage } from '@/routes/settings.version-control'
 import { BrowserSettingsPage } from '@/routes/settings.browser'
+import { LanguageServersSettingsPage } from '@/routes/settings.language-servers'
 
 const LIST_SECTIONS: Readonly<Record<string, string>> = {
   agents: 'Agents',
@@ -42,6 +43,7 @@ const LIST_SECTIONS: Readonly<Record<string, string>> = {
 
 const LEAF_SECTIONS: Readonly<Record<string, string>> = {
   providers: 'Providers',
+  'language-servers': 'Language servers',
   connection: 'Connection',
   'version-control': 'Git & reviews',
   memory: 'Memory',
@@ -100,6 +102,7 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'connection') return <BackendConnectionPage />
   if (section === 'version-control') return <VersionControlSettingsPage />
   if (section === 'providers') return <ProvidersSettingsPage />
+  if (section === 'language-servers') return <LanguageServersSettingsPage />
   if (section === 'sandbox') return <SandboxSettingsPage />
   // Keep old command/deep-link targets working after Dream was folded into Memory.
   if (section === 'dream') return <MemorySettingsPage />

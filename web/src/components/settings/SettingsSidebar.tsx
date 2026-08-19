@@ -21,6 +21,7 @@ import {
   Plug,
   Search,
   Server,
+  ServerCog,
   Shield,
   Sparkles,
   Stethoscope,
@@ -51,6 +52,7 @@ type SidebarPath =
   | '/settings/agents'
   | '/settings/skills'
   | '/settings/mcp'
+  | '/settings/language-servers'
   | '/settings/memory'
   | '/settings/sandbox'
   | '/settings/browser'
@@ -193,6 +195,12 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             icon: Plug,
             matchPrefix: '/settings/mcp',
             count: mcpQ.data?.servers.length ?? null,
+          },
+          {
+            to: '/settings/language-servers',
+            label: t('Language servers'),
+            icon: ServerCog,
+            matchPrefix: '/settings/language-servers',
           },
         ],
       },
