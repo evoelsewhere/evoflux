@@ -1637,7 +1637,7 @@ export function CodingSidebar({
       >
         <SidebarModeSlot />
         {onCommandPalette && (
-          <div className="pt-1">
+          <div className="pt-2">
             <SidebarSearchTrigger onClick={onCommandPalette} compact />
           </div>
         )}

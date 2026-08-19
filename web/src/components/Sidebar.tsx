@@ -690,7 +690,7 @@ export function Sidebar({
             <SidebarModeSlot />
           </div>
           {onCommandPalette && (
-            <div className="px-2 pt-1">
+            <div className="px-2.5 pt-2">
               <SidebarSearchTrigger onClick={onCommandPalette} compact />
             </div>
           )}
