@@ -98,6 +98,10 @@ export {
 } from './useProvidersQuery'
 export { queryKeys } from './keys'
 export {
+  useLanguageServersQuery,
+  useInstallLanguageServerMutation,
+} from './useLanguageServersQuery'
+export {
   useCodeReviewActionMutation,
   useCreateCodeReviewMutation,
   useCodeReviewQuery,

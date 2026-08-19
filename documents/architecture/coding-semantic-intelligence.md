@@ -29,6 +29,31 @@ server-to-client requests required by semantic servers. A server-requested
 `workspace/applyEdit` is rejected: all semantic mutations must become a
 reviewed ChangeSet.
 
+## Managed language-server lifecycle
+
+Language-server packages are machine-level, regeneratable dependencies under
+`EVOFLUX_CACHE_DIR/language-servers`. They are never written into a repository.
+The runtime resolves a pinned EvoFlux-managed executable first and falls back
+to a compatible executable on the system `PATH`.
+
+Settings → Language servers scans the active project's authorized repository
+set for known source extensions. Detection respects `.gitignore`, skips
+symlinked directories, and is bounded to 50,000 files per repository. One
+managed installation is shared by every repository, while each
+`(repository, language)` pair still owns an independent LSP process and
+document-version state.
+
+Installation is never automatic. A user confirms one catalog entry, then the
+backend installs allowlisted, pinned packages from a fixed public registry into
+a staging directory, validates the expected executable, atomically activates
+the cache entry, and restarts only clients for that language. Node-based
+servers use npm with lifecycle scripts and user npm configuration disabled;
+Python uses an isolated uv tool directory. SDK-coupled servers such as clangd,
+sourcekit-lsp, Dart, rust-analyzer, and jdtls remain system-managed and expose a
+toolchain-specific setup hint instead of invoking an OS package manager. Known
+toolchain proxies are probed before being reported ready; for example, a rustup
+`rust-analyzer` shim without the installed component remains `missing`.
+
 ## Automatic post-edit feedback
 
 Every successful `edit`, `write`, or `patch` mutation in Coding mode triggers

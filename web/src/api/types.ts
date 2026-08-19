@@ -448,6 +448,39 @@ export interface SearchEverywhereResponse {
   items: SearchEverywhereItem[]
 }
 
+export interface LanguageServerDetectedRepository {
+  workspace: string
+  name: string
+  file_count: number
+}
+
+export type LanguageServerState = 'ready' | 'missing' | 'update_available'
+export type LanguageServerSource = 'managed' | 'system' | 'missing'
+
+export interface LanguageServerStatus {
+  language_id: string
+  display_name: string
+  extensions: string[]
+  detected: boolean
+  file_count: number
+  repositories: LanguageServerDetectedRepository[]
+  state: LanguageServerState
+  source: LanguageServerSource
+  command: string | null
+  installed_version: string | null
+  expected_version: string | null
+  installable: boolean
+  installer: 'npm' | 'uv' | null
+  installer_available: boolean
+  install_hint: string
+}
+
+export interface LanguageServerOverview {
+  workspaces: string[]
+  cache_dir: string
+  servers: LanguageServerStatus[]
+}
+
 // ── Code context (/api/code-context) ────────────────────────────────────────
 
 export interface CodeGraphStatusResponse {

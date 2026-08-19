@@ -134,6 +134,7 @@ function TextPreview({
   const editorRef = useRef<Parameters<NonNullable<Parameters<typeof Editor>[0]['onMount']>>[0] | null>(null)
   const sessionId = useTeamStore((state) => state.sessionId)
   const openWorkbenchTool = useUIStore((state) => state.openWorkbenchTool)
+  const openSettings = useUIStore((state) => state.openSettings)
   const setChangeSet = useChangeSetStore((state) => state.setActive)
   const pushToast = useToastStore((state) => state.push)
 
@@ -620,9 +621,20 @@ function TextPreview({
             ) : diagnosticStatus === 'unsupported' ? (
               <span className="text-(--color-text-subtle)">LSP is not configured for this file type</span>
             ) : (
-              <span className="truncate text-(--color-text-subtle)" title={diagnosticMessage ?? undefined}>
-                {diagnosticStatus === 'error' ? 'LSP check failed' : 'LSP unavailable'}{diagnosticMessage ? ` — ${diagnosticMessage}` : ''}
-              </span>
+              <>
+                <span className="min-w-0 flex-1 truncate text-(--color-text-subtle)" title={diagnosticMessage ?? undefined}>
+                  {diagnosticStatus === 'error' ? 'LSP check failed' : 'LSP unavailable'}{diagnosticMessage ? ` — ${diagnosticMessage}` : ''}
+                </span>
+                {diagnosticStatus === 'unavailable' && (
+                  <button
+                    type="button"
+                    onClick={() => openSettings('language-servers', { workspace })}
+                    className="shrink-0 rounded px-1.5 py-0.5 font-medium text-(--color-accent) hover:bg-(--color-accent-soft)"
+                  >
+                    Manage
+                  </button>
+                )}
+              </>
             )}
           </div>
           {diagnostics.length > 0 && (

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -16,6 +17,9 @@ from app.agent.lsp_manager import (
     language_server_spec,
     _locations,
     get_language_server,
+    managed_language_server_command,
+    resolve_language_server_command,
+    system_language_server_command,
 )
 
 
@@ -47,6 +51,44 @@ def test_locations_normalizes_single_and_list_results():
     assert _locations(location) == [location]
     assert _locations([location, "bad"]) == [location]
     assert _locations(None) == []
+
+
+def test_managed_server_is_preferred_over_system_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    spec = next(item for item in SPECS if item.language_id == "typescript")
+    managed = tmp_path / "node_modules" / ".bin" / "typescript-language-server"
+    managed.parent.mkdir(parents=True)
+    managed.write_text("#!/bin/sh\n", encoding="utf-8")
+    managed.chmod(0o755)
+    monkeypatch.setattr(
+        "app.agent.lsp_manager.managed_language_server_root", lambda _language: tmp_path
+    )
+    monkeypatch.setattr(
+        "app.agent.lsp_manager.shutil.which",
+        lambda _name: "/usr/local/bin/typescript-language-server",
+    )
+
+    assert managed_language_server_command(spec) == (str(managed), "--stdio")
+    command, source = resolve_language_server_command(spec) or ((), "")
+    assert command == (str(managed), "--stdio")
+    assert source == "managed"
+
+
+def test_rustup_proxy_without_component_is_not_reported_ready(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    spec = next(item for item in SPECS if item.language_id == "rust")
+    monkeypatch.setattr(
+        "app.agent.lsp_manager.shutil.which",
+        lambda _name: "/Users/test/.cargo/bin/rust-analyzer",
+    )
+    monkeypatch.setattr(
+        "app.agent.lsp_manager.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1),
+    )
+
+    assert system_language_server_command(spec) is None
 
 
 async def test_missing_language_server_is_explicit(

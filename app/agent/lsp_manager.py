@@ -12,7 +12,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import shutil
+import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +24,7 @@ from loguru import logger
 
 from app.agent.sandbox import get_sandbox
 from app.agent.tools.builtin.shell import _scrubbed_env
+from app.core.config import settings
 
 
 @dataclass(frozen=True)
@@ -638,25 +641,93 @@ def language_server_spec(path: Path) -> LanguageServerSpec | None:
     )
 
 
+def managed_language_server_root(language_id: str) -> Path:
+    """Return the regeneratable cache root for one managed server."""
+    return Path(settings.EVOFLUX_CACHE_DIR) / "language-servers" / language_id
+
+
+def managed_language_server_command(
+    spec: LanguageServerSpec,
+    *,
+    root: Path | None = None,
+) -> tuple[str, ...] | None:
+    """Resolve a managed server executable without consulting ``PATH``."""
+    install_root = root or managed_language_server_root(spec.language_id)
+    for candidate in spec.commands:
+        executable = candidate[0]
+        names = (
+            (f"{executable}.cmd", f"{executable}.exe", executable)
+            if os.name == "nt"
+            else (executable, f"{executable}.cmd", f"{executable}.exe")
+        )
+        for directory in (
+            install_root / "bin",
+            install_root / "node_modules" / ".bin",
+        ):
+            for name in names:
+                path = directory / name
+                if path.is_file() and (os.name == "nt" or os.access(path, os.X_OK)):
+                    return (str(path), *candidate[1:])
+    return None
+
+
+def resolve_language_server_command(
+    spec: LanguageServerSpec,
+) -> tuple[tuple[str, ...], str] | None:
+    """Prefer EvoFlux-managed binaries, then fall back to the system PATH."""
+    managed = managed_language_server_command(spec)
+    if managed is not None:
+        return managed, "managed"
+    system = system_language_server_command(spec)
+    if system is not None:
+        return system, "system"
+    return None
+
+
+def system_language_server_command(
+    spec: LanguageServerSpec,
+) -> tuple[str, ...] | None:
+    """Resolve a usable system command, rejecting known toolchain proxies."""
+    for candidate in spec.commands:
+        executable = shutil.which(candidate[0])
+        if executable is None:
+            continue
+        # rustup exposes a rust-analyzer proxy even when the component is not
+        # installed. A successful version probe distinguishes that proxy from
+        # a runnable server without starting an LSP session.
+        if candidate[0] == "rust-analyzer":
+            try:
+                probe = subprocess.run(
+                    (executable, "--version"),
+                    check=False,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=3,
+                    env=_scrubbed_env(inherit=False),
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if probe.returncode != 0:
+                continue
+        return (executable, *candidate[1:])
+    return None
+
+
 async def get_language_server(workspace: Path, path: Path) -> LanguageServerClient:
     spec = language_server_spec(path)
     if spec is None:
         raise LanguageServerUnavailable(
             f"No language-server mapping for extension '{path.suffix}'."
         )
-    command = next(
-        (
-            candidate
-            for candidate in spec.commands
-            if shutil.which(candidate[0]) is not None
-        ),
-        None,
-    )
-    if command is None:
+    resolved_command = resolve_language_server_command(spec)
+    if resolved_command is None:
         names = ", ".join(candidate[0] for candidate in spec.commands)
         raise LanguageServerUnavailable(
-            f"No {spec.language_id} language server found. Install one of: {names}."
+            f"No {spec.language_id} language server found. Install one from "
+            f"Settings → Language servers, or provide one on PATH: {names}."
         )
+    command, _source = resolved_command
     key = (workspace.resolve(), spec.language_id)
     async with _clients_lock:
         client = _clients.get(key)
@@ -667,9 +738,13 @@ async def get_language_server(workspace: Path, path: Path) -> LanguageServerClie
     return client
 
 
-async def close_language_servers() -> None:
-    clients = list(_clients.values())
-    _clients.clear()
+async def close_language_servers(language_id: str | None = None) -> None:
+    """Close every client, or only clients for one language after an update."""
+    async with _clients_lock:
+        selected_keys = [
+            key for key in _clients if language_id is None or key[1] == language_id
+        ]
+        clients = [_clients.pop(key) for key in selected_keys]
     await asyncio.gather(
         *(client.close() for client in clients), return_exceptions=True
     )
