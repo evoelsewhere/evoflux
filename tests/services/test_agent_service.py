@@ -568,6 +568,32 @@ async def test_dispatch_with_attachments_prefers_provided_session_id(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_dispatch_uses_effective_attachment_model_for_capabilities():
+    team = _make_team(vision=False, model_id="deepseek:deepseek-v4-pro")
+    att = RawAttachment(
+        filename="image.png",
+        content_type="image/png",
+        data=b"\x89PNG\r\n\x1a\n",
+    )
+    metas = [{"filename": "stored.png", "delivery": "native"}]
+    with patch(
+        "app.services.agent_service.validate_and_persist_attachments",
+        new_callable=AsyncMock,
+        return_value=("existing-123", metas),
+    ) as persist:
+        await dispatch_user_message(
+            team,
+            content="inspect",
+            session_id="existing-123",
+            attachments=[att],
+            model=None,
+            attachment_model="openai:gpt-5.5",
+        )
+
+    assert persist.await_args.kwargs["model_override"] == "openai:gpt-5.5"
+
+
+@pytest.mark.asyncio
 async def test_dispatch_reuses_persisted_attachment_metadata():
     team = _make_team()
     metas = [

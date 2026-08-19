@@ -403,7 +403,7 @@ class Agent(Generic[TContext]):
             messages=messages,
             system_prompt=self.system_prompt,
             context=self.context,
-            capabilities=self.capabilities,
+            capabilities=get_capabilities(active_model_id),
             tool_names=sorted(run_tools.keys()),
             tool_defs=tool_defs,
         )

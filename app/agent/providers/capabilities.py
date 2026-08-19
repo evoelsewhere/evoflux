@@ -275,3 +275,16 @@ def get_capabilities(model_id: str | None) -> ModelCapabilities:
         spec["input"]["video"] = False
         return _merge_caps(spec)
     return resolved
+
+
+def has_runtime_model_capabilities(model_id: str | None) -> bool:
+    """Return whether live provider capability metadata exists for a model."""
+    return bool(model_id and model_id.lower() in _runtime_capabilities)
+
+
+def has_model_capabilities(model_id: str | None) -> bool:
+    """Return whether bundled registry or live capabilities recognize a model."""
+    if not model_id:
+        return False
+    normalized = model_id.lower()
+    return normalized in load_model_registry() or normalized in _runtime_capabilities

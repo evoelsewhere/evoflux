@@ -3,10 +3,13 @@ from __future__ import annotations
 from pydantic import SecretStr
 
 from app.agent.providers.anthropic import AnthropicProvider
+from app.agent.providers.anthropic.anthropic import _split_messages
 from app.agent.schemas.chat import (
     AssistantMessage,
     HumanMessage,
+    ImageDataBlock,
     SystemMessage,
+    TextBlock,
     ToolMessage,
 )
 
@@ -159,3 +162,50 @@ def test_anthropic_payload_allows_supported_top_p_when_thinking() -> None:
 
     assert "temperature" not in payload
     assert payload["top_p"] == 0.95
+
+
+def test_anthropic_human_message_preserves_image_parts() -> None:
+    _, messages = _split_messages(
+        [
+            HumanMessage(
+                content="inspect attached",
+                parts=[
+                    TextBlock(text="[Attached image]"),
+                    ImageDataBlock(data="aW1n", media_type="image/png"),
+                ],
+            )
+        ]
+    )
+
+    assert messages == [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "[Attached image]"},
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": "aW1n",
+                    },
+                },
+            ],
+        }
+    ]
+
+
+def test_anthropic_tool_result_preserves_image_parts() -> None:
+    _, messages = _split_messages(
+        [
+            ToolMessage(
+                tool_call_id="toolu_image",
+                content="[Image]",
+                parts=[ImageDataBlock(data="aW1n", media_type="image/png")],
+            )
+        ]
+    )
+
+    result = messages[0]["content"][0]
+    assert result["type"] == "tool_result"
+    assert result["content"][0]["source"]["media_type"] == "image/png"
