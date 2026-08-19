@@ -21,6 +21,7 @@ import { useTeamStore } from '@/stores/useTeamStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useChangeSetStore } from '@/stores/useChangeSetStore'
 import { useToastStore } from '@/stores/useToastStore'
+import { LspRenameDialog, type LspRenameRequest } from './LspRenameDialog'
 import type {
   CodingLspDiagnostic,
   EditorActionRequest,
@@ -131,6 +132,7 @@ function TextPreview({
   const [diagnosticStatus, setDiagnosticStatus] = useState<'idle' | 'checking' | 'ready' | 'unavailable' | 'unsupported' | 'error'>('idle')
   const [diagnosticMessage, setDiagnosticMessage] = useState<string | null>(null)
   const [aiRequest, setAiRequest] = useState<EditorActionRequest | null>(null)
+  const [renameRequest, setRenameRequest] = useState<LspRenameRequest | null>(null)
   const editorRef = useRef<Parameters<NonNullable<Parameters<typeof Editor>[0]['onMount']>>[0] | null>(null)
   const sessionId = useTeamStore((state) => state.sessionId)
   const openWorkbenchTool = useUIStore((state) => state.openWorkbenchTool)
@@ -241,8 +243,8 @@ function TextPreview({
       newName?: string
       diagnostic?: CodingLspDiagnostic
     } = {},
-  ) => {
-    if (diagnosticContent === null) return
+  ): Promise<{ ok: boolean; message?: string }> => {
+    if (diagnosticContent === null) return { ok: false, message: 'Editor content is unavailable.' }
     try {
       const response = await getCodingWorkspaceSemanticResult(workspace, {
         action,
@@ -264,7 +266,7 @@ function TextPreview({
           title: 'LSP hover',
           description: response.result ? JSON.stringify(response.result).slice(0, 360) : 'No hover information.',
         })
-        return
+        return { ok: true }
       }
       let workspaceEdit: Record<string, unknown> | null = null
       let title = action === 'rename'
@@ -284,8 +286,9 @@ function TextPreview({
         if (candidate?.title) title = candidate.title
       }
       if (!workspaceEdit) {
-        pushToast({ tone: 'info', title: 'No applicable LSP edit returned' })
-        return
+        const message = 'No applicable LSP edit returned.'
+        pushToast({ tone: 'info', title: message })
+        return { ok: false, message }
       }
       const changeSet = await createChangeSet(workspace, {
         origin: 'lsp',
@@ -293,12 +296,15 @@ function TextPreview({
         workspace_edit: workspaceEdit,
       })
       setChangeSet(changeSet)
+      return { ok: true }
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'LSP action failed.'
       pushToast({
         tone: 'error',
         title: 'LSP action failed',
-        description: error instanceof Error ? error.message : undefined,
+        description: message,
       })
+      return { ok: false, message }
     }
   }, [diagnosticContent, file.path, pushToast, setChangeSet, workspace])
 
@@ -379,8 +385,13 @@ function TextPreview({
         contextMenuOrder: 2,
         run: (ed) => {
           const position = ed.getPosition()
-          const name = window.prompt('Rename symbol to:')?.trim()
-          if (position && name) void runSemanticAction('rename', { line: position.lineNumber, column: position.column, newName: name })
+          const model = ed.getModel()
+          if (!position || !model) return
+          setRenameRequest({
+            line: position.lineNumber,
+            column: position.column,
+            currentName: model.getWordAtPosition(position)?.word ?? '',
+          })
         },
       }))
       disposables.push(editor.addAction({
@@ -688,6 +699,19 @@ function TextPreview({
           onOpenProblems={() => openWorkbenchTool('problems')}
         />
       )}
+      <LspRenameDialog
+        request={renameRequest}
+        onClose={() => setRenameRequest(null)}
+        onRename={async (newName) => {
+          if (!renameRequest) throw new Error('Rename position is unavailable.')
+          const result = await runSemanticAction('rename', {
+            line: renameRequest.line,
+            column: renameRequest.column,
+            newName,
+          })
+          if (!result.ok) throw new Error(result.message ?? 'Rename could not be prepared.')
+        }}
+      />
     </div>
   )
 }
