@@ -17,6 +17,7 @@ from app.conductor.models import (
     RegistrationResponse,
     ResourceChangePage,
     ResourceInventoryRequest,
+    TelemetryBatchResponse,
     canonical_hash,
 )
 from app.conductor.constants.api import (
@@ -305,15 +306,13 @@ class ConductorClient:
 
     async def report_telemetry(
         self, installation_id: str, events: list[dict[str, Any]]
-    ) -> None:
+    ) -> TelemetryBatchResponse:
         clean_events: list[dict[str, Any]] = []
         for event in events:
             clean = redact_telemetry(event)
             clean.pop(TelemetryField.INSTALLATION_ID, None)
             clean_events.append(clean)
-        if not clean_events:
-            return
-        await self._request(
+        response = await self._request(
             "POST",
             V1_TELEMETRY_PATH,
             headers=self._auth_headers(),
@@ -322,6 +321,7 @@ class ConductorClient:
                 TelemetryBatchField.EVENTS: clean_events,
             },
         )
+        return TelemetryBatchResponse.model_validate(response.json())
 
     async def report_resource_usage(self, events: list[dict[str, object]]) -> None:
         """Report content-free managed-resource usage events."""
