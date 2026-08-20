@@ -3,8 +3,10 @@ import { StrictMode, createElement, useEffect, type PropsWithChildren } from 're
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  captureTranscriptPrependAnchor,
   nextPinnedScrollTop,
   pinnedAfterViewportUpdate,
+  scrollTopAfterPrepend,
   usePinnedTranscript,
 } from '@/hooks/usePinnedTranscript'
 
@@ -37,6 +39,39 @@ describe('nextPinnedScrollTop', () => {
   it('settles exactly and handles content shrinking', () => {
     expect(nextPinnedScrollTop(523.6, 524, 16)).toBe(524)
     expect(nextPinnedScrollTop(540, 524, 16)).toBe(524)
+  })
+})
+
+describe('scrollTopAfterPrepend', () => {
+  it('preserves a reader offset that is already inside the load threshold', () => {
+    expect(scrollTopAfterPrepend(240, 1_200, 1_950)).toBe(990)
+  })
+
+  it('keeps a top-anchored reader at the same message after prepend', () => {
+    expect(scrollTopAfterPrepend(0, 1_200, 1_950)).toBe(750)
+  })
+
+  it('never produces a negative scroll position when content shrinks', () => {
+    expect(scrollTopAfterPrepend(20, 1_200, 1_000)).toBe(0)
+  })
+})
+
+describe('captureTranscriptPrependAnchor', () => {
+  it('captures the first turn intersecting the reader viewport', () => {
+    const scroller = document.createElement('div')
+    const above = document.createElement('div')
+    const visible = document.createElement('div')
+    above.className = 'oa-transcript-turn'
+    visible.className = 'oa-latest-turn-runway'
+    scroller.append(above, visible)
+    scroller.getBoundingClientRect = () => ({ top: 100, bottom: 500 }) as DOMRect
+    above.getBoundingClientRect = () => ({ top: 20, bottom: 80 }) as DOMRect
+    visible.getBoundingClientRect = () => ({ top: 140, bottom: 260 }) as DOMRect
+
+    expect(captureTranscriptPrependAnchor(scroller)).toEqual({
+      element: visible,
+      viewportTop: 140,
+    })
   })
 })
 

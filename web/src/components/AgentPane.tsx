@@ -9,7 +9,7 @@
  * renders through `AssistantTurn` (tool groups + footer); the trailing turn
  * hides its footer while the agent is actively streaming.
  */
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { AssistantTurn } from './AssistantTurnFooter'
@@ -23,17 +23,23 @@ import { ContextBudgetBar } from '@/components/ContextBudgetBar'
 import { useRegistryQuery } from '@/queries'
 import { TierBadge } from './TierBadge'
 import { resolveMemberTier } from '@/utils/tier'
-import { usePinnedTranscript } from '@/hooks/usePinnedTranscript'
+import {
+  captureTranscriptPrependAnchor,
+  type TranscriptPrependAnchor,
+  usePinnedTranscript,
+} from '@/hooks/usePinnedTranscript'
 import type { AgentStream } from '@/stores/useTeamStore'
 import { ActivityStatus } from './motion/ActivityStatus'
 import { resolveAgentRole } from '@/lib/agent-roles'
 import { TurnChangesCard } from './TurnChangesCard'
+import { TranscriptHistoryControl } from './TranscriptHistoryControl'
 import type { ContentBlock, TodoItem } from '@/api/types'
 
 // Split focuses on the current work. Mount a smaller initial history window
 // so entering the layout does not parse dozens of old Markdown turns at once.
 const INITIAL_RENDERED_TURNS = 32
 const TURN_RENDER_STEP = 80
+const LOAD_OLDER_THRESHOLD = 240
 
 interface AgentPaneProps {
   name: string
@@ -62,10 +68,15 @@ export function AgentPane({
   const [paneCollapsed, setPaneCollapsed] = useState(false)
   const [renderedTurnCount, setRenderedTurnCount] = useState(INITIAL_RENDERED_TURNS)
   const prevScrollHeightRef = useRef<number | null>(null)
+  const prevScrollTopRef = useRef<number | null>(null)
+  const prependAnchorRef = useRef<TranscriptPrependAnchor | null>(null)
   const pendingRestoreRef = useRef(false)
+  const historyLoadStartBlockCountRef = useRef<number | null>(null)
+  const topLoadArmedRef = useRef(true)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
   const sessionModel = useTeamStore((s) => s.sessionModel)
   const isTeamWorking = useTeamStore((s) => s.isTeamWorking)
+  const loadingOlder = useTeamStore((s) => s._loadingOlder)
   const compactTeam = useTeamStore((s) => s.compactTeam)
   const turnChanges = useTeamStore((s) => s.turnChanges)
   const registry = useRegistryQuery()
@@ -108,6 +119,43 @@ export function AgentPane({
     [stream.currentBlocks],
   )
   const isEmpty = allBlocks.length === 0
+
+  const loadOlderMessages = useCallback((element: HTMLDivElement | null) => {
+    if (element) {
+      prevScrollHeightRef.current = element.scrollHeight
+      prevScrollTopRef.current = element.scrollTop
+      prependAnchorRef.current = captureTranscriptPrependAnchor(element)
+      pendingRestoreRef.current = true
+      historyLoadStartBlockCountRef.current = stream.blocks.length
+    }
+    void useTeamStore.getState().loadOlderMessages()
+  }, [stream.blocks.length])
+
+  const handleViewportScroll = useCallback((element: HTMLDivElement) => {
+    if (element.scrollTop > LOAD_OLDER_THRESHOLD * 2) {
+      topLoadArmedRef.current = true
+      return
+    }
+    if (element.scrollTop > LOAD_OLDER_THRESHOLD || !topLoadArmedRef.current) return
+
+    topLoadArmedRef.current = false
+    if (hiddenTurnCount > 0) {
+      prevScrollHeightRef.current = element.scrollHeight
+      prevScrollTopRef.current = element.scrollTop
+      prependAnchorRef.current = captureTranscriptPrependAnchor(element)
+      pendingRestoreRef.current = true
+      setRenderedTurnCount((count) => Math.min(turnItems.length, count + TURN_RENDER_STEP))
+      return
+    }
+    if (
+      !useTeamStore.getState().hasMore
+      || useTeamStore.getState()._loadingOlder
+    ) {
+      return
+    }
+    loadOlderMessages(element)
+  }, [hiddenTurnCount, loadOlderMessages, turnItems.length])
+
   const {
     contentRef,
     restorePrependOffset,
@@ -120,23 +168,75 @@ export function AgentPane({
     resetKey: sessionId,
     followKey: isWorking && isContinuing ? `continue:${sessionId ?? ''}:${name}` : null,
     topAnchorKey: latestLiveUserBlockId,
+    onScrollFrame: handleViewportScroll,
   })
 
   const showEarlierTurns = useCallback(() => {
     const el = scrollRef.current
     if (el) {
       prevScrollHeightRef.current = el.scrollHeight
+      prevScrollTopRef.current = el.scrollTop
+      prependAnchorRef.current = captureTranscriptPrependAnchor(el)
       pendingRestoreRef.current = true
     }
     setRenderedTurnCount((count) => Math.min(turnItems.length, count + TURN_RENDER_STEP))
   }, [scrollRef, turnItems.length])
 
-  useEffect(() => {
-    if (!pendingRestoreRef.current || prevScrollHeightRef.current === null) return
+  const loadOlderFromControl = useCallback(() => {
+    loadOlderMessages(scrollRef.current)
+  }, [loadOlderMessages, scrollRef])
+
+  useLayoutEffect(() => {
+    topLoadArmedRef.current = true
+    historyLoadStartBlockCountRef.current = null
     pendingRestoreRef.current = false
-    restorePrependOffset(prevScrollHeightRef.current)
     prevScrollHeightRef.current = null
-  }, [renderedTurnCount, restorePrependOffset])
+    prevScrollTopRef.current = null
+    prependAnchorRef.current = null
+  }, [sessionId])
+
+  // History paging is global to the team. If another split pane starts the
+  // request, snapshot this pane too so its reader position survives the same
+  // prepend without jumping.
+  useLayoutEffect(() => {
+    if (loadingOlder && historyLoadStartBlockCountRef.current === null) {
+      const element = scrollRef.current
+      if (!element) return
+      prevScrollHeightRef.current = element.scrollHeight
+      prevScrollTopRef.current = element.scrollTop
+      prependAnchorRef.current = captureTranscriptPrependAnchor(element)
+      pendingRestoreRef.current = true
+      historyLoadStartBlockCountRef.current = stream.blocks.length
+    }
+  }, [loadingOlder, scrollRef, stream.blocks.length])
+
+  useLayoutEffect(() => {
+    if (
+      !pendingRestoreRef.current
+      || prevScrollHeightRef.current === null
+      || prevScrollTopRef.current === null
+    ) return
+    pendingRestoreRef.current = false
+    restorePrependOffset(
+      prevScrollHeightRef.current,
+      prevScrollTopRef.current,
+      prependAnchorRef.current,
+    )
+    prevScrollHeightRef.current = null
+    prevScrollTopRef.current = null
+    prependAnchorRef.current = null
+  }, [renderedTurnCount, restorePrependOffset, stream.blocks.length])
+
+  useEffect(() => {
+    const startCount = historyLoadStartBlockCountRef.current
+    if (loadingOlder || startCount === null) return
+    historyLoadStartBlockCountRef.current = null
+    if (stream.blocks.length !== startCount) return
+    pendingRestoreRef.current = false
+    prevScrollHeightRef.current = null
+    prevScrollTopRef.current = null
+    prependAnchorRef.current = null
+  }, [loadingOlder, stream.blocks.length])
 
   const paneClass = isError
     ? 'ring-1 ring-inset ring-(--color-error)/40 shadow-sm'
@@ -234,7 +334,7 @@ export function AgentPane({
 
       {/* Body */}
       <div className={collapsible && paneCollapsed ? 'hidden' : 'relative flex min-h-0 flex-1 flex-col'}>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain" style={{ minHeight: 0 }}>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none]" style={{ minHeight: 0 }}>
         {isEmpty && !isWorking && (isError || isOffline) && (
             <div className="flex h-full select-none flex-col items-center justify-center py-8">
               <p className="text-xs text-(--color-text-subtle)">{isError ? stream.lastError || 'Error' : 'Offline'}</p>
@@ -243,19 +343,14 @@ export function AgentPane({
 
          {allBlocks.length > 0 && (
             <div ref={contentRef} className="space-y-3 px-3 py-3">
-               {hiddenTurnCount > 0 && (
-                 <div className="flex justify-center pb-1">
-                   <button
-                     type="button"
-                     onClick={showEarlierTurns}
-                     className="inline-flex min-h-8 items-center gap-1 rounded-full border border-(--color-border) bg-(--bg-card) px-2.5 py-1 text-xs text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-2 focus-visible:ring-(--focus-ring) focus-visible:outline-none"
-                     aria-label={`Show ${Math.min(TURN_RENDER_STEP, hiddenTurnCount)} earlier turns`}
-                   >
-                     <ChevronUp size={12} aria-hidden="true" />
-                     {hiddenTurnCount} earlier
-                   </button>
-                 </div>
-               )}
+               <TranscriptHistoryControl
+                 compact
+                 allowServerHistory={isLead}
+                 hiddenTurnCount={hiddenTurnCount}
+                 revealStep={TURN_RENDER_STEP}
+                 onRevealLoaded={showEarlierTurns}
+                 onLoadOlder={loadOlderFromControl}
+               />
                {visibleTurnItems.map((item, k) => {
                    if (item.kind === 'user') {
                      return (

@@ -1,5 +1,4 @@
 import type { AgentUsage, ChatMessage, ContentBlock, MessageResponse } from '@/api/types'
-import { generateBlockId } from './blocks'
 
 // Me sort messages by timestamp asc, assistant before tool on ties
 
@@ -44,7 +43,7 @@ function assistantBlocks(
   const blocks: ContentBlock[] = []
 
   if (msg.reasoning_content && !msg.extra?.is_continuation) {
-    blocks.push({ id: generateBlockId(), type: 'thinking', content: msg.reasoning_content, timestamp })
+    blocks.push({ id: `${msg.id}:thinking`, type: 'thinking', content: msg.reasoning_content, timestamp })
   }
 
   const extra = msg.extra as { duration_ms?: number; model?: unknown; lifecycle?: unknown } | null
@@ -55,7 +54,7 @@ function assistantBlocks(
   // Me text before tools — LLM emits content first, then tool_calls
   if (msg.content || lifecycle) {
     blocks.push({
-      id: generateBlockId(),
+      id: `${msg.id}:text`,
       type: 'text',
       content: msg.content || '',
       timestamp,
@@ -64,7 +63,9 @@ function assistantBlocks(
     })
   }
 
-  for (const tool of (msg.tool_calls ?? []).filter((t) => t.function?.name !== 'todo_manage')) {
+  for (const [toolIndex, tool] of (msg.tool_calls ?? [])
+    .filter((item) => item.function?.name !== 'todo_manage')
+    .entries()) {
     const name = tool.function?.name ?? tool.id
     let parsedArgs: Record<string, unknown> | undefined
     let args: string | undefined
@@ -80,7 +81,7 @@ function assistantBlocks(
     // collapsed tool-call chip (the streamed widgetHtml never persists).
     if (name === 'show_widget' && typeof parsedArgs?.widget_code === 'string') {
       const block: ContentBlock = {
-        id: generateBlockId(),
+        id: `${msg.id}:widget:${tool.id || toolIndex}`,
         type: 'widget',
         content: '',
         toolCallId: tool.id,
@@ -95,7 +96,7 @@ function assistantBlocks(
     }
 
     const block: ContentBlock = {
-      id: generateBlockId(),
+      id: `${msg.id}:tool:${tool.id || toolIndex}`,
       type: 'tool',
       content: '',
       toolName: name,
@@ -132,7 +133,7 @@ export function parseApiMessages(msgs: MessageResponse[]): ChatMessage[] {
         role: 'assistant',
         content: '',
         blocks: [{
-          id: generateBlockId(),
+          id: `${msg.id}:compaction`,
           type: 'compaction',
           content: '',
           extra: { state: 'compacted' },
