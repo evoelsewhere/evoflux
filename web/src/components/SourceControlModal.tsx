@@ -156,7 +156,6 @@ export function SourceControlPanel({
   const [showDiff, setShowDiff] = useState(true)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [gitAiBusy, setGitAiBusy] = useState(false)
-  const [gitAiResult, setGitAiResult] = useState<GitAIResponse | null>(null)
   const sessionId = useTeamStore((state) => state.sessionId)
   const openWorkbenchTool = useUIStore((state) => state.openWorkbenchTool)
   const setChangeSet = useChangeSetStore((state) => state.setActive)
@@ -231,7 +230,15 @@ export function SourceControlPanel({
   }, [open, files, selectedPath])
 
   const runAi = useCallback(async (action: GitAIAction, reference?: string) => {
-    if (!sessionId || gitAiBusy) return
+    if (gitAiBusy) return
+    if (!sessionId) {
+      useToastStore.getState().push({
+        tone: 'info',
+        title: 'Open a coding task to use AI Git actions',
+        description: 'The active task supplies the model and workspace authorization.',
+      })
+      return
+    }
     setGitAiBusy(true)
     try {
       const result = await runGitAIAction(workspace, {
@@ -249,8 +256,6 @@ export function SourceControlPanel({
             ? `${result.findings.length} AI review finding${result.findings.length === 1 ? '' : 's'}`
             : 'AI review found no concrete problems',
         })
-      } else {
-        setGitAiResult(result)
       }
     } catch (error) {
       useToastStore.getState().push({
@@ -263,12 +268,23 @@ export function SourceControlPanel({
     }
   }, [gitAiBusy, openWorkbenchTool, sessionId, setChangeSet, workspace])
 
+  const reviewChanges = useCallback(() => {
+    if (files.length === 0) {
+      useToastStore.getState().push({
+        tone: 'info',
+        title: 'No changes to review',
+      })
+      return
+    }
+    void runAi('self_review')
+  }, [files.length, runAi])
+
   useEffect(() => {
     if (!open) return
-    const review = () => { void runAi('self_review') }
+    const review = () => reviewChanges()
     window.addEventListener('evoflux:git-ai-review', review)
     return () => window.removeEventListener('evoflux:git-ai-review', review)
-  }, [open, runAi])
+  }, [open, reviewChanges])
 
   return (
       <div
@@ -335,32 +351,6 @@ export function SourceControlPanel({
             </span>
           )}
           <div className="flex-1" />
-          <ToolbarButton
-            icon={gitAiBusy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-            label="Review changes with AI"
-            disabled={!sessionId || gitAiBusy || files.length === 0}
-            onClick={() => { void runAi('self_review') }}
-          />
-          <ToolbarButton
-            icon={<Sparkles size={12} />}
-            label="Explain HEAD"
-            disabled={!sessionId || gitAiBusy || !isGitRepo}
-            onClick={() => { void runAi('explain_commit', 'HEAD') }}
-          />
-          <ToolbarButton
-            icon={<Sparkles size={12} />}
-            label="Draft PR description"
-            disabled={!sessionId || gitAiBusy || !isGitRepo}
-            onClick={() => { void runAi('generate_pr_description') }}
-          />
-          {hasConflicts && (
-            <ToolbarButton
-              icon={<Sparkles size={12} />}
-              label="Resolve conflicts with AI"
-              disabled={!sessionId || gitAiBusy}
-              onClick={() => { void runAi('propose_conflict_resolution') }}
-            />
-          )}
           <ToolbarButton icon={<RefreshCw size={12} />} label="Refresh" onClick={() => changesQuery.refetch()} compact />
           <ToolbarButton
             icon={<CloudDownload size={12} />}
@@ -424,20 +414,40 @@ export function SourceControlPanel({
             </select>
             <div className="min-w-0 flex-1" />
             {activeView === 'changes' && (
-              <button
-                type="button"
-                onClick={() => setShowDiff(!showDiff)}
-                className={cn(
-                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[10px] font-medium transition-colors',
-                  showDiff
-                    ? 'bg-(--bg-key) text-(--color-text)'
-                    : 'text-(--color-text-muted) hover:bg-(--bg-key)',
-                )}
-                title={showDiff ? 'Hide diff' : 'Show diff'}
-                aria-label={showDiff ? 'Hide diff' : 'Show diff'}
-              >
-                {showDiff ? <PanelRightClose size={12} /> : <PanelRightOpen size={12} />}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={reviewChanges}
+                  disabled={gitAiBusy || files.length === 0}
+                  className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[10px] font-medium text-(--color-accent) transition-colors hover:bg-(--bg-key) disabled:opacity-40"
+                  title={
+                    files.length === 0
+                      ? 'No changes to review'
+                      : sessionId
+                        ? 'Review uncommitted changes and publish findings to Problems'
+                        : 'Open a coding task to review changes with AI'
+                  }
+                >
+                  {gitAiBusy
+                    ? <Loader2 size={12} className="animate-spin" />
+                    : <Sparkles size={12} />}
+                  Review changes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDiff(!showDiff)}
+                  className={cn(
+                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[10px] font-medium transition-colors',
+                    showDiff
+                      ? 'bg-(--bg-key) text-(--color-text)'
+                      : 'text-(--color-text-muted) hover:bg-(--bg-key)',
+                  )}
+                  title={showDiff ? 'Hide diff' : 'Show diff'}
+                  aria-label={showDiff ? 'Hide diff' : 'Show diff'}
+                >
+                  {showDiff ? <PanelRightClose size={12} /> : <PanelRightOpen size={12} />}
+                </button>
+              </>
             )}
           </div>
         )}
@@ -458,6 +468,8 @@ export function SourceControlPanel({
             conflicts={conflicts!}
             onContinue={() => continueMutation.mutate(undefined, { onSuccess: () => useToastStore.getState().push({ tone: 'success', title: 'Continued' }), onError: () => useToastStore.getState().push({ tone: 'error', title: 'Failed' }) })}
             onAbort={() => abortMutation.mutate(undefined, { onSuccess: () => useToastStore.getState().push({ tone: 'info', title: 'Aborted' }), onError: () => useToastStore.getState().push({ tone: 'error', title: 'Failed' }) })}
+            onResolve={() => { void runAi('propose_conflict_resolution') }}
+            resolving={gitAiBusy}
           />
         )}
 
@@ -496,7 +508,6 @@ export function SourceControlPanel({
         )}
 
         {isGitRepo && activeView === 'changes' && <CommitArea workspace={workspace} stagedCount={stagedFiles.length} />}
-        {gitAiResult && <GitAiResultDialog result={gitAiResult} onClose={() => setGitAiResult(null)} />}
       </div>
   )
 }
@@ -515,13 +526,30 @@ function ToolbarButton({ icon, label, onClick, badge, compact = false, disabled 
 
 /* ── Conflict Banner ─────────────────────────────────────────────────────── */
 
-function ConflictBar({ conflicts, onContinue, onAbort }: { conflicts: { operation: string | null; files: { path: string; status: string }[] }; onContinue: () => void; onAbort: () => void }) {
+function ConflictBar({ conflicts, onContinue, onAbort, onResolve, resolving }: {
+  conflicts: { operation: string | null; files: { path: string; status: string }[] }
+  onContinue: () => void
+  onAbort: () => void
+  onResolve: () => void
+  resolving: boolean
+}) {
   return (
     <div className="flex items-center gap-3 border-b border-red-500/35 bg-red-500/10 px-3 py-1.5">
       <span className="text-[11px] font-medium text-red-300">
         {conflicts.operation ? `${conflicts.operation} conflict` : 'Conflicts'} — {conflicts.files.length} file{conflicts.files.length !== 1 ? 's' : ''}
       </span>
       <div className="flex-1" />
+      <button
+        type="button"
+        onClick={onResolve}
+        disabled={resolving}
+        className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium text-(--color-accent) hover:bg-(--bg-key) disabled:opacity-40"
+      >
+        {resolving
+          ? <Loader2 size={11} className="animate-spin" />
+          : <Sparkles size={11} />}
+        Resolve with AI
+      </button>
       <button type="button" onClick={onContinue} className="rounded bg-green-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-green-500">Continue</button>
       <button type="button" onClick={onAbort} className="rounded px-2 py-0.5 text-[11px] text-red-300 hover:bg-red-500/20">Abort</button>
     </div>
@@ -1255,7 +1283,14 @@ function HistoryPanel({ workspace }: { workspace: string }) {
                 onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to revert commit', description: error instanceof Error ? error.message : undefined }),
               })}
               onExplain={() => {
-                if (!sessionId) return
+                if (!sessionId) {
+                  useToastStore.getState().push({
+                    tone: 'info',
+                    title: 'Open a coding task to explain commits with AI',
+                    description: 'The active task supplies the model and workspace authorization.',
+                  })
+                  return
+                }
                 void runGitAIAction(workspace, {
                   session_id: sessionId,
                   action: 'explain_commit',

@@ -1222,6 +1222,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     handleWorkspaceFiles,
     handleCodingSidebarToggle,
     mode: workOrCodingMode,
+    workspace,
     handleNewSession,
     handleDreamRun,
     agentNames,

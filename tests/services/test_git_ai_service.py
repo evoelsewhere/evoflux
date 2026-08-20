@@ -100,6 +100,94 @@ async def test_self_review_publishes_ai_and_security_findings(repository: Path):
 
 
 @pytest.mark.asyncio
+async def test_self_review_includes_untracked_text_content(repository: Path):
+    marker = "UNTRACKED_REVIEW_MARKER = True\n"
+    (repository / "new_module.py").write_text(marker, encoding="utf-8")
+
+    with patch(
+        "app.services.git_ai_service._code_impact",
+        new_callable=AsyncMock,
+        return_value=[],
+    ):
+        evidence = await _evidence(repository, "self_review", None, None)
+
+    assert evidence["status"].strip().endswith("new_module.py")
+    assert evidence["untracked_files"] == [
+        {
+            "path": "new_module.py",
+            "size": len(marker.encode()),
+            "content": marker,
+            "truncated": False,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_pr_description_uses_committed_source_to_target_range(
+    repository: Path,
+):
+    target_branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "switch", "-qc", "feature/review-draft"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(["git", "add", "app.py"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "commit", "-qm", "update application value"],
+        cwd=repository,
+        check=True,
+    )
+
+    with patch(
+        "app.services.git_ai_service._code_impact",
+        new_callable=AsyncMock,
+        return_value=[],
+    ):
+        evidence = await _evidence(
+            repository,
+            "generate_pr_description",
+            None,
+            {
+                "source_branch": "feature/review-draft",
+                "target_branch": target_branch,
+            },
+        )
+
+    assert evidence["source_branch"] == "feature/review-draft"
+    assert evidence["target_branch"] == target_branch
+    assert any("update application value" in row for row in evidence["commits"])
+    assert "+value = 2" in evidence["committed_diff"]
+    assert "staged_diff" not in evidence
+    assert "unstaged_diff" not in evidence
+
+
+@pytest.mark.asyncio
+async def test_pr_description_rejects_the_same_source_and_target(repository: Path):
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    with pytest.raises(ValueError, match="must be different"):
+        await _evidence(
+            repository,
+            "generate_pr_description",
+            None,
+            {"source_branch": branch, "target_branch": branch},
+        )
+
+
+@pytest.mark.asyncio
 async def test_generate_commit_message_returns_structured_text(repository: Path):
     subprocess.run(["git", "add", "app.py"], cwd=repository, check=True)
     (repository / "notes.txt").write_text(

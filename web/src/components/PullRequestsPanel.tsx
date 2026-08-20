@@ -1908,7 +1908,7 @@ function ConnectionsDialog({
   )
 }
 
-function CreateReviewDialog({
+export function CreateReviewDialog({
   target,
   onClose,
 }: {
@@ -1921,6 +1921,7 @@ function CreateReviewDialog({
   const remotes = useGitRemotesQuery(workspace, Boolean(target))
   const create = useCreateCodeReviewMutation(target?.workspace_id ?? '')
   const push = useToastStore((state) => state.push)
+  const sessionId = useTeamStore((state) => state.sessionId)
   const [form, setForm] = useState({
     title: '',
     body: '',
@@ -1928,6 +1929,7 @@ function CreateReviewDialog({
     targetBranch: '',
   })
   const [publishing, setPublishing] = useState(false)
+  const [drafting, setDrafting] = useState(false)
 
   const localBranches = useMemo(
     () => (branches.data ?? []).filter((branch) => branch.remote === null),
@@ -1955,6 +1957,61 @@ function CreateReviewDialog({
     (remotes.data ?? []).find((remote) => remote.name === upstreamRemote)?.name
     ?? remotes.data?.find((remote) => remote.name === 'origin')?.name
     ?? remotes.data?.[0]?.name
+
+  const draftDescription = async () => {
+    if (!target) return
+    if (!sessionId) {
+      push({
+        tone: 'info',
+        title: 'Open a coding task to draft with AI',
+        description: 'The active task supplies the model and workspace authorization.',
+      })
+      return
+    }
+    if (!sourceBranch.trim() || !targetBranch.trim()) {
+      push({ tone: 'info', title: 'Choose source and target branches first' })
+      return
+    }
+    if (sourceBranch.trim() === targetBranch.trim()) {
+      push({ tone: 'info', title: 'Source and target branches must be different' })
+      return
+    }
+
+    setDrafting(true)
+    try {
+      const result = await runGitAIAction(workspace, {
+        session_id: sessionId,
+        action: 'generate_pr_description',
+        remote_context: {
+          source_branch: sourceBranch.trim(),
+          target_branch: targetBranch.trim(),
+        },
+      })
+      const draftTitle = result.title?.trim()
+      const draftBody = result.body?.trim()
+      if (!draftTitle || !draftBody) {
+        throw new Error('The generated draft did not include both a title and description.')
+      }
+      setForm((current) => ({
+        ...current,
+        title: draftTitle,
+        body: draftBody,
+      }))
+      push({
+        tone: 'success',
+        title: 'Review draft generated',
+        description: `Based on committed changes from ${targetBranch} to ${sourceBranch}.`,
+      })
+    } catch (error) {
+      push({
+        tone: 'error',
+        title: 'Could not draft review description',
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setDrafting(false)
+    }
+  }
 
   const waitForPush = async () => {
     const deadline = Date.now() + 5 * 60_000
@@ -2075,6 +2132,30 @@ function CreateReviewDialog({
                   : 'Add a Git remote before creating this review.'}
             </div>
           )}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-(--color-border) bg-(--bg-key)/25 px-3 py-2">
+            <p className="min-w-48 flex-1 text-[11px] leading-4 text-(--color-text-muted)">
+              Generate the title and description from commits in{' '}
+              <span className="font-mono text-(--color-text)">{targetBranch || 'target'}</span>
+              {' '}…{' '}
+              <span className="font-mono text-(--color-text)">{sourceBranch || 'source'}</span>.
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void draftDescription()}
+              disabled={
+                drafting
+                || !sourceBranch.trim()
+                || !targetBranch.trim()
+                || sourceBranch.trim() === targetBranch.trim()
+              }
+              title={sessionId ? 'Draft from committed branch changes' : 'Open a coding task to use AI'}
+            >
+              {drafting ? <Loader2 className="animate-spin" /> : <Sparkles />}
+              {drafting ? 'Drafting…' : 'Draft with AI'}
+            </Button>
+          </div>
           <label className="block space-y-1.5 text-xs text-(--color-text-muted)">
             <span>Title</span>
             <Input
