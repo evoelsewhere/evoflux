@@ -27,6 +27,9 @@ use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
 use tokio::sync::{oneshot, Mutex};
 
+#[cfg(target_os = "linux")]
+use xcap_linux as xcap;
+
 use crate::sidecar::{Handshake, Sidecar};
 
 /// Shared application state.

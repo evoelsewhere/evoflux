@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "desktop-packages.yml"
 TAURI_CONFIG = ROOT / "desktop" / "src-tauri" / "tauri.conf.json"
+CARGO_MANIFEST = ROOT / "desktop" / "src-tauri" / "Cargo.toml"
 
 
 def test_release_matrix_contains_linux_x64_deb() -> None:
@@ -57,3 +59,17 @@ def test_removed_webbridge_source_is_not_bundled_or_repackaged() -> None:
 
     assert "extensions/webbridge" not in workflow
     assert all("extensions/webbridge" not in source for source in resources)
+
+
+def test_linux_capture_dependency_matches_ubuntu_22_pipewire_baseline() -> None:
+    manifest = tomllib.loads(CARGO_MANIFEST.read_text(encoding="utf-8"))
+    targets = manifest["target"]
+
+    assert (
+        targets['cfg(target_os = "linux")']["dependencies"]["xcap-linux"]["version"]
+        == "=0.4.1"
+    )
+    assert (
+        targets['cfg(not(target_os = "linux"))']["dependencies"]["xcap"]["version"]
+        == "0.9.8"
+    )

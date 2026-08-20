@@ -34,11 +34,19 @@ walkdir = "2"
 mime_guess = "2"
 base64 = "0.22"
 notify = "7"
-xcap = { version = "0.9.8", default-features = false }
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 file_icon_provider = "0.4"
 png = "0.17"
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+xcap = { version = "0.9.8", default-features = false }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# xcap 0.9.x pulls pipewire/libspa 0.10, whose generated bindings require
+# newer PipeWire headers than Ubuntu 22.04 provides. The 0.4 line exposes the
+# same Monitor/image API used here without raising the distro baseline.
+xcap-linux = { package = "xcap", version = "=0.4.1", default-features = false }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 block2 = "0.6"
