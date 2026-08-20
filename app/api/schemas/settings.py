@@ -149,6 +149,8 @@ class ProviderUsageCredits(BaseModel):
     has_credits: bool
     unlimited: bool
     balance: str | None = None
+    used: str | None = None
+    total: str | None = None
 
 
 class ProviderUsageLimit(BaseModel):
