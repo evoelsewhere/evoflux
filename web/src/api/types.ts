@@ -1895,12 +1895,6 @@ export interface WebBridgeStatusResponse {
   extensions: WebBridgeExtensionInfo[]
 }
 
-export interface WebBridgeLaunchBrowserResponse {
-  ok: boolean
-  browser?: string
-  message: string
-}
-
 export interface WebBridgeAuditEntry {
   ts: number
   session_id: string

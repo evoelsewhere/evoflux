@@ -48,3 +48,12 @@ def test_linux_runner_installs_native_build_and_smoke_dependencies() -> None:
     assert "libxdo-dev" in source
     assert "xauth" in source
     assert "xvfb" in source
+
+
+def test_removed_webbridge_source_is_not_bundled_or_repackaged() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    config = json.loads(TAURI_CONFIG.read_text(encoding="utf-8"))
+    resources = config["bundle"]["resources"]
+
+    assert "extensions/webbridge" not in workflow
+    assert all("extensions/webbridge" not in source for source in resources)

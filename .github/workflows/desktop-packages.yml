@@ -818,16 +818,6 @@ jobs:
               output.write(f"value={version}\n")
           PY
 
-      - name: Package WebBridge extension
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="$(jq -r .version extensions/webbridge/manifest.json)"
-          filename="EvoFlux-WebBridge-${version}.zip"
-          output="$GITHUB_WORKSPACE/release-assets/$filename"
-          (cd extensions/webbridge && zip -qr "$output" .)
-          (cd release-assets && sha256sum "$filename" > "EvoFlux-WebBridge-${version}-SHA256SUMS.txt")
-
       - name: Create draft release and release notes
         env:
           GH_TOKEN: ${{ github.token }}

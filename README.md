@@ -128,15 +128,14 @@ Current stable release: **[EvoFlux v0.0.6](https://github.com/evoelsewhere/evofl
 | macOS · Apple Silicon | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux_0.0.6_aarch64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/evoflux-macos-apple-silicon-SHA256SUMS.txt) |
 | macOS · Intel | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux_0.0.6_x64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/evoflux-macos-intel-SHA256SUMS.txt) |
 | Windows · x64 | [Download installer](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux_0.0.6_x64-setup.exe) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/evoflux-windows-x64-SHA256SUMS.txt) |
-| Chrome / Edge WebBridge · v2.4.0 | [Download extension ZIP](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux-WebBridge-2.4.0.zip) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux-WebBridge-2.4.0-SHA256SUMS.txt) |
 
 Linux x64 DEB packaging is enabled for the next tagged release. Install a
 downloaded package with `sudo apt install ./EvoFlux_*_amd64.deb`; updates use
 the same package-managed flow instead of replacing dpkg-owned files in place.
 
-The desktop packages include the native Python sidecar. To install WebBridge,
-extract the ZIP, open `chrome://extensions` or `edge://extensions`, enable
-**Developer mode**, and choose **Load unpacked**.
+The desktop packages include the native Python sidecar. The optional WebBridge
+browser companion is distributed separately and can be installed from the
+WebBridge panel in EvoFlux.
 
 > [!NOTE]
 > The v0.0.6 macOS packages use an ad-hoc signature and the Windows installer
@@ -337,7 +336,7 @@ It connects an agent to the user's real Chrome or Edge session through a persist
 | **Live collaboration** | Streams the agent session into the browser side panel, supports questions and element selection, and allows seamless control handoff between the user and agent. |
 | **Teach and monitor** | Records meaningful browser actions without capturing raw keystrokes, redacts sensitive fields, creates reviewable workflows, and requires confirmation before monitored results are shared. |
 
-Pairings, tickets, tab bindings, and Teach drafts are persisted through Alembic migrations. Revoking a pairing closes the live relay and invalidates outstanding tickets. See [`extensions/webbridge/README.md`](extensions/webbridge/README.md) for installation and policy configuration.
+Pairings, tickets, tab bindings, and Teach drafts are persisted through Alembic migrations. Revoking a pairing closes the live relay and invalidates outstanding tickets. Installation and connection status are managed from the WebBridge panel in EvoFlux.
 
 ### Beyond the real-browser bridge
 

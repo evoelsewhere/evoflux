@@ -46,7 +46,7 @@ sudo apt install ./EvoFlux_x.y.z_amd64.deb
 ```
 
 The package contains the native desktop shell, bundled Python sidecar, web UI,
-WebBridge extension, desktop entry, and icons. Required GTK/WebKit libraries,
+desktop entry, and icons. Required GTK/WebKit libraries,
 `xdg-utils`, and the X11 input helper are declared as package dependencies.
 
 Install a newer `.deb` with the same command to update. EvoFlux intentionally

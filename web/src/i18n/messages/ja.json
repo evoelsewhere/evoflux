@@ -325,7 +325,6 @@
   "{0}/team/sessions/resolve": "{0}/チーム/セッション/解決",
   "{0}/team/webbridge/appearance": "{0}/team/webbridge/appearance",
   "{0}/team/webbridge/audit{1}": "{0}/チーム/ウェブブリッジ/監査{1}",
-  "{0}/team/webbridge/launch-browser": "{0}/チーム/webbridge/launch-browser",
   "{0}/team/webbridge/status": "{0}/チーム/ウェブブリッジ/ステータス",
   "{0}/team/webbridge/teach-drafts/{1}": "{0}/チーム/ウェブブリッジ/ティーチドラフト/{1}",
   "{0}/team/webbridge/teach-drafts/{1}/approve": "{0}/チーム/webbridge/teach-drafts/{1}/approve",
