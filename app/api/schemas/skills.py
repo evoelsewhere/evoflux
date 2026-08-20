@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.conductor.models import ManagedResourceProvider
 from app.core.skill_scope import ALL_SKILL_MODES, SkillMode, default_skill_modes
 
 
@@ -50,6 +51,7 @@ class SkillSummary(BaseModel):
     editable: bool = True
     source: str = "global-EvoFlux"
     modes: list[SkillMode] = Field(default_factory=default_skill_modes)
+    provider: ManagedResourceProvider | None = None
 
 
 class SkillDetail(BaseModel):
@@ -77,6 +79,7 @@ class SkillDetail(BaseModel):
     modes: list[SkillMode] = Field(default_factory=default_skill_modes)
     files: list[SkillBundleFile] = Field(default_factory=list)
     bundle_truncated: bool = False
+    provider: ManagedResourceProvider | None = None
 
 
 class SkillWriteRequest(BaseModel):

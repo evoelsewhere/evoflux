@@ -59,13 +59,15 @@ from app.plugin_platform.workspace import (
     write_workspace_file,
 )
 from app.services import team_manager
+from app.conductor.provenance import managed_resource_provider_by_id
+from app.conductor.models import ManagedResourceProvider
 
 
 router = APIRouter()
 
 
 def _capabilities_for(installation: PluginInstallation) -> PluginLifecycleCapabilities:
-    if installation.source_type == "builtin":
+    if installation.source_type == "builtin" or installation.managed_by == "conductor":
         return PluginLifecycleCapabilities(
             can_enable=False,
             can_edit=False,
@@ -109,6 +111,23 @@ def _credential_state_for(
         )
 
 
+def _managed_provider_for(
+    installation: PluginInstallation,
+) -> ManagedResourceProvider | None:
+    if not installation.managed_project_id or not installation.managed_resource_id:
+        return None
+    provider = managed_resource_provider_by_id(
+        installation.managed_project_id,
+        installation.managed_resource_id,
+    )
+    if provider is None or installation.managed_version_id not in {
+        provider.applied_version_id,
+        provider.version_id,
+    }:
+        return None
+    return provider
+
+
 async def _after_mutation() -> None:
     from app.plugin_platform.runtime import plugin_mcp_runtime
 
@@ -139,6 +158,7 @@ async def list_plugins() -> PluginListResponse:
                 inspection=inspection,
                 credentials=_credential_state_for(installation, inspection),
                 capabilities=_capabilities_for(installation),
+                provider=_managed_provider_for(installation),
             )
             for installation, inspection in zip(installations, items, strict=True)
         ],

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import random
 import uuid
 from typing import Any, Protocol
@@ -8,10 +10,14 @@ from typing import Any, Protocol
 import httpx
 
 from app.conductor.models import (
+    EffectiveResourceVersion,
     HeartbeatResponse,
     Manifest,
     RegistrationRequest,
     RegistrationResponse,
+    ResourceChangePage,
+    ResourceInventoryRequest,
+    TelemetryBatchResponse,
     canonical_hash,
 )
 from app.conductor.constants.api import (
@@ -30,13 +36,20 @@ from app.conductor.constants.api import (
     V1_RESOURCE_KINDS,
     V1_SUBSCRIBE_PATH,
     V1_TELEMETRY_PATH,
+    V2_CHANGE_PAGE_LIMIT,
+    V2_CHANGES_PATH,
+    V2_INVENTORY_PATH,
 )
 from app.conductor.constants.telemetry import (
     TELEMETRY_EVENT_FIELD_ALLOWLIST,
     TELEMETRY_NUMERIC_TOKEN_FIELDS,
+    TELEMETRY_MAX_RESOURCE_ATTRIBUTIONS,
+    TELEMETRY_RESOURCE_FIELD_ALLOWLIST,
     TELEMETRY_SECRET_FIELD_MARKERS,
+    TELEMETRY_SENSITIVE_MARKER_EXCEPTIONS,
     TelemetryBatchField,
     TelemetryField,
+    TelemetryResourceField,
 )
 
 
@@ -48,13 +61,43 @@ def redact_telemetry(value: dict[str, Any]) -> dict[str, Any]:
         lowered = key.lower()
         sensitive = (
             "token" in lowered and key not in TELEMETRY_NUMERIC_TOKEN_FIELDS
-        ) or any(word in lowered for word in TELEMETRY_SECRET_FIELD_MARKERS)
+        ) or (
+            key not in TELEMETRY_SENSITIVE_MARKER_EXCEPTIONS
+            and any(word in lowered for word in TELEMETRY_SECRET_FIELD_MARKERS)
+        )
         if key not in TELEMETRY_EVENT_FIELD_ALLOWLIST or sensitive:
+            continue
+        if key == TelemetryField.RESOURCES:
+            clean[key] = _redact_resource_refs(item)
             continue
         if item is None or isinstance(item, (bool, int, float)):
             clean[key] = item
         elif isinstance(item, str):
             clean[key] = item[:API_TEXT_FIELD_MAX_LENGTH]
+    return clean
+
+
+def _redact_resource_refs(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    clean: list[dict[str, str]] = []
+    for item in value[:TELEMETRY_MAX_RESOURCE_ATTRIBUTIONS]:
+        if not isinstance(item, dict):
+            continue
+        reference = {
+            str(key): raw[:API_TEXT_FIELD_MAX_LENGTH]
+            for key, raw in item.items()
+            if str(key) in TELEMETRY_RESOURCE_FIELD_ALLOWLIST
+            and isinstance(raw, str)
+            and raw
+        }
+        required = {
+            TelemetryResourceField.RESOURCE_ID,
+            TelemetryResourceField.VERSION_ID,
+            TelemetryResourceField.RELATION,
+        }
+        if all(field in reference for field in required):
+            clean.append(reference)
     return clean
 
 
@@ -193,20 +236,83 @@ class ConductorClient:
         del payload
 
     async def report_inventory(self, payload: dict[str, Any]) -> None:
-        # Temporary V1 local compatibility: inventory sync is not implemented.
-        del payload
+        request = ResourceInventoryRequest.model_validate(payload)
+        try:
+            await self._request(
+                "PUT",
+                V2_INVENTORY_PATH,
+                headers=self._auth_headers(),
+                json=request.model_dump(mode="json"),
+                idempotent=True,
+            )
+        except ConductorRequestError as exc:
+            if exc.status_code != 404:
+                raise
+
+    async def fetch_changes(self, cursor: str | None) -> ResourceChangePage:
+        query: dict[str, str | int] = {"limit": V2_CHANGE_PAGE_LIMIT}
+        if cursor:
+            query["cursor"] = cursor
+        params = str(httpx.QueryParams(query))
+        response = await self._request(
+            "GET",
+            f"{V2_CHANGES_PATH}?{params}",
+            headers=self._auth_headers(),
+        )
+        return ResourceChangePage.model_validate(response.json())
+
+    async def fetch_resource_version(
+        self, resource_id: str, version_id: str
+    ) -> EffectiveResourceVersion:
+        response = await self._request(
+            "GET",
+            f"/api/v1/resources/{resource_id}/versions/{version_id}",
+            headers=self._auth_headers(),
+        )
+        version = EffectiveResourceVersion.model_validate(response.json())
+        if version.kind != "plugin":
+            payload = json.dumps(
+                version.payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+            if len(payload) != version.size:
+                raise ValueError("Conductor managed-resource payload size mismatch.")
+            if hashlib.sha256(payload).hexdigest() != version.sha256:
+                raise ValueError("Conductor managed-resource payload digest mismatch.")
+        return version
+
+    async def download_resource_artifact(
+        self,
+        resource_id: str,
+        version_id: str,
+        *,
+        expected_sha256: str,
+        expected_size: int,
+    ) -> bytes:
+        response = await self._request(
+            "GET",
+            f"/api/v1/resources/{resource_id}/versions/{version_id}/artifact",
+            headers=self._auth_headers(),
+        )
+        payload = response.content
+        if len(payload) != expected_size:
+            raise ValueError("Conductor Plugin artifact size mismatch.")
+        actual = hashlib.sha256(payload).hexdigest()
+        if actual != expected_sha256:
+            raise ValueError("Conductor Plugin artifact digest mismatch.")
+        return payload
 
     async def report_telemetry(
         self, installation_id: str, events: list[dict[str, Any]]
-    ) -> None:
+    ) -> TelemetryBatchResponse:
         clean_events: list[dict[str, Any]] = []
         for event in events:
             clean = redact_telemetry(event)
             clean.pop(TelemetryField.INSTALLATION_ID, None)
             clean_events.append(clean)
-        if not clean_events:
-            return
-        await self._request(
+        response = await self._request(
             "POST",
             V1_TELEMETRY_PATH,
             headers=self._auth_headers(),
@@ -215,6 +321,7 @@ class ConductorClient:
                 TelemetryBatchField.EVENTS: clean_events,
             },
         )
+        return TelemetryBatchResponse.model_validate(response.json())
 
     async def report_resource_usage(self, events: list[dict[str, object]]) -> None:
         """Report content-free managed-resource usage events."""

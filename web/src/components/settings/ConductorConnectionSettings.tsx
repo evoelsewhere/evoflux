@@ -1,19 +1,29 @@
 import { useEffect, useId, useState } from 'react'
 
 import {
+  approveConductorResource,
   connectConductor,
   disconnectConductor,
   getConductorSettings,
   getConductorStatus,
   syncConductor,
   updateConductorSettings,
+  type ConductorManagedResource,
   type ConductorSettings,
   type ConductorStatus,
 } from '@/api/client'
 import { SettingsCallout, SettingsGroup, SettingsRow } from '@/components/settings/SettingsLayout'
+import { ManagedResourceUpdateBanner } from '@/components/settings/ManagedResourceUpdateBanner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import {
+  CONDUCTOR_ACTION,
+  CONDUCTOR_ENFORCEMENT,
+  CONDUCTOR_RESOURCE_KIND,
+  CONDUCTOR_RESOURCE_STATE,
+  type ConductorAction,
+} from '@/lib/conductor-constants'
 
 export function ConductorConnectionSettings() {
   const urlId = useId()
@@ -24,9 +34,8 @@ export function ConductorConnectionSettings() {
   const [draft, setDraft] = useState<ConductorSettings | null>(null)
   const [status, setStatus] = useState<ConductorStatus | null>(null)
   const [token, setToken] = useState('')
-  const [pendingAction, setPendingAction] = useState<
-    'connect' | 'disconnect' | 'sync' | 'save' | null
-  >(null)
+  const [pendingAction, setPendingAction] = useState<ConductorAction | null>(null)
+  const [pendingResourceId, setPendingResourceId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -45,7 +54,7 @@ export function ConductorConnectionSettings() {
   }, [])
 
   const run = async (
-    actionName: 'connect' | 'disconnect' | 'sync' | 'save',
+    actionName: ConductorAction,
     action: () => Promise<void>,
   ) => {
     setPendingAction(actionName)
@@ -132,12 +141,12 @@ export function ConductorConnectionSettings() {
               value={draft.enforcement_mode}
               onChange={(event) => setDraft({
                 ...draft,
-                enforcement_mode: event.target.value as 'report' | 'enforce',
+                enforcement_mode: event.target.value as ConductorSettings['enforcement_mode'],
               })}
               className="h-9 rounded-md border border-(--color-border) bg-(--bg-input) px-2 text-sm"
             >
-              <option value="report">Report only</option>
-              <option value="enforce">Enforce</option>
+              <option value={CONDUCTOR_ENFORCEMENT.REPORT}>Report only</option>
+              <option value={CONDUCTOR_ENFORCEMENT.ENFORCE}>Enforce</option>
             </select>
           }
         />
@@ -198,14 +207,14 @@ export function ConductorConnectionSettings() {
                   <Button
                     variant="outline"
                     disabled={pending || !tokenValid || !urlValid}
-                    onClick={() => void run('connect', async () => {
+                    onClick={() => void run(CONDUCTOR_ACTION.CONNECT, async () => {
                       const saved = await updateConductorSettings(draft)
                       setDraft(saved)
                       setStatus(await connectConductor(token))
                       setToken('')
                     })}
                   >
-                    {pendingAction === 'connect' ? 'Connecting…' : 'Connect'}
+                    {pendingAction === CONDUCTOR_ACTION.CONNECT ? 'Connecting…' : 'Connect'}
                   </Button>
                 </div>
                 {token.length > 0 && !tokenValid && (
@@ -219,9 +228,9 @@ export function ConductorConnectionSettings() {
         )}
         <div className="flex items-center justify-between px-4 py-3">
           <div className="text-xs text-(--color-text-muted)" role="status" aria-live="polite">
-            {pendingAction === 'disconnect'
+            {pendingAction === CONDUCTOR_ACTION.DISCONNECT
               ? 'Disconnecting…'
-              : pendingAction === 'sync'
+              : pendingAction === CONDUCTOR_ACTION.SYNC
                 ? 'Syncing…'
                 : status?.enrolled
               ? connectionLabel[status.state] || `Connected · ${status.state}`
@@ -233,7 +242,10 @@ export function ConductorConnectionSettings() {
               variant="outline"
               size="sm"
               disabled={pending || !status?.enrolled}
-              onClick={() => void run('sync', async () => setStatus(await syncConductor()))}
+              onClick={() => void run(
+                CONDUCTOR_ACTION.SYNC,
+                async () => setStatus(await syncConductor()),
+              )}
             >
               Sync now
             </Button>
@@ -243,7 +255,7 @@ export function ConductorConnectionSettings() {
                 size="sm"
                 disabled={pending}
                 onClick={() => void run(
-                  'disconnect',
+                  CONDUCTOR_ACTION.DISCONNECT,
                   async () => setStatus(await disconnectConductor()),
                 )}
               >
@@ -254,11 +266,11 @@ export function ConductorConnectionSettings() {
               size="sm"
               disabled={pending}
               onClick={() => void run(
-                'save',
+                CONDUCTOR_ACTION.SAVE,
                 async () => setDraft(await updateConductorSettings(draft)),
               )}
             >
-              {pendingAction === 'save' ? 'Saving…' : 'Save'}
+              {pendingAction === CONDUCTOR_ACTION.SAVE ? 'Saving…' : 'Save'}
             </Button>
           </div>
         </div>
@@ -291,9 +303,133 @@ export function ConductorConnectionSettings() {
           </div>
         </SettingsCallout>
       )}
+      {status?.enrolled && (
+        <SettingsGroup
+          title="Managed resources"
+          description="Project-scoped desired state, local trust and the last observed result."
+        >
+          {status.resources.length === 0 ? (
+            <div className="px-4 py-6 text-sm text-(--color-text-muted)" data-testid="conductor-managed-resources-empty">
+              No governed Agents, Skills or Plugins are currently assigned to this member.
+            </div>
+          ) : (
+          <div className="divide-y divide-(--color-border)">
+            {status.resources.map((resource) => {
+              const managed = isManagedResource(resource)
+              const resourceId = resource.resource_id
+              const state = resource.observed_state
+                || resource.state
+                || CONDUCTOR_RESOURCE_STATE.PENDING
+              const trustPending = state === CONDUCTOR_RESOURCE_STATE.TRUST_PENDING
+                && resource.kind === CONDUCTOR_RESOURCE_KIND.PLUGIN
+              return (
+                <div
+                  key={resourceId || `${resource.kind}/${resource.slug}`}
+                  className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between"
+                  data-testid="conductor-managed-resource"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{resource.slug}</span>
+                      <span className="rounded border border-(--color-border) px-1.5 py-0.5 text-[11px] uppercase text-(--color-text-muted)">
+                        {resource.kind}
+                      </span>
+                      {resource.release_channel && (
+                        <span className="rounded bg-(--bg-hover) px-1.5 py-0.5 text-[11px] capitalize">
+                          {resource.release_channel}
+                        </span>
+                      )}
+                      {resource.applied_version && (
+                        <span className="font-mono text-xs text-(--color-text-muted)">
+                          installed v{resource.applied_version}
+                        </span>
+                      )}
+                      {resource.version && resource.version !== resource.applied_version && (
+                        <span className="font-mono text-xs text-(--color-warning)">
+                          → available v{resource.version}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 text-xs text-(--color-text-muted)">
+                      {resource.message || state.replaceAll('_', ' ')}
+                    </div>
+                    {resource.project_id && (
+                      <div className="mt-1 font-mono text-[10px] text-(--color-text-subtle)">
+                        project {resource.project_id.slice(0, 8)} · resource {resourceId?.slice(0, 8)}
+                      </div>
+                    )}
+                    {managed && (
+                      <ManagedResourceUpdateBanner
+                        provider={resource}
+                        resourceName={resource.slug}
+                        className="mt-3"
+                        onPulled={async () => setStatus(await getConductorStatus())}
+                      />
+                    )}
+                    {trustPending && resource.trust_review && (
+                      <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-(--color-text-muted)">
+                        <span className="rounded bg-(--bg-hover) px-1.5 py-1">
+                          {resource.trust_review.executable_commands?.length || 0} commands
+                        </span>
+                        <span className="rounded bg-(--bg-hover) px-1.5 py-1">
+                          {resource.trust_review.remote_hosts?.length || 0} remote hosts
+                        </span>
+                        <span className="rounded bg-(--bg-hover) px-1.5 py-1">
+                          {resource.trust_review.environment_fields?.length || 0} environment fields
+                        </span>
+                        <span className="rounded bg-(--bg-hover) px-1.5 py-1">
+                          {resource.trust_review.capabilities?.length || 0} capabilities
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span
+                      className={`size-2 rounded-full ${
+                        state === CONDUCTOR_RESOURCE_STATE.IN_SYNC
+                          || state === CONDUCTOR_RESOURCE_STATE.APPLIED
+                          ? 'bg-emerald-400'
+                          : state === CONDUCTOR_RESOURCE_STATE.ERROR
+                            || state === CONDUCTOR_RESOURCE_STATE.INCOMPATIBLE
+                            || state === CONDUCTOR_RESOURCE_STATE.OWNERSHIP_CONFLICT
+                            ? 'bg-red-400'
+                            : 'bg-amber-400'
+                      }`}
+                      aria-hidden="true"
+                    />
+                    <span className="text-xs capitalize text-(--color-text-muted)">
+                      {state.replaceAll('_', ' ')}
+                    </span>
+                    {trustPending && resourceId && (
+                      <Button
+                        size="sm"
+                        disabled={pending || pendingResourceId === resourceId}
+                        onClick={() => {
+                          if (!window.confirm(
+                            'Enable this Conductor-managed Plugin after reviewing the disclosed commands, hosts, environment fields and capabilities?',
+                          )) return
+                          setPendingResourceId(resourceId)
+                          void run(CONDUCTOR_ACTION.APPROVE, async () => {
+                            await approveConductorResource(resourceId)
+                            setStatus(await getConductorStatus())
+                            setPendingResourceId(null)
+                          })
+                        }}
+                      >
+                        {pendingResourceId === resourceId ? 'Approving…' : 'Approve local trust'}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          )}
+        </SettingsGroup>
+      )}
       {status?.maintenance_required && (
         <SettingsCallout tone="warning">
-          A managed team or MCP change is waiting for a safe maintenance boundary.
+          A managed Agent, Skill or Plugin change is waiting for a safe maintenance boundary.
         </SettingsCallout>
       )}
       {(error || status?.error) && (
@@ -318,4 +454,14 @@ function isValidConductorUrl(value: string) {
   } catch {
     return false
   }
+}
+
+function isManagedResource(
+  resource: ConductorStatus['resources'][number],
+): resource is ConductorManagedResource {
+  return Boolean(
+    resource.resource_id
+      && 'project_name' in resource
+      && resource.project_name,
+  )
 }

@@ -40,6 +40,8 @@ export {
   useUpdateAgentMutation,
   useDeleteAgentMutation,
   useBulkUpdateAgentModelMutation,
+  useUpdateAgentRuntimeModelMutation,
+  useUpdateAgentRuntimeSettingsMutation,
 } from './useAgentFilesQuery'
 export {
   useSkillFilesQuery,
@@ -51,6 +53,10 @@ export {
   useDeleteSkillMutation,
 } from './useSkillFilesQuery'
 export { useObservabilitySummaryQuery } from './useObservabilitySummaryQuery'
+export {
+  useConductorStatusQuery,
+  useSyncConductorMutation,
+} from './useConductorStatusQuery'
 export {
   useInfiniteTracesQuery,
   useTracesQuery,

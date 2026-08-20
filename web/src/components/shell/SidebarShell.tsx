@@ -39,8 +39,11 @@ import { DURATIONS, useMotionPreset } from '@/lib/motion'
 import { SIDEBAR_WIDTH, useUIStore } from '@/stores/useUIStore'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { HealthDot } from '@/components/HealthDot'
+import { EnterpriseAttentionDot } from '@/components/settings/EnterpriseAttentionDot'
 import { cn } from '@/lib/utils'
 import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
+import { enterpriseAttentionCount } from '@/lib/enterprise'
+import { useConductorStatusQuery } from '@/queries'
 
 interface SidebarShellProps {
   /** Fully hidden state — owned by the caller. */
@@ -321,6 +324,11 @@ export function SidebarFooter({
   collapsed = false,
   onAction,
 }: SidebarFooterProps) {
+  const conductorQuery = useConductorStatusQuery()
+  const attentionCount = enterpriseAttentionCount(conductorQuery.data)
+  const settingsLabel = attentionCount > 0
+    ? `Settings, ${attentionCount} Enterprise ${attentionCount === 1 ? 'notification' : 'notifications'}`
+    : 'Settings'
   const openSettings = () => {
     useUIStore.getState().openSettings()
     onAction?.()
@@ -336,11 +344,18 @@ export function SidebarFooter({
         <button
           type="button"
           onClick={openSettings}
-          className="focus-ring-control press-control flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-          aria-label="Settings"
-          title="Settings"
+          className="focus-ring-control press-control relative flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+          aria-label={settingsLabel}
+          title={settingsLabel}
         >
           <Settings size={14} aria-hidden="true" />
+          {attentionCount > 0 && (
+            <EnterpriseAttentionDot
+              label={`${attentionCount} Enterprise ${attentionCount === 1 ? 'notification' : 'notifications'}`}
+              className="absolute right-1 top-1"
+              testId="settings-enterprise-attention"
+            />
+          )}
         </button>
         <button
           type="button"
@@ -364,11 +379,18 @@ export function SidebarFooter({
         <button
           type="button"
           onClick={openSettings}
-          className="focus-ring-control press-control flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-          aria-label="Settings"
-          title="Settings"
+          className="focus-ring-control press-control relative flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+          aria-label={settingsLabel}
+          title={settingsLabel}
         >
           <Settings size={14} aria-hidden="true" />
+          {attentionCount > 0 && (
+            <EnterpriseAttentionDot
+              label={`${attentionCount} Enterprise ${attentionCount === 1 ? 'notification' : 'notifications'}`}
+              className="absolute right-1 top-1"
+              testId="settings-enterprise-attention"
+            />
+          )}
         </button>
         <button
           type="button"

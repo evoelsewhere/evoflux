@@ -685,10 +685,12 @@ class TeamMemberBase(abc.ABC):
                 exc,
             )
             from app.agent.mcp.config import config_path as _mcp_config_path
+            from app.core.agent_settings import agent_settings_path
 
             self.agent.config_stamp = stamp_agent_files(
                 agent_md_path=source,
                 mcp_config_path=_mcp_config_path(),
+                agent_settings_path=agent_settings_path(),
             )
             self._config_dirty = False
             return

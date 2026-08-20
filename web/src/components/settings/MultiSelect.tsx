@@ -31,6 +31,7 @@ interface Props {
   placeholder?: string
   emptyLabel?: string
   ariaLabel?: string
+  disabled?: boolean
   /** Optional id forwarded to the search input (for label association). */
   searchId?: string
 }
@@ -42,6 +43,7 @@ export function MultiSelect({
   placeholder = 'Select…',
   emptyLabel = 'No matches',
   ariaLabel = placeholder,
+  disabled = false,
   searchId,
 }: Props) {
   const [open, setOpen] = useState(false)
@@ -83,13 +85,18 @@ export function MultiSelect({
   }
 
   const toggle = (v: string) => {
+    if (disabled) return
     if (selected.has(v)) onChange(value.filter((x) => x !== v))
     else onChange([...value, v])
   }
 
-  const remove = (v: string) => onChange(value.filter((x) => x !== v))
+  const remove = (v: string) => {
+    if (disabled) return
+    onChange(value.filter((x) => x !== v))
+  }
 
   const handleKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (disabled) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       setHighlight((i) => Math.min(i + 1, filtered.length - 1))
@@ -110,7 +117,12 @@ export function MultiSelect({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open && !disabled}
+      onOpenChange={(nextOpen) => {
+        if (!disabled) setOpen(nextOpen)
+      }}
+    >
       <PopoverTrigger
         nativeButton={false}
         // Render as a combobox div so selected chips can contain their own
@@ -120,12 +132,14 @@ export function MultiSelect({
             role="combobox"
             aria-label={ariaLabel}
             aria-expanded={open}
+            aria-disabled={disabled || undefined}
             aria-haspopup="listbox"
-            tabIndex={0}
+            tabIndex={disabled ? -1 : 0}
             className={cn(
               'flex min-h-11 w-full cursor-text flex-wrap items-center gap-1 rounded-lg border border-(--color-border) bg-(--bg-input) px-1.5 py-1 text-sm text-(--color-text) transition-colors outline-none md:min-h-8',
               'focus-visible:border-(--focus-ring) focus-visible:ring-3 focus-visible:ring-(--focus-ring)/50',
               'aria-expanded:border-(--focus-ring)',
+              disabled && 'pointer-events-none cursor-not-allowed opacity-50',
             )}
           >
             {value.length === 0 && (
@@ -139,6 +153,7 @@ export function MultiSelect({
                 {v}
                 <button
                   type="button"
+                  disabled={disabled}
                   // Stop the surrounding-trigger click from re-toggling the
                   // popover when the user removes a chip.
                   onMouseDown={(e) => e.stopPropagation()}

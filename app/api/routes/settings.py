@@ -165,6 +165,37 @@ async def get_conductor_status() -> dict:
     return conductor_service.status_payload()
 
 
+@router.post("/conductor/resources/{resource_id}/approve")
+async def approve_conductor_resource(resource_id: str) -> dict:
+    from app.conductor import conductor_service
+
+    try:
+        return conductor_service.approve_governed_plugin(resource_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404, detail="Managed Plugin is not waiting for trust approval."
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/conductor/resources/{resource_id}/pull")
+async def pull_conductor_resource(resource_id: str) -> dict:
+    from app.conductor import conductor_service
+    from app.conductor.client import ConductorRequestError
+
+    try:
+        return await conductor_service.pull_governed_resource(resource_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404, detail="Managed resource is not available to pull."
+        ) from exc
+    except ConductorRequestError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 # Live-discovered provider models cached per provider so ``GET /providers``
 # doesn't fan out to every configured backend on each render (mirrors
 # ``_registry_model_cache`` in app/api/routes/agents.py). Only successful

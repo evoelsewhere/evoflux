@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.conductor.models import ManagedResourceProvider
 from app.core.skill_scope import SkillMode, default_skill_modes
 
 
@@ -17,6 +18,14 @@ class AgentSummary(BaseModel):
     skills: list[str] = []
     valid: bool
     error: str | None = None
+    editable: bool = True
+    provider: ManagedResourceProvider | None = None
+    runtime_model_editable: bool = False
+    bundle_model: str | None = None
+    model_override: str | None = None
+    extra_tools: list[str] = []
+    extra_skills: list[str] = []
+    extra_mcp: list[str] = []
 
 
 class AgentDetail(BaseModel):
@@ -25,6 +34,14 @@ class AgentDetail(BaseModel):
     content: str
     config: dict | None = None
     error: str | None = None
+    editable: bool = True
+    provider: ManagedResourceProvider | None = None
+    runtime_model_editable: bool = False
+    bundle_model: str | None = None
+    model_override: str | None = None
+    extra_tools: list[str] = []
+    extra_skills: list[str] = []
+    extra_mcp: list[str] = []
 
 
 class AgentWriteRequest(BaseModel):
@@ -43,6 +60,25 @@ class AgentListResponse(BaseModel):
 class AgentBulkModelRequest(BaseModel):
     names: list[str] = Field(description="Agent names (filename stems) to update.")
     model: str = Field(description="New model id, e.g. 'anthropic:claude-sonnet-5'.")
+
+
+class AgentRuntimeModelRequest(BaseModel):
+    model: str | None = Field(
+        description=(
+            "Installation-local model override. Null restores the model declared "
+            "by the managed Agent bundle."
+        )
+    )
+
+
+class AgentRuntimeSettingsRequest(BaseModel):
+    model: str | None = Field(
+        default=None,
+        description="Installation-local model selection for the managed Agent.",
+    )
+    extra_tools: list[str] = Field(default_factory=list, max_length=200)
+    extra_skills: list[str] = Field(default_factory=list, max_length=200)
+    extra_mcp: list[str] = Field(default_factory=list, max_length=200)
 
 
 class AgentBulkModelResult(BaseModel):

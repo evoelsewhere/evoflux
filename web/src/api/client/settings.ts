@@ -6,6 +6,7 @@ import { apiBaseUrl } from '../base-url'
 import { readSSE } from '../sse'
 import type { SSECallbacks } from '../sse'
 import { parseDetailOrThrow } from './_shared'
+import type { ManagedResourceProvider } from '../types'
 
 export type SandboxSettings = {
   denied_patterns: string[]
@@ -116,6 +117,43 @@ export type ConductorSettings = {
   enforcement_mode: 'report' | 'enforce'
 }
 
+export type ConductorManagedResource = ManagedResourceProvider & {
+  kind: 'agent' | 'skill' | 'plugin'
+  slug: string
+  state?: string
+  message?: string | null
+  trust_required?: boolean
+  trust_review?: {
+    executable_commands?: Array<{ server: string; executable: string; args: string[] }>
+    remote_hosts?: Array<{ server: string; transport: string; host: string; url: string }>
+    environment_fields?: string[]
+    capabilities?: Array<{ name: string; source: string }>
+  } | null
+}
+
+export type LegacyConductorResource = {
+  project_id?: string
+  resource_id?: string
+  version_id?: string | null
+  version?: string | null
+  applied_version_id?: string | null
+  applied_version?: string | null
+  release_channel?: 'beta' | 'published' | null
+  kind: 'agent' | 'skill' | 'mcp' | 'plugin'
+  slug: string
+  state: string
+  observed_state?: string
+  drift?: string[]
+  message?: string | null
+  trust_required?: boolean
+  trust_review?: {
+    executable_commands?: Array<{ server: string; executable: string; args: string[] }>
+    remote_hosts?: Array<{ server: string; transport: string; host: string; url: string }>
+    environment_fields?: string[]
+    capabilities?: Array<{ name: string; source: string }>
+  } | null
+}
+
 export type ConductorStatus = {
   enabled: boolean
   enrolled: boolean
@@ -136,12 +174,58 @@ export type ConductorStatus = {
   offline: boolean
   maintenance_required: boolean
   error: string | null
-  resources: Array<{
-    kind: 'agent' | 'skill' | 'mcp'
-    slug: string
-    state: string
-    drift: string[]
-  }>
+  resources: Array<ConductorManagedResource | LegacyConductorResource>
+  sync?: {
+    heartbeat: ConductorSyncLaneStatus
+    resources: ConductorSyncLaneStatus
+    inventory: ConductorSyncLaneStatus
+    telemetry: ConductorSyncLaneStatus
+  }
+  telemetry?: {
+    pending_events: number
+    capacity: number
+    utilization_percent: number
+    oldest_event_at: string | null
+    pending_requests: number
+    pending_model_calls: number
+    pending_tool_calls: number
+    attributed_events: number
+    tokens_in: number
+    tokens_out: number
+    cache_read_tokens: number
+    estimated_cost_usd_micros: number
+    last_flush_accepted: number
+    last_flush_duplicates: number
+    delivery: ConductorTelemetryDeliverySummary | null
+  }
+}
+
+export type ConductorTelemetryDeliverySummary = {
+  installation_id: string
+  window_days: number
+  window_start: string
+  window_end: string
+  events: number
+  requests: number
+  model_calls: number
+  tool_calls: number
+  tokens_in: number
+  tokens_out: number
+  cache_read_tokens: number
+  estimated_cost_usd_micros: number
+  unpriced_model_calls: number
+  attributed_events: number
+  attributed_requests: number
+  attributed_model_calls: number
+  attributed_tool_calls: number
+  attributed_estimated_cost_usd_micros: number
+}
+
+export type ConductorSyncLaneStatus = {
+  state: 'idle' | 'syncing' | 'healthy' | 'offline' | 'paused' | 'error'
+  last_attempt_at: string | null
+  last_success_at: string | null
+  error: string | null
 }
 
 export async function getConductorSettings(): Promise<ConductorSettings> {
@@ -185,6 +269,25 @@ export async function disconnectConductor(): Promise<ConductorStatus> {
 export async function syncConductor(): Promise<ConductorStatus> {
   const res = await fetch(`${apiBaseUrl()}/settings/conductor/sync`, { method: 'POST' })
   if (!res.ok) await parseDetailOrThrow(res, 'POST /settings/conductor/sync')
+  return res.json()
+}
+
+export async function approveConductorResource(resourceId: string): Promise<void> {
+  const res = await fetch(
+    `${apiBaseUrl()}/settings/conductor/resources/${encodeURIComponent(resourceId)}/approve`,
+    { method: 'POST' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'POST /settings/conductor/resources/:id/approve')
+}
+
+export async function pullConductorResource(
+  resourceId: string,
+): Promise<ConductorManagedResource> {
+  const res = await fetch(
+    `${apiBaseUrl()}/settings/conductor/resources/${encodeURIComponent(resourceId)}/pull`,
+    { method: 'POST' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'POST /settings/conductor/resources/:id/pull')
   return res.json()
 }
 
