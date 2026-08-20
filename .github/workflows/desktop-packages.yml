@@ -493,15 +493,25 @@ jobs:
 
           package="${packages[0]}"
           dpkg-deb --info "$package"
-          dpkg-deb --contents "$package" > "$RUNNER_TEMP/evoflux-deb-contents.txt"
           architecture="$(dpkg-deb -f "$package" Architecture)"
           depends="$(dpkg-deb -f "$package" Depends)"
           [[ "$architecture" == "${{ matrix.deb_architecture }}" ]]
           grep -Eq '(^|, )xdotool([ ,]|$)' <<<"$depends"
           grep -Eq '(^|, )xdg-utils([ ,]|$)' <<<"$depends"
-          grep -Eq '/usr/bin/[^/]+$' "$RUNNER_TEMP/evoflux-deb-contents.txt"
-          grep -Eq '/usr/lib/[^/]+/sidecar/python/bin/python3$' "$RUNNER_TEMP/evoflux-deb-contents.txt"
-          grep -Eq '/usr/lib/[^/]+/sidecar/site-packages/app/cli/__main__.py$' "$RUNNER_TEMP/evoflux-deb-contents.txt"
+
+          package_root="$RUNNER_TEMP/evoflux-deb-root"
+          rm -rf "$package_root"
+          mkdir -p "$package_root"
+          dpkg-deb --extract "$package" "$package_root"
+
+          executable="$(find "$package_root/usr/bin" -maxdepth 1 -type f -perm -111 -print -quit)"
+          product_dir="$(find "$package_root/usr/lib" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          if [[ -z "$executable" || -z "$product_dir" ]]; then
+            echo "DEB is missing its desktop executable or product resource directory." >&2
+            exit 1
+          fi
+          [[ -x "$product_dir/sidecar/python/bin/python3" ]]
+          [[ -f "$product_dir/sidecar/site-packages/app/cli/__main__.py" ]]
 
       - name: Smoke-test first Linux DEB launch
         if: runner.os == 'Linux'
