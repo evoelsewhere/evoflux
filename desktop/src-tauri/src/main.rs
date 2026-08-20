@@ -22,9 +22,7 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalSize, RunEvent, WebviewUrl, WebviewWindowBuilder,
     WindowEvent, Wry,
 };
-use tauri_plugin_dialog::{
-    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
-};
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
 use tokio::sync::{oneshot, Mutex};
@@ -3991,11 +3989,10 @@ fn handle_desktop_menu(app: &AppHandle, id: &str) {
         MENU_OPEN_CONFIG_DIR => open_config_dir(app),
         MENU_REVEAL_BACKEND_LOG => reveal_backend_log(app),
         MENU_CHECK_UPDATES => {
+            show_target_window(app);
             let handle = app.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(error) = run_update_check(&handle, true).await {
-                    log::warn!("desktop: manual update check failed: {error:#}");
-                }
+                run_update_check(&handle, true).await;
             });
         }
         MENU_QUIT => quit_app(app),
@@ -4051,45 +4048,50 @@ async fn shutdown_sidecar_now(app: &AppHandle) {
     }
 }
 
-/// Map a ``MessageDialogResult`` from an ``OkCancelCustom`` dialog to a
-/// simple accept/cancel boolean.
-///
-/// ``OkCancelCustom`` yields ``Custom(label)`` matching the button text the
-/// user pressed (rfd's behaviour, surfaced through tauri-plugin-dialog).
-/// Some platforms still report a plain ``Ok``/``Cancel`` for the bundled
-/// system dialog, so we accept either spelling of "yes".
-fn dialog_result_is_accept(result: &MessageDialogResult, ok_label: &str) -> bool {
-    match result {
-        MessageDialogResult::Ok | MessageDialogResult::Yes => true,
-        MessageDialogResult::Custom(s) => s == ok_label,
-        MessageDialogResult::Cancel | MessageDialogResult::No => false,
-    }
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+enum AppUpdateCheckResult {
+    Unavailable {
+        title: String,
+        message: String,
+    },
+    Busy {
+        title: String,
+        message: String,
+    },
+    UpToDate {
+        version: String,
+    },
+    Available {
+        version: String,
+        current_version: String,
+        notes: Option<String>,
+    },
+    Error {
+        title: String,
+        message: String,
+    },
 }
 
-/// Build the "Update available" dialog body shown to the user.
+/// Prepare release notes for the in-app update dialog.
 ///
 /// Release notes are truncated to ~600 characters with an ellipsis so a
-/// runaway changelog never produces a multi-screen modal. An empty/None
-/// body collapses the notes paragraph entirely.
-fn format_update_prompt(new_version: &str, current_version: &str, body: Option<&str>) -> String {
+/// runaway changelog never produces a multi-screen modal. Empty notes are
+/// omitted from the serialized result entirely.
+fn format_update_notes(body: Option<&str>) -> Option<String> {
     const MAX_NOTES_CHARS: usize = 600;
     let notes = body.unwrap_or_default().trim();
-    let trimmed = if notes.chars().count() > MAX_NOTES_CHARS {
+    if notes.is_empty() {
+        return None;
+    }
+    let notes = if notes.chars().count() > MAX_NOTES_CHARS {
         let mut s: String = notes.chars().take(MAX_NOTES_CHARS - 1).collect();
         s.push('…');
         s
     } else {
         notes.to_string()
     };
-    if trimmed.is_empty() {
-        format!(
-            "EvoFlux {new_version} is available (you have {current_version}).\n\nDownload, verify, install, and restart now?"
-        )
-    } else {
-        format!(
-            "EvoFlux {new_version} is available (you have {current_version}).\n\n{trimmed}\n\nDownload, verify, install, and restart now?"
-        )
-    }
+    Some(notes)
 }
 
 /// Format the tray status string shown during a bundle download.
@@ -4123,45 +4125,17 @@ impl Drop for UpdateBusyGuard {
     }
 }
 
-async fn show_update_dialog(
-    app: &AppHandle,
-    title: &str,
-    message: String,
-    kind: MessageDialogKind,
-    buttons: MessageDialogButtons,
-) -> MessageDialogResult {
-    let (tx, rx) = oneshot::channel();
-    app.dialog()
-        .message(message)
-        .title(title)
-        .kind(kind)
-        .buttons(buttons)
-        .show_with_result(move |result| {
-            let _ = tx.send(result);
-        });
-    rx.await.unwrap_or_default()
-}
-
-async fn show_update_message(
-    app: &AppHandle,
-    title: &str,
-    message: impl Into<String>,
-    kind: MessageDialogKind,
-) {
-    let _ = show_update_dialog(app, title, message.into(), kind, MessageDialogButtons::Ok).await;
-}
-
-async fn run_update_check(app: &AppHandle, user_initiated: bool) -> Result<()> {
+async fn check_for_app_update(app: &AppHandle) -> AppUpdateCheckResult {
     if !updater_is_configured() {
-        if user_initiated {
-            let message = if cfg!(debug_assertions) {
-                "Update checks are disabled in development builds. Install a packaged release to test the production updater."
-            } else {
-                "This build was not configured with an updater signing key. Install an official EvoFlux release to receive signed updates."
-            };
-            show_update_message(app, "Updates unavailable", message, MessageDialogKind::Info).await;
-        }
-        return Ok(());
+        let message = if cfg!(debug_assertions) {
+            "Update checks are disabled in development builds. Install a packaged release to test the production updater."
+        } else {
+            "This build was not configured with an updater signing key. Install an official EvoFlux release to receive signed updates."
+        };
+        return AppUpdateCheckResult::Unavailable {
+            title: "Updates unavailable".into(),
+            message: message.into(),
+        };
     }
 
     let busy = {
@@ -4172,16 +4146,10 @@ async fn run_update_check(app: &AppHandle, user_initiated: bool) -> Result<()> {
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
-        if user_initiated {
-            show_update_message(
-                app,
-                "Checking for updates",
-                "An update check or download is already in progress.",
-                MessageDialogKind::Info,
-            )
-            .await;
-        }
-        return Ok(());
+        return AppUpdateCheckResult::Busy {
+            title: "Checking for updates".into(),
+            message: "An update check or download is already in progress.".into(),
+        };
     }
     let _busy_guard = UpdateBusyGuard(busy);
 
@@ -4190,70 +4158,84 @@ async fn run_update_check(app: &AppHandle, user_initiated: bool) -> Result<()> {
         Ok(updater) => updater,
         Err(error) => {
             update_tray_status(app, "Status: Running");
-            if user_initiated {
-                show_update_message(
-                    app,
-                    "Updates unavailable",
-                    format!("This build has an invalid updater configuration.\n\n{error}"),
-                    MessageDialogKind::Error,
-                )
-                .await;
-            }
-            return Err(error).context("initialize desktop updater");
+            log::warn!("desktop: initialize updater failed: {error:#}");
+            return AppUpdateCheckResult::Error {
+                title: "Updates unavailable".into(),
+                message: format!("This build has an invalid updater configuration.\n\n{error}"),
+            };
         }
     };
     let update = match updater.check().await {
         Ok(update) => update,
         Err(error) => {
             update_tray_status(app, "Status: Running");
-            if user_initiated {
-                show_update_message(
-                    app,
-                    "Update check failed",
-                    format!("EvoFlux could not check GitHub Releases.\n\n{error}"),
-                    MessageDialogKind::Error,
-                )
-                .await;
-            }
-            return Err(error).context("check GitHub release update metadata");
+            log::warn!("desktop: check GitHub release update metadata failed: {error:#}");
+            return AppUpdateCheckResult::Error {
+                title: "Update check failed".into(),
+                message: format!("EvoFlux could not check GitHub Releases.\n\n{error}"),
+            };
         }
     };
 
     let Some(update) = update else {
         update_tray_status(app, "Status: Running");
-        if user_initiated {
-            show_update_message(
-                app,
-                "EvoFlux is up to date",
-                format!(
-                    "You already have the latest version ({}).",
-                    env!("CARGO_PKG_VERSION")
-                ),
-                MessageDialogKind::Info,
-            )
-            .await;
-        }
-        return Ok(());
+        return AppUpdateCheckResult::UpToDate {
+            version: env!("CARGO_PKG_VERSION").into(),
+        };
     };
 
-    let install_label = "Install and Restart";
-    let prompt = format_update_prompt(
-        &update.version,
-        &update.current_version,
-        update.body.as_deref(),
-    );
-    let response = show_update_dialog(
-        app,
-        "EvoFlux update available",
-        prompt,
-        MessageDialogKind::Info,
-        MessageDialogButtons::OkCancelCustom(install_label.into(), "Later".into()),
-    )
-    .await;
-    if !dialog_result_is_accept(&response, install_label) {
-        update_tray_status(app, "Status: Running");
-        return Ok(());
+    let notes = format_update_notes(update.body.as_deref());
+    let result = AppUpdateCheckResult::Available {
+        version: update.version,
+        current_version: update.current_version,
+        notes,
+    };
+    update_tray_status(app, "Status: Running");
+    result
+}
+
+async fn install_app_update(app: &AppHandle) -> Result<()> {
+    if !updater_is_configured() {
+        return Err(anyhow!(
+            "Updates are not configured for this EvoFlux build."
+        ));
     }
+
+    let busy = {
+        let state: tauri::State<'_, AppState> = app.state();
+        state.updater_busy.clone()
+    };
+    if busy
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err(anyhow!(
+            "An update check or download is already in progress."
+        ));
+    }
+    let _busy_guard = UpdateBusyGuard(busy);
+
+    update_tray_status(app, "Status: Preparing update…");
+    let updater = match app.updater() {
+        Ok(updater) => updater,
+        Err(error) => {
+            update_tray_status(app, "Status: Running");
+            return Err(error).context("initialize desktop updater");
+        }
+    };
+    let update = match updater.check().await {
+        Ok(Some(update)) => update,
+        Ok(None) => {
+            update_tray_status(app, "Status: Running");
+            return Err(anyhow!(
+                "The update is no longer available. Check again for the latest version."
+            ));
+        }
+        Err(error) => {
+            update_tray_status(app, "Status: Running");
+            return Err(error).context("check GitHub release update metadata");
+        }
+    };
 
     let progress_app = app.clone();
     let finish_app = app.clone();
@@ -4281,15 +4263,6 @@ async fn run_update_check(app: &AppHandle, user_initiated: bool) -> Result<()> {
         Ok(bytes) => bytes,
         Err(error) => {
             update_tray_status(app, "Status: Update failed");
-            show_update_message(
-                app,
-                "Update download failed",
-                format!(
-                    "The update was not installed. EvoFlux verified no changes to the current app.\n\n{error}"
-                ),
-                MessageDialogKind::Error,
-            )
-            .await;
             update_tray_status(app, "Status: Running");
             return Err(error).context("download or verify desktop update");
         }
@@ -4304,13 +4277,7 @@ async fn run_update_check(app: &AppHandle, user_initiated: bool) -> Result<()> {
     shutdown_sidecar_now(app).await;
 
     if let Err(error) = update.install(bytes) {
-        show_update_message(
-            app,
-            "Update installation failed",
-            format!("EvoFlux will restart the current version.\n\n{error}"),
-            MessageDialogKind::Error,
-        )
-        .await;
+        log::error!("desktop: update installation failed, restarting current version: {error:#}");
         app.restart();
     }
 
@@ -4319,9 +4286,23 @@ async fn run_update_check(app: &AppHandle, user_initiated: bool) -> Result<()> {
     app.restart();
 }
 
+async fn run_update_check(app: &AppHandle, user_initiated: bool) {
+    let result = check_for_app_update(app).await;
+    if user_initiated || matches!(&result, AppUpdateCheckResult::Available { .. }) {
+        if let Err(error) = app.emit("app-update-result", result) {
+            log::warn!("desktop: could not deliver update result to the app UI: {error}");
+        }
+    }
+}
+
 #[tauri::command]
-async fn app_check_for_updates(app: AppHandle) -> Result<(), String> {
-    run_update_check(&app, true)
+async fn app_check_for_updates(app: AppHandle) -> AppUpdateCheckResult {
+    check_for_app_update(&app).await
+}
+
+#[tauri::command]
+async fn app_install_update(app: AppHandle) -> Result<(), String> {
+    install_app_update(&app)
         .await
         .map_err(|error| format!("{error:#}"))
 }
@@ -5527,6 +5508,7 @@ fn main() {
             app_retry_backend,
             app_reveal_backend_log,
             app_check_for_updates,
+            app_install_update,
             app_remove_backend_server,
             app_save_backend_server,
             app_use_external_backend,
@@ -5570,9 +5552,7 @@ fn main() {
                 }
                 if updater_is_configured() {
                     tokio::time::sleep(AUTOMATIC_UPDATE_CHECK_DELAY).await;
-                    if let Err(error) = run_update_check(&handle, false).await {
-                        log::warn!("desktop: automatic update check failed: {error:#}");
-                    }
+                    run_update_check(&handle, false).await;
                 }
             });
             Ok(())
@@ -5863,51 +5843,6 @@ mod tests {
         assert!(click_at.contains("move(x, y, 'release')"));
     }
 
-    // ── dialog_result_is_accept ──────────────────────────────────────────────
-    //
-    // Guards the OkCancelCustom mapping. rfd surfaces the user's choice as
-    // ``Custom("Install")`` on macOS/Linux but the underlying system dialog
-    // may report ``Ok``/``Yes`` instead — both must count as accept, and
-    // every other variant (including a ``Custom`` with a different label)
-    // must count as cancel.
-
-    #[test]
-    fn dialog_result_custom_with_matching_label_accepts() {
-        assert!(dialog_result_is_accept(
-            &MessageDialogResult::Custom("Install".into()),
-            "Install"
-        ));
-    }
-
-    #[test]
-    fn dialog_result_custom_with_other_label_rejects() {
-        assert!(!dialog_result_is_accept(
-            &MessageDialogResult::Custom("Later".into()),
-            "Install"
-        ));
-    }
-
-    #[test]
-    fn dialog_result_ok_and_yes_accept() {
-        assert!(dialog_result_is_accept(&MessageDialogResult::Ok, "Install"));
-        assert!(dialog_result_is_accept(
-            &MessageDialogResult::Yes,
-            "Install"
-        ));
-    }
-
-    #[test]
-    fn dialog_result_cancel_and_no_reject() {
-        assert!(!dialog_result_is_accept(
-            &MessageDialogResult::Cancel,
-            "Install"
-        ));
-        assert!(!dialog_result_is_accept(
-            &MessageDialogResult::No,
-            "Install"
-        ));
-    }
-
     #[test]
     fn frontend_init_script_allows_runtime_backend_switches() {
         let script = frontend_init_script(Some("secret"), "http://127.0.0.1:4082");
@@ -5964,66 +5899,51 @@ mod tests {
         );
     }
 
-    // ── format_update_prompt ────────────────────────────────────────────────
+    // ── format_update_notes ─────────────────────────────────────────────────
     //
-    // The prompt is the only thing the user reads before deciding to install,
-    // so it must (a) always show both version numbers, (b) handle a missing
-    // body without printing literal "None" or doubled blank lines, and
-    // (c) bound the length so a runaway changelog doesn't blow out the modal.
+    // Notes are displayed in the React-owned update dialog, so native code
+    // only normalizes and bounds the release body before serializing it.
 
     #[test]
-    fn update_prompt_without_notes_omits_notes_paragraph() {
-        let prompt = format_update_prompt("1.2.0", "1.1.0", None);
-        assert!(prompt.contains("1.2.0"));
-        assert!(prompt.contains("1.1.0"));
-        assert!(prompt.contains("install, and restart now?"));
-        // Exactly one blank line between the version line and the call to
-        // action — i.e. no orphan ``\n\n\n`` from an empty body.
-        assert!(!prompt.contains("\n\n\n"));
+    fn update_notes_without_body_are_omitted() {
+        assert_eq!(format_update_notes(None), None);
     }
 
     #[test]
-    fn update_prompt_with_empty_string_body_treated_as_no_notes() {
-        let with_empty = format_update_prompt("1.2.0", "1.1.0", Some(""));
-        let with_none = format_update_prompt("1.2.0", "1.1.0", None);
-        assert_eq!(with_empty, with_none);
+    fn update_notes_with_empty_string_are_omitted() {
+        assert_eq!(format_update_notes(Some("")), None);
     }
 
     #[test]
-    fn update_prompt_with_whitespace_only_body_treated_as_no_notes() {
-        let prompt = format_update_prompt("1.2.0", "1.1.0", Some("   \n\t  "));
-        let baseline = format_update_prompt("1.2.0", "1.1.0", None);
-        assert_eq!(prompt, baseline);
+    fn update_notes_with_whitespace_only_are_omitted() {
+        assert_eq!(format_update_notes(Some("   \n\t  ")), None);
     }
 
     #[test]
-    fn update_prompt_includes_short_notes_verbatim() {
-        let prompt = format_update_prompt("1.2.0", "1.1.0", Some("Fixed crash on launch"));
-        assert!(prompt.contains("Fixed crash on launch"));
+    fn update_notes_include_short_body_verbatim() {
+        assert_eq!(
+            format_update_notes(Some("Fixed crash on launch")),
+            Some("Fixed crash on launch".into())
+        );
     }
 
     #[test]
-    fn update_prompt_truncates_long_notes_with_ellipsis() {
+    fn update_notes_truncate_long_body_with_ellipsis() {
         let long = "x".repeat(2000);
-        let prompt = format_update_prompt("1.2.0", "1.1.0", Some(&long));
-        // The xxxxx body itself must be capped well below the original
-        // length and end with an ellipsis. Total prompt length is body +
-        // surrounding template, so it stays under ~1000 chars.
-        assert!(prompt.contains('…'));
-        assert!(prompt.len() < 1000);
-        assert!(prompt.contains("1.2.0"));
-        assert!(prompt.contains("install, and restart now?"));
+        let notes = format_update_notes(Some(&long)).expect("notes");
+        assert!(notes.ends_with('…'));
+        assert_eq!(notes.chars().count(), 600);
     }
 
     #[test]
-    fn update_prompt_truncation_respects_char_boundaries() {
+    fn update_notes_truncation_respects_char_boundaries() {
         // A body of 700 multi-byte chars (3 bytes each in UTF-8) would
         // panic on a naive ``&body[..N]`` slice. ``chars().take`` keeps
         // us safe — assert we don't panic and produce a valid String.
         let multibyte_body: String = "✦".repeat(700);
-        let prompt = format_update_prompt("1.2.0", "1.1.0", Some(&multibyte_body));
-        assert!(prompt.contains('…'));
-        assert!(prompt.is_char_boundary(prompt.len()));
+        let notes = format_update_notes(Some(&multibyte_body)).expect("notes");
+        assert!(notes.ends_with('…'));
+        assert!(notes.is_char_boundary(notes.len()));
     }
 
     // ── format_download_progress ────────────────────────────────────────────

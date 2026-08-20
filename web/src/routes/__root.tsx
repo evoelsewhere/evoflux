@@ -6,6 +6,7 @@ import { Link, Outlet, useLocation } from '@tanstack/react-router'
 import { queryClient } from '@/lib/query-client'
 import { Home } from 'lucide-react'
 import { ToastStack } from '@/components/ToastStack'
+import { AppUpdateDialog } from '@/components/AppUpdateDialog'
 import { MacTitleBar } from '@/components/MacTitleBar'
 import { SettingsScreen } from '@/components/SettingsScreen'
 import { GuidelinesModal } from '@/components/help/GuidelinesModal'
@@ -51,6 +52,7 @@ export function Root() {
         </>
       )}
       <ToastStack />
+      <AppUpdateDialog />
       {/* Remount on each open so local search/selection state resets cleanly. */}
       {guidelinesOpen ? <GuidelinesModal /> : null}
       {/* <ReactQueryDevtools initialIsOpen={false} /> */}
