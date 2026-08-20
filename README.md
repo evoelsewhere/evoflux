@@ -3,41 +3,54 @@
 
   # EvoFlux
 
-  ### A harness-first desktop workspace for agents that do real work.
+  ### The local-first desktop workspace for AI agent teams.
 
-  **Lead-and-specialists. Orchestrated. Parallel. Verified.**
+  Give EvoFlux an outcome. A lead agent plans the work, brings in specialists,
+  uses the right tools, and verifies the result — while you stay in control.
 
-  Work for cowork and Coding for software engineering —
-  powered by one local-first agent harness and any model you choose.
+  **Cowork and software engineering. Any model. Your machine.**
 
   [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-2563EB.svg)](LICENSE)
   [![Desktop only](https://img.shields.io/badge/Product-Desktop%20only-1764FF)](desktop/)
   [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)](pyproject.toml)
   [![React 19](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)](web/package.json)
   [![Tauri v2](https://img.shields.io/badge/Tauri-v2-FFC131?logo=tauri&logoColor=white)](desktop/)
-  [![BYOM](https://img.shields.io/badge/Models-12%20providers-7C3AED)](#bring-your-own-model)
+  [![BYOM](https://img.shields.io/badge/Models-19%20providers-7C3AED)](#bring-your-own-model)
 
-  [Two modes](#two-specialized-modes) ·
-  [Download](#download) ·
+  **[Download EvoFlux](#download)** ·
+  [Product tour](#product-tour) ·
   [Quick start](#quick-start) ·
-  [Working model](#agent-working-model) ·
+  [How it works](#agent-working-model) ·
   [Architecture](#architecture) ·
-  [Capabilities](#core-capabilities) ·
-  [WebBridge](#webbridge)
+  [Capabilities](#core-capabilities)
 </div>
 
 <br />
 
 <p align="center">
-  <img src="documents/images/generated/harness-and-modes.png" width="820" alt="EvoFlux harness modules connect model providers to detailed Work and Coding capabilities" />
+  <a href="documents/images/showcase/coding-workspace.png">
+    <img src="documents/images/showcase/coding-workspace.png" width="1100" alt="EvoFlux Coding workspace with an agent conversation, source editor, and repository file tree" />
+  </a>
 </p>
+
+<p align="center"><sub>Plan with the team, inspect the implementation, and navigate the repository without leaving the workspace.</sub></p>
 
 > [!NOTE]
 > Since **30 June 2026**, fixes, optimizations, and new EvoFlux features have been developed and delivered using **EvoFlux Coding mode**. The agents build, review, and ship themselves.
 
 ---
 
-## Two specialized modes
+## Why EvoFlux
+
+| **Delegate outcomes** | **Keep the whole job together** | **Choose every model** | **Own the execution** |
+|---|---|---|---|
+| A lead coordinates focused specialists and verifies their handoffs. | Chat, files, terminal, browser, memory, git, and previews live in one workspace. | Mix providers, models, reasoning levels, skills, and tools per agent. | Local runtime, scoped access, outbound redaction, and inspectable history. |
+
+---
+
+## Product tour
+
+### One app, two specialized modes
 
 One desktop app. One harness. Two different kinds of work.
 
@@ -49,26 +62,58 @@ One desktop app. One harness. Two different kinds of work.
 | Default specialists | Executor, Explorer, Consultant, Debate | Coder, Explorer, Architect, Debate |
 | Verification | Artifact and tool-result review | Tests, diffs, code context, git |
 
-### Work · cowork without a repository
+**Work** is a fast execution sandbox for research, documents, data, browser tasks, files, and quick scripts. Start with a request instead of a repository.
 
-Work is the fast execution sandbox. Start with a request instead of a project: research a topic, draft a document, build a slide deck, analyze data, work with files, automate a browser task, or prototype a script.
-
-### Coding · persistent engineering
-
-Coding opens your real repository — or several repositories as one project — and keeps that workspace available across sessions. Agents can search indexed source, navigate structural relationships, inspect the file tree, edit and test code, review diffs, and use the complete git surface.
+**Coding** opens one or more real repositories and keeps them available across sessions. Agents can understand the codebase, edit and test code, review diffs, and use the complete git surface.
 
 <table>
   <tr>
-    <td width="50%" align="center"><strong>Work</strong></td>
-    <td width="50%" align="center"><strong>Coding</strong></td>
+    <td width="50%"><a href="documents/images/showcase/work-mode.png"><img src="documents/images/showcase/work-mode.png" alt="EvoFlux Work mode ready for a new outcome" /></a></td>
+    <td width="50%"><a href="documents/images/showcase/workspace-tools.png"><img src="documents/images/showcase/workspace-tools.png" alt="EvoFlux workspace with its tool dock open" /></a></td>
   </tr>
   <tr>
-    <td><a href="documents/images/showcase/work-mode.jpg"><img src="documents/images/showcase/work-mode.jpg" width="360" alt="Work coordinating an artifact task" /></a></td>
-    <td><a href="documents/images/showcase/coding-mode.jpg"><img src="documents/images/showcase/coding-mode.jpg" width="360" alt="Coding working across a multi-repository project" /></a></td>
+    <td><strong>Start with the outcome</strong><br /><sub>Drop into Work and describe what you want accomplished.</sub></td>
+    <td><strong>Bring every tool into view</strong><br /><sub>Open terminal, processes, browser, files, side chat, memory, and scheduler beside the conversation.</sub></td>
+  </tr>
+</table>
+
+### Assemble the right team and models
+
+Create role-focused agent teams, then tune the model and capabilities of every member independently. EvoFlux ships with 19 provider integrations, including direct APIs, subscription OAuth, cloud platforms, local runtimes, and model routers.
+
+<table>
+  <tr>
+    <td width="50%"><a href="documents/images/showcase/agent-teams.png"><img src="documents/images/showcase/agent-teams.png" alt="EvoFlux agent team settings with Work and Coding specialists" /></a></td>
+    <td width="50%"><a href="documents/images/showcase/model-providers.png"><img src="documents/images/showcase/model-providers.png" alt="EvoFlux model provider catalog" /></a></td>
   </tr>
   <tr>
-    <td><sub>Agent collaboration, files, previews, and verification</sub></td>
-    <td><sub>Repository context, tool history, implementation, verification</sub></td>
+    <td><strong>Lead-and-specialists</strong><br /><sub>Give each agent one role, one model, and a focused capability set.</sub></td>
+    <td><strong>Bring your own model</strong><br /><sub>Connect hosted, subscription, routed, cloud, or local providers from one catalog.</sub></td>
+  </tr>
+</table>
+
+### Understand the codebase, not just matching text
+
+EvoFlux indexes symbols and relationships across every repository in a Coding project. Explore the graph visually, trace callers and dependencies, and pair structural context with repository-aware language servers.
+
+<p align="center">
+  <a href="documents/images/showcase/code-graph.png">
+    <img src="documents/images/showcase/code-graph.png" width="1100" alt="EvoFlux cross-repository code graph with symbols and relationships" />
+  </a>
+</p>
+
+### Local control is part of the product
+
+Language servers provide semantic feedback in the active project. Sandbox controls scope filesystem and process access, mask or block sensitive outbound data, and keep execution boundaries visible rather than hidden behind the agent.
+
+<table>
+  <tr>
+    <td width="50%"><a href="documents/images/showcase/language-servers.png"><img src="documents/images/showcase/language-servers.png" alt="EvoFlux language server management" /></a></td>
+    <td width="50%"><a href="documents/images/showcase/sandbox-controls.png"><img src="documents/images/showcase/sandbox-controls.png" alt="EvoFlux sandbox and outbound data protection controls" /></a></td>
+  </tr>
+  <tr>
+    <td><strong>Semantic feedback</strong><br /><sub>Detect project languages and reuse managed or system language servers.</sub></td>
+    <td><strong>Explicit boundaries</strong><br /><sub>Control outbound data, host environment access, shell behavior, and denied paths.</sub></td>
   </tr>
 </table>
 
@@ -187,6 +232,10 @@ The production app launches a local sidecar through an ephemeral port and token 
 
 A language model generates reasoning. The harness turns that reasoning into controlled action:
 
+<p align="center">
+  <img src="documents/images/generated/harness-and-modes.png" width="820" alt="EvoFlux harness modules connect model providers to detailed Work and Coding capabilities" />
+</p>
+
 | Layer | Responsibility |
 |---|---|
 | **1. Tool orchestration** | Shell, filesystem, git, browser automation, MCP, and agent-to-agent actions |
@@ -247,7 +296,7 @@ The scheduled or manually triggered **Dream** agent consolidates sessions and no
 
 ### Bring your own model
 
-Twelve provider integrations ship behind one streaming abstraction, including Anthropic, OpenAI, Google Gemini, AWS Bedrock, Ollama, DeepSeek, xAI, Vertex AI, and GitHub Copilot. Models can be selected independently for each agent.
+Nineteen provider integrations ship behind one streaming abstraction, including Anthropic, OpenAI, Google Gemini, AWS Bedrock, Ollama, DeepSeek, xAI, Vertex AI, and GitHub Copilot. Models can be selected independently for each agent.
 
 ### Skills and MCP
 
@@ -307,7 +356,7 @@ EvoFlux also includes direct control of its persistent in-app browser, PDF/HTML 
   | Interface | **Desktop app** | CLI, IDE, desktop, web | VS Code fork | Cloud + desktop + CLI | CLI, cloud, IDE | Web, CLI, API |
   | Deployment | **Local, self-hosted** | Local + optional cloud | Local IDE + cloud agents | Cloud/VPC + local desktop | Local + cloud sandbox | Self-hosted or cloud |
   | Open source | **Apache-2.0** | No | No | No | CLI only | MIT |
-  | Bring your own model | **12 providers** | Partial proxy setups | Partial BYOK | Provider choice | OpenAI only | Any model |
+  | Bring your own model | **19 providers** | Partial proxy setups | Partial BYOK | Provider choice | OpenAI only | Any model |
   | Non-project cowork | **Work** | Ad hoc | No | Limited | No | Yes |
   | Multi-agent | Lead + on-demand specialists + mailbox | Subagents and teams | Agent fleets + worktrees | Sub-Devins | Up to six subagents | Parallel delegation |
   | Code understanding | Structural graph, 25 parsers, cross-repo | Search + optional LSP | Embedding search | Codebase Q&A | Repo-aware loop | Agent-computer interface |
