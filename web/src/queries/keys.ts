@@ -182,5 +182,6 @@ export const queryKeys = {
       ['settings', 'language-servers', workspaces] as const,
     providerModels: (providerId: string) => ['settings', 'providers', providerId, 'models'] as const,
     providerUsage: (providerId: string) => ['settings', 'providers', providerId, 'usage'] as const,
+    conductorStatus: () => ['settings', 'conductor', 'status'] as const,
   },
 }

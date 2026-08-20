@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
@@ -14,8 +17,21 @@ from app.conductor.client import (
     CredentialStoreError,
     redact_telemetry,
 )
-from app.conductor.models import Manifest, RegistrationRequest
+from app.conductor.models import (
+    ManagedResourceRecord,
+    Manifest,
+    RegistrationRequest,
+    ResourceChangePage,
+    TelemetryBatchResponse,
+)
 from app.conductor.service import ConductorService
+from app.conductor.telemetry import TelemetryOutbox
+from app.conductor.constants.telemetry import (
+    TelemetryCollectionLevel,
+    TelemetryEventStatus,
+    TelemetryEventType,
+    TelemetryField,
+)
 from app.core.config import settings
 from app.core.runtime_settings import (
     ConductorSettings,
@@ -64,6 +80,29 @@ def registration_payload() -> dict[str, object]:
             "telemetry": {"enabled": True},
             "privacy_notice_version": "2026-08-10",
         },
+    }
+
+
+def telemetry_delivery_payload(installation_id: str) -> dict[str, object]:
+    return {
+        "installation_id": installation_id,
+        "window_days": 30,
+        "from": "2026-07-19T10:00:00Z",
+        "to": "2026-08-18T10:00:00Z",
+        "events": 201,
+        "requests": 10,
+        "model_calls": 120,
+        "tool_calls": 71,
+        "tokens_in": 90_000,
+        "tokens_out": 12_000,
+        "cache_read_tokens": 5_000,
+        "estimated_cost_usd_micros": 900_000,
+        "unpriced_model_calls": 3,
+        "attributed_events": 133,
+        "attributed_requests": 7,
+        "attributed_model_calls": 80,
+        "attributed_tool_calls": 46,
+        "attributed_estimated_cost_usd_micros": 640_000,
     }
 
 
@@ -231,6 +270,84 @@ async def test_v1_snapshot_is_adapted_to_manifest() -> None:
     assert etag == f'"v1-{manifest.revision}"'
     assert unchanged is None
     assert repeated_etag == etag
+
+
+@pytest.mark.asyncio
+async def test_governed_text_resource_verifies_canonical_payload_digest() -> None:
+    store = MemoryCredentialStore("evc_local_secret")
+    payload = {
+        "files": [
+            {
+                "path": "reviewer.md",
+                "content": "---\nname: reviewer\ndescription: Review\n---\nReview.\n",
+            }
+        ]
+    }
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/resources/resource-1/versions/version-1"
+        return httpx.Response(
+            200,
+            json={
+                "project_id": "project-1",
+                "resource_id": "resource-1",
+                "version_id": "version-1",
+                "kind": "agent",
+                "slug": "reviewer",
+                "version": "0.1.0",
+                "release_channel": "published",
+                "payload": payload,
+                "sha256": hashlib.sha256(canonical).hexdigest(),
+                "size": len(canonical),
+            },
+        )
+
+    client = ConductorClient(
+        "https://conductor.example",
+        store,
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        version = await client.fetch_resource_version("resource-1", "version-1")
+    finally:
+        await client.close()
+    assert version.slug == "reviewer"
+
+
+@pytest.mark.asyncio
+async def test_governed_text_resource_rejects_payload_digest_mismatch() -> None:
+    store = MemoryCredentialStore("evc_local_secret")
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "project_id": "project-1",
+                "resource_id": "resource-1",
+                "version_id": "version-1",
+                "kind": "skill",
+                "slug": "reviewer",
+                "version": "0.1.0",
+                "release_channel": "published",
+                "payload": {"files": []},
+                "sha256": "0" * 64,
+                "size": 12,
+            },
+        )
+
+    client = ConductorClient(
+        "https://conductor.example",
+        store,
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        with pytest.raises(ValueError, match="digest mismatch"):
+            await client.fetch_resource_version("resource-1", "version-1")
+    finally:
+        await client.close()
 
 
 @pytest.mark.asyncio
@@ -534,3 +651,459 @@ async def test_offline_sync_uses_last_known_good(
         json.loads(service._reconciler.last_good_path.read_text())["revision"]
         == "cached"
     )
+
+
+@pytest.mark.asyncio
+async def test_governed_sync_recovers_from_a_rejected_persisted_cursor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_dir = tmp_path / "config"
+    state_dir = tmp_path / "state"
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(config_dir))
+    monkeypatch.setattr(settings, "EVOFLUX_STATE_DIR", str(state_dir))
+    monkeypatch.setattr(settings, "AGENTS_DIR", str(config_dir / "agents"))
+    monkeypatch.setattr(settings, "SKILLS_DIR", str(config_dir / "skills"))
+    (config_dir / "agents").mkdir(parents=True)
+    (config_dir / "skills").mkdir(parents=True)
+
+    config = ConductorSettings(
+        enabled=True,
+        url="https://conductor.example",
+        installation_id="installation-1",
+        project_id="project-1",
+        enforcement_mode="enforce",
+    )
+    store = MemoryCredentialStore("evc_active")
+    service = ConductorService(store)
+    managed_store = service._governed_reconciler.store
+    managed_store.replace_project("project-1")
+    managed_store.commit_cursor("project-1", "stale-signed-cursor")
+    seen_cursors: list[str | None] = []
+
+    class RecoveringClient:
+        base_url = config.url
+        credentials = store
+
+        async def fetch_changes(self, cursor: str | None) -> ResourceChangePage:
+            seen_cursors.append(cursor)
+            if cursor is not None:
+                raise ConductorRequestError(
+                    httpx.codes.BAD_REQUEST, "invalid cursor signature"
+                )
+            return ResourceChangePage(
+                schema_version=2,
+                project_id="project-1",
+                next_cursor="fresh-signed-cursor",
+                has_more=False,
+                changes=[],
+            )
+
+        async def report_inventory(self, _payload: dict[str, object]) -> None:
+            return None
+
+    monkeypatch.setattr(service, "_config", lambda: config)
+    service._client = cast(ConductorClient, RecoveringClient())
+
+    status = await service.sync_now()
+
+    assert seen_cursors == ["stale-signed-cursor", None]
+    assert managed_store.load().committed_cursor == "fresh-signed-cursor"
+    assert status.state == "in_sync"
+    assert status.error is None
+    assert status.last_success_at is not None
+
+
+@pytest.mark.asyncio
+async def test_governed_sync_replays_feed_to_backfill_missing_mode_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_dir = tmp_path / "config"
+    state_dir = tmp_path / "state"
+    agents_dir = config_dir / "agents"
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(config_dir))
+    monkeypatch.setattr(settings, "EVOFLUX_STATE_DIR", str(state_dir))
+    monkeypatch.setattr(settings, "AGENTS_DIR", str(agents_dir))
+    monkeypatch.setattr(settings, "SKILLS_DIR", str(config_dir / "skills"))
+    agents_dir.mkdir(parents=True)
+    (config_dir / "skills").mkdir(parents=True)
+
+    content = "---\nname: managed-agent\ndescription: Test\n---\nPrompt\n"
+    (agents_dir / "managed-agent.md").write_text(content, encoding="utf-8")
+    config = ConductorSettings(
+        enabled=True,
+        url="https://conductor.example",
+        installation_id="installation-1",
+        project_id="project-1",
+        enforcement_mode="enforce",
+    )
+    credential_store = MemoryCredentialStore("evc_active")
+    service = ConductorService(credential_store)
+    managed_store = service._governed_reconciler.store
+    managed_store.upsert(
+        ManagedResourceRecord(
+            project_id="project-1",
+            resource_id="agent-1",
+            version_id="agent-version-1",
+            version="0.1.0",
+            applied_version_id="agent-version-1",
+            applied_version="0.1.0",
+            release_channel="published",
+            kind="agent",
+            slug="managed-agent",
+            modes=["work", "coding"],
+            local_content_sha256=hashlib.sha256(content.encode()).hexdigest(),
+            observed_state="in_sync",
+            observed_at=datetime.now(UTC),
+        )
+    )
+    managed_store.commit_cursor("project-1", "already-committed")
+    seen_cursors: list[str | None] = []
+
+    class ReplayClient:
+        base_url = config.url
+        credentials = credential_store
+
+        async def fetch_changes(self, cursor: str | None) -> ResourceChangePage:
+            seen_cursors.append(cursor)
+            return ResourceChangePage(
+                schema_version=2,
+                project_id="project-1",
+                next_cursor="fresh-cursor",
+                has_more=False,
+                changes=[],
+            )
+
+        async def report_inventory(self, _payload: dict[str, object]) -> None:
+            return None
+
+    monkeypatch.setattr(service, "_config", lambda: config)
+    service._client = cast(ConductorClient, ReplayClient())
+
+    await service.sync_now()
+
+    assert seen_cursors == [None]
+    assert managed_store.load().committed_cursor == "fresh-cursor"
+
+
+def test_status_payload_preserves_v1_resource_results(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "EVOFLUX_STATE_DIR", str(tmp_path / "state"))
+    service = ConductorService(MemoryCredentialStore("evc_active"))
+    service.status.project_id = "project-1"
+    service.status.resources = [
+        {
+            "kind": "mcp",
+            "slug": "browser-tools",
+            "state": "in_sync",
+            "message": "Legacy V1 manifest resource",
+        }
+    ]
+    service._governed_reconciler.store.replace_project("project-1")
+
+    payload = service.status_payload()
+
+    assert payload["resources"] == service.status.resources
+
+
+@pytest.mark.asyncio
+async def test_inventory_failure_does_not_block_telemetry_drain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state_dir = tmp_path / "state"
+    config_dir = tmp_path / "config"
+    monkeypatch.setattr(settings, "EVOFLUX_STATE_DIR", str(state_dir))
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(config_dir))
+    monkeypatch.setattr(settings, "AGENTS_DIR", str(config_dir / "agents"))
+    monkeypatch.setattr(settings, "SKILLS_DIR", str(config_dir / "skills"))
+    (config_dir / "agents").mkdir(parents=True)
+    (config_dir / "skills").mkdir(parents=True)
+    installation_id = str(uuid.uuid4())
+    config = ConductorSettings(
+        enabled=True,
+        url="https://conductor.example",
+        installation_id=installation_id,
+        project_id="project-1",
+        collection_level=TelemetryCollectionLevel.COUNTERS,
+        enforcement_mode="enforce",
+    )
+    outbox = TelemetryOutbox(tmp_path / "telemetry.json")
+    assert outbox.enqueue(_telemetry_event(installation_id, "event-1"))
+    credential_store = MemoryCredentialStore("evc_active")
+    service = ConductorService(credential_store, telemetry_store=outbox)
+    service._governed_reconciler.store.replace_project("project-1")
+    telemetry_batches: list[list[dict[str, object]]] = []
+
+    class InventoryFailureClient:
+        base_url = config.url
+        credentials = credential_store
+
+        async def report_telemetry(
+            self, _installation_id: str, events: list[dict[str, object]]
+        ) -> TelemetryBatchResponse:
+            telemetry_batches.append(events)
+            return TelemetryBatchResponse(accepted=len(events), duplicates=0)
+
+        async def fetch_changes(self, _cursor: str | None) -> ResourceChangePage:
+            return ResourceChangePage(
+                schema_version=2,
+                project_id="project-1",
+                next_cursor="cursor-1",
+                has_more=False,
+                changes=[],
+            )
+
+        async def report_inventory(self, _payload: dict[str, object]) -> None:
+            raise ConductorRequestError(
+                400, "content digest does not match applied version"
+            )
+
+        async def report_resource_usage(self, _events: list[dict[str, object]]) -> None:
+            return None
+
+    monkeypatch.setattr(service, "_config", lambda: config)
+    service._client = cast(ConductorClient, InventoryFailureClient())
+
+    status = await service.sync_now()
+
+    assert [len(batch) for batch in telemetry_batches] == [1, 0]
+    assert outbox.count() == 0
+    assert status.sync.telemetry.state == "healthy"
+    assert status.sync.telemetry.last_success_at is not None
+    assert status.sync.inventory.state == "error"
+    assert status.state == "error"
+
+
+@pytest.mark.asyncio
+async def test_one_flush_wake_drains_multiple_telemetry_batches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "EVOFLUX_STATE_DIR", str(tmp_path / "state"))
+    installation_id = str(uuid.uuid4())
+    config = ConductorSettings(
+        enabled=True,
+        url="https://conductor.example",
+        installation_id=installation_id,
+        project_id="project-1",
+        collection_level=TelemetryCollectionLevel.COUNTERS,
+    )
+    events = [
+        _telemetry_event(installation_id, f"event-{index}") for index in range(205)
+    ]
+    outbox_path = tmp_path / "outbox.json"
+    outbox_path.write_text(json.dumps(events), encoding="utf-8")
+    outbox = TelemetryOutbox(outbox_path)
+    store = MemoryCredentialStore("evc_active")
+    service = ConductorService(store, telemetry_store=outbox)
+    batch_sizes: list[int] = []
+
+    class DrainClient:
+        base_url = config.url
+        credentials = store
+
+        async def report_telemetry(
+            self, _installation_id: str, batch: list[dict[str, object]]
+        ) -> TelemetryBatchResponse:
+            batch_sizes.append(len(batch))
+            return TelemetryBatchResponse(accepted=len(batch), duplicates=0)
+
+    monkeypatch.setattr(service, "_config", lambda: config)
+    service._client = cast(ConductorClient, DrainClient())
+
+    await service._flush_telemetry()
+
+    assert batch_sizes == [100, 100, 5, 0]
+    assert outbox.count() == 0
+    assert service.status.telemetry.last_flush_accepted == 205
+
+    await service._flush_telemetry()
+
+    assert service.status.telemetry.last_flush_accepted == 205
+
+
+@pytest.mark.asyncio
+async def test_empty_telemetry_queue_is_a_healthy_completed_lane(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "EVOFLUX_STATE_DIR", str(tmp_path / "state"))
+    installation_id = str(uuid.uuid4())
+    config = ConductorSettings(
+        enabled=True,
+        url="https://conductor.example",
+        installation_id=installation_id,
+        project_id="project-1",
+        collection_level=TelemetryCollectionLevel.COUNTERS,
+    )
+    store = MemoryCredentialStore("evc_active")
+    service = ConductorService(
+        store,
+        telemetry_store=TelemetryOutbox(tmp_path / "empty-outbox.json"),
+    )
+
+    calls: list[list[dict[str, object]]] = []
+
+    class SummaryClient:
+        async def report_telemetry(
+            self, _installation_id: str, events: list[dict[str, object]]
+        ) -> TelemetryBatchResponse:
+            calls.append(events)
+            return TelemetryBatchResponse.model_validate(
+                {
+                    "accepted": 0,
+                    "duplicates": 0,
+                    "summary": telemetry_delivery_payload(installation_id),
+                }
+            )
+
+    monkeypatch.setattr(service, "_config", lambda: config)
+    service._client = cast(ConductorClient, SummaryClient())
+
+    await service._flush_telemetry()
+
+    assert service.status.sync.telemetry.state == "healthy"
+    assert service.status.sync.telemetry.last_success_at is not None
+    assert service.status.sync.telemetry.error is None
+    assert calls == [[]]
+    assert service.status.telemetry.delivery is not None
+    assert service.status.telemetry.delivery.events == 201
+    assert service.status_payload()["telemetry"]["delivery"]["window_start"] == (
+        "2026-07-19T10:00:00Z"
+    )
+
+
+@pytest.mark.asyncio
+async def test_empty_summary_refresh_tolerates_an_older_conductor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "EVOFLUX_STATE_DIR", str(tmp_path / "state"))
+    installation_id = str(uuid.uuid4())
+    config = ConductorSettings(
+        enabled=True,
+        url="https://conductor.example",
+        installation_id=installation_id,
+        project_id="project-1",
+        collection_level=TelemetryCollectionLevel.COUNTERS,
+    )
+    store = MemoryCredentialStore("evc_active")
+    service = ConductorService(
+        store,
+        telemetry_store=TelemetryOutbox(tmp_path / "empty-old-server.json"),
+    )
+
+    class OlderClient:
+        async def report_telemetry(
+            self, _installation_id: str, _events: list[dict[str, object]]
+        ) -> TelemetryBatchResponse:
+            raise ConductorRequestError(400, "events must contain 1–100 items")
+
+    monkeypatch.setattr(service, "_config", lambda: config)
+    service._client = cast(ConductorClient, OlderClient())
+
+    await service._flush_telemetry()
+
+    assert service.status.sync.telemetry.state == "healthy"
+    assert service.status.sync.telemetry.error is None
+    assert service.status.telemetry.delivery is None
+
+
+@pytest.mark.asyncio
+async def test_incomplete_telemetry_ack_keeps_the_durable_batch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "EVOFLUX_STATE_DIR", str(tmp_path / "state"))
+    installation_id = str(uuid.uuid4())
+    config = ConductorSettings(
+        enabled=True,
+        url="https://conductor.example",
+        installation_id=installation_id,
+        project_id="project-1",
+        collection_level=TelemetryCollectionLevel.COUNTERS,
+    )
+    outbox = TelemetryOutbox(tmp_path / "incomplete-ack.json")
+    assert outbox.enqueue(_telemetry_event(installation_id, "event-1"))
+    store = MemoryCredentialStore("evc_active")
+    service = ConductorService(store, telemetry_store=outbox)
+
+    class IncompleteAckClient:
+        base_url = config.url
+        credentials = store
+
+        async def report_telemetry(
+            self, _installation_id: str, _events: list[dict[str, object]]
+        ) -> TelemetryBatchResponse:
+            return TelemetryBatchResponse(accepted=0, duplicates=0)
+
+    monkeypatch.setattr(service, "_config", lambda: config)
+    service._client = cast(ConductorClient, IncompleteAckClient())
+
+    await service._flush_telemetry()
+
+    assert outbox.count() == 1
+    assert service.status.sync.telemetry.state == "error"
+    assert service.status.sync.telemetry.error == (
+        "Conductor acknowledged an incomplete telemetry batch."
+    )
+
+
+@pytest.mark.asyncio
+async def test_many_installations_flush_concurrently_without_cross_ack(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "EVOFLUX_STATE_DIR", str(tmp_path / "state"))
+    active = 0
+    peak = 0
+    active_lock = asyncio.Lock()
+    services: list[ConductorService] = []
+    outboxes: list[TelemetryOutbox] = []
+
+    class ConcurrentClient:
+        def __init__(self, config: ConductorSettings, store: MemoryCredentialStore):
+            self.base_url = config.url
+            self.credentials = store
+
+        async def report_telemetry(
+            self, _installation_id: str, events: list[dict[str, object]]
+        ) -> TelemetryBatchResponse:
+            nonlocal active, peak
+            async with active_lock:
+                active += 1
+                peak = max(peak, active)
+            await asyncio.sleep(0)
+            async with active_lock:
+                active -= 1
+            return TelemetryBatchResponse(accepted=len(events), duplicates=0)
+
+    for index in range(200):
+        installation_id = str(uuid.uuid4())
+        config = ConductorSettings(
+            enabled=True,
+            url="https://conductor.example",
+            installation_id=installation_id,
+            project_id="project-1",
+            collection_level=TelemetryCollectionLevel.COUNTERS,
+        )
+        store = MemoryCredentialStore(f"evc_user_{index}")
+        outbox = TelemetryOutbox(tmp_path / f"outbox-{index}.json")
+        assert outbox.enqueue(_telemetry_event(installation_id, f"event-{index}"))
+        service = ConductorService(store, telemetry_store=outbox)
+        monkeypatch.setattr(service, "_config", lambda config=config: config)
+        service._client = cast(ConductorClient, ConcurrentClient(config, store))
+        services.append(service)
+        outboxes.append(outbox)
+
+    await asyncio.gather(*(service._flush_telemetry() for service in services))
+
+    assert peak > 1
+    assert sum(outbox.count() for outbox in outboxes) == 0
+
+
+def _telemetry_event(installation_id: str, event_id: str) -> dict[str, object]:
+    return {
+        TelemetryField.EVENT_ID: event_id,
+        TelemetryField.INSTALLATION_ID: installation_id,
+        TelemetryField.REQUEST_ID: f"request-{event_id}",
+        TelemetryField.EVENT_TYPE: TelemetryEventType.MODEL_CALL,
+        TelemetryField.STATUS: TelemetryEventStatus.SUCCESS,
+        TelemetryField.REPORTED_AT: "2026-08-18T00:00:00+00:00",
+        TelemetryField.TOKENS_IN: 10,
+    }

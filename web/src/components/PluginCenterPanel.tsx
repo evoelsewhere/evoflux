@@ -19,6 +19,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import {
+  approveConductorResource,
   createPlugin,
   importPlugin,
   inspectPlugin,
@@ -55,6 +56,9 @@ import { cn } from '@/lib/utils'
 import { PluginWorkspaceEditor } from '@/components/PluginWorkspaceEditor'
 import { PluginCredentialsPanel } from '@/components/PluginCredentialsPanel'
 import { PluginTrustReviewDialog } from '@/components/PluginTrustReviewDialog'
+import { ManagedResourceProviderBadge } from '@/components/settings/ManagedResourceProviderBadge'
+import { ManagedResourceUpdateBanner } from '@/components/settings/ManagedResourceUpdateBanner'
+import { CONDUCTOR_RESOURCE_STATE } from '@/lib/conductor-constants'
 
 async function choosePath(options: {
   directory?: boolean
@@ -105,7 +109,7 @@ function PluginCard({
   onDelete: () => void
   onOpen: () => void
   onCredentials: () => void
-  onUpdate: () => void
+  onUpdate: () => void | Promise<void>
 }) {
   const { installation, inspection } = item
   const displayName = installation.name
@@ -124,16 +128,19 @@ function PluginCard({
       ? 'credentials incomplete'
       : 'credentials missing'
   const detailsId = `plugin-details-${installation.id}`
+  const managed = installation.managed_by === 'conductor'
   const sourceLabel = installation.source_type === 'builtin'
     ? 'bundled'
     : installation.source_type === 'linked'
       ? 'dev link'
       : 'installed'
   const hasActions = item.credentials.supported
-    || item.capabilities.can_edit
-    || item.capabilities.can_pack
-    || item.capabilities.can_update
-    || item.capabilities.can_uninstall
+    || (!managed && (
+      item.capabilities.can_edit
+      || item.capabilities.can_pack
+      || item.capabilities.can_update
+      || item.capabilities.can_uninstall
+    ))
   return (
     <article
       className={cn(
@@ -169,6 +176,9 @@ function PluginCard({
               <span className="rounded-full bg-(--bg-key) px-2 py-0.5 text-[11px] font-medium text-(--color-text-muted)">
                 v{installation.version}
               </span>
+            )}
+            {item.provider && (
+              <ManagedResourceProviderBadge provider={item.provider} />
             )}
             <span className="rounded-full border border-(--color-border) px-2 py-0.5 text-[11px] font-medium text-(--color-text-muted)">
               {sourceLabel}
@@ -244,6 +254,15 @@ function PluginCard({
             id={detailsId}
             className="grid gap-4 p-4 @2xl/plugin-card:grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_auto]"
           >
+            {item.provider
+              && installation.managed_version_id === item.provider.applied_version_id && (
+              <ManagedResourceUpdateBanner
+                provider={item.provider}
+                resourceName={installation.name}
+                className="@lg/plugin-card:col-span-3"
+                onPulled={async () => { await onUpdate() }}
+              />
+            )}
             <div className="min-w-0">
               <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-(--color-text-subtle)">
                 Components
@@ -310,7 +329,9 @@ function PluginCard({
                   disabled={busy || !item.capabilities.can_enable}
                   aria-label={item.capabilities.can_enable
                     ? `${installation.enabled ? 'Disable' : 'Enable'} ${displayName}`
-                    : `${displayName} is bundled and always enabled`}
+                    : managed
+                      ? `${displayName} is managed by Conductor and read-only`
+                      : `${displayName} is bundled and always enabled`}
                   onCheckedChange={onToggle}
                 />
               </div>
@@ -326,19 +347,19 @@ function PluginCard({
                   {item.credentials.supported && <DropdownMenuItem onClick={onCredentials}>
                     <KeyRound /> Credentials
                   </DropdownMenuItem>}
-                  {item.capabilities.can_edit && <DropdownMenuItem onClick={onOpen}>
+                  {!managed && item.capabilities.can_edit && <DropdownMenuItem onClick={onOpen}>
                     <Code2 /> Edit plugin
                   </DropdownMenuItem>}
-                  {item.capabilities.can_pack && <DropdownMenuItem onClick={onPack}>
+                  {!managed && item.capabilities.can_pack && <DropdownMenuItem onClick={onPack}>
                     <FileArchive /> Pack archive
                   </DropdownMenuItem>}
-                  {item.capabilities.can_update && (
+                  {!managed && item.capabilities.can_update && (
                     <DropdownMenuItem onClick={onUpdate}>
                       <RefreshCw /> Update package
                     </DropdownMenuItem>
                   )}
-                  {item.capabilities.can_uninstall && <DropdownMenuSeparator />}
-                  {item.capabilities.can_uninstall && <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                  {!managed && item.capabilities.can_uninstall && <DropdownMenuSeparator />}
+                  {!managed && item.capabilities.can_uninstall && <DropdownMenuItem variant="destructive" onClick={onDelete}>
                     <Trash2 /> Uninstall
                   </DropdownMenuItem>}
                 </DropdownMenuContent>
@@ -368,7 +389,9 @@ export function PluginCenterPanel() {
   const [showCreate, setShowCreate] = useState(false)
   const [hostPath, setHostPath] = useState('')
   const [updateTarget, setUpdateTarget] = useState<PluginListItem | null>(null)
-  const [trustReview, setTrustReview] = useState<PluginOperationResponse | null>(null)
+  const [trustReview, setTrustReview] = useState<
+    (PluginOperationResponse & { managedResourceId?: string }) | null
+  >(null)
   const [createParent, setCreateParent] = useState('')
   const [createName, setCreateName] = useState('')
   const [createDescription, setCreateDescription] = useState('')
@@ -435,7 +458,9 @@ export function PluginCenterPanel() {
     if (!trustReview) return
     const enabled = await run(
       `trust:${trustReview.installation.id}`,
-      () => setPluginEnabled(trustReview.installation.id, true),
+      () => trustReview.managedResourceId
+        ? approveConductorResource(trustReview.managedResourceId)
+        : setPluginEnabled(trustReview.installation.id, true),
     )
     if (enabled) setTrustReview(null)
   }
@@ -752,6 +777,11 @@ export function PluginCenterPanel() {
                     setTrustReview({
                       installation: item.installation,
                       inspection: item.inspection,
+                      managedResourceId:
+                        item.provider?.observed_state === CONDUCTOR_RESOURCE_STATE.TRUST_PENDING
+                        && item.installation.managed_version_id === item.provider.version_id
+                          ? item.provider.resource_id
+                          : undefined,
                     })
                     return
                   }
@@ -767,7 +797,7 @@ export function PluginCenterPanel() {
                 }}
                 onOpen={() => setActiveView({ kind: 'editor', root: item.installation.root, name: item.installation.name })}
                 onCredentials={() => setActiveView({ kind: 'credentials', plugin: item })}
-                onUpdate={() => void chooseUpdate(item)}
+                onUpdate={() => item.provider ? refresh() : chooseUpdate(item)}
               />
             ))}
           </div>

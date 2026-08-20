@@ -5,6 +5,7 @@ import { Sparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { SettingsListView, type ListViewRow } from '@/components/settings/SettingsListView'
+import { ManagedResourceProviderBadge } from '@/components/settings/ManagedResourceProviderBadge'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { resolveSkillDetailMode } from '@/lib/skill-detail-mode'
 import { skillAvailabilityLabel, type SkillAvailability } from '@/lib/skill-modes'
@@ -72,7 +73,14 @@ export function SkillsListPage() {
         search: detailMode ? { mode: detailMode } : undefined,
         active: selected === s.name,
         title,
-        badge,
+        badge: s.provider ? (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <ManagedResourceProviderBadge provider={s.provider} />
+            <span className="hidden rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] text-(--color-text-muted) ring-1 ring-(--color-border) sm:inline-flex">
+              {badge}
+            </span>
+          </span>
+        ) : badge,
         description: [
           s.description || 'No description',
           skillAvailabilityLabel(s.modes),

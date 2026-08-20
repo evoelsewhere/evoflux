@@ -10,14 +10,17 @@ that contract: validation + rollback semantics, but no live team swap.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from app.api.routes import agents as agents_routes
 from app.api.routes.agents import router as agents_router
 from app.api.routes.skills import router as skills_router
+from app.conductor.models import ManagedResourceProvider
 from app.services import team_manager
 
 
@@ -31,10 +34,13 @@ def fs_dirs(tmp_path: Path, monkeypatch):
 
     agents = tmp_path / "agents"
     skills = tmp_path / "skills"
+    config = tmp_path / "config"
     agents.mkdir()
     skills.mkdir()
+    config.mkdir()
     monkeypatch.setattr(settings, "AGENTS_DIR", str(agents))
     monkeypatch.setattr(settings, "SKILLS_DIR", str(skills))
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(config))
     from app.agent.tools.builtin import skill as skill_module
 
     monkeypatch.setattr(skill_module, "_iter_skill_roots", lambda: [skills])
@@ -97,6 +103,18 @@ def _seed_files(agents_dir: Path) -> None:
     (agents_dir / "lead.md").write_text(LEAD_MD)
 
 
+def _managed_provider() -> ManagedResourceProvider:
+    return ManagedResourceProvider(
+        project_id="project-1",
+        project_name="Platform Core",
+        resource_id="agent-1",
+        version_id="agent-version-2",
+        version="0.2.0",
+        release_channel="published",
+        observed_state="in_sync",
+    )
+
+
 # ── GET /agents ──────────────────────────────────────────────────────────────
 
 
@@ -120,6 +138,166 @@ async def test_list_existing(fs_dirs, client: AsyncClient):
     assert row["role"] == "lead"
     assert row["model"] == "zai:glm-5-turbo"
     assert row["valid"] is True
+
+
+@pytest.mark.asyncio
+async def test_managed_agent_exposes_provider_and_blocks_local_mutation(
+    fs_dirs, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    agents_dir, _ = fs_dirs
+    _seed_files(agents_dir)
+    provider = _managed_provider()
+    monkeypatch.setattr(
+        agents_routes,
+        "managed_resource_providers",
+        lambda: {("agent", "lead"): provider},
+    )
+    monkeypatch.setattr(
+        agents_routes,
+        "managed_resource_provider",
+        lambda kind, slug: provider if (kind, slug) == ("agent", "lead") else None,
+    )
+
+    listed = await client.get("/api/agents")
+    row = listed.json()["agents"][0]
+    assert row["editable"] is False
+    assert row["provider"]["project_name"] == "Platform Core"
+    assert row["provider"]["version"] == "0.2.0"
+    assert row["runtime_model_editable"] is True
+    assert row["bundle_model"] == "zai:glm-5-turbo"
+    assert row["model_override"] is None
+
+    detail = await client.get("/api/agents/lead")
+    assert detail.json()["editable"] is False
+    assert detail.json()["provider"]["resource_id"] == "agent-1"
+
+    updated = await client.put(
+        "/api/agents/lead", json={"name": "lead", "content": LEAD_MD}
+    )
+    deleted = await client.delete("/api/agents/lead")
+    bulk = await client.patch(
+        "/api/agents/model",
+        json={"names": ["lead"], "model": "anthropic:claude-sonnet-5"},
+    )
+
+    assert updated.status_code == 403
+    assert deleted.status_code == 403
+    assert bulk.json()["results"][0]["ok"] is False
+    assert (agents_dir / "lead.md").read_text() == LEAD_MD
+
+
+@pytest.mark.asyncio
+async def test_managed_agent_model_override_is_local_and_resettable(
+    fs_dirs, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    agents_dir, _ = fs_dirs
+    _seed_files(agents_dir)
+    provider = _managed_provider()
+    monkeypatch.setattr(
+        agents_routes,
+        "managed_resource_providers",
+        lambda: {("agent", "lead"): provider},
+    )
+    monkeypatch.setattr(
+        agents_routes,
+        "managed_resource_provider",
+        lambda kind, slug: provider if (kind, slug) == ("agent", "lead") else None,
+    )
+    monkeypatch.setattr(
+        agents_routes,
+        "is_registered_model_id",
+        AsyncMock(return_value=True),
+    )
+
+    selected = "anthropic:claude-sonnet-5"
+    updated = await client.patch(
+        "/api/agents/runtime-model/lead",
+        json={"model": selected},
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["config"]["model"] == selected
+    assert updated.json()["model_override"] == selected
+    assert updated.json()["bundle_model"] == "zai:glm-5-turbo"
+    assert (agents_dir / "lead.md").read_text() == LEAD_MD
+
+    listed = await client.get("/api/agents")
+    assert listed.json()["agents"][0]["model"] == selected
+
+    reset = await client.patch(
+        "/api/agents/runtime-model/lead",
+        json={"model": None},
+    )
+    assert reset.status_code == 200
+    assert reset.json()["config"]["model"] == "zai:glm-5-turbo"
+    assert reset.json()["model_override"] is None
+
+
+@pytest.mark.asyncio
+async def test_managed_agent_runtime_settings_only_add_capabilities(
+    fs_dirs, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    agents_dir, _ = fs_dirs
+    _seed_files(agents_dir)
+    provider = _managed_provider()
+    monkeypatch.setattr(
+        agents_routes,
+        "managed_resource_providers",
+        lambda: {("agent", "lead"): provider},
+    )
+    monkeypatch.setattr(
+        agents_routes,
+        "managed_resource_provider",
+        lambda kind, slug: provider if (kind, slug) == ("agent", "lead") else None,
+    )
+    monkeypatch.setattr(
+        agents_routes,
+        "get_registry",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                tools=[
+                    SimpleNamespace(name="read"),
+                    SimpleNamespace(name="web_search"),
+                ],
+                skills=[SimpleNamespace(name="local-research")],
+            )
+        ),
+    )
+
+    updated = await client.patch(
+        "/api/agents/runtime-settings/lead",
+        json={
+            "model": None,
+            "extra_tools": ["read", "web_search"],
+            "extra_skills": ["local-research"],
+            "extra_mcp": ["local-browser"],
+        },
+    )
+
+    assert updated.status_code == 200
+    body = updated.json()
+    assert body["extra_tools"] == ["read", "web_search"]
+    assert body["extra_skills"] == ["local-research"]
+    assert body["extra_mcp"] == ["local-browser"]
+    assert body["config"]["tools"].count("read") == 1
+    assert "web_search" in body["config"]["tools"]
+    assert body["config"]["skills"] == ["local-research"]
+    assert body["config"]["mcp"] == ["local-browser"]
+    assert (agents_dir / "lead.md").read_text() == LEAD_MD
+
+
+@pytest.mark.asyncio
+async def test_runtime_model_override_rejects_local_agent(fs_dirs, client: AsyncClient):
+    agents_dir, _ = fs_dirs
+    _seed_files(agents_dir)
+
+    response = await client.patch(
+        "/api/agents/runtime-model/lead",
+        json={"model": "anthropic:claude-sonnet-5"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Agent 'lead' is not managed by Conductor."
 
 
 @pytest.mark.asyncio

@@ -8,7 +8,30 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-ResourceKind = Literal["agent", "skill", "mcp"]
+from app.conductor.constants.resource import (
+    DEFAULT_RESOURCE_TARGET_MODES,
+    ResourceTargetMode,
+    ResourceVersionGap,
+    ResourceVersionStatus,
+)
+
+ResourceKind = Literal["agent", "skill", "mcp", "plugin"]
+GovernedResourceKind = Literal["agent", "skill", "plugin"]
+ReleaseChannel = Literal["beta", "published"]
+ObservedResourceState = Literal[
+    "pending",
+    "staged",
+    "trust_pending",
+    "update_pending",
+    "applied",
+    "in_sync",
+    "declined",
+    "incompatible",
+    "ownership_conflict",
+    "project_scope_mismatch",
+    "error",
+    "removed",
+]
 DriftCategory = Literal[
     "missing",
     "modified",
@@ -205,3 +228,188 @@ class HeartbeatResponse(BaseModel):
     server_time: datetime
     heartbeat_interval_seconds: int = Field(ge=30, le=300)
     connection_state: Literal["active"]
+
+
+class ResourceVersionNotice(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version_id: str
+    version: str
+    status: ResourceVersionStatus
+    release_channel: ReleaseChannel
+    changelog: str | None = None
+    published_at: datetime | None = None
+    deprecation_reason: str | None = None
+
+
+class ResourceChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str
+    resource_id: str
+    version_id: str | None = None
+    kind: GovernedResourceKind
+    slug: str
+    version: str | None = None
+    description: str | None = None
+    changelog: str | None = None
+    version_history: list[ResourceVersionNotice] = Field(default_factory=list)
+    release_channel: ReleaseChannel | None = None
+    sha256: str | None = None
+    size: int = Field(default=0, ge=0, le=500 * 1024 * 1024)
+    minimum_evoflux_version: str | None = None
+    trust_required: bool = False
+    tombstone: bool = False
+
+
+class ResourceChangePage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[2]
+    project_id: str
+    next_cursor: str
+    has_more: bool
+    changes: list[ResourceChange] = Field(default_factory=list)
+
+
+class EffectiveResourceVersion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str
+    resource_id: str
+    version_id: str
+    kind: GovernedResourceKind
+    slug: str
+    version: str
+    description: str | None = None
+    changelog: str | None = None
+    version_history: list[ResourceVersionNotice] = Field(default_factory=list)
+    release_channel: ReleaseChannel
+    payload: dict[str, Any]
+    sha256: str
+    size: int = Field(ge=0, le=500 * 1024 * 1024)
+    artifact_key: str | None = None
+    minimum_evoflux_version: str | None = None
+
+
+class ManagedResourceRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str
+    resource_id: str
+    version_id: str | None = None
+    version: str | None = None
+    applied_version_id: str | None = None
+    applied_version: str | None = None
+    description: str | None = None
+    changelog: str | None = None
+    version_history: list[ResourceVersionNotice] = Field(default_factory=list)
+    release_channel: ReleaseChannel | None = None
+    kind: GovernedResourceKind
+    slug: str
+    modes: list[ResourceTargetMode] = Field(
+        default_factory=lambda: list(DEFAULT_RESOURCE_TARGET_MODES)
+    )
+    content_sha256: str | None = None
+    # Digest of the immutable artifact that was actually applied. Older V2
+    # state files omit this field; inventory must then omit its digest rather
+    # than pairing a desired-version digest with an older applied version.
+    applied_content_sha256: str | None = None
+    content_size: int = Field(default=0, ge=0, le=500 * 1024 * 1024)
+    minimum_evoflux_version: str | None = None
+    local_content_sha256: str | None = None
+    plugin_installation_id: str | None = None
+    previous_plugin_installation_id: str | None = None
+    observed_state: ObservedResourceState = "pending"
+    error_category: str | None = None
+    message: str | None = None
+    trust_required: bool = False
+    trust_review: dict[str, Any] | None = None
+    observed_at: datetime
+
+
+class ManagedResourceProvider(BaseModel):
+    """User-facing provenance for a locally materialized managed resource."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str
+    project_name: str
+    resource_id: str
+    modes: list[ResourceTargetMode] = Field(
+        default_factory=lambda: list(DEFAULT_RESOURCE_TARGET_MODES)
+    )
+    version_id: str | None = None
+    version: str | None = None
+    applied_version_id: str | None = None
+    applied_version: str | None = None
+    description: str | None = None
+    changelog: str | None = None
+    version_history: list[ResourceVersionNotice] = Field(default_factory=list)
+    update_available: bool = False
+    update_required: bool = False
+    version_gap: ResourceVersionGap | None = None
+    current_version_deprecation_reason: str | None = None
+    release_channel: ReleaseChannel | None = None
+    observed_state: ObservedResourceState
+
+
+class ManagedResourceDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[2] = 2
+    project_id: str | None = None
+    committed_cursor: str | None = None
+    resources: list[ManagedResourceRecord] = Field(default_factory=list)
+
+
+class ResourceInventoryItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    resource_id: str
+    desired_version_id: str | None = None
+    applied_version_id: str | None = None
+    release_channel: ReleaseChannel | None = None
+    content_sha256: str | None = None
+    plugin_installation_id: str | None = None
+    observed_state: ObservedResourceState
+    error_category: str | None = None
+    observed_at: datetime
+
+
+class ResourceInventoryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    installation_id: str
+    items: list[ResourceInventoryItem] = Field(default_factory=list, max_length=500)
+
+
+class TelemetryDeliverySummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    installation_id: str
+    window_days: int = Field(ge=1)
+    window_start: datetime = Field(validation_alias="from")
+    window_end: datetime = Field(validation_alias="to")
+    events: int = Field(ge=0)
+    requests: int = Field(ge=0)
+    model_calls: int = Field(ge=0)
+    tool_calls: int = Field(ge=0)
+    tokens_in: int = Field(ge=0)
+    tokens_out: int = Field(ge=0)
+    cache_read_tokens: int = Field(ge=0)
+    estimated_cost_usd_micros: int = Field(ge=0)
+    unpriced_model_calls: int = Field(ge=0)
+    attributed_events: int = Field(ge=0)
+    attributed_requests: int = Field(ge=0)
+    attributed_model_calls: int = Field(ge=0)
+    attributed_tool_calls: int = Field(ge=0)
+    attributed_estimated_cost_usd_micros: int = Field(ge=0)
+
+
+class TelemetryBatchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    accepted: int = Field(ge=0)
+    duplicates: int = Field(ge=0)
+    summary: TelemetryDeliverySummary | None = None

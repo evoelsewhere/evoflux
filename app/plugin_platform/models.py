@@ -163,6 +163,10 @@ class PluginInstallation(BaseModel):
     source_ref: str
     content_sha256: str
     enabled: bool = True
+    managed_by: Literal["conductor"] | None = None
+    managed_project_id: str | None = None
+    managed_resource_id: str | None = None
+    managed_version_id: str | None = None
     installed_at: str
     updated_at: str
 

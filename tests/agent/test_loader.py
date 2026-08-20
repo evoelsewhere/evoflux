@@ -1350,6 +1350,69 @@ def test_load_team_skips_unconfigured_members(tmp_path):
     assert set(team.blueprints.keys()) == {"worker"}
 
 
+def test_managed_agent_runtime_model_makes_placeholder_spawnable(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    from app.agent.loader import load_team_from_dir, rebuild_agent_from_disk
+    from app.cli.seed import PROVIDER_MODEL_TOKEN
+    from app.conductor import agent_runtime
+    from app.conductor.models import ManagedResourceProvider
+    from app.core.agent_settings import write_agent_runtime_model
+    from app.core.config import settings
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(config_dir))
+    provider = ManagedResourceProvider(
+        project_id="project-1",
+        project_name="Platform Core",
+        resource_id="agent-placeholder",
+        version_id="version-1",
+        version="1.0.0",
+        release_channel="published",
+        observed_state="in_sync",
+    )
+    monkeypatch.setattr(
+        agent_runtime,
+        "managed_resource_provider",
+        lambda kind, slug: (
+            provider if (kind, slug) == ("agent", "placeholder") else None
+        ),
+    )
+    selected = "anthropic:claude-sonnet-5"
+    write_agent_runtime_model(
+        project_id=provider.project_id,
+        resource_id=provider.resource_id,
+        name="placeholder",
+        model=selected,
+    )
+    d = _make_agents_dir(
+        tmp_path,
+        [
+            {"name": "lead", "role": "lead", "model": "zai:glm-5-turbo"},
+            {"name": "placeholder", "role": "member", "model": PROVIDER_MODEL_TOKEN},
+        ],
+    )
+    monkeypatch.setattr(settings, "AGENTS_DIR", str(d))
+    requested_models: list[str | None] = []
+    mock_provider = MagicMock()
+
+    def factory(model: str | None, model_kwargs: dict | None = None):
+        requested_models.append(model)
+        return mock_provider
+
+    team = load_team_from_dir(d, provider_factory=factory)
+    assert team is not None
+    assert set(team.blueprints) == {"placeholder"}
+
+    agent = rebuild_agent_from_disk(
+        team.blueprints["placeholder"].source_path,
+        provider_factory=factory,
+    )
+    assert agent.model_id == selected
+    assert requested_models[-1] == selected
+
+
 def test_load_team_parse_error_raises(tmp_path):
     from app.agent.loader import load_team_from_dir
 

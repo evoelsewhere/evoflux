@@ -94,6 +94,8 @@ interface Props {
   skillMode?: SkillMode
   /** Project repositories; falls back to the active coding workspace. */
   workspaceRoots?: readonly string[]
+  /** A managed Agent configures its installation model outside the bundle form. */
+  hideRuntimeSection?: boolean
 }
 
 export function AgentForm({
@@ -106,6 +108,7 @@ export function AgentForm({
   onModeChange,
   skillMode,
   workspaceRoots,
+  hideRuntimeSection,
 }: Props) {
   const [raw, setRaw] = useState(initial)
 
@@ -240,6 +243,7 @@ export function AgentForm({
           modelOptions={modelOptions}
           agentPath={agentPath}
           effectiveTools={agentSummary?.tools}
+          hideRuntimeSection={hideRuntimeSection}
           updateFromForm={updateFromForm}
         />
       ) : (
@@ -303,6 +307,7 @@ function FormFields({
   modelOptions,
   agentPath,
   effectiveTools,
+  hideRuntimeSection,
   updateFromForm,
 }: {
   fm: AgentFrontmatter
@@ -316,6 +321,7 @@ function FormFields({
   modelOptions: ModelOption[]
   agentPath?: string
   effectiveTools?: string[]
+  hideRuntimeSection?: boolean
   updateFromForm: (next: AgentFrontmatter, nextBody: string) => void
 }) {
   // Per-field errors computed fresh from zod on render. For the scalar
@@ -461,12 +467,13 @@ function FormFields({
           </div>
         </AgentSection>
 
-        <AgentSection
-          icon={BrainCircuit}
-          title="Runtime"
-          description="Use the same model and reasoning controls available in chat."
-        >
-          <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-2">
+        {!hideRuntimeSection && (
+          <AgentSection
+            icon={BrainCircuit}
+            title="Runtime"
+            description="Use the same model and reasoning controls available in chat."
+          >
+            <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-2">
             <Field label="Primary model" required error={modelError} className="md:col-span-2">
               <ModelCombobox
                 value={fm.model ?? ''}
@@ -548,8 +555,9 @@ function FormFields({
                 unsetLabel="No fallback"
               />
             </Field>
-          </div>
-        </AgentSection>
+            </div>
+          </AgentSection>
+        )}
       </div>
 
       <AgentSection
@@ -573,6 +581,7 @@ function FormFields({
               )}
               <MultiSelect
                 ariaLabel="Tools"
+                disabled={disabled}
                 options={extraToolOptions}
                 value={fm.tools ?? []}
                 onChange={(value) => updateFromForm({ ...fm, tools: value }, body)}
@@ -585,6 +594,7 @@ function FormFields({
                   </p>
                   <MultiSelect
                     ariaLabel="Disabled default tools"
+                    disabled={disabled}
                     options={defaultToolOptions}
                     value={fm.tools_opt_out ?? []}
                     onChange={(value) =>
@@ -608,6 +618,7 @@ function FormFields({
             >
               <MultiSelect
                 ariaLabel="MCP servers"
+                disabled={disabled}
                 options={mcpOptions}
                 value={fm.mcp ?? []}
                 onChange={(value) => updateFromForm({ ...fm, mcp: value }, body)}
@@ -624,6 +635,7 @@ function FormFields({
             >
               <MultiSelect
                 ariaLabel="Skills"
+                disabled={disabled}
                 options={extraSkillOptions}
                 value={fm.skills ?? []}
                 onChange={(value) => updateFromForm({ ...fm, skills: value }, body)}

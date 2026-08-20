@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 import httpx
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.agent.mcp.config import load_config
 from app.conductor.client import (
@@ -22,10 +22,19 @@ from app.conductor.client import (
 )
 from app.conductor.constants.telemetry import (
     TELEMETRY_BATCH_SIZE,
+    TELEMETRY_DRAIN_MAX_BATCHES,
+    TELEMETRY_FLUSH_INTERVAL_SECONDS,
     TelemetryCollectionLevel,
     TelemetryField,
 )
-from app.conductor.models import ReconcileResult, RegistrationRequest
+from app.conductor.models import (
+    ManagedResourceRecord,
+    ReconcileResult,
+    RegistrationRequest,
+    TelemetryDeliverySummary,
+)
+from app.conductor.provenance import managed_resource_provider_from_record
+from app.conductor.governed_reconciler import GovernedResourceReconciler
 from app.conductor.reconciler import ResourceReconciler
 from app.conductor.telemetry import (
     TelemetryOutbox,
@@ -42,6 +51,44 @@ from app.core.runtime_settings import (
 )
 from app.core.version import VERSION
 from app.services import agent_fs
+
+
+class ConductorSyncLaneStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    state: Literal["idle", "syncing", "healthy", "offline", "paused", "error"] = "idle"
+    last_attempt_at: datetime | None = None
+    last_success_at: datetime | None = None
+    error: str | None = None
+
+
+class ConductorSyncReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    heartbeat: ConductorSyncLaneStatus = Field(default_factory=ConductorSyncLaneStatus)
+    resources: ConductorSyncLaneStatus = Field(default_factory=ConductorSyncLaneStatus)
+    inventory: ConductorSyncLaneStatus = Field(default_factory=ConductorSyncLaneStatus)
+    telemetry: ConductorSyncLaneStatus = Field(default_factory=ConductorSyncLaneStatus)
+
+
+class ConductorTelemetryReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pending_events: int = 0
+    capacity: int = 0
+    utilization_percent: float = 0.0
+    oldest_event_at: str | None = None
+    pending_requests: int = 0
+    pending_model_calls: int = 0
+    pending_tool_calls: int = 0
+    attributed_events: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cache_read_tokens: int = 0
+    estimated_cost_usd_micros: int = 0
+    last_flush_accepted: int = 0
+    last_flush_duplicates: int = 0
+    delivery: TelemetryDeliverySummary | None = None
 
 
 class ConductorStatus(BaseModel):
@@ -68,6 +115,10 @@ class ConductorStatus(BaseModel):
     maintenance_required: bool = False
     error: str | None = None
     resources: list[dict[str, Any]] = Field(default_factory=list)
+    sync: ConductorSyncReport = Field(default_factory=ConductorSyncReport)
+    telemetry: ConductorTelemetryReport = Field(
+        default_factory=ConductorTelemetryReport
+    )
 
 
 class ConductorService:
@@ -80,9 +131,11 @@ class ConductorService:
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
         self._sync_lock = asyncio.Lock()
+        self._usage_flush_lock = asyncio.Lock()
         self._client: ConductorClient | None = None
         self._credential_store = credential_store
         self._reconciler = ResourceReconciler()
+        self._governed_reconciler = GovernedResourceReconciler()
         self._telemetry_store = telemetry_store or telemetry_outbox
 
     def _config(self) -> ConductorSettings:
@@ -208,6 +261,9 @@ class ConductorService:
                 ),
                 idempotency_key=str(uuid.uuid4()),
             )
+            previous_project_id = load_runtime_settings().conductor.project_id
+            if previous_project_id and previous_project_id != registration.project.id:
+                self._governed_reconciler.deactivate_project(previous_project_id)
             self._credentials().save(token.strip())
             runtime = load_runtime_settings()
             runtime.conductor.installation_key = installation_key
@@ -242,6 +298,9 @@ class ConductorService:
 
     async def disconnect(self) -> ConductorStatus:
         await self.stop()
+        current_project_id = self._config().project_id
+        if current_project_id:
+            self._governed_reconciler.deactivate_project(current_project_id)
         self._credentials().delete()
         self._telemetry_store.clear()
         clear_usage()
@@ -269,12 +328,17 @@ class ConductorService:
 
     async def heartbeat_now(self) -> ConductorStatus:
         config = self._config()
+        lane = self.status.sync.heartbeat
+        lane.last_attempt_at = datetime.now(UTC)
+        lane.state = "syncing"
         if not config.enabled:
             self.status.state = "disabled"
+            lane.state = "paused"
             return self.status
         if not config.installation_id or self._credentials().load() is None:
             self.status.enrolled = False
             self.status.state = "disconnected"
+            lane.state = "paused"
             return self.status
         client = self._client
         if client is None or client.base_url != config.url:
@@ -284,22 +348,31 @@ class ConductorService:
         try:
             heartbeat = await client.heartbeat(config.installation_id)
         except ConductorRequestError as exc:
+            lane.state = "error"
+            lane.error = str(exc)
             self._handle_request_error(exc, heartbeat=True)
             return self.status
         except CredentialStoreError as exc:
             self.status.state = "error"
             self.status.error = str(exc)
+            lane.state = "error"
+            lane.error = str(exc)
             return self.status
         except (httpx.HTTPError, OSError) as exc:
             self.status.offline = True
             self.status.state = "offline"
             self.status.error = f"Conductor is unreachable ({type(exc).__name__})."
+            lane.state = "offline"
+            lane.error = self.status.error
             return self.status
         self.status.enrolled = True
         self.status.offline = False
         self.status.error = None
         self.status.state = "connected"
         self.status.last_heartbeat_at = datetime.now(UTC)
+        lane.state = "healthy"
+        lane.error = None
+        lane.last_success_at = self.status.last_heartbeat_at
         next_interval = float(heartbeat.heartbeat_interval_seconds)
         self.status.heartbeat_interval_seconds = next_interval
         if next_interval != config.heartbeat_interval_seconds:
@@ -362,7 +435,20 @@ class ConductorService:
                 self.status.state = "disconnected"
                 return self.status
             self.status.state = "syncing"
+            resource_lane = self.status.sync.resources
+            resource_lane.state = "syncing"
+            resource_lane.last_attempt_at = self.status.last_sync_at
+            resource_lane.error = None
+            await self._flush_usage_queues()
             try:
+                if await self._sync_governed(config):
+                    self.status.etag = None
+                    self.status.offline = False
+                    self.status.error = None
+                    self.status.last_success_at = datetime.now(UTC)
+                    resource_lane.state = "healthy"
+                    resource_lane.last_success_at = self.status.last_success_at
+                    return self.status
                 manifest, etag = await self._client.fetch_manifest(self.status.etag)
                 if manifest is None:
                     manifest = self._reconciler.load_last_good_manifest()
@@ -380,13 +466,19 @@ class ConductorService:
                 self.status.offline = False
                 self.status.error = None
                 self.status.last_success_at = datetime.now(UTC)
+                resource_lane.state = "healthy"
+                resource_lane.last_success_at = self.status.last_success_at
                 self._set_result(result)
             except ConductorRequestError as exc:
+                resource_lane.state = "error"
+                resource_lane.error = str(exc)
                 self._handle_request_error(exc)
             except (httpx.HTTPError, OSError) as exc:
                 self.status.offline = True
                 self.status.state = "offline"
                 self.status.error = f"Conductor is unreachable ({type(exc).__name__})."
+                resource_lane.state = "offline"
+                resource_lane.error = self.status.error
                 cached = self._reconciler.load_last_good_manifest()
                 if cached is not None:
                     result = await self._reconciler.reconcile(
@@ -401,35 +493,217 @@ class ConductorService:
             except Exception as exc:
                 self.status.state = "error"
                 self.status.error = f"Conductor sync failed ({type(exc).__name__})."
+                resource_lane.state = "error"
+                resource_lane.error = self.status.error
                 logger.error(
                     "conductor_sync_failed error_type={}",
                     type(exc).__name__,
                 )
             return self.status
 
+    async def _sync_governed(self, config: ConductorSettings) -> bool:
+        """Prefer schema-v2 changes; return False only for a V1-only server/client."""
+
+        if self._client is None or not hasattr(self._client, "fetch_changes"):
+            return False
+        project_id = config.project_id
+        installation_id = config.installation_id
+        if not project_id or not installation_id:
+            return False
+        document = self._governed_reconciler.store.replace_project(project_id)
+        cursor = document.committed_cursor
+        if cursor is not None and self._governed_reconciler.needs_change_replay(
+            project_id
+        ):
+            logger.info("conductor_change_replay_required project_id={}", project_id)
+            self._governed_reconciler.store.clear_cursor(project_id)
+            cursor = None
+        recovered_rejected_cursor = False
+        results = []
+        for _ in range(100):
+            try:
+                page = await self._client.fetch_changes(cursor)
+            except ConductorRequestError as exc:
+                if exc.status_code == 404:
+                    return False
+                if (
+                    cursor is not None
+                    and exc.status_code == httpx.codes.BAD_REQUEST
+                    and not recovered_rejected_cursor
+                ):
+                    logger.warning(
+                        "conductor_change_cursor_rejected project_id={}", project_id
+                    )
+                    self._governed_reconciler.store.clear_cursor(project_id)
+                    cursor = None
+                    recovered_rejected_cursor = True
+                    continue
+                raise
+            page_results = await self._governed_reconciler.reconcile_page(
+                self._client,
+                page,
+                expected_project_id=project_id,
+                enforcement_mode=config.enforcement_mode,
+            )
+            results.extend(page_results)
+            if any(item.observed_state == "error" for item in page_results):
+                cursor = self._governed_reconciler.store.load().committed_cursor
+                break
+            cursor = page.next_cursor
+            if not page.has_more:
+                break
+        else:
+            raise RuntimeError("Conductor change feed exceeded 100 pages in one sync.")
+
+        inventory_lane = self.status.sync.inventory
+        inventory_lane.state = "syncing"
+        inventory_lane.last_attempt_at = datetime.now(UTC)
+        try:
+            await self._client.report_inventory(
+                {
+                    "installation_id": installation_id,
+                    "items": self._governed_reconciler.inventory(),
+                }
+            )
+        except Exception as exc:
+            inventory_lane.state = "error"
+            inventory_lane.error = _safe_sync_error(exc)
+            raise
+        inventory_lane.state = "healthy"
+        inventory_lane.error = None
+        inventory_lane.last_success_at = datetime.now(UTC)
+        current = self._governed_reconciler.store.load().resources
+        self.status.manifest_revision = cursor
+        self._refresh_governed_status(current)
+        self.status.maintenance_required = False
+        states = {item.observed_state for item in current}
+        if "error" in states:
+            self.status.state = "error"
+        elif states & {"trust_pending", "update_pending", "ownership_conflict"}:
+            self.status.state = "update_pending"
+        elif results:
+            self.status.state = "applied"
+        else:
+            self.status.state = "in_sync"
+        return True
+
+    def approve_governed_plugin(self, resource_id: str) -> dict[str, Any]:
+        config = self._config()
+        if not config.project_id:
+            raise ValueError("EvoFlux is not connected to a Conductor project.")
+        record = self._governed_reconciler.approve_plugin(
+            config.project_id, resource_id
+        )
+        self._refresh_governed_status()
+        return self._governed_resource_payload(record)
+
+    async def pull_governed_resource(self, resource_id: str) -> dict[str, Any]:
+        async with self._sync_lock:
+            config = self._config()
+            if (
+                not config.enabled
+                or not config.project_id
+                or not config.installation_id
+            ):
+                raise ValueError("EvoFlux is not connected to a Conductor project.")
+            if self._client is None or self._client.base_url != config.url:
+                if self._client:
+                    await self._client.close()
+                self._client = self._new_client(config)
+            record = await self._governed_reconciler.pull(
+                self._client,
+                config.project_id,
+                resource_id,
+            )
+            await self._client.report_inventory(
+                {
+                    "installation_id": config.installation_id,
+                    "items": self._governed_reconciler.inventory(),
+                }
+            )
+            self._refresh_governed_status()
+            self.status.last_sync_at = datetime.now(UTC)
+            self.status.last_success_at = self.status.last_sync_at
+            self.status.state = (
+                "update_pending"
+                if record.observed_state in {"trust_pending", "update_pending"}
+                else record.observed_state
+            )
+            return self._governed_resource_payload(record)
+
+    def _governed_resource_payload(
+        self, record: ManagedResourceRecord
+    ) -> dict[str, Any]:
+        project_name = (
+            self.status.project_display_name
+            or self.status.project_name
+            or record.project_id
+        )
+        provider = managed_resource_provider_from_record(record, project_name)
+        return {
+            **record.model_dump(mode="json"),
+            **provider.model_dump(mode="json"),
+        }
+
+    def _refresh_governed_status(
+        self, resources: list[ManagedResourceRecord] | None = None
+    ) -> None:
+        current = resources
+        if current is None:
+            current = self._governed_reconciler.store.load().resources
+        self.status.resources = [
+            self._governed_resource_payload(item) for item in current
+        ]
+
     async def _run(self) -> None:
+        try:
+            async with asyncio.TaskGroup() as group:
+                group.create_task(
+                    self._connection_loop(), name="conductor-control-plane"
+                )
+                group.create_task(
+                    self._telemetry_loop(), name="conductor-telemetry-drain"
+                )
+        except asyncio.CancelledError:
+            raise
+
+    async def _connection_loop(self) -> None:
         loop = asyncio.get_running_loop()
         next_heartbeat = 0.0
         next_sync = 0.0
-        try:
-            while not self._stop.is_set():
-                now = loop.time()
-                config = self._config()
-                if now >= next_heartbeat:
-                    await self.heartbeat_now()
-                    next_heartbeat = now + self.status.heartbeat_interval_seconds
-                if self._stop.is_set():
-                    break
-                if now >= next_sync:
-                    await self.sync_now()
-                    next_sync = now + config.sync_interval_seconds
-                delay = max(0.1, min(next_heartbeat, next_sync) - loop.time())
-                try:
-                    await asyncio.wait_for(self._stop.wait(), timeout=delay)
-                except TimeoutError:
-                    pass
-        except asyncio.CancelledError:
-            raise
+        while not self._stop.is_set():
+            now = loop.time()
+            config = self._config()
+            if now >= next_heartbeat:
+                await self.heartbeat_now()
+                next_heartbeat = now + self.status.heartbeat_interval_seconds
+            if self._stop.is_set():
+                break
+            if now >= next_sync:
+                await self.sync_now()
+                next_sync = now + config.sync_interval_seconds
+            delay = max(0.1, min(next_heartbeat, next_sync) - loop.time())
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=delay)
+            except TimeoutError:
+                pass
+
+    async def _telemetry_loop(self) -> None:
+        while not self._stop.is_set():
+            config = self._config()
+            if (
+                config.enabled
+                and config.installation_id
+                and self._client is not None
+                and self.status.enrolled
+            ):
+                await self._flush_usage_queues()
+            try:
+                await asyncio.wait_for(
+                    self._stop.wait(), timeout=TELEMETRY_FLUSH_INTERVAL_SECONDS
+                )
+            except TimeoutError:
+                pass
 
     async def _report(self, result: ReconcileResult | None) -> None:
         if self._client is None:
@@ -446,9 +720,28 @@ class ConductorService:
             ),
         }
         await self._client.report_observed_state(observed)
-        await self._client.report_inventory(self.inventory())
-        await self._flush_telemetry()
-        await self._flush_skill_usage()
+        config = self._config()
+        if config.installation_id:
+            inventory_lane = self.status.sync.inventory
+            inventory_lane.state = "syncing"
+            inventory_lane.last_attempt_at = datetime.now(UTC)
+            try:
+                await self._client.report_inventory(
+                    {"installation_id": config.installation_id, "items": []}
+                )
+            except Exception as exc:
+                inventory_lane.state = "error"
+                inventory_lane.error = _safe_sync_error(exc)
+                raise
+            inventory_lane.state = "healthy"
+            inventory_lane.error = None
+            inventory_lane.last_success_at = datetime.now(UTC)
+        await self._flush_usage_queues()
+
+    async def _flush_usage_queues(self) -> None:
+        async with self._usage_flush_lock:
+            await self._flush_telemetry_unlocked()
+            await self._flush_skill_usage()
 
     async def _flush_skill_usage(self) -> None:
         if self._client is None:
@@ -467,6 +760,10 @@ class ConductorService:
             )
 
     async def _flush_telemetry(self) -> None:
+        async with self._usage_flush_lock:
+            await self._flush_telemetry_unlocked()
+
+    async def _flush_telemetry_unlocked(self) -> None:
         if self._client is None:
             return
         config = self._config()
@@ -474,34 +771,89 @@ class ConductorService:
             None,
             TelemetryCollectionLevel.OFF,
         }:
+            self.status.sync.telemetry.state = "paused"
             return
-        events = self._telemetry_store.peek(
-            config.installation_id,
-            limit=TELEMETRY_BATCH_SIZE,
-        )
-        if not events:
-            return
-        try:
-            await self._client.report_telemetry(config.installation_id, events)
-        except (
-            ConductorRequestError,
-            CredentialStoreError,
-            httpx.HTTPError,
-            OSError,
-        ) as exc:
-            logger.warning(
-                "conductor_telemetry_flush_deferred error_type={} pending={}",
-                type(exc).__name__,
-                self._telemetry_store.count(),
+        lane = self.status.sync.telemetry
+        accepted_total = 0
+        duplicates_total = 0
+        for batch_index in range(TELEMETRY_DRAIN_MAX_BATCHES + 1):
+            events = self._telemetry_store.peek(
+                config.installation_id,
+                limit=TELEMETRY_BATCH_SIZE,
             )
-            return
-        self._telemetry_store.acknowledge(
-            {
-                event_id
-                for event in events
-                if isinstance((event_id := event.get(TelemetryField.EVENT_ID)), str)
-            }
-        )
+            if events and batch_index == TELEMETRY_DRAIN_MAX_BATCHES:
+                break
+            lane.state = "syncing"
+            lane.last_attempt_at = datetime.now(UTC)
+            try:
+                response = await self._client.report_telemetry(
+                    config.installation_id, events
+                )
+            except ConductorRequestError as exc:
+                if not events and exc.status_code == 400:
+                    # Older Conductor releases rejected empty batches. Keep the
+                    # delivery lane healthy during a rolling upgrade; the
+                    # authoritative summary appears after the server upgrades.
+                    lane.state = "healthy"
+                    lane.error = None
+                    lane.last_success_at = datetime.now(UTC)
+                    break
+                lane.state = "error"
+                lane.error = _safe_sync_error(exc)
+                logger.warning(
+                    "conductor_telemetry_flush_deferred error_type={} pending={}",
+                    type(exc).__name__,
+                    self._telemetry_store.count(),
+                )
+                break
+            except (
+                CredentialStoreError,
+                httpx.HTTPError,
+                json.JSONDecodeError,
+                OSError,
+                ValidationError,
+            ) as exc:
+                lane.state = (
+                    "offline"
+                    if isinstance(exc, (httpx.HTTPError, OSError))
+                    else "error"
+                )
+                lane.error = _safe_sync_error(exc)
+                logger.warning(
+                    "conductor_telemetry_flush_deferred error_type={} pending={}",
+                    type(exc).__name__,
+                    self._telemetry_store.count(),
+                )
+                break
+            if response.accepted + response.duplicates != len(events):
+                lane.state = "error"
+                lane.error = "Conductor acknowledged an incomplete telemetry batch."
+                logger.warning(
+                    "conductor_telemetry_partial_ack submitted={} accepted={} duplicates={}",
+                    len(events),
+                    response.accepted,
+                    response.duplicates,
+                )
+                break
+            if response.summary is not None:
+                self.status.telemetry.delivery = response.summary
+            self._telemetry_store.acknowledge(
+                {
+                    event_id
+                    for event in events
+                    if isinstance((event_id := event.get(TelemetryField.EVENT_ID)), str)
+                }
+            )
+            accepted_total += response.accepted
+            duplicates_total += response.duplicates
+            lane.state = "healthy"
+            lane.error = None
+            lane.last_success_at = datetime.now(UTC)
+            if not events:
+                break
+        if accepted_total or duplicates_total:
+            self.status.telemetry.last_flush_accepted = accepted_total
+            self.status.telemetry.last_flush_duplicates = duplicates_total
 
     def inventory(self) -> dict[str, Any]:
         return {
@@ -529,6 +881,9 @@ class ConductorService:
             self.status.state = result.state
 
     def status_payload(self) -> dict[str, Any]:
+        config = self._config()
+        stats = self._telemetry_store.stats(config.installation_id)
+        self.status.telemetry = self.status.telemetry.model_copy(update=stats)
         return self.status.model_dump(mode="json")
 
 
@@ -539,6 +894,12 @@ def _platform_identity() -> tuple[Literal["macos", "linux", "windows"], str]:
     if current == "windows":
         return "windows", "Windows"
     return "linux", "Linux"
+
+
+def _safe_sync_error(exc: Exception) -> str:
+    if isinstance(exc, ConductorRequestError):
+        return str(exc)
+    return f"Sync failed ({type(exc).__name__})."
 
 
 conductor_service = ConductorService()
