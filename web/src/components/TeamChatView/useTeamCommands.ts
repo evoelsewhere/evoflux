@@ -33,6 +33,7 @@ interface UseTeamCommandsArgs {
   handleWorkspaceFiles: () => void
   handleCodingSidebarToggle: () => void
   mode?: 'work' | 'coding'
+  workspace?: string | null
 
   // Session
   handleNewSession: () => void
@@ -57,6 +58,7 @@ export function useTeamCommands({
   handleWorkspaceFiles,
   handleCodingSidebarToggle,
   mode = 'work',
+  workspace = null,
   handleNewSession,
   handleDreamRun,
   agentNames,
@@ -91,7 +93,7 @@ export function useTeamCommands({
           action: () => useUIStore.getState().openWorkbenchTool('overview'),
         }]
       : []),
-    ...(mode === 'coding'
+    ...(mode === 'coding' && workspace
       ? [{
           id: 'ai-review-changes',
           group: 'Git',

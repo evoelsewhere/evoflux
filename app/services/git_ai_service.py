@@ -21,6 +21,7 @@ from app.agent.providers.base import LLMProviderBase
 from app.agent.schemas.chat import ChatMessage, HumanMessage, SystemMessage
 from app.services.change_set_service import (
     ChangeFileInput,
+    ChangeSetError,
     ChangeSetStale,
     create_change_set,
     normalize_change_path,
@@ -40,11 +41,16 @@ GitAIAction = Literal[
 ]
 
 _MAX_EVIDENCE = 180_000
+_MAX_UNTRACKED_FILES = 50
+_MAX_UNTRACKED_FILE_BYTES = 32_000
+_MAX_UNTRACKED_TOTAL_BYTES = 96_000
 _SYSTEM_PROMPT = """You are EvoFlux's explicit Git review engine. Return one
 JSON object and no Markdown fence. Ground every finding in the supplied diff,
 diagnostics, project rules, test evidence, or code-impact evidence. Do not
 invent tests or claim verification passed. Conflict resolutions must return
 complete UTF-8 file contents and preserve both intended behaviors.
+PR drafts must describe only the committed source-to-target branch range in
+the supplied evidence, including validation status without inventing results.
 
 Schema:
 {
@@ -206,6 +212,8 @@ async def _evidence(
         return {"pull_request": _bounded_json(remote_context or {})}
     if action == "propose_conflict_resolution":
         return {"conflicts": await _conflict_evidence(workspace)}
+    if action == "generate_pr_description":
+        return await _pr_evidence(workspace, remote_context)
 
     staged = await run_git(
         str(workspace),
@@ -225,18 +233,7 @@ async def _evidence(
         max_output_bytes=_MAX_EVIDENCE,
     )
     status = await run_git(str(workspace), "status", "--short", timeout=5)
-    open_problems = list_problems(workspace)
-    diagnostics = [
-        {
-            "source": problem.source,
-            "severity": problem.severity,
-            "path": problem.path,
-            "line": problem.line,
-            "code": problem.code,
-            "message": problem.message,
-        }
-        for problem in open_problems[:200]
-    ]
+    diagnostics = _diagnostic_evidence(workspace)
     changed_paths = _status_paths(status.stdout)
     if action == "generate_commit_message":
         return {
@@ -252,6 +249,7 @@ async def _evidence(
         "status": status.stdout,
         "staged_diff": staged.stdout[:_MAX_EVIDENCE],
         "unstaged_diff": unstaged.stdout[:_MAX_EVIDENCE],
+        "untracked_files": await _untracked_evidence(workspace),
         "diagnostics": diagnostics,
         "test_evidence": [
             item for item in diagnostics if item["source"] in {"test", "build"}
@@ -260,6 +258,198 @@ async def _evidence(
         "guidelines": _guidelines(workspace),
         "remote_context": _bounded_json(remote_context or {}),
     }
+
+
+async def _pr_evidence(
+    workspace: Path,
+    remote_context: dict[str, Any] | None,
+) -> dict[str, Any]:
+    context = remote_context or {}
+    source_branch = context.get("source_branch")
+    target_branch = context.get("target_branch")
+    if not isinstance(source_branch, str) or not source_branch.strip():
+        raise ValueError("A source branch is required to draft a PR description.")
+    if not isinstance(target_branch, str) or not target_branch.strip():
+        raise ValueError("A target branch is required to draft a PR description.")
+    source_branch = source_branch.strip()
+    target_branch = target_branch.strip()
+    if source_branch == target_branch:
+        raise ValueError("Source and target branches must be different.")
+
+    source_sha = await _verified_commit(workspace, source_branch)
+    target_sha = await _verified_commit(workspace, target_branch)
+    commit_range = f"{target_sha}..{source_sha}"
+    diff_range = f"{target_sha}...{source_sha}"
+
+    commits = await run_git(
+        str(workspace),
+        "log",
+        "--format=%H%x09%s",
+        commit_range,
+        timeout=10,
+        max_output_bytes=64_000,
+    )
+    if not commits.ok:
+        raise ValueError(
+            f"Could not read commits from {target_branch} to {source_branch}: "
+            f"{commits.stderr or 'git log failed'}"
+        )
+    commit_rows = [row for row in commits.stdout.splitlines() if row.strip()]
+    if not commit_rows:
+        raise ValueError(
+            f"No commits from {source_branch} are ahead of {target_branch}."
+        )
+
+    diff = await run_git(
+        str(workspace),
+        "diff",
+        "--stat",
+        "--patch",
+        "--no-ext-diff",
+        diff_range,
+        timeout=15,
+        max_output_bytes=_MAX_EVIDENCE,
+    )
+    if not diff.ok:
+        raise ValueError(
+            f"Could not compare {source_branch} with {target_branch}: "
+            f"{diff.stderr or 'git diff failed'}"
+        )
+    changed = await run_git(
+        str(workspace),
+        "diff",
+        "--name-only",
+        "--no-ext-diff",
+        diff_range,
+        timeout=10,
+        max_output_bytes=64_000,
+    )
+    if not changed.ok:
+        raise ValueError(
+            f"Could not list files changed between {target_branch} and "
+            f"{source_branch}: {changed.stderr or 'git diff failed'}"
+        )
+
+    diagnostics = _diagnostic_evidence(workspace)
+    changed_paths = [row for row in changed.stdout.splitlines() if row.strip()]
+    return {
+        "source_branch": source_branch,
+        "source_sha": source_sha,
+        "target_branch": target_branch,
+        "target_sha": target_sha,
+        "commits": commit_rows,
+        "committed_diff": diff.stdout[:_MAX_EVIDENCE],
+        "diagnostics": diagnostics,
+        "test_evidence": [
+            item for item in diagnostics if item["source"] in {"test", "build"}
+        ],
+        "code_impact": await _code_impact(workspace, changed_paths),
+        "guidelines": _guidelines(workspace),
+    }
+
+
+async def _untracked_evidence(workspace: Path) -> list[dict[str, Any]]:
+    listed = await run_git(
+        str(workspace),
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+        timeout=10,
+        max_output_bytes=_MAX_EVIDENCE,
+    )
+    if not listed.ok:
+        raise ValueError(
+            f"Could not enumerate untracked files: "
+            f"{listed.stderr or 'git ls-files failed'}"
+        )
+
+    rows: list[dict[str, Any]] = []
+    total_bytes = 0
+    raw_paths = [value for value in listed.stdout.split("\0") if value]
+    for raw_path in raw_paths[:_MAX_UNTRACKED_FILES]:
+        candidate = workspace / raw_path
+        if candidate.is_symlink():
+            rows.append({"path": raw_path, "skipped": "symlink"})
+            continue
+        try:
+            normalized = normalize_change_path(workspace, raw_path)
+        except ChangeSetError:
+            rows.append({"path": raw_path, "skipped": "unsafe_path"})
+            continue
+        path = workspace / normalized
+        try:
+            if not path.is_file():
+                rows.append({"path": normalized, "skipped": "not_a_file"})
+                continue
+            size = path.stat().st_size
+            remaining = _MAX_UNTRACKED_TOTAL_BYTES - total_bytes
+            if remaining <= 0:
+                rows.append({"truncated": True, "reason": "total_size_limit"})
+                break
+            read_limit = min(_MAX_UNTRACKED_FILE_BYTES, remaining)
+            with path.open("rb") as handle:
+                raw = handle.read(read_limit + 1)
+        except OSError:
+            rows.append({"path": normalized, "skipped": "unreadable"})
+            continue
+
+        truncated = len(raw) > read_limit or size > read_limit
+        raw = raw[:read_limit]
+        total_bytes += len(raw)
+        if b"\0" in raw:
+            rows.append(
+                {
+                    "path": normalized,
+                    "size": size,
+                    "binary": True,
+                    "truncated": truncated,
+                }
+            )
+            continue
+        try:
+            content = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            rows.append(
+                {
+                    "path": normalized,
+                    "size": size,
+                    "binary": True,
+                    "truncated": truncated,
+                }
+            )
+            continue
+        rows.append(
+            {
+                "path": normalized,
+                "size": size,
+                "content": content,
+                "truncated": truncated,
+            }
+        )
+    if len(raw_paths) > _MAX_UNTRACKED_FILES:
+        rows.append(
+            {
+                "truncated": True,
+                "reason": "file_count_limit",
+                "omitted": len(raw_paths) - _MAX_UNTRACKED_FILES,
+            }
+        )
+    return rows
+
+
+def _diagnostic_evidence(workspace: Path) -> list[dict[str, Any]]:
+    return [
+        {
+            "source": problem.source,
+            "severity": problem.severity,
+            "path": problem.path,
+            "line": problem.line,
+            "code": problem.code,
+            "message": problem.message,
+        }
+        for problem in list_problems(workspace)[:200]
+    ]
 
 
 async def _verified_commit(workspace: Path, reference: str) -> str:
@@ -323,6 +513,13 @@ def _validate_action_output(action: GitAIAction, output: _Output) -> None:
         )
     if action == "propose_conflict_resolution" and not output.files:
         raise ValueError("AI conflict resolution returned no file proposals.")
+    if action == "generate_pr_description" and (
+        not output.title
+        or not output.title.strip()
+        or not output.body
+        or not output.body.strip()
+    ):
+        raise ValueError("AI PR draft returned an empty title or description.")
     if action != "propose_conflict_resolution" and output.files:
         raise ValueError("Only conflict resolution may return file proposals.")
 
