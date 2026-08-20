@@ -22,6 +22,9 @@ export async function checkForAppUpdates(): Promise<AppUpdateCheckResult> {
   if (!platform.isTauri || platform.os === 'ios' || platform.os === 'android') {
     throw new Error('App updates are only available in the EvoFlux desktop app.')
   }
+  if (platform.os === 'linux') {
+    throw new Error('Linux updates are installed with a newer EvoFlux .deb package.')
+  }
 
   const { invoke } = await import('@tauri-apps/api/core')
   return await invoke<AppUpdateCheckResult>('app_check_for_updates')
@@ -32,6 +35,9 @@ export async function installAppUpdate(): Promise<void> {
   const platform = getPlatform()
   if (!platform.isTauri || platform.os === 'ios' || platform.os === 'android') {
     throw new Error('App updates are only available in the EvoFlux desktop app.')
+  }
+  if (platform.os === 'linux') {
+    throw new Error('Linux updates are installed with a newer EvoFlux .deb package.')
   }
 
   const { invoke } = await import('@tauri-apps/api/core')

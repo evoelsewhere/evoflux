@@ -117,7 +117,11 @@ export function SettingsHubPage() {
   const sandboxCount = sandboxQ.data?.denied_patterns.length ?? null
   const version = healthQ.data?.version
   const desktopUpdaterAvailable =
-    platform.isTauri && platform.os !== 'ios' && platform.os !== 'android'
+    platform.isTauri
+    && platform.os !== 'linux'
+    && platform.os !== 'ios'
+    && platform.os !== 'android'
+  const linuxDebInstall = platform.isTauri && platform.os === 'linux'
 
   const groups: Array<{ label: string; rows: NavRow[] }> = [
     {
@@ -262,7 +266,9 @@ export function SettingsHubPage() {
         <SettingsRow
           label="App updates"
           description={
-            desktopUpdaterAvailable
+            linuxDebInstall
+              ? 'Linux updates are installed through a newer EvoFlux .deb package so dpkg keeps ownership consistent.'
+              : desktopUpdaterAvailable
               ? 'Check GitHub Releases for a signed EvoFlux update. Downloads are verified before installation.'
               : 'Update checks are available in the packaged EvoFlux desktop app.'
           }

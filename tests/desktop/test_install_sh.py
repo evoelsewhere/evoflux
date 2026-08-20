@@ -260,20 +260,20 @@ class TestLinuxBranch:
         mode = desktop_file.stat().st_mode & 0o777
         assert mode == 0o644
 
-    def test_linux_deb_defers_to_dpkg(self, tmp_path: Path):
-        """When given a .deb, the script must hand off to dpkg."""
+    def test_linux_deb_installs_with_apt_get(self, tmp_path: Path):
+        """When given a .deb, apt installs it with dependency resolution."""
         if platform.system() != "Linux":
             pytest.skip("Linux-specific branch")
-        # Fake sudo + dpkg so we don't need actual root or the package.
+        # Fake sudo + apt-get so we don't need actual root or the package.
         fake_bindir = tmp_path / "bin"
         fake_bindir.mkdir()
-        log = tmp_path / "dpkg.log"
+        log = tmp_path / "apt-get.log"
         (fake_bindir / "sudo").write_text('#!/bin/sh\nexec "$@"\n')
         (fake_bindir / "sudo").chmod(0o755)
-        (fake_bindir / "dpkg").write_text(
-            f'#!/bin/sh\necho "dpkg $@" >> {log}\nexit 0\n'
+        (fake_bindir / "apt-get").write_text(
+            f'#!/bin/sh\necho "apt-get $@" >> {log}\nexit 0\n'
         )
-        (fake_bindir / "dpkg").chmod(0o755)
+        (fake_bindir / "apt-get").chmod(0o755)
 
         deb = tmp_path / "EVOFLUX_0.1.0_amd64.deb"
         deb.write_text("not really a deb")
@@ -283,9 +283,9 @@ class TestLinuxBranch:
             env={"PATH": f"{fake_bindir}:{os.environ['PATH']}"},
         )
         assert proc.returncode == 0, proc.stderr
-        # Verify our fake dpkg was actually invoked.
+        # Verify our fake apt-get was actually invoked.
         assert log.is_file()
-        assert f"dpkg -i {deb}" in log.read_text()
+        assert f"apt-get install -y {deb}" in log.read_text()
 
     def test_linux_rpm_defers_to_rpm(self, tmp_path: Path):
         if platform.system() != "Linux":

@@ -21,6 +21,9 @@ class UpdaterTarget:
 
 
 TARGETS = (
+    # Linux releases are Debian packages managed by dpkg/apt. They are
+    # published with checksums but intentionally excluded from Tauri's
+    # self-update manifest so package ownership remains consistent.
     UpdaterTarget("darwin-aarch64", "*_aarch64.app.tar.gz"),
     UpdaterTarget("darwin-x86_64", "*_x64.app.tar.gz"),
     UpdaterTarget("windows-x86_64-nsis", "*_x64-setup.exe"),
