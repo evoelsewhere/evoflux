@@ -85,6 +85,10 @@ Current stable release: **[EvoFlux v0.0.6](https://github.com/evoelsewhere/evofl
 | Windows · x64 | [Download installer](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux_0.0.6_x64-setup.exe) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/evoflux-windows-x64-SHA256SUMS.txt) |
 | Chrome / Edge WebBridge · v2.4.0 | [Download extension ZIP](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux-WebBridge-2.4.0.zip) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux-WebBridge-2.4.0-SHA256SUMS.txt) |
 
+Linux x64 DEB packaging is enabled for the next tagged release. Install a
+downloaded package with `sudo apt install ./EvoFlux_*_amd64.deb`; updates use
+the same package-managed flow instead of replacing dpkg-owned files in place.
+
 The desktop packages include the native Python sidecar. To install WebBridge,
 extract the ZIP, open `chrome://extensions` or `edge://extensions`, enable
 **Developer mode**, and choose **Load unpacked**.

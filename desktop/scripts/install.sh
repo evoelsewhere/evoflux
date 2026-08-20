@@ -320,9 +320,10 @@ if [ "$PLATFORM" = "linux" ]; then
   # If user handed us a .deb, defer to the package manager.
   case "$BINARY" in
     *.deb)
-      info "Detected .deb package; deferring to dpkg."
-      if ! sudo dpkg -i "$BINARY"; then
-        fail "dpkg install failed. Try: sudo apt-get install -f"
+      info "Detected .deb package; installing with apt-get."
+      deb_path="$(cd -- "$(dirname -- "$BINARY")" && pwd)/$(basename -- "$BINARY")"
+      if ! sudo apt-get install -y "$deb_path"; then
+        fail "apt-get install failed."
         exit 4
       fi
       ok "${BOLD}Done.${RESET}"

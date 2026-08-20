@@ -16,6 +16,7 @@ on:
           - "macos-intel"
           - "macos-apple-silicon"
           - "windows-x64"
+          - "linux-x64"
       signing:
         description: Sign and notarize when credentials are available
         required: true
@@ -54,7 +55,7 @@ jobs:
         run: |
           case "$SELECTED_PLATFORM" in
             all)
-              matrix='{"include":[{"name":"DMG · Intel","os":"macos-15-intel","artifact":"evoflux-macos-intel","architecture":"x86_64","dmg_architecture":"x64"},{"name":"DMG · Apple Silicon","os":"macos-15","artifact":"evoflux-macos-apple-silicon","architecture":"arm64","dmg_architecture":"aarch64"},{"name":"NSIS · Windows x64","os":"windows-2022","artifact":"evoflux-windows-x64","architecture":"x86_64"}]}'
+              matrix='{"include":[{"name":"DMG · Intel","os":"macos-15-intel","artifact":"evoflux-macos-intel","architecture":"x86_64","dmg_architecture":"x64"},{"name":"DMG · Apple Silicon","os":"macos-15","artifact":"evoflux-macos-apple-silicon","architecture":"arm64","dmg_architecture":"aarch64"},{"name":"NSIS · Windows x64","os":"windows-2022","artifact":"evoflux-windows-x64","architecture":"x86_64"},{"name":"DEB · Linux x64","os":"ubuntu-22.04","artifact":"evoflux-linux-x64","architecture":"x86_64","deb_architecture":"amd64"}]}'
               ;;
             macos-intel)
               matrix='{"include":[{"name":"DMG · Intel","os":"macos-15-intel","artifact":"evoflux-macos-intel","architecture":"x86_64","dmg_architecture":"x64"}]}'
@@ -64,6 +65,9 @@ jobs:
               ;;
             windows-x64)
               matrix='{"include":[{"name":"NSIS · Windows x64","os":"windows-2022","artifact":"evoflux-windows-x64","architecture":"x86_64"}]}'
+              ;;
+            linux-x64)
+              matrix='{"include":[{"name":"DEB · Linux x64","os":"ubuntu-22.04","artifact":"evoflux-linux-x64","architecture":"x86_64","deb_architecture":"amd64"}]}'
               ;;
             *)
               echo "Unsupported platform: $SELECTED_PLATFORM" >&2
@@ -225,6 +229,42 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Linux desktop build dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            curl \
+            dbus-x11 \
+            file \
+            libayatana-appindicator3-dev \
+            libgtk-3-dev \
+            libpipewire-0.3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxcb-randr0-dev \
+            libxcb1-dev \
+            libxdo-dev \
+            patchelf \
+            wget \
+            xauth \
+            xdg-utils \
+            xdotool \
+            xvfb
+
+      - name: Run Linux packaging regression tests
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          uv sync --frozen
+          uv run pytest --no-cov -q \
+            tests/desktop/test_install_sh.py \
+            tests/scripts/test_build_sidecar.py \
+            tests/scripts/test_desktop_packages_workflow.py
+
       - name: Cache Cargo
         uses: actions/cache@v4
         with:
@@ -304,7 +344,12 @@ jobs:
           from pathlib import Path
 
           bundle = {
-              "createUpdaterArtifacts": os.environ["UPDATER_ENABLED"] == "true"
+              # Debian packages are updated through apt/manual package install,
+              # not by replacing package-manager-owned files in place.
+              "createUpdaterArtifacts": (
+                  os.environ["UPDATER_ENABLED"] == "true"
+                  and os.environ["RUNNER_OS"] != "Linux"
+              )
           }
           if os.environ["RUNNER_OS"] == "macOS" and os.environ.get("MAC_SIGNING_ENABLED") != "true":
               bundle["macOS"] = {"signingIdentity": "-"}
@@ -427,6 +472,103 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: cargo tauri build --bundles nsis --verbose --config $env:TAURI_BUNDLE_CONFIG
+
+      - name: Build Linux DEB package
+        if: runner.os == 'Linux'
+        shell: bash
+        working-directory: desktop/src-tauri
+        run: cargo tauri build --bundles deb --verbose --config "$TAURI_BUNDLE_CONFIG"
+
+      - name: Verify Linux DEB contents and dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(desktop/src-tauri/target/release/bundle/deb/*.deb)
+          if [[ ${#packages[@]} -ne 1 ]]; then
+            echo "Expected exactly one DEB package, found ${#packages[@]}." >&2
+            exit 1
+          fi
+
+          package="${packages[0]}"
+          dpkg-deb --info "$package"
+          dpkg-deb --contents "$package" > "$RUNNER_TEMP/evoflux-deb-contents.txt"
+          architecture="$(dpkg-deb -f "$package" Architecture)"
+          depends="$(dpkg-deb -f "$package" Depends)"
+          [[ "$architecture" == "${{ matrix.deb_architecture }}" ]]
+          grep -Eq '(^|, )xdotool([ ,]|$)' <<<"$depends"
+          grep -Eq '(^|, )xdg-utils([ ,]|$)' <<<"$depends"
+          grep -Eq '/usr/bin/[^/]+$' "$RUNNER_TEMP/evoflux-deb-contents.txt"
+          grep -Eq '/usr/lib/[^/]+/sidecar/python/bin/python3$' "$RUNNER_TEMP/evoflux-deb-contents.txt"
+          grep -Eq '/usr/lib/[^/]+/sidecar/site-packages/app/cli/__main__.py$' "$RUNNER_TEMP/evoflux-deb-contents.txt"
+
+      - name: Smoke-test first Linux DEB launch
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(desktop/src-tauri/target/release/bundle/deb/*.deb)
+          package="${packages[0]}"
+          package_name="$(dpkg-deb -f "$package" Package)"
+          sudo apt-get install -y "$PWD/$package"
+
+          executable="$(dpkg -L "$package_name" | awk '/^\/usr\/bin\// { print; exit }')"
+          if [[ -z "$executable" || ! -x "$executable" ]]; then
+            echo "Installed EvoFlux executable was not found." >&2
+            dpkg -L "$package_name" >&2
+            exit 1
+          fi
+
+          smoke_root="$RUNNER_TEMP/evoflux-linux-first-launch"
+          export XDG_CONFIG_HOME="$smoke_root/xdg-config"
+          export XDG_DATA_HOME="$smoke_root/xdg-data"
+          export XDG_CACHE_HOME="$smoke_root/xdg-cache"
+          export XDG_STATE_HOME="$smoke_root/xdg-state"
+          export EVOFLUX_DATA_DIR="$smoke_root/data"
+          export EVOFLUX_CONFIG_DIR="$smoke_root/config"
+          export EVOFLUX_STATE_DIR="$smoke_root/state"
+          export EVOFLUX_CACHE_DIR="$smoke_root/cache"
+          export EVOFLUX_WIKI_DIR="$smoke_root/wiki"
+          export EVOFLUX_WORKSPACE_DIR="$smoke_root/workspace"
+          export WEBKIT_DISABLE_COMPOSITING_MODE=1
+          mkdir -p "$smoke_root"
+
+          desktop_log="$smoke_root/desktop.log"
+          setsid dbus-run-session -- xvfb-run -a "$executable" >"$desktop_log" 2>&1 &
+          app_pid=$!
+          cleanup() {
+            kill -TERM -- "-$app_pid" 2>/dev/null || true
+            wait "$app_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          deadline=$((SECONDS + 120))
+          ready=false
+          backend_log=""
+          while (( SECONDS < deadline )); do
+            backend_log="$(find "$smoke_root" -name backend.log -type f -print -quit)"
+            if [[ -n "$backend_log" ]] && grep -q 'startup_timing phase=server_ready' "$backend_log"; then
+              ready=true
+              break
+            fi
+            if ! kill -0 "$app_pid" 2>/dev/null; then
+              echo "EvoFlux exited before the bundled backend became ready." >&2
+              cat "$desktop_log" >&2 || true
+              [[ -n "$backend_log" ]] && cat "$backend_log" >&2 || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          if [[ "$ready" != "true" ]]; then
+            echo "First Linux launch did not become ready within 120 seconds." >&2
+            cat "$desktop_log" >&2 || true
+            [[ -n "$backend_log" ]] && cat "$backend_log" >&2 || true
+            exit 1
+          fi
+          echo "First Linux DEB launch reached backend-ready state."
 
       - name: Validate Windows updater asset
         if: runner.os == 'Windows' && steps.updater_signing.outputs.enabled == 'true'
@@ -587,6 +729,13 @@ jobs:
           }
           $lines | Set-Content "$env:RUNNER_TEMP/${{ matrix.artifact }}-SHA256SUMS.txt"
 
+      - name: Generate Linux checksums
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cd desktop/src-tauri/target/release/bundle/deb
+          sha256sum ./*.deb > "$RUNNER_TEMP/${{ matrix.artifact }}-SHA256SUMS.txt"
+
       - name: Upload DMG
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
@@ -608,6 +757,17 @@ jobs:
           path: |
             desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
             desktop/src-tauri/target/release/bundle/nsis/*-setup.exe.sig
+            ${{ runner.temp }}/${{ matrix.artifact }}-SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Linux DEB package
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            desktop/src-tauri/target/release/bundle/deb/*.deb
             ${{ runner.temp }}/${{ matrix.artifact }}-SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14

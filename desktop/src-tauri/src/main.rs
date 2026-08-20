@@ -4113,7 +4113,10 @@ fn format_download_progress(downloaded_mb: usize, total_bytes: Option<u64>) -> S
 /// Keeping it out of the committed config lets normal local builds remain
 /// updater-disabled until a maintainer provisions the long-lived signing key.
 fn updater_is_configured() -> bool {
-    !cfg!(debug_assertions)
+    // Linux DEB files are owned by dpkg/apt. Replacing package-managed files
+    // through the self-updater would leave the package database inconsistent.
+    !cfg!(target_os = "linux")
+        && !cfg!(debug_assertions)
         && option_env!("EVOFLUX_UPDATER_PUBLIC_KEY").is_some_and(|key| !key.trim().is_empty())
 }
 
@@ -4127,13 +4130,24 @@ impl Drop for UpdateBusyGuard {
 
 async fn check_for_app_update(app: &AppHandle) -> AppUpdateCheckResult {
     if !updater_is_configured() {
-        let message = if cfg!(debug_assertions) {
-            "Update checks are disabled in development builds. Install a packaged release to test the production updater."
+        let (title, message) = if cfg!(target_os = "linux") {
+            (
+                "Updates managed by Debian",
+                "Install the newer EvoFlux .deb with apt to update this Linux installation.",
+            )
+        } else if cfg!(debug_assertions) {
+            (
+                "Updates unavailable",
+                "Update checks are disabled in development builds. Install a packaged release to test the production updater.",
+            )
         } else {
-            "This build was not configured with an updater signing key. Install an official EvoFlux release to receive signed updates."
+            (
+                "Updates unavailable",
+                "This build was not configured with an updater signing key. Install an official EvoFlux release to receive signed updates.",
+            )
         };
         return AppUpdateCheckResult::Unavailable {
-            title: "Updates unavailable".into(),
+            title: title.into(),
             message: message.into(),
         };
     }

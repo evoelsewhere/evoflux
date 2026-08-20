@@ -37,39 +37,23 @@ v1; option A may come later.
 The script refuses to overwrite an existing signature; pass
 `--force` to clobber.
 
-## Linux (x86_64, arm64)
+## Linux (x86_64, Debian / Ubuntu)
 
-We ship three artifacts; pick whichever your distro prefers.
-
-### AppImage (universal)
+The supported Linux release artifact is the x86_64 `.deb` package:
 
 ```bash
-chmod +x EvoFlux-x.y.z.AppImage
-./install.sh --install ./EvoFlux-x.y.z.AppImage
+sudo apt install ./EvoFlux_x.y.z_amd64.deb
 ```
 
-This installs the binary to `~/.local/bin/EvoFlux`, drops a
-`.desktop` entry under `~/.local/share/applications/`, and registers
-the icon with the hicolor theme. No `sudo` required.
+The package contains the native desktop shell, bundled Python sidecar, web UI,
+WebBridge extension, desktop entry, and icons. Required GTK/WebKit libraries,
+`xdg-utils`, and the X11 input helper are declared as package dependencies.
 
-If `~/.local/bin` is not on your `$PATH`, the script will print the
-exact `export` line to add to your shell rc.
+Install a newer `.deb` with the same command to update. EvoFlux intentionally
+does not self-update on Linux because the installed files belong to dpkg/apt.
 
-### Debian / Ubuntu (`.deb`)
-
-```bash
-sudo dpkg -i EVOFLUX_x.y.z_amd64.deb
-sudo apt-get install -f      # only if dpkg complains about deps
-```
-
-### Fedora / RHEL (`.rpm`)
-
-```bash
-sudo rpm -Uvh EvoFlux-x.y.z.x86_64.rpm
-```
-
-The `install.sh` helper detects `.deb` / `.rpm` and defers to the
-right package manager automatically.
+AppImage and RPM paths in `install.sh` remain developer conveniences and are
+not part of the supported release matrix.
 
 ## Windows (x64)
 
@@ -106,7 +90,7 @@ The expected hashes are also pinned in the GitHub release notes.
 | Platform | How                                                                  |
 |----------|----------------------------------------------------------------------|
 | macOS    | Drag `EvoFlux.app` from `/Applications` to the Trash.             |
-| Linux    | Delete `~/.local/bin/EvoFlux` and `~/.local/share/applications/EvoFlux.desktop`. Or `sudo apt remove EvoFlux` / `sudo rpm -e EvoFlux` if you used the system package. |
+| Linux    | `sudo apt remove evoflux` (application data remains intact). |
 | Windows  | *Settings → Apps → EvoFlux → Uninstall*.                          |
 
 Application data lives under the same XDG paths used by the CLI (these survive uninstall by design):
