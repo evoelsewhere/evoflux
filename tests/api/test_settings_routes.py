@@ -1094,6 +1094,7 @@ def test_codex_usage_normalizes_official_rate_limit_contract() -> None:
                     "balance": "28473",
                     "used": "171527",
                     "total": "200000",
+                    "unit": "credits",
                 },
                 "plan_type": "enterprise_cbp_usage_based",
                 "rate_limit_reached_type": None,
@@ -1141,6 +1142,7 @@ def test_codex_usage_normalizes_monthly_spend_control() -> None:
     assert limit.credits.balance == "28473"
     assert limit.credits.used == "171527"
     assert limit.credits.total == "200000"
+    assert limit.credits.unit == "credits"
 
 
 def test_get_codex_provider_usage_returns_unlimited_credits(
@@ -1212,6 +1214,7 @@ def test_get_codex_provider_usage_returns_unlimited_credits(
                     "balance": None,
                     "used": None,
                     "total": None,
+                    "unit": "credits",
                 },
                 "plan_type": "business",
                 "rate_limit_reached_type": None,
@@ -1292,7 +1295,7 @@ def test_get_copilot_provider_usage_returns_premium_quota_snapshot(
         "limit_name": "Premium requests",
         "primary": {
             "used_percent": pytest.approx(14.4),
-            "window_minutes": None,
+            "window_minutes": 43_200,
             "resets_at": 1780272000,
         },
         "secondary": None,
@@ -1302,10 +1305,37 @@ def test_get_copilot_provider_usage_returns_premium_quota_snapshot(
             "balance": "257/300",
             "used": "43",
             "total": "300",
+            "unit": "premium requests",
         },
         "plan_type": "individual",
         "rate_limit_reached_type": None,
     }
+
+
+def test_copilot_usage_derives_percent_when_snapshot_omits_it() -> None:
+    limit = copilot_usage._usage_limit(
+        "premium_interactions",
+        {
+            "quota_id": "premium_interactions",
+            "remaining": 40,
+            "entitlement": 50,
+            "unlimited": False,
+            "quota_reset_at": 0,
+        },
+        plan_type="business",
+        fallback_reset_at=1_780_272_000,
+    )
+
+    assert limit is not None
+    assert limit.primary is not None
+    assert limit.primary.used_percent == pytest.approx(20)
+    assert limit.primary.window_minutes == 43_200
+    assert limit.primary.resets_at == 1_780_272_000
+    assert limit.credits is not None
+    assert limit.credits.balance == "40/50"
+    assert limit.credits.used == "10"
+    assert limit.credits.total == "50"
+    assert limit.credits.unit == "premium requests"
 
 
 def test_get_provider_usage_rejects_unsupported_provider() -> None:

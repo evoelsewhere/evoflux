@@ -151,6 +151,7 @@ class ProviderUsageCredits(BaseModel):
     balance: str | None = None
     used: str | None = None
     total: str | None = None
+    unit: str | None = None
 
 
 class ProviderUsageLimit(BaseModel):

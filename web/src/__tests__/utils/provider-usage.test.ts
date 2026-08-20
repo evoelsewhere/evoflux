@@ -28,6 +28,7 @@ describe('provider usage formatting', () => {
       used: 171527,
       total: 200000,
       usedPercent: 85.7635,
+      unit: 'credits',
       label: '171,527 of 200,000 credits used',
     })
     expect(summarizeCreditUsage({ balance: '28473/200000' }, 'en-US')?.label).toBe(
@@ -41,8 +42,20 @@ describe('provider usage formatting', () => {
 
     expect(formatUsageWindowLabel('Codex', 30 * 24 * 60)).toBe('Monthly usage')
     expect(formatUsageWindowLabel('Codex', 7 * 24 * 60)).toBe('Weekly usage')
+    expect(formatUsageWindowLabel('Premium requests', 30 * 24 * 60)).toBe(
+      'Monthly premium requests',
+    )
     expect(formatUsageReset(resetAt, 30 * 24 * 60, 'en-US', 'UTC')).toBe(
       'Resets Sep 1',
     )
+  })
+
+  it('uses the provider quota unit instead of calling every limit credits', () => {
+    expect(
+      summarizeCreditUsage(
+        { used: '43', total: '300', unit: 'premium requests' },
+        'en-US',
+      )?.label,
+    ).toBe('43 of 300 premium requests used')
   })
 })

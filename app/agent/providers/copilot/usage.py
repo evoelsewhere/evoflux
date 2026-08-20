@@ -51,6 +51,16 @@ def _usage_headers() -> dict[str, str]:
     }
 
 
+def _quota_number(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value)
+
+
+def _quota_text(value: float) -> str:
+    return str(int(value)) if value.is_integer() else str(value)
+
+
 def _usage_limit(
     name: str,
     data: object,
@@ -61,35 +71,40 @@ def _usage_limit(
     if not isinstance(data, dict):
         return None
     values = cast("dict[str, object]", data)
-    percent_remaining = values.get("percent_remaining")
-    primary = None
-    if isinstance(percent_remaining, int | float):
-        reset_at = _parse_timestamp(values.get("quota_reset_at")) or fallback_reset_at
-        primary = ProviderUsageWindow(
-            used_percent=max(0.0, min(100.0, 100.0 - float(percent_remaining))),
-            resets_at=reset_at,
-        )
     unlimited = values.get("unlimited") is True
-    remaining = values.get("remaining")
-    entitlement = values.get("entitlement")
+    remaining = _quota_number(values.get("remaining"))
+    entitlement = _quota_number(values.get("entitlement"))
     balance = None
     used = None
     total = None
-    if (
-        isinstance(remaining, int | float)
-        and isinstance(entitlement, int | float)
-        and entitlement > 0
-    ):
-        balance = f"{int(remaining)}/{int(entitlement)}"
-        used = str(max(0, int(entitlement) - int(remaining)))
-        total = str(int(entitlement))
+    used_value = None
+    if remaining is not None and entitlement is not None and entitlement > 0:
+        bounded_remaining = max(0.0, min(entitlement, remaining))
+        used_value = entitlement - bounded_remaining
+        balance = f"{_quota_text(bounded_remaining)}/{_quota_text(entitlement)}"
+        used = _quota_text(used_value)
+        total = _quota_text(entitlement)
+
+    percent_remaining = _quota_number(values.get("percent_remaining"))
+    if percent_remaining is None and used_value is not None and entitlement:
+        percent_remaining = max(0.0, min(100.0, 100.0 - used_value / entitlement * 100))
+    reset_at = _parse_timestamp(values.get("quota_reset_at")) or fallback_reset_at
+    primary = (
+        ProviderUsageWindow(
+            used_percent=max(0.0, min(100.0, 100.0 - percent_remaining)),
+            window_minutes=30 * 24 * 60,
+            resets_at=reset_at,
+        )
+        if percent_remaining is not None
+        else None
+    )
     credits = ProviderUsageCredits(
-        has_credits=unlimited
-        or bool(isinstance(remaining, int | float) and remaining > 0),
+        has_credits=unlimited or bool(remaining is not None and remaining > 0),
         unlimited=unlimited,
         balance=balance,
         used=used,
         total=total,
+        unit="premium requests",
     )
     quota_id = values.get("quota_id")
     return ProviderUsageLimit(

@@ -121,6 +121,7 @@ def _usage_credits(data: object) -> ProviderUsageCredits | None:
             "monthlyLimit",
         )
     )
+    unit = _text(_first(values, "unit", "credit_unit", "creditUnit")) or "credits"
     if used is None:
         used = _difference(total, balance)
     if balance is None:
@@ -145,6 +146,7 @@ def _usage_credits(data: object) -> ProviderUsageCredits | None:
         balance=balance,
         used=used,
         total=total,
+        unit=unit,
     )
 
 
