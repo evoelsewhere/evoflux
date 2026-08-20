@@ -2132,6 +2132,9 @@ fn browser_capture_monitor(
         .map_err(|error| format!("Could not list browser displays: {error}"))?
         .into_iter()
         .min_by_key(|candidate| {
+            #[cfg(target_os = "linux")]
+            let candidate_name = candidate.name().ok();
+            #[cfg(not(target_os = "linux"))]
             let candidate_name = candidate.friendly_name().ok();
             let name_penalty = match (target_name, candidate_name.as_deref()) {
                 (Some(left), Some(right)) if left == right => 0_u64,
@@ -2171,9 +2174,40 @@ fn capture_browser_screen_region(
     width: u32,
     height: u32,
 ) -> Result<xcap::image::RgbaImage, String> {
-    browser_capture_monitor(target_name, target_width, target_height)?
-        .capture_region(x, y, width, height)
-        .map_err(|error| format!("Could not capture the in-app browser: {error}"))
+    let monitor = browser_capture_monitor(target_name, target_width, target_height)?;
+
+    #[cfg(target_os = "linux")]
+    {
+        let monitor_width = monitor
+            .width()
+            .map_err(|error| format!("Could not read display width: {error}"))?;
+        let monitor_height = monitor
+            .height()
+            .map_err(|error| format!("Could not read display height: {error}"))?;
+        let right = x
+            .checked_add(width)
+            .ok_or_else(|| "Browser capture region overflows horizontally".to_string())?;
+        let bottom = y
+            .checked_add(height)
+            .ok_or_else(|| "Browser capture region overflows vertically".to_string())?;
+        if right > monitor_width || bottom > monitor_height {
+            return Err(format!(
+                "Browser capture region ({x}, {y}, {width}, {height}) exceeds display bounds ({monitor_width}, {monitor_height})"
+            ));
+        }
+
+        let image = monitor
+            .capture_image()
+            .map_err(|error| format!("Could not capture the in-app browser: {error}"))?;
+        return Ok(xcap::image::imageops::crop_imm(&image, x, y, width, height).to_image());
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        monitor
+            .capture_region(x, y, width, height)
+            .map_err(|error| format!("Could not capture the in-app browser: {error}"))
+    }
 }
 
 async fn capture_browser_webview(
