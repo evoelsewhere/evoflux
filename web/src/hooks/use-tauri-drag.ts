@@ -39,17 +39,20 @@ function toggleMaximize(): void {
 const INTERACTIVE_SELECTOR =
   'button, a, input, select, textarea, [role="button"], [data-no-drag]'
 
-function isInteractive(target: EventTarget | null, boundary: Element): boolean {
+function isInteractive(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false
-  const hit = target.closest(INTERACTIVE_SELECTOR)
-  return hit !== null && boundary.contains(hit)
+  // React portal events bubble through the React owner tree even though the
+  // target lives outside the header in the DOM. Requiring boundary.contains()
+  // therefore misclassifies popover buttons as bare title-bar presses and
+  // starts a native window drag before their click can complete.
+  return target.closest(INTERACTIVE_SELECTOR) !== null
 }
 
 export function useTauriDrag(): DragProps {
   const { isTauri } = getPlatform()
 
   const onMouseDown = useCallback((event: React.MouseEvent<HTMLElement>) => {
-    if (isInteractive(event.target, event.currentTarget)) return
+    if (isInteractive(event.target)) return
     if (event.buttons !== 1) return
     if (event.detail === 2) {
       void toggleMaximize()

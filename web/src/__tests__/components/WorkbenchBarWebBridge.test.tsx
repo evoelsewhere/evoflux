@@ -97,6 +97,7 @@ describe('WorkbenchBar browser access control', () => {
     const enableButton = screen.getByRole('button', { name: 'Enable WebBridge for this chat' })
 
     await waitFor(() => expect(enableButton).toBeEnabled())
+    expect(enableButton.closest('[data-slot="popover-content"]')).toHaveAttribute('data-no-drag')
     fireEvent.click(enableButton)
     expect(onChange).toHaveBeenCalledWith(true)
   })
