@@ -45,6 +45,7 @@ export type CreditUsageSummary = {
   used: number
   total: number
   usedPercent: number
+  unit: string
   label: string
 }
 
@@ -53,6 +54,7 @@ export function summarizeCreditUsage(
     balance?: string | null
     used?: string | null
     total?: string | null
+    unit?: string | null
   } | null,
   locale?: string,
 ): CreditUsageSummary | null {
@@ -76,6 +78,7 @@ export function summarizeCreditUsage(
   const formattedUsed = formatCreditNumber(String(used), locale)
   const formattedTotal = formatCreditNumber(String(total), locale)
   if (!formattedUsed || !formattedTotal) return null
+  const unit = credits.unit?.trim() || 'credits'
   return {
     used,
     total,
@@ -83,7 +86,8 @@ export function summarizeCreditUsage(
       0,
       Math.min(100, Math.round((used / total) * 1_000_000) / 10_000),
     ),
-    label: `${formattedUsed} of ${formattedTotal} credits used`,
+    unit,
+    label: `${formattedUsed} of ${formattedTotal} ${unit} used`,
   }
 }
 
@@ -95,6 +99,7 @@ export function formatUsageWindowLabel(
   const days = minutes / (60 * 24)
   const prefix = base === 'Codex' ? '' : `${base} · `
   if (days >= 27 && days <= 32) {
+    if (base.toLowerCase() === 'premium requests') return 'Monthly premium requests'
     return base.toLowerCase() === 'monthly usage' ? base : `${prefix}Monthly usage`
   }
   if (days >= 6 && days <= 8) {

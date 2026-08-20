@@ -378,6 +378,7 @@ export type ProviderUsageLimit = {
     balance?: string | null
     used?: string | null
     total?: string | null
+    unit?: string | null
   } | null
   plan_type?: string | null
   rate_limit_reached_type?: string | null

@@ -170,6 +170,8 @@ function UsageLimitRows({ limit }: { limit: ProviderUsageLimit }) {
   const balance = formatCreditBalance(credits?.balance)
   const creditUsage = summarizeCreditUsage(credits)
   const hasWindows = Boolean(limit.primary || limit.secondary)
+  const unit = credits?.unit?.trim() || 'credits'
+  const unitLabel = unit.charAt(0).toUpperCase() + unit.slice(1)
   return (
     <>
       {limit.primary && (
@@ -187,7 +189,7 @@ function UsageLimitRows({ limit }: { limit: ProviderUsageLimit }) {
       )}
       {credits && creditUsage && !hasWindows && (
         <UsageBar
-          label="Credit usage"
+          label={limit.limit_name || `${unitLabel} usage`}
           window={{ used_percent: creditUsage.usedPercent }}
           credits={credits}
         />
@@ -195,10 +197,10 @@ function UsageLimitRows({ limit }: { limit: ProviderUsageLimit }) {
       {credits && !creditUsage && (
         <p className="text-xs text-(--color-text-muted)">
           {credits.unlimited
-            ? 'Unlimited usage available'
+            ? `Unlimited ${unit} available`
             : credits.has_credits
-              ? balance ? `${balance} credits remaining` : 'Usage credits available'
-              : 'No usage credits available'}
+              ? balance ? `${balance} ${unit} remaining` : `${unitLabel} available`
+              : `No ${unit} remaining`}
         </p>
       )}
     </>
