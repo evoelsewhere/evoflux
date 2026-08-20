@@ -26,7 +26,6 @@ import {
   RefreshCw,
   type LucideIcon,
 } from 'lucide-react'
-import { useState } from 'react'
 
 import { cn } from '@/lib/utils'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -45,7 +44,7 @@ import {
 } from '@/queries'
 import { useActiveSkillDiscoveryScope } from '@/hooks/useActiveSkillDiscoveryScope'
 import { usePlatform } from '@/hooks/use-platform'
-import { checkForAppUpdates } from '@/lib/app-updater'
+import { useAppUpdaterStore } from '@/stores/useAppUpdaterStore'
 
 interface NavRow {
   to: string
@@ -100,8 +99,8 @@ export function SettingsHubPage() {
   const isMobile = useIsMobile()
   const platform = usePlatform()
   const navigate = useSettingsNavigate()
-  const [checkingForUpdate, setCheckingForUpdate] = useState(false)
-  const [updateError, setUpdateError] = useState<string | null>(null)
+  const checkingForUpdate = useAppUpdaterStore((state) => state.checking)
+  const checkForUpdates = useAppUpdaterStore((state) => state.check)
   const agentsQ = useAgentFilesQuery()
   const skillScope = useActiveSkillDiscoveryScope()
   const skillsQ = useSkillFilesQuery(skillScope)
@@ -119,18 +118,6 @@ export function SettingsHubPage() {
   const version = healthQ.data?.version
   const desktopUpdaterAvailable =
     platform.isTauri && platform.os !== 'ios' && platform.os !== 'android'
-
-  const checkForUpdates = async () => {
-    setCheckingForUpdate(true)
-    setUpdateError(null)
-    try {
-      await checkForAppUpdates()
-    } catch (error) {
-      setUpdateError(error instanceof Error ? error.message : 'Update check failed.')
-    } finally {
-      setCheckingForUpdate(false)
-    }
-  }
 
   const groups: Array<{ label: string; rows: NavRow[] }> = [
     {
@@ -275,10 +262,9 @@ export function SettingsHubPage() {
         <SettingsRow
           label="App updates"
           description={
-            updateError ??
-            (desktopUpdaterAvailable
+            desktopUpdaterAvailable
               ? 'Check GitHub Releases for a signed EvoFlux update. Downloads are verified before installation.'
-              : 'Update checks are available in the packaged EvoFlux desktop app.')
+              : 'Update checks are available in the packaged EvoFlux desktop app.'
           }
           control={
             <Button

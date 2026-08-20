@@ -12,6 +12,7 @@ fn main() {
             "app_retry_backend",
             "app_reveal_backend_log",
             "app_check_for_updates",
+            "app_install_update",
             "app_remove_backend_server",
             "app_save_backend_server",
             "app_use_external_backend",
