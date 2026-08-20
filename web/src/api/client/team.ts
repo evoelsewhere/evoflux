@@ -42,7 +42,6 @@ import type {
   ProjectCodeSearchResponse,
   ProjectCodeGraphData,
   WebBridgeStatusResponse,
-  WebBridgeLaunchBrowserResponse,
   WebBridgeAuditResponse,
   WebBridgeTeachDraft,
   WebBridgeTeachDraftReplayResponse,
@@ -859,17 +858,6 @@ export async function deleteWebBridgeTeachDraft(draftId: string): Promise<void> 
     { method: 'DELETE' },
   )
   if (!res.ok) await parseDetailOrThrow(res, 'deleteWebBridgeTeachDraft')
-}
-
-/**
- * Ask the backend to launch a local browser with the WebBridge extension
- * loaded. On 404 the thrown error's message carries the backend's
- * manual-install instructions (``detail``) — surface it as-is.
- */
-export async function launchWebBridgeBrowser(): Promise<WebBridgeLaunchBrowserResponse> {
-  const res = await fetch(`${apiBaseUrl()}/team/webbridge/launch-browser`, { method: 'POST' })
-  if (!res.ok) await parseDetailOrThrow(res, 'launchWebBridgeBrowser')
-  return res.json()
 }
 
 /**

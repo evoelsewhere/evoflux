@@ -170,17 +170,6 @@ impl Sidecar {
             .stdout(Stdio::piped())
             .stderr(Stdio::from(stderr_for_child));
 
-        // Point the backend at the WebBridge extension bundled alongside the
-        // sidecar (tauri.conf.json resources), so its launch-browser and
-        // download endpoints work in the packaged app — there is no repo
-        // checkout for _resolve_extension_dir to fall back on. Only set it
-        // when the folder is actually present so a stripped build degrades
-        // to the endpoints' own 404 rather than a dangling override.
-        let webbridge_ext = resource_dir.join("extensions").join("webbridge");
-        if webbridge_ext.is_dir() {
-            cmd.env("EVOFLUX_WEBBRIDGE_EXTENSION_DIR", &webbridge_ext);
-        }
-
         // Path resolution is delegated to the Python backend
         // (app.core.paths). It already resolves the XDG-spec directories
         // — ~/.config/evoflux, ~/.local/share/evoflux, etc. — that

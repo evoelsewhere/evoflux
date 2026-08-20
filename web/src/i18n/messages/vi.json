@@ -325,7 +325,6 @@
   "{0}/team/sessions/resolve": "{0}/team/sessions/resolve",
   "{0}/team/webbridge/appearance": "{0}/team/webbridge/appearance",
   "{0}/team/webbridge/audit{1}": "{0}/team/webbridge/audit{1}",
-  "{0}/team/webbridge/launch-browser": "{0}/team/webbridge/launch-browser",
   "{0}/team/webbridge/status": "{0}/team/webbridge/status",
   "{0}/team/webbridge/teach-drafts/{1}": "{0}/team/webbridge/teach-drafts/{1}",
   "{0}/team/webbridge/teach-drafts/{1}/approve": "{0}/team/webbridge/teach-drafts/{1}/approve",

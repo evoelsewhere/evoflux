@@ -6,7 +6,7 @@
 | **Ngày** | 2026-07-22 |
 | **Audit gần nhất** | 2026-07-23 |
 | **Phạm vi** | Mở rộng WebBridge từ kênh EvoFlux điều khiển browser thành lớp tương tác hai chiều browser <-> EvoFlux |
-| **Tài liệu liên quan** | [`work-computer-use.md`](work-computer-use.md), [`../../extensions/webbridge/README.md`](../../extensions/webbridge/README.md), [`../../docs/side-chat-spec.md`](../../docs/side-chat-spec.md) |
+| **Tài liệu liên quan** | [`work-computer-use.md`](work-computer-use.md), [`../../docs/side-chat-spec.md`](../../docs/side-chat-spec.md) |
 
 ---
 
@@ -126,7 +126,7 @@ khi công bố compatibility cho một tenant cụ thể.
 
 | Năng lực hiện có | Vị trí | Giá trị cho hướng hai chiều |
 |---|---|---|
-| Persistent WebSocket extension <-> backend | `extensions/webbridge/background.js`, `app/api/routes/team/webbridge.py` | Không cần transport mới |
+| Persistent WebSocket extension <-> backend | External WebBridge repository, `app/api/routes/team/webbridge.py` | Không cần transport mới |
 | Pairing credential, relay ticket, revoke, rate limit | pairing service + WebBridge API | Nền identity/authorization đã có |
 | Durable interaction + idempotent dispatch | WebBridge API + models | Selection/link/page metadata đã đi vào chat chuẩn |
 | Pairing-scoped tab/session binding | pairing service + extension worker | Có origin validation và command pinning |
@@ -826,7 +826,7 @@ tool output/widget mở qua full EvoFlux renderer.
 
 | Khu vực | Thay đổi chính |
 |---|---|
-| `extensions/webbridge/manifest.json` | Chrome 116+, Side Panel, context menu và minimum permissions |
+| External WebBridge manifest | Chrome 116+, Side Panel, context menu và minimum permissions |
 | `background.js` | Pairing/outbox/binding, region/context/diagnostics, capability registration, watches/Teach |
 | `semantic_runtime.js` | AX opaque targets, same-origin frames, verified text/range/slide operations |
 | Extension UI | Automatic primary/group tab session, rich transcript/media, context/file/region chips, handoff, diagnostics, multi-watch |
