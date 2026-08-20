@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import { usePlatform } from '@/hooks/use-platform'
@@ -22,11 +22,11 @@ export function useNativeSidebarGlass(): void {
       .catch(() => {})
   }, [active, preference])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!active) return
 
     activeGlassSurfaces += 1
-    document.documentElement.dataset.nativeSidebarGlass = 'true'
+    document.documentElement.dataset.nativeSidebarGlass = os
 
     return () => {
       activeGlassSurfaces = Math.max(0, activeGlassSurfaces - 1)
@@ -34,5 +34,5 @@ export function useNativeSidebarGlass(): void {
         delete document.documentElement.dataset.nativeSidebarGlass
       }
     }
-  }, [active])
+  }, [active, os])
 }

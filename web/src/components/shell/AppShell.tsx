@@ -29,7 +29,7 @@ import { motion } from 'framer-motion'
 import { PanelLeft } from 'lucide-react'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { usePlatform } from '@/hooks/use-platform'
-import { useMotionPreset } from '@/lib/motion'
+import { DURATIONS, useMotionPreset } from '@/lib/motion'
 import { useUIStore } from '@/stores/useUIStore'
 import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
 import { SHELL_SIDEBAR_TOGGLE_EVENT } from '@/lib/shell-events'
@@ -86,6 +86,9 @@ export function AppShell({
       : undefined
   const motionPreset = useMotionPreset()
   const { isMacOverlay } = usePlatform()
+  const sidebarWidth = useUIStore((state) => state.sidebarWidth)
+  const sidebarToggleLeft = sidebarCollapsed ? 4 : sidebarWidth + 4
+  const sidebarTransitionDuration = DURATIONS.base * motionPreset.scale
 
   // Ctrl+B — the single shell-level sidebar toggle. See the file header for
   // why registration is gated on this shell having a sidebar.
@@ -117,14 +120,12 @@ export function AppShell({
       {/* Sidebar toggle — same placement + affordance in every mode. */}
       {hasDockedSidebar && !isMacOverlay && (
         <div
-          className={
-            sidebarCollapsed
-              ? 'pointer-events-none absolute top-2 z-(--z-header) flex flex-col items-center'
-              : 'flex shrink-0 flex-col items-center pt-2'
-          }
-          style={sidebarCollapsed
-            ? { left: 4 }
-            : undefined}
+          data-sidebar-toggle-follower
+          className="pointer-events-none absolute top-2 z-(--z-header) flex flex-col items-center"
+          style={{
+            left: sidebarToggleLeft,
+            transition: `left ${sidebarTransitionDuration}ms var(--ease-out)`,
+          }}
         >
           <motion.button
             type="button"
