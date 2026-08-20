@@ -1024,6 +1024,102 @@ def test_get_codex_provider_usage_returns_active_limits(
     assert body["limits"][1]["primary"]["used_percent"] == 88.0
 
 
+def test_codex_usage_normalizes_official_rate_limit_contract() -> None:
+    response = codex_usage._parse_usage_payload(
+        {
+            "id": 6,
+            "result": {
+                "rateLimitsByLimitId": {
+                    "codex": {
+                        "limitId": "codex",
+                        "limitName": None,
+                        "primary": {
+                            "usedPercent": 85.7635,
+                            "windowDurationMins": 43_200,
+                            "resetsAt": 1_788_220_800,
+                        },
+                        "secondary": None,
+                        "planType": "enterprise_cbp_usage_based",
+                        "credits": {
+                            "hasCredits": True,
+                            "unlimited": False,
+                            "balance": 28_473,
+                            "totalCredits": 200_000,
+                        },
+                        "rateLimitReachedType": None,
+                    }
+                }
+            },
+        }
+    )
+
+    assert response.model_dump() == {
+        "provider": "codex",
+        "limits": [
+            {
+                "limit_id": "codex",
+                "limit_name": None,
+                "primary": {
+                    "used_percent": 85.7635,
+                    "window_minutes": 43_200,
+                    "resets_at": 1_788_220_800,
+                },
+                "secondary": None,
+                "credits": {
+                    "has_credits": True,
+                    "unlimited": False,
+                    "balance": "28473",
+                    "used": "171527",
+                    "total": "200000",
+                },
+                "plan_type": "enterprise_cbp_usage_based",
+                "rate_limit_reached_type": None,
+            }
+        ],
+    }
+
+
+def test_codex_usage_normalizes_monthly_spend_control() -> None:
+    response = codex_usage._parse_usage_payload(
+        {
+            "plan_type": "enterprise_cbp_usage_based",
+            "rate_limit": None,
+            "credits": {
+                "has_credits": True,
+                "unlimited": False,
+                "balance": "28473",
+            },
+            "spend_control": {
+                "reached": False,
+                "individual_limit": {
+                    "source": "workspace",
+                    "limit": "200000",
+                    "used": "171527",
+                    "remaining": "28473",
+                    "used_percent": 86,
+                    "remaining_percent": 14,
+                    "reset_after_seconds": 900_000,
+                    "reset_at": 1_788_220_800,
+                },
+            },
+            "rate_limit_reached_type": None,
+        }
+    )
+
+    limit = response.limits[0]
+    assert limit.limit_id == "codex_monthly_usage"
+    assert limit.limit_name == "Monthly usage"
+    assert limit.plan_type == "enterprise_cbp_usage_based"
+    assert limit.primary is not None
+    assert limit.primary.used_percent == 86
+    assert limit.primary.window_minutes == 43_200
+    assert limit.primary.resets_at == 1_788_220_800
+    assert limit.credits is not None
+    assert limit.credits.balance == "28473"
+    assert limit.credits.used == "171527"
+    assert limit.credits.total == "200000"
+
+
 def test_get_codex_provider_usage_returns_unlimited_credits(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1091,6 +1187,8 @@ def test_get_codex_provider_usage_returns_unlimited_credits(
                     "has_credits": True,
                     "unlimited": True,
                     "balance": None,
+                    "used": None,
+                    "total": None,
                 },
                 "plan_type": "business",
                 "rate_limit_reached_type": None,
@@ -1175,7 +1273,13 @@ def test_get_copilot_provider_usage_returns_premium_quota_snapshot(
             "resets_at": 1780272000,
         },
         "secondary": None,
-        "credits": {"has_credits": True, "unlimited": False, "balance": "257/300"},
+        "credits": {
+            "has_credits": True,
+            "unlimited": False,
+            "balance": "257/300",
+            "used": "43",
+            "total": "300",
+        },
         "plan_type": "individual",
         "rate_limit_reached_type": None,
     }

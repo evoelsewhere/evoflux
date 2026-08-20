@@ -73,17 +73,23 @@ def _usage_limit(
     remaining = values.get("remaining")
     entitlement = values.get("entitlement")
     balance = None
+    used = None
+    total = None
     if (
         isinstance(remaining, int | float)
         and isinstance(entitlement, int | float)
         and entitlement > 0
     ):
         balance = f"{int(remaining)}/{int(entitlement)}"
+        used = str(max(0, int(entitlement) - int(remaining)))
+        total = str(int(entitlement))
     credits = ProviderUsageCredits(
         has_credits=unlimited
         or bool(isinstance(remaining, int | float) and remaining > 0),
         unlimited=unlimited,
         balance=balance,
+        used=used,
+        total=total,
     )
     quota_id = values.get("quota_id")
     return ProviderUsageLimit(
