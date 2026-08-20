@@ -35,6 +35,16 @@ def test_linux_job_builds_smokes_and_uploads_deb() -> None:
     assert "target/release/bundle/deb/*.deb" in source
 
 
+def test_deb_contents_gate_extracts_and_resolves_bundled_symlinks() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+
+    assert 'dpkg-deb --extract "$package" "$package_root"' in source
+    assert "-perm -111 -print -quit" in source
+    assert '[[ -x "$product_dir/sidecar/python/bin/python3" ]]' in source
+    assert '[[ -f "$product_dir/sidecar/site-packages/app/cli/__main__.py" ]]' in source
+    assert "sidecar/python/bin/python3$" not in source
+
+
 def test_deb_declares_external_linux_runtime_helpers() -> None:
     config = json.loads(TAURI_CONFIG.read_text(encoding="utf-8"))
     dependencies = set(config["bundle"]["linux"]["deb"]["depends"])
