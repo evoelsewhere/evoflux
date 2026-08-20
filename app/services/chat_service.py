@@ -8,6 +8,7 @@ from typing import Literal, NamedTuple
 from uuid import UUID
 
 from loguru import logger
+from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import and_, col, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -385,9 +386,7 @@ def _on_or_after_boundary(stmt, boundary: SessionMessage):
     )
 
 
-def _visible_messages_stmt(
-    session_id: UUID, boundary: SessionMessage | None = None
-):
+def _visible_messages_stmt(session_id: UUID, boundary: SessionMessage | None = None):
     """Base query: all LLM-visible messages for a session, oldest first.
 
     ``exclude_from_context`` is the LLM-context flag. UI-only hiding uses
@@ -404,9 +403,7 @@ def _visible_messages_stmt(
     )
 
 
-def _history_messages_stmt(
-    session_id: UUID, boundary: SessionMessage | None = None
-):
+def _history_messages_stmt(session_id: UUID, boundary: SessionMessage | None = None):
     stmt = select(SessionMessage).where(col(SessionMessage.session_id) == session_id)
     if boundary is not None:
         stmt = _before_boundary(stmt, boundary)
@@ -918,17 +915,15 @@ async def exclude_messages_before_summary(
     # All visible non-summary messages created before the summary, oldest-first.
     # Use (created_at, id) order so same-timestamp rows *after* the summary
     # are not falsely excluded (common on coarse Windows clocks).
-    stmt = (
-        _before_boundary(
-            select(SessionMessage)
-            .where(col(SessionMessage.session_id) == session_id)
-            .where(~col(SessionMessage.exclude_from_context))
-            .where(~col(SessionMessage.is_summary)),
-            summary_msg,
-        ).order_by(
-            col(SessionMessage.created_at).asc(),
-            col(SessionMessage.id).asc(),
-        )
+    stmt = _before_boundary(
+        select(SessionMessage)
+        .where(col(SessionMessage.session_id) == session_id)
+        .where(~col(SessionMessage.exclude_from_context))
+        .where(~col(SessionMessage.is_summary)),
+        summary_msg,
+    ).order_by(
+        col(SessionMessage.created_at).asc(),
+        col(SessionMessage.id).asc(),
     )
     rows = list((await db.exec(stmt)).all())
 
@@ -1280,6 +1275,96 @@ def _decode_history_cursor(
     return datetime.fromisoformat(timestamp), UUID(message_id)
 
 
+def _history_row_before(row: SessionMessage) -> ColumnElement[bool]:
+    return or_(
+        col(SessionMessage.created_at) < row.created_at,
+        and_(
+            col(SessionMessage.created_at) == row.created_at,
+            col(SessionMessage.id) < row.id,
+        ),
+    )
+
+
+def _history_row_at_or_after(row: SessionMessage) -> ColumnElement[bool]:
+    return or_(
+        col(SessionMessage.created_at) > row.created_at,
+        and_(
+            col(SessionMessage.created_at) == row.created_at,
+            col(SessionMessage.id) >= row.id,
+        ),
+    )
+
+
+async def _extend_history_page_to_message_boundaries(
+    db: AsyncSession,
+    session_ids: list[UUID],
+    page: list[SessionMessage],
+) -> list[SessionMessage]:
+    """Keep an assistant tool-call cycle on one history page.
+
+    A raw row limit may put one or more ``tool`` results at the start of a
+    session's projected page while their assistant ``tool_calls`` row remains
+    on the previous page. The frontend cannot reconstruct that tool card from
+    either page independently. Extend the global timeline backwards to the
+    nearest non-tool row required by every affected lead/member stream.
+
+    Pages remain globally cursor-ordered. Including all interleaved rows down
+    to the earliest required anchor prevents gaps when team members run in
+    parallel.
+    """
+    while page:
+        oldest_by_session: dict[UUID, SessionMessage] = {}
+        for row in reversed(page):
+            oldest_by_session.setdefault(row.session_id, row)
+        broken_starts = [
+            row for row in oldest_by_session.values() if row.role == "tool"
+        ]
+        if not broken_starts:
+            break
+
+        anchors: list[SessionMessage] = []
+        for row in broken_starts:
+            anchor = (
+                await db.exec(
+                    select(SessionMessage)
+                    .where(col(SessionMessage.session_id) == row.session_id)
+                    .where(_history_row_before(row))
+                    .where(col(SessionMessage.role) != "tool")
+                    .order_by(
+                        col(SessionMessage.created_at).desc(),
+                        col(SessionMessage.id).desc(),
+                    )
+                    .limit(1)
+                )
+            ).first()
+            if anchor is not None:
+                anchors.append(anchor)
+        if not anchors:
+            break
+
+        earliest_anchor = min(anchors, key=lambda row: (row.created_at, row.id))
+        current_oldest = page[-1]
+        extension = list(
+            (
+                await db.exec(
+                    select(SessionMessage)
+                    .where(col(SessionMessage.session_id).in_(session_ids))
+                    .where(_history_row_before(current_oldest))
+                    .where(_history_row_at_or_after(earliest_anchor))
+                    .order_by(
+                        col(SessionMessage.created_at).desc(),
+                        col(SessionMessage.id).desc(),
+                    )
+                )
+            ).all()
+        )
+        if not extension:
+            break
+        page.extend(extension)
+
+    return page
+
+
 async def get_team_history(
     db: AsyncSession,
     lead_session_id: UUID,
@@ -1288,10 +1373,11 @@ async def get_team_history(
 ) -> TeamHistoryData | None:
     """Fetch the latest page of history for a team lead session and its sub-sessions.
 
-    Fetches up to ``_HISTORY_PAGE_SIZE`` messages per session ordered by
-    ``created_at DESC`` (newest first), then reverses to chronological order
-    for the caller.  Pass the ``next_cursor`` from a previous response as
-    ``before`` to load older messages.
+    Fetches ``_HISTORY_PAGE_SIZE`` messages across the team timeline ordered
+    by ``created_at DESC`` (newest first), extending the page only when needed
+    to keep assistant/tool cycles intact. The result is reversed to
+    chronological order for the caller. Pass ``next_cursor`` from a previous
+    response as ``before`` to load older messages.
 
     Returns ``None`` if the lead session does not exist.
     """
@@ -1333,6 +1419,19 @@ async def get_team_history(
     raw_page = list((await db.exec(stmt)).all())
     has_more = len(raw_page) > _HISTORY_PAGE_SIZE
     page = raw_page[:_HISTORY_PAGE_SIZE]
+    if has_more:
+        page = await _extend_history_page_to_message_boundaries(db, session_ids, page)
+        has_more = bool(
+            page
+            and (
+                await db.exec(
+                    select(SessionMessage.id)
+                    .where(col(SessionMessage.session_id).in_(session_ids))
+                    .where(_history_row_before(page[-1]))
+                    .limit(1)
+                )
+            ).first()
+        )
     # Summaries remain visible for compaction UI; only explicit
     # ``hidden_from_user`` rows are removed from the rendered page.
     visible_page = [row for row in page if not _is_hidden_from_user(row)]

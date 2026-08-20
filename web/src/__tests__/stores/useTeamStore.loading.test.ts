@@ -117,6 +117,195 @@ describe('useTeamStore request coalescing', () => {
   })
 })
 
+describe('useTeamStore older history pagination', () => {
+  const initialHistory = {
+    lead: {
+      id: 'session-1',
+      agent_name: 'lead',
+      permission_mode: 'auto',
+      messages: [
+        {
+          id: 'assistant-tail',
+          session_id: 'session-1',
+          role: 'assistant',
+          content: null,
+          reasoning_content: 'working',
+          tool_calls: null,
+          created_at: '2026-08-10T02:06:00Z',
+        },
+      ],
+      running: false,
+    },
+    members: [],
+    goal: null,
+    has_more: true,
+    next_cursor: 'cursor-1',
+  }
+
+  const userPage = {
+    lead: {
+      id: 'session-1',
+      agent_name: 'lead',
+      permission_mode: 'auto',
+      messages: [
+        {
+          id: 'original-user-message',
+          session_id: 'session-1',
+          role: 'user',
+          content: 'Original prompt before a long tool run',
+          created_at: '2026-08-10T01:59:00Z',
+        },
+      ],
+      running: false,
+    },
+    members: [],
+    goal: null,
+    has_more: false,
+    next_cursor: null,
+  }
+
+  const boundedInitialHistory = {
+    ...initialHistory,
+    lead: {
+      ...initialHistory.lead,
+      messages: [
+        {
+          id: 'visible-user-boundary',
+          session_id: 'session-1',
+          role: 'user',
+          content: 'Visible current turn',
+          created_at: '2026-08-10T02:05:59Z',
+        },
+        ...initialHistory.lead.messages,
+      ],
+    },
+  }
+
+  it('automatically hydrates the user prompt before exposing an assistant-only first page', async () => {
+    apiMocks.teamHistory
+      .mockResolvedValueOnce(initialHistory)
+      .mockResolvedValueOnce(userPage)
+
+    useTeamStore.getState().beginResolvedSession('session-1', { mode: 'work' })
+    await useTeamStore.getState().loadSession('session-1', null, null)
+
+    const blocks = useTeamStore.getState().agentStreams.lead.blocks
+    expect(blocks[0]).toMatchObject({
+      id: 'original-user-message',
+      type: 'user',
+      content: 'Original prompt before a long tool run',
+    })
+    expect(useTeamStore.getState()).toMatchObject({ hasMore: false, nextCursor: null })
+  })
+
+  it('continues automatic boundary hydration through an empty projected page', async () => {
+    apiMocks.teamHistory
+      .mockResolvedValueOnce(initialHistory)
+      .mockResolvedValueOnce({
+        ...initialHistory,
+        lead: { ...initialHistory.lead, messages: [] },
+        has_more: true,
+        next_cursor: 'cursor-2',
+      })
+      .mockResolvedValueOnce(userPage)
+
+    useTeamStore.getState().beginResolvedSession('session-1', { mode: 'work' })
+    await useTeamStore.getState().loadSession('session-1', null, null)
+
+    expect(apiMocks.teamHistory.mock.calls.map((call) => call[1])).toEqual([
+      undefined,
+      'cursor-1',
+      'cursor-2',
+    ])
+    expect(useTeamStore.getState().agentStreams.lead.blocks[0]?.type).toBe('user')
+  })
+
+  it('stops at the nearest boundary and leaves a resumable cursor for older turns', async () => {
+    apiMocks.teamHistory
+      .mockResolvedValueOnce(initialHistory)
+      .mockResolvedValueOnce({
+        ...initialHistory,
+        lead: {
+          ...initialHistory.lead,
+          messages: [
+            {
+              id: 'discarded-orphan-tail',
+              session_id: 'session-1',
+              role: 'assistant',
+              content: 'Tail of an older turn',
+              created_at: '2026-08-10T02:04:00Z',
+            },
+            {
+              id: 'nearest-user-boundary',
+              session_id: 'session-1',
+              role: 'user',
+              content: 'Nearest complete turn',
+              created_at: '2026-08-10T02:05:00Z',
+            },
+          ],
+        },
+        has_more: true,
+        next_cursor: 'cursor-2',
+      })
+
+    useTeamStore.getState().beginResolvedSession('session-1', { mode: 'work' })
+    await useTeamStore.getState().loadSession('session-1', null, null)
+
+    const state = useTeamStore.getState()
+    expect(apiMocks.teamHistory).toHaveBeenCalledTimes(2)
+    expect(state.agentStreams.lead.blocks).toHaveLength(2)
+    expect(state.agentStreams.lead.blocks[0]).toMatchObject({
+      id: 'nearest-user-boundary',
+      type: 'user',
+    })
+    expect(state.agentStreams.lead.blocks[1]).toMatchObject({
+      type: 'thinking',
+      content: 'working',
+    })
+    expect(state.hasMore).toBe(true)
+    expect(state.nextCursor).toBe(
+      '2026-08-10T02:05:00Z|nearest-user-boundary',
+    )
+  })
+
+  it('ignores an older page that resolves after switching sessions', async () => {
+    let resolveOlder!: (value: typeof userPage) => void
+    apiMocks.teamHistory
+      .mockResolvedValueOnce(boundedInitialHistory)
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveOlder = resolve
+      }))
+
+    useTeamStore.getState().beginResolvedSession('session-1', { mode: 'work' })
+    await useTeamStore.getState().loadSession('session-1', null, null)
+    const staleLoad = useTeamStore.getState().loadOlderMessages()
+
+    useTeamStore.getState().beginResolvedSession('session-2', { mode: 'work' })
+    resolveOlder(userPage)
+    await staleLoad
+
+    expect(useTeamStore.getState().sessionId).toBe('session-2')
+    expect(useTeamStore.getState().agentStreams.lead.blocks).toEqual([])
+  })
+
+  it('keeps the cursor retryable after an older-page failure', async () => {
+    apiMocks.teamHistory
+      .mockResolvedValueOnce(boundedInitialHistory)
+      .mockRejectedValueOnce(new Error('history request failed'))
+
+    useTeamStore.getState().beginResolvedSession('session-1', { mode: 'work' })
+    await useTeamStore.getState().loadSession('session-1', null, null)
+    await useTeamStore.getState().loadOlderMessages()
+
+    expect(useTeamStore.getState()).toMatchObject({
+      _loadingOlder: false,
+      hasMore: true,
+      nextCursor: 'cursor-1',
+      historyLoadError: 'history request failed',
+    })
+  })
+})
+
 describe('useTeamStore goal state', () => {
   const goal = {
     session_id: 'session-1',

@@ -24,6 +24,27 @@ interface UsePinnedTranscriptOptions {
   bottomThreshold?: number
 }
 
+export interface TranscriptPrependAnchor {
+  element: HTMLElement
+  viewportTop: number
+}
+
+export function captureTranscriptPrependAnchor(
+  scroller: HTMLDivElement,
+): TranscriptPrependAnchor | null {
+  const viewport = scroller.getBoundingClientRect()
+  const candidates = scroller.querySelectorAll<HTMLElement>(
+    '.oa-transcript-turn, .oa-latest-turn-runway',
+  )
+  for (const element of candidates) {
+    const rect = element.getBoundingClientRect()
+    if (rect.bottom > viewport.top + 1 && rect.top < viewport.bottom - 1) {
+      return { element, viewportTop: rect.top }
+    }
+  }
+  return null
+}
+
 /** Content growth must never detach a viewport that was already following. */
 export function pinnedAfterViewportUpdate(wasPinned: boolean, isAtBottom: boolean): boolean {
   return wasPinned || isAtBottom
@@ -52,6 +73,15 @@ export function nextPinnedScrollTop(
   const progress = 1 - Math.exp(-elapsed / FOLLOW_TIME_CONSTANT_MS)
   const next = current + ((target - current) * progress)
   return target - next < 0.75 ? target : next
+}
+
+/** Preserve the reader's exact viewport when content is prepended above it. */
+export function scrollTopAfterPrepend(
+  previousScrollTop: number,
+  previousScrollHeight: number,
+  nextScrollHeight: number,
+): number {
+  return Math.max(0, previousScrollTop + nextScrollHeight - previousScrollHeight)
 }
 
 function prefersReducedMotion(): boolean {
@@ -85,6 +115,9 @@ export function usePinnedTranscript({
   const onScrollFrameRef = useRef(onScrollFrame)
   const followFrameRef = useRef<number | null>(null)
   const reattachFrameRef = useRef<number | null>(null)
+  const prependObserverRef = useRef<ResizeObserver | null>(null)
+  const prependQuietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const prependMaxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [showScrollButton, setShowScrollButton] = useState(false)
 
   useEffect(() => {
@@ -107,6 +140,19 @@ export function usePinnedTranscript({
     if (followFrameRef.current === null) return
     cancelAnimationFrame(followFrameRef.current)
     followFrameRef.current = null
+  }, [])
+
+  const cancelPrependStabilization = useCallback(() => {
+    prependObserverRef.current?.disconnect()
+    prependObserverRef.current = null
+    if (prependQuietTimerRef.current !== null) {
+      clearTimeout(prependQuietTimerRef.current)
+      prependQuietTimerRef.current = null
+    }
+    if (prependMaxTimerRef.current !== null) {
+      clearTimeout(prependMaxTimerRef.current)
+      prependMaxTimerRef.current = null
+    }
   }, [])
 
   const detach = useCallback(() => {
@@ -156,11 +202,45 @@ export function usePinnedTranscript({
     element.scrollTop = element.scrollHeight
   }, [cancelFollow, setScrollButtonVisible])
 
-  const restorePrependOffset = useCallback((previousScrollHeight: number) => {
+  const restorePrependOffset = useCallback((
+    previousScrollHeight: number,
+    previousScrollTop: number,
+    anchor?: TranscriptPrependAnchor | null,
+  ) => {
     const element = scrollRef.current
     if (!element) return
-    element.scrollTop = element.scrollHeight - previousScrollHeight
-  }, [])
+    cancelPrependStabilization()
+
+    const restore = () => {
+      if (anchor?.element.isConnected) {
+        const delta = anchor.element.getBoundingClientRect().top - anchor.viewportTop
+        if (Math.abs(delta) > 0.5) element.scrollTop += delta
+        return
+      }
+      element.scrollTop = scrollTopAfterPrepend(
+        previousScrollTop,
+        previousScrollHeight,
+        element.scrollHeight,
+      )
+    }
+    restore()
+
+    const content = contentRef.current
+    if (!anchor || !content || typeof ResizeObserver === 'undefined') return
+    const finishAfterQuietLayout = () => {
+      if (prependQuietTimerRef.current !== null) {
+        clearTimeout(prependQuietTimerRef.current)
+      }
+      prependQuietTimerRef.current = setTimeout(cancelPrependStabilization, 120)
+    }
+    prependObserverRef.current = new ResizeObserver(() => {
+      restore()
+      finishAfterQuietLayout()
+    })
+    prependObserverRef.current.observe(content)
+    finishAfterQuietLayout()
+    prependMaxTimerRef.current = setTimeout(cancelPrependStabilization, 800)
+  }, [cancelPrependStabilization])
 
   const reattach = useCallback(() => {
     pinnedRef.current = true
@@ -301,11 +381,12 @@ export function usePinnedTranscript({
 
   useEffect(() => () => {
     cancelFollow()
+    cancelPrependStabilization()
     if (reattachFrameRef.current !== null) {
       cancelAnimationFrame(reattachFrameRef.current)
       reattachFrameRef.current = null
     }
-  }, [cancelFollow])
+  }, [cancelFollow, cancelPrependStabilization])
 
   return {
     contentRef,

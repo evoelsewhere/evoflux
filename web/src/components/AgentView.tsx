@@ -18,9 +18,9 @@
  * `AgentPane` for split/unified modes.
  */
 
-import { memo, useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { memo, useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import { ChatWelcome } from './ChatWelcome'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { BlockRenderer } from './BlockRenderer'
 import { AssistantTurnFooter } from './AssistantTurnFooter'
 import { AssistantTurnContent } from './AssistantTurnContent'
@@ -29,7 +29,11 @@ import { appendLiveTurnItems, getVisibleTurnWindow, partitionTurns } from '@/uti
 import { latestDirectUserBlockId } from '@/utils/blocks'
 import { buildUserMessageNavigationItems } from '@/utils/user-message-navigation'
 import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
-import { usePinnedTranscript } from '@/hooks/usePinnedTranscript'
+import {
+  captureTranscriptPrependAnchor,
+  type TranscriptPrependAnchor,
+  usePinnedTranscript,
+} from '@/hooks/usePinnedTranscript'
 import { cn } from '@/lib/utils'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { ActivityStatus } from './motion/ActivityStatus'
@@ -37,6 +41,7 @@ import { TextSelectionAction } from './TextSelectionAction'
 import { TurnChangesCard } from './TurnChangesCard'
 import { UserMessageNavigationRail } from './UserMessageNavigationRail'
 import { StreamingTurnHeader } from './StreamingTurnHeader'
+import { TranscriptHistoryControl } from './TranscriptHistoryControl'
 import { shouldShowPendingActivity } from '@/utils/transcript-layout'
 import type { ContentBlock, TurnChangesPending } from '@/api/types'
 
@@ -145,15 +150,16 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   const [renderedTurnCount, setRenderedTurnCount] = useState(INITIAL_RENDERED_TURNS)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
   const prevScrollHeightRef = useRef<number | null>(null)
+  const prevScrollTopRef = useRef<number | null>(null)
+  const prependAnchorRef = useRef<TranscriptPrependAnchor | null>(null)
   const pendingRestoreRef = useRef(false)
+  const historyLoadStartBlockCountRef = useRef<number | null>(null)
   const pendingUserNavigationRef = useRef<{
     messageId: string
     behavior: ScrollBehavior
   } | null>(null)
-  // Me mirror store _loadingOlder in a ref so the wheel handler can check
-  // it synchronously without subscribing to store state changes.
-  const loadingOlderRef = useRef(false)
   const topLoadArmedRef = useRef(true)
+  const loadingOlder = useTeamStore((state) => state._loadingOlder)
 
   const handleRevert = useCallback(() => {
     void useTeamStore.getState().undoTeam()
@@ -235,6 +241,17 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     isWorking,
   })
 
+  const loadOlderMessages = useCallback((element: HTMLDivElement | null) => {
+    if (element) {
+      prevScrollHeightRef.current = element.scrollHeight
+      prevScrollTopRef.current = element.scrollTop
+      prependAnchorRef.current = captureTranscriptPrependAnchor(element)
+      pendingRestoreRef.current = true
+      historyLoadStartBlockCountRef.current = blocks.length
+    }
+    void useTeamStore.getState().loadOlderMessages()
+  }, [blocks.length])
+
   const handleViewportScroll = useCallback((element: HTMLDivElement) => {
     if (element.scrollTop > LOAD_OLDER_THRESHOLD * 2) {
       topLoadArmedRef.current = true
@@ -245,19 +262,15 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     topLoadArmedRef.current = false
     if (hiddenTurnCount > 0) {
       prevScrollHeightRef.current = element.scrollHeight
+      prevScrollTopRef.current = element.scrollTop
+      prependAnchorRef.current = captureTranscriptPrependAnchor(element)
       pendingRestoreRef.current = true
       setRenderedTurnCount((count) => Math.min(turnItems.length, count + TURN_RENDER_STEP))
       return
     }
-    if (!useTeamStore.getState().hasMore || loadingOlderRef.current) return
-
-    loadingOlderRef.current = true
-    prevScrollHeightRef.current = element.scrollHeight
-    pendingRestoreRef.current = true
-    void useTeamStore.getState().loadOlderMessages().finally(() => {
-      loadingOlderRef.current = false
-    })
-  }, [hiddenTurnCount, turnItems.length])
+    if (!useTeamStore.getState().hasMore || useTeamStore.getState()._loadingOlder) return
+    loadOlderMessages(element)
+  }, [hiddenTurnCount, loadOlderMessages, turnItems.length])
 
   const isEmpty = visibleCount === 0 && !isWorking
   const {
@@ -280,10 +293,26 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     const element = scrollRef.current
     if (element) {
       prevScrollHeightRef.current = element.scrollHeight
+      prevScrollTopRef.current = element.scrollTop
+      prependAnchorRef.current = captureTranscriptPrependAnchor(element)
       pendingRestoreRef.current = true
     }
     setRenderedTurnCount((count) => Math.min(turnItems.length, count + TURN_RENDER_STEP))
   }, [scrollRef, turnItems.length])
+
+  const loadOlderFromControl = useCallback(() => {
+    loadOlderMessages(scrollRef.current)
+  }, [loadOlderMessages, scrollRef])
+
+  useLayoutEffect(() => {
+    topLoadArmedRef.current = true
+    historyLoadStartBlockCountRef.current = null
+    pendingRestoreRef.current = false
+    prevScrollHeightRef.current = null
+    prevScrollTopRef.current = null
+    prependAnchorRef.current = null
+    pendingUserNavigationRef.current = null
+  }, [sessionId])
 
   const scrollToUserMessage = useCallback((
     messageId: string,
@@ -313,12 +342,33 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   // We track a "pending restore" flag separately from blocks.length so
   // that SSE flushes (which also grow blocks) never accidentally trigger
   // a scroll-position restore.
-  useEffect(() => {
-    if (!pendingRestoreRef.current || prevScrollHeightRef.current === null) return
+  useLayoutEffect(() => {
+    if (
+      !pendingRestoreRef.current
+      || prevScrollHeightRef.current === null
+      || prevScrollTopRef.current === null
+    ) return
     pendingRestoreRef.current = false
-    restorePrependOffset(prevScrollHeightRef.current)
+    restorePrependOffset(
+      prevScrollHeightRef.current,
+      prevScrollTopRef.current,
+      prependAnchorRef.current,
+    )
     prevScrollHeightRef.current = null
+    prevScrollTopRef.current = null
+    prependAnchorRef.current = null
   }, [blocks.length, renderedTurnCount, restorePrependOffset])
+
+  useEffect(() => {
+    const startCount = historyLoadStartBlockCountRef.current
+    if (loadingOlder || startCount === null) return
+    historyLoadStartBlockCountRef.current = null
+    if (blocks.length !== startCount) return
+    pendingRestoreRef.current = false
+    prevScrollHeightRef.current = null
+    prevScrollTopRef.current = null
+    prependAnchorRef.current = null
+  }, [blocks.length, loadingOlder])
 
   useEffect(() => {
     const pending = pendingUserNavigationRef.current
@@ -332,7 +382,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
 
   return (
     <div className="@container/agent-view relative flex min-h-0 flex-1 flex-col">
-    <div ref={scrollRef} className="flex flex-1 flex-col overflow-y-auto overscroll-contain">
+    <div ref={scrollRef} className="flex flex-1 flex-col overflow-y-auto overscroll-contain [overflow-anchor:none]">
       <div
         ref={contentRef}
         className={cn(
@@ -345,19 +395,12 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
          )}
 
          <div className="space-y-4">
-              {hiddenTurnCount > 0 && (
-                <div className="flex justify-center py-2">
-                  <button
-                    type="button"
-                    onClick={showEarlierTurns}
-                    className="inline-flex min-h-10 items-center gap-1 rounded-full border border-(--color-border) bg-(--bg-card) px-3 py-1.5 text-xs text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-2 focus-visible:ring-(--focus-ring) focus-visible:outline-none"
-                    aria-label={`Show ${Math.min(TURN_RENDER_STEP, hiddenTurnCount)} earlier turns`}
-                  >
-                    <ChevronUp size={13} aria-hidden="true" />
-                    Show earlier messages · {hiddenTurnCount} hidden
-                  </button>
-                </div>
-              )}
+              <TranscriptHistoryControl
+                hiddenTurnCount={hiddenTurnCount}
+                revealStep={TURN_RENDER_STEP}
+                onRevealLoaded={showEarlierTurns}
+                onLoadOlder={loadOlderFromControl}
+              />
               {visibleTurnItems.map((item, k) => {
                  const globalTurnIndex = hiddenTurnCount + k
                  if (item.kind === 'user') {

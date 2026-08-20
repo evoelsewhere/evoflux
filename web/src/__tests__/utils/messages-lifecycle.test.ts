@@ -48,4 +48,12 @@ describe('sleep lifecycle message parsing', () => {
       extra: { lifecycle: 'sleep' },
     })
   })
+
+  it('uses stable block identities when durable history is parsed again', () => {
+    const first = parseTeamBlocks([lifecycleMessage('Work is underway.')])
+    const second = parseTeamBlocks([lifecycleMessage('Work is underway.')])
+
+    expect(first[0]?.id).toBe('message-1:text')
+    expect(second[0]?.id).toBe(first[0]?.id)
+  })
 })

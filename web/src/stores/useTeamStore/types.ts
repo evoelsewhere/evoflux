@@ -101,6 +101,8 @@ export interface TeamStoreState {
   isConnected: boolean
   /** True while ``loadSession`` is fetching history for the current session. */
   isSessionLoading: boolean
+  /** Last failure while fetching an older transcript page. */
+  historyLoadError: string | null
   error: string | null
   activeGoal: GoalResponse | null
   activeWorkflowExecution: ActiveWorkflowExecution | null

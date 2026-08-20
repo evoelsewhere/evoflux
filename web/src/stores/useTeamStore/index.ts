@@ -11,7 +11,7 @@ import { useToastStore } from '@/stores/useToastStore'
 import { isTransientNetworkError } from '@/utils/errors'
 import { createStreamScheduler } from '@/api/stream-scheduler'
 import type { AgentStream, TeamStore } from './types'
-import type { MessageResponse } from '@/api/types'
+import type { ContentBlock, MessageResponse, TeamHistoryResponse } from '@/api/types'
 
 function revertBoundaryTime(session: { revert?: { message_id?: string } | null; messages: MessageResponse[] }): number | null {
   const boundaryId = session.revert?.message_id
@@ -30,6 +30,136 @@ function messagesBeforeTime(messages: MessageResponse[], boundaryTime: number | 
 
 function messagesBeforeRevert(session: { revert?: { message_id?: string } | null; messages: MessageResponse[] }): MessageResponse[] {
   return messagesBeforeTime(session.messages, revertBoundaryTime(session))
+}
+
+function prependUniqueBlocks(
+  older: ContentBlock[],
+  current: ContentBlock[],
+): ContentBlock[] {
+  const currentIds = new Set(current.map((block) => block.id))
+  return [...older.filter((block) => !currentIds.has(block.id)), ...current]
+}
+
+function historyMessageCount(history: Awaited<ReturnType<typeof teamHistory>>): number {
+  return history.lead.messages.length
+    + history.members.reduce((count, member) => count + member.messages.length, 0)
+}
+
+function isTurnBoundary(message: MessageResponse): boolean {
+  return message.role === 'user' || message.is_summary === true
+}
+
+function messagesContainTurnBoundary(messages: MessageResponse[]): boolean {
+  return messages.length === 0 || messages.some(isTurnBoundary)
+}
+
+function historyContainsTurnBoundaries(history: TeamHistoryResponse): boolean {
+  return messagesContainTurnBoundary(history.lead.messages)
+    && history.members.every((member) => messagesContainTurnBoundary(member.messages))
+}
+
+function prependUniqueMessages(
+  older: MessageResponse[],
+  newer: MessageResponse[],
+): MessageResponse[] {
+  const newerIds = new Set(newer.map((message) => message.id))
+  return [...older.filter((message) => !newerIds.has(message.id)), ...newer]
+}
+
+function mergeOlderHistoryPage(
+  newer: TeamHistoryResponse,
+  older: TeamHistoryResponse,
+): TeamHistoryResponse {
+  const olderMembers = new Map(older.members.map((member) => [member.session_id, member]))
+  const mergedMembers = newer.members.map((member) => {
+    const olderMember = olderMembers.get(member.session_id)
+    if (!olderMember) return member
+    olderMembers.delete(member.session_id)
+    return {
+      ...member,
+      messages: prependUniqueMessages(olderMember.messages, member.messages),
+    }
+  })
+  for (const member of olderMembers.values()) mergedMembers.push(member)
+
+  return {
+    ...newer,
+    lead: {
+      ...newer.lead,
+      messages: prependUniqueMessages(older.lead.messages, newer.lead.messages),
+    },
+    members: mergedMembers,
+    has_more: older.has_more,
+    next_cursor: older.next_cursor,
+  }
+}
+
+function compareMessageOrder(left: MessageResponse, right: MessageResponse): number {
+  const timeDelta = new Date(left.created_at ?? 0).getTime()
+    - new Date(right.created_at ?? 0).getTime()
+  return timeDelta || left.id.localeCompare(right.id)
+}
+
+function trimMessagesToFirstTurnBoundary(
+  messages: MessageResponse[],
+): { boundary: MessageResponse | null; messages: MessageResponse[] } {
+  const boundaryIndex = messages.findIndex(isTurnBoundary)
+  if (boundaryIndex <= 0) return { boundary: null, messages }
+  const boundary = messages[boundaryIndex]
+  if (!boundary?.created_at) return { boundary: null, messages }
+  return { boundary, messages: messages.slice(boundaryIndex) }
+}
+
+function trimHistoryToTurnBoundaries(history: TeamHistoryResponse): TeamHistoryResponse {
+  const trimmedBoundaries: MessageResponse[] = []
+  const lead = trimMessagesToFirstTurnBoundary(history.lead.messages)
+  if (lead.boundary) trimmedBoundaries.push(lead.boundary)
+  const members = history.members.map((member) => {
+    const trimmed = trimMessagesToFirstTurnBoundary(member.messages)
+    if (trimmed.boundary) trimmedBoundaries.push(trimmed.boundary)
+    return { ...member, messages: trimmed.messages }
+  })
+  const resumeBoundary = trimmedBoundaries.sort(compareMessageOrder).at(-1)
+
+  return {
+    ...history,
+    lead: { ...history.lead, messages: lead.messages },
+    members,
+    has_more: history.has_more || resumeBoundary !== undefined,
+    next_cursor: resumeBoundary?.created_at
+      ? `${resumeBoundary.created_at}|${resumeBoundary.id}`
+      : history.next_cursor,
+  }
+}
+
+async function loadHistoryThroughTurnBoundary(
+  sessionId: string,
+  initial: TeamHistoryResponse,
+  signal?: AbortSignal,
+): Promise<TeamHistoryResponse> {
+  let history = initial
+  const seenCursors = new Set<string>()
+
+  // A rendered slice must never begin halfway through an assistant turn.
+  // Continue through empty/assistant-only pages until every visible stream
+  // starts at a user or compaction boundary, or durable history is exhausted.
+  while (
+    history.has_more
+    && history.next_cursor
+    && (
+      historyMessageCount(history) === 0
+      || !historyContainsTurnBoundaries(history)
+    )
+  ) {
+    if (seenCursors.has(history.next_cursor)) {
+      throw new Error('History pagination returned a repeated cursor.')
+    }
+    seenCursors.add(history.next_cursor)
+    const older = await teamHistory(sessionId, history.next_cursor, signal)
+    history = mergeOlderHistoryPage(history, older)
+  }
+
+  return trimHistoryToTurnBoundaries(history)
 }
 
 function queuedMessagesFromHistory(sessionId: string, messages: MessageResponse[]) {
@@ -112,6 +242,7 @@ function resetSessionState(
   state.isContinuing = false
   state.isConnected = false
   state.isSessionLoading = false
+  state.historyLoadError = null
   state.error = null
   state.activeGoal = null
   state.activeWorkflowExecution = null
@@ -227,6 +358,7 @@ export const useTeamStore = create<TeamStore>()(
     isContinuing: false,
     isConnected: false,
     isSessionLoading: false,
+    historyLoadError: null,
     error: null,
     activeGoal: null,
     activeWorkflowExecution: null,
@@ -901,6 +1033,7 @@ export const useTeamStore = create<TeamStore>()(
           draft.isTeamWorking = false
           draft.isContinuing = false
           draft.isSessionLoading = true
+          draft.historyLoadError = null
         })
         try {
           const existingLiveNames = get().liveAgentNames
@@ -911,12 +1044,18 @@ export const useTeamStore = create<TeamStore>()(
             : Promise.resolve(existingLiveNames)
           const historyPromise = teamHistory(sessionId, undefined, loadController.signal)
           const registryPromise = availableModelRegistry()
-          const [liveNames, history, registry] = await Promise.all([
+          const [liveNames, initialHistory, registry] = await Promise.all([
             liveNamesPromise,
             historyPromise,
             registryPromise,
           ])
 
+          if (get()._sessionGeneration !== gen) return
+          const history = await loadHistoryThroughTurnBoundary(
+            sessionId,
+            initialHistory,
+            loadController.signal,
+          )
           if (get()._sessionGeneration !== gen) return
 
           const savedModel = history.lead.model?.trim() || null
@@ -1072,31 +1211,79 @@ export const useTeamStore = create<TeamStore>()(
     },
 
     loadOlderMessages: async () => {
-      const { sessionId, nextCursor, hasMore, leadName, _leadRevertTime, _loadingOlder } = get()
+      const {
+        sessionId,
+        nextCursor,
+        hasMore,
+        leadName,
+        _leadRevertTime,
+        _loadingOlder,
+        _sessionGeneration,
+      } = get()
       if (!sessionId || !hasMore || !nextCursor || _loadingOlder) return
-      set((draft) => { draft._loadingOlder = true })
+      set((draft) => {
+        draft._loadingOlder = true
+        draft.historyLoadError = null
+      })
       try {
-        const history = await teamHistory(sessionId, nextCursor)
+        const firstPage = await teamHistory(sessionId, nextCursor)
+        const history = await loadHistoryThroughTurnBoundary(sessionId, firstPage)
+        const current = get()
+        if (
+          current.sessionId !== sessionId
+          || current._sessionGeneration !== _sessionGeneration
+        ) {
+          return
+        }
+
         set((draft) => {
+          if (
+            draft.sessionId !== sessionId
+            || draft._sessionGeneration !== _sessionGeneration
+          ) {
+            return
+          }
           draft._loadingOlder = false
+          draft.historyLoadError = null
           draft.hasMore = history.has_more
           draft.nextCursor = history.next_cursor
           if (leadName && draft.agentStreams[leadName]) {
             const filtered = messagesBeforeTime(history.lead.messages, _leadRevertTime)
             const older = parseTeamBlocks(filtered)
-            draft.agentStreams[leadName].blocks = [...older, ...draft.agentStreams[leadName].blocks]
+            draft.agentStreams[leadName].blocks = prependUniqueBlocks(
+              older,
+              draft.agentStreams[leadName].blocks,
+            )
           }
           history.members.forEach((member) => {
             if (draft.agentStreams[member.name]) {
               const filtered = messagesBeforeTime(member.messages, _leadRevertTime)
               const older = parseTeamBlocks(filtered)
-              draft.agentStreams[member.name].blocks = [...older, ...draft.agentStreams[member.name].blocks]
+              draft.agentStreams[member.name].blocks = prependUniqueBlocks(
+                older,
+                draft.agentStreams[member.name].blocks,
+              )
             }
           })
         })
       } catch (err) {
-        set((draft) => { draft._loadingOlder = false })
-        throw err
+        const current = get()
+        if (
+          current.sessionId !== sessionId
+          || current._sessionGeneration !== _sessionGeneration
+        ) {
+          return
+        }
+        const message = err instanceof Error ? err.message : 'Failed to load earlier messages'
+        set((draft) => {
+          draft._loadingOlder = false
+          draft.historyLoadError = message
+        })
+        useToastStore.getState().push({
+          tone: 'error',
+          title: 'Could not load earlier messages',
+          description: message,
+        })
       }
     },
 

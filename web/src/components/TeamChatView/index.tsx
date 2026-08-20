@@ -1915,7 +1915,9 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           </div>
         )}
         {/* Content area */}
-        {effectiveViewMode === 'monitor' ? (
+        {showHistorySkeleton ? (
+          historySkeleton
+        ) : effectiveViewMode === 'monitor' ? (
           <Suspense fallback={<PanelLoadingFallback />}>
             <MonitorView
               agentNames={agentNames}
@@ -2008,8 +2010,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
               </div>
             </div>
           </div>
-        ) : showHistorySkeleton ? (
-          historySkeleton
         ) : activeAgent && hasActiveStream ? (
           <ActiveAgentTranscript
             activeAgent={activeAgent}

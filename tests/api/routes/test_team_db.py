@@ -1149,6 +1149,61 @@ class TestTeamHistoryWithData:
         }
 
     @pytest.mark.asyncio
+    async def test_history_does_not_split_assistant_tool_cycle(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        base = datetime.now(timezone.utc) - timedelta(minutes=120)
+        call_id = "call-page-boundary"
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+                await _add_message(
+                    db,
+                    lead_id,
+                    role="assistant",
+                    content=None,
+                    tool_calls=[
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {"name": "read", "arguments": "{}"},
+                        }
+                    ],
+                    created_at=base,
+                )
+                await _add_message(
+                    db,
+                    lead_id,
+                    role="tool",
+                    content="result",
+                    tool_call_id=call_id,
+                    created_at=base + timedelta(seconds=1),
+                )
+                # The normal 100-row window would begin at the tool result and
+                # strand its assistant call on the older page.
+                for index in range(99):
+                    await _add_message(
+                        db,
+                        lead_id,
+                        content=f"later-{index}",
+                        created_at=base + timedelta(seconds=index + 2),
+                    )
+
+        data = TestClient(app_with_team).get(f"/api/team/{lead_id}/history").json()
+
+        messages = data["lead"]["messages"]
+        assert len(messages) == 101
+        assert [message["role"] for message in messages[:2]] == [
+            "assistant",
+            "tool",
+        ]
+        assert messages[0]["tool_calls"][0]["id"] == call_id
+        assert messages[1]["tool_call_id"] == call_id
+        assert data["has_more"] is False
+        assert data["next_cursor"] is None
+
+    @pytest.mark.asyncio
     async def test_history_includes_summary_messages(self, app_with_team):
         """Summary rows (``is_summary=True``) must be returned by the history
         endpoint so the frontend can render the inline "Session compacted"
