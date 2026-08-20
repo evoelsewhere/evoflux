@@ -94,7 +94,7 @@ export function SummaryView({ data }: { data: ObservabilitySummary }) {
         </div>
         <ChartCard
           title="Token volume"
-          description="Independent scales keep both input and output trends readable"
+          description="Aligned buckets with independent scales for input and output"
           legend={[
             { label: 'Input', color: COLORS.input },
             { label: 'Output', color: COLORS.output },

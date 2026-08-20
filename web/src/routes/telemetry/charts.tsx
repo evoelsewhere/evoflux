@@ -122,89 +122,224 @@ export function TokenVolumeChart({
   bucketSize: ObservabilitySummary['bucket_size']
 }) {
   const [containerRef, width] = useChartWidth()
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   if (data.length === 0) return <ChartEmpty />
 
-  const chartHeight = 286
-  const left = 56
-  const right = 14
+  const chartHeight = 252
+  const left = width < 440 ? 44 : 52
+  const right = width < 440 ? 10 : 16
   const plotWidth = width - left - right
-  const panelHeight = 92
-  const inputTop = 24
-  const outputTop = 154
+  const panelHeight = 82
+  const inputTop = 30
+  const inputBaseline = inputTop + panelHeight
+  const outputBaseline = 134
+  const outputBottom = outputBaseline + panelHeight
   const inputMax = niceMax(Math.max(...data.map((point) => point.input_tokens), 1))
   const outputMax = niceMax(Math.max(...data.map((point) => point.output_tokens), 1))
   const bandWidth = plotWidth / Math.max(data.length, 1)
-  const barWidth = Math.max(2, Math.min(22, bandWidth * 0.58))
+  const barWidth = Math.max(2, Math.min(18, bandWidth * 0.5))
   const x = (index: number) => left + bandWidth * (index + 0.5)
-  const barY = (value: number, top: number, max: number) =>
-    top + panelHeight - (value / max) * panelHeight
   const labelEvery = Math.max(1, Math.ceil(data.length / 7))
+  const inputPeak = Math.max(...data.map((point) => point.input_tokens))
+  const outputPeak = Math.max(...data.map((point) => point.output_tokens))
+  const hovered = hoveredIndex === null ? null : data[hoveredIndex]
+  const tooltipWidth = 164
+  const tooltipHeight = 58
+  const tooltipX = hoveredIndex === null
+    ? 0
+    : Math.min(
+        width - right - tooltipWidth,
+        Math.max(left, x(hoveredIndex) - tooltipWidth / 2),
+      )
 
-  const renderPanel = (
-    key: 'input_tokens' | 'output_tokens',
-    label: string,
-    color: string,
-    top: number,
-    max: number,
+  const renderGridLine = (
+    key: string,
+    y: number,
+    value: number,
+    emphasized = false,
   ) => (
-    <g>
-      <text x={left} y={top - 9} fill={color} fontSize="11" fontWeight="600">
-        {label}
+    <g key={key}>
+      <line
+        x1={left}
+        x2={width - right}
+        y1={y}
+        y2={y}
+        stroke={emphasized ? 'var(--color-border-strong)' : 'var(--color-border)'}
+        strokeWidth="1"
+        strokeDasharray={emphasized ? undefined : '3 4'}
+        opacity={emphasized ? 0.8 : 0.46}
+      />
+      <text
+        x={left - 8}
+        y={y + 3.5}
+        textAnchor="end"
+        fill="var(--color-text-subtle)"
+        fontSize="9"
+      >
+        {formatCompact(value)}
       </text>
-      <text x={width - right} y={top - 9} textAnchor="end" fill="var(--color-text-muted)" fontSize="10">
-        Peak {formatCompact(Math.max(...data.map((point) => point[key])))}
-      </text>
-      {[0, 0.5, 1].map((ratio) => {
-        const gridY = top + panelHeight * ratio
-        const value = max * (1 - ratio)
-        return (
-          <g key={ratio}>
-            <line x1={left} x2={width - right} y1={gridY} y2={gridY} stroke="var(--color-border)" strokeWidth="1" opacity="0.58" />
-            <text x={left - 9} y={gridY + 4} textAnchor="end" fill="var(--color-text-muted)" fontSize="10">
-              {formatCompact(value)}
-            </text>
-          </g>
-        )
-      })}
-      {data.map((point, index) => {
-        const value = point[key]
-        const y = barY(value, top, max)
-        return (
-          <rect
-            key={`${key}-${point.bucket_start}`}
-            x={x(index) - barWidth / 2}
-            y={y}
-            width={barWidth}
-            height={Math.max(top + panelHeight - y, value > 0 ? 1 : 0)}
-            rx="2"
-            fill={color}
-            opacity="0.82"
-          >
-            <title>{`${label}: ${formatCompact(value)} · ${formatBucket(point.bucket_start, bucketSize)}`}</title>
-          </rect>
-        )
-      })}
     </g>
   )
 
   return (
     <div
       ref={containerRef}
-      className="overflow-hidden"
+      className="overflow-hidden rounded-md bg-(--bg-page)/20"
       role="img"
-      aria-label="Input and output token volume with independent scales"
+      aria-label={`Input and output token volume with independent scales. Input peak ${formatCompact(inputPeak)}, output peak ${formatCompact(outputPeak)}.`}
     >
-      <svg viewBox={`0 0 ${width} ${chartHeight}`} className="h-[18rem] w-full" aria-hidden="true">
-        {renderPanel('input_tokens', 'Input tokens', 'var(--color-marker-blue)', inputTop, inputMax)}
-        {renderPanel('output_tokens', 'Output tokens', 'var(--color-marker-orange)', outputTop, outputMax)}
+      <svg
+        viewBox={`0 0 ${width} ${chartHeight}`}
+        className="h-[15.75rem] w-full"
+        aria-hidden="true"
+        onMouseLeave={() => setHoveredIndex(null)}
+      >
+        <rect
+          x={left}
+          y={inputTop - 7}
+          width={plotWidth}
+          height={panelHeight + 7}
+          rx="7"
+          fill="var(--color-marker-blue)"
+          opacity="0.035"
+        />
+        <rect
+          x={left}
+          y={outputBaseline}
+          width={plotWidth}
+          height={panelHeight + 7}
+          rx="7"
+          fill="var(--color-marker-orange)"
+          opacity="0.04"
+        />
+
+        {hoveredIndex !== null && (
+          <rect
+            x={left + bandWidth * hoveredIndex + 1}
+            y={inputTop - 7}
+            width={Math.max(1, bandWidth - 2)}
+            height={outputBottom - inputTop + 14}
+            rx="5"
+            fill="var(--bg-key)"
+            opacity="0.75"
+          />
+        )}
+
+        <text x={left + 8} y={inputTop - 13} fill="var(--color-marker-blue)" fontSize="10" fontWeight="650">
+          Input tokens
+        </text>
+        <text x={width - right - 8} y={inputTop - 13} textAnchor="end" fill="var(--color-text-muted)" fontSize="9.5">
+          Peak {formatCompact(inputPeak)}
+        </text>
+        <text x={left + 8} y={outputBaseline - 8} fill="var(--color-marker-orange)" fontSize="10" fontWeight="650">
+          Output tokens
+        </text>
+        <text x={width - right - 8} y={outputBaseline - 8} textAnchor="end" fill="var(--color-text-muted)" fontSize="9.5">
+          Peak {formatCompact(outputPeak)}
+        </text>
+
+        {renderGridLine('input-max', inputTop, inputMax)}
+        {renderGridLine('input-half', inputTop + panelHeight / 2, inputMax / 2)}
+        {renderGridLine('input-zero', inputBaseline, 0, true)}
+        {renderGridLine('output-zero', outputBaseline, 0, true)}
+        {renderGridLine('output-half', outputBaseline + panelHeight / 2, outputMax / 2)}
+        {renderGridLine('output-max', outputBottom, outputMax)}
+
+        {data.map((point, index) => {
+          const value = point.input_tokens
+          const height = (value / inputMax) * panelHeight
+          return (
+            <rect
+              key={`input-${point.bucket_start}`}
+              x={x(index) - barWidth / 2}
+              y={inputBaseline - height}
+              width={barWidth}
+              height={Math.max(height, value > 0 ? 1 : 0)}
+              rx="2.5"
+              fill="var(--color-marker-blue)"
+              opacity={hoveredIndex === null || hoveredIndex === index ? 0.88 : 0.48}
+            />
+          )
+        })}
+
+        {data.map((point, index) => {
+          const value = point.output_tokens
+          const height = (value / outputMax) * panelHeight
+          return (
+            <rect
+              key={`output-${point.bucket_start}`}
+              x={x(index) - barWidth / 2}
+              y={outputBaseline}
+              width={barWidth}
+              height={Math.max(height, value > 0 ? 1 : 0)}
+              rx="2.5"
+              fill="var(--color-marker-orange)"
+              opacity={hoveredIndex === null || hoveredIndex === index ? 0.88 : 0.48}
+            />
+          )
+        })}
+
+        {data.map((point, index) => (
+          <rect
+            key={`hit-${point.bucket_start}`}
+            data-chart-bucket={index}
+            x={left + bandWidth * index}
+            y={inputTop - 7}
+            width={bandWidth}
+            height={outputBottom - inputTop + 14}
+            fill="transparent"
+            onMouseEnter={() => setHoveredIndex(index)}
+          />
+        ))}
+
         {data.map((point, index) => {
           if (index % labelEvery !== 0 && index !== data.length - 1) return null
           return (
-            <text key={point.bucket_start} x={x(index)} y={chartHeight - 8} textAnchor="middle" fill="var(--color-text-muted)" fontSize="10">
+            <text key={point.bucket_start} x={x(index)} y={chartHeight - 9} textAnchor="middle" fill="var(--color-text-subtle)" fontSize="9.5">
               {formatBucket(point.bucket_start, bucketSize)}
             </text>
           )
         })}
+
+        {hovered && hoveredIndex !== null && (
+          <g data-token-tooltip pointerEvents="none">
+            <line
+              x1={x(hoveredIndex)}
+              x2={x(hoveredIndex)}
+              y1={inputTop - 5}
+              y2={outputBottom + 5}
+              stroke="var(--color-text-subtle)"
+              strokeWidth="1"
+              opacity="0.55"
+            />
+            <rect
+              x={tooltipX}
+              y={inputTop + 8}
+              width={tooltipWidth}
+              height={tooltipHeight}
+              rx="7"
+              fill="var(--bg-card)"
+              stroke="var(--color-border-strong)"
+            />
+            <text x={tooltipX + 10} y={inputTop + 24} fill="var(--color-text)" fontSize="10" fontWeight="650">
+              {formatBucket(hovered.bucket_start, bucketSize)}
+            </text>
+            <circle cx={tooltipX + 12} cy={inputTop + 39} r="3" fill="var(--color-marker-blue)" />
+            <text x={tooltipX + 20} y={inputTop + 42} fill="var(--color-text-muted)" fontSize="9.5">
+              Input
+            </text>
+            <text x={tooltipX + 100} y={inputTop + 42} fill="var(--color-text)" fontSize="9.5" fontWeight="600">
+              {formatCompact(hovered.input_tokens)}
+            </text>
+            <circle cx={tooltipX + 12} cy={inputTop + 54} r="3" fill="var(--color-marker-orange)" />
+            <text x={tooltipX + 20} y={inputTop + 57} fill="var(--color-text-muted)" fontSize="9.5">
+              Output
+            </text>
+            <text x={tooltipX + 100} y={inputTop + 57} fill="var(--color-text)" fontSize="9.5" fontWeight="600">
+              {formatCompact(hovered.output_tokens)}
+            </text>
+          </g>
+        )}
       </svg>
     </div>
   )
