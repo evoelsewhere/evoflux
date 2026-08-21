@@ -33,6 +33,9 @@ if TYPE_CHECKING:
     from app.agent.tools.registry import Tool
 
 
+ObservationRange = tuple[str, int, int]
+
+
 def sanitize_error(message: str) -> str:
     """Normalise sandbox paths in tool error messages."""
     return message
@@ -81,12 +84,12 @@ def _prepare_observation(
     state: AgentState,
     tool: Tool,
     args: dict[str, Any],
-) -> tuple[str | None, str | None]:
-    """Return a revision cache key and an optional reuse receipt."""
+) -> tuple[str | None, ObservationRange | None, str | None]:
+    """Return revision identities plus an optional reuse receipt."""
 
     kind = getattr(tool, "observation_kind", None)
     if not isinstance(kind, str) or not kind:
-        return None, None
+        return None, None, None
 
     stats = state.metadata.setdefault(
         "tool_observation_stats",
@@ -107,6 +110,7 @@ def _prepare_observation(
             stats["reused"] += 1
             return (
                 cache_key,
+                None,
                 (
                     "[Observation reused — source revision unchanged]\n"
                     f"tool: {tool.name}\n"
@@ -117,8 +121,45 @@ def _prepare_observation(
                 ),
             )
 
+    observation_range: ObservationRange | None = None
+    range_builder = getattr(tool, "observation_range", None)
+    if callable(range_builder):
+        try:
+            observation_range = range_builder(args)
+        except Exception as exc:  # noqa: BLE001 - caching must never break the tool
+            logger.warning(
+                "tool_observation_range_failed tool={} error={}", tool.name, exc
+            )
+    if observation_range is not None:
+        resource_revision, requested_start, requested_end = observation_range
+        range_key = hashlib.sha256(
+            f"{tool.name}\0{resource_revision}".encode("utf-8", errors="replace")
+        ).hexdigest()
+        cached_ranges = (state.metadata.get("_tool_observation_ranges") or {}).get(
+            range_key, []
+        )
+        for cached in cached_ranges:
+            if (
+                int(cached.get("start", requested_start + 1)) <= requested_start
+                and int(cached.get("end", requested_end - 1)) >= requested_end
+            ):
+                stats["reused"] += 1
+                return (
+                    cache_key,
+                    observation_range,
+                    (
+                        "[Observation range already covered — source revision unchanged]\n"
+                        f"tool: {tool.name}\n"
+                        f"original_call_id: {cached.get('tool_call_id', 'unknown')}\n"
+                        f"covered_range: {cached.get('start')}-{cached.get('end')}\n"
+                        f"requested_range: {requested_start}-{requested_end}\n"
+                        "Reuse the earlier evidence. Read again only after the source "
+                        "changes or when a non-covered range is required."
+                    ),
+                )
+
     stats["executed"] = int(stats.get("executed", 0)) + 1
-    return cache_key, None
+    return cache_key, observation_range, None
 
 
 def make_tool_executor(
@@ -190,9 +231,11 @@ def make_tool_executor(
                 )
             # ─────────────────────────────────────────────────────────────
 
-            observation_cache_key, observation_short_circuit = _prepare_observation(
-                s, active_tool, args
-            )
+            (
+                observation_cache_key,
+                observation_range,
+                observation_short_circuit,
+            ) = _prepare_observation(s, active_tool, args)
             if observation_short_circuit is not None:
                 logger.debug(
                     "tool_observation_short_circuit agent={} tool={} result={}",
@@ -318,14 +361,36 @@ def make_tool_executor(
             else:
                 result = str(result_raw)
 
-            if observation_cache_key and not result.startswith("Error:"):
+            result_is_reusable = not result.startswith("Error:")
+            result_hash = hashlib.sha256(
+                result.encode("utf-8", errors="replace")
+            ).hexdigest()[:16]
+            if observation_cache_key and result_is_reusable:
                 state_cache = s.metadata.setdefault("_tool_observation_cache", {})
                 state_cache[observation_cache_key] = {
                     "tool_call_id": tc.id,
-                    "result_sha256": hashlib.sha256(
-                        result.encode("utf-8", errors="replace")
-                    ).hexdigest()[:16],
+                    "result_sha256": result_hash,
                 }
+            if (
+                observation_range is not None
+                and result_is_reusable
+                and "[read output truncated for LLM context:" not in result
+            ):
+                resource_revision, start, end = observation_range
+                range_key = hashlib.sha256(
+                    f"{active_tool.name}\0{resource_revision}".encode(
+                        "utf-8", errors="replace"
+                    )
+                ).hexdigest()
+                range_cache = s.metadata.setdefault("_tool_observation_ranges", {})
+                range_cache.setdefault(range_key, []).append(
+                    {
+                        "start": start,
+                        "end": end,
+                        "tool_call_id": tc.id,
+                        "result_sha256": result_hash,
+                    }
+                )
             tool_elapsed = time.monotonic() - tool_start
             logger.debug(
                 "tool_done agent={} tool={} elapsed={:.2f}s result_len={}",

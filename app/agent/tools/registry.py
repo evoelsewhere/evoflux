@@ -51,6 +51,12 @@ from loguru import logger
 from app.agent.errors import ToolArgumentError, ToolExecutionError
 
 
+# ``resource_revision, start, end`` for a finite, revision-bound observation.
+# The agent loop uses this contract to recognize a later request that is fully
+# covered by an earlier source range without knowing anything about tool names.
+ObservationRange = tuple[str, int, int]
+
+
 class InjectedArg:
     """Marker: annotate a tool parameter with this to hide it from the LLM schema
     and have it injected automatically at call time by the agent.
@@ -152,6 +158,8 @@ class Tool:
         deduplicate_in_batch: bool = False,
         observation_kind: str | None = None,
         observation_key: Callable[[dict[str, Any]], str | None] | None = None,
+        observation_range: Callable[[dict[str, Any]], ObservationRange | None]
+        | None = None,
     ) -> None:
         self._func = func
         # ``Callable`` is the abstract type; only function objects guarantee
@@ -199,6 +207,7 @@ class Tool:
         self.deduplicate_in_batch = deduplicate_in_batch
         self.observation_kind = observation_kind
         self.observation_key = observation_key
+        self.observation_range = observation_range
 
         self._model, self._definition, self._injected_params = self._build()
         self._description_factory: Callable[[], str] | None = (
@@ -440,6 +449,8 @@ def tool(
     deduplicate_in_batch: bool = False,
     observation_kind: str | None = None,
     observation_key: Callable[[dict[str, Any]], str | None] | None = None,
+    observation_range: Callable[[dict[str, Any]], ObservationRange | None]
+    | None = None,
 ) -> Callable[[Callable], Tool]: ...
 
 
@@ -460,6 +471,8 @@ def tool(
     deduplicate_in_batch: bool = False,
     observation_kind: str | None = None,
     observation_key: Callable[[dict[str, Any]], str | None] | None = None,
+    observation_range: Callable[[dict[str, Any]], ObservationRange | None]
+    | None = None,
 ) -> Tool | Callable[[Callable], Tool]:
     """Decorator that converts a function into a :class:`Tool`.
 
@@ -509,6 +522,7 @@ def tool(
             deduplicate_in_batch=deduplicate_in_batch,
             observation_kind=observation_kind,
             observation_key=observation_key,
+            observation_range=observation_range,
         )
 
     return decorator

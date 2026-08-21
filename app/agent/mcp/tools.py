@@ -13,7 +13,7 @@ collide with built-in tool names.
 from __future__ import annotations
 
 import base64
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
 from pydantic import AnyUrl, BaseModel
@@ -129,6 +129,7 @@ class MCPTool(Tool):
         self.deduplicate_in_batch = False
         self.observation_kind = None
         self.observation_key = None
+        self.observation_range = None
 
         self.__name__ = local_name
         self.__doc__ = description
@@ -154,8 +155,8 @@ class MCPTool(Tool):
             kwargs,
             context=OutboundContext(channel="mcp", destination=self._server_name),
         )
-        protected_kwargs = (
-            protected_kwargs_raw
+        protected_kwargs: dict[str, Any] = (
+            cast(dict[str, Any], protected_kwargs_raw)
             if isinstance(protected_kwargs_raw, dict)
             else kwargs
         )

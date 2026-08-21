@@ -27,6 +27,21 @@ _MUTATING_TOOLS = frozenset(
     {"edit", "write", "patch", "rm", "shell", "python", "process"}
 )
 _PATH_KEYS = ("path", "file_path", "directory", "workdir", "target")
+_REPOSITORY_SIGNAL_MARKERS: tuple[tuple[str, str], ...] = (
+    ("pyproject.toml", "Python"),
+    ("setup.py", "Python"),
+    ("requirements.txt", "Python"),
+    ("Cargo.toml", "Rust"),
+    ("package.json", "JavaScript/TypeScript"),
+    ("tsconfig.json", "TypeScript"),
+    ("go.mod", "Go"),
+    ("pom.xml", "Java/Kotlin"),
+    ("build.gradle", "Java/Kotlin"),
+    ("build.gradle.kts", "Java/Kotlin"),
+    ("Gemfile", "Ruby"),
+    ("composer.json", "PHP"),
+    ("Package.swift", "Swift"),
+)
 
 
 class WorkspaceInstructionsHook(BaseAgentHook):
@@ -86,11 +101,22 @@ class WorkspaceInstructionsHook(BaseAgentHook):
             "",
             "Use the repository path that owns the target code. The first "
             "repository is the primary workspace.",
+            "Repository and language filters are narrowing constraints. If the "
+            "request does not identify the target repository or language, start "
+            "discovery across every listed repository without either filter; "
+            "narrow only after evidence identifies the owner. The primary marker "
+            "and language signals are hints, not proof of ownership.",
+            "Relative paths passed to ordinary filesystem tools resolve against "
+            "the primary workspace only. For a file owned by another listed "
+            "repository, preserve repository identity and use its displayed "
+            "absolute path.",
             "",
         ]
         for index, root in enumerate(roots):
             marker = " **(primary)**" if index == 0 else ""
-            lines.append(f"- **{root.name}**: `{root}`{marker}")
+            signals = _repository_signals(root)
+            signal_suffix = f"; signals: {', '.join(signals)}" if signals else ""
+            lines.append(f"- **{root.name}**: `{root}`{marker}{signal_suffix}")
         return "\n".join(lines)
 
     async def wrap_tool_call(
@@ -228,3 +254,13 @@ def _render_sections(sections) -> str:
     if not rendered:
         return ""
     return "## Workspace Instructions\n\n" + "\n\n".join(rendered)
+
+
+def _repository_signals(root: Path) -> tuple[str, ...]:
+    """Return bounded root-manifest hints without scanning repository contents."""
+
+    found: list[str] = []
+    for marker, signal in _REPOSITORY_SIGNAL_MARKERS:
+        if (root / marker).is_file() and signal not in found:
+            found.append(signal)
+    return tuple(found)

@@ -33,6 +33,11 @@ def test_code_context_owns_discovery_and_graph_navigation() -> None:
         "neighborhood",
     ]
     assert parameters["properties"]["refresh"]["default"] is True
+    assert (
+        "do not default to the primary"
+        in parameters["properties"]["repository"]["description"]
+    )
+    assert "guessed language" in parameters["properties"]["languages"]["description"]
 
 
 def test_code_context_renderer_keeps_evidence_when_one_section_is_oversized() -> None:
@@ -112,6 +117,43 @@ async def test_code_context_dot_selects_active_sandbox_workspace(
     assert "strategy: code-index-vector-fts5-cross-repo" in output
     assert "repositories: repo" in output
     assert "service.py" in output
+
+
+@pytest.mark.asyncio
+async def test_code_context_unknown_root_searches_every_authorized_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    primary = tmp_path / "primary-rust"
+    sibling = tmp_path / "sibling-python"
+    primary.mkdir()
+    sibling.mkdir()
+    (primary / "lib.rs").write_text("fn unrelated_storage() {}\n", encoding="utf-8")
+    (sibling / "pipeline.py").write_text(
+        "class SummarizationHook:\n    prompt_finalization_stage = 65\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+    registry = RepositoryIndexRegistry()
+    monkeypatch.setattr("app.services.code_index.service.repository_indexes", registry)
+    token = set_sandbox(
+        SandboxConfig(
+            workspace=str(primary),
+            extra_workspace_paths=[str(sibling)],
+            session_id="code-index-multi-repo-test",
+            denied_roots=[],
+        )
+    )
+    try:
+        output = await code_context.arun(
+            action="search",
+            query="SummarizationHook prompt finalization",
+            refresh=True,
+        )
+    finally:
+        _sandbox_ctx.reset(token)
+
+    assert "repositories: primary-rust, sibling-python" in output
+    assert "sibling-python/pipeline.py" in output
 
 
 @pytest.mark.asyncio

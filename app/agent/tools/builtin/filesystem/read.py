@@ -91,9 +91,48 @@ def _read_observation_key(args: dict[str, Any]) -> str | None:
     )
 
 
+def _read_observation_range(args: dict[str, Any]) -> tuple[str, int, int] | None:
+    """Describe a finite text range independently from the requested slice.
+
+    The resource identity includes the file revision. A changed file therefore
+    never reuses coverage from an older turn state, while a narrower read of an
+    unchanged range can safely rely on evidence already present in the model's
+    transcript.
+    """
+
+    path = args.get("path")
+    limit = args.get("limit")
+    if (
+        not isinstance(path, str)
+        or not path
+        or not isinstance(limit, int)
+        or limit <= 0
+    ):
+        return None
+    try:
+        resolved = get_sandbox().validate_path(path)
+        if not resolved.is_file() or classify_file(resolved) != "text":
+            return None
+        stat = resolved.stat()
+    except OSError:
+        return None
+    raw_offset = args.get("offset", 1)
+    offset = raw_offset if isinstance(raw_offset, int) else 1
+    start = max(1, offset)
+    revision = f"{resolved.resolve()}:{stat.st_ino}:{stat.st_size}:{stat.st_mtime_ns}"
+    return revision, start, start + limit - 1
+
+
 async def _read_file(
     path: Annotated[
-        str, Field(description="Relative path to the file inside the workspace.")
+        str,
+        Field(
+            description=(
+                "File path. Relative paths resolve against the primary workspace. "
+                "For a file in an authorized non-primary repository, use the "
+                "absolute path shown by the repository map or code-context result."
+            )
+        ),
     ],
     offset: Annotated[
         int,
@@ -182,7 +221,8 @@ read_file = Tool(
         "Read a file from the workspace. Supports text files, images "
         "(PNG, JPG, GIF, WebP), plus PDF and HTML documents. "
         "DOCX, XLSX, and PPTX files are view-only in the workspace UI. "
-        "Paths are workspace-relative. Text lines are prefixed with "
+        "Relative paths use the primary workspace; authorized sibling repositories "
+        "require their displayed absolute path. Text lines are prefixed with "
         "'NNNNN| ' line numbers — display-only metadata: NEVER include the "
         "prefix in edit old_string/new_string or write content."
     ),
@@ -191,4 +231,5 @@ read_file = Tool(
     capabilities=("workspace_read",),
     observation_kind="source",
     observation_key=_read_observation_key,
+    observation_range=_read_observation_range,
 )

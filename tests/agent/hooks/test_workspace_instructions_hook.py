@@ -147,6 +147,9 @@ async def test_multi_repo_context_lists_roots_and_injects_each_instruction_once(
     sibling = tmp_path / "sibling"
     primary.mkdir()
     sibling.mkdir()
+    (primary / "Cargo.toml").write_text("[package]\nname='primary'\n")
+    (sibling / "pyproject.toml").write_text("[project]\nname='sibling'\n")
+    (sibling / "package.json").write_text('{"name":"sibling"}\n')
     (primary / "AGENTS.md").write_text("primary unique rule", encoding="utf-8")
     (sibling / "AGENTS.md").write_text("sibling unique rule", encoding="utf-8")
     hook = WorkspaceInstructionsHook(str(primary), [str(sibling)])
@@ -165,5 +168,10 @@ async def test_multi_repo_context_lists_roots_and_injects_each_instruction_once(
     await hook.wrap_model_call(None, None, Request(), handler)  # type: ignore[arg-type]
 
     assert "## Available Repositories" in seen["prompt"]
+    assert "start discovery across every listed repository" in seen["prompt"]
+    assert "Relative paths passed to ordinary filesystem tools" in seen["prompt"]
+    assert "use its displayed absolute path" in seen["prompt"]
+    assert "signals: Rust" in seen["prompt"]
+    assert "signals: Python, JavaScript/TypeScript" in seen["prompt"]
     assert seen["prompt"].count("primary unique rule") == 1
     assert seen["prompt"].count("sibling unique rule") == 1

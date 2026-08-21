@@ -192,7 +192,9 @@ async def _code_context(
             description=(
                 "Optional authorized repository label or absolute root path. A dot "
                 "selects the primary workspace. Omit to search every authorized "
-                "repository; for graph actions it disambiguates only the root symbol."
+                "repository. For multi-repository discovery, do not default to the "
+                "primary: omit this until user input or returned evidence identifies "
+                "the owner. For graph actions it disambiguates only the root symbol."
             )
         ),
     ] = None,
@@ -213,7 +215,8 @@ async def _code_context(
         Field(
             description=(
                 "Optional native JSON array of language filters for search or grep; "
-                "one language string is also accepted."
+                "one language string is also accepted. Omit during unknown-root "
+                "discovery; a guessed language can hide the owning repository."
             )
         ),
     ] = None,

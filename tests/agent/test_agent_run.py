@@ -10,6 +10,7 @@ from app.agent.agent_loop import Agent
 from app.agent.agent_loop.core import (
     EMPTY_AFTER_TOOL_RECOVERY_PROMPT,
     _build_tool_call_waves,
+    _observation_checkpoint_prompt,
     _partition_tool_call_batch,
 )
 from app.agent import usage as usage_module
@@ -30,6 +31,7 @@ from app.agent.providers.base import LLMProviderBase
 from app.agent.providers.model_metadata import ModelCost
 from app.agent.tools.registry import InjectedArg, Tool
 from app.agent.turn_usage import begin_turn_usage, end_turn_usage
+from app.agent.state import AgentState
 from app.agent.schemas.chat import (
     AssistantMessage,
     ChatCompletionChunk,
@@ -124,6 +126,46 @@ def test_tool_batch_builds_parallel_waves_around_serial_barriers():
         (True, ["call_3"]),
         (False, ["call_4"]),
     ]
+
+
+def test_observation_checkpoint_is_adaptive_soft_and_emitted_once_per_milestone():
+    state = AgentState(messages=[])
+    state.metadata["execution_complexity"] = "simple"
+    state.metadata["tool_observation_stats"] = {
+        "requests": 11,
+        "executed": 11,
+        "reused": 0,
+        "by_kind": {"source": 11},
+    }
+
+    assert _observation_checkpoint_prompt(state) is None
+
+    state.metadata["tool_observation_stats"]["executed"] = 12
+    checkpoint = _observation_checkpoint_prompt(state)
+    assert checkpoint is not None
+    assert "soft guidance" in checkpoint
+    assert "not a hard limit" in checkpoint
+    assert _observation_checkpoint_prompt(state) is None
+
+    state.metadata["tool_observation_stats"]["executed"] = 24
+    assert _observation_checkpoint_prompt(state) is not None
+
+
+def test_complex_observation_checkpoint_allows_more_evidence_before_prompting():
+    state = AgentState(messages=[])
+    state.metadata["execution_complexity"] = "complex"
+    state.metadata["tool_observation_stats"] = {
+        "requests": 23,
+        "executed": 23,
+        "reused": 2,
+        "by_kind": {"retrieval": 23},
+    }
+
+    assert _observation_checkpoint_prompt(state) is None
+    state.metadata["tool_observation_stats"]["executed"] = 24
+    checkpoint = _observation_checkpoint_prompt(state)
+    assert checkpoint is not None
+    assert "reused 2" in checkpoint
 
 
 def make_text_chunk(text: str, usage: Usage | None = None) -> ChatCompletionChunk:
@@ -358,6 +400,50 @@ async def test_agent_run_system_prompt_stripped_from_input():
     system_msgs = [m for m in captured[0] if isinstance(m, SystemMessage)]
     assert len(system_msgs) == 1
     assert system_msgs[0].content == "Agent prompt."
+
+
+async def test_agent_run_injects_observation_checkpoint_only_at_provider_boundary():
+    captured: list[list[ChatMessage]] = []
+
+    class SeedObservationStatsHook(BaseAgentHook):
+        async def before_agent(self, ctx, state) -> None:
+            state.metadata["execution_complexity"] = "simple"
+            state.metadata["tool_observation_stats"] = {
+                "requests": 12,
+                "executed": 12,
+                "reused": 1,
+                "by_kind": {"source": 12},
+            }
+
+    provider = MockProvider([[make_text_chunk("done")]])
+    original_stream = provider.stream
+
+    def capture_stream(messages, tools=None, **kwargs):
+        captured.append(messages)
+        return original_stream(messages, tools, **kwargs)
+
+    provider.stream = capture_stream  # type: ignore[method-assign]
+    agent = Agent(
+        name="bot",
+        llm_provider=provider,
+        hooks=[SeedObservationStatsHook()],
+    )
+
+    returned = await agent.run([HumanMessage(content="audit")])
+
+    provider_checkpoint = [
+        message
+        for message in captured[0]
+        if isinstance(message, HumanMessage)
+        and "Evidence checkpoint" in (message.content or "")
+    ]
+    assert len(provider_checkpoint) == 1
+    assert provider_checkpoint[0].content.startswith("audit\n\n[Evidence checkpoint")
+    assert not any(
+        isinstance(message, HumanMessage)
+        and "Evidence checkpoint" in (message.content or "")
+        for message in returned
+    )
 
 
 async def test_agent_run_state_updated():
