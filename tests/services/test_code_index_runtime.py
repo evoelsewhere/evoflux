@@ -1068,6 +1068,32 @@ async def test_refresh_rebuilds_a_corrupt_regeneratable_cache(
 
 
 @pytest.mark.asyncio
+async def test_refresh_disabled_reopens_committed_index_without_rescan(
+    tmp_path: Path,
+    isolated_cache: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    source = repository / "service.py"
+    source.write_text("def committed_symbol():\n    return 1\n", encoding="utf-8")
+
+    initial_index = await RepositoryIndex.create(repository)
+    committed = await initial_index.update()
+    source.write_text("def changed_after_commit():\n    return 2\n", encoding="utf-8")
+    reopened = await RepositoryIndex.create(repository)
+
+    async def unexpected_update(**_kwargs) -> IndexStats:
+        raise AssertionError("refresh=False must not scan a committed index")
+
+    monkeypatch.setattr(reopened, "update", unexpected_update)
+    reused = await reopened.ensure_ready(refresh=False)
+
+    assert reused.version == committed.version
+    assert reused.files == 1
+
+
+@pytest.mark.asyncio
 async def test_cached_graph_query_reports_corruption_when_refresh_is_disabled(
     tmp_path: Path,
     isolated_cache: Path,

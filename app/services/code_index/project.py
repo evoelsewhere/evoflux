@@ -184,7 +184,6 @@ class RepositoryIndex:
         self._dispatch_lock = threading.RLock()
         self._update_future: concurrent.futures.Future[IndexStats] | None = None
         self._update_future_full = False
-        self._has_completed_update = False
 
     @classmethod
     async def create(cls, root: Path) -> RepositoryIndex:
@@ -249,7 +248,6 @@ class RepositoryIndex:
                     )
                 _rebuild_database(self.database)
                 stats = self._update_sync(True, progress)
-            self._has_completed_update = True
             if progress:
                 progress(IndexProgress("ready", 1.0, "Repository target synchronized"))
             return stats
@@ -362,11 +360,11 @@ class RepositoryIndex:
         return self.stats()
 
     async def ensure_ready(self, *, refresh: bool = True) -> IndexStats:
-        if (
-            refresh
-            or not self._has_completed_update
-            or not self.paths.target_db.exists()
-        ):
+        # ``refresh=False`` is the latency-sensitive committed-index contract
+        # used by UI autocomplete. A process restart creates a fresh
+        # RepositoryIndex object, but an existing target database is already a
+        # valid snapshot and must not trigger a full repository scan.
+        if refresh or not self.paths.target_db.exists():
             return await self.update()
         return await run_index_work(self.stats)
 
@@ -386,7 +384,6 @@ class RepositoryIndex:
         with self._update_lock:
             self.database.close()
             shutil.rmtree(self.paths.directory, ignore_errors=True)
-            self._has_completed_update = False
 
     def stats(self) -> IndexStats:
         try:
