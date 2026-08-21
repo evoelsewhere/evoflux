@@ -115,6 +115,34 @@ def test_redact_covers_tool_arguments_text_parts_and_credentialed_urls() -> None
     assert report.matches >= 4
 
 
+def test_secret_assignment_preserves_source_code_call_expressions() -> None:
+    source = (
+        "let owner_browser_token = app.token_for(&owner).await;\n"
+        "let client_secret = config.secret.clone();"
+    )
+
+    protected, report = protect_outbound_text(
+        source,
+        policy="redact",
+        pii_policy="off",
+    )
+
+    assert protected == source
+    assert report.matches == 0
+
+
+def test_secret_assignment_still_masks_unquoted_literal_values() -> None:
+    protected, report = protect_outbound_text(
+        "password=correct-horse-battery-staple; client_secret: abcdefghijklmnop",
+        policy="redact",
+        pii_policy="off",
+    )
+
+    assert "correct-horse-battery-staple" not in protected
+    assert "abcdefghijklmnop" not in protected
+    assert report.secret_matches == 2
+
+
 def test_block_policy_stops_request_without_echoing_secret() -> None:
     secret = "ghp_abcdefghijklmnopqrstuvwxyz123456"
 

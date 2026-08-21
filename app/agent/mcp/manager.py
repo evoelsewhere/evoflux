@@ -35,7 +35,7 @@ import urllib.parse
 from contextlib import AsyncExitStack, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
 from mcp.client.auth import OAuthRegistrationError
@@ -419,7 +419,7 @@ class MCPManager:
         return runner.status if runner else None
 
     async def call_app_tool(
-        self, server_name: str, tool_name: str, arguments: dict
+        self, server_name: str, tool_name: str, arguments: dict[str, Any]
     ) -> CallToolResult:
         """Call an MCP server tool for an already-approved app bridge request."""
         runner = self._runners.get(server_name)
@@ -437,8 +437,10 @@ class MCPManager:
             arguments,
             context=OutboundContext(channel="mcp", destination=server_name),
         )
-        protected_arguments = (
-            protected_raw if isinstance(protected_raw, dict) else arguments
+        protected_arguments: dict[str, Any] = (
+            cast(dict[str, Any], protected_raw)
+            if isinstance(protected_raw, dict)
+            else arguments
         )
         if report.matches:
             logger.warning(

@@ -133,6 +133,9 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
               \s*[:=]\s*
             )
             ([A-Za-z0-9_+/%=:@.-]{8,})
+            (?![A-Za-z0-9_+/%=:@.-])
+            (?=$|[\s,;}\]])
+            (?!\s*(?:\(|\[|\{|::|\.await\b))
             """
         ),
         r"\1[REDACTED:secret]",

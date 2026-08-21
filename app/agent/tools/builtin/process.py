@@ -510,7 +510,10 @@ async def _process(
     wait_seconds: Annotated[
         int,
         Field(
-            description="For wait: seconds to await new output or completion (max 60).",
+            description=(
+                "For wait: seconds to await process completion before returning "
+                "the latest output (max 60). Use poll for immediate progress."
+            ),
             ge=1,
             le=60,
         ),
@@ -540,12 +543,7 @@ async def _process(
         return f"Error: process '{process_id}' was not found."
 
     if action == "wait":
-        await tracked.wait_for_activity(float(min(wait_seconds, _MAX_WAIT_SECONDS)))
-        if tracked.running:
-            # A command's final stdout bytes can become readable a scheduling
-            # tick before its exit status. Briefly coalesce that edge so the
-            # model does not spend another tool call observing completion.
-            await tracked.wait(timeout_seconds=0.05)
+        await tracked.wait(timeout_seconds=float(min(wait_seconds, _MAX_WAIT_SECONDS)))
         if not tracked.running:
             # Completion and the final pipe read are separate events. Join the
             # reader before consuming the last delta.
@@ -579,7 +577,8 @@ process_tool = Tool(
     deferred=True,
     deferred_summary="Poll, wait for, list, or terminate a command process returned by shell.",
     description=(
-        "Continue a command process returned by shell. Poll and wait return only new "
-        "output since the previous observation, preventing repeated log content."
+        "Continue a command process returned by shell. Poll returns progress "
+        "immediately; wait blocks for completion up to wait_seconds. Both return "
+        "only new output since the previous observation."
     ),
 )
