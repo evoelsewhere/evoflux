@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { type ReactNode, useState } from "react"
 import { Combobox as ComboboxPrimitive } from "@base-ui/react/combobox"
 import { Check, ChevronDown, Search, X } from "lucide-react"
 
@@ -36,6 +36,8 @@ export function Combobox({
   disabled,
   ariaLabel,
   searchPlaceholder = "Search…",
+  clearable = true,
+  renderLeadingIcon,
 }: {
   items: ComboboxItem[]
   value: string | null
@@ -48,10 +50,13 @@ export function Combobox({
   disabled?: boolean
   ariaLabel?: string
   searchPlaceholder?: string
+  clearable?: boolean
+  renderLeadingIcon?: (item: ComboboxItem) => ReactNode
 }) {
   const selected = items.find((item) => item.value === value) ?? null
   const rich = items.some((item) => item.description || item.meta)
   const [query, setQuery] = useState("")
+  const canClear = clearable && selected && !disabled
 
   return (
     <ComboboxPrimitive.Root<ComboboxItem>
@@ -90,12 +95,13 @@ export function Combobox({
           aria-label={ariaLabel}
           className={cn(
             "flex h-full min-w-0 flex-1 items-center gap-2 bg-transparent pl-2.5 text-left outline-none",
-            selected && !disabled ? "pr-14" : "pr-7",
+            canClear ? "pr-14" : "pr-7",
           )}
         >
           <ComboboxPrimitive.Value placeholder={placeholder}>
             {selected ? (
               <span className="flex min-w-0 flex-1 items-center gap-2">
+                {renderLeadingIcon?.(selected)}
                 <span
                   className={cn(
                     "min-w-0 flex-1 truncate font-medium text-(--color-text)",
@@ -122,7 +128,7 @@ export function Combobox({
             )}
           </ComboboxPrimitive.Value>
         </ComboboxPrimitive.Trigger>
-        {selected && !disabled && (
+        {canClear && (
           <ComboboxPrimitive.Clear
             className="absolute right-7 flex h-5 w-5 items-center justify-center rounded text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)"
             aria-label="Clear selection"
@@ -138,14 +144,21 @@ export function Combobox({
       <ComboboxPrimitive.Portal>
         <ComboboxPrimitive.Positioner side="bottom" align="start" sideOffset={4} className="z-(--z-modal)">
           <ComboboxPrimitive.Popup
-            style={rich ? { width: "min(400px, calc(100vw - 16px))" } : undefined}
+            style={
+              rich
+                ? {
+                    width: "min(320px, calc(100vw - 16px))",
+                    maxWidth: "calc(100vw - 16px)",
+                  }
+                : undefined
+            }
             className={cn(
-              "flex max-h-72 w-(--anchor-width) min-w-40 flex-col overflow-hidden rounded-lg border border-(--color-border-strong) bg-(--bg-page) text-(--color-text) shadow-(--shadow-popover)",
+              "flex max-h-64 w-(--anchor-width) min-w-40 flex-col overflow-hidden rounded-lg border border-(--color-border-strong) bg-(--bg-page) text-(--color-text) shadow-(--shadow-popover)",
               "data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
               popupClassName,
             )}
           >
-            <ComboboxPrimitive.InputGroup className="m-1.5 flex h-8 shrink-0 items-center gap-2 rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 focus-within:border-(--focus-ring)">
+            <ComboboxPrimitive.InputGroup className="m-1 flex h-7 shrink-0 items-center gap-2 rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 focus-within:border-(--focus-ring)">
               <Search size={12} className="shrink-0 text-(--color-text-subtle)" aria-hidden="true" />
               <ComboboxPrimitive.Input
                 autoFocus
@@ -174,9 +187,10 @@ export function Combobox({
                   value={item}
                   className={cn(
                     "relative flex w-full cursor-default items-center gap-2 rounded-sm pr-7 pl-2 text-sm text-(--color-text) outline-hidden select-none data-highlighted:bg-(--bg-key)",
-                    rich ? "min-h-11 py-1.5" : "h-8 py-1",
+                    rich ? "min-h-10 py-1" : "h-8 py-1",
                   )}
                 >
+                  {renderLeadingIcon?.(item)}
                   <span className="min-w-0 flex-1">
                     <span className="flex min-w-0 items-center gap-2">
                       <span className="min-w-0 flex-1 truncate font-medium">{item.label}</span>
