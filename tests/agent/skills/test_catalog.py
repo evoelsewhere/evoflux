@@ -115,7 +115,7 @@ def test_catalog_ranking_never_bypasses_mode_or_invocation_policy():
     assert rendered.query_ranked == ()
 
 
-def test_catalog_shortens_descriptions_then_omits_entries_under_budget():
+def test_catalog_preserves_identities_and_shortens_descriptions_under_budget():
     records = [
         _record(f"skill-{index}", f"description {index} " + "x" * 900)
         for index in range(20)
@@ -125,8 +125,8 @@ def test_catalog_shortens_descriptions_then_omits_entries_under_budget():
 
     assert len(rendered.text.encode("utf-8")) <= rendered.budget_chars
     assert rendered.descriptions_shortened is True
-    assert rendered.included
-    assert rendered.omitted
+    assert len(rendered.included) == len(records)
+    assert rendered.omitted == ()
     for name in rendered.included:
         assert name in rendered.text
 
@@ -174,6 +174,8 @@ async def test_catalog_hook_exposes_metadata_but_never_skill_body(
     assert "research" in updated.system_prompt
     assert "Research current facts" in updated.system_prompt
     assert "SECRET FULL WORKFLOW BODY" not in updated.system_prompt
+    assert str(skill_file) not in updated.system_prompt
+    assert "(file:" not in updated.system_prompt
     assert "Skills are optional" not in updated.system_prompt
     assert "you must call `skill`" in updated.system_prompt
     assert state.metadata["skill_catalog"]["query_ranked"] == ["research"]
