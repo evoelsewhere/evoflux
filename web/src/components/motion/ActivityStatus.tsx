@@ -9,7 +9,7 @@ interface ActivityStatusProps {
 
 /** Quiet Codex-style status text with a reduced-motion-safe light sweep. */
 export function ActivityStatus({
-  label = 'Thinking',
+  label = 'Preparing',
   className,
   'aria-label': ariaLabel = label,
 }: ActivityStatusProps) {

@@ -13,6 +13,7 @@ const apiMocks = vi.hoisted(() => ({
 vi.mock('@/api/client', () => apiMocks)
 
 import { queryClient } from '@/lib/query-client'
+import { createDefaultAgentStream } from '@/stores/useTeamStore/defaults'
 import { useTeamStore } from '@/stores/useTeamStore'
 
 beforeEach(() => {
@@ -398,5 +399,54 @@ describe('useTeamStore turn usage', () => {
       turnCompletionTokens: 0,
       turnCalls: 0,
     })
+  })
+})
+
+describe('useTeamStore optimistic turn status', () => {
+  it('shows the lead as working during ingress and rolls back on send failure', async () => {
+    let rejectSend!: (error: Error) => void
+    apiMocks.getRegistry.mockResolvedValue({ models: [{ id: 'codex:gpt-5.4' }] })
+    apiMocks.postTeamChat.mockImplementation(
+      () => new Promise((_resolve, reject) => {
+        rejectSend = reject
+      }),
+    )
+    useTeamStore.getState().beginResolvedSession('session-1', {
+      mode: 'coding',
+      workspace: '/repo',
+      model: 'codex:gpt-5.4',
+    })
+    useTeamStore.setState((state) => ({
+      ...state,
+      leadName: 'lead',
+      agentNames: ['lead'],
+      agentStreams: {
+        lead: {
+          ...createDefaultAgentStream(),
+          model: 'codex:gpt-5.4',
+        },
+      },
+    }))
+
+    const sending = useTeamStore.getState().sendMessage('inspect the code', undefined, {
+      mode: 'coding',
+      workspace: '/repo',
+      model: 'codex:gpt-5.4',
+    })
+
+    await vi.waitFor(() => expect(apiMocks.postTeamChat).toHaveBeenCalledTimes(1))
+    expect(useTeamStore.getState().isTeamWorking).toBe(true)
+    expect(useTeamStore.getState().agentStreams.lead.status).toBe('working')
+    expect(useTeamStore.getState().agentStreams.lead.currentBlocks.at(-1)).toMatchObject({
+      type: 'user',
+      content: 'inspect the code',
+    })
+
+    rejectSend(new Error('ingress failed'))
+    await sending
+
+    expect(useTeamStore.getState().isTeamWorking).toBe(false)
+    expect(useTeamStore.getState().agentStreams.lead.status).toBe('idle')
+    expect(useTeamStore.getState().agentStreams.lead._turnStartedAt).toBeNull()
   })
 })

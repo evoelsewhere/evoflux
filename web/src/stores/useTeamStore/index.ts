@@ -558,6 +558,7 @@ export const useTeamStore = create<TeamStore>()(
         })
         if (leadName && draft.agentStreams[leadName]) {
           resetTurnUsage(draft.agentStreams[leadName])
+          draft.agentStreams[leadName].status = 'working'
           draft.agentStreams[leadName]._turnStartedAt = submittedAt
           const effectiveModel = effectiveLeadModel(draft, leadName, resolvedOptions?.model)
           const effectiveThinkingLevel = resolvedOptions?.thinkingLevel ?? draft.sessionThinkingLevel
@@ -607,6 +608,10 @@ export const useTeamStore = create<TeamStore>()(
         set((draft) => {
           draft.error = err instanceof Error ? err.message : 'Failed to send message'
           draft.isTeamWorking = false
+          if (leadName && draft.agentStreams[leadName]) {
+            draft.agentStreams[leadName].status = 'idle'
+            draft.agentStreams[leadName]._turnStartedAt = null
+          }
         })
       }
     },
@@ -634,6 +639,7 @@ export const useTeamStore = create<TeamStore>()(
           draft.error = null
           if (draft.leadName && draft.agentStreams[draft.leadName]) {
             resetTurnUsage(draft.agentStreams[draft.leadName])
+            draft.agentStreams[draft.leadName].status = 'working'
             draft.agentStreams[draft.leadName]._turnStartedAt = submittedAt
           }
         })
@@ -644,6 +650,10 @@ export const useTeamStore = create<TeamStore>()(
           draft.error = err instanceof Error ? err.message : 'Failed to continue'
           draft.isTeamWorking = false
           draft.isContinuing = false
+          if (draft.leadName && draft.agentStreams[draft.leadName]) {
+            draft.agentStreams[draft.leadName].status = 'idle'
+            draft.agentStreams[draft.leadName]._turnStartedAt = null
+          }
         })
       }
     },
@@ -662,6 +672,7 @@ export const useTeamStore = create<TeamStore>()(
           draft.error = null
           if (draft.leadName && draft.agentStreams[draft.leadName]) {
             resetTurnUsage(draft.agentStreams[draft.leadName])
+            draft.agentStreams[draft.leadName].status = 'working'
             draft.agentStreams[draft.leadName]._turnStartedAt = submittedAt
           }
         })
@@ -671,6 +682,10 @@ export const useTeamStore = create<TeamStore>()(
         set((draft) => {
           draft.error = err instanceof Error ? err.message : 'Failed to compact'
           draft.isTeamWorking = false
+          if (draft.leadName && draft.agentStreams[draft.leadName]) {
+            draft.agentStreams[draft.leadName].status = 'idle'
+            draft.agentStreams[draft.leadName]._turnStartedAt = null
+          }
         })
       }
     },
