@@ -1331,6 +1331,85 @@ class TestBuiltinSkills:
         )
         assert exact_callers["expected_trajectory"] == ["code_context"]
 
+    def test_coding_implementation_locks_bounded_phase_trajectory(self):
+        root = _builtin_skills_dir() / "coding-implementation"
+        skill = (root / "SKILL.md").read_text(encoding="utf-8")
+        normalized = " ".join(skill.split())
+        cases = json.loads(
+            (root / "evals" / "trigger-cases.json").read_text(encoding="utf-8")
+        )
+
+        assert "Phase 1 — Lock the contract and owner" in skill
+        assert "**Exit criterion:** one owning symbol/file" in normalized
+        assert "do not return to broad discovery" in normalized
+        assert (
+            "Do not use shell `cat`, `sed`, `head`, `tail`, `nl`, `rg`, or `find`"
+            in normalized
+        )
+        assert (
+            "When the regression check and required surface checks pass, stop"
+            in normalized
+        )
+        assert '`process(action="wait", wait_seconds=60)`' in normalized
+
+        forbidden = {
+            behavior
+            for case in cases
+            for behavior in case.get("forbidden_behaviors", [])
+        }
+        assert {
+            "shell_source_reread",
+            "bypass_observation_receipt",
+            "continue_discovery_after_test_seam",
+            "restart_discovery_after_diagnostic",
+            "unsolicited_adjacent_review_after_checks_pass",
+        } <= forbidden
+
+        bounded = next(
+            case
+            for case in cases
+            if case.get("expected_trajectory", [None])[0] == "lock_contract_and_owner"
+        )
+        assert bounded["expected_trajectory"][-1] == "stop"
+
+    def test_coding_specialists_share_bounded_execution_contracts(self):
+        expected_stop_evidence = {
+            "coding-debugging": "one falsifiable hypothesis explains the first bad state",
+            "coding-migration": "Treat every rollout phase as a gate",
+            "coding-performance": "Compare with the same protocol",
+            "coding-review": "concrete trigger and changed causal path",
+            "coding-security": "one reachable attacker-to-operation boundary",
+            "coding-testing": "one proof obligation and the cheapest sufficient level",
+        }
+
+        for name, stop_evidence in expected_stop_evidence.items():
+            root = _builtin_skills_dir() / name
+            normalized = " ".join(
+                (root / "SKILL.md").read_text(encoding="utf-8").split()
+            )
+            cases = json.loads(
+                (root / "evals" / "trigger-cases.json").read_text(encoding="utf-8")
+            )
+
+            assert stop_evidence in normalized, name
+            assert "do not use shell `cat`, `sed`, `head`, `tail`" in normalized, name
+            assert "observation receipt" in normalized, name
+            assert '`process(action="wait", wait_seconds=60)`' in normalized, name
+
+            forbidden = {
+                behavior
+                for case in cases
+                for behavior in case.get("forbidden_behaviors", [])
+            }
+            assert "shell_source_reread" in forbidden, name
+            assert "bypass_observation_receipt" in forbidden, name
+            trajectory = next(
+                case["expected_trajectory"]
+                for case in cases
+                if case.get("expected_trajectory")
+            )
+            assert trajectory[-1] in {"stop", "phase_stop"}, name
+
     def test_builtin_skill_resource_links_exist(self):
         resource_link = re.compile(
             r"(?:\[[^\]]+\]\(([^)]+)\)|"

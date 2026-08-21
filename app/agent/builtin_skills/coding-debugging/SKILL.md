@@ -68,6 +68,21 @@ passes after it. Rerun the original reproduction plus the narrow affected
 suite. For races or flakes, repeat enough times to exercise the timing window
 and explain why the new synchronization removes it.
 
+## Execution discipline and stop gate
+
+Batch independent graph queries and source reads. Use `code_context`, `read`,
+`grep`, and `glob` for source; do not use shell `cat`, `sed`, `head`, `tail`,
+`nl`, `rg`, or `find` to reread source or bypass a revision-aware observation
+receipt. Reserve shell for reproduction, formatter, test, diagnostics, and
+runtime commands. If one returns a process handle, prefer
+`process(action="wait", wait_seconds=60)` over repeated short polls.
+
+Once one falsifiable hypothesis explains the first bad state and its cheapest
+disproof supports it, stop broad discovery. After the original reproduction
+and regression proof pass, stop; do not investigate adjacent failures unless
+they contradict the causal claim. On command failure, inspect only the exact
+diagnostic boundary and rerun that same command after one coherent correction.
+
 ## Deliverable
 
 Report:

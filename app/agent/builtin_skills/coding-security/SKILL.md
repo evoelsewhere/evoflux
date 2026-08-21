@@ -71,6 +71,21 @@ Add negative tests for bypasses and adjacent tenants/resources. Verify secure
 failure behavior, auditability, and any required key rotation, data cleanup,
 configuration change, or deployment sequence.
 
+## Execution discipline and threat stop
+
+Select one reachable attacker-to-operation boundary before enumerating checks.
+Batch independent source/sink graph queries and reads. Use `code_context`,
+`read`, `grep`, and `glob` for source; do not use shell `cat`, `sed`, `head`,
+`tail`, `nl`, `rg`, or `find` to reread source or bypass an observation receipt.
+Reserve shell for bounded negative tests, formatter, lint, build, dependency
+audit, and runtime checks. Await long commands with
+`process(action="wait", wait_seconds=60)`.
+
+Stop expanding when reachability, control failure, and impact are either proven
+or one named dynamic boundary remains. After the invariant fix and negative
+tests pass, stop; do not sweep unrelated vulnerability categories. A failed
+check reopens only the source, control, or sink named by its evidence.
+
 ## Deliverable
 
 Report scope and threat model, proven findings with severity and evidence,

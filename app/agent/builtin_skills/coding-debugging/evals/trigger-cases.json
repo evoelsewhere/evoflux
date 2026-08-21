@@ -1,7 +1,9 @@
 [
   {
     "query": "Our invoice worker sometimes marks the job complete before the PDF exists. Reproduce the race and fix the root cause.",
-    "should_trigger": true
+    "should_trigger": true,
+    "expected_trajectory": ["reproduce", "one_hypothesis", "cheapest_disproof", "fix_owner", "regression_proof", "stop"],
+    "forbidden_behaviors": ["repeat_broad_discovery_after_exact_boundary", "shell_source_reread", "bypass_observation_receipt", "adjacent_failure_investigation_after_proof"]
   },
   {
     "query": "This integration test passes locally but times out in CI after the database upgrade. Diagnose it before changing anything.",

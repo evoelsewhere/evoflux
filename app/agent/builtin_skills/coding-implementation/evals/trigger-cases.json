@@ -5,7 +5,23 @@
   },
   {
     "query": "Fix the confirmed pagination off-by-one in listProjects and add a regression test for the final page.",
-    "should_trigger": true
+    "should_trigger": true,
+    "expected_trajectory": [
+      "lock_contract_and_owner",
+      "select_one_regression_seam",
+      "implement_one_slice",
+      "focused_check",
+      "proportional_verification",
+      "stop"
+    ],
+    "forbidden_behaviors": [
+      "general_repository_survey_after_owner_known",
+      "shell_source_reread",
+      "bypass_observation_receipt",
+      "continue_discovery_after_test_seam",
+      "restart_discovery_after_diagnostic",
+      "unsolicited_adjacent_review_after_checks_pass"
+    ]
   },
   {
     "query": "Make the upload cancellation state visible in the component and preserve the current retry contract.",
@@ -25,5 +41,21 @@
     "query": "Rename the typo in this comment.",
     "should_trigger": false,
     "near_miss": "A trivial edit needs no specialist workflow."
+  },
+  {
+    "query": "In a multi-repository project, update the sibling API client's confirmed timeout behavior and add its existing focused test.",
+    "should_trigger": true,
+    "expected_trajectory": [
+      "cross_repository_owner_discovery",
+      "absolute_sibling_path",
+      "implement_one_slice",
+      "focused_check",
+      "stop"
+    ],
+    "forbidden_behaviors": [
+      "default_to_primary_repository",
+      "strip_sibling_repository_identity",
+      "serialize_independent_reads"
+    ]
   }
 ]

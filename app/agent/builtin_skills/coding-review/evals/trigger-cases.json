@@ -1,7 +1,9 @@
 [
   {
     "query": "Audit my local diff for correctness and regression risks. Do not modify files.",
-    "should_trigger": true
+    "should_trigger": true,
+    "expected_trajectory": ["diff_once", "changed_boundaries", "candidate_trigger", "finding_contract", "stop"],
+    "forbidden_behaviors": ["repeat_diff_read", "shell_source_reread", "bypass_observation_receipt", "commentary_volume_after_candidates_resolved"]
   },
   {
     "query": "Review the supplied caching implementation and report only actionable defects with file and line anchors.",
