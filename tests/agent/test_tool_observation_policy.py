@@ -58,6 +58,63 @@ async def test_unchanged_read_returns_receipt_and_revision_change_invalidates_ca
 
 
 @pytest.mark.asyncio
+async def test_narrower_read_reuses_covering_revision_range(observation_sandbox):
+    source = observation_sandbox / "sample.txt"
+    source.write_text("".join(f"line-{index}\n" for index in range(1, 101)))
+    state = AgentState(messages=[], tool_names=["read"])
+    execute = make_tool_executor({"read": read_file}, "agent")
+    ctx = RunContext(session_id="s", run_id="r", agent_name="agent")
+
+    first = await execute(
+        ctx,
+        state,
+        _call("call-1", "read", {"path": "sample.txt", "offset": 1, "limit": 80}),
+    )
+    covered = await execute(
+        ctx,
+        state,
+        _call("call-2", "read", {"path": "sample.txt", "offset": 20, "limit": 20}),
+    )
+    uncovered = await execute(
+        ctx,
+        state,
+        _call("call-3", "read", {"path": "sample.txt", "offset": 81, "limit": 10}),
+    )
+
+    assert "line-1" in first
+    assert "Observation range already covered" in covered
+    assert "original_call_id: call-1" in covered
+    assert "line-81" in uncovered
+    assert "Observation range already covered" not in uncovered
+    assert state.metadata["tool_observation_stats"]["reused"] == 1
+    assert state.metadata["tool_observation_stats"]["executed"] == 2
+
+
+@pytest.mark.asyncio
+async def test_covering_range_is_invalidated_when_file_changes(observation_sandbox):
+    source = observation_sandbox / "sample.txt"
+    source.write_text("first\nsecond\nthird\n")
+    state = AgentState(messages=[], tool_names=["read"])
+    execute = make_tool_executor({"read": read_file}, "agent")
+    ctx = RunContext(session_id="s", run_id="r", agent_name="agent")
+
+    await execute(
+        ctx,
+        state,
+        _call("call-1", "read", {"path": "sample.txt", "offset": 1, "limit": 3}),
+    )
+    source.write_text("changed\nsecond\nthird\n")
+    changed = await execute(
+        ctx,
+        state,
+        _call("call-2", "read", {"path": "sample.txt", "offset": 1, "limit": 2}),
+    )
+
+    assert "changed" in changed
+    assert "Observation range already covered" not in changed
+
+
+@pytest.mark.asyncio
 async def test_non_revisioned_observations_are_measured_but_never_blocked():
     executions: list[str] = []
 

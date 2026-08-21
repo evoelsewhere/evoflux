@@ -42,6 +42,32 @@ _RG_MATCH_SEP = "\x1f"
 _RG_CONTEXT_SEP = "\x1e"
 
 
+def _contains_line_break_expression(pattern: str) -> bool:
+    """Return whether a line-oriented regex asks to cross a line boundary.
+
+    Ripgrep rejects these expressions without multiline mode, while the Python
+    fallback accepts them but evaluates each line separately and can therefore
+    never satisfy that branch. Failing fast avoids an expensive full-tree scan
+    that cannot produce the requested cross-line match. An escaped literal
+    ``\\\\n`` remains valid and is not mistaken for a newline token.
+    """
+
+    if "\n" in pattern or "\r" in pattern:
+        return True
+    index = 0
+    while index < len(pattern):
+        if pattern[index] != "\\":
+            index += 1
+            continue
+        start = index
+        while index < len(pattern) and pattern[index] == "\\":
+            index += 1
+        slash_count = index - start
+        if slash_count % 2 == 1 and index < len(pattern) and pattern[index] in "nr":
+            return True
+    return False
+
+
 def _format_line(display: str, lineno: str | int, content: str, *, match: bool) -> str:
     """Render one output line; context lines use '-' separators like grep -C."""
     content = content[:_MAX_LINE_CHARS]
@@ -297,6 +323,13 @@ async def _grep_files(
     if len(pattern) > _MAX_PATTERN_LEN:
         raise ValueError(
             f"Pattern too long ({len(pattern)} chars, max {_MAX_PATTERN_LEN})"
+        )
+
+    if _contains_line_break_expression(pattern):
+        raise ValueError(
+            "grep is line-oriented and cannot match newline expressions. "
+            "Search each line pattern separately or use a structural/code-context "
+            "query for cross-line relationships."
         )
 
     try:

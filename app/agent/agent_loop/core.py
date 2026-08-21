@@ -76,6 +76,56 @@ EMPTY_AFTER_TOOL_RECOVERY_PROMPT = (
     "make the next required tool call. Do not return an empty response."
 )
 
+_OBSERVATION_CHECKPOINTS: dict[str, tuple[int, ...]] = {
+    "trivial": (8, 16, 32),
+    "simple": (12, 24, 48),
+    "multi_step": (16, 32, 64),
+    "complex": (24, 48, 96),
+}
+
+
+def _observation_checkpoint_prompt(state: AgentState) -> str | None:
+    """Return one ephemeral evidence-budget reminder at adaptive milestones.
+
+    This is deliberately a soft checkpoint, not a global iteration cap. A
+    difficult investigation can continue, but it must identify the unresolved
+    claim instead of silently accumulating overlapping source observations.
+    """
+
+    stats = state.metadata.get("tool_observation_stats")
+    if not isinstance(stats, dict):
+        return None
+    executed = stats.get("executed")
+    if not isinstance(executed, int) or executed <= 0:
+        return None
+    complexity = str(state.metadata.get("execution_complexity") or "simple")
+    thresholds = _OBSERVATION_CHECKPOINTS.get(
+        complexity, _OBSERVATION_CHECKPOINTS["simple"]
+    )
+    reached = [threshold for threshold in thresholds if executed >= threshold]
+    if not reached:
+        return None
+    emitted: set[int] = state.metadata.setdefault(
+        "_observation_checkpoints_emitted", set()
+    )
+    pending = [threshold for threshold in reached if threshold not in emitted]
+    if not pending:
+        return None
+    threshold = max(pending)
+    emitted.update(value for value in reached if value <= threshold)
+    reused = stats.get("reused") if isinstance(stats.get("reused"), int) else 0
+    return (
+        "[Evidence checkpoint — soft guidance]\n"
+        f"This turn has executed {executed} source/retrieval/discovery "
+        f"observations and reused {reused}. Before another observation, identify "
+        "one unresolved material claim and choose the cheapest tool call that can "
+        "settle it. If the requested conclusion already has direct implementation "
+        "evidence plus focused regression or runtime evidence, answer now. Reuse "
+        "covered ranges and batch independent reads in one model turn. This is not "
+        "a hard limit; continue when a named evidence gap remains."
+    )
+
+
 TContext = TypeVar("TContext", bound=AgentContext)
 
 
@@ -669,6 +719,18 @@ class Agent(Generic[TContext]):
                 updated = await hook.before_model(ctx, state, model_request)
                 if updated is not None:
                     model_request = updated
+
+            observation_checkpoint = _observation_checkpoint_prompt(state)
+            if observation_checkpoint:
+                model_request = model_request.override(
+                    messages=(
+                        *model_request.messages,
+                        HumanMessage(
+                            content=observation_checkpoint,
+                            extra={"system_generated": True},
+                        ),
+                    )
+                )
 
             # Replaying an identical post-tool request makes deterministic
             # empty completions repeat forever. Add an ephemeral user nudge to

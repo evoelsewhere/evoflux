@@ -390,6 +390,12 @@ async def test_glob_name_limits_to_200_results(sandbox):
 # ---------------------------------------------------------------------------
 
 
+def test_read_schema_explains_non_primary_repository_paths():
+    parameters = read_file.definition["function"]["parameters"]["properties"]
+    assert "primary workspace" in parameters["path"]["description"]
+    assert "absolute path" in parameters["path"]["description"]
+
+
 class TestGrepFiles:
     async def test_grep_finds_matches(self, workspace):
         result = await grep_files.arun(pattern="def ", directory=".")
@@ -409,6 +415,14 @@ class TestGrepFiles:
     async def test_grep_invalid_regex(self, workspace):
         with pytest.raises(ToolExecutionError):
             await grep_files.arun(pattern="[invalid", directory=".")
+
+    async def test_grep_rejects_unmatchable_newline_expression(self, workspace):
+        with pytest.raises(ToolExecutionError, match="line-oriented"):
+            await grep_files.arun(pattern=r"first\n|second", directory=".")
+
+    async def test_grep_keeps_escaped_literal_backslash_n_valid(self, workspace):
+        result = await grep_files.arun(pattern=r"first\\n", directory=".")
+        assert "No matches" in result
 
     async def test_grep_not_a_directory(self, workspace):
         with pytest.raises(ToolExecutionError):
