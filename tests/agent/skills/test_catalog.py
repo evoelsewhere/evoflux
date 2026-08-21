@@ -9,8 +9,8 @@ from app.agent.hooks.configured_skills import (
     MAX_CONFIGURED_SKILL_CHARS,
     ConfiguredSkillsHook,
 )
-from app.agent.hooks.skill_catalog import SkillCatalogHook
-from app.agent.schemas.chat import HumanMessage
+from app.agent.hooks.skill_catalog import SkillCatalogFinalizerHook, SkillCatalogHook
+from app.agent.schemas.chat import AssistantMessage, HumanMessage
 from app.agent.skills.activation import MAX_ACTIVATED_SKILL_BYTES, activate_skill
 from app.agent.skills.catalog import render_skill_catalog
 from app.agent.skills.discovery import MAX_SKILL_FILE_BYTES
@@ -178,6 +178,46 @@ async def test_catalog_hook_exposes_metadata_but_never_skill_body(
     assert "you must call `skill`" in updated.system_prompt
     assert state.metadata["skill_catalog"]["query_ranked"] == ["research"]
     assert state.messages == [state.messages[0]]
+
+
+@pytest.mark.asyncio
+async def test_team_catalog_finalizer_keeps_catalog_after_stable_prompt(
+    monkeypatch, tmp_path
+):
+    record = _record("research", "Research current facts.", root=tmp_path)
+    monkeypatch.setattr(
+        "app.agent.tools.builtin.skill.discover_skill_records_runtime",
+        lambda **_kwargs: {"research": record},
+    )
+    monkeypatch.setattr(
+        "app.agent.hooks.skill_catalog.get_model_limits",
+        lambda _model: SimpleNamespace(context_length=128_000),
+    )
+    catalog = SkillCatalogHook(mode="work", model_id="test:model")
+    finalizer = SkillCatalogFinalizerHook()
+    ctx = SimpleNamespace(agent_name="agent")
+    state = AgentState(messages=[HumanMessage(content="Research current facts")])
+    request = ModelRequest(
+        messages=tuple(state.messages),
+        system_prompt="Base\n\nStatic team protocol",
+    )
+
+    await finalizer.before_agent(ctx, state)
+    updated = await catalog.before_model(ctx, state, request)
+    captured: list[ModelRequest] = []
+
+    async def handler(model_request: ModelRequest) -> AssistantMessage:
+        captured.append(model_request)
+        return AssistantMessage(content="done")
+
+    response = await finalizer.wrap_model_call(ctx, state, request, handler)
+
+    assert updated is None
+    assert response.content == "done"
+    assert captured[0].system_prompt.startswith("Base\n\nStatic team protocol")
+    assert captured[0].system_prompt.index("## Skills") > captured[
+        0
+    ].system_prompt.index("Static team protocol")
 
 
 @pytest.mark.asyncio
