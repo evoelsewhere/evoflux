@@ -1502,8 +1502,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                 : cn(
                     'w-full border-(--color-border) focus-within:border-(--color-border-strong)',
                     isMobile
-                      ? 'rounded-xl'
-                      : 'rounded-[20px]',
+                      ? 'rounded-md'
+                      : 'rounded-[10px]',
                   ),
             )}
           >
