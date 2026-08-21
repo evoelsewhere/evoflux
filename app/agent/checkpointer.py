@@ -302,25 +302,55 @@ class SQLiteCheckpointer(Checkpointer):
                 # ── Update exclude_from_context on already-persisted messages ─────
                 # Re-read the flag directly — no diff tracking needed.
                 # db_id is set on all messages after first persist, so PK lookup is safe.
+                latest_assistant = next(
+                    (
+                        message
+                        for message in reversed(state.messages)
+                        if isinstance(message, AssistantMessage)
+                    ),
+                    None,
+                )
                 for msg in seen_messages:
                     if isinstance(msg, SystemMessage):
                         continue
-                    if not msg.exclude_from_context:
-                        continue
                     if msg.db_id is None:
+                        continue
+                    turn_usage = (
+                        (msg.extra or {}).get("turn_usage")
+                        if msg is latest_assistant
+                        else None
+                    )
+                    if not msg.exclude_from_context and not isinstance(
+                        turn_usage, dict
+                    ):
                         continue
                     stmt = select(SessionMessage).where(
                         col(SessionMessage.id) == msg.db_id
                     )
                     row = (await db.exec(stmt)).first()
-                    if row is not None and not row.exclude_from_context:
+                    if row is None:
+                        continue
+                    changed = False
+                    if msg.exclude_from_context and not row.exclude_from_context:
                         row.exclude_from_context = True
-                        db.add(row)
+                        changed = True
                         logger.debug(
                             "checkpointer_exclude_flag_updated session_id={} db_id={}",
                             sid,
                             msg.db_id,
                         )
+                    if isinstance(turn_usage, dict) and (
+                        (row.extra or {}).get("turn_usage") != turn_usage
+                    ):
+                        row.extra = {**(row.extra or {}), "turn_usage": turn_usage}
+                        changed = True
+                        logger.debug(
+                            "checkpointer_turn_usage_updated session_id={} db_id={}",
+                            sid,
+                            msg.db_id,
+                        )
+                    if changed:
+                        db.add(row)
 
                 # ── Persist new messages ──────────────────────────────────────────
                 for msg in new_messages:

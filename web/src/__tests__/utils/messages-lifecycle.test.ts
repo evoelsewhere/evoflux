@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { MessageResponse } from '@/api/types'
-import { parseApiMessages, parseTeamBlocks } from '@/utils/messages'
+import { parseApiMessages, parseTeamBlocks, sumUsageFromMessages } from '@/utils/messages'
 
 function lifecycleMessage(content: string | null): MessageResponse {
   return {
@@ -55,5 +55,38 @@ describe('sleep lifecycle message parsing', () => {
 
     expect(first[0]?.id).toBe('message-1:text')
     expect(second[0]?.id).toBe(first[0]?.id)
+  })
+})
+
+describe('turn usage history restoration', () => {
+  it('restores current context and aggregate turn usage independently', () => {
+    const message = lifecycleMessage('Done')
+    message.extra = {
+      usage: { input: 14_200, output: 17, cache: 2_000 },
+      turn_usage: {
+        input: 17_000,
+        output: 29,
+        cache: 2_500,
+        calls: 3,
+        phases: {
+          main: { input: 14_200, output: 17, cache: 2_000, calls: 1 },
+          skill_resolver: { input: 2_800, output: 12, cache: 500, calls: 1 },
+        },
+      },
+    }
+
+    expect(sumUsageFromMessages([message])).toMatchObject({
+      promptTokens: 14_200,
+      completionTokens: 17,
+      cachedTokens: 2_000,
+      turnPromptTokens: 17_000,
+      turnCompletionTokens: 29,
+      turnTotalTokens: 17_029,
+      turnCachedTokens: 2_500,
+      turnCalls: 3,
+      turnPhases: {
+        main: { input: 14_200, output: 17, cache: 2_000, calls: 1 },
+      },
+    })
   })
 })

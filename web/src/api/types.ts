@@ -1014,6 +1014,13 @@ export interface ChatMessage {
 }
 
 // Agent Usage Stats
+export interface TurnUsageBreakdown {
+  input: number
+  output: number
+  cache: number
+  calls: number
+}
+
 export interface AgentUsage {
   promptTokens: number
   completionTokens: number
@@ -1023,6 +1030,8 @@ export interface AgentUsage {
   turnCompletionTokens?: number
   turnTotalTokens?: number
   turnCachedTokens?: number
+  turnCalls?: number
+  turnPhases?: Record<string, TurnUsageBreakdown>
 }
 
 // ── Wiki ─────────────────────────────────────────────────────────────────────

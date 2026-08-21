@@ -6,7 +6,7 @@ SummarizationHook is a pure state transform.
 - Constructor: SummarizationHook(llm_provider, prompt_token_threshold, keep_last_assistants, summary_prompt, max_token_length)
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -24,6 +24,12 @@ from app.agent.schemas.chat import (
     SystemMessage,
     ToolCall,
     ToolMessage,
+    Usage,
+)
+from app.agent.turn_usage import (
+    begin_turn_usage,
+    current_turn_usage_snapshot,
+    end_turn_usage,
 )
 
 
@@ -691,6 +697,57 @@ async def test_call_llm_skips_empty_choices_chunks(mock_provider):
     summary_msgs = [m for m in state.messages if getattr(m, "is_summary", False)]
     assert len(summary_msgs) == 1
     assert "Summary result." in summary_msgs[0].content
+
+
+@pytest.mark.asyncio
+async def test_summarization_usage_is_included_in_turn_total():
+    provider = MagicMock()
+    provider.model = "summary-model"
+
+    async def _stream(*_, **__):
+        chunk = MagicMock()
+        chunk.choices = [MagicMock()]
+        chunk.choices[0].delta.content = "Compact summary."
+        chunk.usage = Usage(
+            prompt_tokens=4_000,
+            completion_tokens=200,
+            total_tokens=4_200,
+            cached_tokens=1_000,
+        )
+        yield chunk
+
+    provider.stream = _stream
+    hook = SummarizationHook(
+        llm_provider=provider,
+        summary_prompt="test summary prompt",
+        prompt_token_threshold=1,
+    )
+    token = begin_turn_usage("session-1", "lead")
+    try:
+        with patch(
+            "app.services.memory_stream_store.push_event",
+            new_callable=AsyncMock,
+        ):
+            result = await hook._call_llm(_make_ctx(), [HumanMessage(content="hi")])
+        assert result == "Compact summary."
+        assert current_turn_usage_snapshot() == {
+            "input": 4_000,
+            "output": 200,
+            "cache": 1_000,
+            "calls": 1,
+            "models": ["summary-model"],
+            "phases": {
+                "summarization": {
+                    "input": 4_000,
+                    "output": 200,
+                    "cache": 1_000,
+                    "calls": 1,
+                    "models": ["summary-model"],
+                }
+            },
+        }
+    finally:
+        end_turn_usage(token)
 
 
 # ---------------------------------------------------------------------------

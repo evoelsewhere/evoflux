@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -11,6 +12,11 @@ from app.agent.schemas.chat import AssistantMessage, HumanMessage
 from app.agent.skills.models import SkillRecord
 from app.agent.skills.resolution import eligible_resolution_records, resolve_skill
 from app.agent.state import AgentState
+from app.agent.turn_usage import (
+    begin_turn_usage,
+    current_turn_usage_snapshot,
+    end_turn_usage,
+)
 
 
 def _record(
@@ -35,8 +41,11 @@ def _record(
 
 
 class _Provider:
-    def __init__(self, payload: dict | str) -> None:
+    model = "mock-model"
+
+    def __init__(self, payload: dict | str, usage: dict | None = None) -> None:
         self.payload = payload
+        self.usage = usage
         self.calls: list[tuple[list, list | None]] = []
 
     async def chat(self, messages, tools=None, **_kwargs):
@@ -44,7 +53,10 @@ class _Provider:
         content = (
             self.payload if isinstance(self.payload, str) else json.dumps(self.payload)
         )
-        return AssistantMessage(content=content)
+        return AssistantMessage(
+            content=content,
+            extra={"usage": self.usage} if self.usage else None,
+        )
 
 
 def test_resolution_eligibility_is_policy_and_mode_bounded():
@@ -93,6 +105,44 @@ async def test_resolver_selects_one_exact_eligible_skill():
         "coding-investigation",
         "coding-debugging",
     }
+
+
+@pytest.mark.asyncio
+async def test_resolver_usage_is_included_in_turn_total():
+    provider = _Provider(
+        {"skill_name": None, "confidence": 1.0, "reason": "Casual chat."},
+        usage={"input": 800, "output": 12, "cache": 100},
+    )
+    token = begin_turn_usage("session-1", "lead")
+    try:
+        with patch(
+            "app.services.memory_stream_store.push_event",
+            new_callable=AsyncMock,
+        ):
+            await resolve_skill(
+                provider,
+                request="hello",
+                mode="coding",
+                records=[_record("coding-investigation", "Investigate code paths.")],
+            )
+        assert current_turn_usage_snapshot() == {
+            "input": 800,
+            "output": 12,
+            "cache": 100,
+            "calls": 1,
+            "models": ["mock-model"],
+            "phases": {
+                "skill_resolver": {
+                    "input": 800,
+                    "output": 12,
+                    "cache": 100,
+                    "calls": 1,
+                    "models": ["mock-model"],
+                }
+            },
+        }
+    finally:
+        end_turn_usage(token)
 
 
 @pytest.mark.asyncio

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.agent.schemas.chat import HumanMessage, SystemMessage
 from app.agent.skills.models import SkillRecord
+from app.agent.turn_usage import record_turn_usage
 
 if TYPE_CHECKING:
     from app.agent.providers.base import LLMProviderBase
@@ -128,6 +129,13 @@ async def resolve_skill(
         ],
         tools=None,
     )
+    usage = (response.extra or {}).get("usage") if response.extra else None
+    if isinstance(usage, dict):
+        await record_turn_usage(
+            usage,
+            phase="skill_resolver",
+            model_id=getattr(provider, "model", None),
+        )
     try:
         payload = _DecisionPayload.model_validate_json(
             _json_object(response.content or "")

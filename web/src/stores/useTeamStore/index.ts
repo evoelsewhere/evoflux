@@ -13,6 +13,15 @@ import { createStreamScheduler } from '@/api/stream-scheduler'
 import type { AgentStream, TeamStore } from './types'
 import type { ContentBlock, MessageResponse, TeamHistoryResponse } from '@/api/types'
 
+function resetTurnUsage(stream: AgentStream) {
+  stream.usage.turnPromptTokens = 0
+  stream.usage.turnCompletionTokens = 0
+  stream.usage.turnTotalTokens = 0
+  stream.usage.turnCachedTokens = 0
+  stream.usage.turnCalls = 0
+  stream.usage.turnPhases = {}
+}
+
 function revertBoundaryTime(session: { revert?: { message_id?: string } | null; messages: MessageResponse[] }): number | null {
   const boundaryId = session.revert?.message_id
   if (!boundaryId) return null
@@ -548,6 +557,7 @@ export const useTeamStore = create<TeamStore>()(
           stream.revertedMessages = []
         })
         if (leadName && draft.agentStreams[leadName]) {
+          resetTurnUsage(draft.agentStreams[leadName])
           draft.agentStreams[leadName]._turnStartedAt = submittedAt
           const effectiveModel = effectiveLeadModel(draft, leadName, resolvedOptions?.model)
           const effectiveThinkingLevel = resolvedOptions?.thinkingLevel ?? draft.sessionThinkingLevel
@@ -623,6 +633,7 @@ export const useTeamStore = create<TeamStore>()(
           draft.isContinuing = true
           draft.error = null
           if (draft.leadName && draft.agentStreams[draft.leadName]) {
+            resetTurnUsage(draft.agentStreams[draft.leadName])
             draft.agentStreams[draft.leadName]._turnStartedAt = submittedAt
           }
         })
@@ -650,6 +661,7 @@ export const useTeamStore = create<TeamStore>()(
           draft.isTeamWorking = true
           draft.error = null
           if (draft.leadName && draft.agentStreams[draft.leadName]) {
+            resetTurnUsage(draft.agentStreams[draft.leadName])
             draft.agentStreams[draft.leadName]._turnStartedAt = submittedAt
           }
         })

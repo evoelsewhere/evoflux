@@ -20,7 +20,7 @@ import {
   touchesWiki,
 } from './helpers'
 import { isBackgroundCompletion, sendDesktopNotification } from '@/lib/desktop-notifications'
-import type { GoalResponse, TurnChangedFile } from '@/api/types'
+import type { GoalResponse, TurnChangedFile, TurnUsageBreakdown } from '@/api/types'
 import type { ActivityItem, CacheInvalidation, TeamStore } from './types'
 
 type Setter = (fn: (draft: TeamStore) => void) => void
@@ -86,7 +86,19 @@ function stampOpenTextBlocks(
 function markTurnStarted(draft: TeamStore, agent: string, startedAt = Date.now()) {
   ensureAgent(draft, agent)
   const stream = draft.agentStreams[agent]
-  if (stream._turnStartedAt === undefined || stream._turnStartedAt === null) stream._turnStartedAt = startedAt
+  if (stream._turnStartedAt === undefined || stream._turnStartedAt === null) {
+    resetTurnUsage(stream)
+    stream._turnStartedAt = startedAt
+  }
+}
+
+function resetTurnUsage(stream: TeamStore['agentStreams'][string]) {
+  stream.usage.turnPromptTokens = 0
+  stream.usage.turnCompletionTokens = 0
+  stream.usage.turnTotalTokens = 0
+  stream.usage.turnCachedTokens = 0
+  stream.usage.turnCalls = 0
+  stream.usage.turnPhases = {}
 }
 
 function appendStreamingText(
@@ -99,7 +111,10 @@ function appendStreamingText(
 ) {
   ensureAgent(draft, agent)
   const stream = draft.agentStreams[agent]
-  if (stream._turnStartedAt === undefined || stream._turnStartedAt === null) stream._turnStartedAt = Date.now()
+  if (stream._turnStartedAt === undefined || stream._turnStartedAt === null) {
+    resetTurnUsage(stream)
+    stream._turnStartedAt = Date.now()
+  }
   if (kind === 'thinking') {
     stream.currentBlocks = appendThinking(stream.currentBlocks, text)
     const last = stream.currentBlocks[stream.currentBlocks.length - 1]
@@ -377,6 +392,10 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
             u.turnCompletionTokens = completionTokens
             u.turnTotalTokens = (d.total_tokens as number) || (promptTokens + completionTokens)
             u.turnCachedTokens = cachedTokens ?? 0
+            u.turnCalls = typeof meta.calls === 'number' ? meta.calls : undefined
+            u.turnPhases = meta.phases && typeof meta.phases === 'object'
+              ? meta.phases as Record<string, TurnUsageBreakdown>
+              : undefined
             return
           }
           u.promptTokens     = promptTokens
@@ -472,6 +491,7 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
           draft.isTeamWorking = true
           draft.isContinuing = false
           draft.error = null
+          resetTurnUsage(draft.agentStreams[agent])
           draft.agentStreams[agent].status = 'working'
           const queued = draft._pendingMessages.filter((msg) => {
             if (msg.sessionId !== draft.sessionId) return false
@@ -571,6 +591,7 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         set((draft) => {
           ensureAgent(draft, agent)
           if (status === 'working') {
+            resetTurnUsage(draft.agentStreams[agent])
             draft.agentStreams[agent].status = 'working'
             draft.agentStreams[agent]._completionEstimated = 0
             draft.isTeamWorking = true

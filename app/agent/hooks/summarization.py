@@ -60,6 +60,7 @@ from app.agent.schemas.chat import (
     ToolMessage,
 )
 from app.agent.usage import set_usage_span_attributes, usage_to_dict
+from app.agent.turn_usage import record_turn_usage
 from app.agent.schemas.events import SummarizationEndEvent, SummarizationStartEvent
 from app.core.otel import get_tracer
 from app.services.stream_envelope import StreamEnvelope
@@ -962,5 +963,10 @@ class SummarizationHook(BaseAgentHook):
                     usage_dict.get("cache", 0),
                 )
                 set_usage_span_attributes(span, usage_dict)
+                await record_turn_usage(
+                    last_usage,
+                    phase="summarization",
+                    model_id=model_id,
+                )
             span.set_status(StatusCode.OK)
             return full_text.strip()

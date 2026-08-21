@@ -57,6 +57,7 @@ from app.agent.state import (
     build_tool_chain,
 )
 from app.agent.tools.registry import Tool, deferred_catalog_entry
+from app.agent.turn_usage import current_turn_usage_snapshot
 
 MAX_AGENT_ITERATIONS = 5000
 MAX_CONCURRENT_TOOLS = 10
@@ -474,9 +475,7 @@ class Agent(Generic[TContext]):
 
             from app.plugin_platform.runtime import plugin_mcp_runtime
 
-            state.metadata.setdefault("plugin_mcp_grants", set()).add(
-                installation_id
-            )
+            state.metadata.setdefault("plugin_mcp_grants", set()).add(installation_id)
             tools = plugin_mcp_runtime.get_tools_for_installation(installation_id)
             added = _merge_dynamic_deferred_tools(tools)
             if added:
@@ -870,6 +869,10 @@ class Agent(Generic[TContext]):
                 state.metadata["total_tokens"] = total_tokens
                 state.metadata["last_usage"] = usage_dict
 
+            turn_usage = current_turn_usage_snapshot()
+            if turn_usage is not None:
+                message_extra["turn_usage"] = turn_usage
+
             assistant_msg.extra = message_extra
 
             messages.append(assistant_msg)
@@ -1081,6 +1084,12 @@ class Agent(Generic[TContext]):
         if last_assistant_msg:
             for hook in combined_hooks:
                 await hook.after_agent(ctx, state, last_assistant_msg)
+            turn_usage = current_turn_usage_snapshot()
+            if turn_usage is not None:
+                last_assistant_msg.extra = {
+                    **(last_assistant_msg.extra or {}),
+                    "turn_usage": turn_usage,
+                }
 
         # Me sync after after_agent — final sync
         await self._sync(checkpointer, ctx, state)

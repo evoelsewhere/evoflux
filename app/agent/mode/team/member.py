@@ -92,6 +92,7 @@ from app.agent.ask_user import (
 )
 from app.agent.schemas.agent import RunConfig
 from app.agent.schemas.chat import ChatMessage, HumanMessage
+from app.agent.turn_usage import begin_turn_usage, end_turn_usage
 from app.agent.mode.team.mailbox import Message
 from app.core.db import DbFactory, resolve_db_factory
 from app.models.chat import ChatSession, SessionMessage
@@ -1629,6 +1630,7 @@ class TeamMemberBase(abc.ABC):
 
         # Scope agent role for plugin applies_to filtering ("lead"/"member").
         role_token = set_role(self._role_label)
+        usage_token = begin_turn_usage(lead_session_id, self.name)
 
         try:
             await self.agent.run(
@@ -1647,6 +1649,7 @@ class TeamMemberBase(abc.ABC):
             await self._maybe_inject_open_task_nudge()
             await self._maybe_inject_delegation_wait_nudge()
         finally:
+            end_turn_usage(usage_token)
             reset_role(role_token)
             _sandbox_ctx.reset(token)
             reset_permission_service(perm_token, self.session_id)
