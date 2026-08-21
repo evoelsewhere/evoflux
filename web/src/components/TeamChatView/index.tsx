@@ -308,6 +308,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const dragHandlers = useTauriDrag()
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const inputRef = useRef<InputBarHandle>(null)
+  const handleCodingSuggestion = useCallback((suggestion: string) => {
+    inputRef.current?.setValue(suggestion)
+    inputRef.current?.focus()
+  }, [])
   const mainColumnRef = useRef<HTMLDivElement>(null)
   const [codingFileViewer, setCodingFileViewer] = useState<WorkspaceFileInfo | null>(null)
   const [codingFileViewerHost, setCodingFileViewerHost] = useState<CodingFileViewerHost>(null)
@@ -1155,7 +1159,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   }, [])
 
   // History already carries session metadata. Reuse it instead of issuing a
-  // second GET that hydrates the same 100-message history page.
+  // second GET that hydrates the same paginated history payload.
   useEffect(() => {
     setPermissionMode(sessionPermissionMode)
   }, [sessionIdState, sessionPermissionMode])
@@ -2030,14 +2034,16 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
               mode === 'coding' && workspace ? (
                 <div className="flex flex-col items-center justify-center py-16">
                   {projectIdState ? (
-                    activeProject && <ProjectInfoCard project={activeProject} />
+                    activeProject && (
+                      <ProjectInfoCard
+                        project={activeProject}
+                        onSuggestion={handleCodingSuggestion}
+                      />
+                    )
                   ) : (
                     <WorkspaceInfoCard
                       workspace={workspace}
-                      onSuggestion={(suggestion) => {
-                        inputRef.current?.setValue(suggestion)
-                        inputRef.current?.focus()
-                      }}
+                      onSuggestion={handleCodingSuggestion}
                     />
                   )}
                 </div>
@@ -2047,15 +2053,17 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         ) : mode === 'coding' && workspace ? (
           <div className="flex flex-1 flex-col items-center justify-center py-16">
             {projectIdState ? (
-              activeProject && <ProjectInfoCard project={activeProject} />
+              activeProject && (
+                <ProjectInfoCard
+                  project={activeProject}
+                  onSuggestion={handleCodingSuggestion}
+                />
+              )
             ) : (
               <WorkspaceInfoCard
-                       workspace={workspace}
-                       onSuggestion={(suggestion) => {
-                         inputRef.current?.setValue(suggestion)
-                         inputRef.current?.focus()
-                       }}
-                     />
+                workspace={workspace}
+                onSuggestion={handleCodingSuggestion}
+              />
             )}
           </div>
         ) : sessionId && !isConnected ? (
