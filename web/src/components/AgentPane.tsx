@@ -195,10 +195,6 @@ export function AgentPane({
     [renderedTurnCount, turnItems],
   )
   const latestMCPAppBlockIds = useMemo(() => latestMCPAppResourceBlockIds(allBlocks), [allBlocks])
-  const latestLiveUserBlockId = useMemo(
-    () => latestDirectUserBlockId(stream.currentBlocks),
-    [stream.currentBlocks],
-  )
   const isEmpty = allBlocks.length === 0
 
   const loadOlderMessages = useCallback((element: HTMLDivElement | null) => {
@@ -248,7 +244,9 @@ export function AgentPane({
     contentKey: allBlocks.length,
     resetKey: sessionId,
     followKey: isWorking && isContinuing ? `continue:${sessionId ?? ''}:${name}` : null,
-    topAnchorKey: latestLiveUserBlockId,
+    // Historical session hydration must reveal the prompt that owns the
+    // trailing runway, not pin only its assistant response to the bottom.
+    topAnchorKey: latestUserBlockId,
     onScrollFrame: handleViewportScroll,
   })
 
@@ -441,7 +439,7 @@ export function AgentPane({
                        <CompactUserTranscriptTurn
                          key={item.block.id}
                          block={item.block}
-                         isTopAnchor={item.block.id === latestLiveUserBlockId}
+                         isTopAnchor={item.block.id === latestUserBlockId}
                          sessionId={sessionId}
                          onRevert={item.block.id === latestUserBlockId ? handleRevert : undefined}
                          latestMCPAppBlockIds={latestMCPAppBlockIds}
