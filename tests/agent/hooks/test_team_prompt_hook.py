@@ -422,6 +422,49 @@ class TestProtocolConstants:
         assert "Never redo the member's full investigation" in prompt
         assert "Verify at least ONE claim" not in prompt
 
+    @pytest.mark.parametrize(
+        ("contract", "required"),
+        [
+            ("interactive clarification", "use `ask_user` once"),
+            ("task sizing", "`trivial` stays with you"),
+            ("skill disclosure", "Load specialized workflows only on demand"),
+            ("roster inspection", "team_manage(action='status')"),
+            ("queue handling", "Queued behind active work"),
+            ("durable assignment", "team_delegate"),
+            ("quick coordination", "team_message"),
+            ("structured delivery", "team_handoff"),
+            ("shared facts", "team_state"),
+            ("dependency graph", "depends_on"),
+            ("todo ownership", "assigned_to"),
+            ("workspace isolation", "isolation='worktree'"),
+            ("repository scope", "target_repos"),
+            ("worktree review", "team_worktree(action='review'"),
+            ("worktree finalize", "team_worktree(action='finalize')"),
+            ("waiting", "exactly `<sleep>`"),
+            ("partial handoff", 'status: "partial"'),
+            ("final handoff", 'wait for `"final"`'),
+            ("proportional verification", "verify proportionately"),
+            (
+                "avoid duplicate investigation",
+                "Never redo the member's full investigation",
+            ),
+            ("structured rejection", "team_reject"),
+            ("rejection severity", "`minor`, `major`, or `redo`"),
+            (
+                "no duplicate execution",
+                "do not execute the same task in parallel yourself",
+            ),
+            ("explicit reclaim", "reclaim or cancel the member task first"),
+            ("direct peer handoff", "peer handoff chain"),
+            ("lead synthesis", "not as a message bus"),
+            ("member reuse", "Keep useful members alive"),
+            ("durable member config", "update durable settings"),
+        ],
+    )
+    def test_lead_prompt_preserves_behavior_contract(self, contract, required):
+        prompt = f"{LEAD_COMMUNICATION_RULES}\n\n{LEAD_PROTOCOL}"
+        assert required in prompt, f"missing {contract} contract"
+
     def test_member_protocol_no_old_params(self):
         """Member protocol does not reference old mode/stop params."""
         assert "stop=true" not in MEMBER_PROTOCOL
