@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import sys
 
@@ -104,7 +105,9 @@ async def test_process_wait_finishes_and_removes_registry_entry(process_sandbox)
 
 
 @pytest.mark.asyncio
-async def test_process_wait_returns_on_new_output_without_replay(process_sandbox):
+async def test_process_wait_ignores_progress_until_timeout_without_replay(
+    process_sandbox,
+):
     result = await shell_tool.arun(
         command="sleep 0.4; printf 'progress\\n'; sleep 30",
         yield_time_ms=250,
@@ -112,11 +115,14 @@ async def test_process_wait_returns_on_new_output_without_replay(process_sandbox
     )
     process_id = _process_id(result)
 
+    started = asyncio.get_running_loop().time()
     waited = await process_tool.arun(
-        action="wait", process_id=process_id, wait_seconds=5
+        action="wait", process_id=process_id, wait_seconds=1
     )
+    elapsed = asyncio.get_running_loop().time() - started
     polled = await process_tool.arun(action="poll", process_id=process_id)
 
+    assert elapsed >= 0.8
     assert "progress" in waited
     assert "Running" in waited
     assert "progress" not in polled
