@@ -18,6 +18,24 @@ under **Gaps** requires one.
   configuration key, event, or runtime effect. Run one `code_context` with `action="search"` using that
   stable artifact, select one declared identifier, then promote it to graph.
 
+In a multi-repository workspace, omit `repository`, `paths`, and `languages`
+from that first unknown-root search unless the user names the target or direct
+source evidence already identifies it. The primary-workspace marker and a
+repository's language are hints, not proof that it owns the requested behavior.
+When a hit belongs to a non-primary repository, keep that repository identity:
+ordinary filesystem tools need the absolute path shown in the repository map.
+Do not strip it to a primary-relative path.
+
+A single bounded investigation question is one work lane, not an implementation
+plan. Do not create a todo unless the request contains multiple independent
+questions or deliverables. When several independent source ranges are already
+known, issue their read-only calls together in one model turn instead of
+serializing them.
+
+`read` results already carry stable line numbers. Reuse those anchors for the
+final answer; never rerun `sed`, `nl`, or another read solely to add citation
+numbers that the existing result already provides.
+
 Never pass request prose, a filename, module, route, comment, or guessed spelling
 as the exact-symbol `query`. Promotion from unknown-root to exact-symbol ends broad
 discovery.
@@ -74,6 +92,10 @@ references question. Otherwise name one gap before observing more source:
 Keep evidence proportional to the question. Stop when the requested
 relationship is proven; when static analysis reaches a dynamic boundary,
 state that limitation instead of expanding discovery without a new hypothesis.
+For an audit of an existing invariant, one direct implementation/wiring chain
+plus one focused regression or runtime check is normally decisive. Do not trace
+generic framework internals after those agree unless one material link remains
+ambiguous or contradictory.
 
 Read [references/code-context-contract.md](references/code-context-contract.md) only
 for ambiguity, truncation, or reported index limitations,

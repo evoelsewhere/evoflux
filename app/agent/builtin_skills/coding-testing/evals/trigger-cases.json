@@ -1,7 +1,9 @@
 [
   {
     "query": "Design a test matrix proving v1 and v2 event producers remain compatible with both consumer releases.",
-    "should_trigger": true
+    "should_trigger": true,
+    "expected_trajectory": ["proof_obligation", "cheapest_sufficient_level", "one_test_seam", "focused_proof", "affected_suite", "stop"],
+    "forbidden_behaviors": ["fixture_survey_before_test_level", "shell_source_reread", "bypass_observation_receipt", "adjacent_cases_outside_failure_modes"]
   },
   {
     "query": "This browser test flakes around autosave. Find the nondeterministic boundary and replace sleeps with reliable proof.",

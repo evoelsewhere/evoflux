@@ -63,6 +63,20 @@ Confirm exact line anchors against the final working diff. Deduplicate symptoms
 that one fix would resolve, and separate an unverified risk from a demonstrated
 defect.
 
+## Execution discipline and finding stop
+
+Inspect the complete diff once, then batch independent reads/graph queries for
+changed boundaries. Use `code_context`, `read`, `grep`, and `glob` for source;
+apart from one scoped diff/status command, do not use shell `cat`, `sed`, `head`,
+`tail`, `nl`, `rg`, or `find` to reread source or bypass an observation receipt.
+If a narrow check returns a process handle, use
+`process(action="wait", wait_seconds=60)`.
+
+Keep only candidates with a concrete trigger and changed causal path. Once each
+surviving candidate satisfies the finding contract—or is rejected—stop. Do not
+continue reading to increase commentary volume, and do not rerun checks after
+line anchors and final diff remain unchanged.
+
 ## Deliverable
 
 Order findings by severity. Each finding must state trigger, impact, causal

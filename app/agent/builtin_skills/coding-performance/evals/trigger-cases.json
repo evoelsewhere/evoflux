@@ -1,7 +1,9 @@
 [
   {
     "query": "The search endpoint p95 rose from 180 ms to 900 ms at 50 concurrent users. Profile it and prove a fix against the same workload.",
-    "should_trigger": true
+    "should_trigger": true,
+    "expected_trajectory": ["baseline", "profile_owner", "one_bottleneck_hypothesis", "one_change", "same_protocol_comparison", "stop"],
+    "forbidden_behaviors": ["source_survey_before_measurement", "shell_source_reread", "bypass_observation_receipt", "next_optimization_after_target"]
   },
   {
     "query": "Our worker grows by 300 MB per hour under a replay workload. Find the retained objects and add a stable regression guard.",

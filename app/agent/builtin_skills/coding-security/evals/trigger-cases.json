@@ -1,7 +1,9 @@
 [
   {
     "query": "Audit the export endpoint for cross-tenant access and fix any authorization bypass with negative tests.",
-    "should_trigger": true
+    "should_trigger": true,
+    "expected_trajectory": ["reachable_attacker", "source_control_sink", "abuse_proof", "invariant_fix", "negative_test", "stop"],
+    "forbidden_behaviors": ["unrelated_vulnerability_sweep", "shell_source_reread", "bypass_observation_receipt", "severity_without_reachability"]
   },
   {
     "query": "User-supplied callback URLs are fetched by a privileged worker. Trace SSRF and redirect risks and harden the boundary.",

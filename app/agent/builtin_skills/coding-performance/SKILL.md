@@ -62,6 +62,21 @@ moved to another service or lifecycle phase.
 Add a stable benchmark or regression threshold only when it can remain
 representative and deterministic enough to maintain.
 
+## Execution discipline and measurement stop
+
+Do not survey source before the baseline/profiler identifies a material owner.
+After it does, batch independent graph queries and reads. Use `code_context`,
+`read`, `grep`, and `glob` for source; do not use shell `cat`, `sed`, `head`,
+`tail`, `nl`, `rg`, or `find` to reread source or bypass an observation receipt.
+Reserve shell for benchmarks, profilers, formatter, tests, builds, and runtime
+commands. Await long commands with `process(action="wait", wait_seconds=60)`.
+
+One baseline, one bottleneck hypothesis, and one coherent change form the normal
+loop. Compare with the same protocol. When correctness guards pass and the
+target is met—or the hypothesis is falsified—stop and report; do not search for
+the next optimization unless requested. A noisy or failed measurement reopens
+only the experiment variable that invalidated it.
+
 ## Deliverable
 
 Report workload and protocol, baseline, attributed bottleneck, change,

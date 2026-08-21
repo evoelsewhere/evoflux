@@ -68,6 +68,21 @@ Every irreversible step needs a precondition, owner, evidence source, and stop
 condition. A backup is not a rollback plan unless restoration time and data
 loss are acceptable.
 
+## Execution discipline and phase stop
+
+Inventory each named boundary once, batch independent graph/source observations,
+and preserve repository-qualified results. Use `code_context`, `read`, `grep`,
+and `glob` for source; do not use shell `cat`, `sed`, `head`, `tail`, `nl`, `rg`,
+or `find` to reread source or bypass an observation receipt. Reserve shell for
+migration, formatter, test, build, and runtime commands. Await long commands
+with `process(action="wait", wait_seconds=60)`.
+
+Treat every rollout phase as a gate. Once its compatibility rows, proof,
+telemetry, rollback, and deletion condition are complete, stop that phase; do
+not implement later operational phases unless the user requested them. A failed
+check may reopen only the named boundary/compatibility row, not the whole
+inventory.
+
 ## Deliverable
 
 Provide affected surfaces, ordered phases, compatibility matrix, verification
