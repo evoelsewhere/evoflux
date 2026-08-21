@@ -9,7 +9,7 @@
  * renders through `AssistantTurn` (tool groups + footer); the trailing turn
  * hides its footer while the agent is actively streaming.
  */
-import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
+import { memo, useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { AssistantTurn } from './AssistantTurnFooter'
@@ -38,7 +38,9 @@ import type { ContentBlock, TodoItem } from '@/api/types'
 // Split focuses on the current work. Mount a smaller initial history window
 // so entering the layout does not parse dozens of old Markdown turns at once.
 const INITIAL_RENDERED_TURNS = 32
-const TURN_RENDER_STEP = 80
+// Large prepend commits are especially expensive in split view because every
+// pane can contain Markdown and tool timelines. Reveal a small runway instead.
+const TURN_RENDER_STEP = 12
 const LOAD_OLDER_THRESHOLD = 240
 
 interface AgentPaneProps {
@@ -59,6 +61,85 @@ interface AgentPaneProps {
 function isDirectUserBlock(block: ContentBlock): boolean {
   return block.type === 'user' && !block.extra?.from_agent
 }
+
+interface CompactUserTranscriptTurnProps {
+  block: ContentBlock
+  isTopAnchor: boolean
+  latestMCPAppBlockIds: Set<string>
+  onRevert?: () => void
+  sessionId?: string
+}
+
+const CompactUserTranscriptTurn = memo(function CompactUserTranscriptTurn({
+  block,
+  isTopAnchor,
+  latestMCPAppBlockIds,
+  onRevert,
+  sessionId,
+}: CompactUserTranscriptTurnProps) {
+  return (
+    <div
+      className="oa-transcript-turn"
+      data-transcript-top-anchor={isTopAnchor ? 'true' : undefined}
+    >
+      <BlockRenderer
+        block={block}
+        isStreaming={false}
+        compact
+        sessionId={sessionId}
+        onRevert={onRevert}
+        latestMCPAppBlockIds={latestMCPAppBlockIds}
+        renderLeadingQuoteAsContext
+      />
+    </div>
+  )
+})
+
+interface CompactAssistantTranscriptTurnProps {
+  blocks: ContentBlock[]
+  isTrailingTurn: boolean
+  isWorking: boolean
+  latestMCPAppBlockIds: Set<string>
+  onContinue?: () => void
+  sessionId?: string
+  startIndex: number
+  totalBlocks: number
+}
+
+/** Historical assistant turns do not rerender when the window grows upward. */
+const CompactAssistantTranscriptTurn = memo(function CompactAssistantTranscriptTurn({
+  blocks,
+  isTrailingTurn,
+  isWorking,
+  latestMCPAppBlockIds,
+  onContinue,
+  sessionId,
+  startIndex,
+  totalBlocks,
+}: CompactAssistantTranscriptTurnProps) {
+  return (
+    <AssistantTurn
+      blocks={blocks}
+      startIndex={startIndex}
+      isWorking={isWorking}
+      isTrailingTurn={isTrailingTurn}
+      totalBlocks={totalBlocks}
+      onContinue={onContinue}
+      sessionId={sessionId}
+      latestMCPAppBlockIds={latestMCPAppBlockIds}
+      renderBlock={({ block, isStreaming }) => (
+        <BlockRenderer
+          block={block}
+          isStreaming={isStreaming}
+          compact
+          sessionId={sessionId}
+          latestMCPAppBlockIds={latestMCPAppBlockIds}
+          renderLeadingQuoteAsContext
+        />
+      )}
+    />
+  )
+})
 
 export function AgentPane({
   name, stream, isLead, todos, isContinuing = false, onContinue,
@@ -357,21 +438,14 @@ export function AgentPane({
                {visibleTurnItems.map((item, k) => {
                    if (item.kind === 'user') {
                      return (
-                       <div
+                       <CompactUserTranscriptTurn
                          key={item.block.id}
-                         className="oa-transcript-turn"
-                         data-transcript-top-anchor={item.block.id === latestLiveUserBlockId ? 'true' : undefined}
-                       >
-                         <BlockRenderer
-                           block={item.block}
-                           isStreaming={false}
-                           compact
-                           sessionId={sessionId}
-                           onRevert={item.block.id === latestUserBlockId ? handleRevert : undefined}
-                           latestMCPAppBlockIds={latestMCPAppBlockIds}
-                           renderLeadingQuoteAsContext
-                         />
-                       </div>
+                         block={item.block}
+                         isTopAnchor={item.block.id === latestLiveUserBlockId}
+                         sessionId={sessionId}
+                         onRevert={item.block.id === latestUserBlockId ? handleRevert : undefined}
+                         latestMCPAppBlockIds={latestMCPAppBlockIds}
+                       />
                      )
                    }
                    // Me only the trailing turn (no user block after) can be "live"
@@ -381,7 +455,7 @@ export function AgentPane({
                        key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}
                        className={isTrailingTurn ? 'oa-latest-turn-runway' : 'oa-transcript-turn'}
                      >
-                       <AssistantTurn
+                       <CompactAssistantTranscriptTurn
                          blocks={item.blocks}
                          startIndex={item.startIndex}
                          isWorking={isWorking}
@@ -390,17 +464,6 @@ export function AgentPane({
                          onContinue={onContinue}
                          sessionId={sessionId}
                          latestMCPAppBlockIds={latestMCPAppBlockIds}
-                         renderBlock={({ block, isStreaming }) => (
-                           <BlockRenderer
-                             block={block}
-                             isStreaming={isStreaming}
-                             compact
-                             sessionId={sessionId}
-                             onRevert={isDirectUserBlock(block) && block.id === latestUserBlockId ? handleRevert : undefined}
-                             latestMCPAppBlockIds={latestMCPAppBlockIds}
-                             renderLeadingQuoteAsContext
-                           />
-                         )}
                        />
                        {showTurnChanges
                          && isLead

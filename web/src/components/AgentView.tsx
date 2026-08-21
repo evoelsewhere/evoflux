@@ -47,7 +47,9 @@ import type { ContentBlock, TurnChangesPending } from '@/api/types'
 
 const LOAD_OLDER_THRESHOLD = 300
 const INITIAL_RENDERED_TURNS = 48
-const TURN_RENDER_STEP = 48
+// Keep prepend commits small: each turn may contain expensive Markdown,
+// syntax highlighting, tool cards, and MCP app artifacts.
+const TURN_RENDER_STEP = 12
 
 function findUserMessageNavigationAnchor(
   container: HTMLDivElement,
@@ -97,6 +99,42 @@ interface AssistantTranscriptTurnProps {
   turnChanges: TurnChangesPending | null
   turnIsStreaming: boolean
 }
+
+interface UserTranscriptTurnProps {
+  block: ContentBlock
+  isNavigationAnchor: boolean
+  isTopAnchor: boolean
+  latestMCPAppBlockIds: Set<string>
+  onRevert?: () => void
+  sessionId?: string
+}
+
+/** Loaded user turns retain their subtree when an older window is prepended. */
+const UserTranscriptTurn = memo(function UserTranscriptTurn({
+  block,
+  isNavigationAnchor,
+  isTopAnchor,
+  latestMCPAppBlockIds,
+  onRevert,
+  sessionId,
+}: UserTranscriptTurnProps) {
+  return (
+    <div
+      className="oa-transcript-turn"
+      data-user-message-navigation-anchor={isNavigationAnchor ? block.id : undefined}
+      data-transcript-top-anchor={isTopAnchor ? 'true' : undefined}
+    >
+      <BlockRenderer
+        block={block}
+        isStreaming={false}
+        sessionId={sessionId}
+        onRevert={onRevert}
+        latestMCPAppBlockIds={latestMCPAppBlockIds}
+        renderLeadingQuoteAsContext
+      />
+    </div>
+  )
+})
 
 /** Historical turns keep stable block-array identities and skip live ticks. */
 const AssistantTranscriptTurn = memo(function AssistantTranscriptTurn({
@@ -406,21 +444,15 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                  if (item.kind === 'user') {
                    const navigationItem = userMessageNavigationIds.has(item.block.id)
                    return (
-                     <div
+                     <UserTranscriptTurn
                        key={item.block.id}
-                       className="oa-transcript-turn"
-                       data-user-message-navigation-anchor={navigationItem ? item.block.id : undefined}
-                       data-transcript-top-anchor={item.block.id === latestLiveUserBlockId ? 'true' : undefined}
-                     >
-                       <BlockRenderer
-                         block={item.block}
-                         isStreaming={false}
-                         sessionId={sessionId}
-                         onRevert={item.block.id === latestUserBlockId ? handleRevert : undefined}
-                         latestMCPAppBlockIds={latestMCPAppBlockIds}
-                         renderLeadingQuoteAsContext
-                       />
-                     </div>
+                       block={item.block}
+                       isNavigationAnchor={navigationItem}
+                       isTopAnchor={item.block.id === latestLiveUserBlockId}
+                       sessionId={sessionId}
+                       onRevert={item.block.id === latestUserBlockId ? handleRevert : undefined}
+                       latestMCPAppBlockIds={latestMCPAppBlockIds}
+                     />
                    )
                  }
                   // Only the trailing turn (no user block after) can be "live".
