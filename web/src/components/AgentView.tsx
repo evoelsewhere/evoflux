@@ -268,10 +268,6 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     () => new Set(latestMCPAppBlockIdsKey ? latestMCPAppBlockIdsKey.split('\0') : []),
     [latestMCPAppBlockIdsKey],
   )
-  const latestLiveUserBlockId = useMemo(
-    () => latestDirectUserBlockId(currentBlocks),
-    [currentBlocks],
-  )
   const showPendingActivity = shouldShowPendingActivity({
     currentBlocks,
     isContinuing,
@@ -323,7 +319,10 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     contentKey: totalLen,
     resetKey: sessionId,
     followKey: isWorking && isContinuing ? `continue:${sessionId ?? ''}` : null,
-    topAnchorKey: latestLiveUserBlockId,
+    // On reload the newest prompt is already finalized. Keep using the same
+    // direct-user id as a live turn moves into history so the viewport anchors
+    // once without jumping again when the response completes.
+    topAnchorKey: latestUserBlockId,
     onScrollFrame: handleViewportScroll,
   })
 
@@ -448,7 +447,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                        key={item.block.id}
                        block={item.block}
                        isNavigationAnchor={navigationItem}
-                       isTopAnchor={item.block.id === latestLiveUserBlockId}
+                       isTopAnchor={item.block.id === latestUserBlockId}
                        sessionId={sessionId}
                        onRevert={item.block.id === latestUserBlockId ? handleRevert : undefined}
                        latestMCPAppBlockIds={latestMCPAppBlockIds}
