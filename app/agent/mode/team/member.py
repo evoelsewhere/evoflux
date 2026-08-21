@@ -167,7 +167,7 @@ LEAD_COMMUNICATION_RULES = """\
 - **Right-size delegation.** Handle trivia and one- or two-step work yourself. Delegate only for strong role fit, parallel independent streams, noisy context isolation, or a sustained multi-step workstream; prefer reusing a relevant live member.
 {{ROUTING_GUIDE}}
 - **Roster management.** Members are spawned on demand, and interactive spawn waits for user confirmation of model and thinking effort. Before parallel routing or reusing a possibly busy member, call `team_manage(action='status')` to inspect live state, active Task ID, and queue depth. A bare-blueprint `team_delegate` atomically spawns or reuses an instance; if it reports `Queued behind active work`, accept the queue or intentionally spawn another instance when work must overlap.
-- **Coordination.** Use `team_delegate` for structured assignments, `team_message` for quick questions/answers/status, `team_handoff` for deliverables, and `team_state` for durable shared facts. Never create a task through `team_message`; do not answer the user until every assigned member has a final handoff.
+- **Coordination.** Use `team_delegate` for structured assignments, `team_message` for quick questions/answers/status, `team_handoff` for deliverables, and `team_state` for durable shared facts. A delegation's durable Task ID must be preserved through `depends_on`, handoff, rejection, and rework. Never create a task through `team_message`; do not answer the user until every assigned member has a final handoff.
 - **Waiting on a member? Respond with exactly `<sleep>`** — just the token, no tool calls and no plain text. After delegating you may send one brief "work is underway" note (see workflow step 3), but every wake after that where you're still waiting on outstanding delegations and have nothing new to verify or synthesise — no partial answer, no "here's what I have so far," no guessed conclusion — must be exactly `<sleep>`. Answering on your own before a member reports back defeats the delegation and shows the user an answer the team hasn't actually produced yet; your next real response after their handoff arrives is the answer.
 - **Choose workspace isolation.** For code-changing work, set `isolation='worktree'` (or use `auto`) and name every affected repository in `target_repos`; use `shared` only for read-only work or small non-overlapping edits. The runtime gives each recipient its own branch/worktree set. After a final handoff, inspect it with `team_worktree(action='review', task_id=...)`, then explicitly `merge`, `discard`, or `team_reject`. Dependencies do not start until isolated work is merged. When all accepted tasks are merged, call `team_worktree(action='finalize')` to fast-forward clean source repositories.
 - Member capabilities come from their blueprint/root configuration at spawn time. If a member lacks a required capability, use an appropriately configured blueprint or update durable settings rather than mutating a live member.
@@ -175,7 +175,7 @@ LEAD_COMMUNICATION_RULES = """\
 
 LEAD_PROTOCOL = """\
 ## Lead workflow
-1. Frame the request. When a genuinely ambiguous choice would waste substantial work, use `ask_user` once with every needed question; infer cheap, reversible details. Assess scope and use todo tiers consistently: `trivial` stays with you, `simple` is straightforward, `multi_step` spans several steps, and `complex` needs broader coordination.
+1. Frame the request. When a genuinely ambiguous choice would waste substantial work, call the blocking `ask_user` tool—not a plain-text question—and batch every needed question once; infer cheap, reversible details. Assess scope and use todo tiers consistently: `trivial` stays with you, `simple` normally has one straightforward owner, `multi_step` has one owner across several steps, and `complex` may need coordinated parallel members.
 2. **Load specialized workflows only on demand.** The visible tool schemas and your role instructions are sufficient for ordinary work. Use the `skill` tool progressively only when the task needs a specialized artifact or operational workflow; do not list or load skills as a generic first step.
 3. When delegating:
    - For multi-step work, create a todo plan first with first-class `dependencies`. Leave a member todo unassigned until its owner is live; once `team_delegate` returns a concrete handle, set `assigned_to` to that handle, never a bare blueprint or group expression. Do not spawn, delegate, or message owners of blocked tasks until their dependencies are complete.
@@ -184,13 +184,13 @@ LEAD_PROTOCOL = """\
    - For dependent workflows, keep a **peer handoff chain** and pass prerequisite delegation UUIDs in downstream `depends_on`; the runtime dispatches only after every dependency has a final handoff.
    - Do not make yourself the default relay for member outputs. Use the lead as the synthesizer/final verifier, not as a message bus between members.
 4. When members report back:
-   - Read structured `team_handoff` fields directly; `status: "partial"` is not complete, so wait for `"final"`.
+   - Read `team_handoff` fields (`summary`, `findings`, `evidence`, `confidence`, `next_actions`) directly; `status: "partial"` is not complete, so wait for `"final"`.
    - **BE CRITICAL — do not rubber-stamp, but verify proportionately.** Your job is quality control, not duplicating the member's entire investigation. For every handoff:
      - Cross-check the output against the original `expected_output` from your delegation. Does it ACTUALLY satisfy the spec, or does it just claim to?
      - Look for: missing edge cases, untested paths, unsupported claims, shallow research (only 1-2 sources), copy-paste without adaptation.
      - If confidence is self-reported > 0.8 but evidence is sparse, that's a red flag — challenge it.
    - **Use the strongest existing evidence first.** A passing machine-generated completion contract or specific, relevant verification record does not need to be rerun merely for duplication. If evidence is absent, weak, contradictory, or the consequence of error is high, spot-check the highest-risk claim with the cheapest decisive read/command/citation check. For read-only research with exact citations, inspect a disputed or representative citation rather than repeating the whole search. Never redo the member's full investigation or full test suite unless its evidence is insufficient for the user's risk.
-   - Use `team_reject` with concrete issues and severity (`minor`, `major`, or `redo`) for inadequate work. Reject final deliverables sent through `team_message` instead of `team_handoff`.
+   - Use `team_reject` with the same Task ID, concrete `reason`, `issues`, `suggestions`, and severity (`minor`, `major`, or `redo`) for inadequate work. Reject final deliverables sent through `team_message` instead of `team_handoff`.
    - Accept only evidence-backed work, state what you verified, and add the smallest decisive check needed before promising completion.
 5. Keep useful members alive for related follow-ups and warm prompt-cache state. Dismiss only instances clearly finished for the session; their history remains restorable."""
 
@@ -1451,6 +1451,15 @@ class TeamMemberBase(abc.ABC):
         if is_continuation:
             pipeline.add(HookStage.LIFECYCLE, "continuation", ContinuationHook())
 
+        # Assemble query-dependent prompt sections after all context producers.
+        # Summarization then receives the exact same finalized system prompt as
+        # the main provider call instead of snapshotting an incomplete prefix.
+        pipeline.add(
+            HookStage.PROMPT_FINALIZATION,
+            "skill-catalog-finalizer",
+            SkillCatalogFinalizerHook(),
+        )
+
         # Build checkpointer — stream_session_id + agent_name let it clear
         # this agent's stream buffer after each persist, preventing
         # duplicate blocks on mid-turn refresh.
@@ -1502,12 +1511,6 @@ class TeamMemberBase(abc.ABC):
             "tool-context-projection",
             build_tool_context_projection_hook(self._team.mode),
         )
-        pipeline.add(
-            HookStage.CONTEXT_CONTROL,
-            "skill-catalog-finalizer",
-            SkillCatalogFinalizerHook(),
-        )
-
         hooks = pipeline.build()
 
         # Inject team tools
