@@ -121,25 +121,28 @@ Language servers provide semantic feedback in the active project. Sandbox contro
 
 ## Download
 
-Current stable release: **[EvoFlux v0.0.6](https://github.com/evoelsewhere/evoflux/releases/tag/v0.0.6)**
+Current stable release: **[EvoFlux v0.0.8](https://github.com/evoelsewhere/evoflux/releases/tag/v0.0.8)**
 
 | Platform | Package | SHA-256 |
 |---|---|---|
-| macOS · Apple Silicon | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux_0.0.6_aarch64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/evoflux-macos-apple-silicon-SHA256SUMS.txt) |
-| macOS · Intel | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux_0.0.6_x64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/evoflux-macos-intel-SHA256SUMS.txt) |
-| Windows · x64 | [Download installer](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/EvoFlux_0.0.6_x64-setup.exe) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.6/evoflux-windows-x64-SHA256SUMS.txt) |
+| macOS · Apple Silicon | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.8/EvoFlux_0.0.8_aarch64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.8/evoflux-macos-apple-silicon-SHA256SUMS.txt) |
+| macOS · Intel | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.8/EvoFlux_0.0.8_x64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.8/evoflux-macos-intel-SHA256SUMS.txt) |
+| Windows · x64 | [Download installer](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.8/EvoFlux_0.0.8_x64-setup.exe) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.8/evoflux-windows-x64-SHA256SUMS.txt) |
+| Linux · x64 | [Download DEB](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.8/EvoFlux_0.0.8_amd64.deb) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.8/evoflux-linux-x64-SHA256SUMS.txt) |
 
-Linux x64 DEB packaging is enabled for the next tagged release. Install a
-downloaded package with `sudo apt install ./EvoFlux_*_amd64.deb`; updates use
-the same package-managed flow instead of replacing dpkg-owned files in place.
+Install the Linux package with `sudo apt install ./EvoFlux_*_amd64.deb`.
+Linux updates use the same package-managed flow instead of replacing
+dpkg-owned files through the in-app updater.
 
 The desktop packages include the native Python sidecar. The optional WebBridge
-browser companion is distributed separately and can be installed from the
-WebBridge panel in EvoFlux.
+browser companion is not bundled in EvoFlux release assets; its source and
+installation instructions live in the separate
+[evo-webbridge repository](https://github.com/evoelsewhere/evo-webbridge).
 
 > [!NOTE]
-> The v0.0.6 macOS packages use an ad-hoc signature and the Windows installer
-> is unsigned because production signing credentials are not yet configured.
+> The v0.0.8 macOS packages use an ad-hoc signature and the Windows installer
+> is not Authenticode-signed, so the operating system may show a trust prompt.
+> Tauri updater archives remain minisign-signed.
 
 ---
 
@@ -150,10 +153,11 @@ WebBridge panel in EvoFlux.
 Choose the package for your platform in [Download](#download), install it, and
 launch EvoFlux. The packaged app includes its Python sidecar.
 
-Updater-aware builds check the latest GitHub Release after startup. You can
-also run a manual signed update check from **Settings > About**, the application
-menu, or the tray menu. The first updater-aware release must be installed
-manually once; later releases can update in place.
+On macOS and Windows, updater-aware builds check the latest GitHub Release after
+startup. You can also run a manual signed update check from **Settings > About**,
+the application menu, or the tray menu. Install one current package manually;
+later releases can update in place. Linux updates use a newly downloaded DEB
+through `apt` or `dpkg`.
 
 On first launch:
 
@@ -321,7 +325,10 @@ Coding mode exposes diff review, commits, branches, merge, rebase, cherry-pick, 
 
 ## WebBridge
 
-WebBridge is an external browser companion for the EvoFlux desktop app — not a web version of EvoFlux.
+[WebBridge](https://github.com/evoelsewhere/evo-webbridge) is an independently
+distributed browser companion for the EvoFlux desktop app — not a web version
+of EvoFlux. Its extension source and release lifecycle live in the dedicated
+repository rather than this desktop repository.
 
 It connects an agent to the user's real Chrome or Edge session through a persistent, policy-checked relay. Control flows from the desktop agent to the browser over CDP; selections, page context, and human handoff flow back to the desktop session.
 
@@ -336,7 +343,7 @@ It connects an agent to the user's real Chrome or Edge session through a persist
 | **Live collaboration** | Streams the agent session into the browser side panel, supports questions and element selection, and allows seamless control handoff between the user and agent. |
 | **Teach and monitor** | Records meaningful browser actions without capturing raw keystrokes, redacts sensitive fields, creates reviewable workflows, and requires confirmation before monitored results are shared. |
 
-Pairings, tickets, tab bindings, and Teach drafts are persisted through Alembic migrations. Revoking a pairing closes the live relay and invalidates outstanding tickets. Installation and connection status are managed from the WebBridge panel in EvoFlux.
+Pairings, tickets, tab bindings, and Teach drafts are persisted through Alembic migrations. Revoking a pairing closes the live relay and invalidates outstanding tickets. EvoFlux shows live connection status and pairing controls in its WebBridge panel; extension installation and distribution are handled by the [evo-webbridge repository](https://github.com/evoelsewhere/evo-webbridge).
 
 ### Beyond the real-browser bridge
 
