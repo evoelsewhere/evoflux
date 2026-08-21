@@ -54,6 +54,8 @@ export interface CodeGraphOverviewProps {
   onFileSelect?: (file: WorkspaceFileInfo | null) => void
 }
 
+export const CODE_GRAPH_SEARCH_DEBOUNCE_MS = 80
+
 function repoLabel(path: string): string {
   return path.split(/[\\/]/).pop() || path
 }
@@ -164,7 +166,10 @@ export function CodeGraphOverview({
   const [explorerOpen, setExplorerOpen] = useState(false)
 
   useEffect(() => {
-    const id = window.setTimeout(() => setDebounced(query.trim()), 180)
+    const id = window.setTimeout(
+      () => setDebounced(query.trim()),
+      CODE_GRAPH_SEARCH_DEBOUNCE_MS,
+    )
     return () => window.clearTimeout(id)
   }, [query])
 
@@ -191,9 +196,9 @@ export function CodeGraphOverview({
   const repositoryWord = repositoryCount === 1 ? 'repository' : 'repositories'
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-(--bg-page)">
-      <section className="shrink-0 border-b border-(--color-border) bg-(--bg-card)/45 px-4 py-4">
-        <div className="flex items-start justify-between gap-4">
+    <div className="@container/code-graph flex h-full min-h-0 flex-col bg-(--bg-page)">
+      <section className="shrink-0 border-b border-(--color-border) bg-(--bg-card) px-3 py-3 @[42rem]/code-graph:px-4 @[42rem]/code-graph:py-4">
+        <div className="flex flex-col items-stretch gap-3 @[28rem]/code-graph:flex-row @[28rem]/code-graph:items-start @[28rem]/code-graph:justify-between">
           <div className="flex min-w-0 items-start gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-(--accent-blue)/25 bg-(--accent-blue)/10 text-(--accent-blue)">
               <Network size={17} />
@@ -213,7 +218,7 @@ export function CodeGraphOverview({
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2 self-end @[28rem]/code-graph:self-auto">
             <button
               type="button"
               onClick={() => setExplorerOpen(true)}
@@ -250,7 +255,7 @@ export function CodeGraphOverview({
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-[minmax(180px,0.75fr)_minmax(260px,1.4fr)] gap-3 max-md:grid-cols-1">
+        <div className="mt-3 grid grid-cols-1 gap-3 @[44rem]/code-graph:mt-4 @[44rem]/code-graph:grid-cols-[minmax(180px,0.75fr)_minmax(260px,1.4fr)]">
           <div className="flex items-center gap-4 rounded-lg border border-(--color-border-subtle) bg-(--bg-card) p-3">
             <div
               className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-full"
@@ -276,14 +281,14 @@ export function CodeGraphOverview({
                     ? 'Graph data updates while repositories are scanned.'
                     : 'Search symbols or open the explorer to inspect relationships.'}
               </p>
-              <div className="mt-2 flex items-center gap-3 text-[10px] text-(--color-text-muted)">
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-(--color-text-muted)">
                 <span><strong className="font-mono text-(--color-text)">{compactNumber(summary.symbols)}</strong> symbols</span>
                 <span><strong className="font-mono text-(--color-text)">{compactNumber(summary.relations)}</strong> relations</span>
               </div>
             </div>
           </div>
 
-          <div className="grid max-h-[124px] grid-cols-2 gap-2 overflow-y-auto pr-1 max-lg:grid-cols-1">
+          <div className="grid max-h-[148px] grid-cols-1 gap-2 overflow-y-auto pr-1 @[52rem]/code-graph:max-h-[124px] @[52rem]/code-graph:grid-cols-2">
             {statusLoading ? (
               <div className="col-span-full flex items-center justify-center gap-2 rounded-lg border border-(--color-border-subtle) py-8 text-xs text-(--color-text-subtle)">
                 <Loader2 size={13} className="animate-spin" /> Loading repositories…
@@ -354,7 +359,7 @@ export function CodeGraphOverview({
                   </h3>
                   <span className="text-[9px] text-(--color-text-subtle)">{matches.length}</span>
                 </div>
-                <div className="grid grid-cols-2 gap-1.5 max-md:grid-cols-1">
+                <div className="grid grid-cols-1 gap-1.5 @[42rem]/code-graph:grid-cols-2">
                   {matches.map((result) => (
                     <button
                       key={result.node.id}

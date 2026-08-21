@@ -167,7 +167,8 @@ export function RepoGraphModal(props: RepoGraphModalProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="flex !h-[94dvh] !max-h-[94dvh] !w-[96vw] !max-w-[96vw] flex-col gap-0 overflow-hidden !rounded-xl border-(--color-border-strong) bg-(--bg-page) p-0 text-(--color-text) shadow-2xl"
+        overlayBlur={false}
+        className="flex !h-[100dvh] !max-h-[100dvh] !w-screen !max-w-none flex-col gap-0 overflow-hidden !rounded-none border-(--color-border-strong) bg-(--bg-page) p-0 text-(--color-text) shadow-2xl sm:!h-[94dvh] sm:!max-h-[94dvh] sm:!w-[96vw] sm:!max-w-[96vw] sm:!rounded-xl"
       >
         <header className="shrink-0 border-b border-(--color-border) bg-(--bg-card)">
           <div className="flex min-h-14 items-center gap-3 px-4">
