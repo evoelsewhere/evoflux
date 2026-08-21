@@ -10,7 +10,7 @@ from uuid import uuid7  # ty: ignore[unresolved-import]
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from loguru import logger
 from pydantic import BaseModel, field_validator
-from sqlmodel import select
+from sqlmodel import col, select
 from sse_starlette.sse import EventSourceResponse
 
 from app.api.deps import ChatFormDep, DbSession, WriteDbSession
@@ -44,6 +44,7 @@ from app.api.routes.team.worktrees import (
 )
 from app.models.chat import (
     ChatSession,
+    CodingProject,
     CodingProjectWorkspace,
     normalize_mode,
 )
@@ -1147,10 +1148,33 @@ async def list_coding_workspace_tree(db: DbSession) -> CodingWorkspaceTreeRespon
     a real CodingProjectWorkspace lookup, not path-string matching against
     a separately-fetched projects list."""
     rows = await list_visible_coding_workspaces(db)
-    membership = {
-        link.workspace_id: link.project_id
-        for link in (await db.exec(select(CodingProjectWorkspace))).all()
-    }
+    # Only live Coding projects own sidebar placement. A stale link to a
+    # hidden/soft-deleted project must not suppress the repository from the
+    # standalone Workspaces section when that project is absent from Projects.
+    membership_rows = (
+        await db.exec(
+            select(
+                CodingProjectWorkspace.workspace_id,
+                CodingProjectWorkspace.project_id,
+            )
+            .join(
+                CodingProject,
+                col(CodingProject.id) == col(CodingProjectWorkspace.project_id),
+            )
+            .where(
+                ~col(CodingProject.hidden),
+                col(CodingProject.deleted_at).is_(None),
+                CodingProject.kind == "coding",
+            )
+            .order_by(col(CodingProject.created_at).asc())
+        )
+    ).all()
+    # A repository can belong to more than one visible project. The response
+    # shape exposes one owner only; keep the oldest deterministic owner, while
+    # project lists still show every real membership.
+    membership: dict[UUID, UUID] = {}
+    for workspace_id, project_id in membership_rows:
+        membership.setdefault(workspace_id, project_id)
     repositories: dict[str, CodingWorkspaceTreeRepository] = {}
     pending_worktrees = []
     for row in rows:

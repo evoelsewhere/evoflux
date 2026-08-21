@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -72,6 +74,27 @@ async def test_hidden_workspace_excluded_even_with_session(db, tmp_path):
     await db.commit()
 
     assert await list_workspace_paths_with_sessions(db) == []
+
+
+@pytest.mark.asyncio
+async def test_reopening_workspace_restores_hidden_and_deleted_registry_row(
+    db, tmp_path
+):
+    workspace = await upsert_coding_workspace(
+        db,
+        path=str(tmp_path),
+        kind="repo",
+        hidden=True,
+        deleted_at=datetime.now(timezone.utc),
+    )
+    await db.commit()
+
+    reopened = await upsert_coding_workspace(db, path=str(tmp_path), kind="repo")
+    await db.commit()
+
+    assert reopened.id == workspace.id
+    assert reopened.hidden is False
+    assert reopened.deleted_at is None
 
 
 @pytest.mark.asyncio
