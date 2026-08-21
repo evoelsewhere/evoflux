@@ -17,7 +17,13 @@ from app.agent.agent_loop import Agent
 from app.agent.providers.base import LLMProviderBase
 from app.agent.mode.team.member import TeamLead, TeamMember
 from app.agent.mode.team.team import AgentTeam
-from app.models.chat import ChatSession, CodingWorkspace, SessionMessage
+from app.models.chat import (
+    ChatSession,
+    CodingProject,
+    CodingProjectWorkspace,
+    CodingWorkspace,
+    SessionMessage,
+)
 from app.services import goal_service
 
 
@@ -688,6 +694,57 @@ class TestResolveTeamSession:
         assert [p["id"] for p in body["projects"]] == [str(project_id)]
 
     @pytest.mark.asyncio
+    async def test_workspace_tree_ignores_memberships_to_invisible_projects(
+        self, app_with_team, tmp_path
+    ):
+        """A stale membership must not hide a reopened repository from both
+        sidebar sections when its former project is no longer visible."""
+        import app.core.db as _db
+
+        hidden_repo = tmp_path / "hidden-owner-repo"
+        deleted_repo = tmp_path / "deleted-owner-repo"
+        hidden_repo.mkdir()
+        deleted_repo.mkdir()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                hidden_project = CodingProject(name="Hidden", hidden=True)
+                deleted_project = CodingProject(
+                    name="Deleted", deleted_at=datetime.now(timezone.utc)
+                )
+                hidden_workspace = CodingWorkspace(
+                    path=str(hidden_repo), kind="repo", name=hidden_repo.name
+                )
+                deleted_workspace = CodingWorkspace(
+                    path=str(deleted_repo), kind="repo", name=deleted_repo.name
+                )
+                db.add(hidden_project)
+                db.add(deleted_project)
+                db.add(hidden_workspace)
+                db.add(deleted_workspace)
+                await db.flush()
+                db.add(
+                    CodingProjectWorkspace(
+                        project_id=hidden_project.id,
+                        workspace_id=hidden_workspace.id,
+                    )
+                )
+                db.add(
+                    CodingProjectWorkspace(
+                        project_id=deleted_project.id,
+                        workspace_id=deleted_workspace.id,
+                    )
+                )
+
+        tree = TestClient(app_with_team).get("/api/team/workspace/tree")
+
+        assert tree.status_code == 200
+        body = tree.json()
+        assert body["projects"] == []
+        by_path = {repo["path"]: repo for repo in body["repositories"]}
+        assert by_path[str(hidden_repo)]["project_id"] is None
+        assert by_path[str(deleted_repo)]["project_id"] is None
+
+    @pytest.mark.asyncio
     async def test_workspace_visibility_hides_all_workspace_sessions(
         self, app_with_team, tmp_path
     ):
@@ -716,6 +773,44 @@ class TestResolveTeamSession:
         tree = client.get("/api/team/workspace/tree")
         assert tree.status_code == 200
         assert tree.json()["repositories"] == []
+
+    @pytest.mark.asyncio
+    async def test_removed_workspace_can_be_reopened_as_standalone(
+        self, app_with_team, tmp_path
+    ):
+        import app.core.db as _db
+
+        repository = tmp_path / "reopen-repo"
+        repository.mkdir()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                db.add(
+                    CodingWorkspace(
+                        path=str(repository), kind="repo", name=repository.name
+                    )
+                )
+
+        client = TestClient(app_with_team)
+        removed = client.patch(
+            "/api/team/workspace/visibility",
+            json={"workspace": str(repository), "hidden": True},
+        )
+        assert removed.status_code == 200
+        assert client.get("/api/team/workspace/tree").json()["repositories"] == []
+
+        reopened = client.patch(
+            "/api/team/workspace/visibility",
+            json={"workspace": str(repository), "hidden": False},
+        )
+
+        assert reopened.status_code == 200
+        tree = client.get("/api/team/workspace/tree").json()
+        assert len(tree["repositories"]) == 1
+        item = tree["repositories"][0]
+        assert item["path"] == str(repository)
+        assert item["name"] == repository.name
+        assert item["worktrees"] == []
+        assert item["project_id"] is None
 
     @pytest.mark.asyncio
     async def test_workspace_visibility_can_hide_missing_workspace(
@@ -1070,7 +1165,7 @@ class TestTeamHistoryWithData:
                 await _create_member_session(
                     db, member_id, lead_id, agent_name="worker"
                 )
-                for index in range(120):
+                for index in range(520):
                     session_id = lead_id if index % 2 == 0 else member_id
                     await _add_message(
                         db,
@@ -1085,7 +1180,7 @@ class TestTeamHistoryWithData:
             *first["lead"]["messages"],
             *(message for member in first["members"] for message in member["messages"]),
         ]
-        assert len(first_messages) == 100
+        assert len(first_messages) == 500
         assert first["has_more"] is True
         second = client.get(
             f"/api/team/{lead_id}/history",
@@ -1104,7 +1199,7 @@ class TestTeamHistoryWithData:
         contents = {
             message["content"] for message in [*first_messages, *second_messages]
         }
-        assert contents == {f"message-{index}" for index in range(120)}
+        assert contents == {f"message-{index}" for index in range(520)}
 
     @pytest.mark.asyncio
     async def test_history_cursor_keeps_rows_with_identical_timestamps(
@@ -1119,7 +1214,7 @@ class TestTeamHistoryWithData:
             async with db.begin():
                 await _create_team_session(db, lead_id)
                 await _create_member_session(db, member_id, lead_id)
-                for index in range(120):
+                for index in range(520):
                     await _add_message(
                         db,
                         lead_id if index % 2 == 0 else member_id,
@@ -1143,9 +1238,9 @@ class TestTeamHistoryWithData:
                 for message in member["messages"]
             ),
         ]
-        assert len(messages) == 120
+        assert len(messages) == 520
         assert {message["content"] for message in messages} == {
-            f"tie-{index}" for index in range(120)
+            f"tie-{index}" for index in range(520)
         }
 
     @pytest.mark.asyncio
@@ -1180,9 +1275,9 @@ class TestTeamHistoryWithData:
                     tool_call_id=call_id,
                     created_at=base + timedelta(seconds=1),
                 )
-                # The normal 100-row window would begin at the tool result and
+                # The normal 500-row window would begin at the tool result and
                 # strand its assistant call on the older page.
-                for index in range(99):
+                for index in range(499):
                     await _add_message(
                         db,
                         lead_id,
@@ -1193,7 +1288,7 @@ class TestTeamHistoryWithData:
         data = TestClient(app_with_team).get(f"/api/team/{lead_id}/history").json()
 
         messages = data["lead"]["messages"]
-        assert len(messages) == 101
+        assert len(messages) == 501
         assert [message["role"] for message in messages[:2]] == [
             "assistant",
             "tool",

@@ -1246,7 +1246,11 @@ class TeamHistoryMemberData(NamedTuple):
     messages: list[SessionMessage]
 
 
-_HISTORY_PAGE_SIZE = 100
+# Keep a generous server-side history buffer so scrolling through a long
+# transcript rarely has to wait for another round trip. The frontend still
+# mounts turns through its smaller render window, so this does not render all
+# 500 rows at once.
+_HISTORY_PAGE_SIZE = 500
 
 
 class TeamHistoryData(NamedTuple):
