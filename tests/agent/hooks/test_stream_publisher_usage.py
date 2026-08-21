@@ -14,6 +14,7 @@ from app.agent.schemas.chat import (
 )
 from app.agent.state import AgentState
 from app.agent.schemas.chat import HumanMessage
+from app.agent.turn_usage import begin_turn_usage, end_turn_usage
 
 
 def _make_hook(session_id="sess-1", agent_name="lead") -> StreamPublisherHook:
@@ -124,6 +125,50 @@ async def test_on_model_delta_usage_session_id_correct():
         await hook.on_model_delta(MagicMock(), state, _make_chunk_with_usage())
 
     assert pushed_to[0] == "team-lead-sess"
+
+
+async def test_on_model_delta_emits_current_context_and_full_turn_total():
+    hook = _make_hook(session_id="team-lead-sess", agent_name="lead")
+    pushed = []
+    token = begin_turn_usage("team-lead-sess", "lead")
+    try:
+        with patch(
+            "app.services.memory_stream_store.push_event",
+            new_callable=AsyncMock,
+            side_effect=lambda _sid, event: pushed.append(event),
+        ):
+            await hook.on_model_delta(
+                MagicMock(),
+                _make_state(),
+                _make_chunk_with_usage(
+                    prompt=14_200,
+                    completion=17,
+                    total=14_217,
+                    cached=2_000,
+                    model="model-a",
+                ),
+            )
+    finally:
+        end_turn_usage(token)
+
+    usage_events = [event for event in pushed if event.event == "usage"]
+    assert len(usage_events) == 2
+    assert usage_events[0].data["metadata"].get("turn_total") is None
+    assert usage_events[1].data["metadata"] == {
+        "turn_total": True,
+        "agent": "lead",
+        "calls": 1,
+        "phases": {
+            "main": {
+                "input": 14_200,
+                "output": 17,
+                "cache": 2_000,
+                "calls": 1,
+                "models": ["model-a"],
+            }
+        },
+        "models": ["model-a"],
+    }
 
 
 async def test_after_agent_emits_turn_total_after_multiple_usage_events():

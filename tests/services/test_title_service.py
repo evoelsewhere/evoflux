@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.agent.schemas.chat import HumanMessage, SystemMessage
-from app.models.chat import ChatSession
+from app.agent.schemas.chat import AssistantMessage, HumanMessage, SystemMessage
+from app.agent.turn_usage import begin_turn_usage, end_turn_usage
+from app.models.chat import ChatSession, SessionMessage
 from app.services.title_service import (
     _attach_usage,
     _clean_title,
@@ -189,6 +190,62 @@ class TestGenerateAndSaveTitle:
             call_args = mock_push.call_args
             assert call_args[0][0] == str(chat_session.id)
             assert call_args[0][1].event == "title_update"
+
+    @pytest.mark.asyncio
+    async def test_title_usage_updates_persisted_turn_total(
+        self, engine, session, mock_provider
+    ):
+        chat_session = ChatSession(title="")
+        session.add(chat_session)
+        await session.flush()
+        assistant = SessionMessage(
+            session_id=chat_session.id,
+            role="assistant",
+            content="Hello",
+            extra={"usage": {"input": 14_200, "output": 17}},
+        )
+        session.add(assistant)
+        await session.commit()
+
+        mock_provider.model = "gpt-test"
+        mock_provider.chat.return_value = AssistantMessage(
+            content="Greeting",
+            extra={"usage": {"input": 300, "output": 5, "cache": 50}},
+        )
+        db_factory = async_sessionmaker(
+            engine, class_=AsyncSession, expire_on_commit=False
+        )
+        token = begin_turn_usage(str(chat_session.id), "lead")
+        try:
+            with patch("app.services.memory_stream_store.push_event"):
+                await generate_and_save_title(
+                    session_id=chat_session.id,
+                    user_message="hello",
+                    provider=mock_provider,
+                    db_factory=db_factory,
+                    system_prompt="test title prompt",
+                )
+        finally:
+            end_turn_usage(token)
+
+        await session.refresh(assistant)
+        assert assistant.extra is not None
+        assert assistant.extra["turn_usage"] == {
+            "input": 300,
+            "output": 5,
+            "cache": 50,
+            "calls": 1,
+            "models": ["gpt-test"],
+            "phases": {
+                "title": {
+                    "input": 300,
+                    "output": 5,
+                    "cache": 50,
+                    "calls": 1,
+                    "models": ["gpt-test"],
+                }
+            },
+        }
 
     @pytest.mark.asyncio
     async def test_message_truncated_to_500_chars(self, engine, session, mock_provider):

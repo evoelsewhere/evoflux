@@ -20,6 +20,10 @@ from loguru import logger
 from opentelemetry.trace import SpanKind, StatusCode
 
 from app.agent.usage import set_usage_span_attributes
+from app.agent.turn_usage import (
+    persist_turn_usage_snapshot,
+    record_turn_usage,
+)
 from app.agent.providers.base import LLMProviderBase
 from app.agent.schemas.chat import ChatMessage, HumanMessage, SystemMessage
 from app.agent.schemas.events import TitleUpdateEvent
@@ -145,14 +149,29 @@ async def generate_and_save_title(
                 getattr(provider, "model", None),
                 getattr(provider, "provider_name", None),
             )
+            usage = (result.extra or {}).get("usage") if result.extra else None
+            turn_usage = None
+            if isinstance(usage, dict):
+                turn_usage = await record_turn_usage(
+                    usage,
+                    phase="title",
+                    model_id=getattr(provider, "model", None),
+                )
             title = _clean_title(result.content or "")
-            if not title:
-                logger.debug("title_generation_empty session_id={}", session_id_str)
-                span.set_attribute("title_generation.skipped", "empty_response")
-                span.set_status(StatusCode.OK)
-                return
 
             async with db_factory() as db:
+                usage_persisted = await persist_turn_usage_snapshot(
+                    db,
+                    session_id,
+                    turn_usage,
+                )
+                if not title:
+                    if usage_persisted:
+                        await db.commit()
+                    logger.debug("title_generation_empty session_id={}", session_id_str)
+                    span.set_attribute("title_generation.skipped", "empty_response")
+                    span.set_status(StatusCode.OK)
+                    return
                 session = await db.get(ChatSession, session_id)
                 if session is None:
                     span.set_attribute("title_generation.skipped", "session_not_found")

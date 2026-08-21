@@ -351,3 +351,52 @@ describe('useTeamStore goal state', () => {
     expect(useTeamStore.getState().activeGoal).toBeNull()
   })
 })
+
+describe('useTeamStore turn usage', () => {
+  it('keeps current context separate from aggregate turn usage', () => {
+    useTeamStore.getState().beginResolvedSession('session-usage', { mode: 'work' })
+    const handle = useTeamStore.getState()._handleSSEEvent
+
+    handle('agent_status', { agent: 'lead', status: 'working' })
+    handle('usage', {
+      prompt_tokens: 14_200,
+      completion_tokens: 17,
+      cached_tokens: 2_000,
+      metadata: { agent: 'lead' },
+    })
+    handle('usage', {
+      prompt_tokens: 17_000,
+      completion_tokens: 29,
+      cached_tokens: 2_500,
+      metadata: {
+        agent: 'lead',
+        turn_total: true,
+        calls: 3,
+        phases: {
+          main: { input: 14_200, output: 17, cache: 2_000, calls: 1 },
+          skill_resolver: { input: 2_800, output: 12, cache: 500, calls: 1 },
+        },
+      },
+    })
+
+    expect(useTeamStore.getState().agentStreams.lead.usage).toMatchObject({
+      promptTokens: 14_200,
+      cachedTokens: 2_000,
+      turnPromptTokens: 17_000,
+      turnCompletionTokens: 29,
+      turnCachedTokens: 2_500,
+      turnCalls: 3,
+      turnPhases: {
+        skill_resolver: { input: 2_800, output: 12, cache: 500, calls: 1 },
+      },
+    })
+
+    handle('agent_status', { agent: 'lead', status: 'working' })
+    expect(useTeamStore.getState().agentStreams.lead.usage).toMatchObject({
+      promptTokens: 14_200,
+      turnPromptTokens: 0,
+      turnCompletionTokens: 0,
+      turnCalls: 0,
+    })
+  })
+})

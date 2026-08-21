@@ -2,7 +2,7 @@
 
 import asyncio
 from typing import Annotated, Any, AsyncIterator
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -25,9 +25,11 @@ from app.agent.errors import (
     ProviderRequestError,
 )
 from app.agent.hooks import BaseAgentHook
+from app.agent.hooks.stream_publisher import StreamPublisherHook
 from app.agent.providers.base import LLMProviderBase
 from app.agent.providers.model_metadata import ModelCost
 from app.agent.tools.registry import InjectedArg, Tool
+from app.agent.turn_usage import begin_turn_usage, end_turn_usage
 from app.agent.schemas.chat import (
     AssistantMessage,
     ChatCompletionChunk,
@@ -501,17 +503,13 @@ async def test_agent_run_stops_after_terminal_tool_result():
         _state.metadata["stop_after_tool_call"] = "finish"
         return "delivered"
 
-    provider = MockProvider(
-        [[make_tool_chunk("finish", "call_terminal", "{}")]]
-    )
+    provider = MockProvider([[make_tool_chunk("finish", "call_terminal", "{}")]])
     agent = Agent(name="bot", llm_provider=provider, tools=[Tool(finish)])
 
     messages = await agent.run([HumanMessage(content="finish")])
 
     assert [
-        message.content
-        for message in messages
-        if isinstance(message, ToolMessage)
+        message.content for message in messages if isinstance(message, ToolMessage)
     ] == ["delivered"]
     assert agent.stats.messages_count == 1
 
@@ -549,9 +547,7 @@ async def test_agent_run_retries_empty_response_after_tool_result():
     assert len(requests) == 3
     assert isinstance(requests[-1][-1], HumanMessage)
     assert requests[-1][-1].content == EMPTY_AFTER_TOOL_RECOVERY_PROMPT
-    assert all(
-        message.content != EMPTY_AFTER_TOOL_RECOVERY_PROMPT for message in msgs
-    )
+    assert all(message.content != EMPTY_AFTER_TOOL_RECOVERY_PROMPT for message in msgs)
 
 
 async def test_agent_run_stops_on_third_empty_response_after_tool_result():
@@ -898,6 +894,44 @@ async def test_agent_run_usage_tracked():
     await agent.run([HumanMessage(content="go")])
 
     assert agent.stats.total_tokens == 15
+
+
+async def test_agent_run_attaches_aggregate_turn_usage_to_assistant():
+    usage = Usage(prompt_tokens=100, completion_tokens=5, total_tokens=105)
+    provider = MockProvider([[make_text_chunk("hi", usage=usage)]])
+    publisher = StreamPublisherHook(session_id="session-1", agent_name="bot")
+    agent = Agent(name="bot", llm_provider=provider, hooks=[publisher])
+    token = begin_turn_usage("session-1", "bot")
+
+    try:
+        with patch(
+            "app.services.memory_stream_store.push_event",
+            new_callable=AsyncMock,
+        ):
+            messages = await agent.run([HumanMessage(content="go")])
+    finally:
+        end_turn_usage(token)
+
+    assistant = last_assistant(messages)
+    assert assistant is not None
+    assert assistant.extra is not None
+    assert assistant.extra["usage"] == {"input": 100, "output": 5}
+    assert assistant.extra["turn_usage"] == {
+        "input": 100,
+        "output": 5,
+        "cache": 0,
+        "calls": 1,
+        "models": ["mock-model"],
+        "phases": {
+            "main": {
+                "input": 100,
+                "output": 5,
+                "cache": 0,
+                "calls": 1,
+                "models": ["mock-model"],
+            }
+        },
+    }
 
 
 async def test_agent_run_persists_estimated_usage_cost(monkeypatch):

@@ -233,6 +233,44 @@ class TestSQLiteCheckpointerSync:
         assert any(m.content == "hello from agent" for m in messages)
 
     @pytest.mark.asyncio
+    async def test_sync_updates_late_turn_usage_on_latest_assistant(self):
+        import app.core.db as _db
+        from app.models.chat import SessionMessage
+
+        sid = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _make_session(db, sid)
+
+        cp = SQLiteCheckpointer(_db.async_session_factory)
+        ctx = _ctx(str(sid))
+        assistant = AssistantMessage(
+            content="hello from agent",
+            extra={"usage": {"input": 100, "output": 5}},
+        )
+        state = AgentState(messages=[assistant])
+        await cp.sync(ctx, state)
+
+        assistant.extra = {
+            **(assistant.extra or {}),
+            "turn_usage": {
+                "input": 140,
+                "output": 8,
+                "cache": 20,
+                "calls": 2,
+                "phases": {},
+            },
+        }
+        await cp.sync(ctx, state)
+
+        async with _db.async_session_factory() as db:
+            row = await db.get(SessionMessage, assistant.db_id)
+        assert row is not None
+        assert row.extra is not None
+        assert row.extra["turn_usage"]["input"] == 140
+        assert row.extra["turn_usage"]["calls"] == 2
+
+    @pytest.mark.asyncio
     async def test_sync_persists_tool_message(self):
         """ToolMessage is persisted to DB."""
         import app.core.db as _db

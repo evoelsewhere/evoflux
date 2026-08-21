@@ -172,12 +172,29 @@ export function parseApiMessages(msgs: MessageResponse[]): ChatMessage[] {
     if (msg.role === 'assistant') {
       const timestamp = msg.created_at ? new Date(msg.created_at) : new Date()
       const blocks = assistantBlocks(msg, pendingToolBlocks, timestamp)
-      const extra = msg.extra as { usage?: { input?: number; output?: number; cache?: number } } | null
+      const extra = msg.extra as {
+        usage?: { input?: number; output?: number; cache?: number }
+        turn_usage?: {
+          input?: number
+          output?: number
+          cache?: number
+          calls?: number
+          phases?: AgentUsage['turnPhases']
+        }
+      } | null
       const usage = extra?.usage ? {
         promptTokens: extra.usage.input ?? 0,
         completionTokens: extra.usage.output ?? 0,
         totalTokens: (extra.usage.input ?? 0) + (extra.usage.output ?? 0),
         cachedTokens: extra.usage.cache ?? 0,
+        turnPromptTokens: extra.turn_usage?.input,
+        turnCompletionTokens: extra.turn_usage?.output,
+        turnTotalTokens: extra.turn_usage
+          ? (extra.turn_usage.input ?? 0) + (extra.turn_usage.output ?? 0)
+          : undefined,
+        turnCachedTokens: extra.turn_usage?.cache,
+        turnCalls: extra.turn_usage?.calls,
+        turnPhases: extra.turn_usage?.phases,
       } : undefined
       result.push({
         id: msg.id,
@@ -200,22 +217,41 @@ export function parseApiMessages(msgs: MessageResponse[]): ChatMessage[] {
  * Reads from message.extra.usage persisted by DatabaseHook.
  */
 export function sumUsageFromMessages(msgs: MessageResponse[]): AgentUsage {
-  const acc = { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedTokens: 0 }
+  const acc: AgentUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedTokens: 0 }
   let lastInput = 0
   let lastCache = 0
+  let lastTurn: {
+    input?: number
+    output?: number
+    cache?: number
+    calls?: number
+    phases?: AgentUsage['turnPhases']
+  } | undefined
   for (const msg of sortMessages(msgs)) {
     if (msg.role !== 'assistant') continue
-    const extra = msg.extra as { usage?: { input?: number; output?: number; cache?: number } } | null
+    const extra = msg.extra as {
+      usage?: { input?: number; output?: number; cache?: number }
+      turn_usage?: typeof lastTurn
+    } | null
     if (!extra?.usage) continue
     const i = extra.usage.input ?? 0
     const o = extra.usage.output ?? 0
     acc.completionTokens += o
     lastInput = i
     lastCache = extra.usage.cache ?? 0
+    if (extra.turn_usage) lastTurn = extra.turn_usage
   }
   acc.promptTokens = lastInput
   acc.cachedTokens = lastCache
   acc.totalTokens  = lastInput + acc.completionTokens
+  if (lastTurn) {
+    acc.turnPromptTokens = lastTurn.input ?? 0
+    acc.turnCompletionTokens = lastTurn.output ?? 0
+    acc.turnTotalTokens = (lastTurn.input ?? 0) + (lastTurn.output ?? 0)
+    acc.turnCachedTokens = lastTurn.cache ?? 0
+    acc.turnCalls = lastTurn.calls
+    acc.turnPhases = lastTurn.phases
+  }
   return acc
 }
 

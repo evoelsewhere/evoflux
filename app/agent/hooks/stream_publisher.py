@@ -30,6 +30,7 @@ from app.agent.schemas.events import (
     ToolStartEvent,
     UsageEvent,
 )
+from app.agent.turn_usage import record_turn_usage
 from app.services.stream_envelope import AnyStreamEvent, StreamEnvelope
 
 if TYPE_CHECKING:
@@ -178,19 +179,27 @@ class StreamPublisherHook(BaseAgentHook):
                     metadata=metadata,
                 )
             )
-            # Me accumulate for turn-total summary
-            self._total_prompt += pt
-            self._total_completion += ct
-            cached = getattr(u, "cached_tokens", None)
-            if cached is not None:
-                self._total_cached = (self._total_cached or 0) + cached
-            thoughts = getattr(u, "thoughts_tokens", None)
-            if thoughts is not None:
-                self._total_thoughts = (self._total_thoughts or 0) + thoughts
-            tool_use = getattr(u, "tool_use_tokens", None)
-            if tool_use is not None:
-                self._total_tool_use = (self._total_tool_use or 0) + tool_use
-            self._usage_count += 1
+            snapshot = await record_turn_usage(
+                u,
+                phase="main",
+                model_id=model if isinstance(model, str) else None,
+            )
+            # Standalone hook tests and third-party integrations may invoke
+            # this hook without the team turn tracker. Preserve the historical
+            # main-call-only aggregate as a compatibility fallback.
+            if snapshot is None:
+                self._total_prompt += pt
+                self._total_completion += ct
+                cached = getattr(u, "cached_tokens", None)
+                if cached is not None:
+                    self._total_cached = (self._total_cached or 0) + cached
+                thoughts = getattr(u, "thoughts_tokens", None)
+                if thoughts is not None:
+                    self._total_thoughts = (self._total_thoughts or 0) + thoughts
+                tool_use = getattr(u, "tool_use_tokens", None)
+                if tool_use is not None:
+                    self._total_tool_use = (self._total_tool_use or 0) + tool_use
+                self._usage_count += 1
 
         if not chunk.choices:
             return

@@ -4,8 +4,8 @@
  * Trigger: thin meter + percent. Click opens a Cursor-style "Context Usage"
  * popover: summary row, segmented bar, and color-swatch breakdown.
  *
- * Categories map to real AgentUsage fields only (input / cache / output) —
- * no invented system-prompt / rules / skills slices without backend data.
+ * Current context is the latest main prompt. Turn usage is a separate total
+ * across primary and auxiliary model calls.
  */
 
 import { useState } from 'react'
@@ -35,10 +35,16 @@ export interface ContextBudgetBarProps {
   compact?: boolean
   /** Latest input-token count (prompt). */
   input?: number
-  /** Cumulative output-token count. */
-  output?: number
   /** Latest cache-token count. */
   cached?: number
+  /** Total input tokens consumed by all model calls in the current turn. */
+  turnInput?: number
+  /** Total output tokens consumed by all model calls in the current turn. */
+  turnOutput?: number
+  /** Total cached input tokens across all model calls in the current turn. */
+  turnCached?: number
+  /** Number of model calls included in the current turn total. */
+  turnCalls?: number
   /** Auto-summary input threshold. */
   trigger?: number
   /** Manually summarize earlier turns to free context. */
@@ -47,7 +53,7 @@ export interface ContextBudgetBarProps {
   compactDisabled?: boolean
 }
 
-type UsageCategoryId = 'input' | 'cache' | 'output'
+type UsageCategoryId = 'input' | 'cache'
 
 interface UsageCategory {
   id: UsageCategoryId
@@ -55,8 +61,6 @@ interface UsageCategory {
   tokens: number
   /** CSS color token used for swatch + bar segment. */
   color: string
-  /** When true, segment contributes to the context-window fill bar. */
-  inContext: boolean
 }
 
 function formatTokenCount(n: number): string {
@@ -71,33 +75,22 @@ function formatTokenCount(n: number): string {
   return String(Math.round(n))
 }
 
-function buildCategories(input: number, cached: number, output: number): UsageCategory[] {
+function buildContextCategories(input: number, cached: number): UsageCategory[] {
   const safeCache = Math.max(0, Math.min(cached, Math.max(input, 0)))
   const freshInput = Math.max(0, input - safeCache)
-  // Input + cache partition the current context window. Output is session
-  // cumulative and is listed for transparency but is not a context slice
-  // (prompt already includes prior turns).
+  // Fresh input + cache partition the current main prompt exactly.
   return [
     {
       id: 'input',
       label: 'Input',
       tokens: freshInput,
       color: 'var(--accent-blue)',
-      inContext: true,
     },
     {
       id: 'cache',
       label: 'Cache',
       tokens: safeCache,
       color: 'var(--accent-purple)',
-      inContext: true,
-    },
-    {
-      id: 'output',
-      label: 'Output',
-      tokens: Math.max(0, output),
-      color: 'var(--accent-orange)',
-      inContext: false,
     },
   ]
 }
@@ -109,8 +102,11 @@ export function ContextBudgetBar({
   showLabel = true,
   compact = false,
   input = 0,
-  output = 0,
   cached = 0,
+  turnInput,
+  turnOutput,
+  turnCached,
+  turnCalls,
   trigger,
   onCompact,
   compactDisabled = false,
@@ -124,10 +120,14 @@ export function ContextBudgetBar({
   const pct = Math.min(100, Math.round((contextUsed / safeMax) * 100))
   const isDanger = pct >= 95
   const isWarn = pct >= 80 || (trigger !== undefined && contextUsed >= trigger)
-  const categories = buildCategories(input > 0 ? input : used, cached, output)
-  const contextCategories = categories.filter((c) => c.inContext && c.tokens > 0)
+  const contextCategories = buildContextCategories(input > 0 ? input : used, cached)
+    .filter((category) => category.tokens > 0)
   const contextSegmentTotal = contextCategories.reduce((sum, c) => sum + c.tokens, 0)
   const summaryUsed = contextSegmentTotal > 0 ? contextSegmentTotal : contextUsed
+  const safeTurnInput = Math.max(turnInput ?? 0, 0)
+  const safeTurnOutput = Math.max(turnOutput ?? 0, 0)
+  const safeTurnCached = Math.max(0, Math.min(turnCached ?? 0, safeTurnInput))
+  const hasTurnUsage = safeTurnInput > 0 || safeTurnOutput > 0
 
   const handleCompact = async () => {
     if (!onCompact || compactDisabled || compactPending) return
@@ -201,7 +201,7 @@ export function ContextBudgetBar({
   )
 
   // Hide until there is something useful to show.
-  const hasAnyTokens = categories.some((c) => c.tokens > 0) || contextUsed > 0
+  const hasAnyTokens = contextCategories.length > 0 || contextUsed > 0 || hasTurnUsage
   if (!hasAnyTokens) {
     return null
   }
@@ -284,11 +284,18 @@ export function ContextBudgetBar({
           })}
         </div>
 
-        {/* Breakdown */}
-        <ul className="flex flex-col gap-2" aria-label="Token usage breakdown">
-          {categories
-            .filter((cat) => cat.tokens > 0)
-            .map((cat) => (
+        {/* Current context */}
+        <section aria-labelledby="current-context-heading">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h3 id="current-context-heading" className="text-[11px] font-medium text-(--color-text-2)">
+              Current context
+            </h3>
+            <span className="text-[10px] tabular-nums text-(--color-text-subtle)">
+              Latest main prompt
+            </span>
+          </div>
+          <ul className="flex flex-col gap-2" aria-label="Current context breakdown">
+            {contextCategories.map((cat) => (
               <li
                 key={cat.id}
                 className="flex items-center justify-between gap-3 text-[12px] leading-none"
@@ -306,13 +313,52 @@ export function ContextBudgetBar({
                 </span>
               </li>
             ))}
-          {trigger !== undefined && trigger > 0 && (
-            <li className="mt-1 flex items-center justify-between gap-3 border-t border-(--color-border) pt-2.5 text-[11px] leading-none text-(--color-text-subtle)">
-              <span>Auto-summary at</span>
-              <span className="tabular-nums">{formatTokenCount(trigger)}</span>
-            </li>
-          )}
-        </ul>
+            {trigger !== undefined && trigger > 0 && (
+              <li className="mt-1 flex items-center justify-between gap-3 border-t border-(--color-border) pt-2.5 text-[11px] leading-none text-(--color-text-subtle)">
+                <span>Auto-summary at</span>
+                <span className="tabular-nums">{formatTokenCount(trigger)}</span>
+              </li>
+            )}
+          </ul>
+        </section>
+
+        {hasTurnUsage && (
+          <section className="mt-3 border-t border-(--color-border) pt-3" aria-labelledby="turn-usage-heading">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h3 id="turn-usage-heading" className="text-[11px] font-medium text-(--color-text-2)">
+                Turn usage
+              </h3>
+              <span className="text-[10px] tabular-nums text-(--color-text-subtle)">
+                {turnCalls ? `${turnCalls} model ${turnCalls === 1 ? 'call' : 'calls'}` : 'All model calls'}
+              </span>
+            </div>
+            <ul className="flex flex-col gap-2" aria-label="Turn usage breakdown">
+              <li className="flex items-center justify-between gap-3 text-[12px] leading-none">
+                <span className="flex min-w-0 items-center gap-2 text-(--color-text-2)">
+                  <span className="size-2.5 shrink-0 rounded-[3px] bg-(--accent-blue)" aria-hidden="true" />
+                  <span>Input</span>
+                </span>
+                <span className="tabular-nums text-(--color-text-muted)">{formatTokenCount(safeTurnInput)}</span>
+              </li>
+              <li className="flex items-center justify-between gap-3 text-[12px] leading-none">
+                <span className="flex min-w-0 items-center gap-2 text-(--color-text-2)">
+                  <span className="size-2.5 shrink-0 rounded-[3px] bg-(--accent-orange)" aria-hidden="true" />
+                  <span>Output</span>
+                </span>
+                <span className="tabular-nums text-(--color-text-muted)">{formatTokenCount(safeTurnOutput)}</span>
+              </li>
+              {safeTurnCached > 0 && (
+                <li className="flex items-center justify-between gap-3 text-[12px] leading-none">
+                  <span className="flex min-w-0 items-center gap-2 text-(--color-text-2)">
+                    <span className="size-2.5 shrink-0 rounded-[3px] bg-(--accent-purple)" aria-hidden="true" />
+                    <span>Cached input</span>
+                  </span>
+                  <span className="tabular-nums text-(--color-text-muted)">{formatTokenCount(safeTurnCached)}</span>
+                </li>
+              )}
+            </ul>
+          </section>
+        )}
 
         {onCompact && (
           <div className="mt-3 border-t border-(--color-border) pt-3">
