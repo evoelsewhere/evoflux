@@ -11,6 +11,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.agent.state import AgentState, ModelRequest, RunContext, UsageInfo
+from app.agent.state import build_model_chain
+from app.agent.hooks.pipeline import HookPipeline, HookStage
+from app.agent.hooks.skill_catalog import SkillCatalogFinalizerHook
 from app.agent.hooks.summarization import (
     CODING_SUMMARY_PROMPT,
     MAX_DURABLE_SKILL_CHARS,
@@ -31,6 +34,7 @@ from app.agent.turn_usage import (
     current_turn_usage_snapshot,
     end_turn_usage,
 )
+from app.agent.skills.catalog import SkillCatalogRender
 
 
 # ---------------------------------------------------------------------------
@@ -748,6 +752,66 @@ async def test_summarization_usage_is_included_in_turn_total():
         }
     finally:
         end_turn_usage(token)
+
+
+@pytest.mark.asyncio
+async def test_prompt_finalization_precedes_summarization_snapshot():
+    finalizer = SkillCatalogFinalizerHook()
+    summarization = SummarizationHook(
+        llm_provider=MagicMock(),
+        summary_prompt="summarize",
+        prompt_token_threshold=1,
+        keep_last_assistants=0,
+        min_messages_since_last_summary=0,
+    )
+    pipeline = HookPipeline()
+    # Register out of order deliberately; stage ownership must still place the
+    # finalized prompt before the summarizer snapshots it.
+    pipeline.add(HookStage.CONTEXT_CONTROL, "summarization", summarization)
+    pipeline.add(
+        HookStage.PROMPT_FINALIZATION,
+        "skill-catalog-finalizer",
+        finalizer,
+    )
+    hooks = pipeline.build()
+    ctx = _make_ctx()
+    state = AgentState(
+        messages=[HumanMessage(content="old"), HumanMessage(content="new")],
+        usage=UsageInfo(last_prompt_tokens=999),
+    )
+    state.metadata["_skill_catalog_render"] = SkillCatalogRender(
+        text="## Skills\n- research: Research facts.",
+        included=("research",),
+    )
+    for hook in hooks:
+        await hook.before_agent(ctx, state)
+
+    request = ModelRequest(
+        messages=tuple(state.messages),
+        system_prompt="BASE\n\nTEAM",
+    )
+    for hook in hooks:
+        updated = await hook.before_model(ctx, state, request)
+        if updated is not None:
+            request = updated
+
+    summarizer_prompts: list[str | None] = []
+
+    async def fake_summarize(_ctx, _state, *, system_prompt=None):
+        summarizer_prompts.append(system_prompt)
+
+    summarization._summarise = AsyncMock(side_effect=fake_summarize)
+    main_prompts: list[str] = []
+
+    async def execute(model_request: ModelRequest) -> AssistantMessage:
+        main_prompts.append(model_request.system_prompt)
+        return AssistantMessage(content="done")
+
+    await build_model_chain(hooks, ctx, state, execute)(request)
+
+    assert summarizer_prompts == main_prompts
+    assert main_prompts[0].count("## Skills") == 1
+    assert main_prompts[0].startswith("BASE\n\nTEAM")
 
 
 # ---------------------------------------------------------------------------

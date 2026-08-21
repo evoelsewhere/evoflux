@@ -425,7 +425,8 @@ class TestProtocolConstants:
     @pytest.mark.parametrize(
         ("contract", "required"),
         [
-            ("interactive clarification", "use `ask_user` once"),
+            ("interactive clarification", "call the blocking `ask_user` tool"),
+            ("no plain-text clarification", "not a plain-text question"),
             ("task sizing", "`trivial` stays with you"),
             ("skill disclosure", "Load specialized workflows only on demand"),
             ("roster inspection", "team_manage(action='status')"),
@@ -435,6 +436,7 @@ class TestProtocolConstants:
             ("structured delivery", "team_handoff"),
             ("shared facts", "team_state"),
             ("dependency graph", "depends_on"),
+            ("durable task identity", "must be preserved"),
             ("todo ownership", "assigned_to"),
             ("workspace isolation", "isolation='worktree'"),
             ("repository scope", "target_repos"),
@@ -443,12 +445,14 @@ class TestProtocolConstants:
             ("waiting", "exactly `<sleep>`"),
             ("partial handoff", 'status: "partial"'),
             ("final handoff", 'wait for `"final"`'),
+            ("handoff evidence fields", "`summary`, `findings`, `evidence`"),
             ("proportional verification", "verify proportionately"),
             (
                 "avoid duplicate investigation",
                 "Never redo the member's full investigation",
             ),
             ("structured rejection", "team_reject"),
+            ("actionable rejection", "`reason`, `issues`, `suggestions`"),
             ("rejection severity", "`minor`, `major`, or `redo`"),
             (
                 "no duplicate execution",

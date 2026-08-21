@@ -213,9 +213,13 @@ async def test_team_catalog_finalizer_keeps_catalog_after_stable_prompt(
         return AssistantMessage(content="done")
 
     response = await finalizer.wrap_model_call(ctx, state, request, handler)
+    second_response = await finalizer.wrap_model_call(ctx, state, request, handler)
 
     assert updated is None
     assert response.content == "done"
+    assert second_response.content == "done"
+    assert len(captured) == 2
+    assert all(prompt.system_prompt.count("## Skills") == 1 for prompt in captured)
     assert captured[0].system_prompt.startswith("Base\n\nStatic team protocol")
     assert captured[0].system_prompt.index("## Skills") > captured[
         0

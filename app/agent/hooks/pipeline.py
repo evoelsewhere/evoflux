@@ -15,6 +15,9 @@ class HookStage(IntEnum):
     INGRESS = 40
     WORKSPACE = 50
     LIFECYCLE = 60
+    # Final prompt-only sections must run after every context producer but
+    # before summarization snapshots the provider request.
+    PROMPT_FINALIZATION = 65
     CONTEXT_CONTROL = 70
 
 
