@@ -11,7 +11,13 @@ from app.agent.providers.model_metadata import get_model_limits
 from app.agent.skills.catalog import SkillCatalogRender, render_skill_catalog
 
 if TYPE_CHECKING:
-    from app.agent.state import AgentState, ModelRequest, RunContext
+    from app.agent.schemas.chat import AssistantMessage
+    from app.agent.state import (
+        AgentState,
+        ModelCallHandler,
+        ModelRequest,
+        RunContext,
+    )
 
 
 class SkillCatalogHook(BaseAgentHook):
@@ -82,6 +88,8 @@ class SkillCatalogHook(BaseAgentHook):
 
         if not rendered.text:
             return None
+        if state.metadata.get("_finalize_skill_catalog_prompt") is True:
+            return None
         prompt = (
             f"{request.system_prompt}\n\n{rendered.text}"
             if request.system_prompt
@@ -104,4 +112,32 @@ class SkillCatalogHook(BaseAgentHook):
         return ""
 
 
-__all__ = ["SkillCatalogHook"]
+class SkillCatalogFinalizerHook(BaseAgentHook):
+    """Append the rendered catalog after stable runtime prompt sections.
+
+    Team runs install this hook at the end of their ordered pipeline. Direct
+    ``Agent.run`` callers keep the historical ``SkillCatalogHook`` behavior.
+    """
+
+    async def before_agent(self, ctx: RunContext, state: AgentState) -> None:
+        state.metadata["_finalize_skill_catalog_prompt"] = True
+
+    async def wrap_model_call(
+        self,
+        ctx: RunContext,
+        state: AgentState,
+        request: ModelRequest,
+        handler: ModelCallHandler,
+    ) -> AssistantMessage:
+        rendered = state.metadata.get("_skill_catalog_render")
+        if not isinstance(rendered, SkillCatalogRender) or not rendered.text:
+            return await handler(request)
+        prompt = (
+            f"{request.system_prompt}\n\n{rendered.text}"
+            if request.system_prompt
+            else rendered.text
+        )
+        return await handler(request.override(system_prompt=prompt))
+
+
+__all__ = ["SkillCatalogFinalizerHook", "SkillCatalogHook"]

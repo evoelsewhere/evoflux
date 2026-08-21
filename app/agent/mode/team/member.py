@@ -49,6 +49,7 @@ from app.agent.hooks.otel import OpenTelemetryHook
 from app.agent.hooks.conductor_telemetry import ConductorTelemetryHook
 from app.conductor.constants.telemetry import CONDUCTOR_TELEMETRY_HOOK_NAME
 from app.agent.hooks.stream_publisher import StreamPublisherHook
+from app.agent.hooks.skill_catalog import SkillCatalogFinalizerHook
 from app.agent.hooks.summarization import build_team_summarization_hook
 from app.agent.hooks.title_generation import build_title_generation_hook
 from app.agent.hooks.memory_extraction import build_memory_extraction_hook
@@ -1333,10 +1334,12 @@ class TeamMemberBase(abc.ABC):
         pipeline.add(
             HookStage.BASE_CONTEXT, "wiki-context", default_wiki_injection_hook
         )
+        pipeline.add(HookStage.BASE_CONTEXT, "team-protocol", team_prompt_hook)
+        # Query-dependent context belongs after the static role/team prefix so
+        # providers can reuse a much longer automatic prompt-cache prefix.
         pipeline.add(
             HookStage.BASE_CONTEXT, "memory-context", default_memory_context_hook
         )
-        pipeline.add(HookStage.BASE_CONTEXT, "team-protocol", team_prompt_hook)
         pipeline.add(HookStage.BASE_CONTEXT, "team-inbox", team_inbox_hook)
         pipeline.add(HookStage.BASE_CONTEXT, "stream-publisher", publisher_hook)
         pipeline.add(HookStage.BASE_CONTEXT, "telemetry", otel_hook)
@@ -1514,6 +1517,11 @@ class TeamMemberBase(abc.ABC):
             HookStage.CONTEXT_CONTROL,
             "tool-context-projection",
             build_tool_context_projection_hook(self._team.mode),
+        )
+        pipeline.add(
+            HookStage.CONTEXT_CONTROL,
+            "skill-catalog-finalizer",
+            SkillCatalogFinalizerHook(),
         )
 
         hooks = pipeline.build()
