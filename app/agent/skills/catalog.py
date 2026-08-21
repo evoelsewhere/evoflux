@@ -191,12 +191,11 @@ def _render_lines(
 ) -> str:
     lines: list[str] = []
     for record, limit in zip(records, description_limits, strict=True):
-        path = str(record.skill_file)
         description = _compact_description(record.description)[:limit].rstrip()
         if description:
-            lines.append(f"- {record.name}: {description} (file: {path})")
+            lines.append(f"- {record.name}: {description}")
         else:
-            lines.append(f"- {record.name} (file: {path})")
+            lines.append(f"- {record.name}")
     return f"{_INTRO}{chr(10).join(lines)}{_RULES}"
 
 
