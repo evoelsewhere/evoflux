@@ -27,12 +27,12 @@ On 2026-08-23, after the leaf-symbol and shared-traversal hardening updates:
 
 | Repository | Structural files | Search-only | Parse failures | Symbols excluding file nodes | Relations | Symbols/KLOC |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `evoflux` | 1,446 | 257 | 0 | 25,333 | 339,129 | 59.09 |
-| `evo-conductor` | 201 | 20 | 0 | 5,309 | 44,578 | 113.44 |
+| `evoflux` | 1,447 | 257 | 0 | 29,972 | 345,757 | 69.84 |
+| `evo-conductor` | 201 | 20 | 0 | 5,309 | 44,799 | 113.44 |
 
 Index/UI totals also include one file node per indexable file. The corresponding
-committed totals are 27,036 and 5,530 symbols respectively. The combined
-project totals are 32,566 symbols and 383,707 relations.
+committed totals are 31,676 and 5,530 symbols respectively. The combined
+project totals are 37,206 symbols and 390,556 relations.
 
 ## What improved
 
@@ -57,14 +57,21 @@ The parser now emits named API-surface leaves that were previously absent:
 - JSDoc plus Rust line/block documentation attached across decorators/attributes;
 - qualified Rust scoped/field calls, generic/scoped trait implementations, and
   type references for aliases, constants, statics, and associated bounds.
+- Python class/dataclass-style fields, annotated module/field references,
+  qualified nested calls, generic inheritance, and runtime default-parameter
+  references;
+- semantic Python docstring evaluation/indent normalization that rejects bytes,
+  f-strings, and malformed literals rather than reporting them as docs.
 
 This raises the two-repository project from roughly 23.4K previously indexed
-symbols to 32.6K after a full reindex (about +39%), without counting anonymous
+symbols to 37.2K after a full reindex (about +59%), without counting anonymous
 syntax nodes or inflating the graph with duplicate relations.
 
-Documentation detail is also measurable: EvoFlux rises from 16.83% to 19.0%
-documented symbols and Evo Conductor from 2.15% to 3.07%, while signature
-completeness remains 100% and structural parse failures remain zero.
+Documentation detail is also measurable: EvoFlux has 4,813 documented symbols
+and Evo Conductor has 163. EvoFlux's percentage is 16.06% after adding 4.6K
+mostly-undocumented class fields, so the report includes both absolute and
+percentage values. Signature completeness remains 100% and structural parse
+failures remain zero.
 
 ## Explorer sampling
 
@@ -75,18 +82,20 @@ the explorer is not the stored graph size.
 
 ## Mutation gate
 
-The shared tree-sitter traversal, JavaScript/TypeScript/TSX parser, Rust parser,
-and optimized leaf extractor are mutation-tested with Mutmut:
+The shared tree-sitter traversal, Python parser, JavaScript/TypeScript/TSX
+parser, Rust parser, and optimized leaf extractor are mutation-tested with
+Mutmut:
 
 ```bash
 uv run mutmut run
 uv run mutmut results
 ```
 
-The configured scope is `parsers/base.py`, `parsers/ecmascript.py`,
-`parsers/rust.py`, and `parsers/symbol_leaves.py`. Exact shared-walker, JS/TS/TSX,
-and Rust contracts are the oracle. A cache-clean campaign kills 2,163/2,163
-generated mutants with no survivors, timeouts, or uncovered mutants. Two
+The configured scope is `parsers/base.py`, `parsers/python.py`,
+`parsers/ecmascript.py`, `parsers/rust.py`, and `parsers/symbol_leaves.py`.
+Exact shared-walker, Python, JS/TS/TSX, and Rust contracts are the oracle. A
+cache-clean campaign kills 2,699/2,699 generated mutants with no survivors,
+timeouts, or uncovered mutants. Two
 behaviorally equivalent line mutations are excluded explicitly in source:
 extending an already proven-free collision candidate range, and replacing a
 capped synthetic-loop `break` with `return` when every child is blocked by the

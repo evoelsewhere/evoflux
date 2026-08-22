@@ -109,6 +109,8 @@ def audit_repository(root: Path) -> dict[str, Any]:
             "structural_file_share_pct": _percent(structural_files, indexable_files),
             "signature_completeness_pct": _percent(signature_count, symbol_count),
             "docstring_completeness_pct": _percent(docstring_count, symbol_count),
+            "signature_symbols": signature_count,
+            "documented_symbols": docstring_count,
             "languages": dict(languages.most_common()),
             "node_kinds": dict(node_kinds.most_common()),
             "relation_kinds": dict(relation_kinds.most_common()),
@@ -140,8 +142,10 @@ def _print_human(report: dict[str, Any]) -> None:
     )
     print(
         "  detail: "
-        f"{report['signature_completeness_pct']}% signatures · "
-        f"{report['docstring_completeness_pct']}% docs"
+        f"{report['signature_completeness_pct']}% signatures "
+        f"({report['signature_symbols']}/{report['symbols']}) · "
+        f"{report['docstring_completeness_pct']}% docs "
+        f"({report['documented_symbols']}/{report['symbols']})"
     )
     print(f"  languages: {report['languages']}")
     print(f"  node kinds: {report['node_kinds']}")

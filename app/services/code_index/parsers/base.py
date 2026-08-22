@@ -458,7 +458,10 @@ def _is_reference_identifier(node: Node) -> bool:
 
     for ancestor in ancestors:
         if (
-            "type" in ancestor.type
+            (
+                "type" in ancestor.type
+                and ancestor.type != "typed_default_parameter"
+            )
             or "annotation" in ancestor.type
             or "heritage" in ancestor.type
             or ancestor.type == "attribute_item"
@@ -475,8 +478,10 @@ def _is_reference_identifier(node: Node) -> bool:
         }:
             return False
 
-    # Names introduced by declarations/parameters are definitions, not reads.
-    if "parameter" in parent.type:
+    # Names introduced by declarations are definitions, not reads. Parameter
+    # defaults remain runtime reads; the `name` field below excludes only the
+    # binding itself while type ancestry excludes its annotation.
+    if parent.type in {"parameters", "lambda_parameters"}:
         return False
     for field in ("name", "declarator", "pattern", "alias", "macro"):
         if _same_span(parent.child_by_field_name(field), node):
