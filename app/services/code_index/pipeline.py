@@ -120,6 +120,7 @@ def _processing_identity(extension: str, language_override: str | None) -> str:
         package / "graph_types.py",
         package / "parsers" / "base.py",
         package / "parsers" / "registry.py",
+        package / "parsers" / "symbol_leaves.py",
         Path(str(__import__(type(parser).__module__, fromlist=["x"]).__file__))
         if parser is not None
         else package / "file_matcher.py",

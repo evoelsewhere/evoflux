@@ -55,7 +55,7 @@ class Definition:
 
     kind: str
     name: str
-    is_class: bool
+    is_class: bool = False
     prefix: str | None = None  # override parent prefix (e.g. Go receiver type)
 
 
@@ -112,6 +112,7 @@ class TreeSitterParser:
             line_end=root.end_point[0] + 1,
         )
         result = ParseResult(language=self.name, file_path=file_path, nodes=[file_node])
+        used_local_ids = {file_node.local_id}
         self._walk(
             root,
             source,
@@ -120,6 +121,7 @@ class TreeSitterParser:
             parent_local_id="<file>",
             inside_class=False,
             depth=0,
+            used_local_ids=used_local_ids,
         )
         # Language-specific dispatch extraction and the shared identifier
         # pass can intentionally discover the same semantic reference. Keep
@@ -219,6 +221,7 @@ class TreeSitterParser:
         *,
         prefix: str,
         parent_local_id: str,
+        used_local_ids: set[str],
         local_id_suffix: str = "",
     ) -> tuple[str, str]:
         line_start = node.start_point[0] + 1
@@ -229,7 +232,13 @@ class TreeSitterParser:
             qualified = f"{prefix}{definition.name}"
         else:
             qualified = definition.name
-        local_id = f"{qualified}#{line_start}{local_id_suffix}"
+        local_id_base = f"{qualified}#{line_start}{local_id_suffix}"
+        local_id = local_id_base
+        ordinal = 2
+        while local_id in used_local_ids:
+            local_id = f"{local_id_base}:{ordinal}"
+            ordinal += 1
+        used_local_ids.add(local_id)
         result.nodes.append(
             ExtractedNode(
                 local_id=local_id,
@@ -262,6 +271,7 @@ class TreeSitterParser:
         parent_local_id: str,
         inside_class: bool,
         depth: int,
+        used_local_ids: set[str],
     ) -> None:
         if depth > _MAX_DEPTH or len(result.nodes) > _MAX_NODES_PER_FILE:
             return
@@ -277,6 +287,7 @@ class TreeSitterParser:
                 result,
                 prefix=prefix,
                 parent_local_id=parent_local_id,
+                used_local_ids=used_local_ids,
             )
             for sup in self.supertypes(node, source):
                 result.edges.append(
@@ -367,6 +378,7 @@ class TreeSitterParser:
                 result,
                 prefix=prefix,
                 parent_local_id=parent_local_id,
+                used_local_ids=used_local_ids,
                 local_id_suffix=f":implicit:{index}",
             )
 
@@ -379,6 +391,7 @@ class TreeSitterParser:
                 parent_local_id=child_parent,
                 inside_class=child_inside_class,
                 depth=depth + 1,
+                used_local_ids=used_local_ids,
             )
 
 
