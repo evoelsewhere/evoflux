@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_index.parsers.base import (
@@ -14,6 +15,7 @@ from app.services.code_index.parsers.base import (
 from app.services.code_index.graph_types import (
     EDGE_IMPLEMENTS,
     NODE_CLASS,
+    NODE_FIELD,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
@@ -33,55 +35,45 @@ class GoParser(TreeSitterParser):
 
     def root_prefix(self, root: Node, source: bytes) -> str:
         self._package_prefix = ""
-        for child in root.children:
-            if child.type != "package_clause":
-                continue
-            package = next(
-                (sub for sub in child.children if sub.type == "package_identifier"),
-                None,
-            )
-            if package is not None:
-                self._package_prefix = f"{node_text(package, source)}."
-            break
+        clause = next(
+            (child for child in root.children if child.type == "package_clause"),
+            None,
+        )
+        if clause is None:
+            return self._package_prefix
+        package = next(
+            (sub for sub in clause.children if sub.type == "package_identifier"),
+            None,
+        )
+        if package is not None:
+            self._package_prefix = f"{node_text(package, source)}."
         return self._package_prefix
 
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool
     ) -> Definition | None:
         ntype = node.type
-        if ntype == "type_declaration":
-            # type_declaration → type_spec or type_alias
-            spec = _first_child_of_type(node, "type_spec")
-            if spec is not None:
-                name = self._spec_name(spec, source)
-                if not name:
-                    return None
-                body = spec.child_by_field_name("type")
-                if body is not None and body.type == "interface_type":
-                    return Definition(kind=NODE_INTERFACE, name=name, is_class=True)
-                if body is not None and body.type == "struct_type":
-                    return Definition(kind=NODE_STRUCT, name=name, is_class=True)
-                # Other named types retain the broad type/class category.
-                return Definition(kind=NODE_CLASS, name=name, is_class=True)
-            # type alias: type Foo = ...
-            alias = _first_child_of_type(node, "type_alias")
-            if alias is not None:
-                for child in alias.children:
-                    if child.type == "type_identifier":
-                        return Definition(
-                            kind=NODE_CLASS,
-                            name=node_text(child, source),
-                            is_class=False,
-                        )
-            return None
+        if ntype == "type_spec":
+            name = self._spec_name(node, source)
+            if not name:
+                return None
+            body = node.child_by_field_name("type")
+            if body is not None and body.type == "interface_type":
+                return Definition(kind=NODE_INTERFACE, name=name, is_class=True)
+            if body is not None and body.type == "struct_type":
+                return Definition(kind=NODE_STRUCT, name=name, is_class=True)
+            return Definition(kind=NODE_CLASS, name=name, is_class=True)
+        if ntype == "type_alias":
+            name = node.child_by_field_name("name")
+            return (
+                Definition(kind=NODE_CLASS, name=node_text(name, source))
+                if name is not None
+                else None
+            )
         if ntype == "function_declaration":
             name_node = node.child_by_field_name("name")
             if name_node is not None:
-                return Definition(
-                    kind=NODE_FUNCTION,
-                    name=node_text(name_node, source),
-                    is_class=False,
-                )
+                return Definition(kind=NODE_FUNCTION, name=node_text(name_node, source))
         if ntype == "method_declaration":
             name_node = node.child_by_field_name("name")
             if name_node is not None:
@@ -92,11 +84,29 @@ class GoParser(TreeSitterParser):
                 return Definition(
                     kind=NODE_METHOD,
                     name=node_text(name_node, source),
-                    is_class=False,
                     prefix=prefix,
                 )
-        if ntype in ("const_declaration", "var_declaration"):
-            return self._var_or_const(node, source)
+        if ntype == "method_elem":
+            name = node.child_by_field_name("name")
+            return (
+                Definition(kind=NODE_METHOD, name=node_text(name, source))
+                if name is not None
+                else None
+            )
+        if ntype == "field_declaration" and inside_class:
+            name = node.child_by_field_name("name")
+            return (
+                Definition(kind=NODE_FIELD, name=node_text(name, source))
+                if name is not None
+                else None
+            )
+        if ntype in {"const_spec", "var_spec"} and _is_package_spec(node):
+            name = node.child_by_field_name("name")
+            return (
+                Definition(kind=NODE_VARIABLE, name=node_text(name, source))
+                if name is not None
+                else None
+            )
         return None
 
     def call_target(self, node: Node, source: bytes) -> str | None:
@@ -108,26 +118,19 @@ class GoParser(TreeSitterParser):
         if func.type == "identifier":
             return node_text(func, source)
         if func.type == "selector_expression":
-            operand = func.child_by_field_name("operand")
             field = func.child_by_field_name("field")
             if field is None:
                 return None
-            field_name = node_text(field, source)
-            # Emit "Package.Func" or "Type.Method" for qualified resolution
-            if operand is not None and operand.type == "identifier":
-                return f"{node_text(operand, source)}.{field_name}"
-            return field_name
+            qualified = _go_value_name(func, source)
+            return qualified or node_text(field, source)
         return None
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
         # Go doesn't have explicit inheritance. Interface embedding is the closest.
         # For interface types, extract embedded interfaces.
-        if node.type != "type_declaration":
+        if node.type != "type_spec":
             return []
-        spec = _first_child_of_type(node, "type_spec")
-        if spec is None:
-            return []
-        body = spec.child_by_field_name("type")
+        body = node.child_by_field_name("type")
         if body is None:
             return []
         out: list[SuperType] = []
@@ -160,7 +163,18 @@ class GoParser(TreeSitterParser):
         return _preceding_comment(node, source)
 
     def type_refs(self, node: Node, source: bytes) -> list[str]:
-        if node.type not in {"function_declaration", "method_declaration"}:
+        if node.type in {"field_declaration", "type_alias", "var_spec", "const_spec"}:
+            type_node = node.child_by_field_name("type")
+            if type_node is None:
+                return []
+            out: list[str] = []
+            _collect_go_type_ids(type_node, source, out)
+            return list(dict.fromkeys(out))
+        if node.type not in {
+            "function_declaration",
+            "method_declaration",
+            "method_elem",
+        }:
             return []
         out: list[str] = []
         # Parameters
@@ -171,17 +185,11 @@ class GoParser(TreeSitterParser):
         result = node.child_by_field_name("result")
         if result is not None:
             _collect_go_type_ids(result, source, out)
-        return out
+        return list(dict.fromkeys(out))
 
     def _spec_name(self, spec: Node, source: bytes) -> str | None:
         name_node = spec.child_by_field_name("name")
-        if name_node is not None:
-            return node_text(name_node, source)
-        # Fallback: first type_identifier child
-        for child in spec.children:
-            if child.type == "type_identifier":
-                return node_text(child, source)
-        return None
+        return node_text(name_node, source) if name_node is not None else None
 
     def _receiver_type(self, node: Node, source: bytes) -> str | None:
         """Extract the receiver type name from a method_declaration."""
@@ -194,23 +202,6 @@ class GoParser(TreeSitterParser):
                 type_node = param.child_by_field_name("type")
                 if type_node is not None:
                     return _go_type_name(type_node, source)
-        return None
-
-    def _var_or_const(self, node: Node, source: bytes) -> Definition | None:
-        """Capture package-level var/const declarations (single-spec only)."""
-        # Only capture if parent is source_file (package level)
-        if node.parent is None or node.parent.type != "source_file":
-            return None
-        # Look for single spec with a name
-        for child in node.children:
-            if child.type in ("const_spec", "var_spec"):
-                name_node = child.child_by_field_name("name")
-                if name_node is not None:
-                    return Definition(
-                        kind=NODE_VARIABLE,
-                        name=node_text(name_node, source),
-                        is_class=False,
-                    )
         return None
 
     def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
@@ -231,16 +222,18 @@ class GoParser(TreeSitterParser):
         if path_node is None:
             return []
         # Strip quotes from the path string
-        raw = node_text(path_node, source).strip('"')
+        raw = _go_string_content(path_node, source)
         # The target package is conventionally the last path segment; an
         # explicit package identifier changes only the local binding.
-        target_name = raw.rsplit("/", 1)[-1]
+        target_name = PurePosixPath(raw).name
         name_node = spec.child_by_field_name("name")
-        local_name = (
-            node_text(name_node, source)
-            if name_node is not None and name_node.type == "package_identifier"
-            else None
-        )
+        local_name = None
+        if name_node is not None and name_node.type in {
+            "package_identifier",
+            "blank_identifier",
+            "dot",
+        }:
+            local_name = node_text(name_node, source)
         return [
             ImportRef(
                 name=target_name,
@@ -250,11 +243,36 @@ class GoParser(TreeSitterParser):
         ]
 
 
-def _first_child_of_type(node: Node, type_name: str) -> Node | None:
-    for child in node.children:
-        if child.type == type_name:
-            return child
-    return None
+def _is_package_spec(node: Node) -> bool:
+    ancestor = node.parent
+    while ancestor is not None and ancestor.type in {
+        "const_declaration",
+        "var_declaration",
+        "var_spec_list",
+    }:
+        ancestor = ancestor.parent
+    return ancestor is not None and ancestor.type == "source_file"
+
+
+def _go_string_content(node: Node, source: bytes) -> str:
+    text = node_text(node, source)
+    is_quote = text[:1] in {'"', "`"}
+    if len(text) >= 2 and text[0] == text[-1] and is_quote:
+        return text[1:-1]
+    return text
+
+
+def _go_value_name(node: Node, source: bytes) -> str | None:
+    if node.type == "identifier":
+        return node_text(node, source)
+    if node.type != "selector_expression":
+        return None
+    operand = node.child_by_field_name("operand")
+    field = node.child_by_field_name("field")
+    if operand is None or field is None:
+        return None
+    owner = _go_value_name(operand, source)
+    return f"{owner}.{node_text(field, source)}" if owner else None
 
 
 def _go_type_name(node: Node, source: bytes) -> str | None:
@@ -279,7 +297,10 @@ def _go_type_name(node: Node, source: bytes) -> str | None:
 
 def _preceding_comment(node: Node, source: bytes) -> str | None:
     """Extract Go-style doc comment immediately preceding a node."""
-    prev = node.prev_named_sibling
+    owner = node
+    if node.type in {"type_spec", "type_alias"} and node.parent is not None:
+        owner = node.parent
+    prev = owner.prev_named_sibling
     if prev is None or prev.type != "comment":
         return None
     # Collect consecutive comment lines ending at the node.
@@ -294,8 +315,10 @@ def _preceding_comment(node: Node, source: bytes) -> str | None:
     for line in lines:
         if line.startswith("//"):
             cleaned.append(line[2:].strip())
-        elif line.startswith("/*") and line.endswith("*/"):
-            cleaned.append(line[2:-2].strip())
+        elif line.startswith("/*"):
+            cleaned.append(
+                line[2:-2].strip() if line.endswith("*/") else line.strip()
+            )
         else:
             cleaned.append(line.strip())
     return "\n".join(cleaned) if cleaned else None
@@ -334,9 +357,6 @@ def _collect_go_type_ids(node: Node, source: bytes, out: list[str]) -> None:
         name = node_text(node, source)
         if name not in _GO_BUILTIN_TYPES:
             out.append(name)
-        return
-    # Don't recurse into function bodies
-    if node.type == "block":
         return
     for child in node.children:
         _collect_go_type_ids(child, source, out)
