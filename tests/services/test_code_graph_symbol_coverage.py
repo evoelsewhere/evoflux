@@ -93,7 +93,10 @@ export function Card({ title, onSave }: Props) {
 
 
 def test_same_line_union_members_keep_unique_stable_local_ids() -> None:
-    source = b"type Row = { type: 'header' } | { type: 'command' };"
+    source = (
+        b"type Row = { type: 'header' } | { type: 'command' }"
+        b" | { type: 'separator' };"
+    )
 
     result = TypeScriptParser().parse(file_path="rows.ts", source=source)
     row_types = [
@@ -102,11 +105,16 @@ def test_same_line_union_members_keep_unique_stable_local_ids() -> None:
         if node.qualified_name == "Row.type"
     ]
 
-    assert len(row_types) == 2
+    assert [node.local_id for node in row_types] == [
+        "Row.type#1",
+        "Row.type#1:2",
+        "Row.type#1:3",
+    ]
     assert len({node.local_id for node in result.nodes}) == len(result.nodes)
     assert {node.signature for node in row_types} == {
         "type: 'header'",
         "type: 'command'",
+        "type: 'separator'",
     }
 
 

@@ -44,8 +44,10 @@ def test_ui_search_uses_fts_prefixes_for_partial_symbol_names() -> None:
     assert _fts_query("payment service") == '"payment"* OR "service"*'
 
 
-def test_processing_identity_tracks_shared_leaf_extraction(
+@pytest.mark.parametrize("dependency_name", ["base.py", "symbol_leaves.py"])
+def test_processing_identity_tracks_shared_parser_dependencies(
     monkeypatch: pytest.MonkeyPatch,
+    dependency_name: str,
 ) -> None:
     _processing_identity.cache_clear()
     baseline = processing_identity("component.ts")
@@ -53,7 +55,7 @@ def test_processing_identity_tracks_shared_leaf_extraction(
 
     def changed_dependency(path: Path) -> bytes:
         content = original_read_bytes(path)
-        if path.name == "symbol_leaves.py":
+        if path.name == dependency_name:
             return content + b"\n# synthetic parser change\n"
         return content
 

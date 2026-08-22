@@ -43,7 +43,7 @@ class RustParser(TreeSitterParser):
         if ntype == "mod_item":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_MODULE, name=name, is_class=False)
+                return Definition(kind=NODE_MODULE, name=name)
         elif ntype == "struct_item":
             name = self._name(node, source)
             if name:
@@ -73,25 +73,25 @@ class RustParser(TreeSitterParser):
             # type alias: type Foo = Bar;
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=False)
+                return Definition(kind=NODE_CLASS, name=name)
         elif ntype == "function_item":
             name = self._name(node, source)
             if name:
                 kind = NODE_METHOD if inside_class else NODE_FUNCTION
-                return Definition(kind=kind, name=name, is_class=False)
+                return Definition(kind=kind, name=name)
         elif ntype == "function_signature_item":
             # Trait method declarations
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_METHOD, name=name, is_class=False)
+                return Definition(kind=NODE_METHOD, name=name)
         elif ntype == "const_item":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_VARIABLE, name=name, is_class=False)
+                return Definition(kind=NODE_VARIABLE, name=name)
         elif ntype == "static_item":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_VARIABLE, name=name, is_class=False)
+                return Definition(kind=NODE_VARIABLE, name=name)
         return None
 
     def call_target(self, node: Node, source: bytes) -> str | None:
@@ -100,29 +100,12 @@ class RustParser(TreeSitterParser):
             func = node.child_by_field_name("function")
             if func is None:
                 return None
-            if func.type == "identifier":
-                return node_text(func, source)
-            if func.type == "scoped_identifier":
-                # Type::method() or module::func()
-                path_node = func.child_by_field_name("path")
-                name_node = func.child_by_field_name("name")
-                if name_node is not None:
-                    name = node_text(name_node, source)
-                    if path_node is not None and path_node.type in (
-                        "identifier",
-                        "type_identifier",
-                    ):
-                        return f"{node_text(path_node, source)}.{name}"
-                    return name
+            static_name = _rust_value_name(func, source)
+            if static_name is not None:
+                return static_name
             if func.type == "field_expression":
-                value = func.child_by_field_name("value")
                 field = func.child_by_field_name("field")
-                if field is None:
-                    return None
-                field_name = node_text(field, source)
-                if value is not None and value.type == "identifier":
-                    return f"{node_text(value, source)}.{field_name}"
-                return field_name
+                return node_text(field, source) if field is not None else None
         elif ntype == "macro_invocation":
             # println!(...), vec![...] — the macro name is the "macro" field
             macro = node.child_by_field_name("macro")
@@ -133,22 +116,17 @@ class RustParser(TreeSitterParser):
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
         if node.type != "impl_item":
             return []
-        # `impl Trait for Type` — emit "Type implements Trait"
-        # The trait is the first type_identifier before `for` keyword
-        trait_name: str | None = None
-        saw_for = False
-        for child in node.children:
-            if child.type == "for":
-                saw_for = True
-                continue
-            if not saw_for and child.type in (
-                "type_identifier",
-                "scoped_type_identifier",
-            ):
-                trait_name = _type_name(child, source)
-        if trait_name and saw_for:
-            return [SuperType(name=trait_name, edge_kind=EDGE_IMPLEMENTS)]
-        return []
+        # The grammar exposes the implemented trait separately from the target
+        # type for simple, scoped, and generic `impl Trait for Type` blocks.
+        trait = node.child_by_field_name("trait")
+        if trait is None:
+            return []
+        trait_name = _type_name(trait, source)
+        return (
+            [SuperType(name=trait_name, edge_kind=EDGE_IMPLEMENTS)]
+            if trait_name
+            else []
+        )
 
     def docstring(self, node: Node, source: bytes) -> str | None:
         return _preceding_doc_comments(node, source)
@@ -162,18 +140,19 @@ class RustParser(TreeSitterParser):
                 # use std::io::Result;
                 name_node = child.child_by_field_name("name")
                 path_node = child.child_by_field_name("path")
-                if name_node is not None:
-                    module_path = node_text(path_node, source) if path_node else ""
+                if name_node is not None and path_node is not None:
                     out.append(
                         ImportRef(
                             name=node_text(name_node, source),
-                            module_path=module_path,
+                            module_path=node_text(path_node, source),
                         )
                     )
             elif child.type == "scoped_use_list":
                 # use crate::models::{User, Post};
                 path_node = child.child_by_field_name("path")
-                module_path = node_text(path_node, source) if path_node else ""
+                if path_node is None:
+                    continue
+                module_path = node_text(path_node, source)
                 for sub in child.children:
                     if sub.type == "use_list":
                         out.extend(_rust_use_list(sub, source, module_path))
@@ -208,7 +187,7 @@ class RustParser(TreeSitterParser):
         while prev is not None and prev.type == "attribute_item":
             name = _rust_attr_name(prev, source)
             if name:
-                out.append(name)
+                out.insert(0, name)
             prev = prev.prev_named_sibling
         return out
 
@@ -219,10 +198,23 @@ class RustParser(TreeSitterParser):
             "field_declaration",
             "enum_variant",
             "associated_type",
+            "type_item",
+            "const_item",
+            "static_item",
         }:
             return []
         out: list[str] = []
-        if node.type in {"field_declaration", "enum_variant", "associated_type"}:
+        if node.type in {"type_item", "const_item", "static_item"}:
+            type_node = node.child_by_field_name("type")
+            if type_node is not None:
+                _collect_rust_type_ids(type_node, source, out)
+            return list(dict.fromkeys(out))
+        if node.type == "associated_type":
+            bounds = node.child_by_field_name("bounds")
+            if bounds is not None:
+                _collect_rust_type_ids(bounds, source, out)
+            return list(dict.fromkeys(out))
+        if node.type in {"field_declaration", "enum_variant"}:
             _collect_rust_type_ids(node, source, out)
             return list(dict.fromkeys(out))
         params = node.child_by_field_name("parameters")
@@ -283,29 +275,6 @@ def _collect_rust_type_ids(node: Node, source: bytes, out: list[str]) -> None:
         if name not in _RUST_BUILTIN_TYPES:
             out.append(name)
         return
-    if node.type == "scoped_type_identifier":
-        name_node = node.child_by_field_name("name")
-        if name_node is not None:
-            name = node_text(name_node, source)
-            if name not in _RUST_BUILTIN_TYPES:
-                out.append(name)
-        return
-    if node.type == "generic_type":
-        for child in node.children:
-            _collect_rust_type_ids(child, source, out)
-        return
-    if node.type in {
-        "function_type",
-        "tuple_type",
-        "array_type",
-        "pointer_type",
-        "reference_type",
-        "optional_type",
-        "never_type",
-    }:
-        for child in node.children:
-            _collect_rust_type_ids(child, source, out)
-        return
     for child in node.children:
         _collect_rust_type_ids(child, source, out)
 
@@ -321,6 +290,31 @@ def _type_name(node: Node, source: bytes) -> str | None:
         # Generic<T> → extract the base type
         type_node = node.child_by_field_name("type")
         return _type_name(type_node, source) if type_node is not None else None
+    return None
+
+
+def _rust_value_name(node: Node, source: bytes) -> str | None:
+    """Return a static Rust path/field chain using graph qualification dots."""
+    if node.type in {"identifier", "crate", "self", "super"}:
+        return node_text(node, source)
+    if node.type == "scoped_identifier":
+        path = node.child_by_field_name("path")
+        name = node.child_by_field_name("name")
+        if path is None:
+            return None
+        if name is None:
+            return None
+        owner = _rust_value_name(path, source)
+        return f"{owner}.{node_text(name, source)}" if owner else None
+    if node.type == "field_expression":
+        value = node.child_by_field_name("value")
+        field = node.child_by_field_name("field")
+        if value is None:
+            return None
+        if field is None:
+            return None
+        owner = _rust_value_name(value, source)
+        return f"{owner}.{node_text(field, source)}" if owner else None
     return None
 
 
@@ -359,16 +353,30 @@ def _rust_use_list(use_list: Node, source: bytes, module_path: str) -> list[Impo
 
 
 def _preceding_doc_comments(node: Node, source: bytes) -> str | None:
-    """Extract Rust /// or //! doc comments preceding a node."""
+    """Extract Rust line/block doc comments attached across attributes."""
     prev = node.prev_named_sibling
+    while prev is not None and prev.type == "attribute_item":
+        prev = prev.prev_named_sibling
     if prev is None:
         return None
     lines: list[str] = []
     cur = prev
-    while cur is not None and cur.type == "line_comment":
+    while cur is not None and cur.type in {"line_comment", "block_comment"}:
         text = node_text(cur, source)
         if text.startswith("///") or text.startswith("//!"):
             lines.append(text[3:].strip())
+        elif (
+            (text.startswith("/**") or text.startswith("/*!"))
+            and text.endswith("*/")
+        ):
+            body = text[3:-2]
+            cleaned = []
+            for line in body.splitlines():
+                value = line.strip()
+                if value.startswith("*"):
+                    value = value[1:].strip()
+                cleaned.append(value)
+            lines.append("\n".join(cleaned).strip())
         else:
             break
         cur = cur.prev_named_sibling
