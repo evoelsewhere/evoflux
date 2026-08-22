@@ -106,6 +106,7 @@ source_paths = ["app"]
 only_mutate = [
     "app/services/code_index/parsers/base.py",
     "app/services/code_index/parsers/ecmascript.py",
+    "app/services/code_index/parsers/python.py",
     "app/services/code_index/parsers/rust.py",
     "app/services/code_index/parsers/symbol_leaves.py",
 ]
@@ -114,6 +115,7 @@ pytest_add_cli_args_test_selection = [
     "tests/services/test_code_graph_base_contract.py",
     "tests/services/test_code_graph_decorators.py",
     "tests/services/test_code_graph_ecmascript_contract.py",
+    "tests/services/test_code_graph_python_contract.py",
     "tests/services/test_code_graph_rust_contract.py",
     "tests/services/test_code_graph_symbol_coverage.py",
     "tests/services/test_code_graph_variables.py",

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
 from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_index.parsers.base import (
@@ -14,6 +16,7 @@ from app.services.code_index.parsers.base import (
 from app.services.code_index.graph_types import (
     EDGE_INHERITS,
     NODE_CLASS,
+    NODE_FIELD,
     NODE_FUNCTION,
     NODE_METHOD,
     NODE_VARIABLE,
@@ -79,11 +82,13 @@ class PythonParser(TreeSitterParser):
             name = self._name(node, source)
             if name:
                 kind = NODE_METHOD if inside_class else NODE_FUNCTION
-                return Definition(kind=kind, name=name, is_class=False)
-        elif node.type == "assignment" and not inside_class:
-            return self._module_level_assignment(node, source)
-        elif node.type == "typed_assignment" and not inside_class:
-            return self._module_level_typed_assignment(node, source)
+                return Definition(kind=kind, name=name)
+        elif node.type == "assignment":
+            return (
+                self._class_level_assignment(node, source)
+                if inside_class
+                else self._module_level_assignment(node, source)
+            )
         return None
 
     def call_target(self, node: Node, source: bytes) -> str | None:
@@ -96,15 +101,11 @@ class PythonParser(TreeSitterParser):
             target = node_text(func, source)
             return None if target in _BUILTIN_CALLS else target
         if func.type == "attribute":
-            obj = func.child_by_field_name("object")
             attr = func.child_by_field_name("attribute")
             if attr is None:
                 return None
-            attr_name = node_text(attr, source)
-            # Emit "Object.method" for qualified resolution
-            if obj is not None and obj.type == "identifier":
-                return f"{node_text(obj, source)}.{attr_name}"
-            return attr_name
+            qualified = _qualified_value_name(func, source)
+            return qualified or node_text(attr, source)
         return None
 
     def reference_targets(self, node: Node, source: bytes) -> list[str]:
@@ -136,37 +137,19 @@ class PythonParser(TreeSitterParser):
             return []
         out: list[SuperType] = []
         for child in supers.children:
-            if child.type == "identifier":
-                out.append(
-                    SuperType(name=node_text(child, source), edge_kind=EDGE_INHERITS)
-                )
-            elif child.type == "attribute":
-                attr = child.child_by_field_name("attribute")
-                if attr is not None:
-                    out.append(
-                        SuperType(name=node_text(attr, source), edge_kind=EDGE_INHERITS)
-                    )
+            name = _python_type_name(child, source)
+            if name is not None:
+                out.append(SuperType(name=name, edge_kind=EDGE_INHERITS))
         return out
 
     def docstring(self, node: Node, source: bytes) -> str | None:
         body = node.child_by_field_name("body")
         if body is None:
             return None
-        for child in body.children:
-            # A class/module body exposes the docstring as a bare ``string``;
-            # a function body wraps it in an ``expression_statement``.
-            if child.type == "string":
-                return _strip_py_string(node_text(child, source))
-            if child.type == "expression_statement":
-                inner = child.children[0] if child.children else None
-                if inner is not None and inner.type == "string":
-                    return _strip_py_string(node_text(inner, source))
-                break
-            if child.type == "comment":
-                continue
-            # Only the first statement can be a docstring.
-            break
-        return None
+        first = next(iter(body.children), None)
+        if first is None or first.type != "string":
+            return None
+        return _strip_py_string(node_text(first, source))
 
     def _name(self, node: Node, source: bytes) -> str | None:
         name = node.child_by_field_name("name")
@@ -186,6 +169,13 @@ class PythonParser(TreeSitterParser):
         return out
 
     def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type == "assignment":
+            type_node = node.child_by_field_name("type")
+            if type_node is None:
+                return []
+            out: list[str] = []
+            _collect_type_identifiers(type_node, source, out)
+            return list(dict.fromkeys(out))
         if node.type != "function_definition":
             return []
         out: list[str] = []
@@ -201,41 +191,42 @@ class PythonParser(TreeSitterParser):
         ret = node.child_by_field_name("return_type")
         if ret is not None:
             _collect_type_identifiers(ret, source, out)
-        return out
+        return list(dict.fromkeys(out))
+
+    def _class_level_assignment(
+        self, node: Node, source: bytes
+    ) -> Definition | None:
+        parent = node.parent
+        if parent is None or parent.type != "block":
+            return None
+        if parent.parent is None or parent.parent.type != "class_definition":
+            return None
+        left = node.child_by_field_name("left")
+        if left is None:
+            return None
+        if left.type != "identifier":
+            return None
+        name = node_text(left, source)
+        if name.startswith("__") and name.endswith("__"):
+            return None
+        return Definition(kind=NODE_FIELD, name=name)
 
     def _module_level_assignment(self, node: Node, source: bytes) -> Definition | None:
         """Capture `NAME = value` at module level (not inside functions)."""
-        # Only capture if parent is module (top-level) or expression_statement
-        # whose parent is module.
         parent = node.parent
-        if parent is not None and parent.type == "expression_statement":
-            parent = parent.parent
         if parent is None or parent.type != "module":
             return None
         # LHS must be a simple identifier (not self.x, not tuple unpacking)
         left = node.child_by_field_name("left")
-        if left is None or left.type != "identifier":
+        if left is None:
+            return None
+        if left.type != "identifier":
             return None
         name = node_text(left, source)
         # Skip dunder assignments and private internals
         if name.startswith("__") and name.endswith("__"):
             return None
-        return Definition(kind=NODE_VARIABLE, name=name, is_class=False)
-
-    def _module_level_typed_assignment(
-        self, node: Node, source: bytes
-    ) -> Definition | None:
-        """Capture `NAME: type = value` at module level."""
-        parent = node.parent
-        if parent is not None and parent.type != "module":
-            return None
-        left = node.child_by_field_name("left")
-        if left is None or left.type != "identifier":
-            return None
-        name = node_text(left, source)
-        if name.startswith("__") and name.endswith("__"):
-            return None
-        return Definition(kind=NODE_VARIABLE, name=name, is_class=False)
+        return Definition(kind=NODE_VARIABLE, name=name)
 
     def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
         ntype = node.type
@@ -252,13 +243,8 @@ class PythonParser(TreeSitterParser):
             return []
         module_path = node_text(module_node, source)
         out: list[ImportRef] = []
-        # Iterate children to find imported names (multiple possible)
-        past_import_kw = False
-        for child in node.children:
-            if child.type == "import":
-                past_import_kw = True
-                continue
-            if not past_import_kw:
+        for child in node.named_children:
+            if child.end_byte <= module_node.end_byte:
                 continue
             if child.type == "dotted_name":
                 out.append(
@@ -310,17 +296,27 @@ class PythonParser(TreeSitterParser):
         return out
 
 
-def _strip_py_string(text: str) -> str:
-    """Strip quotes/prefixes from a Python string literal, best effort."""
-    s = text.strip()
-    # Drop string prefixes (r, b, f, u and combinations).
-    while s and s[0] in "rRbBuUfF":
-        s = s[1:]
-    for quote in ('"""', "'''", '"', "'"):
-        if s.startswith(quote) and s.endswith(quote) and len(s) >= 2 * len(quote):
-            s = s[len(quote) : len(s) - len(quote)]
-            break
-    return s.strip()
+def _strip_py_string(text: str) -> str | None:
+    """Return Python's semantic string value, normalized like a docstring."""
+    try:
+        value = ast.literal_eval(text)
+    except (SyntaxError, ValueError):
+        return None
+    if not isinstance(value, str):
+        return None
+    return inspect.cleandoc(value)
+
+
+def _python_type_name(node: Node, source: bytes) -> str | None:
+    if node.type == "identifier":
+        return node_text(node, source)
+    if node.type == "attribute":
+        attr = node.child_by_field_name("attribute")
+        return node_text(attr, source) if attr is not None else None
+    if node.type == "subscript":
+        value = node.child_by_field_name("value")
+        return _python_type_name(value, source) if value is not None else None
+    return None
 
 
 def _qualified_value_name(node: Node, source: bytes) -> str | None:

@@ -391,6 +391,7 @@ def test_reference_identifier_rejects_syntax_owners_at_any_depth() -> None:
     )
     assert not _is_reference(_under("annotation", "wrapper", "module"))
     assert not _is_reference(_under("attribute_item", "source_file"))
+    assert not _is_reference(_under("lambda_parameters", "lambda"))
     assert not _is_reference(
         _under("dotted_name", "aliased_import", "import_statement", "module")
     )
@@ -400,8 +401,6 @@ def test_reference_identifier_rejects_syntax_owners_at_any_depth() -> None:
     assert not _is_reference(
         _under("qualified_name", "using_directive", "compilation_unit")
     )
-    assert not _is_reference(_under("typed_parameter", "parameters"))
-
     for field_name in ("name", "declarator", "pattern", "alias"):
         identifier = _under("declaration", "module")
         owner = identifier.parent
