@@ -25,7 +25,11 @@ from app.services.code_index.chunking import (
     MIN_CHUNK_CHARS,
     split_source,
 )
-from app.services.code_index.pipeline import SymbolRow
+from app.services.code_index.pipeline import (
+    SymbolRow,
+    _processing_identity,
+    processing_identity,
+)
 
 
 @pytest.fixture
@@ -38,6 +42,27 @@ def isolated_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_ui_search_uses_fts_prefixes_for_partial_symbol_names() -> None:
     assert _fts_query("settle_pay") == '"settle_pay"*'
     assert _fts_query("payment service") == '"payment"* OR "service"*'
+
+
+def test_processing_identity_tracks_shared_leaf_extraction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _processing_identity.cache_clear()
+    baseline = processing_identity("component.ts")
+    original_read_bytes = Path.read_bytes
+
+    def changed_dependency(path: Path) -> bytes:
+        content = original_read_bytes(path)
+        if path.name == "symbol_leaves.py":
+            return content + b"\n# synthetic parser change\n"
+        return content
+
+    monkeypatch.setattr(Path, "read_bytes", changed_dependency)
+    _processing_identity.cache_clear()
+    changed = processing_identity("component.ts")
+    _processing_identity.cache_clear()
+
+    assert changed != baseline
 
 
 @pytest.mark.asyncio

@@ -270,6 +270,9 @@ export function RepoGraphSpatial({
       rankedLabelIds: new Set(rankedLabels),
     }
   }, [darkMode, data.edges, data.nodes, enabledKinds, hiddenRepoIds, query, selectedId])
+  const visibleSymbolCount = graph.layoutNodes.length - graph.repositories.length
+  const graphIsSampled =
+    visibleSymbolCount < data.totalNodeCount || graph.edges.length < data.totalEdgeCount
 
   useEffect(() => {
     const container = containerRef.current
@@ -537,8 +540,17 @@ export function RepoGraphSpatial({
           <span className="h-1.5 w-1.5 rounded-full bg-(--accent-purple) shadow-[0_0_8px_currentColor]" />
           {selectedId ? 'Focused neighborhood' : query ? `${graph.matchIds.size} matches` : 'Code constellation'}
           <span className="text-(--color-border-strong)">|</span>
-          <span className="font-mono text-(--color-text)">{graph.layoutNodes.length.toLocaleString(getIntlLocale())} nodes</span>
-          <span className="font-mono text-(--color-text-subtle)">{graph.edges.length.toLocaleString(getIntlLocale())} edges</span>
+          <span className="font-mono text-(--color-text)">
+            {visibleSymbolCount.toLocaleString(getIntlLocale())}/{data.totalNodeCount.toLocaleString(getIntlLocale())} symbols
+          </span>
+          <span className="font-mono text-(--color-text-subtle)">
+            {graph.edges.length.toLocaleString(getIntlLocale())}/{data.totalEdgeCount.toLocaleString(getIntlLocale())} relations
+          </span>
+          {graphIsSampled && (
+            <span className="rounded bg-(--bg-key) px-1 py-0.5 font-medium text-(--color-text-subtle)" title="The explorer renders a bounded sample; overview totals remain authoritative.">
+              sampled
+            </span>
+          )}
         </div>
         <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-md border border-(--color-border) bg-(--bg-card)/85 p-1 shadow-lg backdrop-blur-md">
           <button

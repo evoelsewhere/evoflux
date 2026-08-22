@@ -26,6 +26,9 @@ from app.services.code_index.graph_types import (
     NODE_NAMESPACE,
     NODE_VARIABLE,
 )
+from app.services.code_index.parsers.symbol_leaves import (
+    ecmascript_leaf_definition,
+)
 
 if TYPE_CHECKING:
     from tree_sitter import Node
@@ -39,6 +42,9 @@ class EcmaScriptParser(TreeSitterParser):
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool
     ) -> Definition | None:
+        leaf = ecmascript_leaf_definition(node, source)
+        if leaf is not None:
+            return leaf
         ntype = node.type
         if ntype == "internal_module":
             name = self._name(node, source)
@@ -411,6 +417,10 @@ class EcmaScriptParser(TreeSitterParser):
             "generator_function_declaration",
             "function_signature",
             "method_definition",
+            "method_signature",
+            "abstract_method_signature",
+            "property_signature",
+            "public_field_definition",
         }:
             return []
         out: list[str] = []

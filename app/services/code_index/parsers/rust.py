@@ -22,6 +22,7 @@ from app.services.code_index.graph_types import (
     NODE_STRUCT,
     NODE_VARIABLE,
 )
+from app.services.code_index.parsers.symbol_leaves import rust_leaf_definition
 
 if TYPE_CHECKING:
     from tree_sitter import Node
@@ -35,6 +36,9 @@ class RustParser(TreeSitterParser):
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool
     ) -> Definition | None:
+        leaf = rust_leaf_definition(node, source)
+        if leaf is not None:
+            return leaf
         ntype = node.type
         if ntype == "mod_item":
             name = self._name(node, source)
@@ -209,9 +213,18 @@ class RustParser(TreeSitterParser):
         return out
 
     def type_refs(self, node: Node, source: bytes) -> list[str]:
-        if node.type not in {"function_item", "function_signature_item"}:
+        if node.type not in {
+            "function_item",
+            "function_signature_item",
+            "field_declaration",
+            "enum_variant",
+            "associated_type",
+        }:
             return []
         out: list[str] = []
+        if node.type in {"field_declaration", "enum_variant", "associated_type"}:
+            _collect_rust_type_ids(node, source, out)
+            return list(dict.fromkeys(out))
         params = node.child_by_field_name("parameters")
         if params is not None:
             _collect_rust_type_ids(params, source, out)
