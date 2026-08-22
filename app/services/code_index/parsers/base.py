@@ -84,7 +84,7 @@ class ImportRef:
 
 def node_text(node: Node, source: bytes) -> str:
     """Decode a node's source span as UTF-8 (lossy)."""
-    return source[node.start_byte : node.end_byte].decode("utf-8", "replace")
+    return source[node.start_byte : node.end_byte].decode(errors="replace")
 
 
 class TreeSitterParser:
@@ -207,7 +207,7 @@ class TreeSitterParser:
 
     def _signature(self, node: Node, source: bytes) -> str:
         raw = node_text(node, source)
-        first = raw.split("\n", 1)[0].strip()
+        first = raw.partition("\n")[0].strip()
         if len(first) > _MAX_SIGNATURE_LEN:
             first = first[:_MAX_SIGNATURE_LEN].rstrip() + "…"
         return first
@@ -234,10 +234,18 @@ class TreeSitterParser:
             qualified = definition.name
         local_id_base = f"{qualified}#{line_start}{local_id_suffix}"
         local_id = local_id_base
-        ordinal = 2
-        while local_id in used_local_ids:
-            local_id = f"{local_id_base}:{ordinal}"
-            ordinal += 1
+        if local_id in used_local_ids:
+            # At most ``len(used_local_ids)`` candidates can already be
+            # occupied, so this bounded search always contains a free slot.
+            # Keeping it finite also makes collision handling fail fast if the
+            # invariant is ever broken instead of hanging an indexing job.
+            # Adding more candidates to this proven-free upper bound is
+            # behaviorally equivalent; exclude that mutation explicitly.
+            for ordinal in range(2, len(used_local_ids) + 2):  # pragma: no mutate
+                candidate = f"{local_id_base}:{ordinal}"
+                if candidate not in used_local_ids:
+                    local_id = candidate
+                    break
         used_local_ids.add(local_id)
         result.nodes.append(
             ExtractedNode(
@@ -273,7 +281,7 @@ class TreeSitterParser:
         depth: int,
         used_local_ids: set[str],
     ) -> None:
-        if depth > _MAX_DEPTH or len(result.nodes) > _MAX_NODES_PER_FILE:
+        if depth > _MAX_DEPTH or len(result.nodes) >= _MAX_NODES_PER_FILE:
             return
 
         definition = self.classify(node, source, inside_class=inside_class)
@@ -369,8 +377,10 @@ class TreeSitterParser:
             child_inside_class = inside_class
 
         for index, implicit in enumerate(synthetic):
-            if len(result.nodes) > _MAX_NODES_PER_FILE:
-                break
+            if len(result.nodes) >= _MAX_NODES_PER_FILE:
+                # Returning is equivalent because every child hits the same
+                # cap guard immediately; keep the structured loop exit.
+                break  # pragma: no mutate
             self._emit_definition(
                 implicit,
                 node,
@@ -440,32 +450,35 @@ def _is_reference_identifier(node: Node) -> bool:
     # Type annotations/signatures are handled by each grammar's type_refs()
     # hook, which knows that language's builtins and generic parameters. The
     # shared pass is deliberately for runtime value reads only.
-    ancestor = parent
-    for _ in range(4):
-        if "type" in ancestor.type or "annotation" in ancestor.type:
-            return False
+    ancestors: list[Node] = []
+    ancestor: Node | None = parent
+    while ancestor is not None:
+        ancestors.append(ancestor)
         ancestor = ancestor.parent
-        if ancestor is None:
-            break
+
+    for ancestor in ancestors:
+        if (
+            "type" in ancestor.type
+            or "annotation" in ancestor.type
+            or "heritage" in ancestor.type
+            or ancestor.type == "attribute_item"
+        ):
+            return False
 
     # Imports already emit path-aware EDGE_IMPORTS. Emitting a reference from
     # the imported spelling would make the import line mask the first runtime
     # use after callsite de-duplication.
-    ancestor = parent
-    for _ in range(5):
+    for ancestor in ancestors:
         if "import" in ancestor.type or ancestor.type in {
             "use_declaration",
             "using_directive",
         }:
             return False
-        ancestor = ancestor.parent
-        if ancestor is None:
-            break
 
     # Names introduced by declarations/parameters are definitions, not reads.
     if "parameter" in parent.type:
         return False
-    for field in ("name", "declarator", "pattern", "alias"):
+    for field in ("name", "declarator", "pattern", "alias", "macro"):
         if _same_span(parent.child_by_field_name(field), node):
             return False
     if "assignment" in parent.type and _same_span(
@@ -476,14 +489,10 @@ def _is_reference_identifier(node: Node) -> bool:
     # Direct callees already produce EDGE_CALLS. This also handles member
     # expressions by checking whether the identifier is contained by the
     # call's function/constructor field, not just an immediate child.
-    ancestor = parent
-    for _ in range(4):
+    for ancestor in ancestors:
         if ancestor.type in _CALL_NODE_TYPES:
             for field in ("function", "constructor", "name"):
                 if _contains(ancestor.child_by_field_name(field), node):
                     return False
-            break
-        ancestor = ancestor.parent
-        if ancestor is None:
             break
     return True

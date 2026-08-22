@@ -6,9 +6,11 @@ the subclasses only differ in ``grammar`` and ``extensions``.
 
 from __future__ import annotations
 
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_index.parsers.base import (
+    _MAX_SIGNATURE_LEN,
     Definition,
     ImportRef,
     SuperType,
@@ -49,7 +51,7 @@ class EcmaScriptParser(TreeSitterParser):
         if ntype == "internal_module":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_NAMESPACE, name=name, is_class=False)
+                return Definition(kind=NODE_NAMESPACE, name=name)
         elif ntype in {"class_declaration", "abstract_class_declaration"}:
             name = self._name(node, source)
             if name:
@@ -57,11 +59,11 @@ class EcmaScriptParser(TreeSitterParser):
         elif ntype == "interface_declaration":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_INTERFACE, name=name, is_class=False)
+                return Definition(kind=NODE_INTERFACE, name=name)
         elif ntype == "type_alias_declaration":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=False)
+                return Definition(kind=NODE_CLASS, name=name)
         elif ntype == "enum_declaration":
             name = self._name(node, source)
             if name:
@@ -73,11 +75,11 @@ class EcmaScriptParser(TreeSitterParser):
         }:
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_FUNCTION, name=name, is_class=False)
+                return Definition(kind=NODE_FUNCTION, name=name)
         elif ntype == "method_definition":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_METHOD, name=name, is_class=False)
+                return Definition(kind=NODE_METHOD, name=name)
         elif ntype == "pair":
             # Object-literal property holding a function value, e.g.
             # `{ bar: function() {}, baz: () => {} }`. Unlike shorthand
@@ -88,7 +90,7 @@ class EcmaScriptParser(TreeSitterParser):
                 key = node.child_by_field_name("key")
                 name = self._property_name(key, source) if key is not None else None
                 if name:
-                    return Definition(kind=NODE_METHOD, name=name, is_class=False)
+                    return Definition(kind=NODE_METHOD, name=name)
         elif ntype == "assignment_expression":
             # Prototype/instance method assignment, e.g.
             # `Obj.prototype.foo = function() {}` or `this.foo = () => {}`.
@@ -102,10 +104,18 @@ class EcmaScriptParser(TreeSitterParser):
             ):
                 prop = left.child_by_field_name("property")
                 if prop is not None and prop.type == "property_identifier":
+                    owner = left.child_by_field_name("object")
+                    owner_name = (
+                        _static_value_name(owner, source) if owner is not None else None
+                    )
+                    if owner_name and owner_name.endswith(".prototype"):
+                        owner_name = owner_name.removesuffix(".prototype")
+                    elif owner_name == "this":
+                        owner_name = _enclosing_class_name(node, source)
                     return Definition(
                         kind=NODE_METHOD,
                         name=node_text(prop, source),
-                        is_class=False,
+                        prefix=f"{owner_name}." if owner_name else None,
                     )
         elif ntype == "variable_declarator":
             value = node.child_by_field_name("value")
@@ -121,7 +131,6 @@ class EcmaScriptParser(TreeSitterParser):
                     return Definition(
                         kind=NODE_FUNCTION,
                         name=node_text(name_node, source),
-                        is_class=False,
                     )
             elif not inside_class and self._is_top_level_var(node):
                 name_node = node.child_by_field_name("name")
@@ -129,7 +138,6 @@ class EcmaScriptParser(TreeSitterParser):
                     return Definition(
                         kind=NODE_VARIABLE,
                         name=node_text(name_node, source),
-                        is_class=False,
                     )
         return None
 
@@ -144,8 +152,6 @@ class EcmaScriptParser(TreeSitterParser):
             arguments
             and any(
                 child.type in _FUNCTION_VALUE_TYPES
-                and (body := child.child_by_field_name("body")) is not None
-                and body.type == "statement_block"
                 for child in arguments.named_children
             )
         )
@@ -171,12 +177,12 @@ class EcmaScriptParser(TreeSitterParser):
             if arguments is None:
                 return []
             return [
-                node_text(child, source)
+                name
                 for child in arguments.named_children
-                if child.type == "identifier"
+                if (name := _static_value_name(child, source)) is not None
             ]
         if node.type == "jsx_attribute":
-            value = node.child_by_field_name("value") or next(
+            value = next(
                 (
                     child
                     for child in node.named_children
@@ -187,16 +193,23 @@ class EcmaScriptParser(TreeSitterParser):
             if value is None:
                 return []
             return [
-                node_text(child, source)
+                name
                 for child in value.named_children
-                if child.type == "identifier"
+                if (name := _static_value_name(child, source)) is not None
             ]
         if node.type in {"jsx_opening_element", "jsx_self_closing_element"}:
             component = next(
-                (child for child in node.named_children if child.type == "identifier"),
+                (
+                    child
+                    for child in node.named_children
+                    if child.type in {"identifier", "member_expression"}
+                ),
                 None,
             )
-            return [node_text(component, source)] if component is not None else []
+            if component is None:
+                return []
+            name = _static_value_name(component, source)
+            return [name] if name is not None else []
         return []
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
@@ -207,16 +220,16 @@ class EcmaScriptParser(TreeSitterParser):
             elif child.type == "extends_type_clause":
                 # interface ... extends A, B
                 for ident in child.children:
-                    if ident.type in {"type_identifier", "identifier"}:
+                    name = self._type_name(ident, source)
+                    if name:
                         out.append(
-                            SuperType(
-                                name=node_text(ident, source), edge_kind=EDGE_INHERITS
-                            )
+                            SuperType(name=name, edge_kind=EDGE_INHERITS)
                         )
         return out
 
     def _heritage(self, heritage: Node, source: bytes) -> list[SuperType]:
         out: list[SuperType] = []
+        direct_edge_kind: str | None = None
         for clause in heritage.children:
             if clause.type == "extends_clause":
                 for ident in clause.children:
@@ -228,30 +241,36 @@ class EcmaScriptParser(TreeSitterParser):
                     name = self._type_name(ident, source)
                     if name:
                         out.append(SuperType(name=name, edge_kind=EDGE_IMPLEMENTS))
+            elif clause.type == "extends":
+                # The JavaScript grammar puts the keyword and identifier
+                # directly under class_heritage instead of an extends_clause.
+                direct_edge_kind = EDGE_INHERITS
+            elif direct_edge_kind is not None:
+                name = self._type_name(clause, source)
+                if name:
+                    out.append(SuperType(name=name, edge_kind=direct_edge_kind))
         return out
 
     def _type_name(self, node: Node, source: bytes) -> str | None:
         if node.type in {"identifier", "type_identifier"}:
             return node_text(node, source)
+        if node.type in {"nested_type_identifier", "generic_type"}:
+            name = node.child_by_field_name("name")
+            if name is not None:
+                return node_text(name, source)
         if node.type == "member_expression":
             prop = node.child_by_field_name("property")
             return node_text(prop, source) if prop is not None else None
         return None
 
     def _callee_name(self, func: Node, source: bytes) -> str | None:
-        if func.type == "identifier":
-            return node_text(func, source)
-        if func.type == "member_expression":
-            obj = func.child_by_field_name("object")
-            prop = func.child_by_field_name("property")
-            if prop is None:
-                return None
-            prop_name = node_text(prop, source)
-            # Emit "Object.method" for qualified resolution
-            if obj is not None and obj.type in {"identifier", "this"}:
-                return f"{node_text(obj, source)}.{prop_name}"
-            return prop_name
-        return None
+        static_name = _static_value_name(func, source)
+        if static_name is not None:
+            return static_name
+        if func.type != "member_expression":
+            return None
+        prop = func.child_by_field_name("property")
+        return node_text(prop, source) if prop is not None else None
 
     def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
         if node.type == "export_statement":
@@ -411,7 +430,28 @@ class EcmaScriptParser(TreeSitterParser):
                 prev = prev.prev_named_sibling
         return out
 
+    def _signature(self, node: Node, source: bytes) -> str:
+        decorators = [child for child in node.children if child.type == "decorator"]
+        if not decorators:
+            return super()._signature(node, source)
+        start = max(child.end_byte for child in decorators)
+        first = source[start : node.end_byte].decode(errors="replace")
+        first = first.lstrip().partition("\n")[0].strip()
+        if len(first) > _MAX_SIGNATURE_LEN:
+            first = first[:_MAX_SIGNATURE_LEN].rstrip() + "…"
+        return first
+
+    def docstring(self, node: Node, source: bytes) -> str | None:
+        return _leading_jsdoc(node, source)
+
     def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type == "type_alias_declaration":
+            value = node.child_by_field_name("value")
+            if value is None:
+                return []
+            out: list[str] = []
+            _collect_ts_type_ids(value, source, out)
+            return list(dict.fromkeys(out))
         if node.type not in {
             "function_declaration",
             "generator_function_declaration",
@@ -421,6 +461,7 @@ class EcmaScriptParser(TreeSitterParser):
             "abstract_method_signature",
             "property_signature",
             "public_field_definition",
+            "variable_declarator",
         }:
             return []
         out: list[str] = []
@@ -432,31 +473,75 @@ class EcmaScriptParser(TreeSitterParser):
                     for child in param.children:
                         if child.type == "type_annotation":
                             _collect_ts_type_ids(child, source, out)
-        # Return type annotation (direct child type_annotation)
-        ret = node.child_by_field_name("return_type")
-        if ret is not None:
-            _collect_ts_type_ids(ret, source, out)
-        else:
-            # Some grammars put it as a direct child
-            for child in node.children:
-                if child.type == "type_annotation" and child != params:
-                    _collect_ts_type_ids(child, source, out)
-                    break
-        return out
+        # Return/field annotation is a direct child across the three grammars.
+        for child in node.children:
+            if child.type == "type_annotation" and child != params:
+                _collect_ts_type_ids(child, source, out)
+                break
+        return list(dict.fromkeys(out))
 
 
 def _string_content(node: Node, source: bytes) -> str:
     """Extract the text content of a string node, stripping quotes."""
-    for child in node.children:
-        if child.type == "string_fragment":
-            return node_text(child, source)
-    # Fallback: strip quotes manually
     text = node_text(node, source)
-    return text.strip("'\"")
+    is_quote = text[:1] in {"'", '"'}
+    if len(text) >= 2 and text[0] == text[-1] and is_quote:
+        return text[1:-1]
+    return text
+
+
+def _static_value_name(node: Node, source: bytes) -> str | None:
+    """Return a statically named identifier/member chain used as a value."""
+    if node.type in {"identifier", "this"}:
+        return node_text(node, source)
+    if node.type != "member_expression":
+        return None
+    obj = node.child_by_field_name("object")
+    prop = node.child_by_field_name("property")
+    if obj is None:
+        return None
+    if prop is None:
+        return None
+    owner = _static_value_name(obj, source)
+    if owner is None:
+        return None
+    return f"{owner}.{node_text(prop, source)}"
+
+
+def _enclosing_class_name(node: Node, source: bytes) -> str | None:
+    ancestor = node.parent
+    while ancestor is not None:
+        if ancestor.type in {"class_declaration", "abstract_class_declaration"}:
+            name = ancestor.child_by_field_name("name")
+            return node_text(name, source) if name is not None else None
+        ancestor = ancestor.parent
+    return None
+
+
+def _leading_jsdoc(node: Node, source: bytes) -> str | None:
+    """Return the contiguous leading JSDoc attached to a declaration."""
+    owner = node
+    if node.parent is not None and node.parent.type == "export_statement":
+        owner = node.parent
+    comment = owner.prev_named_sibling
+    while comment is not None and comment.type == "decorator":
+        comment = comment.prev_named_sibling
+    if comment is None or comment.type != "comment":
+        return None
+    raw = node_text(comment, source).strip()
+    if not raw.startswith("/**") or not raw.endswith("*/"):
+        return None
+    lines = []
+    for line in raw[3:-2].splitlines():
+        cleaned = line.strip()
+        if cleaned.startswith("*"):
+            cleaned = cleaned[1:].strip()
+        lines.append(cleaned)
+    return "\n".join(lines).strip() or None
 
 
 def _module_ref_name(module_path: str) -> str:
-    tail = module_path.rstrip("/").rsplit("/", 1)[-1]
+    tail = PurePosixPath(module_path).name
     for suffix in (".d.ts", ".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs"):
         if tail.endswith(suffix):
             return tail[: -len(suffix)]
@@ -511,22 +596,6 @@ def _collect_ts_type_ids(node: Node, source: bytes, out: list[str]) -> None:
         name = node_text(node, source)
         if name not in _TS_BUILTIN_TYPES:
             out.append(name)
-        return
-    if (
-        node.type == "identifier"
-        and node.parent
-        and node.parent.type
-        in {
-            "type_annotation",
-            "generic_type",
-        }
-    ):
-        name = node_text(node, source)
-        if name not in _TS_BUILTIN_TYPES:
-            out.append(name)
-        return
-    # Don't descend into value expressions
-    if node.type in {"call_expression", "arrow_function", "function"}:
         return
     for child in node.children:
         _collect_ts_type_ids(child, source, out)

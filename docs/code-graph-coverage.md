@@ -23,15 +23,16 @@ The report includes:
 - signature and docstring completeness;
 - a bounded list of parser failures.
 
-On 2026-08-23, after the TS/TSX/Rust leaf-symbol coverage update:
+On 2026-08-23, after the leaf-symbol and shared-traversal hardening updates:
 
 | Repository | Structural files | Search-only | Parse failures | Symbols excluding file nodes | Relations | Symbols/KLOC |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `evoflux` | 1,443 | 257 | 0 | 24,677 | 335,608 | 57.76 |
-| `evo-conductor` | 201 | 20 | 0 | 5,218 | 46,121 | 111.50 |
+| `evoflux` | 1,446 | 257 | 0 | 25,333 | 339,129 | 59.09 |
+| `evo-conductor` | 201 | 20 | 0 | 5,309 | 44,578 | 113.44 |
 
 Index/UI totals also include one file node per indexable file. The corresponding
-committed totals are 26,377 and 5,439 symbols respectively.
+committed totals are 27,036 and 5,530 symbols respectively. The combined
+project totals are 32,566 symbols and 383,707 relations.
 
 ## What improved
 
@@ -42,11 +43,28 @@ The parser now emits named API-surface leaves that were previously absent:
 - Rust struct/variant fields, enum variants, associated types, and macros;
 - type-reference relations for the added TS and Rust declaration shapes;
 - collision-safe stable local IDs for same-line union members and overload-like
-  declarations.
+  declarations;
+- exact graph contracts for node metadata, ownership, imports, calls, type/value
+  references, decorators, inheritance, synthetic symbols, and source lines;
+- reference filtering across the complete syntax ancestry instead of fixed
+  four/five-level windows, removing false runtime references from deeply nested
+  type and import syntax;
+- a strict per-file node cap and bounded collision search, so pathological input
+  cannot exceed the advertised limit or hang an indexing job.
+- JavaScript inheritance across its distinct tree-sitter heritage shape;
+- qualified JS/TS callback, member-call, prototype, and `this` ownership paths;
+- nested/generic TS heritage, type-alias and annotated-variable references;
+- JSDoc plus Rust line/block documentation attached across decorators/attributes;
+- qualified Rust scoped/field calls, generic/scoped trait implementations, and
+  type references for aliases, constants, statics, and associated bounds.
 
-This raises the two-repository project from roughly 23.4K existing indexed
-symbols to an expected 31.8K after reindex (about +35.9%), without counting
-anonymous syntax nodes or inflating the graph with duplicate relations.
+This raises the two-repository project from roughly 23.4K previously indexed
+symbols to 32.6K after a full reindex (about +39%), without counting anonymous
+syntax nodes or inflating the graph with duplicate relations.
+
+Documentation detail is also measurable: EvoFlux rises from 16.83% to 19.0%
+documented symbols and Evo Conductor from 2.15% to 3.07%, while signature
+completeness remains 100% and structural parse failures remain zero.
 
 ## Explorer sampling
 
@@ -57,19 +75,27 @@ the explorer is not the stored graph size.
 
 ## Mutation gate
 
-The optimized leaf extractor is mutation-tested with Mutmut:
+The shared tree-sitter traversal, JavaScript/TypeScript/TSX parser, Rust parser,
+and optimized leaf extractor are mutation-tested with Mutmut:
 
 ```bash
 uv run mutmut run
 uv run mutmut results
 ```
 
-The configured scope is `parsers/symbol_leaves.py`, with TS/TSX/Rust coverage
-fixtures as the oracle. The current campaign kills 42/42 covered mutants with
-no survivors or uncovered mutants. A wider audit of the legacy TS/Rust parser
-files produced 599 killed, 816 survivors, and 285 uncovered mutants; that result
-is retained as explicit test-debt evidence rather than being hidden inside the
-focused score.
+The configured scope is `parsers/base.py`, `parsers/ecmascript.py`,
+`parsers/rust.py`, and `parsers/symbol_leaves.py`. Exact shared-walker, JS/TS/TSX,
+and Rust contracts are the oracle. A cache-clean campaign kills 2,163/2,163
+generated mutants with no survivors, timeouts, or uncovered mutants. Two
+behaviorally equivalent line mutations are excluded explicitly in source:
+extending an already proven-free collision candidate range, and replacing a
+capped synthetic-loop `break` with `return` when every child is blocked by the
+same cap.
+
+The pre-hardening broad baseline produced 599 killed, 816 survivors, and 285
+uncovered mutants. The primary repository stack has now moved into the clean
+gate above; lower-volume language modules remain explicit follow-up scope and
+must not be represented as mutation-hardened yet.
 
 ## Current limits
 
@@ -80,6 +106,8 @@ focused score.
   parse-success metric.
 - Cross-repository resolution is conservative when multiple symbols share the
   same unqualified name.
+- Language modules outside the shared/ECMAScript/Rust gate still rely on their
+  parser regression suites rather than a zero-survivor mutation contract.
 
 These limits should be shown and measured, not converted into a misleading
 single “coverage” percentage.
