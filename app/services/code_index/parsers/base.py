@@ -466,6 +466,7 @@ def _is_reference_identifier(node: Node) -> bool:
             or "heritage" in ancestor.type
             or ancestor.type == "attribute_item"
             or ancestor.type == "package_declaration"
+            or ancestor.type in {"base_list", "field_declaration"}
         ):
             return False
 
