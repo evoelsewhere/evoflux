@@ -63,7 +63,10 @@ The parser now emits named API-surface leaves that were previously absent:
 - semantic Python docstring evaluation/indent normalization that rejects bytes,
   f-strings, and malformed literals rather than reporting them as docs;
 - Go grouped type/var/const declarations, struct fields, interface methods,
-  qualified selector calls, typed specs, and blank/dot/raw imports.
+  qualified selector calls, typed specs, and blank/dot/raw imports;
+- Java fields, record components, enum constants, annotation members, recursive
+  generic type refs, qualified calls, inheritance/interfaces, imports, Javadoc,
+  and DI collaborator edges.
 
 This raises the two-repository project from roughly 23.4K previously indexed
 symbols to 37.2K after a full reindex (about +59%), without counting anonymous
@@ -85,7 +88,7 @@ the explorer is not the stored graph size.
 ## Mutation gate
 
 The shared tree-sitter traversal, Python parser, JavaScript/TypeScript/TSX
-parser, Go parser, Rust parser, and optimized leaf extractor are
+parser, Go parser, Java parser, Rust parser, and optimized leaf extractor are
 mutation-tested with Mutmut:
 
 ```bash
@@ -94,9 +97,10 @@ uv run mutmut results
 ```
 
 The configured scope is `parsers/base.py`, `parsers/python.py`,
-`parsers/ecmascript.py`, `parsers/go.py`, `parsers/rust.py`, and
-`parsers/symbol_leaves.py`. Exact shared-walker, Python, JS/TS/TSX, and Rust
-contracts are the primary oracle. A cache-clean campaign kills 2,699/2,699
+`parsers/ecmascript.py`, `parsers/go.py`, `parsers/java.py`,
+`parsers/rust.py`, and `parsers/symbol_leaves.py`. Exact shared-walker, Python,
+JS/TS/TSX, and Rust contracts are the primary oracle. A cache-clean campaign
+kills 2,699/2,699
 generated mutants with no survivors,
 timeouts, or uncovered mutants. Two
 behaviorally equivalent line mutations are excluded explicitly in source:
@@ -104,9 +108,9 @@ extending an already proven-free collision candidate range, and replacing a
 capped synthetic-loop `break` with `return` when every child is blocked by the
 same cap.
 
-Go was hardened afterward with an isolated cache-clean 524/524 campaign. A
-combined all-configured-parser campaign remains required after the next
-language tier is complete.
+Go and Java were hardened afterward with isolated cache-clean 524/524 and
+533/533 campaigns. A combined all-configured-parser campaign remains required
+after the next language tier is complete.
 
 The pre-hardening broad baseline produced 599 killed, 816 survivors, and 285
 uncovered mutants. The primary repository stack has now moved into the clean
@@ -122,8 +126,9 @@ must not be represented as mutation-hardened yet.
   parse-success metric.
 - Cross-repository resolution is conservative when multiple symbols share the
   same unqualified name.
-- Language modules outside the shared/Python/ECMAScript/Go/Rust gate still rely
-  on parser regression suites rather than a zero-survivor mutation contract.
+- Language modules outside the shared/Python/ECMAScript/Go/Java/Rust gate still
+  rely on parser regression suites rather than a zero-survivor mutation
+  contract.
 
 These limits should be shown and measured, not converted into a misleading
 single “coverage” percentage.
