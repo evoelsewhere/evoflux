@@ -16,8 +16,10 @@ from app.services.code_index.graph_types import (
     EDGE_INHERITS,
     NODE_CLASS,
     NODE_ENUM,
+    NODE_FIELD,
     NODE_INTERFACE,
     NODE_METHOD,
+    NODE_PROPERTY,
 )
 
 if TYPE_CHECKING:
@@ -63,7 +65,8 @@ class JavaParser(TreeSitterParser):
         # cross-repo resolver retries with the segment stripped if a class
         # match fails, so no static-vs-class distinction is needed at
         # extraction time.
-        return [ImportRef(name=dotted.rsplit(".", 1)[-1], module_path=dotted)]
+        local_name = dotted.rpartition(".")[2] or dotted
+        return [ImportRef(name=local_name, module_path=dotted)]
 
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool
@@ -92,11 +95,27 @@ class JavaParser(TreeSitterParser):
         elif ntype == "method_declaration":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_METHOD, name=name, is_class=False)
+                return Definition(kind=NODE_METHOD, name=name)
         elif ntype == "constructor_declaration":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_METHOD, name=name, is_class=False)
+                return Definition(kind=NODE_METHOD, name=name)
+        elif ntype == "variable_declarator" and inside_class:
+            name = self._name(node, source)
+            if name:
+                return Definition(kind=NODE_FIELD, name=name)
+        elif ntype == "formal_parameter" and inside_class:
+            name = self._name(node, source)
+            if name:
+                return Definition(kind=NODE_FIELD, name=name)
+        elif ntype == "enum_constant":
+            name = self._name(node, source)
+            if name:
+                return Definition(kind=NODE_PROPERTY, name=name)
+        elif ntype == "annotation_type_element_declaration":
+            name = self._name(node, source)
+            if name:
+                return Definition(kind=NODE_METHOD, name=name)
         return None
 
     def call_target(self, node: Node, source: bytes) -> str | None:
@@ -107,7 +126,7 @@ class JavaParser(TreeSitterParser):
                 receiver = node.child_by_field_name("object")
                 if receiver is not None:
                     raw_receiver = node_text(receiver, source)
-                    if raw_receiver in {"this", "super"}:
+                    if raw_receiver == "super":
                         raw_receiver = "this"
                     return f"{raw_receiver}.{name}"
                 return name
@@ -161,6 +180,7 @@ class JavaParser(TreeSitterParser):
             "class_declaration",
             "interface_declaration",
             "enum_declaration",
+            "record_declaration",
         ):
             return []
         out: list[SuperType] = []
@@ -173,21 +193,14 @@ class JavaParser(TreeSitterParser):
                         out.append(SuperType(name=name, edge_kind=EDGE_INHERITS))
             elif child.type == "super_interfaces":
                 # implements clause
-                edge = (
-                    EDGE_IMPLEMENTS
-                    if node.type != "interface_declaration"
-                    else EDGE_INHERITS
-                )
                 for sub in child.children:
                     if sub.type == "type_list":
                         for t in sub.children:
                             name = _simple_type_name(t, source)
                             if name:
-                                out.append(SuperType(name=name, edge_kind=edge))
-                    else:
-                        name = _simple_type_name(sub, source)
-                        if name:
-                            out.append(SuperType(name=name, edge_kind=edge))
+                                out.append(
+                                    SuperType(name=name, edge_kind=EDGE_IMPLEMENTS)
+                                )
             elif child.type == "extends_interfaces":
                 # interface extends other interfaces
                 for sub in child.children:
@@ -202,10 +215,13 @@ class JavaParser(TreeSitterParser):
 
     def docstring(self, node: Node, source: bytes) -> str | None:
         # Java uses block comments (Javadoc) preceding declarations.
-        prev = node.prev_named_sibling
+        owner = node
+        if node.type == "variable_declarator" and node.parent is not None:
+            owner = node.parent
+        prev = owner.prev_named_sibling
         if prev is not None and prev.type == "block_comment":
             text = node_text(prev, source)
-            return _strip_javadoc(text)
+            return _strip_javadoc(text) if text.startswith("/**") else None
         return None
 
     def _name(self, node: Node, source: bytes) -> str | None:
@@ -214,7 +230,10 @@ class JavaParser(TreeSitterParser):
 
     def decorators(self, node: Node, source: bytes) -> list[str]:
         out: list[str] = []
-        for child in node.children:
+        owner = node
+        if node.type == "variable_declarator" and node.parent is not None:
+            owner = node.parent
+        for child in owner.children:
             if child.type == "modifiers":
                 for mod in child.children:
                     if mod.type in {"marker_annotation", "annotation"}:
@@ -225,28 +244,33 @@ class JavaParser(TreeSitterParser):
         return out
 
     def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type == "variable_declarator":
+            owner = node.parent
+            type_node = (
+                owner.child_by_field_name("type") if owner is not None else None
+            )
+            if type_node is None:
+                return []
+            out: list[str] = []
+            _collect_java_type_ids(type_node, source, out)
+            return list(dict.fromkeys(out))
+        if node.type in {"formal_parameter", "annotation_type_element_declaration"}:
+            type_node = node.child_by_field_name("type")
+            if type_node is None:
+                return []
+            out = []
+            _collect_java_type_ids(type_node, source, out)
+            return list(dict.fromkeys(out))
         if node.type not in {"method_declaration", "constructor_declaration"}:
             return []
         out: list[str] = []
-        # Return type — direct child type_identifier or generic_type
-        for child in node.children:
-            if child.type in {"type_identifier", "generic_type"}:
-                name = _simple_type_name(child, source)
-                if name and name not in _JAVA_BUILTIN_TYPES:
-                    out.append(name)
-                break
-        # Parameter types
+        return_type = node.child_by_field_name("type")
+        if return_type is not None:
+            _collect_java_type_ids(return_type, source, out)
         params = node.child_by_field_name("parameters")
         if params is not None:
-            for param in params.children:
-                if param.type == "formal_parameter":
-                    for child in param.children:
-                        if child.type in {"type_identifier", "generic_type"}:
-                            name = _simple_type_name(child, source)
-                            if name and name not in _JAVA_BUILTIN_TYPES:
-                                out.append(name)
-                            break
-        return out
+            _collect_java_type_ids(params, source, out)
+        return list(dict.fromkeys(out))
 
 
 _INJECTION_ANNOTATIONS = frozenset({"Autowired", "Inject", "Resource"})
@@ -284,13 +308,26 @@ def _simple_type_name(node: Node, source: bytes) -> str | None:
     return None
 
 
+def _collect_java_type_ids(node: Node, source: bytes, out: list[str]) -> None:
+    if node.type == "type_identifier":
+        name = node_text(node, source)
+        if name not in _JAVA_BUILTIN_TYPES:
+            out.append(name)
+        return
+    if node.type == "scoped_type_identifier":
+        name = _simple_type_name(node, source)
+        if name and name not in _JAVA_BUILTIN_TYPES:
+            out.append(name)
+        return
+    for child in node.children:
+        _collect_java_type_ids(child, source, out)
+
+
 def _strip_javadoc(text: str) -> str:
     """Strip Javadoc delimiters and leading asterisks."""
     s = text.strip()
-    if s.startswith("/**"):
-        s = s[3:]
-    if s.endswith("*/"):
-        s = s[:-2]
+    if s.startswith("/*") and s.endswith("*/"):
+        s = s[2:-2]
     lines = s.split("\n")
     cleaned: list[str] = []
     for line in lines:
