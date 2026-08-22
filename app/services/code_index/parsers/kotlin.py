@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_index.parsers.base import (
@@ -15,9 +16,13 @@ from app.services.code_index.graph_types import (
     EDGE_IMPLEMENTS,
     EDGE_INHERITS,
     NODE_CLASS,
+    NODE_ENUM,
+    NODE_FIELD,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
+    NODE_PROPERTY,
+    NODE_VARIABLE,
 )
 
 if TYPE_CHECKING:
@@ -48,21 +53,46 @@ class KotlinParser(TreeSitterParser):
         if ntype == "class_declaration":
             name = self._class_name(node, source)
             if name:
-                kind = NODE_INTERFACE if _is_interface(node) else NODE_CLASS
+                if _has_direct_child(node, "enum"):
+                    kind = NODE_ENUM
+                else:
+                    kind = NODE_INTERFACE if _is_interface(node) else NODE_CLASS
                 return Definition(kind=kind, name=name, is_class=True)
-        elif ntype == "object_declaration":
-            name = self._class_name(node, source)
+        elif _has_direct_child(node, "object_literal"):
+            name = next(
+                (
+                    node_text(child, source)
+                    for child in node.children
+                    if child.type == "simple_identifier"
+                ),
+                None,
+            )
             if name:
                 return Definition(kind=NODE_CLASS, name=name, is_class=True)
         elif ntype == "function_declaration":
             name = self._func_name(node, source)
             if name:
                 kind = NODE_METHOD if inside_class else NODE_FUNCTION
-                return Definition(kind=kind, name=name, is_class=False)
-        elif ntype == "property_declaration" and inside_class:
+                return Definition(kind=kind, name=name)
+        elif ntype == "property_declaration":
             name = self._property_name(node, source)
             if name:
-                return Definition(kind=NODE_METHOD, name=name, is_class=False)
+                kind = NODE_FIELD if inside_class else NODE_VARIABLE
+                return Definition(kind=kind, name=name)
+        elif ntype == "class_parameter" and _has_direct_child(
+            node, "binding_pattern_kind"
+        ):
+            name = self._func_name(node, source)
+            if name:
+                return Definition(kind=NODE_FIELD, name=name)
+        elif ntype == "enum_entry":
+            name = self._func_name(node, source)
+            if name:
+                return Definition(kind=NODE_PROPERTY, name=name)
+        elif ntype == "type_alias":
+            name = self._class_name(node, source)
+            if name:
+                return Definition(kind=NODE_CLASS, name=name)
         return None
 
     def call_target(self, node: Node, source: bytes) -> str | None:
@@ -73,7 +103,7 @@ class KotlinParser(TreeSitterParser):
             if child.type == "simple_identifier":
                 return node_text(child, source)
             if child.type == "navigation_expression":
-                return _nav_expr_name(child, source)
+                return _kt_expression_path(child, source)
             if child.type == "call_suffix":
                 break
         return None
@@ -89,10 +119,10 @@ class KotlinParser(TreeSitterParser):
                 if name:
                     if is_interface:
                         edge = EDGE_INHERITS
-                    elif _looks_like_interface_kt(name):
-                        edge = EDGE_IMPLEMENTS
-                    else:
+                    elif _contains_node_type(child, "constructor_invocation"):
                         edge = EDGE_INHERITS
+                    else:
+                        edge = EDGE_IMPLEMENTS
                     out.append(SuperType(name=name, edge_kind=edge))
         return out
 
@@ -132,7 +162,7 @@ class KotlinParser(TreeSitterParser):
         )
         return [
             ImportRef(
-                name=dotted.rsplit(".", 1)[-1],
+                name=dotted.rpartition(".")[2] or dotted,
                 module_path=dotted,
                 local_name=node_text(alias, source) if alias is not None else None,
             )
@@ -140,13 +170,6 @@ class KotlinParser(TreeSitterParser):
 
     def decorators(self, node: Node, source: bytes) -> list[str]:
         out: list[str] = []
-        prev = node.prev_named_sibling
-        while prev is not None and prev.type == "annotation":
-            name = _kt_annotation_name(prev, source)
-            if name:
-                out.append(name)
-            prev = prev.prev_named_sibling
-        # Also check for annotations as direct children (class/function modifiers)
         for child in node.children:
             if child.type == "modifiers":
                 for mod in child.children:
@@ -157,22 +180,42 @@ class KotlinParser(TreeSitterParser):
         return out
 
     def type_refs(self, node: Node, source: bytes) -> list[str]:
-        if node.type != "function_declaration":
-            return []
         out: list[str] = []
-        # Parameter types
-        params = node.child_by_field_name("parameters")
-        if params is not None:
-            for param in params.children:
-                if param.type == "parameter":
-                    type_node = param.child_by_field_name("type")
-                    if type_node is not None:
-                        _collect_kt_type_ids(type_node, source, out)
-        # Return type
-        ret = node.child_by_field_name("type")
-        if ret is not None:
-            _collect_kt_type_ids(ret, source, out)
-        return out
+        if node.type == "function_declaration":
+            for child in node.children:
+                if child.type == "function_value_parameters":
+                    for parameter in child.children:
+                        if parameter.type == "parameter":
+                            type_node = _kt_declared_type(parameter)
+                            if type_node is not None:
+                                _collect_kt_type_ids(type_node, source, out)
+                elif child.type in _KT_TYPE_NODE_TYPES:
+                    _collect_kt_type_ids(child, source, out)
+        elif node.type == "class_parameter":
+            type_node = _kt_declared_type(node)
+            if type_node is not None:
+                _collect_kt_type_ids(type_node, source, out)
+        elif node.type == "property_declaration":
+            declaration = next(
+                (
+                    child
+                    for child in node.children
+                    if child.type == "variable_declaration"
+                ),
+                None,
+            )
+            if declaration is not None:
+                type_node = _kt_declared_type(declaration)
+                if type_node is not None:
+                    _collect_kt_type_ids(type_node, source, out)
+        elif node.type == "type_alias":
+            for child in node.children:
+                if child.type in _KT_TYPE_NODE_TYPES and child.type != "type_identifier":
+                    _collect_kt_type_ids(child, source, out)
+        type_parameters = _kt_enclosing_type_parameters(node, source)
+        return [
+            name for name in dict.fromkeys(out) if name not in type_parameters
+        ]
 
     def _class_name(self, node: Node, source: bytes) -> str | None:
         for child in node.children:
@@ -192,8 +235,6 @@ class KotlinParser(TreeSitterParser):
                 for sub in child.children:
                     if sub.type == "simple_identifier":
                         return node_text(sub, source)
-            if child.type == "simple_identifier":
-                return node_text(child, source)
         return None
 
 
@@ -205,40 +246,58 @@ def _is_interface(node: Node) -> bool:
     return False
 
 
-def _nav_expr_name(node: Node, source: bytes) -> str | None:
-    """Extract the final member name from a navigation_expression."""
-    for child in reversed(node.children):
-        if child.type == "navigation_suffix":
-            for sub in child.children:
-                if sub.type == "simple_identifier":
-                    return node_text(sub, source)
-    return None
+def _has_direct_child(node: Node, node_type: str) -> bool:
+    return any(child.type == node_type for child in node.children)
+
+
+def _contains_node_type(node: Node, node_type: str) -> bool:
+    if node.type == node_type:
+        return True
+    return any(_contains_node_type(child, node_type) for child in node.children)
+
+
+def _kt_expression_path(node: Node, source: bytes) -> str | None:
+    if node.type == "simple_identifier":
+        return node_text(node, source)
+    if node.type in {"this_expression", "super_expression"}:
+        return "this"
+    if node.type != "navigation_expression":
+        return None
+    receiver = node.named_children[0] if node.named_children else None
+    suffix = next(
+        (child for child in reversed(node.children) if child.type == "navigation_suffix"),
+        None,
+    )
+    receiver_path = (
+        _kt_expression_path(receiver, source) if receiver is not None else None
+    )
+    name = (
+        next(
+            (
+                child
+                for child in suffix.children
+                if child.type == "simple_identifier"
+            ),
+            None,
+        )
+        if suffix is not None
+        else None
+    )
+    if name is None:
+        return receiver_path
+    local_name = node_text(name, source)
+    return f"{receiver_path}.{local_name}" if receiver_path else local_name
 
 
 def _delegation_name(node: Node, source: bytes) -> str | None:
     """Extract type name from a delegation_specifier."""
+    if node.type == "type_identifier":
+        return node_text(node, source)
     for child in node.children:
-        if child.type == "user_type":
-            for sub in child.children:
-                if sub.type == "type_identifier":
-                    return node_text(sub, source)
-                if sub.type == "simple_identifier":
-                    return node_text(sub, source)
-        if child.type == "type_identifier":
-            return node_text(child, source)
-        if child.type == "simple_identifier":
-            return node_text(child, source)
+        name = _delegation_name(child, source)
+        if name:
+            return name
     return None
-
-
-def _looks_like_interface_kt(name: str) -> bool:
-    """Heuristic: Kotlin interfaces often start with uppercase but so do classes.
-
-    Without type resolution we can't distinguish, so we treat all as INHERITS
-    unless the name clearly follows interface naming conventions.
-    """
-    # Conservative: only 'I' prefix pattern (less common in Kotlin than C#)
-    return False
 
 
 _KT_BUILTIN_TYPES = frozenset(
@@ -258,42 +317,81 @@ _KT_BUILTIN_TYPES = frozenset(
     }
 )
 
+_KT_TYPE_NODE_TYPES = frozenset(
+    {
+        "function_type",
+        "nullable_type",
+        "parenthesized_type",
+        "type_identifier",
+        "user_type",
+    }
+)
+
+
+def _kt_declared_type(node: Node) -> Node | None:
+    return next(
+        (child for child in node.children if child.type in _KT_TYPE_NODE_TYPES), None
+    )
+
+
+def _kt_enclosing_type_parameters(node: Node, source: bytes) -> set[str]:
+    out: set[str] = set()
+    current: Node | None = node
+    while current is not None:
+        for child in current.children:
+            if child.type != "type_parameters":
+                continue
+            for parameter in child.children:
+                if parameter.type != "type_parameter":
+                    continue
+                out.update(
+                    node_text(nested, source)
+                    for nested in parameter.children
+                    if nested.type == "type_identifier"
+                )
+        current = current.parent
+    return out
+
 
 def _kt_annotation_name(node: Node, source: bytes) -> str | None:
     """Extract annotation name from a Kotlin annotation node."""
+    user_type = next(
+        (descendant for descendant in _kt_walk(node) if descendant.type == "user_type"),
+        None,
+    )
+    if user_type is None:
+        return None
+    names = [
+        child for child in user_type.children if child.type == "type_identifier"
+    ]
+    return node_text(names[-1], source) if names else None
+
+
+def _kt_walk(node: Node) -> Iterator[Node]:
     for child in node.children:
-        if child.type == "user_type":
-            for sub in child.children:
-                if sub.type == "type_identifier":
-                    return node_text(sub, source)
-        if child.type == "constructor_invocation":
-            for sub in child.children:
-                if sub.type == "user_type":
-                    for ssub in sub.children:
-                        if ssub.type == "type_identifier":
-                            return node_text(ssub, source)
-    return None
+        yield child
+        yield from _kt_walk(child)
 
 
 def _collect_kt_type_ids(node: Node, source: bytes, out: list[str]) -> None:
     """Recursively collect user-defined type identifiers from Kotlin type nodes."""
-    if node.type in ("type_identifier", "simple_identifier"):
+    if node.type == "type_identifier":
         name = node_text(node, source)
         if name not in _KT_BUILTIN_TYPES:
             out.append(name)
         return
     if node.type == "user_type":
+        direct_names = [
+            child for child in node.children if child.type == "type_identifier"
+        ]
+        if direct_names:
+            _collect_kt_type_ids(direct_names[-1], source, out)
         for child in node.children:
-            _collect_kt_type_ids(child, source, out)
+            if child.type != "type_identifier":
+                _collect_kt_type_ids(child, source, out)
         return
-    if node.type == "nullable_type":
-        for child in node.children:
-            _collect_kt_type_ids(child, source, out)
-        return
-    if node.type == "type_argument_list":
-        for child in node.children:
-            _collect_kt_type_ids(child, source, out)
-        return
+    for child in node.children:
+        _collect_kt_type_ids(child, source, out)
 
 
 def _preceding_comment(node: Node, source: bytes) -> str | None:
@@ -303,9 +401,7 @@ def _preceding_comment(node: Node, source: bytes) -> str | None:
         return None
     if prev.type == "multiline_comment":
         text = node_text(prev, source)
-        if text.startswith("/**"):
-            text = text[3:]
-        elif text.startswith("/*"):
+        if text.startswith("/*"):
             text = text[2:]
         if text.endswith("*/"):
             text = text[:-2]
