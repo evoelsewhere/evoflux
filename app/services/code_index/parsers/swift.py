@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_index.parsers.base import (
@@ -16,10 +17,13 @@ from app.services.code_index.graph_types import (
     EDGE_INHERITS,
     NODE_CLASS,
     NODE_ENUM,
+    NODE_FIELD,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
+    NODE_PROPERTY,
     NODE_STRUCT,
+    NODE_VARIABLE,
 )
 
 if TYPE_CHECKING:
@@ -38,19 +42,12 @@ class SwiftParser(TreeSitterParser):
         if ntype == "protocol_declaration":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_INTERFACE, name=name, is_class=True)
+                return Definition(kind=NODE_INTERFACE, name=name)
         elif ntype == "class_declaration":
             # Covers: class, struct, enum, actor
             name = self._name(node, source)
             if name:
-                declaration_kind = next(
-                    (
-                        child.type
-                        for child in node.children
-                        if child.type in {"class", "struct", "enum", "actor"}
-                    ),
-                    "class",
-                )
+                declaration_kind = _swift_declaration_kind(node)
                 kind = {
                     "struct": NODE_STRUCT,
                     "enum": NODE_ENUM,
@@ -60,22 +57,42 @@ class SwiftParser(TreeSitterParser):
             name = self._func_name(node, source)
             if name:
                 kind = NODE_METHOD if inside_class else NODE_FUNCTION
-                return Definition(kind=kind, name=name, is_class=False)
+                return Definition(kind=kind, name=name)
+        elif ntype == "protocol_function_declaration":
+            name = self._func_name(node, source)
+            if name:
+                return Definition(kind=NODE_METHOD, name=name)
         elif ntype == "init_declaration":
-            return Definition(kind=NODE_METHOD, name="init", is_class=False)
+            return Definition(kind=NODE_METHOD, name="init")
         elif ntype == "deinit_declaration":
-            return Definition(kind=NODE_METHOD, name="deinit", is_class=False)
+            return Definition(kind=NODE_METHOD, name="deinit")
         elif ntype == "subscript_declaration":
-            return Definition(kind=NODE_METHOD, name="subscript", is_class=False)
-        elif ntype == "property_declaration" and inside_class:
+            return Definition(kind=NODE_METHOD, name="subscript")
+        elif ntype == "property_declaration":
             name = self._property_name(node, source)
             if name:
-                return Definition(kind=NODE_METHOD, name=name, is_class=False)
+                kind = NODE_FIELD if inside_class else NODE_VARIABLE
+                return Definition(kind=kind, name=name)
+        elif ntype == "protocol_property_declaration":
+            name = self._property_name(node, source)
+            if name:
+                return Definition(kind=NODE_FIELD, name=name)
         elif ntype == "typealias_declaration":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=False)
+                return Definition(kind=NODE_CLASS, name=name)
         return None
+
+    def synthetic_definitions(
+        self, node: Node, source: bytes, *, inside_class: bool
+    ) -> list[Definition]:
+        if node.type != "enum_entry" or not inside_class:
+            return []
+        return [
+            Definition(kind=NODE_PROPERTY, name=node_text(child, source))
+            for child in node.children
+            if child.type == "simple_identifier"
+        ]
 
     def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
         if node.type != "import_declaration":
@@ -91,7 +108,9 @@ class SwiftParser(TreeSitterParser):
         # A scoped import ("import struct Foundation.Date") names one specific
         # symbol from the module — the last dotted segment is the locally-used
         # name, mirroring java.py's handling of nested imports.
-        return [ImportRef(name=dotted.rsplit(".", 1)[-1], module_path=dotted)]
+        return [
+            ImportRef(name=dotted.rpartition(".")[2] or dotted, module_path=dotted)
+        ]
 
     def call_target(self, node: Node, source: bytes) -> str | None:
         if node.type != "call_expression":
@@ -102,7 +121,7 @@ class SwiftParser(TreeSitterParser):
             if child.type == "simple_identifier":
                 return node_text(child, source)
             if child.type == "navigation_expression":
-                return _nav_expr_name(child, source)
+                return _swift_expression_path(child, source)
             if child.type == "call_suffix":
                 break
         return None
@@ -112,14 +131,14 @@ class SwiftParser(TreeSitterParser):
             return []
         out: list[SuperType] = []
         is_protocol = node.type == "protocol_declaration"
+        declaration_kind = _swift_declaration_kind(node)
         for child in node.children:
             if child.type == "inheritance_specifier":
                 name = _inheritance_name(child, source)
                 if name:
                     # In Swift, protocols inherit protocols; classes can conform
                     edge = EDGE_INHERITS if is_protocol else EDGE_IMPLEMENTS
-                    # Heuristic: first item for a class is likely the superclass
-                    if not is_protocol and not out:
+                    if declaration_kind == "class" and not out:
                         edge = EDGE_INHERITS
                     out.append(SuperType(name=name, edge_kind=edge))
         return out
@@ -130,54 +149,51 @@ class SwiftParser(TreeSitterParser):
     def decorators(self, node: Node, source: bytes) -> list[str]:
         out: list[str] = []
         for child in node.children:
-            if child.type == "attribute":
-                name = _swift_attr_name(child, source)
-                if name:
-                    out.append(name)
-            elif child.type == "modifiers":
+            if child.type == "modifiers":
                 for mod in child.children:
                     if mod.type == "attribute":
                         name = _swift_attr_name(mod, source)
                         if name:
                             out.append(name)
-        # Also check preceding siblings
-        prev = node.prev_named_sibling
-        while prev is not None:
-            if prev.type == "attribute":
-                name = _swift_attr_name(prev, source)
-                if name:
-                    out.append(name)
-            elif prev.type not in ("comment", "multiline_comment"):
-                break
-            prev = prev.prev_named_sibling
         return out
 
     def type_refs(self, node: Node, source: bytes) -> list[str]:
         if node.type not in {
             "function_declaration",
+            "protocol_function_declaration",
             "init_declaration",
             "deinit_declaration",
             "subscript_declaration",
+            "property_declaration",
+            "protocol_property_declaration",
+            "typealias_declaration",
         }:
             return []
         out: list[str] = []
+        if node.type in {"property_declaration", "protocol_property_declaration"}:
+            annotation = next(
+                (child for child in node.children if child.type == "type_annotation"),
+                None,
+            )
+            if annotation is not None:
+                _collect_swift_type_ids(annotation, source, out)
+            return _filter_swift_type_parameters(node, source, out)
+        if node.type == "typealias_declaration":
+            for child in node.children:
+                if child.type != "type_identifier":
+                    _collect_swift_type_ids(child, source, out)
+            return _filter_swift_type_parameters(node, source, out)
         # Parameter types
         for child in node.children:
             if child.type == "parameter":
                 type_node = child.child_by_field_name("type")
                 if type_node is not None:
                     _collect_swift_type_ids(type_node, source, out)
-            elif child.type == "function_value_parameters":
-                for param in child.children:
-                    if param.type == "parameter":
-                        type_node = param.child_by_field_name("type")
-                        if type_node is not None:
-                            _collect_swift_type_ids(type_node, source, out)
         # Return type
         ret = node.child_by_field_name("return_type")
         if ret is not None:
             _collect_swift_type_ids(ret, source, out)
-        return out
+        return _filter_swift_type_parameters(node, source, out)
 
     def _name(self, node: Node, source: bytes) -> str | None:
         name_node = node.child_by_field_name("name")
@@ -186,44 +202,92 @@ class SwiftParser(TreeSitterParser):
         return None
 
     def _func_name(self, node: Node, source: bytes) -> str | None:
-        name_node = node.child_by_field_name("name")
-        if name_node is not None:
-            return node_text(name_node, source)
-        # Fallback: first simple_identifier child
-        for child in node.children:
-            if child.type == "simple_identifier":
-                return node_text(child, source)
-        return None
+        name = next(
+            (child for child in node.children if child.type == "simple_identifier"),
+            None,
+        )
+        return node_text(name, source) if name is not None else None
 
     def _property_name(self, node: Node, source: bytes) -> str | None:
         # property_declaration has a pattern child with the name
         for child in node.children:
-            if child.type == "pattern" or child.type == "simple_identifier":
-                return node_text(child, source)
+            if child.type == "pattern":
+                name = next(
+                    (
+                        descendant
+                        for descendant in _swift_walk(child)
+                        if descendant.type == "simple_identifier"
+                    ),
+                    None,
+                )
+                return node_text(name, source) if name is not None else None
         return None
 
 
-def _nav_expr_name(node: Node, source: bytes) -> str | None:
-    """Extract the final member name from a navigation_expression (a.b.c → c)."""
-    for child in reversed(node.children):
-        if child.type == "navigation_suffix":
-            for sub in child.children:
-                if sub.type == "simple_identifier":
-                    return node_text(sub, source)
-    return None
+def _swift_declaration_kind(node: Node) -> str:
+    for kind in ("struct", "enum", "actor"):
+        if any(child.type == kind for child in node.children):
+            return kind
+    return "class"
+
+
+def _swift_expression_path(node: Node, source: bytes) -> str | None:
+    if node.type == "simple_identifier":
+        return node_text(node, source)
+    if node.type in {"self_expression", "super_expression"}:
+        return "this"
+    if node.type != "navigation_expression":
+        return None
+    target = node.child_by_field_name("target")
+    suffix = node.child_by_field_name("suffix")
+    target_path = _swift_expression_path(target, source) if target is not None else None
+    name = (
+        next(
+            (
+                child
+                for child in suffix.children
+                if child.type == "simple_identifier"
+            ),
+            None,
+        )
+        if suffix is not None
+        else None
+    )
+    if name is None:
+        return target_path
+    local_name = node_text(name, source)
+    return f"{target_path}.{local_name}" if target_path else local_name
+
+
+def _filter_swift_type_parameters(
+    node: Node, source: bytes, names: list[str]
+) -> list[str]:
+    parameters: set[str] = set()
+    current: Node | None = node
+    while current is not None:
+        for child in current.children:
+            if child.type != "type_parameters":
+                continue
+            for parameter in child.children:
+                if parameter.type != "type_parameter":
+                    continue
+                parameters.update(
+                    node_text(name, source)
+                    for name in parameter.children
+                    if name.type == "type_identifier"
+                )
+        current = current.parent
+    return [name for name in dict.fromkeys(names) if name not in parameters]
 
 
 def _inheritance_name(node: Node, source: bytes) -> str | None:
     """Extract the type name from an inheritance_specifier."""
+    if node.type == "type_identifier":
+        return node_text(node, source)
     for child in node.children:
-        if child.type == "user_type":
-            for sub in child.children:
-                if sub.type == "type_identifier":
-                    return node_text(sub, source)
-                if sub.type == "simple_identifier":
-                    return node_text(sub, source)
-        if child.type == "type_identifier":
-            return node_text(child, source)
+        name = _inheritance_name(child, source)
+        if name:
+            return name
     return None
 
 
@@ -255,12 +319,18 @@ _SWIFT_BUILTIN_TYPES = frozenset(
 
 def _swift_attr_name(attr_node: Node, source: bytes) -> str | None:
     """Extract attribute name from a Swift attribute node."""
-    for child in attr_node.children:
-        if child.type == "type_identifier":
-            return node_text(child, source)
-        if child.type == "simple_identifier":
-            return node_text(child, source)
-    return None
+    names = [
+        node
+        for node in _swift_walk(attr_node)
+        if node.type == "type_identifier"
+    ]
+    return node_text(names[-1], source) if names else None
+
+
+def _swift_walk(node: Node) -> Iterator[Node]:
+    for child in node.children:
+        yield child
+        yield from _swift_walk(child)
 
 
 def _collect_swift_type_ids(node: Node, source: bytes, out: list[str]) -> None:
@@ -268,11 +338,6 @@ def _collect_swift_type_ids(node: Node, source: bytes, out: list[str]) -> None:
     if node.type == "type_identifier":
         name = node_text(node, source)
         if name not in _SWIFT_BUILTIN_TYPES:
-            out.append(name)
-        return
-    if node.type == "simple_identifier":
-        name = node_text(node, source)
-        if name not in _SWIFT_BUILTIN_TYPES and name[0:1].isupper():
             out.append(name)
         return
     if node.type in {
@@ -287,9 +352,15 @@ def _collect_swift_type_ids(node: Node, source: bytes, out: list[str]) -> None:
         for child in node.children:
             _collect_swift_type_ids(child, source, out)
         return
-    if node.type in ("user_type",):
+    if node.type == "user_type":
+        direct_names = [
+            child for child in node.children if child.type == "type_identifier"
+        ]
+        if direct_names:
+            _collect_swift_type_ids(direct_names[-1], source, out)
         for child in node.children:
-            _collect_swift_type_ids(child, source, out)
+            if child.type != "type_identifier":
+                _collect_swift_type_ids(child, source, out)
         return
     for child in node.children:
         _collect_swift_type_ids(child, source, out)
@@ -302,9 +373,7 @@ def _preceding_comment(node: Node, source: bytes) -> str | None:
         return None
     if prev.type == "multiline_comment":
         text = node_text(prev, source)
-        if text.startswith("/**"):
-            text = text[3:]
-        elif text.startswith("/*"):
+        if text.startswith("/*"):
             text = text[2:]
         if text.endswith("*/"):
             text = text[:-2]
