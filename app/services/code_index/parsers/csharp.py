@@ -16,10 +16,12 @@ from app.services.code_index.graph_types import (
     EDGE_INHERITS,
     NODE_CLASS,
     NODE_ENUM,
+    NODE_FIELD,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
     NODE_NAMESPACE,
+    NODE_PROPERTY,
     NODE_STRUCT,
 )
 
@@ -50,7 +52,6 @@ class CSharpParser(TreeSitterParser):
                 return Definition(
                     kind=NODE_NAMESPACE,
                     name=name,
-                    is_class=False,
                     prefix="" if ntype == "file_scoped_namespace_declaration" else None,
                 )
         elif ntype == "class_declaration":
@@ -77,23 +78,35 @@ class CSharpParser(TreeSitterParser):
             name = self._name(node, source)
             if name:
                 kind = NODE_METHOD if inside_class else NODE_FUNCTION
-                return Definition(kind=kind, name=name, is_class=False)
+                return Definition(kind=kind, name=name)
         elif ntype == "constructor_declaration":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_METHOD, name=name, is_class=False)
+                return Definition(kind=NODE_METHOD, name=name)
         elif ntype == "property_declaration":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_METHOD, name=name, is_class=False)
+                return Definition(kind=NODE_PROPERTY, name=name)
         elif ntype == "local_function_statement":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_FUNCTION, name=name, is_class=False)
+                return Definition(kind=NODE_FUNCTION, name=name)
         elif ntype == "delegate_declaration":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_FUNCTION, name=name, is_class=False)
+                return Definition(kind=NODE_FUNCTION, name=name)
+        elif ntype == "variable_declarator" and inside_class:
+            name = self._name(node, source)
+            if name:
+                return Definition(kind=NODE_FIELD, name=name)
+        elif ntype == "parameter" and inside_class:
+            name = self._name(node, source)
+            if name:
+                return Definition(kind=NODE_FIELD, name=name)
+        elif ntype == "enum_member_declaration":
+            name = self._name(node, source)
+            if name:
+                return Definition(kind=NODE_PROPERTY, name=name)
         return None
 
     def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
@@ -121,12 +134,12 @@ class CSharpParser(TreeSitterParser):
         if alias_node is not None:
             return [
                 ImportRef(
-                    name=dotted.rsplit(".", 1)[-1],
+                    name=dotted.rpartition(".")[2] or dotted,
                     module_path=dotted,
                     local_name=node_text(alias_node, source),
                 )
             ]
-        local_name = dotted.rsplit(".", 1)[-1]
+        local_name = dotted.rpartition(".")[2] or dotted
         return [ImportRef(name=local_name, module_path=dotted)]
 
     def call_target(self, node: Node, source: bytes) -> str | None:
@@ -139,14 +152,11 @@ class CSharpParser(TreeSitterParser):
             if func.type == "member_access_expression":
                 name_node = func.child_by_field_name("name")
                 if name_node is not None:
-                    receiver = next(
-                        (child for child in func.named_children if child != name_node),
-                        None,
-                    )
+                    receiver = func.child_by_field_name("expression")
                     name = node_text(name_node, source)
                     if receiver is not None:
                         raw_receiver = node_text(receiver, source)
-                        if raw_receiver in {"this", "base"}:
+                        if raw_receiver == "base":
                             raw_receiver = "this"
                         return f"{raw_receiver}.{name}"
                     return name
@@ -225,7 +235,12 @@ class CSharpParser(TreeSitterParser):
 
     def docstring(self, node: Node, source: bytes) -> str | None:
         # C# uses XML doc comments (///) preceding declarations.
-        prev = node.prev_named_sibling
+        owner = node
+        if node.type == "variable_declarator" and node.parent is not None:
+            declaration = node.parent
+            if declaration.parent is not None:
+                owner = declaration.parent
+        prev = owner.prev_named_sibling
         if prev is None:
             return None
         lines: list[str] = []
@@ -250,7 +265,12 @@ class CSharpParser(TreeSitterParser):
 
     def decorators(self, node: Node, source: bytes) -> list[str]:
         out: list[str] = []
-        for child in node.children:
+        owner = node
+        if node.type == "variable_declarator" and node.parent is not None:
+            declaration = node.parent
+            if declaration.parent is not None:
+                owner = declaration.parent
+        for child in owner.children:
             if child.type != "attribute_list":
                 continue
             for attribute in child.children:
@@ -264,6 +284,25 @@ class CSharpParser(TreeSitterParser):
         return out
 
     def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type == "variable_declarator":
+            declaration = node.parent
+            type_node = (
+                declaration.child_by_field_name("type")
+                if declaration is not None
+                else None
+            )
+            if type_node is None:
+                return []
+            out: list[str] = []
+            _collect_csharp_type_ids(type_node, source, out)
+            return list(dict.fromkeys(out))
+        if node.type == "parameter":
+            type_node = node.child_by_field_name("type")
+            if type_node is None:
+                return []
+            out = []
+            _collect_csharp_type_ids(type_node, source, out)
+            return list(dict.fromkeys(out))
         if node.type not in {
             "method_declaration",
             "constructor_declaration",
@@ -273,9 +312,10 @@ class CSharpParser(TreeSitterParser):
             return []
 
         out: list[str] = []
-        return_type = node.child_by_field_name("returns")
-        if return_type is None and node.type == "property_declaration":
+        if node.type == "property_declaration":
             return_type = node.child_by_field_name("type")
+        else:
+            return_type = node.child_by_field_name("returns")
         if return_type is not None:
             _collect_csharp_type_ids(return_type, source, out)
 
@@ -306,8 +346,8 @@ def _simple_type_name(node: Node, source: bytes) -> str | None:
         return None
     if node.type == "qualified_name":
         # Namespace.Type → Type
-        right = node.child_by_field_name("right")
-        return node_text(right, source) if right is not None else None
+        right = node.child_by_field_name("name")
+        return _simple_type_name(right, source) if right is not None else None
     return None
 
 
@@ -354,22 +394,13 @@ _CSHARP_BUILTIN_TYPES = frozenset(
 
 
 def _collect_csharp_type_ids(node: Node, source: bytes, out: list[str]) -> None:
-    if node.type == "predefined_type":
-        return
     if node.type == "identifier":
         name = node_text(node, source)
         if name not in _CSHARP_BUILTIN_TYPES:
             out.append(name)
         return
-    if node.type == "generic_name":
-        for child in node.children:
-            if child.type == "identifier":
-                _collect_csharp_type_ids(child, source, out)
-            elif child.type == "type_argument_list":
-                _collect_csharp_type_ids(child, source, out)
-        return
     if node.type == "qualified_name":
-        right = node.child_by_field_name("right")
+        right = node.child_by_field_name("name")
         if right is not None:
             _collect_csharp_type_ids(right, source, out)
         return
