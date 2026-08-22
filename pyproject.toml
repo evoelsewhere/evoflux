@@ -114,6 +114,7 @@ only_mutate = [
     "app/services/code_index/parsers/php.py",
     "app/services/code_index/parsers/python.py",
     "app/services/code_index/parsers/rust.py",
+    "app/services/code_index/parsers/swift.py",
     "app/services/code_index/parsers/symbol_leaves.py",
 ]
 pytest_add_cli_args = ["--no-cov"]
@@ -127,11 +128,13 @@ pytest_add_cli_args_test_selection = [
     "tests/services/test_code_graph_imports_c_cpp.py",
     "tests/services/test_code_graph_imports_php.py",
     "tests/services/test_code_graph_imports_kotlin.py",
+    "tests/services/test_code_graph_imports_swift.py",
     "tests/services/test_code_graph_java_contract.py",
     "tests/services/test_code_graph_kotlin_contract.py",
     "tests/services/test_code_graph_python_contract.py",
     "tests/services/test_code_graph_php_contract.py",
     "tests/services/test_code_graph_rust_contract.py",
+    "tests/services/test_code_graph_swift_contract.py",
     "tests/services/test_code_graph_symbol_coverage.py",
     "tests/services/test_code_graph_variables.py",
     "tests/services/test_code_graph_type_refs.py",

@@ -82,6 +82,10 @@ The parser now emits named API-surface leaves that were previously absent:
   entries, type aliases, object singletons, generic/qualified/nullable/function
   types, syntax-based superclass/interface edges, qualified calls, annotations,
   and KDoc/block documentation.
+- Swift stored/protocol properties, top-level variables, protocol requirements,
+  enum cases, type aliases, generic/qualified/composite types, class versus
+  struct/actor conformance semantics, qualified calls, attributes, and line or
+  block documentation.
 
 This raises the two-repository project from roughly 23.4K previously indexed
 symbols to 37.2K after a full reindex (about +59%), without counting anonymous
@@ -104,8 +108,8 @@ the explorer is not the stored graph size.
 
 The shared tree-sitter traversal, Python parser, JavaScript/TypeScript/TSX
 parser, C/C++ parser, C# parser, Go parser, Java parser, Kotlin parser, PHP
-parser, Rust parser, and optimized leaf extractor are mutation-tested with
-Mutmut:
+parser, Rust parser, Swift parser, and optimized leaf extractor are
+mutation-tested with Mutmut:
 
 ```bash
 uv run mutmut run
@@ -115,8 +119,9 @@ uv run mutmut results
 The configured scope is `parsers/base.py`, `parsers/python.py`,
 `parsers/ecmascript.py`, `parsers/c_family.py`, `parsers/csharp.py`,
 `parsers/go.py`, `parsers/java.py`, `parsers/kotlin.py`, `parsers/php.py`,
-`parsers/rust.py`, and `parsers/symbol_leaves.py`. Exact shared-walker and
-per-language contracts are the primary oracle. A cache-clean campaign for the
+`parsers/rust.py`, `parsers/swift.py`, and `parsers/symbol_leaves.py`. Exact
+shared-walker and per-language contracts are the primary oracle. A cache-clean
+campaign for the
 shared/Python/ECMAScript/Rust tier kills 2,699/2,699 generated mutants with no
 survivors, timeouts, or uncovered mutants. Two
 behaviorally equivalent line mutations are excluded explicitly in source:
@@ -124,10 +129,10 @@ extending an already proven-free collision candidate range, and replacing a
 capped synthetic-loop `break` with `return` when every child is blocked by the
 same cap.
 
-Go, Java, C#, C/C++, PHP, and Kotlin were hardened afterward with isolated
-cache-clean 524/524, 533/533, 620/620, 885/885, 719/719, and 543/543
-campaigns. A combined all-configured-parser campaign remains required after
-the remaining language tier is complete.
+Go, Java, C#, C/C++, PHP, Kotlin, and Swift were hardened afterward with
+isolated cache-clean 524/524, 533/533, 620/620, 885/885, 719/719, 543/543,
+and 547/547 campaigns. A combined all-configured-parser campaign remains
+required after the remaining language tier is complete.
 
 The pre-hardening broad baseline produced 599 killed, 816 survivors, and 285
 uncovered mutants. The primary repository stack has now moved into the clean
@@ -144,8 +149,9 @@ must not be represented as mutation-hardened yet.
 - Cross-repository resolution is conservative when multiple symbols share the
   same unqualified name.
 - Language modules outside the
-  shared/Python/ECMAScript/C/C++/C#/Go/Java/Kotlin/PHP/Rust gate still rely on
-  parser regression suites rather than a zero-survivor mutation contract.
+  shared/Python/ECMAScript/C/C++/C#/Go/Java/Kotlin/PHP/Rust/Swift gate still
+  rely on parser regression suites rather than a zero-survivor mutation
+  contract.
 
 These limits should be shown and measured, not converted into a misleading
 single “coverage” percentage.
