@@ -21,10 +21,13 @@ from app.services.code_index.graph_types import (
     EDGE_INHERITS,
     NODE_CLASS,
     NODE_ENUM,
+    NODE_FIELD,
     NODE_FUNCTION,
     NODE_METHOD,
     NODE_NAMESPACE,
+    NODE_PROPERTY,
     NODE_STRUCT,
+    NODE_VARIABLE,
 )
 
 if TYPE_CHECKING:
@@ -42,7 +45,7 @@ class CFamilyParser(TreeSitterParser):
             name_node = node.child_by_field_name("name")
             if name_node is not None:
                 name = node_text(name_node, source).replace("::", ".")
-                return Definition(kind=NODE_NAMESPACE, name=name, is_class=False)
+                return Definition(kind=NODE_NAMESPACE, name=name)
         # struct/union/enum definitions (with a name)
         elif ntype in ("struct_specifier", "union_specifier"):
             name = self._specifier_name(node, source)
@@ -51,7 +54,7 @@ class CFamilyParser(TreeSitterParser):
         elif ntype == "enum_specifier":
             name = self._specifier_name(node, source)
             if name and self._has_body(node):
-                return Definition(kind=NODE_ENUM, name=name, is_class=False)
+                return Definition(kind=NODE_ENUM, name=name, is_class=True)
         elif ntype == "class_specifier":
             # C++ only
             name = self._specifier_name(node, source)
@@ -60,39 +63,103 @@ class CFamilyParser(TreeSitterParser):
         elif ntype == "function_definition":
             name = self._function_name(node, source)
             if name:
-                kind = NODE_METHOD if inside_class else NODE_FUNCTION
-                return Definition(kind=kind, name=name, is_class=False)
-        elif ntype in ("declaration", "field_declaration") and inside_class:
-            # Forward-declared or pure virtual methods in class body
+                scope = self._function_scope(node, source)
+                kind = (
+                    NODE_METHOD
+                    if inside_class or (scope and _looks_like_class_scope(scope))
+                    else NODE_FUNCTION
+                )
+                return Definition(
+                    kind=kind,
+                    name=name,
+                    prefix=self._absolute_scope_prefix(node, source, scope),
+                )
+        elif ntype in ("declaration", "field_declaration"):
+            # Forward declarations, prototypes, and pure virtual methods.
             name = self._declaration_func_name(node, source)
             if name:
-                return Definition(kind=NODE_METHOD, name=name, is_class=False)
+                scope = self._function_scope(node, source)
+                kind = (
+                    NODE_METHOD
+                    if inside_class or (scope and _looks_like_class_scope(scope))
+                    else NODE_FUNCTION
+                )
+                return Definition(
+                    kind=kind,
+                    name=name,
+                    prefix=self._absolute_scope_prefix(node, source, scope),
+                )
+        elif ntype == "enumerator" and inside_class:
+            name_node = node.child_by_field_name("name")
+            if name_node is not None:
+                return Definition(kind=NODE_PROPERTY, name=node_text(name_node, source))
+        elif ntype in {"field_identifier", "identifier"}:
+            owner = self._declaration_for_name(node)
+            if owner is not None and not _contains_node_type(
+                owner.child_by_field_name("declarator"), "function_declarator"
+            ):
+                if inside_class:
+                    return Definition(kind=NODE_FIELD, name=node_text(node, source))
+                if not inside_class and self._is_file_scope_declaration(owner):
+                    return Definition(kind=NODE_VARIABLE, name=node_text(node, source))
         elif ntype == "type_definition":
-            # typedef struct { ... } Name;
+            # Named struct/union/enum typedefs are represented by their
+            # underlying specifier so fields and enumerators remain owned by
+            # the body instead of a duplicate nested alias node.
+            type_node = node.child_by_field_name("type")
+            if (
+                type_node is not None
+                and type_node.type
+                in {"struct_specifier", "union_specifier", "enum_specifier"}
+                and self._specifier_name(type_node, source)
+            ):
+                return None
+            # Anonymous aggregate or primitive typedef.
             name = self._typedef_name(node, source)
             if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=False)
+                is_aggregate = bool(
+                    type_node is not None
+                    and type_node.type
+                    in {"struct_specifier", "union_specifier", "enum_specifier"}
+                )
+                kind = (
+                    NODE_ENUM
+                    if type_node is not None and type_node.type == "enum_specifier"
+                    else NODE_STRUCT if is_aggregate else NODE_CLASS
+                )
+                return Definition(kind=kind, name=name, is_class=is_aggregate)
         return None
 
     def call_target(self, node: Node, source: bytes) -> str | None:
-        if node.type != "call_expression":
-            return None
-        func = node.child_by_field_name("function")
-        if func is None:
-            return None
-        return self._callee_name(func, source)
+        if node.type == "call_expression":
+            func = node.child_by_field_name("function")
+            if func is not None:
+                return self._callee_name(func, source)
+        elif node.type == "new_expression":
+            type_node = node.child_by_field_name("type")
+            if type_node is not None:
+                return _simple_c_type_name(type_node, source)
+        return None
 
     def _callee_name(self, func: Node, source: bytes) -> str | None:
         if func.type == "identifier":
             return node_text(func, source)
         if func.type == "field_expression":
+            argument = func.child_by_field_name("argument")
             field = func.child_by_field_name("field")
             if field is not None:
-                return node_text(field, source)
+                receiver = (
+                    self._callee_name(argument, source)
+                    if argument is not None
+                    else None
+                )
+                name = node_text(field, source)
+                return f"{receiver}.{name}" if receiver else name
+        if func.type == "call_expression":
+            nested = func.child_by_field_name("function")
+            return self._callee_name(nested, source) if nested is not None else None
         if func.type == "qualified_identifier":
-            name_node = func.child_by_field_name("name")
-            if name_node is not None:
-                return self._callee_name(name_node, source)
+            return node_text(func, source).replace("::", ".")
         if func.type == "template_function":
             name_node = func.child_by_field_name("name")
             if name_node is not None:
@@ -113,66 +180,52 @@ class CFamilyParser(TreeSitterParser):
                             )
                         )
                     elif sub.type == "qualified_identifier":
-                        name_node = sub.child_by_field_name("name")
-                        if name_node is not None:
+                        name = _qualified_c_name(sub, source)
+                        if name:
                             out.append(
                                 SuperType(
-                                    name=node_text(name_node, source),
+                                    name=name,
                                     edge_kind=EDGE_INHERITS,
                                 )
                             )
         return out
 
     def decorators(self, node: Node, source: bytes) -> list[str]:
+        owner = self._definition_owner(node)
         out: list[str] = []
-        for child in node.children:
-            if child.type == "attribute_declaration":
-                # C++ [[attr]] or C11 _Alignas etc.
+        for child in owner.children:
+            if child.type in {
+                "attribute_declaration",
+                "attribute_specifier",
+                "ms_declspec_modifier",
+            }:
                 _collect_c_attr_names(child, source, out)
-            elif child.type == "attribute_specifier":
-                # __attribute__((attr))
-                _collect_c_attr_names(child, source, out)
-            elif child.type == "ms_declspec_modifier":
-                # __declspec(attr)
-                _collect_c_attr_names(child, source, out)
-        # Also check preceding siblings (e.g. __attribute__ before function)
-        prev = node.prev_named_sibling
-        while prev is not None:
-            if prev.type in ("attribute_declaration", "attribute_specifier"):
-                _collect_c_attr_names(prev, source, out)
-            elif prev.type not in ("comment",):
-                break
-            prev = prev.prev_named_sibling
         return out
 
     def type_refs(self, node: Node, source: bytes) -> list[str]:
-        if node.type not in {"function_definition", "declaration", "field_declaration"}:
+        owner = node
+        if node.type in {"field_identifier", "identifier"}:
+            declaration = self._declaration_for_name(node)
+            if declaration is not None:
+                owner = declaration
+        if owner.type not in {
+            "function_definition",
+            "declaration",
+            "field_declaration",
+            "type_definition",
+        }:
             return []
         out: list[str] = []
-        # Return type: the type node before the declarator
-        for child in node.children:
-            if child.type in {"primitive_type", "sized_type_specifier"}:
-                continue
-            if child.type == "struct_specifier":
-                name = self._specifier_name(child, source)
-                if name:
-                    out.append(name)
-            elif child.type == "enum_specifier":
-                name = self._specifier_name(child, source)
-                if name:
-                    out.append(name)
-            elif child.type in {"type_identifier", "qualified_identifier"}:
-                name = node_text(child, source)
-                if name not in _C_BUILTIN_TYPES:
-                    out.append(name)
-        # Parameter types from function_declarator
-        decl = node.child_by_field_name("declarator")
+        type_node = owner.child_by_field_name("type")
+        if type_node is not None:
+            _collect_c_type_ids(type_node, source, out)
+        decl = owner.child_by_field_name("declarator")
         if decl is not None:
             _collect_c_param_types(decl, source, out)
-        return out
+        return list(dict.fromkeys(out))
 
     def docstring(self, node: Node, source: bytes) -> str | None:
-        return _preceding_comment(node, source)
+        return _preceding_comment(self._definition_owner(node), source)
 
     def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
         if node.type != "preproc_include":
@@ -180,21 +233,13 @@ class CFamilyParser(TreeSitterParser):
         path_node = node.child_by_field_name("path")
         if path_node is None:
             return []
-        if path_node.type == "system_lib_string":
-            # <vector> — strip the surrounding angle brackets
-            raw = node_text(path_node, source).strip("<>")
-        elif path_node.type == "string_literal":
-            content = next(
-                (c for c in path_node.children if c.type == "string_content"), None
-            )
-            if content is None:
-                return []
-            raw = node_text(content, source)
-        else:
+        if path_node.type not in {"system_lib_string", "string_literal"}:
             return []
+        literal = node_text(path_node, source)
+        raw = literal[1:-1]
         if not raw:
             return []
-        name = raw.rsplit("/", 1)[-1]
+        name = raw.rpartition("/")[2] or raw
         return [ImportRef(name=name, module_path=raw)]
 
     # -- helpers ------------------------------------------------------------
@@ -211,6 +256,31 @@ class CFamilyParser(TreeSitterParser):
         if decl is None:
             return None
         return self._declarator_name(decl, source)
+
+    def _function_scope(self, node: Node, source: bytes) -> str | None:
+        decl = node.child_by_field_name("declarator")
+        while decl is not None:
+            if decl.type == "qualified_identifier":
+                parts = _qualified_identifier_parts(decl, source)
+                return ".".join(parts[:-1]) or None
+            decl = decl.child_by_field_name("declarator")
+        return None
+
+    def _absolute_scope_prefix(
+        self, node: Node, source: bytes, scope: str | None
+    ) -> str | None:
+        if not scope:
+            return None
+        namespaces: list[str] = []
+        ancestor = node.parent
+        while ancestor is not None:
+            if ancestor.type == "namespace_definition":
+                name = ancestor.child_by_field_name("name")
+                if name is not None:
+                    namespaces.append(node_text(name, source).replace("::", "."))
+            ancestor = ancestor.parent
+        namespaces.reverse()
+        return ".".join([*namespaces, scope]) + "."
 
     def _declarator_name(self, node: Node, source: bytes) -> str | None:
         """Recursively extract the identifier from a declarator chain."""
@@ -252,9 +322,118 @@ class CFamilyParser(TreeSitterParser):
 
     def _typedef_name(self, node: Node, source: bytes) -> str | None:
         decl = node.child_by_field_name("declarator")
-        if decl is not None and decl.type == "type_identifier":
-            return node_text(decl, source)
+        name = _declarator_name_node(decl) if decl is not None else None
+        return node_text(name, source) if name is not None else None
+
+    def _declaration_for_name(self, node: Node) -> Node | None:
+        ancestor = node.parent
+        while ancestor is not None and ancestor.type not in {
+            "declaration",
+            "field_declaration",
+        }:
+            ancestor = ancestor.parent
+        if ancestor is None:
+            return None
+        for index, declarator in enumerate(ancestor.children):
+            if ancestor.field_name_for_child(index) != "declarator":
+                continue
+            name_node = _declarator_name_node(declarator)
+            if _same_node(name_node, node):
+                return ancestor
         return None
+
+    def _definition_owner(self, node: Node) -> Node:
+        parent = node.parent
+        if (
+            node.type in {"struct_specifier", "union_specifier", "enum_specifier"}
+            and parent is not None
+            and parent.type == "type_definition"
+        ):
+            return parent
+        if node.type in {"field_identifier", "identifier"}:
+            declaration = self._declaration_for_name(node)
+            if declaration is not None:
+                return declaration
+        return node
+
+    def _is_file_scope_declaration(self, node: Node) -> bool:
+        parent = node.parent
+        while parent is not None and parent.type in {
+            "declaration_list",
+            "linkage_specification",
+        }:
+            parent = parent.parent
+        return bool(
+            parent is not None
+            and parent.type in {"translation_unit", "namespace_definition"}
+        )
+
+
+def _same_node(left: Node | None, right: Node) -> bool:
+    return bool(
+        left is not None
+        and left.start_byte == right.start_byte
+        and left.end_byte == right.end_byte
+    )
+
+
+def _declarator_name_node(node: Node) -> Node | None:
+    if node.type in {"identifier", "field_identifier", "type_identifier"}:
+        return node
+    for child in node.named_children:
+        found = _declarator_name_node(child)
+        if found is not None:
+            return found
+    return None
+
+
+def _contains_node_type(node: Node | None, node_type: str) -> bool:
+    if node is None:
+        return False
+    if node.type == node_type:
+        return True
+    return any(_contains_node_type(child, node_type) for child in node.children)
+
+
+def _looks_like_class_scope(scope: str) -> bool:
+    leaf = scope.split(".")[-1]
+    return bool(leaf and leaf[0].isupper())
+
+
+def _qualified_c_name(node: Node, source: bytes) -> str | None:
+    if node.type == "qualified_identifier":
+        parts = _qualified_identifier_parts(node, source)
+        return ".".join(parts) if parts else None
+    return _simple_c_type_name(node, source)
+
+
+def _qualified_identifier_parts(node: Node, source: bytes) -> list[str]:
+    scope = node.child_by_field_name("scope")
+    name = node.child_by_field_name("name")
+    parts = [node_text(scope, source)] if scope is not None else []
+    if name is not None and name.type == "qualified_identifier":
+        parts.extend(_qualified_identifier_parts(name, source))
+    elif name is not None:
+        local_name = _simple_c_type_name(name, source)
+        if local_name:
+            parts.append(local_name)
+    return parts
+
+
+def _simple_c_type_name(node: Node, source: bytes) -> str | None:
+    if node.type in {"identifier", "type_identifier"}:
+        return node_text(node, source)
+    if node.type in {
+        "qualified_identifier",
+        "template_type",
+        "template_function",
+        "struct_specifier",
+        "union_specifier",
+        "enum_specifier",
+    }:
+        name = node.child_by_field_name("name")
+        return _simple_c_type_name(name, source) if name is not None else None
+    return None
 
 
 class CParser(CFamilyParser):
@@ -308,11 +487,8 @@ def _collect_c_attr_names(node: Node, source: bytes, out: list[str]) -> None:
             name_node = child.child_by_field_name("name")
             if name_node is not None:
                 out.append(node_text(name_node, source))
-            else:
-                for sub in child.children:
-                    if sub.type == "identifier":
-                        out.append(node_text(sub, source))
-                        break
+        elif node.type == "ms_declspec_modifier" and child.type == "identifier":
+            out.append(node_text(child, source))
         elif child.type == "argument_list":
             # __attribute__((attr, ...))
             for arg in child.children:
@@ -320,41 +496,35 @@ def _collect_c_attr_names(node: Node, source: bytes, out: list[str]) -> None:
                     out.append(node_text(arg, source))
                 elif arg.type == "call_expression":
                     func = arg.child_by_field_name("function")
-                    if func is not None and func.type == "identifier":
-                        out.append(node_text(func, source))
+                    if func is not None:
+                        name = _simple_c_type_name(func, source)
+                        if name:
+                            out.append(name)
 
 
 def _collect_c_param_types(node: Node, source: bytes, out: list[str]) -> None:
     """Collect type identifiers from function parameters."""
-    if node.type == "function_declarator":
-        params = node.child_by_field_name("parameters")
-        if params is not None:
-            for param in params.children:
-                if param.type == "parameter_declaration":
-                    for child in param.children:
-                        if child.type == "type_identifier":
-                            name = node_text(child, source)
-                            if name not in _C_BUILTIN_TYPES:
-                                out.append(name)
-                        elif child.type == "struct_specifier":
-                            name_node = child.child_by_field_name("name")
-                            if name_node is not None:
-                                out.append(node_text(name_node, source))
-                        elif child.type == "qualified_identifier":
-                            name = node_text(child, source)
-                            if name not in _C_BUILTIN_TYPES:
-                                out.append(name)
-        # Recurse into nested declarators
-        for child in node.children:
-            _collect_c_param_types(child, source, out)
-    elif node.type in (
-        "pointer_declarator",
-        "reference_declarator",
-        "parenthesized_declarator",
-        "array_declarator",
-    ):
-        for child in node.children:
-            _collect_c_param_types(child, source, out)
+    if node.type == "parameter_declaration":
+        type_node = node.child_by_field_name("type")
+        if type_node is not None:
+            _collect_c_type_ids(type_node, source, out)
+    for child in node.children:
+        _collect_c_param_types(child, source, out)
+
+
+def _collect_c_type_ids(node: Node, source: bytes, out: list[str]) -> None:
+    if node.type in {"identifier", "type_identifier"}:
+        name = node_text(node, source)
+        if name not in _C_BUILTIN_TYPES:
+            out.append(name)
+        return
+    if node.type in {"struct_specifier", "union_specifier", "enum_specifier"}:
+        name = node.child_by_field_name("name")
+        if name is not None:
+            _collect_c_type_ids(name, source, out)
+        return
+    for child in node.children:
+        _collect_c_type_ids(child, source, out)
 
 
 def _preceding_comment(node: Node, source: bytes) -> str | None:
@@ -365,11 +535,7 @@ def _preceding_comment(node: Node, source: bytes) -> str | None:
     text = node_text(prev, source)
     # Block comment (/** ... */)
     if text.startswith("/*"):
-        s = text
-        if s.startswith("/**"):
-            s = s[3:]
-        elif s.startswith("/*"):
-            s = s[2:]
+        s = text[2:]
         if s.endswith("*/"):
             s = s[:-2]
         lines = [ln.strip().lstrip("* ").strip() for ln in s.split("\n")]

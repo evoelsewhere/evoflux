@@ -105,6 +105,7 @@ dev = [
 source_paths = ["app"]
 only_mutate = [
     "app/services/code_index/parsers/base.py",
+    "app/services/code_index/parsers/c_family.py",
     "app/services/code_index/parsers/csharp.py",
     "app/services/code_index/parsers/ecmascript.py",
     "app/services/code_index/parsers/go.py",
@@ -116,10 +117,12 @@ only_mutate = [
 pytest_add_cli_args = ["--no-cov"]
 pytest_add_cli_args_test_selection = [
     "tests/services/test_code_graph_base_contract.py",
+    "tests/services/test_code_graph_c_family_contract.py",
     "tests/services/test_code_graph_csharp_contract.py",
     "tests/services/test_code_graph_decorators.py",
     "tests/services/test_code_graph_ecmascript_contract.py",
     "tests/services/test_code_graph_go_contract.py",
+    "tests/services/test_code_graph_imports_c_cpp.py",
     "tests/services/test_code_graph_java_contract.py",
     "tests/services/test_code_graph_python_contract.py",
     "tests/services/test_code_graph_rust_contract.py",

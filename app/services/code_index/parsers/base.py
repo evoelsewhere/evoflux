@@ -488,6 +488,15 @@ def _is_reference_identifier(node: Node) -> bool:
     for field in ("name", "declarator", "pattern", "alias", "macro"):
         if _same_span(parent.child_by_field_name(field), node):
             return False
+    for ancestor in ancestors:
+        if ancestor.type in {
+            "declaration",
+            "field_declaration",
+            "function_definition",
+            "parameter_declaration",
+            "type_definition",
+        } and _contains(ancestor.child_by_field_name("declarator"), node):
+            return False
     if "assignment" in parent.type and _same_span(
         parent.child_by_field_name("left"), node
     ):
