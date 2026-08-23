@@ -57,6 +57,7 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.app_mode import AppMode, parse_app_mode
+from app.core.metrics import TEAM_RESOLUTION_DURATION
 
 if TYPE_CHECKING:
     from app.agent.mode.team.team import AgentTeam
@@ -109,7 +110,64 @@ _coding_teams: dict[tuple[str, str], "AgentTeam"] = {}
 _coding_team_last_used: dict[tuple[str, str], float] = {}
 _DEFAULT_TEAM_IDLE_SECONDS = 60 * 60
 _CODING_TEAM_IDLE_SECONDS = 30 * 60
+# ``_lock`` protects cache dictionaries only. Team construction performs file
+# IO and provider/tool assembly, so it must never run while this global lock is
+# held. Per-identity build locks provide single-flight construction without
+# blocking an unrelated workspace or session.
 _lock = asyncio.Lock()
+_build_locks: dict[tuple[str, ...], asyncio.Lock] = {}
+_prewarm_tasks: dict[tuple[str, str, str], asyncio.Task[None]] = {}
+
+
+def _build_lock(*identity: str) -> asyncio.Lock:
+    return _build_locks.setdefault(tuple(identity), asyncio.Lock())
+
+
+def prewarm_session_team(*, mode: str, session_id: str, workspace: str | None) -> None:
+    """Warm the selected session's team without delaying history rendering."""
+
+    if mode == "coding" and (
+        not workspace or not Path(workspace).expanduser().is_dir()
+    ):
+        return
+    if mode not in {"work", "coding"}:
+        return
+    key = (mode, workspace or "", session_id)
+    current = (
+        current_coding_team_for_session(workspace, session_id)
+        if mode == "coding" and workspace
+        else current_team_for_session(session_id)
+    )
+    if current is not None:
+        return
+    pending = _prewarm_tasks.get(key)
+    if pending is not None and not pending.done():
+        return
+
+    async def _warm() -> None:
+        try:
+            if mode == "coding" and workspace:
+                await get_or_start_coding_team(workspace, session_id, mode=mode)
+            elif mode == "work":
+                await get_or_start_team_for_session(session_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "team_prewarm_failed mode={} session_id={} error={}",
+                mode,
+                session_id,
+                exc,
+            )
+
+    task = asyncio.create_task(_warm(), name=f"team-prewarm:{session_id}")
+    _prewarm_tasks[key] = task
+
+    def _forget(completed: asyncio.Task[None]) -> None:
+        if _prewarm_tasks.get(key) is completed:
+            _prewarm_tasks.pop(key, None)
+
+    task.add_done_callback(_forget)
 
 
 def _resolve_agents_dir() -> Path:
@@ -352,27 +410,39 @@ async def get_or_start_team() -> "AgentTeam | None":
     """
     global _team, _team_last_used
 
-    async with _lock:
-        now = time.monotonic()
-        expired = _maybe_pop_idle_default_team_locked(now)
+    resolution_started = time.perf_counter()
+    async with _build_lock("default"):
+        async with _lock:
+            now = time.monotonic()
+            expired = _maybe_pop_idle_default_team_locked(now)
+            cached = _team
+            if cached is not None:
+                _team_last_used = now
 
-        if _team is not None:
-            _team_last_used = now
-            result: "AgentTeam | None" = _team
+        if cached is not None:
+            result: "AgentTeam | None" = cached
+            resolution_result = "cached"
         else:
             agents_dir = _resolve_agents_dir()
-            # Sync file IO (glob + Markdown parsing) — keep it
-            # off the event loop so concurrent requests aren't stalled.
+            # Sync file IO (glob + Markdown parsing) — keep it off the event
+            # loop and outside the global state lock.
             candidate = await asyncio.to_thread(load_team_from_dir, agents_dir)
             if candidate is None:
                 logger.warning("team_manager_no_agents path={}", agents_dir)
                 result = None
+                resolution_result = "missing"
             else:
                 await candidate.start()
-                _team = candidate
-                _team_last_used = now
+                async with _lock:
+                    _team = candidate
+                    _team_last_used = time.monotonic()
                 logger.info("team_manager_started lead={}", candidate.lead.name)
                 result = candidate
+                resolution_result = "cold"
+
+    TEAM_RESOLUTION_DURATION.labels(mode="work", result=resolution_result).observe(
+        time.perf_counter() - resolution_started
+    )
 
     if expired is not None:
         try:
@@ -389,32 +459,44 @@ async def get_or_start_team_for_session(session_id: str) -> "AgentTeam | None":
     """Return the default-mode team instance dedicated to one chat session."""
     global _team_last_used
 
-    async with _lock:
-        now = time.monotonic()
-        expired_default = _maybe_pop_idle_default_team_locked(now)
-        expired_sessions = _pop_idle_session_teams_locked(now)
+    resolution_started = time.perf_counter()
+    async with _build_lock("session", session_id):
+        async with _lock:
+            now = time.monotonic()
+            expired_default = _maybe_pop_idle_default_team_locked(now)
+            expired_sessions = _pop_idle_session_teams_locked(now)
+            existing = _session_teams.get(session_id)
+            if existing is not None:
+                _session_team_last_used[session_id] = now
 
-        existing = _session_teams.get(session_id)
         if existing is not None:
-            _session_team_last_used[session_id] = now
             result: "AgentTeam | None" = existing
+            resolution_result = "cached"
         else:
             agents_dir = _resolve_agents_dir()
             candidate = await asyncio.to_thread(load_team_from_dir, agents_dir)
             if candidate is None:
                 logger.warning("team_manager_no_agents path={}", agents_dir)
                 result = None
+                resolution_result = "missing"
             else:
                 await candidate.start()
-                _session_teams[session_id] = candidate
-                _session_team_last_used[session_id] = now
-                _team_last_used = now
+                async with _lock:
+                    _session_teams[session_id] = candidate
+                    now = time.monotonic()
+                    _session_team_last_used[session_id] = now
+                    _team_last_used = now
                 logger.info(
                     "team_manager_session_started session_id={} lead={}",
                     session_id,
                     candidate.lead.name,
                 )
                 result = candidate
+                resolution_result = "cold"
+
+    TEAM_RESOLUTION_DURATION.labels(mode="work", result=resolution_result).observe(
+        time.perf_counter() - resolution_started
+    )
 
     if expired_default is not None:
         try:
@@ -431,34 +513,29 @@ async def get_or_start_team_for_session(session_id: str) -> "AgentTeam | None":
 async def stop() -> None:
     """Stop the current team (if any) on server shutdown."""
     global _team, _team_last_used
+    prewarm_tasks = tuple(_prewarm_tasks.values())
+    _prewarm_tasks.clear()
+    for task in prewarm_tasks:
+        task.cancel()
+    if prewarm_tasks:
+        await asyncio.gather(*prewarm_tasks, return_exceptions=True)
     async with _lock:
-        if _team is not None:
-            try:
-                await _team.stop()
-            except Exception:
-                logger.exception("team_manager_stop_error")
-            _team = None
-            _team_last_used = 0.0
-        for session_id, team in list(_session_teams.items()):
-            try:
-                await team.stop()
-            except Exception:
-                logger.exception(
-                    "team_session_manager_stop_error session_id={}", session_id
-                )
+        default_team = _team
+        session_teams = list(_session_teams.items())
+        coding_teams = list(_coding_teams.items())
+        _team = None
+        _team_last_used = 0.0
         _session_teams.clear()
         _session_team_last_used.clear()
-        for (workspace, session_id), team in list(_coding_teams.items()):
-            try:
-                await team.stop()
-            except Exception:
-                logger.exception(
-                    "coding_team_manager_stop_error workspace={} session_id={}",
-                    workspace,
-                    session_id,
-                )
         _coding_teams.clear()
         _coding_team_last_used.clear()
+    if default_team is not None:
+        try:
+            await default_team.stop()
+        except Exception:
+            logger.exception("team_manager_stop_error")
+    await _stop_session_teams(session_teams)
+    await _stop_coding_teams(coding_teams)
 
 
 async def get_or_start_coding_team(
@@ -480,18 +557,18 @@ async def get_or_start_coding_team(
     mode = resolved_mode.value
     resolved_workspace = validate_workspace(workspace)
     key = (resolved_workspace, session_id)
-    async with _lock:
-        now = time.monotonic()
-        expired = _pop_idle_coding_teams_locked(now)
-        existing = _coding_teams.get(key)
+    resolution_started = time.perf_counter()
+    async with _build_lock("coding", resolved_workspace, session_id):
+        async with _lock:
+            now = time.monotonic()
+            expired = _pop_idle_coding_teams_locked(now)
+            existing = _coding_teams.get(key)
+            if existing is not None:
+                _coding_team_last_used[key] = now
+
         if existing is not None:
-            _coding_team_last_used[key] = now
-            # Update extra/read-only paths if the project config changed
-            if extra_workspace_paths is not None:
-                existing.extra_workspace_paths = extra_workspace_paths
-            if read_only_paths is not None:
-                existing.read_only_paths = read_only_paths
             team = existing
+            resolution_result = "cached"
         else:
             agents_dir = _resolve_coding_agents_dir()
             team = await asyncio.to_thread(
@@ -505,13 +582,10 @@ async def get_or_start_coding_team(
                     f"No {mode} agents found in '{agents_dir}'. "
                     "Create at least one .md file with 'role: lead'."
                 )
-            if extra_workspace_paths:
-                team.extra_workspace_paths = extra_workspace_paths
-            if read_only_paths:
-                team.read_only_paths = read_only_paths
             await team.start()
-            _coding_teams[key] = team
-            _coding_team_last_used[key] = now
+            async with _lock:
+                _coding_teams[key] = team
+                _coding_team_last_used[key] = time.monotonic()
             logger.info(
                 "coding_team_started mode={} workspace={} session_id={} lead={}",
                 mode,
@@ -519,6 +593,17 @@ async def get_or_start_coding_team(
                 session_id,
                 team.lead.name,
             )
+            resolution_result = "cold"
+
+        # Refresh project visibility on both cached and newly built teams.
+        if extra_workspace_paths is not None:
+            team.extra_workspace_paths = extra_workspace_paths
+        if read_only_paths is not None:
+            team.read_only_paths = read_only_paths
+
+    TEAM_RESOLUTION_DURATION.labels(mode=mode, result=resolution_result).observe(
+        time.perf_counter() - resolution_started
+    )
 
     await _stop_coding_teams(expired)
     return team

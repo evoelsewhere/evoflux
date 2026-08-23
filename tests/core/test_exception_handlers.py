@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi import Request
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 
 from app.agent.errors import (
     AgentConfigError,
@@ -20,6 +21,7 @@ from app.agent.errors import (
 )
 from app.core.exception_handlers import (
     EXCEPTION_HANDLERS,
+    _database_busy,
     _agent_config,
     _EVOFLUX_fallback,
     _provider_authentication,
@@ -32,6 +34,15 @@ from app.core.exception_handlers import (
     _tool_argument,
     _tool_execution,
 )
+
+
+@pytest.mark.asyncio
+async def test_database_pool_timeout_is_retryable() -> None:
+    response = await _database_busy(_make_request(), SQLAlchemyTimeoutError("busy"))
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "1"
+    assert b"database_busy" in response.body
 
 
 def _make_request() -> Request:
@@ -252,6 +263,7 @@ class TestExceptionHandlersDict:
             RoutingError,
             AgentConfigError,
             EvoFluxError,
+            SQLAlchemyTimeoutError,
         }
         assert set(EXCEPTION_HANDLERS.keys()) == expected
 

@@ -1,26 +1,29 @@
 from __future__ import annotations
 
-import asyncio
+import hashlib
 import time
 from collections.abc import AsyncGenerator, Iterator
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger
 from sqlalchemy import event
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import AsyncAdaptedQueuePool
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.requests import Request
 
 from app.core.config import settings
 from app.core.metrics import (
     DB_POOL_CHECKED_OUT,
+    DB_POOL_TIMEOUTS,
+    DB_POOL_WAIT,
     DB_QUERY_DURATION,
     DB_TRANSACTION_DURATION,
-    SQLITE_WRITE_GUARD_WAIT,
-    SQLITE_WRITE_GUARD_WAITERS,
 )
+from app.core.request_context import request_origin
 
 if TYPE_CHECKING:
     from alembic.config import Config
@@ -43,12 +46,51 @@ if _is_sqlite:
     if _db_path and _db_path != ":memory:":
         Path(_db_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
 
+
 # SQLite is a single-writer database. Giving every concurrent writer its own
 # pooled connection lets all of them occupy the pool while SQLite queues them
 # on its file lock, starving otherwise-safe WAL readers. Keep the application
 # writer lane at one connection and give HTTP reads an independent pool.
+class _ObservedQueuePool(AsyncAdaptedQueuePool):
+    """Measure the queueing time hidden before SQLAlchemy's checkout event."""
+
+    lane = "unknown"
+
+    def _do_get(self):  # noqa: ANN202 — SQLAlchemy's private hook is untyped
+        started = time.perf_counter()
+        _method, route = request_origin()
+        try:
+            return super()._do_get()
+        except SQLAlchemyTimeoutError:
+            DB_POOL_TIMEOUTS.labels(lane=self.lane, route=route).inc()
+            raise
+        finally:
+            elapsed = time.perf_counter() - started
+            DB_POOL_WAIT.labels(lane=self.lane, route=route).observe(elapsed)
+            if elapsed >= 0.25:
+                logger.warning(
+                    "slow_db_pool_wait lane={} route={} duration_ms={}",
+                    self.lane,
+                    route,
+                    round(elapsed * 1000),
+                )
+
+
+class _WriteQueuePool(_ObservedQueuePool):
+    lane = "write"
+
+
+class _ReadQueuePool(_ObservedQueuePool):
+    lane = "read"
+
+
 _write_pool_kwargs: dict = (
-    {"pool_size": 1, "max_overflow": 0, "pool_timeout": 30}
+    {
+        "poolclass": _WriteQueuePool,
+        "pool_size": 1,
+        "max_overflow": 0,
+        "pool_timeout": 5,
+    }
     if _is_sqlite
     else {"pool_size": 20, "max_overflow": 10, "pool_timeout": 10}
 )
@@ -67,8 +109,9 @@ read_engine = (
         echo=False,
         pool_pre_ping=True,
         pool_recycle=3600,
+        poolclass=_ReadQueuePool,
         pool_size=5,
-        max_overflow=5,
+        max_overflow=0,
         pool_timeout=5,
     )
     if _is_sqlite
@@ -132,11 +175,19 @@ def _instrument_engine(target_engine, lane: str) -> None:
         operation = _sql_operation(statement)
         DB_QUERY_DURATION.labels(lane=lane, operation=operation).observe(elapsed)
         if elapsed >= 0.25:
+            method, route = request_origin()
+            normalized = " ".join(statement.split())
+            fingerprint = hashlib.sha256(normalized.encode()).hexdigest()[:12]
             logger.warning(
-                "slow_db_query lane={} operation={} duration_ms={}",
+                "slow_db_query lane={} operation={} fingerprint={} method={} "
+                "route={} duration_ms={} statement={!r}",
                 lane,
                 operation,
+                fingerprint,
+                method,
+                route,
                 round(elapsed * 1000),
+                normalized[:500],
             )
 
     @event.listens_for(target_engine.sync_engine, "begin")
@@ -176,58 +227,6 @@ read_session_factory = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
-
-# Backs sqlite_write_guard() below. A single process-wide lock, not per
-# workspace/project — busy_timeout alone isn't enough once a large application
-# write legitimately holds the database longer than the timeout; another
-# writer arriving mid-transaction still raises
-# "database is locked" instead of waiting for the first to finish. This lock
-# removes the race instead of racing the clock.
-#
-# Created lazily (not at module scope) and rebuilt if the running loop
-# changes: an asyncio.Lock binds to whatever loop first awaits it, and a
-# module-level instance would otherwise raise "bound to a different event
-# loop" the moment it's reused under a new loop — every pytest-asyncio test
-# gets its own, and a long-lived server could in principle recreate one too.
-_sqlite_write_lock: asyncio.Lock | None = None
-_sqlite_write_lock_loop: asyncio.AbstractEventLoop | None = None
-
-
-def _get_sqlite_write_lock() -> asyncio.Lock:
-    global _sqlite_write_lock, _sqlite_write_lock_loop
-    loop = asyncio.get_running_loop()
-    if _sqlite_write_lock is None or _sqlite_write_lock_loop is not loop:
-        _sqlite_write_lock = asyncio.Lock()
-        _sqlite_write_lock_loop = loop
-    return _sqlite_write_lock
-
-
-@asynccontextmanager
-async def sqlite_write_guard() -> AsyncGenerator[None, None]:
-    """Serialize the caller's DB writes against every other in-process
-    SQLite writer.
-
-    SQLite allows exactly one writer at a time. Wrap application-database
-    spans that issue writes through the final ``commit()`` in this guard so
-    they queue instead of colliding. Repository code indexes use independent
-    managed SQLite targets and never enter this guard. No-op on Postgres/MySQL.
-    """
-    if not _is_sqlite:
-        yield
-        return
-    lock = _get_sqlite_write_lock()
-    started = time.perf_counter()
-    SQLITE_WRITE_GUARD_WAITERS.inc()
-    try:
-        await lock.acquire()
-    finally:
-        SQLITE_WRITE_GUARD_WAITERS.dec()
-    SQLITE_WRITE_GUARD_WAIT.observe(time.perf_counter() - started)
-    try:
-        yield
-    finally:
-        lock.release()
-
 
 # Type alias for a session factory callable.
 # async_sessionmaker[AsyncSession] satisfies this; so do @asynccontextmanager

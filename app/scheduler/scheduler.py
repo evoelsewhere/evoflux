@@ -223,8 +223,14 @@ class TaskScheduler:
     from the FastAPI lifespan.
     """
 
-    def __init__(self, db_factory: DbFactory) -> None:
-        self._db = db_factory
+    def __init__(
+        self,
+        db_factory: DbFactory,
+        *,
+        read_db_factory: DbFactory | None = None,
+    ) -> None:
+        self._write_db = db_factory
+        self._read_db = read_db_factory or db_factory
         # task_id → running asyncio.Task
         self._tasks: dict[UUID, asyncio.Task[None]] = {}
         self._fire_tasks: set[asyncio.Task[None]] = set()
@@ -267,7 +273,7 @@ class TaskScheduler:
         """Fire a persisted overdue task, then restart recurring timers."""
         await self._fire_task(task)
 
-        async with self._db() as session:
+        async with self._read_db() as session:
             fresh = await session.get(ScheduledTask, task.id)
 
         if (
@@ -283,7 +289,7 @@ class TaskScheduler:
         return bool(await self._enabled_tasks())
 
     async def _enabled_tasks(self) -> list[ScheduledTask]:
-        async with self._db() as session:
+        async with self._read_db() as session:
             result = await session.exec(
                 select(ScheduledTask).where(col(ScheduledTask.enabled).is_(True))
             )
@@ -314,7 +320,7 @@ class TaskScheduler:
             timezone=task.timezone,
             run_count=task.run_count,
         )
-        async with self._db() as session:
+        async with self._write_db() as session:
             session.add(task)
             await session.commit()
             await session.refresh(task)
@@ -336,13 +342,13 @@ class TaskScheduler:
         _validate_target(body.mode, body.workspace)
         _validate_project_target(body.mode, body.project_id)
         await _validate_project_compat(
-            self._db,
+            self._read_db,
             mode=body.mode,
             workspace=body.workspace,
             project_id=body.project_id,
         )
         await _validate_session_compat(
-            self._db,
+            self._read_db,
             session_id=body.session_id,
             mode=body.mode,
             workspace=body.workspace,
@@ -397,7 +403,7 @@ class TaskScheduler:
         if "mode" in fields or "workspace" in fields or "project_id" in fields:
             _validate_target(new_mode, new_workspace)
             await _validate_project_compat(
-                self._db,
+                self._read_db,
                 mode=new_mode,
                 workspace=new_workspace,
                 project_id=new_project_id,
@@ -414,7 +420,7 @@ class TaskScheduler:
             or "project_id" in fields
         ):
             await _validate_session_compat(
-                self._db,
+                self._read_db,
                 session_id=new_session_id,
                 mode=new_mode,
                 workspace=new_workspace,
@@ -494,7 +500,7 @@ class TaskScheduler:
     async def remove(self, task_id: UUID) -> None:
         """Cancel timer and delete *task_id* from DB."""
         self._cancel_timer(task_id)
-        async with self._db() as session:
+        async with self._write_db() as session:
             result = await session.exec(
                 select(ScheduledTask).where(ScheduledTask.id == task_id)
             )
@@ -523,7 +529,7 @@ class TaskScheduler:
             # must still get one future fire even if this task ran before.
             run_count=0 if reset_one_shot else task.run_count,
         )
-        async with self._db() as session:
+        async with self._write_db() as session:
             session.add(task)
             await session.commit()
             await session.refresh(task)
@@ -535,7 +541,7 @@ class TaskScheduler:
     async def pause(self, task_id: UUID) -> ScheduledTask:
         """Disable task and cancel its timer."""
         self._cancel_timer(task_id)
-        async with self._db() as session:
+        async with self._write_db() as session:
             result = await session.exec(
                 select(ScheduledTask).where(ScheduledTask.id == task_id)
             )
@@ -549,7 +555,7 @@ class TaskScheduler:
 
     async def resume(self, task_id: UUID) -> ScheduledTask:
         """Re-enable task, recompute next_fire_at, and start timer."""
-        async with self._db() as session:
+        async with self._write_db() as session:
             result = await session.exec(
                 select(ScheduledTask).where(ScheduledTask.id == task_id)
             )
@@ -574,7 +580,7 @@ class TaskScheduler:
 
     async def trigger(self, task_id: UUID) -> None:
         """Fire task immediately and ensure it is enabled."""
-        async with self._db() as session:
+        async with self._write_db() as session:
             result = await session.exec(
                 select(ScheduledTask).where(ScheduledTask.id == task_id)
             )
@@ -605,7 +611,7 @@ class TaskScheduler:
         )
 
     async def list_tasks(self, session_id: str | None = None) -> list[ScheduledTask]:
-        async with self._db() as session:
+        async with self._read_db() as session:
             stmt = select(ScheduledTask)
             if session_id is not None:
                 stmt = stmt.where(ScheduledTask.session_id == session_id)
@@ -613,7 +619,7 @@ class TaskScheduler:
             return list(result.all())
 
     async def get_task(self, task_id: UUID) -> ScheduledTask | None:
-        async with self._db() as session:
+        async with self._read_db() as session:
             result = await session.exec(
                 select(ScheduledTask).where(ScheduledTask.id == task_id)
             )
@@ -680,7 +686,7 @@ class TaskScheduler:
                 return
 
             # Reload task state from DB so run_count / status are fresh
-            async with self._db() as session:
+            async with self._read_db() as session:
                 result = await session.exec(
                     select(ScheduledTask).where(ScheduledTask.id == task.id)
                 )
@@ -705,7 +711,7 @@ class TaskScheduler:
             manual=True,
             preserved_next_fire_at=preserved_next,
         )
-        async with self._db() as session:
+        async with self._read_db() as session:
             fresh = await session.get(ScheduledTask, task.id)
         if (
             not self._stopping
@@ -738,7 +744,7 @@ class TaskScheduler:
         from app.models.chat import ChatSession
         from app.services.coding_project_service import get_project_workspace_paths
 
-        async with self._db() as db:
+        async with self._read_db() as db:
             if project_id is None:
                 row = await db.get(ChatSession, sid_uuid)
                 if row is None or row.project_id is None:
@@ -784,7 +790,7 @@ class TaskScheduler:
         now = datetime.now(_utc)
 
         # 1. Mark running
-        async with self._db() as session:
+        async with self._write_db() as session:
             result = await session.exec(
                 select(ScheduledTask).where(ScheduledTask.id == task.id)
             )
@@ -886,7 +892,7 @@ class TaskScheduler:
             from app.models.chat import ChatSession
 
             try:
-                async with self._db() as db:
+                async with self._write_db() as db:
                     chat_row = await db.get(ChatSession, UUID(fired_sid))
                     if chat_row is not None:
                         chat_row.scheduled_task_name = task.name
@@ -901,7 +907,7 @@ class TaskScheduler:
                 )
 
         # 4. Update stats
-        async with self._db() as session:
+        async with self._write_db() as session:
             result = await session.exec(
                 select(ScheduledTask).where(ScheduledTask.id == task.id)
             )
@@ -955,6 +961,9 @@ class TaskScheduler:
 
 # ── Module-level singleton ────────────────────────────────────────────────────
 
-from app.core.db import async_session_factory  # noqa: E402
+from app.core.db import async_session_factory, read_session_factory  # noqa: E402
 
-task_scheduler = TaskScheduler(db_factory=async_session_factory)
+task_scheduler = TaskScheduler(
+    db_factory=async_session_factory,
+    read_db_factory=read_session_factory,
+)

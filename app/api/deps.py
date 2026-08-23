@@ -6,13 +6,12 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends
-from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.schemas import ChatForm
 from app.core.config import Settings, settings
 from app.core.db import (
-    async_session_factory,
+    DbFactory,
     get_read_session,
     get_session,
     get_write_session,
@@ -41,13 +40,22 @@ WriteDbSession = Annotated[AsyncSession, Depends(get_write_session)]
 DbSession = Annotated[AsyncSession, Depends(get_session)]
 
 
-def get_session_factory() -> async_sessionmaker[AsyncSession]:
-    return async_session_factory
+def get_session_factory() -> DbFactory:
+    from app.core import db as db_module
+
+    return db_module.async_session_factory
 
 
-DbSessionFactory = Annotated[
-    async_sessionmaker[AsyncSession], Depends(get_session_factory)
-]
+DbSessionFactory = Annotated[DbFactory, Depends(get_session_factory)]
+
+
+def get_read_session_factory() -> DbFactory:
+    from app.core import db as db_module
+
+    return db_module.read_session_factory
+
+
+ReadDbSessionFactory = Annotated[DbFactory, Depends(get_read_session_factory)]
 
 
 # ── Team (optional — None when no agents are configured) ─────────────────────

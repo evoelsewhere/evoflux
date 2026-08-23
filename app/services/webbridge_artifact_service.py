@@ -3,21 +3,30 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
 from loguru import logger
-from sqlmodel import select
+from sqlalchemy import update
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
-from app.core.db import async_session_factory
 from app.core.paths import uploads_dir
 from app.models.chat import SessionMessage
 
 _CLEANUP_INTERVAL_SECONDS = 3600
+
+
+@dataclass(frozen=True, slots=True)
+class _ArtifactCleanup:
+    message_id: UUID
+    session_id: UUID
+    extra: dict[str, Any]
+    attachments: tuple[dict[str, Any], ...]
 
 
 def artifact_expired(value: Any, *, now: datetime | None = None) -> bool:
@@ -83,13 +92,32 @@ async def cleanup_expired_artifacts(
     now: datetime | None = None,
 ) -> int:
     """Delete expired bytes and tombstone metadata across all message history."""
-    rows = list((await db.exec(select(SessionMessage))).all())
-    cleaned = 0
-    for row in rows:
-        attachments = (row.extra or {}).get("attachments")
+    plan = await _plan_expired_artifact_cleanup(db, now=now)
+    return await _apply_artifact_cleanup(db, plan)
+
+
+async def _plan_expired_artifact_cleanup(
+    db: AsyncSession,
+    *,
+    now: datetime | None = None,
+) -> list[_ArtifactCleanup]:
+    """Project only metadata columns; message bodies can occupy hundreds of MB."""
+
+    rows = (
+        await db.exec(
+            select(
+                SessionMessage.id, SessionMessage.session_id, SessionMessage.extra
+            ).where(col(SessionMessage.extra).is_not(None))
+        )
+    ).all()
+    plan: list[_ArtifactCleanup] = []
+    for message_id, session_id, raw_extra in rows:
+        extra = dict(raw_extra or {})
+        attachments = extra.get("attachments")
         if not isinstance(attachments, list):
             continue
         updated_attachments = list(attachments)
+        expired: list[dict[str, Any]] = []
         changed = False
         for index, value in enumerate(attachments):
             if not isinstance(value, dict):
@@ -99,18 +127,39 @@ async def cleanup_expired_artifacts(
                 attachment, now=now
             ):
                 continue
-            await delete_artifact_bytes(row.session_id, attachment)
             updated = dict(attachment)
             updated["deleted_at"] = (now or datetime.now(timezone.utc)).isoformat()
             updated_attachments[index] = updated
+            expired.append(attachment)
             changed = True
-            cleaned += 1
         if changed:
-            extra = dict(row.extra or {})
             extra["attachments"] = updated_attachments
-            row.extra = extra
-            db.add(row)
-    if cleaned:
+            plan.append(
+                _ArtifactCleanup(
+                    message_id=message_id,
+                    session_id=session_id,
+                    extra=extra,
+                    attachments=tuple(expired),
+                )
+            )
+    return plan
+
+
+async def _apply_artifact_cleanup(
+    db: AsyncSession,
+    plan: list[_ArtifactCleanup],
+) -> int:
+    cleaned = 0
+    for item in plan:
+        for attachment in item.attachments:
+            await delete_artifact_bytes(item.session_id, attachment)
+            cleaned += 1
+        await db.exec(
+            update(SessionMessage)
+            .where(col(SessionMessage.id) == item.message_id)
+            .values(extra=item.extra)
+        )
+    if plan:
         await db.commit()
     return cleaned
 
@@ -119,8 +168,15 @@ async def run_artifact_cleanup_loop() -> None:
     """Sweep once at startup and hourly until cancelled."""
     while True:
         try:
-            async with async_session_factory() as db:
-                cleaned = await cleanup_expired_artifacts(db)
+            from app.core import db as db_module
+
+            async with db_module.read_session_factory() as db:
+                plan = await _plan_expired_artifact_cleanup(db)
+            if plan:
+                async with db_module.async_session_factory() as db:
+                    cleaned = await _apply_artifact_cleanup(db, plan)
+            else:
+                cleaned = 0
             if cleaned:
                 logger.info("webbridge_artifacts_expired count={}", cleaned)
         except asyncio.CancelledError:

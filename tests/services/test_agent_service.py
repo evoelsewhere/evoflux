@@ -699,7 +699,11 @@ async def test_deferred_dispatch_surfaces_background_preparation_failure():
         await asyncio.wait_for(task, timeout=1)
 
     team.release_user_turn_reservation.assert_called_once_with()
-    assert push.await_count == 2
+    assert push.await_count == 3
+    preparing = push.await_args_list[0].args[1]
+    assert preparing.event == "agent_status"
+    assert preparing.data["status"] == "working"
+    assert preparing.data["metadata"]["phase"] == "preparing"
     mark_done.assert_awaited_once_with("existing-123")
 
 

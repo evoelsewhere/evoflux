@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from sqlalchemy.ext.asyncio import create_async_engine
 
 
 # ── WAL pragma listener ───────────────────────────────────────────────────────
@@ -49,6 +51,36 @@ def test_sqlite_wal_sets_synchronous_normal(tmp_path):
         assert value == 1
     finally:
         conn.close()
+
+
+@pytest.mark.asyncio
+async def test_write_pool_records_hidden_checkout_wait(tmp_path):
+    from app.core.db import _WriteQueuePool
+    from app.core.metrics import DB_POOL_WAIT
+
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'queue.db'}",
+        poolclass=_WriteQueuePool,
+        pool_size=1,
+        max_overflow=0,
+        pool_timeout=1,
+    )
+    metric = DB_POOL_WAIT.labels(lane="write", route="background")
+    before = metric._sum.get()
+    first = await engine.connect()
+
+    async def acquire_second() -> None:
+        async with engine.connect():
+            return
+
+    queued = asyncio.create_task(acquire_second())
+    await asyncio.sleep(0.05)
+    await first.close()
+    await queued
+    after = metric._sum.get()
+    await engine.dispose()
+
+    assert after - before >= 0.04
 
 
 # ── run_migrations() ──────────────────────────────────────────────────────────

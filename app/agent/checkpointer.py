@@ -37,8 +37,7 @@ from app.models.chat import SessionMessage
 from app.services.chat_service import get_messages_for_llm, save_message
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import async_sessionmaker
-    from sqlmodel.ext.asyncio.session import AsyncSession
+    from app.core.db import DbFactory
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -157,8 +156,10 @@ class SQLiteCheckpointer(Checkpointer):
     updated via ``exclude_from_context=True``.
 
     Args:
-        session_factory: An ``async_sessionmaker[AsyncSession]`` produced by
+        session_factory: A write-session factory produced by
             the application's database setup (``app.core.db``).
+        read_session_factory: Optional independent read-session factory. When
+            provided, loading context never queues behind agent persistence.
         stream_session_id: Optional session id used to address the shared SSE
             stream store.  Together with *agent_name*, this lets ``sync()``
             call ``stream_store.commit_agent_content`` after persisting an
@@ -172,12 +173,14 @@ class SQLiteCheckpointer(Checkpointer):
 
     def __init__(
         self,
-        session_factory: async_sessionmaker[AsyncSession],
+        session_factory: DbFactory,
         *,
+        read_session_factory: DbFactory | None = None,
         stream_session_id: str | None = None,
         agent_name: str | None = None,
     ) -> None:
         self._session_factory = session_factory
+        self._read_session_factory = read_session_factory or session_factory
         # Me track persisted message object ids — key: session_id
         self._persisted: dict[str, set[int]] = {}
         # Me store seeded prompt tokens per session — set by mark_loaded(), read by seed_state()
@@ -249,7 +252,7 @@ class SQLiteCheckpointer(Checkpointer):
         Returns ``None`` when the session has no messages yet.
         """
         logger.debug("checkpointer_load session_id={}", session_id)
-        async with self._session_factory() as db:
+        async with self._read_session_factory() as db:
             messages = await get_messages_for_llm(db, UUID(session_id))
 
         if not messages:

@@ -26,7 +26,7 @@ from uuid import uuid7  # ty: ignore[unresolved-import] - backported in app.__in
 from loguru import logger
 
 from app.core.paths import session_uploads_dir
-from app.agent.schemas.events import DoneEvent, ErrorEvent
+from app.agent.schemas.events import AgentStatusEvent, DoneEvent, ErrorEvent
 from app.services import memory_stream_store as stream_store
 from app.services.shell_service import dispatch_shell_command
 from app.services.stream_envelope import StreamEnvelope
@@ -631,6 +631,16 @@ async def dispatch_user_message(
         # first provider chunk or have its new SSE connection terminated.
         await stream_store.init_turn(sid)
         team.reserve_user_turn()
+        await stream_store.push_event(
+            sid,
+            StreamEnvelope.from_event(
+                AgentStatusEvent(
+                    agent=team.lead.name,
+                    status="working",
+                    metadata={"phase": "preparing", "ingress": True},
+                )
+            ),
+        )
 
         async def _run_deferred_dispatch() -> None:
             try:
