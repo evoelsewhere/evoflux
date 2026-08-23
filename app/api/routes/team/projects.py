@@ -9,8 +9,13 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.api.deps import DbSession
+from app.api.deps import (
+    ReadDbSession,
+    ReadDbSessionFactory,
+    WriteDbSession,
+)
 from app.api.schemas.code_context import (
     CodeContextIndexRequest,
     CodeContextQueryRequest,
@@ -18,6 +23,7 @@ from app.api.schemas.code_context import (
     ProjectCodeContextIndexResponse,
 )
 from app.api.schemas.projects import ProjectResponse, ProjectWorkspaceItem
+from app.core.db import DbFactory
 from app.models.chat import CodingProjectWorkspace, CodingWorkspace
 from app.services import coding_project_service as svc
 from app.services import team_manager
@@ -78,7 +84,7 @@ def _ws_item(link: CodingProjectWorkspace, ws: CodingWorkspace) -> ProjectWorksp
     )
 
 
-async def _project_response(db: DbSession, project_id: UUID) -> ProjectResponse:
+async def _project_response(db: AsyncSession, project_id: UUID) -> ProjectResponse:
     project = await svc.get_project(db, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -96,7 +102,7 @@ async def _project_response(db: DbSession, project_id: UUID) -> ProjectResponse:
 
 
 async def list_project_responses(
-    db: DbSession, *, kind: str | None = None
+    db: AsyncSession, *, kind: str | None = None
 ) -> list[ProjectResponse]:
     projects = await svc.list_visible_projects(db, kind=kind)
     output: list[ProjectResponse] = []
@@ -118,7 +124,7 @@ async def list_project_responses(
 
 
 async def _project_scopes(
-    db: DbSession, project_id: UUID
+    db: AsyncSession, project_id: UUID
 ) -> tuple[RepositoryScope, ...]:
     project = await svc.get_project(db, project_id)
     if project is None:
@@ -143,15 +149,31 @@ async def _project_scopes(
     return tuple(scopes)
 
 
+async def _load_project_context(
+    db_factory: DbFactory, project_id: UUID
+) -> tuple[
+    tuple[RepositoryScope, ...],
+    list[tuple[CodingProjectWorkspace, CodingWorkspace]],
+]:
+    """Read project metadata and release SQLite before index work starts."""
+
+    async with db_factory() as db:
+        scopes = await _project_scopes(db, project_id)
+        pairs = await svc.get_project_workspaces(db, project_id)
+    return scopes, pairs
+
+
 @router.get("", response_model=list[ProjectResponse])
 async def list_projects(
-    db: DbSession, kind: str | None = None
+    db: ReadDbSession, kind: str | None = None
 ) -> list[ProjectResponse]:
     return await list_project_responses(db, kind=kind)
 
 
 @router.post("", response_model=ProjectResponse, status_code=201)
-async def create_project(body: ProjectCreateRequest, db: DbSession) -> ProjectResponse:
+async def create_project(
+    body: ProjectCreateRequest, db: WriteDbSession
+) -> ProjectResponse:
     project = await svc.create_project(
         db,
         name=body.name,
@@ -164,13 +186,13 @@ async def create_project(body: ProjectCreateRequest, db: DbSession) -> ProjectRe
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
-async def get_project(project_id: UUID, db: DbSession) -> ProjectResponse:
+async def get_project(project_id: UUID, db: ReadDbSession) -> ProjectResponse:
     return await _project_response(db, project_id)
 
 
 @router.put("/{project_id}", response_model=ProjectResponse)
 async def update_project(
-    project_id: UUID, body: ProjectUpdateRequest, db: DbSession
+    project_id: UUID, body: ProjectUpdateRequest, db: WriteDbSession
 ) -> ProjectResponse:
     project = await svc.update_project(
         db,
@@ -188,7 +210,7 @@ async def update_project(
 
 
 @router.delete("/{project_id}", status_code=204)
-async def delete_project(project_id: UUID, db: DbSession) -> None:
+async def delete_project(project_id: UUID, db: WriteDbSession) -> None:
     if await purge_project(db, project_id) is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -197,7 +219,7 @@ async def delete_project(project_id: UUID, db: DbSession) -> None:
     "/{project_id}/workspaces", response_model=ProjectWorkspaceItem, status_code=201
 )
 async def add_workspace(
-    project_id: UUID, body: AddWorkspaceRequest, db: DbSession
+    project_id: UUID, body: AddWorkspaceRequest, db: WriteDbSession
 ) -> ProjectWorkspaceItem:
     link = await svc.add_workspace_to_project(
         db,
@@ -215,7 +237,9 @@ async def add_workspace(
 
 
 @router.delete("/{project_id}/workspaces/{workspace_id}", status_code=204)
-async def remove_workspace(project_id: UUID, workspace_id: UUID, db: DbSession) -> None:
+async def remove_workspace(
+    project_id: UUID, workspace_id: UUID, db: WriteDbSession
+) -> None:
     if await purge_project_workspace(db, project_id, workspace_id) is None:
         raise HTTPException(status_code=404, detail="Workspace not in project")
 
@@ -227,7 +251,7 @@ async def update_workspace_in_project(
     project_id: UUID,
     workspace_id: UUID,
     body: UpdateWorkspaceRequest,
-    db: DbSession,
+    db: WriteDbSession,
 ) -> ProjectWorkspaceItem:
     link = (
         await db.exec(
@@ -255,10 +279,17 @@ async def update_workspace_in_project(
     "/{project_id}/code-context/status",
 )
 async def project_code_context_status(
-    project_id: UUID, db: DbSession
+    project_id: UUID, db_factory: ReadDbSessionFactory
 ) -> list[dict[str, object]]:
-    scopes = await _project_scopes(db, project_id)
-    pairs = await svc.get_project_workspaces(db, project_id)
+    scopes, pairs = await _load_project_context(db_factory, project_id)
+    return await _project_code_context_status_data(project_id, scopes, pairs)
+
+
+async def _project_code_context_status_data(
+    project_id: UUID,
+    scopes: tuple[RepositoryScope, ...],
+    pairs: list[tuple[CodingProjectWorkspace, CodingWorkspace]],
+) -> list[dict[str, object]]:
     indexes = await asyncio.gather(
         *(repository_indexes.get(scope.root) for scope in scopes)
     )
@@ -306,10 +337,10 @@ async def project_code_context_status(
 )
 async def index_project_code_context(
     project_id: UUID,
-    db: DbSession,
+    db_factory: ReadDbSessionFactory,
     body: CodeContextIndexRequest | None = None,
 ) -> ProjectCodeContextIndexResponse:
-    scopes = await _project_scopes(db, project_id)
+    scopes, _pairs = await _load_project_context(db_factory, project_id)
     indexes = await asyncio.gather(
         *(repository_indexes.get(scope.root) for scope in scopes)
     )
@@ -331,12 +362,13 @@ async def index_project_code_context(
 )
 async def query_project_code_context(
     project_id: UUID,
-    db: DbSession,
+    db_factory: ReadDbSessionFactory,
     body: CodeContextQueryRequest,
 ) -> CodeContextQueryResponse:
+    scopes, _pairs = await _load_project_context(db_factory, project_id)
     try:
         result = await query_code_context(
-            scopes=await _project_scopes(db, project_id),
+            scopes=scopes,
             action=body.action,
             query=body.query,
             repository=body.repository,
@@ -354,13 +386,12 @@ async def query_project_code_context(
 @router.get("/{project_id}/code-context/graph-data")
 async def project_code_context_graph_data(
     project_id: UUID,
-    db: DbSession,
+    db_factory: ReadDbSessionFactory,
     node_limit_per_repo: int = Query(500, ge=1, le=5_000),
     edge_limit_per_repo: int = Query(2_000, ge=1, le=10_000),
 ) -> dict[str, object]:
     """Build the spatial graph from current repository targets, never DB rows."""
-    scopes = await _project_scopes(db, project_id)
-    pairs = await svc.get_project_workspaces(db, project_id)
+    scopes, pairs = await _load_project_context(db_factory, project_id)
     indexes = await asyncio.gather(
         *(repository_indexes.get(scope.root) for scope in scopes)
     )
@@ -386,7 +417,7 @@ async def project_code_context_graph_data(
         )
         for symbol in snapshot.symbols
     }
-    repos = await project_code_context_status(project_id, db)
+    repos = await _project_code_context_status_data(project_id, scopes, pairs)
     nodes = [
         {
             "id": global_id[symbol.identity],

@@ -180,9 +180,13 @@ def app_without_team(monkeypatch):
     async def no_team(_session_id: str):
         return None
 
+    async def no_default_team():
+        return None
+
     monkeypatch.setattr(
         "app.services.team_manager.get_or_start_team_for_session", no_team
     )
+    monkeypatch.setattr("app.services.team_manager.get_or_start_team", no_default_team)
     return app
 
 

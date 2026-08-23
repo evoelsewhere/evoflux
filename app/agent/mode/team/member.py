@@ -1465,8 +1465,11 @@ class TeamMemberBase(abc.ABC):
         # duplicate blocks on mid-turn refresh.
         checkpointer = None
         if self.db_factory:
+            from app.core import db as db_module
+
             checkpointer = SQLiteCheckpointer(
                 self.db_factory,
+                read_session_factory=db_module.read_session_factory,
                 stream_session_id=lead_session_id,
                 agent_name=self.name,
             )

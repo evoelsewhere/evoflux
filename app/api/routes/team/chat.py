@@ -13,7 +13,13 @@ from pydantic import BaseModel, field_validator
 from sqlmodel import col, select
 from sse_starlette.sse import EventSourceResponse
 
-from app.api.deps import ChatFormDep, DbSession, WriteDbSession
+from app.api.deps import (
+    ChatFormDep,
+    DbSession,
+    DbSessionFactory,
+    ReadDbSession,
+    WriteDbSession,
+)
 from app.api.routes.team._helpers import (
     _message_response,
     _read_upload_as_attachment,
@@ -276,7 +282,8 @@ def _goal_response(goal) -> GoalResponse:
 @router.post("/chat", status_code=202)
 async def team_chat(
     request: Request,
-    db: DbSession,
+    db: ReadDbSession,
+    write_db_factory: DbSessionFactory,
     body: ChatFormDep,
     files: list[UploadFile] = File(default=[]),
 ) -> dict:
@@ -342,8 +349,11 @@ async def team_chat(
         )
 
     if body.webbridge_enabled is not None and existing is not None:
-        async with db.begin():
-            existing.tags = sorted(session_tags) or None
+        async with write_db_factory() as write_db:
+            async with write_db.begin():
+                writable = await write_db.get(ChatSession, existing.id)
+                if writable is not None:
+                    writable.tags = sorted(session_tags) or None
 
     # A persisted session owns its mode and workspace. Request fields select
     # the context only when creating a new session; they can never migrate an
@@ -522,8 +532,9 @@ async def team_chat(
 
     async with team_obj.user_message_lock:
         if session_uuid is not None:
-            async with db.begin():
-                await cleanup_reverted_tail(db, session_uuid)
+            async with write_db_factory() as write_db:
+                async with write_db.begin():
+                    await cleanup_reverted_tail(write_db, session_uuid)
 
         if (
             session_uuid is not None
@@ -556,37 +567,40 @@ async def team_chat(
                     raise HTTPException(
                         status_code=exc.status, detail=str(exc)
                     ) from exc
-            async with db.begin():
-                queued_extra: dict[str, object] = {}
-                effective_model = model or team_obj.lead.agent.model_id
-                if effective_model:
-                    queued_extra["model"] = effective_model
-                if thinking_level:
-                    queued_extra["thinking_level"] = thinking_level
-                if fast_mode_service_tier:
-                    queued_extra["service_tier"] = "fast"
-                if queued_attachment_metas:
-                    queued_extra["attachments"] = queued_attachment_metas
-                existing_row = await db.get(ChatSession, session_uuid)
-                if existing_row is not None:
-                    if model_provided:
-                        existing_row.model = model
-                    if thinking_level_provided:
-                        existing_row.thinking_level = thinking_level
-                    effective_model = existing_row.model or team_obj.lead.agent.model_id
+            async with write_db_factory() as write_db:
+                async with write_db.begin():
+                    queued_extra: dict[str, object] = {}
+                    effective_model = model or team_obj.lead.agent.model_id
                     if effective_model:
                         queued_extra["model"] = effective_model
-                    if existing_row.thinking_level:
-                        queued_extra["thinking_level"] = existing_row.thinking_level
+                    if thinking_level:
+                        queued_extra["thinking_level"] = thinking_level
                     if fast_mode_service_tier:
                         queued_extra["service_tier"] = "fast"
-                    db.add(existing_row)
-                queued = await save_queued_user_message(
-                    db,
-                    session_uuid,
-                    message,
-                    extra=queued_extra,
-                )
+                    if queued_attachment_metas:
+                        queued_extra["attachments"] = queued_attachment_metas
+                    existing_row = await write_db.get(ChatSession, session_uuid)
+                    if existing_row is not None:
+                        if model_provided:
+                            existing_row.model = model
+                        if thinking_level_provided:
+                            existing_row.thinking_level = thinking_level
+                        effective_model = (
+                            existing_row.model or team_obj.lead.agent.model_id
+                        )
+                        if effective_model:
+                            queued_extra["model"] = effective_model
+                        if existing_row.thinking_level:
+                            queued_extra["thinking_level"] = existing_row.thinking_level
+                        if fast_mode_service_tier:
+                            queued_extra["service_tier"] = "fast"
+                        write_db.add(existing_row)
+                    queued = await save_queued_user_message(
+                        write_db,
+                        session_uuid,
+                        message,
+                        extra=queued_extra,
+                    )
             logger.info(
                 "team_chat_queued session_id={} message_id={} mentions={}",
                 session_id,
@@ -1117,6 +1131,11 @@ async def resolve_team_session(
         await db.refresh(session)
 
     data = SessionResponse.model_validate(session).model_dump()
+    team_manager.prewarm_session_team(
+        mode=session.mode,
+        session_id=str(session.id),
+        workspace=session.workspace,
+    )
     return TeamSessionResolveResponse(**data, created=created)
 
 
@@ -1405,6 +1424,11 @@ async def team_history(
         ) from exc
     if history is None:
         raise HTTPException(status_code=404, detail="Lead session not found.")
+    team_manager.prewarm_session_team(
+        mode=history.lead_session.mode,
+        session_id=str(history.lead_session.id),
+        workspace=history.lead_session.workspace,
+    )
     goal_row = await goal_service.get_goal(db, history.lead_session.id)
     goal_response = _goal_response(goal_row) if goal_row is not None else None
     lead_resp = SessionResponse.model_validate(history.lead_session).model_copy(

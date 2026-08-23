@@ -86,6 +86,35 @@ DB_POOL_CHECKED_OUT = Gauge(
     registry=REGISTRY,
 )
 
+DB_POOL_WAIT = Histogram(
+    "EVOFLUX_db_pool_wait_seconds",
+    "Time spent acquiring a database connection, split by lane and route.",
+    labelnames=("lane", "route"),
+    buckets=(
+        0.0005,
+        0.001,
+        0.0025,
+        0.005,
+        0.01,
+        0.025,
+        0.05,
+        0.1,
+        0.25,
+        0.5,
+        1,
+        2.5,
+        5,
+    ),
+    registry=REGISTRY,
+)
+
+DB_POOL_TIMEOUTS = Counter(
+    "EVOFLUX_db_pool_timeouts_total",
+    "Database connection acquisition timeouts, split by lane and route.",
+    labelnames=("lane", "route"),
+    registry=REGISTRY,
+)
+
 DB_QUERY_DURATION = Histogram(
     "EVOFLUX_db_query_duration_seconds",
     "Database cursor execution duration, excluding pool checkout wait.",
@@ -117,19 +146,6 @@ DB_TRANSACTION_DURATION = Histogram(
     registry=REGISTRY,
 )
 
-SQLITE_WRITE_GUARD_WAIT = Histogram(
-    "EVOFLUX_sqlite_write_guard_wait_seconds",
-    "Time spent waiting for the in-process SQLite write guard.",
-    buckets=(0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10),
-    registry=REGISTRY,
-)
-
-SQLITE_WRITE_GUARD_WAITERS = Gauge(
-    "EVOFLUX_sqlite_write_guard_waiters",
-    "Coroutines currently queued on the in-process SQLite write guard.",
-    registry=REGISTRY,
-)
-
 # ── Agent / turn metrics ──────────────────────────────────────────────────────
 
 TURNS_TOTAL = Counter(
@@ -143,6 +159,14 @@ TURN_DURATION = Histogram(
     "EVOFLUX_turn_duration_seconds",
     "End-to-end turn duration in seconds.",
     buckets=(0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300, 600),
+    registry=REGISTRY,
+)
+
+TEAM_RESOLUTION_DURATION = Histogram(
+    "EVOFLUX_team_resolution_duration_seconds",
+    "Time to resolve a cached or cold team before message ingress.",
+    labelnames=("mode", "result"),
+    buckets=(0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5),
     registry=REGISTRY,
 )
 
@@ -257,21 +281,28 @@ class HTTPMetricsMiddleware(BaseHTTPMiddleware):
         if request.url.path == "/metrics":
             return await call_next(request)
 
+        from app.core.request_context import (
+            bind_request_context,
+            reset_request_context,
+        )
+
+        route = _route_template(request)
+        context_tokens = bind_request_context(request.method, route)
         start = time.perf_counter()
         try:
             response = await call_next(request)
             status_code = response.status_code
         except Exception:
             elapsed = time.perf_counter() - start
-            route = _route_template(request)
             HTTP_REQUESTS.labels(method=request.method, route=route, status="5xx").inc()
             HTTP_REQUEST_DURATION.labels(method=request.method, route=route).observe(
                 elapsed
             )
             raise
+        finally:
+            reset_request_context(context_tokens)
 
         elapsed = time.perf_counter() - start
-        route = _route_template(request)
         HTTP_REQUESTS.labels(
             method=request.method, route=route, status=_status_class(status_code)
         ).inc()

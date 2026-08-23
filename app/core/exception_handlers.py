@@ -20,6 +20,7 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 from loguru import logger
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 
 from app.agent.errors import (
     AgentConfigError,
@@ -119,9 +120,29 @@ async def _EVOFLUX_fallback(request: Request, exc: EvoFluxError) -> JSONResponse
     return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 
+async def _database_busy(request: Request, exc: SQLAlchemyTimeoutError) -> JSONResponse:
+    """Turn bounded SQLite admission pressure into a retryable response."""
+
+    logger.warning(
+        "database_busy method={} path={} error={}",
+        request.method,
+        request.url.path,
+        exc,
+    )
+    return JSONResponse(
+        status_code=503,
+        headers={"Retry-After": "1"},
+        content={
+            "detail": "Database is busy. Retry the request in a moment.",
+            "code": "database_busy",
+        },
+    )
+
+
 # Specific exception types must come before the base class so FastAPI resolves
 # the most-specific handler first.  Order matters: subclasses before superclasses.
 EXCEPTION_HANDLERS: dict[int | type[Exception], _ExceptionHandler] = {
+    SQLAlchemyTimeoutError: _database_busy,
     SessionNotFoundError: _session_not_found,
     ProviderRateLimitError: _provider_rate_limit,
     ProviderAuthenticationError: _provider_authentication,

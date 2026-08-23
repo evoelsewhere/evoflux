@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
+import threading
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -412,6 +414,35 @@ async def test_get_or_start_coding_team_isolated_by_session(tmp_path, monkeypatc
         team_manager.current_coding_team_for_session(str(workspace), "session-b")
         is second_team
     )
+
+
+@pytest.mark.asyncio
+async def test_unrelated_coding_teams_build_concurrently(tmp_path, monkeypatch):
+    first_workspace = tmp_path / "first"
+    second_workspace = tmp_path / "second"
+    first_workspace.mkdir()
+    second_workspace.mkdir()
+    first_team = _make_team("coding-first")
+    second_team = _make_team("coding-second")
+    rendezvous = threading.Barrier(2)
+
+    def load(_path, **kwargs):
+        rendezvous.wait(timeout=2)
+        return (
+            first_team
+            if kwargs["workspace"] == str(first_workspace.resolve())
+            else second_team
+        )
+
+    monkeypatch.setattr(team_manager, "load_team_from_dir", load)
+
+    first, second = await asyncio.gather(
+        team_manager.get_or_start_coding_team(str(first_workspace), "session-a"),
+        team_manager.get_or_start_coding_team(str(second_workspace), "session-b"),
+    )
+
+    assert first is first_team
+    assert second is second_team
 
 
 # ── refresh_blueprints() ──────────────────────────────────────────────────────
