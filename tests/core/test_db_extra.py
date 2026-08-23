@@ -53,6 +53,18 @@ def test_sqlite_wal_sets_synchronous_normal(tmp_path):
         conn.close()
 
 
+def test_sqlite_connections_enforce_foreign_keys(tmp_path):
+    from app.core.db import _set_sqlite_pragmas
+    import sqlite3
+
+    conn = sqlite3.connect(str(tmp_path / "foreign-keys.db"))
+    try:
+        _set_sqlite_pragmas(conn, None)
+        assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
 @pytest.mark.asyncio
 async def test_write_pool_records_hidden_checkout_wait(tmp_path):
     from app.core.db import _WriteQueuePool

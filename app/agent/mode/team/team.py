@@ -2529,6 +2529,15 @@ class AgentTeam:
                 f"(allowed this turn: {allowed or 'lead only'})."
             )
 
+        # ``spawn`` is also a public runtime/test entry point and can be
+        # invoked before the first user turn materializes the lead row. Every
+        # child session and delegation references that row, so establish the
+        # parent invariant before issuing any FK-backed writes.
+        await self.lead._ensure_db_session(
+            mode=self.mode,
+            workspace=self.workspace,
+        )
+
         # Reconcile counter for this lead session if not yet done.  This
         # ensures auto-assigned ``#N`` values are restart-safe and don't
         # collide with old child sessions.

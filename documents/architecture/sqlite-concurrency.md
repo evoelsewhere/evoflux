@@ -27,6 +27,10 @@ flowchart LR
   file lock.
 - Connection admission times out after five seconds and becomes a retryable
   HTTP `503 database_busy`, never an unexplained 30-second freeze.
+- Every application connection enables `PRAGMA foreign_keys=ON`. Revision 53
+  repairs legacy drift by applying each declared `CASCADE`/`SET NULL` action
+  explicitly, then fails migration if `PRAGMA foreign_key_check` returns any
+  row. Foreign-key enforcement is mirrored by the test database.
 - POST does not imply write intent. Long-running code-context POST handlers
   load project metadata through a short read-factory scope, close it, and only
   then start repository work.
@@ -48,6 +52,16 @@ after it. In particular:
 The SQLAlchemy FIFO pool is the single-writer coordinator. Pool acquisition is
 instrumented inside `_do_get()`, which includes the time hidden before normal
 checkout events.
+
+Session teardown increments an in-memory epoch before evicting teams. Cold
+builders may only publish a team when the epoch captured before construction is
+still current; otherwise the candidate is stopped and discarded. This prevents
+a delete/purge racing a cold boot from resurrecting an in-memory ghost team.
+
+Two-phase artifact retention uses optimistic compare-and-set on message
+metadata. If checkpointer or usage telemetry changes `extra` between planning
+and apply, cleanup never overwrites the newer value; the expired artifact is
+replanned on the next sweep.
 
 ## CPU and cache isolation
 
