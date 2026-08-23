@@ -118,6 +118,14 @@ async def _purge_session_rows(
     if not session_ids:
         return SessionFiles()
 
+    # Remove episodic evidence first; semantic facts survive only when another
+    # session still supports them. This gives chat deletion real forget
+    # semantics for the canonical scoped-memory store.
+    from app.services.scoped_memory import forget_session_memory
+
+    for session_id in session_ids:
+        await forget_session_memory(db, session_id)
+
     executions = list(
         (
             await db.exec(

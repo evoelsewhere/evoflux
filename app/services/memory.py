@@ -8,11 +8,14 @@ retrieval path used by both automatic prompt injection and ``memory_search``.
 
 from __future__ import annotations
 
+import asyncio
 import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from uuid import UUID
 
+from sqlalchemy import func, or_
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -360,9 +363,13 @@ def search_curated_memory(
 
 
 async def search_memory_messages(
-    db: AsyncSession, query: str, *, limit: int = 5
+    db: AsyncSession,
+    query: str,
+    *,
+    limit: int = 5,
+    session_id: UUID | None = None,
 ) -> list[MemorySearchResult]:
-    """Search visible persisted chat messages as a raw-evidence fallback."""
+    """Search visible persisted dialogue as a scoped raw-evidence fallback."""
     limit = max(1, limit)
     query_tokens = _scoring_tokens(query)
     if not query_tokens:
@@ -372,12 +379,49 @@ async def search_memory_messages(
         .join(ChatSession, col(SessionMessage.session_id) == col(ChatSession.id))
         .where(col(SessionMessage.exclude_from_context).is_(False))
         .where(col(SessionMessage.content).is_not(None))
+        .where(col(SessionMessage.role).in_(("user", "assistant")))
         .order_by(col(SessionMessage.created_at).desc())
         .limit(500)
     )
+    if session_id is not None:
+        target = await db.get(ChatSession, session_id)
+        if target is None:
+            return []
+        owner = target
+        if target.parent_session_id is not None:
+            parent = await db.get(ChatSession, target.parent_session_id)
+            if parent is not None:
+                owner = parent
+        allowed = [
+            col(ChatSession.id) == target.id,
+            col(ChatSession.id) == owner.id,
+            col(ChatSession.parent_session_id) == owner.id,
+        ]
+        if owner.project_id is not None:
+            allowed.append(col(ChatSession.project_id) == owner.project_id)
+        elif owner.workspace:
+            allowed.append(col(ChatSession.workspace) == owner.workspace)
+        elif owner.folder_id is not None:
+            allowed.append(col(ChatSession.folder_id) == owner.folder_id)
+        stmt = stmt.where(or_(*allowed))
+
+    # Filter before LIMIT so old relevant evidence can beat newer unrelated
+    # chatter. This portable predicate is a compatibility bridge to FTS.
+    content_terms = sorted(query_tokens, key=len, reverse=True)[:5]
+    if content_terms:
+        stmt = stmt.where(
+            or_(
+                *(
+                    func.lower(SessionMessage.content).contains(term)
+                    for term in content_terms
+                )
+            )
+        )
     rows = (await db.exec(stmt)).all()
     results: list[MemorySearchResult] = []
     for message, session in rows:
+        if message.extra and message.extra.get("hidden_from_user"):
+            continue
         content = message.content or ""
         title = session.title or session.agent_name or str(session.id)
         score = _score(query_tokens, f"{title}\n{message.role}\n{content}")
@@ -405,18 +449,44 @@ async def memory_search(
     limit: int = 8,
     rerank: bool = True,
     abstain_weak: bool = True,
+    session_id: UUID | None = None,
 ) -> list[MemorySearchResult]:
     """Search durable Memory, raw evidence files, and visible chat history."""
     limit = max(1, limit)
-    results = search_memory_files(
-        query,
-        limit=limit,
-        scope="all",
-        rerank=rerank,
-        abstain_weak=abstain_weak,
+    results: list[MemorySearchResult] = []
+    if db is not None and session_id is not None:
+        from app.services.scoped_memory import search_scoped_memory
+
+        results.extend(
+            await search_scoped_memory(
+                db,
+                session_id,
+                query,
+                limit=limit,
+                automatic=False,
+            )
+        )
+    # Legacy wiki remains explicitly searchable while automatic recall uses
+    # only scoped facts.
+    results.extend(
+        await asyncio.to_thread(
+            search_memory_files,
+            query,
+            limit=limit,
+            scope="all",
+            rerank=rerank,
+            abstain_weak=abstain_weak,
+        )
     )
     if db is not None:
-        results.extend(await search_memory_messages(db, query, limit=limit))
+        results.extend(
+            await search_memory_messages(
+                db,
+                query,
+                limit=limit,
+                session_id=session_id,
+            )
+        )
     return sorted(results, key=lambda result: (-result.score, result.source_ref))[
         :limit
     ]

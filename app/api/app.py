@@ -134,6 +134,19 @@ async def _start_optional_services(app: FastAPI, process_started: float) -> None
     _log_startup_timing("scheduler", phase_started, process_started)
 
     phase_started = perf_counter()
+    try:
+        from app.core.db import async_session_factory
+        from app.services.scoped_memory import backfill_extracted_note_projections
+
+        async with async_session_factory() as db:
+            await backfill_extracted_note_projections(db)
+    except Exception as exc:  # noqa: BLE001 - optional compatibility import
+        logger.error(
+            "optional_service_start_failed service=memory_backfill error={}", exc
+        )
+    _log_startup_timing("memory_backfill", phase_started, process_started)
+
+    phase_started = perf_counter()
     runtime_settings = app.state.runtime_settings
     try:
         if runtime_settings.dream.enabled:
@@ -284,6 +297,12 @@ async def lifespan(app: FastAPI):
     await stop_all_processes()
     await stop_all_servers()
     await close_language_servers()
+
+    # Extraction tasks own DB work and must finish (or record a retryable
+    # failure) before the engines are disposed.
+    from app.agent.hooks.memory_extraction import drain_memory_extraction_tasks
+
+    await drain_memory_extraction_tasks()
 
     from app.core.db import dispose_engines
 

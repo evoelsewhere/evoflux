@@ -116,8 +116,8 @@ async def test_relevant_topic_is_injected():
     )
 
     assert "## Relevant memory" in result
-    assert "source=topic:response-style" in result
-    assert "sources=['session-test']" in result
+    assert '"source":"topic:response-style"' in result
+    assert '"provenance":["session-test"]' in result
     assert "direct fact-based" in result
 
 
@@ -136,7 +136,7 @@ async def test_metadata_tags_boost_domain_memory():
         _request(user="How should EvoFlux memory retrieval work?"),
     )
 
-    assert "source=topic:evoflux-memory" in result
+    assert '"source":"topic:evoflux-memory"' in result
     assert "benchmarkable" in result
 
 

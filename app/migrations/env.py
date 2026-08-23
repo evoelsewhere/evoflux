@@ -12,6 +12,7 @@ from sqlmodel import SQLModel
 from app.core.config import settings
 from app.models import ChatSession, SessionMessage  # noqa: F401
 from app.models import DelegationTask, GitServerConnection  # noqa: F401
+from app.models import MemoryExtractionState, MemoryFact, MemoryFactEvidence  # noqa: F401
 from app.models.chat import TZDateTime  # noqa: F401 — used by render_item
 from app.scheduler.models import ScheduledTask  # noqa: F401
 

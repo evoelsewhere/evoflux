@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
+from uuid import UUID
 
 from pydantic import Field
 
-from app.agent.tools.registry import Tool
-from app.core.db import get_write_session
+from app.agent.tools.registry import InjectedArg, Tool
+from app.core.db import get_read_session
 from app.services.memory import memory_search as search_memory
 
 
@@ -21,6 +22,7 @@ async def _memory_search(
             description="Maximum number of cited memory results to return (default 8)."
         ),
     ] = 8,
+    _state: Annotated[Any, InjectedArg()] = None,
 ) -> str:
     """Search curated knowledge, raw evidence, and visible chat messages.
 
@@ -29,8 +31,20 @@ async def _memory_search(
     `comparison:<slug>`, `memory:user`, and `message:<uuid>`.
     """
     limit = max(1, min(top_k, 20))
-    async for db in get_write_session():
-        results = await search_memory(query, db=db, limit=limit)
+    raw_session_id = (
+        (_state.metadata or {}).get("session_id") if _state is not None else None
+    )
+    try:
+        session_id = UUID(str(raw_session_id)) if raw_session_id else None
+    except ValueError:
+        session_id = None
+    async for db in get_read_session():
+        results = await search_memory(
+            query,
+            db=db,
+            limit=limit,
+            session_id=session_id,
+        )
         break
     else:
         results = await search_memory(query, limit=limit)

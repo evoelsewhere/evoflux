@@ -31,6 +31,8 @@ as the "concept" page-type.
 from __future__ import annotations
 
 import re
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -38,6 +40,7 @@ from pathlib import Path
 import yaml
 from loguru import logger
 
+from app.agent.tools.builtin.filesystem._atomic import atomic_write_bytes
 from app.core.config import settings
 
 # ── Layout constants ─────────────────────────────────────────────────────────
@@ -70,6 +73,40 @@ _KNOWLEDGE_DIRS: tuple[str, ...] = (
 
 #: Every subdirectory that may appear as the first path component.
 _VALID_SUBDIRS: frozenset[str] = frozenset((*_KNOWLEDGE_DIRS, IMPORTS_DIR, NOTES_DIR))
+
+_thread_write_lock = threading.RLock()
+
+
+@contextmanager
+def _wiki_write_lock():
+    """Serialise wiki writes across threads and local EvoFlux processes."""
+
+    root = wiki_root()
+    root.mkdir(parents=True, exist_ok=True)
+    lock_path = root / ".memory-write.lock"
+    with _thread_write_lock:
+        handle = lock_path.open("a+b")
+        try:
+            try:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            except ImportError:  # pragma: no cover - Windows
+                pass
+            yield
+        finally:
+            try:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            except ImportError:  # pragma: no cover - Windows
+                pass
+            handle.close()
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    atomic_write_bytes(path, content.encode("utf-8"))
+
 
 #: Default content for USER.md on first seed.
 DEFAULT_USER_FILE = """\
@@ -407,8 +444,8 @@ def write_file(rel_path: str, content: str) -> WikiFileContent:
     """Create or overwrite a wiki file."""
     resolved = validate_wiki_path(rel_path)
     parsed = parse_frontmatter(content)
-    resolved.parent.mkdir(parents=True, exist_ok=True)
-    resolved.write_text(content, encoding="utf-8")
+    with _wiki_write_lock():
+        _atomic_write_text(resolved, content)
     logger.info(
         "wiki_file_written path={} bytes={}", rel_path, len(content.encode("utf-8"))
     )
@@ -438,9 +475,10 @@ def delete_file(rel_path: str) -> None:
             f"Refusing to delete protected wiki file: {rel_path}. "
             "Overwrite the contents instead."
         )
-    if not resolved.exists():
-        raise FileNotFoundError(f"Wiki file not found: {rel_path}")
-    resolved.unlink()
+    with _wiki_write_lock():
+        if not resolved.exists():
+            raise FileNotFoundError(f"Wiki file not found: {rel_path}")
+        resolved.unlink()
     logger.info("wiki_file_deleted path={}", rel_path)
 
 
@@ -477,17 +515,18 @@ def append_log(entry: str) -> Path:
 
     root = wiki_root()
     dest = root / LOG_FILE
-    if dest.exists():
-        existing = dest.read_text(encoding="utf-8")
-        dest.write_text(existing + block, encoding="utf-8")
-    else:
-        # Bootstrap header so a first-time reader knows what this file is.
-        header = (
-            "# Wiki Log\n\n"
-            "Chronological append-only record of dream activity.  Each entry "
-            "is parseable with `grep '^## \\['`.\n\n"
-        )
-        dest.write_text(header + block, encoding="utf-8")
+    with _wiki_write_lock():
+        if dest.exists():
+            existing = dest.read_text(encoding="utf-8")
+            _atomic_write_text(dest, existing + block)
+        else:
+            # Bootstrap header so a first-time reader knows what this file is.
+            header = (
+                "# Wiki Log\n\n"
+                "Chronological append-only record of dream activity.  Each entry "
+                "is parseable with `grep '^## \\['`.\n\n"
+            )
+            _atomic_write_text(dest, header + block)
     logger.info("wiki_log_appended bytes={}", len(block.encode("utf-8")))
     return dest
 
@@ -515,15 +554,20 @@ def write_note(content: str) -> Path:
 
     entry = f"## {timestamp}\n\n{content.strip()}\n"
 
-    if dest.exists():
-        existing = dest.read_text(encoding="utf-8")
-        dest.write_text(existing + "\n" + entry, encoding="utf-8")
-        logger.info(
-            "wiki_note_appended path={} bytes={}", dest, len(content.encode("utf-8"))
-        )
-    else:
-        dest.write_text(entry, encoding="utf-8")
-        logger.info(
-            "wiki_note_written path={} bytes={}", dest, len(content.encode("utf-8"))
-        )
+    with _wiki_write_lock():
+        if dest.exists():
+            existing = dest.read_text(encoding="utf-8")
+            _atomic_write_text(dest, existing + "\n" + entry)
+            logger.info(
+                "wiki_note_appended path={} bytes={}",
+                dest,
+                len(content.encode("utf-8")),
+            )
+        else:
+            _atomic_write_text(dest, entry)
+            logger.info(
+                "wiki_note_written path={} bytes={}",
+                dest,
+                len(content.encode("utf-8")),
+            )
     return dest

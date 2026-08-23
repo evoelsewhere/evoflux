@@ -17,6 +17,13 @@ The Markdown wiki is an inspectable consolidation/export surface. It is not the
 only copy of newly extracted memory and does not gate whether a fact can be
 recalled.
 
+On the first upgraded startup, historical extraction-note projections are
+imported idempotently. Because old bullets carried no scope, they are kept
+local to their source project/workspace/folder/session; legacy wording is never
+used to guess a user-global preference. The import commits per source session
+and writes a completion sentinel so it cannot monopolize SQLite's writer lane
+or reinforce the same evidence on every restart.
+
 ## Scope contract
 
 Every semantic fact has one explicit scope:
