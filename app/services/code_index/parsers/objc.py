@@ -33,6 +33,12 @@ class ObjCParser(TreeSitterParser):
     extensions: ClassVar[tuple[str, ...]] = (".m", ".mm")
     grammar: ClassVar[str] = "objc"
 
+    def identifier_reference_targets(self, node: Node, source: bytes) -> list[str]:
+        # ObjC selectors, property attributes, declarations, and message
+        # arguments all use plain identifiers. The generic fallback creates
+        # mostly false positives; explicit type/call hooks are authoritative.
+        return []
+
     def parse(self, *, file_path: str, source: bytes) -> ParseResult:
         result = super().parse(file_path=file_path, source=source)
         _coalesce_objc_classes(result)
@@ -55,50 +61,49 @@ class ObjCParser(TreeSitterParser):
                 category = node.child_by_field_name("category")
                 if category is not None:
                     name = f"{name}+{node_text(category, source)}"
-                return Definition(kind=NODE_CLASS, name=name, is_class=True)
+                return Definition(kind=NODE_CLASS, name=name)
         elif ntype == "protocol_declaration":
             name = self._ident(node, source)
             if name:
-                return Definition(kind=NODE_INTERFACE, name=name, is_class=True)
-        elif ntype == "category_interface":
-            name = self._ident(node, source)
-            if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=True)
+                return Definition(kind=NODE_INTERFACE, name=name)
         elif ntype == "method_declaration":
             selector = self._selector_name(node, source)
             if selector:
-                return Definition(kind=NODE_METHOD, name=selector, is_class=False)
-        elif ntype == "implementation_definition":
+                return Definition(kind=NODE_METHOD, name=selector)
+        elif ntype == "method_definition":
             selector = self._selector_name(node, source)
             if selector:
-                return Definition(kind=NODE_METHOD, name=selector, is_class=False)
+                return Definition(kind=NODE_METHOD, name=selector)
         elif ntype == "property_declaration":
             name = _property_name(node, source)
             if name:
-                return Definition(kind=NODE_PROPERTY, name=name, is_class=False)
+                return Definition(kind=NODE_PROPERTY, name=name)
         elif ntype == "function_definition":
-            name = node.child_by_field_name("declarator")
-            if name is not None:
-                return Definition(
-                    kind=NODE_FUNCTION,
-                    name=_declarator_name(name, source) or "",
-                    is_class=False,
-                )
+            declarator = node.child_by_field_name("declarator")
+            name = (
+                _declarator_name(declarator, source)
+                if declarator is not None
+                else None
+            )
+            if name:
+                return Definition(kind=NODE_FUNCTION, name=name)
         return None
 
     def synthetic_definitions(
         self, node: Node, source: bytes, *, inside_class: bool
     ) -> list[Definition]:
-        if node.type != "property_declaration" or not inside_class:
+        if node.type != "property_declaration":
+            return []
+        if not inside_class:
             return []
         name = _property_name(node, source)
         if not name:
             return []
         getter, setter = _property_accessors(node, name, source)
-        definitions = [Definition(kind=NODE_METHOD, name=getter, is_class=False)]
+        definitions = [Definition(kind=NODE_METHOD, name=getter)]
         if setter is not None:
             definitions.append(
-                Definition(kind=NODE_METHOD, name=setter, is_class=False)
+                Definition(kind=NODE_METHOD, name=setter)
             )
         return definitions
 
@@ -113,8 +118,8 @@ class ObjCParser(TreeSitterParser):
                 return []
             if path_node.type == "system_lib_string":
                 # <Foundation/Foundation.h> — angle brackets, framework-qualified.
-                raw = node_text(path_node, source).strip("<>")
-                name = raw.split("/", 1)[0]
+                raw = node_text(path_node, source)[1:-1]
+                name = raw.partition("/")[0]
                 return [ImportRef(name=name, module_path=raw)]
             if path_node.type == "string_literal":
                 # "MyHeader.h" — a quoted local include. These resolve within
@@ -125,7 +130,7 @@ class ObjCParser(TreeSitterParser):
                 raw = _string_literal_content(path_node, source)
                 if not raw:
                     return []
-                name = raw.rsplit("/", 1)[-1]
+                name = raw.rpartition("/")[2] or raw
                 return [ImportRef(name=name, module_path=raw)]
             return []
         if node.type == "module_import":
@@ -141,9 +146,11 @@ class ObjCParser(TreeSitterParser):
 
     def call_target(self, node: Node, source: bytes) -> str | None:
         if node.type == "message_expression":
-            sel = node.child_by_field_name("selector")
+            sel = node.child_by_field_name("method")
+            if sel is None:
+                sel = node.child_by_field_name("selector")
             if sel is not None:
-                return node_text(sel, source).replace(":", "")
+                return node_text(sel, source)
             # Fallback: look for keyword_selector
             for child in node.children:
                 if child.type == "keyword_selector":
@@ -155,7 +162,9 @@ class ObjCParser(TreeSitterParser):
                 return node_text(identifiers[-1], source)
         elif node.type == "call_expression":
             func = node.child_by_field_name("function")
-            if func is not None and func.type == "identifier":
+            if func is None:
+                return None
+            if func.type == "identifier":
                 return node_text(func, source)
         return None
 
@@ -171,62 +180,36 @@ class ObjCParser(TreeSitterParser):
                     if protocol.type == "identifier"
                 )
             return out
-        if node.type not in ("class_interface", "class_implementation"):
+        if node.type != "class_interface":
             return []
         out: list[SuperType] = []
-        # Superclass: second identifier after ':'
         sup = node.child_by_field_name("superclass")
         if sup is not None:
             out.append(SuperType(name=node_text(sup, source), edge_kind=EDGE_INHERITS))
-        else:
-            # Positional: find identifier after ':'
-            found_colon = False
-            found_name = False
-            for child in node.children:
-                if child.type == ":":
-                    found_colon = True
-                elif found_colon and not found_name and child.type == "identifier":
-                    out.append(
-                        SuperType(
-                            name=node_text(child, source), edge_kind=EDGE_INHERITS
-                        )
-                    )
-                    found_name = True
-                    break
-        # Protocols in angle brackets
         for child in node.children:
             if child.type == "parameterized_arguments":
-                for sub in child.children:
-                    if sub.type == "identifier":
-                        out.append(
-                            SuperType(
-                                name=node_text(sub, source), edge_kind=EDGE_IMPLEMENTS
-                            )
-                        )
-                    elif sub.type == "type_name":
-                        out.append(
-                            SuperType(
-                                name=node_text(sub, source), edge_kind=EDGE_IMPLEMENTS
-                            )
-                        )
+                for sub in child.named_children:
+                    names: list[str] = []
+                    _collect_objc_type_ids(sub, source, names)
+                    out.extend(
+                        SuperType(name=name, edge_kind=EDGE_IMPLEMENTS)
+                        for name in names
+                    )
         return out
 
     def decorators(self, node: Node, source: bytes) -> list[str]:
         out: list[str] = []
-        # ObjC availability attributes and other attributes
-        prev = node.prev_named_sibling
-        while prev is not None:
-            if prev.type == "attribute_declaration":
-                _collect_objc_attr_names(prev, source, out)
-            elif prev.type == "availability_attribute":
-                out.append("availability")
-            elif prev.type not in ("comment",):
-                break
-            prev = prev.prev_named_sibling
-        # Also check direct children for attributes
         for child in node.children:
-            if child.type in ("attribute_declaration", "availability_attribute"):
-                if child.type == "availability_attribute":
+            if child.type in {
+                "attribute_declaration",
+                "attribute_specifier",
+                "availability_attribute",
+                "availability_attribute_specifier",
+            }:
+                if child.type in {
+                    "availability_attribute",
+                    "availability_attribute_specifier",
+                }:
                     out.append("availability")
                 else:
                     _collect_objc_attr_names(child, source, out)
@@ -239,30 +222,13 @@ class ObjCParser(TreeSitterParser):
             return out
         if node.type not in {
             "method_declaration",
-            "implementation_definition",
+            "method_definition",
             "function_definition",
         }:
             return []
         out: list[str] = []
-        # Return type
-        ret = node.child_by_field_name("return_type")
-        if ret is not None:
-            for child in ret.children:
-                if child.type == "type_identifier":
-                    name = node_text(child, source)
-                    if name not in _OBJC_BUILTIN_TYPES:
-                        out.append(name)
-        # Parameter types
-        for child in node.children:
-            if child.type == "parameter_list":
-                for param in child.children:
-                    if param.type == "parameter_declaration":
-                        type_node = param.child_by_field_name("type")
-                        if type_node is not None:
-                            name = node_text(type_node, source)
-                            if name not in _OBJC_BUILTIN_TYPES:
-                                out.append(name)
-        return out
+        _collect_objc_type_ids(node, source, out)
+        return list(dict.fromkeys(out))
 
     def docstring(self, node: Node, source: bytes) -> str | None:
         prev = node.prev_named_sibling
@@ -279,22 +245,12 @@ class ObjCParser(TreeSitterParser):
         return None
 
     def _selector_name(self, node: Node, source: bytes) -> str | None:
-        sel = node.child_by_field_name("selector")
-        if sel is not None:
-            return node_text(sel, source).replace(":", "")
-        for child in node.children:
-            if child.type == "keyword_selector":
-                parts: list[str] = []
-                for sub in child.children:
-                    if sub.type == "keyword_declarator":
-                        for k in sub.children:
-                            if k.type == "identifier":
-                                parts.append(node_text(k, source))
-                                break
-                return "".join(parts) if parts else None
-            if child.type == "identifier":
-                return node_text(child, source)
-        return None
+        direct_names = [
+            node_text(child, source)
+            for child in node.children
+            if child.type == "identifier"
+        ]
+        return "".join(direct_names) if direct_names else None
 
 
 def _declarator_name(node: Node, source: bytes) -> str | None:
@@ -311,25 +267,22 @@ def _declarator_name(node: Node, source: bytes) -> str | None:
 
 
 def _property_name(node: Node, source: bytes) -> str | None:
-    declaration = next(
-        (child for child in node.children if child.type == "struct_declaration"), None
-    )
-    if declaration is None:
+    declarations = [
+        child for child in node.children if child.type == "struct_declaration"
+    ]
+    if not declarations:
         return None
-    declarator = next(
-        (
-            child
-            for child in reversed(declaration.named_children)
-            if child.type == "struct_declarator"
-        ),
-        None,
-    )
-    return _declarator_name(declarator, source) if declarator is not None else None
+    declarators = [
+        child
+        for child in declarations[0].named_children
+        if child.type == "struct_declarator"
+    ]
+    return _declarator_name(declarators[-1], source) if declarators else None
 
 
 def _property_accessors(node: Node, name: str, source: bytes) -> tuple[str, str | None]:
     getter = name
-    setter: str | None = f"set{name[:1].upper()}{name[1:]}"
+    setter: str | None = f"set{name[0].upper()}{name[1:]}"
     for child in node.children:
         if child.type != "property_attributes_declaration":
             continue
@@ -340,9 +293,9 @@ def _property_accessors(node: Node, name: str, source: bytes) -> tuple[str, str 
             if text == "readonly":
                 setter = None
             elif text.startswith("getter="):
-                getter = text.removeprefix("getter=").rstrip(":")
+                getter = text.removeprefix("getter=")
             elif text.startswith("setter="):
-                setter = text.removeprefix("setter=").rstrip(":")
+                setter = text.removeprefix("setter=").removesuffix(":")
     return getter, setter
 
 
@@ -375,7 +328,6 @@ def _coalesce_objc_classes(result: ParseResult) -> None:
 
     result.nodes[:] = nodes
     edges = []
-    seen = set()
     for edge in result.edges:
         rewritten = replace(
             edge,
@@ -386,18 +338,13 @@ def _coalesce_objc_classes(result: ParseResult) -> None:
                 else None
             ),
         )
-        if rewritten not in seen:
-            edges.append(rewritten)
-            seen.add(rewritten)
-    result.edges[:] = edges
+        edges.append(rewritten)
+    result.edges[:] = dict.fromkeys(edges)
 
 
 def _string_literal_content(node: Node, source: bytes) -> str:
     """Extract the text content of a string_literal, stripping quotes."""
-    for child in node.children:
-        if child.type == "string_content":
-            return node_text(child, source)
-    return node_text(node, source).strip('"')
+    return node_text(node, source)[1:-1]
 
 
 _OBJC_BUILTIN_TYPES = frozenset(
@@ -428,9 +375,7 @@ _OBJC_BUILTIN_TYPES = frozenset(
 def _collect_objc_attr_names(node: Node, source: bytes, out: list[str]) -> None:
     """Extract attribute names from an ObjC attribute_declaration node."""
     for child in node.children:
-        if child.type == "identifier":
-            out.append(node_text(child, source))
-        elif child.type == "argument_list":
+        if child.type == "argument_list":
             for arg in child.children:
                 if arg.type == "identifier":
                     out.append(node_text(arg, source))
