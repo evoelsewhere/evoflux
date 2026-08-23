@@ -51,5 +51,5 @@ bun run lint && bun run typecheck
 
 ## Documentation pointers
 
-- Harness contract: `../documents/architecture/application-harness.md`.
-- Desktop packaging context: `../documents/research/desktop-packaging-signing.md`.
+- Harness contract: `../docs/architecture/application-harness.md`.
+- Desktop packaging context: `../docs/research/desktop-packaging-signing.md`.

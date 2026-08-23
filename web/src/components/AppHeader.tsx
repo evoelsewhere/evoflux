@@ -8,7 +8,7 @@
  * On macOS Tauri the OS overlays the traffic-light buttons over our
  * WebView; we reserve the native controls area at the left and use
  * `useTauriDrag` to make the header act as the window-drag region.
- * See `documents/docs/web/chrome.md` for the wider story.
+ * See `docs/architecture/web-frontend.md` for the wider story.
  */
 import { Link } from '@tanstack/react-router'
 import { Home, Menu } from 'lucide-react'

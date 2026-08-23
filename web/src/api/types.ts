@@ -856,7 +856,7 @@ export interface TeamHistoryResponse {
   next_cursor: string | null
 }
 
-// ── Workflows (documents/plans/workflows-feature-plan.md) ────────────────────
+// ── Workflows (docs/plans/workflows-feature-plan.md) ────────────────────
 
 export interface WorkflowInputSpec {
   name: string
@@ -1471,7 +1471,7 @@ export interface ScheduledTaskResponse {
   name: string
   // Routing target — every task delivers to the team lead of the matching
   // team (default lead for ``normal``, workspace lead for ``coding``).
-  // See documents/docs/agent/tools.md#scheduler-builtinschedulepy.
+  // See docs/features/automation.md#scheduler.
   mode: ScheduledTaskMode
   workspace: string | null
   project_id: string | null

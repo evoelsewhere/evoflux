@@ -235,8 +235,8 @@ app/_web_dist/
 
 .DS_Store
 
-# Asset generation scripts (source HTML, not tracked)
-documents/assets/scripts/
+# Documentation asset-generation scripts (source HTML, not tracked)
+docs/images/scripts/
 
 # Diagram source files
 .diagrams/

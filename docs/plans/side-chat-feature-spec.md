@@ -1,5 +1,9 @@
 # Side Chat Feature Specification
 
+> [!NOTE]
+> Historical implementation plan. For the current reverse-engineered contract,
+> see [Workbench, files, and Side Chat](../features/workbench-files-and-side-chat.md).
+
 ## Overview
 
 Side Chat enables users to ask questions in a side panel that has read-only access to the main session's context, without polluting the main conversation thread. Inspired by Claude Code Desktop's `/btw` feature.
@@ -73,7 +77,7 @@ Add new fields to `ChatSession`:
 ```python
 class ChatSession(SQLModel, table=True):
     # ... existing fields ...
-    
+
     # New fields for side chat
     session_type: str = Field(
         default="main",
@@ -125,7 +129,7 @@ async def create_side_chat(
     main_session = await db.get(ChatSession, session_id)
     if not main_session:
         raise HTTPException(status_code=404, detail="Main session not found")
-    
+
     # Create side chat session
     side_chat = ChatSession(
         title=f"Side Chat: {main_session.title or 'Untitled'}",
@@ -139,7 +143,7 @@ async def create_side_chat(
     db.add(side_chat)
     await db.flush()
     await db.refresh(side_chat)
-    
+
     return SessionResponse.model_validate(side_chat)
 ```
 
@@ -164,7 +168,7 @@ async def get_side_chat_context(
     )
     db_messages = list((await db.exec(stmt)).all())
     db_messages.reverse()  # Chronological order
-    
+
     # Deserialize and return
     return await asyncio.to_thread(
         _deserialize_messages, db_messages, sanitize_tool_pairs=True
@@ -193,19 +197,19 @@ async def send_side_chat_message(
         or side_chat.source_session_id != session_id
     ):
         raise HTTPException(status_code=404, detail="Side chat not found")
-    
+
     # Save user message
     await save_message(db, side_chat_id, "user", body.content)
-    
+
     # Get side chat context (read-only from main session)
     context = await get_side_chat_context(db, session_id)
-    
+
     # Get side chat's own messages
     side_chat_messages = await get_messages_for_llm(db, side_chat_id)
-    
+
     # Combine: context + side chat messages
     all_messages = context + side_chat_messages
-    
+
     # Run agent with restricted tools
     # ... (see Agent Loop section)
 ```
@@ -230,7 +234,7 @@ async def side_chat_stream(
         or side_chat.source_session_id != session_id
     ):
         raise HTTPException(status_code=404, detail="Side chat not found")
-    
+
     async def _gen() -> AsyncGenerator[dict, None]:
         try:
             async for event in stream_store.attach(str(side_chat_id)):
@@ -246,7 +250,7 @@ async def side_chat_stream(
                 "event": "error",
                 "data": f'{{"type":"error","message":"stream_error:{type(exc).__name__}"}}',
             }
-    
+
     return EventSourceResponse(_gen())
 ```
 
@@ -307,12 +311,12 @@ async def get_messages_for_llm(
     include_source_context: bool = False,
 ) -> list[ChatMessage]:
     """Return the message window that should be sent to the LLM.
-    
+
     When include_source_context=True (for side chats), prepend read-only
     context from the source session.
     """
     # ... existing logic ...
-    
+
     if include_source_context:
         session = await db.get(ChatSession, session_id)
         if session and session.session_type == "side_chat" and session.source_session_id:
@@ -322,7 +326,7 @@ async def get_messages_for_llm(
             )
             # Prepend as read-only context
             messages = source_context + messages
-    
+
     return messages
 ```
 
@@ -369,7 +373,7 @@ export function SideChatPanel({ mainSessionId, isOpen, onClose }: SideChatPanelP
     sendMessage,
     stopGeneration,
   } = useSideChat(mainSessionId)
-  
+
   return (
     <SidePanel
       storageKey="side-chat-panel"
@@ -389,7 +393,7 @@ export function SideChatPanel({ mainSessionId, isOpen, onClose }: SideChatPanelP
             <MessageBubble key={msg.id} message={msg} />
           ))}
         </div>
-        
+
         {/* Input bar */}
         <div className="border-t p-4">
           <InputBar
@@ -420,28 +424,28 @@ import { useTeamStore } from '@/stores/useTeamStore'
 export function useSideChat(mainSessionId: string) {
   const queryClient = useQueryClient()
   const abortControllerRef = useRef<AbortController | null>(null)
-  
+
   // Create/get side chat session
   const { data: sideChatSession } = useQuery({
     queryKey: ['sideChat', mainSessionId],
     queryFn: () => apiClient.createSideChat(mainSessionId),
     enabled: !!mainSessionId,
   })
-  
+
   // Send message mutation
   const sendMessage = useMutation({
     mutationFn: async (content: string) => {
       if (!sideChatSession) throw new Error('No side chat session')
-      
+
       // Abort any previous streaming request
       if (abortControllerRef.current) {
         abortControllerRef.current.abort()
       }
       abortControllerRef.current = new AbortController()
-      
+
       return apiClient.sendSideChatMessage(
-        mainSessionId, 
-        sideChatSession.id, 
+        mainSessionId,
+        sideChatSession.id,
         content,
         abortControllerRef.current.signal
       )
@@ -450,45 +454,45 @@ export function useSideChat(mainSessionId: string) {
       queryClient.invalidateQueries({ queryKey: ['sideChatMessages', sideChatSession?.id] })
     },
   })
-  
+
   // Get messages
   const { data: messages = [] } = useQuery({
     queryKey: ['sideChatMessages', sideChatSession?.id],
     queryFn: () => apiClient.getSideChatMessages(sideChatSession?.id),
     enabled: !!sideChatSession?.id,
   })
-  
+
   // SSE connection for streaming
   useEffect(() => {
     if (!sideChatSession?.id) return
-    
+
     const eventSource = new EventSource(
       `${apiBaseUrl()}/team/${mainSessionId}/side-chat/${sideChatSession.id}/stream`
     )
-    
+
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data)
       // Handle streaming updates
       useTeamStore.getState()._handleSSEEvent(data.type, data)
     }
-    
+
     eventSource.onerror = () => {
       // Reconnect logic
       eventSource.close()
     }
-    
+
     return () => {
       eventSource.close()
     }
   }, [sideChatSession?.id, mainSessionId])
-  
+
   const stopGeneration = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
       abortControllerRef.current = null
     }
   }, [])
-  
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -497,7 +501,7 @@ export function useSideChat(mainSessionId: string) {
       }
     }
   }, [])
-  
+
   return {
     messages,
     isWorking: sendMessage.isPending,
@@ -516,13 +520,13 @@ import { SideChatPanel } from '../SideChatPanel'
 
 export function TeamChatView({ sessionId, mode, workspace, codingSessionLoading }: TeamChatViewProps) {
   const [sideChatOpen, setSideChatOpen] = useState(false)
-  
+
   // ... existing code ...
-  
+
   return (
     <AppShell>
       {/* ... existing layout ... */}
-      
+
       {/* Side Chat Panel */}
       {sideChatOpen && sessionId && (
         <SideChatPanel
@@ -531,7 +535,7 @@ export function TeamChatView({ sessionId, mode, workspace, codingSessionLoading 
           onClose={() => setSideChatOpen(false)}
         />
       )}
-      
+
       {/* FloatingInputBar with /btw command */}
       <FloatingInputBar
         // ... existing props ...
@@ -578,7 +582,7 @@ export async function sendSideChatMessage(
     `${apiBaseUrl()}/team/${mainSessionId}/side-chat/${sideChatId}/message`,
     {
       method: 'POST',
-      headers: { 
+      headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
       },
@@ -613,9 +617,9 @@ export async function getSideChatMessages(
 ```tsx
 const slashCommands: SlashCommand[] = [
   // ... existing commands ...
-  { 
-    id: 'btw', 
-    label: 'Side Chat', 
+  {
+    id: 'btw',
+    label: 'Side Chat',
     description: 'Open a side chat with read-only access to this session',
     keepInputOpen: false, // Opens the panel, doesn't insert text
   },
@@ -678,7 +682,7 @@ Side chat sessions are isolated from the main session:
 
 **Problem:** Main session receives new messages while side chat is open.
 
-**Solution:** 
+**Solution:**
 - Side chat context is fetched at message submission time
 - No real-time sync with main session
 - User can manually refresh context by sending a new message
@@ -808,11 +812,11 @@ async def main_session(db: AsyncSession):
     session = ChatSession(title="Test Main Session")
     db.add(session)
     await db.flush()
-    
+
     # Add some messages
     await save_message(db, session.id, "user", "Hello, world!")
     await save_message(db, session.id, "assistant", "Hi there!")
-    
+
     return session
 
 @pytest.fixture

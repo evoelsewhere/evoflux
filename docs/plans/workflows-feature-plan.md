@@ -1,9 +1,13 @@
 # EvoFlux Workflows — Design & Implementation Plan
 
+> [!NOTE]
+> Historical design plan. For the current reverse-engineered runtime contract,
+> see [Goals, workflows, and scheduler](../features/automation.md).
+
 > Status: PROPOSED (v5 — implementation audit: every mechanism the design leans on was traced to its exact function in the codebase by three parallel deep-dives; contradictions found in v4's self-audit are fixed; the doc now specifies integration points at function level, FE and BE, so it can be handed to an implementer as-is)
 > Date: 2026-07-09 (v5, v4, v3); 2026-07-08 (v2)
 > Scope: A visual node-graph builder for repeatable agent pipelines ("workflows"), scoped to `work` (usable from any work session) or `coding` (bound to a workspace/project), triggered by `/workflow` in chat, executed **inline in the current session**.
-> Companion: `documents/analysis/claude-code-vs-evoflux.md`
+> Companion: `docs/analysis/claude-code-vs-evoflux.md`
 
 ---
 

@@ -53,16 +53,16 @@ gh issue comment <issue-number> --repo khuonghung/evoflux --body "Included in th
 
 4. Documentation readiness:
 
-- Before confirming the release, check whether the diff requires documentation updates. At minimum inspect the canonical feature catalogue and roadmap, plus any related docs for touched areas.
+- Before confirming the release, check whether the diff requires documentation updates. At minimum inspect the canonical feature catalogue and the current architecture/reference pages for touched areas.
 
 ```bash
 git diff --name-only main..HEAD
-git diff --stat main..HEAD -- documents/docs/features.md documents/docs/roadmap.md documents/docs README.md
+git diff --stat main..HEAD -- docs/features docs/architecture docs/reference docs/development README.md
 ```
 
-- For user-visible features, behavior changes, install/update changes, or removed/deprecated functionality, update `documents/docs/features.md` first; it is the canonical feature catalogue.
-- Update `documents/docs/roadmap.md` when the release completes, changes, adds, or invalidates roadmap items.
-- Update related files as needed, such as `README.md`, `documents/docs/comparison.md`, installation docs, agent/team docs, or operation docs for the affected area.
+- For user-visible features, behavior changes, install/update changes, or removed/deprecated functionality, update `docs/features/README.md` first; it is the canonical feature catalogue.
+- Update the affected current-state pages under `docs/features/`, `docs/architecture/`, `docs/reference/`, or `docs/development/`. Use `docs/plans/` only for design plans, not as the implemented contract.
+- Update related files as needed, such as `README.md`, installation docs, agent/team docs, operation docs, and localized in-app Help for the affected area.
 - If no documentation changes are needed, record the rationale in the release PR body (for example: `Docs: no user-facing behavior changed`).
 - Include documentation updates in the feature branch before the version bump PR is created; do not leave release-blocking docs fixes until after publishing.
 

@@ -6,7 +6,7 @@
 | **Ngày** | 2026-07-22 |
 | **Audit gần nhất** | 2026-07-23 |
 | **Phạm vi** | Mở rộng WebBridge từ kênh EvoFlux điều khiển browser thành lớp tương tác hai chiều browser <-> EvoFlux |
-| **Tài liệu liên quan** | [`work-computer-use.md`](work-computer-use.md), [`../../docs/side-chat-spec.md`](../../docs/side-chat-spec.md) |
+| **Tài liệu liên quan** | [`work-computer-use.md`](work-computer-use.md), [`../plans/side-chat-feature-spec.md`](../plans/side-chat-feature-spec.md) |
 
 ---
 

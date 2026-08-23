@@ -7,10 +7,9 @@ Create Date: 2026-07-16
 Adds the AIM (AI Innovation Modernization) state layer: a ``kind``
 discriminator on ``coding_projects`` ("coding" | "aim"), plus three tables
 (``aim_units``, ``aim_runs``, ``aim_links``) that index a migration
-project's state. Per documents/research/aim-framework.md §3.5, these
-tables are a rebuildable index — the KB repo (git) is the actual source of
-truth — so this migration only needs to create empty tables, not backfill
-anything.
+project's state. These historical tables were a rebuildable index — the KB
+repo (git) was the actual source of truth — so this migration only creates
+empty tables. Revision 00000043 later removes the AIM product surface.
 """
 
 from typing import Sequence, Union

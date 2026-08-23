@@ -13,7 +13,7 @@ The code graph parser layer is now structurally sound for its intended role: pro
 
 Those failures were corrected with AST-backed regressions. The shared walker now also supports synthetic leaf definitions, which is required when one syntax node creates several symbols, such as Ruby accessors, Objective-C property accessors, and Liquid variables.
 
-At the time of this audit, an earlier code-graph skill had been retired because it duplicated the native tool contract and polluted the catalog. That catalog decision was superseded on 2026-08-07: `code-graph-navigation` returned as progressively disclosed Coding-only workflow guidance, while the native `code_graph` tool still owns execution. Parser correctness remains owned by [the parser service](../../app/services/code_graph/parsers), and every language claim below is tied to executable syntax evidence.
+At the time of this audit, an earlier code-graph skill had been retired because it duplicated the native tool contract and polluted the catalog. That catalog decision was superseded on 2026-08-07: `code-graph-navigation` returned as progressively disclosed Coding-only workflow guidance, while the native `code_graph` tool still owns execution. Parser correctness now lives in [the parser service](../../app/services/code_index/parsers), and every language claim below is tied to executable syntax evidence.
 
 ## 2. Audit method
 
@@ -36,7 +36,7 @@ A language is not considered covered merely because its extension maps to a gram
 
 ## 3. Shared parser contract
 
-The common walker in [base.py](../../app/services/code_graph/parsers/base.py) owns traversal, safety limits, qualified names, containment, calls, imports, supertypes, decorators, type references, and documentation edges.
+The common walker in [base.py](../../app/services/code_index/parsers/base.py) owns traversal, safety limits, qualified names, containment, calls, imports, supertypes, decorators, type references, and documentation edges.
 
 The current invariants are:
 
@@ -48,7 +48,7 @@ The current invariants are:
 - Dynamic languages do not receive invented static classes or types. Only syntax or well-defined static macros are modeled.
 - Embedded-language parsers preserve host-file line numbers and report the host language while delegating semantic extraction.
 
-These values feed [the indexer](../../app/services/code_graph/indexer.py), [module-path resolution](../../app/services/code_graph/path_resolve.py), and [cross-repository resolution](../../app/services/code_graph/cross_repo.py).
+These values feed [the source-to-index pipeline](../../app/services/code_index/pipeline.py) and the [module-path/cross-repository resolver](../../app/services/code_index/query.py).
 
 ## 4. Built-in language matrix
 
@@ -182,15 +182,7 @@ The implementation was checked against these primary or canonical references, th
 The final parser validation covered core parser semantics, tiered language corpora, language-specific import suites, type references, and decorators:
 
 ```text
-uv run pytest --no-cov -q \
-  tests/services/test_code_graph.py \
-  tests/services/test_code_graph_parsers.py \
-  tests/services/test_code_graph_parsers_tier2.py \
-  tests/services/test_code_graph_parsers_tier3.py \
-  tests/services/test_code_graph_imports.py \
-  tests/services/test_code_graph_imports_*.py \
-  tests/services/test_code_graph_type_refs.py \
-  tests/services/test_code_graph_decorators.py
+uv run pytest --no-cov -q tests/services/test_code_graph_*.py
 
 Result: PASS
 ```
