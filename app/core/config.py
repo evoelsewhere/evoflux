@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Literal
 
 from pydantic import model_validator
 from pydantic.fields import Field
@@ -173,6 +174,12 @@ class Settings(BaseSettings):
     # Refresh model metadata from https://models.dev at runtime. Disable in tests
     # or hermetic deployments; bundled model_registry.json remains the fallback.
     EVOFLUX_MODEL_REGISTRY_REFRESH: bool = True
+
+    # Repository index rebuilds are CPU/GIL heavy. Production isolates them
+    # in one worker process so API, SSE, and aiosqlite threads remain
+    # responsive. ``thread`` is retained for deterministic fault-injection
+    # tests and constrained embedders.
+    EVOFLUX_CODE_INDEX_EXECUTION: Literal["process", "thread"] = "process"
 
     # Agents directory — contains per-agent .md files.
     # Empty string means "derive from EVOFLUX_CONFIG_DIR" → ``{CONFIG_DIR}/agents``.

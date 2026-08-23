@@ -15,7 +15,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from app.services.code_index.executor import run_index_work, submit_index_work
+from app.services.code_index.executor import run_index_work, submit_index_update
 from app.services.code_index.file_matcher import SourceMetadata, walk_source_records
 from app.services.code_index.languages import SEARCH_ONLY_LANGUAGES
 from app.services.code_index.models import IndexStats
@@ -139,6 +139,9 @@ class ManagedDatabase:
             connection = sqlite3.connect(self.path, timeout=30)
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 30000")
+        if not readonly:
+            connection.execute("PRAGMA journal_mode = WAL")
+            connection.execute("PRAGMA synchronous = NORMAL")
         return connection
 
     @contextmanager
@@ -214,7 +217,20 @@ class RepositoryIndex:
             with self._dispatch_lock:
                 pending = self._update_future
                 if pending is None or pending.done():
-                    pending = submit_index_work(self._update_locked, full, progress)
+                    if progress:
+                        progress(
+                            IndexProgress(
+                                "snapshot",
+                                0.02,
+                                "Scanning keyed source snapshot",
+                            )
+                        )
+                    pending = submit_index_update(
+                        self._update_locked,
+                        (full, progress),
+                        process_function=_update_repository_process,
+                        process_args=(str(self.root), str(self.database.path), full),
+                    )
                     self._update_future = pending
                     self._update_future_full = full
                 covers_full_refresh = self._update_future_full
@@ -228,10 +244,6 @@ class RepositoryIndex:
         progress: ProgressCallback | None,
     ) -> IndexStats:
         with self._update_lock:
-            if progress:
-                progress(
-                    IndexProgress("snapshot", 0.02, "Scanning keyed source snapshot")
-                )
             try:
                 stats = self._update_sync(full, progress)
             except sqlite3.DatabaseError as exc:
@@ -431,6 +443,26 @@ class RepositoryIndex:
 
     def close(self) -> None:
         self.database.close()
+
+
+def _update_repository_process(
+    root: str,
+    database_path: str,
+    full: bool,
+) -> IndexStats:
+    """Reconstruct and update one index wholly inside the worker process."""
+
+    canonical = Path(root).expanduser().resolve()
+    target = Path(database_path).expanduser().resolve()
+    paths = RepositoryIndexPaths(
+        root=canonical,
+        directory=target.parent,
+        target_db=target,
+    )
+    database = ManagedDatabase(target)
+    _ensure_schema(database)
+    index = RepositoryIndex(root=canonical, paths=paths, database=database)
+    return index._update_locked(full, None)
 
 
 def _ensure_schema(database: ManagedDatabase) -> None:

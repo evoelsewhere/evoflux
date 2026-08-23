@@ -1192,3 +1192,25 @@ async def test_cached_graph_query_reports_corruption_when_refresh_is_disabled(
     assert result.matches == []
     assert result.strategy == "code-index-unavailable"
     assert any("refresh to repair" in item for item in result.limitations)
+
+
+@pytest.mark.asyncio
+async def test_repository_rebuild_can_run_in_isolated_process(
+    tmp_path: Path,
+    isolated_cache: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = tmp_path / "process-repo"
+    repository.mkdir()
+    (repository / "service.py").write_text(
+        "def process_isolated_symbol():\n    return 1\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "EVOFLUX_CODE_INDEX_EXECUTION", "process")
+
+    index = await RepositoryIndex.create(repository)
+    stats = await index.update(full=True)
+
+    assert stats.files == 1
+    assert stats.symbols >= 1
+    assert stats.version is not None
