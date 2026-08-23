@@ -8,7 +8,7 @@
   Give EvoFlux an outcome. A lead agent plans the work, brings in specialists,
   uses the right tools, and verifies the result — while you stay in control.
 
-  **Cowork and software engineering. Any model. Your machine.**
+  **Cowork and coding agents. Any model. Your machine.**
 
   [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-2563EB.svg)](LICENSE)
   [![Desktop only](https://img.shields.io/badge/Product-Desktop%20only-1764FF)](desktop/)
@@ -56,7 +56,7 @@ One desktop app. One harness. Two different kinds of work.
 
 | | **Work** | **Coding** |
 |---|---|---|
-| Product role | Cowork | Software engineering workspace |
+| Product role | Cowork | Coding agent workspace |
 | Workspace | Temporary sandbox | Persistent repo or multi-repo project |
 | Best for | Research, documents, data, browser work, quick scripts | Build, test, refactor, review, git operations |
 | Default specialists | Executor, Explorer, Consultant, Debate | Coder, Explorer, Architect, Debate |
