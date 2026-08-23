@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_index.parsers.base import (
@@ -12,122 +14,144 @@ from app.services.code_index.parsers.base import (
     node_text,
 )
 from app.services.code_index.graph_types import (
+    EDGE_CONTAINS,
     EDGE_IMPLEMENTS,
     EDGE_INHERITS,
+    EDGE_REFERENCES,
     NODE_CLASS,
     NODE_ENUM,
+    NODE_FIELD,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
     NODE_MODULE,
     NODE_PROPERTY,
     NODE_STRUCT,
+    NODE_VARIABLE,
 )
 
 if TYPE_CHECKING:
     from tree_sitter import Node
+
+    from app.services.code_index.graph_types import ExtractedNode, ParseResult
 
 
 class PascalParser(TreeSitterParser):
     name: ClassVar[str] = "pascal"
     extensions: ClassVar[tuple[str, ...]] = (".pas", ".pp", ".dpr", ".lpr")
     grammar: ClassVar[str] = "pascal"
-    _unit_prefix: str = ""
 
-    def root_prefix(self, root: Node, source: bytes) -> str:
-        self._unit_prefix = ""
-        unit = next(
-            (child for child in root.named_children if child.type == "unit"), None
-        )
-        if unit is not None:
-            name = self._unit_name(unit, source)
-            if name:
-                self._unit_prefix = f"{name}."
-        return ""
+    def identifier_reference_targets(self, node: Node, source: bytes) -> list[str]:
+        # Pascal grammar identifiers cover declaration names, unit path
+        # segments, selector members, property accessors, and runtime reads.
+        # Precise declaration/type/call/import hooks below avoid emitting those
+        # syntax fragments as unrelated references.
+        return []
+
+    def parse(self, *, file_path: str, source: bytes) -> ParseResult:
+        result = super().parse(file_path=file_path, source=source)
+        _coalesce_pascal_callables(result)
+        return result
 
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool
     ) -> Definition | None:
         ntype = node.type
-        if ntype == "unit":
+        if ntype in {"unit", "program", "library"}:
             name = self._unit_name(node, source)
             if name:
-                return Definition(kind=NODE_MODULE, name=name, is_class=True, prefix="")
-        elif ntype == "declClass":
-            name = self._type_name(node, source)
-            if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=True)
+                return Definition(kind=NODE_MODULE, name=name)
         elif ntype == "declType":
-            name_node = node.child_by_field_name("name") or self._first_child_type(
-                node, "genericTpl"
-            )
+            name_node = node.child_by_field_name("name")
             if name_node:
                 kind = _pascal_decl_kind(node)
                 return Definition(
                     kind=kind,
                     name=node_text(name_node, source),
-                    is_class=kind
-                    in {NODE_CLASS, NODE_INTERFACE, NODE_STRUCT, NODE_ENUM},
                 )
+        elif ntype == "declEnumValue":
+            name = node.child_by_field_name("name")
+            if name is not None:
+                return Definition(kind=NODE_PROPERTY, name=node_text(name, source))
+        elif ntype == "declField":
+            name = node.child_by_field_name("name")
+            if name is not None:
+                return Definition(kind=NODE_FIELD, name=node_text(name, source))
+        elif ntype in {"declVar", "declConst"}:
+            name = node.child_by_field_name("name")
+            if name is not None:
+                return Definition(kind=NODE_VARIABLE, name=node_text(name, source))
         elif ntype == "declProp":
             name = node.child_by_field_name("name")
             if name is not None:
                 return Definition(
                     kind=NODE_PROPERTY,
                     name=node_text(name, source),
-                    is_class=False,
                 )
         elif ntype == "defProc":
             name = self._proc_name(node, source)
             if name:
-                kind = NODE_METHOD if "." in name else NODE_FUNCTION
-                owner = name.rsplit(".", 1)[0] if "." in name else None
+                owner, separator, leaf = name.rpartition(".")
+                kind = NODE_METHOD if separator else NODE_FUNCTION
+                unit = _enclosing_unit_name(node, source) if owner else None
                 return Definition(
                     kind=kind,
-                    name=name.rsplit(".", 1)[-1],
-                    is_class=False,
-                    prefix=f"{self._unit_prefix}{owner}." if owner else None,
+                    name=leaf if separator else name,
+                    prefix=(
+                        f"{unit + '.' if unit else ''}{owner}." if owner else None
+                    ),
                 )
         elif ntype == "declProc":
             if node.parent is not None and node.parent.type == "defProc":
                 return None
             name = self._proc_name(node, source)
             if name:
-                return Definition(kind=NODE_METHOD, name=name, is_class=False)
+                return Definition(
+                    kind=(
+                        NODE_METHOD
+                        if _inside_pascal_class(node)
+                        else NODE_FUNCTION
+                    ),
+                    name=name,
+                )
         return None
 
     def call_target(self, node: Node, source: bytes) -> str | None:
-        if node.type == "exprCall":
-            for child in node.children:
-                if child.type == "identifier":
-                    return node_text(child, source)
-                if child.type == "exprDot":
-                    for sub in reversed(child.children):
-                        if sub.type == "identifier":
-                            return node_text(sub, source)
-                    break
-        return None
+        if node.type != "exprCall":
+            return None
+        entity = node.child_by_field_name("entity")
+        return _pascal_static_name(entity, source) if entity is not None else None
 
     def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
         if node.type != "declUses":
             return []
+        body = node_text(node, source).strip()
+        _, body = body.split(maxsplit=1)
+        identifier = r"[^\W\d]\w*"
         out: list[ImportRef] = []
-        for child in node.children:
-            if child.type == "moduleName":
-                dotted = node_text(child, source)
-                if dotted:
-                    out.append(
-                        ImportRef(name=dotted.rsplit(".", 1)[-1], module_path=dotted)
-                    )
+        for match in re.finditer(
+            rf"(?:^|,)\s*({identifier}(?:\.{identifier})*)"
+            r"(?:\s+(?i:in)\s+['\"]([^'\"]+)['\"])?",
+            body,
+        ):
+            dotted, explicit_path = match.groups()
+            out.append(
+                ImportRef(
+                    name=dotted.rsplit(".")[-1],
+                    module_path=explicit_path or dotted,
+                )
+            )
         return out
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
-        if node.type not in ("declClass", "declType"):
+        if node.type != "declType":
             return []
-        container = (
-            node.child_by_field_name("type") if node.type == "declType" else node
+        container = next(
+            child
+            for index, child in enumerate(node.children)
+            if node.field_name_for_child(index) == "type"
         )
-        if container is None or container.type != "declClass":
+        if container.type not in {"declClass", "declIntf"}:
             return []
         parents = [
             node_text(child, source)
@@ -136,7 +160,7 @@ class PascalParser(TreeSitterParser):
             and child.type == "typeref"
         ]
         if parents:
-            if _pascal_decl_kind(node) == NODE_INTERFACE:
+            if container.type == "declIntf":
                 return [
                     SuperType(name=name, edge_kind=EDGE_INHERITS) for name in parents
                 ]
@@ -147,22 +171,23 @@ class PascalParser(TreeSitterParser):
                 )
                 for index, name in enumerate(parents)
             ]
-        out: list[SuperType] = []
-        for child in container.children:
-            if child.type == "classParent":
-                for sub in child.children:
-                    if sub.type == "identifier":
-                        out.append(
-                            SuperType(
-                                name=node_text(sub, source), edge_kind=EDGE_INHERITS
-                            )
-                        )
-        return out
+        return []
 
     def docstring(self, node: Node, source: bytes) -> str | None:
         prev = node.prev_named_sibling
         if prev is not None and prev.type == "comment":
             text = node_text(prev, source)
+            if text.startswith("///"):
+                lines: list[str] = []
+                current: Node | None = prev
+                while current is not None and current.type == "comment":
+                    line = node_text(current, source)
+                    if not line.startswith("///"):
+                        break
+                    lines.append(line[3:].strip())
+                    current = current.prev_named_sibling
+                lines.reverse()
+                return "\n".join(line for line in lines if line) or None
             if text.startswith("{"):
                 return text.strip("{}").strip()
             if text.startswith("(*"):
@@ -171,9 +196,17 @@ class PascalParser(TreeSitterParser):
 
     def type_refs(self, node: Node, source: bytes) -> list[str]:
         out: list[str] = []
-        if node.type == "declProp":
+        if node.type in {"declProp", "declField", "declVar", "declConst"}:
             type_node = node.child_by_field_name("type")
             if type_node is not None:
+                _collect_pascal_type_refs(type_node, source, out)
+            return list(dict.fromkeys(out))
+        if node.type == "declType" and _pascal_decl_kind(node) == NODE_CLASS:
+            type_node = node.child_by_field_name("type")
+            if type_node is not None and type_node.type not in {
+                "declClass",
+                "declIntf",
+            }:
                 _collect_pascal_type_refs(type_node, source, out)
             return list(dict.fromkeys(out))
         if node.type not in {"defProc", "declProc"}:
@@ -214,42 +247,139 @@ class PascalParser(TreeSitterParser):
                 return node_text(child, source)
         return None
 
-    def _first_child_type(self, node: Node, ntype: str) -> Node | None:
-        for child in node.children:
-            if child.type == ntype:
-                return child
-        return None
-
     def _unit_name(self, node: Node, source: bytes) -> str | None:
         module = next(
-            (child for child in node.named_children if child.type == "moduleName"),
-            None,
+            child for child in node.named_children if child.type == "moduleName"
         )
-        return node_text(module, source) if module is not None else None
+        return node_text(module, source)
+
+
+def _pascal_static_name(node: Node, source: bytes) -> str | None:
+    if node.type == "identifier":
+        return node_text(node, source)
+    if node.type != "exprDot":
+        return None
+    lhs = next(
+        child
+        for index, child in enumerate(node.children)
+        if node.field_name_for_child(index) == "lhs"
+    )
+    rhs = next(
+        child
+        for index, child in enumerate(node.children)
+        if node.field_name_for_child(index) == "rhs"
+    )
+    owner = _pascal_static_name(lhs, source)
+    member = _pascal_static_name(rhs, source)
+    if member is None:
+        return None
+    return f"{owner}.{member}" if owner else member
+
+
+def _inside_pascal_class(node: Node) -> bool:
+    ancestor = node.parent
+    while ancestor is not None:
+        if ancestor.type in {"declClass", "declIntf"}:
+            return True
+        ancestor = ancestor.parent
+    return False
+
+
+def _enclosing_unit_name(node: Node, source: bytes) -> str | None:
+    ancestor = node.parent
+    while ancestor is not None:
+        if ancestor.type in {"unit", "program", "library"}:
+            module = next(
+                child
+                for child in ancestor.named_children
+                if child.type == "moduleName"
+            )
+            return node_text(module, source)
+        ancestor = ancestor.parent
+    return None
+
+
+def _pascal_callable_key(node: ExtractedNode) -> tuple[str, str, str]:
+    signature: str = node.signature  # ty: ignore[invalid-assignment]
+    tail = signature.casefold().rpartition(node.name.casefold())[2].partition(";")[0]
+    normalized_tail = re.sub(r"\s+", "", tail)
+    return node.kind, node.qualified_name.casefold(), normalized_tail
+
+
+def _coalesce_pascal_callables(result: ParseResult) -> None:
+    groups: dict[tuple[str, str, str], list[ExtractedNode]] = {}
+    for node in result.nodes:
+        if node.kind in {NODE_FUNCTION, NODE_METHOD}:
+            groups.setdefault(_pascal_callable_key(node), []).append(node)
+
+    replacements: dict[str, str] = {}
+    merged_nodes: dict[str, ExtractedNode] = {}
+    for duplicates in groups.values():
+        if len(duplicates) != 2:
+            continue
+        declaration, implementation = duplicates
+        replacements[implementation.local_id] = declaration.local_id
+        merged_nodes[declaration.local_id] = replace(
+            implementation,
+            local_id=declaration.local_id,
+            name=declaration.name,
+            qualified_name=declaration.qualified_name,
+            docstring=declaration.docstring or implementation.docstring,
+        )
+    if not replacements:
+        return
+
+    result.nodes[:] = [
+        merged_nodes.get(node.local_id, node)
+        for node in result.nodes
+        if node.local_id not in replacements
+    ]
+
+    edges = []
+    semantic_refs: set[tuple[str, str, str | None]] = set()
+    for edge in result.edges:
+        if edge.kind == EDGE_CONTAINS and edge.dst_local_id in replacements:
+            continue
+        rewritten = replace(
+            edge,
+            src_local_id=replacements.get(edge.src_local_id, edge.src_local_id),
+        )
+        if rewritten.kind == EDGE_REFERENCES:
+            key = (rewritten.src_local_id, rewritten.kind, rewritten.dst_name)
+            if key in semantic_refs:
+                continue
+            semantic_refs.add(key)
+        edges.append(rewritten)
+    result.edges[:] = dict.fromkeys(edges)
 
 
 _PASCAL_BUILTIN_TYPES = frozenset(
     {
-        "Boolean",
-        "Byte",
-        "Cardinal",
-        "Char",
-        "Double",
-        "Extended",
-        "Integer",
-        "Int64",
-        "LongInt",
-        "LongWord",
-        "Pointer",
-        "Real",
-        "ShortInt",
-        "ShortString",
-        "Single",
-        "SmallInt",
-        "String",
-        "WideChar",
-        "WideString",
-        "Word",
+        "ansistring",
+        "boolean",
+        "byte",
+        "cardinal",
+        "char",
+        "currency",
+        "double",
+        "extended",
+        "integer",
+        "int64",
+        "longint",
+        "longword",
+        "nativeint",
+        "nativeuint",
+        "pointer",
+        "real",
+        "shortint",
+        "shortstring",
+        "single",
+        "smallint",
+        "string",
+        "variant",
+        "widechar",
+        "widestring",
+        "word",
     }
 )
 
@@ -258,12 +388,12 @@ def _pascal_decl_kind(node: Node) -> str:
     type_node = node.child_by_field_name("type") if node.type == "declType" else node
     if type_node is None:
         return NODE_CLASS
+    if type_node.type == "declIntf":
+        return NODE_INTERFACE
     if type_node.type == "declClass":
         child_types = {child.type for child in type_node.named_children}
         if "kRecord" in child_types:
             return NODE_STRUCT
-        if "kInterface" in child_types:
-            return NODE_INTERFACE
         return NODE_CLASS
     if any(child.type == "declEnum" for child in type_node.named_children):
         return NODE_ENUM
@@ -271,10 +401,16 @@ def _pascal_decl_kind(node: Node) -> str:
 
 
 def _collect_pascal_type_refs(node: Node, source: bytes, out: list[str]) -> None:
+    if node.type == "typerefDot":
+        _append_pascal_type(node_text(node, source).strip(), out)
+        return
     if node.type == "identifier":
-        name = node_text(node, source)
-        if name not in _PASCAL_BUILTIN_TYPES:
-            out.append(name)
+        _append_pascal_type(node_text(node, source).strip(), out)
         return
     for child in node.named_children:
         _collect_pascal_type_refs(child, source, out)
+
+
+def _append_pascal_type(name: str, out: list[str]) -> None:
+    if name and name.lower() not in _PASCAL_BUILTIN_TYPES:
+        out.append(name)
