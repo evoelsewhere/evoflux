@@ -51,12 +51,22 @@ checkout events.
 
 ## CPU and cache isolation
 
-Repository rebuilds run in one spawned worker process. This prevents parser,
-tree-sitter orchestration, hashing, and cache reconciliation from sharing the
-API process GIL with asyncio and aiosqlite. Lightweight committed-index queries
-remain in a bounded thread executor. Repository cache databases use WAL, so
-queries can read the last committed graph while the worker reconciles a new
-target.
+Repository rebuilds run in one spawned worker process. Cold spatial-graph
+snapshots use a separate spawned process lane, so a graph request can still
+read the last committed target while a rebuild is active. This prevents parser,
+tree-sitter orchestration, hashing, reconciliation, and Python graph resolution
+from sharing the API process GIL with asyncio and aiosqlite. Both process lanes
+are serial, single-flight where applicable, and shut down as soon as their
+queues empty; no parser heap is retained while idle. Lightweight committed-index
+queries remain in a bounded thread executor. Repository cache databases use
+WAL, so queries can read the last committed graph while a worker reconciles a
+new target.
+
+Graph snapshots use a four-entry LRU keyed by repository identity, committed
+version, and node/edge limits. Concurrent cache misses for the same key share
+one build. Stats are cached against the main database and WAL signatures, and
+large graph payloads are materialized/encoded outside the event loop. A version
+change invalidates both stats and graph snapshots without an explicit purge.
 
 Project code-context routes release the application read session before either
 kind of repository operation. Repository symbols and relations never enter the
