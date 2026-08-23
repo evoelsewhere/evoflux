@@ -1246,11 +1246,48 @@ class TeamHistoryMemberData(NamedTuple):
     messages: list[SessionMessage]
 
 
-# Keep a generous server-side history buffer so scrolling through a long
-# transcript rarely has to wait for another round trip. The frontend still
-# mounts turns through its smaller render window, so this does not render all
-# 500 rows at once.
-_HISTORY_PAGE_SIZE = 500
+# History is bounded by both row count and serialized weight. Tool output can
+# be tens of kilobytes per row, so a fixed 500-row page created 0.5–5 MiB JSON
+# responses and made concurrent history loads contend for the event loop/GIL.
+# The UI already cursor-loads older pages; smaller bounded pages improve first
+# paint without changing the durable transcript or LLM context.
+_HISTORY_MAX_ROWS = 160
+_HISTORY_TARGET_BYTES = 192 * 1024
+_HISTORY_MIN_ROWS = 24
+
+
+def _history_row_weight(row: SessionMessage) -> int:
+    """Estimate the JSON payload weight of one message without serializing it."""
+
+    total = 256  # ids, role/name fields, timestamps, and JSON punctuation
+    for value in (row.content, row.reasoning_content, row.tool_call_id, row.name):
+        if value:
+            total += len(value.encode("utf-8", "replace"))
+    for value in (row.tool_calls, row.extra):
+        if value is not None:
+            total += len(
+                json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode(
+                    "utf-8", "replace"
+                )
+            )
+    return total
+
+
+def _bounded_history_page(rows: list[SessionMessage]) -> list[SessionMessage]:
+    """Take a newest-first page under the row and approximate byte budgets."""
+
+    page: list[SessionMessage] = []
+    weight = 0
+    for row in rows[:_HISTORY_MAX_ROWS]:
+        row_weight = _history_row_weight(row)
+        if (
+            len(page) >= _HISTORY_MIN_ROWS
+            and weight + row_weight > _HISTORY_TARGET_BYTES
+        ):
+            break
+        page.append(row)
+        weight += row_weight
+    return page
 
 
 class TeamHistoryData(NamedTuple):
@@ -1299,18 +1336,17 @@ def _history_row_at_or_after(row: SessionMessage) -> ColumnElement[bool]:
     )
 
 
-async def _extend_history_page_to_message_boundaries(
+async def _extend_history_page_to_turn_boundaries(
     db: AsyncSession,
     session_ids: list[UUID],
     page: list[SessionMessage],
 ) -> list[SessionMessage]:
-    """Keep an assistant tool-call cycle on one history page.
+    """Keep every projected session stream on a complete turn boundary.
 
-    A raw row limit may put one or more ``tool`` results at the start of a
-    session's projected page while their assistant ``tool_calls`` row remains
-    on the previous page. The frontend cannot reconstruct that tool card from
-    either page independently. Extend the global timeline backwards to the
-    nearest non-tool row required by every affected lead/member stream.
+    A row/byte limit may put assistant or tool rows at the start of a session's
+    projected page while the originating user/summary row remains on the older
+    page. Extend the global timeline backwards to the nearest durable turn
+    boundary required by every affected lead/member stream.
 
     Pages remain globally cursor-ordered. Including all interleaved rows down
     to the earliest required anchor prevents gaps when team members run in
@@ -1321,7 +1357,9 @@ async def _extend_history_page_to_message_boundaries(
         for row in reversed(page):
             oldest_by_session.setdefault(row.session_id, row)
         broken_starts = [
-            row for row in oldest_by_session.values() if row.role == "tool"
+            row
+            for row in oldest_by_session.values()
+            if row.role != "user" and not row.is_summary
         ]
         if not broken_starts:
             break
@@ -1333,7 +1371,12 @@ async def _extend_history_page_to_message_boundaries(
                     select(SessionMessage)
                     .where(col(SessionMessage.session_id) == row.session_id)
                     .where(_history_row_before(row))
-                    .where(col(SessionMessage.role) != "tool")
+                    .where(
+                        or_(
+                            col(SessionMessage.role) == "user",
+                            col(SessionMessage.is_summary),
+                        )
+                    )
                     .order_by(
                         col(SessionMessage.created_at).desc(),
                         col(SessionMessage.id).desc(),
@@ -1377,11 +1420,11 @@ async def get_team_history(
 ) -> TeamHistoryData | None:
     """Fetch the latest page of history for a team lead session and its sub-sessions.
 
-    Fetches ``_HISTORY_PAGE_SIZE`` messages across the team timeline ordered
-    by ``created_at DESC`` (newest first), extending the page only when needed
-    to keep assistant/tool cycles intact. The result is reversed to
-    chronological order for the caller. Pass ``next_cursor`` from a previous
-    response as ``before`` to load older messages.
+    Fetches one byte- and row-bounded slice across the team timeline ordered by
+    ``created_at DESC`` (newest first), extending the page only when needed to
+    keep assistant/tool cycles intact. The result is reversed to chronological
+    order for the caller. Pass ``next_cursor`` from a previous response as
+    ``before`` to load older messages.
 
     Returns ``None`` if the lead session does not exist.
     """
@@ -1405,7 +1448,7 @@ async def get_team_history(
             col(SessionMessage.created_at).desc(),
             col(SessionMessage.id).desc(),
         )
-        .limit(_HISTORY_PAGE_SIZE + 1)
+        .limit(_HISTORY_MAX_ROWS + 1)
     )
     if before_at is not None:
         if before_id is None:
@@ -1421,10 +1464,10 @@ async def get_team_history(
                 )
             )
     raw_page = list((await db.exec(stmt)).all())
-    has_more = len(raw_page) > _HISTORY_PAGE_SIZE
-    page = raw_page[:_HISTORY_PAGE_SIZE]
+    page = _bounded_history_page(raw_page)
+    has_more = len(raw_page) > len(page)
     if has_more:
-        page = await _extend_history_page_to_message_boundaries(db, session_ids, page)
+        page = await _extend_history_page_to_turn_boundaries(db, session_ids, page)
         has_more = bool(
             page
             and (
@@ -1455,6 +1498,14 @@ async def get_team_history(
         f"{page[-1].created_at.isoformat()}|{page[-1].id}"
         if has_more and page
         else None
+    )
+
+    logger.debug(
+        "history_page_loaded session_id={} rows={} estimated_bytes={} has_more={}",
+        lead_session_id,
+        len(page),
+        sum(_history_row_weight(row) for row in page),
+        has_more,
     )
 
     return TeamHistoryData(
