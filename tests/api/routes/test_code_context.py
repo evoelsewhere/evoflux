@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.routes.code_context import router
-from app.api.routes.team.projects import _graph_node_id
+from app.api.routes.team.projects import _graph_node_id, router as project_router
 from app.core.config import settings
 from app.services.code_index.project import RepositoryIndexRegistry
 
@@ -96,6 +96,26 @@ def test_graph_action_rejects_prose_at_http_boundary(
 
     assert response.status_code == 422
     assert "one exact symbol" in response.json()["detail"]
+
+
+def test_graph_openapi_retains_object_response_schema(
+    code_context_client: tuple[TestClient, Path],
+) -> None:
+    client, _repository = code_context_client
+
+    schema = client.get("/openapi.json").json()["paths"][
+        "/api/code-context/graph-data"
+    ]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert schema["type"] == "object"
+    assert "additionalProperties" in schema
+
+    project_app = FastAPI()
+    project_app.include_router(project_router, prefix="/api/team")
+    project_schema = project_app.openapi()["paths"][
+        "/api/team/projects/{project_id}/code-context/graph-data"
+    ]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert project_schema["type"] == "object"
+    assert "additionalProperties" in project_schema
 
 
 @pytest.mark.parametrize(

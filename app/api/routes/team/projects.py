@@ -484,7 +484,10 @@ async def query_project_code_context(
     return CodeContextQueryResponse.model_validate(result, from_attributes=True)
 
 
-@router.get("/{project_id}/code-context/graph-data")
+@router.get(
+    "/{project_id}/code-context/graph-data",
+    response_model=dict[str, object],
+)
 async def project_code_context_graph_data(
     project_id: UUID,
     db_factory: ReadDbSessionFactory,

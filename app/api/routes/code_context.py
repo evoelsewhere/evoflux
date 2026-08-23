@@ -200,7 +200,7 @@ async def query(
     return CodeContextQueryResponse.model_validate(result, from_attributes=True)
 
 
-@router.get("/graph-data")
+@router.get("/graph-data", response_model=dict[str, object])
 async def graph_data(
     workspace: str | None = Query(None, description="Coding workspace directory."),
     node_limit_per_repo: int = Query(500, ge=1, le=5_000),
