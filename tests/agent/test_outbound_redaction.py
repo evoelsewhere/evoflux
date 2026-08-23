@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from app.agent.outbound_redaction import (
     OutboundContext,
     OutboundSensitiveDataError,
+    load_outbound_data_policy,
+    load_outbound_pii_policy,
     protect_outbound_text,
     protect_outbound_value,
     protect_outbound_payload,
@@ -21,6 +24,26 @@ from app.agent.schemas.chat import (
     ToolCall,
     ToolMessage,
 )
+
+
+def test_policy_load_failures_default_all_outbound_protection_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.agent.sandbox.get_sandbox",
+        lambda: SimpleNamespace(
+            outbound_data_policy=None,
+            outbound_pii_policy=None,
+        ),
+    )
+
+    def fail_to_load_config():
+        raise OSError("unreadable sandbox config")
+
+    monkeypatch.setattr("app.agent.sandbox_config.load_config", fail_to_load_config)
+
+    assert load_outbound_data_policy() == "off"
+    assert load_outbound_pii_policy() == "off"
 
 
 def test_redact_masks_configured_secret_without_mutating_history(

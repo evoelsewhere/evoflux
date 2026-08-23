@@ -102,6 +102,19 @@ def test_session_sandbox_loads_saved_process_security_policy(
     assert sandbox.max_output_bytes == 8192
     assert sandbox.inherit_shell_environment is True
     assert sandbox.load_shell_profile is True
+    assert sandbox.outbound_data_policy == "off"
+    assert sandbox.outbound_pii_policy == "off"
+
+
+def test_isolated_sandbox_defaults_outbound_protection_off(tmp_path: Path):
+    sandbox = SandboxConfig(
+        workspace=str(tmp_path / "ws"),
+        denied_roots=[],
+        denied_patterns=[],
+    )
+
+    assert sandbox.outbound_data_policy == "off"
+    assert sandbox.outbound_pii_policy == "off"
 
 
 def test_metadata_path_is_session_scoped_when_session_id_present(tmp_path):

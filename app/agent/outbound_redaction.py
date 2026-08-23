@@ -404,7 +404,7 @@ def _configured_secret_values() -> tuple[str, ...]:
 
 
 def load_outbound_data_policy() -> OutboundDataPolicy:
-    """Load the saved policy, defaulting securely if the file is unusable."""
+    """Load the saved policy, defaulting to disabled if the file is unusable."""
 
     try:
         from app.agent.sandbox import get_sandbox
@@ -421,12 +421,12 @@ def load_outbound_data_policy() -> OutboundDataPolicy:
 
         return load_config().outbound_data_policy
     except (OSError, ValueError) as exc:
-        logger.warning("outbound_data_policy_load_failed fallback=block err={}", exc)
-        return "block"
+        logger.warning("outbound_data_policy_load_failed fallback=off err={}", exc)
+        return "off"
 
 
 def load_outbound_pii_policy() -> OutboundPiiPolicy:
-    """Load the saved PII policy, defaulting to standard protection."""
+    """Load the saved PII policy, defaulting to disabled if the file is unusable."""
 
     try:
         from app.agent.sandbox import get_sandbox
@@ -443,8 +443,8 @@ def load_outbound_pii_policy() -> OutboundPiiPolicy:
 
         return load_config().outbound_pii_policy
     except (OSError, ValueError) as exc:
-        logger.warning("outbound_pii_policy_load_failed fallback=standard err={}", exc)
-        return "standard"
+        logger.warning("outbound_pii_policy_load_failed fallback=off err={}", exc)
+        return "off"
 
 
 def _raise_if_blocked(report: RedactionReport, *, policy: OutboundDataPolicy) -> None:
