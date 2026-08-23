@@ -485,7 +485,7 @@ def _is_reference_identifier(node: Node) -> bool:
     # binding itself while type ancestry excludes its annotation.
     if parent.type in {"parameters", "lambda_parameters"}:
         return False
-    for field in ("name", "declarator", "pattern", "alias", "macro"):
+    for field in ("name", "pattern", "alias", "macro"):
         if _same_span(parent.child_by_field_name(field), node):
             return False
     for ancestor in ancestors:
