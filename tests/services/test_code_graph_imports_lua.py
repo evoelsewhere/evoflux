@@ -24,12 +24,12 @@ def test_lua_local_require_assignment():
 
 
 def test_lua_bare_string_call_require():
-    source = b"""require "mypkg.utils"
+    source = b"""require "one.mypkg.utils"
 """
     result = LuaParser().parse(file_path="main.lua", source=source)
     names = _import_names(result)
     module_paths = _import_module_paths(result)
-    assert "mypkg.utils" in module_paths
+    assert "one.mypkg.utils" in module_paths
     # No assignment target — falls back to the last dotted segment.
     assert "utils" in names
 
@@ -53,6 +53,21 @@ def test_lua_require_single_quotes():
     module_paths = _import_module_paths(result)
     assert "json" in names
     assert "dkjson" in module_paths
+
+
+def test_lua_dotted_assignment_uses_leaf_binding():
+    source = b'''M.dependencies.json = require("vendor.dkjson")
+'''
+    result = LuaParser().parse(file_path="main.lua", source=source)
+
+    assert _import_names(result) == ["json"]
+    assert _import_module_paths(result) == ["vendor.dkjson"]
+
+
+def test_lua_empty_require_has_no_import():
+    result = LuaParser().parse(file_path="main.lua", source=b"require()")
+
+    assert _import_names(result) == []
 
 
 def test_lua_non_require_call_not_treated_as_import():
