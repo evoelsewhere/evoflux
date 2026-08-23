@@ -187,6 +187,10 @@ class RepositoryIndex:
         self._dispatch_lock = threading.RLock()
         self._update_future: concurrent.futures.Future[IndexStats] | None = None
         self._update_future_full = False
+        self._stats_lock = threading.RLock()
+        self._stats_cache: (
+            tuple[tuple[tuple[int, int] | None, ...], IndexStats] | None
+        ) = None
 
     @classmethod
     async def create(cls, root: Path) -> RepositoryIndex:
@@ -235,6 +239,7 @@ class RepositoryIndex:
                     self._update_future_full = full
                 covers_full_refresh = self._update_future_full
             result = await asyncio.shield(asyncio.wrap_future(pending))
+            self._remember_stats(result)
             if not full or covers_full_refresh:
                 return result
 
@@ -244,6 +249,7 @@ class RepositoryIndex:
         progress: ProgressCallback | None,
     ) -> IndexStats:
         with self._update_lock:
+            self._clear_stats_cache()
             try:
                 stats = self._update_sync(full, progress)
             except sqlite3.DatabaseError as exc:
@@ -394,10 +400,16 @@ class RepositoryIndex:
 
     def _purge_locked(self) -> None:
         with self._update_lock:
+            self._clear_stats_cache()
             self.database.close()
             shutil.rmtree(self.paths.directory, ignore_errors=True)
 
     def stats(self) -> IndexStats:
+        signature_before = self._database_signature()
+        with self._stats_lock:
+            cached = self._stats_cache
+            if cached is not None and cached[0] == signature_before:
+                return cached[1]
         try:
             with self.database.readonly() as connection:
                 files = _count(connection, "source_files")
@@ -423,7 +435,7 @@ class RepositoryIndex:
         for file_path, fingerprint in fingerprint_rows:
             digest.update(str(file_path).encode("utf-8", "replace"))
             digest.update(str(fingerprint).encode("ascii", "replace"))
-        return IndexStats(
+        result = IndexStats(
             files=files,
             chunks=chunks,
             symbols=symbols,
@@ -433,6 +445,32 @@ class RepositoryIndex:
             errors=tuple((str(row[0]), str(row[1])) for row in error_rows),
             version=digest.hexdigest()[:12] if fingerprint_rows else None,
         )
+        signature_after = self._database_signature()
+        if signature_before == signature_after:
+            with self._stats_lock:
+                self._stats_cache = (signature_after, result)
+        return result
+
+    def _database_signature(self) -> tuple[tuple[int, int] | None, ...]:
+        def signature(path: Path) -> tuple[int, int] | None:
+            try:
+                stat = path.stat()
+            except OSError:
+                return None
+            return stat.st_mtime_ns, stat.st_size
+
+        return (
+            signature(self.database.path),
+            signature(Path(f"{self.database.path}-wal")),
+        )
+
+    def _remember_stats(self, value: IndexStats) -> None:
+        with self._stats_lock:
+            self._stats_cache = (self._database_signature(), value)
+
+    def _clear_stats_cache(self) -> None:
+        with self._stats_lock:
+            self._stats_cache = None
 
     def rebuild_lexical_index(self) -> None:
         """Repair derived FTS state without rebuilding parsed source and graph rows."""

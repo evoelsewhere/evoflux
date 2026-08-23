@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import fnmatch
 import hashlib
 import posixpath
@@ -14,7 +15,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from app.services.code_index.parsers.registry import default_registry
-from app.services.code_index.executor import run_index_work
+from app.services.code_index.executor import run_index_work, submit_graph_build
 from app.services.code_index.models import (
     CodeContextResult,
     CodeSymbol,
@@ -24,7 +25,8 @@ from app.services.code_index.models import (
     IndexStats,
     SearchHit,
 )
-from app.services.code_index.project import RepositoryIndex
+from app.services.code_index.paths import RepositoryIndexPaths
+from app.services.code_index.project import ManagedDatabase, RepositoryIndex
 from app.services.code_index.semantic import embed_text, similarity
 from app.services.code_index.structural import StructuralPattern
 
@@ -121,6 +123,12 @@ _SYMBOL_CACHE_LOCK = threading.RLock()
 _SYMBOL_CACHE: OrderedDict[
     tuple[int, str], tuple[str | None, tuple[_StoredSymbol, ...]]
 ] = OrderedDict()
+_GRAPH_SNAPSHOT_CACHE_LIMIT = 4
+_GRAPH_SNAPSHOT_LOCK = threading.RLock()
+_GRAPH_SNAPSHOT_CACHE: OrderedDict[tuple[object, ...], GraphSnapshot] = OrderedDict()
+_GRAPH_SNAPSHOT_INFLIGHT: dict[
+    tuple[object, ...], concurrent.futures.Future[GraphSnapshot]
+] = {}
 
 
 def _fts_query(query: str) -> str:
@@ -582,9 +590,83 @@ async def snapshot_graph(
     *,
     node_limit_per_repository: int,
     relation_limit_per_repository: int,
+    stats: dict[str, IndexStats] | None = None,
 ) -> GraphSnapshot:
-    """Return a bounded graph projection resolved from the current repo set."""
-    stored_symbols = await run_index_work(_load_symbols, indexes)
+    """Return a versioned, single-flight graph projection for the repo set."""
+
+    resolved_stats = stats or await run_index_work(_index_stats, indexes)
+    cache_key: tuple[object, ...] = (
+        tuple(
+            (id(index), label, resolved_stats[label].version)
+            for label, index in indexes
+        ),
+        node_limit_per_repository,
+        relation_limit_per_repository,
+    )
+    with _GRAPH_SNAPSHOT_LOCK:
+        cached = _GRAPH_SNAPSHOT_CACHE.get(cache_key)
+        if cached is not None:
+            _GRAPH_SNAPSHOT_CACHE.move_to_end(cache_key)
+            return cached
+        pending = _GRAPH_SNAPSHOT_INFLIGHT.get(cache_key)
+        if pending is None:
+            pending = submit_graph_build(
+                _build_graph_snapshot,
+                (
+                    indexes,
+                    resolved_stats,
+                    node_limit_per_repository,
+                    relation_limit_per_repository,
+                ),
+                process_function=_build_graph_snapshot_process,
+                process_args=(
+                    tuple(
+                        (label, str(index.root), str(index.database.path))
+                        for label, index in indexes
+                    ),
+                    resolved_stats,
+                    node_limit_per_repository,
+                    relation_limit_per_repository,
+                ),
+            )
+            _GRAPH_SNAPSHOT_INFLIGHT[cache_key] = pending
+
+            def remember(
+                completed: concurrent.futures.Future[GraphSnapshot],
+            ) -> None:
+                try:
+                    snapshot = completed.result()
+                except BaseException:
+                    snapshot = None
+                with _GRAPH_SNAPSHOT_LOCK:
+                    if _GRAPH_SNAPSHOT_INFLIGHT.get(cache_key) is completed:
+                        _GRAPH_SNAPSHOT_INFLIGHT.pop(cache_key, None)
+                    if snapshot is not None:
+                        _GRAPH_SNAPSHOT_CACHE[cache_key] = snapshot
+                        _GRAPH_SNAPSHOT_CACHE.move_to_end(cache_key)
+                        while len(_GRAPH_SNAPSHOT_CACHE) > _GRAPH_SNAPSHOT_CACHE_LIMIT:
+                            _GRAPH_SNAPSHOT_CACHE.popitem(last=False)
+
+            pending.add_done_callback(remember)
+
+    return await asyncio.shield(asyncio.wrap_future(pending))
+
+
+def _index_stats(
+    indexes: list[tuple[str, RepositoryIndex]],
+) -> dict[str, IndexStats]:
+    return {label: index.stats() for label, index in indexes}
+
+
+def _build_graph_snapshot(
+    indexes: list[tuple[str, RepositoryIndex]],
+    stats: dict[str, IndexStats],
+    node_limit_per_repository: int,
+    relation_limit_per_repository: int,
+) -> GraphSnapshot:
+    """Build the complete projection inside the bounded code-index thread."""
+
+    stored_symbols = _load_symbols(indexes, stats)
     selected: list[_StoredSymbol] = []
     for label, _index in indexes:
         values = [item for item in stored_symbols if item.repository == label]
@@ -598,9 +680,7 @@ async def snapshot_graph(
         )
         selected.extend(values[:node_limit_per_repository])
     selected_ids = {item.value.identity for item in selected}
-    stored_relations, total_relations = await run_index_work(
-        _relations_from_selected, selected
-    )
+    stored_relations, total_relations = _relations_from_selected(selected)
     resolver = _GraphResolver(stored_symbols, stored_relations)
     resolved = resolver.resolve_all()
     relation_counts: dict[str, int] = defaultdict(int)
@@ -629,6 +709,41 @@ async def snapshot_graph(
         relations=tuple(output_relations),
         total_symbols=len(stored_symbols),
         total_relations=total_relations,
+    )
+
+
+def _build_graph_snapshot_process(
+    descriptors: tuple[tuple[str, str, str], ...],
+    stats: dict[str, IndexStats],
+    node_limit_per_repository: int,
+    relation_limit_per_repository: int,
+) -> GraphSnapshot:
+    """Reconstruct repository handles and build a graph in an isolated process."""
+
+    indexes: list[tuple[str, RepositoryIndex]] = []
+    for label, root_value, database_value in descriptors:
+        root = Path(root_value)
+        database_path = Path(database_value)
+        database = ManagedDatabase(database_path)
+        indexes.append(
+            (
+                label,
+                RepositoryIndex(
+                    root=root,
+                    paths=RepositoryIndexPaths(
+                        root=root,
+                        directory=database_path.parent,
+                        target_db=database_path,
+                    ),
+                    database=database,
+                ),
+            )
+        )
+    return _build_graph_snapshot(
+        indexes,
+        stats,
+        node_limit_per_repository,
+        relation_limit_per_repository,
     )
 
 
@@ -1437,9 +1552,7 @@ def _traverse_lazy(
         )
         heritage_owners: dict[tuple[str, str], _StoredSymbol] = {}
         for relation in relations:
-            raw_target = (relation.dst_name or "").replace("::", ".").replace(
-                "->", "."
-            )
+            raw_target = (relation.dst_name or "").replace("::", ".").replace("->", ".")
             source = catalog.by_identity.get((relation.repository, relation.src_id))
             if (
                 source is None

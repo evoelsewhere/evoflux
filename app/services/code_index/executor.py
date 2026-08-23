@@ -24,34 +24,85 @@ _INDEX_THREAD_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
     max_workers=_INDEX_WORKERS,
     thread_name_prefix="code-index",
 )
-_INDEX_PROCESS_EXECUTOR: concurrent.futures.ProcessPoolExecutor | None = None
-_INDEX_PROCESS_LOCK = threading.Lock()
 
 
-def _process_executor() -> concurrent.futures.ProcessPoolExecutor:
-    global _INDEX_PROCESS_EXECUTOR
-    with _INDEX_PROCESS_LOCK:
-        if _INDEX_PROCESS_EXECUTOR is None:
-            _INDEX_PROCESS_EXECUTOR = concurrent.futures.ProcessPoolExecutor(
-                max_workers=1,
-                mp_context=multiprocessing.get_context("spawn"),
-            )
-        return _INDEX_PROCESS_EXECUTOR
+class _EphemeralProcessLane:
+    """One serial process queue that releases its worker when it becomes idle."""
 
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._executor: concurrent.futures.ProcessPoolExecutor | None = None
+        self._pending = 0
 
-def shutdown_index_processes() -> None:
-    """Terminate rebuild workers without disabling lightweight query threads."""
+    def submit(
+        self,
+        function: Callable[..., _T],
+        args: tuple[object, ...],
+    ) -> concurrent.futures.Future[_T]:
+        with self._lock:
+            if self._executor is None:
+                self._executor = concurrent.futures.ProcessPoolExecutor(
+                    max_workers=1,
+                    mp_context=multiprocessing.get_context("spawn"),
+                )
+            executor = self._executor
+            self._pending += 1
+            try:
+                future = executor.submit(function, *args)
+            except BaseException:
+                self._pending -= 1
+                raise
 
-    global _INDEX_PROCESS_EXECUTOR
-    with _INDEX_PROCESS_LOCK:
-        process_executor = _INDEX_PROCESS_EXECUTOR
-        _INDEX_PROCESS_EXECUTOR = None
-    if process_executor is not None:
-        processes = tuple(getattr(process_executor, "_processes", {}).values())
-        process_executor.shutdown(wait=False, cancel_futures=True)
+        def release(_future: concurrent.futures.Future[_T]) -> None:
+            retire: concurrent.futures.ProcessPoolExecutor | None = None
+            with self._lock:
+                if self._executor is not executor:
+                    return
+                self._pending -= 1
+                if self._pending == 0:
+                    retire = self._executor
+                    self._executor = None
+            if retire is not None:
+                retire.shutdown(wait=False, cancel_futures=False)
+
+        future.add_done_callback(release)
+        return future
+
+    def shutdown(self) -> None:
+        with self._lock:
+            executor = self._executor
+            self._executor = None
+            self._pending = 0
+        if executor is None:
+            return
+        processes = tuple(getattr(executor, "_processes", {}).values())
+        executor.shutdown(wait=False, cancel_futures=True)
         for process in processes:
             if process.is_alive():
                 process.terminate()
+
+    def state(self) -> tuple[int, bool]:
+        with self._lock:
+            return self._pending, self._executor is not None
+
+
+_UPDATE_PROCESS_LANE = _EphemeralProcessLane()
+_GRAPH_PROCESS_LANE = _EphemeralProcessLane()
+
+
+def shutdown_index_processes() -> None:
+    """Terminate rebuild/graph workers without disabling query threads."""
+
+    _UPDATE_PROCESS_LANE.shutdown()
+    _GRAPH_PROCESS_LANE.shutdown()
+
+
+def index_process_queue_state() -> tuple[int, bool]:
+    """Return aggregate ``(pending_jobs, worker_pool_alive)`` diagnostics."""
+
+    update_pending, update_alive = _UPDATE_PROCESS_LANE.state()
+    graph_pending, graph_alive = _GRAPH_PROCESS_LANE.state()
+    return update_pending + graph_pending, update_alive or graph_alive
 
 
 def _shutdown_all_index_executors() -> None:
@@ -80,7 +131,21 @@ def submit_index_update(
 
     if settings.EVOFLUX_CODE_INDEX_EXECUTION == "thread":
         return _INDEX_THREAD_EXECUTOR.submit(thread_function, *thread_args)
-    return _process_executor().submit(process_function, *process_args)
+    return _UPDATE_PROCESS_LANE.submit(process_function, process_args)
+
+
+def submit_graph_build(
+    thread_function: Callable[..., _T],
+    thread_args: tuple[object, ...],
+    *,
+    process_function: Callable[..., _T],
+    process_args: tuple[object, ...],
+) -> concurrent.futures.Future[_T]:
+    """Submit a cold graph build outside the API process in production."""
+
+    if settings.EVOFLUX_CODE_INDEX_EXECUTION == "thread":
+        return _INDEX_THREAD_EXECUTOR.submit(thread_function, *thread_args)
+    return _GRAPH_PROCESS_LANE.submit(process_function, process_args)
 
 
 async def run_index_work(
@@ -93,7 +158,9 @@ async def run_index_work(
 
 __all__ = [
     "run_index_work",
+    "index_process_queue_state",
     "shutdown_index_processes",
     "submit_index_update",
+    "submit_graph_build",
     "submit_index_work",
 ]

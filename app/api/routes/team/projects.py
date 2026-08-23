@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -29,7 +30,7 @@ from app.services import coding_project_service as svc
 from app.services import team_manager
 from app.services.coding_purge_service import purge_project, purge_project_workspace
 from app.services.code_index.jobs import project_index_jobs
-from app.services.code_index.models import RepositoryScope
+from app.services.code_index.models import GraphSnapshot, IndexStats, RepositoryScope
 from app.services.code_index.pipeline import stable_id
 from app.services.code_index.project import repository_indexes
 from app.services.code_index.query import snapshot_graph
@@ -289,13 +290,15 @@ async def _project_code_context_status_data(
     project_id: UUID,
     scopes: tuple[RepositoryScope, ...],
     pairs: list[tuple[CodingProjectWorkspace, CodingWorkspace]],
+    stats_values: list[IndexStats] | None = None,
 ) -> list[dict[str, object]]:
-    indexes = await asyncio.gather(
-        *(repository_indexes.get(scope.root) for scope in scopes)
-    )
-    stats_values = await asyncio.gather(
-        *(asyncio.to_thread(index.stats) for index in indexes)
-    )
+    if stats_values is None:
+        indexes = await asyncio.gather(
+            *(repository_indexes.get(scope.root) for scope in scopes)
+        )
+        stats_values = list(
+            await asyncio.gather(*(asyncio.to_thread(index.stats) for index in indexes))
+        )
     job_states = project_index_jobs.snapshot(str(project_id))
     output: list[dict[str, object]] = []
     for scope, (_link, workspace), stats in zip(
@@ -328,6 +331,104 @@ async def _project_code_context_status_data(
             }
         )
     return output
+
+
+def _render_project_graph_payload(
+    scopes: tuple[RepositoryScope, ...],
+    pairs: list[tuple[CodingProjectWorkspace, CodingWorkspace]],
+    snapshot: GraphSnapshot,
+    repos: list[dict[str, object]],
+    *,
+    node_limit_per_repo: int,
+    edge_limit_per_repo: int,
+) -> bytes:
+    """Materialize and encode the large graph payload off the event loop."""
+
+    workspace_by_label = {
+        scope.label: workspace
+        for scope, (_link, workspace) in zip(scopes, pairs, strict=True)
+    }
+    global_id = {
+        symbol.identity: _graph_node_id(
+            workspace_by_label[symbol.repository].id, symbol.id
+        )
+        for symbol in snapshot.symbols
+    }
+    nodes = [
+        {
+            "id": global_id[symbol.identity],
+            "workspace_id": str(workspace_by_label[symbol.repository].id),
+            "kind": symbol.kind,
+            "name": symbol.name,
+            "qualified_name": symbol.qualified_name,
+            "file_path": symbol.file_path,
+            "language": symbol.language,
+            "line_start": symbol.line_start,
+            "line_end": symbol.line_end,
+            "signature": symbol.signature,
+            "docstring": symbol.docstring,
+        }
+        for symbol in snapshot.symbols
+    ]
+    local_edges: list[dict[str, object]] = []
+    cross_edges: list[dict[str, object]] = []
+    for relation in snapshot.relations:
+        relation_id = stable_id(
+            relation.source.repository,
+            relation.source.id,
+            relation.kind,
+            relation.target.repository,
+            relation.target.id,
+            relation.callsite_line,
+        )
+        if not relation.cross_repo:
+            local_edges.append(
+                {
+                    "id": relation_id,
+                    "src_id": global_id[relation.source.identity],
+                    "dst_id": global_id[relation.target.identity],
+                    "kind": relation.kind,
+                    "file_path": relation.callsite_file,
+                    "line": relation.callsite_line,
+                }
+            )
+            continue
+        source_workspace = workspace_by_label[relation.source.repository]
+        target_workspace = workspace_by_label[relation.target.repository]
+        cross_edges.append(
+            {
+                "id": relation_id,
+                "src_workspace_id": str(source_workspace.id),
+                "src_node_id": global_id[relation.source.identity],
+                "src_file_path": relation.callsite_file,
+                "src_line": relation.callsite_line,
+                "raw_reference": relation.target.qualified_name,
+                "dst_name_hint": relation.target.name,
+                "kind": relation.kind,
+                "status": "resolved",
+                "method": "dynamic-symbol-resolution",
+                "confidence": 1.0,
+                "rationale": "Resolved over the current authorized repository set.",
+                "dst_workspace_id": str(target_workspace.id),
+                "dst_node_id": global_id[relation.target.identity],
+                "dst_qualified_name": relation.target.qualified_name,
+            }
+        )
+    payload = {
+        "repos": repos,
+        "nodes": nodes,
+        "edges": local_edges,
+        "cross_repo_edges": cross_edges,
+        "node_limit_per_repo": node_limit_per_repo,
+        "edge_limit_per_repo": edge_limit_per_repo,
+        "total_node_count": snapshot.total_symbols,
+        "total_edge_count": snapshot.total_relations,
+    }
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
 
 
 @router.post(
@@ -389,7 +490,7 @@ async def project_code_context_graph_data(
     db_factory: ReadDbSessionFactory,
     node_limit_per_repo: int = Query(500, ge=1, le=5_000),
     edge_limit_per_repo: int = Query(2_000, ge=1, le=10_000),
-) -> dict[str, object]:
+) -> Response:
     """Build the spatial graph from current repository targets, never DB rows."""
     scopes, pairs = await _load_project_context(db_factory, project_id)
     indexes = await asyncio.gather(
@@ -398,96 +499,38 @@ async def project_code_context_graph_data(
     stats_values = await asyncio.gather(
         *(asyncio.to_thread(index.stats) for index in indexes)
     )
+    indexed = [
+        (scope.label, index)
+        for scope, index, stats in zip(scopes, indexes, stats_values, strict=True)
+        if stats.files > 0
+    ]
+    stats_by_label = {
+        scope.label: stats
+        for scope, stats in zip(scopes, stats_values, strict=True)
+        if stats.files > 0
+    }
     snapshot = await snapshot_graph(
-        list(
-            (scope.label, index)
-            for scope, index, stats in zip(scopes, indexes, stats_values, strict=True)
-            if stats.files > 0
-        ),
+        indexed,
         node_limit_per_repository=node_limit_per_repo,
         relation_limit_per_repository=edge_limit_per_repo,
+        stats=stats_by_label,
     )
-    workspace_by_label = {
-        scope.label: workspace
-        for scope, (_link, workspace) in zip(scopes, pairs, strict=True)
-    }
-    global_id = {
-        symbol.identity: _graph_node_id(
-            workspace_by_label[symbol.repository].id, symbol.id
-        )
-        for symbol in snapshot.symbols
-    }
-    repos = await _project_code_context_status_data(project_id, scopes, pairs)
-    nodes = [
-        {
-            "id": global_id[symbol.identity],
-            "workspace_id": str(workspace_by_label[symbol.repository].id),
-            "kind": symbol.kind,
-            "name": symbol.name,
-            "qualified_name": symbol.qualified_name,
-            "file_path": symbol.file_path,
-            "language": symbol.language,
-            "line_start": symbol.line_start,
-            "line_end": symbol.line_end,
-            "signature": symbol.signature,
-            "docstring": symbol.docstring,
-        }
-        for symbol in snapshot.symbols
-    ]
-    local_edges: list[dict[str, object]] = []
-    cross_edges: list[dict[str, object]] = []
-    for relation in snapshot.relations:
-        relation_id = stable_id(
-            relation.source.repository,
-            relation.source.id,
-            relation.kind,
-            relation.target.repository,
-            relation.target.id,
-            relation.callsite_line,
-        )
-        if not relation.cross_repo:
-            local_edges.append(
-                {
-                    "id": relation_id,
-                    "src_id": global_id[relation.source.identity],
-                    "dst_id": global_id[relation.target.identity],
-                    "kind": relation.kind,
-                    "file_path": relation.callsite_file,
-                    "line": relation.callsite_line,
-                }
-            )
-            continue
-        source_workspace = workspace_by_label[relation.source.repository]
-        target_workspace = workspace_by_label[relation.target.repository]
-        cross_edges.append(
-            {
-                "id": relation_id,
-                "src_workspace_id": str(source_workspace.id),
-                "src_node_id": global_id[relation.source.identity],
-                "src_file_path": relation.callsite_file,
-                "src_line": relation.callsite_line,
-                "raw_reference": relation.target.qualified_name,
-                "dst_name_hint": relation.target.name,
-                "kind": relation.kind,
-                "status": "resolved",
-                "method": "dynamic-symbol-resolution",
-                "confidence": 1.0,
-                "rationale": "Resolved over the current authorized repository set.",
-                "dst_workspace_id": str(target_workspace.id),
-                "dst_node_id": global_id[relation.target.identity],
-                "dst_qualified_name": relation.target.qualified_name,
-            }
-        )
-    return {
-        "repos": repos,
-        "nodes": nodes,
-        "edges": local_edges,
-        "cross_repo_edges": cross_edges,
-        "node_limit_per_repo": node_limit_per_repo,
-        "edge_limit_per_repo": edge_limit_per_repo,
-        "total_node_count": snapshot.total_symbols,
-        "total_edge_count": snapshot.total_relations,
-    }
+    repos = await _project_code_context_status_data(
+        project_id,
+        scopes,
+        pairs,
+        list(stats_values),
+    )
+    content = await asyncio.to_thread(
+        _render_project_graph_payload,
+        scopes,
+        pairs,
+        snapshot,
+        repos,
+        node_limit_per_repo=node_limit_per_repo,
+        edge_limit_per_repo=edge_limit_per_repo,
+    )
+    return Response(content=content, media_type="application/json")
 
 
 __all__ = ["list_project_responses", "router"]

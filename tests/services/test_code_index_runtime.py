@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -18,7 +19,7 @@ from app.services.code_index.project import (
     RepositoryIndexRegistry,
 )
 from app.services.code_index.paths import paths_for_repository
-from app.services.code_index.query import _fts_query, search_index
+from app.services.code_index.query import _fts_query, search_index, snapshot_graph
 from app.services.code_index.service import query_code_context
 from app.services.code_index.chunking import (
     MAX_CHUNK_CHARS,
@@ -1214,3 +1215,113 @@ async def test_repository_rebuild_can_run_in_isolated_process(
     assert stats.files == 1
     assert stats.symbols >= 1
     assert stats.version is not None
+
+    from app.services.code_index.executor import index_process_queue_state
+
+    for _ in range(20):
+        if index_process_queue_state() == (0, False):
+            break
+        await asyncio.sleep(0.05)
+    assert index_process_queue_state() == (0, False)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_graph_snapshots_share_one_versioned_build(
+    tmp_path: Path,
+    isolated_cache: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = tmp_path / "graph-repo"
+    repository.mkdir()
+    (repository / "service.py").write_text(
+        "def source():\n    return target()\n\ndef target():\n    return 1\n",
+        encoding="utf-8",
+    )
+    index = await RepositoryIndex.create(repository)
+    stats = await index.update(full=True)
+
+    from app.services.code_index import query as query_module
+
+    with query_module._GRAPH_SNAPSHOT_LOCK:
+        query_module._GRAPH_SNAPSHOT_CACHE.clear()
+        query_module._GRAPH_SNAPSHOT_INFLIGHT.clear()
+    original = query_module._build_graph_snapshot
+    builds = 0
+
+    def tracked(*args, **kwargs):
+        nonlocal builds
+        builds += 1
+        time.sleep(0.05)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(query_module, "_build_graph_snapshot", tracked)
+    calls = [
+        snapshot_graph(
+            [("repo", index)],
+            node_limit_per_repository=100,
+            relation_limit_per_repository=300,
+            stats={"repo": stats},
+        )
+        for _ in range(8)
+    ]
+    results = await asyncio.gather(*calls)
+    cached = await snapshot_graph(
+        [("repo", index)],
+        node_limit_per_repository=100,
+        relation_limit_per_repository=300,
+        stats={"repo": stats},
+    )
+    (repository / "service.py").write_text(
+        "def source():\n    return target()\n\ndef target():\n    return 2\n",
+        encoding="utf-8",
+    )
+    refreshed = await index.update()
+    invalidated = await snapshot_graph(
+        [("repo", index)],
+        node_limit_per_repository=100,
+        relation_limit_per_repository=300,
+        stats={"repo": refreshed},
+    )
+
+    assert builds == 2
+    assert all(result is results[0] for result in results)
+    assert cached is results[0]
+    assert invalidated is not cached
+
+
+@pytest.mark.asyncio
+async def test_cold_graph_snapshot_can_run_in_isolated_process(
+    tmp_path: Path,
+    isolated_cache: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = tmp_path / "isolated-graph-repo"
+    repository.mkdir()
+    (repository / "service.py").write_text(
+        "def isolated_source():\n    return isolated_target()\n\n"
+        "def isolated_target():\n    return 1\n",
+        encoding="utf-8",
+    )
+    index = await RepositoryIndex.create(repository)
+    stats = await index.update(full=True)
+    monkeypatch.setattr(settings, "EVOFLUX_CODE_INDEX_EXECUTION", "process")
+
+    from app.services.code_index import query as query_module
+    from app.services.code_index.executor import index_process_queue_state
+
+    with query_module._GRAPH_SNAPSHOT_LOCK:
+        query_module._GRAPH_SNAPSHOT_CACHE.clear()
+        query_module._GRAPH_SNAPSHOT_INFLIGHT.clear()
+    snapshot = await snapshot_graph(
+        [("repo", index)],
+        node_limit_per_repository=100,
+        relation_limit_per_repository=300,
+        stats={"repo": stats},
+    )
+
+    assert snapshot.symbols
+    for _ in range(20):
+        if index_process_queue_state() == (0, False):
+            break
+        await asyncio.sleep(0.05)
+    assert index_process_queue_state() == (0, False)
