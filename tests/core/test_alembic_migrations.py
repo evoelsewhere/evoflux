@@ -597,3 +597,113 @@ def test_side_chat_source_ref_migration_backfills_existing_rows(tmp_path, monkey
         assert rows[unrelated_id.hex] is None
     finally:
         engine.dispose()
+
+
+def test_foreign_key_repair_applies_declared_cascade_and_set_null(
+    tmp_path, monkeypatch
+):
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "foreign-key-repair.sqlite"
+    monkeypatch.setattr(
+        settings, "DATABASE_URL", SecretStr(f"sqlite+aiosqlite:///{db_path}")
+    )
+    ini = Path(app.__file__).resolve().parent / "alembic.ini"
+    cfg = Config(str(ini))
+    command.upgrade(cfg, "00000052")
+
+    valid_session = "1" * 32
+    orphan_child = "2" * 32
+    orphan_descendant = "3" * 32
+    valid_message = "4" * 32
+    orphan_message = "5" * 32
+    doomed_message = "6" * 32
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO chat_sessions "
+                    "(id, created_at, updated_at, mode, permission_mode, session_type, "
+                    "source_session_id, project_id) VALUES "
+                    "(:id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'work', 'auto', "
+                    "'main', :missing, :missing)"
+                ),
+                {"id": valid_session, "missing": "f" * 32},
+            )
+            conn.execute(
+                sa.text(
+                    "INSERT INTO chat_sessions "
+                    "(id, parent_session_id, created_at, updated_at, mode, "
+                    "permission_mode, session_type) VALUES "
+                    "(:id, :parent, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
+                    "'work', 'auto', 'team_member')"
+                ),
+                [
+                    {"id": orphan_child, "parent": "e" * 32},
+                    {"id": orphan_descendant, "parent": orphan_child},
+                ],
+            )
+            conn.execute(
+                sa.text(
+                    "INSERT INTO session_messages "
+                    "(id, session_id, role, is_summary, exclude_from_context, created_at) "
+                    "VALUES (:id, :session, 'user', 0, 0, CURRENT_TIMESTAMP)"
+                ),
+                [
+                    {"id": valid_message, "session": valid_session},
+                    {"id": orphan_message, "session": "d" * 32},
+                    {"id": doomed_message, "session": orphan_child},
+                ],
+            )
+            conn.execute(
+                sa.text(
+                    "INSERT INTO delegation_tasks "
+                    "(id, lead_session_id, delegator, recipient, "
+                    "final_handoff_message_id, created_at, updated_at) VALUES "
+                    "(:id, :lead, 'lead', 'worker', :message, "
+                    "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                ),
+                [
+                    {"id": "7" * 32, "lead": "c" * 32, "message": None},
+                    {
+                        "id": "8" * 32,
+                        "lead": valid_session,
+                        "message": "b" * 32,
+                    },
+                    {
+                        "id": "9" * 32,
+                        "lead": valid_session,
+                        "message": doomed_message,
+                    },
+                ],
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.connect() as conn:
+            assert conn.execute(sa.text("PRAGMA foreign_key_check")).fetchall() == []
+            sessions = conn.execute(
+                sa.text("SELECT id, source_session_id, project_id FROM chat_sessions")
+            ).fetchall()
+            assert sessions == [(valid_session, None, None)]
+            messages = (
+                conn.execute(sa.text("SELECT id FROM session_messages ORDER BY id"))
+                .scalars()
+                .all()
+            )
+            assert messages == [valid_message]
+            delegations = conn.execute(
+                sa.text(
+                    "SELECT id, final_handoff_message_id FROM delegation_tasks "
+                    "ORDER BY id"
+                )
+            ).fetchall()
+            assert delegations == [("8" * 32, None), ("9" * 32, None)]
+    finally:
+        engine.dispose()

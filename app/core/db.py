@@ -125,6 +125,7 @@ if _is_sqlite:
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
         # Fresh databases opt into bounded, explicit page reclamation. Existing
         # databases adopt it after the one-time maintenance VACUUM.
         cursor.execute("PRAGMA auto_vacuum=INCREMENTAL")
