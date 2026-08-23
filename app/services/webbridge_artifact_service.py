@@ -25,7 +25,8 @@ _CLEANUP_INTERVAL_SECONDS = 3600
 class _ArtifactCleanup:
     message_id: UUID
     session_id: UUID
-    extra: dict[str, Any]
+    original_extra: dict[str, Any]
+    updated_extra: dict[str, Any]
     attachments: tuple[dict[str, Any], ...]
 
 
@@ -138,7 +139,8 @@ async def _plan_expired_artifact_cleanup(
                 _ArtifactCleanup(
                     message_id=message_id,
                     session_id=session_id,
-                    extra=extra,
+                    original_extra=dict(raw_extra or {}),
+                    updated_extra=extra,
                     attachments=tuple(expired),
                 )
             )
@@ -153,12 +155,21 @@ async def _apply_artifact_cleanup(
     for item in plan:
         for attachment in item.attachments:
             await delete_artifact_bytes(item.session_id, attachment)
-            cleaned += 1
-        await db.exec(
+        result = await db.exec(
             update(SessionMessage)
-            .where(col(SessionMessage.id) == item.message_id)
-            .values(extra=item.extra)
+            .where(
+                col(SessionMessage.id) == item.message_id,
+                col(SessionMessage.extra) == item.original_extra,
+            )
+            .values(extra=item.updated_extra)
         )
+        if result.rowcount:
+            cleaned += len(item.attachments)
+        else:
+            logger.debug(
+                "webbridge_artifact_cleanup_conflict message_id={}",
+                item.message_id,
+            )
     if plan:
         await db.commit()
     return cleaned

@@ -445,6 +445,63 @@ async def test_unrelated_coding_teams_build_concurrently(tmp_path, monkeypatch):
     assert second is second_team
 
 
+@pytest.mark.asyncio
+async def test_stop_sessions_invalidates_inflight_coding_build(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    team = _make_team("racing-lead")
+    started = threading.Event()
+    release = threading.Event()
+
+    def load(*_args, **_kwargs):
+        started.set()
+        assert release.wait(timeout=2)
+        return team
+
+    monkeypatch.setattr(team_manager, "load_team_from_dir", load)
+    build = asyncio.create_task(
+        team_manager.get_or_start_coding_team(str(workspace), "race-session")
+    )
+    assert await asyncio.to_thread(started.wait, 2)
+
+    await team_manager.stop_sessions({"race-session"})
+    release.set()
+
+    with pytest.raises(
+        team_manager.TeamBuildInvalidatedError,
+        match="removed while its team was starting",
+    ):
+        await build
+    assert team_manager.find_team_for_session("race-session") is None
+    team.stop.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_stop_sessions_invalidates_inflight_work_build(monkeypatch):
+    team = _make_team("racing-work-lead")
+    started = threading.Event()
+    release = threading.Event()
+
+    def load(*_args, **_kwargs):
+        started.set()
+        assert release.wait(timeout=2)
+        return team
+
+    monkeypatch.setattr(team_manager, "load_team_from_dir", load)
+    build = asyncio.create_task(
+        team_manager.get_or_start_team_for_session("race-work-session")
+    )
+    assert await asyncio.to_thread(started.wait, 2)
+
+    await team_manager.stop_sessions({"race-work-session"})
+    release.set()
+
+    with pytest.raises(team_manager.TeamBuildInvalidatedError):
+        await build
+    assert team_manager.find_team_for_session("race-work-session") is None
+    team.stop.assert_awaited_once()
+
+
 # ── refresh_blueprints() ──────────────────────────────────────────────────────
 #
 # Without this rediscovery step, a member ``.md`` file created via Settings →

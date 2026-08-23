@@ -117,6 +117,11 @@ _CODING_TEAM_IDLE_SECONDS = 30 * 60
 _lock = asyncio.Lock()
 _build_locks: dict[tuple[str, ...], asyncio.Lock] = {}
 _prewarm_tasks: dict[tuple[str, str, str], asyncio.Task[None]] = {}
+_session_epochs: dict[str, int] = {}
+
+
+class TeamBuildInvalidatedError(ValueError):
+    """Raised when session teardown wins a race with cold team construction."""
 
 
 def _build_lock(*identity: str) -> asyncio.Lock:
@@ -152,6 +157,12 @@ def prewarm_session_team(*, mode: str, session_id: str, workspace: str | None) -
                 await get_or_start_team_for_session(session_id)
         except asyncio.CancelledError:
             raise
+        except TeamBuildInvalidatedError:
+            logger.debug(
+                "team_prewarm_invalidated mode={} session_id={}",
+                mode,
+                session_id,
+            )
         except Exception as exc:
             logger.warning(
                 "team_prewarm_failed mode={} session_id={} error={}",
@@ -299,6 +310,7 @@ async def stop_sessions(session_ids: set[str]) -> None:
         session_teams: list[tuple[str, "AgentTeam"]] = []
         coding_teams: list[tuple[tuple[str, str], "AgentTeam"]] = []
         for session_id in session_ids:
+            _session_epochs[session_id] = _session_epochs.get(session_id, 0) + 1
             team = _session_teams.pop(session_id, None)
             _session_team_last_used.pop(session_id, None)
             if team is not None:
@@ -463,6 +475,7 @@ async def get_or_start_team_for_session(session_id: str) -> "AgentTeam | None":
     async with _build_lock("session", session_id):
         async with _lock:
             now = time.monotonic()
+            build_epoch = _session_epochs.get(session_id, 0)
             expired_default = _maybe_pop_idle_default_team_locked(now)
             expired_sessions = _pop_idle_session_teams_locked(now)
             existing = _session_teams.get(session_id)
@@ -481,11 +494,20 @@ async def get_or_start_team_for_session(session_id: str) -> "AgentTeam | None":
                 resolution_result = "missing"
             else:
                 await candidate.start()
+                invalidated = False
                 async with _lock:
-                    _session_teams[session_id] = candidate
-                    now = time.monotonic()
-                    _session_team_last_used[session_id] = now
-                    _team_last_used = now
+                    if _session_epochs.get(session_id, 0) != build_epoch:
+                        invalidated = True
+                    else:
+                        _session_teams[session_id] = candidate
+                        now = time.monotonic()
+                        _session_team_last_used[session_id] = now
+                        _team_last_used = now
+                if invalidated:
+                    await candidate.stop()
+                    raise TeamBuildInvalidatedError(
+                        f"Session {session_id} was removed while its team was starting."
+                    )
                 logger.info(
                     "team_manager_session_started session_id={} lead={}",
                     session_id,
@@ -561,6 +583,7 @@ async def get_or_start_coding_team(
     async with _build_lock("coding", resolved_workspace, session_id):
         async with _lock:
             now = time.monotonic()
+            build_epoch = _session_epochs.get(session_id, 0)
             expired = _pop_idle_coding_teams_locked(now)
             existing = _coding_teams.get(key)
             if existing is not None:
@@ -583,9 +606,18 @@ async def get_or_start_coding_team(
                     "Create at least one .md file with 'role: lead'."
                 )
             await team.start()
+            invalidated = False
             async with _lock:
-                _coding_teams[key] = team
-                _coding_team_last_used[key] = time.monotonic()
+                if _session_epochs.get(session_id, 0) != build_epoch:
+                    invalidated = True
+                else:
+                    _coding_teams[key] = team
+                    _coding_team_last_used[key] = time.monotonic()
+            if invalidated:
+                await team.stop()
+                raise TeamBuildInvalidatedError(
+                    f"Session {session_id} was removed while its team was starting."
+                )
             logger.info(
                 "coding_team_started mode={} workspace={} session_id={} lead={}",
                 mode,
