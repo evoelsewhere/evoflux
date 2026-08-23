@@ -116,6 +116,11 @@ The parser now emits named API-surface leaves that were previously absent:
   heritage, qualified calls, explicit unit paths, documentation comments, and
   signature-aware declaration/implementation coalescing that preserves
   overloads.
+- Svelte/Vue/Astro/Liquid component modules, qualified embedded-script symbols,
+  robust JS/TS/TSX selection, Astro client scripts, external script imports,
+  static template component/binding/event references, and Liquid variables,
+  value references, and static dependencies without treating dynamic template
+  names as imports.
 
 This raises the two-repository project from roughly 23.4K previously indexed
 symbols to 37.2K after a full reindex (about +59%), without counting anonymous
@@ -139,7 +144,8 @@ the explorer is not the stored graph size.
 The shared tree-sitter traversal, Python parser, JavaScript/TypeScript/TSX
 parser, C/C++ parser, C# parser, Dart parser, Go parser, Java parser, Kotlin
 parser, Lua/Luau parser, Objective-C parser, Pascal parser, PHP parser, R parser,
-Ruby parser, Rust parser, Scala parser, Swift parser, and optimized leaf extractor are
+Ruby parser, Rust parser, Scala parser, Swift parser, web-component parser, and
+optimized leaf extractor are
 mutation-tested with Mutmut:
 
 ```bash
@@ -153,7 +159,7 @@ The configured scope is `parsers/base.py`, `parsers/python.py`,
 `parsers/go.py`, `parsers/java.py`, `parsers/kotlin.py`, `parsers/lua.py`,
 `parsers/objc.py`, `parsers/pascal.py`, `parsers/php.py`, `parsers/r_lang.py`,
 `parsers/ruby.py`, `parsers/rust.py`, `parsers/scala.py`, `parsers/swift.py`, and
-`parsers/symbol_leaves.py`. Exact
+`parsers/symbol_leaves.py`, and `parsers/web_components.py`. Exact
 shared-walker and per-language contracts are the primary oracle. A cache-clean
 campaign for the
 shared/Python/ECMAScript/Rust tier kills 2,699/2,699 generated mutants with no
@@ -164,9 +170,10 @@ capped synthetic-loop `break` with `return` when every child is blocked by the
 same cap.
 
 Go, Java, C#, C/C++, PHP, Kotlin, Swift, Dart, Ruby, Scala, Objective-C,
-Lua/Luau, R, and Pascal were hardened afterward with isolated cache-clean 524/524, 533/533,
+Lua/Luau, R, Pascal, and web components/Liquid were hardened afterward with
+isolated cache-clean 524/524, 533/533,
 620/620, 885/885, 719/719, 543/543, 547/547, 690/690, 501/501, 586/586,
-533/533, 536/536, 695/695, and 606/606 campaigns. A combined all-configured-parser campaign
+533/533, 536/536, 695/695, 606/606, and 565/565 campaigns. A combined all-configured-parser campaign
 remains required after the remaining language tier is complete.
 
 The pre-hardening broad baseline produced 599 killed, 816 survivors, and 285
@@ -184,7 +191,7 @@ must not be represented as mutation-hardened yet.
 - Cross-repository resolution is conservative when multiple symbols share the
   same unqualified name.
 - Language modules outside the
-  shared/Python/ECMAScript/C/C++/C#/Dart/Go/Java/Kotlin/Lua/Luau/Objective-C/Pascal/PHP/R/Ruby/Rust/Scala/Swift
+  shared/Python/ECMAScript/C/C++/C#/Dart/Go/Java/Kotlin/Lua/Luau/Objective-C/Pascal/PHP/R/Ruby/Rust/Scala/Swift/Web-components/Liquid
   gate still rely on parser regression suites rather than a zero-survivor
   mutation contract.
 
