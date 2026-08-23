@@ -13,7 +13,7 @@ from app.core.db import current_sqlite_path
 # Keep this in sync with the single Alembic head. The migration tests and the
 # sidecar build validate the value, so a release cannot silently ship a stale
 # marker.
-SCHEMA_HEAD = "00000053"
+SCHEMA_HEAD = "00000054"
 
 
 @dataclass(frozen=True)

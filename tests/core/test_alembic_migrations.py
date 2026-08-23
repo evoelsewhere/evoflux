@@ -71,6 +71,11 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
         }.isdisjoint(inspector.get_table_names())
         assert "session_chapters" not in inspector.get_table_names()
         assert "memory_processed_sources" not in inspector.get_table_names()
+        assert {
+            "memory_facts",
+            "memory_fact_evidence",
+            "memory_extraction_states",
+        } <= set(inspector.get_table_names())
         assert "session_goals" in inspector.get_table_names()
         assert {
             "code_nodes",

@@ -6,6 +6,7 @@ from .chat import (
     SessionMessage,
 )
 from .goal import SessionGoal
+from .memory import MemoryExtractionState, MemoryFact, MemoryFactEvidence
 from .team import DelegationTask
 from .workflow import (
     WorkflowApproval,
@@ -28,6 +29,9 @@ __all__ = [
     "DreamLog",
     "DreamNotesLog",
     "GitServerConnection",
+    "MemoryExtractionState",
+    "MemoryFact",
+    "MemoryFactEvidence",
     "SessionMessage",
     "ScheduledTask",
     "SessionGoal",

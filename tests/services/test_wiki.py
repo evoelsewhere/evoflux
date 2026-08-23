@@ -198,6 +198,19 @@ def test_write_note_appends(_wiki_dir: Path):
     assert "Second." in content
 
 
+def test_write_note_concurrent_appends_are_lossless(_wiki_dir: Path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    entries = [f"concurrent-note-{index}" for index in range(24)]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(write_note, entries))
+
+    files = list((_wiki_dir / NOTES_DIR).glob("*.md"))
+    assert len(files) == 1
+    content = files[0].read_text(encoding="utf-8")
+    assert all(entry in content for entry in entries)
+
+
 def test_default_user_file_content():
     assert "identity: {}" in DEFAULT_USER_FILE
     assert "preferences: []" in DEFAULT_USER_FILE

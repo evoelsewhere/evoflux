@@ -264,6 +264,64 @@ async def test_get_unprocessed_notes_excludes_processed(setup_db, _wiki_dir: Pat
     assert result == []
 
 
+@pytest.mark.asyncio
+async def test_get_unprocessed_notes_requeues_modified_file(setup_db, _wiki_dir: Path):
+    """Appending after consolidation must make the same daily file pending."""
+    from app.core.db import async_session_factory
+
+    note_file = _wiki_dir / "notes" / "2026-04-29.md"
+    note_file.write_text("First fact.", encoding="utf-8")
+    async with async_session_factory() as db:
+        await mark_note_processed(db, note_file.name)
+    note_file.write_text("First fact.\nSecond fact.", encoding="utf-8")
+
+    async with async_session_factory() as db:
+        assert note_file.name in await get_unprocessed_notes(db)
+
+
+@pytest.mark.asyncio
+async def test_get_unprocessed_sessions_requeues_new_messages(setup_db):
+    from app.core.db import async_session_factory
+
+    session = ChatSession(agent_name="lead")
+    async with async_session_factory() as db:
+        db.add(session)
+        await db.flush()
+        db.add(SessionMessage(session_id=session.id, role="user", content="First"))
+        await db.commit()
+        await mark_session_processed(db, session.id, "lead", [])
+
+    async with async_session_factory() as db:
+        assert session.id not in {row.id for row in await get_unprocessed_sessions(db)}
+        db.add(SessionMessage(session_id=session.id, role="user", content="Second"))
+        await db.commit()
+
+    async with async_session_factory() as db:
+        assert session.id in {row.id for row in await get_unprocessed_sessions(db)}
+
+
+@pytest.mark.asyncio
+async def test_get_unprocessed_sessions_excludes_child_and_side_chat(setup_db):
+    from app.core.db import async_session_factory
+
+    lead = ChatSession(agent_name="lead")
+    async with async_session_factory() as db:
+        db.add(lead)
+        await db.flush()
+        child = ChatSession(agent_name="member", parent_session_id=lead.id)
+        side = ChatSession(agent_name="lead", session_type="side_chat")
+        db.add(child)
+        db.add(side)
+        await db.commit()
+
+    async with async_session_factory() as db:
+        ids = {row.id for row in await get_unprocessed_sessions(db)}
+
+    assert lead.id in ids
+    assert child.id not in ids
+    assert side.id not in ids
+
+
 # ── Dream v2 source selection helpers ────────────────────────────────────────
 
 
@@ -822,10 +880,10 @@ async def test_run_dream_interleaves_sessions_and_notes(setup_db, _wiki_dir: Pat
         async with async_session_factory() as db:
             result = await run_dream(db)
 
-    # Built-in scheduler batch size is 1, so the session is processed first.
+    # Scheduler admits one item from each class so notes cannot starve.
     assert result["sessions_processed"] == 1
-    assert result["notes_processed"] == 0
-    assert result["remaining"] == 2
+    assert result["notes_processed"] == 1
+    assert result["remaining"] == 1
 
 
 # ── _diff_topics (bug #6: updates to existing topics) ─────────────────────────
@@ -1510,20 +1568,19 @@ async def test_run_dream_interleave_order_session_first(setup_db, _wiki_dir: Pat
 
     assert result == {
         "sessions_processed": 1,
-        "notes_processed": 0,
-        "remaining": 1,
+        "notes_processed": 1,
+        "remaining": 0,
         "failed": 0,
     }
     # Critical ordering: session enqueued first, then note.
-    assert seen_kinds == ["session"]
+    assert seen_kinds == ["session", "note"]
 
 
 @pytest.mark.asyncio
-async def test_run_dream_batch_size_one_picks_session_first(setup_db, _wiki_dir: Path):
-    """``batch_size=1`` with 1 session + 1 note → only the session runs;
-    note remains in ``remaining`` (interleave loop must not pull both when
-    cap is reached after the first append).
-    """
+async def test_run_dream_batch_size_one_does_not_starve_notes(
+    setup_db, _wiki_dir: Path
+):
+    """A nominal batch of one admits one session and one note when both wait."""
     from app.core.db import async_session_factory
 
     _write_dream_md(batch_size=1)
@@ -1538,8 +1595,8 @@ async def test_run_dream_batch_size_one_picks_session_first(setup_db, _wiki_dir:
             result = await run_dream(db)
 
     assert result["sessions_processed"] == 1
-    assert result["notes_processed"] == 0
-    assert result["remaining"] == 1
+    assert result["notes_processed"] == 1
+    assert result["remaining"] == 0
 
 
 # ── Coverage gap: failed-item accounting ─────────────────────────────────────
@@ -1577,7 +1634,7 @@ async def test_run_dream_partial_failure_accounts_correctly(setup_db, _wiki_dir:
 
     assert result["sessions_processed"] == 1
     assert result["notes_processed"] == 0
-    assert result["failed"] == 0
+    assert result["failed"] == 1
     # remaining = (1 session + 1 note) total - 1 session processed - 0 notes
     assert result["remaining"] == 1
 

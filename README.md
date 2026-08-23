@@ -296,7 +296,9 @@ documented in [`docs/architecture/coding-semantic-intelligence.md`](docs/archite
 
 ### Memory and Dream
 
-The scheduled or manually triggered **Dream** agent consolidates sessions and notes into an inspectable Markdown wiki: `topics/`, `entities/`, `notes/`, and `imports/`, with `INDEX.md`, an append-only `LOG.md`, source citations, confidence, and related-page metadata.
+EvoFlux Memory separates session working context, provenance-backed episodic evidence, and scoped semantic facts. Preferences can follow the user, while technical decisions stay inside their project, workspace, Work folder, or source session. Extraction is durable and retryable, relevant facts are available immediately, and deleting the final supporting session forgets the fact.
+
+The scheduled or manually triggered **Dream** agent incrementally consolidates top-level sessions and changed notes into an inspectable Markdown wiki: `topics/`, `entities/`, `notes/`, and `imports/`, with `INDEX.md`, an append-only `LOG.md`, source citations, confidence, and related-page metadata. See the [Memory architecture](docs/architecture/memory-system.md) for scope, recall, consolidation, and forget semantics.
 
 ### Bring your own model
 

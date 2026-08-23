@@ -37,7 +37,10 @@ from app.agent.hooks.continuation import ContinuationHook
 from app.agent.hooks.folder_context import FolderContextHook
 from app.agent.hooks.goal import GoalContextHook, GoalUsageHook
 from app.agent.hooks.dynamic_prompt import inject_current_date
-from app.agent.hooks.memory_context import default_memory_context_hook
+from app.agent.hooks.memory_context import (
+    MemoryContextHook,
+    default_memory_context_hook,
+)
 from app.agent.hooks.memory_flush import build_memory_flush_hook
 from app.agent.hooks.pipeline import HookPipeline, HookStage
 from app.agent.hooks.wiki_injection import default_wiki_injection_hook
@@ -1321,9 +1324,15 @@ class TeamMemberBase(abc.ABC):
         pipeline.add(HookStage.BASE_CONTEXT, "team-protocol", team_prompt_hook)
         # Query-dependent context belongs after the static role/team prefix so
         # providers can reuse a much longer automatic prompt-cache prefix.
-        pipeline.add(
-            HookStage.BASE_CONTEXT, "memory-context", default_memory_context_hook
+        memory_context_hook = (
+            MemoryContextHook(
+                db_factory=self.db_factory,
+                session_id=self.session_id,
+            )
+            if self.db_factory
+            else default_memory_context_hook
         )
+        pipeline.add(HookStage.BASE_CONTEXT, "memory-context", memory_context_hook)
         pipeline.add(HookStage.BASE_CONTEXT, "team-inbox", team_inbox_hook)
         pipeline.add(HookStage.BASE_CONTEXT, "stream-publisher", publisher_hook)
         pipeline.add(HookStage.BASE_CONTEXT, "telemetry", otel_hook)
@@ -1441,6 +1450,7 @@ class TeamMemberBase(abc.ABC):
         if self._role_label == "lead":
             mem_hook = build_memory_extraction_hook(
                 provider=runtime_provider or self.agent.llm_provider,
+                db_factory=self.db_factory,
             )
             if mem_hook is not None:
                 pipeline.add(HookStage.LIFECYCLE, "memory-extraction", mem_hook)
