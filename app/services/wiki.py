@@ -1,6 +1,6 @@
 """Wiki service — file operations for the wiki knowledge store.
 
-Storage layout (Karpathy LLM Wiki pattern, see ``documents/docs/agent/memory.md``)::
+Storage layout (Karpathy LLM Wiki pattern, see ``docs/features/memory-and-dream.md``)::
 
     {EVOFLUX_WIKI_DIR}/
       USER.md          # always injected into system prompt

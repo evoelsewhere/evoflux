@@ -4,7 +4,7 @@ Revision ID: 00000021
 Revises: 00000020
 Create Date: 2026-07-16
 
-Workflows engine (documents/plans/workflows-feature-plan.md §5): a
+Workflows engine (docs/plans/workflows-feature-plan.md §5): a
 per-content-hash approval ledger plus a best-effort execution debug log.
 Execution rows are never read back to resume anything — live state is the
 runner's in-memory ExecutionState — so empty tables are all this needs.

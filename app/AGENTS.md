@@ -50,6 +50,6 @@ uv run ruff check app/ tests/ && uv run ruff format --check app/ tests/ && uv ru
 
 ## Documentation pointers
 
-- Harness contract: `documents/architecture/application-harness.md`.
-- Coding context: `documents/architecture/coding-agent-code-context.md`.
-- Model capability flow: `documents/architecture/model-capability-flow.md`.
+- Harness contract: `docs/architecture/application-harness.md`.
+- Coding context: `docs/architecture/coding-agent-code-context.md`.
+- Model capability flow: `docs/architecture/model-capability-flow.md`.

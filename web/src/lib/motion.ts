@@ -20,7 +20,7 @@
  * Keep in sync with:
  * - `web/src/index.css` token block
  * - `web/public/appearance-init.js` pre-paint script
- * - `documents/styling-specs/motion.md` (semantic meaning of each value)
+ * - `docs/reference/design-system.md` (semantic meaning of each value)
  */
 import { useCallback, useState, useSyncExternalStore } from 'react'
 import type { Transition } from 'framer-motion'

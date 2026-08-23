@@ -37,7 +37,7 @@ class ProviderEntry(TypedDict, total=False):
     incomplete for supported model families (Vertex AI, plus Google
     image/video models that are not reliably returned by the public
     model-listing endpoint). See
-    ``documents/techdebts/catalog-default-models.md`` for the history.
+    ``docs/features/models-and-providers.md`` for the current contract.
     """
 
     id: str

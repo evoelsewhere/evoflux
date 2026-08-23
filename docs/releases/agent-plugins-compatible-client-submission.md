@@ -19,7 +19,7 @@ Confirm the field shape against the upstream `lib/compatible-clients.ts` type be
     "Local-first desktop agent harness with portable Agent Skills and MCP plugin runtimes.",
   homepageUrl: "https://github.com/evoelsewhere/evoflux",
   instructionsUrl:
-    "https://github.com/evoelsewhere/evoflux/blob/main/documents/guides/agent-plugins.md",
+    "https://github.com/evoelsewhere/evoflux/blob/main/docs/guides/agent-plugins.md",
   sourceUrl: "https://github.com/evoelsewhere/evoflux",
   logo: {
     lightSrc: "/images/logos/evoflux/evoflux-app-icon.png",
