@@ -252,8 +252,10 @@ async def lifespan(app: FastAPI):
         optional_startup_task.cancel()
     await asyncio.gather(optional_startup_task, return_exceptions=True)
     from app.services.code_index.project import repository_indexes
+    from app.services.code_index.executor import shutdown_index_processes
 
     repository_indexes.close_all()
+    shutdown_index_processes()
     webbridge_cleanup_task = getattr(app.state, "webbridge_cleanup_task", None)
     if webbridge_cleanup_task:
         webbridge_cleanup_task.cancel()

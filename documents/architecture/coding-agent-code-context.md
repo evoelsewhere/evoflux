@@ -37,6 +37,14 @@ all rows owned by a component in one transaction. Deleted components cascade to
 their chunks, symbols, and relations. A parse failure records an error without
 destroying the last successful component.
 
+Full and incremental rebuilds execute in one spawned worker process rather
+than the API process's thread pool. Repository targets use WAL, so API queries
+continue reading the last committed snapshot while parser/hash/reconciliation
+work consumes CPU in isolation. Lightweight committed-index queries remain in
+a bounded thread executor. See
+[`sqlite-concurrency.md`](sqlite-concurrency.md) for the application/read/write
+boundary and latency acceptance contract.
+
 The target contains:
 
 | Table | Purpose |
