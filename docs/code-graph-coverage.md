@@ -159,7 +159,7 @@ The configured scope is `parsers/base.py`, `parsers/python.py`,
 `parsers/go.py`, `parsers/java.py`, `parsers/kotlin.py`, `parsers/lua.py`,
 `parsers/objc.py`, `parsers/pascal.py`, `parsers/php.py`, `parsers/r_lang.py`,
 `parsers/ruby.py`, `parsers/rust.py`, `parsers/scala.py`, `parsers/swift.py`, and
-`parsers/symbol_leaves.py`, and `parsers/web_components.py`. Exact
+`parsers/symbol_leaves.py` and `parsers/web_components.py`. Exact
 shared-walker and per-language contracts are the primary oracle. A cache-clean
 campaign for the
 shared/Python/ECMAScript/Rust tier kills 2,699/2,699 generated mutants with no
@@ -173,13 +173,21 @@ Go, Java, C#, C/C++, PHP, Kotlin, Swift, Dart, Ruby, Scala, Objective-C,
 Lua/Luau, R, Pascal, and web components/Liquid were hardened afterward with
 isolated cache-clean 524/524, 533/533,
 620/620, 885/885, 719/719, 543/543, 547/547, 690/690, 501/501, 586/586,
-533/533, 536/536, 695/695, 606/606, and 565/565 campaigns. A combined all-configured-parser campaign
-remains required after the remaining language tier is complete.
+533/533, 536/536, 695/695, 606/606, and 565/565 campaigns.
+
+The final cache-clean combined campaign covers all 20 configured source files
+at once and kills 11,802/11,802 mutants, with zero survivors, uncovered/no-test
+mutants, timeouts, suspicious results, segfaults, or interruption. The first
+combined audit exposed two equivalent `declarator` checks in the shared
+identifier filter; the redundant immediate-parent check was removed, the full
+regression suite passed, and the 11,802-mutant campaign was regenerated and
+rerun from an empty cache.
 
 The pre-hardening broad baseline produced 599 killed, 816 survivors, and 285
-uncovered mutants. The primary repository stack has now moved into the clean
-gate above; lower-volume language modules remain explicit follow-up scope and
-must not be represented as mutation-hardened yet.
+uncovered mutants. Every built-in parser in the default registry now runs
+through the clean gate above. The optional YAML-configured structural parser
+for legacy/custom languages has a separate regression suite and is not part of
+this tree-sitter/component mutation claim.
 
 ## Current limits
 
@@ -190,10 +198,9 @@ must not be represented as mutation-hardened yet.
   parse-success metric.
 - Cross-repository resolution is conservative when multiple symbols share the
   same unqualified name.
-- Language modules outside the
-  shared/Python/ECMAScript/C/C++/C#/Dart/Go/Java/Kotlin/Lua/Luau/Objective-C/Pascal/PHP/R/Ruby/Rust/Scala/Swift/Web-components/Liquid
-  gate still rely on parser regression suites rather than a zero-survivor
-  mutation contract.
+- Workspace-provided YAML structural extractors are regex-based and depend on
+  their configured anchors/denylists; they are reported separately from the
+  built-in zero-survivor parser gate.
 
 These limits should be shown and measured, not converted into a misleading
 single “coverage” percentage.
