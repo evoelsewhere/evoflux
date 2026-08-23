@@ -140,7 +140,9 @@ class Service:
 
 
 def test_python_call_targets_keep_nested_attribute_qualification() -> None:
-    source = b'''def run():
+    source = b'''class Child(Base):
+ def run(self):
+    super().base()
     direct()
     package.service.method()
     get_factory().nested()
@@ -155,11 +157,12 @@ def test_python_call_targets_keep_nested_attribute_qualification() -> None:
     ]
 
     assert calls == [
-        ("direct", 2),
-        ("package.service.method", 3),
-        ("nested", 4),
-        ("get_factory", 4),
-        ("worker.submit", 5),
+        ("super.base", 3),
+        ("direct", 4),
+        ("package.service.method", 5),
+        ("nested", 6),
+        ("get_factory", 6),
+        ("worker.submit", 7),
     ]
 
 

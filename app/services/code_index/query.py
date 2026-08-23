@@ -45,6 +45,9 @@ _REFERENCE_KINDS = frozenset(
 )
 _TYPE_KINDS = frozenset({"class", "interface", "struct", "enum"})
 _CALLABLE_KINDS = frozenset({"function", "method", "class", "struct", "enum"})
+_SUPER_MEMBER_LANGUAGES = frozenset(
+    {"javascript", "java", "kotlin", "python", "scala", "swift", "tsx", "typescript"}
+)
 _COMMON_MEMBER_NAMES = frozenset(
     {
         "add",
@@ -747,6 +750,25 @@ class _GraphResolver:
         raw_name = (relation.dst_name or "").strip()
         if not raw_name:
             return None
+        raw_normalized = raw_name.replace("::", ".").replace("->", ".").strip(".")
+        if (
+            source.value.language in _SUPER_MEMBER_LANGUAGES
+            and raw_normalized.casefold().startswith("super.")
+        ):
+            member = raw_normalized.partition(".")[2]
+            candidates = self._super_member_candidates(
+                source,
+                relation,
+                member=member,
+                allowed=_allowed_symbol_kinds(relation.kind),
+            )
+            if len(candidates) == 1:
+                return _ResolvedRelation(source, candidates[0], relation)
+            if len(candidates) > 1 and report_ambiguity:
+                self._record_ambiguity(relation, candidates)
+            # A statically spelled OOP `super` call must never fall back to
+            # the current lexical member and become a false self-loop.
+            return None
         normalized = _normalize_symbol(raw_name)
         explicit_receiver = "." in normalized
         short = normalized.rsplit(".", 1)[-1]
@@ -885,6 +907,53 @@ class _GraphResolver:
         if cross_repo_safe and len(global_candidates) > 1 and report_ambiguity:
             self._record_ambiguity(relation, global_candidates)
         return None
+
+    def _super_member_candidates(
+        self,
+        source: _StoredSymbol,
+        relation: _StoredRelation,
+        *,
+        member: str,
+        allowed: frozenset[str],
+    ) -> list[_StoredSymbol]:
+        container_name, separator, _ = source.value.qualified_name.rpartition(".")
+        if not separator or not member:
+            return []
+        containers = [
+            item
+            for item in self.by_repo_qualified.get(
+                (source.repository, container_name.casefold()), []
+            )
+            if item.value.kind in _TYPE_KINDS
+        ]
+        output: list[_StoredSymbol] = []
+        for container in containers:
+            for heritage in self.relations:
+                if (
+                    heritage.repository != source.repository
+                    or heritage.src_id != container.value.id
+                    or heritage.kind != "inherits"
+                ):
+                    continue
+                parent_edge = self._resolve(
+                    heritage,
+                    allow_import_binding=True,
+                    report_ambiguity=False,
+                )
+                if parent_edge is None:
+                    continue
+                target_name = (
+                    f"{parent_edge.target.value.qualified_name}.{member}".casefold()
+                )
+                output.extend(
+                    item
+                    for item in self.by_repo_qualified.get(
+                        (parent_edge.target.repository, target_name), []
+                    )
+                    if item.value.kind in allowed
+                    and item.value.identity != source.value.identity
+                )
+        return _prefer_same_repository(output, relation.repository)
 
     def _module_candidates(
         self,
@@ -1365,6 +1434,39 @@ def _traverse_lazy(
             outbound=wants_outbound,
             inbound=wants_inbound,
             kinds=kinds,
+        )
+        heritage_owners: dict[tuple[str, str], _StoredSymbol] = {}
+        for relation in relations:
+            raw_target = (relation.dst_name or "").replace("::", ".").replace(
+                "->", "."
+            )
+            source = catalog.by_identity.get((relation.repository, relation.src_id))
+            if (
+                source is None
+                or source.value.language not in _SUPER_MEMBER_LANGUAGES
+                or not raw_target.casefold().startswith("super.")
+            ):
+                continue
+            container_name, separator, _ = source.value.qualified_name.rpartition(".")
+            if not separator:
+                continue
+            for owner in catalog.by_repo_qualified.get(
+                (source.repository, container_name.casefold()), []
+            ):
+                if owner.value.kind in _TYPE_KINDS:
+                    heritage_owners[owner.value.identity] = owner
+        for owner in heritage_owners.values():
+            relations.extend(
+                _relations_for_node(
+                    indexes,
+                    owner,
+                    outbound=True,
+                    inbound=False,
+                    kinds=frozenset({"inherits"}),
+                )
+            )
+        relations = list(
+            {(item.repository, item.id): item for item in relations}.values()
         )
         resolver = _GraphResolver(symbols, relations, catalog=catalog)
         edges = resolver.resolve_all()

@@ -27,12 +27,12 @@ On 2026-08-23, after the leaf-symbol and shared-traversal hardening updates:
 
 | Repository | Structural files | Search-only | Parse failures | Symbols excluding file nodes | Relations | Symbols/KLOC |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `evoflux` | 1,447 | 257 | 0 | 29,972 | 345,757 | 69.84 |
+| `evoflux` | 1,462 | 257 | 0 | 30,312 | 352,200 | 69.65 |
 | `evo-conductor` | 201 | 20 | 0 | 5,309 | 44,799 | 113.44 |
 
 Index/UI totals also include one file node per indexable file. The corresponding
-committed totals are 31,676 and 5,530 symbols respectively. The combined
-project totals are 37,206 symbols and 390,556 relations.
+committed totals are 32,031 and 5,530 symbols respectively. The combined
+project totals are 37,561 symbols and 396,999 relations.
 
 ## What improved
 
@@ -121,13 +121,15 @@ The parser now emits named API-surface leaves that were previously absent:
   static template component/binding/event references, and Liquid variables,
   value references, and static dependencies without treating dynamic template
   names as imports.
+- inheritance-aware `super.member` extraction and graph resolution, preventing
+  overridden methods from resolving their base call back into a false self-loop.
 
 This raises the two-repository project from roughly 23.4K previously indexed
-symbols to 37.2K after a full reindex (about +59%), without counting anonymous
+symbols to 37.6K after a full reindex (about +60%), without counting anonymous
 syntax nodes or inflating the graph with duplicate relations.
 
-Documentation detail is also measurable: EvoFlux has 4,813 documented symbols
-and Evo Conductor has 163. EvoFlux's percentage is 16.06% after adding 4.6K
+Documentation detail is also measurable: EvoFlux has 4,809 documented symbols
+and Evo Conductor has 163. EvoFlux's percentage is 15.87% after adding 4.6K
 mostly-undocumented class fields, so the report includes both absolute and
 percentage values. Signature completeness remains 100% and structural parse
 failures remain zero.
@@ -176,12 +178,15 @@ isolated cache-clean 524/524, 533/533,
 533/533, 536/536, 695/695, 606/606, and 565/565 campaigns.
 
 The final cache-clean combined campaign covers all 20 configured source files
-at once and kills 11,802/11,802 mutants, with zero survivors, uncovered/no-test
+at once and kills 11,824/11,824 mutants, with zero survivors, uncovered/no-test
 mutants, timeouts, suspicious results, segfaults, or interruption. The first
 combined audit exposed two equivalent `declarator` checks in the shared
 identifier filter; the redundant immediate-parent check was removed, the full
-regression suite passed, and the 11,802-mutant campaign was regenerated and
-rerun from an empty cache.
+regression suite passed, and the campaign was regenerated from an empty cache.
+An end-to-end graph query then exposed a false `super().method` self-loop; the
+Python parser and inheritance-aware resolver were corrected, the isolated
+Python campaign killed 555/555 mutants, and the final 11,824-mutant combined
+campaign was regenerated and rerun cleanly.
 
 The pre-hardening broad baseline produced 599 killed, 816 survivors, and 285
 uncovered mutants. Every built-in parser in the default registry now runs

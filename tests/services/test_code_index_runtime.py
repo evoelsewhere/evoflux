@@ -529,6 +529,51 @@ async def test_namespace_import_resolves_static_member_calls(
 
 
 @pytest.mark.asyncio
+async def test_super_member_call_resolves_to_base_method_without_self_loop(
+    tmp_path: Path, isolated_cache: Path
+) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    (repository / "service.py").write_text(
+        "class Base:\n"
+        "    def run(self):\n"
+        "        return 1\n\n"
+        "class Child(Base):\n"
+        "    def run(self):\n"
+        "        return super().run()\n",
+        encoding="utf-8",
+    )
+
+    callees = await query_code_context(
+        scopes=(RepositoryScope(repository, "repo"),),
+        action="callees",
+        query="Child.run",
+        refresh=True,
+        limit=20,
+    )
+    callers = await query_code_context(
+        scopes=(RepositoryScope(repository, "repo"),),
+        action="callers",
+        query="Base.run",
+        refresh=False,
+        limit=20,
+    )
+
+    assert [relation.source.qualified_name for relation in callees.relations] == [
+        "Child.run"
+    ]
+    assert [relation.target.qualified_name for relation in callees.relations] == [
+        "Base.run"
+    ]
+    assert [relation.source.qualified_name for relation in callers.relations] == [
+        "Child.run"
+    ]
+    assert [relation.target.qualified_name for relation in callers.relations] == [
+        "Base.run"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_declaration_and_import_identifiers_are_not_false_references(
     tmp_path: Path, isolated_cache: Path
 ) -> None:
