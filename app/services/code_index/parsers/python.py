@@ -323,6 +323,15 @@ def _qualified_value_name(node: Node, source: bytes) -> str | None:
     """Return an identifier/attribute chain used as a first-class value."""
     if node.type == "identifier":
         return node_text(node, source)
+    if node.type == "call":
+        function = node.child_by_field_name("function")
+        if (
+            function is not None
+            and function.type == "identifier"
+            and node_text(function, source) == "super"
+        ):
+            return "super"
+        return None
     if node.type != "attribute":
         return None
     obj = node.child_by_field_name("object")
