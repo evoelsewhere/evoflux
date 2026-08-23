@@ -205,7 +205,7 @@ class SandboxConfig:
             else (
                 getattr(file_config, "outbound_data_policy", "off")
                 if file_config is not None
-                else "block"
+                else "off"
             )
         )
         self.outbound_pii_policy: Literal["off", "standard", "strict"] = (
@@ -214,7 +214,7 @@ class SandboxConfig:
             else (
                 getattr(file_config, "outbound_pii_policy", "off")
                 if file_config is not None
-                else "standard"
+                else "off"
             )
         )
 
