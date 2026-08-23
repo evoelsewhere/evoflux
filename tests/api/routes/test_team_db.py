@@ -1175,30 +1175,25 @@ class TestTeamHistoryWithData:
                     )
 
         client = TestClient(app_with_team)
-        first = client.get(f"/api/team/{lead_id}/history").json()
-        first_messages = [
-            *first["lead"]["messages"],
-            *(message for member in first["members"] for message in member["messages"]),
-        ]
-        assert len(first_messages) == 500
-        assert first["has_more"] is True
-        second = client.get(
-            f"/api/team/{lead_id}/history",
-            params={"before": first["next_cursor"]},
-        ).json()
-        second_messages = [
-            *second["lead"]["messages"],
-            *(
-                message
-                for member in second["members"]
-                for message in member["messages"]
-            ),
-        ]
-        assert len(second_messages) == 20
-        assert second["has_more"] is False
-        contents = {
-            message["content"] for message in [*first_messages, *second_messages]
-        }
+        page = client.get(f"/api/team/{lead_id}/history").json()
+        pages = 0
+        messages = []
+        while True:
+            pages += 1
+            messages.extend(page["lead"]["messages"])
+            messages.extend(
+                message for member in page["members"] for message in member["messages"]
+            )
+            if not page["has_more"]:
+                break
+            page = client.get(
+                f"/api/team/{lead_id}/history",
+                params={"before": page["next_cursor"]},
+            ).json()
+
+        assert pages > 2
+        assert len(messages) == 520
+        contents = {message["content"] for message in messages}
         assert contents == {f"message-{index}" for index in range(520)}
 
     @pytest.mark.asyncio
@@ -1223,25 +1218,48 @@ class TestTeamHistoryWithData:
                     )
 
         client = TestClient(app_with_team)
-        first = client.get(f"/api/team/{lead_id}/history").json()
-        second = client.get(
-            f"/api/team/{lead_id}/history",
-            params={"before": first["next_cursor"]},
-        ).json()
-        messages = [
-            *first["lead"]["messages"],
-            *(message for member in first["members"] for message in member["messages"]),
-            *second["lead"]["messages"],
-            *(
-                message
-                for member in second["members"]
-                for message in member["messages"]
-            ),
-        ]
+        page = client.get(f"/api/team/{lead_id}/history").json()
+        messages = []
+        while True:
+            messages.extend(page["lead"]["messages"])
+            messages.extend(
+                message for member in page["members"] for message in member["messages"]
+            )
+            if not page["has_more"]:
+                break
+            page = client.get(
+                f"/api/team/{lead_id}/history",
+                params={"before": page["next_cursor"]},
+            ).json()
         assert len(messages) == 520
         assert {message["content"] for message in messages} == {
             f"tie-{index}" for index in range(520)
         }
+
+    @pytest.mark.asyncio
+    async def test_history_page_is_bounded_by_payload_weight(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+                for index in range(80):
+                    await _add_message(
+                        db,
+                        lead_id,
+                        role="tool",
+                        content=f"tool-{index}:" + ("x" * 12_000),
+                    )
+
+        response = TestClient(app_with_team).get(f"/api/team/{lead_id}/history")
+        data = response.json()
+
+        assert response.status_code == 200
+        assert len(response.content) < 400_000
+        assert len(data["lead"]["messages"]) < 80
+        assert data["has_more"] is True
+        assert data["next_cursor"] is not None
 
     @pytest.mark.asyncio
     async def test_history_does_not_split_assistant_tool_cycle(self, app_with_team):
@@ -1253,6 +1271,13 @@ class TestTeamHistoryWithData:
         async with _db.async_session_factory() as db:
             async with db.begin():
                 await _create_team_session(db, lead_id)
+                await _add_message(
+                    db,
+                    lead_id,
+                    role="user",
+                    content="run the tool",
+                    created_at=base - timedelta(seconds=1),
+                )
                 await _add_message(
                     db,
                     lead_id,
@@ -1275,9 +1300,9 @@ class TestTeamHistoryWithData:
                     tool_call_id=call_id,
                     created_at=base + timedelta(seconds=1),
                 )
-                # The normal 500-row window would begin at the tool result and
+                # The normal 160-row window would begin at the tool result and
                 # strand its assistant call on the older page.
-                for index in range(499):
+                for index in range(159):
                     await _add_message(
                         db,
                         lead_id,
@@ -1288,13 +1313,14 @@ class TestTeamHistoryWithData:
         data = TestClient(app_with_team).get(f"/api/team/{lead_id}/history").json()
 
         messages = data["lead"]["messages"]
-        assert len(messages) == 501
-        assert [message["role"] for message in messages[:2]] == [
+        assert len(messages) == 162
+        assert [message["role"] for message in messages[:3]] == [
+            "user",
             "assistant",
             "tool",
         ]
-        assert messages[0]["tool_calls"][0]["id"] == call_id
-        assert messages[1]["tool_call_id"] == call_id
+        assert messages[1]["tool_calls"][0]["id"] == call_id
+        assert messages[2]["tool_call_id"] == call_id
         assert data["has_more"] is False
         assert data["next_cursor"] is None
 

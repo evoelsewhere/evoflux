@@ -346,8 +346,6 @@ class SessionMessage(SQLModel, table=True):
             "created_at",
             "id",
         ),
-        # Me cover is_summary lookup (get_messages_for_llm summary query)
-        sa.Index("ix_session_messages_session_summary", "session_id", "is_summary"),
     )
 
     id: UUID = Field(default_factory=uuid7, primary_key=True)
