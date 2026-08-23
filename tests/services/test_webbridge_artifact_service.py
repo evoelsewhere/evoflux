@@ -6,6 +6,8 @@ import pytest
 
 from app.models.chat import ChatSession, SessionMessage
 from app.services.webbridge_artifact_service import (
+    _apply_artifact_cleanup,
+    _plan_expired_artifact_cleanup,
     cleanup_expired_artifacts,
     resolve_attachment_path,
 )
@@ -82,3 +84,57 @@ async def test_cleanup_expired_artifacts_sweeps_unvisited_history(
     assert cleaned == 1
     assert not path.exists()
     assert row.extra["attachments"][0]["deleted_at"]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_preserves_concurrent_message_metadata(monkeypatch, tmp_path):
+    from app.core import db as db_module
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVOFLUX_WORKSPACE_DIR", str(tmp_path))
+    session = ChatSession(title="Concurrent artifact metadata")
+    async with db_module.async_session_factory() as db:
+        db.add(session)
+        await db.flush()
+        row = SessionMessage(
+            session_id=session.id,
+            role="tool",
+            content="capture",
+            extra={
+                "attachments": [
+                    {
+                        "filename": "expired.png",
+                        "webbridge_artifact": {
+                            "expires_at": (
+                                datetime.now(timezone.utc) - timedelta(days=1)
+                            ).isoformat()
+                        },
+                    }
+                ],
+                "original": True,
+            },
+        )
+        db.add(row)
+        await db.commit()
+        message_id = row.id
+
+    async with db_module.read_session_factory() as db:
+        plan = await _plan_expired_artifact_cleanup(db)
+    async with db_module.async_session_factory() as db:
+        current = await db.get(SessionMessage, message_id)
+        assert current is not None
+        current.extra = {**(current.extra or {}), "concurrent": True}
+        await db.commit()
+    async with db_module.async_session_factory() as db:
+        cleaned = await _apply_artifact_cleanup(db, plan)
+
+    assert cleaned == 0
+    async with db_module.async_session_factory() as db:
+        current = await db.get(SessionMessage, message_id)
+        assert current is not None
+        assert current.extra and current.extra["concurrent"] is True
+        cleaned = await cleanup_expired_artifacts(db)
+        await db.refresh(current)
+        assert current.extra["concurrent"] is True
+        assert current.extra["attachments"][0]["deleted_at"]
+    assert cleaned == 1
