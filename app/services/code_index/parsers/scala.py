@@ -12,12 +12,17 @@ from app.services.code_index.parsers.base import (
     node_text,
 )
 from app.services.code_index.graph_types import (
+    EDGE_IMPLEMENTS,
     EDGE_INHERITS,
     NODE_CLASS,
+    NODE_ENUM,
+    NODE_FIELD,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
     NODE_NAMESPACE,
+    NODE_PROPERTY,
+    NODE_VARIABLE,
 )
 
 if TYPE_CHECKING:
@@ -49,8 +54,7 @@ class ScalaParser(TreeSitterParser):
                 return Definition(
                     kind=NODE_NAMESPACE,
                     name=name,
-                    is_class=False,
-                    prefix=("" if node.child_by_field_name("body") is None else None),
+                    prefix="",
                 )
         elif ntype == "trait_definition":
             name = self._name(node, source)
@@ -64,21 +68,32 @@ class ScalaParser(TreeSitterParser):
             name = self._name(node, source)
             if name:
                 return Definition(kind=NODE_CLASS, name=name, is_class=True)
-        elif ntype == "function_definition":
+        elif ntype == "enum_definition":
+            name = self._name(node, source)
+            if name:
+                return Definition(kind=NODE_ENUM, name=name)
+        elif ntype in {"function_declaration", "function_definition"}:
             name = self._name(node, source)
             if name:
                 kind = NODE_METHOD if inside_class else NODE_FUNCTION
-                return Definition(kind=kind, name=name, is_class=False)
-        elif ntype == "val_definition":
-            # Only capture named vals inside classes as properties
-            if inside_class:
-                name = self._val_name(node, source)
-                if name:
-                    return Definition(kind=NODE_METHOD, name=name, is_class=False)
+                return Definition(kind=kind, name=name)
+        elif ntype in {"val_definition", "var_definition"}:
+            name = self._val_name(node, source)
+            if name:
+                kind = NODE_FIELD if inside_class else NODE_VARIABLE
+                return Definition(kind=kind, name=name)
+        elif ntype == "class_parameter":
+            name = self._name(node, source)
+            if name:
+                return Definition(kind=NODE_FIELD, name=name)
+        elif ntype == "simple_enum_case":
+            name = self._name(node, source)
+            if name:
+                return Definition(kind=NODE_PROPERTY, name=name)
         elif ntype == "type_definition":
             name = self._name(node, source)
             if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=False)
+                return Definition(kind=NODE_CLASS, name=name)
         return None
 
     def call_target(self, node: Node, source: bytes) -> str | None:
@@ -89,13 +104,11 @@ class ScalaParser(TreeSitterParser):
             if func.type == "identifier":
                 return node_text(func, source)
             if func.type == "field_expression":
-                field = func.child_by_field_name("field")
-                if field is not None:
-                    return node_text(field, source)
+                return _scala_expression_path(func, source)
             if func.type == "generic_function":
                 fn = func.child_by_field_name("function")
-                if fn is not None and fn.type == "identifier":
-                    return node_text(fn, source)
+                if fn is not None:
+                    return _scala_expression_path(fn, source)
         return None
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
@@ -106,17 +119,27 @@ class ScalaParser(TreeSitterParser):
         ):
             return []
         out: list[SuperType] = []
+        is_trait = node.type == "trait_definition"
+        is_class = node.type == "class_definition"
         for child in node.children:
             if child.type == "extends_clause":
-                for sub in child.children:
-                    name = _scala_type_name(sub, source)
-                    if name:
-                        out.append(SuperType(name=name, edge_kind=EDGE_INHERITS))
+                names = [
+                    name
+                    for sub in child.children
+                    if (name := _scala_type_name(sub, source)) is not None
+                ]
+                for index, name in enumerate(names):
+                    edge = (
+                        EDGE_INHERITS
+                        if is_trait or (is_class and index == 0)
+                        else EDGE_IMPLEMENTS
+                    )
+                    out.append(SuperType(name=name, edge_kind=edge))
         return out
 
     def docstring(self, node: Node, source: bytes) -> str | None:
         prev = node.prev_named_sibling
-        if prev is not None and prev.type == "comment":
+        if prev is not None and prev.type == "block_comment":
             text = node_text(prev, source)
             if text.startswith("/**"):
                 return _strip_scaladoc(text)
@@ -132,8 +155,6 @@ class ScalaParser(TreeSitterParser):
         # a namespace_selectors ({A, B => C}) or namespace_wildcard (_ / *).
         segments: list[list[Node]] = [[]]
         for child in node.children:
-            if child.type == "import":
-                continue
             if child.type == ",":
                 segments.append([])
                 continue
@@ -145,20 +166,38 @@ class ScalaParser(TreeSitterParser):
 
     def decorators(self, node: Node, source: bytes) -> list[str]:
         out: list[str] = []
-        prev = node.prev_named_sibling
-        while prev is not None and prev.type == "annotation":
-            name = _scala_annotation_name(prev, source)
-            if name:
-                out.append(name)
-            prev = prev.prev_named_sibling
+        for child in node.children:
+            if child.type == "annotation":
+                name = _scala_annotation_name(child, source)
+                if name:
+                    out.append(name)
         return out
 
     def type_refs(self, node: Node, source: bytes) -> list[str]:
-        if node.type != "function_definition":
+        if node.type not in {
+            "class_parameter",
+            "function_declaration",
+            "function_definition",
+            "type_definition",
+            "val_definition",
+            "var_definition",
+        }:
             return []
         out: list[str] = []
+        if node.type in {"class_parameter", "val_definition", "var_definition"}:
+            type_node = node.child_by_field_name("type")
+            if type_node is not None:
+                _collect_scala_type_ids(type_node, source, out)
+            return _filter_scala_type_parameters(node, source, out)
+        if node.type == "type_definition":
+            for child in node.children:
+                if child.type != "type_identifier":
+                    _collect_scala_type_ids(child, source, out)
+            return _filter_scala_type_parameters(node, source, out)
         # Parameter types
-        params = node.child_by_field_name("parameters")
+        params = next(
+            (child for child in node.children if child.type == "parameters"), None
+        )
         if params is not None:
             for param in params.children:
                 if param.type == "parameter":
@@ -169,7 +208,7 @@ class ScalaParser(TreeSitterParser):
         ret = node.child_by_field_name("return_type")
         if ret is not None:
             _collect_scala_type_ids(ret, source, out)
-        return out
+        return _filter_scala_type_parameters(node, source, out)
 
     def _name(self, node: Node, source: bytes) -> str | None:
         name_node = node.child_by_field_name("name")
@@ -182,9 +221,46 @@ class ScalaParser(TreeSitterParser):
 
     def _val_name(self, node: Node, source: bytes) -> str | None:
         pattern = node.child_by_field_name("pattern")
-        if pattern is not None and pattern.type == "identifier":
-            return node_text(pattern, source)
-        return None
+        return (
+            node_text(pattern, source)
+            if pattern is not None and pattern.type == "identifier"
+            else None
+        )
+
+
+def _scala_expression_path(node: Node, source: bytes) -> str | None:
+    if node.type == "identifier":
+        name = node_text(node, source)
+        return "this" if name == "super" else name
+    if node.type == "field_expression":
+        value = node.child_by_field_name("value")
+        field = node.child_by_field_name("field")
+        value_path = (
+            _scala_expression_path(value, source) if value is not None else None
+        )
+        if field is None:
+            return value_path
+        name = node_text(field, source)
+        return f"{value_path}.{name}" if value_path else name
+    return None
+
+
+def _filter_scala_type_parameters(
+    node: Node, source: bytes, names: list[str]
+) -> list[str]:
+    parameters: set[str] = set()
+    current: Node | None = node
+    while current is not None:
+        type_parameters = next(
+            (child for child in current.children if child.type == "type_parameters"),
+            None,
+        )
+        if type_parameters is not None:
+            for child in type_parameters.children:
+                if child.type == "identifier":
+                    parameters.add(node_text(child, source))
+        current = current.parent
+    return [name for name in dict.fromkeys(names) if name not in parameters]
 
 
 _SCALA_BUILTIN_TYPES = frozenset(
@@ -210,16 +286,15 @@ _SCALA_BUILTIN_TYPES = frozenset(
 
 def _scala_annotation_name(node: Node, source: bytes) -> str | None:
     """Extract annotation name from a Scala annotation node."""
-    for child in node.children:
-        if child.type == "identifier":
-            return node_text(child, source)
-        if child.type == "type_identifier":
-            return node_text(child, source)
-        if child.type == "constructor_annotation":
-            for sub in child.children:
-                if sub.type == "identifier":
-                    return node_text(sub, source)
-    return None
+    name = next(
+        (
+            child
+            for child in node.named_children
+            if child.type == "type_identifier"
+        ),
+        None,
+    )
+    return node_text(name, source) if name is not None else None
 
 
 def _collect_scala_type_ids(node: Node, source: bytes, out: list[str]) -> None:
@@ -228,10 +303,6 @@ def _collect_scala_type_ids(node: Node, source: bytes, out: list[str]) -> None:
         name = node_text(node, source)
         if name not in _SCALA_BUILTIN_TYPES:
             out.append(name)
-        return
-    if node.type == "generic_type":
-        for child in node.children:
-            _collect_scala_type_ids(child, source, out)
         return
     for child in node.children:
         _collect_scala_type_ids(child, source, out)

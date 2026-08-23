@@ -116,6 +116,7 @@ only_mutate = [
     "app/services/code_index/parsers/python.py",
     "app/services/code_index/parsers/ruby.py",
     "app/services/code_index/parsers/rust.py",
+    "app/services/code_index/parsers/scala.py",
     "app/services/code_index/parsers/swift.py",
     "app/services/code_index/parsers/symbol_leaves.py",
 ]
@@ -132,6 +133,7 @@ pytest_add_cli_args_test_selection = [
     "tests/services/test_code_graph_imports_dart.py",
     "tests/services/test_code_graph_imports_php.py",
     "tests/services/test_code_graph_imports_ruby.py",
+    "tests/services/test_code_graph_imports_scala.py",
     "tests/services/test_code_graph_imports_kotlin.py",
     "tests/services/test_code_graph_imports_swift.py",
     "tests/services/test_code_graph_java_contract.py",
@@ -140,6 +142,7 @@ pytest_add_cli_args_test_selection = [
     "tests/services/test_code_graph_php_contract.py",
     "tests/services/test_code_graph_rust_contract.py",
     "tests/services/test_code_graph_ruby_contract.py",
+    "tests/services/test_code_graph_scala_contract.py",
     "tests/services/test_code_graph_swift_contract.py",
     "tests/services/test_code_graph_symbol_coverage.py",
     "tests/services/test_code_graph_variables.py",
