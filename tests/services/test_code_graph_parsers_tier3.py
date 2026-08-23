@@ -583,8 +583,8 @@ end.
     result = PascalParser().parse(file_path="main.pas", source=source)
     qualified = {node.name: node.qualified_name for node in result.nodes}
 
-    assert qualified["Outer"] == "Outer"
-    assert qualified["Inner"] == "Outer.Inner"
+    assert qualified["Outer"] == "Main.Outer"
+    assert qualified["Inner"] == "Main.Outer.Inner"
 
 
 def test_pascal_unit_types_properties_inheritance_and_calls():
@@ -615,10 +615,16 @@ end.
     assert by_kind[NODE_ENUM] == {"Billing.Service.TState"}
     assert by_kind[NODE_STRUCT] == {"Billing.Service.TRecord"}
     assert "Billing.Service.TService" in by_kind[NODE_CLASS]
-    assert by_kind[NODE_PROPERTY] == {"Billing.Service.TService.Name"}
+    assert by_kind[NODE_PROPERTY] == {
+        "Billing.Service.TState.Idle",
+        "Billing.Service.TState.Running",
+        "Billing.Service.TService.Name",
+    }
     assert "TObject" in _edge_names(result.edges, EDGE_INHERITS)
     assert "IRunner" in _edge_names(result.edges, EDGE_IMPLEMENTS)
-    assert {"Helper", "Work"}.issubset(_edge_names(result.edges, EDGE_CALLS))
+    assert {"Helper", "Utils.Work"}.issubset(
+        _edge_names(result.edges, EDGE_CALLS)
+    )
     assert {"TInput", "TResult"}.issubset(_edge_names(result.edges, EDGE_REFERENCES))
 
 
