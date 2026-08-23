@@ -541,7 +541,7 @@ def test_r_member_calls_and_right_assigned_functions():
 """
     result = RParser().parse(file_path="main.R", source=source)
 
-    assert "run" in _edge_names(result.edges, EDGE_CALLS)
+    assert "obj.run" in _edge_names(result.edges, EDGE_CALLS)
     functions = {node.name for node in result.nodes if node.kind == NODE_FUNCTION}
     assert "handler" in functions
 
