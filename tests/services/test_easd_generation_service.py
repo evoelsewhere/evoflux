@@ -25,6 +25,10 @@ def _repository(tmp_path: Path) -> GenerationRepository:
     (tmp_path / "README.md").write_text(
         "Run pytest -q before handoff.\n", encoding="utf-8"
     )
+    (tmp_path / "documents").mkdir()
+    (tmp_path / "documents" / "feature.md").write_text(
+        "The route response is a compatibility contract.\n", encoding="utf-8"
+    )
     (tmp_path / "app").mkdir()
     (tmp_path / "app" / "routes.py").write_text(
         "def list_runs(): return []\n", encoding="utf-8"
@@ -141,6 +145,10 @@ async def test_generation_is_grounded_bounded_and_draft_only(tmp_path: Path):
     assert result.provider == "test"
     assert result.usage == {"input": 120, "output": 40, "cache": 20}
     assert any(item.kind == "instructions" for item in result.provenance)
+    assert any(
+        item.path == "documents/feature.md" and item.kind == "documentation"
+        for item in result.provenance
+    )
     sent = provider.chat.await_args.args[0]
     assert sent[0].role == "system"
     assert "DRAFT only" in sent[0].content

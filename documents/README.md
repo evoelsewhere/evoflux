@@ -84,4 +84,4 @@ For a feature change, update all applicable layers:
 5. tests and code comments that link to the old contract.
 
 Use repository-relative Markdown links. Keep generated screenshots under
-`docs/images/`; do not create another documentation root.
+`documents/images/`; do not create another documentation root.

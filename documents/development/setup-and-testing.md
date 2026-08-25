@@ -106,8 +106,8 @@ filesystem/network/model work inside a database transaction.
 
 ## Documentation workflow
 
-Current behavior belongs in `docs/features`, `docs/architecture` and
-`docs/reference`. Design exploration belongs in `docs/plans`, `analysis` or
+Current behavior belongs in `documents/features`, `documents/architecture` and
+`documents/reference`. Design exploration belongs in `documents/plans`, `analysis` or
 `research` and must not be presented as implemented behavior.
 
 When a feature changes:
@@ -116,7 +116,7 @@ When a feature changes:
 2. update its feature contract and catalogue row;
 3. update API/config/architecture references if the public boundary changes;
 4. update localized in-app Help for user-visible UI behavior;
-5. run the documentation link audit described in `docs/README.md`.
+5. run the documentation link audit described in `documents/README.md`.
 
 ## Change discipline
 

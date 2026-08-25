@@ -20,14 +20,14 @@
 
   **[Get EvoFlux](#download)** ·
   **[Evo Agent Specs](#evo-agent-specs)** ·
-  **[Watch the real EASD run](docs/images/easd-ui-end-to-end.mp4)**
+  **[Watch the real EASD run](documents/images/easd-ui-end-to-end.mp4)**
 </div>
 
 <br />
 
 <p align="center">
-  <a href="docs/images/showcase/coding-workspace.png">
-    <img src="docs/images/showcase/coding-workspace.png" width="1100" alt="EvoFlux Coding workspace with an agent conversation, source editor, and repository file tree" />
+  <a href="documents/images/showcase/coding-workspace.png">
+    <img src="documents/images/showcase/coding-workspace.png" width="1100" alt="EvoFlux Coding workspace with an agent conversation, source editor, and repository file tree" />
   </a>
 </p>
 
@@ -66,8 +66,8 @@ One desktop app. One harness. Two different kinds of work.
 
 <table>
   <tr>
-    <td width="50%"><a href="docs/images/showcase/work-mode.png"><img src="docs/images/showcase/work-mode.png" alt="EvoFlux Work mode ready for a new outcome" /></a></td>
-    <td width="50%"><a href="docs/images/showcase/workspace-tools.png"><img src="docs/images/showcase/workspace-tools.png" alt="EvoFlux workspace with its tool dock open" /></a></td>
+    <td width="50%"><a href="documents/images/showcase/work-mode.png"><img src="documents/images/showcase/work-mode.png" alt="EvoFlux Work mode ready for a new outcome" /></a></td>
+    <td width="50%"><a href="documents/images/showcase/workspace-tools.png"><img src="documents/images/showcase/workspace-tools.png" alt="EvoFlux workspace with its tool dock open" /></a></td>
   </tr>
   <tr>
     <td><strong>Start with the outcome</strong><br /><sub>Drop into Work and describe what you want accomplished.</sub></td>
@@ -81,8 +81,8 @@ Create role-focused agent teams, then tune the model and capabilities of every m
 
 <table>
   <tr>
-    <td width="50%"><a href="docs/images/showcase/agent-teams.png"><img src="docs/images/showcase/agent-teams.png" alt="EvoFlux agent team settings with Work and Coding specialists" /></a></td>
-    <td width="50%"><a href="docs/images/showcase/model-providers.png"><img src="docs/images/showcase/model-providers.png" alt="EvoFlux model provider catalog" /></a></td>
+    <td width="50%"><a href="documents/images/showcase/agent-teams.png"><img src="documents/images/showcase/agent-teams.png" alt="EvoFlux agent team settings with Work and Coding specialists" /></a></td>
+    <td width="50%"><a href="documents/images/showcase/model-providers.png"><img src="documents/images/showcase/model-providers.png" alt="EvoFlux model provider catalog" /></a></td>
   </tr>
   <tr>
     <td><strong>Lead-and-specialists</strong><br /><sub>Give each agent one role, one model, and a focused capability set.</sub></td>
@@ -95,8 +95,8 @@ Create role-focused agent teams, then tune the model and capabilities of every m
 EvoFlux indexes symbols and relationships across every repository in a Coding project. Explore the graph visually, trace callers and dependencies, and pair structural context with repository-aware language servers.
 
 <p align="center">
-  <a href="docs/images/showcase/code-graph.png">
-    <img src="docs/images/showcase/code-graph.png" width="1100" alt="EvoFlux cross-repository code graph with symbols and relationships" />
+  <a href="documents/images/showcase/code-graph.png">
+    <img src="documents/images/showcase/code-graph.png" width="1100" alt="EvoFlux cross-repository code graph with symbols and relationships" />
   </a>
 </p>
 
@@ -106,8 +106,8 @@ Language servers provide semantic feedback in the active project. Sandbox contro
 
 <table>
   <tr>
-    <td width="50%"><a href="docs/images/showcase/language-servers.png"><img src="docs/images/showcase/language-servers.png" alt="EvoFlux language server management" /></a></td>
-    <td width="50%"><a href="docs/images/showcase/sandbox-controls.png"><img src="docs/images/showcase/sandbox-controls.png" alt="EvoFlux sandbox and outbound data protection controls" /></a></td>
+    <td width="50%"><a href="documents/images/showcase/language-servers.png"><img src="documents/images/showcase/language-servers.png" alt="EvoFlux language server management" /></a></td>
+    <td width="50%"><a href="documents/images/showcase/sandbox-controls.png"><img src="documents/images/showcase/sandbox-controls.png" alt="EvoFlux sandbox and outbound data protection controls" /></a></td>
   </tr>
   <tr>
     <td><strong>Semantic feedback</strong><br /><sub>Detect project languages and reuse managed or system language servers.</sub></td>
@@ -195,7 +195,7 @@ EvoFlux operates under a **lead-and-specialists** model. Each request is analyze
 - The Lead evaluates handoffs and evidence, requests rework when needed, and synthesizes the final response.
 
 <p align="center">
-  <img src="docs/images/generated/agent-working-model.png" width="780" alt="EvoFlux Lead plans, dispatches parallel specialists, verifies evidence, and loops back for rework" />
+  <img src="documents/images/generated/agent-working-model.png" width="780" alt="EvoFlux Lead plans, dispatches parallel specialists, verifies evidence, and loops back for rework" />
 </p>
 
 ### Configurable per agent
@@ -213,7 +213,7 @@ Agent Markdown is the user-owned override surface. Runtime and Settings compile
 the same effective config from the mode profile plus frontmatter additions and
 `tools_opt_out`; reads and validation never materialise
 configuration files. See
-[`docs/architecture/application-harness.md`](docs/architecture/application-harness.md).
+[`documents/architecture/application-harness.md`](documents/architecture/application-harness.md).
 
 ---
 
@@ -226,7 +226,7 @@ EvoFlux is desktop-only:
 The production app launches a local sidecar through an ephemeral port and token handshake. The React interface, agent runtime, repository-local code indexes, memory engine, scheduler, permissions, and MCP client all run on the user's machine.
 
 <p align="center">
-  <img src="docs/images/generated/system-architecture.png" width="780" alt="Detailed EvoFlux desktop-only architecture with harness modules, local state, and external integrations" />
+  <img src="documents/images/generated/system-architecture.png" width="780" alt="Detailed EvoFlux desktop-only architecture with harness modules, local state, and external integrations" />
 </p>
 
 ### What makes it a harness
@@ -234,7 +234,7 @@ The production app launches a local sidecar through an ephemeral port and token 
 A language model generates reasoning. The harness turns that reasoning into controlled action:
 
 <p align="center">
-  <img src="docs/images/generated/harness-and-modes.png" width="820" alt="EvoFlux harness modules connect model providers to detailed Work and Coding capabilities" />
+  <img src="documents/images/generated/harness-and-modes.png" width="820" alt="EvoFlux harness modules connect model providers to detailed Work and Coding capabilities" />
 </p>
 
 | Layer | Responsibility |
@@ -287,8 +287,8 @@ drafts the full specification and driven flow in chat. Only the user can approve
 its hash, approve any required Plan, and advance Implement → Review → Verify →
 Converge.
 See the
-[EASD methodology](docs/reference/easd-methodology.md) and the implemented
-[Evo Agent Specs flow](docs/features/evo-agent-specs.md).
+[EASD methodology](documents/reference/easd-methodology.md) and the implemented
+[Evo Agent Specs flow](documents/features/evo-agent-specs.md).
 
 #### Real EASD UI runs
 
@@ -297,7 +297,7 @@ application state—not scripted product-introduction animations.
 
 **1. Archived benchmark: Create run → Implement → Test → Review → Converge** · 20 minutes 9 seconds
 
-[![Play the real EASD end-to-end run](docs/images/easd-ui-end-to-end.jpg)](docs/images/easd-ui-end-to-end.mp4)
+[![Play the real EASD end-to-end run](documents/images/easd-ui-end-to-end.jpg)](documents/images/easd-ui-end-to-end.mp4)
 
 This recording is real runtime evidence from the original benchmark and
 predates driven-flow selection, repository-owned run storage, and the separate
@@ -310,7 +310,7 @@ machine/review evidence for all four ACs, and reaches server-owned Convergence.
 
 **2. Board → Table → List → acceptance matrix** · 12 seconds
 
-[![Play the real EASD run inspection](docs/images/easd-ui-run-inspection.jpg)](docs/images/easd-ui-run-inspection.mp4)
+[![Play the real EASD run inspection](documents/images/easd-ui-run-inspection.jpg)](documents/images/easd-ui-run-inspection.mp4)
 
 Switches the actual project runs workspace between all three views, then opens
 the converged benchmark run with 8 acceptance criteria, 8 missions, and 47
@@ -334,17 +334,17 @@ The model receives one native `code_context` tool:
 | Follow incoming or outgoing calls | `callers` or `callees` |
 | Inspect direct or transitive relationships | `references`, `impact`, or `neighborhood` |
 
-The first query normally uses `refresh=true`; immediate follow-ups over the same indexed version can use `refresh=false`. Structural results are static evidence, so runtime-only behavior still requires tests, logs, LSP, or debugger evidence. The full storage, query, ambiguity, and tool contract is documented in [`docs/architecture/coding-agent-code-context.md`](docs/architecture/coding-agent-code-context.md).
+The first query normally uses `refresh=true`; immediate follow-ups over the same indexed version can use `refresh=false`. Structural results are static evidence, so runtime-only behavior still requires tests, logs, LSP, or debugger evidence. The full storage, query, ambiguity, and tool contract is documented in [`documents/architecture/coding-agent-code-context.md`](documents/architecture/coding-agent-code-context.md).
 
 Coding's repository-local LSP, automatic post-edit feedback, Guarded ChangeSets,
 Problems hub, explicit AI editor/Git actions, and Search Everywhere contracts are
-documented in [`docs/architecture/coding-semantic-intelligence.md`](docs/architecture/coding-semantic-intelligence.md).
+documented in [`documents/architecture/coding-semantic-intelligence.md`](documents/architecture/coding-semantic-intelligence.md).
 
 ### Memory and Dream
 
 EvoFlux Memory separates session working context, provenance-backed episodic evidence, and scoped semantic facts. Preferences can follow the user, while technical decisions stay inside their project, workspace, Work folder, or source session. Extraction is durable and retryable, relevant facts are available immediately, and deleting the final supporting session forgets the fact.
 
-The scheduled or manually triggered **Dream** agent incrementally consolidates top-level sessions and changed notes into an inspectable Markdown wiki: `topics/`, `entities/`, `notes/`, and `imports/`, with `INDEX.md`, an append-only `LOG.md`, source citations, confidence, and related-page metadata. See the [Memory architecture](docs/architecture/memory-system.md) for scope, recall, consolidation, and forget semantics.
+The scheduled or manually triggered **Dream** agent incrementally consolidates top-level sessions and changed notes into an inspectable Markdown wiki: `topics/`, `entities/`, `notes/`, and `imports/`, with `INDEX.md`, an append-only `LOG.md`, source citations, confidence, and related-page metadata. See the [Memory architecture](documents/architecture/memory-system.md) for scope, recall, consolidation, and forget semantics.
 
 ### Bring your own model
 
@@ -357,10 +357,10 @@ Twenty-three built-in skills cover mode-scoped Work and Coding workflows, specia
 The built-in **Plugin Center** implements the portable [Agent Plugins 1.0](https://agent-plugins.org/) core. It can scaffold, validate, import, developer-link, pack, update, enable, disable, and uninstall local plugins containing immediate-child Agent Skills and isolated stdio or Streamable HTTP MCP servers. `.evoplugin` is a deterministic ZIP distribution wrapper; the unpacked package remains standards-compatible through root `plugin.json` and optional `mcp.json`.
 
 <p align="center">
-  <img src="docs/images/generated/agent-plugins-architecture.png" width="790" alt="Detailed portable Agent Plugin architecture across package, Plugin Center, private state, and runtime boundaries" />
+  <img src="documents/images/generated/agent-plugins-architecture.png" width="790" alt="Detailed portable Agent Plugin architecture across package, Plugin Center, private state, and runtime boundaries" />
 </p>
 
-Plugin packages remain portable content bundles: they contribute Skills and MCP server declarations, while EvoFlux owns validation, lifecycle, permissions, credentials, installation data, and runtime status. New imports remain disabled until the user reviews executable commands, remote hosts, environment-field names, and capabilities. Plugin MCP servers run in an isolated manager instead of being merged into the user's global MCP configuration. See the [Agent Plugin setup guide](docs/guides/agent-plugins.md) to use a package and the [portable Agent Plugin architecture](docs/architecture/agent-plugins.md) for the package contract, runtime boundaries, storage model, and failure isolation rules.
+Plugin packages remain portable content bundles: they contribute Skills and MCP server declarations, while EvoFlux owns validation, lifecycle, permissions, credentials, installation data, and runtime status. New imports remain disabled until the user reviews executable commands, remote hosts, environment-field names, and capabilities. Plugin MCP servers run in an isolated manager instead of being merged into the user's global MCP configuration. See the [Agent Plugin setup guide](documents/guides/agent-plugins.md) to use a package and the [portable Agent Plugin architecture](documents/architecture/agent-plugins.md) for the package contract, runtime boundaries, storage model, and failure isolation rules.
 
 ### Permissions and sandboxing
 
@@ -382,7 +382,7 @@ repository rather than this desktop repository.
 It connects an agent to the user's real Chrome or Edge session through a persistent, policy-checked relay. Control flows from the desktop agent to the browser over CDP; selections, page context, and human handoff flow back to the desktop session.
 
 <p align="center">
-  <img src="docs/images/generated/webbridge.png" width="790" alt="Detailed WebBridge architecture for pairing, relay, redaction, context, control, and human handoff" />
+  <img src="documents/images/generated/webbridge.png" width="790" alt="Detailed WebBridge architecture for pairing, relay, redaction, context, control, and human handoff" />
 </p>
 
 | Capability | What it does |
@@ -446,7 +446,7 @@ web/        React interface embedded by the Tauri desktop app
 desktop/    Tauri v2 shell and Python sidecar packaging
 seed/       Work and Coding blueprints, skills, and config
 tests/      Backend and frontend tests
-docs/       Architecture, feature contracts, references, project records, and media
+documents/  Architecture, feature contracts, records, media, and EASD run data
 ```
 
 ## Contributing

@@ -27,15 +27,15 @@ desktop/      Rust/Tauri shell and native packaging
 seed/         First-install agent and configuration templates
 scripts/      Development, build, validation, and release utilities
 tests/        Python backend, integration, CLI, and packaging tests
-docs/         Single documentation root
+documents/    Single documentation root and EASD repository data
 ```
 
 Start with:
 
-- `docs/README.md` for documentation navigation;
-- `docs/features/README.md` for implemented features and code ownership;
-- `docs/architecture/system-overview.md` for process and trust boundaries;
-- `docs/reference/repository-map.md` for the detailed source map.
+- `documents/README.md` for documentation navigation;
+- `documents/features/README.md` for implemented features and code ownership;
+- `documents/architecture/system-overview.md` for process and trust boundaries;
+- `documents/reference/repository-map.md` for the detailed source map.
 
 ## Architecture boundaries
 
@@ -63,7 +63,7 @@ contract; agents implement and verify that contract with traceable evidence.
 The named product-executable method is **EASD — Evo Agent Specification-Driven
 Development**; its product/UI name is **Evo Agent Specs**. Its normative
 lifecycle, roles, trust levels, and convergence rules live in
-`docs/reference/easd-methodology.md`.
+`documents/reference/easd-methodology.md`.
 
 The workflow is:
 
@@ -94,12 +94,12 @@ provider protocol, filesystem scope, or release/update behavior.
 
 ### Sources of truth
 
-- `docs/features/` describes implemented product behavior.
-- `docs/architecture/` defines process, storage, concurrency, trust, and system
+- `documents/features/` describes implemented product behavior.
+- `documents/architecture/` defines process, storage, concurrency, trust, and system
   boundaries.
-- `docs/reference/` defines public API, configuration, CLI, and repository
+- `documents/reference/` defines public API, configuration, CLI, and repository
   contracts.
-- `docs/plans/` holds proposed or historical design work and is not proof that a
+- `documents/plans/` holds proposed or historical design work and is not proof that a
   feature is implemented.
 - Tests are executable evidence for a contract, not a substitute for an absent
   product specification.
@@ -119,8 +119,8 @@ specification.
    - Record current behavior, constraints, known edge cases, and affected owners.
    - Distinguish implemented behavior from proposals and stale historical docs.
 2. **Specify**
-   - Write a proposed design under `docs/plans/` for an unimplemented feature.
-   - Update the current feature contract in `docs/features/` when behavior ships.
+   - Write a proposed design under `documents/plans/` for an unimplemented feature.
+   - Update the current feature contract in `documents/features/` when behavior ships.
    - Update architecture/reference documents before or with any boundary change.
    - Resolve material ambiguity with the user instead of encoding an assumption
      that changes product behavior.
@@ -141,7 +141,7 @@ specification.
 6. **Reconcile**
    - Update feature status, architecture/reference pages, in-app Help, examples,
      and migration/release notes so documentation matches the shipped result.
-   - Preserve design rationale in `docs/plans/` or `docs/analysis/`, clearly
+   - Preserve design rationale in `documents/plans/` or `documents/analysis/`, clearly
      labelled as historical when it no longer defines current behavior.
 
 ### Minimum full specification
@@ -367,18 +367,18 @@ During iteration, run the smallest focused tests named by the nearest nested
 
 ## Documentation contract
 
-`docs/` is the only product/contributor documentation root. The manifest-owned
-`documents/easd/` default is EASD run data, not a second documentation root; do
-not place ordinary project documentation elsewhere under `documents/`.
+`documents/` is the only product/contributor documentation root. The
+manifest-owned `documents/easd/` subtree is EASD run data, not product or
+contributor documentation.
 
-- Current behavior belongs in `docs/features/`, `docs/architecture/`, and
-  `docs/reference/`.
-- Contributor and release procedures belong in `docs/development/`.
+- Current behavior belongs in `documents/features/`, `documents/architecture/`, and
+  `documents/reference/`.
+- Contributor and release procedures belong in `documents/development/`.
 - Historical audits, research, plans, and release evidence belong in their
-  existing `docs/analysis/`, `docs/research/`, `docs/plans/`, and
-  `docs/releases/` directories and must not override current contracts.
+  existing `documents/analysis/`, `documents/research/`, `documents/plans/`, and
+  `documents/releases/` directories and must not override current contracts.
 - Use repository-relative Markdown links and keep README media under
-  `docs/images/`.
+  `documents/images/`.
 - When a feature changes, update its feature page, catalogue entry, affected
   architecture/API/config reference, and in-app Help in the same change.
 

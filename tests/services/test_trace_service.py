@@ -25,7 +25,7 @@ def _spec(
             "outcome": "Every required criterion has snapshot-bound evidence.",
             "goals": ["Make completion verifiable"],
             "non_goals": ["Replace the workflow engine"],
-            "source_refs": ["docs/plans/trace.md"],
+            "source_refs": ["documents/plans/trace.md"],
             "impact_targets": [
                 {
                     "repository": "backend",
@@ -38,7 +38,7 @@ def _spec(
                 {
                     "kind": "compatibility",
                     "statement": "Preserve the accepted revision hash contract",
-                    "source_refs": ["docs/plans/trace.md"],
+                    "source_refs": ["documents/plans/trace.md"],
                 }
             ],
             "verification_commands": ["pytest -q tests/services/test_trace_service.py"],
