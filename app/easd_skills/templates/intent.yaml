@@ -1,0 +1,4 @@
+run_id: "<run-uuid>"
+title: "<short outcome-oriented title>"
+problem: "<current observable problem and why it matters>"
+outcome: "<optional; drafting may propose this>"

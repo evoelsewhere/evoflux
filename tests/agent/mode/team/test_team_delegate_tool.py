@@ -13,6 +13,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from uuid import uuid7
 
+import pytest
+
 import app.agent.mode.team.delegate as delegate_module
 from app.agent.mode.team.delegate import TaskSpec, make_team_delegate_tool
 from app.agent.mode.team.mailbox import TeamMailbox
@@ -44,6 +46,10 @@ class TestTaskSpecSchema:
         assert spec.resolved_isolation == "shared"
         assert spec.target_repos == []
         assert spec.complexity == "auto"
+        assert spec.trace_run_id is None
+        assert spec.trace_plan_hash is None
+        assert spec.plan_mission_id is None
+        assert spec.acceptance_criteria == []
 
     def test_full_spec(self):
         """All fields populated."""
@@ -58,6 +64,36 @@ class TestTaskSpecSchema:
         assert spec.priority == "high"
         assert len(spec.constraints) == 2
         assert spec.depends_on == ["task_1"]
+
+    def test_trace_contract_supports_direct_and_planned_identity(self):
+        with pytest.raises(ValueError, match="EASD delegation requires"):
+            TaskSpec(
+                goal="Implement AC-1",
+                expected_output="Verified implementation",
+                trace_run_id=str(uuid7()),
+            )
+
+        direct = TaskSpec(
+            goal="Implement AC-1 directly",
+            expected_output="Verified implementation",
+            trace_run_id=str(uuid7()),
+            trace_spec_hash="f" * 64,
+            acceptance_criteria=["AC-1"],
+        )
+        assert direct.trace_plan_hash is None
+        assert direct.plan_mission_id is None
+
+        spec = TaskSpec(
+            goal="Implement AC-1",
+            expected_output="Verified implementation",
+            trace_run_id=str(uuid7()),
+            trace_spec_hash="f" * 64,
+            trace_plan_hash="e" * 64,
+            plan_mission_id="M1",
+            acceptance_criteria=["AC-1"],
+        )
+        assert spec.acceptance_criteria == ["AC-1"]
+        assert spec.plan_mission_id == "M1"
 
     def test_serialization_excludes_none(self):
         """model_dump with exclude_none drops empty optional fields."""
@@ -113,9 +149,7 @@ class TestTeamDelegateTool:
 
             def live_instances_for_blueprint(self, blueprint):
                 return [
-                    name
-                    for name in self.members
-                    if name.startswith(f"{blueprint}#")
+                    name for name in self.members if name.startswith(f"{blueprint}#")
                 ]
 
             def blueprint_allowed_this_turn(self, blueprint):

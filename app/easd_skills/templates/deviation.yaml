@@ -1,0 +1,10 @@
+id: "<deviation-uuid>"
+run_id: "<run-uuid>"
+spec_hash: "<accepted-spec-sha256>"
+criterion_id: null
+status: open
+blocking: true
+description: "<observed contract or scope drift>"
+proposed_change: {}
+resolution: null
+created_at: "<RFC3339 UTC>"

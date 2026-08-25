@@ -47,6 +47,9 @@ from app.agent.mode.team.reject import make_team_reject_tool
 from app.agent.mode.team.shared_state import make_team_state_tool
 from app.agent.mode.team.tools import make_team_message_tool
 from app.agent.mode.team.worktree import make_team_worktree_tool
+from app.agent.mode.team.easd_spec import make_easd_spec_tool
+from app.agent.mode.team.easd_plan import make_easd_plan_tool
+from app.agent.mode.team.easd_review import make_easd_review_tool
 from app.agent.multimodal import build_parts_from_metas
 from app.agent.schemas.chat import AssistantMessage, HumanMessage, ToolMessage
 from app.agent.schemas.events import DoneEvent
@@ -510,6 +513,46 @@ class AgentTeam:
         db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
         async with self._delegation_lock:
             async with db_factory() as db:
+                trace_context = None
+                trace_run_id = None
+                if spec.get("trace_run_id"):
+                    from app.services.trace_service import validate_mission_binding
+
+                    trace_context = await validate_mission_binding(
+                        db,
+                        run_id=str(spec.get("trace_run_id")),
+                        spec_hash=str(spec.get("trace_spec_hash") or ""),
+                        plan_hash=(
+                            str(spec["trace_plan_hash"])
+                            if spec.get("trace_plan_hash")
+                            else None
+                        ),
+                        plan_mission_id=(
+                            str(spec["plan_mission_id"])
+                            if spec.get("plan_mission_id")
+                            else None
+                        ),
+                        criterion_ids=[
+                            str(item)
+                            for item in spec.get("acceptance_criteria", [])
+                            if isinstance(item, str)
+                        ],
+                        target_paths=[
+                            str(item)
+                            for item in spec.get("target_paths", [])
+                            if isinstance(item, str)
+                        ],
+                        target_repositories=[
+                            str(item)
+                            for item in spec.get("target_repos", [])
+                            if isinstance(item, str)
+                        ],
+                    )
+                    trace_run_id = trace_context.run.id
+                    spec = {
+                        **spec,
+                        "_easd_owner_workspace": trace_context.run.workspace,
+                    }
                 tasks = await delegation_ledger.create_tasks(
                     db,
                     lead_session_id=lead_session_id,
@@ -518,8 +561,13 @@ class AgentTeam:
                     spec=spec,
                     dependencies=dependencies,
                     deadline_at=deadline_at,
+                    trace_run_id=trace_run_id,
                 )
                 await db.commit()
+            if trace_context is not None:
+                from app.services.trace_service import record_mission_binding
+
+                record_mission_binding(trace_context, missions=tasks)
             self.register_delegation(
                 delegator,
                 [task.recipient for task in tasks],
@@ -904,6 +952,16 @@ class AgentTeam:
                     recipient=recipient,
                     result=artifact,
                 )
+                if completed.trace_run_id is not None:
+                    from app.services.trace_service import (
+                        record_mission_handoff_evidence,
+                    )
+
+                    await record_mission_handoff_evidence(
+                        db,
+                        task=completed,
+                        artifact=artifact,
+                    )
                 ready, failed = await delegation_ledger.release_ready_tasks(
                     db,
                     lead_session_id=lead_session_id,
@@ -987,6 +1045,16 @@ class AgentTeam:
                     task_id=task_id,
                     spec=updated_spec,
                 )
+                if completed.trace_run_id is not None:
+                    from app.services.trace_service import (
+                        record_mission_handoff_evidence,
+                    )
+
+                    await record_mission_handoff_evidence(
+                        db,
+                        task=completed,
+                        artifact=dict(completed.result or {}),
+                    )
                 ready, failed = await delegation_ledger.release_ready_tasks(
                     db,
                     lead_session_id=lead_session_id,
@@ -2628,9 +2696,7 @@ class AgentTeam:
         cfg = parse_agent_md(bp.source_path)
         default_model = cfg.model
         if not default_model:
-            raise ValueError(
-                f"Member blueprint '{blueprint}' has no model configured."
-            )
+            raise ValueError(f"Member blueprint '{blueprint}' has no model configured.")
         default_thinking = cfg.thinking_level
         service = get_active_ask_user_service()
         if service is None:
@@ -2659,7 +2725,9 @@ class AgentTeam:
         try:
             selection = json.loads(raw)
         except (TypeError, json.JSONDecodeError) as exc:
-            raise ValueError("Invalid agent spawn selection returned by the UI.") from exc
+            raise ValueError(
+                "Invalid agent spawn selection returned by the UI."
+            ) from exc
         if not isinstance(selection, dict):
             raise ValueError("Invalid agent spawn selection returned by the UI.")
         model = selection.get("model")
@@ -3011,8 +3079,13 @@ class AgentTeam:
             make_todo_manage_tool(role),
             make_team_state_tool(agent_name),
         ]
+        if self.mode == "coding":
+            tools.append(make_easd_review_tool(self, agent_name=agent_name, role=role))
 
         if agent_name == self.lead.name:
+            if self.mode == "coding":
+                tools.append(make_easd_spec_tool(self, agent_name=agent_name))
+                tools.append(make_easd_plan_tool(self, agent_name=agent_name))
             tools.append(make_team_manage_tool(self))
             tools.append(
                 make_team_delegate_tool(self.mailbox, agent_name=agent_name, team=self)
@@ -3047,12 +3120,12 @@ class AgentTeam:
 
     def status(self) -> dict:
         """Return current state of all live agents + blueprint roster."""
+
         def member_status(member: TeamMemberBase) -> dict:
             return {
                 "name": member.name,
                 "state": member.state,
-                "model": member.runtime_model_id
-                or member.agent.llm_provider.model,
+                "model": member.runtime_model_id or member.agent.llm_provider.model,
                 "thinking_level": member.runtime_thinking_level,
                 "active_task_id": member._active_delegation_task_id,
                 "queue_depth": self.mailbox.inbox_size(member.name),

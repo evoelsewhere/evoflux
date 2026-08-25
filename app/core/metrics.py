@@ -237,6 +237,15 @@ CODE_CONTEXT_ROUTING = Counter(
     registry=REGISTRY,
 )
 
+# ── EASD development metrics ────────────────────────────────────────────────
+
+TRACE_OPERATIONS = Counter(
+    "EVOFLUX_trace_operations_total",
+    "EASD lifecycle operations grouped by operation, outcome, and risk tier.",
+    labelnames=("operation", "status", "risk_tier"),
+    registry=REGISTRY,
+)
+
 # ── Observability plumbing metrics ────────────────────────────────────────────
 
 SPANS_DROPPED = Counter(

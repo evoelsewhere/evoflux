@@ -27,6 +27,7 @@ from app.api.routes.settings import router as settings_router
 from app.api.routes.skills import router as skills_router
 from app.api.routes.snippets import router as snippets_router
 from app.api.routes.team import router as team_router
+from app.api.routes.easd import router as easd_router
 from app.api.routes.wiki import router as wiki_router
 from app.api.routes.workflows import router as workflows_router
 from app.core.config import settings
@@ -351,6 +352,15 @@ def create_app() -> FastAPI:
     # ── Routers (all under /api) ─────────────────────────────────────────────
     app.include_router(health_router, prefix="/api/health", tags=["health"])
     app.include_router(team_router, prefix="/api/team", tags=["team"])
+    app.include_router(easd_router, prefix="/api/easd", tags=["easd"])
+    # Keep the pre-EASD URI for persisted clients. It is deliberately hidden
+    # from OpenAPI so new integrations discover only the canonical brand.
+    app.include_router(
+        easd_router,
+        prefix="/api/trace",
+        tags=["legacy-easd"],
+        include_in_schema=False,
+    )
     app.include_router(quote_router, prefix="/api/quote", tags=["quote"])
     app.include_router(wiki_router, prefix="/api/wiki", tags=["wiki"])
     app.include_router(agents_router, prefix="/api/agents", tags=["agents"])

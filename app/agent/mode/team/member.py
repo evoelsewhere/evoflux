@@ -55,6 +55,7 @@ from app.agent.hooks.stream_publisher import StreamPublisherHook
 from app.agent.hooks.skill_catalog import SkillCatalogFinalizerHook
 from app.agent.hooks.summarization import build_team_summarization_hook
 from app.agent.hooks.title_generation import build_title_generation_hook
+from app.agent.hooks.easd_context import EasdContextHook
 from app.agent.hooks.memory_extraction import build_memory_extraction_hook
 from app.agent.lifecycle import is_sleep_message
 from app.agent.mode.team.hooks.queued_injection import QueuedMessageInjectionHook
@@ -1408,6 +1409,17 @@ class TeamMemberBase(abc.ABC):
                     ),
                 )
         if self._team.mode == "coding":
+            if self.db_factory:
+                pipeline.add(
+                    HookStage.SESSION_CONTEXT,
+                    "trace-context",
+                    EasdContextHook(
+                        db_factory=self.db_factory,
+                        lead_session_id=lead_session_id,
+                        agent_name=self.name,
+                        role=self._role_label,
+                    ),
+                )
             pipeline.add(
                 HookStage.WORKSPACE,
                 "workspace-context",

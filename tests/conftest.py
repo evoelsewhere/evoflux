@@ -97,6 +97,7 @@ async def setup_db():
     ``app.core.db`` to it."""
     global _test_engine, _test_db_tmpdir, _TEST_DB_URL
     import app.core.db as _db_module
+    import app.models  # noqa: F401 - register every SQLModel table before create_all
 
     _test_db_tmpdir = tempfile.TemporaryDirectory(prefix="EvoFlux-test-db-")
     db_path = Path(_test_db_tmpdir.name) / "test.sqlite"

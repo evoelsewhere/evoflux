@@ -220,6 +220,8 @@ workspace/
 **/.evoflux/memory/
 **/.evoflux/sessions/
 **/.evoflux/state/
+**/.evoflux/team_state.json
+**/.evoflux/worktrees/
 **/.evoflux/wiki/
 **/.evoflux/workspace/
 **/.evoflux/pptx-html/

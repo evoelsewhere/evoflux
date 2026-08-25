@@ -58,6 +58,19 @@ class Verification(BaseModel):
     exit_codes: list[int] = Field(default_factory=list)
     revision: str | None = None
     artifact_hash: str | None = None
+    completion_contract: dict | None = Field(
+        default=None,
+        description="Runtime-generated changed-file and command evidence snapshot.",
+    )
+
+
+class CriterionResult(BaseModel):
+    """One mission-owned EASD acceptance criterion result."""
+
+    criterion_id: str = Field(min_length=3, max_length=64)
+    result: Literal["passed", "failed", "inconclusive"]
+    summary: str = Field(min_length=1, max_length=4000)
+    evidence_ids: list[str] = Field(default_factory=list)
 
 
 class HandoffArtifact(BaseModel):
@@ -123,6 +136,8 @@ class HandoffArtifact(BaseModel):
             "Members do not populate this field."
         ),
     )
+    criteria_results: list[CriterionResult] = Field(default_factory=list)
+    deviations: list[str] = Field(default_factory=list)
 
 
 # ── Tool descriptions ───────────────────────────────────────────────────────
@@ -182,6 +197,15 @@ def format_handoff_message(
             if artifact.verification.result:
                 verification_line += f" — {artifact.verification.result}"
         lines.append(verification_line)
+    if artifact.criteria_results:
+        lines.append("EASD criteria:")
+        lines.extend(
+            f"  • {item.criterion_id}: {item.result} — {item.summary}"
+            for item in artifact.criteria_results
+        )
+    if artifact.deviations:
+        lines.append("EASD deviations:")
+        lines.extend(f"  ⚠ {item}" for item in artifact.deviations)
     if artifact.workspace_result:
         repositories = artifact.workspace_result.get("repositories", [])
         lines.append(
@@ -298,6 +322,19 @@ def make_team_handoff_tool(
                 ),
             ),
         ] = None,
+        criteria_results: Annotated[
+            list[dict[str, Any]],
+            Field(
+                description=(
+                    "EASD criterion results: criterion_id, "
+                    "passed|failed|inconclusive result, summary, evidence_ids."
+                )
+            ),
+        ] = [],  # noqa: B006
+        deviations: Annotated[
+            list[str],
+            Field(description="EASD scope/spec deviations discovered by the mission."),
+        ] = [],  # noqa: B006
         _state: Annotated[Any, InjectedArg()] = None,
     ) -> str:
         """Deliver a structured work artifact to teammates."""
@@ -389,6 +426,7 @@ def make_team_handoff_tool(
                     None,
                 ),
                 artifact_hash=str(contract.get("artifact_hash") or "") or None,
+                completion_contract=contract,
             )
         elif verified is not None:
             verification = Verification(
@@ -430,6 +468,30 @@ def make_team_handoff_tool(
                     "Changed-file deliverables require a passing machine-generated "
                     "CompletionContract; self-reported verification is not sufficient."
                 )
+            trace_assigned = (
+                [
+                    str(item)
+                    for item in linked_task.spec.get("acceptance_criteria", [])
+                    if isinstance(item, str)
+                ]
+                if linked_task is not None and linked_task.trace_run_id is not None
+                else []
+            )
+            try:
+                parsed_criteria = [
+                    CriterionResult.model_validate(item) for item in criteria_results
+                ]
+            except ValueError as exc:
+                quality_issues.append(f"Invalid EASD criteria_results: {exc}")
+                parsed_criteria = []
+            if trace_assigned:
+                provided = {item.criterion_id for item in parsed_criteria}
+                missing = sorted(set(trace_assigned) - provided)
+                if missing:
+                    quality_issues.append(
+                        "EASD final handoff must report every assigned criterion: "
+                        + ", ".join(missing)
+                    )
             if quality_issues:
                 return (
                     "HANDOFF BLOCKED — quality gate failed:\n"
@@ -439,6 +501,9 @@ def make_team_handoff_tool(
         # ─────────────────────────────────────────────────────────────────
 
         # Build artifact
+        parsed_criteria = [
+            CriterionResult.model_validate(item) for item in criteria_results
+        ]
         artifact = HandoffArtifact(
             task_id=linked_task_id,
             summary=summary,
@@ -449,6 +514,8 @@ def make_team_handoff_tool(
             next_actions=list(next_actions),
             raw_data=raw_data,
             verification=verification,
+            criteria_results=parsed_criteria,
+            deviations=list(deviations),
         )
 
         artifact_json = artifact.model_dump(mode="json", exclude_none=True)
@@ -496,11 +563,7 @@ def make_team_handoff_tool(
                 )
             await mailbox.send(to=recipient, message=msg)
 
-        if (
-            _state is not None
-            and status == "final"
-            and linked_task_id is not None
-        ):
+        if _state is not None and status == "final" and linked_task_id is not None:
             # The durable task is complete and its handoff is delivered. Ask
             # the loop to stop after persisting this tool result instead of
             # making another model call that can duplicate work or fail after

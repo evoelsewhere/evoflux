@@ -76,6 +76,48 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             "memory_fact_evidence",
             "memory_extraction_states",
         } <= set(inspector.get_table_names())
+        assert {
+            "trace_runs",
+            "trace_spec_revisions",
+            "trace_plan_revisions",
+            "trace_evidence",
+            "trace_deviations",
+        } <= set(inspector.get_table_names())
+        active_run_index = next(
+            index
+            for index in inspector.get_indexes("trace_runs")
+            if index["name"] == "uq_trace_runs_active_session"
+        )
+        assert active_run_index["unique"] == 1
+        with engine.connect() as conn:
+            active_run_index_sql = conn.execute(
+                sa.text(
+                    "SELECT sql FROM sqlite_master WHERE type='index' "
+                    "AND name='uq_trace_runs_active_session'"
+                )
+            ).scalar_one()
+        assert "authoring" in active_run_index_sql
+        assert "planning" in active_run_index_sql
+        assert "reviewing" in active_run_index_sql
+        run_columns = {column["name"] for column in inspector.get_columns("trace_runs")}
+        assert "intent" in run_columns
+        assert "active_plan_revision_id" in run_columns
+        delegation_columns = {
+            column["name"] for column in inspector.get_columns("delegation_tasks")
+        }
+        assert "trace_run_id" in delegation_columns
+        deviation_columns = {
+            column["name"] for column in inspector.get_columns("trace_deviations")
+        }
+        assert "spec_hash" in deviation_columns
+        revision_columns = {
+            column["name"] for column in inspector.get_columns("trace_spec_revisions")
+        }
+        assert "authoring" in revision_columns
+        plan_columns = {
+            column["name"] for column in inspector.get_columns("trace_plan_revisions")
+        }
+        assert {"spec_hash", "plan", "authoring", "content_hash"} <= plan_columns
         assert "session_goals" in inspector.get_table_names()
         assert {
             "code_nodes",
