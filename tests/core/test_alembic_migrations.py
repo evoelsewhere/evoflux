@@ -224,6 +224,84 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
         engine.dispose()
 
 
+def test_legacy_easd_revision_60_migrates_forward_without_data_loss(
+    tmp_path, monkeypatch
+):
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "legacy-easd-60.sqlite"
+    monkeypatch.setattr(
+        settings, "DATABASE_URL", SecretStr(f"sqlite+aiosqlite:///{db_path}")
+    )
+
+    ini = Path(app.__file__).resolve().parent / "alembic.ini"
+    cfg = Config(str(ini))
+    command.upgrade(cfg, "00000055")
+
+    run_id = uuid4().hex
+    now = datetime.now(timezone.utc)
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO trace_runs "
+                    "(id, workspace, title, status, risk_tier, created_at, updated_at) "
+                    "VALUES (:id, :workspace, :title, :status, :risk_tier, "
+                    ":created_at, :updated_at)"
+                ),
+                {
+                    "id": run_id,
+                    "workspace": "/tmp/legacy-easd",
+                    "title": "Preserve this run",
+                    "status": "accepted",
+                    "risk_tier": "standard",
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
+            conn.execute(sa.text("DROP INDEX uq_trace_runs_active_session"))
+            conn.execute(
+                sa.text(
+                    "CREATE UNIQUE INDEX uq_trace_runs_active_session "
+                    "ON trace_runs (session_id) "
+                    "WHERE session_id IS NOT NULL AND status IN "
+                    "('authoring', 'planning', 'active', 'reviewing', 'verifying')"
+                )
+            )
+            conn.execute(sa.text("UPDATE alembic_version SET version_num = '00000060'"))
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.connect() as conn:
+            version = conn.execute(
+                sa.text("SELECT version_num FROM alembic_version")
+            ).scalar_one()
+            preserved_title = conn.execute(
+                sa.text("SELECT title FROM trace_runs WHERE id = :id"),
+                {"id": run_id},
+            ).scalar_one()
+            active_run_index_sql = conn.execute(
+                sa.text(
+                    "SELECT sql FROM sqlite_master WHERE type='index' "
+                    "AND name='uq_trace_runs_active_session'"
+                )
+            ).scalar_one()
+
+        assert version == SCHEMA_HEAD
+        assert preserved_title == "Preserve this run"
+        assert "'accepted'" in active_run_index_sql
+        assert "'plan_review'" in active_run_index_sql
+        assert "'planned'" in active_run_index_sql
+    finally:
+        engine.dispose()
+
+
 def test_work_mode_migration_rewrites_forge_rows_and_defaults(tmp_path, monkeypatch):
     from alembic import command
     from alembic.config import Config

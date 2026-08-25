@@ -38,6 +38,20 @@ def test_schema_preflight_skips_database_at_head(tmp_path, monkeypatch) -> None:
     assert status.compatible is True
 
 
+def test_schema_preflight_accepts_legacy_consolidated_easd_head(
+    tmp_path, monkeypatch
+) -> None:
+    db_path = tmp_path / "legacy-easd.sqlite"
+    _write_revision(db_path, "00000060")
+    monkeypatch.setattr(schema_version, "current_sqlite_path", lambda: str(db_path))
+
+    status = schema_version.inspect_database_schema()
+
+    assert status.current == "00000060"
+    assert status.at_head is False
+    assert status.compatible is True
+
+
 def test_schema_preflight_rejects_unknown_revision(tmp_path, monkeypatch) -> None:
     db_path = tmp_path / "newer.sqlite"
     _write_revision(db_path, "99999999")
