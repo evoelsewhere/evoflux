@@ -1009,7 +1009,7 @@ function SpecificationEditorForm({
               </label>
               <label className="block text-xs font-medium text-(--color-text-2) @3xl/easd:col-span-2">
                 Source references <span className="font-normal text-(--color-text-subtle)">· one per line</span>
-                <textarea value={sourceRefs} onChange={(event) => setSourceRefs(event.target.value)} className="mt-1.5 min-h-20 w-full resize-y rounded-lg border border-(--color-border) bg-(--bg-page) p-3 font-mono text-xs text-(--color-text) outline-none focus:border-(--color-accent)" placeholder="docs/plans/feature.md" />
+                <textarea value={sourceRefs} onChange={(event) => setSourceRefs(event.target.value)} className="mt-1.5 min-h-20 w-full resize-y rounded-lg border border-(--color-border) bg-(--bg-page) p-3 font-mono text-xs text-(--color-text) outline-none focus:border-(--color-accent)" placeholder="documents/plans/feature.md" />
               </label>
               <label className="block text-xs font-medium text-(--color-text-2) @3xl/easd:col-span-2">
                 Affected repositories, files, and modules <span className="font-normal text-(--color-text-subtle)">· repository:path :: module :: reason</span>
@@ -1017,7 +1017,7 @@ function SpecificationEditorForm({
               </label>
               <label className="block text-xs font-medium text-(--color-text-2) @3xl/easd:col-span-2">
                 Constraints and boundaries <span className="font-normal text-(--color-text-subtle)">· [kind] statement :: sources</span>
-                <textarea value={constraints} onChange={(event) => setConstraints(event.target.value)} className="mt-1.5 min-h-24 w-full resize-y rounded-lg border border-(--color-border) bg-(--bg-page) p-3 text-xs text-(--color-text) outline-none focus:border-(--color-accent)" placeholder="[compatibility] Preserve the existing response shape :: docs/reference/http-api.md" />
+                <textarea value={constraints} onChange={(event) => setConstraints(event.target.value)} className="mt-1.5 min-h-24 w-full resize-y rounded-lg border border-(--color-border) bg-(--bg-page) p-3 text-xs text-(--color-text) outline-none focus:border-(--color-accent)" placeholder="[compatibility] Preserve the existing response shape :: documents/reference/http-api.md" />
               </label>
             </div>
           </section>

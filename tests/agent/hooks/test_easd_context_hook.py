@@ -19,7 +19,7 @@ def _spec() -> TraceSpecification:
             "outcome": "Every Coding turn sees the accepted EASD contract.",
             "goals": ["Preserve normative scope"],
             "non_goals": ["Replace team prompts"],
-            "source_refs": ["docs/features/evo-agent-specs.md"],
+            "source_refs": ["documents/features/evo-agent-specs.md"],
             "impact_targets": [
                 {
                     "repository": "backend",
@@ -32,7 +32,7 @@ def _spec() -> TraceSpecification:
                 {
                     "kind": "compatibility",
                     "statement": "Preserve ordinary Coding turns",
-                    "source_refs": ["docs/features/evo-agent-specs.md"],
+                    "source_refs": ["documents/features/evo-agent-specs.md"],
                 }
             ],
             "verification_commands": [

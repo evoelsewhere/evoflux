@@ -72,7 +72,7 @@ instance/
 .scrapy
 
 # Sphinx documentation
-docs/_build/
+documents/_build/
 
 # PyBuilder
 .pybuilder/
@@ -238,7 +238,7 @@ app/_web_dist/
 .DS_Store
 
 # Documentation asset-generation scripts (source HTML, not tracked)
-docs/images/scripts/
+documents/images/scripts/
 
 # Diagram source files
 .diagrams/

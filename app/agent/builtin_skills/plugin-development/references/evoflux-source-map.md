@@ -4,8 +4,8 @@ Use this map when changing the platform itself or when package behavior must be 
 
 ## Product and architecture
 
-- `docs/architecture/agent-plugins.md` — current supported behavior and architecture.
-- `docs/analysis/agent-plugins-evoflux-adoption-2026-08-09.md` — standards evaluation and rationale; prefer current source when older deferred decisions differ.
+- `documents/architecture/agent-plugins.md` — current supported behavior and architecture.
+- `documents/analysis/agent-plugins-evoflux-adoption-2026-08-09.md` — standards evaluation and rationale; prefer current source when older deferred decisions differ.
 - `/api/plugins` OpenAPI — exact current HTTP request and response contract.
 
 ## Backend ownership

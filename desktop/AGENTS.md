@@ -41,4 +41,4 @@ For normal desktop development, run `make dev-web` at the repo root first, then 
 ## Documentation pointers
 
 - Local architecture: `README.md`.
-- Release/signing/update pipeline: `../docs/research/desktop-packaging-signing.md`.
+- Release/signing/update pipeline: `../documents/research/desktop-packaging-signing.md`.

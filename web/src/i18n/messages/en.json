@@ -66,7 +66,7 @@
   "(optional)": "(optional)",
   "(This page opened an empty dialog.)": "(This page opened an empty dialog.)",
   "\u001b[31m[terminal error: {0}]\u001b[0m": "\u001b[31m[terminal error: {0}]\u001b[0m",
-  "[compatibility] Preserve the existing response shape :: docs/reference/http-api.md": "[compatibility] Preserve the existing response shape :: docs/reference/http-api.md",
+  "[compatibility] Preserve the existing response shape :: documents/reference/http-api.md": "[compatibility] Preserve the existing response shape :: documents/reference/http-api.md",
   "[data-column=\"{0}\"]": "[data-column=\"{0}\"]",
   "[data-idx=\"{0}\"]": "[data-idx=\"{0}\"]",
   "[data-preview-item]": "[data-preview-item]",

@@ -44,7 +44,7 @@ async def test_lead_tool_persists_draft_without_approving_or_implementing(
             "impact_targets": [
                 {
                     "repository": tmp_path.name,
-                    "path": "docs/spec.md",
+                    "path": "documents/spec.md",
                     "reason": "Documents the intended behavior",
                 }
             ],

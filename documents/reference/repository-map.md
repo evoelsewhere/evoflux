@@ -9,7 +9,7 @@ desktop/      Tauri/Rust shell, native capabilities and packaging
 seed/         First-install agent/config templates
 scripts/      Build, release, validation and smoke-test utilities
 tests/        Python backend, service, CLI and packaging tests
-docs/         The single project documentation root
+documents/      Project documentation and repository-owned EASD run data
 test-artifacts/  Checked-in visual evidence used by selected tests/reviews
 ```
 

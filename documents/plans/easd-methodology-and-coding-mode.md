@@ -475,7 +475,7 @@ goals:
 non_goals:
   - Distributed global rate limiting.
 source_refs:
-  - docs/plans/rate-limit.md
+  - documents/plans/rate-limit.md
 impact_targets:
   - repository: backend
     path: app/api/routes/rate_limit.py
@@ -484,7 +484,7 @@ impact_targets:
 constraints:
   - kind: compatibility
     statement: Preserve existing success response shapes.
-    source_refs: [docs/reference/http-api.md]
+    source_refs: [documents/reference/http-api.md]
 verification_commands:
   - uv run pytest --no-cov -q tests/api/routes/test_rate_limit.py
 risk_tier: cross_layer
@@ -672,5 +672,5 @@ Minimum metrics/log fields:
   `useEasdQuery.ts`, and workbench owners
 - Tests: `tests/services/test_trace_service.py`, route/team/handoff/frontend tests
 - Documentation: prior-art research (including
-  `docs/research/easd-skill-prior-art-2026-08-24.md`), this plan, current
+  `documents/research/easd-skill-prior-art-2026-08-24.md`), this plan, current
   feature/architecture/API/Help

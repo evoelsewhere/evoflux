@@ -20,7 +20,7 @@ title_service.py         Title generation
 
 - Route behavior change: keep HTTP validation in `app/api/`, durable logic here, and add route/service tests.
 - Session/history change: inspect `chat_service.py`, DB models, stream store, and web store assumptions.
-- Wiki/Dream change: inspect `docs/features/memory-and-dream.md`, manual smoke scripts, and scheduler interactions.
+- Wiki/Dream change: inspect `documents/features/memory-and-dream.md`, manual smoke scripts, and scheduler interactions.
 - File/workspace change: check traversal protection, symlink behavior, media endpoints, and tests under `tests/api/routes/test_team_*`.
 
 ## Commands

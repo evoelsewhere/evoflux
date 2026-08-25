@@ -57,11 +57,11 @@ gh issue comment <issue-number> --repo khuonghung/evoflux --body "Included in th
 
 ```bash
 git diff --name-only main..HEAD
-git diff --stat main..HEAD -- docs/features docs/architecture docs/reference docs/development README.md
+git diff --stat main..HEAD -- documents/features documents/architecture documents/reference documents/development README.md
 ```
 
-- For user-visible features, behavior changes, install/update changes, or removed/deprecated functionality, update `docs/features/README.md` first; it is the canonical feature catalogue.
-- Update the affected current-state pages under `docs/features/`, `docs/architecture/`, `docs/reference/`, or `docs/development/`. Use `docs/plans/` only for design plans, not as the implemented contract.
+- For user-visible features, behavior changes, install/update changes, or removed/deprecated functionality, update `documents/features/README.md` first; it is the canonical feature catalogue.
+- Update the affected current-state pages under `documents/features/`, `documents/architecture/`, `documents/reference/`, or `documents/development/`. Use `documents/plans/` only for design plans, not as the implemented contract.
 - Update related files as needed, such as `README.md`, installation docs, agent/team docs, operation docs, and localized in-app Help for the affected area.
 - If no documentation changes are needed, record the rationale in the release PR body (for example: `Docs: no user-facing behavior changed`).
 - Include documentation updates in the feature branch before the version bump PR is created; do not leave release-blocking docs fixes until after publishing.

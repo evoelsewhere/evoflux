@@ -318,7 +318,7 @@ def _kind(
     name = PurePosixPath(path).name
     if name == "AGENTS.md":
         return "instructions"
-    if path.startswith("docs/") or name.lower().startswith("readme"):
+    if path.startswith(("docs/", "documents/")) or name.lower().startswith("readme"):
         return "documentation"
     if "test" in {
         part.lower() for part in PurePosixPath(path).parts

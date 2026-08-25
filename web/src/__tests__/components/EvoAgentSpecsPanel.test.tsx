@@ -811,7 +811,7 @@ describe('EvoAgentSpecsPanel', () => {
         non_goals: ['Change unrelated routes'],
         source_refs: ['Backend:app/api/routes.py'],
         impact_targets: [{ repository: 'Backend', path: 'app/api/routes.py', module: 'API', reason: 'Owns the endpoint' }],
-        constraints: [{ kind: 'compatibility', statement: 'Preserve response shape', source_refs: ['docs/reference/http-api.md'] }],
+        constraints: [{ kind: 'compatibility', statement: 'Preserve response shape', source_refs: ['documents/reference/http-api.md'] }],
         used_sources: ['Backend:app/api/routes.py'],
       },
       proof: {
