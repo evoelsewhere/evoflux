@@ -60,11 +60,15 @@ Start with:
 EvoFlux follows **Specification-Driven Development (SDD)** and
 **Agent-Driven Development (ADD)**. The specification defines the intended
 contract; agents implement and verify that contract with traceable evidence.
+The named product-executable method is **EASD — Evo Agent Specification-Driven
+Development**; its product/UI name is **Evo Agent Specs**. Its normative
+lifecycle, roles, trust levels, and convergence rules live in
+`docs/reference/easd-methodology.md`.
 
 The workflow is:
 
 ```text
-discover → specify → plan → implement → verify → reconcile docs → hand off
+discover → specify → [plan when required] → implement → review → verify → reconcile docs → hand off
 ```
 
 Do not start a non-trivial implementation from a vague request. First resolve
@@ -353,12 +357,19 @@ During iteration, run the smallest focused tests named by the nearest nested
   observation/result rendering, and tests.
 - A user-visible feature change must update in-app Help under
   `web/src/help/locales/` when applicable.
-- Never commit generated sidecars, `target/`, `web/dist`, local `.evoflux/`
-  state, credentials, signing keys, or machine-specific paths.
+- Never commit generated sidecars, `target/`, `web/dist`, credentials, signing
+  keys, machine-specific paths, or local `.evoflux/` runtime state such as
+  `team_state.json`, sessions, caches, and worktrees. Repository-owned
+  `.evoflux/easd/config.json`, `.evoflux/easd/RULES.md`, the manifest-selected
+  EASD `data_directory`, repository-scoped `.evoflux/skills/easd-*/**`, and
+  normative `.evoflux/trace/**` contracts are the explicit version-controlled
+  exception. `.evoflux/easd/.local/**` remains machine-local and ignored.
 
 ## Documentation contract
 
-`docs/` is the only documentation root. Do not recreate `documents/`.
+`docs/` is the only product/contributor documentation root. The manifest-owned
+`documents/easd/` default is EASD run data, not a second documentation root; do
+not place ordinary project documentation elsewhere under `documents/`.
 
 - Current behavior belongs in `docs/features/`, `docs/architecture/`, and
   `docs/reference/`.

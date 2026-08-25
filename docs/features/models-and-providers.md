@@ -68,6 +68,24 @@ display. Provider payload shapes do not leak into the team/session API.
 Model calls can include bounded multimodal content only when both the model and
 adapter advertise support. Tool call IDs/results are normalized across APIs.
 
+## EASD role guidance for GPT-5.6 family
+
+When the Codex OAuth catalogue exposes the GPT-5.6 family, EASD benchmarks and
+high-assurance runs prefer:
+
+| Role | Model | Typical reasoning |
+|---|---|---|
+| Lead/convergence owner | `codex:gpt-5.6-sol` | high/xhigh |
+| Architect or independent verifier | `codex:gpt-5.6-sol` | high |
+| Builder mission | `codex:gpt-5.6-terra` | medium/high |
+| Narrow repeatable exploration | `codex:gpt-5.6-luna` or Terra | medium |
+
+This is a role policy, not hard-coded routing. Provider availability, visible
+models, per-agent configuration, capability validation, user overrides, and
+budget remain authoritative. Official OpenAI documentation recommends GPT-5.6
+for demanding multi-step agents, Terra for efficient read-heavy workers, and
+Luna for narrow repeatable work.
+
 ## Source and tests
 
 Primary code: `app/agent/providers/catalog.py`, `factory.py`, `capabilities.py`,

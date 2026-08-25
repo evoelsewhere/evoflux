@@ -3,12 +3,13 @@
 
   # EvoFlux
 
-  ### The local-first desktop workspace for AI agent teams.
+  ### The spec-first, local-first workspace for AI agent teams.
 
-  Give EvoFlux an outcome. A lead agent plans the work, brings in specialists,
-  uses the right tools, and verifies the result — while you stay in control.
+  Start with an outcome. Approve the specification. EvoFlux coordinates a lead
+  and specialists to implement, test, review, and converge on evidence — while
+  you stay in control.
 
-  **Cowork and coding agents. Any model. Your machine.**
+  **Cowork and coding agents. Any model. Your machine. Evidence before Done.**
 
   [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-2563EB.svg)](LICENSE)
   [![Desktop only](https://img.shields.io/badge/Product-Desktop%20only-1764FF)](desktop/)
@@ -17,13 +18,9 @@
   [![Tauri v2](https://img.shields.io/badge/Tauri-v2-FFC131?logo=tauri&logoColor=white)](desktop/)
   [![BYOM](https://img.shields.io/badge/Models-19%20providers-7C3AED)](#bring-your-own-model)
 
-  **[Download EvoFlux](#download)** ·
-  [Product tour](#product-tour) ·
-  [Quick start](#quick-start) ·
-  [Documentation](docs/README.md) ·
-  [How it works](#agent-working-model) ·
-  [Architecture](#architecture) ·
-  [Capabilities](#core-capabilities)
+  **[Get EvoFlux](#download)** ·
+  **[Evo Agent Specs](#evo-agent-specs)** ·
+  **[Watch the real EASD run](docs/images/easd-ui-end-to-end.mp4)**
 </div>
 
 <br />
@@ -269,6 +266,55 @@ the session's permissions or sandbox scope.
 
 Use `/goal` to inspect status, `/goal:budget <tokens|none>` to change the budget,
 and `/goal:pause`, `/goal:resume`, or `/goal:stop` to control the objective.
+
+### Evo Agent Specs
+
+EASD — **Evo Agent Specification-Driven Development** — combines
+Specification-Driven Development with EvoFlux's Agent-Driven Development
+runtime. Coding teams bind missions to accepted Spec and optional Plan hashes plus
+observable acceptance criteria, preserve rework and deviations, and converge only from
+persisted evidence instead of an agent's “done” claim. Each project repository
+is initialized once with Coding-only Skills, core rules, YAML templates, and a
+user-selected version-controlled data folder. Repository files—not one user's
+SQLite database—are the shared run source of truth.
+This is the executable methodology beneath EvoFlux's **spec-first Coding agent**
+workflow: the Spec recommends `direct` for eligible low-risk single-boundary
+work or `planned` when stronger coordination is required. The user approves
+that choice with the Spec and separately approves Plan when present. Review and
+final Verify remain user-controlled; evidence—not confidence—decides Done.
+Create a run from title, problem, and an optional outcome; the bound Coding lead
+drafts the full specification and driven flow in chat. Only the user can approve
+its hash, approve any required Plan, and advance Implement → Review → Verify →
+Converge.
+See the
+[EASD methodology](docs/reference/easd-methodology.md) and the implemented
+[Evo Agent Specs flow](docs/features/evo-agent-specs.md).
+
+#### Real EASD UI runs
+
+These are recordings of the local **EASD Benchmark** project using persisted
+application state—not scripted product-introduction animations.
+
+**1. Archived benchmark: Create run → Implement → Test → Review → Converge** · 20 minutes 9 seconds
+
+[![Play the real EASD end-to-end run](docs/images/easd-ui-end-to-end.jpg)](docs/images/easd-ui-end-to-end.mp4)
+
+This recording is real runtime evidence from the original benchmark and
+predates driven-flow selection, repository-owned run storage, and the separate
+Verify gate. It
+creates and accepts a real Standard-risk specification, starts its linked UI
+chat, delegates implementation to `coder#1`, merges the worktree, recovers from
+a real coordination stall through **Open active chat**, runs 33 tests and
+compile verification, completes an independent `debate#1` review, persists
+machine/review evidence for all four ACs, and reaches server-owned Convergence.
+
+**2. Board → Table → List → acceptance matrix** · 12 seconds
+
+[![Play the real EASD run inspection](docs/images/easd-ui-run-inspection.jpg)](docs/images/easd-ui-run-inspection.mp4)
+
+Switches the actual project runs workspace between all three views, then opens
+the converged benchmark run with 8 acceptance criteria, 8 missions, and 47
+persisted evidence records. Click either image to play its H.264 recording.
 
 ### Repository-local code context
 

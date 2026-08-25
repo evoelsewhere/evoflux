@@ -31,6 +31,7 @@ Status meanings:
 | Document preview | Optional | Read-only PDF/DOCX/XLSX/PPTX/HTML preview | `app/services/document_preview/` | [Workbench and files](workbench-files-and-side-chat.md) |
 | Code index and graph | Implemented | Code graph, search, agent `code_context` tool | `app/services/code_index/` | [Coding intelligence](coding-intelligence.md) |
 | LSP and Problems | Optional | Problems, rename, quick fixes, semantic actions | LSP manager/service, ChangeSets, Problems service | [Coding intelligence](coding-intelligence.md) |
+| Evo Agent Specs | Implemented | Repository-owned **Agent Specification-Driven Development** with user-approved Spec, direct/planned flow, optional Plan, Review, Verify and Converge | EASD repository store/setup/run services and API, team runtime and `EvoAgentSpecsPanel.tsx` | [Evo Agent Specs](evo-agent-specs.md) |
 | Git source control | Implemented | Changes, history, branches, stash and sync | Git routes/services and `GitWorkspacePanel.tsx` | [Git and guarded edits](git-reviews-and-guarded-edits.md) |
 | Pull/merge request review | Optional | Pull Requests panel and review sessions | review routes, code-review service, provider connections | [Git and guarded edits](git-reviews-and-guarded-edits.md) |
 | Memory facts | Implemented | Automatic recall and `memory_search` | scoped memory models/service and memory hooks | [Memory and Dream](memory-and-dream.md) |

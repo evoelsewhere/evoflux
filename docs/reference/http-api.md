@@ -29,6 +29,7 @@ external deployments should configure an access key and restrictive CORS.
 | `/api/diagnostics` | runtime/platform/path diagnostics | `diagnostics.py` |
 | `/api/team` | chat, sessions, files, terminal, projects and Coding workbench | `routes/team/` |
 | `/api/team/webbridge` | pairing, browser-panel chat, relay, bindings and Teach | `team/webbridge.py` |
+| `/api/easd` | Evo Agent Specs: specification revisions, missions, evidence, deviations and convergence | `easd.py` |
 | `/api/agents` | agent registry and editable/runtime configuration | `agents.py` |
 | `/api/skills` | Skill discovery, CRUD and runtime settings | `skills.py` |
 | `/api/mcp` | global/plugin server status and global MCP lifecycle | `mcp.py` |
@@ -62,6 +63,71 @@ The `/api/team` router includes:
 
 Use the OpenAPI document rather than copying request/response field definitions
 from this overview.
+
+## Evo Agent Specs (EASD)
+
+Evo Agent Specs routes are Coding-scoped:
+
+- `GET /api/easd/setup` returns per-repository initialization state for a
+  workspace or Coding Project. Repository state is `not_initialized`,
+  `upgrade_required`, `ready`, or `invalid`, with manifest/data/rules/skills
+  paths and the five installed skill names; no setup or bundle version is exposed;
+- `POST /api/easd/setup` initializes selected/all repositories or explicitly
+  repairs invalid setup. It installs Coding-only `easd-specify`, `easd-plan`,
+  `easd-implement`, `easd-review`, and `easd-verify` project skills under
+  `.evoflux/skills`. `data_directory` selects the safe repository-relative YAML
+  store (default `documents/easd`); legacy setups upgrade directly to the current layout without
+  `overwrite`, while invalid setup requires `overwrite=true`;
+- `POST /api/easd/generate` reads bounded authorized project context and returns
+  a non-persisted intended-outcome/Scope/Proof plus `direct|planned` flow proposal,
+  provenance/confidence, or clarifying questions. `intent.title` and
+  `intent.problem` are required; `intent.outcome` is optional and is drafted by
+  the model for `scope`/`both`. `target` may be `scope`, `proof`, or `both`;
+  cancellation is the HTTP request cancellation and never mutates a run;
+- `GET/POST /api/easd/runs` list/create runs for a workspace/project. New UI
+  clients send exactly one minimal `intent` (title, problem, optional outcome);
+  `specification` remains an exclusive compatibility input for importing an
+  already-authored full draft;
+- `GET /api/easd/runs/{id}` returns spec and plan revisions/active hashes,
+  computed AC matrix, missions, evidence, deviations, and convergence report;
+- spec revision and `/plans` create/accept endpoints preserve separate immutable
+  hash-bound contracts; a plan is valid only for its exact accepted spec hash;
+- `POST /api/easd/runs/{id}/authoring/start` atomically binds persisted Intent
+  to an authorized idle Coding session without creating or approving a spec;
+- `POST /api/easd/runs/{id}/planning/start` moves an accepted planned-flow spec into typed
+  planning; agent submission moves it to `plan_review`, but only user plan
+  acceptance establishes `planned`;
+- `POST /api/easd/runs/{id}/start` binds an authorized Coding chat and moves
+  eligible direct flow `accepted → active`; planned flow still requires the current
+  accepted Plan and moves `planned → active`;
+- `/review/start` requires terminal implementation missions and moves
+  `active → reviewing`; `/verification/start` requires terminal review missions,
+  passing review evidence, and runtime-independent evidence when required, then
+  moves `reviewing → verifying`;
+- evidence and deviation endpoints append accountable run state; callers may
+  add manual, review, or waiver evidence, while machine evidence is reserved
+  for runtime-generated CompletionContracts. Public review payloads cannot set
+  runtime reviewer identity or independence;
+- `POST /converge` accepts only `verifying` and returns either a repository-owned
+  durable report bound to the Spec and optional Plan hash, or structured `409`
+  gate reasons, including
+  `planned_verification_missing` when accepted Proof commands lack passing
+  machine evidence.
+
+Run/revision create accepts optional bounded `authoring` metadata for generated
+drafts. It records generation ID/time, provider/model/usage, confidence,
+fingerprints, applied/edited sections, and hash-addressed sources; it does not
+change lifecycle state or imply user acceptance.
+
+Run creation before full scope initialization returns `409` with
+`detail.code = easd_setup_required` and the unready repository paths.
+
+`/api/trace` remains a hidden compatibility alias for clients created before
+the EASD rename. It is not emitted in OpenAPI and new integrations must use
+`/api/easd`. Legacy database/table/mission field names remain unchanged.
+
+See [EASD architecture](../architecture/evo-agent-specs.md) for trust,
+transaction, evidence, and state rules.
 
 ## Asynchronous chat contract
 
