@@ -10,6 +10,7 @@ code is authoritative and the document should be updated in the same change.
 | Audience | Entry point | Purpose |
 |---|---|---|
 | Product and support | [Feature catalogue](features/README.md) | Every implemented product area and its owning code |
+| Product and engineering | [EASD methodology](reference/easd-methodology.md) | Normative SDD + ADD lifecycle, contracts, roles, and gates |
 | Engineers | [System overview](architecture/system-overview.md) | Processes, boundaries, and end-to-end request flow |
 | New contributors | [Repository map](reference/repository-map.md) | Where code, state, tests, and documentation live |
 | Local operators | [Configuration reference](reference/configuration.md) | Runtime directories, files, settings, and credentials |
@@ -30,6 +31,7 @@ code is authoritative and the document should be updated in the same change.
 - [SQLite concurrency](architecture/sqlite-concurrency.md)
 - [Coding-agent code context](architecture/coding-agent-code-context.md)
 - [Coding semantic intelligence](architecture/coding-semantic-intelligence.md)
+- [EASD development architecture](architecture/evo-agent-specs.md)
 - [Provider model capability flow](architecture/model-capability-flow.md)
 - [Portable Agent Plugins](architecture/agent-plugins.md)
 
@@ -39,6 +41,7 @@ code is authoritative and the document should be updated in the same change.
 - [Agent runtime and teams](features/agent-runtime-and-teams.md)
 - [Workbench, files, and Side Chat](features/workbench-files-and-side-chat.md)
 - [Coding intelligence](features/coding-intelligence.md)
+- [Evo Agent Specs](features/evo-agent-specs.md)
 - [Git, reviews, and guarded edits](features/git-reviews-and-guarded-edits.md)
 - [Memory and Dream](features/memory-and-dream.md)
 - [Goals, workflows, and scheduler](features/automation.md)
@@ -56,8 +59,10 @@ of duplicating every UI instruction.
 ## Guides and project records
 
 - `guides/` contains task-oriented operator guides.
-- `analysis/` contains dated audits and competitive/implementation analyses.
-- `research/` contains investigations and proposals.
+- `analysis/` contains dated audits and competitive/implementation analyses,
+  including the completed [EASD benchmark report](analysis/easd-benchmark-2026-08-24.md).
+- `research/` contains investigations and proposals, including the
+  [EASD repository-skill prior-art review](research/easd-skill-prior-art-2026-08-24.md).
 - `plans/` contains design plans, including plans for features that may have
   changed after implementation.
 - `releases/` contains submission and release evidence.

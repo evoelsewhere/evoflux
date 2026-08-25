@@ -1,0 +1,12 @@
+id: "<revision-uuid>"
+version: 1
+status: draft
+spec_hash: "<accepted-spec-sha256>"
+content_hash: "<sha256 of normalized plan>"
+plan:
+  review_required: false
+  integration_owner: null
+  missions: []
+authoring: null
+created_at: "<RFC3339 UTC>"
+accepted_at: null

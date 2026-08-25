@@ -26,6 +26,7 @@ test-artifacts/  Checked-in visual evidence used by selected tests/reviews
 | `app/agent/providers/` | Nineteen provider adapters and model metadata |
 | `app/agent/tools/` | Built-in and multimodal tool registry |
 | `app/agent/skills/` | Skill discovery, catalog, resolution and activation |
+| `app/easd_skills/` | Packaged EASD phase Skills, core rules, and repository-store YAML templates installed only by setup |
 | `app/agent/mcp/` | User-global MCP configuration and runtime |
 | `app/plugin_platform/` | Portable Agent Plugin lifecycle and isolated MCP |
 | `app/services/` | Business logic shared by API, CLI and agents |

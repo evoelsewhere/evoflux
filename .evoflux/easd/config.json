@@ -1,0 +1,16 @@
+{
+  "data_directory": "documents/easd",
+  "methodology": "EASD",
+  "methodology_name": "Evo Agent Specification-Driven Development",
+  "product": "Evo Agent Specs",
+  "rules_file": ".evoflux/easd/RULES.md",
+  "skills": [
+    "easd-specify",
+    "easd-plan",
+    "easd-implement",
+    "easd-review",
+    "easd-verify"
+  ],
+  "skills_directory": ".evoflux/skills",
+  "templates_directory": "documents/easd/templates"
+}
