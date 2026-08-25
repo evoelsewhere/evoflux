@@ -32,6 +32,8 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Combobox } from '@/components/ui/combobox'
+import { SelectControl } from '@/components/ui/select'
 import { GitActionSurface, type GitAction } from '@/components/git/GitActionMenu'
 import { useToastStore } from '@/stores/useToastStore'
 import { queryKeys } from '@/queries'
@@ -295,18 +297,22 @@ export function SourceControlPanel({
         <div className="flex min-h-11 shrink-0 items-center gap-2 overflow-x-auto border-b border-(--color-border) px-3 py-1.5">
           <h2 id="sc-title" className="sr-only">Source Control repository actions</h2>
           {projectWorkspaces.length > 1 ? (
-            <select
+            <Combobox
               value={workspace}
-              onChange={(event) => onWorkspaceChange?.(event.target.value)}
-              className="h-7 max-w-40 shrink-0 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[11px] font-medium text-(--color-text) outline-none focus:border-(--color-accent)"
-              aria-label="Repository"
-            >
-              {projectWorkspaces.map((item) => (
-                <option key={item.path} value={item.path}>
-                  {item.display_name || item.name || repoLabel(item.path)}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => {
+                if (value) onWorkspaceChange?.(value)
+              }}
+              items={projectWorkspaces.map((item) => ({
+                value: item.path,
+                label: item.display_name || item.name || repoLabel(item.path),
+                description: item.path,
+              }))}
+              size="sm"
+              clearable={false}
+              ariaLabel="Repository"
+              searchPlaceholder="Search repositories…"
+              className="max-w-48 shrink-0 bg-(--bg-card) text-[11px]"
+            />
           ) : null}
           {branch && (
             <span
@@ -399,19 +405,22 @@ export function SourceControlPanel({
             <label htmlFor="source-control-view" className="text-[10px] font-medium text-(--color-text-muted)">
               View
             </label>
-            <select
+            <SelectControl
               id="source-control-view"
               value={activeView}
-              onChange={(event) => setActiveView(event.target.value as typeof activeView)}
-              className="h-7 min-w-36 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[11px] font-medium text-(--color-text) outline-none focus:border-(--color-accent)"
-            >
-              <option value="changes">Changes ({files.length})</option>
-              <option value="branches">Branches ({localBranches.length})</option>
-              <option value="history">History</option>
-              <option value="stash">Stashes ({stashes.length})</option>
-              <option value="remotes">Remotes ({remotes.length})</option>
-              <option value="tags">Tags ({tags.length})</option>
-            </select>
+              onValueChange={(value) => setActiveView(value as typeof activeView)}
+              size="sm"
+              ariaLabel="Source control view"
+              className="min-w-36 bg-(--bg-card) text-[11px] font-medium"
+              options={[
+                { value: 'changes', label: `Changes (${files.length})` },
+                { value: 'branches', label: `Branches (${localBranches.length})` },
+                { value: 'history', label: 'History' },
+                { value: 'stash', label: `Stashes (${stashes.length})` },
+                { value: 'remotes', label: `Remotes (${remotes.length})` },
+                { value: 'tags', label: `Tags (${tags.length})` },
+              ]}
+            />
             <div className="min-w-0 flex-1" />
             {activeView === 'changes' && (
               <>
@@ -1702,16 +1711,17 @@ function RemotesPanel({
               {upstream ? `Tracking ${upstream}` : branch ? `${branch} has no upstream yet` : 'Choose a branch before pushing'}
             </p>
           </div>
-          <select
+          <SelectControl
             value={selectedRemote}
-            onChange={(event) => setSelectedRemote(event.target.value)}
+            onValueChange={setSelectedRemote}
             disabled={remotes.length === 0}
-            className="h-8 min-w-28 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[11px] text-(--color-text) outline-none"
-            aria-label="Remote for sync"
-          >
-            {remotes.length === 0 && <option value="origin">No remotes</option>}
-            {remotes.map((remote) => <option key={remote.name} value={remote.name}>{remote.name}</option>)}
-          </select>
+            size="sm"
+            className="min-w-28 bg-(--bg-card) text-[11px]"
+            ariaLabel="Remote for sync"
+            options={remotes.length === 0
+              ? [{ value: 'origin', label: 'No remotes' }]
+              : remotes.map((remote) => ({ value: remote.name, label: remote.name }))}
+          />
           <button
             type="button"
             disabled={remotes.length === 0 || fetchMutation.isPending}
@@ -1926,9 +1936,7 @@ function TagsPanel({ workspace }: { workspace: string }) {
         <div className="flex-1" />
         {remotes.length > 0 && (
           <>
-            <select value={remote} onChange={(event) => setRemote(event.target.value)} className="h-7 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[10px] text-(--color-text)">
-              {remotes.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
-            </select>
+            <SelectControl value={remote} onValueChange={setRemote} size="sm" ariaLabel="Remote for tags" className="min-w-24 bg-(--bg-card) text-[10px]" options={remotes.map((item) => ({ value: item.name, label: item.name }))} />
             <button
               type="button"
               disabled={pushMutation.isPending}

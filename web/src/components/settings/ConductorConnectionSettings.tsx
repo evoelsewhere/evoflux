@@ -16,6 +16,7 @@ import { SettingsCallout, SettingsGroup, SettingsRow } from '@/components/settin
 import { ManagedResourceUpdateBanner } from '@/components/settings/ManagedResourceUpdateBanner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SelectControl } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import {
   CONDUCTOR_ACTION,
@@ -136,18 +137,20 @@ export function ConductorConnectionSettings() {
           description="Report only detects drift. Enforce remediates managed resources at safe turn boundaries."
           htmlFor={enforcementId}
           control={
-            <select
+            <SelectControl
               id={enforcementId}
               value={draft.enforcement_mode}
-              onChange={(event) => setDraft({
+              onValueChange={(value) => setDraft({
                 ...draft,
-                enforcement_mode: event.target.value as ConductorSettings['enforcement_mode'],
+                enforcement_mode: value as ConductorSettings['enforcement_mode'],
               })}
-              className="h-9 rounded-md border border-(--color-border) bg-(--bg-input) px-2 text-sm"
-            >
-              <option value={CONDUCTOR_ENFORCEMENT.REPORT}>Report only</option>
-              <option value={CONDUCTOR_ENFORCEMENT.ENFORCE}>Enforce</option>
-            </select>
+              ariaLabel="Enforcement"
+              className="min-w-32 bg-(--bg-input)"
+              options={[
+                { value: CONDUCTOR_ENFORCEMENT.REPORT, label: 'Report only' },
+                { value: CONDUCTOR_ENFORCEMENT.ENFORCE, label: 'Enforce' },
+              ]}
+            />
           }
         />
         <SettingsRow

@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { SelectControl } from '@/components/ui/select'
 import type { WorkflowInputSpec } from '@/api/types'
 
 export interface RunInputsRequest {
@@ -78,34 +79,37 @@ export function RunInputsDialog({
                 </span>
               )}
               {spec.type === 'enum' ? (
-                <select
+                <SelectControl
                   value={String(values[spec.name] ?? spec.default ?? '')}
-                  onChange={(e) =>
-                    setValues((prev) => ({ ...prev, [spec.name]: e.target.value }))
+                  onValueChange={(value) =>
+                    setValues((prev) => ({ ...prev, [spec.name]: value }))
                   }
-                  className="mt-1 w-full rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
-                >
-                  <option value="">Select…</option>
-                  {(spec.options ?? []).map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
+                  ariaLabel={spec.name}
+                  className="mt-1 bg-(--bg-subtle) text-xs"
+                  options={[
+                    { value: '', label: 'Select…' },
+                    ...(spec.options ?? []).map((option) => ({
+                      value: option,
+                      label: option,
+                    })),
+                  ]}
+                />
               ) : spec.type === 'boolean' ? (
-                <select
+                <SelectControl
                   value={String(values[spec.name] ?? spec.default ?? 'false')}
-                  onChange={(e) =>
+                  onValueChange={(value) =>
                     setValues((prev) => ({
                       ...prev,
-                      [spec.name]: e.target.value === 'true',
+                      [spec.name]: value === 'true',
                     }))
                   }
-                  className="mt-1 w-full rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
-                >
-                  <option value="false">false</option>
-                  <option value="true">true</option>
-                </select>
+                  ariaLabel={spec.name}
+                  className="mt-1 bg-(--bg-subtle) text-xs"
+                  options={[
+                    { value: 'false', label: 'false' },
+                    { value: 'true', label: 'true' },
+                  ]}
+                />
               ) : (
                 <input
                   type={spec.type === 'number' ? 'number' : 'text'}

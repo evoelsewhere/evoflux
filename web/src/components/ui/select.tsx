@@ -6,14 +6,26 @@ import { cn } from "@/lib/utils"
 
 const Select = SelectPrimitive.Root
 
-function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
-  return (
-    <SelectPrimitive.Group
-      data-slot="select-group"
-      className={cn("scroll-my-1 p-1", className)}
-      {...props}
-    />
-  )
+const EMPTY_SELECT_VALUE = "__evoflux_empty_select_value__"
+
+interface SelectControlOption {
+  value: string
+  label: React.ReactNode
+  disabled?: boolean
+}
+
+interface SelectControlProps {
+  value: string | null
+  onValueChange: (value: string) => void
+  options: SelectControlOption[]
+  placeholder?: React.ReactNode
+  ariaLabel?: string
+  disabled?: boolean
+  size?: "sm" | "default"
+  className?: string
+  contentClassName?: string
+  itemClassName?: string
+  id?: string
 }
 
 function SelectValue({ className, ...props }: SelectPrimitive.Value.Props) {
@@ -96,19 +108,6 @@ function SelectContent({
   )
 }
 
-function SelectLabel({
-  className,
-  ...props
-}: SelectPrimitive.GroupLabel.Props) {
-  return (
-    <SelectPrimitive.GroupLabel
-      data-slot="select-label"
-      className={cn("px-2 py-1 text-xs font-medium text-(--color-text-muted)", className)}
-      {...props}
-    />
-  )
-}
-
 function SelectItem({
   className,
   children,
@@ -134,19 +133,6 @@ function SelectItem({
         <CheckIcon className="pointer-events-none text-(--accent-blue)" />
       </SelectPrimitive.ItemIndicator>
     </SelectPrimitive.Item>
-  )
-}
-
-function SelectSeparator({
-  className,
-  ...props
-}: SelectPrimitive.Separator.Props) {
-  return (
-    <SelectPrimitive.Separator
-      data-slot="select-separator"
-      className={cn("pointer-events-none -mx-1 my-1 h-px bg-(--color-border-subtle)", className)}
-      {...props}
-    />
   )
 }
 
@@ -186,15 +172,70 @@ function SelectScrollDownButton({
   )
 }
 
+/**
+ * Shared single-select for the common controlled-value case.
+ *
+ * Feature code should use this instead of a native `<select>` so trigger,
+ * popup, focus, keyboard and theme behavior stay consistent across Tauri and
+ * browser development. Use `Combobox` for long/searchable dynamic lists and
+ * the lower-level exports below only for custom item layouts.
+ */
+function SelectControl({
+  value,
+  onValueChange,
+  options,
+  placeholder = "Select…",
+  ariaLabel,
+  disabled,
+  size = "default",
+  className,
+  contentClassName,
+  itemClassName,
+  id,
+}: SelectControlProps) {
+  const internalValue = value === "" ? EMPTY_SELECT_VALUE : value
+  const selected = options.find((option) => option.value === value)
+
+  return (
+    <Select
+      value={internalValue}
+      onValueChange={(nextValue) => {
+        if (nextValue == null) return
+        onValueChange(
+          nextValue === EMPTY_SELECT_VALUE ? "" : String(nextValue),
+        )
+      }}
+      disabled={disabled}
+    >
+      <SelectTrigger
+        id={id}
+        aria-label={ariaLabel}
+        size={size}
+        className={cn("w-full", className)}
+      >
+        <SelectValue>{selected?.label ?? placeholder}</SelectValue>
+      </SelectTrigger>
+      <SelectContent className={contentClassName}>
+        {options.map((option) => (
+          <SelectItem
+            key={option.value || EMPTY_SELECT_VALUE}
+            value={option.value || EMPTY_SELECT_VALUE}
+            disabled={option.disabled}
+            className={itemClassName}
+          >
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
 export {
   Select,
+  SelectControl,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
-  SelectScrollDownButton,
-  SelectScrollUpButton,
-  SelectSeparator,
   SelectTrigger,
   SelectValue,
 }

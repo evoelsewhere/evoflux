@@ -35,6 +35,13 @@ export default defineConfig([
           destructuredArrayIgnorePattern: '^_',
         },
       ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "JSXOpeningElement[name.name='select']",
+          message: 'Use SelectControl/Select from components/ui/select or Combobox for searchable lists.',
+        },
+      ],
       // All product surfaces share the chat Markdown pipeline. Keeping direct
       // parser/plugin imports in one module prevents previews from drifting in
       // syntax, security policy, highlighting, and theme.
@@ -79,6 +86,14 @@ export default defineConfig([
     files: ['src/utils/markdown.tsx'],
     rules: {
       'no-restricted-imports': 'off',
+    },
+  },
+  {
+    files: ['src/__tests__/**/*.{ts,tsx}'],
+    rules: {
+      // Test doubles may use a native select to model an external component;
+      // production source remains guarded by the rule above.
+      'no-restricted-syntax': 'off',
     },
   },
 ])
