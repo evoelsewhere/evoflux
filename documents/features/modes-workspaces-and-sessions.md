@@ -71,6 +71,13 @@ transcripts, goal and live workflow projection. Cursor pagination keeps long
 history bounded. The live SSE stream then layers current activity over the
 durable replay.
 
+The primary transcript starts with a bounded 72-turn render window and reveals
+older loaded content in 24-turn batches. Earlier server history begins loading
+while the reader is still at least three viewport heights (and no less than
+1600px) from the top. A short initial transcript primes one older page after
+mount, so network latency is normally paid before fast upward scrolling reaches
+the history control. Every prepend restores the visible turn anchor.
+
 ## Primary interfaces
 
 - `/api/team/chat`, `/api/team/commands`, session CRUD/history/stream routes

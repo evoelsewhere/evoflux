@@ -50,6 +50,13 @@ registry, commands, auto-layout, responsive overlays and mobile gestures.
 Shared shell primitives in `components/shell/` own sidebars, panels, rows,
 context menus and mobile behavior.
 
+`AgentView` starts transcript rendering at 72 turns, expands locally in
+24-turn batches, and starts the earlier-history path three viewport heights
+from the top with a 1600px minimum. If the initial page has less upward scroll
+buffer, one older cursor page is primed after mount. Prepend restoration uses a
+visible turn anchor first and scroll-height delta as fallback, so look-ahead
+loading does not move the text currently under the reader.
+
 ## Streaming projection
 
 `useTeamSse` connects/reconnects the session stream and projects envelope types

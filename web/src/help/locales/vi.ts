@@ -916,6 +916,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Ctrl+R refresh danh sách session sidebar Work.',
       'Pin session để giữ chúng trên cùng, trên Today / Yesterday / Older.',
       'Filing chỉ set folder_id — history, model và workspace settings vẫn theo session.',
+      'Transcript dài preload history cũ trước mép trên vài màn hình; cuộn nhanh lên vẫn giữ đoạn đang đọc ổn định khi turn cũ xuất hiện.',
       'Tắt share_context với folder client nhạy cảm — không để tóm tắt lọt sang session khác.',
       'Đặt tên folder theo outcome (“RFP research”, “incident 4821”), không theo ngày — ngày đã nhóm chat chưa file.',
       'Unfile qua Move to folder… → none khi thread không còn thuộc sibling.'

@@ -945,6 +945,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Ctrl+R refreshes the Work sidebar session list.',
       'Pin sessions to keep them on top above Today / Yesterday / Older.',
       'Filing only sets folder_id — history, model, and workspace settings stay with the session.',
+      'Long transcripts preload earlier history several screens before the top; fast upward scrolling should keep the current text anchored while older turns appear.',
       'Turn share_context off for sensitive client folders that must not digest into siblings.',
       'Name folders by outcome (“RFP research”, “incident 4821”), not by date — dates already group unfiled chats.',
       'Unfile via Move to folder… → none when a thread no longer belongs with its siblings.'

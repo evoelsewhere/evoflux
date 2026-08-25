@@ -43,13 +43,14 @@ import { UserMessageNavigationRail } from './UserMessageNavigationRail'
 import { StreamingTurnHeader } from './StreamingTurnHeader'
 import { TranscriptHistoryControl } from './TranscriptHistoryControl'
 import { shouldShowPendingActivity } from '@/utils/transcript-layout'
+import {
+  HISTORY_INITIAL_RENDERED_TURNS,
+  HISTORY_RENDER_STEP,
+  historyLoadRearmThreshold,
+  historyLoadThreshold,
+  shouldPrimeOlderHistory,
+} from '@/utils/transcript-history'
 import type { ContentBlock, TurnChangesPending } from '@/api/types'
-
-const LOAD_OLDER_THRESHOLD = 300
-const INITIAL_RENDERED_TURNS = 48
-// Keep prepend commits small: each turn may contain expensive Markdown,
-// syntax highlighting, tool cards, and MCP app artifacts.
-const TURN_RENDER_STEP = 12
 
 function findUserMessageNavigationAnchor(
   container: HTMLDivElement,
@@ -185,7 +186,7 @@ const AssistantTranscriptTurn = memo(function AssistantTranscriptTurn({
 })
 
 export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, onAddSelectionToChat, onRequestSelectionDetails, onSendToSideChat, turnChanges }: AgentViewProps) {
-  const [renderedTurnCount, setRenderedTurnCount] = useState(INITIAL_RENDERED_TURNS)
+  const [renderedTurnCount, setRenderedTurnCount] = useState(HISTORY_INITIAL_RENDERED_TURNS)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
   const prevScrollHeightRef = useRef<number | null>(null)
   const prevScrollTopRef = useRef<number | null>(null)
@@ -197,7 +198,10 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     behavior: ScrollBehavior
   } | null>(null)
   const topLoadArmedRef = useRef(true)
+  const primedHistorySessionRef = useRef<string | null>(null)
   const loadingOlder = useTeamStore((state) => state._loadingOlder)
+  const hasMoreHistory = useTeamStore((state) => state.hasMore)
+  const nextHistoryCursor = useTeamStore((state) => state.nextCursor)
 
   const handleRevert = useCallback(() => {
     void useTeamStore.getState().undoTeam()
@@ -287,11 +291,12 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   }, [blocks.length])
 
   const handleViewportScroll = useCallback((element: HTMLDivElement) => {
-    if (element.scrollTop > LOAD_OLDER_THRESHOLD * 2) {
+    const loadThreshold = historyLoadThreshold(element.clientHeight)
+    if (element.scrollTop > historyLoadRearmThreshold(element.clientHeight)) {
       topLoadArmedRef.current = true
       return
     }
-    if (element.scrollTop > LOAD_OLDER_THRESHOLD || !topLoadArmedRef.current) return
+    if (element.scrollTop > loadThreshold || !topLoadArmedRef.current) return
 
     topLoadArmedRef.current = false
     if (hiddenTurnCount > 0) {
@@ -299,7 +304,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
       prevScrollTopRef.current = element.scrollTop
       prependAnchorRef.current = captureTranscriptPrependAnchor(element)
       pendingRestoreRef.current = true
-      setRenderedTurnCount((count) => Math.min(turnItems.length, count + TURN_RENDER_STEP))
+      setRenderedTurnCount((count) => Math.min(turnItems.length, count + HISTORY_RENDER_STEP))
       return
     }
     if (!useTeamStore.getState().hasMore || useTeamStore.getState()._loadingOlder) return
@@ -326,6 +331,34 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     onScrollFrame: handleViewportScroll,
   })
 
+  // Prime one older server page when the initial transcript is shorter than
+  // the upward buffer. This moves network latency off the user's first fast
+  // scroll while preserving the same anchor-based prepend behavior.
+  useEffect(() => {
+    if (!sessionId || isEmpty || primedHistorySessionRef.current === sessionId) return
+    const frame = requestAnimationFrame(() => {
+      const element = scrollRef.current
+      if (!element || primedHistorySessionRef.current === sessionId) return
+      if (loadingOlder) return
+      primedHistorySessionRef.current = sessionId
+      if (!shouldPrimeOlderHistory({
+        canLoadOlder: hasMoreHistory && Boolean(nextHistoryCursor),
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+      })) return
+      loadOlderMessages(element)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [
+    hasMoreHistory,
+    isEmpty,
+    loadOlderMessages,
+    loadingOlder,
+    nextHistoryCursor,
+    scrollRef,
+    sessionId,
+  ])
+
   const showEarlierTurns = useCallback(() => {
     const element = scrollRef.current
     if (element) {
@@ -334,7 +367,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
       prependAnchorRef.current = captureTranscriptPrependAnchor(element)
       pendingRestoreRef.current = true
     }
-    setRenderedTurnCount((count) => Math.min(turnItems.length, count + TURN_RENDER_STEP))
+    setRenderedTurnCount((count) => Math.min(turnItems.length, count + HISTORY_RENDER_STEP))
   }, [scrollRef, turnItems.length])
 
   const loadOlderFromControl = useCallback(() => {
@@ -343,6 +376,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
 
   useLayoutEffect(() => {
     topLoadArmedRef.current = true
+    primedHistorySessionRef.current = null
     historyLoadStartBlockCountRef.current = null
     pendingRestoreRef.current = false
     prevScrollHeightRef.current = null
@@ -434,7 +468,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
          <div className="space-y-4">
               <TranscriptHistoryControl
                 hiddenTurnCount={hiddenTurnCount}
-                revealStep={TURN_RENDER_STEP}
+                revealStep={HISTORY_RENDER_STEP}
                 onRevealLoaded={showEarlierTurns}
                 onLoadOlder={loadOlderFromControl}
               />
