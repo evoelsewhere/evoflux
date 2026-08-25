@@ -170,3 +170,64 @@ The bundle intentionally has no scripts, MCP dependencies, network operations,
 or built-in registration. This keeps activation local to repositories that have
 explicitly initialized EASD and leaves every security/state mutation at the
 existing EvoFlux service boundary.
+
+## Information-architecture extension — 2026-08-25
+
+The initial EASD store only standardized `templates/` and `runs/`. A second
+audit reviewed how established spec-first systems separate living contracts,
+active changes, reusable project knowledge, and historical evidence.
+
+### Additional source evidence
+
+| Source | Snapshot | Observed structure | EASD implication |
+|---|---|---|---|
+| [OpenSpec concepts](https://github.com/Fission-AI/OpenSpec/blob/f1b521dffac38ed6638689cd28b0c204b1eef0f1/docs/concepts.md) | `f1b521d`, 2026-08-21 | `openspec/specs/<domain>/spec.md` is current behavior; `openspec/changes/<change>/` contains proposal, design, tasks and delta specs; completed changes move under `changes/archive/` | Separate living specifications from change/run evidence. Do not use an execution folder as the only discoverable spec catalogue. |
+| [Spec Kit plan template](https://github.com/github/spec-kit/blob/27f50f7e6b618ea14d74dd4037f9e7c60218b16c/templates/plan-template.md) | `27f50f7`, 2026-08-21 | Each feature-local spec directory can contain plan, research, data model, quickstart, contracts and tasks | Keep change-specific planning together, but route stable API/config contracts into a living reference section when the change ships. |
+| [Agent OS product planning](https://github.com/buildermethods/agent-os/blob/cae8e664fb59a01869718c3151e0f45b7a06a2fb/commands/agent-os/plan-product.md) | `cae8e66`, 2026-05-05 | `agent-os/product/` holds mission, roadmap and tech stack; standards are separately indexed | Preserve a small set of stable project-level knowledge sections instead of loading every historical run. |
+| [Agent OS spec shaping](https://github.com/buildermethods/agent-os/blob/cae8e664fb59a01869718c3151e0f45b7a06a2fb/commands/agent-os/shape-spec.md) | `cae8e66`, 2026-05-05 | A timestamped spec folder groups plan, shape, standards, references and visuals | EASD Runs already provide the self-contained change folder; avoid adding parallel top-level `changes/`, `tasks/` or `archive/` trees. |
+
+### Taxonomy decision
+
+`<data_directory>` is the repository-local EASD knowledge base. Its stable
+sections are available without forcing a migration of documentation that the
+repository already owns elsewhere:
+
+| Section | Authority and retention |
+|---|---|
+| `specs/` | Accepted, behavior-first normative specifications, indexed independently from Runs. |
+| `features/` | Current shipped product behavior and ownership; reconciled at Converge. |
+| `architecture/` | Current system/trust/storage/concurrency boundaries; ADR-style decisions live in `architecture/decisions/`. |
+| `reference/` | Exact API, configuration, schema, CLI and repository contracts. |
+| `guides/` | Task-oriented human/operator workflows that are not normative product behavior. |
+| `development/` | Contributor, test, build and release procedures. |
+| `runs/` | Active and completed EASD change ledgers: Intent, Plan, missions, evidence, deviations, events and convergence. |
+| `records/` | Non-normative analysis, research, historical plans and release evidence. |
+| `templates/` | Current shapes used to create each supported artifact. |
+| `images/` | Media referenced by knowledge-base Markdown. |
+
+The required initialized core is `specs`, `features`, `architecture`,
+`reference`, `runs`, and `templates`. The remaining sections are standardized
+and indexed so repositories can add them without inventing new roots, but they
+may contain only their README until needed.
+
+### Deliberately rejected folders
+
+- No top-level `changes/`: `runs/` already owns active and completed changes.
+- No top-level `plans/`: accepted implementation plans are Run-bound; historical
+  methodology/design plans belong in `records/plans/`.
+- No top-level `tasks/` or `evidence/`: missions and evidence are meaningful only
+  when bound to a Run, Spec hash and repository snapshot.
+- No separate `archive/`: terminal Run status plus `records/` preserve history
+  without moving paths and breaking references.
+- No automatic migration or mirroring of an existing `docs/`, `documents/`, or
+  custom documentation tree. Setup creates the EASD skeleton only; existing
+  project knowledge remains authoritative until maintainers explicitly adopt or
+  link it.
+
+### Publication rule
+
+Draft Spec revisions remain inside their Run while awaiting review. User
+acceptance publishes an immutable, hash-identical copy into `specs/` and updates
+only that Spec's small current-revision index. The Run-local copy remains the
+audit snapshot. This is intentional immutable denormalization, not two mutable
+sources of truth: a hash mismatch is a repository conflict.
