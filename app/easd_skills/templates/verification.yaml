@@ -1,0 +1,16 @@
+id: "<verification-uuid>"
+run_id: "<run-uuid>"
+spec_hash: "<accepted-spec-sha256>"
+criterion_ids: []
+producer: "<runtime verifier identity>"
+kind: machine
+result: inconclusive
+summary: "<verification result>"
+delegation_task_id: null
+revision: "<git revision>"
+artifact_hash: "<snapshot sha256>"
+payload:
+  verification:
+    completion_contract: {}
+source_key: "<stable idempotency key>"
+created_at: "<RFC3339 UTC>"

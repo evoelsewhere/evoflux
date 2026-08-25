@@ -23,7 +23,7 @@ from app.agent.mode.team.member import TeamLead, TeamMember
 from app.agent.mode.team.reject import make_team_reject_tool
 from app.agent.mode.team.team import AgentTeam
 from app.core import db as db_module
-from app.models.chat import SessionMessage
+from app.models.chat import ChatSession, SessionMessage
 from app.models.team import DelegationTask
 from tests.agent.mode.team.conftest import MockTeamProvider
 
@@ -315,6 +315,161 @@ async def test_isolated_handoff_waits_for_lead_merge_then_finalizes(
 
     assert (repo / "feature.txt").read_text(encoding="utf-8") == "isolated\n"
     assert _git(repo, "status", "--porcelain") == ""
+    await team.stop()
+
+
+@pytest.mark.asyncio
+async def test_trace_worktree_evidence_is_imported_only_after_lead_merge(
+    tmp_path: Path,
+):
+    from app.services import trace_service
+    from app.services.trace_contracts import TracePlan, TraceSpecification
+
+    repo = _git_repo(tmp_path)
+    team = await _make_team("coder#1")
+    team.mode = "coding"
+    team.workspace = str(repo)
+    specification = TraceSpecification.model_validate(
+        {
+            "schema_version": 1,
+            "title": "Merge-gated evidence",
+            "problem": "Unreviewed worktree evidence could satisfy convergence.",
+            "outcome": "Evidence is imported only after the lead accepts the merge.",
+            "impact_targets": [
+                {
+                    "repository": repo.name,
+                    "path": "feature.txt",
+                    "reason": "The mission owns this file.",
+                }
+            ],
+            "criteria": [
+                {
+                    "id": "AC-1",
+                    "statement": "The accepted worktree changes feature.txt.",
+                }
+            ],
+        }
+    )
+    async with db_module.async_session_factory() as db:
+        run = await trace_service.create_run(
+            db,
+            workspace=str(repo),
+            title=specification.title,
+            risk_tier="standard",
+            specification=specification,
+        )
+        draft = (await trace_service.run_detail(db, run.id))["revisions"][0]
+        revision = await trace_service.accept_revision(
+            db,
+            run_id=run.id,
+            revision_id=draft["id"],
+            expected_hash=draft["content_hash"],
+        )
+        plan = TracePlan.model_validate(
+            {
+                "spec_hash": revision.content_hash,
+                "missions": [
+                    {
+                        "id": "M1",
+                        "kind": "implementation",
+                        "title": "Implement AC-1",
+                        "goal": "Implement the accepted worktree change.",
+                        "acceptance_criteria": ["AC-1"],
+                        "target_repositories": [repo.name],
+                        "target_paths": ["feature.txt"],
+                        "expected_output": "Code and verification.",
+                    },
+                    {
+                        "id": "M2",
+                        "kind": "review",
+                        "title": "Review AC-1",
+                        "goal": "Review the integrated worktree change.",
+                        "acceptance_criteria": ["AC-1"],
+                        "target_repositories": [repo.name],
+                        "target_paths": ["feature.txt"],
+                        "depends_on": ["M1"],
+                        "expected_output": "Cited review evidence.",
+                    },
+                ],
+            }
+        )
+        plan_revision = await trace_service.create_plan_revision(
+            db, run_id=run.id, plan=plan
+        )
+        await trace_service.accept_plan_revision(
+            db,
+            run_id=run.id,
+            revision_id=plan_revision.id,
+            expected_hash=plan_revision.content_hash,
+        )
+        run_session = ChatSession(
+            agent_name="lead",
+            mode="coding",
+            workspace=str(repo),
+        )
+        db.add(run_session)
+        await db.flush()
+        await trace_service.start_run_in_session(
+            db, run_id=run.id, session_id=run_session.id
+        )
+        await db.commit()
+
+    delegate = make_team_delegate_tool(team.mailbox, "lead", team)
+    delegated = await delegate(
+        to=["coder#1"],
+        goal="Implement isolated EASD feature",
+        expected_output="Code and verification",
+        target_paths=["feature.txt"],
+        isolation="worktree",
+        trace_run_id=str(run.id),
+        trace_spec_hash=revision.content_hash,
+        trace_plan_hash=plan_revision.content_hash,
+        plan_mission_id="M1",
+        acceptance_criteria=["AC-1"],
+        target_repos=[repo.name],
+    )
+    assert "Task delegated" in delegated
+    task = (await _tasks(team))[0]
+    allocation = task.spec["worktree_allocation"]
+    task_workspace = Path(allocation["repositories"][0]["workspace"])
+    (task_workspace / "feature.txt").write_text("accepted\n", encoding="utf-8")
+
+    handoff = make_team_handoff_tool(
+        team.mailbox,
+        "coder#1",
+        role="member",
+        team=team,
+    )
+    delivered = await handoff(
+        to=["lead"],
+        task_id=str(task.id),
+        summary="The isolated EASD implementation is ready for lead review.",
+        findings=["feature.txt updated in the assigned worktree"],
+        verified=True,
+        verification_method="read feature.txt",
+        criteria_results=[
+            {
+                "criterion_id": "AC-1",
+                "result": "passed",
+                "summary": "The worktree contains the accepted value.",
+            }
+        ],
+    )
+    assert "Handoff delivered" in delivered
+
+    async with db_module.async_session_factory() as db:
+        before_merge = await trace_service.run_detail(db, run.id)
+    assert before_merge["missions"][0]["status"] == "review"
+    assert before_merge["evidence"] == []
+
+    await team.merge_delegation_worktree(str(task.id))
+
+    async with db_module.async_session_factory() as db:
+        after_merge = await trace_service.run_detail(db, run.id)
+    assert after_merge["missions"][0]["status"] == "completed"
+    assert len(after_merge["evidence"]) == 1
+    assert after_merge["evidence"][0]["kind"] == "manual"
+    assert after_merge["evidence"][0]["criterion_ids"] == ["AC-1"]
     await team.stop()
 
 

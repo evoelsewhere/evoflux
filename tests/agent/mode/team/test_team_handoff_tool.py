@@ -13,7 +13,11 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from app.agent.mode.team.handoff import HandoffArtifact, make_team_handoff_tool
+from app.agent.mode.team.handoff import (
+    CriterionResult,
+    HandoffArtifact,
+    make_team_handoff_tool,
+)
 from app.agent.mode.team.mailbox import TeamMailbox
 
 
@@ -38,6 +42,7 @@ class TestHandoffArtifactSchema:
         assert artifact.confidence is None
         assert artifact.next_actions == []
         assert artifact.raw_data is None
+        assert artifact.criteria_results == []
 
     def test_full_artifact(self):
         """All fields populated."""
@@ -53,6 +58,17 @@ class TestHandoffArtifactSchema:
         assert len(artifact.findings) == 3
         assert artifact.confidence == 0.85
         assert artifact.status == "final"
+
+    def test_trace_criterion_result_schema(self):
+        result = CriterionResult(
+            criterion_id="AC-1",
+            result="passed",
+            summary="Focused test passed.",
+        )
+        artifact = HandoffArtifact(
+            summary="EASD mission completed.", criteria_results=[result]
+        )
+        assert artifact.criteria_results[0].criterion_id == "AC-1"
 
     def test_partial_status(self):
         """Partial handoff for incremental delivery."""

@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from uuid import uuid7  # ty: ignore[unresolved-import] - backported in app.__init__
 
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.agent.tools.registry import Tool
 
@@ -130,6 +130,58 @@ class TaskSpec(BaseModel):
         default="auto",
         description="Task complexity used for adaptive reasoning and verification.",
     )
+    trace_run_id: str | None = Field(
+        default=None,
+        description="EASD Development Run UUID for this mission.",
+    )
+    trace_spec_hash: str | None = Field(
+        default=None,
+        min_length=64,
+        max_length=64,
+        description="Exact accepted EASD specification hash.",
+    )
+    trace_plan_hash: str | None = Field(
+        default=None,
+        min_length=64,
+        max_length=64,
+        description="Exact accepted EASD implementation plan hash.",
+    )
+    plan_mission_id: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=64,
+        description="Stable mission ID from the accepted EASD plan.",
+    )
+    acceptance_criteria: list[str] = Field(
+        default_factory=list,
+        description="EASD acceptance criterion IDs owned by this mission.",
+    )
+    evidence_policy: dict = Field(
+        default_factory=dict,
+        description="Mission-specific evidence requirements copied into the contract.",
+    )
+
+    @model_validator(mode="after")
+    def _trace_fields_are_complete(self) -> "TaskSpec":
+        base_values = (
+            bool(self.trace_run_id),
+            bool(self.trace_spec_hash),
+            bool(self.acceptance_criteria),
+        )
+        plan_values = (bool(self.trace_plan_hash), bool(self.plan_mission_id))
+        if any((*base_values, *plan_values)) and not all(base_values):
+            raise ValueError(
+                "EASD delegation requires trace_run_id, trace_spec_hash, and "
+                "acceptance_criteria together"
+            )
+        if any(plan_values) and not all(plan_values):
+            raise ValueError(
+                "Planned EASD delegation requires trace_plan_hash and "
+                "plan_mission_id together; direct flow omits both"
+            )
+        if len(set(self.acceptance_criteria)) != len(self.acceptance_criteria):
+            raise ValueError("EASD acceptance_criteria must be unique")
+        return self
 
 
 # ── Tool description ─────────────────────────────────────────────────────────
@@ -182,9 +234,7 @@ def format_delegation_message(
     if spec.context:
         formatted_lines.append(f"**Context:** {spec.context}")
     if len(spec.peer_recipients) > 1:
-        formatted_lines.append(
-            "**Parallel peers:** " + ", ".join(spec.peer_recipients)
-        )
+        formatted_lines.append("**Parallel peers:** " + ", ".join(spec.peer_recipients))
         formatted_lines.append(
             "**Parallel contract:** Work independently against the full task brief; "
             "do not assume peers cover missing parts unless Context explicitly "
@@ -204,6 +254,24 @@ def format_delegation_message(
         formatted_lines.append(
             f"**Target repositories:** {', '.join(spec.target_repos)}"
         )
+    if spec.trace_run_id:
+        formatted_lines.extend(
+            [
+                f"**EASD run:** {spec.trace_run_id}",
+                f"**EASD spec:** {spec.trace_spec_hash}",
+                "**EASD acceptance criteria:** " + ", ".join(spec.acceptance_criteria),
+                "**EASD contract:** Report every assigned criterion in the final "
+                "team_handoff criteria_results. Record any scope/spec drift in "
+                "deviations; do not silently expand the contract.",
+            ]
+        )
+        if spec.trace_plan_hash and spec.plan_mission_id:
+            formatted_lines.extend(
+                [
+                    f"**EASD plan:** {spec.trace_plan_hash}",
+                    f"**EASD plan mission:** {spec.plan_mission_id}",
+                ]
+            )
     allocation = spec.worktree_allocation
     if isinstance(allocation, dict):
         repositories = [
@@ -361,6 +429,36 @@ def make_team_delegate_tool(
                 )
             ),
         ] = "auto",
+        trace_run_id: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Optional EASD Development Run UUID. When provided, "
+                    "Spec identity and acceptance_criteria are required; planned "
+                    "flow additionally supplies Plan hash and mission ID."
+                )
+            ),
+        ] = None,
+        trace_spec_hash: Annotated[
+            str | None,
+            Field(description="Exact accepted EASD specification SHA-256 hash."),
+        ] = None,
+        trace_plan_hash: Annotated[
+            str | None,
+            Field(description="Exact accepted EASD plan SHA-256 hash."),
+        ] = None,
+        plan_mission_id: Annotated[
+            str | None,
+            Field(description="Stable mission ID from the accepted EASD plan."),
+        ] = None,
+        acceptance_criteria: Annotated[
+            list[str],
+            Field(description="EASD criterion IDs this mission owns."),
+        ] = [],  # noqa: B006
+        evidence_policy: Annotated[
+            dict,
+            Field(description="Optional EASD mission evidence requirements."),
+        ] = {},  # noqa: B006
     ) -> str:
         """Delegate a structured task with explicit acceptance criteria."""
         from app.agent.mode.team.mailbox import Message
@@ -403,8 +501,7 @@ def make_team_delegate_tool(
         for name in requested:
             target = (
                 team.resolve_delegation_recipient(name)
-                if team is not None
-                and hasattr(team, "resolve_delegation_recipient")
+                if team is not None and hasattr(team, "resolve_delegation_recipient")
                 else _resolve(team, mailbox, name, agent_name)
             )
             if target is None and team is not None and name in team.blueprints:
@@ -413,7 +510,9 @@ def make_team_delegate_tool(
                     try:
                         spawned = await team.spawn(name, confirm=True)
                     except Exception as exc:  # noqa: BLE001 - tool boundary
-                        logger.exception("team_delegate_auto_spawn_failed name={}", name)
+                        logger.exception(
+                            "team_delegate_auto_spawn_failed name={}", name
+                        )
                         errors.append(f"Could not auto-spawn blueprint '{name}': {exc}")
                         continue
                     target = spawned.name
@@ -451,23 +550,32 @@ def make_team_delegate_tool(
 
         # Build task spec. Runtime-owned context keeps the shared objective in
         # every member brief even when the lead writes a terse summary.
-        spec = TaskSpec(
-            goal=goal,
-            expected_output=expected_output,
-            constraints=list(constraints),
-            context=context,
-            parent_request=parent_request,
-            peer_recipients=list(resolved),
-            priority=priority,
-            depends_on=list(depends_on),
-            deadline_at=deadline_at,
-            target_paths=normalized_targets,
-            exclusive_paths=exclusive_paths,
-            isolation=isolation,
-            resolved_isolation=resolved_isolation,
-            target_repos=list(target_repos),
-            complexity=complexity,
-        )
+        try:
+            spec = TaskSpec(
+                goal=goal,
+                expected_output=expected_output,
+                constraints=list(constraints),
+                context=context,
+                parent_request=parent_request,
+                peer_recipients=list(resolved),
+                priority=priority,
+                depends_on=list(depends_on),
+                deadline_at=deadline_at,
+                target_paths=normalized_targets,
+                exclusive_paths=exclusive_paths,
+                isolation=isolation,
+                resolved_isolation=resolved_isolation,
+                target_repos=list(target_repos),
+                complexity=complexity,
+                trace_run_id=trace_run_id,
+                trace_spec_hash=trace_spec_hash,
+                trace_plan_hash=trace_plan_hash,
+                plan_mission_id=plan_mission_id,
+                acceptance_criteria=list(acceptance_criteria),
+                evidence_policy=dict(evidence_policy),
+            )
+        except ValueError as exc:
+            return f"Error: {exc}"
         spec_json = spec.model_dump(mode="json", exclude_none=True)
 
         if team is not None:
@@ -479,7 +587,7 @@ def make_team_delegate_tool(
                     dependencies=list(depends_on),
                     deadline_at=deadline_at,
                 )
-            except (TypeError, ValueError) as exc:
+            except (TypeError, ValueError, RuntimeError) as exc:
                 return f"Error: {exc}"
             task_ids = [str(task.id) for task in tasks]
             try:
@@ -532,8 +640,7 @@ def make_team_delegate_tool(
         queued = [
             recipient
             for recipient in resolved
-            if recipient not in blocked_recipients
-            and recipient_was_working[recipient]
+            if recipient not in blocked_recipients and recipient_was_working[recipient]
         ]
         states: list[str] = []
         if running:
@@ -545,8 +652,7 @@ def make_team_delegate_tool(
             )
         if blocked_recipients:
             states.append(
-                "Blocked on dependencies: "
-                f"{', '.join(sorted(blocked_recipients))}."
+                f"Blocked on dependencies: {', '.join(sorted(blocked_recipients))}."
             )
         return f"Task delegated to {', '.join(resolved)}. {' '.join(states)}{suffix}"
 

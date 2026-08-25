@@ -8,6 +8,13 @@ from .chat import (
 from .goal import SessionGoal
 from .memory import MemoryExtractionState, MemoryFact, MemoryFactEvidence
 from .team import DelegationTask
+from .trace import (
+    TraceDeviation,
+    TraceEvidence,
+    TracePlanRevision,
+    TraceRun,
+    TraceSpecRevision,
+)
 from .workflow import (
     WorkflowApproval,
     WorkflowExecution,
@@ -35,6 +42,11 @@ __all__ = [
     "SessionMessage",
     "ScheduledTask",
     "SessionGoal",
+    "TraceDeviation",
+    "TraceEvidence",
+    "TracePlanRevision",
+    "TraceRun",
+    "TraceSpecRevision",
     "WorkflowApproval",
     "WorkflowExecution",
     "WorkflowGateRequest",

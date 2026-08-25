@@ -39,6 +39,15 @@ class DelegationTask(SQLModel, table=True):
             nullable=False,
         )
     )
+    trace_run_id: UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey("trace_runs.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        ),
+    )
     delegator: str = Field(sa_column=Column(sa.String(100), nullable=False))
     recipient: str = Field(sa_column=Column(sa.String(100), nullable=False))
     # blocked | pending | review | completed | cancelled | failed

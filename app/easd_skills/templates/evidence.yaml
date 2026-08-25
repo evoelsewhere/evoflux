@@ -1,0 +1,12 @@
+id: "<evidence-uuid>"
+run_id: "<run-uuid>"
+spec_hash: "<accepted-spec-sha256>"
+criterion_ids: []
+producer: "<runtime or human identity>"
+kind: manual
+result: inconclusive
+summary: "<observable result>"
+revision: null
+artifact_hash: null
+payload: {}
+created_at: "<RFC3339 UTC>"
