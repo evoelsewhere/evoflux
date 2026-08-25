@@ -41,7 +41,16 @@ def test_initialize_repository_creates_stable_easd_contract(tmp_path):
         "templates_directory": "documents/easd/templates",
     }
     assert (tmp_path / ".evoflux" / "easd" / "RULES.md").is_file()
-    assert (tmp_path / "documents" / "easd" / "README.md").is_file()
+    data_readme = (tmp_path / "documents" / "easd" / "README.md").read_text(
+        encoding="utf-8"
+    )
+    assert "## Document skeleton" in data_readme
+    assert ".evoflux/easd/config.json" in data_readme
+    assert "<slug>--<run-uuid>" in data_readme
+    assert "specifications/0001.yaml" in data_readme
+    assert "events/<sequence>-<event-uuid>.yaml" in data_readme
+    assert "Direct flow leaves `plans/` empty" in data_readme
+    assert "Accepted Spec/Plan revisions" in data_readme
     assert (tmp_path / "documents" / "easd" / "runs").is_dir()
     assert {
         item.name for item in (tmp_path / "documents" / "easd" / "templates").iterdir()

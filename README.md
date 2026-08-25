@@ -286,6 +286,65 @@ Create a run from title, problem, and an optional outcome; the bound Coding lead
 drafts the full specification and driven flow in chat. Only the user can approve
 its hash, approve any required Plan, and advance Implement → Review → Verify →
 Converge.
+
+#### Repository store skeleton
+
+Initialization creates one portable contract and one version-controlled run
+store in every repository. The data directory defaults to `documents/easd`.
+
+```text
+<repository>/
+├── .evoflux/
+│   ├── easd/
+│   │   ├── config.json                 # paths, methodology, installed Skills
+│   │   ├── RULES.md                    # normative EASD rules
+│   │   ├── .gitignore                  # ignores .local/
+│   │   └── .local/                     # rebuildable locks/session bindings
+│   └── skills/
+│       └── easd-{specify,plan,implement,review,verify}/
+│           ├── SKILL.md                # phase operating contract
+│           └── .evoflux.json           # Coding-mode scope
+└── <data_directory>/                   # default: documents/easd
+    ├── README.md                       # store contract and skeleton
+    ├── templates/                      # current document shapes
+    │   ├── intent.yaml
+    │   ├── specification.yaml
+    │   ├── plan.yaml
+    │   ├── run.yaml
+    │   ├── mission.yaml
+    │   ├── review.yaml
+    │   ├── verification.yaml
+    │   ├── evidence.yaml
+    │   ├── deviation.yaml
+    │   └── event.yaml
+    └── runs/
+        └── <slug>--<run-uuid>/
+            ├── run.yaml                # current lifecycle projection + hash
+            ├── intent.yaml             # title, problem, optional outcome
+            ├── specifications/
+            │   └── 0001.yaml           # immutable after acceptance
+            ├── plans/
+            │   └── 0001.yaml           # planned flow only
+            ├── missions/
+            │   └── <mission-uuid>.yaml
+            ├── reviews/
+            │   └── <evidence-uuid>.yaml
+            ├── verifications/
+            │   └── <evidence-uuid>.yaml
+            ├── evidence/
+            │   └── <evidence-uuid>.yaml
+            ├── deviations/
+            │   └── <deviation-uuid>.yaml
+            ├── events/
+            │   └── <sequence>-<event-uuid>.yaml
+            └── convergence.yaml        # created only after Converge
+```
+
+`run.yaml` is the CAS-protected lifecycle projection. Accepted Spec/Plan
+revisions and convergence are immutable; events and evidence are append-only.
+Everything under the configured data directory is collaboration state intended
+for Git. Only `.evoflux/easd/.local/` is machine-local and ignored.
+
 See the
 [EASD methodology](documents/reference/easd-methodology.md) and the implemented
 [Evo Agent Specs flow](documents/features/evo-agent-specs.md).
