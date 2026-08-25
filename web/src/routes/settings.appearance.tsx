@@ -5,7 +5,7 @@ import { ThemeToggle } from '@/components/ThemeToggle'
 import { MotionPreview } from '@/components/settings/MotionPreview'
 import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/settings/SettingsLayout'
 import { DiscreteSlider } from '@/components/ui/discrete-slider'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { SelectControl } from '@/components/ui/select'
 import { useI18n, type AppLocale } from '@/i18n'
 import { cn } from '@/lib/utils'
 import {
@@ -81,17 +81,17 @@ export function AppearanceSettingsPage() {
           label="Display language"
           description="Choose the language used across EvoFlux. Changes apply immediately and stay on this machine."
           control={
-            <NativeSelect
-              platformNative
+            <SelectControl
               value={locale}
-              aria-label="Display language"
-              onChange={(event) => setLocale(event.target.value as AppLocale)}
+              ariaLabel="Display language"
+              onValueChange={(value) => setLocale(value as AppLocale)}
               className="min-w-40"
-            >
-              <NativeSelectOption value="en" data-i18n-ignore>English</NativeSelectOption>
-              <NativeSelectOption value="vi" data-i18n-ignore>Tiếng Việt</NativeSelectOption>
-              <NativeSelectOption value="ja" data-i18n-ignore>日本語</NativeSelectOption>
-            </NativeSelect>
+              options={[
+                { value: 'en', label: <span data-i18n-ignore>English</span> },
+                { value: 'vi', label: <span data-i18n-ignore>Tiếng Việt</span> },
+                { value: 'ja', label: <span data-i18n-ignore>日本語</span> },
+              ]}
+            />
           }
         />
         <SettingsRow

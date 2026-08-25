@@ -61,6 +61,16 @@ focus trapping for modals and sufficient touch targets. The shell is
 mobile-first and supports safe areas, edge swipes and overlay panels. Desktop
 hover behavior must have a keyboard/touch equivalent.
 
+## Selection controls
+
+Production feature code must not render a native HTML `<select>`. Short or
+fixed single-choice lists use `SelectControl` from `components/ui/select`;
+custom item layouts use the lower-level primitives in the same module;
+long dynamic lists that benefit from filtering use the shared `Combobox`.
+These Base UI controls own the themed trigger/popup, portal layering, focus,
+keyboard navigation, disabled state and accessible combobox semantics. ESLint
+guards this boundary so OS-native dropdown styling cannot reappear unnoticed.
+
 ## Verification
 
 Run frontend lint/typecheck and focused component tests. For shell, motion,

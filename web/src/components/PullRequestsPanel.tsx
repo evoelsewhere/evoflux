@@ -59,10 +59,8 @@ import {
 } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select'
+import { Combobox } from '@/components/ui/combobox'
+import { SelectControl } from '@/components/ui/select'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { Switch } from '@/components/ui/switch'
 import { openExternalUrl } from '@/lib/open-external'
@@ -757,18 +755,19 @@ function ReviewLifecycleDialog({
             )}
             <label className="block space-y-1.5 text-xs text-(--color-text-muted)">
               <span>Merge strategy</span>
-              <NativeSelect
+              <SelectControl
                 value={mergeMethod}
-                onChange={(event) => setMergeMethod(event.target.value)}
+                onValueChange={setMergeMethod}
+                ariaLabel="Merge strategy"
                 className="w-full"
-              >
-                <NativeSelectOption value="">Provider default</NativeSelectOption>
-                {mergeMethods.map((method) => (
-                  <NativeSelectOption key={method.value} value={method.value}>
-                    {method.label}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+                options={[
+                  { value: '', label: 'Provider default' },
+                  ...mergeMethods.map((method) => ({
+                    value: method.value,
+                    label: method.label,
+                  })),
+                ]}
+              />
             </label>
             <label className="block space-y-1.5 text-xs text-(--color-text-muted)">
               <span>Commit title (optional)</span>
@@ -1684,22 +1683,21 @@ export function ConnectionDialog({
             <span className="text-xs font-medium text-(--color-text-muted)">
               Provider
             </span>
-            <NativeSelect
+            <SelectControl
               className="w-full"
               value={provider}
-              onChange={(event) => {
-                const nextProvider = event.target.value as GitServerProvider
+              onValueChange={(value) => {
+                const nextProvider = value as GitServerProvider
                 setProvider(nextProvider)
                 setDomain(suggestedServerDomain(target, nextProvider))
                 setTested(false)
               }}
-            >
-              {PROVIDERS.map((item) => (
-                <NativeSelectOption key={item.value} value={item.value}>
-                  {item.label}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              ariaLabel="Provider"
+              options={PROVIDERS.map((item) => ({
+                value: item.value,
+                label: item.label,
+              }))}
+            />
           </label>
           <label className="grid gap-1">
             <span className="text-xs font-medium text-(--color-text-muted)">
@@ -2426,24 +2424,24 @@ export function PullRequestsPanel({
               className="h-8 bg-(--bg-card) pl-8 text-xs"
             />
           </div>
-          <NativeSelect
+          <Combobox
             value={repositoryFilter}
-            onChange={(event) => setRepositoryFilter(event.target.value)}
-            className="h-8 min-w-44 flex-1 bg-(--bg-card) text-xs"
-            aria-label="Filter by repository"
-          >
-            <NativeSelectOption value="all">
-              All repositories
-            </NativeSelectOption>
-            {(reviews.data?.repositories ?? []).map((repository) => (
-              <NativeSelectOption
-                key={repository.workspace_id}
-                value={repository.workspace_id}
-              >
-                {repository.repository ?? repository.name}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            onValueChange={(value) => {
+              if (value) setRepositoryFilter(value)
+            }}
+            items={[
+              { value: 'all', label: 'All repositories' },
+              ...(reviews.data?.repositories ?? []).map((repository) => ({
+                value: repository.workspace_id,
+                label: repository.repository ?? repository.name,
+              })),
+            ]}
+            size="sm"
+            clearable={false}
+            className="min-w-44 flex-1 bg-(--bg-card) text-xs"
+            ariaLabel="Filter by repository"
+            searchPlaceholder="Search repositories…"
+          />
         </div>
       </header>
 

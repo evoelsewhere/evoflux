@@ -1,6 +1,7 @@
 import { ArrowLeft, Database, Globe2, Printer, ShieldAlert, ZoomIn } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { SelectControl } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import type { BrowserPreferences } from './browserPreferences'
 
@@ -115,20 +116,22 @@ export function DirectBrowserSettingsView({
             title="Browser profile"
             description="Applies to newly created tabs"
             action={(
-              <select
+              <SelectControl
                 value={preferences.profileMode}
                 disabled={!active}
-                onChange={(event) => onPreferencesChange({
+                onValueChange={(value) => onPreferencesChange({
                   ...preferences,
-                  profileMode: event.target.value as BrowserPreferences['profileMode'],
+                  profileMode: value as BrowserPreferences['profileMode'],
                 })}
-                className="h-8 rounded-md border border-(--color-border) bg-(--bg-key) px-2 text-xs text-(--color-text)"
-                aria-label="Browser profile mode"
-              >
-                <option value="shared">Shared</option>
-                <option value="session">Per session</option>
-                <option value="incognito">Incognito</option>
-              </select>
+                size="sm"
+                className="min-w-32 bg-(--bg-key) text-xs"
+                ariaLabel="Browser profile mode"
+                options={[
+                  { value: 'shared', label: 'Shared' },
+                  { value: 'session', label: 'Per session' },
+                  { value: 'incognito', label: 'Incognito' },
+                ]}
+              />
             )}
           />
           <SettingsRow

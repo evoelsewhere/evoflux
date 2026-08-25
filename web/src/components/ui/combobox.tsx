@@ -13,11 +13,9 @@ export interface ComboboxItem {
 }
 
 /**
- * A searchable single-select — the native `<select>`/`NativeSelect` swapped
- * in wherever the option list is long enough that scrolling to find one
- * (a project's units, its modules, ...) is worse than typing to filter.
- * Small, fixed-length lists (a pipeline picker, a case-set toggle) should
- * stay `NativeSelect` — this isn't a blanket replacement.
+ * A searchable single-select used wherever the option list is long enough
+ * that scrolling to find one (a project's units, its modules, ...) is worse
+ * than typing to filter. Small, fixed-length lists should use `SelectControl`.
  *
  * Wraps `@base-ui/react/combobox` (already a dependency, used by `Select`)
  * with the same trigger/popup token language as `select.tsx` so it reads

@@ -19,6 +19,7 @@ import {
 import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SelectControl } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
@@ -165,20 +166,22 @@ export function BrowserSettingsPage() {
           label={t('Browser profile')}
           description={t('Choose whether sign-in and site data are shared, isolated per chat, or discarded on close.')}
           control={
-            <select
+            <SelectControl
               value={preferences.profileMode}
               disabled={!preferences.enabled}
-              onChange={(event) => patchBuiltIn(
+              onValueChange={(value) => patchBuiltIn(
                 'profileMode',
-                event.target.value as BrowserPreferences['profileMode'],
+                value as BrowserPreferences['profileMode'],
               )}
-              className="h-8 rounded-md border border-(--color-border) bg-(--bg-key) px-2 text-xs text-(--color-text)"
-              aria-label={t('Built-in browser profile mode')}
-            >
-              <option value="shared">{t('Shared')}</option>
-              <option value="session">{t('Per session')}</option>
-              <option value="incognito">{t('Incognito')}</option>
-            </select>
+              size="sm"
+              className="min-w-32 bg-(--bg-key) text-xs"
+              ariaLabel={t('Built-in browser profile mode')}
+              options={[
+                { value: 'shared', label: t('Shared') },
+                { value: 'session', label: t('Per session') },
+                { value: 'incognito', label: t('Incognito') },
+              ]}
+            />
           }
         />
         <SettingsRow
