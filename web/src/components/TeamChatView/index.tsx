@@ -75,6 +75,7 @@ import { useDirectBrowserPresence } from '@/components/BrowserViewer/useDirectBr
 import { areWebBridgeDefaultsEnabled } from '@/components/BrowserViewer/browserPreferences'
 import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
 import { WorkbenchDock, WorkbenchSurface } from '@/components/workbench/WorkbenchDock'
+import type { EasdRunChatRequest } from '@/components/EvoAgentSpecsPanel'
 import { useSideChat } from '../SideChatPanel/useSideChat'
 import type {
   AgentCapabilities as AgentCapabilitiesType,
@@ -104,6 +105,14 @@ import {
   codeReviewSessionTags,
   parseCodeReviewSessionTags,
 } from '@/lib/code-review-session'
+
+const EASD_PHASE_COPY: Record<EasdRunChatRequest['phase'], { noun: string; started: string }> = {
+  authoring: { noun: 'Specification', started: 'Specification drafting' },
+  planning: { noun: 'Plan', started: 'EASD planning' },
+  implementation: { noun: 'Implementation', started: 'EASD implementation' },
+  review: { noun: 'Review', started: 'EASD review' },
+  verification: { noun: 'Verification', started: 'EASD verification' },
+}
 
 const WorkspaceFilesPanel = lazy(() =>
   import('@/components/WorkspaceFilesPanel').then((module) => ({
@@ -167,6 +176,11 @@ const PluginCenterPanel = lazy(() =>
 const ProblemsPanel = lazy(() =>
   import('@/components/ProblemsPanel').then((module) => ({
     default: module.ProblemsPanel,
+  })),
+)
+const EvoAgentSpecsPanel = lazy(() =>
+  import('@/components/EvoAgentSpecsPanel').then((module) => ({
+    default: module.EvoAgentSpecsPanel,
   })),
 )
 const loadSplitWorkbench = () =>
@@ -442,6 +456,9 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const updateWorkbenchTab = useUIStore((s) => s.updateWorkbenchTab)
   const workspaceFileRequest = useUIStore((s) => s.workspaceFileRequest)
   const clearWorkspaceFileRequest = useUIStore((s) => s.clearWorkspaceFileRequest)
+  const easdChatRequest = useUIStore((s) => s.easdChatRequest)
+  const requestEasdChat = useUIStore((s) => s.requestEasdChat)
+  const clearEasdChatRequest = useUIStore((s) => s.clearEasdChatRequest)
   const wikiOpen = workbenchTabs.some((tab) => tab.tool === 'wiki')
   const browserOpen = workbenchTabs.some((tab) => tab.tool === 'browser')
   const sideChatOpen = workbenchTabs.some((tab) => tab.tool === 'side-chat')
@@ -1460,6 +1477,76 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       )
     : null
 
+  const handleEasdRunInChat = useCallback((request: EasdRunChatRequest) => {
+    requestEasdChat(request)
+    useUIStore.getState().closeWorkbench()
+    if (request.sessionId === sessionIdState) return
+    const focusId = codingFocusId({
+      project_id: request.projectId,
+      workspace: request.workspace,
+    })
+    navigate(
+      focusId
+        ? {
+            to: '/coding/$focusId/$sessionId',
+            params: { focusId, sessionId: request.sessionId },
+          }
+        : { to: '/$sessionId', params: { sessionId: request.sessionId } },
+    )
+  }, [navigate, requestEasdChat, sessionIdState])
+
+  useEffect(() => {
+    if (
+      !easdChatRequest
+      || easdChatRequest.sessionId !== sessionIdState
+      || isSessionLoading
+    ) return
+    clearEasdChatRequest(easdChatRequest.id)
+    useUIStore.getState().closeWorkbench()
+    if (!easdChatRequest.prompt) {
+      pushToast({ tone: 'info', title: 'Opened the run’s linked chat' })
+      return
+    }
+    const current = useTeamStore.getState()
+    if (!easdChatRequest.autoSend || current.isTeamWorking) {
+      const phaseCopy = EASD_PHASE_COPY[easdChatRequest.phase]
+      inputRef.current?.setValue(easdChatRequest.prompt)
+      inputRef.current?.focus()
+      pushToast({
+        tone: 'info',
+        title: current.isTeamWorking
+          ? 'Chat is already running'
+          : `${phaseCopy.noun} prompt ready`,
+        description: current.isTeamWorking
+          ? 'The resume prompt is ready to queue or send after the current turn.'
+          : 'Review the kickoff prompt, then send when ready.',
+      })
+      return
+    }
+    inputRef.current?.setValue('')
+    void current.sendMessage(easdChatRequest.prompt, undefined, {
+      mode: 'coding',
+      workspace: easdChatRequest.workspace,
+      model: (current.sessionModel ?? selectedModel) || null,
+      thinkingLevel: (current.sessionThinkingLevel ?? selectedThinkingLevel) || null,
+      fastMode: current.sessionFastMode,
+    }).then(() => {
+      const error = useTeamStore.getState().error
+      const phaseCopy = EASD_PHASE_COPY[easdChatRequest.phase]
+      pushToast(error
+        ? { tone: 'error', title: `${phaseCopy.started} could not start`, description: error }
+        : { tone: 'success', title: `${phaseCopy.started} started in chat` })
+    })
+  }, [
+    clearEasdChatRequest,
+    easdChatRequest,
+    isSessionLoading,
+    pushToast,
+    selectedModel,
+    selectedThinkingLevel,
+    sessionIdState,
+  ])
+
   // Workbench lives in AppShell's full-height trailing column so opening it
   // constrains both the conversation canvas and the compact topbar.
   const workbenchPanel = (
@@ -1520,6 +1607,17 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                 onClose={() => closeWorkbenchTool('graph')}
                 projectId={projectIdState}
               />
+            </WorkbenchSurface>
+            <WorkbenchSurface tool="easd">
+              {(_tab, active) => (
+                <EvoAgentSpecsPanel
+                  workspace={workspace}
+                  projectId={projectIdState}
+                  sessionId={sessionIdState}
+                  active={active}
+                  onRunInChat={handleEasdRunInChat}
+                />
+              )}
             </WorkbenchSurface>
           </>
         )}

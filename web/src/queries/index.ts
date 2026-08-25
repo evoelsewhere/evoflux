@@ -4,6 +4,8 @@ export { useTeamAgentsQuery } from './useAgentsQuery'
 export { useTeamStatusQuery } from './useTeamStatusQuery'
 export {
   useTeamSessionsQuery,
+  useCodingWorkspaceSessionsQuery,
+  useProjectSessionsQuery,
   useDeleteTeamSessionMutation,
   useDuplicateTeamSessionMutation,
   useUpdateTeamSessionTitleMutation,
@@ -103,6 +105,25 @@ export {
   useInstallSeedMutation,
 } from './useProvidersQuery'
 export { queryKeys } from './keys'
+export {
+  useAcceptEasdPlanRevisionMutation,
+  useAcceptEasdRevisionMutation,
+  useAddEasdDeviationMutation,
+  useAddEasdEvidenceMutation,
+  useConvergeEasdRunMutation,
+  useCreateEasdRunMutation,
+  useCreateEasdRevisionMutation,
+  useEasdRunQuery,
+  useEasdRunsQuery,
+  useEasdSetupQuery,
+  useGenerateEasdScopeAndProofMutation,
+  useInitializeEasdSetupMutation,
+  useStartEasdRunInChatMutation,
+  useStartEasdPlanningMutation,
+  useStartEasdReviewMutation,
+  useStartEasdSpecAuthoringMutation,
+  useStartEasdVerificationMutation,
+} from './useEasdQuery'
 export {
   useLanguageServersQuery,
   useInstallLanguageServerMutation,
