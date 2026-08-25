@@ -77,10 +77,15 @@ gate be attempted.
 ## Repository source of truth
 
 `.evoflux/easd/config.json` selects a safe repository-relative data directory.
-The owning repository stores Intent, Spec/Plan revisions, lifecycle events,
-mission snapshots, reviews, verifications, evidence, deviations, and
-convergence as version-controlled YAML. Accepted revision content is immutable;
-mutable projections use generation/hash compare-and-swap and atomic rename.
+That directory is the EASD knowledge base: `specs/` holds published accepted
+behavior contracts; `features/`, `architecture/`, and `reference/` hold adopted
+living knowledge; `runs/` stores change execution; and `records/` is historical.
+Setup creates missing skeleton files but never moves or copies existing project
+documentation. The owning repository stores Intent, Spec/Plan revisions,
+lifecycle events, mission snapshots, reviews, verifications, evidence,
+deviations, and convergence as version-controlled YAML. Accepted revision
+content is immutable; mutable projections use generation/hash compare-and-swap
+and atomic rename.
 
 Application SQLite and `.evoflux/easd/.local/` may hold only rebuildable runtime
 projection, locks, or session bindings. They do not define shared status. Git
@@ -104,7 +109,9 @@ submission changes the run to human review; it does not authorize execution.
 
 The specification contains goals, non-goals, sources, affected targets, typed
 constraints, planned verification commands, risk tier, and ACs with evidence
-policies. Acceptance freezes a normalized revision and hash.
+policies. Acceptance freezes a normalized revision and hash, retains the
+Run-local audit snapshot, and publishes the same accepted content hash into the
+common `specs/` catalogue.
 
 Before acceptance, the user may ask the EASD authoring agent to propose Scope
 and Proof from authorized repository context. This is analysis, not authority:

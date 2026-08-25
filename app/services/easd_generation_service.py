@@ -42,6 +42,21 @@ _MAX_FILES_INCLUDED = 32
 _MAX_FILE_BYTES = 14_000
 _MAX_CONTEXT_CHARS = 260_000
 _MAX_REPOSITORY_MAP_CHARS = 80_000
+_MAX_EASD_MANIFEST_BYTES = 64 * 1024
+_EASD_SKELETON_SECTIONS = frozenset(
+    {
+        "architecture",
+        "development",
+        "features",
+        "guides",
+        "images",
+        "records",
+        "reference",
+        "runs",
+        "specs",
+        "templates",
+    }
+)
 _EXCLUDED_DIRECTORIES = frozenset(
     {
         ".git",
@@ -344,11 +359,49 @@ def _intent_tokens(intent: EasdGenerationIntent) -> set[str]:
     }
 
 
+def _configured_easd_data_parts(root: Path) -> tuple[str, ...] | None:
+    manifest = root / ".evoflux" / "easd" / "config.json"
+    try:
+        if (
+            manifest.is_symlink()
+            or not manifest.is_file()
+            or manifest.stat().st_size > _MAX_EASD_MANIFEST_BYTES
+        ):
+            return None
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    value = payload.get("data_directory") if isinstance(payload, dict) else None
+    if not isinstance(value, str):
+        return None
+    relative = PurePosixPath(value.replace("\\", "/"))
+    if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+        return None
+    return relative.parts
+
+
+def _is_easd_scaffold(relative: str, data_parts: tuple[str, ...] | None) -> bool:
+    if data_parts is None:
+        return False
+    parts = PurePosixPath(relative).parts
+    if parts[: len(data_parts)] != data_parts:
+        return False
+    tail = parts[len(data_parts) :]
+    if tail in {("README.md",), ("index.yaml",)}:
+        return True
+    if not tail:
+        return False
+    if tail[0] == "templates":
+        return True
+    return tail[-1] == "README.md" and tail[0] in _EASD_SKELETON_SECTIONS
+
+
 def _discover_repository(
     repository: GenerationRepository,
     tokens: set[str],
 ) -> tuple[list[str], list[tuple[int, Path, str]]]:
     root = repository.path.resolve(strict=True)
+    easd_data_parts = _configured_easd_data_parts(root)
     paths: list[str] = []
     scored: list[tuple[int, Path, str]] = []
     for current, directories, files in os.walk(root, followlinks=False):
@@ -368,6 +421,8 @@ def _discover_repository(
             paths.append(relative)
             if len(paths) >= _MAX_FILES_DISCOVERED:
                 break
+            if _is_easd_scaffold(relative, easd_data_parts):
+                continue
             suffix = path.suffix.lower()
             if name not in _ALWAYS_NAMES and suffix not in _TEXT_SUFFIXES:
                 continue

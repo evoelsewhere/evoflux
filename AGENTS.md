@@ -368,8 +368,9 @@ During iteration, run the smallest focused tests named by the nearest nested
 ## Documentation contract
 
 `documents/` is the only product/contributor documentation root. The
-manifest-owned `documents/easd/` subtree is EASD run data, not product or
-contributor documentation.
+manifest-owned `documents/easd/` subtree is this repository's EASD knowledge
+skeleton and Run data. EASD setup must not move or copy existing current docs
+into that subtree; adoption is an explicit accepted change.
 
 - Current behavior belongs in `documents/features/`, `documents/architecture/`, and
   `documents/reference/`.

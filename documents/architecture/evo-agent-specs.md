@@ -18,7 +18,14 @@ portable project-skill artifacts:
 .evoflux/easd/config.json
 .evoflux/easd/RULES.md
 .evoflux/easd/.local/                 # ignored, rebuildable
-<data_directory>/templates/*.yaml    # default documents/easd
+<data_directory>/README.md            # taxonomy + authority
+<data_directory>/index.yaml
+<data_directory>/specs/               # published accepted Specs
+<data_directory>/features/
+<data_directory>/architecture/decisions/
+<data_directory>/reference/
+<data_directory>/{guides,development,records,images}/
+<data_directory>/templates/           # YAML + Markdown shapes
 <data_directory>/runs/<slug>--<uuid>/
 .evoflux/skills/easd-{specify,plan,implement,review,verify}/SKILL.md
 .evoflux/skills/easd-*/.evoflux.json
@@ -33,10 +40,11 @@ repository is in the active workspace/project.
 
 The service rejects symlink/path escapes, invalid Skill frontmatter or scope,
 oversized files and malformed manifests. A legacy or incomplete setup reports
-`upgrade_required`; upgrade writes the current layout, fills missing artifacts, and preserves
-existing valid edited skills. Invalid setup requires an explicit overwrite
-repair. Project readiness is computed across all live project repositories; run
-creation fails closed until every member is ready.
+`upgrade_required`; upgrade writes missing skeleton artifacts and preserves
+existing valid edited Skills and project documentation at their original paths.
+Setup never migrates or mirrors an existing docs tree. Invalid setup requires an
+explicit overwrite repair. Project readiness is computed across all live
+project repositories; run creation fails closed until every member is ready.
 Skills are procedural context only: service/tool/hook validation remains the
 authority for state, repository access, approval, evidence, and convergence.
 Chat handoff prompts select one exact phase Skill through the existing
@@ -84,6 +92,7 @@ snapshot requires a second replacement confirmation.
 ```mermaid
 flowchart LR
     Draft[Draft specification] --> Accept[Accepted immutable revision]
+    Accept --> Catalogue[Common specs catalogue]
     Accept --> Context[EASD context hook]
     Accept --> Mission[DelegationTask mission]
     Mission --> Work[Agent + path claim/worktree]
@@ -105,7 +114,12 @@ The owning repository is the EASD source of truth:
 
 | Repository document | Responsibility |
 |---|---|
-| `run.yaml` | lifecycle projection, driven flow, active revisions, CAS generation/hash |
+| `index.yaml` and section READMEs | knowledge taxonomy, navigation and authority boundaries |
+| `specs/<slug>--<run-id>/index.yaml` | current accepted revision/hash for one published Run Spec |
+| `specs/<slug>--<run-id>/revisions/NNNN.yaml` | immutable published accepted Spec content; hash-identical to the Run snapshot |
+| `features/`, `architecture/`, `reference/` | adopted living current-state knowledge reconciled by applicable Runs |
+| `records/` | non-normative analysis/research/plans/release evidence |
+| `run.yaml` | lifecycle projection, driven flow, active revisions, common Spec index reference, and CAS generation/hash |
 | `intent.yaml` | original human problem/outcome input |
 | `specifications/NNNN.yaml` | immutable-content Spec revisions and authoring provenance |
 | `plans/NNNN.yaml` | planned-flow revisions; absent for direct flow |
@@ -116,8 +130,11 @@ The owning repository is the EASD source of truth:
 | `convergence.yaml` | final deterministic gate report |
 
 Writes use repository-contained temporary files, atomic rename, local process
-locks, and expected document hashes. A stale collaborator snapshot fails with a
-reload/review conflict. Append-only artifact IDs make Git merges inspectable.
+locks, and expected document hashes. Spec acceptance publishes the common
+revision and CAS-updates its index after the database commit; an idempotent
+accept retry repairs missing publication. A stale collaborator snapshot fails
+with a reload/review conflict. Append-only artifact IDs make Git merges
+inspectable.
 Exactly one repository owns a multi-repo run; repository-qualified Scope may
 still reference every authorized project member.
 

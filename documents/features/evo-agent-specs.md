@@ -37,7 +37,9 @@ EASD separates two responsibilities:
    mandatory for multi-repo, cross-layer, security, persistence/migration,
    compatibility, concurrency, and critical boundaries. Edit by saving a newer
    draft, then explicitly choose **Approve specification**. This user action
-   accepts both the immutable Spec hash and its flow.
+   accepts both the immutable Spec hash and its flow. Acceptance also publishes
+   a hash-identical immutable copy into the repository's common `specs/`
+   catalogue; the Run-local revision remains its audit snapshot.
 7. For `planned`, choose **Run plan in chat**. EvoFlux moves `accepted → planning`
    and selects `easd-plan`. The lead compiles a typed acyclic mission graph from
    the exact accepted spec hash, then calls the lead-only `easd_submit_plan`
@@ -91,16 +93,21 @@ setup.
 |---|---|
 | `.evoflux/easd/config.json` | bootstrap manifest for the configured data directory, rules, templates, and skill bundle |
 | `.evoflux/easd/RULES.md` | normative core rules shared by every phase Skill |
-| `<data_directory>/templates/*.yaml` | standard Intent, Spec, Plan, Run, mission/evidence/review/verification/deviation/event shapes |
+| `<data_directory>/index.yaml` and section READMEs | EASD knowledge-base navigation, authority and retention contract |
+| `<data_directory>/specs/` | discoverable accepted Specs with immutable revisions and a small current-revision index |
+| `<data_directory>/{features,architecture,reference}/` | adopted living product behavior, boundaries and exact contracts |
+| `<data_directory>/{guides,development,records,images}/` | task guidance, contributor procedures, historical records and media |
+| `<data_directory>/templates/` | standard YAML and Markdown artifact shapes |
 | `<data_directory>/runs/<slug>--<uuid>/` | version-controlled lifecycle, revisions, status history, missions, evidence, deviations, and convergence |
 | `.evoflux/easd/.local/` | ignored rebuildable locks/index/session bindings; never normative |
 | `.evoflux/skills/easd-{specify,plan,implement,review,verify}/SKILL.md` | portable EASD phase guidance discovered only in this repository |
 | `.evoflux/skills/easd-*/.evoflux.json` | limits the EASD skills to Coding mode |
 
 Run creation returns `409 easd_setup_required` until the entire selected scope
-is ready. Legacy setups upgrade directly to the current layout without version
-selection and without replacing existing valid edited skills. Invalid configuration or skills
-are never silently overwritten; repair requires an explicit action.
+is ready. Legacy Run-only setups report `upgrade_required` and add only missing
+knowledge skeleton/templates without replacing existing valid edited Skills or
+moving/copying repository documentation. Invalid configuration, symlinks or
+Skills are never silently overwritten; repair requires an explicit action.
 
 The installed skills are not global seeds or EvoFlux built-ins. Standard skill
 precedence makes them available only when their authorized repository is part

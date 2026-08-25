@@ -8,8 +8,11 @@ description: Independently review an EASD implementation against its accepted sp
 ## Repository contract
 
 Read `.evoflux/easd/config.json`, its `rules_file`, and the current run under
-`data_directory` before phase work. Repository documents are the shared source
-of truth. Stop on a missing file, stale hash, or generation conflict; never
+`data_directory` before phase work. Confirm the common `specs/` revision and
+Run-local accepted snapshot have the same hash. Inspect affected living
+`features/`, `architecture/`, and `reference/` documents plus existing project
+docs at their original paths. Repository documents are the shared source of
+truth. Stop on a missing file, stale hash, or generation conflict; never
 reconstruct authority from chat memory or SQLite. Review is mandatory for both
 `direct` and `planned`; independence remains risk-driven.
 

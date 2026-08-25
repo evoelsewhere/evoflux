@@ -1,0 +1,8 @@
+id: "<owning-run-uuid>"
+title: "<specification title>"
+status: accepted
+current_revision: 1
+current_hash: "<accepted-spec-sha256>"
+current_path: revisions/0001.yaml
+owning_run_id: "<run-uuid>"
+updated_at: "<RFC3339 UTC>"

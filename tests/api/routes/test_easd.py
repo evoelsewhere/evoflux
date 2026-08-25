@@ -169,6 +169,31 @@ def test_easd_api_create_accept_start_evidence_and_converge(client, tmp_path):
     )
     assert accepted.status_code == 200
     assert accepted.json()["status"] == "accepted"
+    catalog_directory = next(
+        (tmp_path / "documents" / "easd" / "specs").glob(f"*--{run_id}")
+    )
+    catalog_index = yaml.safe_load((catalog_directory / "index.yaml").read_text())
+    published_revision = yaml.safe_load(
+        (catalog_directory / catalog_index["current_path"]).read_text()
+    )
+    assert catalog_index["current_hash"] == draft["content_hash"]
+    assert published_revision["content_hash"] == draft["content_hash"]
+
+    (catalog_directory / catalog_index["current_path"]).unlink()
+    (catalog_directory / "revisions").rmdir()
+    (catalog_directory / "index.yaml").unlink()
+    catalog_directory.rmdir()
+    repaired = client.post(
+        f"/api/easd/runs/{run_id}/revisions/{draft['id']}/accept",
+        json={"expected_hash": draft["content_hash"]},
+    )
+    assert repaired.status_code == 200
+    assert (
+        next((tmp_path / "documents" / "easd" / "specs").glob(f"*--{run_id}"))
+        .joinpath("index.yaml")
+        .is_file()
+    )
+
     _approve_plan(client, client.get(f"/api/easd/runs/{run_id}").json())
     active = _start_run(client, str(tmp_path), run_id, session["id"])
     assert active.status_code == 200
@@ -220,6 +245,7 @@ def test_easd_api_create_accept_start_evidence_and_converge(client, tmp_path):
     stored_run = yaml.safe_load((run_directory / "run.yaml").read_text())
     assert stored_run["status"] == "converged"
     assert stored_run["delivery_flow"]["mode"] == "planned"
+    assert stored_run["spec_catalog_index"].endswith(f"--{run_id}/index.yaml")
     assert len(list((run_directory / "specifications").glob("*.yaml"))) == 1
     assert len(list((run_directory / "plans").glob("*.yaml"))) == 1
     assert len(list((run_directory / "evidence").glob("*.yaml"))) == 1

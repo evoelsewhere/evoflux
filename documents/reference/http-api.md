@@ -75,9 +75,11 @@ Evo Agent Specs routes are Coding-scoped:
 - `POST /api/easd/setup` initializes selected/all repositories or explicitly
   repairs invalid setup. It installs Coding-only `easd-specify`, `easd-plan`,
   `easd-implement`, `easd-review`, and `easd-verify` project skills under
-  `.evoflux/skills`. `data_directory` selects the safe repository-relative YAML
-  store (default `documents/easd`); legacy setups upgrade directly to the current layout without
-  `overwrite`, while invalid setup requires `overwrite=true`;
+  `.evoflux/skills`. `data_directory` selects the safe repository-relative EASD
+  knowledge base (default `documents/easd`) containing common Specs, living
+  knowledge sections, templates and Runs. Legacy Run-only setups add missing
+  skeleton files without moving existing project docs or requiring `overwrite`;
+  invalid setup requires `overwrite=true`;
 - `POST /api/easd/generate` reads bounded authorized project context and returns
   a non-persisted intended-outcome/Scope/Proof plus `direct|planned` flow proposal,
   provenance/confidence, or clarifying questions. `intent.title` and
@@ -91,7 +93,9 @@ Evo Agent Specs routes are Coding-scoped:
 - `GET /api/easd/runs/{id}` returns spec and plan revisions/active hashes,
   computed AC matrix, missions, evidence, deviations, and convergence report;
 - spec revision and `/plans` create/accept endpoints preserve separate immutable
-  hash-bound contracts; a plan is valid only for its exact accepted spec hash;
+  hash-bound contracts; Spec acceptance also publishes an immutable
+  hash-identical common-catalogue revision, while a plan is valid only for its
+  exact accepted spec hash;
 - `POST /api/easd/runs/{id}/authoring/start` atomically binds persisted Intent
   to an authorized idle Coding session without creating or approving a spec;
 - `POST /api/easd/runs/{id}/planning/start` moves an accepted planned-flow spec into typed

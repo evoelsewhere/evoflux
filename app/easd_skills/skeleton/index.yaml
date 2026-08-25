@@ -1,0 +1,21 @@
+methodology: EASD
+product: Evo Agent Specs
+sections:
+  specs: specs
+  features: features
+  architecture: architecture
+  reference: reference
+  guides: guides
+  development: development
+  records: records
+  images: images
+  templates: templates
+  runs: runs
+authority:
+  normative: specs
+  current_state:
+    - features
+    - architecture
+    - reference
+  execution: runs
+  historical: records

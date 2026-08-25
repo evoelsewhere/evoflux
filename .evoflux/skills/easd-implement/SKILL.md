@@ -8,11 +8,14 @@ description: Implement bounded work for an active EASD run under its accepted sp
 ## Repository contract
 
 Read `.evoflux/easd/config.json`, its `rules_file`, and the current run under
-`data_directory` before phase work. Repository documents are the shared source
-of truth. Stop on a missing file, stale hash, or generation conflict; never
-reconstruct authority from chat memory or SQLite. For `planned`, bind work to
-the accepted Plan mission. For `direct`, bind only to accepted Spec/AC/scope and
-never invent a Plan identity.
+`data_directory` before phase work. Resolve the accepted Spec through the common
+`specs/` index and confirm it matches the Run snapshot. Use `features/`,
+`architecture/`, and `reference/` only for living knowledge the accepted change
+actually affects; existing external docs remain in place. Repository documents
+are the shared source of truth. Stop on a missing file, stale hash, or generation
+conflict; never reconstruct authority from chat memory or SQLite. For `planned`,
+bind work to the accepted Plan mission. For `direct`, bind only to accepted
+Spec/AC/scope and never invent a Plan identity.
 
 Implement only the active accepted contract and the mission or ownership scope
 assigned to this agent. EvoFlux runtime checks remain authoritative even when
