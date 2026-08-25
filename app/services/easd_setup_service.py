@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
+import yaml
+
 from app.agent.skills.discovery import MAX_SKILL_FILE_BYTES
 from app.agent.skills.validation import parse_skill_definition
 from app.core.skill_scope import (
@@ -18,8 +20,10 @@ from app.core.skill_scope import (
 )
 from app.easd_skills import (
     EASD_SKILL_NAMES,
+    EASD_SKELETON_FILES,
     EASD_TEMPLATE_NAMES,
     read_easd_rules,
+    read_easd_skeleton,
     read_easd_skill,
     read_easd_template,
 )
@@ -32,6 +36,7 @@ EASD_LOCAL_GITIGNORE = EASD_DIRECTORY / ".gitignore"
 DEFAULT_EASD_DATA_DIRECTORY = Path("documents/easd")
 EASD_SKILLS_DIRECTORY = Path(".evoflux/skills")
 _MAX_MANIFEST_BYTES = 64 * 1024
+_MAX_SKELETON_FILE_BYTES = 256 * 1024
 
 EasdSetupState = Literal[
     "not_initialized",
@@ -41,71 +46,8 @@ EasdSetupState = Literal[
 ]
 
 _SKILL_SCOPE_TEXT = serialize_skill_modes(("coding",))
-_DATA_README_TEXT = """# Evo Agent Specs repository store
-
-This directory is the version-controlled source of truth for EASD runs owned by
-this repository. Commit Intent, immutable Spec/Plan revisions, lifecycle events,
-mission snapshots, review/verification evidence, deviations, and convergence.
-
-## Document skeleton
-
-`<data_directory>` is this directory. It defaults to `documents/easd` and is
-resolved from `.evoflux/easd/config.json`.
-
-```text
-<repository>/
-├── .evoflux/
-│   ├── easd/
-│   │   ├── config.json
-│   │   ├── RULES.md
-│   │   ├── .gitignore
-│   │   └── .local/                     # ignored, rebuildable
-│   └── skills/
-│       └── easd-{specify,plan,implement,review,verify}/
-│           ├── SKILL.md
-│           └── .evoflux.json
-└── <data_directory>/
-    ├── README.md
-    ├── templates/
-    │   ├── intent.yaml
-    │   ├── specification.yaml
-    │   ├── plan.yaml
-    │   ├── run.yaml
-    │   ├── mission.yaml
-    │   ├── review.yaml
-    │   ├── verification.yaml
-    │   ├── evidence.yaml
-    │   ├── deviation.yaml
-    │   └── event.yaml
-    └── runs/
-        └── <slug>--<run-uuid>/
-            ├── run.yaml                # mutable CAS lifecycle projection
-            ├── intent.yaml
-            ├── specifications/0001.yaml
-            ├── plans/0001.yaml         # planned flow only
-            ├── missions/<mission-uuid>.yaml
-            ├── reviews/<evidence-uuid>.yaml
-            ├── verifications/<evidence-uuid>.yaml
-            ├── evidence/<evidence-uuid>.yaml
-            ├── deviations/<deviation-uuid>.yaml
-            ├── events/<sequence>-<event-uuid>.yaml
-            └── convergence.yaml        # only after Converge
-```
-
-Later Spec/Plan revisions increment the zero-padded filename (`0002.yaml`,
-`0003.yaml`, ...). Direct flow leaves `plans/` empty. Imported full drafts may
-omit `intent.yaml`; phase-specific artifact directories remain empty until that
-phase produces records.
-
-Accepted Spec/Plan revisions and `convergence.yaml` are immutable. Events and
-evidence are append-only. `run.yaml`, mission snapshots, and open deviations
-use document hashes for compare-and-swap updates so collaborators never silently
-overwrite newer repository state.
-
-Do not store machine-specific session IDs, locks, credentials, or absolute paths
-here. Rebuildable local state belongs under `.evoflux/easd/.local/`.
-"""
 _LOCAL_GITIGNORE_TEXT = ".local/\n"
+_KNOWLEDGE_INDEX_CONTRACT = yaml.safe_load(read_easd_skeleton("index.yaml"))
 
 
 def normalize_data_directory(value: str | Path) -> Path:
@@ -156,6 +98,14 @@ def _safe_path(root: Path, relative: Path) -> Path:
     if resolved_parent != root and root not in resolved_parent.parents:
         raise ValueError(f"EASD setup path escapes repository: {candidate}")
     return candidate
+
+
+def _reject_symlink_ancestors(root: Path, path: Path, *, label: str) -> None:
+    current = path
+    while current != root:
+        if current.is_symlink():
+            raise ValueError(f"{label} must not traverse a symlink: {current}")
+        current = current.parent
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
@@ -232,6 +182,61 @@ def _inspect_skill_bundle(root: Path) -> tuple[list[str], str | None]:
                 raise ValueError("scope must contain only Coding mode")
         except (OSError, ValueError) as exc:
             return [], f"Invalid EASD skill {name}: {exc}"
+    return missing, None
+
+
+def _inspect_skeleton(
+    root: Path,
+    data_directory: Path,
+) -> tuple[list[str], str | None]:
+    """Return missing knowledge files and one fail-closed validation issue."""
+
+    missing: list[str] = []
+    for name in EASD_SKELETON_FILES:
+        try:
+            path = _safe_path(root, data_directory / Path(name))
+            _reject_symlink_ancestors(
+                root,
+                path,
+                label=f"EASD knowledge file {name}",
+            )
+        except ValueError as exc:
+            return [], str(exc)
+        if not path.exists():
+            missing.append(name)
+            continue
+        if path.is_symlink() or not path.is_file() or path.parent.is_symlink():
+            return [], f"EASD knowledge file must be repository-local: {name}"
+        try:
+            content = _read_bounded_text(
+                path,
+                limit=_MAX_SKELETON_FILE_BYTES,
+                label=f"EASD knowledge file {name}",
+            )
+            parsed = (
+                yaml.safe_load(content) if path.suffix in {".yaml", ".yml"} else None
+            )
+            if path.suffix in {".yaml", ".yml"} and not isinstance(parsed, dict):
+                raise ValueError(f"EASD knowledge file {name} must contain a mapping")
+            if name == "index.yaml":
+                if not isinstance(parsed, dict):
+                    raise ValueError("EASD knowledge index must contain a mapping")
+                expected_sections = _KNOWLEDGE_INDEX_CONTRACT["sections"]
+                actual_sections = parsed.get("sections")
+                if not isinstance(actual_sections, dict):
+                    raise ValueError("EASD knowledge index must define sections")
+                mismatched = [
+                    key
+                    for key, expected in expected_sections.items()
+                    if actual_sections.get(key) != expected
+                ]
+                if mismatched:
+                    raise ValueError(
+                        "EASD knowledge index has invalid sections: "
+                        + ", ".join(mismatched)
+                    )
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            return [], str(exc)
     return missing, None
 
 
@@ -346,14 +351,35 @@ def inspect_repository(target: EasdRepositoryTarget) -> dict[str, Any]:
                 missing_templates = [
                     name
                     for name in EASD_TEMPLATE_NAMES
-                    if not (templates_path / name).is_file()
-                    or (templates_path / name).is_symlink()
+                    if not (templates_path / name).exists()
                 ]
-                if missing_templates:
-                    raise ValueError(
-                        "Missing EASD templates: " + ", ".join(missing_templates)
+                invalid_templates = [
+                    name
+                    for name in EASD_TEMPLATE_NAMES
+                    if (templates_path / name).exists()
+                    and (
+                        not (templates_path / name).is_file()
+                        or (templates_path / name).is_symlink()
                     )
-                if missing_skills:
+                ]
+                if invalid_templates:
+                    raise ValueError(
+                        "Invalid EASD templates: " + ", ".join(invalid_templates)
+                    )
+                missing_skeleton, skeleton_issue = _inspect_skeleton(
+                    root, data_directory
+                )
+                if skeleton_issue:
+                    raise ValueError(skeleton_issue)
+                if missing_templates:
+                    state = "upgrade_required"
+                    issue = "Missing EASD templates: " + ", ".join(missing_templates)
+                elif missing_skeleton:
+                    state = "upgrade_required"
+                    issue = "Missing EASD knowledge skeleton: " + ", ".join(
+                        missing_skeleton
+                    )
+                elif missing_skills:
                     state = "upgrade_required"
                     issue = "Missing EASD skills: " + ", ".join(missing_skills)
                 else:
@@ -428,13 +454,30 @@ def initialize_repositories(
             raise ValueError(f"EASD data_directory escapes repository: {data_path}")
         if data_path.is_symlink():
             raise ValueError("EASD data_directory must not be a symlink")
-        data_readme = _safe_path(root, selected_data_directory / "README.md")
         templates_directory = _safe_path(root, selected_data_directory / "templates")
         runs_directory = _safe_path(root, selected_data_directory / "runs")
+        _reject_symlink_ancestors(
+            root,
+            templates_directory,
+            label="EASD templates directory",
+        )
+        _reject_symlink_ancestors(
+            root,
+            runs_directory,
+            label="EASD runs directory",
+        )
         templates_directory.mkdir(parents=True, exist_ok=True)
         runs_directory.mkdir(parents=True, exist_ok=True)
-        if overwrite or not data_readme.exists():
-            _atomic_write_text(data_readme, _DATA_README_TEXT)
+        for name in EASD_SKELETON_FILES:
+            skeleton_file = _safe_path(root, selected_data_directory / Path(name))
+            _reject_symlink_ancestors(
+                root,
+                skeleton_file,
+                label=f"EASD knowledge file {name}",
+            )
+            skeleton_file.parent.mkdir(parents=True, exist_ok=True)
+            if overwrite or not skeleton_file.exists():
+                _atomic_write_text(skeleton_file, read_easd_skeleton(name))
         for name in EASD_TEMPLATE_NAMES:
             template_file = _safe_path(
                 root, selected_data_directory / "templates" / name

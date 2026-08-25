@@ -274,9 +274,10 @@ Specification-Driven Development with EvoFlux's Agent-Driven Development
 runtime. Coding teams bind missions to accepted Spec and optional Plan hashes plus
 observable acceptance criteria, preserve rework and deviations, and converge only from
 persisted evidence instead of an agent's “done” claim. Each project repository
-is initialized once with Coding-only Skills, core rules, YAML templates, and a
-user-selected version-controlled data folder. Repository files—not one user's
-SQLite database—are the shared run source of truth.
+is initialized once with Coding-only Skills, core rules, artifact templates, and
+a repository-local version-controlled knowledge base. Existing project docs stay
+where they are. Repository files—not one user's SQLite database—are the shared
+Spec, knowledge, and Run source of truth.
 This is the executable methodology beneath EvoFlux's **spec-first Coding agent**
 workflow: the Spec recommends `direct` for eligible low-risk single-boundary
 work or `planned` when stronger coordination is required. The user approves
@@ -289,8 +290,9 @@ Converge.
 
 #### Repository store skeleton
 
-Initialization creates one portable contract and one version-controlled run
-store in every repository. The data directory defaults to `documents/easd`.
+Initialization creates one portable contract and one version-controlled EASD
+knowledge base in every repository. The data directory defaults to
+`documents/easd`; existing project documentation is never moved or copied.
 
 ```text
 <repository>/
@@ -305,18 +307,17 @@ store in every repository. The data directory defaults to `documents/easd`.
 │           ├── SKILL.md                # phase operating contract
 │           └── .evoflux.json           # Coding-mode scope
 └── <data_directory>/                   # default: documents/easd
-    ├── README.md                       # store contract and skeleton
-    ├── templates/                      # current document shapes
-    │   ├── intent.yaml
-    │   ├── specification.yaml
-    │   ├── plan.yaml
-    │   ├── run.yaml
-    │   ├── mission.yaml
-    │   ├── review.yaml
-    │   ├── verification.yaml
-    │   ├── evidence.yaml
-    │   ├── deviation.yaml
-    │   └── event.yaml
+    ├── README.md                       # taxonomy and authority rules
+    ├── index.yaml                      # stable section map
+    ├── specs/                          # published accepted Specs
+    ├── features/                       # current implemented behavior
+    ├── architecture/                   # current boundaries + decisions
+    ├── reference/                      # API/config/schema contracts
+    ├── guides/                         # task-oriented workflows
+    ├── development/                    # contributor procedures
+    ├── records/                        # analysis/research/plans/releases
+    ├── images/                         # knowledge-base media
+    ├── templates/                      # current artifact shapes
     └── runs/
         └── <slug>--<run-uuid>/
             ├── run.yaml                # current lifecycle projection + hash
@@ -342,8 +343,10 @@ store in every repository. The data directory defaults to `documents/easd`.
 
 `run.yaml` is the CAS-protected lifecycle projection. Accepted Spec/Plan
 revisions and convergence are immutable; events and evidence are append-only.
-Everything under the configured data directory is collaboration state intended
-for Git. Only `.evoflux/easd/.local/` is machine-local and ignored.
+Draft Specs stay Run-local; approval publishes the hash-identical accepted
+revision into `specs/`. Everything under the configured data directory is
+collaboration state intended for Git. Only `.evoflux/easd/.local/` is
+machine-local and ignored.
 
 See the
 [EASD methodology](documents/reference/easd-methodology.md) and the implemented

@@ -16,6 +16,10 @@ from app.services.easd_generation_service import (
     collect_generation_context,
     generate_scope_and_proof,
 )
+from app.services.easd_setup_service import (
+    EasdRepositoryTarget,
+    initialize_repositories,
+)
 
 
 def _repository(tmp_path: Path) -> GenerationRepository:
@@ -175,6 +179,29 @@ def test_context_ignores_symlink_escape(tmp_path: Path):
     assert any(item.path == ".evoflux/trace/spec.yaml" for item in context)
     assert all("private-state" not in item.path for item in context)
     assert "must not be included" not in "\n".join(item.content for item in context)
+
+
+def test_context_skips_easd_scaffold_but_keeps_repository_sources(tmp_path: Path):
+    (tmp_path / "service.py").write_text(
+        "def active_contract(): return 'ready'\n", encoding="utf-8"
+    )
+    initialize_repositories([EasdRepositoryTarget(path=str(tmp_path), name="backend")])
+
+    context = collect_generation_context(
+        [GenerationRepository(path=tmp_path, name="backend")],
+        EasdGenerationIntent(
+            title="Inspect active contract",
+            problem="Need grounded source ownership.",
+            outcome="Keep real source context ahead of boilerplate.",
+        ),
+    )
+
+    assert any(item.path == "service.py" for item in context)
+    assert all(
+        not item.path.startswith("documents/easd/templates/") for item in context
+    )
+    assert all(item.path != "documents/easd/README.md" for item in context)
+    assert all(item.path != "documents/easd/features/README.md" for item in context)
 
 
 def test_multi_repo_context_keeps_all_maps_and_bounds_file_excerpts(tmp_path: Path):

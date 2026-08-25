@@ -48,12 +48,14 @@ from app.services.easd_repository_sync import (
     enqueue_revision_update,
     enqueue_run_create,
     enqueue_run_update,
+    enqueue_spec_publication,
 )
 from app.services.easd_repository_store import (
     EasdRepositoryStore,
     EasdStoreError,
     EasdStoredRun,
     registered_run_root,
+    spec_catalog_directory,
 )
 
 ACTIVE_RUN_STATUSES = frozenset(
@@ -210,6 +212,11 @@ def _repository_run_payload(
         "risk_tier": run.risk_tier,
         "active_spec_revision_id": (
             str(run.active_spec_revision_id) if run.active_spec_revision_id else None
+        ),
+        "spec_catalog_index": (
+            f"{spec_catalog_directory(run.title, run.id)}/index.yaml"
+            if run.active_spec_revision_id
+            else None
         ),
         "active_plan_revision_id": (
             str(run.active_plan_revision_id) if run.active_plan_revision_id else None
@@ -992,6 +999,12 @@ async def accept_revision(
     if revision.content_hash != expected_hash:
         raise TraceConflict("EASD spec hash changed before acceptance")
     if revision.status == "accepted" and run.active_spec_revision_id == revision.id:
+        enqueue_spec_publication(
+            db,
+            workspace=run.workspace,
+            run_id=str(run.id),
+            revision=_repository_revision_payload(revision),
+        )
         return revision
     if revision.status != "draft":
         raise TraceConflict(f"Cannot accept a {revision.status} spec revision")

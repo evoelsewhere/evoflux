@@ -5,6 +5,7 @@ status: intent
 delivery_flow: null
 risk_tier: standard
 active_spec_revision_id: null
+spec_catalog_index: null
 active_plan_revision_id: null
 convergence_report: null
 store_generation: 1

@@ -1,4 +1,4 @@
-"""Versioned repository-scoped Agent Skills installed by EASD setup."""
+"""Portable repository-scoped EASD Skills and knowledge-base resources."""
 
 from __future__ import annotations
 
@@ -36,6 +36,14 @@ def read_easd_template(name: str) -> str:
     return files(__name__).joinpath("templates", name).read_text(encoding="utf-8")
 
 
+def read_easd_skeleton(name: str) -> str:
+    """Return one portable knowledge-base skeleton file."""
+
+    if name not in EASD_SKELETON_FILES:
+        raise KeyError(f"Unknown EASD skeleton file: {name}")
+    return files(__name__).joinpath("skeleton", name).read_text(encoding="utf-8")
+
+
 EASD_TEMPLATE_NAMES = (
     "intent.yaml",
     "specification.yaml",
@@ -47,13 +55,42 @@ EASD_TEMPLATE_NAMES = (
     "deviation.yaml",
     "event.yaml",
     "run.yaml",
+    "spec-index.yaml",
+    "feature.md",
+    "architecture.md",
+    "decision.md",
+    "reference.md",
+    "guide.md",
+    "record.md",
+)
+
+EASD_SKELETON_FILES = (
+    "README.md",
+    "index.yaml",
+    "specs/README.md",
+    "features/README.md",
+    "architecture/README.md",
+    "architecture/decisions/README.md",
+    "reference/README.md",
+    "guides/README.md",
+    "development/README.md",
+    "records/README.md",
+    "records/analysis/README.md",
+    "records/research/README.md",
+    "records/plans/README.md",
+    "records/releases/README.md",
+    "images/README.md",
+    "runs/README.md",
+    "templates/README.md",
 )
 
 
 __all__ = [
     "EASD_SKILL_NAMES",
+    "EASD_SKELETON_FILES",
     "EASD_TEMPLATE_NAMES",
     "read_easd_rules",
+    "read_easd_skeleton",
     "read_easd_skill",
     "read_easd_template",
 ]

@@ -198,13 +198,34 @@ def enqueue_revision_update(
             for item in store.read_revisions(run_id, kind)
             if int(item.get("version") or 0) == version
         )
-        store.replace_revision(
+        stored_revision = store.replace_revision(
             run_id,
             kind=kind,
             version=version,
             payload=payload,
             expected_hash=document_hash(current),
         )
+        if kind == "specifications" and payload.get("status") == "accepted":
+            store.publish_spec_revision(run_id, stored_revision)
+
+    enqueue(db, write)
+
+
+def enqueue_spec_publication(
+    db: AsyncSession,
+    *,
+    workspace: str,
+    run_id: str,
+    revision: dict[str, Any],
+) -> None:
+    """Idempotently repair the common catalogue for an accepted Run Spec."""
+
+    payload = dict(revision)
+
+    def write() -> None:
+        store = _store_if_initialized(workspace)
+        if store is not None:
+            store.publish_spec_revision(run_id, payload)
 
     enqueue(db, write)
 
@@ -279,6 +300,7 @@ __all__ = [
     "enqueue_revision_update",
     "enqueue_run_create",
     "enqueue_run_update",
+    "enqueue_spec_publication",
 ]
 
 

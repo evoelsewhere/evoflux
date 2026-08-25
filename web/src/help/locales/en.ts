@@ -1478,7 +1478,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'convergence',
     ],
     setup:
-      'Open a Coding workspace and initialize every repository with a version-controlled EASD data folder. Create Intent, review the agent-suggested direct/planned flow, and Approve specification. Direct continues to Implement; planned adds Run/Approve plan. Both finish Review → Verify → Converge.',
+      'Open a Coding workspace and initialize every repository with a version-controlled EASD knowledge base. Existing project docs stay where they are. Create Intent, review the agent-suggested direct/planned flow, and Approve specification. Direct continues to Implement; planned adds Run/Approve plan. Both finish Review → Verify → Converge.',
     tricks: [
       'Initialize once per repository; project runs stay locked until every live project repository is ready.',
       'Initialization installs five Coding-only project skills: easd-specify, easd-plan, easd-implement, easd-review, and easd-verify. They are discovered only from repositories in the active Coding scope.',
@@ -1491,7 +1491,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Review outcome, Scope, risk, AC evidence policy and commands; edit by saving a newer draft revision, then explicitly Approve specification. The agent cannot approve it.',
       'The Spec recommends direct or planned flow. Direct skips Plan only for low-risk single-boundary work; planned persists a typed mission graph and only user Approve plan unlocks implementation.',
       'Use Board for workflow state, Table for comparison, or List for compact navigation. Search spans title, status, risk, and repository.',
-      'Accept freezes the normalized spec revision and hash; later changes create a new revision.',
+      'Accept freezes the normalized Spec revision/hash and publishes a hash-identical immutable copy into the common specs catalogue; later changes create another revision.',
       'Run review is separate and read-only. Delegated evidence must match the approved review mission and uses runtime reviewer identity; Run verify remains a separate user action.',
       'EASD team_delegate always includes run ID, exact Spec hash, AC ownership, and accepted Scope. Planned flow also requires exact Plan hash/mission ID; direct flow must omit them.',
       'Machine evidence comes only from CompletionContracts. Every accepted Proof command has a verification mission; Verify can create a fresh revision-bound contract without editing files. Runtime executes commands without a shell, blocks changed paths outside Scope, and worktree missions wait for an accepted merge.',
@@ -1505,7 +1505,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Initialization adds `.evoflux/easd/config.json`, `RULES.md`, five Coding-only Skills, and current YAML templates under the repository data folder (default `documents/easd`). The repository stores all shared run status, revisions, missions, evidence, deviations, and convergence; `.local/` contains only ignored rebuildable locks/session bindings.',
+        text: 'Initialization adds `.evoflux/easd/config.json`, `RULES.md`, five Coding-only Skills, and an EASD knowledge skeleton under the repository data folder (default `documents/easd`): specs, features, architecture, reference, guides, development, records, images, templates, and runs. Existing project documentation is not moved or copied. `.local/` contains only ignored rebuildable locks/session bindings.',
       },
       {
         type: 'p',

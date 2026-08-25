@@ -1437,7 +1437,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'convergence',
     ],
     setup:
-      'Mở Coding workspace và initialize mọi repository với thư mục dữ liệu EASD được version-control. Tạo Intent, review flow direct/planned do agent đề xuất rồi Approve specification. Direct đi thẳng Implement; planned thêm Run/Approve plan. Cả hai đều qua Review → Verify → Converge.',
+      'Mở Coding workspace và initialize mọi repository với EASD knowledge base được version-control; tài liệu project hiện có vẫn giữ nguyên vị trí. Tạo Intent, review flow direct/planned do agent đề xuất rồi Approve specification. Direct đi thẳng Implement; planned thêm Run/Approve plan. Cả hai đều qua Review → Verify → Converge.',
     tricks: [
       'Mỗi repository chỉ cần initialize một lần; project chưa cho tạo run cho tới khi mọi repository đang hoạt động đều ready.',
       'Initialization cài năm project Skill chỉ dành cho Coding: easd-specify, easd-plan, easd-implement, easd-review và easd-verify. Skill chỉ được discover từ repository thuộc Coding scope hiện tại.',
@@ -1450,7 +1450,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Review outcome, Scope, risk, evidence policy từng AC và commands; edit bằng revision draft mới rồi tự Approve specification. Agent không thể approve.',
       'Spec đề xuất flow direct hoặc planned. Direct chỉ skip Plan cho thay đổi low-risk một boundary; planned persist mission graph typed và chỉ user Approve plan mới mở khóa implementation.',
       'Dùng Board để theo dõi workflow, Table để so sánh hoặc List để điều hướng gọn. Search theo title, status, risk và repository.',
-      'Accept đóng băng normalized spec revision và hash; thay đổi sau đó tạo revision mới.',
+      'Accept đóng băng Spec revision/hash và publish một bản immutable cùng hash vào specs catalogue chung; thay đổi sau đó tạo revision mới.',
       'Run review là phase read-only riêng. Delegated evidence phải khớp approved review mission và dùng runtime reviewer identity; Run verify vẫn là action riêng của user.',
       'team_delegate EASD luôn có run ID, exact Spec hash, AC ownership và accepted Scope. Planned cần thêm exact Plan hash/mission ID; direct phải bỏ hai field đó.',
       'Machine evidence chỉ đến từ CompletionContract. Mỗi accepted Proof command có verification mission; Verify tạo được contract mới gắn revision mà không sửa file. Runtime chạy command không qua shell, chặn changed path ngoài Scope; mission worktree phải chờ merge được chấp nhận.',
@@ -1464,7 +1464,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Initialization thêm `.evoflux/easd/config.json`, `RULES.md`, năm Coding Skill và YAML template mới nhất vào thư mục dữ liệu repository (mặc định `documents/easd`). Repository lưu toàn bộ status, revision, mission, evidence, deviation và convergence dùng chung; `.local/` chỉ chứa lock/session binding có thể rebuild và bị ignore.',
+        text: 'Initialization thêm `.evoflux/easd/config.json`, `RULES.md`, năm Coding Skill và EASD knowledge skeleton vào thư mục dữ liệu repository (mặc định `documents/easd`): specs, features, architecture, reference, guides, development, records, images, templates và runs. Tài liệu project hiện có không bị move hoặc copy; `.local/` chỉ chứa lock/session binding có thể rebuild và bị ignore.',
       },
       {
         type: 'p',

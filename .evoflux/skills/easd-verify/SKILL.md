@@ -8,10 +8,12 @@ description: Run the final EASD integration and evidence gate against accepted A
 ## Repository contract
 
 Read `.evoflux/easd/config.json`, its `rules_file`, and the current run under
-`data_directory` before phase work. Repository documents are the shared source
-of truth. Stop on a missing file, stale hash, or generation conflict; never
-reconstruct authority from chat memory or SQLite. Verify and Converge remain
-mandatory for both `direct` and `planned`.
+`data_directory` before phase work. Confirm the common `specs/` revision and
+Run-local accepted snapshot have the same hash. Inspect affected living
+knowledge sections and existing project docs without migrating them implicitly.
+Repository documents are the shared source of truth. Stop on a missing file,
+stale hash, or generation conflict; never reconstruct authority from chat memory
+or SQLite. Verify and Converge remain mandatory for both `direct` and `planned`.
 
 Challenge the integrated result against the exact accepted specification. This
 skill helps gather and assess evidence; only the EASD service computes Done.
@@ -45,8 +47,10 @@ convergence. Any other state returns to its owning phase.
 5. For cross-layer or critical runs, ensure review is performed by an agent or
    human independent of the implementation owner and covers the integrated
    revision rather than an abandoned worktree.
-6. Reconcile current feature/architecture/reference docs, localized Help, and
-   release or migration notes where the accepted behavior requires them.
+6. Reconcile adopted EASD `features/`, `architecture/`, and `reference/`
+   documents, existing project docs, localized Help, and release or migration
+   notes where the accepted behavior requires them. Never move existing docs as
+   an implicit verification side effect.
 
 If a required command, runtime environment, manual observation, or independent
 review cannot be completed, report `manual verification required` or the exact

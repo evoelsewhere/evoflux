@@ -41,3 +41,12 @@ run. Project Skills guide work but never override this contract.
 12. **Reconcile the living contract.** Before handoff, update current docs,
     evidence, deviations, and lifecycle projection so another collaborator can
     continue from Git without the original chat or machine.
+13. **Use the knowledge taxonomy.** Accepted normative behavior belongs in
+    `specs/`; shipped behavior in `features/`; current system boundaries in
+    `architecture/`; exact API/config/schema contracts in `reference/`; and
+    change execution/evidence in `runs/`. Historical `records/` never override
+    living contracts.
+14. **Do not migrate knowledge implicitly.** Initialization and upgrade create
+    missing EASD skeleton files only. Existing repository documentation remains
+    at its current path and authoritative until maintainers explicitly adopt,
+    link, or move it through an accepted change.

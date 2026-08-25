@@ -1454,7 +1454,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'convergence',
     ],
     setup:
-      'Coding workspace で各 repository を version-controlled EASD data folder とともに初期化します。Intent を作成し、agent 推奨の direct/planned flow を review して specification を Approve します。Direct は Implement へ、planned は Run/Approve plan を追加し、両方とも Review → Verify → Converge を進めます。',
+      'Coding workspace で各 repository を version-controlled EASD knowledge base とともに初期化します。既存 project docs は元の場所に残ります。Intent を作成し、agent 推奨の direct/planned flow を review して specification を Approve します。Direct は Implement へ、planned は Run/Approve plan を追加し、両方とも Review → Verify → Converge を進めます。',
     tricks: [
       '初期化はリポジトリごとに一度だけ行います。Project の全リポジトリが ready になるまで run は作成できません。',
       '初期化では Coding 専用の project Skill（easd-specify、easd-plan、easd-implement、easd-review、easd-verify）をインストールします。現在の Coding scope に含まれる repository からだけ検出されます。',
@@ -1467,7 +1467,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Outcome、Scope、risk、各 AC evidence policy、commands を review し、必要なら新しい draft revision を保存してからユーザーが Approve specification します。Agent は approve できません。',
       'Spec は direct または planned flow を推奨します。Direct は low-risk single-boundary だけ Plan を skip し、planned は typed mission graph を永続化して user の Approve plan 後に implementation を解除します。',
       'Board は進行状態、Table は比較、List はコンパクトな移動に使います。Title、status、risk、repository を検索できます。',
-      'Accept は正規化された仕様リビジョンとハッシュを固定します。',
+      'Accept は正規化された Spec revision/hash を固定し、同じ hash の immutable copy を共通 specs catalogue に publish します。',
       'Run review は独立した read-only phase です。Delegated evidence は approved review mission と一致し、runtime reviewer identity を使います。Run verify も user の別 action です。',
       'EASD team_delegate は run ID、exact Spec hash、AC ownership、accepted Scope が必須です。Planned は exact Plan hash/mission ID も必要で、direct はそれらを省略します。',
       'Machine evidence は CompletionContract からのみ生成されます。各 accepted Proof command は verification mission に属し、Verify は file edit なしでも revision-bound contract を生成できます。Runtime は command を shell なしで実行し、Scope 外の変更をブロックします。Worktree mission は承認済み merge 後に取り込まれます。',
@@ -1481,7 +1481,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '初期化では `.evoflux/easd/config.json`、`RULES.md`、5つの Coding Skill、current YAML template を repository data folder（既定 `documents/easd`）に追加します。共有 status、revision、mission、evidence、deviation、convergence は repository に保存し、`.local/` は ignored/rebuildable な lock/session binding だけです。',
+        text: '初期化では `.evoflux/easd/config.json`、`RULES.md`、5つの Coding Skill と EASD knowledge skeleton を repository data folder（既定 `documents/easd`）に追加します。Skeleton は specs、features、architecture、reference、guides、development、records、images、templates、runs を含みます。既存 project documentation は move/copy されず、`.local/` は ignored/rebuildable な lock/session binding だけです。',
       },
       {
         type: 'p',

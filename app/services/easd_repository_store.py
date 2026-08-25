@@ -105,6 +105,13 @@ def _slug(value: str) -> str:
     return (slug or "run")[:80]
 
 
+def spec_catalog_directory(title: str, run_id: str | UUID) -> str:
+    """Return the stable data-directory-relative catalogue path for a Run Spec."""
+
+    normalized = str(UUID(str(run_id)))
+    return f"specs/{_slug(title)}--{normalized}"
+
+
 @dataclass(frozen=True, slots=True)
 class EasdStoredRun:
     root: Path
@@ -129,6 +136,7 @@ class EasdRepositoryStore:
         relative = normalize_data_directory(str(manifest.get("data_directory") or ""))
         self.data_directory = relative
         self.data_path = self._inside(relative)
+        self.specs_path = self._inside(relative / "specs")
         self.runs_path = self._inside(relative / "runs")
         self.local_path = self._inside(Path(".evoflux/easd/.local"))
 
@@ -146,6 +154,15 @@ class EasdRepositoryStore:
         matches = list(self.runs_path.glob(f"*--{normalized}"))
         if len(matches) != 1 or not matches[0].is_dir() or matches[0].is_symlink():
             raise EasdStoreNotFound(f"EASD run {normalized} was not found")
+        return matches[0]
+
+    def _spec_directory(self, run_id: str | UUID) -> Path:
+        normalized = str(UUID(str(run_id)))
+        matches = list(self.specs_path.glob(f"*--{normalized}"))
+        if len(matches) != 1 or not matches[0].is_dir() or matches[0].is_symlink():
+            raise EasdStoreNotFound(
+                f"Published EASD specification {normalized} was not found"
+            )
         return matches[0]
 
     @contextmanager
@@ -344,6 +361,117 @@ class EasdRepositoryStore:
         directory = self._run_directory(run_id) / kind
         return [_read_yaml(path) for path in sorted(directory.glob("[0-9]*.yaml"))]
 
+    def publish_spec_revision(
+        self,
+        run_id: str | UUID,
+        revision: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Publish one accepted Run snapshot into the common Spec catalogue."""
+
+        normalized_run_id = str(UUID(str(run_id)))
+        version = int(revision.get("version") or 0)
+        content_hash = str(revision.get("content_hash") or "")
+        specification = revision.get("spec")
+        if (
+            revision.get("status") != "accepted"
+            or version < 1
+            or len(content_hash) != 64
+            or not isinstance(specification, dict)
+            or not str(specification.get("title") or "").strip()
+        ):
+            raise EasdStoreError(
+                "Only a complete accepted EASD Spec revision can be published"
+            )
+        title = str(specification["title"]).strip()
+        directory = self.data_path / spec_catalog_directory(title, normalized_run_id)
+        if directory.exists() and (directory.is_symlink() or not directory.is_dir()):
+            raise EasdStoreConflict(
+                f"EASD specification catalogue path is invalid: {directory}"
+            )
+        revisions = directory / "revisions"
+        revisions.mkdir(parents=True, exist_ok=True)
+        if revisions.is_symlink() or not revisions.is_dir():
+            raise EasdStoreConflict(
+                "EASD specification revisions must be a repository-local directory"
+            )
+        revision_path = revisions / f"{version:04d}.yaml"
+        published_payload = {
+            **revision,
+            "run_snapshot": (
+                self._run_directory(normalized_run_id)
+                / "specifications"
+                / f"{version:04d}.yaml"
+            )
+            .relative_to(self.data_path)
+            .as_posix(),
+        }
+        if revision_path.exists():
+            current_revision = _read_yaml(revision_path)
+            if (
+                current_revision.get("content_hash") != content_hash
+                or current_revision.get("status") != "accepted"
+            ):
+                raise EasdStoreConflict(
+                    "Published EASD Spec revision conflicts with repository state"
+                )
+        else:
+            self._write_document(
+                revision_path,
+                published_payload,
+                create_only=True,
+            )
+
+        index_path = directory / "index.yaml"
+        current_index = _read_yaml(index_path) if index_path.exists() else None
+        if current_index is not None:
+            current_version = int(current_index.get("current_revision") or 0)
+            if current_version > version:
+                raise EasdStoreConflict(
+                    "Published EASD Spec index already points to a newer revision"
+                )
+            if (
+                current_version == version
+                and current_index.get("current_hash") != content_hash
+            ):
+                raise EasdStoreConflict(
+                    "Published EASD Spec index conflicts at the same revision"
+                )
+        index_payload = {
+            "id": normalized_run_id,
+            "title": title,
+            "status": "accepted",
+            "current_revision": version,
+            "current_hash": content_hash,
+            "current_path": f"revisions/{version:04d}.yaml",
+            "owning_run_id": normalized_run_id,
+            "updated_at": revision.get("accepted_at") or revision.get("created_at"),
+        }
+        return self._write_document(
+            index_path,
+            index_payload,
+            expected_hash=(
+                document_hash(current_index) if current_index is not None else None
+            ),
+            create_only=current_index is None,
+        )
+
+    def load_published_spec(self, run_id: str | UUID) -> dict[str, Any]:
+        """Load the common catalogue index and its current accepted revision."""
+
+        directory = self._spec_directory(run_id)
+        index = _read_yaml(directory / "index.yaml")
+        current_path = index.get("current_path")
+        if not isinstance(current_path, str):
+            raise EasdStoreError("Published EASD Spec index has no current path")
+        revision_path = directory / current_path
+        resolved = revision_path.resolve(strict=False)
+        if resolved != directory and directory not in resolved.parents:
+            raise EasdStoreError("Published EASD Spec path escapes its catalogue")
+        revision = _read_yaml(revision_path)
+        if revision.get("content_hash") != index.get("current_hash"):
+            raise EasdStoreConflict("Published EASD Spec hash does not match its index")
+        return {"directory": directory, "index": index, "revision": revision}
+
     def append_artifact(
         self,
         run_id: str | UUID,
@@ -429,4 +557,5 @@ __all__ = [
     "EasdStoredRun",
     "document_hash",
     "registered_run_root",
+    "spec_catalog_directory",
 ]

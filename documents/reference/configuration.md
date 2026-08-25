@@ -46,7 +46,7 @@ Derived values:
 | `<workspace>/.evoflux/workflows/*.yaml` | repository | project-local Coding Workflows |
 | `<workspace>/.evoflux/launch.json` | repository | preview/process launch definitions |
 | `<workspace>/.evoflux/easd/config.json` | repository/EASD setup | safe `data_directory`, core rules/templates, and exact project-skill contract in the current unversioned layout |
-| `<workspace>/<data_directory>/` | repository | version-controlled EASD Intent, revisions, status/events, missions, evidence, deviations, and convergence (default `documents/easd`) |
+| `<workspace>/<data_directory>/` | repository | EASD knowledge base: accepted Specs, adopted feature/architecture/reference docs, templates, historical records, and Run ledgers (default `documents/easd`) |
 | `<workspace>/.evoflux/easd/.local/` | machine-local | ignored rebuildable EASD locks/index/session bindings; never normative |
 | `<workspace>/.evoflux/skills/easd-*/` | repository | Coding-only portable EASD phase Skills installed by EASD setup |
 

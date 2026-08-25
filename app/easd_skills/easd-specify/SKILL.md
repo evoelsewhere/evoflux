@@ -8,7 +8,10 @@ description: Draft or revise a reviewable EASD specification from repository evi
 ## Repository contract
 
 Read `.evoflux/easd/config.json`, its `rules_file`, and the current run under
-`data_directory` before phase work. Repository documents are the shared source
+`data_directory` before phase work. Read the knowledge-base `index.yaml`,
+`specs/`, `features/`, `architecture/`, and `reference/` plus any existing
+project documentation named by repository instructions. Do not copy or move
+existing docs into EASD implicitly. Repository documents are the shared source
 of truth. Stop on a missing file, stale hash, or generation conflict; never
 reconstruct authority from chat memory or SQLite.
 
@@ -61,7 +64,9 @@ When the run is in authoring state and the lead has the typed
 `easd_submit_specification` tool, submit the exact run ID, complete specification,
 grounding summary, and honest confidence. Stop after persistence is confirmed.
 Report the returned revision ID/hash as the durable review target; do not treat
-the draft's presence or the agent's message as user acceptance.
+the draft's presence or the agent's message as user acceptance. The draft stays
+Run-local; explicit user acceptance publishes its hash-identical immutable copy
+into the common `specs/` catalogue.
 
 Never approve or activate the specification, begin implementation, or call
 convergence. If the tool is unavailable or rejects the draft, report the exact

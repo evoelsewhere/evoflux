@@ -8,7 +8,12 @@ from app.agent.skills.discovery import (
     discover_skill_records,
     select_skill_records_for_mode,
 )
-from app.easd_skills import EASD_SKILL_NAMES, read_easd_skill
+from app.easd_skills import (
+    EASD_SKILL_NAMES,
+    EASD_SKELETON_FILES,
+    EASD_TEMPLATE_NAMES,
+    read_easd_skill,
+)
 from app.services.easd_setup_service import (
     EasdRepositoryTarget,
     EasdSetupConflict,
@@ -20,6 +25,9 @@ from app.services.easd_setup_service import (
 
 def test_initialize_repository_creates_stable_easd_contract(tmp_path):
     target = EasdRepositoryTarget(path=str(tmp_path), name="backend")
+    existing_document = tmp_path / "documents" / "architecture" / "system.md"
+    existing_document.parent.mkdir(parents=True)
+    existing_document.write_text("existing project knowledge\n", encoding="utf-8")
 
     before = inspect_repository(target)
     assert before["state"] == "not_initialized"
@@ -44,28 +52,26 @@ def test_initialize_repository_creates_stable_easd_contract(tmp_path):
     data_readme = (tmp_path / "documents" / "easd" / "README.md").read_text(
         encoding="utf-8"
     )
-    assert "## Document skeleton" in data_readme
-    assert ".evoflux/easd/config.json" in data_readme
+    assert "## Structure" in data_readme
+    assert "specs/" in data_readme
+    assert "features/" in data_readme
+    assert "architecture/" in data_readme
+    assert "reference/" in data_readme
     assert "<slug>--<run-uuid>" in data_readme
-    assert "specifications/0001.yaml" in data_readme
-    assert "events/<sequence>-<event-uuid>.yaml" in data_readme
-    assert "Direct flow leaves `plans/` empty" in data_readme
-    assert "Accepted Spec/Plan revisions" in data_readme
+    assert "Draft Specs stay Run-local" in data_readme
+    assert "explicitly adopt or link it" in data_readme
     assert (tmp_path / "documents" / "easd" / "runs").is_dir()
+    assert all(
+        (tmp_path / "documents" / "easd" / path).is_file()
+        for path in EASD_SKELETON_FILES
+    )
     assert {
         item.name for item in (tmp_path / "documents" / "easd" / "templates").iterdir()
-    } == {
-        "intent.yaml",
-        "specification.yaml",
-        "plan.yaml",
-        "mission.yaml",
-        "review.yaml",
-        "verification.yaml",
-        "evidence.yaml",
-        "deviation.yaml",
-        "event.yaml",
-        "run.yaml",
-    }
+    } == set(EASD_TEMPLATE_NAMES) | {"README.md"}
+    assert existing_document.read_text(encoding="utf-8") == (
+        "existing project knowledge\n"
+    )
+    assert not (tmp_path / "documents" / "easd" / "architecture" / "system.md").exists()
     records = discover_skill_records([tmp_path / ".evoflux" / "skills"])
     assert set(records) == set(EASD_SKILL_NAMES)
     assert all(record.source == "project-EvoFlux" for record in records.values())
@@ -79,6 +85,10 @@ def test_initialize_repository_creates_stable_easd_contract(tmp_path):
     initialize_repositories([target])
     assert (tmp_path / ".evoflux" / "easd" / "config.json").read_bytes() == (
         first_manifest
+    )
+    initialize_repositories([target], overwrite=True)
+    assert existing_document.read_text(encoding="utf-8") == (
+        "existing project knowledge\n"
     )
 
 
@@ -180,6 +190,71 @@ def test_initialize_uses_custom_repository_data_directory(tmp_path):
     assert (tmp_path / "documents" / "agent-specs" / "runs").is_dir()
     manifest = json.loads((tmp_path / ".evoflux" / "easd" / "config.json").read_text())
     assert manifest["data_directory"] == "documents/agent-specs"
+
+
+def test_run_only_setup_upgrades_skeleton_without_migrating_existing_docs(tmp_path):
+    target = EasdRepositoryTarget(path=str(tmp_path), name="backend")
+    initialize_repositories([target])
+    missing = tmp_path / "documents" / "easd" / "specs" / "README.md"
+    missing.unlink()
+    existing = tmp_path / "documents" / "features" / "billing.md"
+    existing.parent.mkdir(parents=True)
+    existing.write_text("existing feature contract\n", encoding="utf-8")
+
+    before = inspect_repository(target)
+
+    assert before["state"] == "upgrade_required"
+    assert "knowledge skeleton" in before["issue"]
+    after = initialize_repositories([target])[0]
+    assert after["state"] == "ready"
+    assert missing.is_file()
+    assert existing.read_text(encoding="utf-8") == "existing feature contract\n"
+    assert not (tmp_path / "documents" / "easd" / "features" / "billing.md").exists()
+
+
+def test_setup_rejects_nested_knowledge_symlink(tmp_path):
+    target = EasdRepositoryTarget(path=str(tmp_path), name="backend")
+    initialize_repositories([target])
+    specs = tmp_path / "documents" / "easd" / "specs"
+    (specs / "README.md").unlink()
+    specs.rmdir()
+    target_directory = tmp_path / "documents" / "easd" / "linked-specs"
+    target_directory.mkdir()
+    specs.symlink_to(target_directory, target_is_directory=True)
+
+    inspected = inspect_repository(target)
+
+    assert inspected["state"] == "invalid"
+    assert "must not traverse a symlink" in inspected["issue"]
+    with pytest.raises(EasdSetupConflict):
+        initialize_repositories([target])
+    with pytest.raises(ValueError, match="must not traverse a symlink"):
+        initialize_repositories([target], overwrite=True)
+
+
+def test_setup_rejects_malformed_or_oversized_knowledge_index(tmp_path):
+    target = EasdRepositoryTarget(path=str(tmp_path), name="backend")
+    initialize_repositories([target])
+    index = tmp_path / "documents" / "easd" / "index.yaml"
+    index.write_text("[not-a-mapping]\n", encoding="utf-8")
+
+    malformed = inspect_repository(target)
+
+    assert malformed["state"] == "invalid"
+    assert "must contain a mapping" in malformed["issue"]
+
+    index.write_text(
+        "methodology: EASD\nsections:\n  specs: another-directory\n",
+        encoding="utf-8",
+    )
+    wrong_sections = inspect_repository(target)
+    assert wrong_sections["state"] == "invalid"
+    assert "invalid sections" in wrong_sections["issue"]
+
+    index.write_text("x" * (256 * 1024 + 1), encoding="utf-8")
+    oversized = inspect_repository(target)
+    assert oversized["state"] == "invalid"
+    assert "exceeds 262144 bytes" in oversized["issue"]
 
 
 @pytest.mark.parametrize("value", ["../outside", "/tmp/easd", ".git/easd"])

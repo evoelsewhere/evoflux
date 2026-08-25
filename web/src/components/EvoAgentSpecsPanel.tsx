@@ -369,7 +369,7 @@ function SetupView({
               </div>
               <h2 className="mt-2 text-base font-semibold leading-5 text-(--color-text)">Set up {EASD_DISPLAY_NAME}</h2>
               <p className="mt-1.5 max-w-xl text-xs leading-5 text-(--color-text-muted)">
-                Add a versioned EASD contract and five Coding-only project skills to every repository. Runs become available as soon as the whole scope is ready.
+                Add a version-controlled EASD knowledge base and five Coding-only project skills to every repository. Existing project docs stay in place; Runs become available when the whole scope is ready.
               </p>
             </div>
           </div>
@@ -387,7 +387,7 @@ function SetupView({
           {remaining.length > 0 && (
             <div className="px-4 py-4 @xl/easd:px-5">
               <label className="block text-xs font-medium text-(--color-text-2)">
-                Repository data folder
+                EASD knowledge-base folder
                 <input
                   value={dataDirectory}
                   onChange={(event) => setDataDirectory(event.target.value)}
@@ -396,7 +396,7 @@ function SetupView({
                   spellCheck={false}
                 />
               </label>
-              <p className="mt-1.5 text-[10px] leading-4 text-(--color-text-subtle)">Repository-relative and version-controlled. Intent, specs, plans, status, evidence, and convergence live here so the team can collaborate through Git.</p>
+              <p className="mt-1.5 text-[10px] leading-4 text-(--color-text-subtle)">Repository-relative and version-controlled. It contains common Specs, optional living knowledge sections, templates, and Run evidence. Initialization never moves or copies existing project documentation.</p>
             </div>
           )}
           {setup.repositories.map((repository) => {
@@ -478,7 +478,7 @@ function SetupView({
           <div>
             <p className="text-xs font-medium text-(--color-text-2)">Files added to each repository</p>
             <p className="mt-0.5 break-all font-mono text-[10px] text-(--color-text-subtle)">.evoflux/easd/config.json · .evoflux/easd/RULES.md · {dataDirectory || 'documents/easd'}/ · .evoflux/skills/easd-*/</p>
-            <p className="mt-1 text-[10px] text-(--color-text-subtle)">Repository files are the shared source of truth; Skills are Coding-only and never approve a specification.</p>
+            <p className="mt-1 text-[10px] text-(--color-text-subtle)">Repository files are the shared source of truth; setup preserves existing docs, and Skills are Coding-only and never approve a specification.</p>
             <div className="mt-2 flex flex-wrap gap-1" aria-label="EASD skill bundle">
               {skillNames.map((name) => (
                 <span key={name} className="rounded-md border border-(--color-border) bg-(--bg-card) px-1.5 py-0.5 font-mono text-[9px] text-(--color-text-muted)">

@@ -11,6 +11,7 @@ code is authoritative and the document should be updated in the same change.
 |---|---|---|
 | Product and support | [Feature catalogue](features/README.md) | Every implemented product area and its owning code |
 | Product and engineering | [EASD methodology](reference/easd-methodology.md) | Normative SDD + ADD lifecycle, contracts, roles, and gates |
+| EASD repository collaborators | [EASD knowledge-base skeleton](easd/README.md) | Portable taxonomy, authority, templates, and Run store |
 | Engineers | [System overview](architecture/system-overview.md) | Processes, boundaries, and end-to-end request flow |
 | New contributors | [Repository map](reference/repository-map.md) | Where code, state, tests, and documentation live |
 | Local operators | [Configuration reference](reference/configuration.md) | Runtime directories, files, settings, and credentials |
@@ -55,6 +56,10 @@ The in-app Help Center in `web/src/help/locales/` is the source for end-user UI
 walkthroughs and is localized in English, Vietnamese, and Japanese. The pages
 under `features/` describe implementation contracts and code ownership instead
 of duplicating every UI instruction.
+
+`easd/` is the initialized EASD knowledge skeleton for this repository. Its
+presence does not relocate or supersede the current EvoFlux pages listed above;
+those remain authoritative until an explicit accepted change adopts them.
 
 ## Guides and project records
 

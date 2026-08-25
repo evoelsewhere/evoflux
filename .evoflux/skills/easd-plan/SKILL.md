@@ -8,10 +8,13 @@ description: Compile an accepted EASD specification into a traceable implementat
 ## Repository contract
 
 Read `.evoflux/easd/config.json`, its `rules_file`, and the current run under
-`data_directory` before phase work. Repository documents are the shared source
-of truth. Stop on a missing file, stale hash, or generation conflict; never
-reconstruct authority from chat memory or SQLite. If the accepted Spec selected
-`direct`, stop: Plan is intentionally skipped and this Skill has no authority.
+`data_directory` before phase work. Resolve the accepted revision through the
+Run's common `specs/` catalogue index and confirm its hash matches the Run
+snapshot. Read affected current-state knowledge without relocating existing
+project docs. Repository documents are the shared source of truth. Stop on a
+missing file, stale hash, or generation conflict; never reconstruct authority
+from chat memory or SQLite. If the accepted Spec selected `direct`, stop: Plan
+is intentionally skipped and this Skill has no authority.
 
 Build the execution map from the exact accepted specification hash. Planning
 does not authorize implementation and must not weaken the accepted contract.
@@ -63,7 +66,7 @@ Emit one row or block per proposed mission with:
 
 Make the complete chain easy to inspect:
 
-`AC → owner/mission → repository and path scope → verification/evidence → docs`
+`AC → owner/mission → repository and path scope → verification/evidence → living knowledge`
 
 Validate that dependencies are acyclic, parallel paths do not overlap, and each
 required AC is owned. Flag unsafe commands, ownership conflicts, and unresolved

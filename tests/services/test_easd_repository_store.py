@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
+import yaml
 
 from app.services.easd_repository_store import (
     EasdRepositoryStore,
@@ -131,6 +132,18 @@ def test_repository_store_keeps_immutable_revisions_and_append_only_evidence(
         payload={**revision, "status": "accepted"},
         expected_hash=document_hash(revision),
     )
+    published_index = store.publish_spec_revision(run_id, accepted)
+    published = store.load_published_spec(run_id)
+    repeated_index = store.publish_spec_revision(run_id, accepted)
+
+    assert published_index["current_revision"] == 1
+    assert repeated_index["current_hash"] == "a" * 64
+    assert published["index"]["current_hash"] == "a" * 64
+    assert published["revision"]["content_hash"] == "a" * 64
+    assert published["revision"]["run_snapshot"].endswith(
+        f"--{run_id}/specifications/0001.yaml"
+    )
+    assert published["directory"].parent == (tmp_path / "documents" / "easd" / "specs")
     with pytest.raises(EasdStoreConflict, match="immutable"):
         store.replace_revision(
             run_id,
@@ -139,6 +152,39 @@ def test_repository_store_keeps_immutable_revisions_and_append_only_evidence(
             payload={**accepted, "status": "superseded"},
             expected_hash=document_hash(accepted),
         )
+    with pytest.raises(EasdStoreConflict, match="conflicts"):
+        store.publish_spec_revision(
+            run_id,
+            {**accepted, "content_hash": "b" * 64},
+        )
+
+    second = store.write_revision(
+        run_id,
+        kind="specifications",
+        version=2,
+        payload={
+            **revision,
+            "id": str(uuid4()),
+            "version": 2,
+            "content_hash": "b" * 64,
+        },
+    )
+    accepted_second = store.replace_revision(
+        run_id,
+        kind="specifications",
+        version=2,
+        payload={**second, "status": "accepted"},
+        expected_hash=document_hash(second),
+    )
+    store.publish_spec_revision(run_id, accepted_second)
+    current_publication = store.load_published_spec(run_id)
+    assert current_publication["index"]["current_revision"] == 2
+    assert current_publication["revision"]["content_hash"] == "b" * 64
+    first_publication = current_publication["directory"] / "revisions" / "0001.yaml"
+    assert first_publication.is_file()
+    assert document_hash(yaml.safe_load(first_publication.read_text())) == (
+        document_hash(published["revision"])
+    )
 
     evidence_id = uuid4()
     store.append_artifact(
@@ -153,7 +199,7 @@ def test_repository_store_keeps_immutable_revisions_and_append_only_evidence(
         },
     )
 
-    assert len(store.read_revisions(run_id, "specifications")) == 1
+    assert len(store.read_revisions(run_id, "specifications")) == 2
     assert len(store.read_artifacts(run_id, "evidence")) == 1
 
 
@@ -224,6 +270,13 @@ async def test_easd_mission_status_is_projected_after_each_commit(tmp_path, setu
         await db.commit()
 
     store = EasdRepositoryStore(tmp_path)
+    published = store.load_published_spec(run.id)
+    assert published["index"]["current_hash"] == draft["content_hash"]
+    assert (
+        store.load_run(run.id)
+        .run["spec_catalog_index"]
+        .endswith(f"--{run.id}/index.yaml")
+    )
     assert store.read_artifacts(run.id, "missions")[0]["status"] == "pending"
 
     async with async_session_factory() as db:
