@@ -31,6 +31,7 @@ export type WorkbenchTool =
   | 'source-control'
   | 'pull-requests'
   | 'problems'
+  | 'easd'
 
 export interface WorkbenchTab {
   id: string
@@ -54,6 +55,16 @@ export interface WorkspaceFileRequest {
   path: string
 }
 
+export interface EasdChatRequest {
+  id: number
+  sessionId: string
+  workspace: string
+  projectId: string | null
+  prompt: string | null
+  autoSend: boolean
+  phase: 'authoring' | 'planning' | 'implementation' | 'review' | 'verification'
+}
+
 interface WorkbenchState {
   workbenchTabs: WorkbenchTab[]
   activeWorkbenchTabId: string | null
@@ -67,6 +78,7 @@ interface WorkbenchState {
 const MULTI_INSTANCE_TOOLS = new Set<WorkbenchTool>(['terminal', 'browser'])
 let workbenchTabSequence = 0
 let workspaceFileRequestSequence = 0
+let easdChatRequestSequence = 0
 
 function newWorkbenchTab(
   tool: WorkbenchTool,
@@ -244,6 +256,8 @@ interface UIStore {
   sideChatRequest: string | null
   /** One-shot request from a transcript artifact link to preview a workspace file. */
   workspaceFileRequest: WorkspaceFileRequest | null
+  /** One-shot handoff from an EASD run to its linked Coding chat. */
+  easdChatRequest: EasdChatRequest | null
   createWorkbenchTab: (tool: WorkbenchTool, options?: WorkbenchTabOptions) => void
   restoreWorkbenchTabs: (
     tool: WorkbenchTool,
@@ -287,6 +301,8 @@ interface UIStore {
   clearSideChatRequest: () => void
   requestWorkspaceFile: (sessionId: string, path: string) => void
   clearWorkspaceFileRequest: (requestId?: number) => void
+  requestEasdChat: (request: Omit<EasdChatRequest, 'id'>) => void
+  clearEasdChatRequest: (requestId?: number) => void
 }
 
 export const useUIStore = create<UIStore>()(
@@ -470,6 +486,15 @@ export const useUIStore = create<UIStore>()(
     clearWorkspaceFileRequest: (requestId) => set((state) => {
       if (requestId !== undefined && state.workspaceFileRequest?.id !== requestId) return
       state.workspaceFileRequest = null
+    }),
+    easdChatRequest: null,
+    requestEasdChat: (request) => set((state) => {
+      easdChatRequestSequence += 1
+      state.easdChatRequest = { id: easdChatRequestSequence, ...request }
+    }),
+    clearEasdChatRequest: (requestId) => set((state) => {
+      if (requestId !== undefined && state.easdChatRequest?.id !== requestId) return
+      state.easdChatRequest = null
     }),
   }))
 )

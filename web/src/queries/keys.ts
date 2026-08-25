@@ -140,6 +140,14 @@ export const queryKeys = {
         ? (['projects', 'detail', id, 'code-context-data'] as const)
         : (['projects', 'detail', id, 'code-context-data', nodeLimit, edgeLimit] as const),
   },
+  easd: {
+    setup: (workspace: string, projectId?: string | null) =>
+      ['easd', 'setup', workspace, projectId ?? null] as const,
+    runs: () => ['easd', 'runs'] as const,
+    list: (workspace: string, projectId?: string | null) =>
+      ['easd', 'runs', workspace, projectId ?? null] as const,
+    detail: (runId: string) => ['easd', 'runs', runId] as const,
+  },
   git: {
     reviews: (scope?: string) =>
       scope

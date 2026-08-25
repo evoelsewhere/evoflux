@@ -12,6 +12,7 @@ import {
   Blocks,
   CircleAlert,
   Terminal,
+  ListChecks,
   type LucideIcon,
 } from 'lucide-react'
 import type { WorkbenchTool } from '@/stores/useUIStore'
@@ -100,6 +101,11 @@ export const WORKBENCH_TOOLS: Record<
     description: 'Review LSP, build, test, AI, security, and plugin findings',
     icon: CircleAlert,
   },
+  easd: {
+    label: 'Agent Specification-Driven Development',
+    description: 'Run specs through accountable missions, evidence, and convergence',
+    icon: ListChecks,
+  },
 }
 
 export const WORKBENCH_TOOL_ORDER = Object.keys(WORKBENCH_TOOLS) as WorkbenchTool[]
@@ -112,6 +118,9 @@ export function isWorkbenchToolEnabled(
     return context.mode === 'coding' && Boolean(context.workspace)
   }
   if (tool === 'problems') {
+    return context.mode === 'coding' && Boolean(context.workspace)
+  }
+  if (tool === 'easd') {
     return context.mode === 'coding' && Boolean(context.workspace)
   }
   if (tool === 'source-control' || tool === 'pull-requests') {

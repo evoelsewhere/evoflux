@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { isWorkbenchToolEnabled } from '@/components/workbench/tools'
+import { isWorkbenchToolEnabled, WORKBENCH_TOOLS } from '@/components/workbench/tools'
 
 describe('workspace overview workbench tool', () => {
   it('is available for coding workspaces', () => {
@@ -32,5 +32,29 @@ describe('process manager workbench tool', () => {
       sessionId: null,
       workspace: null,
     })).toBe(true)
+  })
+})
+
+describe('Evo Agent Specs workbench tool', () => {
+  it('uses the full methodology name in the UI', () => {
+    expect(WORKBENCH_TOOLS.easd.label).toBe('Agent Specification-Driven Development')
+  })
+
+  it('is available only in a Coding workspace', () => {
+    expect(isWorkbenchToolEnabled('easd', {
+      mode: 'coding',
+      sessionId: 'session-1',
+      workspace: '/repo',
+    })).toBe(true)
+    expect(isWorkbenchToolEnabled('easd', {
+      mode: 'coding',
+      sessionId: 'session-1',
+      workspace: null,
+    })).toBe(false)
+    expect(isWorkbenchToolEnabled('easd', {
+      mode: 'work',
+      sessionId: 'session-1',
+      workspace: '/repo',
+    })).toBe(false)
   })
 })
