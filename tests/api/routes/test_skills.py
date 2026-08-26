@@ -13,7 +13,7 @@ from httpx import ASGITransport, AsyncClient
 from app.api.routes import skills as skills_routes
 from app.api.routes.skills import router as skills_router
 from app.conductor.models import ManagedResourceProvider
-from app.services import agent_fs, team_manager
+from app.services import team_manager
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -1196,37 +1196,41 @@ async def test_update_skill_bundle_is_transactional_on_invalid_resource(
 
 
 @pytest.mark.asyncio
-async def test_update_enforces_limit_on_final_accumulated_bundle(
-    client, fs_dirs, monkeypatch
+async def test_create_and_update_accept_bundle_above_former_20_mib_limit(
+    client, fs_dirs
 ):
     _, skills_dir = fs_dirs
-    monkeypatch.setattr(agent_fs, "_MAX_SKILL_BUNDLE_BYTES", 12)
+    payload = "x" * ((2 * 1024 * 1024) - 1)
     created = await client.post(
         "/api/skills",
         json={
             "name": "research",
             "content": VALID_SKILL,
-            "files": [{"path": "assets/first.txt", "content": "12345678"}],
+            "files": [
+                {"path": f"assets/{index:02}.txt", "content": payload}
+                for index in range(11)
+            ],
         },
     )
     assert created.status_code == 201
     skill_dir = skills_dir / "research"
-    before_skill = (skill_dir / "SKILL.md").read_bytes()
+    assert (
+        sum(path.stat().st_size for path in (skill_dir / "assets").iterdir())
+        > 20 * 1024 * 1024
+    )
 
     response = await client.put(
         "/api/skills/research",
         json={
             "name": "research",
             "content": VALID_SKILL.replace("Do research.", "Changed body."),
-            "files": [{"path": "assets/second.txt", "content": "abcdefgh"}],
+            "files": [{"path": "assets/additional.txt", "content": payload}],
         },
     )
 
-    assert response.status_code == 400
-    assert "Final skill bundle resources exceed" in response.json()["detail"]
-    assert (skill_dir / "SKILL.md").read_bytes() == before_skill
-    assert (skill_dir / "assets" / "first.txt").read_text() == "12345678"
-    assert not (skill_dir / "assets" / "second.txt").exists()
+    assert response.status_code == 200
+    assert "Changed body." in (skill_dir / "SKILL.md").read_text()
+    assert (skill_dir / "assets" / "additional.txt").stat().st_size == len(payload)
 
 
 @pytest.mark.asyncio

@@ -39,6 +39,12 @@ Mode scope (`work`, `coding`, or both), explicit-only behavior, required tools,
 runtime dependencies and diagnostics are resolved before activation. Settings
 can create/edit user Skills and enable, disable or configure variants.
 
+EvoFlux does not impose an aggregate byte ceiling on Skill bundle resources.
+Managed create/update and validation still enforce the per-resource size and
+entry-count budgets, reject symlinks and unsafe paths, require regular files,
+and keep Settings previews bounded. This relaxation applies only to Skill
+bundles; chat attachment and upload limits remain separate and unchanged.
+
 ## Global MCP client
 
 Global servers are configured in `{CONFIG_DIR}/mcp.json`. EvoFlux supports

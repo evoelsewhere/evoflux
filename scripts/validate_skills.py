@@ -30,7 +30,6 @@ MAX_DESCRIPTION_CHARS = 1_024
 MAX_SKILL_BYTES = 512 * 1024
 MAX_AGENT_METADATA_BYTES = 256 * 1024
 MAX_RESOURCE_BYTES = 2 * 1024 * 1024
-MAX_BUNDLE_BYTES = 20 * 1024 * 1024
 MAX_BUNDLE_ENTRIES = 20_000
 MAX_SKILL_DIRECTORIES = 2_000
 RECOMMENDED_BODY_LINES = 500
@@ -283,7 +282,6 @@ def _validate_agent_metadata(skill_dir: Path, result: SkillResult) -> None:
 def _validate_resources(skill_dir: Path, result: SkillResult) -> None:
     """Validate bundle resources with the same hard limits as Settings CRUD."""
 
-    total_bytes = 0
     entries_seen = 0
     root = skill_dir.resolve()
     stack = [skill_dir]
@@ -323,20 +321,12 @@ def _validate_resources(skill_dir: Path, result: SkillResult) -> None:
                 result.add("error", "unreadable-resource", f"{relative}: {exc}")
                 continue
             result.resource_count += 1
-            total_bytes += size
             if size > MAX_RESOURCE_BYTES:
                 result.add(
                     "error",
                     "resource-too-large",
                     f"{relative} exceeds {MAX_RESOURCE_BYTES} bytes.",
                 )
-            if total_bytes > MAX_BUNDLE_BYTES:
-                result.add(
-                    "error",
-                    "bundle-too-large",
-                    f"Bundle resources exceed {MAX_BUNDLE_BYTES} bytes.",
-                )
-                return
 
 
 def _validate_links(skill_dir: Path, body: str, result: SkillResult) -> None:

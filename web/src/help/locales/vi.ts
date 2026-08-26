@@ -2013,6 +2013,10 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         type: 'p',
         text: 'Tên Skill phải đúng Agent Skills naming contract. Description cần chính xác vì dùng cho discovery. Giữ workflow chính trong SKILL.md, chỉ load reference lớn khi cần. Nhắc MCP tool bằng stable suffix vì EvoFlux thêm runtime prefix riêng theo installation.',
       },
+      {
+        type: 'p',
+        text: 'EvoFlux không giới hạn tổng dung lượng resource của bundle Skill. Giới hạn từng file và số entry, path containment, kiểm tra regular-file/symlink và preview Settings có giới hạn vẫn được giữ nguyên. Giới hạn attachment và upload của chat là hệ thống riêng, không thay đổi.',
+      },
       { type: 'heading', text: 'MCP stdio và Streamable HTTP' },
       {
         type: 'code',

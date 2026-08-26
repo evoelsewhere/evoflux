@@ -2063,6 +2063,10 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'p',
         text: 'Skill name must match the portable Agent Skills naming contract. Write a precise description because it drives discovery. Keep the core workflow in SKILL.md and load large references only when needed. Refer to MCP tools by stable suffix because EvoFlux prefixes runtime names per installation.',
       },
+      {
+        type: 'p',
+        text: 'EvoFlux places no aggregate byte limit on Skill bundle resources. Per-file and entry-count limits, path containment, regular-file and symlink checks, and bounded Settings previews still apply. Chat attachment and upload limits are separate and unchanged.',
+      },
       { type: 'heading', text: 'MCP stdio and Streamable HTTP' },
       {
         type: 'code',

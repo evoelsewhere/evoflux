@@ -96,6 +96,26 @@ def test_validator_caps_scandir_before_materializing_wide_bundle(
     assert any(item.code == "bundle-entry-limit" for item in result.findings)
 
 
+def test_validator_accepts_aggregate_resources_above_former_20_mib_limit(
+    tmp_path,
+) -> None:
+    skill_dir = tmp_path / "large-bundle"
+    resources = skill_dir / "assets"
+    resources.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: large-bundle\ndescription: Validate a large bundle.\n---\nBody."
+    )
+    payload = b"x" * ((2 * 1024 * 1024) - 1)
+    for index in range(11):
+        (resources / f"{index:02}.bin").write_bytes(payload)
+
+    result = validator.validate_skill(skill_dir)
+
+    assert result.resource_count == 11
+    assert not any(item.code == "bundle-too-large" for item in result.findings)
+    assert result.valid is True
+
+
 def test_validator_accepts_behavioral_trajectory_fields(tmp_path) -> None:
     skill_dir = tmp_path / "investigate-code"
     (skill_dir / "agents").mkdir(parents=True)
