@@ -21,7 +21,11 @@ from urllib.parse import unquote, urlsplit
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from app.agent.schemas.chat import ContentBlock, ImageDataBlock, TextBlock, ToolResult
+from app.agent.schemas.chat import ImageDataBlock, TextBlock, ToolResult
+from app.agent.tools.builtin.browser_shared import (
+    combine_browser_results,
+    mark_untrusted_browser_result,
+)
 from app.agent.tools.registry import InjectedArg, tool
 
 _MAX_IMAGE_BYTES = 10_485_760
@@ -710,7 +714,10 @@ def _text_result(action: str, result: Any) -> str:
     else:
         text = json.dumps(result, ensure_ascii=False, indent=2)
     if action in _UNTRUSTED_ACTIONS:
-        return f"{_UNTRUSTED_BROWSER_NOTICE}\n{text}"
+        return mark_untrusted_browser_result(
+            text,
+            notice=_UNTRUSTED_BROWSER_NOTICE,
+        )
     return text
 
 
@@ -747,17 +754,19 @@ def _image_result(result: dict[str, Any]) -> str | ToolResult:
                     f"css_y={origin_y}+image_y×{scale_y:.4f}. "
                     "click_at defaults to screenshot coordinates and applies this mapping."
                 )
-    return ToolResult(
-        parts=[
-            TextBlock(
-                text=(
-                    f"{_UNTRUSTED_BROWSER_NOTICE}\n"
-                    f"{result.get('text') or '[In-app browser screenshot]'}"
-                    f"{mapping_text}"
-                )
-            ),
-            ImageDataBlock(data=data, media_type=str(media_type)),
-        ]
+    return mark_untrusted_browser_result(
+        ToolResult(
+            parts=[
+                TextBlock(
+                    text=(
+                        f"{result.get('text') or '[In-app browser screenshot]'}"
+                        f"{mapping_text}"
+                    )
+                ),
+                ImageDataBlock(data=data, media_type=str(media_type)),
+            ]
+        ),
+        notice=_UNTRUSTED_BROWSER_NOTICE,
     )
 
 
@@ -876,21 +885,4 @@ async def browser_use(
             logger.debug("direct_browser_error action={} error={}", name, exc)
             results.append(f"Error ({name}): {exc}")
 
-    if not results:
-        return "No actions executed."
-    if not any(isinstance(result, ToolResult) for result in results):
-        return "\n---\n".join(str(result) for result in results)
-
-    parts: list[ContentBlock] = []
-    text: list[str] = []
-    for result in results:
-        if isinstance(result, ToolResult):
-            if text:
-                parts.append(TextBlock(text="\n---\n".join(text)))
-                text.clear()
-            parts.extend(result.parts)
-        else:
-            text.append(result)
-    if text:
-        parts.append(TextBlock(text="\n---\n".join(text)))
-    return ToolResult(parts=parts)
+    return combine_browser_results(results)
