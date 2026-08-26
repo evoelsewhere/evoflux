@@ -303,7 +303,6 @@ def _default_tool_registry() -> dict[str, Tool]:
     )
     from app.agent.tools.builtin.visualize import visualize_read_me, show_widget
     from app.agent.tools.builtin.preview import preview_tool
-    from app.agent.tools.builtin.terminal import terminal_run
 
     registry: dict[str, Tool] = {
         "web_search": web_search,
@@ -359,7 +358,6 @@ def _default_tool_registry() -> dict[str, Tool]:
         "static_diagnostics": static_diagnostics,
         "visualize_read_me": visualize_read_me,
         "show_widget": show_widget,
-        "terminal_run": terminal_run,
     }
     # Merge MCP tools from healthy servers. Names follow ``mcp_<server>_<tool>``
     # so they cannot collide with the builtins above.

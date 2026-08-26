@@ -10,6 +10,35 @@ from app.agent.tools.registry import InjectedArg, Tool, tool
 
 
 # ---------------------------------------------------------------------------
+# Default built-in registry invariants
+# ---------------------------------------------------------------------------
+
+
+def test_default_registry_has_unique_builtin_identity():
+    from app.agent.loader import _default_tool_registry
+
+    registry = _default_tool_registry()
+    builtins = {
+        key: registered
+        for key, registered in registry.items()
+        if registered.origin == "builtin"
+    }
+
+    assert all(key == registered.name for key, registered in builtins.items())
+    implementations = [id(registered.__wrapped__) for registered in builtins.values()]
+    assert len(implementations) == len(set(implementations))
+
+
+def test_default_registry_does_not_advertise_live_terminal_execution():
+    from app.agent.loader import _default_tool_registry
+
+    registry = _default_tool_registry()
+
+    assert "terminal_run" not in registry
+    assert {"shell", "process"} <= registry.keys()
+
+
+# ---------------------------------------------------------------------------
 # @tool decorator — bare usage
 # ---------------------------------------------------------------------------
 

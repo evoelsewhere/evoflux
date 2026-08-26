@@ -513,6 +513,7 @@ async def test_registry_returns_catalog(
     tool_names = {t["name"] for t in body["tools"]}
     # A few builtins we know must exist.
     assert {"read", "write", "shell", "date"}.issubset(tool_names)
+    assert "terminal_run" not in tool_names
     assert {"skill", "todo_manage", "schedule_task", "note"}.isdisjoint(tool_names)
     assert isinstance(body["providers"], list) and body["providers"]
 
