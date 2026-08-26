@@ -10,7 +10,7 @@ surfaces through explicit host-managed boundaries.
 The built-in registry covers:
 
 - filesystem read/search/edit/write/patch/remove;
-- shell, Python, terminal, managed processes and previews;
+- shell, Python, managed processes and previews;
 - web search/fetch, persistent browser and WebBridge;
 - code context, LSP and code-review actions;
 - todos, notes, memory, goals, plans, scheduling and user questions;

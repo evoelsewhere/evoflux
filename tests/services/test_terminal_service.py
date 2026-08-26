@@ -174,17 +174,6 @@ async def test_multiple_terminals_per_session_are_independent(tmp_path):
     await tm.close(sid, terminal_id="1")
 
 
-def test_terminal_run_tool_is_lead_only_all_modes():
-    from app.agent.builtin_prompts import tier_tools
-    from app.agent.loader import _default_tool_registry
-
-    registry = _default_tool_registry()
-    assert "terminal_run" in registry
-    for mode in ("work", "coding"):
-        assert "terminal_run" in tier_tools(registry, mode=mode, role="lead")
-        assert "terminal_run" not in tier_tools(registry, mode=mode, role="member")
-
-
 # ── Windows import gating ─────────────────────────────────────────────────────
 
 
