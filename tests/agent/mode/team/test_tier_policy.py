@@ -140,7 +140,6 @@ class TestDefaultDeferredTools:
 
         registry = _default_tool_registry()
         expected = {
-            "terminal_run",
             "worktree_start",
             "worktree_finish",
             "lsp_diagnostics",
