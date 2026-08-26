@@ -53,7 +53,6 @@ _AGENT_FRONTMATTER_RE = re.compile(
 )
 _AGENT_TEMPERATURE_LINE_RE = re.compile(r"^temperature[ \t]*:")
 _MAX_SKILL_FILE_BYTES = 2 * 1024 * 1024
-_MAX_SKILL_BUNDLE_BYTES = 20 * 1024 * 1024
 _MAX_SKILL_TEXT_PREVIEW_BYTES = 512 * 1024
 _MAX_SKILL_BUNDLE_FILES = 200
 _MAX_SKILL_BUNDLE_ENTRIES = 2_000
@@ -511,7 +510,6 @@ def apply_skill_bundle_files(
     root = skill_dir.resolve()
     root.mkdir(parents=True, exist_ok=True)
     decoded: list[tuple[Path, bytes]] = []
-    total_bytes = 0
     seen: set[str] = set()
     for path, content, encoding in files:
         rel = _validate_skill_resource_path(path).as_posix()
@@ -530,9 +528,6 @@ def apply_skill_bundle_files(
             raise AgentFsPathError(
                 f"Skill resource '{rel}' exceeds the 2 MiB per-file limit."
             )
-        total_bytes += len(payload)
-        if total_bytes > _MAX_SKILL_BUNDLE_BYTES:
-            raise AgentFsPathError("Skill resource updates exceed the 20 MiB limit.")
         decoded.append((_skill_resource_file(root, rel), payload))
 
     for path in deleted_files:
@@ -582,7 +577,6 @@ def assert_skill_bundle_limits(skill_dir: Path) -> None:
     root = skill_dir.resolve()
     stack = [root]
     entries_seen = 0
-    total_bytes = 0
     while stack:
         current = stack.pop()
         directories: list[Path] = []
@@ -621,11 +615,6 @@ def assert_skill_bundle_limits(skill_dir: Path) -> None:
                     if size > _MAX_SKILL_FILE_BYTES:
                         raise AgentFsPathError(
                             f"Skill resource '{relative}' exceeds the 2 MiB per-file limit."
-                        )
-                    total_bytes += size
-                    if total_bytes > _MAX_SKILL_BUNDLE_BYTES:
-                        raise AgentFsPathError(
-                            "Final skill bundle resources exceed the 20 MiB limit."
                         )
         except AgentFsPathError:
             raise

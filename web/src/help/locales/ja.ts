@@ -2034,6 +2034,10 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         type: 'p',
         text: 'Skill name は Agent Skills naming contract に従います。description は discovery に使われるため正確に書きます。主 workflow は SKILL.md、大きな reference は必要時のみ load。EvoFlux runtime prefix は installation ごとに変わるため、MCP tool は安定 suffix で案内します。',
       },
+      {
+        type: 'p',
+        text: 'EvoFlux は Skill bundle resource の合計 byte 数を制限しません。file 単位と entry 数の上限、path containment、regular-file/symlink 検査、Settings preview の bounded contract は維持されます。chat attachment と upload の制限は別契約で、変更されません。',
+      },
       { type: 'heading', text: 'MCP stdio と Streamable HTTP' },
       {
         type: 'code',
