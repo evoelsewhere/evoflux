@@ -1,6 +1,6 @@
 [package]
 name = "evoflux-desktop"
-version = "0.0.8"
+version = "1.0.0"
 description = "EvoFlux — on-machine AI agents (desktop shell)"
 authors = ["EvoFlux contributors"]
 license = "Apache-2.0"

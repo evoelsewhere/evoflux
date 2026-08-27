@@ -6,10 +6,19 @@ the desktop product packages `web/dist` through Tauri.
 
 ## Version sources
 
-The project version in `pyproject.toml` and `app/version.txt` must stay aligned.
-Tauri/package metadata and release tags must describe the same product version.
-Tagged desktop builds require signed updater metadata for platforms that use the
-Tauri updater.
+The five canonical release-version sources must stay aligned:
+
+- `pyproject.toml`;
+- `app/version.txt`;
+- `web/package.json`;
+- `desktop/src-tauri/Cargo.toml`;
+- `desktop/src-tauri/tauri.conf.json`.
+
+`uv.lock` and `desktop/src-tauri/Cargo.lock` carry generated package entries for
+the same version. The tagged desktop workflow rejects a tag that differs from
+the canonical value. Tagged builds also require signed updater metadata on
+platforms that use the Tauri updater. README stable-download links continue to
+name the last published release until replacement artifacts actually exist.
 
 ## Build layers
 
@@ -105,3 +114,12 @@ pins compatible ONNX runtime versions through project constraints.
 The detailed historical investigation remains in
 [`../research/desktop-packaging-signing.md`](../research/desktop-packaging-signing.md),
 while this page describes the current release contract.
+
+## Curated release notes
+
+Release summaries live in `documents/releases/` and the repository-level
+`CHANGELOG.md`. For a tagged release that needs a curated introduction, create
+the GitHub release as a draft after pushing the tag and pass the matching
+release summary with `--notes-file` alongside `--generate-notes`. The tagged
+workflow preserves an existing draft body, adds validated artifacts, and only
+publishes the release after all required build jobs pass.
