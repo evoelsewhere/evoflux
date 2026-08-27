@@ -45,9 +45,9 @@ Derived values:
 | `<data>/agent-plugins/` | Plugin Center | installed package registry and private data |
 | `<workspace>/.evoflux/workflows/*.yaml` | repository | project-local Coding Workflows |
 | `<workspace>/.evoflux/launch.json` | repository | preview/process launch definitions |
-| `<workspace>/.evoflux/easd/config.json` | repository/EASD setup | safe `data_directory`, core rules/templates, and exact project-skill contract in the current unversioned layout |
-| `<workspace>/<data_directory>/` | repository | EASD knowledge base: accepted Specs, adopted feature/architecture/reference docs, templates, historical records, and Run ledgers (default `documents/easd`) |
-| `<workspace>/.evoflux/easd/.local/` | machine-local | ignored rebuildable EASD locks/index/session bindings; never normative |
+| `<workspace>/.evoflux/easd/config.json` | repository/EASD setup | tracked knowledge path, fixed local runtime policy, manual publish policy, rules, and project-skill contract |
+| `<workspace>/<data_directory>/` | repository | accepted Specs and explicitly adopted feature/architecture/reference/historical docs (default `documents/easd`) |
+| `<workspace>/.evoflux/easd/.local/` | machine-local | ignored Runs, plans, missions, evidence, events, Recovery, templates, locks/index/session bindings |
 | `<workspace>/.evoflux/skills/easd-*/` | repository | Coding-only portable EASD phase Skills installed by EASD setup |
 
 Project `.env` is loaded first and `~/.config/evoflux/.env` overrides it.

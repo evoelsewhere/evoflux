@@ -3,23 +3,31 @@ from __future__ import annotations
 import json
 
 import pytest
+import yaml
 
 from app.agent.skills.discovery import (
     discover_skill_records,
     select_skill_records_for_mode,
 )
 from app.easd_skills import (
+    EASD_LEGACY_OPTIONAL_SKELETON_FILES,
     EASD_SKILL_NAMES,
     EASD_SKELETON_FILES,
     EASD_TEMPLATE_NAMES,
     read_easd_skill,
+    read_easd_skeleton,
+    read_easd_template,
 )
 from app.services.easd_setup_service import (
+    EASD_RUNTIME_DIRECTORY,
+    EASD_TEMPLATES_DIRECTORY,
     EasdRepositoryTarget,
     EasdSetupConflict,
     initialize_repositories,
     inspect_repositories,
     inspect_repository,
+    localize_legacy_runs,
+    preview_runtime_migration,
 )
 
 
@@ -55,7 +63,10 @@ def test_initialize_repository_creates_stable_easd_contract(tmp_path):
         "rules_file": ".evoflux/easd/RULES.md",
         "skills": list(EASD_SKILL_NAMES),
         "skills_directory": ".evoflux/skills",
-        "templates_directory": "documents/easd/templates",
+        "templates_directory": ".evoflux/easd/.local/templates",
+        "runtime_storage": "local",
+        "runtime_directory": ".evoflux/easd/.local/runs",
+        "publish_converged_runs": "manual",
     }
     assert (tmp_path / ".evoflux" / "easd" / "RULES.md").is_file()
     data_readme = (tmp_path / "documents" / "easd" / "README.md").read_text(
@@ -69,14 +80,15 @@ def test_initialize_repository_creates_stable_easd_contract(tmp_path):
     assert "<slug>--<run-uuid>" in data_readme
     assert "Draft Specs stay Run-local" in data_readme
     assert "explicitly adopt or link it" in data_readme
-    assert (tmp_path / "documents" / "easd" / "runs").is_dir()
+    assert not (tmp_path / "documents" / "easd" / "runs").exists()
+    assert (tmp_path / EASD_RUNTIME_DIRECTORY).is_dir()
     assert all(
         (tmp_path / "documents" / "easd" / path).is_file()
         for path in EASD_SKELETON_FILES
     )
     assert {
-        item.name for item in (tmp_path / "documents" / "easd" / "templates").iterdir()
-    } == set(EASD_TEMPLATE_NAMES) | {"README.md"}
+        item.name for item in (tmp_path / EASD_TEMPLATES_DIRECTORY).iterdir()
+    } == set(EASD_TEMPLATE_NAMES)
     assert existing_document.read_text(encoding="utf-8") == (
         "existing project knowledge\n"
     )
@@ -196,9 +208,55 @@ def test_initialize_uses_custom_repository_data_directory(tmp_path):
 
     assert result["data_directory"] == "documents/agent-specs"
     assert result["data_path"] == str(tmp_path / "documents" / "agent-specs")
-    assert (tmp_path / "documents" / "agent-specs" / "runs").is_dir()
+    assert not (tmp_path / "documents" / "agent-specs" / "runs").exists()
+    assert (tmp_path / EASD_RUNTIME_DIRECTORY).is_dir()
     manifest = json.loads((tmp_path / ".evoflux" / "easd" / "config.json").read_text())
     assert manifest["data_directory"] == "documents/agent-specs"
+
+
+def test_runtime_migration_removes_only_unchanged_generated_legacy_files(tmp_path):
+    target = EasdRepositoryTarget(path=str(tmp_path), name="backend")
+    initialize_repositories([target])
+    templates = tmp_path / "documents" / "easd" / "templates"
+    templates.mkdir(parents=True)
+    unchanged = templates / "run.yaml"
+    customized = templates / "plan.yaml"
+    unchanged.write_text(read_easd_template("run.yaml"), encoding="utf-8")
+    customized.write_text("project-specific template\n", encoding="utf-8")
+    placeholder_name = EASD_LEGACY_OPTIONAL_SKELETON_FILES[0]
+    placeholder = tmp_path / "documents" / "easd" / placeholder_name
+    placeholder.parent.mkdir(parents=True, exist_ok=True)
+    placeholder.write_text(read_easd_skeleton(placeholder_name), encoding="utf-8")
+
+    preview = preview_runtime_migration([target])[0]
+    assert preview["legacy_generated_file_count"] == 2
+
+    migrated = localize_legacy_runs([target])[0]
+
+    assert migrated["removed_generated_file_count"] == 2
+    assert not unchanged.exists()
+    assert not placeholder.exists()
+    assert customized.read_text(encoding="utf-8") == "project-specific template\n"
+
+
+def test_setup_normalizes_only_legacy_run_and_template_index_entries(tmp_path):
+    target = EasdRepositoryTarget(path=str(tmp_path), name="backend")
+    initialize_repositories([target])
+    index = tmp_path / "documents" / "easd" / "index.yaml"
+    payload = json.loads(json.dumps(yaml.safe_load(index.read_text())))
+    payload["sections"]["runs"] = "runs"
+    payload["sections"]["templates"] = "templates"
+    payload["sections"]["custom"] = "project-docs"
+    payload["authority"]["execution"] = "runs"
+    index.write_text(yaml.safe_dump(payload, sort_keys=False))
+
+    initialize_repositories([target])
+    normalized = yaml.safe_load(index.read_text())
+
+    assert "runs" not in normalized["sections"]
+    assert "templates" not in normalized["sections"]
+    assert normalized["sections"]["custom"] == "project-docs"
+    assert normalized["authority"]["execution"] == ".evoflux/easd/.local/runs"
 
 
 def test_run_only_setup_upgrades_skeleton_without_migrating_existing_docs(tmp_path):

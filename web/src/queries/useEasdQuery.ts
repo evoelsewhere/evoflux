@@ -9,11 +9,13 @@ import {
   createEasdRun,
   createEasdRevision,
   executeEasdRecovery,
+  executeEasdRuntimeMigration,
   getEasdSetup,
   generateEasdScopeAndProof,
   getEasdRun,
   getEasdRunTrace,
   getEasdRecovery,
+  getEasdRuntimeMigration,
   initializeEasdSetup,
   listEasdRuns,
   retryEasdPlanningInChat,
@@ -63,6 +65,40 @@ export function useInitializeEasdSetupMutation(
     onSuccess: async (setup) => {
       client.setQueryData(queryKeys.easd.setup(workspace, projectId), setup)
       await client.invalidateQueries({ queryKey: queryKeys.easd.list(workspace, projectId) })
+    },
+  })
+}
+
+export function useEasdRuntimeMigrationQuery(
+  workspace: string,
+  projectId?: string | null,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.easd.runtimeMigration(workspace, projectId),
+    queryFn: () => getEasdRuntimeMigration(workspace, projectId),
+    enabled: Boolean(workspace) && enabled,
+  })
+}
+
+export function useExecuteEasdRuntimeMigrationMutation(
+  workspace: string,
+  projectId?: string | null,
+) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (repositoryPaths: string[]) => executeEasdRuntimeMigration({
+      workspace,
+      project_id: projectId,
+      repository_paths: repositoryPaths,
+      confirm: true,
+    }),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.easd.setup(workspace, projectId) }),
+        client.invalidateQueries({ queryKey: queryKeys.easd.runtimeMigration(workspace, projectId) }),
+        client.invalidateQueries({ queryKey: queryKeys.easd.runs() }),
+      ])
     },
   })
 }

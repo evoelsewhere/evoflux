@@ -1479,9 +1479,10 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'convergence',
     ],
     setup:
-      'Open a Coding workspace and initialize every repository with a version-controlled EASD knowledge base. Existing project docs stay where they are. Create Intent, review the agent-suggested direct/planned flow, and Approve specification. Direct continues to Implement; planned adds Run/Approve plan. Both finish Review → Verify → Converge.',
+      'Open a Coding workspace and initialize every repository with a tracked EASD knowledge base plus ignored local Run storage. Existing project docs stay where they are. Create Intent, review the agent-suggested direct/planned flow, and Approve specification. Direct continues to Implement; planned adds Run/Approve plan. Both finish Review → Verify → Converge.',
     tricks: [
       'Initialize once per repository; project runs stay locked until every live project repository is ready.',
+      'Operational Runs, missions, evidence, events, Recovery, and Realtime state stay under ignored `.evoflux/easd/.local/`. Accepted Specs and explicitly adopted docs remain trackable. Setup can preview and move legacy Git-visible Runs, removing only unchanged generated defaults.',
       'Initialization installs five Coding-only project skills: easd-specify, easd-plan, easd-implement, easd-review, and easd-verify. They are discovered only from repositories in the active Coding scope.',
       'EASD chat handoffs select only the current phase Skill: Specify for drafting, Plan only for accepted planned flow, Implement for direct or approved-plan execution, Review for mandatory challenge, and Verify for the final gate.',
       'Every EASD Skill re-reads persisted phase and hash state. A stale plan, mission, review snapshot, or verification result stops instead of continuing from chat memory.',

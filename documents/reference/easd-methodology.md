@@ -76,21 +76,21 @@ gate be attempted.
 
 ## Repository source of truth
 
-`.evoflux/easd/config.json` selects a safe repository-relative data directory.
-That directory is the EASD knowledge base: `specs/` holds published accepted
-behavior contracts; `features/`, `architecture/`, and `reference/` hold adopted
-living knowledge; `runs/` stores change execution; and `records/` is historical.
+`.evoflux/easd/config.json` selects a safe repository-relative knowledge
+directory and a fixed ignored local runtime directory. The knowledge directory
+holds accepted Specs and explicitly adopted living/historical docs;
+`.evoflux/easd/.local/runs/` stores operational change execution.
 Setup creates missing skeleton files but never moves or copies existing project
-documentation. The owning repository stores Intent, Spec/Plan revisions,
-lifecycle events, mission snapshots, reviews, verifications, evidence,
-deviations, and convergence as version-controlled YAML. Accepted revision
-content is immutable; mutable projections use generation/hash compare-and-swap
-and atomic rename.
+documentation. Operational Intent, draft Spec/Plan revisions, lifecycle events,
+mission snapshots, reviews, verifications, evidence, deviations and convergence
+are local ignored YAML. Accepted Specs are published as immutable
+version-controlled knowledge. Mutable local projections use generation/hash
+compare-and-swap and atomic rename.
 
-Application SQLite and `.evoflux/easd/.local/` may hold only rebuildable runtime
-projection, locks, or session bindings. They do not define shared status. Git
-repository documents win so another collaborator can continue without the
-original machine or chat.
+Application SQLite remains a query/runtime projection. Git does not transport
+active Run status; remote continuation requires explicit publication or a
+shared service. This avoids per-attempt Git churn and accidental evidence
+retention in large-member repositories.
 
 The lifecycle's Learn phase is intentionally not a sixth Skill yet. It remains
 backed by run telemetry and benchmark analysis until EvoFlux exposes a bounded

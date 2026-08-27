@@ -117,6 +117,8 @@ export {
   useEasdRunQuery,
   useEasdRunTraceQuery,
   useEasdRecoveryQuery,
+  useEasdRuntimeMigrationQuery,
+  useExecuteEasdRuntimeMigrationMutation,
   useExecuteEasdRecoveryMutation,
   useEasdRunsQuery,
   useEasdSetupQuery,

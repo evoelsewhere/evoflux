@@ -16,6 +16,8 @@ import type {
   EasdRecoveryActionId,
   EasdRecoveryExecuteResponse,
   EasdRecoveryPreview,
+  EasdRuntimeMigrationPreview,
+  EasdRuntimeMigrationResult,
   EasdRun,
   EasdRunDetail,
   EasdRunTrace,
@@ -99,6 +101,30 @@ export async function initializeEasdSetup(body: {
     body: JSON.stringify(body),
   })
   return easdResponse(response, 'initializeEasdSetup')
+}
+
+export async function getEasdRuntimeMigration(
+  workspace: string,
+  projectId?: string | null,
+): Promise<EasdRuntimeMigrationPreview> {
+  const params = new URLSearchParams({ workspace })
+  if (projectId) params.set('project_id', projectId)
+  const response = await fetch(`${apiBaseUrl()}/easd/setup/runtime-migration?${params}`)
+  return easdResponse(response, 'getEasdRuntimeMigration')
+}
+
+export async function executeEasdRuntimeMigration(body: {
+  workspace: string
+  project_id?: string | null
+  repository_paths?: string[] | null
+  confirm: true
+}): Promise<EasdRuntimeMigrationResult> {
+  const response = await fetch(`${apiBaseUrl()}/easd/setup/runtime-migration`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return easdResponse(response, 'executeEasdRuntimeMigration')
 }
 
 export async function getEasdRun(runId: string): Promise<EasdRunDetail> {

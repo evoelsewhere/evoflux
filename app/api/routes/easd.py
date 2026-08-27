@@ -26,6 +26,9 @@ from app.api.schemas.easd import (
     EasdPlanRevisionCreateRequest,
     EasdPlanRevisionOut,
     EasdRepositorySetupOut,
+    EasdRuntimeMigrationPreviewResponse,
+    EasdRuntimeMigrationRequest,
+    EasdRuntimeMigrationResponse,
     EasdRecoveryExecuteRequest,
     EasdRecoveryExecuteResponse,
     EasdRecoveryPreviewResponse,
@@ -52,6 +55,8 @@ from app.services.easd_setup_service import (
     EasdSetupConflict,
     initialize_repositories,
     inspect_repositories,
+    localize_legacy_runs,
+    preview_runtime_migration,
 )
 from app.services.trace_service import (
     TraceConflict,
@@ -240,6 +245,118 @@ async def initialize_easd_setup(
         workspace=root,
         project_id=body.project_id,
         repositories=repositories,
+    )
+
+
+def _migration_response(
+    *,
+    workspace: str,
+    project_id: UUID | None,
+    repositories: list[dict],
+    moved: bool,
+) -> dict:
+    return {
+        "workspace": workspace,
+        "project_id": project_id,
+        "legacy_run_count": sum(item["legacy_run_count"] for item in repositories),
+        "legacy_generated_file_count": sum(
+            item["legacy_generated_file_count"] for item in repositories
+        ),
+        "moved_run_count": (
+            sum(item.get("moved_run_count", 0) for item in repositories)
+            if moved
+            else None
+        ),
+        "removed_generated_file_count": (
+            sum(item.get("removed_generated_file_count", 0) for item in repositories)
+            if moved
+            else None
+        ),
+        "file_count": sum(
+            run["file_count"]
+            for repository in repositories
+            for run in repository["runs"]
+        ),
+        "bytes": sum(
+            run["bytes"] for repository in repositories for run in repository["runs"]
+        ),
+        "generated_bytes": sum(item["generated_bytes"] for item in repositories),
+        "repositories": repositories,
+    }
+
+
+@router.get(
+    "/setup/runtime-migration",
+    response_model=EasdRuntimeMigrationPreviewResponse,
+)
+async def preview_easd_runtime_migration(
+    db_factory: DbSessionFactory,
+    workspace: str,
+    project_id: UUID | None = None,
+) -> EasdRuntimeMigrationPreviewResponse:
+    root, targets = await _repository_targets(
+        db_factory,
+        workspace=workspace,
+        project_id=project_id,
+    )
+    try:
+        repositories = await asyncio.to_thread(preview_runtime_migration, targets)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return EasdRuntimeMigrationPreviewResponse.model_validate(
+        _migration_response(
+            workspace=root,
+            project_id=project_id,
+            repositories=repositories,
+            moved=False,
+        )
+    )
+
+
+@router.post(
+    "/setup/runtime-migration",
+    response_model=EasdRuntimeMigrationResponse,
+)
+async def execute_easd_runtime_migration(
+    body: EasdRuntimeMigrationRequest,
+    db_factory: DbSessionFactory,
+) -> EasdRuntimeMigrationResponse:
+    root, targets = await _repository_targets(
+        db_factory,
+        workspace=body.workspace,
+        project_id=body.project_id,
+    )
+    by_path = {target.path: target for target in targets}
+    if body.repository_paths is None:
+        selected = targets
+    else:
+        normalized = [_workspace(path) for path in body.repository_paths]
+        unknown = sorted(set(normalized) - set(by_path))
+        if unknown:
+            raise HTTPException(
+                status_code=422,
+                detail="Repositories are outside the selected EASD scope: "
+                + ", ".join(unknown),
+            )
+        selected = [by_path[path] for path in dict.fromkeys(normalized)]
+        if not selected:
+            raise HTTPException(
+                status_code=422,
+                detail="Select at least one repository to localize.",
+            )
+    try:
+        repositories = await asyncio.to_thread(localize_legacy_runs, selected)
+    except EasdSetupConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return EasdRuntimeMigrationResponse.model_validate(
+        _migration_response(
+            workspace=root,
+            project_id=body.project_id,
+            repositories=repositories,
+            moved=True,
+        )
     )
 
 

@@ -21,7 +21,7 @@ Approve plan, and Converge each require a confirmation summarizing the exact
 contract or evidence state.
 
 Each Run also has **Overview** and **Trace** workspaces. Trace is a read-only
-server projection of the repository-owned Run, Spec/Plan revisions, ACs,
+server projection of the locally persisted Run, Spec/Plan revisions, ACs,
 mission contracts and attempts, evidence, deviations, convergence, and ordered
 events. Users can filter by AC, inspect exact entity hashes/status/ownership,
 and see the current action blockers as trace gaps. Narrow panels present the
@@ -39,7 +39,7 @@ replays repository events after the client's last sequence, and then delivers
 post-commit lifecycle/artifact/recovery events. The client deduplicates sequence
 overlap and invalidates existing detail, Trace, Recovery, and list queries;
 TanStack Query remains the durable UI authority. Header presence is ephemeral
-and shows only viewer count, while all activity remains repository-owned.
+and shows only viewer count, while all activity remains local and durable.
 
 1. Open a Coding workspace/session and choose **Agent Specification-Driven
    Development** in the workbench.
@@ -139,23 +139,26 @@ setup.
 
 | Repository artifact | Purpose |
 |---|---|
-| `.evoflux/easd/config.json` | bootstrap manifest for the configured data directory, rules, templates, and skill bundle |
+| `.evoflux/easd/config.json` | tracked knowledge path, ignored runtime/templates, publish policy, rules, and skill bundle |
 | `.evoflux/easd/RULES.md` | normative core rules shared by every phase Skill |
 | `<data_directory>/index.yaml` and section READMEs | EASD knowledge-base navigation, authority and retention contract |
 | `<data_directory>/specs/` | discoverable accepted Specs with immutable revisions and a small current-revision index |
 | `<data_directory>/{features,architecture,reference}/` | adopted living product behavior, boundaries and exact contracts |
 | `<data_directory>/{guides,development,records,images}/` | task guidance, contributor procedures, historical records and media |
-| `<data_directory>/templates/` | standard YAML and Markdown artifact shapes |
-| `<data_directory>/runs/<slug>--<uuid>/` | version-controlled lifecycle, revisions, status history, missions, evidence, deviations, and convergence |
-| `.evoflux/easd/.local/` | ignored rebuildable locks/index/session bindings; never normative |
+| `.evoflux/easd/.local/templates/` | ignored bundled runtime artifact shapes |
+| `.evoflux/easd/.local/runs/<slug>--<uuid>/` | ignored lifecycle, revisions, missions, evidence, deviations, events, Recovery and convergence |
+| `.evoflux/easd/.local/` | local runtime, locks/index/session bindings; never Git transport |
 | `.evoflux/skills/easd-{specify,plan,implement,review,verify}/SKILL.md` | portable EASD phase guidance discovered only in this repository |
 | `.evoflux/skills/easd-*/.evoflux.json` | limits the EASD skills to Coding mode |
 
 Run creation returns `409 easd_setup_required` until the entire selected scope
 is ready. Legacy Run-only setups report `upgrade_required` and add only missing
-knowledge skeleton/templates without replacing existing valid edited Skills or
-moving/copying repository documentation. Invalid configuration, symlinks or
-Skills are never silently overwritten; repair requires an explicit action.
+local runtime policy/templates without replacing existing valid edited Skills
+or moving/copying repository documentation. Git-visible legacy Runs remain
+readable until **Move to local** is explicitly confirmed. That migration removes
+only byte-identical generated defaults and preserves customized files. Invalid
+configuration, symlinks or Skills are never silently overwritten; repair
+requires an explicit action.
 
 The installed skills are not global seeds or EvoFlux built-ins. Standard skill
 precedence makes them available only when their authorized repository is part
@@ -327,7 +330,7 @@ Primary code:
 
 - repository store/projection: `easd_repository_store.py`,
   `easd_repository_sync.py`, and the current unversioned config contract; the application DB contains
-  only a rebuildable runtime projection for local sessions and generic tasks;
+  only a rebuildable query projection for local sessions and generic tasks;
 - setup: `easd_setup_service.py`, packaged `app/easd_skills/` templates,
   `/api/easd/setup`, and repository-local `.evoflux/easd/` plus
   `.evoflux/skills/easd-*` artifacts;
@@ -343,8 +346,8 @@ Primary code:
 - observability: `EVOFLUX_trace_operations_total` plus structured logs.
 
 `trace_*` model/service names and the hidden `/api/trace` alias remain local
-compatibility identifiers during migration. They are not the collaborative
-source of truth: repository YAML wins and can rebuild the local projection.
+compatibility identifiers during migration. Accepted repository Specs and local
+Run YAML are the respective knowledge/runtime authorities.
 
 Focused tests cover repository-store structure/CAS/immutable revisions/mission
 status projection, direct/planned branching, authorized multi-repo generation,

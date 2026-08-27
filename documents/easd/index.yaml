@@ -9,13 +9,11 @@ sections:
   development: development
   records: records
   images: images
-  templates: templates
-  runs: runs
 authority:
   normative: specs
   current_state:
     - features
     - architecture
     - reference
-  execution: runs
+  execution: .evoflux/easd/.local/runs
   historical: records

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -119,6 +120,12 @@ def _initialize(client, workspace: str, *, project_id: str | None = None) -> dic
     assert "schema_version" not in repository
     assert "skill_bundle_version" not in repository
     assert repository["data_directory"] == "documents/easd"
+    assert repository["runtime_directory"] == ".evoflux/easd/.local/runs"
+    assert repository["runtime_path"] == str(
+        Path(workspace) / ".evoflux" / "easd" / ".local" / "runs"
+    )
+    assert repository["legacy_run_count"] == 0
+    assert repository["legacy_generated_file_count"] == 0
     assert repository["rules_path"] == ".evoflux/easd/RULES.md"
     assert repository["skills_path"] == ".evoflux/skills"
     assert repository["skill_names"] == [
@@ -273,7 +280,7 @@ def test_easd_api_create_accept_start_evidence_and_converge(client, tmp_path):
     assert converged.status_code == 200
     assert converged.json()["report"]["criteria"]["passed"] == 1
     run_directory = next(
-        (tmp_path / "documents" / "easd" / "runs").glob(f"*--{run_id}")
+        (tmp_path / ".evoflux" / "easd" / ".local" / "runs").glob(f"*--{run_id}")
     )
     stored_run = yaml.safe_load((run_directory / "run.yaml").read_text())
     assert stored_run["status"] == "converged"
@@ -537,6 +544,7 @@ def test_easd_is_canonical_in_openapi_and_trace_path_is_legacy(client):
     assert "/api/easd/runs/{run_id}/review/start" in paths
     assert "/api/easd/runs/{run_id}/verification/start" in paths
     assert "/api/easd/runs/{run_id}/stream" in paths
+    assert "/api/easd/setup/runtime-migration" in paths
     assert "/api/easd/runs/{run_id}/plans/{revision_id}/accept" in paths
     assert "/api/easd/runs/{run_id}/activate" not in paths
     assert "/api/trace/runs" not in paths
@@ -604,7 +612,49 @@ def test_easd_setup_api_accepts_custom_repository_data_directory(client, tmp_pat
     assert response.status_code == 200
     repository = response.json()["repositories"][0]
     assert repository["data_directory"] == "documents/easd"
-    assert (tmp_path / "documents" / "easd" / "templates" / "run.yaml").is_file()
+    assert (
+        tmp_path / ".evoflux" / "easd" / ".local" / "templates" / "run.yaml"
+    ).is_file()
+
+
+def test_easd_setup_explicitly_localizes_legacy_runs(client, tmp_path):
+    _initialize(client, str(tmp_path))
+    created = client.post("/api/easd/runs", json=_payload(str(tmp_path))).json()
+    run_id = created["run"]["id"]
+    local_directory = next(
+        (tmp_path / ".evoflux" / "easd" / ".local" / "runs").glob(f"*--{run_id}")
+    )
+    legacy_root = tmp_path / "documents" / "easd" / "runs"
+    legacy_root.mkdir(parents=True)
+    legacy_directory = legacy_root / local_directory.name
+    os.replace(local_directory, legacy_directory)
+
+    preview = client.get(
+        "/api/easd/setup/runtime-migration",
+        params={"workspace": str(tmp_path)},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["legacy_run_count"] == 1
+    assert preview.json()["legacy_generated_file_count"] == 0
+    assert preview.json()["repositories"][0]["runs"][0]["run_id"] == run_id
+    rejected = client.post(
+        "/api/easd/setup/runtime-migration",
+        json={"workspace": str(tmp_path), "confirm": False},
+    )
+    assert rejected.status_code == 422
+
+    migrated = client.post(
+        "/api/easd/setup/runtime-migration",
+        json={"workspace": str(tmp_path), "confirm": True},
+    )
+
+    assert migrated.status_code == 200, migrated.text
+    assert migrated.json()["moved_run_count"] == 1
+    assert not legacy_directory.exists()
+    assert (local_directory / "run.yaml").is_file()
+    assert client.get(f"/api/easd/runs/{run_id}").status_code == 200
+    setup = client.get("/api/easd/setup", params={"workspace": str(tmp_path)})
+    assert setup.json()["repositories"][0]["legacy_run_count"] == 0
 
 
 def test_easd_run_create_requires_exactly_one_intent_or_specification(client, tmp_path):

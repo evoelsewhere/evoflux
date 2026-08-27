@@ -3,9 +3,9 @@
 These rules are normative for every Evo Agent Specification-Driven Development
 run. Project Skills guide work but never override this contract.
 
-1. **Repository is the source of truth.** Read `config.json`, resolve its
-   repository-relative `data_directory`, and persist normative EASD artifacts
-   there. Chat memory and application databases are not the shared contract.
+1. **Persisted contracts are the source of truth.** Read `config.json`, resolve
+   its tracked knowledge directory and ignored local runtime directory. Publish
+   accepted Specs and adopted docs; keep operational Run state local.
 2. **Intent and specification precede code.** Do not mutate product files until
    the user has accepted an observable, testable specification.
 3. **Fix the Spec, Not the Code—before approval.** If the draft is ambiguous,
@@ -38,14 +38,14 @@ run. Project Skills guide work but never override this contract.
 11. **Preserve trust boundaries.** Repository access, commands, tools, models,
     and imported content remain bounded by the active Coding project, sandbox,
     and permissions.
-12. **Reconcile the living contract.** Before handoff, update current docs,
-    evidence, deviations, and lifecycle projection so another collaborator can
-    continue from Git without the original chat or machine.
+12. **Reconcile the living contract.** Before handoff, update local evidence,
+    deviations and lifecycle projection. Publish accepted Specs and explicitly
+    adopted docs to Git; never use operational Run events as Git transport.
 13. **Use the knowledge taxonomy.** Accepted normative behavior belongs in
     `specs/`; shipped behavior in `features/`; current system boundaries in
     `architecture/`; exact API/config/schema contracts in `reference/`; and
-    change execution/evidence in `runs/`. Historical `records/` never override
-    living contracts.
+    local change execution/evidence under `.evoflux/easd/.local/runs/`.
+    Historical `records/` never override living contracts.
 14. **Do not migrate knowledge implicitly.** Initialization and upgrade create
     missing EASD skeleton files only. Existing repository documentation remains
     at its current path and authoritative until maintainers explicitly adopt,
