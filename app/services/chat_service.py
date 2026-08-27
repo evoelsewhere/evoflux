@@ -1059,6 +1059,8 @@ async def get_latest_top_level_session(
     folder_id: UUID | None = None,
     tags: list[str] | None = None,
     tag_match: Literal["exact", "contains"] = "exact",
+    agent_name: str | None = None,
+    include_unassigned_agent: bool = False,
 ) -> ChatSession | None:
     """Return the newest top-level session for a mode/workspace pair.
 
@@ -1090,6 +1092,16 @@ async def get_latest_top_level_session(
     )
     if folder_id is not None:
         stmt = stmt.where(col(ChatSession.folder_id) == folder_id)
+    if agent_name is not None:
+        if include_unassigned_agent:
+            stmt = stmt.where(
+                or_(
+                    col(ChatSession.agent_name) == agent_name,
+                    col(ChatSession.agent_name).is_(None),
+                )
+            )
+        else:
+            stmt = stmt.where(col(ChatSession.agent_name) == agent_name)
     if project_id is not None:
         stmt = stmt.where(col(ChatSession.project_id) == project_id)
     else:

@@ -9,14 +9,23 @@ streaming, persistence and verification.
 An agent is a Markdown file with YAML frontmatter. The effective configuration
 combines a code-owned Work or Coding base profile with user-owned additions:
 
-- identity, role and optional visual metadata;
+- identity, role, optional member `lead` owner and visual metadata;
 - `provider:model` and thinking level;
 - Skills and tools plus explicit tool opt-outs;
 - permission rules and runtime settings;
 - optional team metadata and specialist roster.
 
-Exactly one lead is required per team. First-party base behavior is not copied
-into user files; edits remain compact and survive upgrades. Tracked agent/MCP
+Each mode may define multiple leads. A member belongs to its explicit `lead`, or
+to the deterministic default (`evoflux`, otherwise the first sorted lead) when
+the field is omitted for backward compatibility. Every top-level session stores
+its selected lead; the topbar switches an idle session and shows only that
+lead's member blueprints. Settings → Agents renders each lead as a collapsible
+team with its owned members nested underneath; inherited legacy members are
+labelled under the default lead rather than shown as a shared flat pool.
+Delegation cards state `<lead> delegated → <member#N>` so task execution remains
+clear even though coordination and final synthesis appear in the lead transcript.
+First-party base behavior is not copied into user
+files; edits remain compact and survive upgrades. Tracked agent/MCP
 changes are detected at the next turn without stopping other running sessions.
 
 See [Application harness](../architecture/application-harness.md) for the exact
@@ -42,7 +51,9 @@ wire formats stay behind a generic message/tool/usage schema.
 
 ## Lead and specialists
 
-The lead decides whether to handle work directly or spawn specialists.
+The session-selected lead decides whether to handle work directly or spawn its
+owned specialists. Members assigned to another lead are absent from delegation
+and capabilities rosters.
 Specialists are lazy blueprints; `team_delegate` creates independent instances
 named `blueprint#N`, each with its own history and lifecycle. They are activated
 only when mailbox input exists and return to idle after draining it.
@@ -68,9 +79,11 @@ bounded concurrent waves; stateful or unsafe batches run serially. Multiple
 specialist instances can work in parallel, but there are no permanent
 background agent loops.
 
-Teams are cached by Work/session or Coding identity and evicted after an idle
-window. Deletion and reload use lifecycle epochs/locks to prevent stale builders
-from publishing old state.
+Teams are cached by Work/session or Coding identity plus the session's durable
+lead selection and evicted after an idle window. Lead switching is rejected
+during active work, commits the new owner, then evicts the old idle team.
+Deletion and reload use lifecycle epochs/locks to prevent stale builders from
+publishing old state.
 
 ## Streaming and failure behavior
 

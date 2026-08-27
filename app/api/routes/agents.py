@@ -107,6 +107,7 @@ def _parse_summary(
     return AgentSummary(
         name=name,
         role=effective.role,
+        lead=effective.lead,
         description=effective.description,
         model=effective.model,
         tools=effective.tools,

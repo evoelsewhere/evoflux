@@ -724,7 +724,7 @@ def test_ensure_builtin_lead_blueprint_skips_existing_lead(tmp_path):
     assert not (d / "evoflux.md").exists()
 
 
-def test_load_team_from_dir_multiple_leads_raises(tmp_path):
+def test_load_team_from_dir_selects_lead_owned_members(tmp_path):
     from app.agent.loader import load_team_from_dir
 
     d = _make_agents_dir(
@@ -732,10 +732,44 @@ def test_load_team_from_dir_multiple_leads_raises(tmp_path):
         [
             {"name": "lead1", "role": "lead", "model": "zai:glm-5-turbo"},
             {"name": "lead2", "role": "lead", "model": "zai:glm-5-turbo"},
+            {"name": "default-worker", "role": "member", "model": "zai:glm-5-turbo"},
+            {
+                "name": "lead2-worker",
+                "role": "member",
+                "lead": "lead2",
+                "model": "zai:glm-5-turbo",
+            },
         ],
     )
     factory, _ = _make_provider_factory()
-    with pytest.raises(ValueError, match="Multiple agents with 'role: lead'"):
+    default_team = load_team_from_dir(d, provider_factory=factory)
+    lead2_team = load_team_from_dir(d, provider_factory=factory, lead_name="lead2")
+
+    assert default_team is not None
+    assert default_team.lead.name == "lead1"
+    assert set(default_team.blueprints) == {"default-worker"}
+    assert lead2_team is not None
+    assert lead2_team.lead.name == "lead2"
+    assert set(lead2_team.blueprints) == {"lead2-worker"}
+
+
+def test_load_team_from_dir_rejects_unknown_member_lead(tmp_path):
+    from app.agent.loader import load_team_from_dir
+
+    d = _make_agents_dir(
+        tmp_path,
+        [
+            {"name": "lead", "role": "lead", "model": "zai:glm-5-turbo"},
+            {
+                "name": "worker",
+                "role": "member",
+                "lead": "missing",
+                "model": "zai:glm-5-turbo",
+            },
+        ],
+    )
+    factory, _ = _make_provider_factory()
+    with pytest.raises(ValueError, match="unknown lead 'missing'"):
         load_team_from_dir(d, provider_factory=factory)
 
 

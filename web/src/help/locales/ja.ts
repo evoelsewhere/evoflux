@@ -278,6 +278,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Monitor 表示は多数の worker が生きているときのチーム横断アクティビティ概要です。',
       'workbench のコンテキスト予算バーはモデルの context_length と summary_trigger_tokens を使います — 上がったら早めに compact。',
       'モデル、スキル、ツール、権限は Settings → Agents でエージェントごとに設定。',
+      'topbar の Lead selector で idle session の Work/Coding lead を選択します。各 option はその lead 所有 member だけを表示し、active work 中は switch できません。',
+      'Settings → Agents は member を collapsible lead team 配下に表示します。Delegation card は “lead delegated → member#N” と示し、lead は coordination と final synthesis を担当します。',
       'composer のセッション pill は現在チャットだけのモデル / thinking / fast mode。',
       '単純タスクは Lead に留め、並列が明らかに壁時計時間を短くするときだけ fan-out。',
       'Lead 専用ツール（ask_user、plan mode ヘルパー、一部 worktree ヘルパー）は specialist に付与されません — worker にプラン承認を期待しないでください。'
@@ -285,7 +287,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: '各セッションにユーザー向けトランスクリプトを所有する Lead エージェントがあります。複雑な仕事は目標と制約付きのサブタスクに分解され、specialist が需要に応じて起動し、共有 mailbox で結果を交換し、Lead が証拠を評価してからあなたに答えます。',
+        text: '各 session はユーザー向け transcript を所有する Lead を一つ永続化します。各 mode は複数 lead を定義でき、各 member は Settings → Agents で一つの lead に所属します。選択中 lead の specialist だけが必要時に起動し、mailbox で結果を交換して evidence を返します。',
       },
       {
         type: 'p',

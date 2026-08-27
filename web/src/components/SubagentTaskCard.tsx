@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 
 export interface SubagentTaskCardProps {
   agent: string
+  delegatedBy?: string | null
   title: string
   status?: DelegationDisplayStatus | 'idle'
   activity?: string
@@ -41,6 +42,7 @@ function stringList(value: unknown): string[] {
 
 export function SubagentTaskCard({
   agent,
+  delegatedBy = null,
   title,
   status = 'running',
   activity,
@@ -100,7 +102,7 @@ export function SubagentTaskCard({
       />
       <div className="min-w-0 flex-1">
         <p className="truncate font-mono text-[11px] font-semibold text-(--color-text)">
-          Task → {agent}
+          {delegatedBy ? `${delegatedBy} delegated → ${agent}` : `Task → ${agent}`}
         </p>
         <p className="mt-0.5 line-clamp-2 text-xs text-(--color-text-muted)">{title}</p>
         {activity && !summary && (
@@ -172,7 +174,7 @@ export function SubagentTaskCard({
           type="button"
           onClick={onFocus}
           className={headerClasses}
-          title={taskId ? `Open ${agent} · Task ${taskId}` : `Open ${agent}`}
+          title={taskId ? `Open ${agent} · Delegated by ${delegatedBy ?? 'lead'} · Task ${taskId}` : `Open ${agent}`}
         >
           {headerContent}
         </button>

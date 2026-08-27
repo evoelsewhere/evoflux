@@ -40,7 +40,14 @@ beforeEach(() => {
       lead,
       'explorer#1': createDefaultAgentStream(),
     },
-    activityLog: [],
+    activityLog: [{
+      id: 'delegation',
+      kind: 'delegation',
+      agent: 'lead',
+      timestamp: new Date(1_000),
+      label: 'Delegated task',
+      meta: { from_agent: 'lead', to_agents: ['explorer#1'], task_ids: [TASK_ID] },
+    }],
   })
 })
 
@@ -82,7 +89,7 @@ describe('ToolCallGroup delegation lifecycle', () => {
       'aria-expanded',
       'false',
     )
-    expect(screen.getByText('Task → explorer#1')).toBeInTheDocument()
+    expect(screen.getByText('lead delegated → explorer#1')).toBeInTheDocument()
     expect(screen.getByText('The current branch is main.')).toBeInTheDocument()
     expect(screen.getByLabelText('Elapsed 5s')).toBeInTheDocument()
     expect(screen.getByText('done')).toBeInTheDocument()

@@ -140,6 +140,7 @@ export interface TeamStoreActions {
   loadTeamStatus: (
     workspace?: string | null,
     mode?: 'coding' | null,
+    sessionId?: string | null,
   ) => Promise<void>
   loadSession: (
     sessionId: string,

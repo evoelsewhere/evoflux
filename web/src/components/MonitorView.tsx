@@ -155,6 +155,7 @@ function AgentStatusCard({
                 return 'agent'
               }
             })()}
+            delegatedBy={name}
             title={truncateArg(tool.args) || 'Delegated task'}
             status={isWorking ? 'running' : 'idle'}
             interactive={false}
@@ -250,6 +251,7 @@ function CommsRow({ item }: { item: ActivityItem }) {
       <div className="px-3 py-1.5">
         <SubagentTaskCard
           agent={toAgents[0] ?? item.agent}
+          delegatedBy={item.agent}
           title={title}
           status="running"
           isolation={resolvedIsolation}

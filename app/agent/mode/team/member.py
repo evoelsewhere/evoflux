@@ -475,12 +475,19 @@ class TeamMemberBase(abc.ABC):
                         self.name,
                         self.session_id,
                     )
-                elif not existing.title:
-                    existing.title = title or f"Team {self._role_label}: {self.name}"
-                    existing.mode = mode
-                    existing.workspace = workspace
-                    if project_id is not None:
-                        existing.project_id = project_id
+                elif not existing.title or (
+                    self._role_label == "lead" and existing.agent_name is None
+                ):
+                    if not existing.title:
+                        existing.title = (
+                            title or f"Team {self._role_label}: {self.name}"
+                        )
+                        existing.mode = mode
+                        existing.workspace = workspace
+                        if project_id is not None:
+                            existing.project_id = project_id
+                    if self._role_label == "lead" and existing.agent_name is None:
+                        existing.agent_name = self.name
                     db.add(existing)
                     await db.commit()
                     logger.info(

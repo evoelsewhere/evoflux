@@ -148,6 +148,78 @@ def test_dedupe_named_paths_empty():
 
 
 class TestTeamAgentsRouteExtra:
+    def test_mode_leads_report_exact_owned_members(
+        self, app_without_team, monkeypatch, tmp_path
+    ):
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "AGENTS_DIR", str(tmp_path))
+        definitions = {
+            "evoflux.md": "---\nname: evoflux\nrole: lead\nmodel: test:model\n---\nDefault lead.\n",
+            "research.md": "---\nname: research\nrole: lead\nmodel: test:model\n---\nResearch lead.\n",
+            "coder.md": "---\nname: coder\nrole: member\nmodel: test:model\n---\nCoder.\n",
+            "explorer.md": "---\nname: explorer\nrole: member\nlead: research\nmodel: test:model\n---\nExplorer.\n",
+        }
+        for name, content in definitions.items():
+            (tmp_path / name).write_text(content, encoding="utf-8")
+
+        response = TestClient(app_without_team).get(
+            "/api/team/leads", params={"mode": "work"}
+        )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["default_lead"] == "evoflux"
+        owners = {
+            lead["name"]: [member["name"] for member in lead["members"]]
+            for lead in body["leads"]
+        }
+        assert owners == {"evoflux": ["coder"], "research": ["explorer"]}
+
+    def test_session_persists_and_switches_idle_lead(
+        self, app_without_team, monkeypatch, tmp_path
+    ):
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "AGENTS_DIR", str(tmp_path))
+        for name, role in (("evoflux", "lead"), ("research", "lead")):
+            (tmp_path / f"{name}.md").write_text(
+                f"---\nname: {name}\nrole: {role}\nmodel: test:model\n---\n{name}.\n",
+                encoding="utf-8",
+            )
+        client = TestClient(app_without_team)
+        created = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "work", "create": True, "agent_name": "research"},
+        )
+        assert created.status_code == 200, created.text
+        assert created.json()["agent_name"] == "research"
+        from app.services import team_manager
+
+        asyncio.run(team_manager.stop_sessions({created.json()["id"]}))
+        roster = client.get(
+            "/api/team/agents", params={"session_id": created.json()["id"]}
+        )
+        assert roster.status_code == 200, roster.text
+        assert roster.json()["lead_name"] == "research"
+        live_team = team_manager.find_team_for_session(created.json()["id"])
+        assert live_team is not None
+        live_team.lead.state = "working"
+        blocked = client.patch(
+            f"/api/team/sessions/{created.json()['id']}/lead",
+            json={"lead_name": "evoflux"},
+        )
+        assert blocked.status_code == 409
+        live_team.lead.state = "idle"
+
+        switched = client.patch(
+            f"/api/team/sessions/{created.json()['id']}/lead",
+            json={"lead_name": "evoflux"},
+        )
+
+        assert switched.status_code == 200, switched.text
+        assert switched.json()["agent_name"] == "evoflux"
+
     def test_agents_no_team_returns_404(self, app_without_team):
         client = TestClient(app_without_team)
         assert client.get("/api/team/agents").status_code == 404
@@ -378,7 +450,7 @@ class TestTeamAgentsRouteExtra:
             )
         )
 
-        async def fake_get_or_start_team_for_session(_session_id: str):
+        async def fake_get_or_start_team_for_session(_session_id: str, **_kwargs):
             test_team.workspace = None
             return test_team
 
@@ -421,7 +493,7 @@ class TestTeamAgentsRouteExtra:
             )
         )
 
-        async def fake_get_work(_session_id: str):
+        async def fake_get_work(_session_id: str, **_kwargs):
             test_team.mode = "work"
             return test_team
 

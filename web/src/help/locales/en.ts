@@ -290,6 +290,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Monitor view gives an overview of activity across the team when many workers are live.',
       'The context budget bar on the workbench uses the model’s context_length and summary_trigger_tokens — compact early if it climbs.',
       'Configure models, skills, tools, and permissions per agent in Settings → Agents.',
+      'Use the topbar Lead selector to choose a Work or Coding lead for the current idle session. Each option lists only that lead’s owned members; switching is disabled during active work.',
+      'Settings → Agents groups members under collapsible lead teams. Delegation cards read “lead delegated → member#N”; the lead still owns coordination and final synthesis.',
       'Session pills on the composer set model, thinking level, and fast mode for the current chat only.',
       'Keep simple tasks on the Lead; fan-out only when parallelism clearly shortens wall time.',
       'Lead-only tools (ask_user, plan mode helpers, some worktree helpers) are never granted to specialists — do not expect workers to approve plans.'
@@ -297,7 +299,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Every session has a Lead agent that owns the user-facing transcript. Complex work is broken into subtasks with goals and constraints; specialists activate on demand, exchange results through a shared mailbox, and the Lead evaluates evidence before answering you.',
+        text: 'Every session persists one selected Lead agent that owns the user-facing transcript. Each mode can define multiple leads, and each member belongs to exactly one lead through Settings → Agents. Complex work is broken into subtasks with goals and constraints; only the selected lead’s specialists activate on demand, exchange results through a shared mailbox, and return evidence before the Lead answers you.',
       },
       {
         type: 'p',

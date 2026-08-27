@@ -95,6 +95,7 @@ interface ToolCallProps {
   durationMs?: number
   startedAt?: number
   attachments?: MessageAttachment[]
+  agentName?: string
 }
 
 export function ToolAttachments({
@@ -296,7 +297,7 @@ function toolActivityLabel(
   }
 }
 
-export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, result, durationMs, startedAt, attachments }: ToolCallProps) {
+export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, result, durationMs, startedAt, attachments, agentName }: ToolCallProps) {
   // Hooks must be called unconditionally — before any early returns
   const preset = useMotionPreset()
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null)
@@ -408,6 +409,7 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
         result={result}
         toolState={state}
         startedAt={startedAt}
+        delegatedBy={agentName}
       />
     )
   }

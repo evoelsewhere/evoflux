@@ -130,6 +130,27 @@ export interface TeamAgentsResponse {
   blueprints: TeamBlueprintInfo[]
   mode?: string
   workspace?: string | null
+  lead_name?: string
+}
+
+export interface TeamLeadMember {
+  name: string
+  description: string | null
+  model: string | null
+}
+
+export interface TeamLeadOption {
+  name: string
+  description: string | null
+  model: string | null
+  is_default: boolean
+  members: TeamLeadMember[]
+}
+
+export interface TeamLeadListResponse {
+  mode: 'work' | 'coding'
+  default_lead: string
+  leads: TeamLeadOption[]
 }
 
 export interface WorkspaceValidationResponse {
@@ -1670,6 +1691,7 @@ export interface ManagedResourceVersionNotice {
 export interface AgentSummary {
   name: string
   role: 'lead' | 'member'
+  lead: string | null
   description: string | null
   model: string | null
   tools: string[]
@@ -1691,6 +1713,7 @@ export interface AgentSummary {
 export interface AgentConfig {
   name: string
   role: 'lead' | 'member'
+  lead?: string | null
   description?: string | null
   system_prompt?: string
   tools?: string[]

@@ -17,6 +17,7 @@ import type {
   SessionResponse,
   TeamHistoryResponse,
   TeamAgentsResponse,
+  TeamLeadListResponse,
   WorkspaceValidationResponse,
   WorktreeCreateResponse,
   WorktreeInfo,
@@ -282,14 +283,23 @@ export function teamStream(sessionId: string, callbacks: SSECallbacks, signal?: 
 export async function listTeamAgents(
   workspace?: string | null,
   mode?: 'coding' | null,
+  sessionId?: string | null,
 ): Promise<TeamAgentsResponse> {
   const params = new URLSearchParams()
   if (workspace) params.set('workspace', workspace)
   // Which roster the workspace team uses — without it the backend assumes coding.
   if (workspace && mode) params.set('mode', mode)
+  if (sessionId) params.set('session_id', sessionId)
   const query = params.toString()
   const res = await fetch(`${apiBaseUrl()}/team/agents${query ? `?${query}` : ''}`)
   if (!res.ok) await parseDetailOrThrow(res, 'listTeamAgents')
+  return res.json()
+}
+
+export async function listTeamLeads(mode: 'work' | 'coding'): Promise<TeamLeadListResponse> {
+  const params = new URLSearchParams({ mode })
+  const res = await fetch(`${apiBaseUrl()}/team/leads?${params}`)
+  if (!res.ok) await parseDetailOrThrow(res, 'listTeamLeads')
   return res.json()
 }
 
@@ -523,6 +533,7 @@ export async function resolveTeamSession(options: {
   worktreeFrom?: string | null
   worktreeName?: string | null
   worktreeBranch?: string | null
+  agentName?: string | null
 }): Promise<TeamSessionResolveResponse> {
   const body: Record<string, string | string[] | boolean | null> = {
     mode: options.mode ?? 'work',
@@ -538,6 +549,7 @@ export async function resolveTeamSession(options: {
   if (options.worktreeFrom !== undefined) body.worktree_from = options.worktreeFrom
   if (options.worktreeName !== undefined) body.worktree_name = options.worktreeName
   if (options.worktreeBranch !== undefined) body.worktree_branch = options.worktreeBranch
+  if (options.agentName !== undefined) body.agent_name = options.agentName
   const res = await fetch(`${apiBaseUrl()}/team/sessions/resolve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -554,6 +566,16 @@ export async function updateTeamSessionTitle(id: string, title: string): Promise
     body: JSON.stringify({ title }),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'updateTeamSessionTitle')
+  return res.json()
+}
+
+export async function updateTeamSessionLead(id: string, leadName: string): Promise<SessionResponse> {
+  const res = await fetch(`${apiBaseUrl()}/team/sessions/${id}/lead`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lead_name: leadName }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'updateTeamSessionLead')
   return res.json()
 }
 

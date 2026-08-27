@@ -54,6 +54,10 @@ describe('WorkbenchBar browser access control', () => {
     render(
       <WorkbenchBar
         activeAgent="Lead"
+        leadName="Lead"
+        leadOptions={[{ name: 'Lead', description: null, model: null, is_default: true, members: [] }]}
+        leadChanging={false}
+        onLeadChange={vi.fn()}
         viewMode="agent"
         onViewModeChange={onViewModeChange}
         onOpenMobileSidebar={vi.fn()}
@@ -122,10 +126,46 @@ describe('WorkbenchBar browser access control', () => {
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(false))
   })
 
+  it('shows mode-scoped lead ownership and selects another idle lead', () => {
+    const onLeadChange = vi.fn()
+    render(
+      <WorkbenchBar
+        activeAgent="EvoFlux"
+        leadName="EvoFlux"
+        leadOptions={[
+          { name: 'EvoFlux', description: 'Default', model: null, is_default: true, members: [{ name: 'coder', description: null, model: null }] },
+          { name: 'Research', description: 'Research lead', model: null, is_default: false, members: [{ name: 'explorer', description: null, model: null }] },
+        ]}
+        leadChanging={false}
+        onLeadChange={onLeadChange}
+        viewMode="agent"
+        onViewModeChange={vi.fn()}
+        onOpenMobileSidebar={vi.fn()}
+        isMobile={false}
+        isMacOverlay={false}
+        mode="work"
+        webBridgeEnabled={false}
+        onWebBridgeEnabledChange={vi.fn()}
+        webBridgePopoverOpen={false}
+        onWebBridgePopoverOpenChange={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select lead agent' }))
+    expect(screen.getByText('coder')).toBeInTheDocument()
+    expect(screen.getByText('explorer')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Research'))
+    expect(onLeadChange).toHaveBeenCalledWith('Research')
+  })
+
   it('uses the macOS title-bar navigation instead of rendering a duplicate mobile button', () => {
     const { container } = render(
       <WorkbenchBar
         activeAgent="Lead"
+        leadName="Lead"
+        leadOptions={[{ name: 'Lead', description: null, model: null, is_default: true, members: [] }]}
+        leadChanging={false}
+        onLeadChange={vi.fn()}
         viewMode="agent"
         onViewModeChange={vi.fn()}
         onOpenMobileSidebar={vi.fn()}
@@ -140,6 +180,9 @@ describe('WorkbenchBar browser access control', () => {
     )
 
     expect(screen.queryByRole('button', { name: 'Open navigation' })).not.toBeInTheDocument()
+    const leadSelector = screen.getByRole('button', { name: 'Select lead agent' })
+    expect(leadSelector).toHaveClass('w-8', 'sm:w-auto')
+    expect(leadSelector.querySelector('span.hidden')).toHaveClass('sm:inline')
     expect(container.querySelector('header')).toHaveClass(
       'pl-(--spacing-mac-window-controls-inset)',
     )

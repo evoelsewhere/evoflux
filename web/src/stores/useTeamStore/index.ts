@@ -49,6 +49,13 @@ function prependUniqueBlocks(
   return [...older.filter((block) => !currentIds.has(block.id)), ...current]
 }
 
+function parseAgentBlocks(messages: MessageResponse[], agentName: string): ContentBlock[] {
+  return parseTeamBlocks(messages).map((block) => ({
+    ...block,
+    extra: { ...(block.extra ?? {}), _source_agent: agentName },
+  }))
+}
+
 function historyMessageCount(history: Awaited<ReturnType<typeof teamHistory>>): number {
   return history.lead.messages.length
     + history.members.reduce((count, member) => count + member.messages.length, 0)
@@ -205,10 +212,11 @@ function availableModelRegistry() {
 function availableTeamAgents(
   workspace?: string | null,
   mode?: 'coding' | null,
+  sessionId?: string | null,
 ) {
   return queryClient.fetchQuery({
-    queryKey: queryKeys.teamAgents(workspace, mode),
-    queryFn: () => listTeamAgents(workspace, mode),
+    queryKey: queryKeys.teamAgents(workspace, mode, sessionId),
+    queryFn: () => listTeamAgents(workspace, mode, sessionId),
     staleTime: 30_000,
   })
 }
@@ -1000,10 +1008,11 @@ export const useTeamStore = create<TeamStore>()(
     loadTeamStatus: async (
       workspace?: string | null,
       mode?: 'coding' | null,
+      sessionId?: string | null,
     ) => {
       const requestId = ++latestTeamRosterRequest
       try {
-        const roster = await availableTeamAgents(workspace, mode)
+        const roster = await availableTeamAgents(workspace, mode, sessionId)
         if (requestId !== latestTeamRosterRequest) return
         const lead = roster.agents.find((agent) => agent.is_lead) ?? roster.agents[0]
         if (lead) {
@@ -1065,7 +1074,7 @@ export const useTeamStore = create<TeamStore>()(
         try {
           const existingLiveNames = get().liveAgentNames
           const liveNamesPromise = existingLiveNames === null
-            ? availableTeamAgents(workspace, mode).then((roster) =>
+            ? availableTeamAgents(workspace, mode, sessionId).then((roster) =>
                 roster.agents.map((agent) => agent.name),
               )
             : Promise.resolve(existingLiveNames)
@@ -1147,7 +1156,7 @@ export const useTeamStore = create<TeamStore>()(
               }
               revokeBlobUrlsFromBlocks(draft.agentStreams[leadName].currentBlocks)
               const leadStream = draft.agentStreams[leadName]
-              leadStream.blocks = parseTeamBlocks(history.lead.messages)
+              leadStream.blocks = parseAgentBlocks(history.lead.messages, leadName)
               leadStream._revertedSuffix = []
               applyRevertBoundary(leadStream, leadRevertTime)
               leadStream.currentBlocks = []
@@ -1176,7 +1185,7 @@ export const useTeamStore = create<TeamStore>()(
               }
               revokeBlobUrlsFromBlocks(draft.agentStreams[member.name].currentBlocks)
               const memberStream = draft.agentStreams[member.name]
-              memberStream.blocks = parseTeamBlocks(member.messages)
+              memberStream.blocks = parseAgentBlocks(member.messages, member.name)
               memberStream._revertedSuffix = []
               applyRevertBoundary(memberStream, leadRevertTime)
               memberStream.currentBlocks = []
@@ -1276,7 +1285,7 @@ export const useTeamStore = create<TeamStore>()(
           draft.nextCursor = history.next_cursor
           if (leadName && draft.agentStreams[leadName]) {
             const filtered = messagesBeforeTime(history.lead.messages, _leadRevertTime)
-            const older = parseTeamBlocks(filtered)
+            const older = parseAgentBlocks(filtered, leadName)
             draft.agentStreams[leadName].blocks = prependUniqueBlocks(
               older,
               draft.agentStreams[leadName].blocks,
@@ -1285,7 +1294,7 @@ export const useTeamStore = create<TeamStore>()(
           history.members.forEach((member) => {
             if (draft.agentStreams[member.name]) {
               const filtered = messagesBeforeTime(member.messages, _leadRevertTime)
-              const older = parseTeamBlocks(filtered)
+              const older = parseAgentBlocks(filtered, member.name)
               draft.agentStreams[member.name].blocks = prependUniqueBlocks(
                 older,
                 draft.agentStreams[member.name].blocks,

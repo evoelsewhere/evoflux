@@ -11,6 +11,7 @@ from app.core.skill_scope import SkillMode, default_skill_modes
 class AgentSummary(BaseModel):
     name: str
     role: str
+    lead: str | None = None
     description: str | None = None
     model: str | None = None
     tools: list[str] = []

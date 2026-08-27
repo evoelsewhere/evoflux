@@ -198,6 +198,16 @@ export function AgentForm({
     }) ?? []
 
   const agentSummary = agentFiles.data?.agents.find((a) => a.name === agentPath)
+  const leadOptions: MultiSelectOption[] = (agentFiles.data?.agents ?? [])
+    .filter((agent) => agent.valid && agent.role === 'lead')
+    .filter((agent) => (
+      agentMode === 'coding' ? agent.name.startsWith('coding/') : !agent.name.startsWith('coding/')
+    ))
+    .map((agent) => ({
+      value: agent.name.split('/').at(-1) ?? agent.name,
+      label: agent.name.split('/').at(-1) ?? agent.name,
+      description: agent.description ?? 'Lead agent',
+    }))
   const modelOptions = registry.data?.models ?? []
 
   // Form → raw propagation. Runs whenever a form field changes.
@@ -241,6 +251,7 @@ export function AgentForm({
           skillOptions={skillOptions}
           mcpOptions={mcpOptions}
           modelOptions={modelOptions}
+          leadOptions={leadOptions}
           agentPath={agentPath}
           effectiveTools={agentSummary?.tools}
           hideRuntimeSection={hideRuntimeSection}
@@ -305,6 +316,7 @@ function FormFields({
   skillOptions,
   mcpOptions,
   modelOptions,
+  leadOptions,
   agentPath,
   effectiveTools,
   hideRuntimeSection,
@@ -319,6 +331,7 @@ function FormFields({
   skillOptions: MultiSelectOption[]
   mcpOptions: MultiSelectOption[]
   modelOptions: ModelOption[]
+  leadOptions: MultiSelectOption[]
   agentPath?: string
   effectiveTools?: string[]
   hideRuntimeSection?: boolean
@@ -372,6 +385,9 @@ function FormFields({
     (tool) => !(fm.tools_opt_out ?? []).includes(tool),
   )
   const isMember = fm.role !== 'lead'
+  const ownerLeadOptions = fm.lead && !leadOptions.some((option) => option.value === fm.lead)
+    ? [...leadOptions, { value: fm.lead, label: fm.lead, description: 'Current configured lead' }]
+    : leadOptions
   const extraToolOptions = toolOptions
     .filter((option) => !defaultToolNames.has(option.value))
     .filter((option) => !implicitToolNames.has(option.value))
@@ -428,11 +444,15 @@ function FormFields({
               />
             </Field>
 
-            <Field label="Role" required hint="Each team must have exactly one lead.">
+            <Field label="Role" required hint="Each mode can have multiple leads; every member has one owner.">
               <Select
                 value={fm.role}
                 onValueChange={(value) =>
-                  value && updateFromForm({ ...fm, role: value as 'lead' | 'member' }, body)
+                  value && updateFromForm({
+                    ...fm,
+                    role: value as 'lead' | 'member',
+                    lead: value === 'lead' ? null : fm.lead,
+                  }, body)
                 }
                 disabled={disabled}
               >
@@ -445,6 +465,31 @@ function FormFields({
                 </SelectContent>
               </Select>
             </Field>
+
+            {isMember && (
+              <Field label="Owned by lead" hint="Default follows the mode's EvoFlux lead (or first sorted lead).">
+                <Select
+                  value={fm.lead ?? '__default__'}
+                  onValueChange={(value) => updateFromForm({
+                    ...fm,
+                    lead: !value || value === '__default__' ? null : value,
+                  }, body)}
+                  disabled={disabled}
+                >
+                  <SelectTrigger aria-label="Owned by lead" className="min-h-11 w-full md:min-h-10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__default__">Default lead</SelectItem>
+                    {ownerLeadOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
 
             <Field
               label="Description"
@@ -923,6 +968,7 @@ function parseFormState(raw: string): {
     const parsed = parseSimpleYaml(fmText)
     if (typeof parsed.name === 'string') fm.name = parsed.name
     if (parsed.role === 'lead' || parsed.role === 'member') fm.role = parsed.role
+    if (typeof parsed.lead === 'string') fm.lead = parsed.lead
     if (typeof parsed.description === 'string') fm.description = parsed.description
     if (typeof parsed.model === 'string') fm.model = parsed.model
     if (typeof parsed.fallback_model === 'string') fm.fallback_model = parsed.fallback_model

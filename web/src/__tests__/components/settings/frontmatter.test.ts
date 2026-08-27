@@ -38,4 +38,20 @@ Original instructions.
     expect(parsed.fm).toContain('tools_opt_out:\n  - shell')
     expect(parsed.body.trim()).toBe('Updated instructions.')
   })
+
+  it('serializes member ownership and omits it from a lead config', () => {
+    const member = combinePreservingUnknown(
+      '---\nname: coder\nrole: member\n---\n\nCode.\n',
+      { name: 'coder', role: 'member', lead: 'engineering' },
+      'Code.',
+    )
+    const lead = combinePreservingUnknown(
+      member,
+      { name: 'coder', role: 'lead', lead: null },
+      'Lead.',
+    )
+
+    expect(splitFrontmatter(member).fm).toContain('lead: engineering')
+    expect(splitFrontmatter(lead).fm).not.toContain('lead:')
+  })
 })

@@ -18,6 +18,7 @@ interface UseTeamSseArgs {
   hasCodingWorkspace: boolean
   isCodingSessionLoading: boolean
   mode: 'work' | 'coding'
+  reloadToken?: number
 }
 
 function isLiveStream(
@@ -49,6 +50,7 @@ export function useTeamSse({
   hasCodingWorkspace,
   isCodingSessionLoading,
   mode,
+  reloadToken = 0,
 }: UseTeamSseArgs): RefObject<AbortController | null> {
   const connectStream  = useTeamStore((s) => s.connectStream)
   const loadTeamStatus = useTeamStore((s) => s.loadTeamStatus)
@@ -60,7 +62,7 @@ export function useTeamSse({
 
   useEffect(() => {
     if (hasCodingWorkspace)
-      void loadTeamStatus(agentWorkspace, 'coding')
+      void loadTeamStatus(agentWorkspace, 'coding', sessionId)
     if (isCodingSessionLoading) return
     if (!sessionId) return
     const store = useTeamStore.getState()
@@ -136,7 +138,7 @@ export function useTeamSse({
       markStreamStopped(controller)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, agentWorkspace, hasCodingWorkspace, isCodingSessionLoading])
+  }, [sessionId, agentWorkspace, hasCodingWorkspace, isCodingSessionLoading, reloadToken])
 
   useEffect(() => {
     if (!sessionId) return

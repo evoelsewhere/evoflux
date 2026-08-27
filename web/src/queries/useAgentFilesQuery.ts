@@ -60,6 +60,7 @@ function invalidateTeam(client: ReturnType<typeof useQueryClient>) {
   client.invalidateQueries({ queryKey: queryKeys.agentFiles.registry() })
   client.invalidateQueries({ queryKey: queryKeys.agents() })
   client.invalidateQueries({ queryKey: queryKeys.team.status() })
+  client.invalidateQueries({ queryKey: ['team', 'leads'] })
 }
 
 export function useCreateAgentMutation() {

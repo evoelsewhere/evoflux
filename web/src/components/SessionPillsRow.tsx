@@ -275,6 +275,7 @@ export interface SessionPillsRowProps {
   agentNames?: string[]
   workspace?: string | null
   mode?: 'coding' | null
+  sessionId?: string | null
 }
 
 export function SessionPillsRow({
@@ -286,6 +287,7 @@ export function SessionPillsRow({
   agentNames,
   workspace,
   mode,
+  sessionId,
 }: SessionPillsRowProps) {
   return (
     <div className="flex min-w-0 items-center gap-1">
@@ -301,6 +303,7 @@ export function SessionPillsRow({
         workspace={workspace}
         sessionModel={sessionModel ?? null}
         mode={mode}
+        sessionId={sessionId}
       />
     </div>
   )

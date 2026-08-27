@@ -18,6 +18,7 @@ class AgentConfig(BaseModel):
 
     name: str
     role: Literal["lead", "member"] = "member"
+    lead: str | None = None
     description: str | None = None
     system_prompt: str = ""
     tools: list[str] = []
@@ -31,6 +32,14 @@ class AgentConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate(self) -> "AgentConfig":
+        if self.lead is not None:
+            self.lead = self.lead.strip()
+            if not self.lead:
+                raise ValueError(f"Agent '{self.name}': lead owner cannot be blank.")
+        if self.role == "lead" and self.lead is not None:
+            raise ValueError(
+                f"Lead agent '{self.name}' cannot be owned by another lead."
+            )
         if self.model and self.model != PROVIDER_MODEL_TOKEN and ":" not in self.model:
             raise ValueError(
                 f"Agent '{self.name}': invalid model '{self.model}' "
@@ -98,7 +107,7 @@ def parse_agent_md(path: Path) -> AgentConfig:
 
 
 def validate_agent_config_dir(agents_dir: Path) -> str | None:
-    """Parse a team directory and return its lead name without building a team."""
+    """Parse a team directory and return its default lead without building."""
     if not agents_dir.exists():
         return None
     paths = sorted(agents_dir.glob("*.md"))
@@ -118,33 +127,86 @@ def validate_agent_config_dir(agents_dir: Path) -> str | None:
             + "\n".join(errors)
         )
 
+    _lead, _members, default_lead = resolve_agent_roster(configs)
+    return default_lead
+
+
+def resolve_agent_roster(
+    configs: list[tuple[AgentConfig, Path]],
+    lead_name: str | None = None,
+) -> tuple[tuple[AgentConfig, Path], list[tuple[AgentConfig, Path]], str]:
+    """Validate one mode directory and resolve a lead-owned member roster."""
+
     leads = [(config, path) for config, path in configs if config.role == "lead"]
     if not leads:
+        directory = configs[0][1].parent if configs else "agent directory"
         raise ValueError(
-            f"No agent with 'role: lead' found in '{agents_dir}'. "
-            "Exactly one agent must have 'role: lead'."
-        )
-    if len(leads) > 1:
-        names = [config.name for config, _path in leads]
-        raise ValueError(
-            f"Multiple agents with 'role: lead' found in '{agents_dir}': {names}. "
-            "Exactly one agent must have 'role: lead'."
+            f"No agent with 'role: lead' found in '{directory}'. "
+            "At least one lead is required."
         )
 
-    lead_name = leads[0][0].name
-    seen = {lead_name}
+    by_name: dict[str, tuple[AgentConfig, Path]] = {}
     for config, path in configs:
-        if config.role != "member":
-            continue
-        if "#" in config.name:
+        if config.name in by_name:
+            existing_config, _existing_path = by_name[config.name]
+            if "lead" in {existing_config.role, config.role}:
+                raise ValueError(
+                    f"Member '{config.name}' in '{path.name}' shares the lead's name."
+                )
+            raise ValueError(f"Duplicate agent name '{config.name}' in '{path.name}'.")
+        by_name[config.name] = (config, path)
+        if config.role == "member" and "#" in config.name:
             raise ValueError(
                 f"Member blueprint '{config.name}' in '{path.name}' contains '#'. "
                 "Reserved character — instances are named 'blueprint#N'."
             )
-        if config.name in seen:
-            raise ValueError(f"Duplicate agent name '{config.name}' in '{path.name}'.")
-        seen.add(config.name)
-    return lead_name
+
+    lead_by_name = {config.name: (config, path) for config, path in leads}
+    default_lead = "evoflux" if "evoflux" in lead_by_name else sorted(lead_by_name)[0]
+    selected = lead_name or default_lead
+    if selected not in lead_by_name:
+        raise ValueError(
+            f"Lead agent '{selected}' is not configured. "
+            f"Available leads: {', '.join(sorted(lead_by_name))}."
+        )
+
+    members: list[tuple[AgentConfig, Path]] = []
+    for config, path in configs:
+        if config.role != "member":
+            continue
+        owner = config.lead or default_lead
+        if owner not in lead_by_name:
+            raise ValueError(
+                f"Member '{config.name}' in '{path.name}' references unknown lead "
+                f"'{owner}'."
+            )
+        if owner == selected:
+            members.append((config, path))
+    return lead_by_name[selected], members, default_lead
+
+
+def list_agent_rosters(
+    agents_dir: Path,
+) -> tuple[str | None, list[tuple[AgentConfig, Path, list[tuple[AgentConfig, Path]]]]]:
+    """Return every lead and its exact member configs for one mode directory."""
+
+    if not agents_dir.exists():
+        return None, []
+    entries = [(parse_agent_md(path), path) for path in sorted(agents_dir.glob("*.md"))]
+    if not entries:
+        return None, []
+    _lead, _members, default_lead = resolve_agent_roster(entries)
+    leads = sorted(
+        (entry for entry in entries if entry[0].role == "lead"),
+        key=lambda entry: entry[0].name,
+    )
+    rosters = []
+    for lead_config, lead_path in leads:
+        _selected, members, _default = resolve_agent_roster(
+            entries, lead_name=lead_config.name
+        )
+        rosters.append((lead_config, lead_path, members))
+    return default_lead, rosters
 
 
 def agent_dir_has_lead(agents_dir: Path) -> bool:

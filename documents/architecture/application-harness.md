@@ -26,6 +26,11 @@ both the runtime and settings API:
 4. Apply `tools_opt_out` to code-owned tier tools.
 5. Deduplicate the effective result.
 
+Work and Coding agent directories may each contain multiple `role: lead`
+definitions. A member may declare `lead: <name>`; omission binds it only to the
+mode's deterministic default lead. Top-level sessions persist the selected lead
+and runtime team construction never includes another lead's members.
+
 Seed and materialised built-in Markdown files contain identity/model settings
 and user overrides only. They do not duplicate code-owned capability lists.
 Filesystem materialisation belongs to application bootstrap; loaders,

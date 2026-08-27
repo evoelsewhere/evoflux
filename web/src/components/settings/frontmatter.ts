@@ -11,6 +11,7 @@
 export interface AgentFrontmatter {
   name: string
   role: 'lead' | 'member'
+  lead?: string | null
   description?: string | null
   model?: string | null
   fallback_model?: string | null
@@ -85,6 +86,7 @@ export function buildFrontmatter(fm: AgentFrontmatter): string {
   const lines: string[] = []
   lines.push(`name: ${fm.name}`)
   lines.push(`role: ${fm.role}`)
+  if (fm.role === 'member' && fm.lead) lines.push(`lead: ${fm.lead}`)
   if (fm.description) lines.push(`description: ${escapeScalar(fm.description)}`)
   if (fm.model) lines.push(`model: ${fm.model}`)
   if (fm.fallback_model) lines.push(`fallback_model: ${fm.fallback_model}`)
@@ -122,6 +124,7 @@ export function combine(fm: AgentFrontmatter, body: string): string {
 const MANAGED_KEYS = new Set([
   'name',
   'role',
+  'lead',
   'description',
   'model',
   'fallback_model',

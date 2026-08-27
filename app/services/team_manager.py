@@ -52,6 +52,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from loguru import logger
 
@@ -128,7 +129,13 @@ def _build_lock(*identity: str) -> asyncio.Lock:
     return _build_locks.setdefault(tuple(identity), asyncio.Lock())
 
 
-def prewarm_session_team(*, mode: str, session_id: str, workspace: str | None) -> None:
+def prewarm_session_team(
+    *,
+    mode: str,
+    session_id: str,
+    workspace: str | None,
+    lead_name: str | None = None,
+) -> None:
     """Warm the selected session's team without delaying history rendering."""
 
     if mode == "coding" and (
@@ -152,9 +159,11 @@ def prewarm_session_team(*, mode: str, session_id: str, workspace: str | None) -
     async def _warm() -> None:
         try:
             if mode == "coding" and workspace:
-                await get_or_start_coding_team(workspace, session_id, mode=mode)
+                await get_or_start_coding_team(
+                    workspace, session_id, mode=mode, lead_name=lead_name
+                )
             elif mode == "work":
-                await get_or_start_team_for_session(session_id)
+                await get_or_start_team_for_session(session_id, lead_name=lead_name)
         except asyncio.CancelledError:
             raise
         except TeamBuildInvalidatedError:
@@ -190,8 +199,54 @@ def _resolve_coding_agents_dir() -> Path:
     return _resolve_agents_dir() / "coding"
 
 
+def configured_lead_rosters(
+    mode: str,
+) -> tuple[str, list[tuple[Any, Path, list[tuple[Any, Path]]]]]:
+    """Return the validated mode-scoped lead/member configuration rosters."""
+
+    from app.agent.config import list_agent_rosters
+
+    resolved_mode = parse_app_mode(mode)
+    agents_dir = (
+        _resolve_coding_agents_dir()
+        if resolved_mode is AppMode.CODING
+        else _resolve_agents_dir()
+    )
+    default_lead, rosters = list_agent_rosters(agents_dir)
+    if default_lead is None or not rosters:
+        raise ValueError(
+            f"No {resolved_mode.value} lead agents found in '{agents_dir}'."
+        )
+    return default_lead, rosters
+
+
+def resolve_configured_lead(mode: str, requested: str | None = None) -> str:
+    default_lead, rosters = configured_lead_rosters(mode)
+    names = {lead.name for lead, _path, _members in rosters}
+    selected = requested or default_lead
+    if selected not in names:
+        raise ValueError(
+            f"Lead agent '{selected}' is not configured for {parse_app_mode(mode).value}. "
+            f"Available leads: {', '.join(sorted(names))}."
+        )
+    return selected
+
+
 def _resolve_workspace(workspace: str) -> Path:
     return Path(workspace).expanduser().resolve()
+
+
+async def _persisted_session_lead(session_id: str) -> str | None:
+    try:
+        normalized = UUID(session_id)
+    except ValueError:
+        return None
+    from app.core.db import async_session_factory
+    from app.models.chat import ChatSession
+
+    async with async_session_factory() as db:
+        session = await db.get(ChatSession, normalized)
+        return session.agent_name if session is not None else None
 
 
 def validate_workspace(workspace: str) -> str:
@@ -467,11 +522,16 @@ async def get_or_start_team() -> "AgentTeam | None":
     return result
 
 
-async def get_or_start_team_for_session(session_id: str) -> "AgentTeam | None":
+async def get_or_start_team_for_session(
+    session_id: str,
+    *,
+    lead_name: str | None = None,
+) -> "AgentTeam | None":
     """Return the default-mode team instance dedicated to one chat session."""
     global _team_last_used
 
     resolution_started = time.perf_counter()
+    selected_lead = lead_name or await _persisted_session_lead(session_id)
     async with _build_lock("session", session_id):
         async with _lock:
             now = time.monotonic()
@@ -487,7 +547,13 @@ async def get_or_start_team_for_session(session_id: str) -> "AgentTeam | None":
             resolution_result = "cached"
         else:
             agents_dir = _resolve_agents_dir()
-            candidate = await asyncio.to_thread(load_team_from_dir, agents_dir)
+            candidate = (
+                await asyncio.to_thread(
+                    load_team_from_dir, agents_dir, lead_name=selected_lead
+                )
+                if selected_lead is not None
+                else await asyncio.to_thread(load_team_from_dir, agents_dir)
+            )
             if candidate is None:
                 logger.warning("team_manager_no_agents path={}", agents_dir)
                 result = None
@@ -567,6 +633,7 @@ async def get_or_start_coding_team(
     *,
     mode: str = "coding",
     read_only_paths: list[str] | None = None,
+    lead_name: str | None = None,
 ) -> "AgentTeam":
     """Build (or return the cached) project-scoped coding team for *workspace*.
 
@@ -578,6 +645,7 @@ async def get_or_start_coding_team(
         raise ValueError("Coding team manager only accepts mode='coding'.")
     mode = resolved_mode.value
     resolved_workspace = validate_workspace(workspace)
+    selected_lead = lead_name or await _persisted_session_lead(session_id)
     key = (resolved_workspace, session_id)
     resolution_started = time.perf_counter()
     async with _build_lock("coding", resolved_workspace, session_id):
@@ -594,11 +662,13 @@ async def get_or_start_coding_team(
             resolution_result = "cached"
         else:
             agents_dir = _resolve_coding_agents_dir()
+            load_kwargs = {"mode": mode, "workspace": resolved_workspace}
+            if selected_lead is not None:
+                load_kwargs["lead_name"] = selected_lead
             team = await asyncio.to_thread(
                 load_team_from_dir,
                 agents_dir,
-                mode=mode,
-                workspace=resolved_workspace,
+                **load_kwargs,
             )
             if team is None:
                 raise ValueError(
@@ -788,6 +858,7 @@ def refresh_blueprints(team: "AgentTeam") -> None:
     * **Parse error in a new file** → logged and skipped; the rest of the
       directory is still processed.
     """
+    from app.agent.config import AgentConfig, resolve_agent_roster
     from app.agent.loader import member_model_is_configured, parse_agent_md
     from app.conductor.agent_runtime import apply_managed_agent_runtime_model
     from app.agent.mode.team.team import MemberBlueprint
@@ -800,20 +871,46 @@ def refresh_blueprints(team: "AgentTeam") -> None:
         return
 
     md_files = sorted(agents_dir.glob("*.md"))
-    seen: set[str] = set()
+    parsed_entries = []
     for md_path in md_files:
         try:
-            cfg = apply_managed_agent_runtime_model(
-                parse_agent_md(md_path), source_path=md_path
+            parsed_entries.append((parse_agent_md(md_path), md_path))
+        except Exception as exc:
+            logger.warning(
+                "blueprint_refresh_parse_failed path={} error={}", md_path.name, exc
             )
+    if not any(config.role == "lead" for config, _path in parsed_entries):
+        parsed_entries.append(
+            (
+                AgentConfig(
+                    name=team.lead.name,
+                    role="lead",
+                    description=team.lead.agent.description,
+                    model=team.lead.agent.model_id,
+                ),
+                team.lead.agent.source_path or agents_dir / f"{team.lead.name}.md",
+            )
+        )
+    try:
+        _lead, owned_entries, _default = resolve_agent_roster(
+            parsed_entries, lead_name=team.lead.name
+        )
+    except ValueError as exc:
+        logger.warning(
+            "blueprint_refresh_roster_failed lead={} error={}", team.lead.name, exc
+        )
+        return
+
+    seen: set[str] = set()
+    for raw_cfg, md_path in owned_entries:
+        try:
+            cfg = apply_managed_agent_runtime_model(raw_cfg, source_path=md_path)
         except Exception as exc:
             logger.warning(
                 "blueprint_refresh_parse_failed path={} error={}", md_path.name, exc
             )
             continue
-        # Skip the lead — its file lives in the same directory but is owned
-        # by :func:`reload`, not by this hot-path discovery.
-        if cfg.role != "member" or not member_model_is_configured(cfg.model):
+        if not member_model_is_configured(cfg.model):
             continue
         if "#" in cfg.name or cfg.name == team.lead.name:
             # Same invariants ``load_team_from_dir`` enforces; silently
