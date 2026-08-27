@@ -244,6 +244,8 @@ def _queue_run_state(
     event: str,
     actor: str,
     delivery_flow: dict[str, Any] | None = None,
+    entity_refs: list[str] | None = None,
+    event_data: dict[str, Any] | None = None,
 ) -> None:
     enqueue_run_update(
         db,
@@ -256,6 +258,8 @@ def _queue_run_state(
             "to_status": run.status,
             "actor": actor,
             "created_at": _utcnow().isoformat(),
+            "entity_refs": entity_refs or [f"run:{run.id}"],
+            **(event_data or {}),
         },
         expected_hash=_REPOSITORY_RUN_HASHES.get(run.id),
     )
@@ -870,6 +874,12 @@ async def create_revision(
         event="specification_draft_created",
         actor="agent" if authoring else "human",
         delivery_flow=specification.delivery_flow.model_dump(mode="json"),
+        entity_refs=[f"run:{run.id}", f"spec:{revision.id}"],
+        event_data={
+            "revision_id": str(revision.id),
+            "version": revision.version,
+            "content_hash": revision.content_hash,
+        },
     )
     return revision
 
@@ -1073,6 +1083,12 @@ async def accept_revision(
         event="specification_accepted",
         actor="human",
         delivery_flow=accepted_specification.delivery_flow.model_dump(mode="json"),
+        entity_refs=[f"run:{run.id}", f"spec:{revision.id}"],
+        event_data={
+            "revision_id": str(revision.id),
+            "version": revision.version,
+            "content_hash": revision.content_hash,
+        },
     )
     logger.info(
         "trace_spec_accepted run_id={} version={} spec_hash={}",
@@ -1265,6 +1281,13 @@ async def create_plan_revision(
         event="plan_draft_created",
         actor="agent" if authoring else "human",
         delivery_flow=context.specification.delivery_flow.model_dump(mode="json"),
+        entity_refs=[f"run:{run.id}", f"plan:{revision.id}"],
+        event_data={
+            "revision_id": str(revision.id),
+            "version": revision.version,
+            "content_hash": revision.content_hash,
+            "spec_hash": revision.spec_hash,
+        },
     )
     return revision
 
@@ -1384,6 +1407,13 @@ async def accept_plan_revision(
         event="plan_accepted",
         actor="human",
         delivery_flow=context.specification.delivery_flow.model_dump(mode="json"),
+        entity_refs=[f"run:{run.id}", f"plan:{revision.id}"],
+        event_data={
+            "revision_id": str(revision.id),
+            "version": revision.version,
+            "content_hash": revision.content_hash,
+            "spec_hash": revision.spec_hash,
+        },
     )
     logger.info(
         "trace_plan_accepted run_id={} version={} plan_hash={}",
@@ -3260,6 +3290,340 @@ def _run_action_rail(
     }
 
 
+def _trace_node(
+    node_id: str,
+    kind: str,
+    label: str,
+    *,
+    status: str | None = None,
+    timestamp: str | None = None,
+    entity_id: str | None = None,
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": node_id,
+        "kind": kind,
+        "label": label,
+        "status": status,
+        "timestamp": timestamp,
+        "entity_id": entity_id,
+        "data": data or {},
+    }
+
+
+def _trace_edge(
+    kind: str,
+    source: str,
+    target: str,
+    *,
+    criterion_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": f"{kind}:{source}:{target}",
+        "kind": kind,
+        "source": source,
+        "target": target,
+        "criterion_ids": criterion_ids or [],
+    }
+
+
+def _trace_projection(
+    detail: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    run = detail["run"]
+    run_id = str(run["id"])
+    run_node_id = f"run:{run_id}"
+    nodes: list[dict[str, Any]] = [
+        _trace_node(
+            run_node_id,
+            "run",
+            run["title"],
+            status=run["status"],
+            timestamp=run["updated_at"],
+            entity_id=run_id,
+            data={
+                "risk_tier": run["risk_tier"],
+                "workspace": run["workspace"],
+                "session_id": run["session_id"],
+            },
+        )
+    ]
+    edges: list[dict[str, Any]] = []
+    criterion_nodes: dict[tuple[str, str], str] = {}
+    mission_contract_nodes: dict[tuple[str, str], str] = {}
+
+    matrix_by_id = {item["id"]: item for item in detail["criteria"]}
+    for revision in detail["revisions"]:
+        revision_id = str(revision["id"])
+        spec_hash = revision["content_hash"]
+        spec_node_id = f"spec:{revision_id}"
+        nodes.append(
+            _trace_node(
+                spec_node_id,
+                "specification",
+                f"Specification v{revision['version']}",
+                status=revision["status"],
+                timestamp=revision["created_at"],
+                entity_id=revision_id,
+                data={
+                    "content_hash": spec_hash,
+                    "risk_tier": revision["spec"].get("risk_tier"),
+                    "delivery_flow": revision["spec"].get("delivery_flow"),
+                    "outcome": revision["spec"].get("outcome"),
+                },
+            )
+        )
+        edges.append(_trace_edge("contains", run_node_id, spec_node_id))
+        for criterion in revision["spec"].get("criteria", []):
+            criterion_id = str(criterion["id"])
+            criterion_node_id = f"criterion:{spec_hash}:{criterion_id}"
+            criterion_nodes[(spec_hash, criterion_id)] = criterion_node_id
+            matrix = matrix_by_id.get(criterion_id)
+            nodes.append(
+                _trace_node(
+                    criterion_node_id,
+                    "criterion",
+                    criterion_id,
+                    status=(matrix or {}).get("status", "uncovered"),
+                    entity_id=criterion_id,
+                    data={
+                        "statement": criterion.get("statement"),
+                        "required": criterion.get("required", True),
+                        "spec_hash": spec_hash,
+                        "evidence_policy": criterion.get("evidence_policy", {}),
+                    },
+                )
+            )
+            edges.append(
+                _trace_edge(
+                    "defines",
+                    spec_node_id,
+                    criterion_node_id,
+                    criterion_ids=[criterion_id],
+                )
+            )
+
+    spec_nodes_by_hash = {
+        node["data"].get("content_hash"): node["id"]
+        for node in nodes
+        if node["kind"] == "specification"
+    }
+    for revision in detail["plan_revisions"]:
+        revision_id = str(revision["id"])
+        plan_hash = revision["content_hash"]
+        plan_node_id = f"plan:{revision_id}"
+        nodes.append(
+            _trace_node(
+                plan_node_id,
+                "plan",
+                f"Plan v{revision['version']}",
+                status=revision["status"],
+                timestamp=revision["created_at"],
+                entity_id=revision_id,
+                data={
+                    "content_hash": plan_hash,
+                    "spec_hash": revision["spec_hash"],
+                    "review_required": revision["plan"].get("review_required", False),
+                    "integration_owner": revision["plan"].get("integration_owner"),
+                },
+            )
+        )
+        edges.append(_trace_edge("contains", run_node_id, plan_node_id))
+        spec_node_id = spec_nodes_by_hash.get(revision["spec_hash"])
+        if spec_node_id:
+            edges.append(_trace_edge("compiled_to", spec_node_id, plan_node_id))
+        for mission in revision["plan"].get("missions", []):
+            mission_id = str(mission["id"])
+            mission_node_id = f"mission_contract:{plan_hash}:{mission_id}"
+            mission_contract_nodes[(plan_hash, mission_id)] = mission_node_id
+            criterion_ids = [
+                str(item) for item in mission.get("acceptance_criteria", [])
+            ]
+            nodes.append(
+                _trace_node(
+                    mission_node_id,
+                    "mission_contract",
+                    mission.get("title") or mission_id,
+                    status=mission.get("kind"),
+                    entity_id=mission_id,
+                    data={
+                        "plan_hash": plan_hash,
+                        "kind": mission.get("kind"),
+                        "goal": mission.get("goal"),
+                        "target_repositories": mission.get("target_repositories", []),
+                        "target_paths": mission.get("target_paths", []),
+                        "isolation": mission.get("isolation"),
+                    },
+                )
+            )
+            edges.append(
+                _trace_edge(
+                    "contains",
+                    plan_node_id,
+                    mission_node_id,
+                    criterion_ids=criterion_ids,
+                )
+            )
+            for criterion_id in criterion_ids:
+                criterion_node_id = criterion_nodes.get(
+                    (revision["spec_hash"], criterion_id)
+                )
+                if criterion_node_id:
+                    edges.append(
+                        _trace_edge(
+                            "owns",
+                            mission_node_id,
+                            criterion_node_id,
+                            criterion_ids=[criterion_id],
+                        )
+                    )
+            for dependency_id in mission.get("depends_on", []):
+                dependency_node_id = f"mission_contract:{plan_hash}:{dependency_id}"
+                edges.append(
+                    _trace_edge("depends_on", mission_node_id, dependency_node_id)
+                )
+
+    mission_nodes: dict[str, str] = {}
+    for mission in detail["missions"]:
+        mission_id = str(mission["id"])
+        mission_node_id = f"mission:{mission_id}"
+        mission_nodes[mission_id] = mission_node_id
+        spec = mission["spec"]
+        criterion_ids = [str(item) for item in spec.get("acceptance_criteria", [])]
+        nodes.append(
+            _trace_node(
+                mission_node_id,
+                "mission_attempt",
+                spec.get("title") or spec.get("goal") or mission["recipient"],
+                status=mission["status"],
+                timestamp=mission["created_at"],
+                entity_id=mission_id,
+                data={
+                    "attempt": mission["attempt"],
+                    "recipient": mission["recipient"],
+                    "delegator": mission["delegator"],
+                    "plan_mission_id": spec.get("plan_mission_id"),
+                    "trace_spec_hash": spec.get("trace_spec_hash"),
+                    "trace_plan_hash": spec.get("trace_plan_hash"),
+                    "last_rejection": mission["last_rejection"],
+                },
+            )
+        )
+        edges.append(_trace_edge("contains", run_node_id, mission_node_id))
+        contract_node_id = mission_contract_nodes.get(
+            (
+                str(spec.get("trace_plan_hash") or ""),
+                str(spec.get("plan_mission_id") or ""),
+            )
+        )
+        if contract_node_id:
+            edges.append(_trace_edge("executes", mission_node_id, contract_node_id))
+        for criterion_id in criterion_ids:
+            criterion_node_id = criterion_nodes.get(
+                (str(spec.get("trace_spec_hash") or ""), criterion_id)
+            )
+            if criterion_node_id:
+                edges.append(
+                    _trace_edge(
+                        "owns",
+                        mission_node_id,
+                        criterion_node_id,
+                        criterion_ids=[criterion_id],
+                    )
+                )
+
+    for evidence in detail["evidence"]:
+        evidence_id = str(evidence["id"])
+        evidence_node_id = f"evidence:{evidence_id}"
+        criterion_ids = [str(item) for item in evidence["criterion_ids"]]
+        nodes.append(
+            _trace_node(
+                evidence_node_id,
+                "evidence",
+                f"{evidence['kind']} · {evidence['result']}",
+                status=evidence["result"],
+                timestamp=evidence["created_at"],
+                entity_id=evidence_id,
+                data={
+                    "kind": evidence["kind"],
+                    "producer": evidence["producer"],
+                    "summary": evidence["summary"],
+                    "spec_hash": evidence["spec_hash"],
+                    "revision": evidence["revision"],
+                    "artifact_hash": evidence["artifact_hash"],
+                },
+            )
+        )
+        edges.append(_trace_edge("contains", run_node_id, evidence_node_id))
+        delegation_task_id = evidence["delegation_task_id"]
+        mission_node_id = mission_nodes.get(str(delegation_task_id))
+        if mission_node_id:
+            edges.append(_trace_edge("produced", mission_node_id, evidence_node_id))
+        for criterion_id in criterion_ids:
+            criterion_node_id = criterion_nodes.get(
+                (evidence["spec_hash"], criterion_id)
+            )
+            if criterion_node_id:
+                edges.append(
+                    _trace_edge(
+                        "supports",
+                        evidence_node_id,
+                        criterion_node_id,
+                        criterion_ids=[criterion_id],
+                    )
+                )
+
+    for deviation in detail["deviations"]:
+        deviation_id = str(deviation["id"])
+        deviation_node_id = f"deviation:{deviation_id}"
+        criterion_id = deviation["criterion_id"]
+        nodes.append(
+            _trace_node(
+                deviation_node_id,
+                "deviation",
+                deviation["description"],
+                status=deviation["status"],
+                timestamp=deviation["created_at"],
+                entity_id=deviation_id,
+                data={
+                    "blocking": deviation["blocking"],
+                    "spec_hash": deviation["spec_hash"],
+                    "resolution": deviation["resolution"],
+                },
+            )
+        )
+        edges.append(_trace_edge("contains", run_node_id, deviation_node_id))
+        criterion_node_id = criterion_nodes.get(
+            (deviation["spec_hash"], str(criterion_id or ""))
+        )
+        if criterion_node_id:
+            edges.append(
+                _trace_edge(
+                    "affects",
+                    deviation_node_id,
+                    criterion_node_id,
+                    criterion_ids=[str(criterion_id)],
+                )
+            )
+
+    if detail["convergence"]:
+        convergence_node_id = f"convergence:{run_id}"
+        nodes.append(
+            _trace_node(
+                convergence_node_id,
+                "convergence",
+                "Convergence report",
+                status="passed",
+                timestamp=detail["convergence"].get("converged_at"),
+                entity_id=run_id,
+                data=detail["convergence"],
+            )
+        )
+        edges.append(_trace_edge("converged_as", run_node_id, convergence_node_id))
+
+    return nodes, list({edge["id"]: edge for edge in edges}.values())
+
+
 async def run_detail(db: AsyncSession, run_id: str | UUID) -> dict[str, Any]:
     run = await get_run(db, run_id)
     revisions = list(
@@ -3370,6 +3734,127 @@ async def run_detail(db: AsyncSession, run_id: str | UUID) -> dict[str, Any]:
         detail=detail,
     )
     return detail
+
+
+def read_run_trace_events(
+    workspace: str,
+    run_id: str | UUID,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Read repository-owned trace events outside a database transaction."""
+
+    try:
+        return EasdRepositoryStore(workspace).read_events(run_id)
+    except EasdStoreError as exc:
+        return [], [{"code": "events_unavailable", "message": str(exc)}]
+
+
+def _trace_events(
+    detail: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    run_node_id = f"run:{detail['run']['id']}"
+    spec_drafts = [
+        item
+        for item in detail["revisions"]
+        if item["status"] in {"draft", "accepted", "superseded"}
+    ]
+    accepted_specs = [item for item in detail["revisions"] if item["accepted_at"]]
+    plan_drafts = [
+        item
+        for item in detail["plan_revisions"]
+        if item["status"] in {"draft", "accepted", "superseded"}
+    ]
+    accepted_plans = [item for item in detail["plan_revisions"] if item["accepted_at"]]
+    draft_spec_index = 0
+    accepted_spec_index = 0
+    draft_plan_index = 0
+    accepted_plan_index = 0
+    output: list[dict[str, Any]] = []
+    known = {
+        "id",
+        "run_id",
+        "sequence",
+        "event",
+        "actor",
+        "created_at",
+        "from_status",
+        "to_status",
+        "entity_refs",
+        "document_hash",
+        "run_document_hash",
+    }
+    for raw in events:
+        event_name = str(raw["event"])
+        refs = [str(item) for item in raw.get("entity_refs", []) if str(item)]
+        if run_node_id not in refs:
+            refs.insert(0, run_node_id)
+        if event_name == "specification_draft_created" and draft_spec_index < len(
+            spec_drafts
+        ):
+            refs.append(f"spec:{spec_drafts[draft_spec_index]['id']}")
+            draft_spec_index += 1
+        elif event_name == "specification_accepted" and accepted_spec_index < len(
+            accepted_specs
+        ):
+            refs.append(f"spec:{accepted_specs[accepted_spec_index]['id']}")
+            accepted_spec_index += 1
+        elif event_name == "plan_draft_created" and draft_plan_index < len(plan_drafts):
+            refs.append(f"plan:{plan_drafts[draft_plan_index]['id']}")
+            draft_plan_index += 1
+        elif event_name == "plan_accepted" and accepted_plan_index < len(
+            accepted_plans
+        ):
+            refs.append(f"plan:{accepted_plans[accepted_plan_index]['id']}")
+            accepted_plan_index += 1
+        output.append(
+            {
+                "id": str(raw["id"]),
+                "sequence": int(raw["sequence"]),
+                "event": event_name,
+                "actor": raw.get("actor"),
+                "created_at": raw.get("created_at"),
+                "from_status": raw.get("from_status"),
+                "to_status": raw.get("to_status"),
+                "entity_refs": list(dict.fromkeys(refs)),
+                "data": {key: value for key, value in raw.items() if key not in known},
+            }
+        )
+    return output
+
+
+def build_run_trace(
+    detail: dict[str, Any],
+    *,
+    events: list[dict[str, Any]],
+    diagnostics: list[dict[str, str]],
+) -> dict[str, Any]:
+    """Build the provider-neutral graph used by Trace, Recovery, and Realtime."""
+
+    nodes, edges = _trace_projection(detail)
+    gaps = [
+        {"action_id": action["id"], **blocker}
+        for action in detail["action_rail"]["actions"]
+        if action["state"] == "blocked"
+        for blocker in action["blockers"]
+    ]
+    trace = {
+        "version": 1,
+        "run_id": str(detail["run"]["id"]),
+        "store_generation": detail["run"].get("store_generation"),
+        "nodes": nodes,
+        "edges": edges,
+        "events": _trace_events(detail, events),
+        "gaps": gaps,
+        "diagnostics": diagnostics,
+    }
+    logger.info(
+        "trace_projection_built nodes={} edges={} events={} diagnostics={}",
+        len(nodes),
+        len(edges),
+        len(events),
+        len(diagnostics),
+    )
+    return trace
 
 
 async def converge_run(

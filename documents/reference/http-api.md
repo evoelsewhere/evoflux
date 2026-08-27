@@ -96,6 +96,10 @@ Evo Agent Specs routes are Coding-scoped:
   action; every action includes a stable ID, label, `available|blocked` state,
   and structured blocker messages with relevant criterion/mission/deviation
   IDs or verification commands;
+- `GET /api/easd/runs/{id}/trace` returns projection version, repository
+  generation, stable artifact nodes, typed relationship edges, ordered bounded
+  repository events, current action gaps, and degraded-read diagnostics. It is
+  read-only and legacy Runs with minimal events still receive an artifact graph;
 - spec revision and `/plans` create/accept endpoints preserve separate immutable
   hash-bound contracts; Spec acceptance also publishes an immutable
   hash-identical common-catalogue revision, while a plan is valid only for its

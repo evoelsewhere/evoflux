@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { EasdRunDetail } from '@/api/types'
+import type { EasdRunDetail, EasdRunTrace } from '@/api/types'
 import { EvoAgentSpecsPanel } from '@/components/EvoAgentSpecsPanel'
 import { useUIStore } from '@/stores/useUIStore'
 
@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   runs: vi.fn(),
   setup: vi.fn(),
   detail: vi.fn(),
+  trace: vi.fn(),
   action: vi.fn(),
   generate: vi.fn(),
   projectSessions: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock('@/queries', () => ({
   useGenerateEasdScopeAndProofMutation: () => mocks.generate(),
   useInitializeEasdSetupMutation: () => mocks.action(),
   useEasdRunQuery: () => mocks.detail(),
+  useEasdRunTraceQuery: () => mocks.trace(),
   useAcceptEasdPlanRevisionMutation: () => mocks.action(),
   useCreateEasdRunMutation: () => mocks.action(),
   useCreateEasdRevisionMutation: () => mocks.action(),
@@ -135,6 +137,26 @@ const detail: EasdRunDetail = {
   ],
   deviations: [],
   convergence: null,
+}
+
+const trace: EasdRunTrace = {
+  version: 1,
+  run_id: run.id,
+  store_generation: 7,
+  nodes: [
+    { id: `run:${run.id}`, kind: 'run', label: run.title, status: 'active', timestamp: run.updated_at, entity_id: run.id, data: { risk_tier: 'standard' } },
+    { id: 'spec:revision-1', kind: 'specification', label: 'Specification v1', status: 'accepted', timestamp: run.created_at, entity_id: 'revision-1', data: { content_hash: 'f'.repeat(64) } },
+    { id: `criterion:${'f'.repeat(64)}:AC-1`, kind: 'criterion', label: 'AC-1', status: 'passed', timestamp: null, entity_id: 'AC-1', data: { statement: 'The API exposes the AC matrix.' } },
+    { id: 'evidence:evidence-1', kind: 'evidence', label: 'machine · passed', status: 'passed', timestamp: run.updated_at, entity_id: 'evidence-1', data: { summary: 'Focused tests passed.' } },
+  ],
+  edges: [
+    { id: 'contains:run:spec', kind: 'contains', source: `run:${run.id}`, target: 'spec:revision-1', criterion_ids: [] },
+    { id: 'defines:spec:criterion', kind: 'defines', source: 'spec:revision-1', target: `criterion:${'f'.repeat(64)}:AC-1`, criterion_ids: ['AC-1'] },
+    { id: 'supports:evidence:criterion', kind: 'supports', source: 'evidence:evidence-1', target: `criterion:${'f'.repeat(64)}:AC-1`, criterion_ids: ['AC-1'] },
+  ],
+  events: [{ id: 'event-1', sequence: 1, event: 'intent_created', actor: 'human', created_at: run.created_at, from_status: null, to_status: 'intent', entity_refs: [`run:${run.id}`], data: {} }],
+  gaps: [],
+  diagnostics: [],
 }
 
 const planRevision = {
@@ -295,6 +317,7 @@ beforeEach(() => {
   mocks.runs.mockReset()
   mocks.setup.mockReset()
   mocks.detail.mockReset()
+  mocks.trace.mockReset()
   mocks.action.mockReset()
   mocks.generate.mockReset()
   mocks.projectSessions.mockReset()
@@ -305,6 +328,7 @@ beforeEach(() => {
   })
   mocks.setup.mockReturnValue({ data: readySetup, isLoading: false, error: null, refetch: vi.fn() })
   mocks.detail.mockReturnValue({ data: detail, isLoading: false })
+  mocks.trace.mockReturnValue({ data: trace, isLoading: false, error: null, refetch: vi.fn() })
   mocks.action.mockReturnValue({
     error: null,
     isPending: false,
@@ -344,6 +368,25 @@ describe('EvoAgentSpecsPanel', () => {
     expect(screen.getByText('coder#1')).toBeInTheDocument()
     expect(screen.getByText('Focused tests passed.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Converge/i })).toBeEnabled()
+  })
+
+  it('renders the server trace projection and AC filter', async () => {
+    render(<EvoAgentSpecsPanel workspace="/repo" projectId="project-1" sessionId="session-1" />)
+    fireEvent.click(screen.getByRole('button', { name: /EASD feature/i }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Trace' }))
+
+    expect(await screen.findByText('Traceability workspace')).toBeInTheDocument()
+    expect(screen.getByText('4 entities · 3 relations · 1 events')).toBeInTheDocument()
+    expect(screen.getByText('intent created')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Specification v1/ })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Filter trace by acceptance criterion' }))
+    const option = await screen.findByRole('option', { name: 'AC-1' })
+    fireEvent.mouseMove(option)
+    fireEvent.pointerDown(option, { pointerType: 'mouse' })
+    fireEvent.mouseUp(option)
+    fireEvent.click(option)
+    await waitFor(() => expect(within(screen.getByRole('complementary', { name: 'Trace entity inspector' })).getByRole('heading', { name: 'AC-1' })).toBeInTheDocument())
   })
 
   it('does not render a false empty state while the run list is loading', () => {

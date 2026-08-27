@@ -20,6 +20,13 @@ command blockers before a mutation is attempted. Approve specification,
 Approve plan, and Converge each require a confirmation summarizing the exact
 contract or evidence state.
 
+Each Run also has **Overview** and **Trace** workspaces. Trace is a read-only
+server projection of the repository-owned Run, Spec/Plan revisions, ACs,
+mission contracts and attempts, evidence, deviations, convergence, and ordered
+events. Users can filter by AC, inspect exact entity hashes/status/ownership,
+and see the current action blockers as trace gaps. Narrow panels present the
+activity ledger first; maximized panels add the relationship map and inspector.
+
 1. Open a Coding workspace/session and choose **Agent Specification-Driven
    Development** in the workbench.
 2. Initialize EASD for every repository in the workspace or Coding Project.
@@ -284,7 +291,8 @@ counts, mission counts, evidence/deviation IDs, and convergence timestamp.
   EASD SSE events are not yet emitted.
 - Deviation resolution and spec/plan revision authoring remain API-backed; the
   detail view exposes the guided phase flow, readiness blockers, and complete
-  approved plan mission contract but does not provide a visual DAG editor.
+  approved plan mission contract. Trace provides a read-only relationship map,
+  not a visual DAG editor.
 - One GPT-5.6 benchmark run is recorded; adaptive role/model selection and
   learning recommendations wait for multiple comparable runs and a control.
 

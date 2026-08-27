@@ -332,10 +332,20 @@ deviations, and convergence. HTTP errors distinguish validation
 convergence reasons (`409 easd_not_converged`). `/api/trace` is a hidden legacy
 alias over the same router and state.
 
+`/runs/{id}/trace` closes the database session before reading repository event
+files, then builds a versioned read projection from the already-authorized Run
+detail and bounded append-only events. Stable nodes and typed edges connect
+Spec/Plan hashes, AC ownership, mission attempts, evidence, deviations, and
+convergence. Malformed event siblings yield diagnostics while valid events and
+the artifact graph remain available. The projection is not a second source of
+truth and grants no new filesystem scope.
+
 The React panel uses TanStack Query as the only durable setup/run truth. Active
 runs poll every 2.5 seconds so mission/handoff work performed by agents appears
 without duplicating state in Zustand. Board/Table/List selection is client-only
 preference state stored through `STORAGE_KEYS`; it never becomes run truth.
+Trace has its own lazily enabled query and remains read-only. AC filtering and
+entity selection are local presentation state over the server projection.
 
 ## Observability
 

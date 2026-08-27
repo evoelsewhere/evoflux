@@ -1183,6 +1183,62 @@ export interface EasdActionRail {
   actions: EasdRunAction[]
 }
 
+export type EasdTraceNodeKind =
+  | 'run'
+  | 'specification'
+  | 'plan'
+  | 'criterion'
+  | 'mission_contract'
+  | 'mission_attempt'
+  | 'evidence'
+  | 'deviation'
+  | 'convergence'
+
+export interface EasdTraceNode {
+  id: string
+  kind: EasdTraceNodeKind
+  label: string
+  status: string | null
+  timestamp: string | null
+  entity_id: string | null
+  data: Record<string, unknown>
+}
+
+export interface EasdTraceEdge {
+  id: string
+  kind: 'contains' | 'defines' | 'compiled_to' | 'owns' | 'depends_on' | 'executes' | 'produced' | 'supports' | 'affects' | 'converged_as'
+  source: string
+  target: string
+  criterion_ids: string[]
+}
+
+export interface EasdTraceEvent {
+  id: string
+  sequence: number
+  event: string
+  actor: string | null
+  created_at: string | null
+  from_status: string | null
+  to_status: string | null
+  entity_refs: string[]
+  data: Record<string, unknown>
+}
+
+export interface EasdTraceGap extends EasdActionBlocker {
+  action_id: EasdActionId
+}
+
+export interface EasdRunTrace {
+  version: 1
+  run_id: string
+  store_generation: number | null
+  nodes: EasdTraceNode[]
+  edges: EasdTraceEdge[]
+  events: EasdTraceEvent[]
+  gaps: EasdTraceGap[]
+  diagnostics: Array<{ code: string; message: string }>
+}
+
 export interface EasdRunDetail {
   run: EasdRun
   revisions: EasdSpecRevision[]

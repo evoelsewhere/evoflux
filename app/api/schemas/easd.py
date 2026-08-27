@@ -367,6 +367,77 @@ class EasdActionRailOut(BaseModel):
     actions: list[EasdRunActionOut]
 
 
+class EasdTraceNodeOut(BaseModel):
+    id: str
+    kind: Literal[
+        "run",
+        "specification",
+        "plan",
+        "criterion",
+        "mission_contract",
+        "mission_attempt",
+        "evidence",
+        "deviation",
+        "convergence",
+    ]
+    label: str
+    status: str | None
+    timestamp: datetime | None
+    entity_id: str | None
+    data: dict[str, Any]
+
+
+class EasdTraceEdgeOut(BaseModel):
+    id: str
+    kind: Literal[
+        "contains",
+        "defines",
+        "compiled_to",
+        "owns",
+        "depends_on",
+        "executes",
+        "produced",
+        "supports",
+        "affects",
+        "converged_as",
+    ]
+    source: str
+    target: str
+    criterion_ids: list[str]
+
+
+class EasdTraceEventOut(BaseModel):
+    id: str
+    sequence: int
+    event: str
+    actor: str | None
+    created_at: datetime | None
+    from_status: str | None
+    to_status: str | None
+    entity_refs: list[str]
+    data: dict[str, Any]
+
+
+class EasdTraceGapOut(EasdActionBlockerOut):
+    action_id: EasdActionId
+
+
+class EasdTraceDiagnosticOut(BaseModel):
+    code: str
+    message: str
+
+
+class EasdRunTraceResponse(BaseModel):
+    version: Literal[1]
+    run_id: UUID
+    store_generation: int | None
+    nodes: list[EasdTraceNodeOut]
+    edges: list[EasdTraceEdgeOut]
+    events: list[EasdTraceEventOut]
+    gaps: list[EasdTraceGapOut]
+    diagnostics: list[EasdTraceDiagnosticOut]
+
+
 class EasdRunListResponse(BaseModel):
     runs: list[EasdRunOut]
 

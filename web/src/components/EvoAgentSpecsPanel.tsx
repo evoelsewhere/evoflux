@@ -51,6 +51,7 @@ import {
   useCreateEasdRunMutation,
   useCreateEasdRevisionMutation,
   useEasdRunQuery,
+  useEasdRunTraceQuery,
   useEasdRunsQuery,
   useEasdSetupQuery,
   useGenerateEasdScopeAndProofMutation,
@@ -73,6 +74,7 @@ import { SelectControl } from '@/components/ui/select'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { SpecificationDiff } from '@/components/easd/SpecificationDiff'
 import { EasdActionRail } from '@/components/easd/EasdActionRail'
+import { EasdTraceWorkspace } from '@/components/easd/EasdTraceWorkspace'
 import {
   EasdActionConfirmationDialog,
   type EasdConfirmableAction,
@@ -97,6 +99,7 @@ export interface EasdRunChatRequest {
 }
 
 type RunsView = 'board' | 'table' | 'list'
+type RunWorkspaceView = 'overview' | 'trace'
 
 const EASD_DISPLAY_NAME = 'Agent Specification-Driven Development'
 
@@ -1276,6 +1279,7 @@ function RunDetail({
   const [chatSearch, setChatSearch] = useState('')
   const [chatActionError, setChatActionError] = useState<string | null>(null)
   const [editingDraft, setEditingDraft] = useState(false)
+  const [workspaceView, setWorkspaceView] = useState<RunWorkspaceView>('overview')
   const [confirmingAction, setConfirmingAction] = useState<EasdConfirmableAction | null>(null)
   const draft = detail
     ? [...detail.revisions]
@@ -1307,6 +1311,7 @@ function RunDetail({
   const convergeMutation = useConvergeEasdRunMutation(runId)
   const evidenceMutation = useAddEasdEvidenceMutation(runId)
   const deviationMutation = useAddEasdDeviationMutation(runId)
+  const traceQuery = useEasdRunTraceQuery(runId, workspaceView === 'trace')
   const [evidenceCriterion, setEvidenceCriterion] = useState('')
   const [evidenceSummary, setEvidenceSummary] = useState('')
   const [evidenceKind, setEvidenceKind] = useState<EasdAppendableEvidenceKind>('manual')
@@ -1655,6 +1660,25 @@ function RunDetail({
 
       <div className="min-h-0 flex-1 overflow-auto p-3 @xl/easd:p-5">
         <div className="mx-auto max-w-5xl space-y-4">
+          <SegmentedControl
+            value={workspaceView}
+            onChange={(value) => setWorkspaceView(value as RunWorkspaceView)}
+            layoutId="easd-run-workspace-view"
+            ariaLabel="Run workspace view"
+            className="w-full @2xl/easd:w-auto"
+            options={[
+              { value: 'overview', label: 'Overview' },
+              { value: 'trace', label: 'Trace' },
+            ]}
+          />
+          {workspaceView === 'trace' ? (
+            <EasdTraceWorkspace
+              trace={traceQuery.data}
+              loading={traceQuery.isLoading}
+              error={traceQuery.error}
+              onRetry={() => void traceQuery.refetch()}
+            />
+          ) : <>
           {(detail.run.status === 'intent' || detail.run.status === 'authoring') && (
             <section className="rounded-2xl border border-(--color-border) bg-(--bg-card) p-4">
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--color-accent)">01 · Intent</p>
@@ -1819,6 +1843,7 @@ function RunDetail({
               ))}
             </div>
           </section>
+          </>}
           </>}
         </div>
       </div>

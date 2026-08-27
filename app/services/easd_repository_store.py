@@ -516,23 +516,64 @@ class EasdRepositoryStore:
         directory = self._run_directory(run_id) / kind
         return [_read_yaml(path) for path in sorted(directory.glob("*.yaml"))]
 
+    def read_events(
+        self,
+        run_id: str | UUID,
+        *,
+        limit: int = 1_000,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+        """Read a bounded ordered event ledger without hiding valid siblings."""
+
+        if limit < 1 or limit > 1_000:
+            raise EasdStoreError("EASD event read limit must be between 1 and 1000")
+        directory = self._run_directory(run_id) / "events"
+        paths = sorted(directory.glob("*.yaml"))
+        diagnostics: list[dict[str, str]] = []
+        if len(paths) > limit:
+            diagnostics.append(
+                {
+                    "code": "events_truncated",
+                    "message": f"Showing the latest {limit} of {len(paths)} events.",
+                }
+            )
+            paths = paths[-limit:]
+        events: list[dict[str, Any]] = []
+        for path in paths:
+            try:
+                payload = _read_yaml(path)
+                sequence = int(payload.get("sequence") or 0)
+                if sequence < 1 or not str(payload.get("event") or "").strip():
+                    raise EasdStoreError("event requires a sequence and event name")
+            except (EasdStoreError, TypeError, ValueError) as exc:
+                diagnostics.append(
+                    {
+                        "code": "event_document_invalid",
+                        "message": f"Skipped {path.name}: {exc}",
+                    }
+                )
+                continue
+            events.append(payload)
+        events.sort(key=lambda item: int(item["sequence"]))
+        return events, diagnostics
+
     def append_event(
         self, run_id: str | UUID, payload: dict[str, Any]
     ) -> dict[str, Any]:
         directory = self._run_directory(run_id)
         events = directory / "events"
-        sequence = len(list(events.glob("*.yaml"))) + 1
-        event_id = str(payload.get("id") or uuid4())
-        return self._write_document(
-            events / f"{sequence:06d}-{event_id}.yaml",
-            {
-                "id": event_id,
-                "run_id": str(UUID(str(run_id))),
-                "sequence": sequence,
-                **payload,
-            },
-            create_only=True,
-        )
+        with self._lock(f"run-{UUID(str(run_id))}-events"):
+            sequence = len(list(events.glob("*.yaml"))) + 1
+            event_id = str(payload.get("id") or uuid4())
+            return self._write_document(
+                events / f"{sequence:06d}-{event_id}.yaml",
+                {
+                    "id": event_id,
+                    "run_id": str(UUID(str(run_id))),
+                    "sequence": sequence,
+                    **payload,
+                },
+                create_only=True,
+            )
 
     def write_convergence(
         self, run_id: str | UUID, report: dict[str, Any]

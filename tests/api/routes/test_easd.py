@@ -180,6 +180,15 @@ def test_easd_api_create_accept_start_evidence_and_converge(client, tmp_path):
             },
         ],
     }
+    trace = client.get(f"/api/easd/runs/{run_id}/trace")
+    assert trace.status_code == 200
+    trace_body = trace.json()
+    assert trace_body["version"] == 1
+    assert trace_body["run_id"] == run_id
+    assert [event["event"] for event in trace_body["events"]] == ["intent_created"]
+    assert any(node["kind"] == "specification" for node in trace_body["nodes"])
+    assert any(node["kind"] == "criterion" for node in trace_body["nodes"])
+    assert any(edge["kind"] == "defines" for edge in trace_body["edges"])
 
     accepted = client.post(
         f"/api/easd/runs/{run_id}/revisions/{draft['id']}/accept",
@@ -213,6 +222,12 @@ def test_easd_api_create_accept_start_evidence_and_converge(client, tmp_path):
     )
 
     _approve_plan(client, client.get(f"/api/easd/runs/{run_id}").json())
+    planned_trace = client.get(f"/api/easd/runs/{run_id}/trace").json()
+    assert any(node["kind"] == "plan" for node in planned_trace["nodes"])
+    assert (
+        sum(node["kind"] == "mission_contract" for node in planned_trace["nodes"]) == 2
+    )
+    assert any(edge["kind"] == "compiled_to" for edge in planned_trace["edges"])
     active = _start_run(client, str(tmp_path), run_id, session["id"])
     assert active.status_code == 200
     assert active.json()["status"] == "active"

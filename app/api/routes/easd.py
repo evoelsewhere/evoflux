@@ -29,6 +29,7 @@ from app.api.schemas.easd import (
     EasdRunDetailResponse,
     EasdRunListResponse,
     EasdRunOut,
+    EasdRunTraceResponse,
     EasdSetupResponse,
     EasdSpecRevisionOut,
 )
@@ -52,6 +53,7 @@ from app.services.trace_service import (
     TraceValidationError,
     accept_revision,
     accept_plan_revision,
+    build_run_trace,
     converge_run,
     create_deviation,
     create_evidence,
@@ -63,6 +65,7 @@ from app.services.trace_service import (
     list_runs,
     retry_plan_authoring_in_session,
     retry_spec_authoring_in_session,
+    read_run_trace_events,
     resolve_deviation,
     run_detail,
     serialize_deviation,
@@ -420,6 +423,27 @@ async def get_easd_run(
 ) -> EasdRunDetailResponse:
     try:
         return EasdRunDetailResponse.model_validate(await run_detail(db, run_id))
+    except (TraceNotFound, TraceConflict, TraceValidationError) as exc:
+        _raise_easd(exc)
+        raise AssertionError("unreachable")
+
+
+@router.get("/runs/{run_id}/trace", response_model=EasdRunTraceResponse)
+async def get_easd_run_trace(
+    run_id: UUID,
+    db_factory: DbSessionFactory,
+) -> EasdRunTraceResponse:
+    try:
+        async with db_factory() as db:
+            detail = await run_detail(db, run_id)
+        events, diagnostics = await asyncio.to_thread(
+            read_run_trace_events,
+            detail["run"]["workspace"],
+            run_id,
+        )
+        return EasdRunTraceResponse.model_validate(
+            build_run_trace(detail, events=events, diagnostics=diagnostics)
+        )
     except (TraceNotFound, TraceConflict, TraceValidationError) as exc:
         _raise_easd(exc)
         raise AssertionError("unreachable")
