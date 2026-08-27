@@ -171,7 +171,7 @@ const recoveryAction = {
   from_status: 'active' as const,
   to_status: 'active' as const,
   prompt_phase: 'implementation' as const,
-  reuses: [`Spec ${'f'.repeat(64)}`, 'Coding session session-1'],
+  reuses: ['Specification revision v1', 'Coding session session-1'],
   preserves: ['Prior revisions and attempts', 'Existing evidence and deviations', 'Append-only Trace events'],
 }
 
@@ -434,7 +434,7 @@ describe('EvoAgentSpecsPanel', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Recovery' }))
 
     expect(await screen.findByText('Retry without losing history')).toBeInTheDocument()
-    expect(screen.getByText(/Spec f{12}/)).toBeInTheDocument()
+    expect(screen.getByText(/Specification revision v1/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Retry implementation/ }))
     expect(screen.getByRole('heading', { name: 'Retry implementation?' })).toBeInTheDocument()
     expect(mutateAsync).not.toHaveBeenCalled()
@@ -805,7 +805,7 @@ describe('EvoAgentSpecsPanel', () => {
     expect(screen.getByRole('heading', { name: 'Review before approval' })).toBeInTheDocument()
     expect(screen.getByText('Implement AC-1')).toBeInTheDocument()
     expect(screen.getByText('Review AC-1')).toBeInTheDocument()
-    expect(screen.getByText('pytest -q tests/service.py')).toBeInTheDocument()
+    expect(screen.getByText((_, element) => element?.tagName === 'CODE' && element.textContent?.includes('pytest -q tests/service.py') === true)).toBeInTheDocument()
     expect(screen.getByText(/Preserve the public contract/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Approve plan' }))
     expect(screen.getByRole('heading', { name: 'Approve plan?' })).toBeInTheDocument()

@@ -3924,8 +3924,8 @@ async def recovery_preview(db: AsyncSession, run_id: str | UUID) -> dict[str, An
     reuses = [
         value
         for value in (
-            f"Spec {spec['content_hash']}" if spec else None,
-            f"Plan {plan['content_hash']}" if plan else None,
+            f"Specification revision v{spec['version']}" if spec else None,
+            f"Plan revision v{plan['version']}" if plan else None,
             f"Coding session {run['session_id']}" if run["session_id"] else None,
         )
         if value

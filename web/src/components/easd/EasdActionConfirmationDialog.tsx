@@ -62,7 +62,7 @@ export function EasdActionConfirmationDialog({
 
         {action === 'approve_specification' && draft && (
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 rounded-lg border border-(--color-border) bg-(--bg-page) p-3 text-xs">
-            <dt className="text-(--color-text-subtle)">Revision</dt><dd>v{draft.version} · <span className="font-mono">{draft.content_hash.slice(0, 12)}</span></dd>
+            <dt className="text-(--color-text-subtle)">Revision</dt><dd>Specification v{draft.version}</dd>
             <dt className="text-(--color-text-subtle)">Risk</dt><dd className="capitalize">{draft.spec.risk_tier.replace('_', '-')}</dd>
             <dt className="text-(--color-text-subtle)">Criteria</dt><dd>{draft.spec.criteria.length} acceptance criteria</dd>
             <dt className="text-(--color-text-subtle)">Flow</dt><dd className="capitalize">{deliveryMode}{deliveryMode === 'direct' ? ' · Plan will be skipped' : ' · Plan approval required'}</dd>
@@ -71,8 +71,8 @@ export function EasdActionConfirmationDialog({
 
         {action === 'approve_plan' && planDraft && (
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 rounded-lg border border-(--color-border) bg-(--bg-page) p-3 text-xs">
-            <dt className="text-(--color-text-subtle)">Revision</dt><dd>v{planDraft.version} · <span className="font-mono">{planDraft.content_hash.slice(0, 12)}</span></dd>
-            <dt className="text-(--color-text-subtle)">Spec</dt><dd className="font-mono">{planDraft.spec_hash.slice(0, 12)}</dd>
+            <dt className="text-(--color-text-subtle)">Revision</dt><dd>Plan v{planDraft.version}</dd>
+            <dt className="text-(--color-text-subtle)">Spec</dt><dd>Accepted specification</dd>
             <dt className="text-(--color-text-subtle)">Missions</dt><dd>{planDraft.plan.missions.length}</dd>
             <dt className="text-(--color-text-subtle)">Review</dt><dd>{planDraft.plan.review_required ? 'Independent review required' : 'Standard review required'}</dd>
           </dl>

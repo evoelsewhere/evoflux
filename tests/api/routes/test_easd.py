@@ -763,6 +763,9 @@ def test_easd_recovery_redrafts_idempotently_and_rejects_stale_generation(
     body = preview.json()
     assert body["store_generation"] == 1
     assert body["actions"][0]["id"] == "redraft_specification"
+    assert body["actions"][0]["reuses"][0] == "Specification revision v1"
+    draft_hash = created["revisions"][0]["content_hash"]
+    assert draft_hash not in " ".join(body["actions"][0]["reuses"])
     assert "Prior revisions and attempts" in body["actions"][0]["preserves"]
     request = {
         "action_id": "redraft_specification",

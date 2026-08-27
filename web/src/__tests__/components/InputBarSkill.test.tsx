@@ -117,4 +117,44 @@ describe('InputBar skill directives', () => {
     expect(chip).toHaveTextContent('/skill:work-writing')
     expect(chip).toHaveClass('font-semibold')
   })
+
+  it('highlights built-in, workflow, and custom slash commands after send', () => {
+    const { rerender } = render(
+      <BlockRenderer
+        block={{ id: 'user-goal', type: 'user', content: '/goal Ship the release' }}
+        isStreaming={false}
+      />,
+    )
+    expect(screen.getByTestId('command-chip')).toHaveTextContent('/goal')
+
+    rerender(
+      <BlockRenderer
+        block={{ id: 'user-workflow', type: 'user', content: '/workflow release-check' }}
+        isStreaming={false}
+      />,
+    )
+    expect(screen.getByTestId('command-chip')).toHaveTextContent('/workflow')
+
+    rerender(
+      <BlockRenderer
+        block={{ id: 'user-custom', type: 'user', content: '/git:commit --staged' }}
+        isStreaming={false}
+      />,
+    )
+    expect(screen.getByTestId('command-chip')).toHaveTextContent('/git:commit')
+  })
+
+  it('highlights executable, flags, and paths in sent shell commands', () => {
+    render(
+      <BlockRenderer
+        block={{ id: 'user-shell', type: 'user', content: '! python -m pytest tests/test_api.py', extra: { kind: 'user_shell' } }}
+        isStreaming={false}
+      />,
+    )
+
+    expect(screen.getByText('Shell')).toBeInTheDocument()
+    expect(screen.getByText('python')).toHaveClass('text-(--color-accent)')
+    expect(screen.getByText('-m')).toHaveClass('text-(--color-warning)')
+    expect(screen.getByText('tests/test_api.py')).toHaveClass('text-(--color-success)')
+  })
 })

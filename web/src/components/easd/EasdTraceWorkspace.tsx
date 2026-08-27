@@ -30,9 +30,9 @@ const KIND_ORDER: EasdTraceNodeKind[] = [
   'convergence',
 ]
 
-function displayValue(value: unknown): string {
+function displayValue(value: unknown, compactIdentity = false): string {
   if (value === null || value === undefined || value === '') return '—'
-  if (typeof value === 'string') return value
+  if (typeof value === 'string') return compactIdentity && value.length > 12 ? `${value.slice(0, 8)}…` : value
   if (typeof value === 'boolean' || typeof value === 'number') return String(value)
   return JSON.stringify(value)
 }
@@ -58,8 +58,8 @@ function NodeInspector({ node, trace }: { node: EasdTraceNode; trace: EasdRunTra
       <dl className="mt-3 space-y-2">
         {Object.entries(node.data).map(([key, value]) => (
           <div key={key}>
-            <dt className="text-[9px] uppercase tracking-wide text-(--color-text-subtle)">{key.replaceAll('_', ' ')}</dt>
-            <dd className="mt-0.5 break-all text-[10px] leading-4 text-(--color-text-2)">{displayValue(value)}</dd>
+            <dt className="text-[9px] uppercase tracking-wide text-(--color-text-subtle)">{key.includes('hash') ? 'revision identity' : key.replaceAll('_', ' ')}</dt>
+            <dd className="mt-0.5 break-all text-[10px] leading-4 text-(--color-text-2)">{displayValue(value, key.includes('hash'))}</dd>
           </div>
         ))}
       </dl>

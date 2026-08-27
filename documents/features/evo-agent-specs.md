@@ -88,6 +88,17 @@ and shows only viewer count, while all activity remains repository-owned.
    interrupted attempt, while **Replan in chat** moves
    `plan_review → planning` and keeps the prior draft until its replacement is
    persisted.
+   Plan prose renders backtick-delimited symbols and paths as lightweight inline
+   code. Verification commands use a dedicated selectable command block that
+   distinguishes the executable, flags, and path-like arguments without
+   interpreting arbitrary Markdown.
+   Generated `$easd-*` chat handoffs render as phase-labelled technical
+   messages. Full Spec/Plan hashes and Run IDs remain in the copied/runtime
+   prompt and API contract but are redacted from chat presentation; normal Run
+   views use revision labels, while Trace shows only a compact identity when
+   needed. The same user-bubble syntax highlighting applies automatically to
+   built-in, Skill, Workflow, and custom slash commands; sent shell commands
+   reuse the executable/flag/path token styling.
 9. Choose **Run implementation in chat**. Planned flow requires accepted Spec
    and Plan and moves `planned → active`; direct flow requires only its accepted
    Spec and moves `accepted → active`. Planned delegations include exact
