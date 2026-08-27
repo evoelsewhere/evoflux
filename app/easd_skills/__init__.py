@@ -39,7 +39,7 @@ def read_easd_template(name: str) -> str:
 def read_easd_skeleton(name: str) -> str:
     """Return one portable knowledge-base skeleton file."""
 
-    if name not in EASD_SKELETON_FILES:
+    if name not in (*EASD_SKELETON_FILES, *EASD_LEGACY_OPTIONAL_SKELETON_FILES):
         raise KeyError(f"Unknown EASD skeleton file: {name}")
     return files(__name__).joinpath("skeleton", name).read_text(encoding="utf-8")
 
@@ -68,6 +68,9 @@ EASD_SKELETON_FILES = (
     "README.md",
     "index.yaml",
     "specs/README.md",
+)
+
+EASD_LEGACY_OPTIONAL_SKELETON_FILES = (
     "features/README.md",
     "architecture/README.md",
     "architecture/decisions/README.md",
@@ -87,6 +90,7 @@ EASD_SKELETON_FILES = (
 
 __all__ = [
     "EASD_SKILL_NAMES",
+    "EASD_LEGACY_OPTIONAL_SKELETON_FILES",
     "EASD_SKELETON_FILES",
     "EASD_TEMPLATE_NAMES",
     "read_easd_rules",

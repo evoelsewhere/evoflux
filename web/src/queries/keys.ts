@@ -143,6 +143,8 @@ export const queryKeys = {
   easd: {
     setup: (workspace: string, projectId?: string | null) =>
       ['easd', 'setup', workspace, projectId ?? null] as const,
+    runtimeMigration: (workspace: string, projectId?: string | null) =>
+      ['easd', 'runtime-migration', workspace, projectId ?? null] as const,
     runs: () => ['easd', 'runs'] as const,
     list: (workspace: string, projectId?: string | null) =>
       ['easd', 'runs', workspace, projectId ?? null] as const,

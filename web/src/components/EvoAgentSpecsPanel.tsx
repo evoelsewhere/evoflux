@@ -54,7 +54,9 @@ import {
   useEasdRunQuery,
   useEasdRunTraceQuery,
   useEasdRecoveryQuery,
+  useEasdRuntimeMigrationQuery,
   useExecuteEasdRecoveryMutation,
+  useExecuteEasdRuntimeMigrationMutation,
   useEasdRealtime,
   useEasdRunsQuery,
   useEasdSetupQuery,
@@ -76,6 +78,14 @@ import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import { SelectControl } from '@/components/ui/select'
 import { SegmentedControl } from '@/components/ui/segmented-control'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { SpecificationDiff } from '@/components/easd/SpecificationDiff'
 import { EasdActionRail } from '@/components/easd/EasdActionRail'
 import { EasdTraceWorkspace } from '@/components/easd/EasdTraceWorkspace'
@@ -307,6 +317,12 @@ function loadRunsView(): RunsView {
   return 'board'
 }
 
+function formatStorageBytes(value: number): string {
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${Math.ceil(value / 1024)} KB`
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`
+}
+
 function SetupView({
   setup,
   workspace,
@@ -319,6 +335,15 @@ function SetupView({
   onReady: () => void
 }) {
   const mutation = useInitializeEasdSetupMutation(workspace, projectId)
+  const migrationQuery = useEasdRuntimeMigrationQuery(
+    workspace,
+    projectId,
+    setup.repositories.some((repository) => (
+      repository.legacy_run_count > 0 || repository.legacy_generated_file_count > 0
+    )),
+  )
+  const migrationMutation = useExecuteEasdRuntimeMigrationMutation(workspace, projectId)
+  const [migrationPath, setMigrationPath] = useState<string | null>(null)
   const pendingPaths = mutation.variables?.repositoryPaths ?? []
   const remaining = setup.repositories.filter((repository) => !repository.installed)
   const skillNames = setup.repositories[0]?.skill_names ?? []
@@ -330,6 +355,9 @@ function SetupView({
   const progress = setup.repository_count === 0
     ? 0
     : Math.round((setup.installed_count / setup.repository_count) * 100)
+  const migrationRepository = migrationQuery.data?.repositories.find(
+    (repository) => repository.path === migrationPath,
+  )
 
   const initialize = async (repositories: EasdRepositorySetup[]) => {
     // Repair is intentionally isolated: one invalid repository must never make
@@ -374,7 +402,7 @@ function SetupView({
               </div>
               <h2 className="mt-2 text-base font-semibold leading-5 text-(--color-text)">Set up {EASD_DISPLAY_NAME}</h2>
               <p className="mt-1.5 max-w-xl text-xs leading-5 text-(--color-text-muted)">
-                Add a version-controlled EASD knowledge base and five Coding-only project skills to every repository. Existing project docs stay in place; Runs become available when the whole scope is ready.
+                Add a version-controlled EASD knowledge base and five Coding-only project skills to every repository. Operational Runs stay local and ignored; accepted Specs and adopted docs remain shareable.
               </p>
             </div>
           </div>
@@ -401,7 +429,7 @@ function SetupView({
                   spellCheck={false}
                 />
               </label>
-              <p className="mt-1.5 text-[10px] leading-4 text-(--color-text-subtle)">Repository-relative and version-controlled. It contains common Specs, optional living knowledge sections, templates, and Run evidence. Initialization never moves or copies existing project documentation.</p>
+              <p className="mt-1.5 text-[10px] leading-4 text-(--color-text-subtle)">Repository-relative and version-controlled. It contains accepted Specs and optional living knowledge only. Runtime Runs, templates, evidence, Recovery, and events stay under ignored `.evoflux/easd/.local/`.</p>
             </div>
           )}
           {setup.repositories.map((repository) => {
@@ -451,6 +479,13 @@ function SetupView({
                     {repository.skill_names.length} {repository.installed ? 'Coding skills' : 'required Coding skills'} · {repository.skills_path}
                   </p>
                   <p className="mt-0.5 truncate font-mono text-[10px] text-(--color-text-subtle)">data · {repository.data_directory}</p>
+                  <p className="mt-0.5 truncate font-mono text-[10px] text-(--color-text-subtle)">runtime · {repository.runtime_directory}</p>
+                  {repository.legacy_run_count > 0 && (
+                    <p className="mt-1 text-[10px] font-medium text-(--color-warning)">{repository.legacy_run_count} legacy {repository.legacy_run_count === 1 ? 'Run is' : 'Runs are'} visible to Git</p>
+                  )}
+                  {repository.legacy_generated_file_count > 0 && (
+                    <p className="mt-1 text-[10px] font-medium text-(--color-warning)">{repository.legacy_generated_file_count} generated legacy files can be removed</p>
+                  )}
                   {repository.issue && (
                     <p className={cn('mt-1 text-[11px]', repository.status === 'invalid' ? 'text-(--color-error)' : 'text-(--color-text-muted)')}>
                       {repository.issue}
@@ -474,6 +509,18 @@ function SetupView({
                         : 'Initialize'}
                   </Button>
                 )}
+                {repository.installed && (repository.legacy_run_count > 0 || repository.legacy_generated_file_count > 0) && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="col-start-2 justify-self-start @sm/easd:col-start-3 @sm/easd:row-start-1"
+                    disabled={migrationQuery.isLoading || migrationMutation.isPending}
+                    onClick={() => setMigrationPath(repository.path)}
+                  >
+                    <FolderGit2 /> Clean up storage
+                  </Button>
+                )}
               </div>
             )
           })}
@@ -483,7 +530,7 @@ function SetupView({
           <div>
             <p className="text-xs font-medium text-(--color-text-2)">Files added to each repository</p>
             <p className="mt-0.5 break-all font-mono text-[10px] text-(--color-text-subtle)">.evoflux/easd/config.json · .evoflux/easd/RULES.md · {dataDirectory || 'documents/easd'}/ · .evoflux/skills/easd-*/</p>
-            <p className="mt-1 text-[10px] text-(--color-text-subtle)">Repository files are the shared source of truth; setup preserves existing docs, and Skills are Coding-only and never approve a specification.</p>
+            <p className="mt-1 text-[10px] text-(--color-text-subtle)">Accepted Specs and adopted docs are shared truth. Active Run, evidence, Trace, Recovery, and Realtime state are local by default.</p>
             <div className="mt-2 flex flex-wrap gap-1" aria-label="EASD skill bundle">
               {skillNames.map((name) => (
                 <span key={name} className="rounded-md border border-(--color-border) bg-(--bg-card) px-1.5 py-0.5 font-mono text-[9px] text-(--color-text-muted)">
@@ -503,6 +550,33 @@ function SetupView({
         </footer>
       </section>
       {mutation.error && <p role="alert" className="text-center text-xs text-(--color-error)">{errorText(mutation.error)}</p>}
+      <Dialog open={migrationPath !== null} onOpenChange={(open) => { if (!open && !migrationMutation.isPending) setMigrationPath(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Move legacy EASD data to local storage?</DialogTitle>
+            <DialogDescription>Runs remain available in EvoFlux. Operational ledgers move under ignored `.evoflux/easd/.local/`; unchanged generated templates and placeholder files are removed.</DialogDescription>
+          </DialogHeader>
+          {migrationRepository ? (
+            <div className="rounded-lg border border-(--color-border) bg-(--bg-page) p-3 text-xs">
+              <p><span className="text-(--color-text-subtle)">Repository:</span> {migrationRepository.display_name || migrationRepository.name}</p>
+              <p className="mt-1"><span className="text-(--color-text-subtle)">Runs:</span> {migrationRepository.legacy_run_count}</p>
+              <p className="mt-1"><span className="text-(--color-text-subtle)">Files:</span> {migrationRepository.runs.reduce((total, run) => total + run.file_count, 0)} · {formatStorageBytes(migrationRepository.runs.reduce((total, run) => total + run.bytes, 0))}</p>
+              <p className="mt-1"><span className="text-(--color-text-subtle)">Generated defaults:</span> {migrationRepository.legacy_generated_file_count} · {formatStorageBytes(migrationRepository.generated_bytes)}</p>
+              <p className="mt-2 text-(--color-warning)">If these files were previously committed, Git will show them as deleted. Review the diff before committing.</p>
+            </div>
+          ) : <p className="text-xs text-(--color-text-muted)">Loading migration preview…</p>}
+          {migrationMutation.error && <p role="alert" className="text-xs text-(--color-error)">{errorText(migrationMutation.error)}</p>}
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={migrationMutation.isPending} onClick={() => setMigrationPath(null)}>Cancel</Button>
+            <Button type="button" disabled={!migrationRepository || migrationMutation.isPending} onClick={() => {
+              if (!migrationPath) return
+              void migrationMutation.mutateAsync([migrationPath])
+                .then(() => setMigrationPath(null))
+                .catch(() => undefined)
+            }}>{migrationMutation.isPending && <Loader2 className="animate-spin" />}Move and clean up</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

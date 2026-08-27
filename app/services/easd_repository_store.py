@@ -18,6 +18,7 @@ import yaml
 
 from app.services.easd_setup_service import (
     EASD_MANIFEST,
+    EASD_RUNTIME_DIRECTORY,
     normalize_data_directory,
 )
 
@@ -137,7 +138,8 @@ class EasdRepositoryStore:
         self.data_directory = relative
         self.data_path = self._inside(relative)
         self.specs_path = self._inside(relative / "specs")
-        self.runs_path = self._inside(relative / "runs")
+        self.runs_path = self._inside(EASD_RUNTIME_DIRECTORY)
+        self.legacy_runs_path = self._inside(relative / "runs")
         self.local_path = self._inside(Path(".evoflux/easd/.local"))
 
     def _inside(self, relative: Path) -> Path:
@@ -151,8 +153,17 @@ class EasdRepositoryStore:
 
     def _run_directory(self, run_id: str | UUID) -> Path:
         normalized = str(UUID(str(run_id)))
-        matches = list(self.runs_path.glob(f"*--{normalized}"))
-        if len(matches) != 1 or not matches[0].is_dir() or matches[0].is_symlink():
+        matches = [
+            path
+            for root in (self.runs_path, self.legacy_runs_path)
+            for path in root.glob(f"*--{normalized}")
+            if path.is_dir() and not path.is_symlink()
+        ]
+        if len(matches) > 1:
+            raise EasdStoreConflict(
+                f"EASD run {normalized} exists in local and legacy storage"
+            )
+        if len(matches) != 1:
             raise EasdStoreNotFound(f"EASD run {normalized} was not found")
         return matches[0]
 
@@ -225,6 +236,13 @@ class EasdRepositoryStore:
         intent: dict[str, Any] | None,
     ) -> EasdStoredRun:
         run_id = str(UUID(str(run["id"])))
+        try:
+            self._run_directory(run_id)
+        except EasdStoreNotFound:
+            pass
+        else:
+            raise EasdStoreConflict(f"EASD run already exists: {run_id}")
+        self.runs_path.mkdir(parents=True, exist_ok=True)
         directory = self.runs_path / f"{_slug(str(run['title']))}--{run_id}"
         if directory.exists():
             raise EasdStoreConflict(f"EASD run already exists: {run_id}")
@@ -271,27 +289,32 @@ class EasdRepositoryStore:
         return EasdStoredRun(self.root, directory, _read_yaml(directory / "run.yaml"))
 
     def list_runs(self) -> list[EasdStoredRun]:
-        if not self.runs_path.is_dir():
-            return []
         rows: list[EasdStoredRun] = []
-        for directory in sorted(self.runs_path.iterdir()):
-            if (
-                not directory.is_dir()
-                or directory.is_symlink()
-                or not _RUN_SUFFIX.search(directory.name)
-            ):
+        seen: dict[UUID, Path] = {}
+        for runs_root in (self.runs_path, self.legacy_runs_path):
+            if not runs_root.is_dir() or runs_root.is_symlink():
                 continue
-            try:
-                rows.append(
-                    EasdStoredRun(
-                        self.root,
-                        directory,
-                        _read_yaml(directory / "run.yaml"),
+            for directory in sorted(runs_root.iterdir()):
+                match = _RUN_SUFFIX.search(directory.name)
+                if not directory.is_dir() or directory.is_symlink() or not match:
+                    continue
+                run_id = UUID(match.group("id"))
+                if run_id in seen:
+                    raise EasdStoreConflict(
+                        f"EASD run {run_id} exists in local and legacy storage"
                     )
-                )
-                _RUN_ROOTS[UUID(str(rows[-1].run["id"]))] = self.root
-            except EasdStoreError:
-                continue
+                try:
+                    rows.append(
+                        EasdStoredRun(
+                            self.root,
+                            directory,
+                            _read_yaml(directory / "run.yaml"),
+                        )
+                    )
+                    seen[run_id] = directory
+                    _RUN_ROOTS[UUID(str(rows[-1].run["id"]))] = self.root
+                except EasdStoreError:
+                    continue
         return rows
 
     def update_run(
@@ -400,16 +423,7 @@ class EasdRepositoryStore:
                 "EASD specification revisions must be a repository-local directory"
             )
         revision_path = revisions / f"{version:04d}.yaml"
-        published_payload = {
-            **revision,
-            "run_snapshot": (
-                self._run_directory(normalized_run_id)
-                / "specifications"
-                / f"{version:04d}.yaml"
-            )
-            .relative_to(self.data_path)
-            .as_posix(),
-        }
+        published_payload = dict(revision)
         if revision_path.exists():
             current_revision = _read_yaml(revision_path)
             if (

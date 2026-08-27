@@ -1327,10 +1327,52 @@ export interface EasdRepositorySetup {
   manifest_path: string
   data_directory: string
   data_path: string
+  runtime_directory: string
+  runtime_path: string
+  legacy_run_count: number
+  legacy_generated_file_count: number
   rules_path: string
   skills_path: string
   skill_names: string[]
   issue: string | null
+}
+
+export interface EasdRuntimeMigrationRun {
+  run_id: string
+  name: string
+  source: string
+  target: string
+  file_count: number
+  bytes: number
+}
+
+export interface EasdRuntimeMigrationRepository {
+  path: string
+  name: string
+  display_name: string | null
+  legacy_run_count: number
+  runs: EasdRuntimeMigrationRun[]
+  legacy_generated_file_count: number
+  generated_files: string[]
+  generated_bytes: number
+  moved_run_count?: number | null
+  removed_generated_file_count?: number | null
+}
+
+export interface EasdRuntimeMigrationPreview {
+  workspace: string
+  project_id: string | null
+  legacy_run_count: number
+  file_count: number
+  bytes: number
+  legacy_generated_file_count: number
+  generated_bytes: number
+  repositories: EasdRuntimeMigrationRepository[]
+}
+
+export interface EasdRuntimeMigrationResult extends EasdRuntimeMigrationPreview {
+  moved_run_count: number
+  removed_generated_file_count: number
 }
 
 export interface EasdSetupResponse {

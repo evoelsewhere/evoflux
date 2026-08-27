@@ -1,8 +1,9 @@
 # Evo Agent Specs knowledge base
 
 This directory is the repository-local, version-controlled EASD knowledge base.
-It combines living product contracts with Run execution evidence without
-relocating or copying documentation that the repository already owns elsewhere.
+It contains accepted and explicitly adopted contracts without relocating or
+copying documentation that the repository already owns elsewhere. Operational
+Run data is local and ignored under `.evoflux/easd/.local/runs/`.
 
 ## Structure
 
@@ -22,21 +23,12 @@ relocating or copying documentation that the repository already owns elsewhere.
 │   ├── research/                  # prior art and investigations
 │   ├── plans/                     # proposed or historical designs
 │   └── releases/                  # release/submission evidence
-├── images/                        # media referenced by Markdown
-├── templates/                     # current EASD artifact shapes
-└── runs/                          # active/completed change ledgers
-    └── <slug>--<run-uuid>/
-        ├── run.yaml
-        ├── intent.yaml
-        ├── specifications/        # draft + immutable accepted Run snapshots
-        ├── plans/
-        ├── missions/
-        ├── reviews/
-        ├── verifications/
-        ├── evidence/
-        ├── deviations/
-        ├── events/
-        └── convergence.yaml
+└── images/                        # media referenced by Markdown
+
+.evoflux/easd/.local/
+├── templates/                     # bundled runtime artifact shapes
+└── runs/                          # ignored operational ledgers
+    └── <slug>--<run-uuid>/        # Intent, Plan, missions, evidence, events
 ```
 
 ## Authority
@@ -44,10 +36,12 @@ relocating or copying documentation that the repository already owns elsewhere.
 - `specs/` is the discoverable catalogue of accepted behavior-first contracts.
 - `features/`, `architecture/`, and `reference/` describe current shipped state
   and are reconciled when a Run changes those boundaries.
-- `runs/` owns change-specific Intent, Plan, missions, evidence and convergence.
+- `.evoflux/easd/.local/runs/` owns change-specific Intent, Plan, missions,
+  evidence and convergence and is not a Git collaboration transport.
 - `records/` is historical and never overrides current Specs or current-state
   documents.
-- `templates/` defines shapes; template presence is not proof of implementation.
+- Bundled local templates define shapes; template presence is not proof of
+  implementation.
 
 Draft Specs stay Run-local. User acceptance publishes a hash-identical immutable
 copy into `specs/`; the Run snapshot remains audit evidence. Existing project

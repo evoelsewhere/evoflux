@@ -1438,9 +1438,10 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'convergence',
     ],
     setup:
-      'Mở Coding workspace và initialize mọi repository với EASD knowledge base được version-control; tài liệu project hiện có vẫn giữ nguyên vị trí. Tạo Intent, review flow direct/planned do agent đề xuất rồi Approve specification. Direct đi thẳng Implement; planned thêm Run/Approve plan. Cả hai đều qua Review → Verify → Converge.',
+      'Mở Coding workspace và initialize mọi repository với EASD knowledge base được track cùng local Run storage bị ignore; tài liệu project hiện có vẫn giữ nguyên vị trí. Tạo Intent, review flow direct/planned do agent đề xuất rồi Approve specification. Direct đi thẳng Implement; planned thêm Run/Approve plan. Cả hai đều qua Review → Verify → Converge.',
     tricks: [
       'Mỗi repository chỉ cần initialize một lần; project chưa cho tạo run cho tới khi mọi repository đang hoạt động đều ready.',
+      'Operational Run, mission, evidence, events, Recovery và Realtime state nằm trong `.evoflux/easd/.local/` bị ignore. Accepted Specs và docs được adopt vẫn track được. Setup preview và move legacy Runs khỏi Git, chỉ xóa generated defaults chưa bị customize.',
       'Initialization cài năm project Skill chỉ dành cho Coding: easd-specify, easd-plan, easd-implement, easd-review và easd-verify. Skill chỉ được discover từ repository thuộc Coding scope hiện tại.',
       'Chat handoff EASD chỉ chọn Skill của pha hiện tại: Specify khi draft, Plan chỉ cho accepted planned flow, Implement cho direct hoặc Plan đã duyệt, Review là challenge bắt buộc và Verify cho final gate.',
       'Mỗi EASD Skill đều đọc lại phase và hash đã persist. Plan, mission, review snapshot hoặc verification result bị stale sẽ dừng thay vì tiếp tục theo chat memory.',

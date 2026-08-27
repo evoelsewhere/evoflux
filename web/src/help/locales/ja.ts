@@ -1455,9 +1455,10 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'convergence',
     ],
     setup:
-      'Coding workspace で各 repository を version-controlled EASD knowledge base とともに初期化します。既存 project docs は元の場所に残ります。Intent を作成し、agent 推奨の direct/planned flow を review して specification を Approve します。Direct は Implement へ、planned は Run/Approve plan を追加し、両方とも Review → Verify → Converge を進めます。',
+      'Coding workspace で各 repository を tracked EASD knowledge base と ignored local Run storage とともに初期化します。既存 project docs は元の場所に残ります。Intent を作成し、agent 推奨の direct/planned flow を review して specification を Approve します。Direct は Implement へ、planned は Run/Approve plan を追加し、両方とも Review → Verify → Converge を進めます。',
     tricks: [
       '初期化はリポジトリごとに一度だけ行います。Project の全リポジトリが ready になるまで run は作成できません。',
+      'Operational Run、mission、evidence、event、Recovery、Realtime state は ignored `.evoflux/easd/.local/` に保存します。Accepted Spec と明示的に adopted された docs は track 可能です。Setup は legacy Git-visible Run を preview/move し、未変更の generated default だけを削除します。',
       '初期化では Coding 専用の project Skill（easd-specify、easd-plan、easd-implement、easd-review、easd-verify）をインストールします。現在の Coding scope に含まれる repository からだけ検出されます。',
       'EASD chat handoff は現在 phase の Skill だけを選択します。Draft は Specify、accepted planned flow だけ Plan、direct または approved-plan execution は Implement、mandatory challenge は Review、final gate は Verify です。',
       '各 EASD Skill は永続化された phase と hash を再読します。Plan、mission、review snapshot、verification result が stale なら、chat memory から続行せず停止します。',

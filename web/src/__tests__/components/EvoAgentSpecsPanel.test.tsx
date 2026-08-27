@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   trace: vi.fn(),
   recovery: vi.fn(),
   recoveryAction: vi.fn(),
+  migration: vi.fn(),
+  migrationAction: vi.fn(),
   action: vi.fn(),
   generate: vi.fn(),
   projectSessions: vi.fn(),
@@ -30,6 +32,8 @@ vi.mock('@/queries', () => ({
   useEasdRealtime: () => ({ status: 'live', viewerCount: 2, lastSequence: 7 }),
   useEasdRecoveryQuery: () => mocks.recovery(),
   useExecuteEasdRecoveryMutation: () => mocks.recoveryAction(),
+  useEasdRuntimeMigrationQuery: () => mocks.migration(),
+  useExecuteEasdRuntimeMigrationMutation: () => mocks.migrationAction(),
   useAcceptEasdPlanRevisionMutation: () => mocks.action(),
   useCreateEasdRunMutation: () => mocks.action(),
   useCreateEasdRevisionMutation: () => mocks.action(),
@@ -298,6 +302,10 @@ const readySetup = {
       manifest_path: '.evoflux/easd/config.json',
       data_directory: 'documents/easd',
       data_path: '/repo/documents/easd',
+      runtime_directory: '.evoflux/easd/.local/runs',
+      runtime_path: '/repo/.evoflux/easd/.local/runs',
+      legacy_run_count: 0,
+      legacy_generated_file_count: 0,
       rules_path: '.evoflux/easd/RULES.md',
       skills_path: '.evoflux/skills',
       skill_names: ['easd-specify', 'easd-plan', 'easd-implement', 'easd-review', 'easd-verify'],
@@ -312,6 +320,10 @@ const readySetup = {
       manifest_path: '.evoflux/easd/config.json',
       data_directory: 'documents/easd',
       data_path: '/web/documents/easd',
+      runtime_directory: '.evoflux/easd/.local/runs',
+      runtime_path: '/web/.evoflux/easd/.local/runs',
+      legacy_run_count: 0,
+      legacy_generated_file_count: 0,
       rules_path: '.evoflux/easd/RULES.md',
       skills_path: '.evoflux/skills',
       skill_names: ['easd-specify', 'easd-plan', 'easd-implement', 'easd-review', 'easd-verify'],
@@ -336,6 +348,8 @@ beforeEach(() => {
   mocks.trace.mockReset()
   mocks.recovery.mockReset()
   mocks.recoveryAction.mockReset()
+  mocks.migration.mockReset()
+  mocks.migrationAction.mockReset()
   mocks.action.mockReset()
   mocks.generate.mockReset()
   mocks.projectSessions.mockReset()
@@ -361,6 +375,8 @@ beforeEach(() => {
       recovery: { ...recoveryAction, recorded_at: run.updated_at, session_id: run.session_id },
     }),
   })
+  mocks.migration.mockReturnValue({ data: undefined, isLoading: false, error: null, refetch: vi.fn() })
+  mocks.migrationAction.mockReturnValue({ error: null, isPending: false, mutateAsync: vi.fn() })
   mocks.action.mockReturnValue({
     error: null,
     isPending: false,
@@ -489,6 +505,51 @@ describe('EvoAgentSpecsPanel', () => {
     )
     expect(screen.getByRole('button', { name: 'Initialize' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /New run/i })).not.toBeInTheDocument()
+  })
+
+  it('previews and confirms moving Git-visible legacy Runs to local storage', async () => {
+    const repository = { ...readySetup.repositories[0], legacy_run_count: 2 }
+    const setup = { ...readySetup, repositories: [repository, readySetup.repositories[1]] }
+    const mutateAsync = vi.fn().mockResolvedValue({ moved_run_count: 2 })
+    mocks.setup.mockReturnValue({ data: setup, isLoading: false, error: null, refetch: vi.fn() })
+    mocks.migration.mockReturnValue({
+      data: {
+        workspace: '/repo',
+        project_id: 'project-1',
+        legacy_run_count: 2,
+        file_count: 14,
+        bytes: 4096,
+        legacy_generated_file_count: 18,
+        generated_bytes: 2048,
+        repositories: [{
+          path: '/repo',
+          name: 'repo',
+          display_name: 'Backend',
+          legacy_run_count: 2,
+          legacy_generated_file_count: 18,
+          generated_files: ['documents/easd/templates/run.yaml'],
+          generated_bytes: 2048,
+          runs: [
+            { run_id: 'run-1', name: 'one', source: 'documents/easd/runs/one', target: '.evoflux/easd/.local/runs/one', file_count: 8, bytes: 3000 },
+            { run_id: 'run-2', name: 'two', source: 'documents/easd/runs/two', target: '.evoflux/easd/.local/runs/two', file_count: 6, bytes: 1096 },
+          ],
+        }],
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    })
+    mocks.migrationAction.mockReturnValue({ error: null, isPending: false, mutateAsync })
+    render(<EvoAgentSpecsPanel workspace="/repo" projectId="project-1" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Repositories' }))
+
+    expect(screen.getByText('2 legacy Runs are visible to Git')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Clean up storage' }))
+    expect(screen.getByRole('heading', { name: 'Move legacy EASD data to local storage?' })).toBeInTheDocument()
+    expect(screen.getByText(/Git will show them as deleted/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Move and clean up' }))
+
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith(['/repo']))
   })
 
   it('offers an in-place skill bundle upgrade without calling destructive repair', async () => {

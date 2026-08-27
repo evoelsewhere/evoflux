@@ -534,6 +534,10 @@ class EasdRepositorySetupOut(BaseModel):
     manifest_path: str
     data_directory: str
     data_path: str
+    runtime_directory: str
+    runtime_path: str
+    legacy_run_count: int
+    legacy_generated_file_count: int
     rules_path: str
     skills_path: str
     skill_names: list[str]
@@ -548,6 +552,53 @@ class EasdSetupResponse(BaseModel):
     repository_count: int
     installed_count: int
     repositories: list[EasdRepositorySetupOut]
+
+
+class EasdRuntimeMigrationRunOut(BaseModel):
+    run_id: UUID
+    name: str
+    source: str
+    target: str
+    file_count: int
+    bytes: int
+
+
+class EasdRuntimeMigrationRepositoryOut(BaseModel):
+    path: str
+    name: str
+    display_name: str | None
+    legacy_run_count: int
+    runs: list[EasdRuntimeMigrationRunOut]
+    legacy_generated_file_count: int
+    generated_files: list[str]
+    generated_bytes: int
+    moved_run_count: int | None = None
+    removed_generated_file_count: int | None = None
+
+
+class EasdRuntimeMigrationPreviewResponse(BaseModel):
+    workspace: str
+    project_id: UUID | None
+    legacy_run_count: int
+    file_count: int
+    bytes: int
+    legacy_generated_file_count: int
+    generated_bytes: int
+    repositories: list[EasdRuntimeMigrationRepositoryOut]
+
+
+class EasdRuntimeMigrationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workspace: str = Field(min_length=1, max_length=4096)
+    project_id: UUID | None = None
+    repository_paths: list[str] | None = Field(default=None, max_length=100)
+    confirm: Literal[True]
+
+
+class EasdRuntimeMigrationResponse(EasdRuntimeMigrationPreviewResponse):
+    moved_run_count: int
+    removed_generated_file_count: int
 
 
 __all__ = [name for name in globals() if name.startswith("Easd")]

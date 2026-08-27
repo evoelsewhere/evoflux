@@ -76,10 +76,16 @@ Evo Agent Specs routes are Coding-scoped:
   repairs invalid setup. It installs Coding-only `easd-specify`, `easd-plan`,
   `easd-implement`, `easd-review`, and `easd-verify` project skills under
   `.evoflux/skills`. `data_directory` selects the safe repository-relative EASD
-  knowledge base (default `documents/easd`) containing common Specs, living
-  knowledge sections, templates and Runs. Legacy Run-only setups add missing
-  skeleton files without moving existing project docs or requiring `overwrite`;
+  knowledge base (default `documents/easd`) containing accepted Specs and
+  explicitly adopted knowledge. Runtime Runs and templates live under ignored
+  `.evoflux/easd/.local/`. Legacy setups add the local policy without moving
+  existing project docs or Runs;
   invalid setup requires `overwrite=true`;
+- `GET/POST /api/easd/setup/runtime-migration` previews and explicitly moves
+  legacy Git-visible Runs into ignored local runtime storage. The same confirmed
+  migration removes only byte-identical generated templates/placeholders;
+  customized files are preserved and previously tracked moves appear as Git
+  deletions for user review;
 - `POST /api/easd/generate` reads bounded authorized project context and returns
   a non-persisted intended-outcome/Scope/Proof plus `direct|planned` flow proposal,
   provenance/confidence, or clarifying questions. `intent.title` and

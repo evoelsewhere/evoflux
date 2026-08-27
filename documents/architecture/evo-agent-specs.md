@@ -17,22 +17,22 @@ portable project-skill artifacts:
 ```text
 .evoflux/easd/config.json
 .evoflux/easd/RULES.md
-.evoflux/easd/.local/                 # ignored, rebuildable
+.evoflux/easd/.local/templates/       # ignored bundled shapes
+.evoflux/easd/.local/runs/            # ignored operational ledgers
 <data_directory>/README.md            # taxonomy + authority
 <data_directory>/index.yaml
 <data_directory>/specs/               # published accepted Specs
 <data_directory>/features/
 <data_directory>/architecture/decisions/
 <data_directory>/reference/
-<data_directory>/{guides,development,records,images}/
-<data_directory>/templates/           # YAML + Markdown shapes
-<data_directory>/runs/<slug>--<uuid>/
+<data_directory>/{guides,development,records,images}/  # created on adoption
 .evoflux/skills/easd-{specify,plan,implement,review,verify}/SKILL.md
 .evoflux/skills/easd-*/.evoflux.json
 ```
 
-Setup records the safe repository-relative data directory, core rules, current
-templates, and exact skill names in one unversioned current-layout contract.
+Setup records the safe tracked knowledge directory, fixed ignored runtime and
+template directories, manual publish policy, core rules, and exact skill names
+in one unversioned current-layout contract.
 Each sidecar scopes its Skill to Coding mode. The existing skill harness
 discovers `.evoflux/skills` at project precedence, so the bundle is absent from
 global/built-in catalogs and becomes eligible only when that authorized
@@ -110,7 +110,7 @@ flowchart LR
 
 ## Persistence
 
-The owning repository is the EASD source of truth:
+Tracked knowledge and local runtime have separate authority:
 
 | Repository document | Responsibility |
 |---|---|
@@ -119,30 +119,30 @@ The owning repository is the EASD source of truth:
 | `specs/<slug>--<run-id>/revisions/NNNN.yaml` | immutable published accepted Spec content; hash-identical to the Run snapshot |
 | `features/`, `architecture/`, `reference/` | adopted living current-state knowledge reconciled by applicable Runs |
 | `records/` | non-normative analysis/research/plans/release evidence |
-| `run.yaml` | lifecycle projection, driven flow, active revisions, common Spec index reference, and CAS generation/hash |
-| `intent.yaml` | original human problem/outcome input |
-| `specifications/NNNN.yaml` | immutable-content Spec revisions and authoring provenance |
-| `plans/NNNN.yaml` | planned-flow revisions; absent for direct flow |
-| `missions/*.yaml` | durable assignment/status snapshots |
-| `reviews/`, `verifications/`, `evidence/` | revision-bound proof with provenance |
-| `deviations/` | explicit scope/spec drift and resolution |
-| `events/` | append-only lifecycle audit |
-| `convergence.yaml` | final deterministic gate report |
+| `.evoflux/easd/.local/runs/**/run.yaml` | local lifecycle projection and CAS generation/hash |
+| local `intent.yaml`, Spec/Plan drafts | operational authoring state |
+| local `missions/`, `reviews/`, `verifications/`, `evidence/` | revision-bound execution/proof |
+| local `deviations/`, `events/`, `convergence.yaml` | drift, audit, Recovery and final gate report |
 
 Writes use repository-contained temporary files, atomic rename, local process
 locks, and expected document hashes. Spec acceptance publishes the common
 revision and CAS-updates its index after the database commit; an idempotent
 accept retry repairs missing publication. A stale collaborator snapshot fails
-with a reload/review conflict. Append-only artifact IDs make Git merges
-inspectable.
+with a reload/review conflict. Operational append-only events are not Git merge
+units.
 Exactly one repository owns a multi-repo run; repository-qualified Scope may
 still reference every authorized project member.
 
-Application SQLite may materialize a rebuildable runtime projection for local
-session binding and generic delegation execution. It is never normative: list
-refresh reads repository YAML first, and another collaborator can continue from
-Git without the original database or chat. `.evoflux/easd/.local/` contains
-only ignored locks/index/session pointers.
+Application SQLite may materialize a rebuildable query projection for session
+binding and generic delegation execution. Local Run YAML is operational truth;
+Git carries accepted Specs and adopted docs only. Cross-host active-Run
+continuation requires explicit publication or a shared service.
+
+Legacy `<data_directory>/runs/` directories remain readable. Setup reports their
+count and a separate confirmed migration previews paths/files/bytes before
+atomic moves into local runtime. The migration removes legacy generated
+templates/placeholders only when byte-identical to bundled defaults; any
+project edit prevents removal. No setup upgrade silently moves Git-visible data.
 
 ## Specification normalization
 
@@ -251,8 +251,8 @@ short database scope used to create the durable tasks. It rejects:
 
 `trace_run_id` is then stored on each local runtime task; its readable spec
 retains `trace_spec_hash` and, only for planned flow, `trace_plan_hash` and
-`plan_mission_id`. A version-controlled mission snapshot is written to the
-owner repository. Existing exclusive path claims,
+`plan_mission_id`. A durable ignored mission snapshot is written to the owner's
+local runtime. Existing exclusive path claims,
 dependencies, worktree allocation, deadlines, attempts, rejection, review, and
 merge behavior are unchanged.
 
