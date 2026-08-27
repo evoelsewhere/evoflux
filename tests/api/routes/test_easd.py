@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -545,9 +546,59 @@ def test_easd_is_canonical_in_openapi_and_trace_path_is_legacy(client):
     assert "/api/easd/runs/{run_id}/verification/start" in paths
     assert "/api/easd/runs/{run_id}/stream" in paths
     assert "/api/easd/setup/runtime-migration" in paths
+    assert "/api/easd/runs/{run_id}/publication" in paths
     assert "/api/easd/runs/{run_id}/plans/{revision_id}/accept" in paths
     assert "/api/easd/runs/{run_id}/activate" not in paths
     assert "/api/trace/runs" not in paths
+
+
+def test_easd_convergence_publication_preview_and_confirm(client, tmp_path):
+    _initialize(client, str(tmp_path))
+    created = client.post("/api/easd/runs", json=_payload(str(tmp_path))).json()
+    run_id = created["run"]["id"]
+    store = EasdRepositoryStore(tmp_path)
+    stored = store.load_run(run_id).run
+    report = {
+        "run_id": run_id,
+        "spec_revision_id": created["revisions"][0]["id"],
+        "spec_hash": created["revisions"][0]["content_hash"],
+        "plan_revision_id": None,
+        "plan_hash": None,
+        "git_revision": "abc1234",
+        "criteria": {"total": 1, "passed": 1, "waived": 0},
+        "missions": {"total": 1, "completed": 1, "cancelled": 0},
+        "evidence_ids": [],
+        "deviation_ids": [],
+        "converged_at": "2026-08-27T00:00:00Z",
+    }
+    store.update_run(
+        run_id,
+        {
+            **stored,
+            "status": "converged",
+            "convergence_report": report,
+            "converged_at": report["converged_at"],
+        },
+        expected_hash=stored["document_hash"],
+    )
+    store.write_convergence(run_id, report)
+
+    preview = client.get(f"/api/easd/runs/{run_id}/publication")
+    published = client.post(
+        f"/api/easd/runs/{run_id}/publication", json={"confirm": True}
+    )
+    repeated = client.post(
+        f"/api/easd/runs/{run_id}/publication", json={"confirm": True}
+    )
+
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["eligible"] is True
+    assert preview.json()["published"] is False
+    assert published.status_code == 200, published.text
+    assert published.json()["created"] is True
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["created"] is False
+    assert (tmp_path / published.json()["path"]).is_file()
 
 
 def test_easd_requires_setup_before_creating_a_run(client, tmp_path):
@@ -955,6 +1006,60 @@ def test_easd_project_setup_initializes_each_repository(client, tmp_path):
     )
     assert sibling_owned.status_code == 201, sibling_owned.text
     assert sibling_owned.json()["run"]["workspace"] == str(web_repo.resolve())
+
+
+def test_easd_project_setup_accepts_linked_worktree_workspace(client, tmp_path):
+    source = tmp_path / "api"
+    source.mkdir()
+    project = client.post(
+        "/api/team/projects",
+        json={"name": "Worktree EASD", "workspace_paths": [str(source)]},
+    ).json()
+    _initialize(client, str(source), project_id=project["id"])
+    subprocess.run(["git", "-C", str(source), "init", "-q"], check=True)
+    subprocess.run(["git", "-C", str(source), "add", "-A"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(source),
+            "-c",
+            "user.name=EASD Test",
+            "-c",
+            "user.email=easd@example.invalid",
+            "commit",
+            "-qm",
+            "init",
+        ],
+        check=True,
+    )
+    worktree = tmp_path / "api-worktree"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(source),
+            "worktree",
+            "add",
+            "-q",
+            str(worktree),
+            "-b",
+            "easd-project-worktree",
+        ],
+        check=True,
+    )
+
+    response = client.get(
+        "/api/easd/setup",
+        params={"workspace": str(worktree), "project_id": project["id"]},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["ready"] is True
+    repository = response.json()["repositories"][0]
+    assert repository["path"] == str(worktree.resolve())
+    assert repository["runtime_owner_path"] == str(source.resolve())
+    assert repository["runtime_shared_across_worktrees"] is True
 
 
 def test_easd_generation_uses_authorized_project_context_without_creating_run(

@@ -80,6 +80,10 @@ gate be attempted.
 directory and a fixed ignored local runtime directory. The knowledge directory
 holds accepted Specs and explicitly adopted living/historical docs;
 `.evoflux/easd/.local/runs/` stores operational change execution.
+Linked Git worktrees resolve this local runtime through their canonical source
+checkout so isolated agents do not create divergent ledgers. Phase Skills use
+the injected EASD runtime contract and `runtime_directory`; a worktree is not
+required to contain another local copy.
 Setup creates missing skeleton files but never moves or copies existing project
 documentation. Operational Intent, draft Spec/Plan revisions, lifecycle events,
 mission snapshots, reviews, verifications, evidence, deviations and convergence

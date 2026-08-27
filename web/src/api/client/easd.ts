@@ -13,6 +13,7 @@ import type {
   EasdGenerateRequest,
   EasdGenerateResponse,
   EasdPlanRevision,
+  EasdPublication,
   EasdRecoveryActionId,
   EasdRecoveryExecuteResponse,
   EasdRecoveryPreview,
@@ -130,6 +131,20 @@ export async function executeEasdRuntimeMigration(body: {
 export async function getEasdRun(runId: string): Promise<EasdRunDetail> {
   const response = await fetch(`${apiBaseUrl()}/easd/runs/${encodeURIComponent(runId)}`)
   return easdResponse(response, 'getEasdRun')
+}
+
+export async function getEasdPublication(runId: string): Promise<EasdPublication> {
+  const response = await fetch(`${apiBaseUrl()}/easd/runs/${encodeURIComponent(runId)}/publication`)
+  return easdResponse(response, 'getEasdPublication')
+}
+
+export async function publishEasdRun(runId: string): Promise<EasdPublication> {
+  const response = await fetch(`${apiBaseUrl()}/easd/runs/${encodeURIComponent(runId)}/publication`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm: true }),
+  })
+  return easdResponse(response, 'publishEasdRun')
 }
 
 export async function getEasdRunTrace(runId: string): Promise<EasdRunTrace> {

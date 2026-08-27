@@ -72,3 +72,9 @@ Default EASD operation no longer produces per-attempt Git noise. Git carries
 accepted contracts and explicit project knowledge; local runtime carries active
 execution. Cross-host continuation now requires explicit publication or a
 shared service rather than implicit event-file merging.
+
+The follow-up hardening audit added canonical source ownership for linked
+worktrees, safe hydration for missing ignored directories, migration
+serialization/rollback/content revalidation, and manual compact convergence
+publication. Existing operational files in this sample remain ignored; no
+automatic retention or commit action was introduced.

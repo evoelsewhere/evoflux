@@ -151,6 +151,7 @@ export const queryKeys = {
     detail: (runId: string) => ['easd', 'runs', runId] as const,
     trace: (runId: string) => ['easd', 'runs', runId, 'trace'] as const,
     recovery: (runId: string) => ['easd', 'runs', runId, 'recovery'] as const,
+    publication: (runId: string) => ['easd', 'runs', runId, 'publication'] as const,
   },
   git: {
     reviews: (scope?: string) =>

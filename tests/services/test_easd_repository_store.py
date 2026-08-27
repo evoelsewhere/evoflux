@@ -280,6 +280,69 @@ def test_repository_store_keeps_immutable_revisions_and_append_only_evidence(
     assert len(store.read_artifacts(run_id, "evidence")) == 1
 
 
+def test_converged_run_publication_is_compact_redacted_and_idempotent(tmp_path):
+    store = _store(tmp_path)
+    run_id = uuid4()
+    report = {
+        "run_id": str(run_id),
+        "spec_revision_id": str(uuid4()),
+        "spec_hash": "a" * 64,
+        "plan_revision_id": str(uuid4()),
+        "plan_hash": "b" * 64,
+        "git_revision": "abc1234",
+        "criteria": {"total": 2, "passed": 2, "waived": 0},
+        "missions": {"total": 3, "completed": 3, "cancelled": 0},
+        "evidence_ids": [str(uuid4())],
+        "deviation_ids": [],
+        "converged_at": "2026-08-27T00:00:00Z",
+    }
+    store.create_run(
+        run={
+            "id": str(run_id),
+            "title": "Compact publication",
+            "status": "converged",
+            "risk_tier": "standard",
+            "owner_repository": "backend",
+            "workspace": "/private/source/path",
+            "spec_catalog_index": f"specs/compact--{run_id}/index.yaml",
+            "convergence_report": {**report, "raw_evidence": "must-not-publish"},
+            "converged_at": report["converged_at"],
+        },
+        intent={
+            "title": "Compact publication",
+            "problem": "Local evidence should not leak",
+        },
+    )
+    store.write_convergence(run_id, {**report, "raw_evidence": "must-not-publish"})
+
+    preview = store.preview_convergence_publication(run_id)
+    first = store.publish_convergence_record(run_id)
+    repeated = store.publish_convergence_record(run_id)
+
+    assert preview["eligible"] is True
+    assert preview["published"] is False
+    assert first["created"] is True
+    assert repeated["created"] is False
+    assert first["path"].startswith("documents/easd/records/runs/")
+    published_text = (tmp_path / first["path"]).read_text(encoding="utf-8")
+    assert "/private/source/path" not in published_text
+    assert "must-not-publish" not in published_text
+    assert "evidence_ids" in published_text
+
+
+def test_non_converged_run_cannot_publish(tmp_path):
+    store = _store(tmp_path)
+    run_id = uuid4()
+    store.create_run(
+        run={"id": str(run_id), "title": "Still active", "status": "active"},
+        intent={"title": "Still active", "problem": "Not done"},
+    )
+
+    assert store.preview_convergence_publication(run_id)["eligible"] is False
+    with pytest.raises(EasdStoreConflict, match="Only a converged"):
+        store.publish_convergence_record(run_id)
+
+
 @pytest.mark.asyncio
 async def test_easd_mission_status_is_projected_after_each_commit(tmp_path, setup_db):
     from app.core.db import async_session_factory

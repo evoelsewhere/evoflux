@@ -7,13 +7,16 @@ description: Run the final EASD integration and evidence gate against accepted A
 
 ## Repository contract
 
-Read `.evoflux/easd/config.json`, its `rules_file`, and the current run under
-`data_directory` before phase work. Confirm the common `specs/` revision and
-Run-local accepted snapshot have the same hash. Inspect affected living
+Read `.evoflux/easd/config.json` and its `rules_file` before phase work. Treat
+the injected EASD context as the authoritative current Run; when the owning
+runtime is accessible, corroborate it under `runtime_directory`. An isolated
+worktree intentionally has no checkout-local runtime copy. Confirm the common
+`specs/` revision and Run-local accepted snapshot have the same hash. Inspect affected living
 knowledge sections and existing project docs without migrating them implicitly.
-Repository documents are the shared source of truth. Stop on a missing file,
-stale hash, or generation conflict; never reconstruct authority from chat memory
-or SQLite. Verify and Converge remain mandatory for both `direct` and `planned`.
+Repository documents are the shared source of truth. Stop on a missing tracked
+contract, stale hash, generation conflict, or unavailable injected runtime;
+never reconstruct authority from chat memory or a stale database-only
+projection. Verify and Converge remain mandatory for both `direct` and `planned`.
 
 Challenge the integrated result against the exact accepted specification. This
 skill helps gather and assess evidence; only the EASD service computes Done.

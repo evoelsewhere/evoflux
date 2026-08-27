@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   trace: vi.fn(),
   recovery: vi.fn(),
   recoveryAction: vi.fn(),
+  publication: vi.fn(),
+  publicationAction: vi.fn(),
   migration: vi.fn(),
   migrationAction: vi.fn(),
   action: vi.fn(),
@@ -32,6 +34,8 @@ vi.mock('@/queries', () => ({
   useEasdRealtime: () => ({ status: 'live', viewerCount: 2, lastSequence: 7 }),
   useEasdRecoveryQuery: () => mocks.recovery(),
   useExecuteEasdRecoveryMutation: () => mocks.recoveryAction(),
+  useEasdPublicationQuery: () => mocks.publication(),
+  usePublishEasdRunMutation: () => mocks.publicationAction(),
   useEasdRuntimeMigrationQuery: () => mocks.migration(),
   useExecuteEasdRuntimeMigrationMutation: () => mocks.migrationAction(),
   useAcceptEasdPlanRevisionMutation: () => mocks.action(),
@@ -304,6 +308,8 @@ const readySetup = {
       data_path: '/repo/documents/easd',
       runtime_directory: '.evoflux/easd/.local/runs',
       runtime_path: '/repo/.evoflux/easd/.local/runs',
+      runtime_owner_path: '/repo',
+      runtime_shared_across_worktrees: false,
       legacy_run_count: 0,
       legacy_generated_file_count: 0,
       rules_path: '.evoflux/easd/RULES.md',
@@ -322,6 +328,8 @@ const readySetup = {
       data_path: '/web/documents/easd',
       runtime_directory: '.evoflux/easd/.local/runs',
       runtime_path: '/web/.evoflux/easd/.local/runs',
+      runtime_owner_path: '/web',
+      runtime_shared_across_worktrees: false,
       legacy_run_count: 0,
       legacy_generated_file_count: 0,
       rules_path: '.evoflux/easd/RULES.md',
@@ -348,6 +356,8 @@ beforeEach(() => {
   mocks.trace.mockReset()
   mocks.recovery.mockReset()
   mocks.recoveryAction.mockReset()
+  mocks.publication.mockReset()
+  mocks.publicationAction.mockReset()
   mocks.migration.mockReset()
   mocks.migrationAction.mockReset()
   mocks.action.mockReset()
@@ -375,6 +385,8 @@ beforeEach(() => {
       recovery: { ...recoveryAction, recorded_at: run.updated_at, session_id: run.session_id },
     }),
   })
+  mocks.publication.mockReturnValue({ data: undefined, isLoading: false, error: null })
+  mocks.publicationAction.mockReturnValue({ error: null, isPending: false, mutateAsync: vi.fn() })
   mocks.migration.mockReturnValue({ data: undefined, isLoading: false, error: null, refetch: vi.fn() })
   mocks.migrationAction.mockReturnValue({ error: null, isPending: false, mutateAsync: vi.fn() })
   mocks.action.mockReturnValue({
@@ -525,6 +537,7 @@ describe('EvoAgentSpecsPanel', () => {
           path: '/repo',
           name: 'repo',
           display_name: 'Backend',
+          runtime_owner_path: '/repo',
           legacy_run_count: 2,
           legacy_generated_file_count: 18,
           generated_files: ['documents/easd/templates/run.yaml'],
@@ -546,6 +559,8 @@ describe('EvoAgentSpecsPanel', () => {
     expect(screen.getByText('2 legacy Runs are visible to Git')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Clean up storage' }))
     expect(screen.getByRole('heading', { name: 'Move legacy EASD data to local storage?' })).toBeInTheDocument()
+    expect(screen.getByText('documents/easd/runs/one → .evoflux/easd/.local/runs/one')).toBeInTheDocument()
+    expect(screen.getByText('documents/easd/templates/run.yaml')).toBeInTheDocument()
     expect(screen.getByText(/Git will show them as deleted/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Move and clean up' }))
 
@@ -1068,6 +1083,46 @@ describe('EvoAgentSpecsPanel', () => {
     expect(screen.getByRole('heading', { name: 'Converge this Run?' })).toBeInTheDocument()
     expect(mutateAsync).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Converge Run' }))
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledOnce())
+  })
+
+  it('previews and manually publishes a compact converged audit record', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ published: true, created: true })
+    mocks.detail.mockReturnValue({
+      data: {
+        ...detail,
+        run: {
+          ...run,
+          status: 'converged',
+          converged_at: '2026-08-27T00:00:00Z',
+        },
+      } satisfies EasdRunDetail,
+      isLoading: false,
+    })
+    mocks.publication.mockReturnValue({
+      data: {
+        eligible: true,
+        published: false,
+        path: 'documents/easd/records/runs/easd-feature--run-1.yaml',
+        record: {
+          title: 'EASD feature',
+          criteria: { total: 1, passed: 1 },
+          evidence_ids: ['evidence-1'],
+        },
+      },
+      isLoading: false,
+      error: null,
+    })
+    mocks.publicationAction.mockReturnValue({ error: null, isPending: false, mutateAsync })
+
+    render(<EvoAgentSpecsPanel workspace="/repo" projectId="project-1" sessionId="session-1" />)
+    fireEvent.click(screen.getByRole('button', { name: /EASD feature/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Publish audit record' }))
+
+    expect(screen.getByRole('heading', { name: 'Publish converged audit record?' })).toBeInTheDocument()
+    expect(screen.getByText(/does not commit this file/)).toBeInTheDocument()
+    expect(screen.getByText('documents/easd/records/runs/easd-feature--run-1.yaml')).toBeInTheDocument()
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Publish audit record' }))
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledOnce())
   })
 

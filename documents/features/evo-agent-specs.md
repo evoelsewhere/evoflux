@@ -148,6 +148,7 @@ setup.
 | `.evoflux/easd/.local/templates/` | ignored bundled runtime artifact shapes |
 | `.evoflux/easd/.local/runs/<slug>--<uuid>/` | ignored lifecycle, revisions, missions, evidence, deviations, events, Recovery and convergence |
 | `.evoflux/easd/.local/` | local runtime, locks/index/session bindings; never Git transport |
+| `<data_directory>/records/runs/*.yaml` | optional manually published compact convergence records; Git-visible only after explicit confirmation |
 | `.evoflux/skills/easd-{specify,plan,implement,review,verify}/SKILL.md` | portable EASD phase guidance discovered only in this repository |
 | `.evoflux/skills/easd-*/.evoflux.json` | limits the EASD skills to Coding mode |
 
@@ -156,7 +157,10 @@ is ready. Legacy Run-only setups report `upgrade_required` and add only missing
 local runtime policy/templates without replacing existing valid edited Skills
 or moving/copying repository documentation. Git-visible legacy Runs remain
 readable until **Move to local** is explicitly confirmed. That migration removes
-only byte-identical generated defaults and preserves customized files. Invalid
+only byte-identical generated defaults, revalidates immediately before removal,
+rolls back a failed execution, and preserves customized files. Linked worktrees
+share the source repository's ignored runtime; an absent ignored directory is
+offered as a non-destructive local upgrade. Invalid
 configuration, symlinks or Skills are never silently overwritten; repair
 requires an explicit action.
 
@@ -317,6 +321,9 @@ counts, mission counts, evidence/deviation IDs, and convergence timestamp.
   automatic plan generation remains future work.
 - EASD realtime is local-host Run collaboration; remote cross-host transport is
   not yet provided.
+- Converged Run detail can preview and manually publish one compact audit record;
+  EvoFlux does not commit it and does not automatically delete the local
+  Recovery ledger.
 - Deviation resolution and spec/plan revision authoring remain API-backed; the
   detail view exposes the guided phase flow, readiness blockers, and complete
   approved plan mission contract. Trace provides a read-only relationship map,
