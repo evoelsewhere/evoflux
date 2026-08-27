@@ -22,7 +22,10 @@ from app.plugin_platform.installer import (
     update_plugin,
 )
 from app.plugin_platform.credentials import credential_definition
-from app.plugin_platform.extensions import CREDENTIALS_EXTENSION, MCP_EXTENSION
+from app.plugin_platform.extensions import (
+    CREDENTIALS_EXTENSION,
+    MCP_EXTENSION,
+)
 from app.plugin_platform.models import (
     MCP_SCHEMA_ID,
     PLUGIN_SCHEMA_ID,
@@ -231,6 +234,61 @@ def test_plugin_placeholder_expansion_is_single_pass() -> None:
     assert _expand("${PLUGIN_ROOT}", root=root, data_root=data) == str(root)
     assert _expand("${PLUGIN_DATA}/${PLUGIN_ROOT}", root=root, data_root=data) == (
         f"{data}/{root}"
+    )
+
+
+def test_create_rejects_an_unportable_automatic_mcp_starter(
+    isolated_platform: Path,
+) -> None:
+    target = isolated_platform / "rejected-mcp-starter"
+
+    with pytest.raises(PluginInstallError, match="Automatic MCP starters"):
+        create_plugin(
+            target,
+            name="created-plugin",
+            skill_name="created-workflow",
+            mcp_name="created-tools",
+        )
+
+    assert not target.exists()
+
+
+def test_created_skill_scaffold_survives_pack_install_and_discovery(
+    isolated_platform: Path,
+) -> None:
+    source = create_plugin(
+        isolated_platform / "created-source",
+        name="created-plugin",
+        description="Created lifecycle",
+        version="0.1.0",
+        author="EvoFlux test",
+        license_name="MIT",
+        skill_name="created-workflow",
+    )
+    inspection = inspect_plugin(source)
+
+    assert inspection.valid is True
+    assert inspection.manifest is not None
+    assert inspection.manifest.author is not None
+    assert inspection.manifest.author.name == "EvoFlux test"
+    assert {skill.name for skill in inspection.skills} == {"created-workflow"}
+    assert inspection.mcp_servers == []
+    assert {path.relative_to(source).as_posix() for path in source.rglob("*")} == {
+        "plugin.json",
+        "skills",
+        "skills/created-workflow",
+        "skills/created-workflow/SKILL.md",
+    }
+
+    first = pack_plugin(source, isolated_platform / "created-1.evoplugin")
+    second = pack_plugin(source, isolated_platform / "created-2.evoplugin")
+    assert first.read_bytes() == second.read_bytes()
+
+    installation = install_plugin(first, enabled=True)
+    record = discover_plugin_skill_records()["created-workflow"]
+    assert record.source == f"plugin:{installation.id}"
+    assert record.skill_file == (
+        Path(installation.root) / "skills" / "created-workflow" / "SKILL.md"
     )
 
 

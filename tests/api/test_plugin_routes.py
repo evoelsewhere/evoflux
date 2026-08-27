@@ -143,6 +143,18 @@ async def test_plugin_api_lifecycle(
         transport=transport,
         base_url="http://test",
     ) as client:
+        rejected_root = tmp_path / "authoring" / "unsupported-mcp"
+        rejected = await client.post(
+            "/api/plugins/create",
+            json={
+                "destination": str(rejected_root),
+                "name": "unsupported-mcp",
+                "mcp_name": "generated-server",
+            },
+        )
+        assert rejected.status_code == 422
+        assert not rejected_root.exists()
+
         created = await client.post(
             "/api/plugins/create",
             json={
@@ -153,7 +165,6 @@ async def test_plugin_api_lifecycle(
                 "author": "EvoFlux test",
                 "license": "MIT",
                 "skill_name": "api-skill",
-                "mcp_name": "api-plugin",
             },
         )
         assert created.status_code == 201
@@ -166,7 +177,7 @@ async def test_plugin_api_lifecycle(
         assert inspected.json()["manifest"]["$schema"].endswith("/plugin.schema.json")
         assert inspected.json()["manifest"]["version"] == "0.1.0"
         assert inspected.json()["manifest"]["author"]["name"] == "EvoFlux test"
-        assert inspected.json()["mcp_servers"][0]["name"] == "api-plugin"
+        assert inspected.json()["mcp_servers"] == []
 
         tree = await client.get(
             "/api/plugins/workspace/tree",
@@ -175,7 +186,6 @@ async def test_plugin_api_lifecycle(
         assert tree.status_code == 200
         assert {entry["path"] for entry in tree.json()} >= {
             "plugin.json",
-            "server.py",
             "skills/api-skill/SKILL.md",
         }
 

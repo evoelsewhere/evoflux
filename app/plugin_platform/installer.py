@@ -13,11 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from uuid import uuid4
 
-from app.plugin_platform.models import (
-    MCP_SCHEMA_ID,
-    PLUGIN_SCHEMA_ID,
-    PluginInstallation,
-)
+from app.plugin_platform.models import PLUGIN_SCHEMA_ID, PluginInstallation
 from app.plugin_platform.registry import (
     add_installation,
     get_installation,
@@ -428,6 +424,13 @@ def create_plugin(
         )
     if root.exists():
         raise PluginInstallError(f"Destination already exists: {root}")
+    if mcp_name:
+        raise PluginInstallError(
+            "Automatic MCP starters are not supported because EvoFlux cannot "
+            "guarantee a portable executable or install plugin dependencies. "
+            "Create the Skill scaffold first, then add mcp.json only with a "
+            "runtime bundled in the package or verified on every target platform."
+        )
     manifest: dict[str, object] = {
         "$schema": PLUGIN_SCHEMA_ID,
         "name": name,
@@ -459,37 +462,6 @@ def create_plugin(
                 "---\n\n"
                 f"# {skill_name.replace('-', ' ').title()}\n\n"
                 "Describe the workflow, evidence requirements, and stop conditions here.\n",
-                encoding="utf-8",
-            )
-        if mcp_name:
-            (root / "mcp.json").write_text(
-                json.dumps(
-                    {
-                        "$schema": MCP_SCHEMA_ID,
-                        "mcpServers": {
-                            mcp_name: {
-                                "type": "stdio",
-                                "command": "python",
-                                "args": ["${PLUGIN_ROOT}/server.py"],
-                                "cwd": "${PLUGIN_ROOT}",
-                            }
-                        },
-                    },
-                    indent=2,
-                )
-                + "\n",
-                encoding="utf-8",
-            )
-            (root / "server.py").write_text(
-                '"""Starter MCP server for this portable EvoFlux plugin."""\n\n'
-                "from mcp.server.fastmcp import FastMCP\n\n"
-                f"server = FastMCP({json.dumps(mcp_name)})\n\n\n"
-                "@server.tool()\n"
-                "def echo(message: str) -> str:\n"
-                '    """Return a message from the plugin starter server."""\n'
-                '    return f"plugin:{message}"\n\n\n'
-                'if __name__ == "__main__":\n'
-                '    server.run(transport="stdio")\n',
                 encoding="utf-8",
             )
         inspection = inspect_plugin(root)

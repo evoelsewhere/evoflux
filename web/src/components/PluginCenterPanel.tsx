@@ -395,6 +395,10 @@ export function PluginCenterPanel() {
   const [createParent, setCreateParent] = useState('')
   const [createName, setCreateName] = useState('')
   const [createDescription, setCreateDescription] = useState('')
+  const [createVersion, setCreateVersion] = useState('')
+  const [createAuthor, setCreateAuthor] = useState('')
+  const [createLicense, setCreateLicense] = useState('')
+  const [createSkill, setCreateSkill] = useState('')
 
   const query = useQuery({
     queryKey: queryKeys.plugins.list(),
@@ -522,11 +526,19 @@ export function PluginCenterPanel() {
     const name = createName.trim()
     if (!parent || !name) return
     const destination = `${parent.replace(/[\\/]+$/, '')}/${name}`
+    const version = createVersion.trim()
+    const author = createAuthor.trim()
+    const license = createLicense.trim()
+    const skillName = createSkill.trim() || name
     await run('create', async () => {
       const result = await createPlugin({
         destination,
         name,
         description: createDescription.trim() || `EvoFlux plugin ${name}`,
+        skill_name: skillName,
+        ...(version ? { version } : {}),
+        ...(author ? { author } : {}),
+        ...(license ? { license } : {}),
       })
       const resultInspection = await inspectPlugin(result.path)
       setInspection(resultInspection)
@@ -707,7 +719,14 @@ export function PluginCenterPanel() {
               </div>
               <Input value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="plugin-name" aria-label="Plugin name" />
               <Input className="@lg/plugin-center:col-span-2" value={createDescription} onChange={(event) => setCreateDescription(event.target.value)} placeholder="Description" aria-label="Plugin description" />
+              <Input value={createVersion} onChange={(event) => setCreateVersion(event.target.value)} placeholder="Version (optional)" aria-label="Plugin version" />
+              <Input value={createAuthor} onChange={(event) => setCreateAuthor(event.target.value)} placeholder="Author (optional)" aria-label="Plugin author" />
+              <Input value={createLicense} onChange={(event) => setCreateLicense(event.target.value)} placeholder="License (optional)" aria-label="Plugin license" />
+              <Input value={createSkill} onChange={(event) => setCreateSkill(event.target.value)} placeholder="Starter Skill (defaults to plugin name)" aria-label="Starter Skill name" />
             </div>
+            <p className="text-xs text-(--color-text-subtle)">
+              A blank Skill name uses the plugin name. Add MCP only when the package includes a verified portable runtime.
+            </p>
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
               <Button disabled={!createParent.trim() || !createName.trim() || busy !== null} onClick={() => void createPackage()}>

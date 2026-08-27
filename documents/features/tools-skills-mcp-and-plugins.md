@@ -64,6 +64,12 @@ Portable Agent Plugins use a root `plugin.json`, immediate-child `skills/` and
 optional `mcp.json`. Plugin Center and CLI support inspect, scaffold, import,
 install, development-link, update, pack, enable/disable and uninstall.
 
+Plugin Center's Create flow defaults a blank starter Skill name to the plugin
+name, so a new scaffold contributes a discoverable workflow instead of only a
+manifest. EvoFlux does not generate an MCP server: `mcp.json` is added only by
+an author who supplies a portable executable or remote endpoint. Static
+validation does not install dependencies or prove process readiness.
+
 New installations are disabled until the user reviews executable commands,
 remote hosts, environment-field names and declared capabilities. Plugin
 credentials and data live outside the package and survive in-place updates.

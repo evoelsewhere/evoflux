@@ -57,7 +57,7 @@ Plugin MCP configuration is adapted in memory. EvoFlux never copies it into the 
 
 ## Develop and debug
 
-Use **Add plugin → Create plugin** to scaffold a package, then edit `plugin.json`, `SKILL.md`, scripts, and `mcp.json` in the built-in editor. A linked development directory refreshes in place.
+Use **Add plugin → Create plugin** to scaffold a package, then edit `plugin.json`, `SKILL.md`, and optional resources in the built-in editor. Enter optional version, author, license, and Skill values; a blank Skill name defaults to the plugin name. EvoFlux does not generate MCP code or install its dependencies. Add `mcp.json` deliberately only after supplying and testing a portable executable or remote endpoint. A linked development directory refreshes in place.
 
 ```bash
 evoflux plugin inspect ./my-plugin

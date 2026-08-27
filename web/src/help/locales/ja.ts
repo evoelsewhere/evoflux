@@ -1973,7 +1973,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '開発: Add plugin → Create plugin で portable scaffold を作り内蔵 editor を開きます。file tree から `plugin.json`、Skill instruction、scripts、`mcp.json` を開き、entry 作成/削除、Save、Validate、Pack を行います。live 開発は directory を Link します。宣言や実装変更後は再検証し、access 変更を確認してから再 enable します。plugin は独自 settings page や任意 frontend を ship できず、Plugin Center が lifecycle、credentials、diagnostics、runtime UI を所有します。',
+        text: '開発: Add plugin → Create plugin は manifest metadata と Starter Skill を受け取り、内蔵 editor を開きます。Skill 名が空なら plugin 名を使用します。EvoFlux は MCP code、host interpreter alias、dependency install を生成しません。bundled/検証済み executable または対応 remote endpoint がある場合だけ `mcp.json` を追加します。file tree で編集し、Pack 前に Validate します。plugin は独自 settings page や任意 frontend を ship できず、Plugin Center が lifecycle、credentials、diagnostics、runtime UI を所有します。',
       },
       {
         type: 'tips',
@@ -2060,7 +2060,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         type: 'code',
         language: 'json',
         caption: 'mcp.json',
-        code: '{\n  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",\n  "mcpServers": {\n    "local": {\n      "type": "stdio",\n      "command": "python",\n      "args": ["${PLUGIN_ROOT}/server.py"],\n      "env": { "CACHE_DIR": "${PLUGIN_DATA}/cache" },\n      "cwd": "${PLUGIN_ROOT}"\n    },\n    "remote": {\n      "type": "streamable-http",\n      "url": "https://api.example.com/mcp",\n      "headers": { "X-Client": "evoflux-plugin" }\n    }\n  }\n}',
+        code: '{\n  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",\n  "mcpServers": {\n    "local": {\n      "type": "stdio",\n      "command": "./bin/local-server",\n      "args": ["--cache", "${PLUGIN_DATA}/cache"],\n      "cwd": "${PLUGIN_ROOT}"\n    },\n    "remote": {\n      "type": "streamable-http",\n      "url": "https://api.example.com/mcp",\n      "headers": { "X-Client": "evoflux-plugin" }\n    }\n  }\n}',
       },
       {
         type: 'table',

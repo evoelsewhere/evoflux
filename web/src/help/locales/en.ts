@@ -2002,7 +2002,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Development: Add plugin → Create plugin scaffolds portable files and opens the built-in editor. Use the file tree to open `plugin.json`, Skill instructions, scripts, and `mcp.json`; create or delete package entries, save, Validate, then Pack. Link the directory for live development. After changing declarations or implementation code, validate again and re-enable only after reviewing changed access. A package cannot ship a custom settings page or arbitrary frontend; Plugin Center owns lifecycle, credentials, diagnostics, and runtime UI.',
+        text: 'Development: Add plugin → Create plugin accepts manifest metadata and a starter Skill, then opens the built-in editor. A blank Skill name defaults to the plugin name. EvoFlux does not generate MCP code, expose a host-interpreter alias, or install dependencies; add `mcp.json` only with a bundled/verified executable or supported remote endpoint. Use the file tree to edit and Validate before Pack. Link the directory for live development. A package cannot ship a custom settings page or arbitrary frontend; Plugin Center owns lifecycle, credentials, diagnostics, and runtime UI.',
       },
       {
         type: 'tips',
@@ -2089,7 +2089,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'code',
         language: 'json',
         caption: 'mcp.json',
-        code: '{\n  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",\n  "mcpServers": {\n    "local": {\n      "type": "stdio",\n      "command": "python",\n      "args": ["${PLUGIN_ROOT}/server.py"],\n      "env": { "CACHE_DIR": "${PLUGIN_DATA}/cache" },\n      "cwd": "${PLUGIN_ROOT}"\n    },\n    "remote": {\n      "type": "streamable-http",\n      "url": "https://api.example.com/mcp",\n      "headers": { "X-Client": "evoflux-plugin" }\n    }\n  }\n}',
+        code: '{\n  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",\n  "mcpServers": {\n    "local": {\n      "type": "stdio",\n      "command": "./bin/local-server",\n      "args": ["--cache", "${PLUGIN_DATA}/cache"],\n      "cwd": "${PLUGIN_ROOT}"\n    },\n    "remote": {\n      "type": "streamable-http",\n      "url": "https://api.example.com/mcp",\n      "headers": { "X-Client": "evoflux-plugin" }\n    }\n  }\n}',
       },
       {
         type: 'table',

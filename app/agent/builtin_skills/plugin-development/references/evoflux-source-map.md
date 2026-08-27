@@ -32,7 +32,9 @@ Workspace editing is UTF-8 only, capped at 1 MiB per file and 2,000 tree entries
 
 The CLI Create command currently exposes destination, required name,
 description, and optional Skill. The underlying scaffold service and Plugin
-Center also expose version, author, license, and MCP starter fields. CLI
+Center also expose version, author, license, and Skill fields; Plugin Center
+defaults a blank Skill name to the plugin name. Automatic MCP scaffolding is
+rejected because the platform cannot supply a portable executable. CLI
 `inspect` accepts a directory; install/update accept a directory or archive.
 Confirm the active surface before documenting commands.
 
@@ -48,6 +50,10 @@ contracts without shipping a reference third-party plugin in the EvoFlux
 source tree. Release-owned packages live under
 `app/agent/builtin_plugins/<package>/` and use the same portable Skill/MCP
 contract as managed packages.
+
+Trusted in-process hooks are a separate source-owned contract under
+`app/agent/plugins/loader.py`: flat `.py` files from `settings.plugin_dirs()`,
+not Plugin Center package directories.
 
 When adding a core built-in workflow, keep mode scope in
 `app/agent/builtin_skills/catalog.py`. A release-bundled plugin instead keeps

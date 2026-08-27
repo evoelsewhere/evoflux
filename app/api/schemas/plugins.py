@@ -35,7 +35,6 @@ class PluginCreateRequest(BaseModel):
     author: str | None = None
     license: str | None = None
     skill_name: str | None = None
-    mcp_name: str | None = None
 
 
 class PluginPackRequest(BaseModel):
