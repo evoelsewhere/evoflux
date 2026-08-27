@@ -69,7 +69,8 @@ Open **Plugins** beneath Scheduler in either Work or Coding mode. Plugin Center 
 - import a local `.evoplugin` or ZIP;
 - link an unpacked development directory without copying it;
 - validate a directory without installing it;
-- scaffold a plugin with optional starter Skill and MCP server files;
+- scaffold a plugin with manifest metadata and a starter Skill that defaults to
+  the plugin name;
 - open a plugin in the built-in workspace editor to browse, create, edit, save,
   and delete package files;
 - configure installation-scoped credentials declared by the plugin;
@@ -128,6 +129,12 @@ installation for the current run. Installation alone does not grant every
 agent every tool, and calls remain subject to the normal permission pipeline.
 
 For stdio servers, EvoFlux creates a persistent installation-scoped data directory and injects absolute `PLUGIN_ROOT` and `PLUGIN_DATA`. Only those exact placeholders are expanded, once, in `args`, `env` values, and `cwd`. Remote configured headers remain literal, and redirects are disabled to avoid forwarding them to a different origin.
+
+EvoFlux does not generate an MCP implementation, provide a host-interpreter
+alias, create a virtual environment, or install package dependencies. Authors
+add `mcp.json` only when its bare command exists on every target runtime, its
+`./relative` executable is bundled in the package, or it names a supported
+remote endpoint. Runtime readiness remains separate from static inspection.
 
 ## Host document viewer boundary
 

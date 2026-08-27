@@ -311,7 +311,6 @@ async def create_plugin_package(body: PluginCreateRequest) -> PluginPathResponse
             author=body.author,
             license_name=body.license,
             skill_name=body.skill_name,
-            mcp_name=body.mcp_name,
         )
         return PluginPathResponse(path=str(path))
     except (OSError, ValueError) as exc:

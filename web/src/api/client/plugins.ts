@@ -121,7 +121,6 @@ export async function createPlugin(body: {
   author?: string
   license?: string
   skill_name?: string
-  mcp_name?: string
 }): Promise<{ path: string }> {
   const response = await fetch(`${apiBaseUrl()}/plugins/create`, {
     method: 'POST',

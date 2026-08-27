@@ -21,8 +21,8 @@ Use the canonical schema and only `$schema` plus `mcpServers` at the top level:
   "mcpServers": {
     "release-api": {
       "type": "stdio",
-      "command": "python",
-      "args": ["${PLUGIN_ROOT}/server.py"],
+      "command": "./bin/release-api",
+      "args": ["--cache", "${PLUGIN_DATA}/cache.json"],
       "env": {
         "RELEASE_CACHE": "${PLUGIN_DATA}/cache.json"
       },
@@ -38,7 +38,7 @@ Supported declarations:
 - `streamable-http`: remote MCP URL with literal optional headers;
 - legacy `sse`: schema-valid for portability but skipped by the EvoFlux runtime.
 
-For stdio, `command` is either a bare executable resolved by the process environment or a `./relative` executable inside the plugin. Never use a shell command string. Keep protocol output clean; send diagnostics to stderr.
+For stdio, `command` is either a bare executable resolved by the process environment or a `./relative` executable inside the plugin. Never use a shell command string. Keep protocol output clean; send diagnostics to stderr. EvoFlux does not generate a server implementation or provide a host-interpreter alias.
 
 For remote MCP:
 

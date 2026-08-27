@@ -18,6 +18,13 @@ Select the smallest path that covers the requested outcome:
 - **Platform development:** change generic validation, lifecycle, runtime, API,
   CLI, or Plugin Center behavior without adding a domain-specific bundle.
 
+First confirm that “plugin” means a managed Plugin Center package. EvoFlux also
+has trusted in-process hooks: those are single `.py` files discovered from
+`settings.plugin_dirs()` and must export `async def plugin()` or
+`class Plugin(BaseAgentHook)`. They are a different trust/runtime contract and
+must never be scaffolded as an Agent Plugin directory. Provider plugins are
+also loaded from that trusted file root by their own registry.
+
 Hand adjacent operations to their owning workflow:
 
 - Use `plugin-installer` for installing the legacy trusted single-file hook from a raw Python URL.
@@ -55,23 +62,28 @@ Start from the official scaffold when practical:
 evoflux plugin create ./my-plugin --name my-plugin --skill my-workflow
 ```
 
-Use Plugin Center's Create flow when the full author/license/MCP starter form is useful. The CLI scaffold currently exposes the basic manifest and optional Skill; add MCP files deliberately if needed.
+Use Plugin Center's Create flow when the author/license/Skill form is useful. A blank Starter Skill field defaults to the plugin name, so the UI scaffold contributes a discoverable workflow immediately. The CLI scaffold currently exposes the basic manifest and optional Skill. EvoFlux intentionally does not generate an MCP implementation because it cannot guarantee a portable executable or install plugin dependencies.
 
-Use this layout:
+Derive the tree from the components the package actually contributes. The
+smallest useful Skills package is:
 
 ```text
 my-plugin/
 ├── plugin.json
-├── skills/
-│   └── my-workflow/
-│       ├── SKILL.md
-│       └── references/        # optional
-├── mcp.json                   # optional
-├── server.py                  # example stdio entrypoint
-└── tests/                     # recommended
+└── skills/
+    └── my-workflow/
+        ├── SKILL.md
+        ├── references/        # optional Skill resources
+        ├── scripts/           # optional Skill resources
+        └── assets/            # optional Skill resources
 ```
 
-Keep each Skill as an immediate child of `skills/`. A manifest-only plugin is valid; do not add empty capabilities merely to fill the tree.
+Add root `mcp.json` only when the package has a genuinely runnable portable MCP
+server. Its implementation path is chosen by that server's declared command;
+there is no required root `server.py`, `backend/`, or package-local `tests/`
+directory. EvoFlux repository regression tests belong under the owning `tests/`
+tree. Keep each Skill as an immediate child of `skills/`. A manifest-only plugin
+is valid; do not add empty capabilities merely to fill the tree.
 
 ## Implement from the outside in
 
@@ -97,6 +109,12 @@ When a Skill calls plugin MCP tools:
 Declare servers in `mcp.json`. Prefer `stdio` for bundled local code and `streamable-http` for a remote MCP endpoint. Legacy `sse` may validate but is skipped by EvoFlux.
 
 For local servers, use an executable plus argument array—never a shell command string. Resolve bundled files through `${PLUGIN_ROOT}` and mutable state through `${PLUGIN_DATA}`. Return bounded, structured results and sanitize operational errors.
+
+There is no automatic MCP starter and no host-Python alias. Prefer a
+package-owned executable such as `./bin/my-server`, or a remote
+`streamable-http` endpoint. If a bare interpreter command is unavoidable,
+document and verify it plus every imported dependency on each target platform;
+static package validation cannot prove runtime readiness.
 
 Give tools accurate read/write/destructive/idempotent annotations where the MCP library supports them. Keep transport boot logs off stdout for stdio servers.
 

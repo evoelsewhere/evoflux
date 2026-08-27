@@ -1202,6 +1202,9 @@ class TestBuiltinSkills:
         assert "isolated EvoFlux data, config, and cache roots" in normalized
         assert "evoflux plugin inspect ./dist" not in combined
         assert "Streamable HTTP servers do not receive these values" in normalized
+        assert "there is no required root `server.py`" in normalized
+        assert "settings.plugin_dirs()" in combined
+        assert "evoflux-python" not in combined
         assert "custom plugin UI" not in combined
         assert "allow_implicit_invocation: false" in metadata
         assert "Jira" not in json.dumps(cases)

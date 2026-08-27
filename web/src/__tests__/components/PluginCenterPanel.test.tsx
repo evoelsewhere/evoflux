@@ -44,7 +44,7 @@ describe('PluginCenterPanel create flow', () => {
     })
   })
 
-  it('asks only for folder, name, and description, then opens the editor', async () => {
+  it('creates a usable Skill scaffold by default, then opens the editor', async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     })
@@ -60,10 +60,10 @@ describe('PluginCenterPanel create flow', () => {
     expect(screen.getByLabelText('Plugin parent folder')).toBeVisible()
     expect(screen.getByLabelText('Plugin name')).toBeVisible()
     expect(screen.getByLabelText('Plugin description')).toBeVisible()
-    expect(screen.queryByLabelText('Plugin version')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Plugin author')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Plugin license')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Starter Skill name')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Plugin version')).toBeVisible()
+    expect(screen.getByLabelText('Plugin author')).toBeVisible()
+    expect(screen.getByLabelText('Plugin license')).toBeVisible()
+    expect(screen.getByLabelText('Starter Skill name')).toBeVisible()
     expect(screen.queryByLabelText('Starter MCP server name')).not.toBeInTheDocument()
     expect(screen.getByText('Create development plugin').closest('section')).toHaveClass(
       '@container/plugin-center',
@@ -87,9 +87,53 @@ describe('PluginCenterPanel create flow', () => {
       destination: '/tmp/plugins/demo-plugin',
       name: 'demo-plugin',
       description: 'Demo description',
+      skill_name: 'demo-plugin',
     }))
     expect(await screen.findByTestId('plugin-editor')).toHaveTextContent(
       'demo-plugin · /tmp/plugins/demo-plugin',
     )
+  })
+
+  it('forwards optional manifest and starter fields', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PluginCenterPanel />
+      </QueryClientProvider>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: /Add plugin/i }))
+    fireEvent.click(await screen.findByText('Create plugin'))
+    fireEvent.change(screen.getByLabelText('Plugin parent folder'), {
+      target: { value: '/tmp/plugins' },
+    })
+    fireEvent.change(screen.getByLabelText('Plugin name'), {
+      target: { value: 'demo-plugin' },
+    })
+    fireEvent.change(screen.getByLabelText('Plugin version'), {
+      target: { value: '0.1.0' },
+    })
+    fireEvent.change(screen.getByLabelText('Plugin author'), {
+      target: { value: 'Demo Team' },
+    })
+    fireEvent.change(screen.getByLabelText('Plugin license'), {
+      target: { value: 'MIT' },
+    })
+    fireEvent.change(screen.getByLabelText('Starter Skill name'), {
+      target: { value: 'demo-workflow' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Create & edit' }))
+
+    await waitFor(() => expect(pluginApi.createPlugin).toHaveBeenCalledWith({
+      destination: '/tmp/plugins/demo-plugin',
+      name: 'demo-plugin',
+      description: 'EvoFlux plugin demo-plugin',
+      version: '0.1.0',
+      author: 'Demo Team',
+      license: 'MIT',
+      skill_name: 'demo-workflow',
+    }))
   })
 })

@@ -1952,7 +1952,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Phát triển: Add plugin → Create plugin tạo scaffold portable và mở editor có sẵn. Dùng file tree để mở `plugin.json`, nội dung Skill, scripts và `mcp.json`; tạo/xóa entry, Save, Validate rồi Pack. Link thư mục để development live. Sau khi sửa declaration hoặc implementation, validate lại và chỉ re-enable sau khi review access đã thay đổi. Plugin không được ship settings page hay frontend tùy ý; Plugin Center sở hữu lifecycle, credentials, diagnostics và runtime UI.',
+        text: 'Phát triển: Add plugin → Create plugin nhận metadata manifest và Starter Skill rồi mở editor có sẵn. Nếu để trống tên Skill, EvoFlux dùng tên plugin. EvoFlux không sinh code MCP, không expose alias interpreter của host và không cài dependency; chỉ thêm `mcp.json` khi package có executable bundled/đã verify hoặc remote endpoint được hỗ trợ. Dùng file tree để sửa và Validate trước khi Pack. Link thư mục để development live. Plugin không được ship settings page hay frontend tùy ý; Plugin Center sở hữu lifecycle, credentials, diagnostics và runtime UI.',
       },
       {
         type: 'tips',
@@ -2039,7 +2039,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         type: 'code',
         language: 'json',
         caption: 'mcp.json',
-        code: '{\n  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",\n  "mcpServers": {\n    "local": {\n      "type": "stdio",\n      "command": "python",\n      "args": ["${PLUGIN_ROOT}/server.py"],\n      "env": { "CACHE_DIR": "${PLUGIN_DATA}/cache" },\n      "cwd": "${PLUGIN_ROOT}"\n    },\n    "remote": {\n      "type": "streamable-http",\n      "url": "https://api.example.com/mcp",\n      "headers": { "X-Client": "evoflux-plugin" }\n    }\n  }\n}',
+        code: '{\n  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",\n  "mcpServers": {\n    "local": {\n      "type": "stdio",\n      "command": "./bin/local-server",\n      "args": ["--cache", "${PLUGIN_DATA}/cache"],\n      "cwd": "${PLUGIN_ROOT}"\n    },\n    "remote": {\n      "type": "streamable-http",\n      "url": "https://api.example.com/mcp",\n      "headers": { "X-Client": "evoflux-plugin" }\n    }\n  }\n}',
       },
       {
         type: 'table',
