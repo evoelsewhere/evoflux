@@ -55,6 +55,7 @@ import {
   useEasdRunTraceQuery,
   useEasdRecoveryQuery,
   useExecuteEasdRecoveryMutation,
+  useEasdRealtime,
   useEasdRunsQuery,
   useEasdSetupQuery,
   useGenerateEasdScopeAndProofMutation,
@@ -1278,6 +1279,7 @@ function RunDetail({
 }) {
   const detailQuery = useEasdRunQuery(runId)
   const detail = detailQuery.data
+  const realtime = useEasdRealtime(runId)
   const [showChatPicker, setShowChatPicker] = useState(false)
   const [creatingChat, setCreatingChat] = useState(false)
   const [chatSearch, setChatSearch] = useState('')
@@ -1607,6 +1609,13 @@ function RunDetail({
             <h1 className="truncate text-sm font-semibold text-(--color-text)">{detail.run.title}</h1>
             <p className="mt-0.5 truncate text-[10px] text-(--color-text-subtle)">{RISK_LABELS[detail.run.risk_tier]} risk · {ownerDataDirectory}/runs{detail.run.store_generation ? ` · repo gen ${detail.run.store_generation}` : ''}</p>
           </div>
+          <span role="status" aria-label={`EASD realtime status: ${realtime.status === 'live' ? `${realtime.viewerCount} ${realtime.viewerCount === 1 ? 'viewer' : 'viewers'}` : realtime.status}`} className={cn(
+            'flex items-center gap-1 rounded-full px-1.5 py-1 text-[9px] @2xl/easd:px-2',
+            realtime.status === 'live' ? 'bg-(--color-success-subtle) text-(--color-success)' : 'bg-(--bg-key) text-(--color-text-muted)',
+          )}>
+            <span className={cn('size-1.5 rounded-full', realtime.status === 'live' ? 'bg-(--color-success)' : realtime.status === 'reconnecting' ? 'bg-(--color-warning)' : 'bg-(--color-text-subtle)')} />
+            <span className="hidden @2xl/easd:inline">{realtime.status === 'live' ? `Live · ${realtime.viewerCount} ${realtime.viewerCount === 1 ? 'viewer' : 'viewers'}` : realtime.status === 'reconnecting' ? 'Reconnecting' : 'Connecting'}</span>
+          </span>
           <RunStatus status={detail.run.status} />
           {detail.run.status === 'converged' && detail.run.session_id && onRunInChat && (
             <Button type="button" variant="outline" size="sm" onClick={() => void openRunChat('implementation', false)}><MessageSquareText /> View chat</Button>

@@ -1453,6 +1453,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Action rail ở Run header hiển thị Intent → Spec → Plan → Implement → Review → Verify → Done. Direct flow đánh dấu Plan là skipped, rail nêu next action và blocker do server tính trước khi bấm; approve Spec, approve Plan và Converge đều cần confirmation.',
       'Mở Trace để theo dõi repository events và quan hệ từ Spec/Plan tới AC ownership, mission attempts, evidence, deviations và convergence. Có thể filter theo AC rồi chọn entity để xem persisted identity; Trace không thay đổi Run state.',
       'Mở Recovery để preview retry an toàn. UI hiển thị phase transition, Spec/Plan/session được reuse và history được preserve trước confirmation. Repository generation stale sẽ chặn retry; Run đã converge vẫn immutable.',
+      'Run đang mở stream repository events theo realtime. Header hiển thị connection/viewer state; reconnect tiếp tục sau event sequence cuối, còn mutation stale vẫn fail thay vì overwrite công việc collaborator.',
       'Review outcome, Scope, risk, evidence policy từng AC và commands; edit bằng revision draft mới rồi tự Approve specification. Agent không thể approve.',
       'Spec đề xuất flow direct hoặc planned. Direct chỉ skip Plan cho thay đổi low-risk một boundary; planned persist mission graph typed và chỉ user Approve plan mới mở khóa implementation.',
       'Dùng Board để theo dõi workflow, Table để so sánh hoặc List để điều hướng gọn. Search theo title, status, risk và repository.',

@@ -105,6 +105,7 @@ export {
   useInstallSeedMutation,
 } from './useProvidersQuery'
 export { queryKeys } from './keys'
+export { useEasdRealtime, type EasdRealtimeStatus } from './useEasdRealtime'
 export {
   useAcceptEasdPlanRevisionMutation,
   useAcceptEasdRevisionMutation,

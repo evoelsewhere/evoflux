@@ -119,6 +119,9 @@ def test_repository_store_rejects_stale_run_write(tmp_path):
 
     assert store.load_run(run_id).run["status"] == "authoring"
     assert store.load_run(run_id).run["store_generation"] == 2
+    events, diagnostics = store.read_events(run_id)
+    assert diagnostics == []
+    assert events[-1]["repository_generation"] == 2
 
 
 def test_repository_store_keeps_immutable_revisions_and_append_only_evidence(

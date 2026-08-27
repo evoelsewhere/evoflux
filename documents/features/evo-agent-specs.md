@@ -34,6 +34,13 @@ paths; active implementation, Review, and Verify retries remain in the same
 phase, append a recovery event, then reopen the matching EASD chat prompt.
 Stale repository generations fail closed. Converged Runs are never reopened.
 
+An open Run maintains a scoped SSE connection. The stream registers presence,
+replays repository events after the client's last sequence, and then delivers
+post-commit lifecycle/artifact/recovery events. The client deduplicates sequence
+overlap and invalidates existing detail, Trace, Recovery, and list queries;
+TanStack Query remains the durable UI authority. Header presence is ephemeral
+and shows only viewer count, while all activity remains repository-owned.
+
 1. Open a Coding workspace/session and choose **Agent Specification-Driven
    Development** in the workbench.
 2. Initialize EASD for every repository in the workspace or Coding Project.
@@ -294,8 +301,8 @@ counts, mission counts, evidence/deviation IDs, and convergence timestamp.
 - For planned flow, mission compilation remains lead-driven, but its typed plan graph is persisted,
   hash-addressed, validated, and user-approved before delegation; deterministic
   automatic plan generation remains future work.
-- EASD detail refreshes through TanStack Query polling while active; dedicated
-  EASD SSE events are not yet emitted.
+- EASD realtime is local-host Run collaboration; remote cross-host transport is
+  not yet provided.
 - Deviation resolution and spec/plan revision authoring remain API-backed; the
   detail view exposes the guided phase flow, readiness blockers, and complete
   approved plan mission contract. Trace provides a read-only relationship map,

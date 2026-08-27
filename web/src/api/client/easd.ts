@@ -2,6 +2,7 @@
 
 import { apiBaseUrl } from '../base-url'
 import { parseDetailOrThrow } from './_shared'
+import { readSSE, type SSECallbacks } from '../sse'
 import type {
   EasdAppendableEvidenceKind,
   EasdAuthoringMetadata,
@@ -130,6 +131,27 @@ export async function executeEasdRecovery(
     body: JSON.stringify(body),
   })
   return easdResponse(response, 'executeEasdRecovery')
+}
+
+export function easdRunStream(
+  runId: string,
+  afterSequence: number,
+  clientId: string,
+  callbacks: SSECallbacks,
+  signal?: AbortSignal,
+): void {
+  const params = new URLSearchParams({
+    after_sequence: String(afterSequence),
+    client_id: clientId,
+  })
+  fetch(`${apiBaseUrl()}/easd/runs/${encodeURIComponent(runId)}/stream?${params}`, { signal })
+    .then((response) => {
+      if (!response.ok) throw new Error(`GET EASD run stream failed: ${response.status}`)
+      readSSE(response, callbacks)
+    })
+    .catch((error: Error) => {
+      if (error.name !== 'AbortError') callbacks.onError?.(error)
+    })
 }
 
 export async function createEasdRun(body: {

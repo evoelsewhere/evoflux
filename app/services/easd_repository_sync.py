@@ -16,6 +16,8 @@ from sqlalchemy.orm import Session
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.team import DelegationTask
+from app.services.easd_event_stream import publish_run_event
+from app.services.easd_projection_state import update_run_state
 from app.services.easd_repository_store import EasdRepositoryStore, document_hash
 from app.services.easd_setup_service import EASD_MANIFEST
 
@@ -80,6 +82,18 @@ def _install_events() -> None:
                         task_id,
                         snapshot,
                     )
+                    event = store.append_event(
+                        run_id,
+                        {
+                            "event": "mission_updated",
+                            "actor": snapshot.get("recipient") or "system",
+                            "created_at": snapshot.get("updated_at"),
+                            "entity_refs": [f"mission:{task_id}"],
+                            "entity_status": snapshot.get("status"),
+                            "attempt": snapshot.get("attempt"),
+                        },
+                    )
+                    publish_run_event(run_id, event)
 
             session.info.setdefault(_CALLBACKS, []).append(write_mission)
 
@@ -122,7 +136,8 @@ def enqueue_run_create(
     def write() -> None:
         store = _store_if_initialized(workspace)
         if store is not None:
-            store.create_run(run=run_payload, intent=intent_payload)
+            stored = store.create_run(run=run_payload, intent=intent_payload)
+            update_run_state(run_payload["id"], stored.run)
 
     enqueue(db, write)
 
@@ -144,12 +159,16 @@ def enqueue_run_update(
         if store is None:
             return
         current = store.load_run(run_id).run
-        store.update_run(
+        updated = store.update_run(
             run_id,
             run_payload,
             expected_hash=expected_hash or document_hash(current),
             event=event_copy,
         )
+        update_run_state(run_id, updated)
+        events, _ = store.read_events(run_id, limit=1)
+        if events:
+            publish_run_event(run_id, events[-1])
 
     enqueue(db, write)
 
@@ -252,7 +271,7 @@ def enqueue_artifact(
         if store is not None:
             store.append_artifact(run_id, kind, artifact_id, artifact)
             entity_kind = kind.removesuffix("s")
-            store.append_event(
+            event = store.append_event(
                 run_id,
                 {
                     "event": f"{entity_kind}_recorded",
@@ -269,6 +288,7 @@ def enqueue_artifact(
                     or [],
                 },
             )
+            publish_run_event(run_id, event)
 
     enqueue(db, write)
 
@@ -289,6 +309,20 @@ def enqueue_artifact_update(
         if store is None:
             return
         store.upsert_artifact(run_id, kind, artifact_id, artifact)
+        entity_kind = kind.removesuffix("s")
+        event = store.append_event(
+            run_id,
+            {
+                "event": f"{entity_kind}_updated",
+                "actor": str(
+                    artifact.get("producer") or artifact.get("recipient") or "system"
+                ),
+                "created_at": str(artifact.get("updated_at") or "") or None,
+                "entity_refs": [f"{entity_kind}:{artifact_id}"],
+                "entity_status": artifact.get("status") or artifact.get("result"),
+            },
+        )
+        publish_run_event(run_id, event)
 
     enqueue(db, write)
 

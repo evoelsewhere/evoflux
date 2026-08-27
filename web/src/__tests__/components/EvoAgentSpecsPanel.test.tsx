@@ -27,6 +27,7 @@ vi.mock('@/queries', () => ({
   useInitializeEasdSetupMutation: () => mocks.action(),
   useEasdRunQuery: () => mocks.detail(),
   useEasdRunTraceQuery: () => mocks.trace(),
+  useEasdRealtime: () => ({ status: 'live', viewerCount: 2, lastSequence: 7 }),
   useEasdRecoveryQuery: () => mocks.recovery(),
   useExecuteEasdRecoveryMutation: () => mocks.recoveryAction(),
   useAcceptEasdPlanRevisionMutation: () => mocks.action(),
@@ -399,6 +400,7 @@ describe('EvoAgentSpecsPanel', () => {
     expect(screen.getByText('coder#1')).toBeInTheDocument()
     expect(screen.getByText('Focused tests passed.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Converge/i })).toBeEnabled()
+    expect(screen.getByRole('status', { name: /EASD realtime status/ })).toHaveTextContent('Live · 2 viewers')
   })
 
   it('renders the server trace projection and AC filter', async () => {

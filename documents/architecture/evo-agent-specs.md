@@ -355,6 +355,15 @@ retry updates only Run recency and queues an append-only recovery event after
 commit. Process-local idempotency returns the first response for a repeated key;
 repository generation protects distinct stale requests.
 
+`/runs/{id}/stream` registers an in-memory subscriber before reading bounded
+repository replay, eliminating the history/live seam. Post-commit repository
+sync updates shared generation/hash projection state, appends the event, and
+publishes it to the bounded Run broker. Slow subscribers receive a resync
+directive rather than unbounded queues. Presence contains random client IDs and
+count only and is discarded on disconnect/restart. The React realtime hook
+tracks the highest sequence, ignores duplicates, reconnects with exponential
+backoff, and invalidates existing query keys instead of patching durable data.
+
 ## Observability
 
 Structured logs include bounded run/spec/risk/count fields. Prometheus counter
