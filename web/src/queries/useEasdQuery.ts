@@ -13,6 +13,8 @@ import {
   getEasdRun,
   initializeEasdSetup,
   listEasdRuns,
+  retryEasdPlanningInChat,
+  retryEasdSpecAuthoringInChat,
   startEasdRunInChat,
   startEasdPlanningInChat,
   startEasdReviewInChat,
@@ -161,6 +163,14 @@ export function useStartEasdSpecAuthoringMutation(runId: string) {
   })
 }
 
+export function useRetryEasdSpecAuthoringMutation(runId: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (sessionId: string) => retryEasdSpecAuthoringInChat(runId, sessionId),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.easd.runs() }),
+  })
+}
+
 function useStartEasdPhaseMutation(
   runId: string,
   action: (runId: string, sessionId: string) => Promise<unknown>,
@@ -174,6 +184,10 @@ function useStartEasdPhaseMutation(
 
 export function useStartEasdPlanningMutation(runId: string) {
   return useStartEasdPhaseMutation(runId, startEasdPlanningInChat)
+}
+
+export function useRetryEasdPlanningMutation(runId: string) {
+  return useStartEasdPhaseMutation(runId, retryEasdPlanningInChat)
 }
 
 export function useStartEasdReviewMutation(runId: string) {

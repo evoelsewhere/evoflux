@@ -1469,6 +1469,45 @@ async def start_plan_authoring_in_session(
     return run
 
 
+async def retry_plan_authoring_in_session(
+    db: AsyncSession,
+    *,
+    run_id: str | UUID,
+    session_id: str | UUID,
+) -> TraceRun:
+    """Retry Plan authoring without overwriting the persisted Plan draft."""
+
+    context = await active_context(db, run_id)
+    run = context.run
+    if context.specification.delivery_flow.mode != "planned":
+        raise TraceConflict("This accepted EASD specification uses direct flow")
+    session = await _session_for_run(db, run, session_id)
+    if run.session_id != session.id:
+        raise TraceConflict("EASD planning run belongs to another Coding session")
+    if run.status == "planning":
+        return run
+    if run.status != "plan_review":
+        raise TraceConflict(f"Cannot retry planning while EASD run is {run.status}")
+    from_status = run.status
+    run.status = "planning"
+    run.updated_at = _utcnow()
+    db.add(run)
+    await db.flush()
+    _queue_run_state(
+        db,
+        run,
+        from_status=from_status,
+        event="planning_retried",
+        actor="human",
+        delivery_flow=context.specification.delivery_flow.model_dump(mode="json"),
+    )
+    logger.info("trace_plan_retried run_id={} session_id={}", run.id, session.id)
+    TRACE_OPERATIONS.labels(
+        operation="plan_retry", status="ok", risk_tier=run.risk_tier
+    ).inc()
+    return run
+
+
 async def start_run_in_session(
     db: AsyncSession,
     *,
@@ -1584,6 +1623,47 @@ async def start_spec_authoring_in_session(
     )
     TRACE_OPERATIONS.labels(
         operation="spec_authoring_start",
+        status="ok",
+        risk_tier=run.risk_tier,
+    ).inc()
+    return run
+
+
+async def retry_spec_authoring_in_session(
+    db: AsyncSession,
+    *,
+    run_id: str | UUID,
+    session_id: str | UUID,
+) -> TraceRun:
+    """Retry specification authoring without overwriting the persisted draft."""
+
+    run = await get_run(db, run_id)
+    session = await _session_for_run(db, run, session_id)
+    if run.session_id != session.id:
+        raise TraceConflict("EASD specification run belongs to another Coding session")
+    if run.status == "authoring":
+        return run
+    if run.status != "draft":
+        raise TraceConflict(
+            f"Cannot retry specification authoring while EASD run is {run.status}"
+        )
+    from_status = run.status
+    run.status = "authoring"
+    run.updated_at = _utcnow()
+    db.add(run)
+    await db.flush()
+    _queue_run_state(
+        db,
+        run,
+        from_status=from_status,
+        event="specification_authoring_retried",
+        actor="human",
+    )
+    logger.info(
+        "trace_spec_authoring_retried run_id={} session_id={}", run.id, session.id
+    )
+    TRACE_OPERATIONS.labels(
+        operation="spec_authoring_retry",
         status="ok",
         risk_tier=run.risk_tier,
     ).inc()
@@ -3356,6 +3436,8 @@ __all__ = [
     "get_run",
     "list_runs",
     "resolve_deviation",
+    "retry_plan_authoring_in_session",
+    "retry_spec_authoring_in_session",
     "record_mission_handoff_evidence",
     "record_mission_binding",
     "run_detail",

@@ -322,11 +322,35 @@ async def test_minimal_intent_authors_reviewable_spec_before_acceptance(
                 authoring={"mode": "agent_chat"},
             )
 
+        retried = await trace_service.retry_spec_authoring_in_session(
+            db,
+            run_id=run.id,
+            session_id=session.id,
+        )
+        assert retried.status == "authoring"
+        assert revision.status == "draft"
+        repeated_retry = await trace_service.retry_spec_authoring_in_session(
+            db,
+            run_id=run.id,
+            session_id=session.id,
+        )
+        assert repeated_retry.status == "authoring"
+        replacement = await trace_service.submit_authored_specification(
+            db,
+            run_id=run.id,
+            session_id=session.id,
+            specification=changed,
+            authoring={"mode": "agent_chat", "attempt": 2},
+        )
+        assert replacement.version == 2
+        assert revision.status == "superseded"
+        assert replacement.status == "draft"
+
         accepted = await trace_service.accept_revision(
             db,
             run_id=run.id,
-            revision_id=revision.id,
-            expected_hash=revision.content_hash,
+            revision_id=replacement.id,
+            expected_hash=replacement.content_hash,
         )
         assert accepted.status == "accepted"
         assert run.status == "accepted"

@@ -362,6 +362,10 @@ Do not create extra agents when coordination cost exceeds the work.
 5. If intended behavior changed, record a blocking deviation and accept a new
    spec revision before continuing.
 6. Rerun affected checks and independent review on the integrated result.
+7. A user may retry an interrupted `authoring`/`planning` attempt, or explicitly
+   return `draft → authoring` and `plan_review → planning`. Retry never rewrites
+   the prior draft; a successful replacement creates a newer revision and
+   supersedes the older draft through the normal revision contract.
 
 ## Anti-patterns
 

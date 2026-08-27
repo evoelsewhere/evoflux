@@ -65,6 +65,11 @@ export interface EasdChatRequest {
   phase: 'authoring' | 'planning' | 'implementation' | 'review' | 'verification'
 }
 
+export interface EasdRunOpenRequest {
+  id: number
+  runId: string
+}
+
 interface WorkbenchState {
   workbenchTabs: WorkbenchTab[]
   activeWorkbenchTabId: string | null
@@ -79,6 +84,7 @@ const MULTI_INSTANCE_TOOLS = new Set<WorkbenchTool>(['terminal', 'browser'])
 let workbenchTabSequence = 0
 let workspaceFileRequestSequence = 0
 let easdChatRequestSequence = 0
+let easdRunOpenRequestSequence = 0
 
 function newWorkbenchTab(
   tool: WorkbenchTool,
@@ -258,6 +264,10 @@ interface UIStore {
   workspaceFileRequest: WorkspaceFileRequest | null
   /** One-shot handoff from an EASD run to its linked Coding chat. */
   easdChatRequest: EasdChatRequest | null
+  /** One-shot request from a successful EASD tool result to its Run detail. */
+  easdRunOpenRequest: EasdRunOpenRequest | null
+  /** Run currently selected in the EASD workbench. */
+  easdSelectedRunId: string | null
   createWorkbenchTab: (tool: WorkbenchTool, options?: WorkbenchTabOptions) => void
   restoreWorkbenchTabs: (
     tool: WorkbenchTool,
@@ -303,6 +313,9 @@ interface UIStore {
   clearWorkspaceFileRequest: (requestId?: number) => void
   requestEasdChat: (request: Omit<EasdChatRequest, 'id'>) => void
   clearEasdChatRequest: (requestId?: number) => void
+  requestEasdRunOpen: (runId: string) => void
+  clearEasdRunOpenRequest: (requestId?: number) => void
+  setEasdSelectedRunId: (runId: string | null) => void
 }
 
 export const useUIStore = create<UIStore>()(
@@ -495,6 +508,21 @@ export const useUIStore = create<UIStore>()(
     clearEasdChatRequest: (requestId) => set((state) => {
       if (requestId !== undefined && state.easdChatRequest?.id !== requestId) return
       state.easdChatRequest = null
+    }),
+    easdRunOpenRequest: null,
+    easdSelectedRunId: null,
+    requestEasdRunOpen: (runId) => set((state) => {
+      easdRunOpenRequestSequence += 1
+      state.easdRunOpenRequest = { id: easdRunOpenRequestSequence, runId }
+      state.easdSelectedRunId = runId
+      addOrActivateTool(state, 'easd')
+    }),
+    clearEasdRunOpenRequest: (requestId) => set((state) => {
+      if (requestId !== undefined && state.easdRunOpenRequest?.id !== requestId) return
+      state.easdRunOpenRequest = null
+    }),
+    setEasdSelectedRunId: (runId) => set((state) => {
+      state.easdSelectedRunId = runId
     }),
   }))
 )

@@ -11,6 +11,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { Copy, Check, Play } from 'lucide-react'
 import { formatTime, lastTurnText } from '@/utils/format'
 import { AssistantTurnContent } from './AssistantTurnContent'
+import { easdToolReviewTarget } from './easd/easdToolReviewTarget'
 import type { ContentBlock } from '@/api/types'
 
 export interface AssistantTurnFooterProps {
@@ -46,6 +47,7 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
     let responseDurationMs: number | undefined
     let modelId: string | undefined
     let hasTool = false
+    let hasEasdReviewAction = false
     for (let i = turnBlocks.length - 1; i >= 0; i--) {
       const block = turnBlocks[i]
       responseDurationMs ??= typeof block.responseDurationMs === 'number'
@@ -53,7 +55,10 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
         : undefined
       modelId ??= typeof block.extra?.model === 'string' ? block.extra.model : undefined
       hasTool ||= block.type === 'tool'
-      if (responseDurationMs !== undefined && modelId !== undefined && hasTool) break
+      hasEasdReviewAction ||= block.type === 'tool' && Boolean(
+        easdToolReviewTarget(block.toolName, block.toolArgs, block.toolResult),
+      )
+      if (responseDurationMs !== undefined && modelId !== undefined && hasTool && hasEasdReviewAction) break
     }
     return {
       textContent,
@@ -62,10 +67,11 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
       modelId,
       modelName: shortModelName(modelId),
       hasTool,
+      hasEasdReviewAction,
     }
   }, [turnBlocks])
-  const { textContent, timestamp, responseDurationMs, modelId, modelName, hasTool } = footerData
-  const canContinue = Boolean(onContinue && (textContent || hasTool))
+  const { textContent, timestamp, responseDurationMs, modelId, modelName, hasTool, hasEasdReviewAction } = footerData
+  const canContinue = Boolean(onContinue && (textContent || hasTool) && !hasEasdReviewAction)
 
   if (!textContent && !timestamp && !canContinue && responseDurationMs === undefined && !modelName) return null
 

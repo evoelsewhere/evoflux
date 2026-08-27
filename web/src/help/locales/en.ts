@@ -1488,6 +1488,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Core rule “Fix the Spec, Not the Code—before approval”: resolve ambiguity in the draft before coding; after approval, fix violating code or create a new user-approved Spec revision instead of weakening the contract.',
       'Creating a run persists Intent only; there is no specification revision and implementation is blocked.',
       'Draft specification in chat binds an idle authorized Coding session. The lead reads project instructions, docs, source/configuration and tests, asks clarifying questions, and submits the complete draft through a typed lead-only tool.',
+      'After successful Spec or Plan submission, the chat tool result shows Review specification or Review plan and opens the exact Run in the EASD workbench. Retry drafting/planning repeats an interrupted attempt; Redraft/Replan preserves the prior draft until a replacement is persisted.',
+      'Proof commands are one non-shell argv-style command per line. Use canonical commands such as `python -m pytest tests/test_simple.py`; shell chains, redirection, pipelines, and `python -c` snippets are rejected.',
       'The panel changes phase only after a durable repository write. Agent prose cannot unlock specification approval, required plan approval, implementation, Review, Verify, or Converge.',
       'Review outcome, Scope, risk, AC evidence policy and commands; edit by saving a newer draft revision, then explicitly Approve specification. The agent cannot approve it.',
       'The Spec recommends direct or planned flow. Direct skips Plan only for low-risk single-boundary work; planned persists a typed mission graph and only user Approve plan unlocks implementation.',

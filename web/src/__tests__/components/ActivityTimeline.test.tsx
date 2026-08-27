@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ActivityTimeline } from '@/components/ActivityTimeline'
 import { AssistantTurnContent } from '@/components/AssistantTurnContent'
 import { segmentAssistantTurn } from '@/utils/activity-timeline'
+import { useUIStore } from '@/stores/useUIStore'
 import type { ContentBlock } from '@/api/types'
 
 function block(id: string, type: ContentBlock['type'], content = ''): ContentBlock {
@@ -24,6 +25,7 @@ beforeEach(() => {
       removeEventListener: vi.fn(),
     }),
   })
+  useUIStore.setState({ easdRunOpenRequest: null, easdSelectedRunId: null })
 })
 
 afterEach(() => {
@@ -134,6 +136,27 @@ describe('ActivityTimeline', () => {
 
     fireEvent.click(summary)
     expect(screen.getByRole('log', { name: 'Activity history' })).toBeInTheDocument()
+  })
+
+  it('keeps a successful EASD review action visible while activity is collapsed', () => {
+    const submit = {
+      ...block('submit', 'tool'),
+      toolName: 'easd_submit_plan',
+      toolArgs: JSON.stringify({ run_id: 'run-plan' }),
+      toolResult: 'Plan draft persisted for user review. revision=plan-1 hash=abc.',
+    }
+    render(
+      <ActivityTimeline
+        blocks={[block('read', 'tool'), submit]}
+        isActive={false}
+        renderBlock={renderBlock}
+      />,
+    )
+
+    expect(screen.queryByRole('log', { name: 'Activity history' })).not.toBeInTheDocument()
+    expect(screen.getByText('Draft persisted · user review is the next EASD step.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Review plan' }))
+    expect(useUIStore.getState().easdRunOpenRequest).toMatchObject({ runId: 'run-plan' })
   })
 
   it('opens historical activity at the beginning instead of the live tail', () => {

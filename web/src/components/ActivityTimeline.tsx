@@ -8,6 +8,8 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { BlockEnter } from './motion/BlockEnter'
 import { ActivityStatus } from './motion/ActivityStatus'
 import { groupLabel } from './ToolCallGroup'
+import { EasdToolReviewAction } from './easd/EasdToolReviewAction'
+import { easdToolReviewTarget } from './easd/easdToolReviewTarget'
 import { usePinnedTranscript } from '@/hooks/usePinnedTranscript'
 import { cn } from '@/lib/utils'
 import type { ContentBlock } from '@/api/types'
@@ -48,6 +50,10 @@ export function ActivityTimeline({
     ? groupLabel(toolBlocks)
     : isActive ? 'Thinking' : 'Thought'
   const actionLabel = `${blocks.length} ${blocks.length === 1 ? 'activity' : 'activities'}`
+  const easdReviewTarget = [...toolBlocks]
+    .reverse()
+    .map((block) => easdToolReviewTarget(block.toolName, block.toolArgs, block.toolResult))
+    .find((target) => target !== null) ?? null
   const contentKey = activityContentKey(blocks)
   const {
     contentRef,
@@ -109,6 +115,13 @@ export function ActivityTimeline({
         <span className="min-w-0 truncate font-medium text-(--color-text-2)">{label}</span>
         {isActive && <ActivityStatus label="Running" className="shrink-0 text-xs" />}
       </button>
+
+      {easdReviewTarget && (
+        <div className="flex flex-col gap-2 border-t border-(--color-border) px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-(--color-text-muted)">Draft persisted · user review is the next EASD step.</p>
+          <EasdToolReviewAction target={easdReviewTarget} />
+        </div>
+      )}
 
       <div className="relative min-w-0" hidden={!open}>
           <div

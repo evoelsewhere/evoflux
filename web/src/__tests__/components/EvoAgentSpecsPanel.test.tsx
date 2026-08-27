@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { EasdRunDetail } from '@/api/types'
 import { EvoAgentSpecsPanel } from '@/components/EvoAgentSpecsPanel'
+import { useUIStore } from '@/stores/useUIStore'
 
 const mocks = vi.hoisted(() => ({
   runs: vi.fn(),
@@ -28,6 +29,8 @@ vi.mock('@/queries', () => ({
   useAcceptEasdRevisionMutation: () => mocks.action(),
   useStartEasdRunInChatMutation: () => mocks.action(),
   useStartEasdPlanningMutation: () => mocks.action(),
+  useRetryEasdPlanningMutation: () => mocks.action(),
+  useRetryEasdSpecAuthoringMutation: () => mocks.action(),
   useStartEasdReviewMutation: () => mocks.action(),
   useStartEasdSpecAuthoringMutation: () => mocks.action(),
   useStartEasdVerificationMutation: () => mocks.action(),
@@ -280,6 +283,7 @@ const readySetup = {
 } as const
 
 beforeEach(() => {
+  useUIStore.setState({ easdRunOpenRequest: null, easdSelectedRunId: null })
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
     value: vi.fn().mockReturnValue({
@@ -480,6 +484,16 @@ describe('EvoAgentSpecsPanel', () => {
     expect(screen.getByRole('heading', { name: 'Agent Specification-Driven Development' })).toBeInTheDocument()
   })
 
+  it('opens the exact Run requested by a successful chat tool action', async () => {
+    useUIStore.getState().requestEasdRunOpen('run-1')
+
+    render(<EvoAgentSpecsPanel workspace="/repo" projectId="project-1" sessionId="session-1" />)
+
+    expect(await screen.findByText('Acceptance matrix')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'EASD feature' })).toBeInTheDocument()
+    expect(useUIStore.getState().easdRunOpenRequest).toBeNull()
+  })
+
   it('creates a run from minimal Intent and keeps outcome optional', async () => {
     const mutateAsync = vi.fn().mockResolvedValue({ run: { id: 'intent-run' } })
     mocks.action.mockReturnValue({ error: null, isPending: false, mutateAsync })
@@ -568,6 +582,24 @@ describe('EvoAgentSpecsPanel', () => {
     expect(screen.getByRole('button', { name: 'Edit specification' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Approve specification' }))
     expect(mutateAsync).toHaveBeenCalledOnce()
+  })
+
+  it('redrafts a persisted specification through an explicit retry attempt', async () => {
+    useDraftDetail()
+    const onRunInChat = vi.fn()
+    const mutateAsync = vi.fn().mockResolvedValue({ ...run, status: 'authoring' })
+    mocks.action.mockReturnValue({ error: null, isPending: false, mutateAsync })
+    render(<EvoAgentSpecsPanel workspace="/repo" projectId="project-1" sessionId="session-1" onRunInChat={onRunInChat} />)
+    fireEvent.click(screen.getByRole('button', { name: /EASD feature/i }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Redraft in chat' }))
+
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith('session-1'))
+    expect(onRunInChat).toHaveBeenCalledWith(expect.objectContaining({
+      phase: 'authoring',
+      autoSend: true,
+      prompt: expect.stringMatching(/^\$easd-specify/),
+    }))
   })
 
   it('saves user edits as a newer specification draft revision', async () => {
@@ -664,6 +696,32 @@ describe('EvoAgentSpecsPanel', () => {
     expect(screen.getByText(/Preserve the public contract/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Approve plan' }))
     expect(mutateAsync).toHaveBeenCalledOnce()
+  })
+
+  it('replans a persisted draft through an explicit retry attempt', async () => {
+    const onRunInChat = vi.fn()
+    const mutateAsync = vi.fn().mockResolvedValue({ ...run, status: 'planning' })
+    mocks.action.mockReturnValue({ error: null, isPending: false, mutateAsync })
+    mocks.detail.mockReturnValue({
+      data: {
+        ...detail,
+        run: { ...run, status: 'plan_review', active_plan_revision_id: null },
+        plan_revisions: [planRevision],
+        active_plan: null,
+      },
+      isLoading: false,
+    })
+    render(<EvoAgentSpecsPanel workspace="/repo" projectId="project-1" sessionId="session-1" onRunInChat={onRunInChat} />)
+    fireEvent.click(screen.getByRole('button', { name: /EASD feature/i }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Replan in chat' }))
+
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith('session-1'))
+    expect(onRunInChat).toHaveBeenCalledWith(expect.objectContaining({
+      phase: 'planning',
+      autoSend: true,
+      prompt: expect.stringMatching(/^\$easd-plan/),
+    }))
   })
 
   it('starts implementation only from an approved plan', async () => {

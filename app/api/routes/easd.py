@@ -61,6 +61,8 @@ from app.services.trace_service import (
     create_plan_revision,
     get_run,
     list_runs,
+    retry_plan_authoring_in_session,
+    retry_spec_authoring_in_session,
     resolve_deviation,
     run_detail,
     serialize_deviation,
@@ -542,6 +544,25 @@ async def start_easd_planning(
         raise AssertionError("unreachable")
 
 
+@router.post("/runs/{run_id}/planning/retry", response_model=EasdRunOut)
+async def retry_easd_planning(
+    run_id: UUID,
+    body: EasdRunStartRequest,
+    db: WriteDbSession,
+) -> EasdRunOut:
+    _require_idle_chat(body.session_id)
+    try:
+        run = await retry_plan_authoring_in_session(
+            db,
+            run_id=run_id,
+            session_id=body.session_id,
+        )
+        return EasdRunOut.model_validate(serialize_run(run))
+    except (TraceNotFound, TraceConflict, TraceValidationError) as exc:
+        _raise_easd(exc)
+        raise AssertionError("unreachable")
+
+
 @router.post("/runs/{run_id}/start", response_model=EasdRunOut)
 async def start_easd_run_in_chat(
     run_id: UUID,
@@ -566,6 +587,25 @@ async def start_easd_spec_authoring(
     _require_idle_chat(body.session_id)
     try:
         run = await start_spec_authoring_in_session(
+            db,
+            run_id=run_id,
+            session_id=body.session_id,
+        )
+        return EasdRunOut.model_validate(serialize_run(run))
+    except (TraceNotFound, TraceConflict, TraceValidationError) as exc:
+        _raise_easd(exc)
+        raise AssertionError("unreachable")
+
+
+@router.post("/runs/{run_id}/authoring/retry", response_model=EasdRunOut)
+async def retry_easd_spec_authoring(
+    run_id: UUID,
+    body: EasdRunStartRequest,
+    db: WriteDbSession,
+) -> EasdRunOut:
+    _require_idle_chat(body.session_id)
+    try:
+        run = await retry_spec_authoring_in_session(
             db,
             run_id=run_id,
             session_id=body.session_id,
