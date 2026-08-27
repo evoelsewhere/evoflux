@@ -162,6 +162,24 @@ def test_easd_api_create_accept_start_evidence_and_converge(client, tmp_path):
     run_id = detail["run"]["id"]
     draft = detail["revisions"][0]
     assert detail["criteria"] == []
+    assert detail["action_rail"] == {
+        "phase": "draft",
+        "primary_action": "approve_specification",
+        "actions": [
+            {
+                "id": "approve_specification",
+                "label": "Approve specification",
+                "state": "available",
+                "blockers": [],
+            },
+            {
+                "id": "retry_specification",
+                "label": "Redraft in chat",
+                "state": "available",
+                "blockers": [],
+            },
+        ],
+    }
 
     accepted = client.post(
         f"/api/easd/runs/{run_id}/revisions/{draft['id']}/accept",
@@ -468,6 +486,11 @@ def test_public_review_payload_cannot_fabricate_independent_runtime_identity(
         ).status_code
         == 200
     )
+
+    action = client.get(f"/api/easd/runs/{run_id}").json()["action_rail"]["actions"][0]
+    assert action["id"] == "start_verification"
+    assert action["state"] == "blocked"
+    assert action["blockers"][0]["code"] == "independent_review_required"
 
     verifying = client.post(
         f"/api/easd/runs/{run_id}/verification/start",

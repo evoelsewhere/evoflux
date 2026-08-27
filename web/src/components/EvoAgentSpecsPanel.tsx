@@ -24,6 +24,7 @@ import {
 import { EasdConvergenceApiError, resolveTeamSession } from '@/api/client'
 import type {
   EasdAppendableEvidenceKind,
+  EasdActionId,
   EasdCriterionState,
   EasdEvidenceResult,
   EasdEvidenceKind,
@@ -71,6 +72,11 @@ import { Combobox } from '@/components/ui/combobox'
 import { SelectControl } from '@/components/ui/select'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { SpecificationDiff } from '@/components/easd/SpecificationDiff'
+import { EasdActionRail } from '@/components/easd/EasdActionRail'
+import {
+  EasdActionConfirmationDialog,
+  type EasdConfirmableAction,
+} from '@/components/easd/EasdActionConfirmationDialog'
 import { useUIStore } from '@/stores/useUIStore'
 
 interface EvoAgentSpecsPanelProps {
@@ -138,19 +144,6 @@ const BOARD_COLUMNS: Array<{
     statuses: ['failed', 'cancelled'],
   },
 ]
-
-const RUN_PHASE_MESSAGES: Partial<Record<EasdRun['status'], string>> = {
-  intent: 'Intent is ready; no specification exists yet.',
-  authoring: 'The lead is drafting the specification. Product files remain read-only.',
-  draft: 'Review and approve the persisted specification before planning.',
-  accepted: 'The specification and its driven flow are accepted; start the persisted next action.',
-  planning: 'The lead is compiling the accepted specification into a typed plan.',
-  plan_review: 'Review and approve the persisted plan before implementation.',
-  planned: 'The accepted specification and plan are ready for implementation.',
-  active: 'Implementation is active; Review remains a separate user-controlled phase.',
-  reviewing: 'Review is active and read-only; passing review evidence unlocks Verify.',
-  verifying: 'Final verification is active; only the server Converge gate can decide Done.',
-}
 
 function lines(value: string): string[] {
   return value
@@ -1283,6 +1276,7 @@ function RunDetail({
   const [chatSearch, setChatSearch] = useState('')
   const [chatActionError, setChatActionError] = useState<string | null>(null)
   const [editingDraft, setEditingDraft] = useState(false)
+  const [confirmingAction, setConfirmingAction] = useState<EasdConfirmableAction | null>(null)
   const draft = detail
     ? [...detail.revisions]
       .filter((item) => item.status === 'draft')
@@ -1356,6 +1350,40 @@ function RunDetail({
   const acceptanceProgress = detail?.criteria.length
     ? Math.round((acceptedCriteria / detail.criteria.length) * 100)
     : 0
+  const actionIsBlocked = (actionId: EasdActionId) => (
+    detail?.action_rail?.actions.find((action) => action.id === actionId)?.state === 'blocked'
+  )
+  const confirmationBusy = confirmingAction === 'approve_specification'
+    ? acceptMutation.isPending
+    : confirmingAction === 'approve_plan'
+      ? acceptPlanMutation.isPending
+      : confirmingAction === 'converge'
+        ? convergeMutation.isPending
+        : false
+  const confirmationError = confirmingAction === 'approve_specification'
+    ? errorText(acceptMutation.error)
+    : confirmingAction === 'approve_plan'
+      ? errorText(acceptPlanMutation.error)
+      : confirmingAction === 'converge'
+        ? errorText(convergeMutation.error)
+        : null
+
+  const confirmLifecycleAction = async () => {
+    try {
+      if (confirmingAction === 'approve_specification') {
+        await acceptMutation.mutateAsync()
+      } else if (confirmingAction === 'approve_plan') {
+        await acceptPlanMutation.mutateAsync()
+      } else if (confirmingAction === 'converge') {
+        await convergeMutation.mutateAsync()
+      } else {
+        return
+      }
+      setConfirmingAction(null)
+    } catch {
+      // The mutation exposes its error in the Run header while the dialog stays open.
+    }
+  }
 
   const addEvidence = async () => {
     if (!detail?.active_spec || !evidenceCriterion || !evidenceSummary.trim()) return
@@ -1517,6 +1545,16 @@ function RunDetail({
 
   return (
     <div className="@container/easd flex h-full min-h-0 flex-col bg-(--bg-page)">
+      <EasdActionConfirmationDialog
+        action={confirmingAction}
+        detail={detail}
+        draft={draft}
+        planDraft={planDraft}
+        busy={confirmationBusy}
+        error={confirmationError}
+        onCancel={() => setConfirmingAction(null)}
+        onConfirm={() => void confirmLifecycleAction()}
+      />
       <header className="shrink-0 border-b border-(--color-border) bg-(--bg-card)/45">
         <div className="flex min-h-16 items-center gap-3 px-3 @xl/easd:px-4">
           <Button type="button" variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back to runs"><ChevronLeft /></Button>
@@ -1530,9 +1568,11 @@ function RunDetail({
             <Button type="button" variant="outline" size="sm" onClick={() => void openRunChat('implementation', false)}><MessageSquareText /> View chat</Button>
           )}
         </div>
-        {detail.run.status in RUN_PHASE_MESSAGES && (
-          <div className="flex items-center justify-between gap-3 border-t border-(--color-border) px-3 py-2 @xl/easd:px-4">
-            <p className="text-[10px] text-(--color-text-subtle)">{RUN_PHASE_MESSAGES[detail.run.status]}</p>
+        <EasdActionRail
+          status={detail.run.status}
+          deliveryMode={deliveryMode}
+          rail={detail.action_rail}
+          actions={<>
             {detail.run.status === 'intent' && (
               detail.run.session_id && onRunInChat
                 ? <Button type="button" size="sm" disabled={startAuthoringMutation.isPending} onClick={() => void openRunChat('authoring', true)}><Sparkles /> Draft specification in chat</Button>
@@ -1541,7 +1581,7 @@ function RunDetail({
                   : null
             )}
             {detail.run.status === 'authoring' && detail.run.session_id && onRunInChat && <span className="flex flex-wrap items-center justify-end gap-2"><Button type="button" variant="outline" size="sm" onClick={() => void openRunChat('authoring', false)}><MessageSquareText /> Open drafting chat</Button><Button type="button" size="sm" disabled={retryAuthoringMutation.isPending} onClick={() => void openRunChat('authoring', true)}><RefreshCw /> Retry drafting</Button></span>}
-            {detail.run.status === 'draft' && draft && <span className="flex flex-wrap items-center justify-end gap-2">{detail.run.session_id && onRunInChat && <Button type="button" variant="outline" size="sm" disabled={retryAuthoringMutation.isPending} onClick={() => void openRunChat('authoring', true)}><RefreshCw /> Redraft in chat</Button>}<Button type="button" variant="outline" size="sm" onClick={() => setEditingDraft(true)}>Edit specification</Button><Button type="button" size="sm" disabled={acceptMutation.isPending} onClick={() => void acceptMutation.mutateAsync()}><FileCheck2 /> Approve specification</Button></span>}
+            {detail.run.status === 'draft' && draft && <span className="flex flex-wrap items-center justify-end gap-2">{detail.run.session_id && onRunInChat && <Button type="button" variant="outline" size="sm" disabled={retryAuthoringMutation.isPending} onClick={() => void openRunChat('authoring', true)}><RefreshCw /> Redraft in chat</Button>}<Button type="button" variant="outline" size="sm" onClick={() => setEditingDraft(true)}>Edit specification</Button><Button type="button" size="sm" disabled={acceptMutation.isPending} onClick={() => setConfirmingAction('approve_specification')}><FileCheck2 /> Approve specification</Button></span>}
             {detail.run.status === 'accepted' && (
               detail.run.session_id && onRunInChat
                 ? deliveryMode === 'direct'
@@ -1556,7 +1596,7 @@ function RunDetail({
               <span className="flex flex-wrap items-center justify-end gap-2">
                 {detail.run.session_id && onRunInChat && <Button type="button" variant="outline" size="sm" onClick={() => void openRunChat('planning', false)}><MessageSquareText /> Open planning chat</Button>}
                 {detail.run.session_id && onRunInChat && <Button type="button" variant="outline" size="sm" disabled={retryPlanningMutation.isPending} onClick={() => void openRunChat('planning', true)}><RefreshCw /> Replan in chat</Button>}
-                <Button type="button" size="sm" disabled={acceptPlanMutation.isPending} onClick={() => void acceptPlanMutation.mutateAsync()}><FileCheck2 /> Approve plan</Button>
+                <Button type="button" size="sm" disabled={acceptPlanMutation.isPending} onClick={() => setConfirmingAction('approve_plan')}><FileCheck2 /> Approve plan</Button>
               </span>
             )}
             {detail.run.status === 'planned' && (
@@ -1569,23 +1609,23 @@ function RunDetail({
             {detail.run.status === 'active' && (
               <span className="flex shrink-0 items-center gap-2">
                 {detail.run.session_id && onRunInChat && <Button type="button" variant="outline" size="sm" onClick={() => void openRunChat('implementation', false)}><MessageSquareText /> Open implementation chat</Button>}
-                {detail.run.session_id && onRunInChat && <Button type="button" size="sm" disabled={startReviewMutation.isPending} onClick={() => void openRunChat('review', true)}><ShieldCheck /> Run review in chat</Button>}
+                {detail.run.session_id && onRunInChat && <Button type="button" size="sm" disabled={startReviewMutation.isPending || actionIsBlocked('start_review')} onClick={() => void openRunChat('review', true)}><ShieldCheck /> Run review in chat</Button>}
               </span>
             )}
             {detail.run.status === 'reviewing' && (
               <span className="flex shrink-0 items-center gap-2">
                 {detail.run.session_id && onRunInChat && <Button type="button" variant="outline" size="sm" onClick={() => void openRunChat('review', false)}><MessageSquareText /> Open review chat</Button>}
-                {detail.run.session_id && onRunInChat && <Button type="button" size="sm" disabled={startVerificationMutation.isPending} onClick={() => void openRunChat('verification', true)}><ShieldCheck /> Run verify in chat</Button>}
+                {detail.run.session_id && onRunInChat && <Button type="button" size="sm" disabled={startVerificationMutation.isPending || actionIsBlocked('start_verification')} onClick={() => void openRunChat('verification', true)}><ShieldCheck /> Run verify in chat</Button>}
               </span>
             )}
             {detail.run.status === 'verifying' && (
               <span className="flex shrink-0 items-center gap-2">
                 {detail.run.session_id && onRunInChat && <Button type="button" variant="outline" size="sm" onClick={() => void openRunChat('verification', false)}><MessageSquareText /> Open verification chat</Button>}
-                <Button type="button" size="sm" disabled={convergeMutation.isPending} onClick={() => void convergeMutation.mutateAsync()}><ShieldCheck /> Converge</Button>
+                <Button type="button" size="sm" disabled={convergeMutation.isPending || actionIsBlocked('converge')} onClick={() => setConfirmingAction('converge')}><ShieldCheck /> Converge</Button>
               </span>
             )}
-          </div>
-        )}
+          </>}
+        />
         {(acceptMutation.error || acceptPlanMutation.error || startAuthoringMutation.error || retryAuthoringMutation.error || startPlanningMutation.error || retryPlanningMutation.error || startInChatMutation.error || startReviewMutation.error || startVerificationMutation.error || (convergeMutation.error && !(convergeMutation.error instanceof EasdConvergenceApiError))) && (
           <p role="alert" className="border-t border-(--color-border) px-3 py-2 text-[10px] text-(--color-error) @xl/easd:px-4">
             {errorText(acceptMutation.error) ?? errorText(acceptPlanMutation.error) ?? errorText(startAuthoringMutation.error) ?? errorText(retryAuthoringMutation.error) ?? errorText(startPlanningMutation.error) ?? errorText(retryPlanningMutation.error) ?? errorText(startInChatMutation.error) ?? errorText(startReviewMutation.error) ?? errorText(startVerificationMutation.error) ?? errorText(convergeMutation.error)}

@@ -91,7 +91,11 @@ Evo Agent Specs routes are Coding-scoped:
   `specification` remains an exclusive compatibility input for importing an
   already-authored full draft;
 - `GET /api/easd/runs/{id}` returns spec and plan revisions/active hashes,
-  computed AC matrix, missions, evidence, deviations, and convergence report;
+  computed AC matrix, missions, evidence, deviations, convergence report, and
+  an additive `action_rail`. The rail identifies the current phase and primary
+  action; every action includes a stable ID, label, `available|blocked` state,
+  and structured blocker messages with relevant criterion/mission/deviation
+  IDs or verification commands;
 - spec revision and `/plans` create/accept endpoints preserve separate immutable
   hash-bound contracts; Spec acceptance also publishes an immutable
   hash-identical common-catalogue revision, while a plan is valid only for its

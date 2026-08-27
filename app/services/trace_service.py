@@ -3040,6 +3040,226 @@ def _criterion_matrix(
     return output
 
 
+def _blocker(code: str, message: str, **fields: Any) -> dict[str, Any]:
+    return {"code": code, "message": message, **fields}
+
+
+def _nonterminal_mission_blockers(
+    missions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [
+        _blocker(
+            "mission_not_terminal",
+            f"Mission {item['id']} is still {item['status']}.",
+            mission_id=item["id"],
+            status=item["status"],
+        )
+        for item in missions
+        if item["status"] not in TERMINAL_MISSION_STATUSES
+    ]
+
+
+def _verification_blockers(
+    *,
+    missions: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+    independent_required: bool,
+) -> list[dict[str, Any]]:
+    blockers = _nonterminal_mission_blockers(missions)
+    review_evidence = [
+        item
+        for item in evidence
+        if item["kind"] == "review" and item["result"] == "passed"
+    ]
+    if not review_evidence:
+        blockers.append(
+            _blocker(
+                "review_evidence_required",
+                "Passing review evidence is required before Verify.",
+            )
+        )
+    elif independent_required and not any(
+        item["payload"].get("runtime_reviewer_identity") is True
+        and item["payload"].get("independent") is True
+        for item in review_evidence
+    ):
+        blockers.append(
+            _blocker(
+                "independent_review_required",
+                "Independent runtime review evidence is required before Verify.",
+            )
+        )
+    return blockers
+
+
+def _convergence_reasons(
+    *,
+    detail: dict[str, Any],
+    specification: TraceSpecification,
+    independent_required: bool,
+) -> list[dict[str, Any]]:
+    criteria = detail["criteria"]
+    missions = detail["missions"]
+    deviations = detail["deviations"]
+    reasons: list[dict[str, Any]] = []
+    for item in criteria:
+        if item["required"] and item["status"] not in {"passed", "waived"}:
+            reasons.append(
+                _blocker(
+                    "criterion_not_satisfied",
+                    f"{item['id']} is {item['status']} and still requires evidence.",
+                    criterion_id=item["id"],
+                    status=item["status"],
+                )
+            )
+    reasons.extend(_nonterminal_mission_blockers(missions))
+    unsatisfied = {
+        criterion["id"]
+        for criterion in criteria
+        if criterion["status"] not in {"passed", "waived"}
+    }
+    for item in missions:
+        if item["status"] != "cancelled":
+            continue
+        covered = set(item["spec"].get("acceptance_criteria", []))
+        if covered & unsatisfied:
+            reasons.append(
+                _blocker(
+                    "cancelled_mission_left_criteria_open",
+                    f"Cancelled mission {item['id']} left required criteria open.",
+                    mission_id=item["id"],
+                )
+            )
+    for item in deviations:
+        if item["blocking"] and item["status"] in {"open", "approved"}:
+            reasons.append(
+                _blocker(
+                    "blocking_deviation",
+                    "A blocking deviation must be rejected or resolved.",
+                    deviation_id=item["id"],
+                    status=item["status"],
+                )
+            )
+    if independent_required and not any(
+        item["kind"] == "review"
+        and item["result"] == "passed"
+        and item["payload"].get("runtime_reviewer_identity") is True
+        and item["payload"].get("independent") is True
+        for item in detail["evidence"]
+    ):
+        reasons.append(
+            _blocker(
+                "independent_review_required",
+                "Independent passing review evidence is required before Converge.",
+            )
+        )
+    planned_commands = set(specification.verification_commands)
+    passed_planned_commands = _passed_planned_commands(detail["evidence"])
+    missing_planned_commands = sorted(planned_commands - passed_planned_commands)
+    if missing_planned_commands:
+        reasons.append(
+            _blocker(
+                "planned_verification_missing",
+                "Accepted verification commands still need passing machine evidence.",
+                commands=missing_planned_commands,
+            )
+        )
+    return reasons
+
+
+def _action(
+    action_id: str,
+    label: str,
+    blockers: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    blockers = blockers or []
+    return {
+        "id": action_id,
+        "label": label,
+        "state": "blocked" if blockers else "available",
+        "blockers": blockers,
+    }
+
+
+def _run_action_rail(
+    *,
+    run: TraceRun,
+    specification: TraceSpecification | None,
+    plan: TracePlan | None,
+    detail: dict[str, Any],
+) -> dict[str, Any]:
+    status = run.status
+    actions: list[dict[str, Any]] = []
+    primary_action: str | None = None
+
+    def add(
+        action_id: str,
+        label: str,
+        blockers: list[dict[str, Any]] | None = None,
+        *,
+        primary: bool = False,
+    ) -> None:
+        nonlocal primary_action
+        actions.append(_action(action_id, label, blockers))
+        if primary:
+            primary_action = action_id
+
+    if status == "intent":
+        add("draft_specification", "Draft specification", primary=True)
+    elif status == "authoring":
+        add("retry_specification", "Retry drafting", primary=True)
+    elif status == "draft":
+        add("approve_specification", "Approve specification", primary=True)
+        add("retry_specification", "Redraft in chat")
+    elif status == "accepted" and specification is not None:
+        if specification.delivery_flow.mode == "direct":
+            add("start_implementation", "Run implementation", primary=True)
+        else:
+            add("start_planning", "Run plan", primary=True)
+    elif status == "planning":
+        add("retry_planning", "Retry planning", primary=True)
+    elif status == "plan_review":
+        add("approve_plan", "Approve plan", primary=True)
+        add("retry_planning", "Replan in chat")
+    elif status == "planned":
+        add("start_implementation", "Run implementation", primary=True)
+    elif status == "active":
+        add(
+            "start_review",
+            "Run review",
+            _nonterminal_mission_blockers(detail["missions"]),
+            primary=True,
+        )
+    elif status == "reviewing":
+        add(
+            "start_verification",
+            "Run verification",
+            _verification_blockers(
+                missions=detail["missions"],
+                evidence=detail["evidence"],
+                independent_required=bool(plan and plan.review_required),
+            ),
+            primary=True,
+        )
+    elif status == "verifying" and specification is not None:
+        add(
+            "converge",
+            "Converge",
+            _convergence_reasons(
+                detail=detail,
+                specification=specification,
+                independent_required=bool(plan and plan.review_required),
+            ),
+            primary=True,
+        )
+
+    return {
+        "phase": status,
+        "primary_action": primary_action,
+        "actions": actions,
+    }
+
+
 async def run_detail(db: AsyncSession, run_id: str | UUID) -> dict[str, Any]:
     run = await get_run(db, run_id)
     revisions = list(
@@ -3105,6 +3325,7 @@ async def run_detail(db: AsyncSession, run_id: str | UUID) -> dict[str, Any]:
         None,
     )
     matrix: list[dict[str, Any]] = []
+    specification: TraceSpecification | None = None
     if active_revision is not None:
         specification = TraceSpecification.model_validate(active_revision.spec)
         matrix = _criterion_matrix(
@@ -3113,7 +3334,20 @@ async def run_detail(db: AsyncSession, run_id: str | UUID) -> dict[str, Any]:
             evidence=evidence,
             missions=missions,
         )
-    return {
+    action_revision = active_revision or next(
+        (item for item in reversed(revisions) if item.status == "draft"), None
+    )
+    if specification is None and action_revision is not None:
+        specification = TraceSpecification.model_validate(action_revision.spec)
+    action_plan_revision = active_plan_revision or next(
+        (item for item in reversed(plan_revisions) if item.status == "draft"), None
+    )
+    plan = (
+        TracePlan.model_validate(action_plan_revision.plan)
+        if action_plan_revision is not None
+        else None
+    )
+    detail = {
         "run": serialize_run(run),
         "revisions": [serialize_revision(item) for item in revisions],
         "active_spec": serialize_revision(active_revision) if active_revision else None,
@@ -3129,6 +3363,13 @@ async def run_detail(db: AsyncSession, run_id: str | UUID) -> dict[str, Any]:
         "deviations": [serialize_deviation(item) for item in deviations],
         "convergence": run.convergence_report,
     }
+    detail["action_rail"] = _run_action_rail(
+        run=run,
+        specification=specification,
+        plan=plan,
+        detail=detail,
+    )
+    return detail
 
 
 async def converge_run(
@@ -3153,82 +3394,27 @@ async def converge_run(
     criteria = detail["criteria"]
     missions = detail["missions"]
     deviations = detail["deviations"]
-    reasons: list[dict[str, Any]] = []
-    for item in criteria:
-        if item["required"] and item["status"] not in {"passed", "waived"}:
-            reasons.append(
-                {
-                    "code": "criterion_not_satisfied",
-                    "criterion_id": item["id"],
-                    "status": item["status"],
-                }
-            )
-    for item in missions:
-        if item["status"] not in TERMINAL_MISSION_STATUSES:
-            reasons.append(
-                {
-                    "code": "mission_not_terminal",
-                    "mission_id": item["id"],
-                    "status": item["status"],
-                }
-            )
-        elif item["status"] == "cancelled":
-            covered = set(item["spec"].get("acceptance_criteria", []))
-            unsatisfied = {
-                criterion["id"]
-                for criterion in criteria
-                if criterion["status"] not in {"passed", "waived"}
-            }
-            if covered & unsatisfied:
-                reasons.append(
-                    {
-                        "code": "cancelled_mission_left_criteria_open",
-                        "mission_id": item["id"],
-                    }
-                )
-    for item in deviations:
-        if item["blocking"] and item["status"] in {"open", "approved"}:
-            reasons.append(
-                {
-                    "code": "blocking_deviation",
-                    "deviation_id": item["id"],
-                    "status": item["status"],
-                }
-            )
-    if plan_context is not None and plan_context.plan.review_required:
-        review_ids = {
-            evidence_id
-            for item in detail["evidence"]
-            if item["kind"] == "review"
-            and item["result"] == "passed"
-            and item["payload"].get("runtime_reviewer_identity") is True
-            and item["payload"].get("independent") is True
-            for evidence_id in [item["id"]]
-        }
-        if not review_ids:
-            reasons.append({"code": "independent_review_required"})
-    planned_commands = set(context.specification.verification_commands)
-    passed_planned_commands = _passed_planned_commands(detail["evidence"])
-    missing_planned_commands = sorted(planned_commands - passed_planned_commands)
-    if missing_planned_commands:
-        reasons.append(
-            {
-                "code": "planned_verification_missing",
-                "commands": missing_planned_commands,
-            }
-        )
+    reasons = _convergence_reasons(
+        detail=detail,
+        specification=context.specification,
+        independent_required=bool(plan_context and plan_context.plan.review_required),
+    )
     if reasons:
+        convergence_reasons = [
+            {key: value for key, value in reason.items() if key != "message"}
+            for reason in reasons
+        ]
         logger.info(
             "trace_convergence_rejected run_id={} reasons={}",
             context.run.id,
-            len(reasons),
+            len(convergence_reasons),
         )
         TRACE_OPERATIONS.labels(
             operation="converge",
             status="rejected",
             risk_tier=context.run.risk_tier,
         ).inc()
-        raise TraceConvergenceError(reasons)
+        raise TraceConvergenceError(convergence_reasons)
 
     now = _utcnow()
     report = {

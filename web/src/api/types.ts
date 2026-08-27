@@ -1148,6 +1148,41 @@ export interface EasdDeviation {
   resolved_at: string | null
 }
 
+export type EasdActionId =
+  | 'draft_specification'
+  | 'retry_specification'
+  | 'approve_specification'
+  | 'start_planning'
+  | 'retry_planning'
+  | 'approve_plan'
+  | 'start_implementation'
+  | 'start_review'
+  | 'start_verification'
+  | 'converge'
+
+export interface EasdActionBlocker {
+  code: string
+  message: string
+  criterion_id?: string | null
+  mission_id?: string | null
+  deviation_id?: string | null
+  status?: string | null
+  commands?: string[] | null
+}
+
+export interface EasdRunAction {
+  id: EasdActionId
+  label: string
+  state: 'available' | 'blocked'
+  blockers: EasdActionBlocker[]
+}
+
+export interface EasdActionRail {
+  phase: EasdRun['status']
+  primary_action: EasdActionId | null
+  actions: EasdRunAction[]
+}
+
 export interface EasdRunDetail {
   run: EasdRun
   revisions: EasdSpecRevision[]
@@ -1159,10 +1194,12 @@ export interface EasdRunDetail {
   evidence: EasdEvidence[]
   deviations: EasdDeviation[]
   convergence: Record<string, unknown> | null
+  action_rail?: EasdActionRail | null
 }
 
 export interface EasdConvergenceReason {
   code: string
+  message?: string
   criterion_id?: string
   mission_id?: string
   deviation_id?: string
