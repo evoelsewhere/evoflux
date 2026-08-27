@@ -189,6 +189,30 @@ export async function startEasdSpecAuthoringInChat(
   return easdResponse(response, 'startEasdSpecAuthoringInChat')
 }
 
+async function retryEasdPhaseInChat(
+  runId: string,
+  sessionId: string,
+  phase: 'authoring' | 'planning',
+): Promise<EasdRun> {
+  const response = await fetch(
+    `${apiBaseUrl()}/easd/runs/${encodeURIComponent(runId)}/${phase}/retry`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId }),
+    },
+  )
+  return easdResponse(response, `retryEasd${phase}InChat`)
+}
+
+export function retryEasdSpecAuthoringInChat(runId: string, sessionId: string): Promise<EasdRun> {
+  return retryEasdPhaseInChat(runId, sessionId, 'authoring')
+}
+
+export function retryEasdPlanningInChat(runId: string, sessionId: string): Promise<EasdRun> {
+  return retryEasdPhaseInChat(runId, sessionId, 'planning')
+}
+
 async function startEasdPhaseInChat(
   runId: string,
   sessionId: string,

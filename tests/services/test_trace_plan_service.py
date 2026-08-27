@@ -343,18 +343,42 @@ async def test_plan_approval_is_required_before_implementation(tmp_path, setup_d
                 authoring={"mode": "agent_chat"},
             )
 
+        retried = await trace_service.retry_plan_authoring_in_session(
+            db,
+            run_id=run.id,
+            session_id=session.id,
+        )
+        assert retried.status == "planning"
+        assert plan_draft.status == "draft"
+        repeated_retry = await trace_service.retry_plan_authoring_in_session(
+            db,
+            run_id=run.id,
+            session_id=session.id,
+        )
+        assert repeated_retry.status == "planning"
+        replacement = await trace_service.submit_authored_plan(
+            db,
+            run_id=run.id,
+            session_id=session.id,
+            plan=changed,
+            authoring={"mode": "agent_chat", "attempt": 2},
+        )
+        assert replacement.version == 2
+        assert plan_draft.status == "superseded"
+        assert replacement.status == "draft"
+
         accepted = await trace_service.accept_plan_revision(
             db,
             run_id=run.id,
-            revision_id=plan_draft.id,
-            expected_hash=plan_draft.content_hash,
+            revision_id=replacement.id,
+            expected_hash=replacement.content_hash,
         )
         assert accepted.status == "accepted"
         assert run.status == "planned"
         await _start(db, run)
         assert run.status == "active"
         detail = await trace_service.run_detail(db, run.id)
-        assert detail["active_plan"]["content_hash"] == plan.content_hash()
+        assert detail["active_plan"]["content_hash"] == changed.content_hash()
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
@@ -54,6 +54,8 @@ import {
   useEasdSetupQuery,
   useGenerateEasdScopeAndProofMutation,
   useInitializeEasdSetupMutation,
+  useRetryEasdPlanningMutation,
+  useRetryEasdSpecAuthoringMutation,
   useStartEasdRunInChatMutation,
   useStartEasdPlanningMutation,
   useStartEasdReviewMutation,
@@ -69,6 +71,7 @@ import { Combobox } from '@/components/ui/combobox'
 import { SelectControl } from '@/components/ui/select'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { SpecificationDiff } from '@/components/easd/SpecificationDiff'
+import { useUIStore } from '@/stores/useUIStore'
 
 interface EvoAgentSpecsPanelProps {
   workspace: string
@@ -289,7 +292,7 @@ function verificationPrompt(detail: EasdRunDetail): string {
 
 function specificationAuthoringPrompt(detail: EasdRunDetail): string {
   const intent = detail.run.intent
-  return `$easd-specify\n\nDraft the specification for EASD run ${detail.run.id}. This is specification authoring only: do not implement, edit product files, approve the specification, activate implementation, or converge the run. Persisted Intent — title: “${intent?.title ?? detail.run.title}”; problem: ${intent?.problem ?? 'not recorded'}; optional intended outcome: ${intent?.outcome || 'not supplied — propose an observable outcome from repository evidence'}. Read .evoflux/easd/config.json, RULES.md, the configured repository data store, every authorized project repository's AGENTS.md, current docs, relevant source, configuration and tests. Ask clarifying questions before choosing behavior when evidence is ambiguous. Produce a complete provider-neutral EASD specification with goals, non-goals, grounded source references, repository-qualified impact targets, constraints/security/compatibility boundaries, risk tier, observable ACs with evidence policy, safe verification commands, and a reasoned direct|planned delivery_flow recommendation. Direct is only for low-risk single-boundary work; cite every condition that forces Plan. When complete, call easd_submit_specification with this exact run ID, the full specification, grounding summary and confidence. Stop after repository persistence and tell the user the draft and driven flow are ready for review.`
+  return `$easd-specify\n\nDraft the specification for EASD run ${detail.run.id}. This is specification authoring only: do not implement, edit product files, approve the specification, activate implementation, or converge the run. Persisted Intent — title: “${intent?.title ?? detail.run.title}”; problem: ${intent?.problem ?? 'not recorded'}; optional intended outcome: ${intent?.outcome || 'not supplied — propose an observable outcome from repository evidence'}. Read .evoflux/easd/config.json, RULES.md, the configured repository data store, every authorized project repository's AGENTS.md, current docs, relevant source, configuration and tests. Ask clarifying questions before choosing behavior when evidence is ambiguous. Produce a complete provider-neutral EASD specification with goals, non-goals, grounded source references, repository-qualified impact targets, constraints/security/compatibility boundaries, risk tier, observable ACs with evidence policy, safe verification commands, and a reasoned direct|planned delivery_flow recommendation. Verification commands are one non-shell argv-style command per line; do not use python -c snippets or &&, ||, ;, |, >, or <. Prefer canonical commands such as python -m pytest tests/test_feature.py. Direct is only for low-risk single-boundary work; cite every condition that forces Plan. When complete, call easd_submit_specification with this exact run ID, the full specification, grounding summary and confidence. Stop after repository persistence and tell the user the draft and driven flow are ready for review.`
 }
 
 function loadRunsView(): RunsView {
@@ -1303,6 +1306,8 @@ function RunDetail({
   const startInChatMutation = useStartEasdRunInChatMutation(runId)
   const startAuthoringMutation = useStartEasdSpecAuthoringMutation(runId)
   const startPlanningMutation = useStartEasdPlanningMutation(runId)
+  const retryAuthoringMutation = useRetryEasdSpecAuthoringMutation(runId)
+  const retryPlanningMutation = useRetryEasdPlanningMutation(runId)
   const startReviewMutation = useStartEasdReviewMutation(runId)
   const startVerificationMutation = useStartEasdVerificationMutation(runId)
   const convergeMutation = useConvergeEasdRunMutation(runId)
@@ -1385,8 +1390,22 @@ function RunDetail({
       if (phase === 'authoring' && detail.run.status === 'intent') {
         await startAuthoringMutation.mutateAsync(sessionId)
       }
+      if (
+        autoSend
+        && phase === 'authoring'
+        && (detail.run.status === 'authoring' || detail.run.status === 'draft')
+      ) {
+        await retryAuthoringMutation.mutateAsync(sessionId)
+      }
       if (phase === 'planning' && detail.run.status === 'accepted') {
         await startPlanningMutation.mutateAsync(sessionId)
+      }
+      if (
+        autoSend
+        && phase === 'planning'
+        && (detail.run.status === 'planning' || detail.run.status === 'plan_review')
+      ) {
+        await retryPlanningMutation.mutateAsync(sessionId)
       }
       if (phase === 'implementation' && (detail.run.status === 'planned' || (detail.run.status === 'accepted' && deliveryMode === 'direct'))) {
         await startInChatMutation.mutateAsync(sessionId)
@@ -1407,9 +1426,13 @@ function RunDetail({
         prompt: detail.run.status === 'converged'
           ? null
           : phase === 'authoring'
-          ? detail.run.status === 'intent' ? specificationAuthoringPrompt(linkedDetail) : null
+          ? autoSend && ['intent', 'authoring', 'draft'].includes(detail.run.status)
+            ? specificationAuthoringPrompt(linkedDetail)
+            : null
           : phase === 'planning'
-            ? detail.run.status === 'accepted' ? planningPrompt(linkedDetail) : null
+            ? autoSend && ['accepted', 'planning', 'plan_review'].includes(detail.run.status)
+              ? planningPrompt(linkedDetail)
+              : null
             : phase === 'implementation'
               ? implementationPrompt(linkedDetail, detail.run.status === 'active')
               : phase === 'review'
@@ -1517,8 +1540,8 @@ function RunDetail({
                   ? <Button type="button" size="sm" onClick={() => setShowChatPicker((value) => !value)}><MessageSquareText /> Choose drafting chat</Button>
                   : null
             )}
-            {detail.run.status === 'authoring' && detail.run.session_id && onRunInChat && <Button type="button" size="sm" onClick={() => void openRunChat('authoring', false)}><MessageSquareText /> Open drafting chat</Button>}
-            {detail.run.status === 'draft' && draft && <span className="flex items-center gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setEditingDraft(true)}>Edit specification</Button><Button type="button" size="sm" disabled={acceptMutation.isPending} onClick={() => void acceptMutation.mutateAsync()}><FileCheck2 /> Approve specification</Button></span>}
+            {detail.run.status === 'authoring' && detail.run.session_id && onRunInChat && <span className="flex flex-wrap items-center justify-end gap-2"><Button type="button" variant="outline" size="sm" onClick={() => void openRunChat('authoring', false)}><MessageSquareText /> Open drafting chat</Button><Button type="button" size="sm" disabled={retryAuthoringMutation.isPending} onClick={() => void openRunChat('authoring', true)}><RefreshCw /> Retry drafting</Button></span>}
+            {detail.run.status === 'draft' && draft && <span className="flex flex-wrap items-center justify-end gap-2">{detail.run.session_id && onRunInChat && <Button type="button" variant="outline" size="sm" disabled={retryAuthoringMutation.isPending} onClick={() => void openRunChat('authoring', true)}><RefreshCw /> Redraft in chat</Button>}<Button type="button" variant="outline" size="sm" onClick={() => setEditingDraft(true)}>Edit specification</Button><Button type="button" size="sm" disabled={acceptMutation.isPending} onClick={() => void acceptMutation.mutateAsync()}><FileCheck2 /> Approve specification</Button></span>}
             {detail.run.status === 'accepted' && (
               detail.run.session_id && onRunInChat
                 ? deliveryMode === 'direct'
@@ -1528,10 +1551,11 @@ function RunDetail({
                   ? <Button type="button" size="sm" onClick={() => setShowChatPicker((value) => !value)}><MessageSquareText /> Choose {deliveryMode === 'direct' ? 'implementation' : 'planning'} chat</Button>
                   : null
             )}
-            {detail.run.status === 'planning' && detail.run.session_id && onRunInChat && <Button type="button" size="sm" onClick={() => void openRunChat('planning', false)}><MessageSquareText /> Open planning chat</Button>}
+            {detail.run.status === 'planning' && detail.run.session_id && onRunInChat && <span className="flex flex-wrap items-center justify-end gap-2"><Button type="button" variant="outline" size="sm" onClick={() => void openRunChat('planning', false)}><MessageSquareText /> Open planning chat</Button><Button type="button" size="sm" disabled={retryPlanningMutation.isPending} onClick={() => void openRunChat('planning', true)}><RefreshCw /> Retry planning</Button></span>}
             {detail.run.status === 'plan_review' && planDraft && (
-              <span className="flex shrink-0 items-center gap-2">
+              <span className="flex flex-wrap items-center justify-end gap-2">
                 {detail.run.session_id && onRunInChat && <Button type="button" variant="outline" size="sm" onClick={() => void openRunChat('planning', false)}><MessageSquareText /> Open planning chat</Button>}
+                {detail.run.session_id && onRunInChat && <Button type="button" variant="outline" size="sm" disabled={retryPlanningMutation.isPending} onClick={() => void openRunChat('planning', true)}><RefreshCw /> Replan in chat</Button>}
                 <Button type="button" size="sm" disabled={acceptPlanMutation.isPending} onClick={() => void acceptPlanMutation.mutateAsync()}><FileCheck2 /> Approve plan</Button>
               </span>
             )}
@@ -1562,9 +1586,9 @@ function RunDetail({
             )}
           </div>
         )}
-        {(acceptMutation.error || acceptPlanMutation.error || startAuthoringMutation.error || startPlanningMutation.error || startInChatMutation.error || startReviewMutation.error || startVerificationMutation.error || (convergeMutation.error && !(convergeMutation.error instanceof EasdConvergenceApiError))) && (
+        {(acceptMutation.error || acceptPlanMutation.error || startAuthoringMutation.error || retryAuthoringMutation.error || startPlanningMutation.error || retryPlanningMutation.error || startInChatMutation.error || startReviewMutation.error || startVerificationMutation.error || (convergeMutation.error && !(convergeMutation.error instanceof EasdConvergenceApiError))) && (
           <p role="alert" className="border-t border-(--color-border) px-3 py-2 text-[10px] text-(--color-error) @xl/easd:px-4">
-            {errorText(acceptMutation.error) ?? errorText(acceptPlanMutation.error) ?? errorText(startAuthoringMutation.error) ?? errorText(startPlanningMutation.error) ?? errorText(startInChatMutation.error) ?? errorText(startReviewMutation.error) ?? errorText(startVerificationMutation.error) ?? errorText(convergeMutation.error)}
+            {errorText(acceptMutation.error) ?? errorText(acceptPlanMutation.error) ?? errorText(startAuthoringMutation.error) ?? errorText(retryAuthoringMutation.error) ?? errorText(startPlanningMutation.error) ?? errorText(retryPlanningMutation.error) ?? errorText(startInChatMutation.error) ?? errorText(startReviewMutation.error) ?? errorText(startVerificationMutation.error) ?? errorText(convergeMutation.error)}
           </p>
         )}
       </header>
@@ -1766,11 +1790,19 @@ export function EvoAgentSpecsPanel({ workspace, projectId, sessionId, active = t
   const setupQuery = useEasdSetupQuery(workspace, projectId, active)
   const setup = setupQuery.data
   const runsQuery = useEasdRunsQuery(workspace, projectId, active && Boolean(setup?.ready))
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
+  const selectedRunId = useUIStore((state) => state.easdSelectedRunId)
+  const setSelectedRunId = useUIStore((state) => state.setEasdSelectedRunId)
   const [creating, setCreating] = useState(false)
   const [showSetup, setShowSetup] = useState(false)
   const [runsView, setRunsView] = useState<RunsView>(loadRunsView)
   const [search, setSearch] = useState('')
+  const easdRunOpenRequest = useUIStore((state) => state.easdRunOpenRequest)
+  const clearEasdRunOpenRequest = useUIStore((state) => state.clearEasdRunOpenRequest)
+
+  useEffect(() => {
+    if (!active || !easdRunOpenRequest) return
+    clearEasdRunOpenRequest(easdRunOpenRequest.id)
+  }, [active, clearEasdRunOpenRequest, easdRunOpenRequest])
 
   const changeView = (view: RunsView) => {
     setRunsView(view)

@@ -1464,6 +1464,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Core rule “Fix the Spec, Not the Code—before approval”: coding 前に draft の曖昧さを修正し、approval 後は contract を弱めず、違反する code を直すか user-approved Spec revision を作成します。',
       'Create run は Intent だけを永続化し、specification revision はまだ存在せず implementation はブロックされます。',
       'Draft specification in chat は同じ scope の idle Coding session を bind します。Lead は instructions、docs、source/config、tests を読み、clarification 後に lead-only typed tool で完全な draft を submit します。',
+      'Spec または Plan の submit が成功すると、chat tool result に Review specification または Review plan が表示され、EASD workbench で該当 Run を開きます。Retry drafting/planning は中断した attempt を再実行し、Redraft/Replan は replacement が persist されるまで以前の draft を保持します。',
+      'Proof command は shell を介さない argv-style command を1行ずつ使用します。`python -m pytest tests/test_simple.py` のような canonical command を使い、shell chain、redirection、pipeline、`python -c` snippet は使用しません。',
       'Panel は durable repository write の後だけ phase を変更します。Agent prose では Spec/required Plan approval、implementation、Review、Verify、Converge を解除できません。',
       'Outcome、Scope、risk、各 AC evidence policy、commands を review し、必要なら新しい draft revision を保存してからユーザーが Approve specification します。Agent は approve できません。',
       'Spec は direct または planned flow を推奨します。Direct は low-risk single-boundary だけ Plan を skip し、planned は typed mission graph を永続化して user の Approve plan 後に implementation を解除します。',

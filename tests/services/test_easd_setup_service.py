@@ -23,6 +23,15 @@ from app.services.easd_setup_service import (
 )
 
 
+def test_specify_skill_documents_non_shell_verification_command_grammar():
+    skill = read_easd_skill("easd-specify")
+
+    assert "Verification command grammar" in skill
+    assert "python -m pytest tests/test_simple.py" in skill
+    assert 'python -c "...; ..."' in skill
+    assert "`&&`, `||`, `;`, `|`, `>`, or `<`" in skill
+
+
 def test_initialize_repository_creates_stable_easd_contract(tmp_path):
     target = EasdRepositoryTarget(path=str(tmp_path), name="backend")
     existing_document = tmp_path / "documents" / "architecture" / "system.md"

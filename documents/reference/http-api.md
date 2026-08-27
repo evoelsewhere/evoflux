@@ -98,9 +98,15 @@ Evo Agent Specs routes are Coding-scoped:
   exact accepted spec hash;
 - `POST /api/easd/runs/{id}/authoring/start` atomically binds persisted Intent
   to an authorized idle Coding session without creating or approving a spec;
+- `POST /api/easd/runs/{id}/authoring/retry` is same-session and idempotent in
+  `authoring`, or explicitly moves `draft → authoring`. The existing draft is
+  retained until a successful newer submission supersedes it;
 - `POST /api/easd/runs/{id}/planning/start` moves an accepted planned-flow spec into typed
   planning; agent submission moves it to `plan_review`, but only user plan
   acceptance establishes `planned`;
+- `POST /api/easd/runs/{id}/planning/retry` is same-session and idempotent in
+  `planning`, or explicitly moves `plan_review → planning`. The prior Plan draft
+  remains durable until a successful replacement is persisted;
 - `POST /api/easd/runs/{id}/start` binds an authorized Coding chat and moves
   eligible direct flow `accepted → active`; planned flow still requires the current
   accepted Plan and moves `planned → active`;

@@ -58,6 +58,27 @@ active run belongs to planning or execution, not this Skill.
    behavior. Fix those gaps before submission or expose them as unresolved
    questions; do not add irrelevant scenarios merely to fill a checklist.
 
+### Verification command grammar
+
+Every planned verification command is executed without a shell. Use one
+argv-style command per line with an approved executable available on `PATH` or
+an approved repository wrapper. Commands must not contain shell composition,
+redirection, or control operators: `&&`, `||`, `;`, `|`, `>`, or `<`.
+
+Prefer canonical test/build entry points, for example:
+
+```text
+python -m pytest tests/test_simple.py
+uv run pytest --no-cov -q tests/api/test_feature.py
+bun run typecheck
+cargo test
+```
+
+Do not submit inline interpreter snippets such as `python -c "...; ..."`, shell
+pipelines, redirected output, command chains, or quoted shell scripts as Proof
+commands. If behavior needs a custom probe, add or identify a focused repository
+test and invoke it through a canonical test command.
+
 ## Submit for human review
 
 When the run is in authoring state and the lead has the typed

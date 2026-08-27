@@ -1447,6 +1447,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Core rule “Fix the Spec, Not the Code—before approval”: xử lý mơ hồ ngay trong draft trước khi code; sau approval phải sửa code vi phạm hoặc tạo Spec revision mới để user duyệt, không được hạ contract.',
       'Create run chỉ persist Intent; chưa có specification revision và implementation vẫn bị khóa.',
       'Draft specification in chat bind một Coding session đúng scope và đang idle. Lead đọc instructions, docs, source/config và tests, hỏi clarification rồi submit draft hoàn chỉnh qua typed tool chỉ dành cho lead.',
+      'Sau khi submit Spec hoặc Plan thành công, tool result trong chat hiển thị Review specification hoặc Review plan và mở đúng Run trong EASD workbench. Retry drafting/planning lặp attempt bị gián đoạn; Redraft/Replan giữ draft cũ cho tới khi replacement được persist.',
+      'Proof command là một argv-style command không qua shell trên mỗi dòng. Dùng command canonical như `python -m pytest tests/test_simple.py`; shell chain, redirection, pipeline và `python -c` snippet sẽ bị reject.',
       'Panel chỉ đổi phase sau durable repository write; lời agent không thể mở khóa approve Spec/Plan bắt buộc, implementation, Review, Verify hay Converge.',
       'Review outcome, Scope, risk, evidence policy từng AC và commands; edit bằng revision draft mới rồi tự Approve specification. Agent không thể approve.',
       'Spec đề xuất flow direct hoặc planned. Direct chỉ skip Plan cho thay đổi low-risk một boundary; planned persist mission graph typed và chỉ user Approve plan mới mở khóa implementation.',

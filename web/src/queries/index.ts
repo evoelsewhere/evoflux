@@ -118,6 +118,8 @@ export {
   useEasdSetupQuery,
   useGenerateEasdScopeAndProofMutation,
   useInitializeEasdSetupMutation,
+  useRetryEasdPlanningMutation,
+  useRetryEasdSpecAuthoringMutation,
   useStartEasdRunInChatMutation,
   useStartEasdPlanningMutation,
   useStartEasdReviewMutation,

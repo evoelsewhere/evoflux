@@ -493,7 +493,9 @@ def test_easd_is_canonical_in_openapi_and_trace_path_is_legacy(client):
     assert "/api/easd/generate" in paths
     assert "/api/easd/runs/{run_id}/start" in paths
     assert "/api/easd/runs/{run_id}/authoring/start" in paths
+    assert "/api/easd/runs/{run_id}/authoring/retry" in paths
     assert "/api/easd/runs/{run_id}/planning/start" in paths
+    assert "/api/easd/runs/{run_id}/planning/retry" in paths
     assert "/api/easd/runs/{run_id}/review/start" in paths
     assert "/api/easd/runs/{run_id}/verification/start" in paths
     assert "/api/easd/runs/{run_id}/plans/{revision_id}/accept" in paths
@@ -688,6 +690,20 @@ def test_easd_minimal_intent_starts_spec_authoring_without_a_draft(
     )
     assert started.status_code == 200
     assert started.json()["status"] == "authoring"
+
+    draft = client.post(
+        f"/api/easd/runs/{run_id}/revisions",
+        json={"specification": _payload(str(tmp_path))["specification"]},
+    )
+    assert draft.status_code == 201, draft.text
+    assert client.get(f"/api/easd/runs/{run_id}").json()["run"]["status"] == "draft"
+
+    retried = client.post(
+        f"/api/easd/runs/{run_id}/authoring/retry",
+        json={"session_id": session["id"]},
+    )
+    assert retried.status_code == 200, retried.text
+    assert retried.json()["status"] == "authoring"
 
 
 def test_easd_project_setup_initializes_each_repository(client, tmp_path):

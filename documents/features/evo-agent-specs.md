@@ -31,6 +31,11 @@ EASD separates two responsibilities:
 5. The tool validates repository scope and persists one immutable-hash draft;
    it cannot approve, start implementation or converge. The detail panel changes
    from Drafting to **Review before approval** only after this durable write.
+   The successful chat tool row exposes **Review specification**, which opens
+   this exact Run in the EASD workbench even though the agent turn stops without
+   final prose. **Retry drafting** repeats an interrupted authoring attempt;
+   **Redraft in chat** moves `draft → authoring` and preserves the current draft
+   until a newer revision is persisted.
 6. Review outcome, goals/non-goals, impact targets, constraints, risk, AC
    evidence policies, commands, and the agent's driven-flow recommendation.
    `direct` skips Plan only for a low-risk single-boundary change; `planned` is
@@ -50,7 +55,11 @@ EASD separates two responsibilities:
    independent-review policy. Every plan must have a Review mission and every
    accepted Proof command must have an explicit verification mission. Only
    explicit **Approve plan** moves
-   `plan_review → planned`; agent prose cannot unlock implementation.
+   `plan_review → planned`; agent prose cannot unlock implementation. The
+   successful tool row exposes **Review plan**. **Retry planning** repeats an
+   interrupted attempt, while **Replan in chat** moves
+   `plan_review → planning` and keeps the prior draft until its replacement is
+   persisted.
 9. Choose **Run implementation in chat**. Planned flow requires accepted Spec
    and Plan and moves `planned → active`; direct flow requires only its accepted
    Spec and moves `accepted → active`. Planned delegations include exact

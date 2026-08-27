@@ -219,6 +219,13 @@ chat scope/idleness before changing state; agent prose never advances the UI.
 Navigation handoff survives route changes, and a running chat receives a
 reviewable prompt rather than a duplicate queued phase start.
 
+User-controlled retry is limited to mutable review boundaries:
+`draft → authoring` and `plan_review → planning`; retry while already authoring
+or planning is idempotent. The prior draft remains durable until a successful
+new tool submission creates the replacement revision. Successful Spec/Plan tool
+results create a one-shot client request that opens the EASD workbench and exact
+Run; the action trusts the typed tool success contract, not agent prose.
+
 ## Mission binding
 
 `AgentTeam.create_delegation_tasks` validates EASD identity inside the same
@@ -311,7 +318,8 @@ the Spec hash and optional Plan hash and remain idempotent.
 
 `/api/easd` owns repository setup, read-only Scope/Proof generation, run
 list/create/detail, spec/plan revision create/accept, planning/implementation/
-review/verification phase starts, evidence, deviations, and convergence. HTTP errors distinguish validation
+review/verification phase starts, Spec/Plan authoring retry, evidence,
+deviations, and convergence. HTTP errors distinguish validation
 (`422`), missing records (`404`), stale/conflicting state (`409`), and structured
 convergence reasons (`409 easd_not_converged`). `/api/trace` is a hidden legacy
 alias over the same router and state.

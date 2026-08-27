@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   useAddEasdEvidenceMutation,
+  useRetryEasdPlanningMutation,
+  useRetryEasdSpecAuthoringMutation,
   useStartEasdRunInChatMutation,
   useStartEasdPlanningMutation,
   useStartEasdReviewMutation,
@@ -18,6 +20,8 @@ const api = vi.hoisted(() => ({
   startInChat: vi.fn(),
   startAuthoring: vi.fn(),
   startPlanning: vi.fn(),
+  retryAuthoring: vi.fn(),
+  retryPlanning: vi.fn(),
   startReview: vi.fn(),
   startVerification: vi.fn(),
   converge: vi.fn(),
@@ -29,6 +33,8 @@ vi.mock('@/api/client', () => ({
   startEasdRunInChat: api.startInChat,
   startEasdSpecAuthoringInChat: api.startAuthoring,
   startEasdPlanningInChat: api.startPlanning,
+  retryEasdSpecAuthoringInChat: api.retryAuthoring,
+  retryEasdPlanningInChat: api.retryPlanning,
   startEasdReviewInChat: api.startReview,
   startEasdVerificationInChat: api.startVerification,
   addEasdDeviation: vi.fn(),
@@ -55,6 +61,8 @@ describe('EASD query invalidation', () => {
     api.startInChat.mockReset().mockResolvedValue({ id: 'run-1', session_id: 'session-1', status: 'active' })
     api.startAuthoring.mockReset().mockResolvedValue({ id: 'run-1', session_id: 'session-1', status: 'authoring' })
     api.startPlanning.mockReset().mockResolvedValue({ id: 'run-1', session_id: 'session-1', status: 'planning' })
+    api.retryAuthoring.mockReset().mockResolvedValue({ id: 'run-1', session_id: 'session-1', status: 'authoring' })
+    api.retryPlanning.mockReset().mockResolvedValue({ id: 'run-1', session_id: 'session-1', status: 'planning' })
     api.startReview.mockReset().mockResolvedValue({ id: 'run-1', session_id: 'session-1', status: 'reviewing' })
     api.startVerification.mockReset().mockResolvedValue({ id: 'run-1', session_id: 'session-1', status: 'verifying' })
     api.converge.mockReset().mockResolvedValue({ report: {} })
@@ -138,5 +146,23 @@ describe('EASD query invalidation', () => {
     expect(api.startReview).toHaveBeenCalledWith('run-1', 'session-1')
     expect(api.startVerification).toHaveBeenCalledWith('run-1', 'session-1')
     expect(invalidate).toHaveBeenCalledTimes(3)
+  })
+
+  it('refreshes run caches after retrying Spec and Plan authoring', async () => {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+    const invalidate = vi.spyOn(client, 'invalidateQueries')
+    const specification = renderHook(() => useRetryEasdSpecAuthoringMutation('run-1'), {
+      wrapper: wrapper(client),
+    })
+    const plan = renderHook(() => useRetryEasdPlanningMutation('run-1'), {
+      wrapper: wrapper(client),
+    })
+
+    await act(() => specification.result.current.mutateAsync('session-1'))
+    await act(() => plan.result.current.mutateAsync('session-1'))
+
+    expect(api.retryAuthoring).toHaveBeenCalledWith('run-1', 'session-1')
+    expect(api.retryPlanning).toHaveBeenCalledWith('run-1', 'session-1')
+    expect(invalidate).toHaveBeenCalledTimes(2)
   })
 })
