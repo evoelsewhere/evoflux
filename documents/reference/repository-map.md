@@ -23,7 +23,7 @@ test-artifacts/  Checked-in visual evidence used by selected tests/reviews
 | `app/agent/agent_loop/` | Streaming model loop, retries and tool dispatch |
 | `app/agent/mode/team/` | Lead/specialist lifecycle, mailbox and delegation |
 | `app/agent/hooks/` | Context, memory, streaming, telemetry and post-edit stages |
-| `app/agent/providers/` | Nineteen provider adapters and model metadata |
+| `app/agent/providers/` | Twenty provider adapters and model metadata |
 | `app/agent/tools/` | Built-in and multimodal tool registry |
 | `app/agent/skills/` | Skill discovery, catalog, resolution and activation |
 | `app/easd_skills/` | Packaged EASD phase Skills, core rules, knowledge skeleton, and YAML/Markdown templates installed only by setup |

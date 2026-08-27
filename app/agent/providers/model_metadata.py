@@ -407,6 +407,32 @@ def get_effective_model_thinking(model_id: str | None) -> ModelThinking:
             default_enabled=True,
             source="provider_profile",
         )
+    if provider_id == "qwencloud":
+        if provider_model in {"qwen3.8-max", "qwen3.8-max-preview"}:
+            return ModelThinking(
+                levels=("none", "low", "medium", "xhigh"),
+                control="effort",
+                default_level="xhigh",
+                default_enabled=True,
+                source="provider_profile",
+            )
+        if provider_model.startswith(
+            (
+                "qwen3.8-",
+                "qwen3.7-",
+                "qwen3.6-",
+                "qwen3.5-",
+                "qwen3-",
+            )
+        ):
+            # These hybrid-thinking families document the explicit off switch,
+            # but not a stable named-effort vocabulary across every model.
+            return ModelThinking(
+                levels=("none",),
+                control="toggle",
+                default_enabled=True,
+                source="provider_profile",
+            )
     if provider_id == "kimi":
         if provider_model in {"k3", "k3-256k"}:
             return ModelThinking(

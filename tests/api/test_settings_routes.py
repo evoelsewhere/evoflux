@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -274,7 +275,18 @@ def test_list_providers_returns_catalog(monkeypatch: pytest.MonkeyPatch) -> None
     assert isinstance(data["providers"], list)
     assert len(data["providers"]) > 5  # we ship many
     ids = {p["id"] for p in data["providers"]}
-    assert {"googlegenai", "openai", "openrouter", "copilot", "codex"} <= ids
+    assert {
+        "googlegenai",
+        "openai",
+        "qwencloud",
+        "openrouter",
+        "copilot",
+        "codex",
+    } <= ids
+    qwencloud = next(p for p in data["providers"] if p["id"] == "qwencloud")
+    assert qwencloud["env_var"] == "DASHSCOPE_API_KEY"
+    assert qwencloud["credentials"][1]["name"] == "DASHSCOPE_BASE_URL"
+    assert qwencloud["credentials"][1]["secret"] is False
     # Nothing configured → has_any_configured is exactly False.
     assert data["has_any_configured"] is False
 
@@ -541,6 +553,39 @@ def test_save_provider_base_url_only_preserves_existing_api_key(
 
     assert os.environ.get("ROUTER9_API_KEY") == "rk-keep-me"
     assert os.environ.get("ROUTER9_BASE_URL") == "http://10.0.0.5:20128/v1"
+
+
+def test_qwencloud_save_and_delete_include_plan_base_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Clearing QwenCloud removes both the secret and its paired plan host."""
+    monkeypatch.setattr(settings_routes.settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+    monkeypatch.delenv("DASHSCOPE_BASE_URL", raising=False)
+    client = TestClient(_make_app())
+    plan_url = "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+
+    saved = client.put(
+        "/api/settings/providers/qwencloud",
+        json={
+            "api_key": "sk-sp-test",
+            "extra": {"DASHSCOPE_BASE_URL": plan_url},
+        },
+    )
+
+    assert saved.status_code == 200
+    env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "DASHSCOPE_API_KEY=sk-sp-test" in env_text
+    assert f"DASHSCOPE_BASE_URL={plan_url}" in env_text
+
+    deleted = client.delete("/api/settings/providers/qwencloud")
+
+    assert deleted.status_code == 200
+    cleared_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "DASHSCOPE_API_KEY" not in cleared_text
+    assert "DASHSCOPE_BASE_URL" not in cleared_text
+    assert "DASHSCOPE_API_KEY" not in os.environ
+    assert "DASHSCOPE_BASE_URL" not in os.environ
 
 
 def test_save_provider_supports_plugin_credentials(

@@ -1828,7 +1828,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'settings',
     title: 'Providers and models (BYOM)',
     summary:
-      'Connect Anthropic, OpenAI, Gemini, Bedrock, Ollama, and more — twelve integrations behind one streaming abstraction — then pick models per agent or per session. EvoFlux does not lock you to a single vendor model.',
+      'Connect Anthropic, OpenAI, QwenCloud, Gemini, Bedrock, Ollama, and more — twenty built-in integrations behind one streaming abstraction — then pick models per agent or per session. EvoFlux does not lock you to a single vendor model.',
     keywords: [
       'provider',
       'model',
@@ -1838,6 +1838,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'byom',
       'Anthropic',
       'OpenAI',
+      'QwenCloud',
       'Gemini',
       'Bedrock',
       'DeepSeek',
@@ -1863,12 +1864,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Context budget bar uses the selected model’s context_length from the registry.',
       'Use a fast model for Lead triage and a stronger model for Coding specialists when cost matters.',
       'After rotating keys, re-test with a tiny Work ping before starting Goal.',
-      'OAuth providers still need a successful connect state — a half-finished OAuth leaves you model-less.'
+      'OAuth providers still need a successful connect state — a half-finished OAuth leaves you model-less.',
+      'QwenCloud subscription keys must use the matching Token Plan or Coding Plan Base URL shown by QwenCloud.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Providers are BYOM integrations (API key, OAuth, or local daemon) that expose models through one streaming layer. Supported families include Anthropic, OpenAI, Google Gemini, AWS Bedrock, Ollama, DeepSeek, xAI, Vertex AI, GitHub Copilot, and more. Credentials live in Settings, not in chat.',
+        text: 'Providers are BYOM integrations (API key, OAuth, or local daemon) that expose models through one streaming layer. Supported families include Anthropic, OpenAI, QwenCloud, Google Gemini, AWS Bedrock, Ollama, DeepSeek, xAI, Vertex AI, GitHub Copilot, and more. Credentials live in Settings, not in chat.',
       },
       {
         type: 'p',
@@ -1877,6 +1879,10 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'p',
         text: 'Open Settings → Providers, add credentials or a base URL, confirm the provider shows as configured, then assign defaults under Agents or override per session via composer pills. Use Diagnostics if streams fail after keys look correct. Fuzzy search helps when a provider exposes a long model list.',
+      },
+      {
+        type: 'p',
+        text: 'QwenCloud uses DASHSCOPE_API_KEY and defaults to the international pay-as-you-go OpenAI-compatible endpoint. Token Plan and Coding Plan keys (sk-sp-…) are not interchangeable with pay-as-you-go keys: copy the complete matching Base URL into Settings. Token Plan Individual terms may restrict schedules and other unattended automation, so verify your plan before using it for those runs.',
       },
       {
         type: 'tips',

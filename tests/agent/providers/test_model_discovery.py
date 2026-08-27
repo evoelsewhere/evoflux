@@ -207,6 +207,31 @@ class _FakeFoundryCatalogOnlyClient(_FakeFoundryClient):
         raise httpx.HTTPStatusError("404", request=None, response=None)
 
 
+class _FakeQwenCloudModelsClient:
+    calls: list[tuple[str, dict | None]] = []
+
+    def __init__(self, *_args, **_kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def get(self, url, headers=None):
+        type(self).calls.append((url, headers))
+        return _FakeFoundryResponse(
+            {
+                "object": "list",
+                "data": [
+                    {"id": "qwen3.8-max"},
+                    {"id": "qwen3.7-plus"},
+                ],
+            }
+        )
+
+
 class _FakeCodexModelsClient:
     def __init__(self, *_args, **_kwargs):
         pass
@@ -413,3 +438,36 @@ async def test_foundry_models_missing_credentials_return_empty(
     )
 
     assert models == []
+
+
+@pytest.mark.asyncio
+async def test_qwencloud_discovery_uses_request_scoped_key_and_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agent.providers import model_discovery
+    from app.agent.providers.catalog import find
+
+    _FakeQwenCloudModelsClient.calls = []
+    monkeypatch.setattr(
+        model_discovery.httpx, "AsyncClient", _FakeQwenCloudModelsClient
+    )
+    monkeypatch.setattr(model_discovery, "is_agent_model_id", lambda *_args: True)
+    entry = find("qwencloud")
+    assert entry is not None
+    plan_url = "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+
+    models = await model_discovery.discover_provider_models(
+        entry,
+        overrides={
+            "DASHSCOPE_API_KEY": "sk-sp-test",
+            "DASHSCOPE_BASE_URL": plan_url,
+        },
+    )
+
+    assert models == ["qwen3.7-plus", "qwen3.8-max"]
+    assert _FakeQwenCloudModelsClient.calls == [
+        (
+            f"{plan_url}/models",
+            {"Authorization": "Bearer sk-sp-test"},
+        )
+    ]

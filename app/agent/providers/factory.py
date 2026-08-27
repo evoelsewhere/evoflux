@@ -35,6 +35,7 @@ from app.agent.providers.ollama import OllamaProvider
 from app.agent.providers.openai import ChatCompletionsOnlyProvider, OpenAIProvider
 from app.agent.providers.openai.compatible import OPENAI_COMPATIBLE_PROVIDER_SPECS
 from app.agent.providers.openrouter import OpenRouterProvider
+from app.agent.providers.qwencloud import QwenCloudProvider
 from app.agent.providers.router9 import Router9Provider
 from app.agent.providers.unconfigured import UnconfiguredProviderError
 from app.agent.providers.vertexai import VertexAIProvider
@@ -58,6 +59,7 @@ SUPPORTED_PROVIDERS: tuple[str, ...] = (
     "ollama",
     "openai",
     "openrouter",
+    "qwencloud",
     "router9",
     "vertexai",
     "xai",
@@ -244,6 +246,16 @@ def build_provider(
             if name == "kimi":
                 return _with_provider_name(
                     KimiCodeProvider(
+                        api_key=cast(str | SecretStr, typed_api_key),
+                        model=model,
+                        base_url=base_url,
+                        model_kwargs=kwargs,
+                    ),
+                    name,
+                )
+            if name == "qwencloud":
+                return _with_provider_name(
+                    QwenCloudProvider(
                         api_key=cast(str | SecretStr, typed_api_key),
                         model=model,
                         base_url=base_url,

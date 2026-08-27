@@ -26,6 +26,7 @@ import NvidiaGlyph from '@/assets/providers/nvidia.svg?react'
 import OllamaGlyph from '@/assets/providers/ollama.svg?react'
 import OpenAIGlyph from '@/assets/providers/openai.svg?react'
 import OpenRouterGlyph from '@/assets/providers/openrouter.svg?react'
+import QwenGlyph from '@/assets/providers/qwen.svg?react'
 import XAIGlyph from '@/assets/providers/xai.svg?react'
 import XiaomiMiMoGlyph from '@/assets/providers/xiaomimimo.svg?react'
 import ZAIGlyph from '@/assets/providers/zai.svg?react'
@@ -48,6 +49,7 @@ const PROVIDER_BRANDS: Record<string, ProviderBrand> = {
   googlegenai: { color: '#4285F4', Glyph: GoogleGlyph, tagline: 'Gemini models' },
   vertexai: { color: '#4285F4', Glyph: GoogleGlyph, tagline: 'Vertex AI' },
   openai: { color: '#10A37F', Glyph: OpenAIGlyph, tagline: 'GPT & reasoning' },
+  qwencloud: { color: '#6F69F7', Glyph: QwenGlyph, tagline: 'QwenCloud models' },
   codex: { color: '#10A37F', Glyph: OpenAIGlyph, tagline: 'Codex CLI' },
   openrouter: { color: '#8B5CF6', Glyph: OpenRouterGlyph, tagline: 'Multi-provider router' },
   zai: { color: '#4B5563', Glyph: ZAIGlyph, tagline: 'GLM models' },

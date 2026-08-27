@@ -81,4 +81,11 @@ OPENAI_COMPATIBLE_PROVIDER_SPECS: dict[str, OpenAICompatibleProviderSpec] = {
         base_url="https://mkp-api.fptcloud.com/v1",
         base_url_env_var="FCI_BASE_URL",
     ),
+    "qwencloud": OpenAICompatibleProviderSpec(
+        provider_id="qwencloud",
+        label="QwenCloud",
+        env_var="DASHSCOPE_API_KEY",
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        base_url_env_var="DASHSCOPE_BASE_URL",
+    ),
 }

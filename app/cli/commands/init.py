@@ -18,6 +18,7 @@ from app.cli.ui import _ask, _bold, _cyan, _dim, _green, _menu, _red, _yellow
 _PROVIDER_KEY_VAR: dict[str, str] = {
     "googlegenai": "GOOGLE_API_KEY",
     "openai": "OPENAI_API_KEY",
+    "qwencloud": "DASHSCOPE_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
     "zai": "ZAI_API_KEY",
     "nvidia": "NVIDIA_API_KEY",
@@ -46,6 +47,14 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
         "gpt-5",
         "gpt-5-mini",
         "gpt-4.1",
+    ],
+    "qwencloud": [
+        "qwen3.8-max",
+        "qwen3.8-flash",
+        "qwen3.7-plus",
+        "qwen3.7-max",
+        "qwen3-coder-plus",
+        "qwen3-coder-flash",
     ],
     "openrouter": [
         "anthropic/claude-sonnet-4.6",
@@ -183,6 +192,7 @@ def cmd_init(_args: argparse.Namespace) -> None:  # noqa: C901
     provider_labels = [
         "googlegenai  — Google AI Studio (free tier available)",
         "openai       — OpenAI (GPT-5.x, GPT-4.1, etc.)",
+        "qwencloud    — QwenCloud (Qwen3.8, OpenAI-compatible)",
         "openrouter   — OpenRouter (many models, free tiers)",
         "zai          — Z.AI / GLM",
         "nvidia       — NVIDIA NIM",
@@ -262,6 +272,11 @@ def cmd_init(_args: argparse.Namespace) -> None:  # noqa: C901
         new_creds["GOOGLE_API_KEY"] = api_key
     elif provider == "openai":
         new_creds["OPENAI_API_KEY"] = api_key
+    elif provider == "qwencloud":
+        new_creds["DASHSCOPE_API_KEY"] = api_key
+        new_comments["DASHSCOPE_API_KEY"] = (
+            "# DASHSCOPE_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+        )
     elif provider == "openrouter":
         new_creds["OPENROUTER_API_KEY"] = api_key
     elif provider == "zai":

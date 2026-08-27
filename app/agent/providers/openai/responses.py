@@ -194,9 +194,11 @@ class ResponsesHandler:
         """Pull the tool-call ID and (optional) function name from a streaming event.
 
         Default behaviour follows the canonical OpenAI Responses wire format:
-        ``item_id`` carries the stable tool-call ID (prefix ``fc_``) and the
-        function ``name`` is *only* delivered via ``response.output_item.added``
-        events — never inline on ``function_call_arguments.delta`` / ``done``.
+        argument events identify the output item through ``item_id`` (prefix
+        ``fc_``). The stream parser maps it to the item's ``call_id`` for the
+        later ``function_call_output``. The function ``name`` is *only*
+        delivered via ``response.output_item.added`` events — never inline on
+        ``function_call_arguments.delta`` / ``done``.
 
         Subclasses override this hook when their gateway diverges from the
         canonical shape (e.g. GitHub Copilot uses ``call_id`` and embeds
@@ -325,8 +327,13 @@ class ResponsesHandler:
         """Parse SSE stream from /responses API into ChatCompletionChunk objects."""
         response_id = ""
         current_tool_call_index = -1
-        tool_call_map: dict[str, int] = {}  # item_id -> index
-        tool_names: dict[str, str] = {}  # item_id -> function_name
+        tool_call_map: dict[str, int] = {}  # output call_id -> index
+        tool_names: dict[str, str] = {}  # item_id/call_id -> function_name
+        # Responses function-call items have two identities: ``id`` identifies
+        # the output item, while ``call_id`` is the value required by the
+        # subsequent ``function_call_output``. Most argument delta events carry
+        # only ``item_id``, so retain the mapping from the item-added event.
+        tool_output_call_ids: dict[str, str] = {}
         # Me: OpenAI's /responses API emits reasoning as multiple
         # ``summary_part`` items per response. Each part starts with its
         # own bold header (``**Title**``) and its deltas carry NO separator
@@ -363,9 +370,14 @@ class ResponsesHandler:
                 item = event.get("item", {})
                 item_id = item.get("id", "")
                 if item.get("type") == "function_call" and item_id:
+                    output_call_id = item.get("call_id", "")
+                    if output_call_id:
+                        tool_output_call_ids[item_id] = output_call_id
                     fn_name = item.get("name", "")
                     if fn_name:
                         tool_names[item_id] = fn_name
+                        if output_call_id:
+                            tool_names[output_call_id] = fn_name
 
             elif etype == "response.reasoning_summary_part.added":
                 # Boundary marker: a new reasoning section is starting.
@@ -426,8 +438,10 @@ class ResponsesHandler:
                 self._raise_response_failed(event, response)
 
             elif etype == "response.function_call_arguments.delta":
-                # item_id is the stable tool call ID (prefix: fc_)
-                call_id, inline_name = self._extract_call_id_and_name(event)
+                # Translate the output item ID (fc_*) to the callable ID
+                # (call_*) that a function_call_output must reference.
+                event_call_id, inline_name = self._extract_call_id_and_name(event)
+                call_id = tool_output_call_ids.get(event_call_id, event_call_id)
                 args_delta = event.get("delta", "")
 
                 first_delta = call_id not in tool_call_map
@@ -465,7 +479,8 @@ class ResponsesHandler:
                 )
 
             elif etype == "response.function_call_arguments.done":
-                call_id, inline_name = self._extract_call_id_and_name(event)
+                event_call_id, inline_name = self._extract_call_id_and_name(event)
+                call_id = tool_output_call_ids.get(event_call_id, event_call_id)
                 fn_name = inline_name or tool_names.get(call_id, "")
                 fn_args = event.get("arguments", "{}")
 
