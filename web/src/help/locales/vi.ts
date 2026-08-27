@@ -1451,6 +1451,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Proof command là một argv-style command không qua shell trên mỗi dòng. Dùng command canonical như `python -m pytest tests/test_simple.py`; shell chain, redirection, pipeline và `python -c` snippet sẽ bị reject.',
       'Panel chỉ đổi phase sau durable repository write; lời agent không thể mở khóa approve Spec/Plan bắt buộc, implementation, Review, Verify hay Converge.',
       'Action rail ở Run header hiển thị Intent → Spec → Plan → Implement → Review → Verify → Done. Direct flow đánh dấu Plan là skipped, rail nêu next action và blocker do server tính trước khi bấm; approve Spec, approve Plan và Converge đều cần confirmation.',
+      'Mở Trace để theo dõi repository events và quan hệ từ Spec/Plan tới AC ownership, mission attempts, evidence, deviations và convergence. Có thể filter theo AC rồi chọn entity để xem persisted identity; Trace không thay đổi Run state.',
       'Review outcome, Scope, risk, evidence policy từng AC và commands; edit bằng revision draft mới rồi tự Approve specification. Agent không thể approve.',
       'Spec đề xuất flow direct hoặc planned. Direct chỉ skip Plan cho thay đổi low-risk một boundary; planned persist mission graph typed và chỉ user Approve plan mới mở khóa implementation.',
       'Dùng Board để theo dõi workflow, Table để so sánh hoặc List để điều hướng gọn. Search theo title, status, risk và repository.',

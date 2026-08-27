@@ -147,6 +147,7 @@ export const queryKeys = {
     list: (workspace: string, projectId?: string | null) =>
       ['easd', 'runs', workspace, projectId ?? null] as const,
     detail: (runId: string) => ['easd', 'runs', runId] as const,
+    trace: (runId: string) => ['easd', 'runs', runId, 'trace'] as const,
   },
   git: {
     reviews: (scope?: string) =>

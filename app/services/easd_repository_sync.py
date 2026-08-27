@@ -251,6 +251,24 @@ def enqueue_artifact(
         store = _store_if_initialized(workspace)
         if store is not None:
             store.append_artifact(run_id, kind, artifact_id, artifact)
+            entity_kind = kind.removesuffix("s")
+            store.append_event(
+                run_id,
+                {
+                    "event": f"{entity_kind}_recorded",
+                    "actor": str(
+                        artifact.get("producer")
+                        or artifact.get("recipient")
+                        or "system"
+                    ),
+                    "created_at": str(artifact.get("created_at") or "") or None,
+                    "entity_refs": [f"{entity_kind}:{artifact_id}"],
+                    "entity_status": artifact.get("status") or artifact.get("result"),
+                    "criterion_ids": artifact.get("criterion_ids")
+                    or artifact.get("acceptance_criteria")
+                    or [],
+                },
+            )
 
     enqueue(db, write)
 

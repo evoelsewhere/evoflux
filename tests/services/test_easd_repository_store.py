@@ -64,6 +64,32 @@ def test_repository_store_persists_complete_diffable_run_structure(tmp_path):
     }
 
 
+def test_repository_store_reads_valid_events_around_a_malformed_sibling(tmp_path):
+    store = _store(tmp_path)
+    run_id = uuid4()
+    stored = store.create_run(
+        run={"id": str(run_id), "title": "Trace events", "status": "intent"},
+        intent={"title": "Trace events", "problem": "Need ordered history"},
+    )
+    (stored.directory / "events" / "000002-invalid.yaml").write_text(
+        "sequence: not-an-integer\nevent: [",
+        encoding="utf-8",
+    )
+    store.append_event(
+        run_id,
+        {"event": "authoring_started", "actor": "human"},
+    )
+
+    events, diagnostics = store.read_events(run_id)
+
+    assert [item["event"] for item in events] == [
+        "intent_created",
+        "authoring_started",
+    ]
+    assert diagnostics[0]["code"] == "event_document_invalid"
+    assert "000002-invalid.yaml" in diagnostics[0]["message"]
+
+
 def test_repository_store_rejects_stale_run_write(tmp_path):
     store = _store(tmp_path)
     run_id = uuid4()

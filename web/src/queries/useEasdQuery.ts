@@ -11,6 +11,7 @@ import {
   getEasdSetup,
   generateEasdScopeAndProof,
   getEasdRun,
+  getEasdRunTrace,
   initializeEasdSetup,
   listEasdRuns,
   retryEasdPlanningInChat,
@@ -91,6 +92,14 @@ export function useEasdRunQuery(runId: string | null, enabled = true) {
       const status = query.state.data?.run.status
       return ['authoring', 'planning', 'active', 'reviewing', 'verifying'].includes(status ?? '') ? 2_500 : false
     },
+  })
+}
+
+export function useEasdRunTraceQuery(runId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.easd.trace(runId ?? ''),
+    queryFn: () => getEasdRunTrace(runId!),
+    enabled: Boolean(runId) && enabled,
   })
 }
 

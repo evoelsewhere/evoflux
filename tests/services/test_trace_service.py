@@ -923,6 +923,19 @@ async def test_convergence_requires_every_planned_verification_command(
                 "commands": ["pytest -q tests/services/test_trace_service.py"],
             }
         ]
+        trace = trace_service.build_run_trace(
+            detail,
+            events=[],
+            diagnostics=[],
+        )
+        assert trace["gaps"] == [
+            {
+                "action_id": "converge",
+                **converge_action["blockers"][0],
+            }
+        ]
+        assert any(node["kind"] == "criterion" for node in trace["nodes"])
+        assert any(edge["kind"] == "supports" for edge in trace["edges"])
 
         with pytest.raises(trace_service.TraceConvergenceError) as exc_info:
             await trace_service.converge_run(db, run_id=run.id, git_revision=None)

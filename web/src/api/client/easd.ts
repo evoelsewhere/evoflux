@@ -14,6 +14,7 @@ import type {
   EasdPlanRevision,
   EasdRun,
   EasdRunDetail,
+  EasdRunTrace,
   EasdSetupResponse,
   EasdSpecRevision,
   EasdSpecificationInput,
@@ -99,6 +100,11 @@ export async function initializeEasdSetup(body: {
 export async function getEasdRun(runId: string): Promise<EasdRunDetail> {
   const response = await fetch(`${apiBaseUrl()}/easd/runs/${encodeURIComponent(runId)}`)
   return easdResponse(response, 'getEasdRun')
+}
+
+export async function getEasdRunTrace(runId: string): Promise<EasdRunTrace> {
+  const response = await fetch(`${apiBaseUrl()}/easd/runs/${encodeURIComponent(runId)}/trace`)
+  return easdResponse(response, 'getEasdRunTrace')
 }
 
 export async function createEasdRun(body: {
