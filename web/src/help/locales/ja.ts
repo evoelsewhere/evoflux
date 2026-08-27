@@ -1862,6 +1862,10 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         text: 'QwenCloud は DASHSCOPE_API_KEY を使い、既定では国際 pay-as-you-go の OpenAI 互換エンドポイントに接続します。Token Plan と Coding Plan のキー（sk-sp-…）は pay-as-you-go キーと交換できないため、Settings に対応する完全な Base URL を入力してください。Token Plan Individual の規約はスケジュールなど無人自動化を制限する場合があるため、利用前にプラン条件を確認してください。',
       },
       {
+        type: 'p',
+        text: 'キャッシュ対応プロバイダは、API 契約で許可される場合に安定したプロンプト接頭辞を自動再利用します。Telemetry → Models はキャッシュ読み取り、書き込み、通常入力を分け、ヒット率と pay-as-you-go 推定コストを確認できます。Codex、Copilot、Kimi Code、Ollama はサブスクリプション／ローカル面のため、トークン使用量を実際の USD 支出として表示しません。',
+      },
+      {
         type: 'tips',
         items: [
           'API key / OAuth / local daemon — 3 つの接続スタイル',

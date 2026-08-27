@@ -46,6 +46,14 @@ if TYPE_CHECKING:
     pass
 
 
+def _positive_token_count(value: object) -> int | None:
+    return (
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0
+        else None
+    )
+
+
 class CompletionsHandler:
     """Handles all interaction with /v1/chat/completions."""
 
@@ -65,6 +73,7 @@ class CompletionsHandler:
 
     def __init__(self, model: str, base_url: str, headers: dict[str, str]) -> None:
         self.model = model
+        self.usage_model_id = model
         self.base_url = base_url
         self.headers = headers
 
@@ -251,6 +260,10 @@ class CompletionsHandler:
         if thinking_level and thinking_level not in ("none", "off"):
             body["reasoning_effort"] = thinking_level
 
+    def _request_headers(self, merged: dict[str, Any]) -> dict[str, str]:
+        """Return per-call headers without mutating the shared handler state."""
+        return self.headers
+
     # ------------------------------------------------------------------
     # Response parsing — non-streaming
     # ------------------------------------------------------------------
@@ -290,7 +303,7 @@ class CompletionsHandler:
         usage_dict = None
         if parsed.usage is not None:
             usage_dict = usage_to_dict(
-                self._usage_from_openai(parsed.usage), self.model
+                self._usage_from_openai(parsed.usage), self.usage_model_id
             )
         return AssistantMessage(
             content=msg.content or None,
@@ -314,7 +327,7 @@ class CompletionsHandler:
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                url, headers=self.headers, json=body, timeout=120.0
+                url, headers=self._request_headers(merged), json=body, timeout=120.0
             )
             if response.status_code >= 400:
                 logger.error(
@@ -336,7 +349,11 @@ class CompletionsHandler:
 
         async with httpx.AsyncClient() as client:
             async with client.stream(
-                "POST", url, headers=self.headers, json=body, timeout=120.0
+                "POST",
+                url,
+                headers=self._request_headers(merged),
+                json=body,
+                timeout=120.0,
             ) as response:
                 if response.status_code >= 400:
                     err_body = await response.aread()
@@ -402,16 +419,27 @@ class CompletionsHandler:
 
     def _usage_from_openai(self, u: Any) -> Usage:
         cached = None
+        cache_write = None
         if u.prompt_tokens_details:
-            cached = u.prompt_tokens_details.cached_tokens or None
+            cached = _positive_token_count(u.prompt_tokens_details.cached_tokens)
+            cache_write = _positive_token_count(
+                u.prompt_tokens_details.cache_write_tokens
+            ) or _positive_token_count(
+                u.prompt_tokens_details.cache_creation_input_tokens
+            )
+        if cached is None:
+            cached = _positive_token_count(getattr(u, "prompt_cache_hit_tokens", None))
         thoughts = None
         if u.completion_tokens_details:
-            thoughts = u.completion_tokens_details.reasoning_tokens or None
+            thoughts = _positive_token_count(
+                u.completion_tokens_details.reasoning_tokens
+            )
         return Usage(
             prompt_tokens=u.prompt_tokens,
             completion_tokens=u.completion_tokens,
             total_tokens=u.total_tokens,
             cached_tokens=cached,
+            cache_write_tokens=cache_write,
             thoughts_tokens=thoughts,
         )
 

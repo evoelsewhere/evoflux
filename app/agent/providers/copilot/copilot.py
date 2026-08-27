@@ -90,21 +90,14 @@ class _CopilotCompletionsHandler(CompletionsHandler):
             body["reasoning_effort"] = thinking_level
 
     def _usage_from_openai(self, u: Any) -> Usage:
-        cached = None
-        if u.prompt_tokens_details:
-            cached = u.prompt_tokens_details.cached_tokens or None
+        usage = super()._usage_from_openai(u)
         # Copilot quirk: reasoning_tokens at the top level of usage.
         # Fall back to OpenAI's nested location if missing.
         thoughts = getattr(u, "reasoning_tokens", None) or None
         if not thoughts and u.completion_tokens_details:
             thoughts = u.completion_tokens_details.reasoning_tokens or None
-        return Usage(
-            prompt_tokens=u.prompt_tokens,
-            completion_tokens=u.completion_tokens,
-            total_tokens=u.total_tokens,
-            cached_tokens=cached,
-            thoughts_tokens=thoughts,
-        )
+        usage.thoughts_tokens = thoughts
+        return usage
 
 
 class _CopilotResponsesHandler(ResponsesHandler):

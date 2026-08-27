@@ -22,6 +22,7 @@ from app.agent.providers.bedrock.bedrock import (
     BedrockProvider,
     _messages_to_bedrock,
     _parse_converse_response,
+    _parse_usage,
     _tools_to_bedrock,
 )
 from app.agent.providers.capabilities import get_capabilities
@@ -259,6 +260,23 @@ class TestParseConverseResponse:
         assert msg.content is None
         assert msg.tool_calls is None
 
+    def test_usage_normalizes_cache_read_and_write_into_total_input(self):
+        usage = _parse_usage(
+            {
+                "inputTokens": 100,
+                "cacheReadInputTokens": 900,
+                "cacheWriteInputTokens": 1_000,
+                "outputTokens": 10,
+                "totalTokens": 2_010,
+            }
+        )
+
+        assert usage is not None
+        assert usage.prompt_tokens == 2_000
+        assert usage.cached_tokens == 900
+        assert usage.cache_write_tokens == 1_000
+        assert usage.total_tokens == 2_010
+
 
 # ============================================================================
 # chat() — async, uses asyncio.to_thread
@@ -295,6 +313,30 @@ class TestBedrockChat:
         )
         call_kwargs = p._client.converse.call_args.kwargs
         assert call_kwargs.get("system") == [{"text": "Be brief."}]
+
+    @pytest.mark.asyncio
+    async def test_chat_adds_trailing_cache_point_for_supported_model(self):
+        p = _make_provider()
+        p._client.converse = MagicMock(return_value=self._make_converse_response())
+
+        await p.chat([HumanMessage(content="Hello")])
+
+        content = p._client.converse.call_args.kwargs["messages"][-1]["content"]
+        assert content[-1] == {"cachePoint": {"type": "default"}}
+
+    @pytest.mark.asyncio
+    async def test_chat_does_not_add_cache_point_for_unsupported_model(self):
+        with patch(
+            "app.agent.providers.bedrock.bedrock._make_client",
+            return_value=MagicMock(),
+        ):
+            p = BedrockProvider(model="meta.llama3-3-70b-instruct-v1:0")
+        p._client.converse = MagicMock(return_value=self._make_converse_response())
+
+        await p.chat([HumanMessage(content="Hello")])
+
+        content = p._client.converse.call_args.kwargs["messages"][-1]["content"]
+        assert all("cachePoint" not in block for block in content)
 
     @pytest.mark.asyncio
     async def test_chat_passes_inference_config(self):
@@ -393,6 +435,31 @@ class TestBedrockStream:
         assert len(usage_chunks) == 1
         assert usage_chunks[0].usage.prompt_tokens == 10
         assert usage_chunks[0].usage.completion_tokens == 5
+
+    @pytest.mark.asyncio
+    async def test_stream_usage_includes_cache_read_and_write(self):
+        events = [
+            {
+                "metadata": {
+                    "usage": {
+                        "inputTokens": 100,
+                        "cacheReadInputTokens": 900,
+                        "cacheWriteInputTokens": 1_000,
+                        "outputTokens": 10,
+                    }
+                }
+            }
+        ]
+        p = _make_provider()
+        self._patch_stream(p, events)
+
+        chunks = [c async for c in p.stream([HumanMessage(content="Hi")])]
+
+        usage = chunks[0].usage
+        assert usage is not None
+        assert usage.prompt_tokens == 2_000
+        assert usage.cached_tokens == 900
+        assert usage.cache_write_tokens == 1_000
 
 
 # ============================================================================

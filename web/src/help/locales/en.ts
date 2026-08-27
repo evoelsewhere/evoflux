@@ -1893,6 +1893,10 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         text: 'QwenCloud uses DASHSCOPE_API_KEY and defaults to the international pay-as-you-go OpenAI-compatible endpoint. Token Plan and Coding Plan keys (sk-sp-…) are not interchangeable with pay-as-you-go keys: copy the complete matching Base URL into Settings. Token Plan Individual terms may restrict schedules and other unattended automation, so verify your plan before using it for those runs.',
       },
       {
+        type: 'p',
+        text: 'Cache-capable providers reuse stable prompt prefixes automatically where their API contract allows it. Telemetry → Models separates cache reads, cache writes, and ordinary input so hit rate and estimated pay-as-you-go cost remain inspectable. Codex, Copilot, Kimi Code, and Ollama are subscription/local surfaces, so token usage there is not shown as actual USD spend.',
+      },
+      {
         type: 'tips',
         items: [
           'API key / OAuth / local daemon — three connect styles',

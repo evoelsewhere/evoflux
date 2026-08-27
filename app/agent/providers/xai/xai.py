@@ -22,8 +22,18 @@ from __future__ import annotations
 from typing import Any
 
 from app.agent.providers.openai import OpenAIProvider
+from app.agent.providers.openai.completions import CompletionsHandler
 
 XAI_API_BASE = "https://api.x.ai/v1"
+
+
+class _XAICompletionsHandler(CompletionsHandler):
+    def _request_headers(self, merged: dict[str, Any]) -> dict[str, str]:
+        headers = dict(self.headers)
+        cache_key = merged.get("cache_affinity_key")
+        if cache_key:
+            headers["x-grok-conv-id"] = str(cache_key)
+        return headers
 
 
 class XAIProvider(OpenAIProvider):
@@ -64,3 +74,11 @@ class XAIProvider(OpenAIProvider):
         # xAI's OpenAI-compatible surface is chat-completions based; do not
         # route thinking-level requests to OpenAI's /responses endpoint.
         return False
+
+    def _make_completions_handler(
+        self, model: str, base_url: str, headers: dict[str, str]
+    ) -> CompletionsHandler:
+        return _XAICompletionsHandler(model, base_url, headers)
+
+    def cache_affinity_kwargs(self, cache_key: str | None) -> dict[str, Any]:
+        return {"cache_affinity_key": cache_key} if cache_key else {}

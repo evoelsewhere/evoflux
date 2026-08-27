@@ -885,6 +885,46 @@ class TestCompletionsHandlerUsage:
         assert result.cached_tokens == 10
         assert result.thoughts_tokens is None
 
+    def test_usage_from_openai_with_cache_write_tokens(self, handler):
+        from app.agent.providers.openai.schemas import (
+            OpenAIPromptTokensDetails,
+            OpenAIUsage,
+        )
+
+        usage = OpenAIUsage(
+            prompt_tokens=1_000,
+            completion_tokens=10,
+            total_tokens=1_010,
+            prompt_tokens_details=OpenAIPromptTokensDetails(
+                cached_tokens=700,
+                cache_write_tokens=200,
+            ),
+        )
+
+        result = handler._usage_from_openai(usage)
+
+        assert result.cached_tokens == 700
+        assert result.cache_write_tokens == 200
+
+    def test_usage_from_openai_accepts_cache_creation_alias(self, handler):
+        from app.agent.providers.openai.schemas import (
+            OpenAIPromptTokensDetails,
+            OpenAIUsage,
+        )
+
+        usage = OpenAIUsage(
+            prompt_tokens=1_000,
+            completion_tokens=10,
+            total_tokens=1_010,
+            prompt_tokens_details=OpenAIPromptTokensDetails(
+                cache_creation_input_tokens=300
+            ),
+        )
+
+        result = handler._usage_from_openai(usage)
+
+        assert result.cache_write_tokens == 300
+
     def test_usage_from_openai_with_reasoning_tokens(self, handler):
         """Test _usage_from_openai with reasoning_tokens in completion_tokens_details."""
         from app.agent.providers.openai.schemas import (

@@ -8,6 +8,7 @@ from pydantic.types import SecretStr
 
 from app.agent.providers.openai import ChatCompletionsOnlyProvider
 from app.agent.providers.openai.completions import CompletionsHandler
+from app.agent.schemas.chat import ChatMessage
 
 
 class _OpenRouterCompletionsHandler(CompletionsHandler):
@@ -19,6 +20,20 @@ class _OpenRouterCompletionsHandler(CompletionsHandler):
             body["reasoning"] = {"enabled": False}
         elif thinking_level:
             body["reasoning"] = {"effort": thinking_level}
+
+    def build_request(
+        self,
+        messages: list[ChatMessage],
+        tools: list[dict[str, Any]] | None,
+        stream: bool,
+        merged: dict[str, Any],
+    ) -> dict[str, Any]:
+        body = super().build_request(messages, tools, stream, merged)
+        if merged.get("session_id") is not None:
+            body["session_id"] = merged["session_id"]
+        if self.model.startswith(("anthropic/", "~anthropic/")):
+            body["cache_control"] = {"type": "ephemeral"}
+        return body
 
 
 class OpenRouterProvider(ChatCompletionsOnlyProvider):
@@ -40,3 +55,6 @@ class OpenRouterProvider(ChatCompletionsOnlyProvider):
         self, model: str, base_url: str, headers: dict[str, str]
     ) -> CompletionsHandler:
         return _OpenRouterCompletionsHandler(model, base_url, headers)
+
+    def cache_affinity_kwargs(self, cache_key: str | None) -> dict[str, Any]:
+        return {"session_id": cache_key} if cache_key else {}

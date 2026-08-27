@@ -166,7 +166,7 @@ class _CodexResponsesHandler(ResponsesHandler):
             reasoning_content=reasoning or None,
             tool_calls=complete_tool_calls or None,
             extra=(
-                {"usage": usage_to_dict(usage, f"codex:{self.model}")}
+                {"usage": usage_to_dict(usage, self.usage_model_id)}
                 if usage is not None
                 else None
             ),
@@ -246,6 +246,13 @@ class CodexProvider(LLMProviderBase):
         )
 
         logger.debug("codex_provider model={}", model)
+
+    def cache_affinity_kwargs(self, cache_key: str | None) -> dict[str, Any]:
+        return {"prompt_cache_key": cache_key} if cache_key else {}
+
+    def bind_provider_name(self, provider_name: str) -> None:
+        super().bind_provider_name(provider_name)
+        self._responses.usage_model_id = self.qualified_model_id()
 
     # ------------------------------------------------------------------
     # Public interface

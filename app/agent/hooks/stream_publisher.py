@@ -74,6 +74,7 @@ class StreamPublisherHook(BaseAgentHook):
         self._total_prompt = 0
         self._total_completion = 0
         self._total_cached: int | None = None
+        self._total_cache_write: int | None = None
         self._total_thoughts: int | None = None
         self._total_tool_use: int | None = None
         self._usage_count = 0
@@ -174,6 +175,7 @@ class StreamPublisherHook(BaseAgentHook):
                     completion_tokens=ct,
                     total_tokens=u.total_tokens or (pt + ct),
                     cached_tokens=getattr(u, "cached_tokens", None),
+                    cache_write_tokens=getattr(u, "cache_write_tokens", None),
                     thoughts_tokens=getattr(u, "thoughts_tokens", None),
                     tool_use_tokens=getattr(u, "tool_use_tokens", None),
                     metadata=metadata,
@@ -193,6 +195,11 @@ class StreamPublisherHook(BaseAgentHook):
                 cached = getattr(u, "cached_tokens", None)
                 if cached is not None:
                     self._total_cached = (self._total_cached or 0) + cached
+                cache_write = getattr(u, "cache_write_tokens", None)
+                if cache_write is not None:
+                    self._total_cache_write = (
+                        self._total_cache_write or 0
+                    ) + cache_write
                 thoughts = getattr(u, "thoughts_tokens", None)
                 if thoughts is not None:
                     self._total_thoughts = (self._total_thoughts or 0) + thoughts
@@ -485,6 +492,7 @@ class StreamPublisherHook(BaseAgentHook):
                     completion_tokens=self._total_completion,
                     total_tokens=self._total_prompt + self._total_completion,
                     cached_tokens=self._total_cached,
+                    cache_write_tokens=self._total_cache_write,
                     thoughts_tokens=self._total_thoughts,
                     tool_use_tokens=self._total_tool_use,
                     metadata={
@@ -498,6 +506,7 @@ class StreamPublisherHook(BaseAgentHook):
         self._total_prompt = 0
         self._total_completion = 0
         self._total_cached = None
+        self._total_cache_write = None
         self._total_thoughts = None
         self._total_tool_use = None
         self._usage_count = 0

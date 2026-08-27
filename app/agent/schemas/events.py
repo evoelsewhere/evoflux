@@ -106,6 +106,7 @@ class UsageEvent(BaseModel):
     completion_tokens: int = 0
     total_tokens: int = 0
     cached_tokens: int | None = None
+    cache_write_tokens: int | None = None
     thoughts_tokens: int | None = None
     tool_use_tokens: int | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

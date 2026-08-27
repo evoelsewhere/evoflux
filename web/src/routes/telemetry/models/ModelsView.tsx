@@ -4,7 +4,10 @@ import { ChartCard, RankedBars } from '../charts'
 import { EmptyTable, SectionHeader, Stat, Table } from '../primitives'
 
 export function ModelsView({ data }: { data: ObservabilitySummary }) {
-  const cacheMissTokens = Math.max(data.totals.input_tokens - data.totals.cached_tokens, 0)
+  const ordinaryInputTokens = Math.max(
+    data.totals.input_tokens - data.totals.cached_tokens - data.totals.cache_write_tokens,
+    0,
+  )
   const models = data.by_model
 
   return (
@@ -69,9 +72,10 @@ export function ModelsView({ data }: { data: ObservabilitySummary }) {
 
       <section>
         <SectionHeader>Prompt cache</SectionHeader>
-        <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <Stat label="Hit tokens" value={formatCompact(data.totals.cached_tokens)} />
-          <Stat label="Miss tokens" value={formatCompact(cacheMissTokens)} />
+        <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat label="Read tokens" value={formatCompact(data.totals.cached_tokens)} />
+          <Stat label="Write tokens" value={formatCompact(data.totals.cache_write_tokens)} />
+          <Stat label="Ordinary input" value={formatCompact(ordinaryInputTokens)} />
           <Stat label="Hit rate" value={formatPercent(data.totals.cache_percent)} />
         </div>
         {data.cache_by_step.length === 0 ? (
@@ -79,17 +83,18 @@ export function ModelsView({ data }: { data: ObservabilitySummary }) {
         ) : (
           <Table
             ariaLabel="Cache usage by operation"
-            headers={['Operation', 'Provider:model', 'Calls', 'Hit', 'Miss', 'Hit rate', 'Cost']}
+            headers={['Operation', 'Provider:model', 'Calls', 'Read', 'Write', 'Ordinary', 'Hit rate', 'Cost']}
             rows={data.cache_by_step.map((step) => [
               step.step,
               step.provider_model,
               formatInt(step.calls),
               formatCompact(step.cached_tokens),
-              formatCompact(step.miss_tokens),
+              formatCompact(step.cache_write_tokens),
+              formatCompact(step.ordinary_input_tokens),
               formatPercent(step.cache_percent),
               formatUsd(step.estimated_cost_usd),
             ])}
-            align={['left', 'left', 'right', 'right', 'right', 'right', 'right']}
+            align={['left', 'left', 'right', 'right', 'right', 'right', 'right', 'right']}
           />
         )}
       </section>

@@ -84,6 +84,36 @@ display. Provider payload shapes do not leak into the team/session API.
 Model calls can include bounded multimodal content only when both the model and
 adapter advertise support. Tool call IDs/results are normalized across APIs.
 
+## Prompt caching and cost accounting
+
+EvoFlux preserves provider-reported total input while tracking cache reads and
+cache writes as disjoint subsets. Estimated token cost prices ordinary input,
+cache reads, cache writes and output separately when the selected
+`provider:model` has matching registry prices. Codex, Copilot, Kimi Code and
+Ollama are subscription/local integrations rather than token-billed API
+surfaces, so EvoFlux does not present registry-equivalent token prices as
+actual spend for them.
+
+Provider cache behavior remains adapter-specific:
+
+- Anthropic and Foundry-hosted Claude use Anthropic's top-level ephemeral
+  automatic cache control.
+- Supported Anthropic Claude and Amazon Nova models on Bedrock Converse receive
+  one trailing cache checkpoint. Other Bedrock families are left unchanged.
+- DeepSeek, Gemini/Vertex, QwenCloud, Z.AI and Xiaomi retain their provider-side
+  implicit cache behavior and normalize their reported cache-hit tokens.
+- Native OpenAI/Foundry OpenAI and Codex receive an opaque stable
+  `prompt_cache_key`; OpenRouter receives `session_id`; xAI Chat Completions
+  receives `x-grok-conv-id`. The key is derived from, but does not expose, the
+  local session ID.
+- OpenRouter Anthropic routes use top-level automatic caching. Other
+  OpenRouter models retain their upstream provider's implicit behavior.
+
+Explicit Qwen/GPT-5.6 breakpoints and managed Gemini cached-content resources
+are not enabled automatically because cache writes can cost more than ordinary
+input when a prefix is not reused. Cache controls never change tool permission,
+outbound redaction or sandbox boundaries.
+
 ## EASD role guidance for GPT-5.6 family
 
 When the Codex OAuth catalogue exposes the GPT-5.6 family, EASD benchmarks and

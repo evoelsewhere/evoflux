@@ -17,6 +17,7 @@ logic individually testable.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from typing import TYPE_CHECKING
 
@@ -47,6 +48,14 @@ if TYPE_CHECKING:
     from app.agent.hooks import BaseAgentHook
     from app.agent.providers.base import LLMProviderBase
     from app.agent.state import AgentState, ModelRequest, RunContext
+
+
+def cache_affinity_key(session_id: str | None) -> str | None:
+    """Derive a stable opaque provider-routing key without exposing session IDs."""
+    if not session_id:
+        return None
+    digest = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:32]
+    return f"evoflux-v1:{digest}"
 
 
 async def _interruptible_stream(
@@ -182,6 +191,8 @@ async def stream_and_assemble(
     tool_calls_buffer: dict[int, dict] = {}
     last_usage: Usage | None = None
 
+    affinity_key = cache_affinity_key(ctx.session_id)
+
     # Prepend system prompt and merge any [user, user] adjacency for the
     # wire — DB keeps adjacent user rows verbatim.
     request_messages: list[ChatMessage] = list(req.messages)
@@ -196,7 +207,9 @@ async def stream_and_assemble(
         logger.warning(
             "outbound_sensitive_data_protected channel={} matches={} "
             "secret_matches={} pii_matches={} categories={}",
-            redaction_report.context.label if redaction_report.context else "model:external",
+            redaction_report.context.label
+            if redaction_report.context
+            else "model:external",
             redaction_report.matches,
             redaction_report.secret_matches,
             redaction_report.pii_matches,
@@ -217,6 +230,7 @@ async def stream_and_assemble(
         state=state,
         hooks=hooks,
         interrupt_event=interrupt_event,
+        cache_affinity_key=affinity_key,
         messages=provider_messages,
         tools=tool_defs or None,
     )

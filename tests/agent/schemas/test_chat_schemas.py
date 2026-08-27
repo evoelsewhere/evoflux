@@ -32,6 +32,7 @@ class TestUsageDefaults:
         assert u.completion_tokens == 0
         assert u.total_tokens == 0
         assert u.cached_tokens is None
+        assert u.cache_write_tokens is None
         assert u.thoughts_tokens is None
         assert u.tool_use_tokens is None
 
@@ -41,10 +42,12 @@ class TestUsageDefaults:
             completion_tokens=5,
             total_tokens=15,
             cached_tokens=3,
+            cache_write_tokens=2,
             thoughts_tokens=2,
         )
         assert u.prompt_tokens == 10
         assert u.cached_tokens == 3
+        assert u.cache_write_tokens == 2
         assert u.thoughts_tokens == 2
 
 

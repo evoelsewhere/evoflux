@@ -103,6 +103,15 @@ class TestXAIProviderInit:
         p = self._make_provider()
         assert p.max_tokens is None
 
+    def test_cache_affinity_uses_x_grok_conversation_header(self):
+        p = XAIProvider(api_key="xai-test-key", model="grok-4.6")
+
+        kwargs = p.cache_affinity_kwargs("opaque-session")
+        headers = p._completions._request_headers(kwargs)
+
+        assert headers["x-grok-conv-id"] == "opaque-session"
+        assert "x-grok-conv-id" not in p._completions.headers
+
 
 # ============================================================================
 # Provider factory — xai branch

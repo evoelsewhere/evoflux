@@ -34,6 +34,18 @@ separate telemetry database. It provides:
 The `/telemetry` UI renders summary, model/tool breakdowns, trace tables and a
 waterfall/detail view.
 
+Prompt-cache reporting treats provider usage as four disjoint billing classes:
+ordinary input, cache reads, cache writes and output. The Models view shows read
+and write tokens separately, derives ordinary input as
+`total input - reads - writes`, and bounds historical hit rates at 100% even if
+an older provider adapter recorded inconsistent totals. Missing cache-write
+attributes in historical span partitions aggregate as zero.
+
+Estimated USD is best-effort and requires a fully qualified `provider:model`
+with matching registry prices. Subscription/local providers do not expose
+token spend as actual invoice cost, so their token usage remains visible while
+estimated USD is omitted.
+
 ## Prometheus and HTTP metrics
 
 `GET /metrics` is the unprefixed Prometheus scrape target. Middleware measures

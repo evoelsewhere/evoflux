@@ -96,6 +96,8 @@ class TestOpenAIUsage:
     def test_prompt_tokens_details_defaults(self):
         d = OpenAIPromptTokensDetails()
         assert d.cached_tokens == 0
+        assert d.cache_write_tokens == 0
+        assert d.cache_creation_input_tokens == 0
         assert d.audio_tokens == 0
 
     def test_completion_tokens_details_defaults(self):

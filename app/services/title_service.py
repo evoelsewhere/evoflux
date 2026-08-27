@@ -24,7 +24,7 @@ from app.agent.turn_usage import (
     persist_turn_usage_snapshot,
     record_turn_usage,
 )
-from app.agent.providers.base import LLMProviderBase
+from app.agent.providers.base import LLMProviderBase, get_qualified_model_id
 from app.agent.schemas.chat import ChatMessage, HumanMessage, SystemMessage
 from app.agent.schemas.events import TitleUpdateEvent
 from app.core.db import DbFactory
@@ -155,7 +155,7 @@ async def generate_and_save_title(
                 turn_usage = await record_turn_usage(
                     usage,
                     phase="title",
-                    model_id=getattr(provider, "model", None),
+                    model_id=get_qualified_model_id(provider),
                 )
             title = _clean_title(result.content or "")
 

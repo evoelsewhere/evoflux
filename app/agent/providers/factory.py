@@ -105,7 +105,7 @@ def require_api_key(secret: SecretStr | None, env_var: str, label: str) -> str:
 def _with_provider_name(
     provider: LLMProviderBase, provider_name: str
 ) -> LLMProviderBase:
-    provider.provider_name = provider_name
+    provider.bind_provider_name(provider_name)
     return provider
 
 

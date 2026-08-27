@@ -40,7 +40,7 @@ external deployments should configure an access key and restrictive CORS.
 | `/api/scheduler` | task CRUD, pause/resume and trigger | `scheduler.py` |
 | `/api/wiki` | validated Markdown tree/file operations | `wiki.py` |
 | `/api/dream` | config, manual run/status and lint | `dream.py` |
-| `/api/observability` | aggregates, trace pages and trace detail | `observability.py` |
+| `/api/observability` | aggregates including cache read/write token classes, trace pages and trace detail | `observability.py` |
 | `/api/commands` | slash-command catalogue/rendering | `commands.py` |
 | `/api/snippets` | snippet catalogue/rendering | `snippets.py` |
 | `/api/auth` | provider OAuth login/callback | `auth.py` |
