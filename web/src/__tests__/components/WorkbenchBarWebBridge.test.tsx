@@ -78,6 +78,7 @@ describe('WorkbenchBar browser access control', () => {
     const control = screen.getByRole('button', { name: 'Open WebBridge' })
 
     expect(control).toHaveTextContent('WebBridge')
+    expect(screen.getByRole('button', { name: 'Select lead agent' }).closest('header')).toHaveClass('pl-12')
 
     fireEvent.click(control)
     expect(onPopoverOpenChange.mock.calls[0]?.[0]).toBe(true)
@@ -182,6 +183,7 @@ describe('WorkbenchBar browser access control', () => {
     expect(screen.queryByRole('button', { name: 'Open navigation' })).not.toBeInTheDocument()
     const leadSelector = screen.getByRole('button', { name: 'Select lead agent' })
     expect(leadSelector).toHaveClass('w-8', 'sm:w-auto')
+    expect(leadSelector.querySelector('[data-lead-icon]')).toHaveClass('lucide-users-round')
     expect(leadSelector.querySelector('span.hidden')).toHaveClass('sm:inline')
     expect(container.querySelector('header')).toHaveClass(
       'pl-(--spacing-mac-window-controls-inset)',

@@ -7,8 +7,8 @@ import {
   FileDiff,
   GitPullRequest,
   Menu,
-  Crown,
   Users,
+  UsersRound,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -134,7 +134,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
         props.isMacOverlay
           ? (props.isMobile || sidebarCollapsed || props.sidebarOverlay)
             && 'pl-(--spacing-mac-window-controls-inset)'
-          : !props.isMobile && sidebarCollapsed && !props.sidebarOverlay && 'pl-12',
+          : !props.isMobile && !props.sidebarOverlay && 'pl-12',
       )}
     >
       {!props.isMacOverlay && (props.isMobile || props.sidebarOverlay) && (
@@ -161,7 +161,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             title={isTeamWorking ? 'Finish or stop the active turn before changing lead' : 'Select lead agent and owned team'}
             data-no-drag
           >
-            <Crown size={13} className="shrink-0 text-(--color-accent)" />
+            <UsersRound data-lead-icon size={14} className="shrink-0 text-(--color-accent)" />
             <span className="hidden truncate sm:inline">{props.leadName ?? 'Choose lead'}</span>
             <ChevronDown size={11} className="hidden shrink-0 text-(--color-text-subtle) transition-transform group-data-[popup-open]:rotate-180 sm:block" />
           </DropdownMenuTrigger>
@@ -177,7 +177,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
                 onClick={() => props.onLeadChange(lead.name)}
                 className="items-start py-2"
               >
-                <Crown size={14} className="mt-0.5 shrink-0" />
+                <UsersRound data-lead-icon size={14} className="mt-0.5 shrink-0" />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5 font-medium">
                     <span className="truncate">{lead.name}</span>
