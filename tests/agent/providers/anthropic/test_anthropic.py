@@ -3,7 +3,10 @@ from __future__ import annotations
 from pydantic import SecretStr
 
 from app.agent.providers.anthropic import AnthropicProvider
-from app.agent.providers.anthropic.anthropic import _split_messages
+from app.agent.providers.anthropic.anthropic import (
+    _split_messages,
+    _usage_from_anthropic,
+)
 from app.agent.schemas.chat import (
     AssistantMessage,
     HumanMessage,
@@ -74,6 +77,61 @@ def test_anthropic_payload_converts_system_tools_and_thinking() -> None:
     assert payload["tools"][0]["name"] == "lookup"
     assert payload["thinking"] == {"type": "adaptive", "display": "summarized"}
     assert payload["output_config"] == {"effort": "low"}
+    assert payload["cache_control"] == {"type": "ephemeral"}
+
+
+def test_anthropic_payload_allows_explicit_cache_opt_out() -> None:
+    provider = AnthropicProvider(
+        api_key="sk-ant-test",
+        model="claude-sonnet-4-6",
+        model_kwargs={"cache_control": None},
+    )
+
+    payload = provider._payload(
+        [HumanMessage(content="hi")], None, provider._merged_kwargs()
+    )
+
+    assert "cache_control" not in payload
+
+
+def test_anthropic_usage_normalizes_read_write_and_total_input() -> None:
+    usage = _usage_from_anthropic(
+        {
+            "input_tokens": 100,
+            "cache_creation_input_tokens": 1_000,
+            "cache_read_input_tokens": 900,
+            "output_tokens": 10,
+        }
+    )
+
+    assert usage is not None
+    assert usage.prompt_tokens == 2_000
+    assert usage.cached_tokens == 900
+    assert usage.cache_write_tokens == 1_000
+    assert usage.completion_tokens == 10
+    assert usage.total_tokens == 2_010
+
+
+def test_anthropic_non_stream_response_preserves_cache_usage() -> None:
+    provider = AnthropicProvider(api_key="sk-ant-test", model="claude-sonnet-4-6")
+    provider.bind_provider_name("anthropic")
+
+    result = provider._parse_response(
+        {
+            "content": [{"type": "text", "text": "ok"}],
+            "usage": {
+                "input_tokens": 100,
+                "cache_creation_input_tokens": 1_000,
+                "cache_read_input_tokens": 900,
+                "output_tokens": 10,
+            },
+        }
+    )
+
+    assert result.extra is not None
+    assert result.extra["usage"]["input"] == 2_000
+    assert result.extra["usage"]["cache"] == 900
+    assert result.extra["usage"]["cache_write"] == 1_000
 
 
 def test_anthropic_payload_uses_adaptive_thinking_for_claude_opus_4_7() -> None:

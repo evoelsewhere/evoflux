@@ -20,6 +20,7 @@ from app.agent.agent_loop.retry import (
     parse_retry_after,
     stream_with_retry,
 )
+from app.agent.agent_loop.streaming import cache_affinity_key
 from app.agent.errors import (
     ProviderAuthenticationError,
     ProviderRateLimitError,
@@ -1006,6 +1007,7 @@ async def test_agent_run_attaches_aggregate_turn_usage_to_assistant():
         "input": 100,
         "output": 5,
         "cache": 0,
+        "cache_write": 0,
         "calls": 1,
         "models": ["mock-model"],
         "phases": {
@@ -1013,6 +1015,7 @@ async def test_agent_run_attaches_aggregate_turn_usage_to_assistant():
                 "input": 100,
                 "output": 5,
                 "cache": 0,
+                "cache_write": 0,
                 "calls": 1,
                 "models": ["mock-model"],
             }
@@ -1264,6 +1267,45 @@ async def test_stream_with_retry_success_on_first_try():
     ]
     assert len(chunks) == 1
     assert chunks[0].choices[0].delta.content == "ok"
+
+
+def test_cache_affinity_key_is_stable_and_opaque() -> None:
+    first = cache_affinity_key("session-sensitive-id")
+    second = cache_affinity_key("session-sensitive-id")
+
+    assert first == second
+    assert first is not None
+    assert first.startswith("evoflux-v1:")
+    assert "session-sensitive-id" not in first
+    assert cache_affinity_key(None) is None
+
+
+async def test_stream_with_retry_applies_provider_affinity_mapping() -> None:
+    captured: dict[str, Any] = {}
+
+    class AffinityProvider(MockProvider):
+        def cache_affinity_kwargs(self, cache_key: str | None) -> dict[str, Any]:
+            return {"provider_cache_key": cache_key} if cache_key else {}
+
+        def stream(self, messages, tools=None, **kwargs):
+            captured.update(kwargs)
+            return super().stream(messages, tools, **kwargs)
+
+    provider = AffinityProvider([[make_text_chunk("ok")]])
+    agent = Agent(name="bot", llm_provider=provider)
+
+    chunks = [
+        chunk
+        async for chunk in stream_with_retry(
+            **retry_args(agent),
+            cache_affinity_key="opaque-session",
+            messages=[],
+            tools=None,
+        )
+    ]
+
+    assert len(chunks) == 1
+    assert captured["provider_cache_key"] == "opaque-session"
 
 
 async def test_stream_with_retry_on_retryable_http_error():

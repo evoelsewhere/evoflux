@@ -234,6 +234,7 @@ class TestGenerateAndSaveTitle:
             "input": 300,
             "output": 5,
             "cache": 50,
+            "cache_write": 0,
             "calls": 1,
             "models": ["gpt-test"],
             "phases": {
@@ -241,6 +242,7 @@ class TestGenerateAndSaveTitle:
                     "input": 300,
                     "output": 5,
                     "cache": 50,
+                    "cache_write": 0,
                     "calls": 1,
                     "models": ["gpt-test"],
                 }

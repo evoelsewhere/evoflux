@@ -56,6 +56,7 @@ class ResponsesHandler:
         request_timeout: float = 120.0,
     ) -> None:
         self.model = model
+        self.usage_model_id = model
         self.base_url = base_url
         self.headers = headers
         self.request_timeout = request_timeout
@@ -253,16 +254,25 @@ class ResponsesHandler:
     def _usage_dict(self, usage_data: dict[str, Any]) -> dict[str, Any] | None:
         if not usage_data:
             return None
-        input_details = usage_data.get("input_tokens_details", {})
-        output_details = usage_data.get("output_tokens_details", {})
-        usage = Usage(
+        usage = self._usage_from_data(usage_data)
+        return usage_to_dict(usage, self.usage_model_id)
+
+    @staticmethod
+    def _usage_from_data(usage_data: dict[str, Any]) -> Usage:
+        input_details = usage_data.get("input_tokens_details", {}) or {}
+        output_details = usage_data.get("output_tokens_details", {}) or {}
+        return Usage(
             prompt_tokens=usage_data.get("input_tokens", 0),
             completion_tokens=usage_data.get("output_tokens", 0),
             total_tokens=usage_data.get("total_tokens", 0),
             cached_tokens=input_details.get("cached_tokens") or None,
+            cache_write_tokens=(
+                input_details.get("cache_write_tokens")
+                or input_details.get("cache_creation_input_tokens")
+                or None
+            ),
             thoughts_tokens=output_details.get("reasoning_tokens") or None,
         )
-        return usage_to_dict(usage, self.model)
 
     # ------------------------------------------------------------------
     # Public API
@@ -533,21 +543,12 @@ class ResponsesHandler:
             elif etype == "response.completed":
                 usage_data = event.get("response", {}).get("usage", {})
                 if usage_data:
-                    input_details = usage_data.get("input_tokens_details", {})
-                    output_details = usage_data.get("output_tokens_details", {})
                     yield ChatCompletionChunk(
                         id=response_id,
                         created=int(time.time()),
                         model=self.model,
                         choices=[],
-                        usage=Usage(
-                            prompt_tokens=usage_data.get("input_tokens", 0),
-                            completion_tokens=usage_data.get("output_tokens", 0),
-                            total_tokens=usage_data.get("total_tokens", 0),
-                            cached_tokens=input_details.get("cached_tokens") or None,
-                            thoughts_tokens=output_details.get("reasoning_tokens")
-                            or None,
-                        ),
+                        usage=self._usage_from_data(usage_data),
                     )
 
     def _raise_response_failed(self, event: dict[str, Any], response: Any) -> None:

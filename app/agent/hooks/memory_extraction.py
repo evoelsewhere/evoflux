@@ -12,6 +12,7 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.agent.hooks.base import BaseAgentHook
+from app.agent.providers.base import get_qualified_model_id
 from app.agent.outbound_redaction import (
     OutboundContext,
     load_outbound_data_policy,
@@ -214,7 +215,7 @@ async def _extract_and_store(
             await record_turn_usage(
                 usage,
                 phase="memory_extraction",
-                model_id=getattr(provider, "model", None),
+                model_id=get_qualified_model_id(provider),
             )
         facts = _parse_payload(response.content or "")
 

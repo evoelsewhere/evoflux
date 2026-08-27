@@ -130,6 +130,7 @@ def test_summarize_aggregates_turns_llm_tools(
                 "gen_ai.usage.input_tokens": 1000,
                 "gen_ai.usage.output_tokens": 200,
                 "gen_ai.usage.cache_read.input_tokens": 250,
+                "gen_ai.usage.cache_write.input_tokens": 100,
                 "gen_ai.usage.estimated_cost_usd": 0.004,
             },
         ),
@@ -197,6 +198,7 @@ def test_summarize_aggregates_turns_llm_tools(
     assert result.total_input_tokens == 2000
     assert result.total_output_tokens == 400
     assert result.total_cached_tokens == 380
+    assert result.total_cache_write_tokens == 100
     assert result.total_estimated_cost_usd == 0.0071
     # Keep failed turns distinct from lower-level error spans.
     assert result.failed_turns == 1
@@ -222,6 +224,7 @@ def test_summarize_aggregates_turns_llm_tools(
     assert models["gpt-4o"]["provider_model"] == "openai:gpt-4o"
     assert models["gpt-4o"]["input_tokens"] == 1500
     assert models["gpt-4o"]["cached_tokens"] == 300
+    assert models["gpt-4o"]["cache_write_tokens"] == 100
     assert models["gpt-4o"]["cache_percent"] == 20.0
     assert models["gpt-4o"]["estimated_cost_usd"] == 0.006
     assert models["gemini-flash"]["calls"] == 1
@@ -233,7 +236,9 @@ def test_summarize_aggregates_turns_llm_tools(
     chat_openai = cache_steps[("chat", "openai:gpt-4o")]
     assert chat_openai["input_tokens"] == 1500
     assert chat_openai["cached_tokens"] == 300
+    assert chat_openai["cache_write_tokens"] == 100
     assert chat_openai["miss_tokens"] == 1200
+    assert chat_openai["ordinary_input_tokens"] == 1100
     title_generation = cache_steps[("title_generation", "openai:gpt-4o-mini")]
     assert title_generation["input_tokens"] == 100
     assert title_generation["cached_tokens"] == 80
@@ -276,6 +281,7 @@ def test_summarize_handles_missing_cache_read_tokens(
     assert result.total_turns == 1
     assert result.total_llm_calls == 1
     assert result.total_cached_tokens == 0
+    assert result.total_cache_write_tokens == 0
     assert result.total_input_tokens == 500
 
 
@@ -324,6 +330,7 @@ def test_to_dict_round_trips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "input_tokens",
         "output_tokens",
         "cached_tokens",
+        "cache_write_tokens",
         "cache_percent",
         "estimated_cost_usd",
         "errors",

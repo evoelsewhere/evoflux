@@ -94,6 +94,9 @@ class OpenAIPromptTokensDetails(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     cached_tokens: int = 0
+    cache_write_tokens: int = 0
+    # Anthropic/Qwen-compatible gateways use this spelling for cache writes.
+    cache_creation_input_tokens: int = 0
     audio_tokens: int = 0
 
     @field_validator("*", mode="before")
@@ -128,6 +131,10 @@ class OpenAIUsage(BaseModel):
     total_tokens: int = 0
     prompt_tokens_details: OpenAIPromptTokensDetails | None = None
     completion_tokens_details: OpenAICompletionTokensDetails | None = None
+    # DeepSeek reports cache accounting at the top level instead of under
+    # prompt_tokens_details.
+    prompt_cache_hit_tokens: int = 0
+    prompt_cache_miss_tokens: int = 0
     # Copilot puts reasoning_tokens at top level (not inside completion_tokens_details)
     reasoning_tokens: int | None = None
 

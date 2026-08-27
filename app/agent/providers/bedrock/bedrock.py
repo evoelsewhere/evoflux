@@ -44,6 +44,7 @@ from typing import Any
 from loguru import logger
 
 from app.agent.providers.base import LLMProviderBase
+from app.agent.usage import usage_to_dict
 from app.agent.schemas.chat import (
     AssistantMessage,
     ChatCompletionChunk,
@@ -65,6 +66,16 @@ from app.agent.schemas.chat import (
 
 
 _DONE = object()  # sentinel — StopIteration cannot propagate through asyncio Futures
+
+
+def _supports_prompt_caching(model: str) -> bool:
+    """Return whether the Converse model family accepts cachePoint blocks."""
+    normalized = model.lower()
+    return (
+        normalized.startswith(("anthropic.claude", "amazon.nova"))
+        or ".anthropic.claude" in normalized
+        or ".amazon.nova" in normalized
+    )
 
 
 async def _nonblocking_iter(sync_iter: Any):
@@ -256,15 +267,23 @@ def _chunk(
 def _parse_usage(usage_dict: dict[str, Any] | None) -> Usage | None:
     if not usage_dict:
         return None
+    ordinary = int(usage_dict.get("inputTokens") or 0)
+    cache_read = int(usage_dict.get("cacheReadInputTokens") or 0)
+    cache_write = int(usage_dict.get("cacheWriteInputTokens") or 0)
+    output = int(usage_dict.get("outputTokens") or 0)
+    prompt = ordinary + cache_read + cache_write
     return Usage(
-        prompt_tokens=usage_dict.get("inputTokens", 0),
-        completion_tokens=usage_dict.get("outputTokens", 0),
-        total_tokens=usage_dict.get("totalTokens", 0),
-        cached_tokens=usage_dict.get("cacheReadInputTokens") or None,
+        prompt_tokens=prompt,
+        completion_tokens=output,
+        total_tokens=prompt + output,
+        cached_tokens=cache_read or None,
+        cache_write_tokens=cache_write or None,
     )
 
 
-def _parse_converse_response(response: dict[str, Any]) -> AssistantMessage:
+def _parse_converse_response(
+    response: dict[str, Any], model_id: str | None = None
+) -> AssistantMessage:
     """Parse a Bedrock converse (non-streaming) response."""
     output = response.get("output", {})
     msg = output.get("message", {})
@@ -288,9 +307,13 @@ def _parse_converse_response(response: dict[str, Any]) -> AssistantMessage:
                 )
             )
 
+    usage = _parse_usage(response.get("usage"))
     return AssistantMessage(
         content="\n".join(text_parts) if text_parts else None,
         tool_calls=tool_calls if tool_calls else None,
+        extra=(
+            {"usage": usage_to_dict(usage, model_id)} if usage is not None else None
+        ),
     )
 
 
@@ -385,6 +408,10 @@ class BedrockProvider(LLMProviderBase):
             # OpenAI-specific
             "responses_api",
             "reasoning_effort",
+            # Runtime cache-affinity hints are translated by adapters that
+            # support them and must never reach Bedrock model fields.
+            "cache_affinity_key",
+            "prompt_cache_key",
         }
         additional = {k: v for k, v in merged.items() if k not in known}
 
@@ -392,6 +419,8 @@ class BedrockProvider(LLMProviderBase):
             "modelId": self.model,
             "messages": converse_messages,
         }
+        if _supports_prompt_caching(self.model) and converse_messages:
+            converse_messages[-1]["content"].append({"cachePoint": {"type": "default"}})
         if system_prompt:
             req["system"] = [{"text": system_prompt}]
         if inference_config:
@@ -413,7 +442,7 @@ class BedrockProvider(LLMProviderBase):
         req = self._build_request(messages, tools, merged)
 
         response = await asyncio.to_thread(self._client.converse, **req)
-        msg = _parse_converse_response(response)
+        msg = _parse_converse_response(response, model_id=self.qualified_model_id())
         logger.debug(
             "bedrock_chat model={} stop_reason={}",
             self.model,

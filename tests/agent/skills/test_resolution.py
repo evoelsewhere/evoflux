@@ -129,6 +129,7 @@ async def test_resolver_usage_is_included_in_turn_total():
             "input": 800,
             "output": 12,
             "cache": 100,
+            "cache_write": 0,
             "calls": 1,
             "models": ["mock-model"],
             "phases": {
@@ -136,6 +137,7 @@ async def test_resolver_usage_is_included_in_turn_total():
                     "input": 800,
                     "output": 12,
                     "cache": 100,
+                    "cache_write": 0,
                     "calls": 1,
                     "models": ["mock-model"],
                 }

@@ -388,7 +388,9 @@ class GeminiProviderBase(LLMProviderBase):
             content=content if content else None,
             reasoning_content=reasoning if reasoning else None,
             tool_calls=tool_calls if tool_calls else None,
-            extra={"usage": usage_to_dict(usage, self.model)} if usage else None,
+            extra={"usage": usage_to_dict(usage, self.qualified_model_id())}
+            if usage
+            else None,
         )
 
     async def stream(

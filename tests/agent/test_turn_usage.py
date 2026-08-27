@@ -27,12 +27,18 @@ async def test_turn_usage_aggregates_phases_and_publishes_totals() -> None:
                     completion_tokens=17,
                     total_tokens=14_217,
                     cached_tokens=2_000,
+                    cache_write_tokens=1_000,
                 ),
                 phase="main",
                 model_id="codex:gpt-test",
             )
             await record_turn_usage(
-                {"input": 2_800, "output": 12, "cache": 500},
+                {
+                    "input": 2_800,
+                    "output": 12,
+                    "cache": 500,
+                    "cache_write": 200,
+                },
                 phase="skill_resolver",
                 model_id="codex:gpt-test",
             )
@@ -42,6 +48,7 @@ async def test_turn_usage_aggregates_phases_and_publishes_totals() -> None:
             "input": 17_000,
             "output": 29,
             "cache": 2_500,
+            "cache_write": 1_200,
             "calls": 2,
             "models": ["codex:gpt-test"],
             "phases": {
@@ -49,6 +56,7 @@ async def test_turn_usage_aggregates_phases_and_publishes_totals() -> None:
                     "input": 14_200,
                     "output": 17,
                     "cache": 2_000,
+                    "cache_write": 1_000,
                     "calls": 1,
                     "models": ["codex:gpt-test"],
                 },
@@ -56,6 +64,7 @@ async def test_turn_usage_aggregates_phases_and_publishes_totals() -> None:
                     "input": 2_800,
                     "output": 12,
                     "cache": 500,
+                    "cache_write": 200,
                     "calls": 1,
                     "models": ["codex:gpt-test"],
                 },
@@ -64,6 +73,7 @@ async def test_turn_usage_aggregates_phases_and_publishes_totals() -> None:
         assert len(pushed) == 2
         assert pushed[-1].data["prompt_tokens"] == 17_000
         assert pushed[-1].data["completion_tokens"] == 29
+        assert pushed[-1].data["cache_write_tokens"] == 1_200
         assert pushed[-1].data["metadata"]["turn_total"] is True
         assert pushed[-1].data["metadata"]["calls"] == 2
     finally:

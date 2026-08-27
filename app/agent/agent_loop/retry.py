@@ -288,6 +288,7 @@ async def stream_with_retry(
     state: AgentState | None,
     hooks: list[BaseAgentHook] | None,
     interrupt_event: asyncio.Event | None = None,
+    cache_affinity_key: str | None = None,
     **kwargs,
 ) -> AsyncIterator:
     """Stream from ``primary_provider`` with retry; fall back if exhausted.
@@ -310,6 +311,10 @@ async def stream_with_retry(
     # buffer from the failed attempt (see ``StreamRestart``).
     emitted_any = False
     for provider, provider_label in providers:
+        provider_kwargs = {
+            **kwargs,
+            **provider.cache_affinity_kwargs(cache_affinity_key),
+        }
         for attempt in range(MAX_RETRIES):
             if interrupt_event is not None and interrupt_event.is_set():
                 return
@@ -317,7 +322,7 @@ async def stream_with_retry(
                 if emitted_any:
                     yield STREAM_RESTART
                     emitted_any = False
-                async for chunk in provider.stream(**kwargs):
+                async for chunk in provider.stream(**provider_kwargs):
                     emitted_any = True
                     yield chunk
                 return  # successful completion — stop retry loop

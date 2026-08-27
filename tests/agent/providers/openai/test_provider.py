@@ -112,6 +112,17 @@ class TestOpenAIProvider:
         )
         assert provider.max_tokens == 1000
 
+    def test_factory_binding_qualifies_usage_and_enables_cache_affinity(self):
+        provider = OpenAIProvider(api_key="sk-test", model="gpt-5.6-sol")
+        provider.bind_provider_name("openai")
+
+        assert provider.qualified_model_id() == "openai:gpt-5.6-sol"
+        assert provider._completions.usage_model_id == "openai:gpt-5.6-sol"
+        assert provider._responses.usage_model_id == "openai:gpt-5.6-sol"
+        assert provider.cache_affinity_kwargs("opaque-session") == {
+            "prompt_cache_key": "opaque-session"
+        }
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test CompletionsHandler.chat() and stream() — HTTP integration

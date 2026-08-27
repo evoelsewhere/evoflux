@@ -46,7 +46,7 @@ One `Agent.run()` iteration does the following:
 
 1. hooks project context, workspace instructions, selected Skills, memory and
    other bounded context into the request;
-2. a provider adapter streams text, reasoning, usage and tool calls;
+2. a provider adapter streams text, reasoning, normalized total/cache-read/cache-write usage and tool calls;
 3. tool calls are partitioned into safe concurrent or serial waves;
 4. the permission and sandbox layers authorize execution;
 5. tool results are bounded/offloaded and appended as observations;

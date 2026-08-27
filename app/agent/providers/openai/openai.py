@@ -169,6 +169,17 @@ class OpenAIProvider(LLMProviderBase):
         """
         return ResponsesHandler(model, base_url, headers)
 
+    def cache_affinity_kwargs(self, cache_key: str | None) -> dict[str, Any]:
+        if cache_key and self.provider_name in {"openai", "foundry"}:
+            return {"prompt_cache_key": cache_key}
+        return {}
+
+    def bind_provider_name(self, provider_name: str) -> None:
+        super().bind_provider_name(provider_name)
+        qualified = self.qualified_model_id()
+        self._completions.usage_model_id = qualified
+        self._responses.usage_model_id = qualified
+
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------

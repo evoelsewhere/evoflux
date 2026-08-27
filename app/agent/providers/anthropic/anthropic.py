@@ -9,6 +9,7 @@ import httpx
 from pydantic.types import SecretStr
 
 from app.agent.providers.base import LLMProviderBase
+from app.agent.usage import usage_to_dict
 from app.agent.schemas.chat import (
     AssistantMessage,
     ChatCompletionChunk,
@@ -211,6 +212,24 @@ def _finish_reason(stop_reason: str | None) -> str | None:
     return "tool_calls" if stop_reason == "tool_use" else stop_reason
 
 
+def _usage_from_anthropic(raw_usage: dict[str, Any] | None) -> Usage | None:
+    """Normalize Anthropic's disjoint input classes into total input tokens."""
+    if not raw_usage:
+        return None
+    ordinary = int(raw_usage.get("input_tokens") or 0)
+    cache_read = int(raw_usage.get("cache_read_input_tokens") or 0)
+    cache_write = int(raw_usage.get("cache_creation_input_tokens") or 0)
+    output = int(raw_usage.get("output_tokens") or 0)
+    prompt = ordinary + cache_read + cache_write
+    return Usage(
+        prompt_tokens=prompt,
+        completion_tokens=output,
+        total_tokens=prompt + output,
+        cached_tokens=cache_read or None,
+        cache_write_tokens=cache_write or None,
+    )
+
+
 def _stream_chunk(
     *,
     chunk_id: str,
@@ -281,6 +300,9 @@ class AnthropicProvider(LLMProviderBase):
         anthropic_tools = _anthropic_tools(tools)
         if anthropic_tools:
             payload["tools"] = anthropic_tools
+        cache_control = kwargs.pop("cache_control", {"type": "ephemeral"})
+        if cache_control:
+            payload["cache_control"] = cache_control
         thinking = _apply_thinking(self.model, kwargs, payload)
         _add_sampling(self.model, kwargs, payload, thinking=thinking)
         return payload
@@ -326,10 +348,16 @@ class AnthropicProvider(LLMProviderBase):
                     ),
                 )
             )
+        usage = _usage_from_anthropic(data.get("usage"))
         return AssistantMessage(
             content=text or None,
             reasoning_content=reasoning or None,
             tool_calls=tool_calls or None,
+            extra=(
+                {"usage": usage_to_dict(usage, self.qualified_model_id())}
+                if usage is not None
+                else None
+            ),
         )
 
     async def stream(
@@ -363,9 +391,9 @@ class AnthropicProvider(LLMProviderBase):
                     if event_type == "message_start":
                         raw_usage = event.get("message", {}).get("usage", {})
                         if isinstance(raw_usage, dict):
-                            usage.prompt_tokens = int(
-                                raw_usage.get("input_tokens") or 0
-                            )
+                            normalized = _usage_from_anthropic(raw_usage)
+                            if normalized is not None:
+                                usage = normalized
                     elif event_type == "content_block_start":
                         content_block = event.get("content_block", {})
                         if (

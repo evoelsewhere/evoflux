@@ -1841,6 +1841,10 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         text: 'QwenCloud dùng DASHSCOPE_API_KEY và mặc định trỏ tới endpoint OpenAI-compatible pay-as-you-go quốc tế. Key Token Plan và Coding Plan (sk-sp-…) không dùng lẫn với key pay-as-you-go: hãy chép toàn bộ Base URL tương ứng vào Settings. Điều khoản Token Plan Individual có thể hạn chế schedule và automation không có người giám sát, nên cần kiểm tra gói trước khi dùng cho các lượt chạy đó.',
       },
       {
+        type: 'p',
+        text: 'Provider có cache sẽ tự tái sử dụng prefix ổn định khi API của họ cho phép. Telemetry → Models tách cache read, cache write và ordinary input để có thể kiểm tra hit rate cùng chi phí pay-as-you-go ước tính. Codex, Copilot, Kimi Code và Ollama là bề mặt subscription/local nên token usage không được trình bày như USD spend thực tế.',
+      },
+      {
         type: 'tips',
         items: [
           'API key / OAuth / daemon local — ba kiểu kết nối',

@@ -190,6 +190,7 @@ class TestWrapModelCall:
                         "input": 100,
                         "output": 50,
                         "cache": 25,
+                        "cache_write": 15,
                         "thoughts": 10,
                         "tool_use": 5,
                         "cost": {"estimated_usd": 0.00125},
@@ -206,6 +207,7 @@ class TestWrapModelCall:
         assert chat.attributes["gen_ai.usage.input_tokens"] == 100
         assert chat.attributes["gen_ai.usage.output_tokens"] == 50
         assert chat.attributes["gen_ai.usage.cache_read.input_tokens"] == 25
+        assert chat.attributes["gen_ai.usage.cache_write.input_tokens"] == 15
         assert chat.attributes["gen_ai.usage.reasoning_tokens"] == 10
         assert chat.attributes["gen_ai.usage.tool_use_tokens"] == 5
         assert chat.attributes["gen_ai.usage.estimated_cost_usd"] == 0.00125

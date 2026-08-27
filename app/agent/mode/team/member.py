@@ -398,6 +398,7 @@ class TeamMemberBase(abc.ABC):
             "completion_tokens": 0,
             "total_tokens": 0,
             "cached_tokens": 0,
+            "cache_write_tokens": 0,
         }
         # Session-level runtime selection can differ from the blueprint model.
         # Roster introspection uses these fields so routing decisions reflect

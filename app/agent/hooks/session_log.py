@@ -204,6 +204,7 @@ class SessionLogHook(BaseAgentHook):
                 completion_tokens=chunk.usage.completion_tokens,
                 total_tokens=chunk.usage.total_tokens,
                 cached_tokens=getattr(chunk.usage, "cached_tokens", None),
+                cache_write_tokens=getattr(chunk.usage, "cache_write_tokens", None),
                 thoughts_tokens=getattr(chunk.usage, "thoughts_tokens", None),
                 tool_use_tokens=getattr(chunk.usage, "tool_use_tokens", None),
                 model=chunk.model,

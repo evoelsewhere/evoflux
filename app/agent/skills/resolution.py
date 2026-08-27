@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.agent.providers.base import get_qualified_model_id
 from app.agent.schemas.chat import HumanMessage, SystemMessage
 from app.agent.skills.models import SkillRecord
 from app.agent.turn_usage import record_turn_usage
@@ -134,7 +135,7 @@ async def resolve_skill(
         await record_turn_usage(
             usage,
             phase="skill_resolver",
-            model_id=getattr(provider, "model", None),
+            model_id=get_qualified_model_id(provider),
         )
     try:
         payload = _DecisionPayload.model_validate_json(

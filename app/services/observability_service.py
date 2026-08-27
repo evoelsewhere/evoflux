@@ -149,6 +149,7 @@ class ObservabilitySummary:
     total_input_tokens: int
     total_output_tokens: int
     total_cached_tokens: int
+    total_cache_write_tokens: int
     total_estimated_cost_usd: float
     failed_turns: int
     error_spans: int
@@ -183,7 +184,8 @@ class ObservabilitySummary:
                 "input_tokens": self.total_input_tokens,
                 "output_tokens": self.total_output_tokens,
                 "cached_tokens": self.total_cached_tokens,
-                "cache_percent": _percent(
+                "cache_write_tokens": self.total_cache_write_tokens,
+                "cache_percent": _cache_percent(
                     self.total_cached_tokens, self.total_input_tokens
                 ),
                 "estimated_cost_usd": self.total_estimated_cost_usd,
@@ -245,6 +247,7 @@ def _empty_summary(
         total_input_tokens=0,
         total_output_tokens=0,
         total_cached_tokens=0,
+        total_cache_write_tokens=0,
         total_estimated_cost_usd=0.0,
         failed_turns=0,
         error_spans=0,
@@ -284,6 +287,11 @@ def _percent(part: int | float, total: int | float) -> float:
     if total <= 0:
         return 0.0
     return round(float(part) / float(total) * 100, 1)
+
+
+def _cache_percent(cached: int | float, total_input: int | float) -> float:
+    """Return a bounded hit rate, including for historical malformed spans."""
+    return _percent(min(max(cached, 0), max(total_input, 0)), total_input)
 
 
 def _create_spans_window_view(
@@ -392,6 +400,7 @@ def _run_queries(
           (SELECT coalesce(sum(try_cast(attributes['gen_ai.usage.input_tokens'] AS BIGINT)), 0) FROM llm_spans) AS input_tokens,
           (SELECT coalesce(sum(try_cast(attributes['gen_ai.usage.output_tokens'] AS BIGINT)), 0) FROM llm_spans) AS output_tokens,
           (SELECT coalesce(sum(try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT)), 0) FROM llm_spans) AS cached_tokens,
+          (SELECT coalesce(sum(try_cast(attributes['gen_ai.usage.cache_write.input_tokens'] AS BIGINT)), 0) FROM llm_spans) AS cache_write_tokens,
           (SELECT coalesce(sum(try_cast(attributes['gen_ai.usage.estimated_cost_usd'] AS DOUBLE)), 0.0) FROM llm_spans) AS estimated_cost_usd,
           (SELECT coalesce(quantile_cont(duration_ms, 0.5), 0.0) FROM turn_spans) AS turn_p50,
           (SELECT coalesce(quantile_cont(duration_ms, 0.95), 0.0) FROM turn_spans) AS turn_p95,
@@ -414,6 +423,7 @@ def _run_queries(
         in_tokens,
         out_tokens,
         cached_tokens,
+        cache_write_tokens,
         estimated_cost_usd,
         turn_p50,
         turn_p95,
@@ -441,7 +451,9 @@ def _run_queries(
 
     bucket_size = "hour" if window_end - window_start <= timedelta(days=1) else "day"
     bucket_unit = "hour" if bucket_size == "hour" else "day"
-    bucket_format = "%Y-%m-%dT%H:00:00Z" if bucket_size == "hour" else "%Y-%m-%dT00:00:00Z"
+    bucket_format = (
+        "%Y-%m-%dT%H:00:00Z" if bucket_size == "hour" else "%Y-%m-%dT00:00:00Z"
+    )
     series_rows = con.execute(
         f"""
         SELECT
@@ -517,6 +529,7 @@ def _run_queries(
             coalesce(sum(try_cast(attributes['gen_ai.usage.input_tokens']  AS BIGINT)), 0) AS input_tokens,
             coalesce(sum(try_cast(attributes['gen_ai.usage.output_tokens'] AS BIGINT)), 0) AS output_tokens,
             coalesce(sum(try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT)), 0) AS cached_tokens,
+            coalesce(sum(try_cast(attributes['gen_ai.usage.cache_write.input_tokens'] AS BIGINT)), 0) AS cache_write_tokens,
             coalesce(sum(try_cast(attributes['gen_ai.usage.estimated_cost_usd'] AS DOUBLE)), 0.0) AS estimated_cost_usd,
             count_if(status = 'ERROR') AS errors,
             coalesce(avg(duration_ms), 0.0) AS avg_ms,
@@ -536,7 +549,8 @@ def _run_queries(
             "input_tokens": int(it),
             "output_tokens": int(ot),
             "cached_tokens": int(ct),
-            "cache_percent": _percent(int(ct), int(it)),
+            "cache_write_tokens": int(cwt),
+            "cache_percent": _cache_percent(int(ct), int(it)),
             "estimated_cost_usd": round(float(cost), 8),
             "errors": int(errors),
             "error_rate": _percent(int(errors), int(c)),
@@ -544,7 +558,7 @@ def _run_queries(
             "p50_ms": round(float(p50), 1),
             "p95_ms": round(float(p95), 1),
         }
-        for provider, m, c, it, ot, ct, cost, errors, avg_ms, p50, p95 in model_rows
+        for provider, m, c, it, ot, ct, cwt, cost, errors, avg_ms, p50, p95 in model_rows
     ]
 
     cache_step_rows = con.execute(
@@ -564,10 +578,12 @@ def _run_queries(
             count(*) AS calls,
             coalesce(sum(try_cast(attributes['gen_ai.usage.input_tokens'] AS BIGINT)), 0) AS input_tokens,
             coalesce(sum(try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT)), 0) AS cached_tokens,
+            coalesce(sum(try_cast(attributes['gen_ai.usage.cache_write.input_tokens'] AS BIGINT)), 0) AS cache_write_tokens,
             coalesce(sum(try_cast(attributes['gen_ai.usage.estimated_cost_usd'] AS DOUBLE)), 0.0) AS estimated_cost_usd
         FROM llm_spans
         WHERE attributes['gen_ai.usage.input_tokens'] IS NOT NULL
            OR attributes['gen_ai.usage.cache_read.input_tokens'] IS NOT NULL
+           OR attributes['gen_ai.usage.cache_write.input_tokens'] IS NOT NULL
         GROUP BY step, provider, model
         ORDER BY estimated_cost_usd DESC, input_tokens DESC
         """
@@ -581,11 +597,24 @@ def _run_queries(
             "calls": int(calls),
             "input_tokens": int(input_tokens),
             "cached_tokens": int(cached_tokens),
+            "cache_write_tokens": int(cache_write_tokens),
             "miss_tokens": max(int(input_tokens) - int(cached_tokens), 0),
-            "cache_percent": _percent(int(cached_tokens), int(input_tokens)),
+            "ordinary_input_tokens": max(
+                int(input_tokens) - int(cached_tokens) - int(cache_write_tokens), 0
+            ),
+            "cache_percent": _cache_percent(int(cached_tokens), int(input_tokens)),
             "estimated_cost_usd": round(float(cost), 8),
         }
-        for step, provider, model, calls, input_tokens, cached_tokens, cost in cache_step_rows
+        for (
+            step,
+            provider,
+            model,
+            calls,
+            input_tokens,
+            cached_tokens,
+            cache_write_tokens,
+            cost,
+        ) in cache_step_rows
     ]
 
     tool_rows = con.execute(
@@ -625,6 +654,7 @@ def _run_queries(
         total_input_tokens=int(in_tokens),
         total_output_tokens=int(out_tokens),
         total_cached_tokens=int(cached_tokens),
+        total_cache_write_tokens=int(cache_write_tokens),
         total_estimated_cost_usd=round(float(estimated_cost_usd), 8),
         failed_turns=int(failed_turns),
         error_spans=int(error_spans),

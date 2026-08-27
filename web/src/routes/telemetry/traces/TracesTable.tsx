@@ -225,5 +225,5 @@ function TraceRow({
 
 function cachePercent(cachedTokens: number, inputTokens: number): number {
   if (inputTokens <= 0) return 0
-  return (cachedTokens / inputTokens) * 100
+  return Math.min((Math.max(cachedTokens, 0) / inputTokens) * 100, 100)
 }

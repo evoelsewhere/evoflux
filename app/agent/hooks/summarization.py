@@ -50,7 +50,7 @@ from app.agent.outbound_redaction import (
     load_outbound_pii_policy,
     protect_outbound_payload,
 )
-from app.agent.providers.base import LLMProviderBase
+from app.agent.providers.base import LLMProviderBase, get_qualified_model_id
 from app.agent.providers.model_metadata import get_model_limits
 from app.agent.skills.activation import is_skill_activation_content
 from app.agent.schemas.chat import (
@@ -893,7 +893,7 @@ class SummarizationHook(BaseAgentHook):
         ) as span:
             t0 = time.monotonic()
             last_usage = None
-            model_id = getattr(self._llm_provider, "model", None)
+            model_id = get_qualified_model_id(self._llm_provider)
             provider_name = getattr(self._llm_provider, "provider_name", None)
             span.set_attribute("gen_ai.operation.name", "summarization")
             if provider_name:

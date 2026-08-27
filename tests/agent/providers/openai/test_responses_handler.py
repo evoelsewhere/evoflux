@@ -341,6 +341,22 @@ class TestResponsesHandler:
         )
         assert body["prompt_cache_key"] == "session-123"
 
+    def test_usage_from_data_preserves_cache_write_tokens(self, handler):
+        usage = handler._usage_from_data(
+            {
+                "input_tokens": 1_000,
+                "output_tokens": 10,
+                "total_tokens": 1_010,
+                "input_tokens_details": {
+                    "cached_tokens": 700,
+                    "cache_write_tokens": 200,
+                },
+            }
+        )
+
+        assert usage.cached_tokens == 700
+        assert usage.cache_write_tokens == 200
+
     def test_build_request_omits_temperature(self, handler):
         """Responses API does not support temperature."""
         messages = [HumanMessage(content="Hello")]

@@ -26,6 +26,7 @@ def _make_chunk_with_usage(
     completion=40,
     total=140,
     cached=None,
+    cache_write=None,
     model="mock",
 ):
     usage = Usage(
@@ -35,6 +36,8 @@ def _make_chunk_with_usage(
     )
     if cached is not None:
         object.__setattr__(usage, "cached_tokens", cached)
+    if cache_write is not None:
+        object.__setattr__(usage, "cache_write_tokens", cache_write)
     delta = ChatCompletionDelta(content=None)
     choice = ChatCompletionChunkChoice(index=0, delta=delta, finish_reason="stop")
     return ChatCompletionChunk(
@@ -145,6 +148,7 @@ async def test_on_model_delta_emits_current_context_and_full_turn_total():
                     completion=17,
                     total=14_217,
                     cached=2_000,
+                    cache_write=1_000,
                     model="model-a",
                 ),
             )
@@ -163,6 +167,7 @@ async def test_on_model_delta_emits_current_context_and_full_turn_total():
                 "input": 14_200,
                 "output": 17,
                 "cache": 2_000,
+                "cache_write": 1_000,
                 "calls": 1,
                 "models": ["model-a"],
             }
@@ -190,6 +195,7 @@ async def test_after_agent_emits_turn_total_after_multiple_usage_events():
                 completion=20,
                 total=120,
                 cached=10,
+                cache_write=5,
                 model="model-a",
             ),
         )
@@ -201,6 +207,7 @@ async def test_after_agent_emits_turn_total_after_multiple_usage_events():
                 completion=30,
                 total=150,
                 cached=15,
+                cache_write=7,
                 model="model-b",
             ),
         )
@@ -216,6 +223,7 @@ async def test_after_agent_emits_turn_total_after_multiple_usage_events():
     assert total["completion_tokens"] == 50
     assert total["total_tokens"] == 270
     assert total["cached_tokens"] == 25
+    assert total["cache_write_tokens"] == 12
     assert total["metadata"] == {
         "turn_total": True,
         "agent": "lead",

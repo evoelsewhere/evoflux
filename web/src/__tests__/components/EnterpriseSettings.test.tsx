@@ -165,6 +165,7 @@ vi.mock('@/queries', () => ({
         input_tokens: 100_000,
         output_tokens: 20_000,
         cached_tokens: 10_000,
+        cache_write_tokens: 2_000,
         cache_percent: 10,
         estimated_cost_usd: 1.25,
         errors: 0,

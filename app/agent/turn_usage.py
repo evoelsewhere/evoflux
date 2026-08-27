@@ -19,6 +19,7 @@ class _UsageTotals:
     input: int = 0
     output: int = 0
     cache: int = 0
+    cache_write: int = 0
     thoughts: int = 0
     tool_use: int = 0
     calls: int = 0
@@ -28,6 +29,7 @@ class _UsageTotals:
         self.input += usage["input"]
         self.output += usage["output"]
         self.cache += usage["cache"]
+        self.cache_write += usage["cache_write"]
         self.thoughts += usage["thoughts"]
         self.tool_use += usage["tool_use"]
         self.calls += 1
@@ -39,6 +41,7 @@ class _UsageTotals:
             "input": self.input,
             "output": self.output,
             "cache": self.cache,
+            "cache_write": self.cache_write,
             "calls": self.calls,
         }
         if self.thoughts:
@@ -139,6 +142,7 @@ async def record_turn_usage(
                     completion_tokens=snapshot["output"],
                     total_tokens=snapshot["input"] + snapshot["output"],
                     cached_tokens=snapshot["cache"],
+                    cache_write_tokens=snapshot["cache_write"],
                     thoughts_tokens=snapshot.get("thoughts"),
                     tool_use_tokens=snapshot.get("tool_use"),
                     metadata={
@@ -191,6 +195,7 @@ def _normalize_usage(
             "input": usage.prompt_tokens,
             "output": usage.completion_tokens,
             "cache": usage.cached_tokens,
+            "cache_write": usage.cache_write_tokens,
             "thoughts": usage.thoughts_tokens,
             "tool_use": usage.tool_use_tokens,
         }
@@ -207,6 +212,7 @@ def _normalize_usage(
         "input": max(0, token_value("input", "prompt_tokens")),
         "output": max(0, token_value("output", "completion_tokens")),
         "cache": max(0, token_value("cache", "cached_tokens")),
+        "cache_write": max(0, token_value("cache_write", "cache_write_tokens")),
         "thoughts": max(0, token_value("thoughts", "thoughts_tokens")),
         "tool_use": max(0, token_value("tool_use", "tool_use_tokens")),
     }

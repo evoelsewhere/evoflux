@@ -36,14 +36,14 @@ Status meanings:
 | Pull/merge request review | Optional | Pull Requests panel and review sessions | review routes, code-review service, provider connections | [Git and guarded edits](git-reviews-and-guarded-edits.md) |
 | Memory facts | Implemented | Automatic recall and `memory_search` | scoped memory models/service and memory hooks | [Memory and Dream](memory-and-dream.md) |
 | Markdown wiki and Dream | Optional | Wiki panel and Dream settings/run | wiki/dream services and Dream scheduler | [Memory and Dream](memory-and-dream.md) |
-| Model providers | Optional | Providers, model picker and per-agent model | provider catalog/factory/adapters | [Models and providers](models-and-providers.md) |
+| Model providers | Optional | Providers, model picker, per-agent model and automatic prompt caching | provider catalog/factory/adapters | [Models and providers](models-and-providers.md) |
 | Agent Skills | Implemented | Composer selection and Settings editor | skill discovery, resolution and activation | [Tools and integrations](tools-skills-mcp-and-plugins.md) |
 | MCP client | Optional | MCP settings and agent tools | `app/agent/mcp/` and MCP routes | [Tools and integrations](tools-skills-mcp-and-plugins.md) |
 | Agent Plugins | Optional | Plugin Center and CLI | `app/plugin_platform/` | [Tools and integrations](tools-skills-mcp-and-plugins.md) |
 | Built-in browser | Optional | Persistent browser workbench | direct-browser bridge and Tauri commands | [Browser and WebBridge](browser-and-webbridge.md) |
 | WebBridge | Optional | Browser companion status and side panel | WebBridge routes/models/services; external extension | [Browser and WebBridge](browser-and-webbridge.md) |
 | Sandbox and permissions | Implemented | Permission modes and Settings | permission engine, sandbox and outbound redaction | [Security and permissions](security-and-permissions.md) |
-| Telemetry and diagnostics | Implemented | `/telemetry`, Diagnostics, health and metrics | OTEL, DuckDB aggregation, Prometheus, diagnostics routes | [Observability](observability-and-diagnostics.md) |
+| Telemetry and diagnostics | Implemented | `/telemetry`, cache read/write, Diagnostics, health and metrics | OTEL, DuckDB aggregation, Prometheus, diagnostics routes | [Observability](observability-and-diagnostics.md) |
 | Conductor managed resources | Optional | Connection/enterprise settings | `app/conductor/` and settings routes | [Security and permissions](security-and-permissions.md) |
 | Desktop packaging and updates | Implemented | Native app, updater and installers | `desktop/`, packaging scripts and CI | [Release and packaging](../development/release-and-packaging.md) |
 

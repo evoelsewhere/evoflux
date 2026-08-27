@@ -147,6 +147,25 @@ class TestDeepSeekWireFieldName:
         p = DeepSeekProvider(api_key="ds-test-key", model="deepseek-v4-pro")
         assert p._completions.uses_max_completion_tokens is False
 
+    def test_top_level_cache_hit_tokens_are_normalized(self):
+        from app.agent.providers.openai.schemas import OpenAIUsage
+
+        p = DeepSeekProvider(api_key="ds-test-key", model="deepseek-v4-flash")
+        raw = OpenAIUsage.model_validate(
+            {
+                "prompt_tokens": 1_000,
+                "completion_tokens": 10,
+                "total_tokens": 1_010,
+                "prompt_cache_hit_tokens": 800,
+                "prompt_cache_miss_tokens": 200,
+            }
+        )
+
+        usage = p._completions._usage_from_openai(raw)
+
+        assert usage.prompt_tokens == 1_000
+        assert usage.cached_tokens == 800
+
 
 # ============================================================================
 # Provider factory — deepseek branch

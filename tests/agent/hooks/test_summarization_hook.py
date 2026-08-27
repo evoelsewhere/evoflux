@@ -738,6 +738,7 @@ async def test_summarization_usage_is_included_in_turn_total():
             "input": 4_000,
             "output": 200,
             "cache": 1_000,
+            "cache_write": 0,
             "calls": 1,
             "models": ["summary-model"],
             "phases": {
@@ -745,6 +746,7 @@ async def test_summarization_usage_is_included_in_turn_total():
                     "input": 4_000,
                     "output": 200,
                     "cache": 1_000,
+                    "cache_write": 0,
                     "calls": 1,
                     "models": ["summary-model"],
                 }
