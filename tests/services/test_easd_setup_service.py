@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+from uuid import uuid4
 
 import pytest
 import yaml
@@ -10,6 +15,7 @@ from app.agent.skills.discovery import (
     select_skill_records_for_mode,
 )
 from app.easd_skills import (
+    EASD_LEGACY_SKILL_SHA256,
     EASD_LEGACY_OPTIONAL_SKELETON_FILES,
     EASD_SKILL_NAMES,
     EASD_SKELETON_FILES,
@@ -29,6 +35,7 @@ from app.services.easd_setup_service import (
     localize_legacy_runs,
     preview_runtime_migration,
 )
+from app.services.easd_repository_store import EasdRepositoryStore
 
 
 def test_specify_skill_documents_non_shell_verification_command_grammar():
@@ -38,6 +45,15 @@ def test_specify_skill_documents_non_shell_verification_command_grammar():
     assert "python -m pytest tests/test_simple.py" in skill
     assert 'python -c "...; ..."' in skill
     assert "`&&`, `||`, `;`, `|`, `>`, or `<`" in skill
+
+
+@pytest.mark.parametrize("name", EASD_SKILL_NAMES)
+def test_phase_skills_use_runtime_context_not_tracked_data_directory(name):
+    skill = read_easd_skill(name)
+
+    assert "`runtime_directory`" in skill
+    assert "injected EASD context" in skill
+    assert "current run under\n`data_directory`" not in skill
 
 
 def test_initialize_repository_creates_stable_easd_contract(tmp_path):
@@ -111,6 +127,120 @@ def test_initialize_repository_creates_stable_easd_contract(tmp_path):
     assert existing_document.read_text(encoding="utf-8") == (
         "existing project knowledge\n"
     )
+
+
+def test_missing_ignored_runtime_is_upgradeable_without_repair(tmp_path):
+    target = EasdRepositoryTarget(path=str(tmp_path), name="backend")
+    initialize_repositories([target])
+    shutil.rmtree(tmp_path / ".evoflux" / "easd" / ".local")
+
+    before = inspect_repository(target)
+    assert before["state"] == "upgrade_required"
+    assert "Initialize local EASD" in before["issue"]
+
+    after = initialize_repositories([target])[0]
+    assert after["state"] == "ready"
+    assert (tmp_path / EASD_RUNTIME_DIRECTORY).is_dir()
+
+
+def test_linked_worktree_reuses_source_runtime_and_templates(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    target = EasdRepositoryTarget(path=str(source), name="source")
+    initialize_repositories([target])
+    subprocess.run(["git", "-C", str(source), "init", "-q"], check=True)
+    subprocess.run(["git", "-C", str(source), "add", "-A"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(source),
+            "-c",
+            "user.name=EASD Test",
+            "-c",
+            "user.email=easd@example.invalid",
+            "commit",
+            "-qm",
+            "init",
+        ],
+        check=True,
+    )
+    worktree = tmp_path / "worktree"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(source),
+            "worktree",
+            "add",
+            "-q",
+            str(worktree),
+            "-b",
+            "easd-test",
+        ],
+        check=True,
+    )
+
+    inspected = inspect_repository(
+        EasdRepositoryTarget(path=str(worktree), name="worktree")
+    )
+
+    assert inspected["state"] == "ready"
+    assert inspected["runtime_owner_path"] == str(source.resolve())
+    assert inspected["runtime_shared_across_worktrees"] is True
+    assert inspected["runtime_path"] == str(source / EASD_RUNTIME_DIRECTORY)
+
+    shutil.rmtree(source / ".evoflux" / "easd" / ".local")
+    worktree_target = EasdRepositoryTarget(path=str(worktree), name="worktree")
+    assert inspect_repository(worktree_target)["state"] == "upgrade_required"
+    assert initialize_repositories([worktree_target])[0]["state"] == "ready"
+    assert (source / EASD_RUNTIME_DIRECTORY).is_dir()
+    assert (source / EASD_TEMPLATES_DIRECTORY / "run.yaml").is_file()
+
+    prior_run_id = uuid4()
+    prior_checkout_run = (
+        worktree / EASD_RUNTIME_DIRECTORY / f"prior-worktree--{prior_run_id}"
+    )
+    prior_checkout_run.mkdir(parents=True)
+    (prior_checkout_run / "run.yaml").write_text(
+        f"id: {prior_run_id}\ntitle: Prior worktree\nstatus: active\n",
+        encoding="utf-8",
+    )
+    assert EasdRepositoryStore(worktree).load_run(prior_run_id).directory == (
+        prior_checkout_run
+    )
+    new_run_id = uuid4()
+    new_run = EasdRepositoryStore(worktree).create_run(
+        run={"id": str(new_run_id), "title": "Shared runtime", "status": "intent"},
+        intent={"title": "Shared runtime", "problem": "Avoid split ledgers"},
+    )
+    assert new_run.directory.parent == source / EASD_RUNTIME_DIRECTORY
+
+
+def test_exact_legacy_bundled_skill_refreshes_but_project_edit_survives(
+    tmp_path, monkeypatch
+):
+    target = EasdRepositoryTarget(path=str(tmp_path), name="backend")
+    initialize_repositories([target])
+    skill = tmp_path / ".evoflux" / "skills" / "easd-plan" / "SKILL.md"
+    old_generated = skill.read_text(encoding="utf-8").replace(
+        "`runtime_directory`", "`legacy_runtime_directory`", 1
+    )
+    skill.write_text(old_generated, encoding="utf-8")
+    monkeypatch.setitem(
+        EASD_LEGACY_SKILL_SHA256,
+        "easd-plan",
+        __import__("hashlib").sha256(old_generated.encode("utf-8")).hexdigest(),
+    )
+
+    assert inspect_repository(target)["state"] == "upgrade_required"
+    initialize_repositories([target])
+    assert skill.read_text(encoding="utf-8") == read_easd_skill("easd-plan")
+
+    edited = skill.read_text(encoding="utf-8") + "\nProject extension.\n"
+    skill.write_text(edited, encoding="utf-8")
+    initialize_repositories([target])
+    assert skill.read_text(encoding="utf-8") == edited
 
 
 def test_legacy_upgrade_preserves_existing_valid_edited_skill(tmp_path):
@@ -237,6 +367,65 @@ def test_runtime_migration_removes_only_unchanged_generated_legacy_files(tmp_pat
     assert not unchanged.exists()
     assert not placeholder.exists()
     assert customized.read_text(encoding="utf-8") == "project-specific template\n"
+
+
+def test_runtime_migration_rolls_back_completed_moves_on_failure(tmp_path, monkeypatch):
+    target = EasdRepositoryTarget(path=str(tmp_path), name="backend")
+    initialize_repositories([target])
+    legacy = tmp_path / "documents" / "easd" / "runs"
+    legacy.mkdir(parents=True)
+    sources = []
+    for title in ("first", "second"):
+        source = legacy / f"{title}--{uuid4()}"
+        source.mkdir()
+        (source / "run.yaml").write_text(f"title: {title}\n", encoding="utf-8")
+        sources.append(source)
+    real_replace = os.replace
+    move_calls = 0
+
+    def fail_second_directory_move(source, destination):
+        nonlocal move_calls
+        if Path(source).is_dir():
+            move_calls += 1
+            if move_calls == 2:
+                raise OSError("simulated move failure")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(
+        "app.services.easd_setup_service.os.replace", fail_second_directory_move
+    )
+
+    with pytest.raises(OSError, match="simulated move failure"):
+        localize_legacy_runs([target])
+
+    assert all(source.is_dir() for source in sources)
+    assert list((tmp_path / EASD_RUNTIME_DIRECTORY).iterdir()) == []
+
+
+def test_runtime_migration_revalidates_generated_content_before_delete(
+    tmp_path, monkeypatch
+):
+    target = EasdRepositoryTarget(path=str(tmp_path), name="backend")
+    initialize_repositories([target])
+    generated = tmp_path / "documents" / "easd" / "templates" / "run.yaml"
+    generated.parent.mkdir(parents=True)
+    generated.write_text(read_easd_template("run.yaml"), encoding="utf-8")
+    real_preview = preview_runtime_migration
+
+    def preview_then_customize(targets):
+        result = real_preview(targets)
+        generated.write_text("project custom content\n", encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(
+        "app.services.easd_setup_service.preview_runtime_migration",
+        preview_then_customize,
+    )
+
+    with pytest.raises(EasdSetupConflict, match="changed"):
+        localize_legacy_runs([target])
+
+    assert generated.read_text(encoding="utf-8") == "project custom content\n"
 
 
 def test_setup_normalizes_only_legacy_run_and_template_index_entries(tmp_path):

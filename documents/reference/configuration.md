@@ -47,8 +47,9 @@ Derived values:
 | `<workspace>/.evoflux/launch.json` | repository | preview/process launch definitions |
 | `<workspace>/.evoflux/easd/config.json` | repository/EASD setup | tracked knowledge path, fixed local runtime policy, manual publish policy, rules, and project-skill contract |
 | `<workspace>/<data_directory>/` | repository | accepted Specs and explicitly adopted feature/architecture/reference/historical docs (default `documents/easd`) |
-| `<workspace>/.evoflux/easd/.local/` | machine-local | ignored Runs, plans, missions, evidence, events, Recovery, templates, locks/index/session bindings |
+| `<source-workspace>/.evoflux/easd/.local/` | machine-local | ignored Runs, plans, missions, evidence, events, Recovery, templates and locks; linked Git worktrees resolve to this canonical source owner |
 | `<workspace>/.evoflux/skills/easd-*/` | repository | Coding-only portable EASD phase Skills installed by EASD setup |
+| `<workspace>/<data_directory>/records/runs/` | repository/manual | allowlisted compact convergence records created only by explicit Publish audit record confirmation |
 
 Project `.env` is loaded first and `~/.config/evoflux/.env` overrides it.
 Process environment values follow Pydantic settings precedence. Keep secrets out

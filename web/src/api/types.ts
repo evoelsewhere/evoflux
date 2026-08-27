@@ -1329,6 +1329,8 @@ export interface EasdRepositorySetup {
   data_path: string
   runtime_directory: string
   runtime_path: string
+  runtime_owner_path: string
+  runtime_shared_across_worktrees: boolean
   legacy_run_count: number
   legacy_generated_file_count: number
   rules_path: string
@@ -1350,6 +1352,7 @@ export interface EasdRuntimeMigrationRepository {
   path: string
   name: string
   display_name: string | null
+  runtime_owner_path: string
   legacy_run_count: number
   runs: EasdRuntimeMigrationRun[]
   legacy_generated_file_count: number
@@ -1373,6 +1376,14 @@ export interface EasdRuntimeMigrationPreview {
 export interface EasdRuntimeMigrationResult extends EasdRuntimeMigrationPreview {
   moved_run_count: number
   removed_generated_file_count: number
+}
+
+export interface EasdPublication {
+  eligible: boolean
+  published: boolean
+  created?: boolean | null
+  path: string | null
+  record: Record<string, unknown> | null
 }
 
 export interface EasdSetupResponse {

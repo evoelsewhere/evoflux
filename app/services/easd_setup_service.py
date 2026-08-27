@@ -7,6 +7,7 @@ import hashlib
 import os
 import tempfile
 import re
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
@@ -21,6 +22,7 @@ from app.core.skill_scope import (
     serialize_skill_modes,
 )
 from app.easd_skills import (
+    EASD_LEGACY_SKILL_SHA256,
     EASD_LEGACY_OPTIONAL_SKELETON_FILES,
     EASD_SKILL_NAMES,
     EASD_SKELETON_FILES,
@@ -29,6 +31,11 @@ from app.easd_skills import (
     read_easd_skeleton,
     read_easd_skill,
     read_easd_template,
+)
+from app.services.easd_runtime import (
+    easd_runtime_lock,
+    easd_runtime_owner,
+    easd_runtime_path,
 )
 
 
@@ -58,6 +65,22 @@ _RUN_SUFFIX = re.compile(
     r"--(?P<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
 )
 _KNOWLEDGE_INDEX_CONTRACT = yaml.safe_load(read_easd_skeleton("index.yaml"))
+_LEGACY_SKILL_RUNTIME_CONTRACT = (
+    "Read `.evoflux/easd/config.json`, its `rules_file`, and the current run under\n"
+    "`data_directory` before phase work."
+)
+_CURRENT_SKILL_RUNTIME_CONTRACT = (
+    "Read `.evoflux/easd/config.json` and its `rules_file` before phase work. Treat\n"
+    "the injected EASD context as the authoritative current Run; when the owning\n"
+    "runtime is accessible, corroborate it under `runtime_directory`. An isolated\n"
+    "worktree intentionally has no checkout-local runtime copy."
+)
+_LEGACY_SKILL_SQLITE_CONTRACT = (
+    "never reconstruct authority from chat memory or SQLite."
+)
+_CURRENT_SKILL_SQLITE_CONTRACT = (
+    "never reconstruct authority from chat memory or a stale database-only projection."
+)
 _LEGACY_KNOWLEDGE_README_SHA256 = (
     "886b1bb3b7d2e6c1939df684285a4c80c431716cdca8ecca53d85f110b4bfb8f"
 )
@@ -191,6 +214,12 @@ def _inspect_skill_bundle(root: Path) -> tuple[list[str], str | None]:
             _description, definition_error = parse_skill_definition(name, content)
             if definition_error:
                 raise ValueError(definition_error)
+            if (
+                hashlib.sha256(content.encode("utf-8")).hexdigest()
+                == EASD_LEGACY_SKILL_SHA256.get(name)
+                or _LEGACY_SKILL_RUNTIME_CONTRACT in content
+            ):
+                missing.append(name)
             modes, scope_error = read_skill_modes_with_diagnostic(directory)
             if scope_error:
                 raise ValueError(scope_error)
@@ -199,6 +228,42 @@ def _inspect_skill_bundle(root: Path) -> tuple[list[str], str | None]:
         except (OSError, ValueError) as exc:
             return [], f"Invalid EASD skill {name}: {exc}"
     return missing, None
+
+
+def _is_legacy_bundled_skill(path: Path, name: str) -> bool:
+    expected = EASD_LEGACY_SKILL_SHA256.get(name)
+    if not expected or not path.is_file() or path.is_symlink():
+        return False
+    try:
+        content = _read_bounded_text(
+            path,
+            limit=MAX_SKILL_FILE_BYTES,
+            label=f"{name}/SKILL.md",
+        )
+    except (OSError, ValueError):
+        return False
+    return hashlib.sha256(content.encode("utf-8")).hexdigest() == expected
+
+
+def _normalize_legacy_skill_runtime_contract(path: Path) -> None:
+    if not path.is_file() or path.is_symlink():
+        return
+    content = _read_bounded_text(
+        path,
+        limit=MAX_SKILL_FILE_BYTES,
+        label=f"{path.parent.name}/SKILL.md",
+    )
+    normalized = content.replace(
+        _LEGACY_SKILL_RUNTIME_CONTRACT,
+        _CURRENT_SKILL_RUNTIME_CONTRACT,
+        1,
+    ).replace(
+        _LEGACY_SKILL_SQLITE_CONTRACT,
+        _CURRENT_SKILL_SQLITE_CONTRACT,
+        1,
+    )
+    if normalized != content:
+        _atomic_write_text(path, normalized)
 
 
 def _inspect_skeleton(
@@ -314,8 +379,10 @@ def _legacy_run_directories(root: Path, data_directory: Path) -> list[Path]:
     ]
 
 
-def _legacy_generated_files(root: Path, data_directory: Path) -> list[Path]:
-    candidates = [
+def _legacy_generated_candidates(
+    root: Path, data_directory: Path
+) -> list[tuple[Path, str]]:
+    return [
         (
             _safe_path(root, data_directory / "templates" / name),
             read_easd_template(name),
@@ -328,8 +395,11 @@ def _legacy_generated_files(root: Path, data_directory: Path) -> list[Path]:
         )
         for name in EASD_LEGACY_OPTIONAL_SKELETON_FILES
     ]
+
+
+def _legacy_generated_files(root: Path, data_directory: Path) -> list[Path]:
     output: list[Path] = []
-    for path, bundled in candidates:
+    for path, bundled in _legacy_generated_candidates(root, data_directory):
         try:
             if (
                 path.is_file()
@@ -344,6 +414,9 @@ def _legacy_generated_files(root: Path, data_directory: Path) -> list[Path]:
 
 def inspect_repository(target: EasdRepositoryTarget) -> dict[str, Any]:
     root = _root(target)
+    runtime_owner = easd_runtime_owner(root)
+    runtime_path = easd_runtime_path(root, EASD_RUNTIME_DIRECTORY)
+    templates_path = easd_runtime_path(root, EASD_TEMPLATES_DIRECTORY)
     state: EasdSetupState = "not_initialized"
     issue: str | None = None
     data_directory = DEFAULT_EASD_DATA_DIRECTORY
@@ -362,7 +435,9 @@ def inspect_repository(target: EasdRepositoryTarget) -> dict[str, Any]:
             "data_directory": DEFAULT_EASD_DATA_DIRECTORY.as_posix(),
             "data_path": str(root / DEFAULT_EASD_DATA_DIRECTORY),
             "runtime_directory": str(EASD_RUNTIME_DIRECTORY),
-            "runtime_path": str(root / EASD_RUNTIME_DIRECTORY),
+            "runtime_path": str(runtime_path),
+            "runtime_owner_path": str(runtime_owner),
+            "runtime_shared_across_worktrees": runtime_owner != root,
             "legacy_run_count": 0,
             "legacy_generated_file_count": 0,
             "rules_path": str(EASD_RULES),
@@ -458,12 +533,19 @@ def inspect_repository(target: EasdRepositoryTarget) -> dict[str, Any]:
                     raise ValueError("EASD data_directory is missing or symlinked")
                 if rules_path.is_symlink() or not rules_path.is_file():
                     raise ValueError("EASD core rules are missing")
-                templates_path = _safe_path(root, EASD_TEMPLATES_DIRECTORY)
-                runtime_path = _safe_path(root, EASD_RUNTIME_DIRECTORY)
-                if templates_path.is_symlink() or not templates_path.is_dir():
+                local_missing: list[str] = []
+                if templates_path.exists() and (
+                    templates_path.is_symlink() or not templates_path.is_dir()
+                ):
                     raise ValueError("EASD templates directory is missing")
-                if runtime_path.is_symlink() or not runtime_path.is_dir():
+                if not templates_path.exists():
+                    local_missing.append("templates")
+                if runtime_path.exists() and (
+                    runtime_path.is_symlink() or not runtime_path.is_dir()
+                ):
                     raise ValueError("EASD local runtime directory is missing")
+                if not runtime_path.exists():
+                    local_missing.append("runtime")
                 missing_templates = [
                     name
                     for name in EASD_TEMPLATE_NAMES
@@ -487,7 +569,10 @@ def inspect_repository(target: EasdRepositoryTarget) -> dict[str, Any]:
                 )
                 if skeleton_issue:
                     raise ValueError(skeleton_issue)
-                if missing_templates:
+                if local_missing:
+                    state = "upgrade_required"
+                    issue = "Initialize local EASD " + " and ".join(local_missing)
+                elif missing_templates:
                     state = "upgrade_required"
                     issue = "Missing EASD templates: " + ", ".join(missing_templates)
                 elif missing_skeleton:
@@ -508,7 +593,6 @@ def inspect_repository(target: EasdRepositoryTarget) -> dict[str, Any]:
         issue = skill_issue
 
     data_path = _safe_path(root, data_directory)
-    runtime_path = _safe_path(root, EASD_RUNTIME_DIRECTORY)
     legacy_run_count = len(_legacy_run_directories(root, data_directory))
     legacy_generated_file_count = len(_legacy_generated_files(root, data_directory))
 
@@ -523,6 +607,8 @@ def inspect_repository(target: EasdRepositoryTarget) -> dict[str, Any]:
         "data_path": str(data_path),
         "runtime_directory": str(EASD_RUNTIME_DIRECTORY),
         "runtime_path": str(runtime_path),
+        "runtime_owner_path": str(runtime_owner),
+        "runtime_shared_across_worktrees": runtime_owner != root,
         "legacy_run_count": legacy_run_count,
         "legacy_generated_file_count": legacy_generated_file_count,
         "rules_path": str(EASD_RULES),
@@ -556,6 +642,7 @@ def initialize_repositories(
     by_path = {item["path"]: item for item in inspected}
     for target in targets:
         root = _root(target)
+        runtime_owner = easd_runtime_owner(root)
         manifest_path = _safe_path(root, EASD_MANIFEST)
         current = by_path[str(root)]
         selected_data_directory = requested_data_directory or normalize_data_directory(
@@ -577,15 +664,15 @@ def initialize_repositories(
             raise ValueError(f"EASD data_directory escapes repository: {data_path}")
         if data_path.is_symlink():
             raise ValueError("EASD data_directory must not be a symlink")
-        templates_directory = _safe_path(root, EASD_TEMPLATES_DIRECTORY)
-        runs_directory = _safe_path(root, EASD_RUNTIME_DIRECTORY)
+        templates_directory = easd_runtime_path(root, EASD_TEMPLATES_DIRECTORY)
+        runs_directory = easd_runtime_path(root, EASD_RUNTIME_DIRECTORY)
         _reject_symlink_ancestors(
-            root,
+            runtime_owner,
             templates_directory,
             label="EASD templates directory",
         )
         _reject_symlink_ancestors(
-            root,
+            runtime_owner,
             runs_directory,
             label="EASD runs directory",
         )
@@ -604,7 +691,7 @@ def initialize_repositories(
         _normalize_knowledge_index(root, selected_data_directory)
         _normalize_knowledge_readme(root, selected_data_directory)
         for name in EASD_TEMPLATE_NAMES:
-            template_file = _safe_path(root, EASD_TEMPLATES_DIRECTORY / name)
+            template_file = easd_runtime_path(root, EASD_TEMPLATES_DIRECTORY / name)
             if overwrite or not template_file.exists():
                 _atomic_write_text(template_file, read_easd_template(name))
         rules_path = _safe_path(root, EASD_RULES)
@@ -615,8 +702,14 @@ def initialize_repositories(
             _atomic_write_text(gitignore_path, _LOCAL_GITIGNORE_TEXT)
         for name in EASD_SKILL_NAMES:
             _directory, skill_file, scope_file = _skill_paths(root, name)
-            if overwrite or not skill_file.exists():
+            if (
+                overwrite
+                or not skill_file.exists()
+                or _is_legacy_bundled_skill(skill_file, name)
+            ):
                 _atomic_write_text(skill_file, read_easd_skill(name))
+            else:
+                _normalize_legacy_skill_runtime_contract(skill_file)
             if overwrite or not scope_file.exists():
                 _atomic_write_text(scope_file, _SKILL_SCOPE_TEXT)
         if overwrite or not manifest_path.exists() or current["state"] != "ready":
@@ -656,12 +749,18 @@ def preview_runtime_migration(
                 )
             match = _RUN_SUFFIX.search(source.name)
             assert match is not None
+            target_path = easd_runtime_path(root, EASD_RUNTIME_DIRECTORY / source.name)
+            target_display = (
+                target_path.relative_to(root).as_posix()
+                if root == easd_runtime_owner(root)
+                else str(target_path)
+            )
             entries.append(
                 {
                     "run_id": match.group("id"),
                     "name": source.name,
                     "source": source.relative_to(root).as_posix(),
-                    "target": (EASD_RUNTIME_DIRECTORY / source.name).as_posix(),
+                    "target": target_display,
                     "file_count": len(files),
                     "bytes": sum(path.stat().st_size for path in files),
                 }
@@ -671,6 +770,7 @@ def preview_runtime_migration(
                 "path": str(root),
                 "name": target.name,
                 "display_name": target.display_name,
+                "runtime_owner_path": str(easd_runtime_owner(root)),
                 "legacy_run_count": len(entries),
                 "runs": entries,
                 "legacy_generated_file_count": len(generated_files),
@@ -686,63 +786,135 @@ def preview_runtime_migration(
 def localize_legacy_runs(
     targets: list[EasdRepositoryTarget],
 ) -> list[dict[str, Any]]:
-    previews = preview_runtime_migration(targets)
-    moves: list[tuple[Path, Path]] = []
-    generated_files: list[tuple[Path, Path]] = []
-    for repository in previews:
-        root = Path(repository["path"])
-        for entry in repository["runs"]:
-            source = _safe_path(root, Path(entry["source"]))
-            target = _safe_path(root, Path(entry["target"]))
-            if source.is_symlink() or not source.is_dir():
-                raise EasdSetupConflict(
-                    f"Legacy EASD Run is not a regular directory: {entry['source']}"
+    owners_by_path: dict[str, Path] = {}
+    for target in targets:
+        owner = easd_runtime_owner(_root(target))
+        owners_by_path[str(owner)] = owner
+    with ExitStack() as locks:
+        for owner_path in sorted(owners_by_path):
+            owner = owners_by_path[owner_path]
+            locks.enter_context(easd_runtime_lock(owner))
+
+        # Rebuild the preview while mutation is serialized so execution never
+        # relies on a stale UI response.
+        previews = preview_runtime_migration(targets)
+        moves: list[tuple[Path, Path]] = []
+        generated_files: list[tuple[Path, Path, str]] = []
+        data_paths: dict[Path, Path] = {}
+        for repository in previews:
+            root = Path(repository["path"])
+            inspected = inspect_repository(
+                EasdRepositoryTarget(path=str(root), name=repository["name"])
+            )
+            data_directory = normalize_data_directory(inspected["data_directory"])
+            data_paths[root] = _safe_path(root, data_directory)
+            generated_by_path = {
+                path: bundled
+                for path, bundled in _legacy_generated_candidates(root, data_directory)
+            }
+            for entry in repository["runs"]:
+                source = _safe_path(root, Path(entry["source"]))
+                target = easd_runtime_path(
+                    root, EASD_RUNTIME_DIRECTORY / str(entry["name"])
                 )
-            if any(path.is_symlink() for path in source.rglob("*")):
+                if source.is_symlink() or not source.is_dir():
+                    raise EasdSetupConflict(
+                        "Legacy EASD Run is not a regular directory: "
+                        + str(entry["source"])
+                    )
+                if any(path.is_symlink() for path in source.rglob("*")):
+                    raise EasdSetupConflict(
+                        f"Legacy EASD Run contains a symlink: {entry['source']}"
+                    )
+                if target.exists():
+                    raise EasdSetupConflict(
+                        f"Local EASD Run already exists: {entry['target']}"
+                    )
+                moves.append((source, target))
+            for relative in repository["generated_files"]:
+                path = _safe_path(root, Path(relative))
+                bundled = generated_by_path.get(path)
+                if bundled is None:
+                    raise EasdSetupConflict(
+                        f"Legacy generated EASD file is not recognized: {relative}"
+                    )
+                try:
+                    unchanged = (
+                        path.is_file()
+                        and not path.is_symlink()
+                        and path.read_text(encoding="utf-8") == bundled
+                    )
+                except (OSError, UnicodeError):
+                    unchanged = False
+                if not unchanged:
+                    raise EasdSetupConflict(
+                        f"Legacy generated EASD file changed: {relative}"
+                    )
+                generated_files.append((root, path, bundled))
+
+        moved: list[tuple[Path, Path]] = []
+        removed: list[tuple[Path, str]] = []
+        try:
+            for source, target in moves:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(source, target)
+                moved.append((source, target))
+            for _root_path, path, bundled in generated_files:
+                # Revalidate immediately before the destructive operation. A
+                # project edit after preview must turn cleanup into a conflict.
+                if (
+                    path.is_symlink()
+                    or not path.is_file()
+                    or path.read_text(encoding="utf-8") != bundled
+                ):
+                    raise EasdSetupConflict(
+                        "Legacy generated EASD file changed before removal: "
+                        + str(path)
+                    )
+                path.unlink()
+                removed.append((path, bundled))
+        except Exception as exc:
+            rollback_errors: list[str] = []
+            for path, content in reversed(removed):
+                try:
+                    if not path.exists():
+                        _atomic_write_text(path, content)
+                except OSError as rollback_exc:
+                    rollback_errors.append(f"restore {path}: {rollback_exc}")
+            for source, target in reversed(moved):
+                try:
+                    if target.exists() and not source.exists():
+                        source.parent.mkdir(parents=True, exist_ok=True)
+                        os.replace(target, source)
+                except OSError as rollback_exc:
+                    rollback_errors.append(
+                        f"restore {source} from {target}: {rollback_exc}"
+                    )
+            if rollback_errors:
                 raise EasdSetupConflict(
-                    f"Legacy EASD Run contains a symlink: {entry['source']}"
-                )
-            if target.exists():
-                raise EasdSetupConflict(
-                    f"Local EASD Run already exists: {entry['target']}"
-                )
-            moves.append((source, target))
-        root = Path(repository["path"])
-        for relative in repository["generated_files"]:
-            path = _safe_path(root, Path(relative))
-            if path.is_symlink() or not path.is_file():
-                raise EasdSetupConflict(
-                    f"Legacy generated EASD file changed: {relative}"
-                )
-            generated_files.append((root, path))
-    for source, target in moves:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(source, target)
-    for root, path in generated_files:
-        data_path = _safe_path(
-            root,
-            normalize_data_directory(
-                inspect_repository(
-                    EasdRepositoryTarget(path=str(root), name=root.name)
-                )["data_directory"]
-            ),
-        )
-        path.unlink()
-        parent = path.parent
-        while parent != data_path and parent != root:
-            try:
-                parent.rmdir()
-            except OSError:
-                break
-            parent = parent.parent
-    return [
-        {
-            **repository,
-            "moved_run_count": len(repository["runs"]),
-            "removed_generated_file_count": len(repository["generated_files"]),
-        }
-        for repository in previews
-    ]
+                    "EASD runtime migration failed and rollback was incomplete: "
+                    + "; ".join(rollback_errors)
+                ) from exc
+            raise
+
+        for root, path, _bundled in generated_files:
+            parent = path.parent
+            data_path = data_paths[root]
+            while parent != data_path and parent != root:
+                try:
+                    parent.rmdir()
+                except OSError:
+                    break
+                parent = parent.parent
+
+        return [
+            {
+                **repository,
+                "moved_run_count": len(repository["runs"]),
+                "removed_generated_file_count": len(repository["generated_files"]),
+            }
+            for repository in previews
+        ]
 
 
 __all__ = [

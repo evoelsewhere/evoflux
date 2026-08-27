@@ -86,6 +86,9 @@ Evo Agent Specs routes are Coding-scoped:
   migration removes only byte-identical generated templates/placeholders;
   customized files are preserved and previously tracked moves appear as Git
   deletions for user review;
+- `GET/POST /api/easd/runs/{run_id}/publication` previews and explicitly writes
+  one compact Git-visible convergence record. Only converged Runs are eligible;
+  publication omits raw evidence/local paths, is idempotent, and never commits;
 - `POST /api/easd/generate` reads bounded authorized project context and returns
   a non-persisted intended-outcome/Scope/Proof plus `direct|planned` flow proposal,
   provenance/confidence, or clarifying questions. `intent.title` and

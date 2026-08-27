@@ -54,6 +54,7 @@ import {
   useEasdRunQuery,
   useEasdRunTraceQuery,
   useEasdRecoveryQuery,
+  useEasdPublicationQuery,
   useEasdRuntimeMigrationQuery,
   useExecuteEasdRecoveryMutation,
   useExecuteEasdRuntimeMigrationMutation,
@@ -62,6 +63,7 @@ import {
   useEasdSetupQuery,
   useGenerateEasdScopeAndProofMutation,
   useInitializeEasdSetupMutation,
+  usePublishEasdRunMutation,
   useRetryEasdPlanningMutation,
   useRetryEasdSpecAuthoringMutation,
   useStartEasdRunInChatMutation,
@@ -480,6 +482,9 @@ function SetupView({
                   </p>
                   <p className="mt-0.5 truncate font-mono text-[10px] text-(--color-text-subtle)">data · {repository.data_directory}</p>
                   <p className="mt-0.5 truncate font-mono text-[10px] text-(--color-text-subtle)">runtime · {repository.runtime_directory}</p>
+                  {repository.runtime_shared_across_worktrees && (
+                    <p className="mt-1 text-[10px] font-medium text-(--color-success)">Shared local runtime from source repository</p>
+                  )}
                   {repository.legacy_run_count > 0 && (
                     <p className="mt-1 text-[10px] font-medium text-(--color-warning)">{repository.legacy_run_count} legacy {repository.legacy_run_count === 1 ? 'Run is' : 'Runs are'} visible to Git</p>
                   )}
@@ -562,6 +567,23 @@ function SetupView({
               <p className="mt-1"><span className="text-(--color-text-subtle)">Runs:</span> {migrationRepository.legacy_run_count}</p>
               <p className="mt-1"><span className="text-(--color-text-subtle)">Files:</span> {migrationRepository.runs.reduce((total, run) => total + run.file_count, 0)} · {formatStorageBytes(migrationRepository.runs.reduce((total, run) => total + run.bytes, 0))}</p>
               <p className="mt-1"><span className="text-(--color-text-subtle)">Generated defaults:</span> {migrationRepository.legacy_generated_file_count} · {formatStorageBytes(migrationRepository.generated_bytes)}</p>
+              {migrationRepository.runs.length > 0 && (
+                <div className="mt-3 max-h-40 space-y-2 overflow-auto rounded-md border border-(--color-border) bg-(--bg-card) p-2">
+                  {migrationRepository.runs.map((run) => (
+                    <div key={run.run_id} className="border-b border-(--color-border) pb-2 last:border-0 last:pb-0">
+                      <p className="font-medium text-(--color-text-2)">{run.name.replace(/--[0-9a-f-]{36}$/i, '')}</p>
+                      <p className="mt-0.5 break-all font-mono text-[9px] text-(--color-text-subtle)">{run.source} → {run.target}</p>
+                      <p className="mt-0.5 text-[9px] text-(--color-text-muted)">{run.file_count} files · {formatStorageBytes(run.bytes)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {migrationRepository.generated_files.length > 0 && (
+                <div className="mt-2 max-h-28 overflow-auto rounded-md border border-(--color-border) bg-(--bg-card) p-2">
+                  <p className="mb-1 text-[9px] font-semibold uppercase tracking-wide text-(--color-text-subtle)">Generated files to remove</p>
+                  {migrationRepository.generated_files.map((path) => <p key={path} className="break-all font-mono text-[9px] text-(--color-text-muted)">{path}</p>)}
+                </div>
+              )}
               <p className="mt-2 text-(--color-warning)">If these files were previously committed, Git will show them as deleted. Review the diff before committing.</p>
             </div>
           ) : <p className="text-xs text-(--color-text-muted)">Loading migration preview…</p>}
@@ -1362,6 +1384,7 @@ function RunDetail({
   const [editingDraft, setEditingDraft] = useState(false)
   const [workspaceView, setWorkspaceView] = useState<RunWorkspaceView>('overview')
   const [confirmingAction, setConfirmingAction] = useState<EasdConfirmableAction | null>(null)
+  const [showPublication, setShowPublication] = useState(false)
   const draft = detail
     ? [...detail.revisions]
       .filter((item) => item.status === 'draft')
@@ -1374,9 +1397,9 @@ function RunDetail({
     : null
   const displayedPlan = planDraft ?? detail?.active_plan ?? null
   const deliveryMode = detail?.active_spec?.spec.delivery_flow?.mode ?? 'planned'
-  const ownerDataDirectory = setup.repositories.find(
+  const ownerRepository = setup.repositories.find(
     (repository) => repository.path === detail?.run.workspace,
-  )?.data_directory ?? 'documents/easd'
+  ) ?? setup.repositories[0]
   const agentAuthoring = draft?.authoring && 'mode' in draft.authoring
     ? draft.authoring
     : null
@@ -1395,6 +1418,8 @@ function RunDetail({
   const traceQuery = useEasdRunTraceQuery(runId, workspaceView === 'trace')
   const recoveryQuery = useEasdRecoveryQuery(runId, workspaceView === 'recovery')
   const recoveryMutation = useExecuteEasdRecoveryMutation(runId)
+  const publicationQuery = useEasdPublicationQuery(runId, detail?.run.status === 'converged')
+  const publicationMutation = usePublishEasdRunMutation(runId)
   const [evidenceCriterion, setEvidenceCriterion] = useState('')
   const [evidenceSummary, setEvidenceSummary] = useState('')
   const [evidenceKind, setEvidenceKind] = useState<EasdAppendableEvidenceKind>('manual')
@@ -1676,13 +1701,37 @@ function RunDetail({
         onCancel={() => setConfirmingAction(null)}
         onConfirm={() => void confirmLifecycleAction()}
       />
+      <Dialog open={showPublication} onOpenChange={(open) => { if (!publicationMutation.isPending) setShowPublication(open) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{publicationQuery.data?.published ? 'Audit record published' : 'Publish converged audit record?'}</DialogTitle>
+            <DialogDescription>This writes one compact Git-visible YAML record. It includes contract IDs, aggregate results, and evidence references—not prompts, chat transcripts, local paths, or raw evidence.</DialogDescription>
+          </DialogHeader>
+          {publicationQuery.isLoading ? (
+            <p className="flex items-center gap-2 text-xs text-(--color-text-muted)"><Loader2 size={13} className="animate-spin" /> Loading publication preview…</p>
+          ) : publicationQuery.data?.record ? (
+            <div className="rounded-lg border border-(--color-border) bg-(--bg-page) p-3 text-xs">
+              <p><span className="text-(--color-text-subtle)">Run:</span> {String(publicationQuery.data.record.title ?? detail.run.title)}</p>
+              <p className="mt-1 break-all"><span className="text-(--color-text-subtle)">Tracked path:</span> <span className="font-mono text-[10px]">{publicationQuery.data.path}</span></p>
+              <p className="mt-1"><span className="text-(--color-text-subtle)">Criteria:</span> {String((publicationQuery.data.record.criteria as Record<string, unknown> | undefined)?.passed ?? 0)} passed · {String((publicationQuery.data.record.criteria as Record<string, unknown> | undefined)?.total ?? 0)} total</p>
+              <p className="mt-1"><span className="text-(--color-text-subtle)">Evidence references:</span> {Array.isArray(publicationQuery.data.record.evidence_ids) ? publicationQuery.data.record.evidence_ids.length : 0}</p>
+              <p className="mt-2 text-[10px] leading-4 text-(--color-warning)">EvoFlux does not commit this file. Review it in Changes before sharing.</p>
+            </div>
+          ) : <p className="text-xs text-(--color-error)">{errorText(publicationQuery.error) ?? 'This Run is not eligible for publication.'}</p>}
+          {publicationMutation.error && <p role="alert" className="text-xs text-(--color-error)">{errorText(publicationMutation.error)}</p>}
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={publicationMutation.isPending} onClick={() => setShowPublication(false)}>Close</Button>
+            {!publicationQuery.data?.published && <Button type="button" disabled={!publicationQuery.data?.eligible || publicationMutation.isPending} onClick={() => void publicationMutation.mutateAsync().catch(() => undefined)}>{publicationMutation.isPending && <Loader2 className="animate-spin" />}Publish audit record</Button>}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <header className="shrink-0 border-b border-(--color-border) bg-(--bg-card)/45">
         <div className="flex min-h-16 items-center gap-3 px-3 @xl/easd:px-4">
           <Button type="button" variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back to runs"><ChevronLeft /></Button>
           <div className="min-w-0 flex-1">
             <div className="mb-1 flex items-center gap-2"><span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-(--color-accent)">Specification run</span><span className="text-[9px] text-(--color-text-subtle)">· {workspaceName(detail.run.workspace)}</span></div>
             <h1 className="truncate text-sm font-semibold text-(--color-text)">{detail.run.title}</h1>
-            <p className="mt-0.5 truncate text-[10px] text-(--color-text-subtle)">{RISK_LABELS[detail.run.risk_tier]} risk · {ownerDataDirectory}/runs{detail.run.store_generation ? ` · repo gen ${detail.run.store_generation}` : ''}</p>
+            <p className="mt-0.5 truncate text-[10px] text-(--color-text-subtle)">{RISK_LABELS[detail.run.risk_tier]} risk · {ownerRepository?.runtime_directory ?? '.evoflux/easd/.local/runs'}{detail.run.store_generation ? ` · repo gen ${detail.run.store_generation}` : ''}</p>
           </div>
           <span role="status" aria-label={`EASD realtime status: ${realtime.status === 'live' ? `${realtime.viewerCount} ${realtime.viewerCount === 1 ? 'viewer' : 'viewers'}` : realtime.status}`} className={cn(
             'flex items-center gap-1 rounded-full px-1.5 py-1 text-[9px] @2xl/easd:px-2',
@@ -1692,9 +1741,12 @@ function RunDetail({
             <span className="hidden @2xl/easd:inline">{realtime.status === 'live' ? `Live · ${realtime.viewerCount} ${realtime.viewerCount === 1 ? 'viewer' : 'viewers'}` : realtime.status === 'reconnecting' ? 'Reconnecting' : 'Connecting'}</span>
           </span>
           <RunStatus status={detail.run.status} />
-          {detail.run.status === 'converged' && detail.run.session_id && onRunInChat && (
-            <Button type="button" variant="outline" size="sm" onClick={() => void openRunChat('implementation', false)}><MessageSquareText /> View chat</Button>
-          )}
+            {detail.run.status === 'converged' && detail.run.session_id && onRunInChat && (
+              <Button type="button" variant="outline" size="sm" onClick={() => void openRunChat('implementation', false)}><MessageSquareText /> View chat</Button>
+            )}
+            {detail.run.status === 'converged' && (
+              <Button type="button" variant="outline" size="sm" disabled={publicationQuery.isLoading} onClick={() => setShowPublication(true)}><FileCheck2 /> {publicationQuery.data?.published ? 'View audit record' : 'Publish audit record'}</Button>
+            )}
         </div>
         <EasdActionRail
           status={detail.run.status}

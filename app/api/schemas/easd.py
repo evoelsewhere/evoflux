@@ -510,6 +510,20 @@ class EasdConvergenceResponse(BaseModel):
     report: dict[str, Any]
 
 
+class EasdPublicationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    confirm: Literal[True]
+
+
+class EasdPublicationResponse(BaseModel):
+    eligible: bool
+    published: bool
+    created: bool | None = None
+    path: str | None
+    record: dict[str, Any] | None
+
+
 class EasdInitializeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -536,6 +550,8 @@ class EasdRepositorySetupOut(BaseModel):
     data_path: str
     runtime_directory: str
     runtime_path: str
+    runtime_owner_path: str
+    runtime_shared_across_worktrees: bool
     legacy_run_count: int
     legacy_generated_file_count: int
     rules_path: str
@@ -567,6 +583,7 @@ class EasdRuntimeMigrationRepositoryOut(BaseModel):
     path: str
     name: str
     display_name: str | None
+    runtime_owner_path: str
     legacy_run_count: int
     runs: list[EasdRuntimeMigrationRunOut]
     legacy_generated_file_count: int

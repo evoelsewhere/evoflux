@@ -10,8 +10,9 @@ import tempfile
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
-from typing import Any, Iterator, Literal
+from typing import Any, Callable, Iterator, Literal, TypeVar, cast
 from uuid import UUID, uuid4
 
 import yaml
@@ -20,6 +21,11 @@ from app.services.easd_setup_service import (
     EASD_MANIFEST,
     EASD_RUNTIME_DIRECTORY,
     normalize_data_directory,
+)
+from app.services.easd_runtime import (
+    easd_runtime_lock,
+    easd_runtime_owner,
+    easd_runtime_path,
 )
 
 EasdArtifactKind = Literal[
@@ -36,6 +42,7 @@ _RUN_SUFFIX = re.compile(
 )
 _MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 _RUN_ROOTS: dict[UUID, Path] = {}
+_Method = TypeVar("_Method", bound=Callable[..., Any])
 
 
 class EasdStoreError(RuntimeError):
@@ -48,6 +55,15 @@ class EasdStoreConflict(EasdStoreError):
 
 class EasdStoreNotFound(EasdStoreError):
     """The requested repository artifact does not exist."""
+
+
+def _runtime_locked(method: _Method) -> _Method:
+    @wraps(method)
+    def wrapped(self: EasdRepositoryStore, *args: Any, **kwargs: Any) -> Any:
+        with easd_runtime_lock(self.root):
+            return method(self, *args, **kwargs)
+
+    return cast(_Method, wrapped)
 
 
 def _stable_yaml(payload: dict[str, Any]) -> str:
@@ -138,9 +154,11 @@ class EasdRepositoryStore:
         self.data_directory = relative
         self.data_path = self._inside(relative)
         self.specs_path = self._inside(relative / "specs")
-        self.runs_path = self._inside(EASD_RUNTIME_DIRECTORY)
+        self.runtime_owner = easd_runtime_owner(self.root)
+        self.runs_path = easd_runtime_path(self.root, EASD_RUNTIME_DIRECTORY)
+        self.checkout_runs_path = self._inside(EASD_RUNTIME_DIRECTORY)
         self.legacy_runs_path = self._inside(relative / "runs")
-        self.local_path = self._inside(Path(".evoflux/easd/.local"))
+        self.local_path = easd_runtime_path(self.root, Path(".evoflux/easd/.local"))
 
     def _inside(self, relative: Path) -> Path:
         candidate = self.root / relative
@@ -151,17 +169,20 @@ class EasdRepositoryStore:
             raise EasdStoreError(f"EASD store path must not be a symlink: {relative}")
         return candidate
 
+    @_runtime_locked
     def _run_directory(self, run_id: str | UUID) -> Path:
         normalized = str(UUID(str(run_id)))
         matches = [
             path
-            for root in (self.runs_path, self.legacy_runs_path)
+            for root in dict.fromkeys(
+                (self.runs_path, self.checkout_runs_path, self.legacy_runs_path)
+            )
             for path in root.glob(f"*--{normalized}")
             if path.is_dir() and not path.is_symlink()
         ]
         if len(matches) > 1:
             raise EasdStoreConflict(
-                f"EASD run {normalized} exists in local and legacy storage"
+                f"EASD run {normalized} exists in local and legacy storage or multiple runtime locations"
             )
         if len(matches) != 1:
             raise EasdStoreNotFound(f"EASD run {normalized} was not found")
@@ -229,6 +250,7 @@ class EasdRepositoryStore:
             _atomic_write(path, _stable_yaml(output))
             return output
 
+    @_runtime_locked
     def create_run(
         self,
         *,
@@ -282,16 +304,20 @@ class EasdRepositoryStore:
         _RUN_ROOTS[UUID(run_id)] = self.root
         return EasdStoredRun(self.root, directory, stored)
 
+    @_runtime_locked
     def load_run(self, run_id: str | UUID) -> EasdStoredRun:
         directory = self._run_directory(run_id)
         normalized = UUID(str(run_id))
         _RUN_ROOTS[normalized] = self.root
         return EasdStoredRun(self.root, directory, _read_yaml(directory / "run.yaml"))
 
+    @_runtime_locked
     def list_runs(self) -> list[EasdStoredRun]:
         rows: list[EasdStoredRun] = []
         seen: dict[UUID, Path] = {}
-        for runs_root in (self.runs_path, self.legacy_runs_path):
+        for runs_root in dict.fromkeys(
+            (self.runs_path, self.checkout_runs_path, self.legacy_runs_path)
+        ):
             if not runs_root.is_dir() or runs_root.is_symlink():
                 continue
             for directory in sorted(runs_root.iterdir()):
@@ -301,7 +327,7 @@ class EasdRepositoryStore:
                 run_id = UUID(match.group("id"))
                 if run_id in seen:
                     raise EasdStoreConflict(
-                        f"EASD run {run_id} exists in local and legacy storage"
+                        f"EASD run {run_id} exists in local and legacy storage or multiple runtime locations"
                     )
                 try:
                     rows.append(
@@ -317,6 +343,7 @@ class EasdRepositoryStore:
                     continue
         return rows
 
+    @_runtime_locked
     def update_run(
         self,
         run_id: str | UUID,
@@ -344,6 +371,7 @@ class EasdRepositoryStore:
             )
         return updated
 
+    @_runtime_locked
     def write_revision(
         self,
         run_id: str | UUID,
@@ -359,6 +387,7 @@ class EasdRepositoryStore:
             create_only=True,
         )
 
+    @_runtime_locked
     def replace_revision(
         self,
         run_id: str | UUID,
@@ -381,6 +410,7 @@ class EasdRepositoryStore:
             expected_hash=expected_hash,
         )
 
+    @_runtime_locked
     def read_revisions(
         self,
         run_id: str | UUID,
@@ -491,6 +521,7 @@ class EasdRepositoryStore:
             raise EasdStoreConflict("Published EASD Spec hash does not match its index")
         return {"directory": directory, "index": index, "revision": revision}
 
+    @_runtime_locked
     def append_artifact(
         self,
         run_id: str | UUID,
@@ -505,6 +536,7 @@ class EasdRepositoryStore:
             create_only=True,
         )
 
+    @_runtime_locked
     def upsert_artifact(
         self,
         run_id: str | UUID,
@@ -529,12 +561,14 @@ class EasdRepositoryStore:
             expected_hash=document_hash(current),
         )
 
+    @_runtime_locked
     def read_artifacts(
         self, run_id: str | UUID, kind: EasdArtifactKind
     ) -> list[dict[str, Any]]:
         directory = self._run_directory(run_id) / kind
         return [_read_yaml(path) for path in sorted(directory.glob("*.yaml"))]
 
+    @_runtime_locked
     def read_events(
         self,
         run_id: str | UUID,
@@ -575,6 +609,7 @@ class EasdRepositoryStore:
         events.sort(key=lambda item: int(item["sequence"]))
         return events, diagnostics
 
+    @_runtime_locked
     def append_event(
         self, run_id: str | UUID, payload: dict[str, Any]
     ) -> dict[str, Any]:
@@ -594,6 +629,7 @@ class EasdRepositoryStore:
                 create_only=True,
             )
 
+    @_runtime_locked
     def write_convergence(
         self, run_id: str | UUID, report: dict[str, Any]
     ) -> dict[str, Any]:
@@ -603,6 +639,144 @@ class EasdRepositoryStore:
             report,
             create_only=True,
         )
+
+    def _convergence_publication_record(
+        self, run_id: str | UUID
+    ) -> tuple[Path, dict[str, Any]]:
+        stored = self.load_run(run_id)
+        run = stored.run
+        normalized = str(UUID(str(run_id)))
+        if run.get("status") != "converged":
+            raise EasdStoreConflict("Only a converged EASD Run can be published")
+        report = _read_yaml(stored.directory / "convergence.yaml")
+        if str(report.get("run_id") or "") != normalized:
+            raise EasdStoreConflict("EASD convergence report has the wrong Run ID")
+        spec_hash = str(report.get("spec_hash") or "")
+        plan_hash = report.get("plan_hash")
+        if len(spec_hash) != 64 or (
+            plan_hash is not None and len(str(plan_hash)) != 64
+        ):
+            raise EasdStoreConflict(
+                "EASD convergence report has invalid contract hashes"
+            )
+
+        def counts(label: str, keys: tuple[str, ...]) -> dict[str, int]:
+            value = report.get(label)
+            if not isinstance(value, dict):
+                raise EasdStoreConflict(
+                    f"EASD convergence report has invalid {label} counts"
+                )
+            output: dict[str, int] = {}
+            for key in keys:
+                count = value.get(key)
+                if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+                    raise EasdStoreConflict(
+                        f"EASD convergence report has invalid {label}.{key}"
+                    )
+                output[key] = count
+            return output
+
+        def identifiers(label: str) -> list[str]:
+            value = report.get(label)
+            if not isinstance(value, list):
+                raise EasdStoreConflict(f"EASD convergence report has invalid {label}")
+            try:
+                return [str(UUID(str(item))) for item in value]
+            except (TypeError, ValueError) as exc:
+                raise EasdStoreConflict(
+                    f"EASD convergence report has invalid {label}"
+                ) from exc
+
+        try:
+            spec_revision_id = str(UUID(str(report.get("spec_revision_id") or "")))
+            plan_revision_id = (
+                str(UUID(str(report.get("plan_revision_id"))))
+                if plan_hash is not None
+                else None
+            )
+        except (TypeError, ValueError) as exc:
+            raise EasdStoreConflict(
+                "EASD convergence report has invalid revision IDs"
+            ) from exc
+        git_revision = report.get("git_revision")
+        if git_revision is not None and not re.fullmatch(
+            r"[0-9a-fA-F]{7,64}", str(git_revision)
+        ):
+            raise EasdStoreConflict("EASD convergence report has invalid Git revision")
+        record = {
+            "schema_version": 1,
+            "product": "Evo Agent Specs",
+            "methodology": "EASD",
+            "kind": "convergence_record",
+            "run_id": normalized,
+            "title": str(run.get("title") or "Untitled Run"),
+            "status": "converged",
+            "risk_tier": str(run.get("risk_tier") or "standard"),
+            "owner_repository": str(run.get("owner_repository") or self.root.name),
+            "accepted_spec": {
+                "revision_id": spec_revision_id,
+                "hash": spec_hash,
+                "catalog_index": str(run.get("spec_catalog_index") or ""),
+            },
+            "accepted_plan": (
+                {
+                    "revision_id": plan_revision_id,
+                    "hash": str(plan_hash),
+                }
+                if plan_hash is not None
+                else None
+            ),
+            "git_revision": str(git_revision) if git_revision is not None else None,
+            "criteria": counts("criteria", ("total", "passed", "waived")),
+            "missions": counts("missions", ("total", "completed", "cancelled")),
+            "evidence_ids": identifiers("evidence_ids"),
+            "deviation_ids": identifiers("deviation_ids"),
+            "converged_at": str(report.get("converged_at") or ""),
+        }
+        relative = (
+            Path("records") / "runs" / f"{_slug(record['title'])}--{normalized}.yaml"
+        )
+        return self.data_path / relative, record
+
+    @_runtime_locked
+    def preview_convergence_publication(self, run_id: str | UUID) -> dict[str, Any]:
+        normalized = str(UUID(str(run_id)))
+        stored = self.load_run(normalized)
+        if stored.run.get("status") != "converged":
+            return {
+                "eligible": False,
+                "published": False,
+                "path": None,
+                "record": None,
+            }
+        path, record = self._convergence_publication_record(normalized)
+        relative = path.relative_to(self.root).as_posix()
+        published = False
+        if path.exists():
+            current = _read_yaml(path)
+            if document_hash(current) != document_hash(record):
+                raise EasdStoreConflict(
+                    "Published EASD convergence record conflicts with local runtime"
+                )
+            published = True
+        return {
+            "eligible": True,
+            "published": published,
+            "path": relative,
+            "record": record,
+        }
+
+    @_runtime_locked
+    def publish_convergence_record(self, run_id: str | UUID) -> dict[str, Any]:
+        preview = self.preview_convergence_publication(run_id)
+        if not preview["eligible"] or preview["record"] is None:
+            raise EasdStoreConflict("Only a converged EASD Run can be published")
+        path = self.root / str(preview["path"])
+        if preview["published"]:
+            current = _read_yaml(path)
+            return {**preview, "created": False, "record": current}
+        stored = self._write_document(path, preview["record"], create_only=True)
+        return {**preview, "published": True, "created": True, "record": stored}
 
 
 def registered_run_root(run_id: str | UUID) -> Path | None:

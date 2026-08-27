@@ -13,6 +13,7 @@ import {
   useStartEasdSpecAuthoringMutation,
   useStartEasdVerificationMutation,
   useConvergeEasdRunMutation,
+  usePublishEasdRunMutation,
 } from '@/queries/useEasdQuery'
 
 const api = vi.hoisted(() => ({
@@ -25,6 +26,7 @@ const api = vi.hoisted(() => ({
   startReview: vi.fn(),
   startVerification: vi.fn(),
   converge: vi.fn(),
+  publish: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => ({
@@ -48,10 +50,12 @@ vi.mock('@/api/client', () => ({
   getEasdRun: vi.fn(),
   getEasdRunTrace: vi.fn(),
   getEasdRecovery: vi.fn(),
+  getEasdPublication: vi.fn(),
   getEasdRuntimeMigration: vi.fn(),
   getEasdSetup: vi.fn(),
   initializeEasdSetup: vi.fn(),
   listEasdRuns: vi.fn(),
+  publishEasdRun: api.publish,
 }))
 
 function wrapper(client: QueryClient) {
@@ -71,6 +75,7 @@ describe('EASD query invalidation', () => {
     api.startReview.mockReset().mockResolvedValue({ id: 'run-1', session_id: 'session-1', status: 'reviewing' })
     api.startVerification.mockReset().mockResolvedValue({ id: 'run-1', session_id: 'session-1', status: 'verifying' })
     api.converge.mockReset().mockResolvedValue({ report: {} })
+    api.publish.mockReset().mockResolvedValue({ eligible: true, published: true, created: true, path: 'records/run.yaml', record: {} })
   })
 
   it('refreshes list and detail caches after lifecycle convergence', async () => {
@@ -83,6 +88,21 @@ describe('EASD query invalidation', () => {
     await act(() => result.current.mutateAsync())
 
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['easd', 'runs'] })
+  })
+
+  it('stores the manual publication result in the Run publication cache', async () => {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+    const { result } = renderHook(() => usePublishEasdRunMutation('run-1'), {
+      wrapper: wrapper(client),
+    })
+
+    await act(() => result.current.mutateAsync())
+
+    expect(api.publish).toHaveBeenCalledWith('run-1')
+    expect(client.getQueryData(['easd', 'runs', 'run-1', 'publication'])).toMatchObject({
+      published: true,
+      created: true,
+    })
   })
 
   it('refreshes the same cache family after evidence changes acceptance state', async () => {

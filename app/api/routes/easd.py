@@ -25,6 +25,8 @@ from app.api.schemas.easd import (
     EasdInitializeRequest,
     EasdPlanRevisionCreateRequest,
     EasdPlanRevisionOut,
+    EasdPublicationRequest,
+    EasdPublicationResponse,
     EasdRepositorySetupOut,
     EasdRuntimeMigrationPreviewResponse,
     EasdRuntimeMigrationRequest,
@@ -57,6 +59,12 @@ from app.services.easd_setup_service import (
     inspect_repositories,
     localize_legacy_runs,
     preview_runtime_migration,
+)
+from app.services.easd_runtime import easd_runtime_owner
+from app.services.easd_repository_store import (
+    EasdRepositoryStore,
+    EasdStoreConflict,
+    EasdStoreError,
 )
 from app.services.trace_service import (
     TraceConflict,
@@ -154,7 +162,21 @@ async def _repository_targets(
             status_code=422,
             detail="Coding project has no repository workspaces.",
         )
-    if root not in {target.path for target in targets}:
+    target_paths = {target.path for target in targets}
+    runtime_owner = str(easd_runtime_owner(root))
+    if root not in target_paths and runtime_owner in target_paths:
+        targets = [
+            EasdRepositoryTarget(
+                path=root,
+                name=target.name,
+                display_name=target.display_name,
+            )
+            if target.path == runtime_owner
+            else target
+            for target in targets
+        ]
+        target_paths = {target.path for target in targets}
+    if root not in target_paths:
         raise HTTPException(
             status_code=422,
             detail="Workspace does not belong to the selected Coding project.",
@@ -1100,6 +1122,62 @@ async def converge_easd_run(
     ) as exc:
         _raise_easd(exc)
         raise AssertionError("unreachable")
+
+
+async def _publication_workspace(db_factory: DbSessionFactory, run_id: UUID) -> str:
+    async with db_factory() as db:
+        run = await get_run(db, run_id)
+        return run.workspace
+
+
+@router.get(
+    "/runs/{run_id}/publication",
+    response_model=EasdPublicationResponse,
+)
+async def preview_easd_run_publication(
+    run_id: UUID,
+    db_factory: DbSessionFactory,
+) -> EasdPublicationResponse:
+    try:
+        workspace = await _publication_workspace(db_factory, run_id)
+        result = await asyncio.to_thread(
+            EasdRepositoryStore(workspace).preview_convergence_publication,
+            run_id,
+        )
+        return EasdPublicationResponse.model_validate(result)
+    except TraceNotFound as exc:
+        _raise_easd(exc)
+        raise AssertionError("unreachable")
+    except EasdStoreConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except EasdStoreError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/runs/{run_id}/publication",
+    response_model=EasdPublicationResponse,
+)
+async def publish_easd_run(
+    run_id: UUID,
+    body: EasdPublicationRequest,
+    db_factory: DbSessionFactory,
+) -> EasdPublicationResponse:
+    del body
+    try:
+        workspace = await _publication_workspace(db_factory, run_id)
+        result = await asyncio.to_thread(
+            EasdRepositoryStore(workspace).publish_convergence_record,
+            run_id,
+        )
+        return EasdPublicationResponse.model_validate(result)
+    except TraceNotFound as exc:
+        _raise_easd(exc)
+        raise AssertionError("unreachable")
+    except EasdStoreConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except EasdStoreError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 __all__ = ["router"]

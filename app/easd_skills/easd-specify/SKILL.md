@@ -7,13 +7,17 @@ description: Draft or revise a reviewable EASD specification from repository evi
 
 ## Repository contract
 
-Read `.evoflux/easd/config.json`, its `rules_file`, and the current run under
-`data_directory` before phase work. Read the knowledge-base `index.yaml`,
+Read `.evoflux/easd/config.json` and its `rules_file` before phase work. Treat
+the injected EASD context as the authoritative current Run; when the owning
+runtime is accessible, corroborate it under `runtime_directory`. An isolated
+worktree intentionally has no checkout-local runtime copy. Read the tracked
+knowledge-base `index.yaml`,
 `specs/`, `features/`, `architecture/`, and `reference/` plus any existing
 project documentation named by repository instructions. Do not copy or move
 existing docs into EASD implicitly. Repository documents are the shared source
-of truth. Stop on a missing file, stale hash, or generation conflict; never
-reconstruct authority from chat memory or SQLite.
+of truth. Stop on a missing tracked contract, stale hash, generation conflict,
+or unavailable injected runtime; never reconstruct authority from chat memory
+or a stale database-only projection.
 
 Turn persisted Intent into a grounded contract that the user can review. This
 skill supplies procedure, not lifecycle authority: repository authorization,

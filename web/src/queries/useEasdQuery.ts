@@ -15,9 +15,11 @@ import {
   getEasdRun,
   getEasdRunTrace,
   getEasdRecovery,
+  getEasdPublication,
   getEasdRuntimeMigration,
   initializeEasdSetup,
   listEasdRuns,
+  publishEasdRun,
   retryEasdPlanningInChat,
   retryEasdSpecAuthoringInChat,
   startEasdRunInChat,
@@ -143,6 +145,24 @@ export function useEasdRecoveryQuery(runId: string | null, enabled = true) {
     queryKey: queryKeys.easd.recovery(runId ?? ''),
     queryFn: () => getEasdRecovery(runId!),
     enabled: Boolean(runId) && enabled,
+  })
+}
+
+export function useEasdPublicationQuery(runId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.easd.publication(runId ?? ''),
+    queryFn: () => getEasdPublication(runId!),
+    enabled: Boolean(runId) && enabled,
+  })
+}
+
+export function usePublishEasdRunMutation(runId: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => publishEasdRun(runId),
+    onSuccess: (publication) => {
+      client.setQueryData(queryKeys.easd.publication(runId), publication)
+    },
   })
 }
 

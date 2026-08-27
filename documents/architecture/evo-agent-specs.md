@@ -33,6 +33,12 @@ portable project-skill artifacts:
 Setup records the safe tracked knowledge directory, fixed ignored runtime and
 template directories, manual publish policy, core rules, and exact skill names
 in one unversioned current-layout contract.
+For a linked Git worktree, the ignored runtime/templates resolve through the
+Git common directory to the source checkout, while tracked Specs, Skills and
+knowledge remain branch-owned. Missing ignored directories are initializable
+local state rather than corrupt tracked setup. An older checkout-local worktree
+Run remains readable during compatibility rollout, but all new Runs use the
+canonical source runtime.
 Each sidecar scopes its Skill to Coding mode. The existing skill harness
 discovers `.evoflux/skills` at project precedence, so the bundle is absent from
 global/built-in catalogs and becomes eligible only when that authorized
@@ -138,11 +144,21 @@ binding and generic delegation execution. Local Run YAML is operational truth;
 Git carries accepted Specs and adopted docs only. Cross-host active-Run
 continuation requires explicit publication or a shared service.
 
+Converged Runs can explicitly publish one compact allowlisted record under
+`<data_directory>/records/runs/`. The record contains contract IDs/hashes,
+aggregate criterion/mission counts, Git revision and evidence/deviation IDs. It
+omits raw evidence, prompts, transcripts and absolute local paths. Publication
+is deterministic and idempotent, never automatic, and never commits for the
+user. Local Run retention remains explicit because the ignored ledger is the
+Recovery source of truth.
+
 Legacy `<data_directory>/runs/` directories remain readable. Setup reports their
 count and a separate confirmed migration previews paths/files/bytes before
 atomic moves into local runtime. The migration removes legacy generated
 templates/placeholders only when byte-identical to bundled defaults; any
-project edit prevents removal. No setup upgrade silently moves Git-visible data.
+project edit prevents removal. Runtime writes and migration share one repository
+lock; execution revalidates removable content and rolls back completed moves or
+removals on failure. No setup upgrade silently moves Git-visible data.
 
 ## Specification normalization
 
